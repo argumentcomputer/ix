@@ -87,6 +87,13 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.compileExpr_run_ordinary_refines,
     standardAxioms := standard, nativeAxioms := blake3Native },
   { root := ``Ix.Compile.Verify.compileExpr_run_ordinary_value,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root :=
+      ``Ix.Compile.Verify.compileExprNoSurgeryFuel_ordinary_arena_refines,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_ordinary_arena_refines,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_ordinary_arena_value,
     standardAxioms := standard, nativeAxioms := blake3Native }
 ]
 

@@ -28,7 +28,10 @@ semantics, and composes with the independent Lean4Lean expression value. A
 frozen-preseed state relation now closes the complete ordinary-expression
 tree through the actual production dispatcher, including arbitrary-universe
 local and external constants, recursive projections, and their Lean4Lean
-value corollary.
+value corollary. The strengthened theorem also exposes a structural
+`ArenaRel` for the returned metadata root, preserves every warm-cache root
+under append-only growth, and makes the `UInt64` arena-capacity boundary
+explicit.
 `KernelSourceWitness` is the sole
 upstream source-semantics boundary; later compiler-preservation slices take it
 as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean

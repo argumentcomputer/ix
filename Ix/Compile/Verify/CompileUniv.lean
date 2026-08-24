@@ -231,12 +231,13 @@ theorem canonUnivCached_run_refines
       CanonUnivCacheWF state' ∧
       exprTableView state' = exprTableView state ∧
       state'.exprCache = state.exprCache ∧
-      state'.univCache = state.univCache := by
+      state'.univCache = state.univCache ∧
+      state'.arena = state.arena := by
   cases hlookup : state.canonUnivCache.get? raw with
   | some cached =>
     have hvalue : cached = Ixon.canonUniv raw := hstate.sound hlookup
     subst cached
-    refine ⟨state, ?_, hstate, rfl, rfl, rfl⟩
+    refine ⟨state, ?_, hstate, rfl, rfl, rfl, rfl⟩
     rw [Ix.CompileM.canonUnivCached,
       run_bind compileEnv blockEnv state Ix.CompileM.getBlockState,
       run_getBlockState]
@@ -245,7 +246,7 @@ theorem canonUnivCached_run_refines
     rfl
   | none =>
     let state' := cacheCanonState state raw
-    refine ⟨state', ?_, ?_, rfl, rfl, rfl⟩
+    refine ⟨state', ?_, ?_, rfl, rfl, rfl, rfl⟩
     · rw [Ix.CompileM.canonUnivCached,
         run_bind compileEnv blockEnv state Ix.CompileM.getBlockState,
         run_getBlockState]
@@ -275,10 +276,12 @@ private theorem internMetaUniv_run_frame
       exprTableView state' = exprTableView state ∧
       state'.exprCache = state.exprCache ∧
       state'.univCache = state.univCache ∧
-      state'.canonUnivCache = state.canonUnivCache := by
+      state'.canonUnivCache = state.canonUnivCache ∧
+      state'.arena = state.arena := by
   cases hlookup : state.metaUnivsIndex.get? raw with
   | some slot =>
-    refine ⟨state.univs.size.toUInt64 + slot, state, ?_, rfl, rfl, rfl, rfl⟩
+    refine ⟨state.univs.size.toUInt64 + slot, state, ?_, rfl, rfl, rfl,
+      rfl, rfl⟩
     change Except.ok ((state.internMetaUniv raw).2,
       (state.internMetaUniv raw).1) = _
     rw [Ix.CompileM.BlockState.internMetaUniv, hlookup]
@@ -288,7 +291,8 @@ private theorem internMetaUniv_run_frame
       { state with
         metaUnivs := state.metaUnivs.push raw
         metaUnivsIndex := state.metaUnivsIndex.insert raw slot }
-    refine ⟨state.univs.size.toUInt64 + slot, state', ?_, rfl, rfl, rfl, rfl⟩
+    refine ⟨state.univs.size.toUInt64 + slot, state', ?_, rfl, rfl, rfl,
+      rfl, rfl⟩
     change Except.ok ((state.internMetaUniv raw).2,
       (state.internMetaUniv raw).1) = _
     rw [Ix.CompileM.BlockState.internMetaUniv, hlookup]
@@ -447,12 +451,13 @@ private theorem compileUniv_cached_refines
       UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
       exprTableView state' = exprTableView state ∧
       state'.exprCache = state.exprCache ∧
-      state'.canonUnivCache = state.canonUnivCache := by
+      state'.canonUnivCache = state.canonUnivCache ∧
+      state'.arena = state.arena := by
   have hvalue : cached = target :=
     Option.some.inj ((hstate.sound hcached).symm.trans href)
   subst target
   exact ⟨state, compileUniv_run_cached compileEnv blockEnv state level cached
-    hcached, hstate, rfl, rfl, rfl⟩
+    hcached, hstate, rfl, rfl, rfl, rfl⟩
 
 /-- Production universe compilation refines the total reference compiler.
 Every successful reference input runs successfully to the same positional
@@ -475,7 +480,8 @@ theorem compileUniv_run_refines
       UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
       exprTableView state' = exprTableView state ∧
       state'.exprCache = state.exprCache ∧
-      state'.canonUnivCache = state.canonUnivCache := by
+      state'.canonUnivCache = state.canonUnivCache ∧
+      state'.arena = state.arena := by
   induction level generalizing state target with
   | zero hash =>
     cases hlookup : state.univCache.get? (.zero hash) with
@@ -486,7 +492,9 @@ theorem compileUniv_run_refines
       subst target
       refine ⟨state.cacheUniv (.zero hash) .zero,
         compileUniv_run_zero_miss compileEnv blockEnv state hash hlookup,
-        hstate.insert hfaithful hlevel (by simp [compileUnivRef]), ?_, ?_, ?_⟩
+        hstate.insert hfaithful hlevel (by simp [compileUnivRef]),
+        ?_, ?_, ?_, ?_⟩
+      · rfl
       · rfl
       · rfl
       · rfl
@@ -497,16 +505,19 @@ theorem compileUniv_run_refines
     | none =>
       simp [compileUnivRef] at href
       rcases href with ⟨u, hu, rfl⟩
-      obtain ⟨state', hrun, hstate', hview, hcache, hcanonCache⟩ :=
+      obtain ⟨state', hrun, hstate', hview, hcache, hcanonCache,
+          harena⟩ :=
         ih (hclosed.succ hlevel) hstate hu
       refine ⟨state'.cacheUniv (.succ level hash) (.succ u),
         compileUniv_run_succ_miss compileEnv blockEnv state level hash
           hlookup hrun,
         hstate'.insert hfaithful hlevel (by simp [compileUnivRef, hu]),
-        ?_, ?_, ?_⟩
+        ?_, ?_, ?_, ?_⟩
       · simpa using hview
       · simpa using hcache
       · simpa using hcanonCache
+      · change state'.arena = state.arena
+        exact harena
   | max left right hash ihLeft ihRight =>
     cases hlookup : state.univCache.get? (.max left right hash) with
     | some cached =>
@@ -515,20 +526,22 @@ theorem compileUniv_run_refines
       simp [compileUnivRef] at href
       rcases href with ⟨leftU, hleft, rightU, hright, rfl⟩
       obtain ⟨leftState, hleftRun, hleftState, hleftView, hleftCache,
-          hleftCanonCache⟩ :=
+          hleftCanonCache, hleftArena⟩ :=
         ihLeft (hclosed.maxLeft hlevel) hstate hleft
       obtain ⟨rightState, hrightRun, hrightState, hrightView, hrightCache,
-          hrightCanonCache⟩ :=
+          hrightCanonCache, hrightArena⟩ :=
         ihRight (hclosed.maxRight hlevel) hleftState hright
       refine ⟨rightState.cacheUniv (.max left right hash)
           (.max leftU rightU),
         compileUniv_run_max_miss compileEnv blockEnv state left right hash
           hlookup hleftRun hrightRun,
         hrightState.insert hfaithful hlevel (by
-          simp [compileUnivRef, hleft, hright]), ?_, ?_, ?_⟩
+          simp [compileUnivRef, hleft, hright]), ?_, ?_, ?_, ?_⟩
       · simpa using hrightView.trans hleftView
       · simpa using hrightCache.trans hleftCache
       · simpa using hrightCanonCache.trans hleftCanonCache
+      · change rightState.arena = state.arena
+        exact hrightArena.trans hleftArena
   | imax left right hash ihLeft ihRight =>
     cases hlookup : state.univCache.get? (.imax left right hash) with
     | some cached =>
@@ -537,20 +550,22 @@ theorem compileUniv_run_refines
       simp [compileUnivRef] at href
       rcases href with ⟨leftU, hleft, rightU, hright, rfl⟩
       obtain ⟨leftState, hleftRun, hleftState, hleftView, hleftCache,
-          hleftCanonCache⟩ :=
+          hleftCanonCache, hleftArena⟩ :=
         ihLeft (hclosed.imaxLeft hlevel) hstate hleft
       obtain ⟨rightState, hrightRun, hrightState, hrightView, hrightCache,
-          hrightCanonCache⟩ :=
+          hrightCanonCache, hrightArena⟩ :=
         ihRight (hclosed.imaxRight hlevel) hleftState hright
       refine ⟨rightState.cacheUniv (.imax left right hash)
           (.imax leftU rightU),
         compileUniv_run_imax_miss compileEnv blockEnv state left right hash
           hlookup hleftRun hrightRun,
         hrightState.insert hfaithful hlevel (by
-          simp [compileUnivRef, hleft, hright]), ?_, ?_, ?_⟩
+          simp [compileUnivRef, hleft, hright]), ?_, ?_, ?_, ?_⟩
       · simpa using hrightView.trans hleftView
       · simpa using hrightCache.trans hleftCache
       · simpa using hrightCanonCache.trans hleftCanonCache
+      · change rightState.arena = state.arena
+        exact hrightArena.trans hleftArena
   | param name hash =>
     cases hlookup : state.univCache.get? (.param name hash) with
     | some cached =>
@@ -565,7 +580,8 @@ theorem compileUniv_run_refines
           compileUniv_run_param_miss compileEnv blockEnv state name hash
             hlookup hidx,
           hstate.insert hfaithful hlevel (by
-            simp [compileUnivRef, univParamIndex, hidx]), ?_, ?_, ?_⟩
+            simp [compileUnivRef, univParamIndex, hidx]), ?_, ?_, ?_, ?_⟩
+        · rfl
         · rfl
         · rfl
         · rfl
@@ -594,15 +610,16 @@ theorem compileAndInternUnivCanon_run_refines
       UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
       CanonUnivCacheWF state' ∧
       exprTableView state' = exprTableView state ∧
-      state'.exprCache = state.exprCache := by
+      state'.exprCache = state.exprCache ∧
+      state'.arena = state.arena := by
   obtain ⟨univState, hunivRun, hunivState, hunivView, hunivExprCache,
-      hunivCanonCache⟩ :=
+      hunivCanonCache, hunivArena⟩ :=
     compileUniv_run_refines compileEnv blockEnv hclosed hfaithful hlevel
       huniv href
   have hunivCanon : CanonUnivCacheWF univState :=
     hcanon.of_cache_eq hunivCanonCache
   obtain ⟨canonState, hcanonRun, hcanonState, hcanonView,
-      hcanonExprCache, hcanonUnivCache⟩ :=
+      hcanonExprCache, hcanonUnivCache, hcanonArena⟩ :=
     canonUnivCached_run_refines compileEnv blockEnv hunivCanon raw
   have hunivState' :
       UnivCacheWF (univParamIndex blockEnv.univCtx) support canonState :=
@@ -622,7 +639,7 @@ theorem compileAndInternUnivCanon_run_refines
   cases hsame : Ixon.canonUniv raw == raw with
   | true =>
     refine ⟨none, canonState, ?_, hunivState', hcanonState, hview,
-      hexprCache⟩
+      hexprCache, hcanonArena.trans hunivArena⟩
     rw [Ix.CompileM.compileAndInternUnivCanon,
       run_bind compileEnv blockEnv state _ _, hunivRun]
     simp only
@@ -642,12 +659,14 @@ theorem compileAndInternUnivCanon_run_refines
     rfl
   | false =>
     obtain ⟨original, finalState, horiginalRun, horiginalView,
-        horiginalExprCache, horiginalUnivCache, horiginalCanonCache⟩ :=
+        horiginalExprCache, horiginalUnivCache, horiginalCanonCache,
+        horiginalArena⟩ :=
       internMetaUniv_run_frame compileEnv blockEnv canonState raw
     refine ⟨some original, finalState, ?_,
       hunivState'.of_cache_eq horiginalUnivCache,
       hcanonState.of_cache_eq horiginalCanonCache,
-      horiginalView.trans hview, horiginalExprCache.trans hexprCache⟩
+      horiginalView.trans hview, horiginalExprCache.trans hexprCache,
+      horiginalArena.trans (hcanonArena.trans hunivArena)⟩
     rw [Ix.CompileM.compileAndInternUnivCanon,
       run_bind compileEnv blockEnv state _ _, hunivRun]
     simp only
@@ -688,7 +707,7 @@ theorem compileUniv_run_value
       UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
       sourceUnivValue (univParamIndex blockEnv.univCtx) level =
         some (univToVLevel target) := by
-  obtain ⟨state', hrun, hstate', _, _, _⟩ := compileUniv_run_refines
+  obtain ⟨state', hrun, hstate', _, _, _, _⟩ := compileUniv_run_refines
     compileEnv blockEnv hclosed hfaithful hlevel hstate href
   exact ⟨state', hrun, hstate', compileUnivRef_value href⟩
 

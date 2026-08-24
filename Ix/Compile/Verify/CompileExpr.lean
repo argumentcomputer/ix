@@ -1,4 +1,5 @@
 import Ix.Compile.Verify.CompileUniv
+import Ix.Compile.Verify.Arena
 import Ix.Compile.Verify.SourceValue
 import Std.Data.HashMap.Lemmas
 
@@ -23,6 +24,8 @@ closes the complete ordinary-expression tree: sorts, arbitrary-universe local
 and external constants, recursive projections, literals, structural
 composition, and erased empty metadata.  The proof covers warm caches,
 universe spelling patches, blob commits, and independent Lean4Lean values.
+Its strengthened frontier also relates the returned `UInt64` root to the
+append-only presentation arena under an explicit no-wrap capacity premise.
 -/
 
 namespace Ix.Compile.Verify
@@ -316,6 +319,32 @@ theorem OrdinaryExprCacheWF.insert {ctx : RefCompileCtx}
       exact href
     next => exact hstate.sound hfound
 
+/-- Inserting a newly allocated ordinary-expression root preserves arena
+cache soundness. Digest faithfulness is needed only when the physical hash
+map reports that the new key replaces the queried key. -/
+theorem ArenaCacheWF.insert {state : Ix.CompileM.BlockState}
+    (hstate : ArenaCacheWF state)
+    (hfaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {source : Ix.Expr} (hsource : OrdinaryExpr source)
+    {target : Ixon.Expr} {root : UInt64}
+    (hroot : ArenaRel source root state.arena) :
+    ArenaCacheWF
+      { state with exprCache := state.exprCache.insert source (target, root) } := by
+  constructor
+  intro queried found foundRoot hfound
+  change (state.exprCache.insert source (target, root)).get? queried =
+    some (found, foundRoot) at hfound
+  simp only [Std.HashMap.get?_insert] at hfound
+  split at hfound
+  next heq =>
+    have hsame : source = queried := hfaithful hsource heq
+    subst queried
+    have hvalue : (found, foundRoot) = (target, root) :=
+      (Option.some.inj hfound).symm
+    cases hvalue
+    exact hroot
+  next => exact hstate.sound hfound
+
 /-- All mutable invariants needed by table-backed ordinary-expression
 compilation.  `snapshot` fixes the reference compiler, while `tables` states
 that the live production state still exposes exactly that preseed view. -/
@@ -347,6 +376,25 @@ theorem FrozenExprStateWF.of_frame
 theorem BlockState.compileName_exprCache
     (state : Ix.CompileM.BlockState) (name : Ix.Name) :
     (state.compileName name).exprCache = state.exprCache := by
+  induction name generalizing state with
+  | anonymous hash =>
+    rw [Ix.CompileM.BlockState.compileName.eq_1]
+    split <;> rfl
+  | str parent value hash ih =>
+    simp only [Ix.CompileM.BlockState.compileName]
+    split
+    · rfl
+    · exact ih _
+  | num parent value hash ih =>
+    simp only [Ix.CompileM.BlockState.compileName]
+    split
+    · rfl
+    · exact ih _
+
+/-- Name serialization never changes the current expression metadata arena. -/
+theorem BlockState.compileName_arena
+    (state : Ix.CompileM.BlockState) (name : Ix.Name) :
+    (state.compileName name).arena = state.arena := by
   induction name generalizing state with
   | anonymous hash =>
     rw [Ix.CompileM.BlockState.compileName.eq_1]
@@ -476,6 +524,61 @@ def literalExpr (literal : Lean.Literal) (idx : UInt64) : Ixon.Expr :=
   match literal with
   | .natVal _ => .nat idx
   | .strVal _ => .str idx
+
+private theorem allocState_arenaExtends (state : Ix.CompileM.BlockState)
+    (node : Ixon.ExprMetaData) :
+    ArenaExtends state.arena (allocState state node).arena := by
+  exact ArenaExtends.push state.arena node
+
+private theorem allocState_root (state : Ix.CompileM.BlockState)
+    (node : Ixon.ExprMetaData)
+    (hroom : state.arena.nodes.size < UInt64.size) :
+    (allocState state node).arena.nodes[
+        state.arena.nodes.size.toUInt64.toNat]? = some node := by
+  have hidx : state.arena.nodes.size.toUInt64.toNat =
+      state.arena.nodes.size :=
+    UInt64.toNat_ofNat_of_lt hroom
+  simp [allocState, hidx]
+
+private theorem allocState_size (state : Ix.CompileM.BlockState)
+    (node : Ixon.ExprMetaData) :
+    (allocState state node).arena.nodes.size = state.arena.nodes.size + 1 := by
+  simp [allocState]
+
+/-- A state-only prelude followed by one arena allocation preserves all warm
+cache roots and returns the newly appended node at its `UInt64` index. -/
+private theorem arenaLeafFrame
+    {before middle : Ix.CompileM.BlockState}
+    (hcache : ArenaCacheWF before)
+    (hcacheEq : middle.exprCache = before.exprCache)
+    (harenaEq : middle.arena = before.arena)
+    (node : Ixon.ExprMetaData)
+    (hroom : before.arena.nodes.size + 1 < UInt64.size) :
+    let root := middle.arena.nodes.size.toUInt64
+    let after := allocState middle node
+    ArenaCacheWF after ∧
+      ArenaExtends before.arena after.arena ∧
+      after.arena.nodes.size ≤ before.arena.nodes.size + 1 ∧
+      after.arena.nodes[root.toNat]? = some node := by
+  let root := middle.arena.nodes.size.toUInt64
+  let after := allocState middle node
+  have hmiddleExtends : ArenaExtends before.arena middle.arena := by
+    rw [harenaEq]
+    exact ArenaExtends.refl before.arena
+  have hallocExtends : ArenaExtends middle.arena after.arena := by
+    dsimp [after]
+    exact allocState_arenaExtends middle node
+  have hmiddleRoom : middle.arena.nodes.size < UInt64.size := by
+    rw [harenaEq]
+    omega
+  have hroot : after.arena.nodes[root.toNat]? = some node := by
+    simpa [after, root] using allocState_root middle node hmiddleRoom
+  have hafterCache : ArenaCacheWF after :=
+    hcache.of_frame (by simpa [after, allocState] using hcacheEq)
+      (ArenaExtends.trans hmiddleExtends hallocExtends)
+  refine ⟨hafterCache,
+    ArenaExtends.trans hmiddleExtends hallocExtends, ?_, hroot⟩
+  simp [allocState, harenaEq]
 
 private theorem FrozenExprStateWF.alloc
     {compileEnv : Ix.CompileM.CompileEnv}
@@ -1023,7 +1126,7 @@ theorem compileExprNoSurgeryStep_sort_refines
         .ok ((.sort idx, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
   obtain ⟨original?, univState, hunivRun, hunivState, hcanonState,
-      hview, hexprCache⟩ :=
+      hview, hexprCache, _⟩ :=
     compileAndInternUnivCanon_run_refines compileEnv blockEnv hclosed
       hlevelFaithful hlevel hstate.univCache hstate.canonUnivCache hraw hindex
   have hfrozenUniv :
@@ -1253,7 +1356,9 @@ theorem FrozenExprStateWF.compileAndInternUnivCanon_refines
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileAndInternUnivCanon level) =
         .ok ((idx, original?), state') ∧
-      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      state'.arena = state.arena ∧
+      state'.exprCache = state.exprCache := by
   cases hraw : compileUnivRef (univParamIndex blockEnv.univCtx) level with
   | none =>
     simp [frozenRefCompileCtx, hraw] at hctxIndex
@@ -1271,7 +1376,8 @@ theorem FrozenExprStateWF.compileAndInternUnivCanon_refines
         state.univsIndex.get? (Ixon.canonUniv raw) = some idx := by
       rw [hmaps]
       exact hpreseed
-    obtain ⟨original?, state', hrun, huniv, hcanon, hview, hexpr⟩ :=
+    obtain ⟨original?, state', hrun, huniv, hcanon, hview, hexpr,
+        harena⟩ :=
       compileAndInternUnivCanon_run_refines compileEnv blockEnv hclosed
         hlevelFaithful hlevel hstate.univCache hstate.canonUnivCache hraw
         hindex
@@ -1279,7 +1385,7 @@ theorem FrozenExprStateWF.compileAndInternUnivCanon_refines
       { tables := hview.trans hstate.tables
         exprCache := hstate.exprCache.of_cache_eq hexpr
         univCache := huniv
-        canonUnivCache := hcanon }⟩
+        canonUnivCache := hcanon }, harena, hexpr⟩
 
 private theorem compileExprNoSurgeryStep_sort_ctx_refines
     (compileEnv : Ix.CompileM.CompileEnv)
@@ -1339,12 +1445,15 @@ private theorem compileAndInternUnivCanon_list_refines
           (levels.mapM Ix.CompileM.compileAndInternUnivCanon) =
         .ok (compiled, state') ∧
       compiled.map Prod.fst = indices ∧
-      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      state'.arena = state.arena ∧
+      state'.exprCache = state.exprCache := by
   induction levels generalizing state indices with
   | nil =>
     simp only [List.mapM_nil, pure, Option.some.injEq] at href
     subst indices
-    exact ⟨[], state, run_pure compileEnv blockEnv state [], rfl, hstate⟩
+    exact ⟨[], state, run_pure compileEnv blockEnv state [], rfl, hstate,
+      rfl, rfl⟩
   | cons level levels ih =>
     cases hhead :
         (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex level with
@@ -1361,14 +1470,16 @@ private theorem compileAndInternUnivCanon_list_refines
         have htailLevels : ∀ child ∈ levels, levelSupport child := by
           intro child hmem
           exact hlevels child (by simp [hmem])
-        obtain ⟨original?, headState, hheadRun, hheadState⟩ :=
+        obtain ⟨original?, headState, hheadRun, hheadState, hheadArena,
+            hheadCache⟩ :=
           hstate.compileAndInternUnivCanon_refines compileEnv blockEnv snapshot
             hclosed hlevelFaithful hlevel hhead
         obtain ⟨tailCompiled, finalState, htailRun, htailMap,
-            hfinalState⟩ :=
+            hfinalState, htailArena, htailCache⟩ :=
           ih htailLevels hheadState htail
         refine ⟨(idx, original?) :: tailCompiled, finalState, ?_, ?_,
-          hfinalState⟩
+          hfinalState, htailArena.trans hheadArena,
+          htailCache.trans hheadCache⟩
         · rw [List.mapM_cons,
             run_bind compileEnv blockEnv state _ _, hheadRun]
           simp only
@@ -1395,7 +1506,9 @@ theorem compileAndInternUnivCanon_array_refines
           (levels.mapM Ix.CompileM.compileAndInternUnivCanon) =
         .ok (compiled, state') ∧
       compiled.map Prod.fst = indices ∧
-      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      state'.arena = state.arena ∧
+      state'.exprCache = state.exprCache := by
   have hlevelsList : ∀ level ∈ levels.toList, levelSupport level := by
     intro level hmem
     exact hlevels level (by simpa using hmem)
@@ -1409,10 +1522,10 @@ theorem compileAndInternUnivCanon_array_refines
       Option.map Array.toList (some indices) at hmapped
     rw [Array.toList_mapM] at hmapped
     simpa using hmapped
-  obtain ⟨compiled, state', hrun, hmap, hstate'⟩ :=
+  obtain ⟨compiled, state', hrun, hmap, hstate', harena, hcache⟩ :=
     compileAndInternUnivCanon_list_refines compileEnv blockEnv snapshot
       hclosed hlevelFaithful hlevelsList hstate hrefList
-  refine ⟨compiled.toArray, state', ?_, ?_, hstate'⟩
+  refine ⟨compiled.toArray, state', ?_, ?_, hstate', harena, hcache⟩
   · rw [Array.mapM_eq_mapM_toList, map_eq_pure_bind,
       run_bind compileEnv blockEnv state _ _, hrun]
     rfl
@@ -1442,7 +1555,8 @@ theorem compileExprNoSurgeryStep_const_recur_refines
             (.const name levels hash)) =
         .ok ((.recur recIdx.toUInt64 indices, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
-  obtain ⟨compiled, univState, hunivsRun, hindices, hunivState⟩ :=
+  obtain ⟨compiled, univState, hunivsRun, hindices, hunivState,
+      hunivArena, hunivExprCache⟩ :=
     compileAndInternUnivCanon_array_refines compileEnv blockEnv snapshot
       hclosed hlevelFaithful hlevels hstate hrefLevels
   let nameState := univState.compileName name
@@ -1517,7 +1631,8 @@ theorem compileExprNoSurgeryStep_const_ref_refines
             (.const name levels hash)) =
         .ok ((.ref refIdx indices, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
-  obtain ⟨compiled, univState, hunivsRun, hindices, hunivState⟩ :=
+  obtain ⟨compiled, univState, hunivsRun, hindices, hunivState,
+      hunivArena, hunivExprCache⟩ :=
     compileAndInternUnivCanon_array_refines compileEnv blockEnv snapshot
       hclosed hlevelFaithful hlevels hstate hrefLevels
   let nameState := univState.compileName name
@@ -2439,6 +2554,144 @@ private theorem compileAppNoSurgery_ordinary_refines
     rw [run_bind compileEnv blockEnv argState _ _, run_allocArenaNode]
     rfl
 
+/-- Flattened App-spine refinement with the returned presentation-arena
+tree, append-only growth, and warm-cache arena soundness. -/
+private theorem compileAppNoSurgery_ordinary_arena_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (fuel : Nat)
+    (hrecur : ∀ {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+        {target : Ixon.Expr},
+      Ix.CompileM.exprCompileDepth source ≤ fuel →
+      SupportedOrdinaryExpr levelSupport source →
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state →
+      ArenaCacheWF state →
+      state.arena.nodes.size + exprArenaCost source < UInt64.size →
+      compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot) source =
+        some target →
+      ∃ root state',
+        Ix.CompileM.CompileM.run compileEnv blockEnv state
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel source) =
+          .ok ((target, root), state') ∧
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+        ArenaCacheWF state' ∧
+        ArenaCompileRel source root state.arena state'.arena)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hdepth : Ix.CompileM.exprCompileDepth source ≤ fuel)
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (harena : ArenaCacheWF state)
+    (hroom : state.arena.nodes.size + exprArenaCost source < UInt64.size)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileAppNoSurgery
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel) source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      ArenaCacheWF state' ∧
+      ArenaCompileRel source root state.arena state'.arena := by
+  induction hsource generalizing state target with
+  | bvar =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth SupportedOrdinaryExpr.bvar hstate harena hroom href
+  | sort hlevel =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.sort hlevel) hstate harena hroom href
+  | const hlevels =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.const hlevels) hstate harena hroom href
+  | lam hty hbody ihty ihbody =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.lam hty hbody) hstate harena hroom href
+  | all hty hbody ihty ihbody =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.all hty hbody) hstate harena hroom href
+  | letE hty hval hbody ihty ihval ihbody =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.letE hty hval hbody) hstate harena
+        hroom href
+  | lit =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth SupportedOrdinaryExpr.lit hstate harena hroom href
+  | proj hval ihval =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate harena hroom href
+  | mdata hinner ihinner =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate harena hroom href
+  | @app fn arg hash hfn harg ihfn iharg =>
+    simp [compileExprRef] at href
+    rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
+    have hfnDepth : Ix.CompileM.exprCompileDepth fn ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hargDepth : Ix.CompileM.exprCompileDepth arg ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hfnRoom :
+        state.arena.nodes.size + exprArenaCost fn < UInt64.size := by
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨fnRoot, fnState, hfnRun, hfnState, hfnCache, hfnArena⟩ :=
+      ihfn hfnDepth hstate harena hfnRoom hfnRef
+    have hargRoom :
+        fnState.arena.nodes.size + exprArenaCost arg < UInt64.size := by
+      have hfnGrowth := hfnArena.growth
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨argRoot, argState, hargRun, hargState, hargCache,
+        hargArena⟩ :=
+      hrecur hargDepth harg hfnState hfnCache hargRoom hargRef
+    have hallocRoom : argState.arena.nodes.size < UInt64.size := by
+      have hfnGrowth := hfnArena.growth
+      have hargGrowth := hargArena.growth
+      simp only [exprArenaCost] at hroom
+      omega
+    let root := argState.arena.nodes.size.toUInt64
+    let node : Ixon.ExprMetaData := .app fnRoot argRoot
+    let finalState := allocState argState node
+    have hallocExtends : ArenaExtends argState.arena finalState.arena := by
+      dsimp [finalState]
+      exact allocState_arenaExtends argState node
+    have hfnFinal : ArenaRel fn fnRoot finalState.arena :=
+      hfnArena.rootRel.mono
+        (ArenaExtends.trans hargArena.arenaExtends hallocExtends)
+    have hargFinal : ArenaRel arg argRoot finalState.arena :=
+      hargArena.rootRel.mono hallocExtends
+    have hrootNode :
+        finalState.arena.nodes[root.toNat]? = some (.app fnRoot argRoot) := by
+      simpa [finalState, node, root] using
+        allocState_root argState node hallocRoom
+    have hrootRel :
+        ArenaRel (.app fn arg hash) root finalState.arena :=
+      .app hfnFinal hargFinal hrootNode
+    have hfinalCache : ArenaCacheWF finalState :=
+      hargCache.of_frame (by rfl) hallocExtends
+    have hfinalGrowth :
+        finalState.arena.nodes.size ≤
+          state.arena.nodes.size + exprArenaCost (.app fn arg hash) := by
+      have hfnGrowth := hfnArena.growth
+      have hargGrowth := hargArena.growth
+      simp only [exprArenaCost]
+      simp [finalState, node, allocState]
+      omega
+    refine ⟨root, finalState, ?_, hargState.alloc node, hfinalCache,
+      ⟨hrootRel,
+        ArenaExtends.trans hfnArena.arenaExtends
+          (ArenaExtends.trans hargArena.arenaExtends hallocExtends),
+        hfinalGrowth⟩⟩
+    rw [Ix.CompileM.compileAppNoSurgery.eq_1,
+      run_bind compileEnv blockEnv state _ _, hfnRun]
+    simp only
+    rw [run_bind compileEnv blockEnv fnState _ _, hargRun]
+    simp only
+    rw [run_bind compileEnv blockEnv argState _ _, run_allocArenaNode]
+    rfl
+
 /-- One cache-miss constructor step for the complete frozen ordinary domain. -/
 private theorem compileExprNoSurgeryStep_ordinary_refines
     (compileEnv : Ix.CompileM.CompileEnv)
@@ -2790,6 +3043,922 @@ private theorem compileExprNoSurgeryStep_ordinary_refines
     rw [run_bind compileEnv blockEnv innerState _ _, run_allocArenaNode]
     rfl
 
+/-- One cache-miss constructor step with semantic refinement and the complete
+presentation-arena transition. -/
+private theorem compileExprNoSurgeryStep_ordinary_arena_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (fuel : Nat)
+    (hrecur : ∀ {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+        {target : Ixon.Expr},
+      Ix.CompileM.exprCompileDepth source ≤ fuel →
+      SupportedOrdinaryExpr levelSupport source →
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state →
+      ArenaCacheWF state →
+      state.arena.nodes.size + exprArenaCost source < UInt64.size →
+      compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot) source =
+        some target →
+      ∃ root state',
+        Ix.CompileM.CompileM.run compileEnv blockEnv state
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel source) =
+          .ok ((target, root), state') ∧
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+        ArenaCacheWF state' ∧
+        ArenaCompileRel source root state.arena state'.arena)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hdepth : Ix.CompileM.exprCompileDepth source ≤ fuel + 1)
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (harena : ArenaCacheWF state)
+    (hroom : state.arena.nodes.size + exprArenaCost source < UInt64.size)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryStep
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel) source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      ArenaCacheWF state' ∧
+      ArenaCompileRel source root state.arena state'.arena := by
+  cases hsource with
+  | bvar =>
+    simp [compileExprRef] at href
+    subst target
+    let root := state.arena.nodes.size.toUInt64
+    let finalState := allocState state .leaf
+    obtain ⟨hfinalCache, hextends, hgrowth, hnode⟩ :=
+      arenaLeafFrame harena rfl rfl .leaf (by
+        simpa [exprArenaCost] using hroom)
+    refine ⟨root, finalState, ?_, hstate.alloc .leaf, hfinalCache,
+      ⟨ArenaRel.bvar hnode, hextends, hgrowth⟩⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_allocArenaNode]
+    rfl
+  | @sort level hash hlevel =>
+    simp [compileExprRef] at href
+    rcases href with ⟨idx, hctxIndex, rfl⟩
+    obtain ⟨original?, univState, hunivRun, hunivState, hunivArena,
+        hunivCache⟩ :=
+      hstate.compileAndInternUnivCanon_refines compileEnv blockEnv snapshot
+        hclosed hlevelFaithful hlevel hctxIndex
+    let root := univState.arena.nodes.size.toUInt64
+    let allocated := allocState univState .leaf
+    have hleafRoom : state.arena.nodes.size + 1 < UInt64.size := by
+      simpa [exprArenaCost] using hroom
+    obtain ⟨hallocatedCache, hextends, hgrowth, hnode⟩ :=
+      arenaLeafFrame harena hunivCache hunivArena .leaf hleafRoom
+    have hallocatedState :
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot allocated :=
+      hunivState.alloc .leaf
+    cases original? with
+    | none =>
+      refine ⟨root, allocated, ?_, hallocatedState, hallocatedCache,
+        ⟨ArenaRel.sort hnode, hextends, ?_⟩⟩
+      · rw [Ix.CompileM.compileExprNoSurgeryStep,
+          run_bind compileEnv blockEnv state _ _, hunivRun]
+        simp only
+        rw [run_bind compileEnv blockEnv univState _ _, run_allocArenaNode]
+        rfl
+      · simpa [exprArenaCost] using hgrowth
+    | some original =>
+      let finalState := patchState allocated root #[original]
+      have hpatchExtends : ArenaExtends allocated.arena finalState.arena := by
+        change ArenaExtends allocated.arena allocated.arena
+        exact ArenaExtends.refl allocated.arena
+      have hfinalCache : ArenaCacheWF finalState :=
+        hallocatedCache.of_frame rfl hpatchExtends
+      have hfinalState :
+          FrozenExprStateWF compileEnv blockEnv levelSupport snapshot
+            finalState := hallocatedState.patch root #[original]
+      refine ⟨root, finalState, ?_, hfinalState, hfinalCache,
+        ⟨(ArenaRel.sort hnode).mono hpatchExtends,
+          ArenaExtends.trans hextends hpatchExtends, ?_⟩⟩
+      · rw [Ix.CompileM.compileExprNoSurgeryStep,
+          run_bind compileEnv blockEnv state _ _, hunivRun]
+        simp only
+        rw [run_bind compileEnv blockEnv univState _ _, run_allocArenaNode]
+        simp only
+        rw [run_bind compileEnv blockEnv allocated _ _, run_pushUnivPatch]
+        rfl
+      · change allocated.arena.nodes.size ≤
+          state.arena.nodes.size + exprArenaCost (.sort level hash)
+        simpa [exprArenaCost] using hgrowth
+  | @const name levels hash hlevels =>
+    cases hrefLevels : levels.mapM
+        (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex with
+    | none => simp [compileExprRef, hrefLevels] at href
+    | some indices =>
+      obtain ⟨compiled, univState, hunivsRun, hindices, hunivState,
+          hunivArena, hunivCache⟩ :=
+        compileAndInternUnivCanon_array_refines compileEnv blockEnv snapshot
+          hclosed hlevelFaithful hlevels hstate hrefLevels
+      let nameState := univState.compileName name
+      have hnameState :
+          FrozenExprStateWF compileEnv blockEnv levelSupport snapshot
+            nameState := hunivState.compileName name
+      have hnameArena : nameState.arena = state.arena :=
+        (BlockState.compileName_arena univState name).trans hunivArena
+      have hnameCache : nameState.exprCache = state.exprCache :=
+        (BlockState.compileName_exprCache univState name).trans hunivCache
+      let root := nameState.arena.nodes.size.toUInt64
+      let allocated := allocState nameState (.ref name.getHash)
+      have hleafRoom : state.arena.nodes.size + 1 < UInt64.size := by
+        simpa [exprArenaCost] using hroom
+      obtain ⟨hallocatedCache, hextends, hgrowth, hnode⟩ :=
+        arenaLeafFrame harena hnameCache hnameArena (.ref name.getHash)
+          hleafRoom
+      have hallocatedState :
+          FrozenExprStateWF compileEnv blockEnv levelSupport snapshot
+            allocated := hnameState.alloc (.ref name.getHash)
+      let patchIndices := compiled.map fun (canonical, original?) =>
+        original?.getD canonical
+      cases hmut : blockEnv.mutCtx.get? name with
+      | some recIdx =>
+        have hmut' : blockEnv.mutCtx[name]? = some recIdx := by
+          change blockEnv.mutCtx.get? name = some recIdx
+          exact hmut
+        have hctxMut :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).mutIndex name =
+              some recIdx.toUInt64 := by
+          simp [frozenRefCompileCtx, hmut']
+        simp [compileExprRef, hrefLevels, hctxMut] at href
+        subst target
+        cases hpatch : compiled.any (·.2.isSome) with
+        | false =>
+          refine ⟨root, allocated, ?_, hallocatedState, hallocatedCache,
+            ⟨ArenaRel.const hnode, hextends, ?_⟩⟩
+          · rw [Ix.CompileM.compileExprNoSurgeryStep,
+              run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+              run_getBlockEnv]
+            simp only
+            rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+            simp only
+            rw [run_bind compileEnv blockEnv univState _ _, run_compileName]
+            simp only
+            rw [hmut]
+            rw [run_bind compileEnv blockEnv nameState _ _,
+              run_allocArenaNode]
+            simp [hpatch, hindices]
+            rfl
+          · simpa [exprArenaCost] using hgrowth
+        | true =>
+          let finalState := patchState allocated root patchIndices
+          have hpatchExtends :
+              ArenaExtends allocated.arena finalState.arena := by
+            change ArenaExtends allocated.arena allocated.arena
+            exact ArenaExtends.refl allocated.arena
+          have hfinalCache : ArenaCacheWF finalState :=
+            hallocatedCache.of_frame rfl hpatchExtends
+          have hfinalState :
+              FrozenExprStateWF compileEnv blockEnv levelSupport snapshot
+                finalState := hallocatedState.patch root patchIndices
+          refine ⟨root, finalState, ?_, hfinalState, hfinalCache,
+            ⟨(ArenaRel.const hnode).mono hpatchExtends,
+              ArenaExtends.trans hextends hpatchExtends, ?_⟩⟩
+          · rw [Ix.CompileM.compileExprNoSurgeryStep,
+              run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+              run_getBlockEnv]
+            simp only
+            rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+            simp only
+            rw [run_bind compileEnv blockEnv univState _ _, run_compileName]
+            simp only
+            rw [hmut]
+            rw [run_bind compileEnv blockEnv nameState _ _,
+              run_allocArenaNode]
+            simp only
+            rw [hpatch]
+            simp
+            rw [map_eq_pure_bind]
+            rw [run_bind compileEnv blockEnv allocated _ _,
+              run_pushUnivPatch]
+            simp [hindices]
+            rfl
+          · change allocated.arena.nodes.size ≤
+              state.arena.nodes.size +
+                exprArenaCost (.const name levels hash)
+            simpa [exprArenaCost] using hgrowth
+      | none =>
+        have hmut' : blockEnv.mutCtx[name]? = none := by
+          change blockEnv.mutCtx.get? name = none
+          exact hmut
+        have hctxMut :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).mutIndex name =
+              none := by
+          simp [frozenRefCompileCtx, hmut']
+        cases hresolve : resolveConstAddr? compileEnv snapshot name with
+        | none =>
+          have hctxRef :
+              (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex name =
+                none := by
+            simp only [frozenRefCompileCtx]
+            rw [hresolve]
+            rfl
+          simp [compileExprRef, hrefLevels, hctxMut, hctxRef] at href
+        | some addr =>
+          cases hpreseed : snapshot.refsIndex.get? addr with
+          | none =>
+            have hctxRef :
+                (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                    name = none := by
+              simp only [frozenRefCompileCtx]
+              rw [hresolve]
+              change snapshot.refsIndex.get? addr = none
+              exact hpreseed
+            simp [compileExprRef, hrefLevels, hctxMut, hctxRef] at href
+          | some refIdx =>
+            have hctxRef :
+                (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                    name = some refIdx := by
+              simp only [frozenRefCompileCtx]
+              rw [hresolve]
+              change snapshot.refsIndex.get? addr = some refIdx
+              exact hpreseed
+            simp [compileExprRef, hrefLevels, hctxMut, hctxRef] at href
+            subst target
+            have hresolveName :
+                resolveConstAddr? compileEnv nameState name = some addr := by
+              rw [resolveConstAddr?_of_exprTableView_eq compileEnv
+                hnameState.tables]
+              exact hresolve
+            have hmaps := refsIndex_eq_of_exprTableView_eq hnameState.tables
+            have hindexName : nameState.refsIndex.get? addr = some refIdx := by
+              rw [hmaps]
+              exact hpreseed
+            have hlookupRun := run_lookupConstAddr_resolved compileEnv blockEnv
+              nameState name addr hresolveName
+            have hinternRun := run_internRef_hit compileEnv blockEnv nameState
+              addr refIdx hindexName
+            cases hpatch : compiled.any (·.2.isSome) with
+            | false =>
+              refine ⟨root, allocated, ?_, hallocatedState, hallocatedCache,
+                ⟨ArenaRel.const hnode, hextends, ?_⟩⟩
+              · rw [Ix.CompileM.compileExprNoSurgeryStep,
+                  run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+                  run_getBlockEnv]
+                simp only
+                rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+                simp only
+                rw [run_bind compileEnv blockEnv univState _ _,
+                  run_compileName]
+                simp only
+                rw [hmut]
+                rw [run_bind compileEnv blockEnv nameState _ _, hlookupRun]
+                simp only
+                rw [run_bind compileEnv blockEnv nameState _ _, hinternRun]
+                simp only
+                rw [run_bind compileEnv blockEnv nameState _ _,
+                  run_allocArenaNode]
+                simp [hpatch, hindices]
+                rfl
+              · simpa [exprArenaCost] using hgrowth
+            | true =>
+              let finalState := patchState allocated root patchIndices
+              have hpatchExtends :
+                  ArenaExtends allocated.arena finalState.arena := by
+                change ArenaExtends allocated.arena allocated.arena
+                exact ArenaExtends.refl allocated.arena
+              have hfinalCache : ArenaCacheWF finalState :=
+                hallocatedCache.of_frame rfl hpatchExtends
+              have hfinalState :
+                  FrozenExprStateWF compileEnv blockEnv levelSupport snapshot
+                    finalState := hallocatedState.patch root patchIndices
+              refine ⟨root, finalState, ?_, hfinalState, hfinalCache,
+                ⟨(ArenaRel.const hnode).mono hpatchExtends,
+                  ArenaExtends.trans hextends hpatchExtends, ?_⟩⟩
+              · rw [Ix.CompileM.compileExprNoSurgeryStep,
+                  run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+                  run_getBlockEnv]
+                simp only
+                rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+                simp only
+                rw [run_bind compileEnv blockEnv univState _ _,
+                  run_compileName]
+                simp only
+                rw [hmut]
+                rw [run_bind compileEnv blockEnv nameState _ _, hlookupRun]
+                simp only
+                rw [run_bind compileEnv blockEnv nameState _ _, hinternRun]
+                simp only
+                rw [run_bind compileEnv blockEnv nameState _ _,
+                  run_allocArenaNode]
+                simp only
+                rw [hpatch]
+                simp
+                rw [map_eq_pure_bind]
+                rw [run_bind compileEnv blockEnv allocated _ _,
+                  run_pushUnivPatch]
+                simp [hindices]
+                rfl
+              · change allocated.arena.nodes.size ≤
+                  state.arena.nodes.size +
+                    exprArenaCost (.const name levels hash)
+                simpa [exprArenaCost] using hgrowth
+  | @app fn arg hash hfn harg =>
+    simp [compileExprRef] at href
+    rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
+    have hfnDepth : Ix.CompileM.exprCompileDepth fn ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hargDepth : Ix.CompileM.exprCompileDepth arg ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hfnRoom :
+        state.arena.nodes.size + exprArenaCost fn < UInt64.size := by
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨fnRoot, fnState, hfnRun, hfnState, hfnCache, hfnArena⟩ :=
+      compileAppNoSurgery_ordinary_arena_refines compileEnv blockEnv snapshot
+        fuel hrecur hfnDepth hfn hstate harena hfnRoom hfnRef
+    have hargRoom :
+        fnState.arena.nodes.size + exprArenaCost arg < UInt64.size := by
+      have hfnGrowth := hfnArena.growth
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨argRoot, argState, hargRun, hargState, hargCache,
+        hargArena⟩ :=
+      hrecur hargDepth harg hfnState hfnCache hargRoom hargRef
+    have hallocRoom : argState.arena.nodes.size < UInt64.size := by
+      have hfnGrowth := hfnArena.growth
+      have hargGrowth := hargArena.growth
+      simp only [exprArenaCost] at hroom
+      omega
+    let root := argState.arena.nodes.size.toUInt64
+    let node : Ixon.ExprMetaData := .app fnRoot argRoot
+    let finalState := allocState argState node
+    have hallocExtends : ArenaExtends argState.arena finalState.arena := by
+      dsimp [finalState]
+      exact allocState_arenaExtends argState node
+    have hrootNode :
+        finalState.arena.nodes[root.toNat]? = some (.app fnRoot argRoot) := by
+      simpa [finalState, node, root] using
+        allocState_root argState node hallocRoom
+    have hrootRel : ArenaRel (.app fn arg hash) root finalState.arena :=
+      .app
+        (hfnArena.rootRel.mono
+          (ArenaExtends.trans hargArena.arenaExtends hallocExtends))
+        (hargArena.rootRel.mono hallocExtends) hrootNode
+    have hfinalCache : ArenaCacheWF finalState :=
+      hargCache.of_frame rfl hallocExtends
+    have hfinalGrowth :
+        finalState.arena.nodes.size ≤
+          state.arena.nodes.size + exprArenaCost (.app fn arg hash) := by
+      have hfnGrowth := hfnArena.growth
+      have hargGrowth := hargArena.growth
+      simp only [exprArenaCost]
+      simp [finalState, node, allocState]
+      omega
+    refine ⟨root, finalState, ?_, hargState.alloc node, hfinalCache,
+      ⟨hrootRel,
+        ArenaExtends.trans hfnArena.arenaExtends
+          (ArenaExtends.trans hargArena.arenaExtends hallocExtends),
+        hfinalGrowth⟩⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      Ix.CompileM.compileAppNoSurgery.eq_1,
+      run_bind compileEnv blockEnv state _ _, hfnRun]
+    simp only
+    rw [run_bind compileEnv blockEnv fnState _ _, hargRun]
+    simp only
+    rw [run_bind compileEnv blockEnv argState _ _, run_allocArenaNode]
+    rfl
+  | @lam name ty body bi hash hty hbody =>
+    simp [compileExprRef] at href
+    rcases href with ⟨tyTarget, htyRef, bodyTarget, hbodyRef, rfl⟩
+    have htyDepth : Ix.CompileM.exprCompileDepth ty ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hbodyDepth : Ix.CompileM.exprCompileDepth body ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    let nameState := state.compileName name
+    have hnameState := hstate.compileName name
+    have hnameArenaEq : nameState.arena = state.arena :=
+      BlockState.compileName_arena state name
+    have hnameCacheEq : nameState.exprCache = state.exprCache :=
+      BlockState.compileName_exprCache state name
+    have hnameCache : ArenaCacheWF nameState :=
+      harena.of_frame hnameCacheEq (by
+        rw [hnameArenaEq]
+        exact ArenaExtends.refl state.arena)
+    have htyRoom :
+        nameState.arena.nodes.size + exprArenaCost ty < UInt64.size := by
+      rw [hnameArenaEq]
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨tyRoot, tyState, htyRun, htyState, htyCache, htyArena⟩ :=
+      hrecur htyDepth hty hnameState hnameCache htyRoom htyRef
+    have hbodyRoom :
+        tyState.arena.nodes.size + exprArenaCost body < UInt64.size := by
+      have htyGrowth := htyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨bodyRoot, bodyState, hbodyRun, hbodyState, hbodyCache,
+        hbodyArena⟩ :=
+      hrecur hbodyDepth hbody htyState htyCache hbodyRoom hbodyRef
+    have hallocRoom : bodyState.arena.nodes.size < UInt64.size := by
+      have htyGrowth := htyArena.growth
+      have hbodyGrowth := hbodyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost] at hroom
+      omega
+    let root := bodyState.arena.nodes.size.toUInt64
+    let node : Ixon.ExprMetaData := .binder name.getHash bi tyRoot bodyRoot
+    let finalState := allocState bodyState node
+    have hallocExtends : ArenaExtends bodyState.arena finalState.arena := by
+      dsimp [finalState]
+      exact allocState_arenaExtends bodyState node
+    have hrootNode : finalState.arena.nodes[root.toNat]? = some node := by
+      simpa [finalState, root] using allocState_root bodyState node hallocRoom
+    have hrootRel : ArenaRel (.lam name ty body bi hash) root finalState.arena :=
+      .lam
+        (htyArena.rootRel.mono
+          (ArenaExtends.trans hbodyArena.arenaExtends hallocExtends))
+        (hbodyArena.rootRel.mono hallocExtends) hrootNode
+    have hfinalCache : ArenaCacheWF finalState :=
+      hbodyCache.of_frame rfl hallocExtends
+    have hfinalGrowth :
+        finalState.arena.nodes.size ≤
+          state.arena.nodes.size + exprArenaCost (.lam name ty body bi hash) := by
+      have htyGrowth := htyArena.growth
+      have hbodyGrowth := hbodyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost]
+      simp [finalState, node, allocState]
+      omega
+    refine ⟨root, finalState, ?_, hbodyState.alloc node, hfinalCache,
+      ⟨hrootRel,
+        ArenaExtends.trans (by
+          rw [← hnameArenaEq]
+          exact htyArena.arenaExtends)
+          (ArenaExtends.trans hbodyArena.arenaExtends hallocExtends),
+        hfinalGrowth⟩⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileName]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, htyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv tyState _ _, hbodyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv bodyState _ _, run_allocArenaNode]
+    rfl
+  | @all name ty body bi hash hty hbody =>
+    simp [compileExprRef] at href
+    rcases href with ⟨tyTarget, htyRef, bodyTarget, hbodyRef, rfl⟩
+    have htyDepth : Ix.CompileM.exprCompileDepth ty ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hbodyDepth : Ix.CompileM.exprCompileDepth body ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    let nameState := state.compileName name
+    have hnameState := hstate.compileName name
+    have hnameArenaEq : nameState.arena = state.arena :=
+      BlockState.compileName_arena state name
+    have hnameCacheEq : nameState.exprCache = state.exprCache :=
+      BlockState.compileName_exprCache state name
+    have hnameCache : ArenaCacheWF nameState :=
+      harena.of_frame hnameCacheEq (by
+        rw [hnameArenaEq]
+        exact ArenaExtends.refl state.arena)
+    have htyRoom :
+        nameState.arena.nodes.size + exprArenaCost ty < UInt64.size := by
+      rw [hnameArenaEq]
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨tyRoot, tyState, htyRun, htyState, htyCache, htyArena⟩ :=
+      hrecur htyDepth hty hnameState hnameCache htyRoom htyRef
+    have hbodyRoom :
+        tyState.arena.nodes.size + exprArenaCost body < UInt64.size := by
+      have htyGrowth := htyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨bodyRoot, bodyState, hbodyRun, hbodyState, hbodyCache,
+        hbodyArena⟩ :=
+      hrecur hbodyDepth hbody htyState htyCache hbodyRoom hbodyRef
+    have hallocRoom : bodyState.arena.nodes.size < UInt64.size := by
+      have htyGrowth := htyArena.growth
+      have hbodyGrowth := hbodyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost] at hroom
+      omega
+    let root := bodyState.arena.nodes.size.toUInt64
+    let node : Ixon.ExprMetaData := .binder name.getHash bi tyRoot bodyRoot
+    let finalState := allocState bodyState node
+    have hallocExtends : ArenaExtends bodyState.arena finalState.arena := by
+      dsimp [finalState]
+      exact allocState_arenaExtends bodyState node
+    have hrootNode : finalState.arena.nodes[root.toNat]? = some node := by
+      simpa [finalState, root] using allocState_root bodyState node hallocRoom
+    have hrootRel :
+        ArenaRel (.forallE name ty body bi hash) root finalState.arena :=
+      .all
+        (htyArena.rootRel.mono
+          (ArenaExtends.trans hbodyArena.arenaExtends hallocExtends))
+        (hbodyArena.rootRel.mono hallocExtends) hrootNode
+    have hfinalCache : ArenaCacheWF finalState :=
+      hbodyCache.of_frame rfl hallocExtends
+    have hfinalGrowth :
+        finalState.arena.nodes.size ≤ state.arena.nodes.size +
+          exprArenaCost (.forallE name ty body bi hash) := by
+      have htyGrowth := htyArena.growth
+      have hbodyGrowth := hbodyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost]
+      simp [finalState, node, allocState]
+      omega
+    refine ⟨root, finalState, ?_, hbodyState.alloc node, hfinalCache,
+      ⟨hrootRel,
+        ArenaExtends.trans (by
+          rw [← hnameArenaEq]
+          exact htyArena.arenaExtends)
+          (ArenaExtends.trans hbodyArena.arenaExtends hallocExtends),
+        hfinalGrowth⟩⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileName]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, htyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv tyState _ _, hbodyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv bodyState _ _, run_allocArenaNode]
+    rfl
+  | @letE name ty val body nonDep hash hty hval hbody =>
+    simp [compileExprRef] at href
+    rcases href with
+      ⟨tyTarget, htyRef, valTarget, hvalRef, bodyTarget, hbodyRef, rfl⟩
+    have htyDepth : Ix.CompileM.exprCompileDepth ty ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hvalDepth : Ix.CompileM.exprCompileDepth val ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hbodyDepth : Ix.CompileM.exprCompileDepth body ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    let nameState := state.compileName name
+    have hnameState := hstate.compileName name
+    have hnameArenaEq : nameState.arena = state.arena :=
+      BlockState.compileName_arena state name
+    have hnameCacheEq : nameState.exprCache = state.exprCache :=
+      BlockState.compileName_exprCache state name
+    have hnameCache : ArenaCacheWF nameState :=
+      harena.of_frame hnameCacheEq (by
+        rw [hnameArenaEq]
+        exact ArenaExtends.refl state.arena)
+    have htyRoom :
+        nameState.arena.nodes.size + exprArenaCost ty < UInt64.size := by
+      rw [hnameArenaEq]
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨tyRoot, tyState, htyRun, htyState, htyCache, htyArena⟩ :=
+      hrecur htyDepth hty hnameState hnameCache htyRoom htyRef
+    have hvalRoom :
+        tyState.arena.nodes.size + exprArenaCost val < UInt64.size := by
+      have htyGrowth := htyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨valRoot, valState, hvalRun, hvalState, hvalCache, hvalArena⟩ :=
+      hrecur hvalDepth hval htyState htyCache hvalRoom hvalRef
+    have hbodyRoom :
+        valState.arena.nodes.size + exprArenaCost body < UInt64.size := by
+      have htyGrowth := htyArena.growth
+      have hvalGrowth := hvalArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨bodyRoot, bodyState, hbodyRun, hbodyState, hbodyCache,
+        hbodyArena⟩ :=
+      hrecur hbodyDepth hbody hvalState hvalCache hbodyRoom hbodyRef
+    have hallocRoom : bodyState.arena.nodes.size < UInt64.size := by
+      have htyGrowth := htyArena.growth
+      have hvalGrowth := hvalArena.growth
+      have hbodyGrowth := hbodyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost] at hroom
+      omega
+    let root := bodyState.arena.nodes.size.toUInt64
+    let node : Ixon.ExprMetaData :=
+      .letBinder name.getHash tyRoot valRoot bodyRoot
+    let finalState := allocState bodyState node
+    have hallocExtends : ArenaExtends bodyState.arena finalState.arena := by
+      dsimp [finalState]
+      exact allocState_arenaExtends bodyState node
+    have hrootNode : finalState.arena.nodes[root.toNat]? = some node := by
+      simpa [finalState, root] using allocState_root bodyState node hallocRoom
+    have hrootRel :
+        ArenaRel (.letE name ty val body nonDep hash) root finalState.arena :=
+      .letE
+        (htyArena.rootRel.mono
+          (ArenaExtends.trans hvalArena.arenaExtends
+            (ArenaExtends.trans hbodyArena.arenaExtends hallocExtends)))
+        (hvalArena.rootRel.mono
+          (ArenaExtends.trans hbodyArena.arenaExtends hallocExtends))
+        (hbodyArena.rootRel.mono hallocExtends) hrootNode
+    have hfinalCache : ArenaCacheWF finalState :=
+      hbodyCache.of_frame rfl hallocExtends
+    have hfinalGrowth :
+        finalState.arena.nodes.size ≤ state.arena.nodes.size +
+          exprArenaCost (.letE name ty val body nonDep hash) := by
+      have htyGrowth := htyArena.growth
+      have hvalGrowth := hvalArena.growth
+      have hbodyGrowth := hbodyArena.growth
+      rw [hnameArenaEq] at htyGrowth
+      simp only [exprArenaCost]
+      simp [finalState, node, allocState]
+      omega
+    refine ⟨root, finalState, ?_, hbodyState.alloc node, hfinalCache,
+      ⟨hrootRel,
+        ArenaExtends.trans (by
+          rw [← hnameArenaEq]
+          exact htyArena.arenaExtends)
+          (ArenaExtends.trans hvalArena.arenaExtends
+            (ArenaExtends.trans hbodyArena.arenaExtends hallocExtends)),
+        hfinalGrowth⟩⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileName]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, htyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv tyState _ _, hvalRun]
+    simp only
+    rw [run_bind compileEnv blockEnv valState _ _, hbodyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv bodyState _ _, run_allocArenaNode]
+    rfl
+  | @lit literal hash =>
+    cases hpreseed : snapshot.refsIndex.get? (literalAddress literal) with
+    | none =>
+      have hctxLiteral :
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).literalRef
+              literal = none := by
+        simp only [frozenRefCompileCtx]
+        change snapshot.refsIndex.get? (literalAddress literal) = none
+        exact hpreseed
+      simp [compileExprRef, hctxLiteral] at href
+    | some refIdx =>
+      have hctxLiteral :
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).literalRef
+              literal = some refIdx := by
+        simp only [frozenRefCompileCtx]
+        change snapshot.refsIndex.get? (literalAddress literal) = some refIdx
+        exact hpreseed
+      have hexpected :
+          compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
+              (.lit literal hash) = some (literalExpr literal refIdx) := by
+        cases literal <;> simp [compileExprRef, literalExpr, hctxLiteral]
+      have htarget : target = literalExpr literal refIdx :=
+        Option.some.inj (href.symm.trans hexpected)
+      subst target
+      have hleafRoom : state.arena.nodes.size + 1 < UInt64.size := by
+        simpa [exprArenaCost] using hroom
+      cases literal with
+      | natVal value =>
+        let bytes := ByteArray.mk (Nat.toBytesLE value)
+        let addr := Address.blake3 bytes
+        have hpreseed' : snapshot.refsIndex.get? addr = some refIdx := by
+          simpa [addr, bytes, literalAddress] using hpreseed
+        let blobbed := blobState state addr bytes
+        have hblobbed := hstate.blob addr bytes
+        have hmaps := refsIndex_eq_of_exprTableView_eq hblobbed.tables
+        have hindex : blobbed.refsIndex.get? addr = some refIdx := by
+          rw [hmaps]
+          exact hpreseed'
+        have hintern := run_internRef_hit compileEnv blockEnv blobbed addr refIdx
+          hindex
+        let root := blobbed.arena.nodes.size.toUInt64
+        let finalState := allocState blobbed .leaf
+        obtain ⟨hfinalCache, hextends, hgrowth, hnode⟩ :=
+          arenaLeafFrame (before := state) (middle := blobbed) harena rfl rfl
+            .leaf hleafRoom
+        have hfinalCache' : ArenaCacheWF finalState := by
+          dsimp [finalState]
+          exact hfinalCache
+        have hextends' : ArenaExtends state.arena finalState.arena := by
+          dsimp [finalState]
+          exact hextends
+        have hnode' : finalState.arena.nodes[root.toNat]? = some .leaf := by
+          dsimp [finalState, root]
+          exact hnode
+        refine ⟨root, finalState, ?_, hblobbed.alloc .leaf, hfinalCache',
+          ⟨ArenaRel.lit hnode', hextends', ?_⟩⟩
+        · rw [Ix.CompileM.compileExprNoSurgeryStep,
+            run_bind compileEnv blockEnv state _ _,
+            run_insertBlockBlob compileEnv blockEnv state addr bytes]
+          simp only
+          rw [run_bind compileEnv blockEnv blobbed _ _, hintern]
+          simp only
+          rw [run_bind compileEnv blockEnv blobbed _ _, run_allocArenaNode]
+          rfl
+        · change (allocState blobbed .leaf).arena.nodes.size ≤
+            state.arena.nodes.size + exprArenaCost (.lit (.natVal value) hash)
+          simpa [exprArenaCost] using hgrowth
+      | strVal value =>
+        let bytes := value.toUTF8
+        let addr := Address.blake3 bytes
+        have hpreseed' : snapshot.refsIndex.get? addr = some refIdx := by
+          simpa [addr, bytes, literalAddress] using hpreseed
+        let blobbed := blobState state addr bytes
+        have hblobbed := hstate.blob addr bytes
+        have hmaps := refsIndex_eq_of_exprTableView_eq hblobbed.tables
+        have hindex : blobbed.refsIndex.get? addr = some refIdx := by
+          rw [hmaps]
+          exact hpreseed'
+        have hintern := run_internRef_hit compileEnv blockEnv blobbed addr refIdx
+          hindex
+        let root := blobbed.arena.nodes.size.toUInt64
+        let finalState := allocState blobbed .leaf
+        obtain ⟨hfinalCache, hextends, hgrowth, hnode⟩ :=
+          arenaLeafFrame (before := state) (middle := blobbed) harena rfl rfl
+            .leaf hleafRoom
+        have hfinalCache' : ArenaCacheWF finalState := by
+          dsimp [finalState]
+          exact hfinalCache
+        have hextends' : ArenaExtends state.arena finalState.arena := by
+          dsimp [finalState]
+          exact hextends
+        have hnode' : finalState.arena.nodes[root.toNat]? = some .leaf := by
+          dsimp [finalState, root]
+          exact hnode
+        refine ⟨root, finalState, ?_, hblobbed.alloc .leaf, hfinalCache',
+          ⟨ArenaRel.lit hnode', hextends', ?_⟩⟩
+        · rw [Ix.CompileM.compileExprNoSurgeryStep,
+            run_bind compileEnv blockEnv state _ _,
+            run_insertBlockBlob compileEnv blockEnv state addr bytes]
+          simp only
+          rw [run_bind compileEnv blockEnv blobbed _ _, hintern]
+          simp only
+          rw [run_bind compileEnv blockEnv blobbed _ _, run_allocArenaNode]
+          rfl
+        · change (allocState blobbed .leaf).arena.nodes.size ≤
+            state.arena.nodes.size + exprArenaCost (.lit (.strVal value) hash)
+          simpa [exprArenaCost] using hgrowth
+  | @proj typeName field val hash hval =>
+    cases hresolve : resolveConstAddr? compileEnv snapshot typeName with
+    | none =>
+      have hctxRef :
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+              typeName = none := by
+        simp only [frozenRefCompileCtx]
+        rw [hresolve]
+        rfl
+      simp [compileExprRef, hctxRef] at href
+    | some addr =>
+      cases hpreseed : snapshot.refsIndex.get? addr with
+      | none =>
+        have hctxRef :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                typeName = none := by
+          simp only [frozenRefCompileCtx]
+          rw [hresolve]
+          change snapshot.refsIndex.get? addr = none
+          exact hpreseed
+        simp [compileExprRef, hctxRef] at href
+      | some refIdx =>
+        have hctxRef :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                typeName = some refIdx := by
+          simp only [frozenRefCompileCtx]
+          rw [hresolve]
+          change snapshot.refsIndex.get? addr = some refIdx
+          exact hpreseed
+        simp [compileExprRef, hctxRef] at href
+        rcases href with ⟨valTarget, hvalRef, rfl⟩
+        have hvalDepth : Ix.CompileM.exprCompileDepth val ≤ fuel := by
+          simp only [Ix.CompileM.exprCompileDepth] at hdepth
+          omega
+        let nameState := state.compileName typeName
+        have hnameState := hstate.compileName typeName
+        have hnameArenaEq : nameState.arena = state.arena :=
+          BlockState.compileName_arena state typeName
+        have hnameCacheEq : nameState.exprCache = state.exprCache :=
+          BlockState.compileName_exprCache state typeName
+        have hnameCache : ArenaCacheWF nameState :=
+          harena.of_frame hnameCacheEq (by
+            rw [hnameArenaEq]
+            exact ArenaExtends.refl state.arena)
+        have hresolveName :
+            resolveConstAddr? compileEnv nameState typeName = some addr := by
+          rw [resolveConstAddr?_of_exprTableView_eq compileEnv
+            hnameState.tables]
+          exact hresolve
+        have hmaps := refsIndex_eq_of_exprTableView_eq hnameState.tables
+        have hindexName : nameState.refsIndex.get? addr = some refIdx := by
+          rw [hmaps]
+          exact hpreseed
+        have hlookupRun := run_lookupConstAddr_resolved compileEnv blockEnv
+          nameState typeName addr hresolveName
+        have hinternRun := run_internRef_hit compileEnv blockEnv nameState addr
+          refIdx hindexName
+        have hvalRoom :
+            nameState.arena.nodes.size + exprArenaCost val < UInt64.size := by
+          rw [hnameArenaEq]
+          simp only [exprArenaCost] at hroom
+          omega
+        obtain ⟨valRoot, valState, hvalRun, hvalState, hvalCache,
+            hvalArena⟩ :=
+          hrecur hvalDepth hval hnameState hnameCache hvalRoom hvalRef
+        have hallocRoom : valState.arena.nodes.size < UInt64.size := by
+          have hvalGrowth := hvalArena.growth
+          rw [hnameArenaEq] at hvalGrowth
+          simp only [exprArenaCost] at hroom
+          omega
+        let root := valState.arena.nodes.size.toUInt64
+        let node : Ixon.ExprMetaData := .prj typeName.getHash valRoot
+        let finalState := allocState valState node
+        have hallocExtends : ArenaExtends valState.arena finalState.arena := by
+          dsimp [finalState]
+          exact allocState_arenaExtends valState node
+        have hrootNode : finalState.arena.nodes[root.toNat]? = some node := by
+          simpa [finalState, root] using allocState_root valState node hallocRoom
+        have hrootRel :
+            ArenaRel (.proj typeName field val hash) root finalState.arena :=
+          .proj (hvalArena.rootRel.mono hallocExtends) hrootNode
+        have hfinalCache : ArenaCacheWF finalState :=
+          hvalCache.of_frame rfl hallocExtends
+        have hfinalGrowth :
+            finalState.arena.nodes.size ≤ state.arena.nodes.size +
+              exprArenaCost (.proj typeName field val hash) := by
+          have hvalGrowth := hvalArena.growth
+          rw [hnameArenaEq] at hvalGrowth
+          simp only [exprArenaCost]
+          simp [finalState, node, allocState]
+          omega
+        refine ⟨root, finalState, ?_, hvalState.alloc node, hfinalCache,
+          ⟨hrootRel,
+            (by
+              rw [← hnameArenaEq]
+              exact ArenaExtends.trans hvalArena.arenaExtends hallocExtends),
+            hfinalGrowth⟩⟩
+        rw [Ix.CompileM.compileExprNoSurgeryStep,
+          run_bind compileEnv blockEnv state _ _, run_compileName]
+        simp only
+        rw [run_bind compileEnv blockEnv nameState _ _, hlookupRun]
+        simp only
+        rw [run_bind compileEnv blockEnv nameState _ _, hinternRun]
+        simp only
+        rw [run_bind compileEnv blockEnv nameState _ _, hvalRun]
+        simp only
+        rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
+        rfl
+  | @mdata inner hash hinner =>
+    have hinnerRef :
+        compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
+            inner = some target := by
+      simpa [compileExprRef] using href
+    have hinnerDepth : Ix.CompileM.exprCompileDepth inner ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hinnerRoom :
+        state.arena.nodes.size + exprArenaCost inner < UInt64.size := by
+      simp only [exprArenaCost] at hroom
+      omega
+    obtain ⟨innerRoot, innerState, hinnerRun, hinnerState, hinnerCache,
+        hinnerArena⟩ :=
+      hrecur hinnerDepth hinner hstate harena hinnerRoom hinnerRef
+    have hallocRoom : innerState.arena.nodes.size < UInt64.size := by
+      have hinnerGrowth := hinnerArena.growth
+      simp only [exprArenaCost] at hroom
+      omega
+    let root := innerState.arena.nodes.size.toUInt64
+    let node : Ixon.ExprMetaData := .mdata #[#[]] innerRoot
+    let finalState := allocState innerState node
+    have hallocExtends : ArenaExtends innerState.arena finalState.arena := by
+      dsimp [finalState]
+      exact allocState_arenaExtends innerState node
+    have hrootNode : finalState.arena.nodes[root.toNat]? = some node := by
+      simpa [finalState, root] using allocState_root innerState node hallocRoom
+    have hrootRel :
+        ArenaRel (.mdata #[] inner hash) root finalState.arena :=
+      .mdata (hinnerArena.rootRel.mono hallocExtends) hrootNode
+    have hfinalCache : ArenaCacheWF finalState :=
+      hinnerCache.of_frame rfl hallocExtends
+    have hfinalGrowth :
+        finalState.arena.nodes.size ≤ state.arena.nodes.size +
+          exprArenaCost (.mdata #[] inner hash) := by
+      have hinnerGrowth := hinnerArena.growth
+      simp only [exprArenaCost]
+      simp [finalState, node, allocState]
+      omega
+    refine ⟨root, finalState, ?_, hinnerState.alloc node, hfinalCache,
+      ⟨hrootRel,
+        ArenaExtends.trans hinnerArena.arenaExtends hallocExtends,
+        hfinalGrowth⟩⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileEmptyKVMap]
+    simp only
+    rw [run_bind compileEnv blockEnv state _ _, hinnerRun]
+    simp only
+    rw [run_bind compileEnv blockEnv innerState _ _, run_allocArenaNode]
+    rfl
+
 /-- The fuel-total production compiler refines the frozen reference compiler
 on the complete recursive ordinary domain: structural nodes, arbitrary-level
 constants, canonical sorts, literals, and projections. -/
@@ -2938,6 +4107,187 @@ theorem compileExpr_run_ordinary_value
     compileExpr_run_ordinary_refines compileEnv blockEnv snapshot hfree hclosed
       hlevelFaithful hexprFaithful hordinary hstate href
   exact ⟨root, state', hrun, hstate',
+    compileExprRef_value hctx hsource href⟩
+
+/-- Fuel-total ordinary refinement with a structurally valid returned arena
+root. The explicit capacity premise prevents `Nat.toUInt64` allocation-index
+wraparound; cache hits only reduce the proved worst-case growth. -/
+theorem compileExprNoSurgeryFuel_ordinary_arena_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {fuel : Nat} {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hdepth : Ix.CompileM.exprCompileDepth source ≤ fuel)
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (harena : ArenaCacheWF state)
+    (hroom : state.arena.nodes.size + exprArenaCost source < UInt64.size)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryFuel fuel source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      ArenaCacheWF state' ∧
+      ArenaCompileRel source root state.arena state'.arena := by
+  induction fuel generalizing state source target with
+  | zero =>
+    have hpos := exprCompileDepth_pos source
+    omega
+  | succ fuel ih =>
+    cases hlookup : state.exprCache.get? source with
+    | some cached =>
+      rcases cached with ⟨cachedTarget, cachedRoot⟩
+      have hcachedRef := hstate.exprCache.sound hlookup
+      have htarget : cachedTarget = target :=
+        Option.some.inj (hcachedRef.symm.trans href)
+      subst cachedTarget
+      have hroot := harena.sound hlookup
+      refine ⟨cachedRoot, state,
+        compileExprNoSurgeryFuel_run_cached compileEnv blockEnv state fuel
+          source (target, cachedRoot) hlookup,
+        hstate, harena, ⟨hroot, ArenaExtends.refl state.arena, ?_⟩⟩
+      have hcost := exprArenaCost_pos source
+      omega
+    | none =>
+      obtain ⟨root, stepState, hstepRun, hstepState, hstepCache,
+          hstepArena⟩ :=
+        compileExprNoSurgeryStep_ordinary_arena_refines compileEnv blockEnv
+          snapshot hclosed hlevelFaithful fuel
+          (fun hdepth hsource hstate harena hroom href =>
+            ih hdepth hsource hstate harena hroom href)
+          hdepth hsource hstate harena hroom href
+      let finalState := cacheState stepState source target root
+      have hfinalState :
+          FrozenExprStateWF compileEnv blockEnv levelSupport snapshot
+            finalState :=
+        hstepState.cache hexprFaithful hsource.ordinary href
+      have hfinalCache : ArenaCacheWF finalState := by
+        simpa [finalState, cacheState] using
+          hstepCache.insert hexprFaithful hsource.ordinary hstepArena.rootRel
+      have hfinalArena :
+          ArenaCompileRel source root state.arena finalState.arena := by
+        simpa [finalState, cacheState] using hstepArena
+      refine ⟨root, finalState, ?_, hfinalState, hfinalCache, hfinalArena⟩
+      rw [Ix.CompileM.compileExprNoSurgeryFuel.eq_2,
+        run_bind compileEnv blockEnv state Ix.CompileM.getBlockState,
+        run_getBlockState]
+      simp only
+      rw [hlookup]
+      change Ix.CompileM.CompileM.run compileEnv blockEnv state (do
+        let (result, resultRoot) ← Ix.CompileM.compileExprNoSurgeryStep
+          (Ix.CompileM.compileExprNoSurgeryFuel fuel) source
+        Ix.CompileM.modifyBlockState fun current =>
+          { current with
+            exprCache := current.exprCache.insert source (result, resultRoot) }
+        pure (result, resultRoot)) = _
+      rw [run_bind compileEnv blockEnv state _ _, hstepRun]
+      rfl
+
+theorem compileExprNoSurgery_run_ordinary_arena_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (harena : ArenaCacheWF state)
+    (hroom : state.arena.nodes.size + exprArenaCost source < UInt64.size)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgery source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      ArenaCacheWF state' ∧
+      ArenaCompileRel source root state.arena state'.arena := by
+  exact compileExprNoSurgeryFuel_ordinary_arena_refines compileEnv blockEnv
+    snapshot hclosed hlevelFaithful hexprFaithful (Nat.le_refl _) hsource
+    hstate harena hroom href
+
+/-- Public surgery-free ordinary compilation returns both the canonical Ixon
+expression and a structurally faithful presentation-arena root. -/
+theorem compileExpr_run_ordinary_arena_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hfree : compileEnv.surgeryFree = true)
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (harena : ArenaCacheWF state)
+    (hroom : state.arena.nodes.size + exprArenaCost source < UInt64.size)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExpr source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      ArenaCacheWF state' ∧
+      ArenaCompileRel source root state.arena state'.arena := by
+  obtain ⟨root, state', hrun, hstate', hcache', harena'⟩ :=
+    compileExprNoSurgery_run_ordinary_arena_refines compileEnv blockEnv
+      snapshot hclosed hlevelFaithful hexprFaithful hsource hstate harena
+      hroom href
+  refine ⟨root, state', ?_, hstate', hcache', harena'⟩
+  rw [Ix.CompileM.compileExpr, run_bind compileEnv blockEnv state,
+    run_getCompileEnv]
+  simp only
+  rw [hfree]
+  exact hrun
+
+/-- The strengthened public theorem exposes canonical value preservation and
+the faithful presentation sidecar in one result. -/
+theorem compileExpr_run_ordinary_arena_value
+    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
+    {dctx : DecodeCtx} {trProj : ProjectionRel}
+    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hfree : compileEnv.surgeryFree = true)
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    (hctx : RefCompileCtxRel
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr} {value : Lean4Lean.VExpr}
+    (hordinary : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (harena : ArenaCacheWF state)
+    (hroom : state.arena.nodes.size + exprArenaCost source < UInt64.size)
+    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals source value)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExpr source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      ArenaCacheWF state' ∧
+      ArenaCompileRel source root state.arena state'.arena ∧
+      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+        target value := by
+  obtain ⟨root, state', hrun, hstate', hcache', harena'⟩ :=
+    compileExpr_run_ordinary_arena_refines compileEnv blockEnv snapshot hfree
+      hclosed hlevelFaithful hexprFaithful hordinary hstate harena hroom href
+  exact ⟨root, state', hrun, hstate', hcache', harena',
     compileExprRef_value hctx hsource href⟩
 
 /-- The public production dispatcher selects the total ordinary compiler in
