@@ -13,7 +13,7 @@ BLAKE3 backend to Lean's native evaluator, and that dynlib gates every
 `IxTcVerify` module, so this pin must stay at or after the revision that
 introduced the target. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "1b0fbd2bd78b2b873e14264037af8c8b1536b9e9"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "e6e908bfd3af607ab44fb462fa2276a2c81addba"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
