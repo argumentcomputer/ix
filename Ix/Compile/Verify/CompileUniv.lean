@@ -89,6 +89,44 @@ structure UnivCacheWF (paramIndex : Ix.Name → Option UInt64)
   sound : ∀ {level u}, state.univCache.get? level = some u →
     compileUnivRef paramIndex level = some u
 
+/-- The canonical-universe memo returns exactly the deterministic
+`Ixon.canonUniv` result for every cached raw universe. -/
+structure CanonUnivCacheWF (state : Ix.CompileM.BlockState) : Prop where
+  sound : ∀ {raw canon}, state.canonUnivCache.get? raw = some canon →
+    canon = Ixon.canonUniv raw
+
+theorem CanonUnivCacheWF.empty :
+    CanonUnivCacheWF (default : Ix.CompileM.BlockState) := by
+  constructor
+  intro raw canon h
+  change ({} : Std.HashMap Ixon.Univ Ixon.Univ).get? raw = some canon at h
+  simp at h
+
+theorem CanonUnivCacheWF.of_cache_eq {before after : Ix.CompileM.BlockState}
+    (hbefore : CanonUnivCacheWF before)
+    (heq : after.canonUnivCache = before.canonUnivCache) :
+    CanonUnivCacheWF after := by
+  constructor
+  intro raw canon h
+  exact hbefore.sound (heq ▸ h)
+
+theorem CanonUnivCacheWF.insert {state : Ix.CompileM.BlockState}
+    (hstate : CanonUnivCacheWF state) (raw : Ixon.Univ) :
+    CanonUnivCacheWF
+      { state with
+        canonUnivCache := state.canonUnivCache.insert raw (Ixon.canonUniv raw) } := by
+  constructor
+  intro queried found hfound
+  change (state.canonUnivCache.insert raw (Ixon.canonUniv raw)).get? queried =
+    some found at hfound
+  simp only [Std.HashMap.get?_insert] at hfound
+  split at hfound
+  next heq =>
+    have hsame : raw = queried := eq_of_beq heq
+    subst queried
+    exact (Option.some.inj hfound).symm
+  next => exact hstate.sound hfound
+
 theorem UnivCacheWF.empty (paramIndex : Ix.Name → Option UInt64)
     (support : Ix.Level → Prop) :
     UnivCacheWF paramIndex support (default : Ix.CompileM.BlockState) := by
@@ -97,6 +135,15 @@ theorem UnivCacheWF.empty (paramIndex : Ix.Name → Option UInt64)
     simp at h
   · change ({} : Std.HashMap Ix.Level Ixon.Univ).get? level = some u at h
     simp at h
+
+theorem UnivCacheWF.of_cache_eq {paramIndex : Ix.Name → Option UInt64}
+    {support : Ix.Level → Prop} {before after : Ix.CompileM.BlockState}
+    (hbefore : UnivCacheWF paramIndex support before)
+    (heq : after.univCache = before.univCache) :
+    UnivCacheWF paramIndex support after := by
+  constructor <;> intro level u h
+  · exact hbefore.supported (heq ▸ h)
+  · exact hbefore.sound (heq ▸ h)
 
 /-- Inserting a reference-correct supported level preserves cache
 correctness.  This is the only place where a digest hit is converted to
@@ -164,6 +211,87 @@ private theorem run_bind (compileEnv : Ix.CompileM.CompileEnv)
     (ReaderT.run action (compileEnv, blockEnv)).run.run state = result
   rcases result with ⟨result, state'⟩
   cases result <;> rfl
+
+private def cacheCanonState (state : Ix.CompileM.BlockState)
+    (raw : Ixon.Univ) : Ix.CompileM.BlockState :=
+  { state with
+    canonUnivCache := state.canonUnivCache.insert raw (Ixon.canonUniv raw) }
+
+/-- The production canonical-universe memo computes the deterministic
+canonical representative and changes neither primary expression tables nor
+the expression/universe compilation caches. -/
+theorem canonUnivCached_run_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) {state : Ix.CompileM.BlockState}
+    (hstate : CanonUnivCacheWF state) (raw : Ixon.Univ) :
+    ∃ state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.canonUnivCached raw) =
+        .ok (Ixon.canonUniv raw, state') ∧
+      CanonUnivCacheWF state' ∧
+      exprTableView state' = exprTableView state ∧
+      state'.exprCache = state.exprCache ∧
+      state'.univCache = state.univCache := by
+  cases hlookup : state.canonUnivCache.get? raw with
+  | some cached =>
+    have hvalue : cached = Ixon.canonUniv raw := hstate.sound hlookup
+    subst cached
+    refine ⟨state, ?_, hstate, rfl, rfl, rfl⟩
+    rw [Ix.CompileM.canonUnivCached,
+      run_bind compileEnv blockEnv state Ix.CompileM.getBlockState,
+      run_getBlockState]
+    simp only
+    rw [hlookup]
+    rfl
+  | none =>
+    let state' := cacheCanonState state raw
+    refine ⟨state', ?_, ?_, rfl, rfl, rfl⟩
+    · rw [Ix.CompileM.canonUnivCached,
+        run_bind compileEnv blockEnv state Ix.CompileM.getBlockState,
+        run_getBlockState]
+      simp only
+      rw [hlookup]
+      rfl
+    · simpa [state', cacheCanonState] using hstate.insert raw
+
+private theorem run_internUniv_hit
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
+    (u : Ixon.Univ) (idx : UInt64)
+    (hindex : state.univsIndex.get? u = some idx) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state
+        (Ix.CompileM.internUniv u) = .ok (idx, state) := by
+  change Except.ok ((state.internUniv u).2, (state.internUniv u).1) =
+    Except.ok (idx, state)
+  rw [Ix.CompileM.BlockState.internUniv, hindex]
+
+private theorem internMetaUniv_run_frame
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
+    (raw : Ixon.Univ) :
+    ∃ idx state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.internMetaUniv raw) = .ok (idx, state') ∧
+      exprTableView state' = exprTableView state ∧
+      state'.exprCache = state.exprCache ∧
+      state'.univCache = state.univCache ∧
+      state'.canonUnivCache = state.canonUnivCache := by
+  cases hlookup : state.metaUnivsIndex.get? raw with
+  | some slot =>
+    refine ⟨state.univs.size.toUInt64 + slot, state, ?_, rfl, rfl, rfl, rfl⟩
+    change Except.ok ((state.internMetaUniv raw).2,
+      (state.internMetaUniv raw).1) = _
+    rw [Ix.CompileM.BlockState.internMetaUniv, hlookup]
+  | none =>
+    let slot := state.metaUnivs.size.toUInt64
+    let state' : Ix.CompileM.BlockState :=
+      { state with
+        metaUnivs := state.metaUnivs.push raw
+        metaUnivsIndex := state.metaUnivsIndex.insert raw slot }
+    refine ⟨state.univs.size.toUInt64 + slot, state', ?_, rfl, rfl, rfl, rfl⟩
+    change Except.ok ((state.internMetaUniv raw).2,
+      (state.internMetaUniv raw).1) = _
+    rw [Ix.CompileM.BlockState.internMetaUniv, hlookup]
 
 /-- A production cache hit is observationally a pure successful return; no
 block-state field changes. -/
@@ -316,12 +444,15 @@ private theorem compileUniv_cached_refines
     ∃ state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileUniv level) = .ok (target, state') ∧
-      UnivCacheWF (univParamIndex blockEnv.univCtx) support state' := by
+      UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
+      exprTableView state' = exprTableView state ∧
+      state'.exprCache = state.exprCache ∧
+      state'.canonUnivCache = state.canonUnivCache := by
   have hvalue : cached = target :=
     Option.some.inj ((hstate.sound hcached).symm.trans href)
   subst target
   exact ⟨state, compileUniv_run_cached compileEnv blockEnv state level cached
-    hcached, hstate⟩
+    hcached, hstate, rfl, rfl, rfl⟩
 
 /-- Production universe compilation refines the total reference compiler.
 Every successful reference input runs successfully to the same positional
@@ -341,7 +472,10 @@ theorem compileUniv_run_refines
     ∃ state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileUniv level) = .ok (target, state') ∧
-      UnivCacheWF (univParamIndex blockEnv.univCtx) support state' := by
+      UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
+      exprTableView state' = exprTableView state ∧
+      state'.exprCache = state.exprCache ∧
+      state'.canonUnivCache = state.canonUnivCache := by
   induction level generalizing state target with
   | zero hash =>
     cases hlookup : state.univCache.get? (.zero hash) with
@@ -351,8 +485,11 @@ theorem compileUniv_run_refines
       simp [compileUnivRef] at href
       subst target
       refine ⟨state.cacheUniv (.zero hash) .zero,
-        compileUniv_run_zero_miss compileEnv blockEnv state hash hlookup, ?_⟩
-      exact hstate.insert hfaithful hlevel (by simp [compileUnivRef])
+        compileUniv_run_zero_miss compileEnv blockEnv state hash hlookup,
+        hstate.insert hfaithful hlevel (by simp [compileUnivRef]), ?_, ?_, ?_⟩
+      · rfl
+      · rfl
+      · rfl
   | succ level hash ih =>
     cases hlookup : state.univCache.get? (.succ level hash) with
     | some cached =>
@@ -360,13 +497,16 @@ theorem compileUniv_run_refines
     | none =>
       simp [compileUnivRef] at href
       rcases href with ⟨u, hu, rfl⟩
-      obtain ⟨state', hrun, hstate'⟩ :=
+      obtain ⟨state', hrun, hstate', hview, hcache, hcanonCache⟩ :=
         ih (hclosed.succ hlevel) hstate hu
       refine ⟨state'.cacheUniv (.succ level hash) (.succ u),
         compileUniv_run_succ_miss compileEnv blockEnv state level hash
-          hlookup hrun, ?_⟩
-      exact hstate'.insert hfaithful hlevel (by
-        simp [compileUnivRef, hu])
+          hlookup hrun,
+        hstate'.insert hfaithful hlevel (by simp [compileUnivRef, hu]),
+        ?_, ?_, ?_⟩
+      · simpa using hview
+      · simpa using hcache
+      · simpa using hcanonCache
   | max left right hash ihLeft ihRight =>
     cases hlookup : state.univCache.get? (.max left right hash) with
     | some cached =>
@@ -374,16 +514,21 @@ theorem compileUniv_run_refines
     | none =>
       simp [compileUnivRef] at href
       rcases href with ⟨leftU, hleft, rightU, hright, rfl⟩
-      obtain ⟨leftState, hleftRun, hleftState⟩ :=
+      obtain ⟨leftState, hleftRun, hleftState, hleftView, hleftCache,
+          hleftCanonCache⟩ :=
         ihLeft (hclosed.maxLeft hlevel) hstate hleft
-      obtain ⟨rightState, hrightRun, hrightState⟩ :=
+      obtain ⟨rightState, hrightRun, hrightState, hrightView, hrightCache,
+          hrightCanonCache⟩ :=
         ihRight (hclosed.maxRight hlevel) hleftState hright
       refine ⟨rightState.cacheUniv (.max left right hash)
           (.max leftU rightU),
         compileUniv_run_max_miss compileEnv blockEnv state left right hash
-          hlookup hleftRun hrightRun, ?_⟩
-      exact hrightState.insert hfaithful hlevel (by
-        simp [compileUnivRef, hleft, hright])
+          hlookup hleftRun hrightRun,
+        hrightState.insert hfaithful hlevel (by
+          simp [compileUnivRef, hleft, hright]), ?_, ?_, ?_⟩
+      · simpa using hrightView.trans hleftView
+      · simpa using hrightCache.trans hleftCache
+      · simpa using hrightCanonCache.trans hleftCanonCache
   | imax left right hash ihLeft ihRight =>
     cases hlookup : state.univCache.get? (.imax left right hash) with
     | some cached =>
@@ -391,16 +536,21 @@ theorem compileUniv_run_refines
     | none =>
       simp [compileUnivRef] at href
       rcases href with ⟨leftU, hleft, rightU, hright, rfl⟩
-      obtain ⟨leftState, hleftRun, hleftState⟩ :=
+      obtain ⟨leftState, hleftRun, hleftState, hleftView, hleftCache,
+          hleftCanonCache⟩ :=
         ihLeft (hclosed.imaxLeft hlevel) hstate hleft
-      obtain ⟨rightState, hrightRun, hrightState⟩ :=
+      obtain ⟨rightState, hrightRun, hrightState, hrightView, hrightCache,
+          hrightCanonCache⟩ :=
         ihRight (hclosed.imaxRight hlevel) hleftState hright
       refine ⟨rightState.cacheUniv (.imax left right hash)
           (.imax leftU rightU),
         compileUniv_run_imax_miss compileEnv blockEnv state left right hash
-          hlookup hleftRun hrightRun, ?_⟩
-      exact hrightState.insert hfaithful hlevel (by
-        simp [compileUnivRef, hleft, hright])
+          hlookup hleftRun hrightRun,
+        hrightState.insert hfaithful hlevel (by
+          simp [compileUnivRef, hleft, hright]), ?_, ?_, ?_⟩
+      · simpa using hrightView.trans hleftView
+      · simpa using hrightCache.trans hleftCache
+      · simpa using hrightCanonCache.trans hleftCanonCache
   | param name hash =>
     cases hlookup : state.univCache.get? (.param name hash) with
     | some cached =>
@@ -413,11 +563,112 @@ theorem compileUniv_run_refines
         subst target
         refine ⟨state.cacheUniv (.param name hash) (.var idx.toUInt64),
           compileUniv_run_param_miss compileEnv blockEnv state name hash
-            hlookup hidx, ?_⟩
-        exact hstate.insert hfaithful hlevel (by
-          simp [compileUnivRef, univParamIndex, hidx])
+            hlookup hidx,
+          hstate.insert hfaithful hlevel (by
+            simp [compileUnivRef, univParamIndex, hidx]), ?_, ?_, ?_⟩
+        · rfl
+        · rfl
+        · rfl
   | mvar name hash =>
     simp [compileUnivRef] at href
+
+/-- With the canonical primary universe already present in the preseeded
+table, the complete production level-index operation returns that frozen
+index, preserves both universe memos, and cannot trigger the post-preseed
+growth tripwire. -/
+theorem compileAndInternUnivCanon_run_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) {support : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed support)
+    (hfaithful : LevelKeyFaithfulOn support)
+    {state : Ix.CompileM.BlockState} {level : Ix.Level}
+    {raw : Ixon.Univ} {idx : UInt64} (hlevel : support level)
+    (huniv : UnivCacheWF (univParamIndex blockEnv.univCtx) support state)
+    (hcanon : CanonUnivCacheWF state)
+    (href : compileUnivRef (univParamIndex blockEnv.univCtx) level = some raw)
+    (hindex : state.univsIndex.get? (Ixon.canonUniv raw) = some idx) :
+    ∃ original? state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileAndInternUnivCanon level) =
+        .ok ((idx, original?), state') ∧
+      UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
+      CanonUnivCacheWF state' ∧
+      exprTableView state' = exprTableView state ∧
+      state'.exprCache = state.exprCache := by
+  obtain ⟨univState, hunivRun, hunivState, hunivView, hunivExprCache,
+      hunivCanonCache⟩ :=
+    compileUniv_run_refines compileEnv blockEnv hclosed hfaithful hlevel
+      huniv href
+  have hunivCanon : CanonUnivCacheWF univState :=
+    hcanon.of_cache_eq hunivCanonCache
+  obtain ⟨canonState, hcanonRun, hcanonState, hcanonView,
+      hcanonExprCache, hcanonUnivCache⟩ :=
+    canonUnivCached_run_refines compileEnv blockEnv hunivCanon raw
+  have hunivState' :
+      UnivCacheWF (univParamIndex blockEnv.univCtx) support canonState :=
+    hunivState.of_cache_eq hcanonUnivCache
+  have hview : exprTableView canonState = exprTableView state :=
+    hcanonView.trans hunivView
+  have hexprCache : canonState.exprCache = state.exprCache :=
+    hcanonExprCache.trans hunivExprCache
+  have hindex' :
+      canonState.univsIndex.get? (Ixon.canonUniv raw) = some idx := by
+    have hmaps := congrArg ExprTableView.univsIndex hview
+    change canonState.univsIndex = state.univsIndex at hmaps
+    rw [hmaps]
+    exact hindex
+  have hintern := run_internUniv_hit compileEnv blockEnv canonState
+    (Ixon.canonUniv raw) idx hindex'
+  cases hsame : Ixon.canonUniv raw == raw with
+  | true =>
+    refine ⟨none, canonState, ?_, hunivState', hcanonState, hview,
+      hexprCache⟩
+    rw [Ix.CompileM.compileAndInternUnivCanon,
+      run_bind compileEnv blockEnv state _ _, hunivRun]
+    simp only
+    rw [run_bind compileEnv blockEnv univState _ _, hcanonRun]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState Ix.CompileM.getBlockState,
+      run_getBlockState]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState _ _, hintern]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState Ix.CompileM.getBlockState,
+      run_getBlockState]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState Ix.CompileM.getBlockState,
+      run_getBlockState]
+    simp [hsame]
+    rfl
+  | false =>
+    obtain ⟨original, finalState, horiginalRun, horiginalView,
+        horiginalExprCache, horiginalUnivCache, horiginalCanonCache⟩ :=
+      internMetaUniv_run_frame compileEnv blockEnv canonState raw
+    refine ⟨some original, finalState, ?_,
+      hunivState'.of_cache_eq horiginalUnivCache,
+      hcanonState.of_cache_eq horiginalCanonCache,
+      horiginalView.trans hview, horiginalExprCache.trans hexprCache⟩
+    rw [Ix.CompileM.compileAndInternUnivCanon,
+      run_bind compileEnv blockEnv state _ _, hunivRun]
+    simp only
+    rw [run_bind compileEnv blockEnv univState _ _, hcanonRun]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState Ix.CompileM.getBlockState,
+      run_getBlockState]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState _ _, hintern]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState Ix.CompileM.getBlockState,
+      run_getBlockState]
+    simp only
+    rw [run_bind compileEnv blockEnv canonState Ix.CompileM.getBlockState,
+      run_getBlockState]
+    simp [hsame]
+    change Ix.CompileM.CompileM.run compileEnv blockEnv canonState (do
+      let original ← Ix.CompileM.internMetaUniv raw
+      pure (idx, some original)) = _
+    rw [run_bind compileEnv blockEnv canonState _ _, horiginalRun]
+    rfl
 
 /-- The production result therefore has the independent Lean4Lean universe
 value assigned to the named source level. -/
@@ -437,7 +688,7 @@ theorem compileUniv_run_value
       UnivCacheWF (univParamIndex blockEnv.univCtx) support state' ∧
       sourceUnivValue (univParamIndex blockEnv.univCtx) level =
         some (univToVLevel target) := by
-  obtain ⟨state', hrun, hstate'⟩ := compileUniv_run_refines
+  obtain ⟨state', hrun, hstate', _, _, _⟩ := compileUniv_run_refines
     compileEnv blockEnv hclosed hfaithful hlevel hstate href
   exact ⟨state', hrun, hstate', compileUnivRef_value href⟩
 

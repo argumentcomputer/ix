@@ -33,7 +33,7 @@ local instance : LawfulBEq Address where
 local instance : LawfulHashable Address where
   hash_eq left right h := by rw [eq_of_beq h]
 
-local instance : LawfulBEq Ixon.Univ where
+instance : LawfulBEq Ixon.Univ where
   eq_of_beq {left right} h := by
     induction left generalizing right with
     | zero =>
@@ -106,8 +106,90 @@ local instance : LawfulBEq Ixon.Univ where
     | var idx =>
       simp [BEq.beq, Ixon.instBEqUniv.beq]
 
-local instance : LawfulHashable Ixon.Univ where
+instance : LawfulHashable Ixon.Univ where
   hash_eq left right h := by rw [eq_of_beq h]
+
+/-- The immutable table/address projection used while compiling one
+expression. Universe/reference caches, metadata, blobs, names, and the arena
+may evolve; these primary tables and resolution maps must remain frozen so a
+`RefCompileCtx` built from the preseed snapshot keeps the same meaning. -/
+structure ExprTableView where
+  refs : Array Address
+  refsIndex : Std.HashMap Address UInt64
+  univs : Array Ixon.Univ
+  univsIndex : Std.HashMap Ixon.Univ UInt64
+  blockNameToAddr : Std.HashMap Ix.Name Address
+  auxNameToAddr : Std.HashMap Ix.Name Address
+
+def exprTableView (state : Ix.CompileM.BlockState) : ExprTableView :=
+  { refs := state.refs
+    refsIndex := state.refsIndex
+    univs := state.univs
+    univsIndex := state.univsIndex
+    blockNameToAddr := state.blockNameToAddr
+    auxNameToAddr := state.auxNameToAddr }
+
+/-- Resolve a source constant name against exactly the maps consulted by
+production `lookupConstAddr`, but without entering `CompileM`.  The global
+maps are immutable inputs and the two block-local maps belong to the frozen
+expression-table view. -/
+def resolveConstAddr? (compileEnv : Ix.CompileM.CompileEnv)
+    (snapshot : Ix.CompileM.BlockState) (name : Ix.Name) : Option Address :=
+  match snapshot.blockNameToAddr.get? name with
+  | some addr => some addr
+  | none =>
+    match compileEnv.nameToAddr.get? name with
+    | some addr => some addr
+    | none =>
+      match snapshot.auxNameToAddr.get? name with
+      | some addr => some addr
+      | none => compileEnv.auxNameToAddr.get? name
+
+/-- The address committed by the production literal branches. -/
+def literalAddress : Lean.Literal → Address
+  | .natVal value => Address.blake3 (ByteArray.mk (Nat.toBytesLE value))
+  | .strVal value => Address.blake3 value.toUTF8
+
+theorem resolveConstAddr?_of_exprTableView_eq
+    (compileEnv : Ix.CompileM.CompileEnv)
+    {left right : Ix.CompileM.BlockState}
+    (hview : exprTableView left = exprTableView right) (name : Ix.Name) :
+    resolveConstAddr? compileEnv left name =
+      resolveConstAddr? compileEnv right name := by
+  have hblock := congrArg ExprTableView.blockNameToAddr hview
+  have haux := congrArg ExprTableView.auxNameToAddr hview
+  change left.blockNameToAddr = right.blockNameToAddr at hblock
+  change left.auxNameToAddr = right.auxNameToAddr at haux
+  simp [resolveConstAddr?, hblock, haux]
+
+theorem refsIndex_eq_of_exprTableView_eq
+    {left right : Ix.CompileM.BlockState}
+    (hview : exprTableView left = exprTableView right) :
+    left.refsIndex = right.refsIndex := by
+  have hmaps := congrArg ExprTableView.refsIndex hview
+  exact hmaps
+
+theorem univsIndex_eq_of_exprTableView_eq
+    {left right : Ix.CompileM.BlockState}
+    (hview : exprTableView left = exprTableView right) :
+    left.univsIndex = right.univsIndex := by
+  have hmaps := congrArg ExprTableView.univsIndex hview
+  exact hmaps
+
+@[simp] theorem cacheUniv_exprTableView
+    (state : Ix.CompileM.BlockState) (level : Ix.Level) (u : Ixon.Univ) :
+    exprTableView (state.cacheUniv level u) = exprTableView state := by
+  rfl
+
+@[simp] theorem cacheUniv_exprCache
+    (state : Ix.CompileM.BlockState) (level : Ix.Level) (u : Ixon.Univ) :
+    (state.cacheUniv level u).exprCache = state.exprCache := by
+  rfl
+
+@[simp] theorem cacheUniv_canonUnivCache
+    (state : Ix.CompileM.BlockState) (level : Ix.Level) (u : Ixon.Univ) :
+    (state.cacheUniv level u).canonUnivCache = state.canonUnivCache := by
+  rfl
 
 /-- The reference-index map is sound for the emitted array, and the next
 array index is representable as `UInt64`.  Completeness is intentionally not

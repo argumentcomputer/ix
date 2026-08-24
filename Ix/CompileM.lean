@@ -412,15 +412,20 @@ def canonUnivCached (u : Ixon.Univ) : CompileM Ixon.Univ := do
     constant's `metaUnivs` extension, returning its VIRTUAL index
     (`univs.size + slot` — the primary table is preseed-final by the
     time expressions compile, so the offset is stable). -/
+def BlockState.internMetaUniv (state : BlockState)
+    (raw : Ixon.Univ) : BlockState × UInt64 :=
+  match state.metaUnivsIndex.get? raw with
+  | some k => (state, state.univs.size.toUInt64 + k)
+  | none =>
+    let k := state.metaUnivs.size.toUInt64
+    ({ state with metaUnivs := state.metaUnivs.push raw
+                  metaUnivsIndex := state.metaUnivsIndex.insert raw k },
+      state.univs.size.toUInt64 + k)
+
 def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 :=
   modifyGetBlockState fun st =>
-    match st.metaUnivsIndex.get? raw with
-    | some k => (st.univs.size.toUInt64 + k, st)
-    | none =>
-      let k := st.metaUnivs.size.toUInt64
-      (st.univs.size.toUInt64 + k,
-       { st with metaUnivs := st.metaUnivs.push raw
-                 metaUnivsIndex := st.metaUnivsIndex.insert raw k })
+    let (st', idx) := st.internMetaUniv raw
+    (idx, st')
 
 /-- Compile a level and intern its CANONICAL form into the primary
     table (canonicity §10.6). Returns the canonical index plus, when

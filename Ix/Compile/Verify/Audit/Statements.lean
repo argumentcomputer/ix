@@ -56,9 +56,13 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.compileUniv_run_refines,
     standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.compileAndInternUnivCanon_run_refines,
+    standardAxioms := standard },
   { root := ``Ix.Compile.Verify.compileUniv_run_value,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.StructuralExprCacheWF.insert,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.OrdinaryExprCacheWF.insert,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.compileExpr_run_surgeryFree,
     standardAxioms := standard, nativeAxioms := blake3Native },
@@ -67,6 +71,14 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.compileExpr_run_structural_refines,
     standardAxioms := standard, nativeAxioms := blake3Native },
   { root := ``Ix.Compile.Verify.compileExpr_run_structural_value,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_sort_value,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_constEmpty_recur_value,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_constEmpty_ref_value,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_lit_value,
     standardAxioms := standard, nativeAxioms := blake3Native }
 ]
 
