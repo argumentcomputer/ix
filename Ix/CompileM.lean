@@ -535,26 +535,35 @@ def storeString (s : String) : CompileM Address := do
 def recordDefHints (name : Name) (hints : Lean.ReducibilityHints) : CompileM Unit :=
   modifyBlockState fun c => { c with defHints := c.defHints.insert name hints }
 
+/-- Pure state transition underlying `compileName`. -/
+def BlockState.compileName : BlockState → Ix.Name → BlockState
+  | state, name =>
+    let addr := name.getHash
+    if state.blockNames.contains addr then
+      state
+    else
+      match name with
+      | .anonymous _ =>
+        { state with blockNames := state.blockNames.insert addr name }
+      | .str parent s _ =>
+        let state :=
+          { state with blockNames := state.blockNames.insert addr name }
+        let bytes := s.toUTF8
+        let stringAddr := Address.blake3 bytes
+        let state :=
+          { state with blockBlobs := state.blockBlobs.insert stringAddr bytes }
+        state.compileName parent
+      | .num parent _ _ =>
+        let state :=
+          { state with blockNames := state.blockNames.insert addr name }
+        state.compileName parent
+termination_by _ name => name
+
 /-- Compile a name: store all string components as blobs and track
     name components in blockNames for deduplication.
     This matches Rust's compile_name behavior. -/
-partial def compileName (name : Ix.Name) : CompileM Unit := do
-  let addr := name.getHash
-  let state ← getBlockState
-  if state.blockNames.contains addr then return ()
-  match name with
-  | .anonymous _ =>
-    modifyBlockState fun c =>
-      { c with blockNames := c.blockNames.insert addr name }
-  | .str parent s _ =>
-    modifyBlockState fun c =>
-      { c with blockNames := c.blockNames.insert addr name }
-    discard <| storeString s
-    compileName parent
-  | .num parent _ _ =>
-    modifyBlockState fun c =>
-      { c with blockNames := c.blockNames.insert addr name }
-    compileName parent
+def compileName (name : Ix.Name) : CompileM Unit :=
+  modifyBlockState fun state => state.compileName name
 
 /-- Serialize a u64 in trimmed little-endian format (only necessary bytes).
     Uses Ixon.u64ByteCount for the byte count calculation. -/
@@ -689,6 +698,170 @@ def sortByCanonIdx (xs : Array (Nat × Expr)) : Array (Nat × Expr) := Id.run do
     out := ((out.extract 0 pos).push x) ++ out.extract pos out.size
   return out
 
+/-- Whether expression compilation can take the kernel-visible ordinary
+    path.  A nonempty plan map selects the existing surgery implementation,
+    even when every plan happens to be the identity; this keeps the dispatch
+    criterion independent of the expression being compiled. -/
+def CompileEnv.surgeryFree (env : CompileEnv) : Bool :=
+  env.callSitePlans.isEmpty && env.brecOnCallSitePlans.isEmpty &&
+    env.belowCallSitePlans.isEmpty
+
+/-- Structural height used to fuel ordinary expression compilation. -/
+def exprCompileDepth : Expr → Nat
+  | .bvar .. | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => 1
+  | .app fn arg _ => max (exprCompileDepth fn) (exprCompileDepth arg) + 1
+  | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
+    max (exprCompileDepth ty) (exprCompileDepth body) + 1
+  | .letE _ ty val body _ _ =>
+    max (exprCompileDepth ty) (max (exprCompileDepth val)
+      (exprCompileDepth body)) + 1
+  | .mdata _ inner _ | .proj _ _ inner _ => exprCompileDepth inner + 1
+
+/-- Compile one flattened App spine using `compile` only for the head and
+    arguments.  Recursive partial-spine App nodes never pass through
+    `compile`, hence never gain expression-cache entries. -/
+def compileAppNoSurgery
+    (compile : Expr → CompileM (Ixon.Expr × UInt64)) :
+    Expr → CompileM (Ixon.Expr × UInt64)
+  | .app fn arg _ => do
+    let (f, fRoot) ← compileAppNoSurgery compile fn
+    let (a, aRoot) ← compile arg
+    let root ← allocArenaNode (.app fRoot aRoot)
+    pure (.app f a, root)
+  | head => compile head
+
+/-- One cache-miss step of ordinary expression compilation, parameterized by
+    the recursive compiler.  Factoring the constructor transition from cache
+    lookup/insertion keeps the executable behavior unchanged while exposing a
+    small kernel-visible proof boundary. -/
+def compileExprNoSurgeryStep
+    (compile : Expr → CompileM (Ixon.Expr × UInt64))
+    (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
+  match e with
+    | .bvar idx _ => do
+      let root ← allocArenaNode .leaf
+      pure (.var idx.toUInt64, root)
+
+    | .sort lvl _ => do
+      let (idx, orig?) ← compileAndInternUnivCanon lvl
+      let root ← allocArenaNode .leaf
+      if let some vidx := orig? then
+        pushUnivPatch root #[vidx]
+      pure (.sort idx, root)
+
+    | .const name lvls _ => do
+      let mutCtx := (← getBlockEnv).mutCtx
+      let compiled ← lvls.mapM compileAndInternUnivCanon
+      let univIndices := compiled.map (·.1)
+      compileName name
+      let nameAddr := name.getHash
+      let recordPatch (root : UInt64) : CompileM Unit := do
+        if compiled.any (·.2.isSome) then
+          pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
+      match mutCtx.get? name with
+      | some recIdx =>
+        let root ← allocArenaNode (.ref nameAddr)
+        recordPatch root
+        pure (.recur recIdx.toUInt64 univIndices, root)
+      | none => do
+        let addr ← lookupConstAddr name
+        let refIdx ← internRef addr
+        let root ← allocArenaNode (.ref nameAddr)
+        recordPatch root
+        pure (.ref refIdx univIndices, root)
+
+    | .app .. => compileAppNoSurgery compile e
+
+    | .lam name ty body bi _ => do
+      compileName name
+      let nameAddr := name.getHash
+      let (t, tyRoot) ← compile ty
+      let (b, bodyRoot) ← compile body
+      let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
+      pure (.leanLam t b, root)
+
+    | .forallE name ty body bi _ => do
+      compileName name
+      let nameAddr := name.getHash
+      let (t, tyRoot) ← compile ty
+      let (b, bodyRoot) ← compile body
+      let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
+      pure (.leanAll t b, root)
+
+    | .letE name ty val body nonDep _ => do
+      compileName name
+      let nameAddr := name.getHash
+      let (t, tyRoot) ← compile ty
+      let (v, valRoot) ← compile val
+      let (b, bodyRoot) ← compile body
+      let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
+      pure (.letE nonDep t v b, root)
+
+    | .lit (.natVal n) _ => do
+      let bytes := ByteArray.mk (Nat.toBytesLE n)
+      let addr := Address.blake3 bytes
+      modifyBlockState fun c =>
+        { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      let idx ← internRef addr
+      let root ← allocArenaNode .leaf
+      pure (.nat idx, root)
+
+    | .lit (.strVal s) _ => do
+      let bytes := s.toUTF8
+      let addr := Address.blake3 bytes
+      modifyBlockState fun c =>
+        { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      let idx ← internRef addr
+      let root ← allocArenaNode .leaf
+      pure (.str idx, root)
+
+    | .proj typeName fieldIdx struct _ => do
+      compileName typeName
+      let typeAddr ← lookupConstAddr typeName
+      let typeRefIdx ← internRef typeAddr
+      let structNameAddr := typeName.getHash
+      let (s, sRoot) ← compile struct
+      let root ← allocArenaNode (.prj structNameAddr sRoot)
+      pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
+
+    | .mdata kvData inner _ => do
+      let kvmap ← compileKVMap kvData
+      let (innerResult, innerRoot) ← compile inner
+      let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
+      pure (innerResult, root)
+
+    | .fvar _ _ => throw (.unsupportedExpr "free variable")
+    | .mvar _ _ => throw (.unsupportedExpr "metavariable")
+
+/-- Fuel-total implementation of the ordinary (no call-site surgery)
+    expression compiler.  The App arm deliberately flattens the complete
+    telescope before recurring, so inner partial-spine nodes are allocated
+    but not expression-cached, exactly as in the Rust compiler and the
+    surgery implementation's normal path.
+
+    Recursive calls consume one unit of fuel.  The public entry point uses
+    `exprCompileDepth e`; every recursively compiled head, argument, or
+    constructor child is a strict source subterm, so the exhaustion branch is
+    unreachable for that entry point. -/
+def compileExprNoSurgeryFuel : Nat → Expr → CompileM (Ixon.Expr × UInt64)
+  | 0, _ => throw (.invalidMutualBlock
+      "internal error: ordinary expression compiler exhausted structural fuel")
+  | fuel + 1, e => do
+    let state ← getBlockState
+    if let some cached := state.exprCache.get? e then
+      return cached
+
+    let (result, root) ← compileExprNoSurgeryStep
+      (compileExprNoSurgeryFuel fuel) e
+
+    modifyBlockState fun c =>
+      { c with exprCache := c.exprCache.insert e (result, root) }
+    pure (result, root)
+
+/-- Kernel-visible ordinary expression compiler. -/
+def compileExprNoSurgery (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
+  compileExprNoSurgeryFuel (exprCompileDepth e) e
+
 mutual
 
 /-- Compile a canonical Ix.Expr to Ixon.Expr with arena-based metadata.
@@ -701,7 +874,7 @@ mutual
     exactly when Rust pushes a `Frame::Compile` for it — App telescopes
     are flattened in `compileAppSpine`, so inner partial-spine nodes are
     neither checked nor cached. -/
-partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   -- Check cache (O(1) lookup via embedded hash)
   let state ← getBlockState
   if let some cached := state.exprCache.get? e then
@@ -750,25 +923,25 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   | .lam name ty body bi _ => do
     compileName name
     let nameAddr := name.getHash
-    let (t, tyRoot) ← compileExpr ty
-    let (b, bodyRoot) ← compileExpr body
+    let (t, tyRoot) ← compileExprSurgical ty
+    let (b, bodyRoot) ← compileExprSurgical body
     let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
     pure (.leanLam t b, root)
 
   | .forallE name ty body bi _ => do
     compileName name
     let nameAddr := name.getHash
-    let (t, tyRoot) ← compileExpr ty
-    let (b, bodyRoot) ← compileExpr body
+    let (t, tyRoot) ← compileExprSurgical ty
+    let (b, bodyRoot) ← compileExprSurgical body
     let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
     pure (.leanAll t b, root)
 
   | .letE name ty val body nonDep _ => do
     compileName name
     let nameAddr := name.getHash
-    let (t, tyRoot) ← compileExpr ty
-    let (v, valRoot) ← compileExpr val
-    let (b, bodyRoot) ← compileExpr body
+    let (t, tyRoot) ← compileExprSurgical ty
+    let (v, valRoot) ← compileExprSurgical val
+    let (b, bodyRoot) ← compileExprSurgical body
     let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
     pure (.letE nonDep t v b, root)
 
@@ -793,13 +966,13 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     let typeAddr ← lookupConstAddr typeName
     let typeRefIdx ← internRef typeAddr
     let structNameAddr := typeName.getHash
-    let (s, sRoot) ← compileExpr struct
+    let (s, sRoot) ← compileExprSurgical struct
     let root ← allocArenaNode (.prj structNameAddr sRoot)
     pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
 
   | .mdata kvData inner _ => do
     let kvmap ← compileKVMap kvData
-    let (innerResult, innerRoot) ← compileExpr inner
+    let (innerResult, innerRoot) ← compileExprSurgical inner
     let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
     pure (innerResult, root)
 
@@ -886,11 +1059,11 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   -- Normal telescope path (compile.rs:1399-1407): head, then one App
   -- node per arg. Same result as one-App-at-a-time recursion, but the
   -- inner spine nodes never touch the expression cache.
-  let (h, hRoot) ← compileExpr headExpr
+  let (h, hRoot) ← compileExprSurgical headExpr
   let mut acc := h
   let mut accRoot := hRoot
   for arg in args do
-    let (a, aRoot) ← compileExpr arg
+    let (a, aRoot) ← compileExprSurgical arg
     let root ← allocArenaNode (.app accRoot aRoot)
     acc := .app acc a
     accRoot := root
@@ -918,17 +1091,17 @@ partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
     (sortedCanon : Array Expr) (collapsedArgs : Array Expr)
     (entries : Array Ixon.CallSiteEntry) (origHeadCollapsed : Bool) :
     CompileM (Ixon.Expr × UInt64) := do
-  let (headIxon, headRoot) ← compileExpr headForCanon
+  let (headIxon, headRoot) ← compileExprSurgical headForCanon
   let mut canonicalExprs : Array Ixon.Expr := #[]
   let mut canonicalRoots : Array UInt64 := #[]
   for arg in sortedCanon do
-    let (a, aRoot) ← compileExpr arg
+    let (a, aRoot) ← compileExprSurgical arg
     canonicalExprs := canonicalExprs.push a
     canonicalRoots := canonicalRoots.push aRoot
   let mut collapsedIxon : Array Ixon.Expr := #[]
   let mut collapsedRoots : Array UInt64 := #[]
   for arg in collapsedArgs do
-    let (a, aRoot) ← compileExpr arg
+    let (a, aRoot) ← compileExprSurgical arg
     collapsedIxon := collapsedIxon.push a
     collapsedRoots := collapsedRoots.push aRoot
   -- Store collapsed arg expressions in surgery sharing (compile.rs:1637).
@@ -1219,6 +1392,17 @@ partial def compileBRecOnCallSite (name : Name)
   buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
 
 end
+
+/-- Production expression compiler.  Environments without any call-site
+    plans use the total ordinary implementation, while plan-bearing
+    environments retain the existing surgery state machine.  The split gives
+    the ordinary refinement proof kernel-visible equations without changing
+    surgery behavior. -/
+def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+  if (← getCompileEnv).surgeryFree then
+    compileExprNoSurgery e
+  else
+    compileExprSurgical e
 
 /-! ## Table Preseeding
 

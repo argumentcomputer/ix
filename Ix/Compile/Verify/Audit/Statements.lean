@@ -57,7 +57,17 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.compileUniv_run_refines,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.compileUniv_run_value,
-    standardAxioms := standard }
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.StructuralExprCacheWF.insert,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.compileExpr_run_surgeryFree,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExprNoSurgeryFuel_structural_refines,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_structural_refines,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_structural_value,
+    standardAxioms := standard, nativeAxioms := blake3Native }
 ]
 
 run_cmd Ix.Tc.Verify.Audit.check roots
