@@ -58,6 +58,8 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.compileAndInternUnivCanon_run_refines,
     standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.compileAndInternUnivCanon_array_refines,
+    standardAxioms := standard, nativeAxioms := blake3Native },
   { root := ``Ix.Compile.Verify.compileUniv_run_value,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.StructuralExprCacheWF.insert,
@@ -79,6 +81,12 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.compileExpr_run_constEmpty_ref_value,
     standardAxioms := standard, nativeAxioms := blake3Native },
   { root := ``Ix.Compile.Verify.compileExpr_run_lit_value,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExprNoSurgeryFuel_ordinary_refines,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_ordinary_refines,
+    standardAxioms := standard, nativeAxioms := blake3Native },
+  { root := ``Ix.Compile.Verify.compileExpr_run_ordinary_value,
     standardAxioms := standard, nativeAxioms := blake3Native }
 ]
 

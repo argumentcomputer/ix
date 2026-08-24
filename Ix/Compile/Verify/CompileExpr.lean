@@ -19,10 +19,10 @@ premise.
 
 The second layer fixes a completed preseed snapshot and relates its universe,
 reference, and name-resolution tables to a concrete `RefCompileCtx`.  It
-currently closes production sorts, empty-universe local/external constants,
-and literals—including warm caches, universe spelling patches, blob commits,
-and independent Lean4Lean values.  General constant level arrays and the
-recursive projection integration are the next extension of this relation.
+closes the complete ordinary-expression tree: sorts, arbitrary-universe local
+and external constants, recursive projections, literals, structural
+composition, and erased empty metadata.  The proof covers warm caches,
+universe spelling patches, blob commits, and independent Lean4Lean values.
 -/
 
 namespace Ix.Compile.Verify
@@ -139,6 +139,53 @@ theorem StructuralExpr.ordinary {source : Ix.Expr} :
   | .all hty hbody => .all hty.ordinary hbody.ordinary
   | .letE hty hval hbody =>
     .letE hty.ordinary hval.ordinary hbody.ordinary
+  | .mdata hinner => .mdata hinner.ordinary
+
+/-- Ordinary syntax paired with the exact finite universe support needed by
+production `compileUniv`.  This is the recursive source domain of the frozen
+ordinary-expression theorem. -/
+inductive SupportedOrdinaryExpr (levelSupport : Ix.Level → Prop) :
+    Ix.Expr → Prop where
+  | bvar {idx hash} : SupportedOrdinaryExpr levelSupport (.bvar idx hash)
+  | sort {level hash} : levelSupport level →
+      SupportedOrdinaryExpr levelSupport (.sort level hash)
+  | const {name levels hash} :
+      (∀ level ∈ levels, levelSupport level) →
+      SupportedOrdinaryExpr levelSupport (.const name levels hash)
+  | app {fn arg hash} : SupportedOrdinaryExpr levelSupport fn →
+      SupportedOrdinaryExpr levelSupport arg →
+      SupportedOrdinaryExpr levelSupport (.app fn arg hash)
+  | lam {name ty body bi hash} : SupportedOrdinaryExpr levelSupport ty →
+      SupportedOrdinaryExpr levelSupport body →
+      SupportedOrdinaryExpr levelSupport (.lam name ty body bi hash)
+  | all {name ty body bi hash} : SupportedOrdinaryExpr levelSupport ty →
+      SupportedOrdinaryExpr levelSupport body →
+      SupportedOrdinaryExpr levelSupport (.forallE name ty body bi hash)
+  | letE {name ty val body nonDep hash} :
+      SupportedOrdinaryExpr levelSupport ty →
+      SupportedOrdinaryExpr levelSupport val →
+      SupportedOrdinaryExpr levelSupport body →
+      SupportedOrdinaryExpr levelSupport (.letE name ty val body nonDep hash)
+  | lit {literal hash} :
+      SupportedOrdinaryExpr levelSupport (.lit literal hash)
+  | proj {typeName field val hash} : SupportedOrdinaryExpr levelSupport val →
+      SupportedOrdinaryExpr levelSupport (.proj typeName field val hash)
+  | mdata {inner hash} : SupportedOrdinaryExpr levelSupport inner →
+      SupportedOrdinaryExpr levelSupport (.mdata #[] inner hash)
+
+theorem SupportedOrdinaryExpr.ordinary {levelSupport : Ix.Level → Prop}
+    {source : Ix.Expr} :
+    SupportedOrdinaryExpr levelSupport source → OrdinaryExpr source
+  | .bvar => .bvar
+  | .sort _ => .sort
+  | .const _ => .const
+  | .app hfn harg => .app hfn.ordinary harg.ordinary
+  | .lam hty hbody => .lam hty.ordinary hbody.ordinary
+  | .all hty hbody => .all hty.ordinary hbody.ordinary
+  | .letE hty hval hbody =>
+    .letE hty.ordinary hval.ordinary hbody.ordinary
+  | .lit => .lit
+  | .proj hval => .proj hval.ordinary
   | .mdata hinner => .mdata hinner.ordinary
 
 /-- Every production expression-cache entry in this slice came from the same
@@ -1188,6 +1235,514 @@ theorem compileExpr_run_sort_value
   exact ⟨root, state', hrun, hstate',
     compileExprRef_value hctx hsource href⟩
 
+/-- One frozen reference-context universe decision is implemented by the
+complete production canonicalization/interning transition. -/
+theorem FrozenExprStateWF.compileAndInternUnivCanon_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    {state : Ix.CompileM.BlockState} {level : Ix.Level} {idx : UInt64}
+    (hlevel : levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hctxIndex :
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex level =
+        some idx) :
+    ∃ original? state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileAndInternUnivCanon level) =
+        .ok ((idx, original?), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  cases hraw : compileUnivRef (univParamIndex blockEnv.univCtx) level with
+  | none =>
+    simp [frozenRefCompileCtx, hraw] at hctxIndex
+  | some raw =>
+    have hctxIndex' := hctxIndex
+    simp only [frozenRefCompileCtx] at hctxIndex'
+    rw [hraw] at hctxIndex'
+    have hpreseed :
+        snapshot.univsIndex.get? (Ixon.canonUniv raw) = some idx := by
+      change snapshot.univsIndex[Ixon.canonUniv raw]? = some idx at hctxIndex'
+      change snapshot.univsIndex.get? (Ixon.canonUniv raw) = some idx
+      exact hctxIndex'
+    have hmaps := univsIndex_eq_of_exprTableView_eq hstate.tables
+    have hindex :
+        state.univsIndex.get? (Ixon.canonUniv raw) = some idx := by
+      rw [hmaps]
+      exact hpreseed
+    obtain ⟨original?, state', hrun, huniv, hcanon, hview, hexpr⟩ :=
+      compileAndInternUnivCanon_run_refines compileEnv blockEnv hclosed
+        hlevelFaithful hlevel hstate.univCache hstate.canonUnivCache hraw
+        hindex
+    exact ⟨original?, state', hrun,
+      { tables := hview.trans hstate.tables
+        exprCache := hstate.exprCache.of_cache_eq hexpr
+        univCache := huniv
+        canonUnivCache := hcanon }⟩
+
+private theorem compileExprNoSurgeryStep_sort_ctx_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (compile : Ix.Expr → Ix.CompileM.CompileM (Ixon.Expr × UInt64))
+    {state : Ix.CompileM.BlockState} {level : Ix.Level} {hash : Address}
+    {idx : UInt64} (hlevel : levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hctxIndex :
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex level =
+        some idx) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryStep compile (.sort level hash)) =
+        .ok ((.sort idx, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  cases hraw : compileUnivRef (univParamIndex blockEnv.univCtx) level with
+  | none => simp [frozenRefCompileCtx, hraw] at hctxIndex
+  | some raw =>
+    have hctxIndex' := hctxIndex
+    simp only [frozenRefCompileCtx] at hctxIndex'
+    rw [hraw] at hctxIndex'
+    have hpreseed :
+        snapshot.univsIndex.get? (Ixon.canonUniv raw) = some idx := by
+      change snapshot.univsIndex[Ixon.canonUniv raw]? = some idx at hctxIndex'
+      change snapshot.univsIndex.get? (Ixon.canonUniv raw) = some idx
+      exact hctxIndex'
+    have hmaps := univsIndex_eq_of_exprTableView_eq hstate.tables
+    have hindex : state.univsIndex.get? (Ixon.canonUniv raw) = some idx := by
+      rw [hmaps]
+      exact hpreseed
+    exact compileExprNoSurgeryStep_sort_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful compile hlevel hstate hraw hindex
+
+/-- Left-to-right production compilation of a list of universe arguments
+implements the frozen reference indices and preserves the live state
+relation.  The optional second component retains source spellings for the
+constant occurrence's metadata patch. -/
+private theorem compileAndInternUnivCanon_list_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    {state : Ix.CompileM.BlockState} {levels : List Ix.Level}
+    {indices : List UInt64}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices) :
+    ∃ compiled state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (levels.mapM Ix.CompileM.compileAndInternUnivCanon) =
+        .ok (compiled, state') ∧
+      compiled.map Prod.fst = indices ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  induction levels generalizing state indices with
+  | nil =>
+    simp only [List.mapM_nil, pure, Option.some.injEq] at href
+    subst indices
+    exact ⟨[], state, run_pure compileEnv blockEnv state [], rfl, hstate⟩
+  | cons level levels ih =>
+    cases hhead :
+        (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex level with
+    | none => simp [List.mapM_cons, hhead] at href
+    | some idx =>
+      cases htail : levels.mapM
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex with
+      | none => simp [List.mapM_cons, hhead, htail] at href
+      | some tailIndices =>
+        have hindices : indices = idx :: tailIndices := by
+          simpa [List.mapM_cons, hhead, htail] using href.symm
+        subst indices
+        have hlevel : levelSupport level := hlevels level (by simp)
+        have htailLevels : ∀ child ∈ levels, levelSupport child := by
+          intro child hmem
+          exact hlevels child (by simp [hmem])
+        obtain ⟨original?, headState, hheadRun, hheadState⟩ :=
+          hstate.compileAndInternUnivCanon_refines compileEnv blockEnv snapshot
+            hclosed hlevelFaithful hlevel hhead
+        obtain ⟨tailCompiled, finalState, htailRun, htailMap,
+            hfinalState⟩ :=
+          ih htailLevels hheadState htail
+        refine ⟨(idx, original?) :: tailCompiled, finalState, ?_, ?_,
+          hfinalState⟩
+        · rw [List.mapM_cons,
+            run_bind compileEnv blockEnv state _ _, hheadRun]
+          simp only
+          rw [run_bind compileEnv blockEnv headState _ _, htailRun]
+          rfl
+        · simp [htailMap]
+
+/-- Array form used verbatim by production constant compilation. -/
+theorem compileAndInternUnivCanon_array_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    {state : Ix.CompileM.BlockState} {levels : Array Ix.Level}
+    {indices : Array UInt64}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices) :
+    ∃ compiled state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (levels.mapM Ix.CompileM.compileAndInternUnivCanon) =
+        .ok (compiled, state') ∧
+      compiled.map Prod.fst = indices ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  have hlevelsList : ∀ level ∈ levels.toList, levelSupport level := by
+    intro level hmem
+    exact hlevels level (by simpa using hmem)
+  have hrefList :
+      levels.toList.mapM
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices.toList := by
+    have hmapped := congrArg (Option.map Array.toList) href
+    change Array.toList <$> levels.mapM
+        (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+      Option.map Array.toList (some indices) at hmapped
+    rw [Array.toList_mapM] at hmapped
+    simpa using hmapped
+  obtain ⟨compiled, state', hrun, hmap, hstate'⟩ :=
+    compileAndInternUnivCanon_list_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful hlevelsList hstate hrefList
+  refine ⟨compiled.toArray, state', ?_, ?_, hstate'⟩
+  · rw [Array.mapM_eq_mapM_toList, map_eq_pure_bind,
+      run_bind compileEnv blockEnv state _ _, hrun]
+    rfl
+  · have hmapped := congrArg List.toArray hmap
+    simpa using hmapped
+
+/-- Arbitrary-universe local-mutual constant step. -/
+theorem compileExprNoSurgeryStep_const_recur_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (compile : Ix.Expr → Ix.CompileM.CompileM (Ixon.Expr × UInt64))
+    {state : Ix.CompileM.BlockState} {name : Ix.Name}
+    {levels : Array Ix.Level} {hash : Address} {indices : Array UInt64}
+    {recIdx : Nat}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hrefLevels : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices)
+    (hmut : blockEnv.mutCtx.get? name = some recIdx) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryStep compile
+            (.const name levels hash)) =
+        .ok ((.recur recIdx.toUInt64 indices, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  obtain ⟨compiled, univState, hunivsRun, hindices, hunivState⟩ :=
+    compileAndInternUnivCanon_array_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful hlevels hstate hrefLevels
+  let nameState := univState.compileName name
+  have hnameState :
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot nameState :=
+    hunivState.compileName name
+  let root := nameState.arena.nodes.size.toUInt64
+  let allocated := allocState nameState (.ref name.getHash)
+  have hallocated :
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot allocated :=
+    hnameState.alloc (.ref name.getHash)
+  let patchIndices := compiled.map fun (canonical, original?) =>
+    original?.getD canonical
+  cases hpatch : compiled.any (·.2.isSome) with
+  | false =>
+    refine ⟨root, allocated, ?_, hallocated⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+      run_getBlockEnv]
+    simp only
+    rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+    simp only
+    rw [run_bind compileEnv blockEnv univState _ _, run_compileName]
+    simp only
+    rw [hmut]
+    rw [run_bind compileEnv blockEnv nameState _ _, run_allocArenaNode]
+    simp [hpatch, hindices]
+    rfl
+  | true =>
+    let finalState := patchState allocated root patchIndices
+    refine ⟨root, finalState, ?_, hallocated.patch root patchIndices⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+      run_getBlockEnv]
+    simp only
+    rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+    simp only
+    rw [run_bind compileEnv blockEnv univState _ _, run_compileName]
+    simp only
+    rw [hmut]
+    rw [run_bind compileEnv blockEnv nameState _ _, run_allocArenaNode]
+    simp only
+    rw [hpatch]
+    simp
+    rw [map_eq_pure_bind]
+    rw [run_bind compileEnv blockEnv allocated _ _, run_pushUnivPatch]
+    simp [hindices]
+    rfl
+
+/-- Arbitrary-universe external constant step. -/
+theorem compileExprNoSurgeryStep_const_ref_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (compile : Ix.Expr → Ix.CompileM.CompileM (Ixon.Expr × UInt64))
+    {state : Ix.CompileM.BlockState} {name : Ix.Name}
+    {levels : Array Ix.Level} {hash addr : Address}
+    {indices : Array UInt64} {refIdx : UInt64}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hrefLevels : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices)
+    (hmut : blockEnv.mutCtx.get? name = none)
+    (hresolve : resolveConstAddr? compileEnv snapshot name = some addr)
+    (hpreseed : snapshot.refsIndex.get? addr = some refIdx) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryStep compile
+            (.const name levels hash)) =
+        .ok ((.ref refIdx indices, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  obtain ⟨compiled, univState, hunivsRun, hindices, hunivState⟩ :=
+    compileAndInternUnivCanon_array_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful hlevels hstate hrefLevels
+  let nameState := univState.compileName name
+  have hnameState :
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot nameState :=
+    hunivState.compileName name
+  have hresolveName :
+      resolveConstAddr? compileEnv nameState name = some addr := by
+    rw [resolveConstAddr?_of_exprTableView_eq compileEnv hnameState.tables]
+    exact hresolve
+  have hmaps := refsIndex_eq_of_exprTableView_eq hnameState.tables
+  have hindexName : nameState.refsIndex.get? addr = some refIdx := by
+    rw [hmaps]
+    exact hpreseed
+  have hlookupRun := run_lookupConstAddr_resolved compileEnv blockEnv nameState
+    name addr hresolveName
+  have hinternRun := run_internRef_hit compileEnv blockEnv nameState addr
+    refIdx hindexName
+  let root := nameState.arena.nodes.size.toUInt64
+  let allocated := allocState nameState (.ref name.getHash)
+  have hallocated :
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot allocated :=
+    hnameState.alloc (.ref name.getHash)
+  let patchIndices := compiled.map fun (canonical, original?) =>
+    original?.getD canonical
+  cases hpatch : compiled.any (·.2.isSome) with
+  | false =>
+    refine ⟨root, allocated, ?_, hallocated⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+      run_getBlockEnv]
+    simp only
+    rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+    simp only
+    rw [run_bind compileEnv blockEnv univState _ _, run_compileName]
+    simp only
+    rw [hmut]
+    rw [run_bind compileEnv blockEnv nameState _ _, hlookupRun]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, hinternRun]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, run_allocArenaNode]
+    simp [hpatch, hindices]
+    rfl
+  | true =>
+    let finalState := patchState allocated root patchIndices
+    refine ⟨root, finalState, ?_, hallocated.patch root patchIndices⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state Ix.CompileM.getBlockEnv,
+      run_getBlockEnv]
+    simp only
+    rw [run_bind compileEnv blockEnv state _ _, hunivsRun]
+    simp only
+    rw [run_bind compileEnv blockEnv univState _ _, run_compileName]
+    simp only
+    rw [hmut]
+    rw [run_bind compileEnv blockEnv nameState _ _, hlookupRun]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, hinternRun]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, run_allocArenaNode]
+    simp only
+    rw [hpatch]
+    simp
+    rw [map_eq_pure_bind]
+    rw [run_bind compileEnv blockEnv allocated _ _, run_pushUnivPatch]
+    simp [hindices]
+    rfl
+
+theorem compileExprNoSurgeryFuel_const_recur_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {name : Ix.Name}
+    {levels : Array Ix.Level} {hash : Address} {indices : Array UInt64}
+    {recIdx : Nat}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hrefLevels : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices)
+    (hmut : blockEnv.mutCtx.get? name = some recIdx) (fuel : Nat) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryFuel (fuel + 1)
+            (.const name levels hash)) =
+        .ok ((.recur recIdx.toUInt64 indices, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  have hmut' : blockEnv.mutCtx[name]? = some recIdx := by
+    change blockEnv.mutCtx.get? name = some recIdx
+    exact hmut
+  have hctxMut :
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).mutIndex name =
+        some recIdx.toUInt64 := by
+    simp [frozenRefCompileCtx, hmut']
+  have href :
+      compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
+          (.const name levels hash) =
+        some (.recur recIdx.toUInt64 indices) := by
+    simp [compileExprRef, hrefLevels, hctxMut]
+  exact compileExprNoSurgeryFuel_leaf_refines compileEnv blockEnv snapshot
+    hexprFaithful OrdinaryExpr.const hstate href fuel
+    (compileExprNoSurgeryStep_const_recur_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful (Ix.CompileM.compileExprNoSurgeryFuel fuel)
+      hlevels hstate hrefLevels hmut)
+
+theorem compileExprNoSurgeryFuel_const_ref_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {name : Ix.Name}
+    {levels : Array Ix.Level} {hash addr : Address}
+    {indices : Array UInt64} {refIdx : UInt64}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hrefLevels : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices)
+    (hmut : blockEnv.mutCtx.get? name = none)
+    (hresolve : resolveConstAddr? compileEnv snapshot name = some addr)
+    (hpreseed : snapshot.refsIndex.get? addr = some refIdx) (fuel : Nat) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryFuel (fuel + 1)
+            (.const name levels hash)) =
+        .ok ((.ref refIdx indices, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  have hmut' : blockEnv.mutCtx[name]? = none := by
+    change blockEnv.mutCtx.get? name = none
+    exact hmut
+  have hctxMut :
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).mutIndex name = none := by
+    simp [frozenRefCompileCtx, hmut']
+  have hctxRef :
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex name =
+        some refIdx := by
+    simp only [frozenRefCompileCtx]
+    rw [show resolveConstAddr? compileEnv snapshot name = some addr from hresolve]
+    change snapshot.refsIndex.get? addr = some refIdx
+    exact hpreseed
+  have href :
+      compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
+          (.const name levels hash) = some (.ref refIdx indices) := by
+    simp [compileExprRef, hrefLevels, hctxMut, hctxRef]
+  exact compileExprNoSurgeryFuel_leaf_refines compileEnv blockEnv snapshot
+    hexprFaithful OrdinaryExpr.const hstate href fuel
+    (compileExprNoSurgeryStep_const_ref_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful (Ix.CompileM.compileExprNoSurgeryFuel fuel)
+      hlevels hstate hrefLevels hmut hresolve hpreseed)
+
+theorem compileExpr_run_const_recur_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hfree : compileEnv.surgeryFree = true)
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {name : Ix.Name}
+    {levels : Array Ix.Level} {hash : Address} {indices : Array UInt64}
+    {recIdx : Nat}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hrefLevels : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices)
+    (hmut : blockEnv.mutCtx.get? name = some recIdx) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExpr (.const name levels hash)) =
+        .ok ((.recur recIdx.toUInt64 indices, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  obtain ⟨root, state', hrun, hstate'⟩ :=
+    compileExprNoSurgeryFuel_const_recur_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful hexprFaithful hlevels hstate hrefLevels hmut 0
+  refine ⟨root, state', ?_, hstate'⟩
+  rw [Ix.CompileM.compileExpr, run_bind compileEnv blockEnv state,
+    run_getCompileEnv]
+  simp only
+  rw [hfree]
+  simpa [Ix.CompileM.compileExprNoSurgery,
+    Ix.CompileM.exprCompileDepth] using hrun
+
+theorem compileExpr_run_const_ref_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hfree : compileEnv.surgeryFree = true)
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {name : Ix.Name}
+    {levels : Array Ix.Level} {hash addr : Address}
+    {indices : Array UInt64} {refIdx : UInt64}
+    (hlevels : ∀ level ∈ levels, levelSupport level)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hrefLevels : levels.mapM
+      (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex =
+        some indices)
+    (hmut : blockEnv.mutCtx.get? name = none)
+    (hresolve : resolveConstAddr? compileEnv snapshot name = some addr)
+    (hpreseed : snapshot.refsIndex.get? addr = some refIdx) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExpr (.const name levels hash)) =
+        .ok ((.ref refIdx indices, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  obtain ⟨root, state', hrun, hstate'⟩ :=
+    compileExprNoSurgeryFuel_const_ref_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful hexprFaithful hlevels hstate hrefLevels hmut
+      hresolve hpreseed 0
+  refine ⟨root, state', ?_, hstate'⟩
+  rw [Ix.CompileM.compileExpr, run_bind compileEnv blockEnv state,
+    run_getCompileEnv]
+  simp only
+  rw [hfree]
+  simpa [Ix.CompileM.compileExprNoSurgery,
+    Ix.CompileM.exprCompileDepth] using hrun
+
 /-- Exact empty-universe local-mutual constant step.  It records the source
 name, allocates reference metadata, and emits the block-local recursion index
 without consulting or changing the external reference table. -/
@@ -1798,6 +2353,590 @@ theorem compileExpr_run_structural_value
   obtain ⟨root, state', hrun, hstate'⟩ :=
     compileExpr_run_structural_refines compileEnv blockEnv ctx hfree hfaithful
       hstruct hstate href
+  exact ⟨root, state', hrun, hstate',
+    compileExprRef_value hctx hsource href⟩
+
+/-- Flattened App-spine refinement for the complete frozen ordinary domain. -/
+private theorem compileAppNoSurgery_ordinary_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (fuel : Nat)
+    (hrecur : ∀ {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+        {target : Ixon.Expr},
+      Ix.CompileM.exprCompileDepth source ≤ fuel →
+      SupportedOrdinaryExpr levelSupport source →
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state →
+      compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot) source =
+        some target →
+      ∃ root state',
+        Ix.CompileM.CompileM.run compileEnv blockEnv state
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel source) =
+          .ok ((target, root), state') ∧
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state')
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hdepth : Ix.CompileM.exprCompileDepth source ≤ fuel)
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileAppNoSurgery
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel) source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  induction hsource generalizing state target with
+  | bvar =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth SupportedOrdinaryExpr.bvar hstate href
+  | sort hlevel =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.sort hlevel) hstate href
+  | const hlevels =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.const hlevels) hstate href
+  | lam hty hbody ihty ihbody =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.lam hty hbody) hstate href
+  | all hty hbody ihty ihbody =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.all hty hbody) hstate href
+  | letE hty hval hbody ihty ihval ihbody =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.letE hty hval hbody) hstate href
+  | lit =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth SupportedOrdinaryExpr.lit hstate href
+  | proj hval ihval =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate href
+  | mdata hinner ihinner =>
+    simpa [Ix.CompileM.compileAppNoSurgery] using
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate href
+  | @app fn arg hash hfn harg ihfn iharg =>
+    simp [compileExprRef] at href
+    rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
+    have hfnDepth : Ix.CompileM.exprCompileDepth fn ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hargDepth : Ix.CompileM.exprCompileDepth arg ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    obtain ⟨fnRoot, fnState, hfnRun, hfnState⟩ :=
+      ihfn hfnDepth hstate hfnRef
+    obtain ⟨argRoot, argState, hargRun, hargState⟩ :=
+      hrecur hargDepth harg hfnState hargRef
+    let root := argState.arena.nodes.size.toUInt64
+    let finalState := allocState argState (.app fnRoot argRoot)
+    refine ⟨root, finalState, ?_, hargState.alloc (.app fnRoot argRoot)⟩
+    rw [Ix.CompileM.compileAppNoSurgery.eq_1,
+      run_bind compileEnv blockEnv state _ _, hfnRun]
+    simp only
+    rw [run_bind compileEnv blockEnv fnState _ _, hargRun]
+    simp only
+    rw [run_bind compileEnv blockEnv argState _ _, run_allocArenaNode]
+    rfl
+
+/-- One cache-miss constructor step for the complete frozen ordinary domain. -/
+private theorem compileExprNoSurgeryStep_ordinary_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (fuel : Nat)
+    (hrecur : ∀ {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+        {target : Ixon.Expr},
+      Ix.CompileM.exprCompileDepth source ≤ fuel →
+      SupportedOrdinaryExpr levelSupport source →
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state →
+      compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot) source =
+        some target →
+      ∃ root state',
+        Ix.CompileM.CompileM.run compileEnv blockEnv state
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel source) =
+          .ok ((target, root), state') ∧
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state')
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hdepth : Ix.CompileM.exprCompileDepth source ≤ fuel + 1)
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryStep
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel) source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  cases hsource with
+  | bvar =>
+    simp [compileExprRef] at href
+    subst target
+    let root := state.arena.nodes.size.toUInt64
+    let finalState := allocState state .leaf
+    refine ⟨root, finalState, ?_, hstate.alloc .leaf⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_allocArenaNode]
+    rfl
+  | @sort level hash hlevel =>
+    simp [compileExprRef] at href
+    rcases href with ⟨idx, hctxIndex, rfl⟩
+    exact compileExprNoSurgeryStep_sort_ctx_refines compileEnv blockEnv
+      snapshot hclosed hlevelFaithful
+      (Ix.CompileM.compileExprNoSurgeryFuel fuel) hlevel hstate hctxIndex
+  | @const name levels hash hlevels =>
+    cases hrefLevels : levels.mapM
+        (frozenRefCompileCtx compileEnv blockEnv snapshot).univIndex with
+    | none => simp [compileExprRef, hrefLevels] at href
+    | some indices =>
+      cases hmut : blockEnv.mutCtx.get? name with
+      | some recIdx =>
+        have hmut' : blockEnv.mutCtx[name]? = some recIdx := by
+          change blockEnv.mutCtx.get? name = some recIdx
+          exact hmut
+        have hctxMut :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).mutIndex name =
+              some recIdx.toUInt64 := by
+          simp [frozenRefCompileCtx, hmut']
+        simp [compileExprRef, hrefLevels, hctxMut] at href
+        subst target
+        exact compileExprNoSurgeryStep_const_recur_refines compileEnv blockEnv
+          snapshot hclosed hlevelFaithful
+          (Ix.CompileM.compileExprNoSurgeryFuel fuel) hlevels hstate
+          hrefLevels hmut
+      | none =>
+        have hmut' : blockEnv.mutCtx[name]? = none := by
+          change blockEnv.mutCtx.get? name = none
+          exact hmut
+        have hctxMut :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).mutIndex name =
+              none := by
+          simp [frozenRefCompileCtx, hmut']
+        cases hresolve : resolveConstAddr? compileEnv snapshot name with
+        | none =>
+          have hctxRef :
+              (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex name =
+                none := by
+            simp only [frozenRefCompileCtx]
+            rw [hresolve]
+            rfl
+          simp [compileExprRef, hrefLevels, hctxMut, hctxRef] at href
+        | some addr =>
+          cases hpreseed : snapshot.refsIndex.get? addr with
+          | none =>
+            have hctxRef :
+                (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                    name = none := by
+              simp only [frozenRefCompileCtx]
+              rw [hresolve]
+              change snapshot.refsIndex.get? addr = none
+              exact hpreseed
+            simp [compileExprRef, hrefLevels, hctxMut, hctxRef] at href
+          | some refIdx =>
+            have hctxRef :
+                (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                    name = some refIdx := by
+              simp only [frozenRefCompileCtx]
+              rw [hresolve]
+              change snapshot.refsIndex.get? addr = some refIdx
+              exact hpreseed
+            simp [compileExprRef, hrefLevels, hctxMut, hctxRef] at href
+            subst target
+            exact compileExprNoSurgeryStep_const_ref_refines compileEnv
+              blockEnv snapshot hclosed hlevelFaithful
+              (Ix.CompileM.compileExprNoSurgeryFuel fuel) hlevels hstate
+              hrefLevels hmut hresolve hpreseed
+  | @app fn arg hash hfn harg =>
+    simp [compileExprRef] at href
+    rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
+    have hfnDepth : Ix.CompileM.exprCompileDepth fn ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hargDepth : Ix.CompileM.exprCompileDepth arg ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    obtain ⟨fnRoot, fnState, hfnRun, hfnState⟩ :=
+      compileAppNoSurgery_ordinary_refines compileEnv blockEnv snapshot fuel
+        hrecur hfnDepth hfn hstate hfnRef
+    obtain ⟨argRoot, argState, hargRun, hargState⟩ :=
+      hrecur hargDepth harg hfnState hargRef
+    let root := argState.arena.nodes.size.toUInt64
+    let finalState := allocState argState (.app fnRoot argRoot)
+    refine ⟨root, finalState, ?_, hargState.alloc (.app fnRoot argRoot)⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      Ix.CompileM.compileAppNoSurgery.eq_1,
+      run_bind compileEnv blockEnv state _ _, hfnRun]
+    simp only
+    rw [run_bind compileEnv blockEnv fnState _ _, hargRun]
+    simp only
+    rw [run_bind compileEnv blockEnv argState _ _, run_allocArenaNode]
+    rfl
+  | @lam name ty body bi hash hty hbody =>
+    simp [compileExprRef] at href
+    rcases href with ⟨tyTarget, htyRef, bodyTarget, hbodyRef, rfl⟩
+    have htyDepth : Ix.CompileM.exprCompileDepth ty ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hbodyDepth : Ix.CompileM.exprCompileDepth body ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    let nameState := state.compileName name
+    have hnameState :
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot nameState :=
+      hstate.compileName name
+    obtain ⟨tyRoot, tyState, htyRun, htyState⟩ :=
+      hrecur htyDepth hty hnameState htyRef
+    obtain ⟨bodyRoot, bodyState, hbodyRun, hbodyState⟩ :=
+      hrecur hbodyDepth hbody htyState hbodyRef
+    let root := bodyState.arena.nodes.size.toUInt64
+    let finalState := allocState bodyState (.binder name.getHash bi tyRoot bodyRoot)
+    refine ⟨root, finalState, ?_,
+      hbodyState.alloc (.binder name.getHash bi tyRoot bodyRoot)⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileName]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, htyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv tyState _ _, hbodyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv bodyState _ _, run_allocArenaNode]
+    rfl
+  | @all name ty body bi hash hty hbody =>
+    simp [compileExprRef] at href
+    rcases href with ⟨tyTarget, htyRef, bodyTarget, hbodyRef, rfl⟩
+    have htyDepth : Ix.CompileM.exprCompileDepth ty ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hbodyDepth : Ix.CompileM.exprCompileDepth body ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    let nameState := state.compileName name
+    have hnameState :
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot nameState :=
+      hstate.compileName name
+    obtain ⟨tyRoot, tyState, htyRun, htyState⟩ :=
+      hrecur htyDepth hty hnameState htyRef
+    obtain ⟨bodyRoot, bodyState, hbodyRun, hbodyState⟩ :=
+      hrecur hbodyDepth hbody htyState hbodyRef
+    let root := bodyState.arena.nodes.size.toUInt64
+    let finalState := allocState bodyState (.binder name.getHash bi tyRoot bodyRoot)
+    refine ⟨root, finalState, ?_,
+      hbodyState.alloc (.binder name.getHash bi tyRoot bodyRoot)⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileName]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, htyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv tyState _ _, hbodyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv bodyState _ _, run_allocArenaNode]
+    rfl
+  | @letE name ty val body nonDep hash hty hval hbody =>
+    simp [compileExprRef] at href
+    rcases href with
+      ⟨tyTarget, htyRef, valTarget, hvalRef, bodyTarget, hbodyRef, rfl⟩
+    have htyDepth : Ix.CompileM.exprCompileDepth ty ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hvalDepth : Ix.CompileM.exprCompileDepth val ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    have hbodyDepth : Ix.CompileM.exprCompileDepth body ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    let nameState := state.compileName name
+    have hnameState :
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot nameState :=
+      hstate.compileName name
+    obtain ⟨tyRoot, tyState, htyRun, htyState⟩ :=
+      hrecur htyDepth hty hnameState htyRef
+    obtain ⟨valRoot, valState, hvalRun, hvalState⟩ :=
+      hrecur hvalDepth hval htyState hvalRef
+    obtain ⟨bodyRoot, bodyState, hbodyRun, hbodyState⟩ :=
+      hrecur hbodyDepth hbody hvalState hbodyRef
+    let root := bodyState.arena.nodes.size.toUInt64
+    let finalState := allocState bodyState
+      (.letBinder name.getHash tyRoot valRoot bodyRoot)
+    refine ⟨root, finalState, ?_,
+      hbodyState.alloc (.letBinder name.getHash tyRoot valRoot bodyRoot)⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileName]
+    simp only
+    rw [run_bind compileEnv blockEnv nameState _ _, htyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv tyState _ _, hvalRun]
+    simp only
+    rw [run_bind compileEnv blockEnv valState _ _, hbodyRun]
+    simp only
+    rw [run_bind compileEnv blockEnv bodyState _ _, run_allocArenaNode]
+    rfl
+  | @lit literal hash =>
+    cases hpreseed : snapshot.refsIndex.get? (literalAddress literal) with
+    | none =>
+      have hctxLiteral :
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).literalRef
+              literal = none := by
+        simp only [frozenRefCompileCtx]
+        change snapshot.refsIndex.get? (literalAddress literal) = none
+        exact hpreseed
+      simp [compileExprRef, hctxLiteral] at href
+    | some refIdx =>
+      have hctxLiteral :
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).literalRef
+              literal = some refIdx := by
+        simp only [frozenRefCompileCtx]
+        change snapshot.refsIndex.get? (literalAddress literal) = some refIdx
+        exact hpreseed
+      have hexpected :
+          compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
+              (.lit literal hash) = some (literalExpr literal refIdx) := by
+        cases literal <;> simp [compileExprRef, literalExpr, hctxLiteral]
+      have htarget : target = literalExpr literal refIdx :=
+        Option.some.inj (href.symm.trans hexpected)
+      subst target
+      exact compileExprNoSurgeryStep_lit_refines compileEnv blockEnv snapshot
+        (Ix.CompileM.compileExprNoSurgeryFuel fuel) hstate hpreseed
+  | @proj typeName field val hash hval =>
+    cases hresolve : resolveConstAddr? compileEnv snapshot typeName with
+    | none =>
+      have hctxRef :
+          (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+              typeName = none := by
+        simp only [frozenRefCompileCtx]
+        rw [hresolve]
+        rfl
+      simp [compileExprRef, hctxRef] at href
+    | some addr =>
+      cases hpreseed : snapshot.refsIndex.get? addr with
+      | none =>
+        have hctxRef :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                typeName = none := by
+          simp only [frozenRefCompileCtx]
+          rw [hresolve]
+          change snapshot.refsIndex.get? addr = none
+          exact hpreseed
+        simp [compileExprRef, hctxRef] at href
+      | some refIdx =>
+        have hctxRef :
+            (frozenRefCompileCtx compileEnv blockEnv snapshot).refIndex
+                typeName = some refIdx := by
+          simp only [frozenRefCompileCtx]
+          rw [hresolve]
+          change snapshot.refsIndex.get? addr = some refIdx
+          exact hpreseed
+        simp [compileExprRef, hctxRef] at href
+        rcases href with ⟨valTarget, hvalRef, rfl⟩
+        have hvalDepth : Ix.CompileM.exprCompileDepth val ≤ fuel := by
+          simp only [Ix.CompileM.exprCompileDepth] at hdepth
+          omega
+        let nameState := state.compileName typeName
+        have hnameState :
+            FrozenExprStateWF compileEnv blockEnv levelSupport snapshot
+              nameState := hstate.compileName typeName
+        have hresolveName :
+            resolveConstAddr? compileEnv nameState typeName = some addr := by
+          rw [resolveConstAddr?_of_exprTableView_eq compileEnv
+            hnameState.tables]
+          exact hresolve
+        have hmaps := refsIndex_eq_of_exprTableView_eq hnameState.tables
+        have hindexName : nameState.refsIndex.get? addr = some refIdx := by
+          rw [hmaps]
+          exact hpreseed
+        have hlookupRun := run_lookupConstAddr_resolved compileEnv blockEnv
+          nameState typeName addr hresolveName
+        have hinternRun := run_internRef_hit compileEnv blockEnv nameState addr
+          refIdx hindexName
+        obtain ⟨valRoot, valState, hvalRun, hvalState⟩ :=
+          hrecur hvalDepth hval hnameState hvalRef
+        let root := valState.arena.nodes.size.toUInt64
+        let finalState := allocState valState (.prj typeName.getHash valRoot)
+        refine ⟨root, finalState, ?_,
+          hvalState.alloc (.prj typeName.getHash valRoot)⟩
+        rw [Ix.CompileM.compileExprNoSurgeryStep,
+          run_bind compileEnv blockEnv state _ _, run_compileName]
+        simp only
+        rw [run_bind compileEnv blockEnv nameState _ _, hlookupRun]
+        simp only
+        rw [run_bind compileEnv blockEnv nameState _ _, hinternRun]
+        simp only
+        rw [run_bind compileEnv blockEnv nameState _ _, hvalRun]
+        simp only
+        rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
+        rfl
+  | @mdata inner hash hinner =>
+    have hinnerRef :
+        compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
+            inner = some target := by
+      simpa [compileExprRef] using href
+    have hinnerDepth : Ix.CompileM.exprCompileDepth inner ≤ fuel := by
+      simp only [Ix.CompileM.exprCompileDepth] at hdepth
+      omega
+    obtain ⟨innerRoot, innerState, hinnerRun, hinnerState⟩ :=
+      hrecur hinnerDepth hinner hstate hinnerRef
+    let root := innerState.arena.nodes.size.toUInt64
+    let finalState := allocState innerState (.mdata #[#[]] innerRoot)
+    refine ⟨root, finalState, ?_,
+      hinnerState.alloc (.mdata #[#[]] innerRoot)⟩
+    rw [Ix.CompileM.compileExprNoSurgeryStep,
+      run_bind compileEnv blockEnv state _ _, run_compileEmptyKVMap]
+    simp only
+    rw [run_bind compileEnv blockEnv state _ _, hinnerRun]
+    simp only
+    rw [run_bind compileEnv blockEnv innerState _ _, run_allocArenaNode]
+    rfl
+
+/-- The fuel-total production compiler refines the frozen reference compiler
+on the complete recursive ordinary domain: structural nodes, arbitrary-level
+constants, canonical sorts, literals, and projections. -/
+theorem compileExprNoSurgeryFuel_ordinary_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {fuel : Nat} {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hdepth : Ix.CompileM.exprCompileDepth source ≤ fuel)
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgeryFuel fuel source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  induction fuel generalizing state source target with
+  | zero =>
+    have hpos := exprCompileDepth_pos source
+    omega
+  | succ fuel ih =>
+    cases hlookup : state.exprCache.get? source with
+    | some cached =>
+      rcases cached with ⟨cachedTarget, cachedRoot⟩
+      have hcachedRef := hstate.exprCache.sound hlookup
+      have htarget : cachedTarget = target :=
+        Option.some.inj (hcachedRef.symm.trans href)
+      subst cachedTarget
+      exact ⟨cachedRoot, state,
+        compileExprNoSurgeryFuel_run_cached compileEnv blockEnv state fuel
+          source (target, cachedRoot) hlookup,
+        hstate⟩
+    | none =>
+      obtain ⟨root, stepState, hstepRun, hstepState⟩ :=
+        compileExprNoSurgeryStep_ordinary_refines compileEnv blockEnv snapshot
+          hclosed hlevelFaithful fuel
+          (fun hdepth hsource hstate href =>
+            ih hdepth hsource hstate href)
+          hdepth hsource hstate href
+      let finalState := cacheState stepState source target root
+      refine ⟨root, finalState, ?_, ?_⟩
+      · rw [Ix.CompileM.compileExprNoSurgeryFuel.eq_2,
+          run_bind compileEnv blockEnv state Ix.CompileM.getBlockState,
+          run_getBlockState]
+        simp only
+        rw [hlookup]
+        change Ix.CompileM.CompileM.run compileEnv blockEnv state (do
+          let (result, resultRoot) ← Ix.CompileM.compileExprNoSurgeryStep
+            (Ix.CompileM.compileExprNoSurgeryFuel fuel) source
+          Ix.CompileM.modifyBlockState fun current =>
+            { current with
+              exprCache := current.exprCache.insert source (result, resultRoot) }
+          pure (result, resultRoot)) = _
+        rw [run_bind compileEnv blockEnv state _ _, hstepRun]
+        rfl
+      · exact hstepState.cache hexprFaithful hsource.ordinary href
+
+theorem compileExprNoSurgery_run_ordinary_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExprNoSurgery source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  exact compileExprNoSurgeryFuel_ordinary_refines compileEnv blockEnv snapshot
+    hclosed hlevelFaithful hexprFaithful (Nat.le_refl _) hsource hstate href
+
+/-- Complete production ordinary-expression refinement in a surgery-free
+environment, including recursive projections and arbitrary universe lists. -/
+theorem compileExpr_run_ordinary_refines
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hfree : compileEnv.surgeryFree = true)
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExpr source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' := by
+  obtain ⟨root, state', hrun, hstate'⟩ :=
+    compileExprNoSurgery_run_ordinary_refines compileEnv blockEnv snapshot
+      hclosed hlevelFaithful hexprFaithful hsource hstate href
+  refine ⟨root, state', ?_, hstate'⟩
+  rw [Ix.CompileM.compileExpr, run_bind compileEnv blockEnv state,
+    run_getCompileEnv]
+  simp only
+  rw [hfree]
+  exact hrun
+
+/-- Complete ordinary compilation preserves the independent Lean4Lean value
+assigned to the source expression. -/
+theorem compileExpr_run_ordinary_value
+    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
+    {dctx : DecodeCtx} {trProj : ProjectionRel}
+    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hfree : compileEnv.surgeryFree = true)
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    (hctx : RefCompileCtxRel
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr} {value : Lean4Lean.VExpr}
+    (hordinary : SupportedOrdinaryExpr levelSupport source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals source value)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExpr source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+        target value := by
+  obtain ⟨root, state', hrun, hstate'⟩ :=
+    compileExpr_run_ordinary_refines compileEnv blockEnv snapshot hfree hclosed
+      hlevelFaithful hexprFaithful hordinary hstate href
   exact ⟨root, state', hrun, hstate',
     compileExprRef_value hctx hsource href⟩
 

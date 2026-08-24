@@ -25,9 +25,10 @@ environments, production `compileExpr` now selects a kernel-visible total
 path; its recursive structural fragment refines `compileExprRef`, preserves a
 sound collision-disciplined expression cache, retains flattened App-spine
 semantics, and composes with the independent Lean4Lean expression value. A
-frozen-preseed state relation now additionally closes canonical sort leaves,
-empty-universe local and external constant leaves, and literal leaves through
-the actual production dispatcher, including their Lean4Lean value corollaries.
+frozen-preseed state relation now closes the complete ordinary-expression
+tree through the actual production dispatcher, including arbitrary-universe
+local and external constants, recursive projections, and their Lean4Lean
+value corollary.
 `KernelSourceWitness` is the sole
 upstream source-semantics boundary; later compiler-preservation slices take it
 as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean
