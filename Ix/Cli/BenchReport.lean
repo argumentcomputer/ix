@@ -1134,8 +1134,9 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     (fun e => constsByEnv.any (·.1 == e))).toArray
 
   -- Env defaults, per backend, when BENCH_ENVS is absent: the env-keyed
-  -- backends (`inputs := .perEnv` — compile, decompile) cover their full
-  -- registry env set — their row IS the env, so a compiler PR sees every
+  -- backends (`inputs := .perEnv` — compile, decompile, aiur-sharded-env) cover
+  -- their registry env set (the full set, or the spec's `envs`
+  -- restriction) — their row IS the env, so a compiler PR sees every
   -- env's delta without asking — while the per-constant backends default
   -- to the light InitStd (a Mathlib prove is too heavy for an unasked-for
   -- default). An explicit BENCH_ENVS applies to every requested backend —
@@ -1148,7 +1149,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       constEnvs
     else if !envs.isEmpty then envs
     else if b.inputs == .perEnv then
-      (Ix.Cli.BenchCmd.envSpecs.map (·.name)).toArray
+      (b.envs.getD (Ix.Cli.BenchCmd.envSpecs.map (·.name))).toArray
     else #["InitStd"]
 
   let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>

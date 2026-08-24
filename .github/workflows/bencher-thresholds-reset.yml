@@ -44,7 +44,7 @@ on:
         # GitHub requires literal choice options, so this list stays static:
         # keep it (and the jobs' valid= lists below) in sync with the
         # backend testbeds in Ix/Cli/BenchCmd.lean (backendSpecs).
-        options: [ix-compile, ix-decompile, aiur, zisk-check-execute, sp1-check-execute, ooc-check, all]
+        options: [ix-compile, ix-decompile, aiur, aiur-sharded-env-check, zisk-check-execute, sp1-check-execute, ooc-check, all]
       sha:
         description: "Commit to anchor to (default: HEAD)"
         required: false
@@ -77,7 +77,7 @@ jobs:
           # (backendSpecs) minus the runner-arch suffix. Static because this
           # job runs on a cheap runner with no built `ix`; keep in sync when
           # adding a backend.
-          valid="aiur ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"
+          valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"
           if [ "$EVENT" = workflow_dispatch ]; then
             # Reset the chosen workload(s) at the given commit; no PR scan.
             sha="${INPUT_SHA:-$HEAD_SHA}"
@@ -133,7 +133,7 @@ jobs:
           # which the merge job expands into every workload). Same static
           # list as the reset job; keep both in sync with backendSpecs in
           # Ix/Cli/BenchCmd.lean.
-          valid="aiur ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"
+          valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"
           accepted="$valid all"
           # Parse the workload token(s) after the command, lowercased.
           workloads=$(printf '%s' "$BODY" \

@@ -143,17 +143,38 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   | none =>
     -- STATIC strategy (no out-of-circuit profiling): byte-balanced min-cut
     -- over the env's walk-edge nets + predicted-FFT rebalance post-pass.
-    -- Fixed shard count only for now — the cap modes' cycle/RAM budgeting
-    -- is calibrated against the profiled op counters, which the static
-    -- profile does not carry.
-    let some n := shardsFlag
-      | p.printError "error: the static strategy (no --profile) requires \
-          --shards N; --max-cycles/--max-ram budgeting needs --profile"
-        return 1
-    if maxCycles.isSome || maxRam.isSome then
-      p.printError "error: --max-cycles/--max-ram require --profile (their \
-        budget model is calibrated on profiled op counters)"
+    -- Shard count comes from `--shards N`, or NAIVELY from `--max-ram G`:
+    -- without a profile the planner cannot know a shard's real prover
+    -- peak, so it estimates it from serialized env bytes via a measured
+    -- amplification factor and picks N so the estimated per-shard peak
+    -- fits the budget. The projections printed by an executed run
+    -- (`ix check --ixes --batch`) are the ground truth that corrects
+    -- the estimate — over-budget shards re-split, far-under merge.
+    if maxCycles.isSome then
+      p.printError "error: --max-cycles requires --profile (its budget \
+        model is calibrated on profiled op counters)"
       return 1
+    let n ← match shardsFlag, maxRam with
+      | some n, _ => pure n
+      | none, some gib =>
+        if gib == 0 then
+          p.printError "error: --max-ram must be positive"; return 1
+        let envBytes := (← System.FilePath.metadata envPath).byteSize.toNat
+        -- Prover-peak-per-env-byte, measured on init and FLT partitions
+        -- (2026-08-21): analytic prover peaks landed at ~20,000-21,000x
+        -- the shard's serialized bytes. Target ~2/3 of the budget so
+        -- the median sits under it with headroom for the measured
+        -- ~2.5x median-to-max spread across shards of one partition.
+        let amplification := 20000
+        let targetBytes := gib * 1024 * 1024 * 1024 * 2 / 3
+        let n := max 1 ((envBytes * amplification + targetBytes - 1) / targetBytes)
+        IO.println s!"[shard] naive RAM sizing: {envBytes} env bytes × \
+          {amplification} / ({gib} GiB × 2/3) → {n} shard(s)"
+        pure n
+      | none, none =>
+        p.printError "error: the static strategy (no --profile) requires \
+          --shards N or --max-ram G"
+        return 1
     IO.println s!"Sharding {envPath} into {n} shards (static strategy, balance ±{balancePct}%)"
     rsShardEnvStaticFFI envPath (toString n) (toString balancePct) outPath
   | some espPath =>
@@ -185,9 +206,9 @@ def shardCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     profile      : String; "Path to a `.ixprof` from `ix profile`. When given, use the profiled strategy (cap budgeting / balanced min-cut over measured costs); when absent, the static strategy partitions the `.ixe` directly."
-    shards       : Nat;    "Fixed number of shards N (required for the static strategy; overrides the profiled default budget sizing)"
+    shards       : Nat;    "Fixed number of shards N (static strategy; overrides --max-ram sizing and the profiled default budget sizing)"
     "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
-    "max-ram"    : Nat;    "Per-shard host-RAM budget, GiB (profiled strategy only; default: detected system RAM)"
+    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: NAIVE sizing — estimates per-shard prover peak from serialized env bytes (measured ~20,000x amplification) and picks the shard count so the estimate fits ~2/3 of the budget; executed projections then correct it (split/merge). Profiled strategy: budget from measured op counters (default: detected system RAM)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
