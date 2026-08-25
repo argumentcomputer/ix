@@ -3,10 +3,11 @@ import Compilatrix.Ixon.Serialize
 /-!
 # Content addresses
 
-32-byte blake3 hashes of canonical Ixon serializations (see ix's
-`docs/Ixon.md` and `docs/kernel_identity.md`). This module is the pure
-data side; `Compilatrix.Ixon.Hash` supplies BLAKE3 computation through
-the current FFI ledger entry.
+32-byte blake3 hashes of canonical artifact serializations. Ixon identity
+follows ix's `docs/Ixon.md` and `docs/kernel_identity.md`; backend IRs have
+independently versioned domains. This module is the pure data side;
+`Compilatrix.Ixon.Hash` supplies BLAKE3 computation through the current FFI
+ledger entry.
 -/
 
 namespace Compilatrix.Ixon
@@ -31,6 +32,22 @@ def replicate (b : UInt8) : Address :=
 def get (a : Address) (i : Fin 32) : UInt8 :=
   a.hash[i.val]'(a.hash_size.symm ▸ i.isLt)
 
+/-- Synthetic address for member `idx` of a mutual block. This is shared by
+the source evaluator's opaque-member oracle identity and the erased program's
+environment key. It remains v1 scaffolding until members receive real content
+addresses. -/
+def memberAddr (block : Address) (idx : Nat) : Address :=
+  ofFn fun i =>
+    if i.val < 24 then block.get i
+    else block.get i ^^^
+      UInt8.ofNat (((idx + 1) >>> (8 * (i.val - 24))) % 256)
+
+/-- Lowercase fixed-width hexadecimal, matching ix's catalog/report spelling. -/
+def toHex (a : Address) : String :=
+  a.hash.data.foldl (fun output byte =>
+    output ++ hexDigitRepr (byte.toNat / 16) ++
+      hexDigitRepr (byte.toNat % 16)) ""
+
 @[simp] theorem data_ofFn (f : Fin 32 → UInt8) :
     (ofFn f).hash.data = Array.ofFn f := by
   rfl
@@ -46,6 +63,13 @@ def get (a : Address) (i : Fin 32) : UInt8 :=
       (by simp [ByteArray.size]) from rfl]
   rw [get_mk]
   rw [Array.getElem_ofFn]
+
+@[simp] theorem memberAddr_get (block : Address) (idx : Nat) (i : Fin 32) :
+    (memberAddr block idx).get i =
+      if i.val < 24 then block.get i
+      else block.get i ^^^
+        UInt8.ofNat (((idx + 1) >>> (8 * (i.val - 24))) % 256) := by
+  simp [memberAddr]
 
 @[simp] theorem get_replicate (b : UInt8) (i : Fin 32) :
     (replicate b).get i = b := by
@@ -69,6 +93,8 @@ instance : Hashable Address := ⟨fun a => hash a.hash.data⟩
 
 instance : Repr Address :=
   ⟨fun a _ => "Address " ++ repr a.hash.data⟩
+
+instance : ToString Address := ⟨Address.toHex⟩
 
 instance : Serialize Address where
   put a := putBytes a.hash

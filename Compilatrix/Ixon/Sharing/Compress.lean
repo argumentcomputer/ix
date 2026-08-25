@@ -1,5 +1,6 @@
 import Compilatrix.Ixon.Hash
 import Compilatrix.Ixon.Sharing.Basic
+import Compilatrix.Ixon.Work
 
 /-!
 # Deterministic Ixon-v2 sharing compression
@@ -28,10 +29,16 @@ namespace Compilatrix.Ixon.Sharing
 parity corpus. Bump only with an intentional, documented policy change. -/
 def compressorPolicyId : String := "compilatrix/ixon-v2-sharing/1"
 
-/-- Upstream ix revision whose sharing corpus and Lean/Rust agreement form the
-v1 provenance baseline for this v2 policy. -/
+/-- Exact upstream ix revision used for the v2 wire/address golden capture and
+sharing-policy comparison. The literal capture artifacts live in `Tests.lean`;
+this is the single source of truth for their revision. -/
 def ixParityRevision : String :=
-  "c98bb74106017e518c705b2567f022e89f732393"
+  "6f18ea907b78d06f7dc0917c43beb385561c35f4"
+
+/-- External sharing policy recognized at ix catalog ingress.  It is pinned to
+the exact upstream revision whose writer/checker artifacts form the parity
+corpus, and is deliberately distinct from `compressorPolicyId`. -/
+def ixonV2PolicyId : String := "ix/ixon-v2-sharing@" ++ ixParityRevision
 
 /-! ## V2 Merkle ordering key -/
 
@@ -171,6 +178,40 @@ def candidateLT (a b : Candidate) : Bool :=
 def shareRefSize (idx : Nat) : Nat :=
   (ser (.share idx.toUInt64 : Expr)).size
 
+/-- Per-node size model used by the pinned upstream compressor.  It predates
+the flattened app/lam/all writer and therefore sums one AST-node header at a
+time; reproducing that heuristic (including its overestimate on long spines)
+is load-bearing for exact external table recognition. -/
+def ixonV2NodeBaseSize : Expr → Nat
+  | .sort u => (tag4Bytes ⟨Expr.FLAG_SORT, u⟩).size
+  | .var i => (tag4Bytes ⟨Expr.FLAG_VAR, i⟩).size
+  | .ref r us | .recur r us =>
+    (tag4Bytes ⟨0, us.size.toUInt64⟩).size +
+      (tag0Bytes ⟨r⟩).size +
+      us.foldl (fun size u => size + (tag0Bytes ⟨u⟩).size) 0
+  | .prj t f _ =>
+    (tag4Bytes ⟨Expr.FLAG_PRJ, f⟩).size + (tag0Bytes ⟨t⟩).size
+  | .str r => (tag4Bytes ⟨Expr.FLAG_STR, r⟩).size
+  | .nat r => (tag4Bytes ⟨Expr.FLAG_NAT, r⟩).size
+  | .app _ _ => 1
+  | .lam _ _ _ | .all _ _ _ _ => 2
+  | .letE _ _ _ _ => 1
+  | .share i => (tag4Bytes ⟨Expr.FLAG_SHARE, i⟩).size
+
+/-- Upstream's effective serialized-size estimate: node base size plus the
+effective size of every structural child. -/
+def ixonV2EffectiveSize : Expr → Nat
+  | e@(.sort _) | e@(.var _) | e@(.ref _ _) | e@(.recur _ _)
+  | e@(.str _) | e@(.nat _) | e@(.share _) => ixonV2NodeBaseSize e
+  | e@(.prj _ _ v) => ixonV2NodeBaseSize e + ixonV2EffectiveSize v
+  | e@(.app f a) =>
+    ixonV2NodeBaseSize e + ixonV2EffectiveSize f + ixonV2EffectiveSize a
+  | e@(.lam _ t b) | e@(.all _ _ t b) =>
+    ixonV2NodeBaseSize e + ixonV2EffectiveSize t + ixonV2EffectiveSize b
+  | e@(.letE _ t v b) =>
+    ixonV2NodeBaseSize e + ixonV2EffectiveSize t +
+      ixonV2EffectiveSize v + ixonV2EffectiveSize b
+
 /-- Greedy ix-style admission on structural representatives. Candidate size is
 the exact standalone v2 serialization; the final audit handles context effects. -/
 def decideSharing (exprs : Array Expr) : Array Expr :=
@@ -180,6 +221,27 @@ def decideSharing (exprs : Array Expr) : Array Expr :=
     let n := occurrenceCount e os
     let size := (ser e).size
     if n ≥ 2 && telescopeSafe e os && (n - 1) * size > n then
+      out.push ⟨e, size, n, exprHash e⟩
+    else out
+  let candidates := candidates.qsort candidateLT
+  candidates.foldl (init := #[]) fun selected cand =>
+    if (cand.usageCount - 1) * cand.termSize >
+        cand.usageCount * shareRefSize selected.size then
+      selected.push cand.expr
+    else selected
+
+/-- Exact candidate admission used by the pinned upstream ixon-v2 compressor.
+Unlike Compilatrix's local policy, it neither filters non-maximal telescope
+suffixes nor runs the later exact-deletion audit.  The remaining machinery is
+shared and collision-safe: structural equality, rather than a digest alone,
+identifies representatives. -/
+def decideIxonV2Sharing (exprs : Array Expr) : Array Expr :=
+  let os := blockOccurrences exprs
+  let representatives := (os.map (·.expr)).eraseDups
+  let candidates := representatives.foldl (init := #[]) fun out e =>
+    let n := occurrenceCount e os
+    let size := ixonV2EffectiveSize e
+    if n ≥ 2 && (n - 1) * size > n then
       out.push ⟨e, size, n, exprHash e⟩
     else out
   let candidates := candidates.qsort candidateLT
@@ -476,6 +538,48 @@ theorem inline_buildCompression (exprs : Array Expr)
     simpa [buildCompression, reps] using
       inlineExpr_rewriteWith_buildTable reps exprs[i] hrepsSize hreps heFree
 
+/-! ## Pinned upstream ixon-v2 construction -/
+
+def ixonV2CompressionReps (exprs : Array Expr) : List Expr :=
+  (selectedTopological exprs (decideIxonV2Sharing exprs)).filter shareFree
+
+theorem ixonV2CompressionReps_shareFree (exprs : Array Expr) :
+    ∀ e ∈ ixonV2CompressionReps exprs, shareFree e = true := by
+  intro e he
+  exact (List.mem_filter.mp he).2
+
+/-- Deterministic image of the pinned upstream ixon-v2 sharing compressor.
+This intentionally stops before Compilatrix's telescope filter and exact
+deletion audit. -/
+def buildIxonV2Compression (exprs : Array Expr) : Compression :=
+  let reps := ixonV2CompressionReps exprs
+  { bodies := exprs.map (rewriteWith reps)
+    table := (buildTable [] reps).toArray }
+
+theorem buildIxonV2Compression_table_size (exprs : Array Expr) :
+    (buildIxonV2Compression exprs).table.size =
+      (ixonV2CompressionReps exprs).length := by
+  simp [buildIxonV2Compression, buildTable_length]
+
+theorem inline_buildIxonV2Compression (exprs : Array Expr)
+    (hfree : exprs.all shareFree = true)
+    (hindex : (buildIxonV2Compression exprs).table.size < UInt64.size) :
+    (buildIxonV2Compression exprs).expanded = exprs := by
+  let reps := ixonV2CompressionReps exprs
+  have hreps : ∀ e ∈ reps, shareFree e = true :=
+    ixonV2CompressionReps_shareFree exprs
+  have hrepsSize : reps.length < UInt64.size := by
+    simpa [reps, buildIxonV2Compression_table_size] using hindex
+  apply Array.ext
+  · simp [Compression.expanded, buildIxonV2Compression]
+  · intro i hiLeft hiRight
+    have hi : i < exprs.size := by
+      simpa [Compression.expanded, buildIxonV2Compression] using hiLeft
+    have heFree : shareFree exprs[i] = true :=
+      (Array.all_eq_true.mp hfree) i hi
+    simpa [Compression.expanded, buildIxonV2Compression, reps] using
+      inlineExpr_rewriteWith_buildTable reps exprs[i] hrepsSize hreps heFree
+
 /-! ## Exact serializer-priced audit -/
 
 /-- Replace a deleted index by its entry and shift every later index down. The
@@ -769,6 +873,56 @@ theorem compressCertified_table_size_le (input : Array Expr) :
   · exact compressUnchecked_table_size_le input
   · simp [identityCompression]
 
+/-! ## Exact pinned ixon-v2 recognizer -/
+
+/-- Reproduce the pinned upstream ixon-v2 compressor and certify the
+safety-critical table invariant plus exact inline recovery.  This is an
+external-format recognizer, not Compilatrix's local compressor. -/
+def compressIxonV2? (exprs : Array Expr) : Option Compression :=
+  if !exprs.all shareFree then none
+  else
+    let out := buildIxonV2Compression exprs
+    if _hstructural : structuralWF out.table out.bodies = true then
+      if _hindex : out.table.size < UInt64.size then
+        if _hinline : out.expanded = exprs then some out
+        else none
+      else none
+    else none
+
+/-- Exact-image predicate for external constants written by the pinned
+upstream ixon-v2 compressor. -/
+def ixonV2Canonical (bodies table : Array Expr) : Bool :=
+  if !structuralWF table bodies then false
+  else
+    let expanded := bodies.map (inlineExpr table)
+    match compressIxonV2? expanded with
+    | some out => decide (out.bodies = bodies ∧ out.table = table)
+    | none => false
+
+theorem inline_compressIxonV2 (input : Array Expr) (out : Compression)
+    (h : compressIxonV2? input = some out) :
+    out.expanded = input := by
+  unfold compressIxonV2? at h
+  split at h <;> simp_all
+  rcases h with ⟨_, _, hinline, rfl⟩
+  exact hinline
+
+theorem structural_compressIxonV2 (input : Array Expr) (out : Compression)
+    (h : compressIxonV2? input = some out) :
+    structuralWF out.table out.bodies = true := by
+  unfold compressIxonV2? at h
+  split at h <;> simp_all
+  rcases h with ⟨hstructural, _, _, rfl⟩
+  exact hstructural
+
+theorem ixonV2Canonical_compress (input : Array Expr) (out : Compression)
+    (h : compressIxonV2? input = some out) :
+    ixonV2Canonical out.bodies out.table = true := by
+  have hstructural := structural_compressIxonV2 input out h
+  have hinline := inline_compressIxonV2 input out h
+  change out.bodies.map (inlineExpr out.table) = input at hinline
+  simp [ixonV2Canonical, hstructural, hinline, h]
+
 /-- Public compressor. Share-freedom is enforced at the API boundary, and the
 result is accepted only when layer 1, the exact audit postcondition, and exact
 inline recovery all hold. The last check is stated as propositional equality so
@@ -795,6 +949,121 @@ def canonical (bodies table : Array Expr) : Bool :=
     match compress? expanded with
     | some out => decide (out.bodies = bodies ∧ out.table = table)
     | none => false
+
+/-! ## Resource-bounded executable boundaries -/
+
+/-- Inclusive structural limits for content-address canonicalization.  The
+compressor cap is intentionally much tighter than the wire-size cap: the
+frozen collision-safe policy performs repeated structural comparisons and an
+exact deletion audit. -/
+structure ResourceLimits where
+  maxLayer1NodeVisits : Nat := 16 * 1024 * 1024
+  maxCompressionInputUnits : Nat := 4096
+  deriving BEq, DecidableEq, Repr
+
+def defaultResourceLimits : ResourceLimits := {}
+
+/-- Run the public compressor only after a linear input-size preflight. -/
+def compressWithLimit (maxInputUnits : Nat) (exprs : Array Expr) :
+    Except Work.Exceeded (Option Compression) :=
+  match Work.ensure .compressionInputUnits (Work.exprArrayUnits exprs)
+      maxInputUnits with
+  | .error exceeded => .error exceeded
+  | .ok _ => .ok (compress? exprs)
+
+/-- Resource-bounded layer-2 recognizer.  The fully inlined size is computed
+from the backward table without allocating the expanded expression forest;
+only an admitted input reaches `inlineExpr` and the compressor. -/
+def canonicalWith (limits : ResourceLimits) (bodies table : Array Expr) :
+    Except Work.Exceeded Bool :=
+  match Work.ensure .layer1NodeVisits (Work.layer1NodeVisits table bodies)
+      limits.maxLayer1NodeVisits with
+  | .error exceeded => .error exceeded
+  | .ok _ =>
+    match Work.expandedUnits? table bodies with
+    | none => .ok false
+    | some units =>
+      match Work.ensure .compressionInputUnits units
+          limits.maxCompressionInputUnits with
+      | .error exceeded => .error exceeded
+      | .ok _ => .ok (canonical bodies table)
+
+/-- Resource-bounded exact-image recognizer for the pinned upstream ixon-v2
+compressor.  It uses the same conservative expansion and compressor-input
+budgets as the local recognizer. -/
+def ixonV2CanonicalWith (limits : ResourceLimits)
+    (bodies table : Array Expr) : Except Work.Exceeded Bool :=
+  match Work.ensure .layer1NodeVisits (Work.layer1NodeVisits table bodies)
+      limits.maxLayer1NodeVisits with
+  | .error exceeded => .error exceeded
+  | .ok _ =>
+    match Work.expandedUnits? table bodies with
+    | none => .ok false
+    | some units =>
+      match Work.ensure .compressionInputUnits units
+          limits.maxCompressionInputUnits with
+      | .error exceeded => .error exceeded
+      | .ok _ => .ok (ixonV2Canonical bodies table)
+
+def canonicalBounded (bodies table : Array Expr) :
+    Except Work.Exceeded Bool :=
+  canonicalWith defaultResourceLimits bodies table
+
+def ixonV2CanonicalBounded (bodies table : Array Expr) :
+    Except Work.Exceeded Bool :=
+  ixonV2CanonicalWith defaultResourceLimits bodies table
+
+theorem compressWithLimit_sound {maxInputUnits : Nat} {exprs : Array Expr}
+    {out : Option Compression}
+    (h : compressWithLimit maxInputUnits exprs = .ok out) :
+    compress? exprs = out := by
+  unfold compressWithLimit at h
+  cases hbudget : Work.ensure .compressionInputUnits
+      (Work.exprArrayUnits exprs) maxInputUnits with
+  | error exceeded => simp_all
+  | ok result =>
+    cases result
+    simp_all
+
+theorem canonicalWith_true {limits : ResourceLimits}
+    {bodies table : Array Expr}
+    (h : canonicalWith limits bodies table = .ok true) :
+    canonical bodies table = true := by
+  unfold canonicalWith at h
+  cases hlayer : Work.ensure .layer1NodeVisits
+      (Work.layer1NodeVisits table bodies) limits.maxLayer1NodeVisits with
+  | error exceeded => simp_all
+  | ok layerResult =>
+    cases layerResult
+    cases hexpanded : Work.expandedUnits? table bodies with
+    | none => simp_all
+    | some units =>
+      cases hcompression : Work.ensure .compressionInputUnits units
+          limits.maxCompressionInputUnits with
+      | error exceeded => simp_all
+      | ok compressionResult =>
+        cases compressionResult
+        simp_all
+
+theorem ixonV2CanonicalWith_true {limits : ResourceLimits}
+    {bodies table : Array Expr}
+    (h : ixonV2CanonicalWith limits bodies table = .ok true) :
+    ixonV2Canonical bodies table = true := by
+  unfold ixonV2CanonicalWith at h
+  cases hlayer : Work.ensure .layer1NodeVisits
+      (Work.layer1NodeVisits table bodies) limits.maxLayer1NodeVisits with
+  | error exceeded => simp_all
+  | ok layerResult =>
+    cases layerResult
+    cases hexpanded : Work.expandedUnits? table bodies with
+    | none => simp_all
+    | some units =>
+      cases hcompression : Work.ensure .compressionInputUnits units
+          limits.maxCompressionInputUnits with
+      | error exceeded => simp_all
+      | ok compressionResult =>
+        cases compressionResult
+        simp_all
 
 /-! ## Executable proof contracts for S4 -/
 

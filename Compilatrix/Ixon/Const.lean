@@ -114,12 +114,12 @@ structure Definition where
   lvls : UInt64
   typ : Expr
   value : Expr
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 structure RecursorRule where
   fields : UInt64
   rhs : Expr
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 structure Recursor where
   k : Bool
@@ -131,7 +131,7 @@ structure Recursor where
   minors : UInt64
   typ : Expr
   rules : Array RecursorRule
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 structure Axiom where
   isUnsafe : Bool
@@ -152,7 +152,7 @@ structure Constructor where
   params : UInt64
   fields : UInt64
   typ : Expr
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 structure Inductive where
   isUnsafe : Bool
@@ -161,7 +161,7 @@ structure Inductive where
   indices : UInt64
   typ : Expr
   ctors : Array Constructor
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 structure InductiveProj where
   idx : UInt64
@@ -188,7 +188,7 @@ inductive MutConst where
   | defn : Definition → MutConst
   | indc : Inductive → MutConst
   | recr : Recursor → MutConst
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 inductive ConstantInfo where
   | defn : Definition → ConstantInfo
@@ -214,6 +214,19 @@ def CONST_IPRJ : UInt64 := 6
 def CONST_DPRJ : UInt64 := 7
 
 end ConstantInfo
+
+/-- Recover the member table used when a constant is entered as its own
+evaluation/checking frame. Standalone definitions and recursors behave as
+singleton blocks; projections, axioms, quotients, and inductive projections
+have no local `recur` members.
+
+This belongs to the constant layer because both the evaluator and the usage
+checker interpret the same serialized `ConstantInfo` shape. -/
+def selfMutsOf : ConstantInfo → Array MutConst
+  | .muts members => members
+  | .defn definition => #[.defn definition]
+  | .recr recursor => #[.recr recursor]
+  | _ => #[]
 
 /-- A top-level constant with sharing, refs, and univs tables. -/
 structure Constant where
@@ -958,6 +971,114 @@ theorem getDecodedU8_canonical (what : String) (decode : UInt8 → Option α)
       subst byte
       exact getU8_canonical pre rest hb
 
+namespace ModeBits
+
+private theorem nat_lt_eight_cases {i : Nat} (h : i < 8) :
+    i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 := by
+  omega
+
+theorem split_low2 (byte : UInt8) :
+    ((byte >>> 2) <<< 2) ||| (byte &&& 0x3) = byte := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_or, UInt8.toBitVec_and,
+    UInt8.toBitVec_shiftLeft, UInt8.toBitVec_shiftRight,
+    BitVec.getElem_or, BitVec.getElem_and, UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
+private theorem reconstruct_low2 (byte : UInt8) (h : byte < 4) :
+    byte = (byte &&& 1) ||| (byte &&& 2) := by
+  have hbn : byte.toNat < 2 ^ 2 := by
+    simpa [UInt8.lt_iff_toNat_lt] using h
+  have hbit (i : Nat) (hi : i < 8) (h2 : 2 ≤ i) :
+      byte.toBitVec[i] = false := by
+    rw [BitVec.getElem_eq_testBit_toNat]
+    apply Nat.testBit_lt_two_pow
+    exact Nat.lt_of_lt_of_le hbn
+      (Nat.pow_le_pow_of_le (by decide : 1 < 2) h2)
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_or, UInt8.toBitVec_and,
+    BitVec.getElem_or, BitVec.getElem_and, UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  all_goals exact hbit _ (by omega) (by omega)
+
+private theorem and_one_cases (byte : UInt8) :
+    byte &&& 1 = 0 ∨ byte &&& 1 = 1 := by
+  by_cases hb : byte.toBitVec[0] = true
+  · right
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb]
+  · left
+    have hb' : byte.toBitVec[0] = false := by
+      cases hbit : byte.toBitVec[0] <;> simp_all
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb']
+
+private theorem and_two_cases (byte : UInt8) :
+    byte &&& 2 = 0 ∨ byte &&& 2 = 2 := by
+  by_cases hb : byte.toBitVec[1] = true
+  · right
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb]
+  · left
+    have hb' : byte.toBitVec[1] = false := by
+      cases hbit : byte.toBitVec[1] <;> simp_all
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb']
+
+theorem recursor_inverse (byte : UInt8) (k isUnsafe : Bool)
+    (hlt : byte < 4)
+    (hk : (byte &&& 1 != 0) = k)
+    (hu : (byte &&& 2 != 0) = isUnsafe) :
+    byte = recursorModeByte k isUnsafe := by
+  have hr := reconstruct_low2 byte hlt
+  cases k <;> cases isUnsafe
+  · simp at hk hu
+    calc
+      byte = (byte &&& 1) ||| (byte &&& 2) := hr
+      _ = 0 := by rw [hk, hu]; rfl
+      _ = recursorModeByte false false := by rfl
+  · simp at hk hu
+    have htwo := (and_two_cases byte).resolve_left hu
+    calc
+      byte = (byte &&& 1) ||| (byte &&& 2) := hr
+      _ = 2 := by rw [hk, htwo]; rfl
+      _ = recursorModeByte false true := by rfl
+  · simp at hk hu
+    have hone := (and_one_cases byte).resolve_left hk
+    calc
+      byte = (byte &&& 1) ||| (byte &&& 2) := hr
+      _ = 1 := by rw [hone, hu]; rfl
+      _ = recursorModeByte true false := by rfl
+  · simp at hk hu
+    have hone := (and_one_cases byte).resolve_left hk
+    have htwo := (and_two_cases byte).resolve_left hu
+    calc
+      byte = (byte &&& 1) ||| (byte &&& 2) := hr
+      _ = 1 ||| 2 := by rw [hone, htwo]
+      _ = recursorModeByte true true := by rfl
+
+end ModeBits
+
 theorem definitionMode_decode (kind : DefKind) (safety : DefinitionSafety) :
     definitionModeOfByte? (definitionModeByte kind safety) =
       some (kind, safety) := by
@@ -981,7 +1102,7 @@ theorem definitionMode_inverse {byte : UInt8}
     change byte = definitionModeByte kind safety
     simp only [definitionModeByte]
     rw [← hkind', ← hsafety']
-    bv_decide
+    exact (ModeBits.split_low2 byte).symm
   next => contradiction
 
 theorem recursorMode_decode (k isUnsafe : Bool) :
@@ -994,7 +1115,17 @@ theorem recursorMode_inverse {byte : UInt8} {mode : Bool × Bool}
   rcases mode with ⟨k, isUnsafe⟩
   cases k <;> cases isUnsafe <;>
     simp only [recursorModeOfByte?] at h
-  all_goals split at h <;> simp_all [recursorModeByte] <;> bv_decide
+  all_goals split at h <;> simp_all [recursorModeByte]
+  all_goals
+    first
+    | exact ModeBits.recursor_inverse byte false false (by assumption)
+        (by simp_all) (by simp_all)
+    | exact ModeBits.recursor_inverse byte false true (by assumption)
+        (by simp_all) (by simp_all)
+    | exact ModeBits.recursor_inverse byte true false (by assumption)
+        (by simp_all) (by simp_all)
+    | exact ModeBits.recursor_inverse byte true true (by assumption)
+        (by simp_all) (by simp_all)
 
 theorem bool_decode (value : Bool) :
     boolOfByte? (if value then 1 else 0) = some value := by
@@ -1004,7 +1135,7 @@ theorem bool_inverse {byte : UInt8} {value : Bool}
     (h : boolOfByte? byte = some value) :
     byte = if value then 1 else 0 := by
   cases value <;> simp only [boolOfByte?] at h ⊢
-  all_goals split at h <;> simp_all <;> bv_decide
+  all_goals split at h <;> simp_all
 
 theorem quotKind_decode (kind : QuotKind) :
     QuotKind.ofBits? kind.toBits = some kind :=
@@ -1013,7 +1144,7 @@ theorem quotKind_decode (kind : QuotKind) :
 theorem quotKind_inverse {byte : UInt8} {kind : QuotKind}
     (h : QuotKind.ofBits? byte = some kind) : byte = kind.toBits := by
   cases kind <;> simp only [QuotKind.ofBits?] at h
-  all_goals split at h <;> simp_all [QuotKind.toBits] <;> bv_decide
+  all_goals split at h <;> simp_all [QuotKind.toBits]
 
 theorem getDefinitionMode_spec (kind : DefKind) (safety : DefinitionSafety) :
     GetSpec getDefinitionMode
@@ -2504,8 +2635,10 @@ private def addr (b : UInt8) : Address :=
 usage modes in both Π/λ telescopes, both result ownership modes, an
 eight-element application and universe-instantiation spine, the
 large form of Tag0/Tag2/Tag4, and every `Univ` constructor. Public
-(not `private`): the compiled `Tests.lean` executable pins its
-layer-2 `address?` through the real FFI hash path. -/
+(not `private`): the compiled `Tests.lean` executable pins its raw bytes and
+BLAKE3 digest through the real FFI hash path. Its deliberately synthetic local
+indices make it a wire fixture, not a value admitted by the semantic
+`address?` gate. -/
 
 def goldenV2 : Constant :=
   { info := .defn

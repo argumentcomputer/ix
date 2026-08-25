@@ -1,4 +1,4 @@
-import Std.Tactic.BVDecide
+import Std
 
 /-!
 # Ixon serialization primitives
@@ -238,36 +238,58 @@ theorem u64LEList_length (n : Nat) (x : UInt64) :
     (u64LEBytes x n).size = n := by
   simp [u64LEBytes, u64LEList_length]
 
+private theorem u64OfLEList_zero_above (bytes : List UInt8) (i : Nat)
+    (h : 8 * bytes.length ≤ i) :
+    (u64OfLEList bytes).toBitVec.getLsbD i = false := by
+  induction bytes generalizing i with
+  | nil => simp [u64OfLEList]
+  | cons b rest ih =>
+    simp only [u64OfLEList, UInt64.toBitVec_or, UInt64.toBitVec_shiftLeft]
+    simp
+    constructor
+    · intro _
+      exact BitVec.getLsbD_of_ge b.toBitVec i (by
+        simp only [List.length_cons, Nat.mul_add] at h
+        omega)
+    · intro _ hi
+      apply ih
+      simp only [List.length_cons, Nat.mul_add] at h
+      omega
+
+private theorem u64OfLEList_cons_shift (b : UInt8) (rest : List UInt8)
+    (hle : rest.length ≤ 7) :
+    (b.toUInt64 ||| (u64OfLEList rest <<< 8)) >>> 8 =
+      u64OfLEList rest := by
+  apply UInt64.toBitVec_inj.1
+  ext i hi
+  simp only [UInt64.toBitVec_shiftRight, UInt64.toBitVec_or,
+    UInt64.toBitVec_shiftLeft]
+  simp
+  by_cases hlow : i < 56
+  · have hsum : 8 + i < 64 := by omega
+    have h8 : ¬8 + i < 8 := by omega
+    simp [hsum, h8, BitVec.getLsbD, BitVec.getElem_eq_testBit_toNat]
+  · have hz := u64OfLEList_zero_above rest i (by omega)
+    have hz' : (u64OfLEList rest).toBitVec[i] = false := by
+      simpa [BitVec.getLsbD, BitVec.getElem_eq_testBit_toNat] using hz
+    have hsum : ¬8 + i < 64 := by omega
+    simp [hsum, hz']
+
 /-- Re-encoding any list of at most eight little-endian bytes recovers the
-list. The finite-width bit identities are discharged by `bv_decide`. -/
+list. The proof reduces the word operations to kernel-checked bit extensionality. -/
 theorem u64LEList_of_decode (bytes : List UInt8) (hle : bytes.length ≤ 8) :
     u64LEList bytes.length (u64OfLEList bytes) = bytes := by
-  rcases bytes with _ | ⟨b0, bytes⟩
-  · rfl
-  rcases bytes with _ | ⟨b1, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-  rcases bytes with _ | ⟨b2, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-    bv_decide
-  rcases bytes with _ | ⟨b3, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-    bv_decide
-  rcases bytes with _ | ⟨b4, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-    bv_decide
-  rcases bytes with _ | ⟨b5, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-    bv_decide
-  rcases bytes with _ | ⟨b6, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-    bv_decide
-  rcases bytes with _ | ⟨b7, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-    bv_decide
-  rcases bytes with _ | ⟨b8, bytes⟩
-  · simp [u64LEList, u64OfLEList]
-    bv_decide
-  · simp at hle
+  induction bytes with
+  | nil => rfl
+  | cons b rest ih =>
+    simp only [List.length_cons] at hle
+    simp only [List.length_cons, u64LEList, u64OfLEList]
+    rw [show (b.toUInt64 ||| u64OfLEList rest <<< 8).toUInt8 = b by
+      apply UInt8.toBitVec_inj.1
+      simp]
+    rw [u64OfLEList_cons_shift b rest (by omega)]
+    congr 1
+    exact ih (by omega)
 
 /-- Re-encoding any byte array of length at most eight recovers it exactly. -/
 theorem u64LEBytes_of_decode (bytes : ByteArray) (hle : bytes.size ≤ 8) :
@@ -299,44 +321,75 @@ theorem u64ByteCount_le_eight (x : UInt64) : (u64ByteCount x).toNat ≤ 8 := by
   · simp
   split <;> simp
 
+private theorem u64_byte_shift_reconstruct (x : UInt64) :
+    x.toUInt8.toUInt64 ||| ((x >>> 8) <<< 8) = x := by
+  apply UInt64.toBitVec_inj.1
+  ext i hi
+  simp only [UInt64.toBitVec_or, UInt64.toBitVec_shiftLeft,
+    UInt64.toBitVec_shiftRight]
+  simp
+  by_cases hlow : i < 8
+  · simp [hlow, BitVec.getLsbD, BitVec.getElem_eq_testBit_toNat,
+      BitVec.toNat_umod]
+    have hmod := Nat.testBit_mod_two_pow x.toNat 8 i
+    rw [show 2 ^ 8 = 256 by decide] at hmod
+    simpa [hlow] using hmod
+  · have hsum : 8 + (i - 8) = i := by omega
+    simp [hlow, hsum, BitVec.getLsbD,
+      BitVec.getElem_eq_testBit_toNat, BitVec.toNat_umod]
+    have hmod := Nat.testBit_mod_two_pow x.toNat 8 i
+    rw [show 2 ^ 8 = 256 by decide] at hmod
+    rw [hmod]
+    simp [hlow]
+
+private theorem u64OfLEList_u64LEList_of_lt (n : Nat) (x : UInt64)
+    (h : x.toNat < 2 ^ (8 * n)) :
+    u64OfLEList (u64LEList n x) = x := by
+  induction n generalizing x with
+  | zero =>
+    simp only [Nat.mul_zero, Nat.pow_zero] at h
+    simp only [u64LEList, u64OfLEList]
+    apply UInt64.toNat_inj.1
+    simp
+    omega
+  | succ n ih =>
+    simp only [u64LEList, u64OfLEList]
+    rw [ih]
+    · exact u64_byte_shift_reconstruct x
+    · change x.toNat >>> 8 < 2 ^ (8 * n)
+      rw [Nat.shiftRight_eq_div_pow, Nat.div_lt_iff_lt_mul (by decide)]
+      calc
+        x.toNat < 2 ^ (8 * (n + 1)) := h
+        _ = 2 ^ (8 * n) * 2 ^ 8 := by
+          rw [show 8 * (n + 1) = 8 * n + 8 by omega, Nat.pow_add]
+
+private theorem u64ByteCount_toNat_bound (x : UInt64) :
+    x.toNat < 2 ^ (8 * (u64ByteCount x).toNat) := by
+  simp only [u64ByteCount]
+  split
+  · simp_all
+  split
+  · simp_all [UInt64.lt_iff_toNat_lt]
+  split
+  · simp_all [UInt64.lt_iff_toNat_lt]
+  split
+  · simp_all [UInt64.lt_iff_toNat_lt]
+  split
+  · simp_all [UInt64.lt_iff_toNat_lt]
+  split
+  · simp_all [UInt64.lt_iff_toNat_lt]
+  split
+  · simp_all [UInt64.lt_iff_toNat_lt]
+  split
+  · simp_all [UInt64.lt_iff_toNat_lt]
+  · simpa using x.toNat_lt
+
 /-- Decoding the minimal little-endian encoding returns the original u64. -/
 theorem u64OfLEBytes_encoded (x : UInt64) :
     u64OfLEBytes (u64LEBytes x (u64ByteCount x).toNat) = x := by
-  simp only [u64ByteCount]
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
-  split
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
-  · rename_i h
-    simp_all [u64OfLEBytes, u64LEBytes, u64LEList, u64OfLEList]
-    bv_decide
+  simpa [u64OfLEBytes, u64LEBytes] using
+    u64OfLEList_u64LEList_of_lt (u64ByteCount x).toNat x
+      (u64ByteCount_toNat_bound x)
 
 def putBytes (x : ByteArray) : PutM Unit :=
   modify fun s => s.append x
@@ -410,6 +463,485 @@ theorem getU64TrimmedLE_encoded_spec (x : UInt64) :
 field; otherwise the small field holds `byteCount - 1` and the size
 follows in minimal little-endian bytes. -/
 
+namespace HeaderBits
+
+private theorem nat_lt_eight_cases {i : Nat} (h : i < 8) :
+    i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 := by
+  omega
+
+private theorem u8_getElem_false_of_lt_pow (x : UInt8) {k i : Nat}
+    (hi : i < 8) (hlt : x.toNat < 2 ^ k) (hki : k ≤ i) :
+    x.toBitVec[i] = false := by
+  rw [BitVec.getElem_eq_testBit_toNat]
+  apply Nat.testBit_lt_two_pow
+  exact Nat.lt_of_lt_of_le hlt
+    (Nat.pow_le_pow_of_le (by decide : 1 < 2) hki)
+
+private theorem tag0_small_and_low (b : UInt8) (h : b < 128) :
+    b &&& 0x7F = b := by
+  apply UInt8.toNat_inj.1
+  simp only [UInt8.toNat_and]
+  have hb : b.toNat < 2 ^ 7 := by
+    simpa [UInt8.lt_iff_toNat_lt] using h
+  simpa using Nat.and_two_pow_sub_one_of_lt_two_pow hb
+
+private theorem tag0_small_and_high (b : UInt8) (h : b < 128) :
+    b &&& 0x80 = 0 := by
+  have hb : b.toNat < 2 ^ 7 := by
+    simpa [UInt8.lt_iff_toNat_lt] using h
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, BitVec.getElem_and, UInt8.toBitVec_ofNat,
+    BitVec.getElem_zero]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  exact u8_getElem_false_of_lt_pow b (by omega) hb (by omega)
+
+theorem tag0_small (b : UInt8) (h : b < 128) :
+    b &&& 0x80 == 0 ∧ b &&& 0x7F = b := by
+  rw [show b &&& 0x80 = 0 from tag0_small_and_high b h]
+  simp [tag0_small_and_low b h]
+
+theorem tag2_flag (flag payload : UInt8) (hf : flag < 4)
+    (hp : payload < 64) :
+    ((flag <<< 6) ||| payload) >>> 6 = flag := by
+  have hfn : flag.toNat < 2 ^ 2 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hf
+  have hpn : payload.toNat < 2 ^ 6 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hp
+  have hf2 := u8_getElem_false_of_lt_pow flag (i := 2) (by omega) hfn (by omega)
+  have hf3 := u8_getElem_false_of_lt_pow flag (i := 3) (by omega) hfn (by omega)
+  have hf4 := u8_getElem_false_of_lt_pow flag (i := 4) (by omega) hfn (by omega)
+  have hf5 := u8_getElem_false_of_lt_pow flag (i := 5) (by omega) hfn (by omega)
+  have hf6 := u8_getElem_false_of_lt_pow flag (i := 6) (by omega) hfn (by omega)
+  have hf7 := u8_getElem_false_of_lt_pow flag (i := 7) (by omega) hfn (by omega)
+  have hp6 := u8_getElem_false_of_lt_pow payload (i := 6) (by omega) hpn (by omega)
+  have hp7 := u8_getElem_false_of_lt_pow payload (i := 7) (by omega) hpn (by omega)
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_shiftRight, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp [hf2, hf3, hf4, hf5, hf6, hf7, hp6, hp7]
+
+theorem tag2_small_header (flag size : UInt8) (hf : flag < 4)
+    (hs : size < 32) :
+    ((flag <<< 6) ||| size) &&& 0x20 = 0 := by
+  have hfn : flag.toNat < 2 ^ 2 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hf
+  have hsn : size.toNat < 2 ^ 5 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hs
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat, BitVec.getElem_zero]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  exact u8_getElem_false_of_lt_pow size (by omega) hsn (by omega)
+
+theorem tag2_small_size (flag size : UInt8) (hf : flag < 4)
+    (hs : size < 32) :
+    ((flag <<< 6) ||| size) &&& 0x1F = size := by
+  have hfn : flag.toNat < 2 ^ 2 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hf
+  have hsn : size.toNat < 2 ^ 5 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hs
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  all_goals exact u8_getElem_false_of_lt_pow size (by omega) hsn (by omega)
+
+private theorem tag0_large_low (low : UInt8) (h : low < 128) :
+    (0x80 ||| low) &&& 0x7F = low := by
+  have hlow : low.toNat < 2 ^ 7 := by
+    simpa [UInt8.lt_iff_toNat_lt] using h
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    BitVec.getElem_and, BitVec.getElem_or, UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  exact u8_getElem_false_of_lt_pow low (by omega) hlow (by omega)
+
+private theorem tag0_large_bit (low : UInt8) :
+    (0x80 ||| low) &&& 0x80 = 0x80 := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    BitVec.getElem_and, BitVec.getElem_or, UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
+theorem tag0_large (n : UInt8) (hlo : 0 < n) (hhi : n ≤ 8) :
+    ((0x80 ||| (n - 1)) &&& 0x7F) + 1 = n ∧
+      ¬((0x80 ||| (n - 1)) &&& 0x80 == 0) := by
+  have hone : (1 : UInt8) ≤ n := by
+    rw [UInt8.le_iff_toNat_le]
+    have := UInt8.lt_iff_toNat_lt.1 hlo
+    simp only [UInt8.reduceToNat] at this ⊢
+    omega
+  have hn : n - 1 < 128 :=
+    UInt8.lt_of_le_of_lt (UInt8.sub_le hone)
+      (UInt8.lt_of_le_of_lt hhi (by decide))
+  rw [tag0_large_low (n - 1) hn, UInt8.sub_add_cancel,
+    tag0_large_bit]
+  simp
+
+private theorem tag2_large_low (flag low : UInt8) (h : low < 32) :
+    ((flag <<< 6) ||| 0x20 ||| low) &&& 0x1F = low := by
+  have hlow : low.toNat < 2 ^ 5 := by
+    simpa [UInt8.lt_iff_toNat_lt] using h
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  all_goals exact u8_getElem_false_of_lt_pow low (by omega) hlow (by omega)
+
+private theorem tag2_large_bit (flag low : UInt8) :
+    ((flag <<< 6) ||| 0x20 ||| low) &&& 0x20 = 0x20 := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
+theorem tag2_large (flag n : UInt8) (hf : flag < 4)
+    (hlo : 0 < n) (hhi : n ≤ 8) :
+    ((((flag <<< 6) ||| 0x20 ||| (n - 1)) >>> 6) = flag) ∧
+    ((((flag <<< 6) ||| 0x20 ||| (n - 1)) &&& 0x1F) + 1 = n) ∧
+    ¬((((flag <<< 6) ||| 0x20 ||| (n - 1)) &&& 0x20) == 0) := by
+  have hone : (1 : UInt8) ≤ n := by
+    rw [UInt8.le_iff_toNat_le]
+    have := UInt8.lt_iff_toNat_lt.1 hlo
+    simp only [UInt8.reduceToNat] at this ⊢
+    omega
+  have hn32 : n - 1 < 32 :=
+    UInt8.lt_of_le_of_lt (UInt8.sub_le hone)
+      (UInt8.lt_of_le_of_lt hhi (by decide))
+  have hp64 : 0x20 ||| (n - 1) < (64 : UInt8) := by
+    rw [UInt8.lt_iff_toNat_lt, UInt8.toNat_or]
+    simp only [UInt8.reduceToNat]
+    apply Nat.or_lt_two_pow (n := 6) (by decide)
+    have hn : (n - 1).toNat < 32 := by
+      simpa [UInt8.lt_iff_toNat_lt] using hn32
+    omega
+  rw [UInt8.or_assoc, tag2_flag flag (0x20 ||| (n - 1)) hf hp64,
+    ← UInt8.or_assoc, tag2_large_low flag (n - 1) hn32,
+    UInt8.sub_add_cancel, tag2_large_bit]
+  simp
+
+theorem tag4_flag (flag payload : UInt8) (hf : flag < 16)
+    (hp : payload < 16) :
+    ((flag <<< 4) ||| payload) >>> 4 = flag := by
+  have hfn : flag.toNat < 2 ^ 4 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hf
+  have hpn : payload.toNat < 2 ^ 4 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hp
+  have hf4 := u8_getElem_false_of_lt_pow flag (i := 4) (by omega) hfn (by omega)
+  have hf5 := u8_getElem_false_of_lt_pow flag (i := 5) (by omega) hfn (by omega)
+  have hf6 := u8_getElem_false_of_lt_pow flag (i := 6) (by omega) hfn (by omega)
+  have hf7 := u8_getElem_false_of_lt_pow flag (i := 7) (by omega) hfn (by omega)
+  have hp4 := u8_getElem_false_of_lt_pow payload (i := 4) (by omega) hpn (by omega)
+  have hp5 := u8_getElem_false_of_lt_pow payload (i := 5) (by omega) hpn (by omega)
+  have hp6 := u8_getElem_false_of_lt_pow payload (i := 6) (by omega) hpn (by omega)
+  have hp7 := u8_getElem_false_of_lt_pow payload (i := 7) (by omega) hpn (by omega)
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_shiftRight, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp [hf4, hf5, hf6, hf7, hp4, hp5, hp6, hp7]
+
+theorem tag4_small_header (flag size : UInt8) (hs : size < 8) :
+    ((flag <<< 4) ||| size) &&& 0x08 = 0 := by
+  have hsn : size.toNat < 2 ^ 3 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hs
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat, BitVec.getElem_zero]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  exact u8_getElem_false_of_lt_pow size (by omega) hsn (by omega)
+
+theorem tag4_small_size (flag size : UInt8) (hs : size < 8) :
+    ((flag <<< 4) ||| size) &&& 0x07 = size := by
+  have hsn : size.toNat < 2 ^ 3 := by
+    simpa [UInt8.lt_iff_toNat_lt] using hs
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  all_goals exact u8_getElem_false_of_lt_pow size (by omega) hsn (by omega)
+
+private theorem tag4_large_low (flag low : UInt8) (h : low < 8) :
+    ((flag <<< 4) ||| 0x08 ||| low) &&& 0x07 = low := by
+  have hlow : low.toNat < 2 ^ 3 := by
+    simpa [UInt8.lt_iff_toNat_lt] using h
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+  all_goals exact u8_getElem_false_of_lt_pow low (by omega) hlow (by omega)
+
+private theorem tag4_large_bit (flag low : UInt8) :
+    ((flag <<< 4) ||| 0x08 ||| low) &&& 0x08 = 0x08 := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_and, UInt8.toBitVec_or,
+    UInt8.toBitVec_shiftLeft, BitVec.getElem_and, BitVec.getElem_or,
+    UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
+theorem tag4_large (flag n : UInt8) (hf : flag < 16)
+    (hlo : 0 < n) (hhi : n ≤ 8) :
+    ((((flag <<< 4) ||| 0x08 ||| (n - 1)) >>> 4) = flag) ∧
+    ((((flag <<< 4) ||| 0x08 ||| (n - 1)) &&& 0x07) + 1 = n) ∧
+    ¬((((flag <<< 4) ||| 0x08 ||| (n - 1)) &&& 0x08) == 0) := by
+  have hone : (1 : UInt8) ≤ n := by
+    rw [UInt8.le_iff_toNat_le]
+    have := UInt8.lt_iff_toNat_lt.1 hlo
+    simp only [UInt8.reduceToNat] at this ⊢
+    omega
+  have hn8 : n - 1 < 8 :=
+    UInt8.lt_of_lt_of_le (UInt8.sub_lt (by decide) hone) hhi
+  have hp16 : 0x08 ||| (n - 1) < (16 : UInt8) := by
+    rw [UInt8.lt_iff_toNat_lt, UInt8.toNat_or]
+    simp only [UInt8.reduceToNat]
+    apply Nat.or_lt_two_pow (n := 4) (by decide)
+    have hn := UInt8.lt_iff_toNat_lt.1 hn8
+    simp only [UInt8.reduceToNat] at hn ⊢
+    omega
+  rw [UInt8.or_assoc, tag4_flag flag (0x08 ||| (n - 1)) hf hp16,
+    ← UInt8.or_assoc, tag4_large_low flag (n - 1) hn8,
+    UInt8.sub_add_cancel, tag4_large_bit]
+  simp
+
+theorem u64_to_u8_to_u64_of_lt (x : UInt64) (h : x < 256) :
+    x.toUInt8.toUInt64 = x := by
+  apply UInt64.toNat_inj.1
+  simp only [UInt8.toNat_toUInt64, UInt64.toNat_toUInt8]
+  apply Nat.mod_eq_of_lt
+  simpa [UInt64.lt_iff_toNat_lt] using h
+
+theorem u64_to_u8_lt (x : UInt64) (bound : UInt8)
+    (h : x < bound.toUInt64) : x.toUInt8 < bound := by
+  rw [UInt8.lt_iff_toNat_lt]
+  simp only [UInt64.toNat_toUInt8]
+  have hxBound : x.toNat < bound.toNat := by
+    simpa [UInt64.lt_iff_toNat_lt] using h
+  rw [Nat.mod_eq_of_lt (Nat.lt_trans hxBound bound.toNat_lt)]
+  exact hxBound
+
+theorem byteCount_pos_of_ne_zero (x : UInt64) (h : x ≠ 0) :
+    0 < u64ByteCount x := by
+  simp only [u64ByteCount]
+  split
+  · simp_all
+  split
+  · simp
+  split
+  · simp
+  split
+  · simp
+  split
+  · simp
+  split
+  · simp
+  split
+  · simp
+  split <;> simp
+
+private theorem tag0_split (header : UInt8) :
+    (header &&& 0x80) ||| (header &&& 0x7F) = header := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_or, UInt8.toBitVec_and,
+    BitVec.getElem_or, BitVec.getElem_and, UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
+private theorem tag2_split (header : UInt8) :
+    ((header >>> 6) <<< 6) ||| (header &&& 0x20) |||
+      (header &&& 0x1F) = header := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_or, UInt8.toBitVec_and,
+    UInt8.toBitVec_shiftLeft, UInt8.toBitVec_shiftRight,
+    BitVec.getElem_or, BitVec.getElem_and, UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
+private theorem tag4_split (header : UInt8) :
+    ((header >>> 4) <<< 4) ||| (header &&& 0x08) |||
+      (header &&& 0x07) = header := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_or, UInt8.toBitVec_and,
+    UInt8.toBitVec_shiftLeft, UInt8.toBitVec_shiftRight,
+    BitVec.getElem_or, BitVec.getElem_and, UInt8.toBitVec_ofNat]
+  rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
+private theorem tag0_high_cases (header : UInt8) :
+    header &&& 0x80 = 0 ∨ header &&& 0x80 = 0x80 := by
+  by_cases hb : header.toBitVec[7] = true
+  · right
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb]
+  · left
+    have hb' : header.toBitVec[7] = false := by
+      cases hbit : header.toBitVec[7] <;> simp_all
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb']
+
+private theorem tag2_high_cases (header : UInt8) :
+    header &&& 0x20 = 0 ∨ header &&& 0x20 = 0x20 := by
+  by_cases hb : header.toBitVec[5] = true
+  · right
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb]
+  · left
+    have hb' : header.toBitVec[5] = false := by
+      cases hbit : header.toBitVec[5] <;> simp_all
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb']
+
+private theorem tag4_high_cases (header : UInt8) :
+    header &&& 0x08 = 0 ∨ header &&& 0x08 = 0x08 := by
+  by_cases hb : header.toBitVec[3] = true
+  · right
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb]
+  · left
+    have hb' : header.toBitVec[3] = false := by
+      cases hbit : header.toBitVec[3] <;> simp_all
+    apply UInt8.toBitVec_inj.1
+    ext i hi
+    simp only [UInt8.toBitVec_and, BitVec.getElem_and,
+      UInt8.toBitVec_ofNat]
+    rcases nat_lt_eight_cases hi with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [hb']
+
+private theorem tag0_mask_bound (header : UInt8) :
+    header.toUInt64 &&& 0x7F < 128 := by
+  rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_and]
+  simp only [UInt8.toNat_toUInt64, UInt64.reduceToNat]
+  exact Nat.and_lt_two_pow (n := 7) header.toNat (by decide)
+
+private theorem tag2_mask_bound (header : UInt8) :
+    header.toUInt64 &&& 0x1F < 32 := by
+  rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_and]
+  simp only [UInt8.toNat_toUInt64, UInt64.reduceToNat]
+  exact Nat.and_lt_two_pow (n := 5) header.toNat (by decide)
+
+private theorem tag4_mask_bound (header : UInt8) :
+    header.toUInt64 &&& 0x07 < 8 := by
+  rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_and]
+  simp only [UInt8.toNat_toUInt64, UInt64.reduceToNat]
+  exact Nat.and_lt_two_pow (n := 3) header.toNat (by decide)
+
+theorem tag0_canonical (header : UInt8) :
+    (header &&& 0x80 == 0 →
+      (header.toUInt64 &&& 0x7F) < 128 ∧
+      (header.toUInt64 &&& 0x7F).toUInt8 = header) ∧
+    (¬(header &&& 0x80 == 0) → 0x80 ||| (header &&& 0x7F) = header) := by
+  constructor
+  · intro hsmall
+    have hm : header &&& 0x80 = 0 := by simpa using hsmall
+    have hlow : header &&& 0x7F = header := by
+      have hsplit := tag0_split header
+      rw [hm] at hsplit
+      simpa using hsplit
+    exact ⟨tag0_mask_bound header, by simpa using hlow⟩
+  · intro hlarge
+    have hne : header &&& 0x80 ≠ 0 := by simpa using hlarge
+    have hm : header &&& 0x80 = 0x80 :=
+      (tag0_high_cases header).resolve_left hne
+    have hsplit := tag0_split header
+    rw [hm] at hsplit
+    exact hsplit
+
+theorem tag2_canonical (header : UInt8) :
+    (header &&& 0x20 == 0 →
+      (header.toUInt64 &&& 0x1F) < 32 ∧
+      ((header >>> 6) <<< 6) ||| (header &&& 0x1F) = header) ∧
+    (¬(header &&& 0x20 == 0) →
+      ((header >>> 6) <<< 6) ||| 0x20 ||| (header &&& 0x1F) = header) := by
+  constructor
+  · intro hsmall
+    have hm : header &&& 0x20 = 0 := by simpa using hsmall
+    have hsplit := tag2_split header
+    rw [hm] at hsplit
+    exact ⟨tag2_mask_bound header, by simpa using hsplit⟩
+  · intro hlarge
+    have hne : header &&& 0x20 ≠ 0 := by simpa using hlarge
+    have hm : header &&& 0x20 = 0x20 :=
+      (tag2_high_cases header).resolve_left hne
+    have hsplit := tag2_split header
+    rw [hm] at hsplit
+    exact hsplit
+
+theorem tag4_canonical (header : UInt8) :
+    (header &&& 0x08 == 0 →
+      (header.toUInt64 &&& 0x07) < 8 ∧
+      ((header >>> 4) <<< 4) ||| (header &&& 0x07) = header) ∧
+    (¬(header &&& 0x08 == 0) →
+      ((header >>> 4) <<< 4) ||| 0x08 ||| (header &&& 0x07) = header) := by
+  constructor
+  · intro hsmall
+    have hm : header &&& 0x08 = 0 := by simpa using hsmall
+    have hsplit := tag4_split header
+    rw [hm] at hsplit
+    exact ⟨tag4_mask_bound header, by simpa using hsplit⟩
+  · intro hlarge
+    have hne : header &&& 0x08 ≠ 0 := by simpa using hlarge
+    have hm : header &&& 0x08 = 0x08 :=
+      (tag4_high_cases header).resolve_left hne
+    have hsplit := tag4_split header
+    rw [hm] at hsplit
+    exact hsplit
+
+end HeaderBits
+
 structure Tag0 where
   size : UInt64
   deriving BEq, Repr
@@ -459,11 +991,16 @@ theorem getTag0_encoded_spec (t : Tag0) : GetSpec getTag0 (tag0Bytes t) t := by
     simp only [getTag0, StateT.run_bind]
     rw [getU8_spec size.toUInt8 pre suffix]
     simp only [bind, Except.bind]
+    have hs8 : size.toUInt8 < 128 :=
+      HeaderBits.u64_to_u8_lt size 128 (by simpa using hs)
+    obtain ⟨hheader, hlow⟩ := HeaderBits.tag0_small size.toUInt8 hs8
     have hheader : size.toUInt8 &&& 0x80 == 0 := by
-      bv_decide
+      exact hheader
     rw [if_pos hheader]
     have hvalue : (size.toUInt8 &&& 0x7F).toUInt64 = size := by
-      bv_decide
+      rw [hlow]
+      exact HeaderBits.u64_to_u8_to_u64_of_lt size
+        (UInt64.lt_trans hs (by decide))
     simp [hvalue, u8Bytes]
     rfl
   · simp only [tag0Bytes, hs, if_false]
@@ -484,27 +1021,17 @@ theorem getTag0_encoded_spec (t : Tag0) : GetSpec getTag0 (tag0Bytes t) t := by
     simp only [getTag0, StateT.run_bind]
     rw [hhead]
     simp only [bind, Except.bind]
-    have hn : (header &&& 0x7F) + 1 = n := by
-      dsimp [header, n]
-      simp only [u64ByteCount]
-      split
-      · simp_all
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split <;> bv_decide
-    have hlarge : ¬(header &&& 0x80 == 0) := by
-      dsimp [header]
-      bv_decide
+    have hne : size ≠ 0 := by
+      intro hzero
+      subst size
+      simp at hs
+    have hnle : n ≤ 8 := by
+      rw [UInt8.le_iff_toNat_le]
+      exact u64ByteCount_le_eight size
+    obtain ⟨hn, hlarge⟩ := HeaderBits.tag0_large n
+      (by simpa [n] using HeaderBits.byteCount_pos_of_ne_zero size hne) hnle
+    change (header &&& 0x7F) + 1 = n at hn
+    change ¬(header &&& 0x80 == 0) at hlarge
     rw [if_neg hlarge]
     rw [hn]
     dsimp only [n]
@@ -581,15 +1108,21 @@ theorem getTag2_encoded_spec (t : Tag2) (hflag : t.flag < 4) :
     simp only [getTag2, StateT.run_bind]
     rw [getU8_spec header pre suffix]
     simp only [bind, Except.bind]
+    have hs8 : size.toUInt8 < 32 :=
+      HeaderBits.u64_to_u8_lt size 32 (by simpa using hs)
     have hdecodedFlag : header >>> 6 = flag := by
       dsimp [header]
-      bv_decide
+      exact HeaderBits.tag2_flag flag size.toUInt8 hflag
+        (UInt8.lt_trans hs8 (by decide))
     have hheader : header &&& 0x20 == 0 := by
       dsimp [header]
-      bv_decide
+      rw [HeaderBits.tag2_small_header flag size.toUInt8 hflag hs8]
+      decide
     have hvalue : (header &&& 0x1F).toUInt64 = size := by
       dsimp [header]
-      bv_decide
+      rw [HeaderBits.tag2_small_size flag size.toUInt8 hflag hs8]
+      exact HeaderBits.u64_to_u8_to_u64_of_lt size
+        (UInt64.lt_trans hs (by decide))
     rw [hdecodedFlag, if_pos hheader, hvalue]
     simp [u8Bytes]
     rfl
@@ -611,46 +1144,19 @@ theorem getTag2_encoded_spec (t : Tag2) (hflag : t.flag < 4) :
     simp only [getTag2, StateT.run_bind]
     rw [hhead]
     simp only [bind, Except.bind]
-    have hdecodedFlag : header >>> 6 = flag := by
-      dsimp [header, n]
-      simp only [u64ByteCount]
-      split
-      · simp_all
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split <;> bv_decide
+    have hne : size ≠ 0 := by
+      intro hzero
+      subst size
+      simp at hs
+    have hnle : n ≤ 8 := by
+      rw [UInt8.le_iff_toNat_le]
+      exact u64ByteCount_le_eight size
+    obtain ⟨hdecodedFlag, hn, hlarge⟩ := HeaderBits.tag2_large flag n hflag
+      (by simpa [n] using HeaderBits.byteCount_pos_of_ne_zero size hne) hnle
+    change header >>> 6 = flag at hdecodedFlag
+    change (header &&& 0x1F) + 1 = n at hn
+    change ¬(header &&& 0x20 == 0) at hlarge
     rw [hdecodedFlag]
-    have hn : (header &&& 0x1F) + 1 = n := by
-      dsimp [header, n]
-      simp only [u64ByteCount]
-      split
-      · simp_all
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split <;> bv_decide
-    have hlarge : ¬(header &&& 0x20 == 0) := by
-      dsimp [header]
-      bv_decide
     rw [if_neg hlarge, hn]
     dsimp only [n]
     let next : UInt64 → GetM Tag2 := fun decoded => do
@@ -726,15 +1232,21 @@ theorem getTag4_encoded_spec (t : Tag4) (hflag : t.flag < 16) :
     simp only [getTag4, StateT.run_bind]
     rw [getU8_spec header pre suffix]
     simp only [bind, Except.bind]
+    have hs8 : size.toUInt8 < 8 :=
+      HeaderBits.u64_to_u8_lt size 8 (by simpa using hs)
     have hdecodedFlag : header >>> 4 = flag := by
       dsimp [header]
-      bv_decide
+      exact HeaderBits.tag4_flag flag size.toUInt8 hflag
+        (UInt8.lt_trans hs8 (by decide))
     have hheader : header &&& 0x08 == 0 := by
       dsimp [header]
-      bv_decide
+      rw [HeaderBits.tag4_small_header flag size.toUInt8 hs8]
+      decide
     have hvalue : (header &&& 0x07).toUInt64 = size := by
       dsimp [header]
-      bv_decide
+      rw [HeaderBits.tag4_small_size flag size.toUInt8 hs8]
+      exact HeaderBits.u64_to_u8_to_u64_of_lt size
+        (UInt64.lt_trans hs (by decide))
     rw [hdecodedFlag, if_pos hheader, hvalue]
     simp [u8Bytes]
     rfl
@@ -756,46 +1268,19 @@ theorem getTag4_encoded_spec (t : Tag4) (hflag : t.flag < 16) :
     simp only [getTag4, StateT.run_bind]
     rw [hhead]
     simp only [bind, Except.bind]
-    have hdecodedFlag : header >>> 4 = flag := by
-      dsimp [header, n]
-      simp only [u64ByteCount]
-      split
-      · simp_all
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split <;> bv_decide
+    have hne : size ≠ 0 := by
+      intro hzero
+      subst size
+      simp at hs
+    have hnle : n ≤ 8 := by
+      rw [UInt8.le_iff_toNat_le]
+      exact u64ByteCount_le_eight size
+    obtain ⟨hdecodedFlag, hn, hlarge⟩ := HeaderBits.tag4_large flag n hflag
+      (by simpa [n] using HeaderBits.byteCount_pos_of_ne_zero size hne) hnle
+    change header >>> 4 = flag at hdecodedFlag
+    change (header &&& 0x07) + 1 = n at hn
+    change ¬(header &&& 0x08 == 0) at hlarge
     rw [hdecodedFlag]
-    have hn : (header &&& 0x07) + 1 = n := by
-      dsimp [header, n]
-      simp only [u64ByteCount]
-      split
-      · simp_all
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split
-      · bv_decide
-      split <;> bv_decide
-    have hlarge : ¬(header &&& 0x08 == 0) := by
-      dsimp [header]
-      bv_decide
     rw [if_neg hlarge, hn]
     dsimp only [n]
     let next : UInt64 → GetM Tag4 := fun decoded => do
@@ -936,13 +1421,12 @@ theorem getTag0_canonical : GetCanonical getTag0 tag0Bytes := by
     by_cases hsmall : header &&& 0x80 == 0
     · simp [hsmall] at h
       cases h
-      have hsize : header.toUInt64 &&& 0x7F < 128 := by
-        bv_decide
+      obtain ⟨hsize, hheader8⟩ :=
+        (HeaderBits.tag0_canonical header).1 hsmall
       have hcanonical :
           tag0Bytes ⟨header.toUInt64 &&& 0x7F⟩ = u8Bytes header := by
         simp only [tag0Bytes, hsize, if_pos]
-        rw [show (header.toUInt64 &&& 0x7F).toUInt8 = header by
-          bv_decide]
+        rw [hheader8]
       refine ⟨afterHead, ?_, ?_⟩
       · simpa [hcanonical] using hrest
       · simp [headPre, hrest, hcanonical, ByteArray.append_assoc]
@@ -978,9 +1462,7 @@ theorem getTag0_canonical : GetCanonical getTag0 tag0Bytes := by
             obtain ⟨suffix, hafterHead, hafterPayload⟩ :=
               getU64TrimmedLE_canonical ((header &&& 0x7F) + 1).toNat
                 headPre afterHead hp
-            have hheader8 :
-                0x80 ||| (header &&& 0x7F) = header := by
-              bv_decide
+            have hheader8 := (HeaderBits.tag0_canonical header).2 hsmall
             refine ⟨suffix, ?_, ?_⟩
             · rw [hrest, hafterHead]
               simp [tag0Bytes, hsize, hcountEq, hheader8,
@@ -1012,11 +1494,8 @@ theorem getTag2_canonical : GetCanonical getTag2 tag2Bytes := by
     by_cases hsmall : header &&& 0x20 == 0
     · simp [hsmall] at h
       cases h
-      have hsize : (header.toUInt64 &&& 0x1F) < 32 := by
-        bv_decide
-      have hheader8 :
-          ((header >>> 6) <<< 6) ||| (header &&& 0x1F) = header := by
-        bv_decide
+      obtain ⟨hsize, hheader8⟩ :=
+        (HeaderBits.tag2_canonical header).1 hsmall
       refine ⟨afterHead, ?_, ?_⟩
       · rw [hrest]
         simp [tag2Bytes, hsize, hheader8]
@@ -1055,10 +1534,7 @@ theorem getTag2_canonical : GetCanonical getTag2 tag2Bytes := by
             obtain ⟨suffix, hafterHead, hafterPayload⟩ :=
               getU64TrimmedLE_canonical ((header &&& 0x1F) + 1).toNat
                 headPre afterHead hp
-            have hheader8 :
-                ((header >>> 6) <<< 6) ||| 0x20 |||
-                    (header &&& 0x1F) = header := by
-              bv_decide
+            have hheader8 := (HeaderBits.tag2_canonical header).2 hsmall
             refine ⟨suffix, ?_, ?_⟩
             · rw [hrest, hafterHead]
               simp [tag2Bytes, hsize, hcountEq, hheader8,
@@ -1091,11 +1567,8 @@ theorem getTag4_canonical : GetCanonical getTag4 tag4Bytes := by
     by_cases hsmall : header &&& 0x08 == 0
     · simp [hsmall] at h
       cases h
-      have hsize : (header.toUInt64 &&& 0x07) < 8 := by
-        bv_decide
-      have hheader8 :
-          ((header >>> 4) <<< 4) ||| (header &&& 0x07) = header := by
-        bv_decide
+      obtain ⟨hsize, hheader8⟩ :=
+        (HeaderBits.tag4_canonical header).1 hsmall
       refine ⟨afterHead, ?_, ?_⟩
       · rw [hrest]
         simp [tag4Bytes, hsize, hheader8]
@@ -1133,10 +1606,7 @@ theorem getTag4_canonical : GetCanonical getTag4 tag4Bytes := by
             obtain ⟨suffix, hafterHead, hafterPayload⟩ :=
               getU64TrimmedLE_canonical ((header &&& 0x07) + 1).toNat
                 headPre afterHead hp
-            have hheader8 :
-                ((header >>> 4) <<< 4) ||| 0x08 |||
-                    (header &&& 0x07) = header := by
-              bv_decide
+            have hheader8 := (HeaderBits.tag4_canonical header).2 hsmall
             refine ⟨suffix, ?_, ?_⟩
             · rw [hrest, hafterHead]
               simp [tag4Bytes, hsize, hcountEq, hheader8,

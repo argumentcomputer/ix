@@ -8,8 +8,9 @@ proved through a certified identity fallback. Canonical inlined identity now
 corresponds to address identity on the exact wire-representable domain under an
 explicit pairwise BLAKE3 no-collision premise. Successful evaluation is also
 proved invariant under full inlining for layer-1-valid stores and constants.
-The pinned ix Lean/Rust corpus, intentional v2 deltas, and policy fingerprint
-are frozen. Last reviewed 2026-08-14.
+The pinned ix Lean/Rust corpus, intentional local-policy deltas, external exact-
+image recognizer, and both policy identifiers are frozen. Corpus-facing checks
+have structural work budgets. Last reviewed 2026-08-25.
 
 Ixon addresses compressed constants, not fully unfolded expression trees.
 That is coherent only if accepted sharing tables cannot arbitrarily change the
@@ -35,12 +36,18 @@ them. `ConstantInfo.exprs` in
 of every expression-bearing payload, including all mutual-block members,
 constructors, and recursor rules.
 
-The constant decoder fails closed on each rule. Positive and negative guards
-cover nested backward references, body overflow, self-reference, forward
-reference, bare aliases, dead entries, and singleton entries. Raw `Constant`
-values remain constructible so those rejection fixtures can be serialized;
-accordingly, the constant roundtrip obligation is restricted to
-`Constant.sharingWF` values.
+The local constant decoder fails closed on each rule. Positive and negative
+guards cover nested backward references, body overflow, self-reference,
+forward reference, bare aliases, dead entries, and singleton entries. Raw
+`Constant` values remain constructible so those rejection fixtures can be
+serialized; accordingly, the local constant roundtrip obligation is
+restricted to `Constant.sharingWF` values.
+
+`Sharing.structuralWF` names rules 1–3 without the direct-use profitability
+rule. The pinned ix compressor can retain a nested entry with one direct use
+after sharing its parent, so external catalog parsing uses this common safety
+core and then requires exact upstream recompression. It does not weaken
+`layer1WF` or make structural well-formedness alone an identity predicate.
 
 ## Inlining
 
@@ -79,7 +86,10 @@ inlined, and its result is exactly `Value.inlineSharing` of the original value.
 recursive reference resolution and recursor rule dispatch. These theorems need
 only decoder-level sharing well-formedness, not layer-2 compressor canonicality:
 canonical spelling determines identity, while layer 1 is enough to preserve
-semantics. Erasure composition reuses this result with the existing share-free
+semantics. The inlined context retains the configured quotient identity map;
+configured quotient heads are structurally unchanged, and a saturated
+`quotV` recursively inlines its stored representative. Erasure composition
+reuses this result with the existing share-free
 simulation instead of adding `.share` to `PErase`. It is implemented by
 `erasure_sim_inlineSharing`; sharing-aware executable
 certificates check the original eraser output against the inlined relation.
@@ -94,6 +104,24 @@ expression exposes only `Expr.serializedHash` from `Hash.lean`: expression
 table indices have meaning inside a constant frame, so that hash is explicitly
 a local cache key rather than a semantic object address.
 
+`address?` is the transparent theorem-facing predicate for Compilatrix's local
+policy. Constructed local values at an executable trust boundary use
+`Constant.addressChecked` or `addressCheckedWith`: wire and local checks run
+first, then the fully inlined compressor-input size is computed from backward
+table-entry sizes without allocating that expansion. Only admitted values
+enter exact local recompression and BLAKE3. Failures distinguish wire, local-
+semantic, structural-resource, and noncanonical-sharing cases. The exact
+counters and defaults live in the [structural budget policy](resource-budgets.md);
+`Constant.addressCheckedWith_sound` proves that every success is wire-valid,
+locally accepted, locally canonically shared, and exactly BLAKE3 of `ser`.
+
+Production ix catalogs use the parallel
+`Constant.addressIxonV2Checked[With]` boundary. It preserves the stored address
+only after wire/local validation and exact recompression by the pinned ix
+policy. Its soundness theorem yields `Sharing.ixonV2Canonical` rather than the
+stronger local `Constant.canonicalSharing`; no normalization or whole-store
+readdressing occurs.
+
 Layer 1 is necessary but not sufficient for canonical term identity. Two
 different, profitable, acyclic tables can still inline to the same bodies.
 
@@ -106,13 +134,15 @@ the deterministic compressor and defines:
 canonical constant := compress (inline constant) == constant
 ```
 
-The parity baseline inspected for this port is ix commit
-`c98bb74106017e518c705b2567f022e89f732393`, `Ix/Sharing.lean`. Deliberate v2
-deltas are the mode-bearing node preimages, structural rather than pointer
-keys, the telescope-maximal filter, and the final exact-byte audit.
-[`sharing-policy.md`](sharing-policy.md) records the reproducible upstream
-runner, exact six-case vectors, the two reviewed deltas, and policy fingerprint
-`8c712eab0db958befe94bda3a40998debe172243dd5771f62d0cd915074f5097` under
+The v2 capture baseline is ix commit
+`6f18ea907b78d06f7dc0917c43beb385561c35f4`, `Ix/Sharing.lean`. Four directed
+cases agree exactly. Two reviewed local strictness deltas remain: structural
+rather than pointer keys plus the telescope-maximal filter and final
+exact-byte audit remove nested entries that ix retains.
+[`sharing-policy.md`](sharing-policy.md) records the clean-archive Lean/Rust
+capture, literal constant and six-case byte vectors, the two reviewed deltas,
+and policy fingerprint
+`19aa227e6be89cbabef37366bdc3a48fcf1d8f856892054511ae6b6fcf1db4ce` under
 policy id `compilatrix/ixon-v2-sharing/1`.
 
 The port uses structural representatives as analysis keys; BLAKE3 affects only
@@ -133,13 +163,45 @@ determinism, and exact recompression over a varied structural corpus.
 
 `canonical bodies table` inlines, recompresses, and requires exact body/table
 equality. `Constant.canonicalSharing` applies that definition to the frozen
-`ConstantInfo.exprs` order, and `Constant.address?` is gated by it.
+`ConstantInfo.exprs` order. `Constant.address?` additionally requires
+`DecodeCheck.checkedWF`, so exact sharing alone cannot give a malformed or
+wire-truncating constructed value an identity.
+
+The raw `compress?`/`canonical` definitions remain the proof surface.
+`compressWithLimit` caps stored compressor input units, while `canonicalWith`
+first caps the quadratic layer-1 charge and the computed fully expanded input.
+Its default 4096-unit compressor cap is intentionally much tighter than the
+wire sequence limit because candidate discovery, structural deduplication,
+ordering, rewriting, and the deletion audit repeatedly compare syntax.
+Compiled regressions pin exact-boundary acceptance and one-below rejection,
+including a linear stored sharing chain with exponentially growing expansion.
 
 `canonical_components` exposes the exact successful compressor result hidden
 inside that boolean recognizer. From it,
 `canonical_eq_of_expanded_eq` proves that two canonical body/table pairs with
 the same expansion have identical bodies and identical tables. This is the
 collision-independent uniqueness result for the sharing layer itself.
+
+### Pinned ix exact-image recognizer
+
+External catalog identity uses a second deterministic construction, identified
+as
+`ix/ixon-v2-sharing@6f18ea907b78d06f7dc0917c43beb385561c35f4`.
+`decideIxonV2Sharing` reproduces upstream's candidate rule, including its
+per-AST-node effective-size estimate (which overestimates flattened
+application/lambda/forall spines), with neither the local maximal-telescope
+filter nor the deletion audit. `compressIxonV2?` certifies structural safety
+and exact inline recovery; `ixonV2Canonical` accepts only its exact body/table
+image.
+
+The construction still keys representatives structurally and uses canonical
+expression bytes to break digest ties, so a BLAKE3 collision does not authorize
+an expression substitution. Exact-image recognition, rather than the weaker
+direct-use condition, prevents alternate acyclic sharing spellings from
+minting addresses. All six clean-archive vectors match the captured ix output,
+and the bounded Std fixture exercises the path over 54 production constants.
+See [`sharing-policy.md`](sharing-policy.md) and
+[`corpus-contact.md`](corpus-contact.md).
 
 ## Canonical semantic identity
 
@@ -157,16 +219,18 @@ These pieces yield two constant-level results:
   constants with equal `InlinedView`s are equal as raw constants. This direction
   requires no hash assumption.
 - `Constant.inlinedView_eq_iff_address?_eq`: for two `Constant.Addressable`
-  values—defined as `wireWF` plus exact canonical sharing—inlined-view equality
-  is equivalent to equality of `address?` results, provided
+  values—defined as exact canonical sharing plus the checked writer's
+  wire-representability and local-semantic domain—inlined-view equality is
+  equivalent to equality of `address?` results, provided
   `Address.Blake3NoCollision (ser left) (ser right)`.
 
 `Blake3NoCollision` is deliberately pair-specific: it says only that equality
 of the two actual digests implies equality of those two preimages. It is an
 explicit theorem premise, not a new axiom and not the impossible claim that a
 fixed 256-bit digest is globally injective. The reverse direction then uses
-the proved conditional `Constant.roundtripLaw`; canonical sharing itself
-implies the decoder-enforced `sharingWF` premise.
+the proved conditional `Constant.roundtripLaw`; `checkedWF` supplies
+`wireWF`, while canonical sharing itself implies the decoder-enforced
+`sharingWF` premise.
 
 `compress?` is a proof-producing validation boundary: after running the raw
 heuristic it checks layer 1, deletion-local optimality, and propositional
@@ -217,10 +281,22 @@ trusted correctness path.
 | S2a | evaluator commutes with full inlining on successful layer-1-valid runs | proved for all six mutual functions, closed evaluation, and definition constants |
 | S2b | sharing factors through the share-free erasure simulation | proved for general and closed evaluation; exact-output program/expression certificates included |
 | S3 | deterministic v2 compressor + exact deletion audit | done: recovery, audit fixpoint, index bound, certified totality, ix vectors, reviewed v2 deltas, and policy fingerprint |
+| S3x | exact pinned-ix external compressor image | done: structural recovery theorems, effective-size parity, six exact vectors, and 54-constant production contact |
 | S4 | checked inline recovery and exact `canonical` recognizer | public recovery, idempotence, and totality theorems proved |
 | S5 | canonical inlined equality corresponds to address equality, modulo BLAKE3 assumptions | proved for `Constant.Addressable`, with an explicit pairwise `Blake3NoCollision` premise |
 
-Reference/universe/self-member table-index validation is a separate decoder
-robustness item. Layer 1 closes sharing cycles and sharing-based address
-splitting; it does not claim that every other table index is semantically
-well-formed.
+Reference/universe/self-member table-index validation remains separate from
+sharing. It is implemented by `DecodeCheck.decodeChecked` for local-policy
+bytes and `decodeIxonV2Checked` for pinned-ix bytes; both address gates require
+their corresponding local checker. Sharing structure itself closes cycles; an
+exact policy image closes sharing-based address splitting, and neither claims
+that every other table index is semantically well-formed. Cross-constant
+member metadata belongs to store ingestion.
+
+One proof-surface distinction remains explicit. Existing evaluator/inlining
+and erasure theorems consume the stronger local `sharingWF`, so an externally
+loaded constant that is only `structuralWF` does not automatically inhabit
+those theorem APIs even though the executable pipeline can safely resolve its
+backward table. Bridging those proofs to the common structural invariant, or
+proving an address-preserving whole-store policy conversion, is separate work;
+catalog ingress does not claim it by fiat.

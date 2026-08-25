@@ -490,6 +490,19 @@ theorem owned_byte_eq_of_decode {mb : UInt8} {o : Owned}
   cases o <;> simp only [Owned.ofBits?] at h
   all_goals split at h <;> simp_all [Owned.toBits]
 
+private theorem u8_split_low2 (byte : UInt8) :
+    ((byte >>> 2) <<< 2) ||| (byte &&& 0x3) = byte := by
+  apply UInt8.toBitVec_inj.1
+  ext i hi
+  simp only [UInt8.toBitVec_or, UInt8.toBitVec_and,
+    UInt8.toBitVec_shiftLeft, UInt8.toBitVec_shiftRight,
+    BitVec.getElem_or, BitVec.getElem_and, UInt8.toBitVec_ofNat]
+  have hiCases :
+      i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 := by
+    omega
+  rcases hiCases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp
+
 theorem getLamMode_spec (u : Uses) :
     GetSpec getLamMode (lamModeBytes u) u := by
   intro pre suffix
@@ -541,15 +554,15 @@ theorem getLamMode_canonical : GetCanonical getLamMode lamModeBytes := by
         by simpa [lamModeBytes] using hstate⟩
 
 theorem all_mode_byte_eq_of_decode {mb : UInt8} {u : Uses} {o : Owned}
-    (hlt : mb < 8)
+    (_hlt : mb < 8)
     (hu : Uses.ofBits? (mb &&& 0x3) = some u)
     (ho : Owned.ofBits? (mb >>> 2) = some o) :
     mb = allModeByte u o := by
   have hu' := uses_byte_eq_of_decode hu
   have ho' := owned_byte_eq_of_decode ho
-  cases u <;> cases o <;>
-    simp [allModeByte, Uses.toBits, Owned.toBits] at hu' ho' ⊢ <;>
-    bv_decide
+  change mb = u.toBits ||| (o.toBits <<< 2)
+  rw [← hu', ← ho']
+  exact (u8_split_low2 mb).symm.trans (UInt8.or_comm _ _)
 
 theorem getAllMode_canonical :
     GetCanonical getAllMode (fun mode => allModeBytes mode.1 mode.2) := by
@@ -583,7 +596,13 @@ theorem getAllMode_canonical :
           simp [hu, ho] at h
           cases h
           obtain ⟨suffix, hrest, hstate⟩ := getU8_canonical pre rest hb
-          have hlt : mb < 8 := by bv_decide
+          have hlt : mb < 8 := by
+            rw [UInt8.lt_iff_toNat_lt]
+            change mb.toNat < 8
+            have hbad' : ¬(8 : UInt8) ≤ mb := hbad
+            rw [UInt8.le_iff_toNat_le] at hbad'
+            change ¬8 ≤ mb.toNat at hbad'
+            omega
           have hmb := all_mode_byte_eq_of_decode hlt hu ho
           subst mb
           exact ⟨suffix, by simpa [allModeBytes] using hrest,
@@ -2018,7 +2037,16 @@ theorem getExprTag_let_canonical (recur : GetM Expr)
   cases hfinish
   have hencodedSize : (if nonDep then 1 else 0) = size := by
     dsimp [nonDep]
-    bv_decide
+    have hsize' : ¬1 < size.toNat := by
+      simpa [UInt64.lt_iff_toNat_lt] using hsize
+    have hcases : size.toNat = 0 ∨ size.toNat = 1 := by omega
+    rcases hcases with hzero | hone
+    · have : size = 0 := UInt64.toNat_inj.1 (by simpa using hzero)
+      subst size
+      rfl
+    · have : size = 1 := UInt64.toNat_inj.1 (by simpa using hone)
+      subst size
+      rfl
   let payload := exprBytes ty ++ exprBytes val ++ exprBytes body
   refine ⟨payload, suffix, ?_, ?_, ?_⟩
   · simp [payload, hrestTy, hrestVal, hrestBody,

@@ -1,7 +1,7 @@
 /-!
 # The usage algebra
 
-First real module of Compilatr.ix: the `Uses` semiring and `Owned`
+First real module of Compilatr.ix: the `Uses` algebra and `Owned`
 result modes that Ixon v2 binders (`all`, `lam`) carry as data. Design
 rationale lives in the (untracked) `plans/substructural-types.md` and
 `plans/Uses.lean`; the short version:
@@ -56,6 +56,11 @@ def mul : Uses → Uses → Uses
   | .linear, u | u, .linear => u
   | .affine, .affine => .affine
   | _, _ => .many
+
+/- `mul` is retained as the specification algebra needed by the future theory
+bridge. Executable CBV checking invokes it only with the `.erased` grade via
+`UsageCheck.UseVec.zeroScale`; using nonzero multiplication to compose closure
+captures would be unsound before one-shot closure multiplicities exist. -/
 
 instance : Mul Uses := ⟨mul⟩
 

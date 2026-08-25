@@ -3,8 +3,8 @@ import Compilatrix.Ixon.Expr
 /-!
 # Sharing-table invariants and inlining
 
-The cheap structural layer of canonical Ixon sharing. A decoded table is
-accepted only when:
+The cheap structural layer of canonical Ixon sharing. Compilatrix's local
+policy accepts a decoded table only when:
 
 1. every body reference is in bounds;
 2. entry `i` references only entries `< i`;
@@ -15,7 +15,10 @@ The first three rules make left-to-right inlining total and rule out cycles.
 The fourth rejects dead/single-use entries, which a canonical compressor never
 emits and which otherwise mint distinct addresses for the same inlined term.
 Exact compressor-image canonicality is the next layer; it is deliberately not
-claimed here.
+claimed here.  The pinned upstream ixon-v2 compressor can leave a nested entry
+with one direct use after sharing its parent.  `structuralWF` names the common
+first three rules so external ix artifacts can be checked against that exact
+compressor without weakening the stricter local `layer1WF` policy.
 -/
 
 namespace Compilatrix.Ixon.Sharing
@@ -63,6 +66,13 @@ def entriesUsedTwice (table bodies : Array Expr) : Bool :=
       (fun total e => total + countShare i e) 0
     let inBodies := bodies.foldl (fun total e => total + countShare i e) 0
     inEntries + inBodies ≥ 2
+
+/-- The safety-critical sharing invariant common to Compilatrix and the
+pinned upstream ixon-v2 compressor: entries are backward-only and non-alias,
+and every body reference is in bounds.  Unlike `layer1WF`, this intentionally
+does not impose a direct-use-count policy. -/
+def structuralWF (table bodies : Array Expr) : Bool :=
+  tableWF table && bodies.all (sharesBelow table.size)
 
 /-- All four cheap sharing-table rules. -/
 def layer1WF (table bodies : Array Expr) : Bool :=

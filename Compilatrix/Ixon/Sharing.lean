@@ -1,6 +1,8 @@
 import Compilatrix.Ixon.Sharing.Basic
 import Compilatrix.Ixon.Sharing.Compress
 import Compilatrix.Ixon.Const
+import Compilatrix.Ixon.DecodeCheck
+import Compilatrix.Ixon.Work
 
 /-!
 # Canonical sharing
@@ -91,11 +93,129 @@ namespace Compilatrix.Ixon
 def Constant.canonicalSharing (c : Constant) : Bool :=
   Sharing.canonical c.info.exprs.toArray c.sharing
 
-/-- Content address of an exactly recompression-canonical constant. Raw and
-merely layer-1 constants remain serializable for decoder fixtures but cannot
-cross the semantic identity boundary through this API. -/
+/-- Content address of an exactly recompression-canonical, checked constant.
+Raw, merely layer-1, count-truncating, or locally malformed constants remain
+serializable for codec fixtures but cannot cross this identity boundary. -/
 def Constant.address? (c : Constant) : Option Address :=
-  if c.canonicalSharing then some (.blake3 (ser c)) else none
+  if c.canonicalSharing && DecodeCheck.checkedWF c then
+    some (.blake3 (ser c))
+  else none
+
+/-- Resource policy for constructed constants entering the semantic address
+boundary.  Local validation and exact recompression have separate limits
+because both execute the layer-1 predicate. -/
+structure Constant.AddressLimits where
+  ingress : DecodeCheck.Limits := {}
+  sharing : Sharing.ResourceLimits := {}
+  deriving BEq, DecidableEq, Repr
+
+def Constant.defaultAddressLimits : Constant.AddressLimits := {}
+
+inductive Constant.AddressError where
+  | wireNotRepresentable
+  | invalid (error : DecodeCheck.Error)
+  | resource (exceeded : Work.Exceeded)
+  | nonCanonicalSharing
+  deriving BEq, DecidableEq, Repr
+
+/-- Corpus-facing constructed-value address boundary.  It checks wire/local
+validity first, computes sharing-expansion size without allocating it, and
+only then runs exact recompression and BLAKE3.  `address?` remains the
+transparent proof-facing predicate. -/
+def Constant.addressCheckedWith (limits : Constant.AddressLimits)
+    (c : Constant) : Except Constant.AddressError Address :=
+  if !DecodeCheck.wireConstantWF c then
+    .error .wireNotRepresentable
+  else
+    match DecodeCheck.checkConstantWith limits.ingress c with
+    | .error error => .error (.invalid error)
+    | .ok _ =>
+      match Sharing.canonicalWith limits.sharing c.info.exprs.toArray
+          c.sharing with
+      | .error exceeded => .error (.resource exceeded)
+      | .ok false => .error .nonCanonicalSharing
+      | .ok true => .ok (.blake3 (ser c))
+
+def Constant.addressChecked (c : Constant) :
+    Except Constant.AddressError Address :=
+  c.addressCheckedWith Constant.defaultAddressLimits
+
+/-- Address boundary for bytes produced by the pinned upstream ixon-v2
+writer.  It preserves the upstream address exactly while admitting only the
+deterministic upstream compressor image; Compilatrix's stronger local sharing
+policy and `addressCheckedWith` remain unchanged. -/
+def Constant.addressIxonV2CheckedWith (limits : Constant.AddressLimits)
+    (c : Constant) : Except Constant.AddressError Address :=
+  if !DecodeCheck.wireConstantWF c then
+    .error .wireNotRepresentable
+  else
+    match DecodeCheck.checkIxonV2ConstantWith limits.ingress c with
+    | .error error => .error (.invalid error)
+    | .ok _ =>
+      match Sharing.ixonV2CanonicalWith limits.sharing c.info.exprs.toArray
+          c.sharing with
+      | .error exceeded => .error (.resource exceeded)
+      | .ok false => .error .nonCanonicalSharing
+      | .ok true => .ok (.blake3 (ser c))
+
+def Constant.addressIxonV2Checked (c : Constant) :
+    Except Constant.AddressError Address :=
+  c.addressIxonV2CheckedWith Constant.defaultAddressLimits
+
+theorem Constant.addressCheckedWith_sound {limits : Constant.AddressLimits}
+    {c : Constant} {address : Address}
+    (h : c.addressCheckedWith limits = .ok address) :
+    c.wireWF ∧ DecodeCheck.checkConstant c = .ok () ∧
+      c.canonicalSharing = true ∧ address = .blake3 (ser c) := by
+  unfold Constant.addressCheckedWith at h
+  split at h
+  · contradiction
+  · rename_i hwire
+    have hwire' : DecodeCheck.wireConstantWF c = true := by
+      simpa using hwire
+    cases hcheck : DecodeCheck.checkConstantWith limits.ingress c with
+    | error error => simp [hcheck] at h
+    | ok result =>
+      cases result
+      cases hcanonical : Sharing.canonicalWith limits.sharing
+          c.info.exprs.toArray c.sharing with
+      | error exceeded => simp [hcheck, hcanonical] at h
+      | ok canonical =>
+        cases canonical with
+        | false => simp [hcheck, hcanonical] at h
+        | true =>
+          simp [hcheck, hcanonical] at h
+          exact ⟨(DecodeCheck.wireConstantWF_eq_true_iff c).mp hwire',
+            DecodeCheck.checkConstant_of_checkConstantWith hcheck,
+            Sharing.canonicalWith_true hcanonical, h.symm⟩
+
+theorem Constant.addressIxonV2CheckedWith_sound
+    {limits : Constant.AddressLimits} {c : Constant} {address : Address}
+    (h : c.addressIxonV2CheckedWith limits = .ok address) :
+    c.wireWF ∧ DecodeCheck.checkIxonV2Constant c = .ok () ∧
+      Sharing.ixonV2Canonical c.info.exprs.toArray c.sharing = true ∧
+      address = .blake3 (ser c) := by
+  unfold Constant.addressIxonV2CheckedWith at h
+  split at h
+  · contradiction
+  · rename_i hwire
+    have hwire' : DecodeCheck.wireConstantWF c = true := by
+      simpa using hwire
+    cases hcheck : DecodeCheck.checkIxonV2ConstantWith limits.ingress c with
+    | error error => simp [hcheck] at h
+    | ok result =>
+      cases result
+      cases hcanonical : Sharing.ixonV2CanonicalWith limits.sharing
+          c.info.exprs.toArray c.sharing with
+      | error exceeded => simp [hcheck, hcanonical] at h
+      | ok canonical =>
+        cases canonical with
+        | false => simp [hcheck, hcanonical] at h
+        | true =>
+          simp [hcheck, hcanonical] at h
+          exact ⟨(DecodeCheck.wireConstantWF_eq_true_iff c).mp hwire',
+            DecodeCheck.checkIxonV2Constant_of_checkIxonV2ConstantWith hcheck,
+            Sharing.ixonV2CanonicalWith_true hcanonical, h.symm⟩
 
 /-! ## Canonical semantic identity -/
 
@@ -451,16 +571,6 @@ def ConstantInfo.mapExprs (f : Expr → Expr)
     (info : ConstantInfo) : ConstantInfo :=
   ConstantIdentityLaws.mapInfo f info
 
-namespace Address
-
-/-- The exact pairwise cryptographic premise used by semantic-address
-theorems. It deliberately does not assert impossible global injectivity of a
-fixed-width hash. -/
-def Blake3NoCollision (left right : ByteArray) : Prop :=
-  Address.blake3 left = Address.blake3 right → left = right
-
-end Address
-
 namespace ConstantInfo
 
 /-- All non-expression fields and expression-slot structure, represented by
@@ -501,10 +611,10 @@ def inlinedView (c : Constant) : InlinedView :=
     refs := c.refs
     univs := c.univs }
 
-/-- The domain on which serialization is injective and the layer-2 address
-gate accepts the sharing representation. -/
+/-- The exact executable address-gate domain: layer-2 canonical sharing plus
+the checked writer's wire and local-semantic domain. -/
 def Addressable (c : Constant) : Prop :=
-  c.wireWF ∧ c.canonicalSharing = true
+  c.canonicalSharing = true ∧ DecodeCheck.checkedWF c = true
 
 theorem sharingWF_of_canonicalSharing (c : Constant)
     (h : c.canonicalSharing = true) : c.sharingWF = true := by
@@ -552,15 +662,17 @@ theorem eq_of_address?_eq (left right : Constant)
     (hcollision : Address.Blake3NoCollision (ser left) (ser right))
     (haddress : left.address? = right.address?) : left = right := by
   have hhash : Address.blake3 (ser left) = Address.blake3 (ser right) := by
-    simpa [address?, hleft.2, hright.2] using haddress
+    simpa [address?, hleft.1, hleft.2, hright.1, hright.2] using haddress
   have hbytes := hcollision hhash
-  exact eq_of_ser_eq left right hleft.1 hright.1
-    (sharingWF_of_canonicalSharing left hleft.2)
-    (sharingWF_of_canonicalSharing right hright.2) hbytes
+  exact eq_of_ser_eq left right
+    (DecodeCheck.wireWF_of_checkedWF hleft.2)
+    (DecodeCheck.wireWF_of_checkedWF hright.2)
+    (sharingWF_of_canonicalSharing left hleft.1)
+    (sharingWF_of_canonicalSharing right hright.1) hbytes
 
-/-- On wire-representable, layer-2-canonical constants, equality of fully
-inlined semantics is equivalent to equality of addresses, modulo the exact
-pairwise BLAKE3 no-collision premise. -/
+/-- On locally checked, wire-representable, layer-2-canonical constants,
+equality of fully inlined semantics is equivalent to equality of addresses,
+modulo the exact pairwise BLAKE3 no-collision premise. -/
 theorem inlinedView_eq_iff_address?_eq (left right : Constant)
     (hleft : left.Addressable) (hright : right.Addressable)
     (hcollision : Address.Blake3NoCollision (ser left) (ser right)) :
@@ -568,7 +680,7 @@ theorem inlinedView_eq_iff_address?_eq (left right : Constant)
   constructor
   · intro hview
     have heq := eq_of_inlinedView_eq_of_canonicalSharing left right
-      hleft.2 hright.2 hview
+      hleft.1 hright.1 hview
     subst right
     rfl
   · intro haddress

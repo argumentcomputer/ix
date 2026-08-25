@@ -150,8 +150,8 @@ A complete `Constant` is:
 3. reference count + 32-byte addresses;
 4. universe count + universes.
 
-After parsing the sharing table, the decoder enforces its layer-1 semantic
-invariant:
+After parsing the sharing table, Compilatrix's local decoder enforces its
+layer-1 semantic invariant:
 
 - every body `.share` is in bounds;
 - entry `i` references only entries `< i`;
@@ -168,6 +168,93 @@ expensive check deliberately remains outside byte decoding.
 `shareFree_inlineExpr_of_layer1` proves that inlining any accepted embedded
 body eliminates every `.share`; `inlineBodies_shareFree` packages that result
 for a complete constant.
+
+### Checked constant ingress
+
+`de` is the local proof-facing wire decoder: it establishes canonical syntax,
+full consumption, and Compilatrix sharing layer 1. Wire-law fixtures
+intentionally continue to use it. Locally produced untrusted constant bytes
+instead enter through `DecodeCheck.decodeChecked` in
+`Compilatrix/Ixon/DecodeCheck.lean`. Its parser uses the same strict tag/mode
+primitives and canonical spine rules, then validates every evaluator-visible
+local index on fully inlined roots.
+
+Production catalog bytes use the parallel
+`DecodeCheck.decodeIxonV2Checked[With]` path. Pinned ix can retain a nested
+entry with one direct use after sharing its parent, so this parser requires the
+common structural rules—backward-only non-alias entries and in-bounds body
+references—without imposing Compilatrix's direct-use rule. The later address
+gate requires exact recompression by the pinned ix policy; structural validity
+alone never grants identity. Both paths share the exact wire parser, resource
+guards, and local semantic checks.
+
+The default per-constant resource policy admits at most 64 MiB, 512 nested
+expression or universe nodes, 4096 elements in any counted array,
+universe-argument vector, or flattened app/λ/Π run, and 16,777,216 charged
+node/list visits in the quadratic sharing-layer check. `decodeCheckedWith` and
+`decodeIxonV2CheckedWith` accept the same explicit `DecodeCheck.Limits`.
+Counts are rejected before loops or allocation; counted arrays and flattened
+runs are decoded iteratively, while recursive descent consumes the explicit
+nesting budget. After parsing, the linear `Ixon.Work` preflight rejects
+excessive sharing work before either the local direct-use check or the external
+exact-image boundary. Exact-boundary tests and truncated hostile headers pin
+each failure mode. Raw `de` stays available for proofs and controlled fixtures
+but is not the catalog-ingress API. The formulas and defaults are recorded in
+the [structural budget policy](resource-budgets.md).
+
+The checked layer validates ref/str/nat and projection-type indices against
+the refs table; sort and reference/recur universe arguments against the
+universe table; every used `Univ.var` against the owning definition,
+recursor, axiom, quotient, inductive, or constructor `lvls`; and `recur`
+against the current mutual-block size. It also rejects recursors unless:
+
+```text
+type leading-Π count = params + motives + minors + indices + 1 major
+rule leading-λ count = params + motives + minors + rule.fields
+```
+
+Ix collapses singleton recursive blocks to standalone `.defn` or `.recr`
+constants without rewriting their self reference, so those two standalone
+forms are checked with self bound 1 and may contain `.recur 0`. Other
+standalone forms have self bound 0.
+
+`DecodeCheck.Error` preserves low-level parser text under `syntax` and gives
+resource and post-decode failures data-bearing constructors, including the
+stable metric/actual/limit triple for structural work and the
+standalone or mutual-member expression-root site where applicable.
+Cross-constant projection/member coherence requires a resolver and is enforced
+after catalog union construction by `Catalog.validateStore`: blocks must
+resolve to mutual constants, member kinds and indices must agree, constructor
+indices must be in range, and every stored constructor `cidx` must equal its
+array position. See the [catalog ingress specification](catalog-ingress.md).
+
+Constructed constants use `DecodeCheck.encodeChecked`, not raw `ser`, at a
+trust boundary. The executable `wireConstantWF` predicate is proved equivalent
+to `Constant.wireWF` through every nested constant variant; `encodeChecked`
+then combines that exact count-representability check with the same bounded
+local semantic validator used by ingress. `encodeCheckedWith` accepts an
+explicit policy; `encodeChecked_sound` proves that every
+successful result is `ser` of a `wireWF` constant accepted by
+`checkConstant`. Raw `ser` remains available for proofs and deliberately
+malformed codec fixtures.
+
+The local semantic identity API applies both sides of this boundary:
+`Constant.address?` requires exact Compilatrix layer-2 sharing and
+`DecodeCheck.checkedWF`, which is the executable wire/local domain. Thus a
+constructed value cannot obtain an address through u64 count truncation or a
+bad local table index. External catalog values use
+`Constant.addressIxonV2Checked[With]`, which requires the exact pinned-ix
+compressor image and hashes their stored serialization without normalization.
+Runtime tests retain raw hashes for upstream synthetic wire fixtures while
+proving that malformed fixtures are not addressable through either semantic
+gate.
+
+The deterministic runtime fuzz corpus serializes every positive constant
+variant, tries every strict prefix, every single-byte low-bit flip, and two
+trailing-byte mutations, then adds 4096 seeded random byte strings of up to
+256 bytes. The process completing establishes the no-crash guard; whenever
+`decodeChecked` accepts, both `ser` and `encodeChecked` must reproduce the
+input byte-for-byte.
 
 Nested payloads are:
 
@@ -200,7 +287,8 @@ decoders accept.
 At the semantic identity boundary, `Constant.InlinedView` records the
 non-expression constant shape, fully inlined bodies, refs, and universes.
 Exact layer-2 sharing makes this view injective. On `Constant.Addressable`
-values (`wireWF` plus canonical sharing),
+values (canonical sharing plus `DecodeCheck.checkedWF`, hence exact `wireWF`
+and local validity),
 `Constant.inlinedView_eq_iff_address?_eq` relates view equality to address
 equality under an explicit pairwise `Address.Blake3NoCollision` premise; no
 global hash-injectivity axiom is assumed.
