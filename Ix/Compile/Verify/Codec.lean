@@ -439,6 +439,402 @@ theorem getTag2_reads (flag : UInt8) (size : UInt64)
       getTag2_reads_small flag size hflag hsize
   · exact getTag2_reads_large flag size hflag hsize
 
+/-! ### Full `Tag0` and `Tag4` primitives -/
+
+/-- Exact bytes emitted by a production `Tag0`, including its trimmed
+    large-size payload. -/
+def tag0Bytes (size : UInt64) : ByteArray :=
+  if size < 128 then
+    [size.toUInt8].toByteArray
+  else
+    let byteCount := Ixon.u64ByteCount size
+    [(0x80 ||| (byteCount - 1))].toByteArray ++
+      trimmedBytes size byteCount.toNat
+
+theorem putTag0_writes (size : UInt64) :
+    Writes (Ixon.putTag0 ⟨size⟩) (tag0Bytes size) := by
+  unfold Ixon.putTag0 tag0Bytes
+  split
+  · exact putU8_writes _
+  · exact (putU8_writes _).bind (putU64TrimmedLE_writes size)
+
+private theorem uint64_cases128 (size : UInt64) (h : size < 128) :
+    size = 0 ∨
+    size = 1 ∨
+    size = 2 ∨
+    size = 3 ∨
+    size = 4 ∨
+    size = 5 ∨
+    size = 6 ∨
+    size = 7 ∨
+    size = 8 ∨
+    size = 9 ∨
+    size = 10 ∨
+    size = 11 ∨
+    size = 12 ∨
+    size = 13 ∨
+    size = 14 ∨
+    size = 15 ∨
+    size = 16 ∨
+    size = 17 ∨
+    size = 18 ∨
+    size = 19 ∨
+    size = 20 ∨
+    size = 21 ∨
+    size = 22 ∨
+    size = 23 ∨
+    size = 24 ∨
+    size = 25 ∨
+    size = 26 ∨
+    size = 27 ∨
+    size = 28 ∨
+    size = 29 ∨
+    size = 30 ∨
+    size = 31 ∨
+    size = 32 ∨
+    size = 33 ∨
+    size = 34 ∨
+    size = 35 ∨
+    size = 36 ∨
+    size = 37 ∨
+    size = 38 ∨
+    size = 39 ∨
+    size = 40 ∨
+    size = 41 ∨
+    size = 42 ∨
+    size = 43 ∨
+    size = 44 ∨
+    size = 45 ∨
+    size = 46 ∨
+    size = 47 ∨
+    size = 48 ∨
+    size = 49 ∨
+    size = 50 ∨
+    size = 51 ∨
+    size = 52 ∨
+    size = 53 ∨
+    size = 54 ∨
+    size = 55 ∨
+    size = 56 ∨
+    size = 57 ∨
+    size = 58 ∨
+    size = 59 ∨
+    size = 60 ∨
+    size = 61 ∨
+    size = 62 ∨
+    size = 63 ∨
+    size = 64 ∨
+    size = 65 ∨
+    size = 66 ∨
+    size = 67 ∨
+    size = 68 ∨
+    size = 69 ∨
+    size = 70 ∨
+    size = 71 ∨
+    size = 72 ∨
+    size = 73 ∨
+    size = 74 ∨
+    size = 75 ∨
+    size = 76 ∨
+    size = 77 ∨
+    size = 78 ∨
+    size = 79 ∨
+    size = 80 ∨
+    size = 81 ∨
+    size = 82 ∨
+    size = 83 ∨
+    size = 84 ∨
+    size = 85 ∨
+    size = 86 ∨
+    size = 87 ∨
+    size = 88 ∨
+    size = 89 ∨
+    size = 90 ∨
+    size = 91 ∨
+    size = 92 ∨
+    size = 93 ∨
+    size = 94 ∨
+    size = 95 ∨
+    size = 96 ∨
+    size = 97 ∨
+    size = 98 ∨
+    size = 99 ∨
+    size = 100 ∨
+    size = 101 ∨
+    size = 102 ∨
+    size = 103 ∨
+    size = 104 ∨
+    size = 105 ∨
+    size = 106 ∨
+    size = 107 ∨
+    size = 108 ∨
+    size = 109 ∨
+    size = 110 ∨
+    size = 111 ∨
+    size = 112 ∨
+    size = 113 ∨
+    size = 114 ∨
+    size = 115 ∨
+    size = 116 ∨
+    size = 117 ∨
+    size = 118 ∨
+    size = 119 ∨
+    size = 120 ∨
+    size = 121 ∨
+    size = 122 ∨
+    size = 123 ∨
+    size = 124 ∨
+    size = 125 ∨
+    size = 126 ∨
+    size = 127 := by
+  simp only [← UInt64.toNat_inj, UInt64.lt_iff_toNat_lt,
+    UInt64.toNat_ofNat] at h ⊢
+  omega
+
+theorem tag0_small_fields (size : UInt64) (hsize : size < 128) :
+    size.toUInt8 &&& 0x80 = 0 ∧
+      (size.toUInt8 &&& 0x7f).toUInt64 = size := by
+  rcases uint64_cases128 size hsize with
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    decide
+
+theorem getTag0_reads_small (size : UInt64) (hsize : size < 128) :
+    Reads Ixon.getTag0 [size.toUInt8].toByteArray ⟨size⟩ := by
+  intro before after
+  unfold Ixon.getTag0
+  change (EStateM.bind Ixon.getU8 _) _ = _
+  rw [EStateM.bind, getU8_reads _ before after]
+  obtain ⟨hlarge, hdecodedSize⟩ := tag0_small_fields size hsize
+  simp only [hlarge]
+  change (EStateM.bind (EStateM.pure _) _) _ = _
+  simp only [EStateM.bind, EStateM.pure]
+  change (EStateM.pure _) _ = _
+  simp [EStateM.pure, hdecodedSize]
+
+theorem tag0_large_fields (byteCount : UInt8)
+    (hpos : 0 < byteCount.toNat) (hle : byteCount.toNat ≤ 8) :
+    let header := 0x80 ||| (byteCount - 1)
+    header &&& 0x80 = 0x80 ∧
+      (header &&& 0x7f).toNat + 1 = byteCount.toNat := by
+  rcases uint8_cases1_8 byteCount hpos hle with
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    decide
+
+theorem getTag0_reads_large (size : UInt64) (hsize : ¬ size < 128) :
+    Reads Ixon.getTag0 (tag0Bytes size) ⟨size⟩ := by
+  let byteCount := Ixon.u64ByteCount size
+  let header := 0x80 ||| (byteCount - 1)
+  have hsizeNat : 128 ≤ size.toNat := by
+    simp only [UInt64.lt_iff_toNat_lt, UInt64.toNat_ofNat] at hsize
+    omega
+  have hcountPos : 0 < byteCount.toNat := by
+    apply Nat.pos_of_ne_zero
+    intro hzero
+    have hfit := u64ByteCount_fits size
+    simp only [byteCount, hzero, Nat.mul_zero, Nat.pow_zero] at hfit
+    omega
+  have hcountLe : byteCount.toNat ≤ 8 := u64ByteCount_toNat_le size
+  obtain ⟨hlarge, hdecodedLen⟩ :=
+    tag0_large_fields byteCount hcountPos hcountLe
+  have hheader : Reads Ixon.getU8 [header].toByteArray header :=
+    getU8_reads header
+  have hsizeRead := getU64TrimmedLE_reads size
+  have hreturn : Reads
+      (pure (⟨size⟩ : Ixon.Tag0) : Ixon.GetM Ixon.Tag0)
+      ByteArray.empty ⟨size⟩ := Reads.pure _
+  have hafterSize : Reads
+      (do
+        let decoded ← Ixon.getU64TrimmedLE byteCount.toNat
+        return (⟨decoded⟩ : Ixon.Tag0))
+      (trimmedBytes size byteCount.toNat) ⟨size⟩ := by
+    simpa [byteCount] using Reads.bind
+      (next := fun decoded : UInt64 =>
+        (pure (⟨decoded⟩ : Ixon.Tag0) : Ixon.GetM Ixon.Tag0))
+      hsizeRead hreturn
+  have hlargeNe : header &&& 0x80 ≠ 0 := by
+    rw [hlarge]
+    decide
+  have hdecodedLen' : (header.toNat &&& 0x7f) + 1 = byteCount.toNat := by
+    simpa [header] using hdecodedLen
+  have htail : Reads
+      (do
+        let large := header &&& 0x80 != 0
+        let small := header &&& 0x7f
+        let decodedSize ← if large then
+          Ixon.getU64TrimmedLE (small.toNat + 1)
+        else
+          pure small.toUInt64
+        return (⟨decodedSize⟩ : Ixon.Tag0))
+      (trimmedBytes size byteCount.toNat) ⟨size⟩ := by
+    simpa [hlargeNe, hdecodedLen'] using hafterSize
+  have hall := Reads.bind
+    (next := fun b : UInt8 => do
+      let large := b &&& 0x80 != 0
+      let small := b &&& 0x7f
+      let decodedSize ← if large then
+        Ixon.getU64TrimmedLE (small.toNat + 1)
+      else
+        pure small.toUInt64
+      return (⟨decodedSize⟩ : Ixon.Tag0))
+    hheader htail
+  simpa [Ixon.getTag0, tag0Bytes, hsize, byteCount, header] using hall
+
+/-- Full production `Tag0` read law for every `UInt64` size. -/
+theorem getTag0_reads (size : UInt64) :
+    Reads Ixon.getTag0 (tag0Bytes size) ⟨size⟩ := by
+  by_cases hsize : size < 128
+  · simpa [tag0Bytes, hsize] using getTag0_reads_small size hsize
+  · exact getTag0_reads_large size hsize
+
+private theorem uint8_cases16 (flag : UInt8) (h : flag < 16) :
+    flag = 0 ∨ flag = 1 ∨ flag = 2 ∨ flag = 3 ∨
+    flag = 4 ∨ flag = 5 ∨ flag = 6 ∨ flag = 7 ∨
+    flag = 8 ∨ flag = 9 ∨ flag = 10 ∨ flag = 11 ∨
+    flag = 12 ∨ flag = 13 ∨ flag = 14 ∨ flag = 15 := by
+  simp only [← UInt8.toNat_inj, UInt8.lt_iff_toNat_lt,
+    UInt8.toNat_ofNat] at h ⊢
+  omega
+
+/-- Exact bytes emitted by a production `Tag4`, including its trimmed
+    large-size payload. -/
+def tag4Bytes (flag : UInt8) (size : UInt64) : ByteArray :=
+  if size < 8 then
+    [((flag <<< 4) ||| size.toUInt8)].toByteArray
+  else
+    let byteCount := Ixon.u64ByteCount size
+    [((flag <<< 4) ||| 0x08 ||| (byteCount - 1))].toByteArray ++
+      trimmedBytes size byteCount.toNat
+
+theorem putTag4_writes (flag : UInt8) (size : UInt64) :
+    Writes (Ixon.putTag4 ⟨flag, size⟩) (tag4Bytes flag size) := by
+  unfold Ixon.putTag4 tag4Bytes
+  split
+  · exact putU8_writes _
+  · exact (putU8_writes _).bind (putU64TrimmedLE_writes size)
+
+private theorem uint64_cases8 (size : UInt64) (h : size < 8) :
+    size = 0 ∨ size = 1 ∨ size = 2 ∨ size = 3 ∨
+    size = 4 ∨ size = 5 ∨ size = 6 ∨ size = 7 := by
+  simp only [← UInt64.toNat_inj, UInt64.lt_iff_toNat_lt,
+    UInt64.toNat_ofNat] at h ⊢
+  omega
+
+theorem tag4_small_fields (flag : UInt8) (size : UInt64)
+    (hflag : flag < 16) (hsize : size < 8) :
+    (((flag <<< 4) ||| size.toUInt8) >>> 4) = flag ∧
+    (((flag <<< 4) ||| size.toUInt8) &&& 0x08) = 0 ∧
+    ((((flag <<< 4) ||| size.toUInt8) &&& 0x07).toUInt64) = size := by
+  rcases uint8_cases16 flag hflag with
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    rcases uint64_cases8 size hsize with
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    decide
+
+theorem getTag4_reads_small (flag : UInt8) (size : UInt64)
+    (hflag : flag < 16) (hsize : size < 8) :
+    Reads Ixon.getTag4
+      [((flag <<< 4) ||| size.toUInt8)].toByteArray
+      ⟨flag, size⟩ := by
+  intro before after
+  unfold Ixon.getTag4
+  change (EStateM.bind Ixon.getU8 _) _ = _
+  rw [EStateM.bind, getU8_reads _ before after]
+  obtain ⟨hdecodedFlag, hlarge, hdecodedSize⟩ :=
+    tag4_small_fields flag size hflag hsize
+  simp only [hdecodedFlag, hlarge]
+  change (EStateM.bind (EStateM.pure _) _) _ = _
+  simp only [EStateM.bind, EStateM.pure]
+  change (EStateM.pure _) _ = _
+  simp [EStateM.pure, hdecodedSize]
+
+theorem tag4_large_fields (flag byteCount : UInt8)
+    (hflag : flag < 16) (hpos : 0 < byteCount.toNat)
+    (hle : byteCount.toNat ≤ 8) :
+    let header := (flag <<< 4) ||| 0x08 ||| (byteCount - 1)
+    header >>> 4 = flag ∧
+      header &&& 0x08 = 0x08 ∧
+      (header &&& 0x07).toNat + 1 = byteCount.toNat := by
+  rcases uint8_cases16 flag hflag with
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    rcases uint8_cases1_8 byteCount hpos hle with
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    decide
+
+theorem getTag4_reads_large (flag : UInt8) (size : UInt64)
+    (hflag : flag < 16) (hsize : ¬ size < 8) :
+    Reads Ixon.getTag4 (tag4Bytes flag size) ⟨flag, size⟩ := by
+  let byteCount := Ixon.u64ByteCount size
+  let header := (flag <<< 4) ||| 0x08 ||| (byteCount - 1)
+  have hsizeNat : 8 ≤ size.toNat := by
+    simp only [UInt64.lt_iff_toNat_lt, UInt64.toNat_ofNat] at hsize
+    omega
+  have hcountPos : 0 < byteCount.toNat := by
+    apply Nat.pos_of_ne_zero
+    intro hzero
+    have hfit := u64ByteCount_fits size
+    simp only [byteCount, hzero, Nat.mul_zero, Nat.pow_zero] at hfit
+    omega
+  have hcountLe : byteCount.toNat ≤ 8 := u64ByteCount_toNat_le size
+  obtain ⟨hdecodedFlag, hlarge, hdecodedLen⟩ :=
+    tag4_large_fields flag byteCount hflag hcountPos hcountLe
+  have hdecodedFlag' : header >>> 4 = flag := by
+    simpa [header] using hdecodedFlag
+  have hheader : Reads Ixon.getU8 [header].toByteArray header :=
+    getU8_reads header
+  have hsizeRead := getU64TrimmedLE_reads size
+  have hreturn : Reads
+      (pure (⟨flag, size⟩ : Ixon.Tag4) : Ixon.GetM Ixon.Tag4)
+      ByteArray.empty ⟨flag, size⟩ := Reads.pure _
+  have hafterSize : Reads
+      (do
+        let decoded ← Ixon.getU64TrimmedLE byteCount.toNat
+        return (⟨flag, decoded⟩ : Ixon.Tag4))
+      (trimmedBytes size byteCount.toNat) ⟨flag, size⟩ := by
+    simpa [byteCount] using Reads.bind
+      (next := fun decoded : UInt64 =>
+        (pure (⟨flag, decoded⟩ : Ixon.Tag4) : Ixon.GetM Ixon.Tag4))
+      hsizeRead hreturn
+  have hlargeNe : header &&& 0x08 ≠ 0 := by
+    rw [hlarge]
+    decide
+  have hdecodedLen' : (header.toNat &&& 0x07) + 1 = byteCount.toNat := by
+    simpa [header] using hdecodedLen
+  have htail : Reads
+      (do
+        let decodedFlag := header >>> 4
+        let large := header &&& 0x08 != 0
+        let small := header &&& 0x07
+        let decodedSize ← if large then
+          Ixon.getU64TrimmedLE (small.toNat + 1)
+        else
+          pure small.toUInt64
+        return (⟨decodedFlag, decodedSize⟩ : Ixon.Tag4))
+      (trimmedBytes size byteCount.toNat) ⟨flag, size⟩ := by
+    simpa [hdecodedFlag', hlargeNe, hdecodedLen'] using hafterSize
+  have hall := Reads.bind
+    (next := fun b : UInt8 => do
+      let decodedFlag := b >>> 4
+      let large := b &&& 0x08 != 0
+      let small := b &&& 0x07
+      let decodedSize ← if large then
+        Ixon.getU64TrimmedLE (small.toNat + 1)
+      else
+        pure small.toUInt64
+      return (⟨decodedFlag, decodedSize⟩ : Ixon.Tag4))
+    hheader htail
+  simpa [Ixon.getTag4, tag4Bytes, hsize, byteCount, header] using hall
+
+/-- Full production `Tag4` read law for every `UInt64` size. -/
+theorem getTag4_reads (flag : UInt8) (size : UInt64)
+    (hflag : flag < 16) :
+    Reads Ixon.getTag4 (tag4Bytes flag size) ⟨flag, size⟩ := by
+  by_cases hsize : size < 8
+  · simpa [tag4Bytes, hsize] using
+      getTag4_reads_small flag size hflag hsize
+  · exact getTag4_reads_large flag size hflag hsize
+
 theorem nat_toUInt64_lt_32 {n : Nat} (h : n < 32) :
     n.toUInt64 < 32 := by
   change UInt64.ofNat n < UInt64.ofNat 32

@@ -116,7 +116,26 @@ def exprUnits : TestSeq :=
     .prj 0 1 (.var 0),
   ]
   cases.foldl (init := .done) fun acc e =>
-    acc ++ test s!"Expr roundtrip: {repr e}" (exprSerde e)
+    acc ++ test s!"Expr roundtrip: {repr e}" (exprSerde e) ++
+      test s!"Expr Lean==Rust bytes: {repr e}"
+        (rsEqExprSerialization e (serExpr e))
+
+def exprPrefixAccepts (bytes : ByteArray) : Bool :=
+  match runGet getExpr bytes with
+  | .ok (.sort 0) => true
+  | _ => false
+
+def exprExactRejects (bytes : ByteArray) : Bool :=
+  match deExpr bytes with
+  | .error _ => true
+  | .ok _ => false
+
+def exprExactUnits : TestSeq :=
+  let bytes := serExpr (.sort 0) ++ [0].toByteArray
+  test "Expr prefix runner may leave trailing bytes"
+      (exprPrefixAccepts bytes) ++
+    test "Expr full-buffer decoder rejects trailing bytes"
+      (exprExactRejects bytes)
 
 def exprRejects (bytes : Array UInt8) : Bool :=
   match deExpr (ByteArray.mk bytes) with
@@ -458,6 +477,8 @@ def envMerkleRootUnitTests : TestSeq :=
 public def Tests.Ixon.suite : List TestSeq := [
   univExactUnits,
   univUnits,
+  exprExactUnits,
+  exprUnits,
   strictExprUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,

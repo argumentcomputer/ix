@@ -850,7 +850,163 @@ def Expr.collectAppArgs : Expr → List Expr × Expr
     (args ++ [a], base)
   | e => ([], e)
 
-partial def putExpr : Expr → PutM Unit
+/-- Structural node count used to totalize the canonical telescope writer.
+    Unlike the generic `sizeOf`, leaf payloads do not contribute: recursive
+    descent depends only on the expression tree. -/
+def Expr.nodeCount : Expr → Nat
+  | .sort _ | .var _ | .ref _ _ | .recur _ _ | .str _ | .nat _ |
+      .share _ => 1
+  | .prj _ _ val => val.nodeCount + 1
+  | .app fn arg | .lam _ fn arg | .all _ _ fn arg =>
+      fn.nodeCount + arg.nodeCount + 1
+  | .letE _ ty val body =>
+      ty.nodeCount + val.nodeCount + body.nodeCount + 1
+
+/-- The base of a collected lambda telescope has no more nodes than its
+    input. -/
+theorem Expr.collectLamBinders_base_nodeCount_le (e : Expr) :
+    e.collectLamBinders.2.nodeCount ≤ e.nodeCount := by
+  induction e with
+  | lam uses binder body ihBinder ihBody =>
+    simp only [Expr.collectLamBinders, Expr.nodeCount]
+    exact Nat.le_trans ihBody <|
+      Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
+  | sort | var | ref | recur | prj | str | nat | app | all | letE | share =>
+    exact Nat.le_refl _
+
+/-- A lambda telescope's base has fewer nodes than a lambda node. -/
+theorem Expr.collectLamBinders_base_nodeCount_lt (uses : Uses)
+    (binder body : Expr) :
+    (Expr.lam uses binder body).collectLamBinders.2.nodeCount <
+      (Expr.lam uses binder body).nodeCount := by
+  simp only [Expr.collectLamBinders]
+  have hle := Expr.collectLamBinders_base_nodeCount_le body
+  exact Nat.lt_of_le_of_lt hle <|
+    Nat.lt_of_le_of_lt (Nat.le_add_left _ _) (Nat.lt_succ_self _)
+
+/-- Every type collected from a lambda telescope has fewer nodes than the
+    input. -/
+theorem Expr.collectLamBinders_mem_nodeCount_lt (e ty : Expr)
+    (h : ∃ uses, (uses, ty) ∈ e.collectLamBinders.1) :
+    ty.nodeCount < e.nodeCount := by
+  induction e with
+  | lam uses binder body ihBinder ihBody =>
+    simp only [Expr.collectLamBinders] at h
+    rcases h with ⟨u, h⟩
+    rcases List.mem_cons.mp h with hhead | htail
+    · have hty : ty = binder := congrArg Prod.snd hhead
+      subst ty
+      exact Nat.lt_of_le_of_lt (Nat.le_add_right _ _) (Nat.lt_succ_self _)
+    · have hlt := ihBody ⟨u, htail⟩
+      exact Nat.lt_of_lt_of_le hlt <|
+        Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
+  | sort | var | ref | recur | prj | str | nat | app | all | letE | share =>
+    rcases h with ⟨_, hmem⟩
+    exact nomatch hmem
+
+/-- The base of a collected forall telescope has no more nodes than its
+    input. -/
+theorem Expr.collectAllBinders_base_nodeCount_le (e : Expr) :
+    e.collectAllBinders.2.nodeCount ≤ e.nodeCount := by
+  induction e with
+  | all uses owned binder body ihBinder ihBody =>
+    simp only [Expr.collectAllBinders, Expr.nodeCount]
+    exact Nat.le_trans ihBody <|
+      Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
+  | sort | var | ref | recur | prj | str | nat | app | lam | letE | share =>
+    exact Nat.le_refl _
+
+/-- A forall telescope's base has fewer nodes than a forall node. -/
+theorem Expr.collectAllBinders_base_nodeCount_lt (uses : Uses) (owned : Owned)
+    (binder body : Expr) :
+    (Expr.all uses owned binder body).collectAllBinders.2.nodeCount <
+      (Expr.all uses owned binder body).nodeCount := by
+  simp only [Expr.collectAllBinders]
+  have hle := Expr.collectAllBinders_base_nodeCount_le body
+  exact Nat.lt_of_le_of_lt hle <|
+    Nat.lt_of_le_of_lt (Nat.le_add_left _ _) (Nat.lt_succ_self _)
+
+/-- Every type collected from a forall telescope has fewer nodes than the
+    input. -/
+theorem Expr.collectAllBinders_mem_nodeCount_lt (e ty : Expr)
+    (h : ∃ uses owned, (uses, owned, ty) ∈ e.collectAllBinders.1) :
+    ty.nodeCount < e.nodeCount := by
+  induction e with
+  | all uses owned binder body ihBinder ihBody =>
+    simp only [Expr.collectAllBinders] at h
+    rcases h with ⟨u, o, h⟩
+    rcases List.mem_cons.mp h with hhead | htail
+    · have hty : ty = binder := congrArg (fun x => x.2.2) hhead
+      subst ty
+      exact Nat.lt_of_le_of_lt (Nat.le_add_right _ _) (Nat.lt_succ_self _)
+    · have hlt := ihBody ⟨u, o, htail⟩
+      exact Nat.lt_of_lt_of_le hlt <|
+        Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
+  | sort | var | ref | recur | prj | str | nat | app | lam | letE | share =>
+    rcases h with ⟨_, _, hmem⟩
+    exact nomatch hmem
+
+/-- The head of a collected application telescope has no more nodes than its
+    input. -/
+theorem Expr.collectAppArgs_base_nodeCount_le (e : Expr) :
+    e.collectAppArgs.2.nodeCount ≤ e.nodeCount := by
+  induction e with
+  | app fn arg ihFn ihArg =>
+    simp only [Expr.collectAppArgs, Expr.nodeCount]
+    exact Nat.le_trans ihFn <|
+      Nat.le_trans (Nat.le_add_right _ _) (Nat.le_succ _)
+  | sort | var | ref | recur | prj | str | nat | lam | all | letE | share =>
+    exact Nat.le_refl _
+
+/-- An application telescope's head has fewer nodes than an app node. -/
+theorem Expr.collectAppArgs_base_nodeCount_lt (fn arg : Expr) :
+    (Expr.app fn arg).collectAppArgs.2.nodeCount <
+      (Expr.app fn arg).nodeCount := by
+  simp only [Expr.collectAppArgs]
+  have hle := Expr.collectAppArgs_base_nodeCount_le fn
+  exact Nat.lt_of_le_of_lt hle <|
+    Nat.lt_of_le_of_lt (Nat.le_add_right _ _) (Nat.lt_succ_self _)
+
+/-- Every collected application argument has fewer nodes than the input. -/
+theorem Expr.collectAppArgs_mem_nodeCount_lt (e arg : Expr)
+    (h : arg ∈ e.collectAppArgs.1) :
+    arg.nodeCount < e.nodeCount := by
+  induction e with
+  | app fn actual ihFn ihActual =>
+    simp only [Expr.collectAppArgs] at h
+    rcases List.mem_append.mp h with hfn | hactual
+    · have hlt := ihFn hfn
+      exact Nat.lt_of_lt_of_le hlt <|
+        Nat.le_trans (Nat.le_add_right _ _) (Nat.le_succ _)
+    · have heq : arg = actual := by simpa using hactual
+      subst arg
+      exact Nat.lt_of_le_of_lt (Nat.le_add_left _ _) (Nat.lt_succ_self _)
+  | sort | var | ref | recur | prj | str | nat | lam | all | letE | share =>
+    exact nomatch h
+
+private theorem nodeCount_left_lt_sum3 (left middle right : Nat) :
+    left < left + middle + right + 1 :=
+  Nat.lt_of_le_of_lt
+    (Nat.le_trans (Nat.le_add_right left middle)
+      (Nat.le_add_right (left + middle) right))
+    (Nat.lt_succ_self _)
+
+private theorem nodeCount_middle_lt_sum3 (left middle right : Nat) :
+    middle < left + middle + right + 1 :=
+  Nat.lt_of_le_of_lt
+    (Nat.le_trans (Nat.le_add_left middle left)
+      (Nat.le_add_right (left + middle) right))
+    (Nat.lt_succ_self _)
+
+private theorem nodeCount_right_lt_sum3 (left middle right : Nat) :
+    right < left + middle + right + 1 :=
+  Nat.lt_of_le_of_lt (Nat.le_add_left right (left + middle))
+    (Nat.lt_succ_self _)
+
+/-- Total canonical v2 expression writer. Telescope collection preserves the
+    Rust byte grammar; the node-count lemmas above expose its recursive calls
+    to the kernel termination checker. -/
+def putExpr : Expr → PutM Unit
   | .sort idx => putTag4 ⟨Expr.FLAG_SORT, idx⟩
   | .var idx => putTag4 ⟨Expr.FLAG_VAR, idx⟩
   | .ref refIdx univIdxs => do
@@ -871,114 +1027,170 @@ partial def putExpr : Expr → PutM Unit
   | .str refIdx => putTag4 ⟨Expr.FLAG_STR, refIdx⟩
   | .nat refIdx => putTag4 ⟨Expr.FLAG_NAT, refIdx⟩
   | e@(.app _ _) => do
-    let (args, base) := e.collectAppArgs
-    putTag4 ⟨Expr.FLAG_APP, args.length.toUInt64⟩
-    putExpr base
-    for arg in args do putExpr arg
+    putTag4 ⟨Expr.FLAG_APP, e.collectAppArgs.1.length.toUInt64⟩
+    putExpr e.collectAppArgs.2
+    for arg in e.collectAppArgs.1 do putExpr arg
   | e@(.lam _ _ _) => do
-    let (binders, base) := e.collectLamBinders
-    putTag4 ⟨Expr.FLAG_LAM, binders.length.toUInt64⟩
-    for (uses, ty) in binders do
-      putU8 uses.toBits
-      putExpr ty
-    putExpr base
+    putTag4 ⟨Expr.FLAG_LAM, e.collectLamBinders.1.length.toUInt64⟩
+    for binder in e.collectLamBinders.1 do
+      putU8 binder.1.toBits
+      putExpr binder.2
+    putExpr e.collectLamBinders.2
   | e@(.all _ _ _ _) => do
-    let (binders, base) := e.collectAllBinders
-    putTag4 ⟨Expr.FLAG_ALL, binders.length.toUInt64⟩
-    for (uses, owned, ty) in binders do
-      putU8 (uses.toBits ||| (owned.toBits <<< 2))
-      putExpr ty
-    putExpr base
+    putTag4 ⟨Expr.FLAG_ALL, e.collectAllBinders.1.length.toUInt64⟩
+    for binder in e.collectAllBinders.1 do
+      putU8 (binder.1.toBits ||| (binder.2.1.toBits <<< 2))
+      putExpr binder.2.2
+    putExpr e.collectAllBinders.2
   | .letE nonDep ty val body => do
     putTag4 ⟨Expr.FLAG_LET, if nonDep then 1 else 0⟩
     putExpr ty
     putExpr val
     putExpr body
   | .share idx => putTag4 ⟨Expr.FLAG_SHARE, idx⟩
+termination_by e => e.nodeCount
+decreasing_by
+  all_goals simp_wf
+  all_goals simp only [Expr.nodeCount]
+  all_goals try exact Nat.lt_succ_self _
+  all_goals try exact nodeCount_left_lt_sum3 _ _ _
+  all_goals try exact nodeCount_middle_lt_sum3 _ _ _
+  all_goals try exact nodeCount_right_lt_sum3 _ _ _
+  · subst e
+    simpa only [Expr.nodeCount] using
+      Expr.collectAppArgs_base_nodeCount_lt _ _
+  · subst e
+    rename_i fn actual hmem
+    simpa only [Expr.nodeCount] using Expr.collectAppArgs_mem_nodeCount_lt
+      (.app fn actual) arg hmem
+  · subst e
+    rename_i uses ty body hmem
+    simpa only [Expr.nodeCount] using Expr.collectLamBinders_mem_nodeCount_lt
+      (.lam uses ty body) binder.2 ⟨binder.1, hmem⟩
+  · subst e
+    simpa only [Expr.nodeCount] using
+      Expr.collectLamBinders_base_nodeCount_lt _ _ _
+  · subst e
+    rename_i uses owned ty body hmem
+    simpa only [Expr.nodeCount] using Expr.collectAllBinders_mem_nodeCount_lt
+      (.all uses owned ty body) binder.2.2
+      ⟨binder.1, binder.2.1, hmem⟩
+  · subst e
+    simpa only [Expr.nodeCount] using
+      Expr.collectAllBinders_base_nodeCount_lt _ _ _ _
 
-partial def getExpr : GetM Expr := do
-  let tag ← getTag4
+/-- Read `count` `Tag0` sizes in wire order. -/
+def getTag0Sizes : Nat → GetM (List UInt64)
+  | 0 => pure []
+  | count + 1 => do
+    let head := (← getTag0).size
+    let tail ← getTag0Sizes count
+    return head :: tail
+
+/-- Read and apply one canonical application argument at a time. -/
+def getExprAppArgs (recur : GetM Expr) : Nat → Expr → GetM Expr
+  | 0, result => pure result
+  | count + 1, result => do
+    let arg ← recur
+    getExprAppArgs recur count (.app result arg)
+
+/-- Read a lambda telescope in outer-to-inner wire order. -/
+def getExprLamBinders (recur : GetM Expr) : Nat → GetM (List (Uses × Expr))
+  | 0 => pure []
+  | count + 1 => do
+    let mode ← getU8
+    let some uses := Uses.ofBits? mode
+      | throw s!"getExpr: invalid lambda mode {mode}"
+    let ty ← recur
+    let tail ← getExprLamBinders recur count
+    return (uses, ty) :: tail
+
+/-- Read a forall telescope in outer-to-inner wire order. -/
+def getExprAllBinders (recur : GetM Expr) :
+    Nat → GetM (List (Uses × Owned × Expr))
+  | 0 => pure []
+  | count + 1 => do
+    let mode ← getU8
+    if mode > 7 then
+      throw s!"getExpr: invalid forall mode {mode}"
+    let some uses := Uses.ofBits? (mode &&& 0x03)
+      | throw s!"getExpr: invalid forall usage mode {mode}"
+    let some owned := Owned.ofBits? ((mode >>> 2) &&& 0x01)
+      | throw s!"getExpr: invalid forall ownership mode {mode}"
+    let ty ← recur
+    let tail ← getExprAllBinders recur count
+    return (uses, owned, ty) :: tail
+
+/-- Parse a v2 expression after its leading `Tag4`. Recursive reads are
+    supplied explicitly so `getExprFuel` below remains structurally total. -/
+def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
   match tag.flag with
   | 0x0 => return .sort tag.size
   | 0x1 => return .var tag.size
   | 0x2 => do  -- REF: tag.size is array_len, then ref_idx, then elements
     let refIdx := (← getTag0).size
-    let mut univIdxs := #[]
-    for _ in [0:tag.size.toNat] do
-      univIdxs := univIdxs.push ((← getTag0).size)
-    return .ref refIdx univIdxs
+    let univIdxs ← getTag0Sizes tag.size.toNat
+    return .ref refIdx univIdxs.toArray
   | 0x3 => do  -- REC: tag.size is array_len, then rec_idx, then elements
     let recIdx := (← getTag0).size
-    let mut univIdxs := #[]
-    for _ in [0:tag.size.toNat] do
-      univIdxs := univIdxs.push ((← getTag0).size)
-    return .recur recIdx univIdxs
+    let univIdxs ← getTag0Sizes tag.size.toNat
+    return .recur recIdx univIdxs.toArray
   | 0x4 => do  -- PRJ: tag.size is field_idx, then type_ref_idx, then val
     let typeRefIdx := (← getTag0).size
-    let val ← getExpr
+    let val ← recur
     return .prj typeRefIdx tag.size val
   | 0x5 => return .str tag.size
   | 0x6 => return .nat tag.size
   | 0x7 => do  -- APP (telescope)
     if tag.size == 0 then
       throw "getExpr: empty app spine"
-    let base ← getExpr
+    let base ← recur
     match base with
     | .app .. => throw "getExpr: non-canonical app base"
     | _ => pure ()
-    let mut result := base
-    for _ in [0:tag.size.toNat] do
-      let arg ← getExpr
-      result := .app result arg
-    return result
+    getExprAppArgs recur tag.size.toNat base
   | 0x8 => do  -- LAM (telescope)
     if tag.size == 0 then
       throw "getExpr: Lam with zero binders"
-    let mut binders := #[]
-    for _ in [0:tag.size.toNat] do
-      let mode ← getU8
-      let some uses := Uses.ofBits? mode
-        | throw s!"getExpr: invalid lambda mode {mode}"
-      binders := binders.push (uses, ← getExpr)
-    let body ← getExpr
+    let binders ← getExprLamBinders recur tag.size.toNat
+    let body ← recur
     match body with
     | .lam .. => throw "getExpr: non-canonical lam telescope"
     | _ => pure ()
-    let mut result := body
-    for (uses, ty) in binders.reverse do
-      result := .lam uses ty result
-    return result
+    return binders.foldr (fun (uses, ty) result => .lam uses ty result) body
   | 0x9 => do  -- ALL (telescope)
     if tag.size == 0 then
       throw "getExpr: All with zero binders"
-    let mut binders := #[]
-    for _ in [0:tag.size.toNat] do
-      let mode ← getU8
-      if mode > 7 then
-        throw s!"getExpr: invalid forall mode {mode}"
-      let some uses := Uses.ofBits? (mode &&& 0x03)
-        | throw s!"getExpr: invalid forall usage mode {mode}"
-      let some owned := Owned.ofBits? ((mode >>> 2) &&& 0x01)
-        | throw s!"getExpr: invalid forall ownership mode {mode}"
-      binders := binders.push (uses, owned, ← getExpr)
-    let body ← getExpr
+    let binders ← getExprAllBinders recur tag.size.toNat
+    let body ← recur
     match body with
     | .all .. => throw "getExpr: non-canonical all telescope"
     | _ => pure ()
-    let mut result := body
-    for (uses, owned, ty) in binders.reverse do
-      result := .all uses owned ty result
-    return result
+    return binders.foldr
+      (fun (uses, owned, ty) result => .all uses owned ty result) body
   | 0xA => do  -- LET
     if tag.size > 1 then
       throw s!"getExpr: invalid letE nonDep {tag.size}"
     let nonDep := tag.size == 1
-    let ty ← getExpr
-    let val ← getExpr
-    let body ← getExpr
+    let ty ← recur
+    let val ← recur
+    let body ← recur
     return .letE nonDep ty val body
   | 0xB => return .share tag.size
   | f => throw s!"getExpr: invalid flag {f}"
+
+/-- Total v2 expression reader. Every recursive layer consumes a `Tag4`
+    header, so a caller-supplied byte budget is a complete termination
+    measure even for telescope-compressed applications and binders. -/
+def getExprFuel : Nat → GetM Expr
+  | 0 => throw "getExpr: recursion budget exhausted"
+  | fuel + 1 => getTag4 >>= getExprFromTag (getExprFuel fuel)
+
+/-- Decode one expression from the current cursor. Remaining bytes plus one
+    are sufficient fuel because every recursive expression consumes a tag. -/
+def getExpr : GetM Expr := do
+  let state ← get
+  getExprFuel (state.bytes.size - state.idx + 1)
 
 instance : Serialize Expr where
   put := putExpr
@@ -1288,7 +1500,7 @@ def serUniv (u : Univ) : ByteArray := runPut (putUniv u)
 def deUniv (bytes : ByteArray) : Except String Univ := runGetExact getUniv bytes
 
 def serExpr (e : Expr) : ByteArray := runPut (putExpr e)
-def deExpr (bytes : ByteArray) : Except String Expr := runGet getExpr bytes
+def deExpr (bytes : ByteArray) : Except String Expr := runGetExact getExpr bytes
 
 def serConstant (c : Constant) : ByteArray := runPut (putConstant c)
 def deConstant (bytes : ByteArray) : Except String Constant := runGet getConstant bytes

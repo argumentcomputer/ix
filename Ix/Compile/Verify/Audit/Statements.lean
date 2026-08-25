@@ -43,6 +43,8 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.deUniv_serUniv_sortOne,
     standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.deExpr_serExpr_single,
+    standardAxioms := standard },
   { root := ``Ix.Compile.Verify.ExprTableWF.mono },
   { root := ``Ix.Compile.Verify.Catalog.empty_wf,
     standardAxioms := standard, nativeAxioms := blake3Native },

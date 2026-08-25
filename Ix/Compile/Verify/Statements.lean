@@ -1,6 +1,7 @@
 import Ix.Compile.Verify.IxonValue
 import Ix.Compile.Verify.Catalog
 import Ix.Compile.Verify.Codec
+import Ix.Compile.Verify.ExprCodec
 import Ix.Compile.Verify.CompileState
 import Ix.Compile.Verify.CompileUniv
 import Ix.Compile.Verify.CompileMeta
@@ -49,7 +50,12 @@ an exact-consumption runner rejects trailing bytes, trimmed little-endian
 integers and both `Tag2` forms have proved production inverses, and every
 universe whose compressed successor counts fit `UInt64` has an exact
 serializer/decoder inverse.  In particular, the `Sort 1` universe required by
-the first declaration fixture is covered.
+the first declaration fixture is covered. The v2 expression writer and reader
+are also kernel-visible total definitions, `deExpr` now requires full-buffer
+consumption, and all twelve constructors round-trip exactly on the first
+canonical singleton-spine domain. That domain includes the `A` type and both
+the type and value shapes of `idA`, with unrestricted `UInt64` fields backed
+by complete `Tag0` and `Tag4` inverse laws.
 `KernelSourceWitness` is the sole
 upstream source-semantics boundary; later compiler-preservation slices take it
 as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean
