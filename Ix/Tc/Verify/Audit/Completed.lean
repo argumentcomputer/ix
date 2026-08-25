@@ -162,7 +162,6 @@ Keep that nonlogical upstream footprint distinct from `standard`: these are
 not ordinary logical axioms and must not become globally permitted. -/
 private def annotatedPiUpstreamAxioms : Array Lean.Name := #[
   ``Lean4Lean.ptrEqConstantInfo_eq,
-  ``Lean4Lean.ptrEqExpr_eq,
   ``Lean.Expr.abstractRange_eq,
   ``Lean.Expr.abstract_eq,
   ``Lean.Expr.eqv_eq,
@@ -8546,6 +8545,9 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := contextNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.isRegular_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.trySameHeadSpineSpeculative_wf,
     standardAxioms := standard, nativeAxioms := blake3Native,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.trySameHeadSpineCached_wf,

@@ -786,7 +786,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bignat"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=a6e781bc55cec99b99fa7a4bee105c5000cec967#a6e781bc55cec99b99fa7a4bee105c5000cec967"
+source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=2a9c91eba44ea791978a086a6a19b3a922edfee5#2a9c91eba44ea791978a086a6a19b3a922edfee5"
 dependencies = [
  "num-bigint",
 ]

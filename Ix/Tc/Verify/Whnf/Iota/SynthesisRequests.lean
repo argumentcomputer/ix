@@ -143,6 +143,18 @@ def KSynthCandidateInputs
       TrKExprS world.venv uvars world.nameOf trProj Delta
         plan.ctorApp ctorAppV
 
+/-- Generated-expression obligation for a K-synthesis result. Only a
+successfully synthesized constructor is consumed as syntax by the iota path;
+both rejection outcomes carry no generated expression. -/
+def KSynthGeneratedInput
+    (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)
+    (uvars : Nat) (Delta : KVLCtx) : KSynthOutcome .anon → Prop
+  | .synthesized result =>
+      support result ∧ ∃ resultV,
+        TrKExprS world.venv uvars world.nameOf trProj Delta result resultV
+  | .definitiveReject => True
+  | .inconclusive => True
+
 /-- Admission-owned structural translation for the one constructor candidate
 actually selected by a successful K-synthesis catalog transaction.
 
@@ -283,7 +295,6 @@ theorem verifyKSynthCandidate_state_wf_of_requests
         cases equal with
         | false =>
             simp only [Bool.not_false, if_true]
-            rw [ReaderT.run_bind, ReaderT.run_monadLift]
             apply TcM.WF.bind
               (TcM.bumpStats_whnf_wf
                 (fun st : TcState .anon =>
@@ -325,7 +336,7 @@ theorem verifyKSynthCandidate_state_wf_of_inputs
       (WhnfStateInv layer semantics trProj world support uvars Delta) s
       ((verifyKSynthCandidate majorTyW ctorId tyUs tyArgs params).run methods)
       (fun result _ =>
-        OptionalGeneratedInput trProj world support uvars Delta result) := by
+        KSynthGeneratedInput trProj world support uvars Delta result) := by
   rcases inputs with
     ⟨majorTyWV, ctorAppV, hmajorTyWSupport, hmajorTyWTr, hctorAppTr⟩
   have hctorHeadSupport :
@@ -376,7 +387,6 @@ theorem verifyKSynthCandidate_state_wf_of_inputs
         cases equal with
         | false =>
             simp only [Bool.not_false, if_true]
-            rw [ReaderT.run_bind, ReaderT.run_monadLift]
             apply TcM.WF.bind
               (TcM.bumpStats_whnf_wf
                 (fun st : TcState .anon =>
@@ -385,10 +395,12 @@ theorem verifyKSynthCandidate_state_wf_of_inputs
                 (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
                 (fun _ => rfl) (fun _ => rfl) afterDefEq)
             intro _ afterReject _
-            exact TcM.WF.pure (fun _ => trivial)
+            exact TcM.WF.pure (fun _ => by
+              cases hfull : afterAttempt.cheapRecursionDepth == 0 <;>
+                simp [hfull, KSynthGeneratedInput])
         | true =>
             exact TcM.WF.pure (fun _ =>
-              ⟨ctorAppV, hctorAppSupport, hctorAppTr⟩)
+              ⟨hctorAppSupport, ctorAppV, hctorAppTr⟩)
 
 /-- Defensive catalog selection preserves state on mismatch, every lazy
 lookup outcome, malformed inductives, and the selected candidate transaction.
@@ -472,7 +484,7 @@ theorem selectKSynthCandidate_state_wf_of_inputs
       ((selectKSynthCandidate majorTyW tyHeadId tyUs tyArgs indId params).run
         methods)
       (fun result _ =>
-        OptionalGeneratedInput trProj world support uvars Delta result) := by
+        KSynthGeneratedInput trProj world support uvars Delta result) := by
   unfold selectKSynthCandidate
   split
   · exact TcM.WF.pure (fun _ => trivial)
@@ -494,7 +506,7 @@ theorem selectKSynthCandidate_state_wf_of_inputs
         cases entry <;> simp only
         all_goals try
           exact TcM.WF.pure (fun _ => by
-            simp [OptionalGeneratedInput])
+            simp [KSynthGeneratedInput])
         case indc name levelParams lvls indParams indices isUnsafe block
             memberIdx indTy ctors leanAll =>
           cases hfirst : ctors[0]? with
@@ -662,7 +674,7 @@ theorem synthCtorWhenK_state_wf_of_inputs
       (WhnfStateInv layer semantics trProj world support uvars Delta) s
       ((synthCtorWhenK major recId recr recUs).run methods)
       (fun result _ =>
-        OptionalGeneratedInput trProj world support uvars Delta result) := by
+        KSynthGeneratedInput trProj world support uvars Delta result) := by
   unfold synthCtorWhenK
   by_cases hlevels : (recUs.size.toUInt64 != recr.lvls) = true
   · simp only [hlevels, if_true]
@@ -696,7 +708,7 @@ theorem synthCtorWhenK_state_wf_of_inputs
             simp only [hspine]
             cases tyHead <;>
               try exact TcM.WF.pure (fun _ => by
-                simp [OptionalGeneratedInput])
+                simp [KSynthGeneratedInput])
             next tyHeadId tyUs tyInfo =>
               simp only
               change TcM.WF _ afterWhnf

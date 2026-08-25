@@ -388,6 +388,33 @@ missing; {nMatch} matched ({t1 - t0}ms) — rerun with --full-oracle \
   let failures := phases.filter (·.2.isFailure)
   IO.println s!"[validate-lean] RESULT: {failures.size} total failures"
   (← IO.getStdout).flush
+
+  -- `--report`: machine-readable phase table + verdict, the
+  -- `ix compile --report` shape (the fidelity suites' gate).
+  if let some flag := p.flag? "report" then
+    let phaseRows := Lean.Json.arr <| phases.map fun (name, r) =>
+      let (result, detail) := match r with
+        | .passed d => ("pass", d)
+        | .failed d => ("fail", d)
+        | .stubbed d => ("stub", d)
+        | .skipped d => ("skip", d)
+      Lean.Json.mkObj
+        [ ("name", Lean.Json.str name)
+        , ("result", Lean.Json.str result)
+        , ("detail", Lean.Json.str detail) ]
+    let report := Lean.Json.mkObj
+      [ ("schemaVersion", Lean.toJson (1 : Nat))
+      , ("tool", Lean.Json.str "validate-lean")
+      , ("ixVersion", Lean.Json.str Ix.versionString)
+      , ("leanToolchain", Lean.Json.str Lean.versionString)
+      , ("input", Lean.Json.str (ixe?.getD (path?.getD "")))
+      , ("ns", (p.flag? "ns").map (Lean.Json.str <| ·.as! String)
+          |>.getD Lean.Json.null)
+      , ("phases", phaseRows)
+      , ("totalFailures", Lean.toJson failures.size)
+      , ("passed", Lean.toJson failures.isEmpty) ]
+    IO.FS.writeFile (flag.as! String) (report.pretty ++ "\n")
+
   return if failures.isEmpty then 0 else 1
 
 end Ix.Cli.ValidateLeanCmd
@@ -400,6 +427,7 @@ def validateLeanCmd : Cli.Cmd := `[Cli|
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
     ixe : String; "Validate a pre-compiled .ixe instead of a Lean file (oracle-free: runs serde + anon roundtrip only)"
+    report : String; "Write a machine-readable JSON report (phase table + pass/fail) to this path."
     workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale — memory scales with workers (phase 1 at 32 peaks past 116 GiB there; 8 is a safe whole-Mathlib setting on a 128 GiB box)."
     «full-oracle»; "Phase 5 comparison via the full canonicalized env (structural BEq per constant + the decompiler's per-recovery debug track) instead of the default per-name digests. Holds a whole extra env copy through phase 5 — use on --ns-filtered closures to debug a digest mismatch."
 

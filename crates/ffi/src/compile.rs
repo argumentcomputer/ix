@@ -310,6 +310,35 @@ pub extern "C" fn rs_compile_env(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, false)
+}
+
+/// `rs_compile_env` with strict-anon output (`ix compile --anon`):
+/// §4/§5/§6 cleared after `finalize_hints`, so the piece file carries
+/// the anon layer only (§1–§3). Same status shape, `named = 0`.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_compile_env_anon"]
+/// opaque rsCompileEnvBytesAnonFFI
+///   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
+///   → IO CompileEnvStatus
+/// ```
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_compile_env_anon(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  allow_partial: u8,
+) -> LeanIOResult<LeanOwned> {
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, true)
+}
+
+fn compile_env_inner(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  allow_partial: u8,
+  strict_anon: bool,
+) -> LeanIOResult<LeanOwned> {
   let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
 
@@ -344,6 +373,19 @@ pub extern "C" fn rs_compile_env(
   }
   let root = ixon::merkle::merkle_root_canonical_sorted(&const_addrs)
     .unwrap_or_else(ixon::merkle::zero_address);
+  if strict_anon {
+    // Strict-anon piece (`ix compile --anon`): drop §4 names, §5
+    // metadata, and §6 commitments. This runs strictly AFTER
+    // `finalize_hints` (inside `compile_env_with_options`), which
+    // derives §3 anon hints FROM `env.named` — the ordering is
+    // load-bearing, and the fixture suite pins §3 survival. §1 blobs
+    // stay: value blobs are load-bearing for constant bodies, and the
+    // conservative superset is never unsound (content-addressed).
+    // The root is unaffected either way — it covers §2 keys only.
+    compile_stt.env.names.clear();
+    compile_stt.env.named.clear();
+    compile_stt.env.comms.clear();
+  }
   let named_count = compile_stt.env.named.len() as u64;
   let unique_anon = const_addrs.len() as u64;
 
@@ -1620,6 +1662,15 @@ pub extern "C" fn rs_decompile_env(
   // before the decompile allocates next to it.
   drop(bytes);
 
+  // Every decompile output is keyed by a §5 name, so an anonymous env
+  // (§5 empty) would "succeed" with 0 constants. Fail loudly instead.
+  if env.named.is_empty() {
+    return LeanIOResult::error_string(&format!(
+      "rs_decompile_env: {path} is an anonymous env (empty named \
+       section); decompile needs names"
+    ));
+  }
+
   // Decompile needs every reachable constant carried: a thin bundle
   // deliberately omits its assumed subtrees, and a bundle with a broken
   // closure would otherwise surface deep inside the decompile as a
@@ -1719,6 +1770,15 @@ pub extern "C" fn rs_decompile_env_consts(
     },
   };
   drop(bytes);
+
+  // Same guard as `rs_decompile_env`: materialization is name-keyed,
+  // and an anonymous env would silently materialize nothing.
+  if env.named.is_empty() {
+    return LeanIOResult::error_string(&format!(
+      "rs_decompile_env_consts: {path} is an anonymous env (empty named \
+       section); decompile needs names"
+    ));
+  }
 
   if !env.assumptions.is_empty() {
     return LeanIOResult::error_string(&format!(

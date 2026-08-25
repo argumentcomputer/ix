@@ -651,6 +651,468 @@ mutual
   public theorem oddp_nonneg : {n : Nat} → OddP n → 0 ≤ n
     | _, .succ h => Nat.le_trans (evenp_nonneg h) (Nat.le_succ _)
 end
+
+-- Tier A for `.below`: both motive arguments form the complete permuted
+-- band, while the implicit major remains unapplied (3 of 4 source args).
+public def evenpBelowPartial (n : Nat) :=
+  @EvenP.below
+    (motive_1 := fun _ _ => True)
+    (motive_2 := fun _ _ => True) n
 end BelowPredicate
+
+-- Mirrored source order for the `.below` Tier-A fixture. Exactly one of
+-- this block and `BelowPredicate` disagrees with canonical class order.
+namespace BelowPredicate2
+mutual
+  public inductive OddP2 : Nat → Prop where
+    | succ : {n : Nat} → EvenP2 n → OddP2 (n + 1)
+  public inductive EvenP2 : Nat → Prop where
+    | zero : EvenP2 0
+    | succ : {n : Nat} → OddP2 n → EvenP2 (n + 1)
+end
+
+mutual
+  public theorem oddp2_nonneg : {n : Nat} → OddP2 n → 0 ≤ n
+    | _, .succ h => Nat.le_trans (evenp2_nonneg h) (Nat.le_succ _)
+  public theorem evenp2_nonneg : {n : Nat} → EvenP2 n → 0 ≤ n
+    | _, .zero => Nat.le_refl 0
+    | _, .succ h => Nat.le_trans (oddp2_nonneg h) (Nat.le_succ _)
+end
+
+public def evenp2BelowPartial (n : Nat) :=
+  @EvenP2.below
+    (motive_1 := fun _ _ => True)
+    (motive_2 := fun _ _ => True) n
+end BelowPredicate2
+
+-- Type-level mutual indexed inductives + mutual structural recursion +
+-- forced `.eq_def` equation lemmas (the TorchLean `NN.GraphSpec.DAG`
+-- `Term`/`Args` shape, torchlean.ixe check-rs failure of 2026-08-22).
+--
+-- The mutual defs compile through `X.brecOn`, and when the canonical
+-- (`sort_consts`) class order differs from Lean's source order the
+-- regenerated `.brecOn`/`.brecOn.go`/`.brecOn.eq` carry canonical motive
+-- and handler order. User references to `X.brecOn` are permuted by
+-- `brec_on_call_site_plans` — but the auto-generated `.eq_def` proofs
+-- reference `X.brecOn.go` and `X.brecOn.eq` DIRECTLY, and those heads
+-- need the same call-site permutation. The block is declared twice with
+-- opposite source orders so exactly one twin disagrees with the
+-- canonical order regardless of content-hash values.
+namespace TypeBrecOnEqDef
+
+-- Two ctors, deliberately NOT unit-like: with a 0-field single-ctor `Sh`,
+-- Lean's elaborator-level `isDefEq` (unit-like structure eta) makes the
+-- generalized major's types defeq inside `mkEqAndProof`, so Lean's
+-- `.brecOn.eq` uses a homogeneous `Eq` for the major where ix's
+-- kernel-level defeq (no unit-like rule) generates `HEq` — a separate,
+-- pre-existing `.eq` fidelity divergence. `NN.Tensor.Shape` (the shape
+-- this fixture mirrors) is not unit-like, so keep `Sh` non-unit-like.
+public inductive Sh where
+  | a : Sh
+  | b : Sh
+
+mutual
+  public inductive Tm : List Sh → Sh → Type where
+    | var {Γ : List Sh} {s : Sh} : Tm Γ s
+    | op {Γ : List Sh} {ins : List Sh} {t : Sh} : Ar Γ ins → Tm Γ t
+  public inductive Ar : List Sh → List Sh → Type where
+    | nil {Γ : List Sh} : Ar Γ []
+    | cons {Γ : List Sh} {s : Sh} {ss : List Sh} :
+        Tm Γ s → Ar Γ ss → Ar Γ (s :: ss)
+end
+
+-- The Ar-first def order mirrors TorchLean's `Args.rename`/`Term.rename`.
+mutual
+  public def Ar.wk {Γ : List Sh} {ss : List Sh} : Ar Γ ss → Ar Γ ss
+    | .nil => .nil
+    | .cons t rest => .cons t.wk rest.wk
+  public def Tm.wk {Γ : List Sh} {s : Sh} : Tm Γ s → Tm Γ s
+    | .var => .var
+    | .op args => .op args.wk
+end
+
+-- Force realization of the `.eq_def` lemmas into the env; their proofs
+-- are what reference `.brecOn.go` / `.brecOn.eq` with explicit motives.
+set_option linter.defProp false in
+def arWkEqDef := @Ar.wk.eq_def
+set_option linter.defProp false in
+def tmWkEqDef := @Tm.wk.eq_def
+
+-- Mirrored source order (Ar2 before Tm2).
+mutual
+  public inductive Ar2 : List Sh → List Sh → Type where
+    | nil {Γ : List Sh} : Ar2 Γ []
+    | cons {Γ : List Sh} {s : Sh} {ss : List Sh} :
+        Tm2 Γ s → Ar2 Γ ss → Ar2 Γ (s :: ss)
+  public inductive Tm2 : List Sh → Sh → Type where
+    | var {Γ : List Sh} {s : Sh} : Tm2 Γ s
+    | op {Γ : List Sh} {ins : List Sh} {t : Sh} : Ar2 Γ ins → Tm2 Γ t
+end
+
+mutual
+  public def Ar2.wk {Γ : List Sh} {ss : List Sh} : Ar2 Γ ss → Ar2 Γ ss
+    | .nil => .nil
+    | .cons t rest => .cons t.wk rest.wk
+  public def Tm2.wk {Γ : List Sh} {s : Sh} : Tm2 Γ s → Tm2 Γ s
+    | .var => .var
+    | .op args => .op args.wk
+end
+
+set_option linter.defProp false in
+def ar2WkEqDef := @Ar2.wk.eq_def
+set_option linter.defProp false in
+def tm2WkEqDef := @Tm2.wk.eq_def
+
+-- Tier B for `.brecOn`: the handler band trails the major, so a bare
+-- reference or a prefix ending at the major needs a source-interface
+-- eta adapter. The two inductive blocks above have opposite source order.
+public noncomputable def arBrecAlias := @Ar.brecOn
+public noncomputable def ar2BrecAlias := @Ar2.brecOn
+
+set_option linter.defProp false in
+public def arBrecPartial {Gamma ss} (a : Ar Gamma ss) :=
+  @Ar.brecOn
+    (motive_1 := fun _ _ => True)
+    (motive_2 := fun _ _ => True) Gamma ss a
+
+set_option linter.defProp false in
+public def ar2BrecPartial {Gamma ss} (a : Ar2 Gamma ss) :=
+  @Ar2.brecOn
+    (motive_1 := fun _ _ => True)
+    (motive_2 := fun _ _ => True) Gamma ss a
+
+end TypeBrecOnEqDef
+
+-- Unit-like index type. `Un` has a single 0-field constructor, so Lean's
+-- elaborator-level defeq (`isDefEqUnitLike`, Meta/ExprDefEq.lean) treats
+-- any two `Un` terms as defeq. Inside the `cases`-tactic construction of
+-- `.brecOn.eq`, `mkEqAndProof` then sees the generalized major's types
+-- `Tm Γ a₁` / `Tm Γ a₂` as defeq and generalizes the major with a
+-- homogeneous `Eq` at the OUTER type (generically ill-typed inside the
+-- motive lambda, but valid under the kernel's infer-only proof checking),
+-- discharged by `Eq.refl` and consumed by `Eq.ndrec`+`Eq.symm` in the
+-- minors — where the non-unit-like shape uses `HEq`/`HEq.refl`/
+-- `eq_of_heq`. The regenerated `.brecOn.eq` must reproduce Lean's choice
+-- (validate-aux Phase 2 congruence + roundtrip). `Ar`'s major stays `HEq`
+-- (`List Un` is not unit-like), so this block exercises both kinds at
+-- once. Order-independent (no mirrored twin needed).
+namespace TypeBrecOnEqDefUnit
+
+public inductive Un where
+  | mk : Un
+
+mutual
+  -- `lit` returns at a CONCRETE unit-like index (`Un.mk`, an expression
+  -- rather than a bound fvar), so its minor exercises the Eq-major kind
+  -- combined with the expression-ret-index substCore path (index
+  -- `Eq.ndrec` abstracting the outer index, forward-dep revert of the
+  -- major, then the homogeneous major `Eq.ndrec`).
+  public inductive Tm : List Un → Un → Type where
+    | var {Γ : List Un} {s : Un} : Tm Γ s
+    | lit {Γ : List Un} : Tm Γ .mk
+    | op {Γ : List Un} {ins : List Un} {t : Un} : Ar Γ ins → Tm Γ t
+  public inductive Ar : List Un → List Un → Type where
+    | nil {Γ : List Un} : Ar Γ []
+    | cons {Γ : List Un} {s : Un} {ss : List Un} :
+        Tm Γ s → Ar Γ ss → Ar Γ (s :: ss)
+end
+
+mutual
+  public def Ar.wk {Γ : List Un} {ss : List Un} : Ar Γ ss → Ar Γ ss
+    | .nil => .nil
+    | .cons t rest => .cons t.wk rest.wk
+  public def Tm.wk {Γ : List Un} {s : Un} : Tm Γ s → Tm Γ s
+    | .var => .var
+    | .lit => .lit
+    | .op args => .op args.wk
+end
+
+set_option linter.defProp false in
+def arWkEqDef := @Ar.wk.eq_def
+-- No `Tm.wk.eq_def` forcing: `lit`'s concrete return index makes the
+-- match dependent and Lean fails to realize the equation lemma for it.
+-- The `.brecOn.eq` coverage doesn't need it — aux_gen regenerates the
+-- brecOn family for the block regardless; eq_def surgery is covered by
+-- `TypeBrecOnEqDef` and by `arWkEqDef` above.
+
+end TypeBrecOnEqDefUnit
+
+-- Mutual Prop-valued inductive predicates consumed through the raw mutual
+-- recursor with explicit motives (the PhiConfluence `Par`/`ParB` shape;
+-- phiconfluence.ixe check-rs failures of 2026-08-22: `parB_domain`,
+-- `parB_preserves`, `par_to_red`, `WF.par`, `par_triangle`, …).
+--
+-- `induction h using Pb.rec (motive_1 := fun _ _ _ => True)` elaborates to a
+-- DIRECT `Pb.rec` application whose motive/minor arguments follow Lean's
+-- source order (`all = [Pa, Pb]`). When the canonical (`sort_consts`) class
+-- order differs from source order, the regenerated `.rec` carries canonical
+-- motive/minor order, so the user proof's call site needs the
+-- `call_site_plans` permutation. The block is declared twice with opposite
+-- source orders so exactly one twin disagrees with the canonical order
+-- regardless of content-hash values.
+namespace PropRecMotives
+
+mutual
+  public inductive Pa : Nat → Nat → Prop where
+    | refl (n : Nat) : Pa n n
+    | zero {ns ns' : List Nat} : Pb ns ns' → Pa 0 0
+  public inductive Pb : List Nat → List Nat → Prop where
+    | nil : Pb [] []
+    | cons {n n' : Nat} {ns ns' : List Nat} :
+        Pa n n' → Pb ns ns' → Pb (n :: ns) (n' :: ns')
+end
+
+-- The `parB_domain` pattern: self motive inferred from the goal, the other
+-- member's motive explicitly trivial.
+public theorem pb_length {ns ns' : List Nat} (h : Pb ns ns') :
+    ns.length = ns'.length := by
+  induction h using Pb.rec (motive_1 := fun _ _ _ => True) with
+  | refl => trivial
+  | zero => trivial
+  | nil => rfl
+  | cons hpa hpb ihpa ihpb => exact congrArg (· + 1) ihpb
+
+-- The `par_to_red`/`WF.par` pattern: the companion motive carries content.
+public theorem pa_eq {a b : Nat} (h : Pa a b) : a = b := by
+  induction h using Pa.rec
+    (motive_2 := fun ns ns' _ => ns.length = ns'.length) with
+  | refl n => rfl
+  | zero hb ihb => rfl
+  | nil => rfl
+  | cons hpa hpb ihpa ihpb => exact congrArg (· + 1) ihpb
+
+-- Call-site shape coverage for the OTHER apply paths (see
+-- plans/callsite-adapter-generalization.md §fixture-catalog). All three
+-- are handled by shipped code; they pin the paths a tactic proof never
+-- produces. Telescope order for `@Pb.rec` (all = [Pa, Pb]): motive_1 =
+-- Pa's motive, motive_2 = Pb's; minors refl, zero, nil, cons; indices
+-- and major explicit under `@`.
+--
+-- Full application written directly at the Const head (taxonomy #1 in a
+-- USER term — normally only Lean-generated auxiliaries exercise it).
+public theorem pb_len_direct {ns ns' : List Nat} (h : Pb ns ns') :
+    ns.length = ns'.length :=
+  @Pb.rec (fun _ _ _ => True) (fun a b _ => a.length = b.length)
+    (fun _ => trivial) (fun _ _ => trivial)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+    ns ns' h
+
+-- Inner-FULL redex (taxonomy #3 / finding F1): the lambda-abstracted
+-- major with a complete spine inside the body. Phase 3 leaves the source
+-- lambda intact and applies ordinary in-body Const-head surgery.
+public theorem pb_len_lam {ns ns' : List Nat} (h : Pb ns ns') :
+    ns.length = ns'.length :=
+  (fun (p : Pb ns ns') =>
+    @Pb.rec (fun _ _ _ => True) (fun a b _ => a.length = b.length)
+      (fun _ => trivial) (fun _ _ => trivial)
+      rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+      ns ns' p) h
+
+-- Dead-binder SPLIT redex: the binder value is unused. Phase 3 preserves
+-- the outer redex verbatim while Tier B adapts the inner motives-only
+-- spine (args=2 of 9); the elaborator inserts the implicit indices into
+-- the outer spine.
+public theorem pb_len_dead {ns ns' : List Nat} (h : Pb ns ns') :
+    ns.length = ns'.length :=
+  (fun (_ : Nat) =>
+    @Pb.rec (fun _ _ _ => True) (fun a b _ => a.length = b.length)) 0
+    (fun _ => trivial) (fun _ _ => trivial)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+    h
+
+-- Tier A: motives+minors are present, while the identity indices/major
+-- suffix remains unapplied (stored source spine: 6 of 9 args).
+set_option linter.defProp false in
+public def pbLenFn : ∀ (ns ns' : List Nat),
+    Pb ns ns' → ns.length = ns'.length :=
+  @Pb.rec (fun _ _ _ => True) (fun a b _ => a.length = b.length)
+    (fun _ => trivial) (fun _ _ => trivial)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+
+public theorem pb_len_let {ns ns' : List Nat} (h : Pb ns ns') :
+    ns.length = ns'.length :=
+  let g := @Pb.rec (fun _ _ _ => True)
+    (fun a b _ => a.length = b.length)
+    (fun _ => trivial) (fun _ _ => trivial)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+  g h
+
+set_option linter.defProp false in
+public def useRec (f : ∀ (a b : List Nat),
+    Pb a b → a.length = b.length) {ns ns' : List Nat}
+    (h : Pb ns ns') : ns.length = ns'.length := f ns ns' h
+
+public theorem pb_len_arg {ns ns' : List Nat} (h : Pb ns ns') :
+    ns.length = ns'.length :=
+  useRec (@Pb.rec (fun _ _ _ => True)
+    (fun a b _ => a.length = b.length)
+    (fun _ => trivial) (fun _ _ => trivial)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)) h
+
+-- Tier B: the permuted minor band is still unapplied (2 of 9 args).
+set_option linter.defProp false in
+public def pbCases :
+    (∀ (_ : Nat), True) →
+    (∀ {ns ns' : List Nat}, Pb ns ns' →
+      ns.length = ns'.length → True) →
+    (List.length ([] : List Nat) = List.length ([] : List Nat)) →
+    (∀ {n n' : Nat} {ns ns' : List Nat}, Pa n n' → Pb ns ns' →
+      True → ns.length = ns'.length →
+      (n :: ns).length = (n' :: ns').length) →
+    ∀ (ns ns' : List Nat), Pb ns ns' → ns.length = ns'.length :=
+  @Pb.rec (fun _ _ _ => True) (fun a b _ => a.length = b.length)
+
+set_option linter.defProp false in
+public def pbRecAlias := @Pb.rec
+
+public theorem pbRec_eq_self : @Pb.rec = @Pb.rec := rfl
+
+-- Mirrored source order (Pb2 before Pa2).
+mutual
+  public inductive Pb2 : List Nat → List Nat → Prop where
+    | nil : Pb2 [] []
+    | cons {n n' : Nat} {ns ns' : List Nat} :
+        Pa2 n n' → Pb2 ns ns' → Pb2 (n :: ns) (n' :: ns')
+  public inductive Pa2 : Nat → Nat → Prop where
+    | refl (n : Nat) : Pa2 n n
+    | zero {ns ns' : List Nat} : Pb2 ns ns' → Pa2 0 0
+end
+
+public theorem pb2_length {ns ns' : List Nat} (h : Pb2 ns ns') :
+    ns.length = ns'.length := by
+  induction h using Pb2.rec (motive_2 := fun _ _ _ => True) with
+  | nil => rfl
+  | cons hpa hpb ihpa ihpb => exact congrArg (· + 1) ihpb
+  | refl => trivial
+  | zero => trivial
+
+public theorem pa2_eq {a b : Nat} (h : Pa2 a b) : a = b := by
+  induction h using Pa2.rec
+    (motive_1 := fun ns ns' _ => ns.length = ns'.length) with
+  | nil => rfl
+  | cons hpa hpb ihpa ihpb => exact congrArg (· + 1) ihpb
+  | refl n => rfl
+  | zero hb ihb => rfl
+
+-- Mirrored-order twins of the shape-coverage theorems above. For
+-- `@Pb2.rec` (all = [Pb2, Pa2]): motive_1 = Pb2's motive, motive_2 =
+-- Pa2's; minors nil, cons, refl, zero.
+public theorem pb2_len_direct {ns ns' : List Nat} (h : Pb2 ns ns') :
+    ns.length = ns'.length :=
+  @Pb2.rec (fun a b _ => a.length = b.length) (fun _ _ _ => True)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+    (fun _ => trivial) (fun _ _ => trivial)
+    ns ns' h
+
+public theorem pb2_len_lam {ns ns' : List Nat} (h : Pb2 ns ns') :
+    ns.length = ns'.length :=
+  (fun (p : Pb2 ns ns') =>
+    @Pb2.rec (fun a b _ => a.length = b.length) (fun _ _ _ => True)
+      rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+      (fun _ => trivial) (fun _ _ => trivial)
+      ns ns' p) h
+
+public theorem pb2_len_dead {ns ns' : List Nat} (h : Pb2 ns ns') :
+    ns.length = ns'.length :=
+  (fun (_ : Nat) =>
+    @Pb2.rec (fun a b _ => a.length = b.length) (fun _ _ _ => True)) 0
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+    (fun _ => trivial) (fun _ _ => trivial)
+    h
+
+set_option linter.defProp false in
+public def pb2LenFn : ∀ (ns ns' : List Nat),
+    Pb2 ns ns' → ns.length = ns'.length :=
+  @Pb2.rec (fun a b _ => a.length = b.length) (fun _ _ _ => True)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+    (fun _ => trivial) (fun _ _ => trivial)
+
+public theorem pb2_len_let {ns ns' : List Nat} (h : Pb2 ns ns') :
+    ns.length = ns'.length :=
+  let g := @Pb2.rec (fun a b _ => a.length = b.length)
+    (fun _ _ _ => True)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+    (fun _ => trivial) (fun _ _ => trivial)
+  g h
+
+set_option linter.defProp false in
+public def useRec2 (f : ∀ (a b : List Nat),
+    Pb2 a b → a.length = b.length) {ns ns' : List Nat}
+    (h : Pb2 ns ns') : ns.length = ns'.length := f ns ns' h
+
+public theorem pb2_len_arg {ns ns' : List Nat} (h : Pb2 ns ns') :
+    ns.length = ns'.length :=
+  useRec2 (@Pb2.rec (fun a b _ => a.length = b.length)
+    (fun _ _ _ => True)
+    rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
+    (fun _ => trivial) (fun _ _ => trivial)) h
+
+set_option linter.defProp false in
+public def pb2Cases :
+    (List.length ([] : List Nat) = List.length ([] : List Nat)) →
+    (∀ {n n' : Nat} {ns ns' : List Nat}, Pa2 n n' → Pb2 ns ns' →
+      True → ns.length = ns'.length →
+      (n :: ns).length = (n' :: ns').length) →
+    (∀ (_ : Nat), True) →
+    (∀ {ns ns' : List Nat}, Pb2 ns ns' →
+      ns.length = ns'.length → True) →
+    ∀ (ns ns' : List Nat), Pb2 ns ns' → ns.length = ns'.length :=
+  @Pb2.rec (fun a b _ => a.length = b.length) (fun _ _ _ => True)
+
+set_option linter.defProp false in
+public def pb2RecAlias := @Pb2.rec
+
+public theorem pb2Rec_eq_self : @Pb2.rec = @Pb2.rec := rfl
+
+end PropRecMotives
+
+-- Type-valued nested mutual consumed through the raw recursor with explicit
+-- motives, including the nested-aux motive (the PhiConfluence
+-- `Term`/`Binding` shape — `Term.form` nests `Binding` through `List` — and
+-- its `nf_devel`/`nf_false_reducible` check-rs failures of 2026-08-22).
+-- `Tm.rec` has three motives: Tm, Bd, and the `List Bd` nested auxiliary;
+-- a user `induction … using Tm.rec (motive_2 := …) (motive_3 := …)` passes
+-- all three in source order. Twins in both source orders, as above.
+namespace NestedMutualRecMotives
+
+mutual
+  public inductive Tm where
+    | leaf
+    | node (kids : List Bd)
+  public inductive Bd where
+    | wrap (t : Tm)
+end
+
+public theorem tm_eq_self (t : Tm) : t = t := by
+  induction t using Tm.rec
+    (motive_2 := fun b => b = b)
+    (motive_3 := fun bs => bs = bs) with
+  | leaf => rfl
+  | node kids ih => rfl
+  | wrap t ih => rfl
+  | nil => rfl
+  | cons b bs ihb ihbs => rfl
+
+-- Mirrored source order (Bd2 before Tm2): `Tm2.rec`'s user motives arrive
+-- as [Bd2, Tm2] with the aux `List Bd2` motive third.
+mutual
+  public inductive Bd2 where
+    | wrap (t : Tm2)
+  public inductive Tm2 where
+    | leaf
+    | node (kids : List Bd2)
+end
+
+public theorem tm2_eq_self (t : Tm2) : t = t := by
+  induction t using Tm2.rec
+    (motive_1 := fun b => b = b)
+    (motive_3 := fun bs => bs = bs) with
+  | leaf => rfl
+  | node kids ih => rfl
+  | wrap t ih => rfl
+  | nil => rfl
+  | cons b bs ihb ihbs => rfl
+
+end NestedMutualRecMotives
 
 end Tests.Ix.Compile.Mutual

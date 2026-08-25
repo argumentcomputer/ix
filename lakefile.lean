@@ -5,7 +5,7 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "e780f4188c9649aef988270f4d126651460ca9c4"
+  "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
 
 /- Blake3's `blake3_rs_shared` target builds `blake3-rs` as a `cdylib`
 alongside the staticlib. `ix_native_decide_dynlib` fetches it to supply the
@@ -13,7 +13,7 @@ BLAKE3 backend to Lean's native evaluator, and that dynlib gates every
 `IxTcVerify` module, so this pin must stay at or after the revision that
 introduced the target. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "db25a8a21579d8211eec4347402721f5674bf2c1"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "1b0fbd2bd78b2b873e14264037af8c8b1536b9e9"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
@@ -24,14 +24,16 @@ require batteries from git
 /- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
 Theory/Verify specification surface, while `bench-lean4lean` and the ignored
 `lean4lean` test runner exercise the implementation. The default `ix` target
-still does not build this dependency. Pin the audited Argument fork exactly:
-this revision extends the inductive formalization through L4L-08, including
-the remaining one-family parity and first exact mutual-generation certificate
-surface consumed by E2c. It also carries the upstream v4.32/v4.33 kernel
-hardening, including `checkNoMVarNoFVar` for opaque values
-(leanprover/lean4#14498). -/
+still does not build this dependency. Pin `argumentcomputer/lean4ix` exactly --
+the Argument development line, a standalone repository rather than a GitHub
+fork of digama0/lean4lean: this revision carries the upstream v4.32/v4.33
+kernel hardening — including the `checkNoMVarNoFVar` check on an opaque's
+value (leanprover/lean4#14498), which the replay path in
+`Benchmarks/Lean4Lean.lean` reaches — on top of that line's certified
+inductive-environment and projection development, and tracks Lean v4.33.1 as
+this package does. -/
 require lean4lean from git
-  "https://github.com/argumentcomputer/lean4lean" @ "4844eda4fe376a7ab7e23a4b9755189d3c2ffe5b"
+  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
 
 /-! ## FFI
 
@@ -114,6 +116,7 @@ lean_lib Tests
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
+  needs := #[`@/ix]
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where
@@ -162,6 +165,23 @@ lean_exe «bench-lean4lean» where
 
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
+
+/- Typed TruthMines corpus records: the package catalog, the frozen admission
+spec, fail-closed validation (elaboration-time `run_cmd` gate), and workspace
+projections consumed by the `truthmines` driver and the `truthmines-spec`
+suite. Pure data and pure functions; the nested corpus workspace they project
+lives in `Benchmarks/TruthMines/`. -/
+lean_lib TruthMinesSpec where
+  globs := #[.submodules `Benchmarks.TruthMinesSpec]
+
+/- The corpus driver: `gen [--check]` projects `Benchmarks/TruthMines/`
+(lakefile, toolchain, per-member `Drivers/<Q>.lean`) from the typed
+records, `spec` prints the member/driver table, and `build` compiles
+per-member pieces (`pieces/<Q>.ixe`, one watchdogged `ix compile`
+process each) and assembles + verifies the `truthmines.ixc` catalog
+manifest. Needs `lake build ix` first for the `build` verb. -/
+lean_exe truthmines where
+  root := `Benchmarks.TruthMinesSpec.Main
 
 end Benchmarks
 

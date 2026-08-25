@@ -49,6 +49,7 @@ This separation means cosmetic changes (renaming variables) don't change the con
 | [Sharing](#sharing-system) | Expression deduplication |
 | [Metadata](#metadata) | Names and source info |
 | [Environment](#environment) | Storage and serialization |
+| [The .ixc Catalog](#the-ixc-catalog-manifest) | Multi-env merkle catalog |
 | [Proofs and Claims](#proofs-and-claims) | ZK claims and proofs |
 | [Commitments](#cryptographic-commitments) | Commitment scheme |
 | [Compilation](#compilation-lean--ixon) | Lean to Ixon conversion |
@@ -1105,11 +1106,91 @@ difference in the selected mode, 1 = differences, 2 = error.
 
 ---
 
+## The `.ixc` Catalog Manifest
+
+A catalog commits a SET of `.ixe` environments ("pieces") as one
+artifact — semantically one big anonymous env, the union of the
+members' constant sets, never materialized as a single file. Anonymous
+Ixon is conflict-free (§2 is content-addressed: a key collision between
+two files implies byte-equal values), so catalog identity involves no
+names, no qualification, and no merging. Two roots commit everything:
+
+- `members_root`: `merkle_root_canonical` over member ENV ROOTS — the
+  membership commitment.
+- `content_root`: `merkle_root_canonical` over the UNION of the
+  members' §2 constant addresses — the env root of the virtual union
+  env, computed by a k-way streaming sweep over the members'
+  already-sorted §2 address lists (O(members) resident).
+
+Because both roots are set functions of content, re-partitioning
+storage never moves a commitment.
+
+On disk a `.ixc` is a self-contained DIRECTORY — manifest and piece
+files together, no separate pieces dir and no report side-files (the
+manifest is the machine-readable record; `ix catalog info` dumps it):
+
+```
+<name>.ixc/
+  manifest              the binary manifest below
+  <label>.ixe           one piece per member (fat profile)
+  <label>.chunk<i>.ixe  chunk files (chunked profile)
+  .cache/               drivers' build metadata; ignored by verify
+```
+
+`ix catalog assemble` ingests external pieces by hard link (copy
+fallback), so assembling from same-filesystem pieces moves no bytes.
+
+Manifest wire format (Convention B — own magic + explicit version,
+fixed-width little-endian like `.ixes`; source of truth
+`crates/ixon/src/catalog.rs`, Lean mirror `Ix/Catalog.lean`):
+
+```
+magic    b"IXC\0\0\0\0\0"            (8)
+version  u32 = 1
+flags    u32                          # bit0: storage profile (0 = fat, 1 = chunked)
+members_root      32 bytes
+content_root      32 bytes
+member_count      u32
+per member:
+  env_root        32 bytes            # anon semantic identity
+  const_count     u64
+  label           u16 len + utf8      # qualifier; doubles as the piece
+                                      #   filename stem (<label>.ixe)
+  toolchain       u16 len + utf8
+  source_pin      u16 len + utf8      # e.g. git:<url>@<rev>; empty = local
+  deps            u32 count + [u32]*  # member indices, all < self (topo)
+  preimage        0x00 | 0x01+32      # store key of the member's const-set
+                                      #   AssumptionTree (`ix tree env`)
+storage (by flags bit0):
+  fat:     per member: file_hash 32 + file_bytes u64
+           # self-contained pieces; closures may overlap (identity
+           #   dedup only — never a soundness issue)
+  chunked: chunk_count u32; per chunk:
+           chunk_root 32 + file_hash 32 + file_bytes u64 + owner u32
+           # disjoint chunks partitioning the union; an address in two
+           #   chunks is a HARD error (no-redeclaration invariant)
+trailing bytes: reserved future sections, preserved opaquely
+```
+
+Both roots are recomputed against a stored manifest: `members_root`
+from the entries on every parse, `content_root` by the k-way sweep in
+`ix catalog verify` (which also enforces the profile's dedup rule and
+every piece's env root, counts, and sizes; `--deep` re-hashes files
+and fully verifies each piece load — all against the pieces inside
+the directory). `ix merge` materializes any subset as one ordinary
+anonymous `.ixe` (a derived view — the catalog directory stays the
+source of truth). The `Catalog` claim (below) binds both roots.
+
+---
+
 ## Proofs and Claims
 
 Envs, commitments, the AssumptionTree data type, and all claims share
-Tag4 flag 0xE. Proofs (opaque ZK bytes) share Tag4 flag 0xF. Everything
-fits in single-byte tags (sizes 0..=7 per flag).
+Tag4 flag 0xE. Proofs (opaque ZK bytes) share Tag4 flag 0xF. Sizes
+0..=7 fit in single-byte tags; with variants 0–7 under 0xE all taken,
+the Catalog claim (variant 8) is the first — and so far only —
+multi-byte tag in this space: it encodes as `0xE8 0x08` (large bit
+set, one size byte).
 
 ### Tag4 0xE Variant Layout (Env + Comm + AssumptionTree + Claims)
 
@@ -1123,9 +1204,19 @@ fits in single-byte tags (sizes 0..=7 per flag).
 | 5 | `0xE5` | CheckEnv claim | 1 addr (env root) + opt assumptions |
 | 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
+| 8 | `0xE8 0x08` | Catalog claim | 2 addr (members root, content root) + opt assumptions |
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
+
+The Catalog claim's two roots use two DISTINCT leaf vocabularies,
+never mixed: `members` leaves are member ENV ROOTS; `content` (and
+`assumptions`) leaves are CONSTANT ADDRESSES. See
+`crates/ixon/src/catalog.rs` for the `.ixc` artifact it binds. The
+exact wire bytes are pinned by twin tests
+(`proof.rs::catalog_claim_wire_bytes_pinned` and the `claim` suite's
+digest-parity test) so the Rust and Lean serializers cannot drift on
+the multi-byte-tag path.
 
 ### Tag4 0xF Variant Layout (Proofs)
 
@@ -1136,6 +1227,7 @@ by 32 bytes for `Some(merkle_root)`.
 | 2 | `0xF2` | CheckEnv proof | claim payload + Tag0 length + opaque ZK bytes |
 | 3 | `0xF3` | Reveal proof | claim payload + Tag0 length + opaque ZK bytes |
 | 4 | `0xF4` | Contains proof | claim payload + Tag0 length + opaque ZK bytes |
+| 5 | `0xF5` | Catalog proof | claim payload + Tag0 length + opaque ZK bytes |
 
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
@@ -1157,6 +1249,12 @@ pub enum Claim {
     Reveal { comm: Address, info: RevealConstantInfo },
     /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
     Contains { tree: Address, const_addr: Address },
+    /// The `.ixc` catalog claim: `content` is exactly the union of the
+    /// member envs committed at `members`, and every constant in it is
+    /// well-typed, optionally modulo `assumptions`. Verified by
+    /// COMPOSITION of per-piece CheckEnv claims with set discharge —
+    /// there is deliberately no whole-catalog interpreter arm.
+    Catalog { members: Address, content: Address, assumptions: Option<Address> },
 }
 ```
 

@@ -27,6 +27,24 @@ def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
   else
     initSearchPath (← findSysroot)
 
+/-- Walk up from `start` looking for `lake-manifest.json`. -/
+partial def findLakeRoot (start : FilePath) : IO (Option FilePath) := do
+  if ← (start / "lake-manifest.json").pathExists then
+    return some start
+  match start.parent with
+  | none => return none
+  | some p => if p == start then return none else findLakeRoot p
+
+/-- Search path for elaborating `file`: query lake at the file's LAKE
+    ROOT, not its immediate parent — `lake env` does not walk up, so a
+    file nested inside a workspace (`Benchmarks/TruthMines/Drivers/…`)
+    would otherwise resolve to a bare toolchain path and fail on its
+    first workspace import. Files sitting at a workspace root behave
+    exactly as before. -/
+def initLeanSearchPathFor (file : FilePath) : IO Unit := do
+  let parent := file.parent.getD ⟨"."⟩
+  initLeanSearchPath (some ((← findLakeRoot parent).getD parent))
+
 /-- A file's elaborated environment plus whether its header declares `module`. -/
 structure FileEnv where
   env : Environment
@@ -54,7 +72,7 @@ isolation the mode exists for (TruthMines' `module-header-v1` patch) without
 corrupting stored content. See `Ix.EnvScope.defaultConstList`. -/
 def getFileEnvCore (path : FilePath) : IO FileEnv := do
   let path ← IO.FS.realPath path
-  initLeanSearchPath path.parent
+  initLeanSearchPathFor path
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
@@ -93,7 +111,7 @@ callers union locally-elaborated names (`getModuleIdxFor? · |>.isNone`) from
 the full-content env. -/
 def moduleVisibleNames (path : FilePath) : IO (Option NameSet) := do
   let path ← IO.FS.realPath path
-  initLeanSearchPath path.parent
+  initLeanSearchPathFor path
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, _, messages) ← Parser.parseHeader inputCtx
@@ -154,14 +172,6 @@ def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
     let exitCode ← child.wait
     if exitCode != 0 then
       throw $ IO.userError "lake exe cache get failed"
-
-/-- Walk up from `start` looking for `lake-manifest.json`. -/
-partial def findLakeRoot (start : FilePath) : IO (Option FilePath) := do
-  if ← (start / "lake-manifest.json").pathExists then
-    return some start
-  match start.parent with
-  | none => return none
-  | some p => if p == start then return none else findLakeRoot p
 
 /-- Walk up from `cur` collecting directory names until reaching `root`,
 yielding the path components between them (in top-down order). -/

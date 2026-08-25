@@ -191,6 +191,39 @@ opaque verify : @& AiurSystem →
 
 end AiurSystem
 
+namespace Bytecode.Toplevel
+
+@[extern "rs_aiur_toplevel_shard_check_batch"]
+private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → @& Nat →
+  @& CommitmentParameters → @& FriParameters →
+    Except String (Array (String × Nat))
+
+/-- Check EVERY shard of a partition in one call: rayon over the shard
+    list with true work-stealing (no chunk barriers), each shard
+    through the exact single-shard machinery over its own private
+    record and witness io. `shardsBlob` encodes, per shard, a 4-byte LE
+    owned-constant count followed by that many 32-byte addresses.
+    Returns one `(error, peakBytes)` pair per shard in shard order:
+    empty error = clean, and `peakBytes` is the analytic prover RAM
+    peak ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's
+    executed record — the split/merge input (0 on failure).
+    `jobs = 0` uses rayon's default pool width (all cores): peak RSS
+    is bounded by the Rust-side RAM gate (a byte-weighted admission
+    semaphore over estimated per-shard execution RSS vs available
+    system RAM), not by thread count — pass `jobs` only to narrow
+    CPU use. -/
+def shardCheckBatchWithEnv (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (shardsBlob : ByteArray) (useBytecode : Bool := false) (jobs : Nat := 0)
+  (commitmentParameters : CommitmentParameters := defaultCommitmentParameters)
+  (friParameters : FriParameters := defaultFriParameters)
+  : Except String (Array (String × Nat)) :=
+  shardCheckBatchWithEnv' toplevel funIdx envHandle shardsBlob useBytecode
+    jobs commitmentParameters friParameters
+
+end Bytecode.Toplevel
+
 /-- One-shot variant of `AiurSystem.circuitShapes` for flows that never
 build an `AiurSystem` (the `ix check` statistics): Rust builds the system,
 extracts the shapes, and drops it. -/

@@ -28,6 +28,16 @@ pub type AiurConfig = GoldilocksBlake3Config;
 /// A proof under [`AiurConfig`].
 pub type AiurProof = Proof<AiurConfig>;
 
+/// The prover RAM model's phase breakdown; `peak` is the number the
+/// budget gate compares (see [`AiurSystem::peak_prove_bytes`]).
+pub struct PeakProveBytes {
+  pub phase_witness: usize,
+  pub phase_stage2: usize,
+  pub phase_open: usize,
+  pub preprocessed: usize,
+  pub peak: usize,
+}
+
 pub struct AiurSystem {
   toplevel: Toplevel,
   // perhaps remove the key from the system in verifier only mode?
@@ -193,6 +203,103 @@ impl AiurSystem {
         preprocessed_height: circuit.preprocessed_height,
       })
       .collect()
+  }
+
+  /// Predicted peak prover resident bytes for a record, from circuit
+  /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
+  /// line. Mirrors this system's actual allocation schedule (multi-stark
+  /// rev `be1755e`, the workspace pin; an upstream allocation-schedule
+  /// change skews every prediction, so re-validate against a measured
+  /// prove when bumping multi-stark — real proves at ~472 GiB measured
+  /// +1.6-1.7% over prediction):
+  ///
+  /// 1. WITNESS phase: the `QueryRecord` plus every circuit's padded main
+  ///    trace and base-field lookup witness, built in parallel and all
+  ///    alive at once.
+  /// 2. STAGE-2 transition: stage-1 LDEs and their Merkle tree, the
+  ///    still-alive lookup witness, the logUp message array plus its
+  ///    batch-inverse copy, and the new extension traces.
+  /// 3. FRI OPEN: all committed LDEs (main + stage-2 + quotient, at
+  ///    `8·2^log_blowup` bytes per trace cell) and their trees, the
+  ///    retained FRI fold layers (geometric in `max_log_arity`), and the
+  ///    open-phase buffers — all proportional to `H = blowup · tallest`.
+  ///
+  /// The peak is the max of the three plus the preprocessed-gadget
+  /// residency committed at setup. Heights are `next_power_of_two` of the
+  /// record's unique queries — the padding the trace actually commits,
+  /// which per-fft models blur.
+  pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
+    self.peak_prove_bytes_by(
+      |_, ct| match ct {
+        CircuitType::Function { idx } => record.function_queries[*idx].len(),
+        CircuitType::Memory { width } => {
+          record.memory_queries.get(width).map_or(0, |m| m.len())
+        },
+        CircuitType::Bytes1 => 256,
+        CircuitType::Bytes2 => 65536,
+      },
+      crate::execute::record_retained_bytes(record),
+    )
+  }
+
+  fn peak_prove_bytes_by(
+    &self,
+    raw_of: impl Fn(usize, &CircuitType) -> usize,
+    record_bytes: usize,
+  ) -> PeakProveBytes {
+    const S: usize = 8; // bytes per base field element (Goldilocks)
+    const DG: usize = 32; // blake3 digest bytes (Merkle nodes, arity 2)
+    let b = 1usize << self.commitment_parameters.log_blowup;
+    let fold = 1usize << self.fri_parameters.max_log_arity;
+    let circuit_types = self.circuit_types();
+    let ncirc = self.system.circuits.len();
+    let mut tallest = 0usize;
+    for (i, ct) in circuit_types.iter().enumerate().take(ncirc) {
+      let raw = raw_of(i, ct);
+      if raw != 0 {
+        tallest = tallest.max(raw.next_power_of_two());
+      }
+    }
+    let mut witness = 0usize;
+    let mut s1_lde = 0usize; // stage-1 LDEs
+    let mut lookup_w = 0usize; // base-field lookup witness
+    let mut msgs = 0usize; // logUp messages (+ inverse copy)
+    let mut s2_trace = 0usize; // stage-2 extension traces
+    let mut committed = 0usize; // all committed LDE bytes
+    let mut prep = 0usize;
+    for (i, ct) in circuit_types.iter().enumerate().take(ncirc) {
+      let raw = raw_of(i, ct);
+      if raw == 0 {
+        continue;
+      }
+      let n = raw.next_power_of_two();
+      let c = &self.system.circuits[i];
+      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      let args: usize = self.slot_widths[i].iter().sum();
+      let q = c.quotient_degree();
+      witness +=
+        S * n * c.main_width + S * n * (c.num_lookups + args) + 40 * raw;
+      s1_lde += S * b * n * c.main_width;
+      lookup_w += S * n * (c.num_lookups + args);
+      msgs += 2 * S * d * n * c.num_lookups;
+      s2_trace += S * n * c.stage_2_width;
+      committed += S * b * n * (c.main_width + c.stage_2_width + q * d);
+      prep += S * (1 + b) * c.preprocessed_width * c.preprocessed_height
+        + 2 * DG * b * c.preprocessed_height;
+    }
+    let h = b * tallest;
+    let phase_witness = record_bytes + witness;
+    let phase_stage2 = s1_lde + 2 * DG * h + lookup_w + msgs + s2_trace;
+    // Trees (3 rounds) + retained FRI fold layers + open buffers, all ∝ H.
+    let fri_layers = (2 * S + 2 * DG) * h * fold / (fold - 1).max(1);
+    let phase_open = committed + 3 * 2 * DG * h + fri_layers + 11 * S * h;
+    PeakProveBytes {
+      phase_witness,
+      phase_stage2,
+      phase_open,
+      preprocessed: prep,
+      peak: phase_witness.max(phase_stage2).max(phase_open) + prep,
+    }
   }
 
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]

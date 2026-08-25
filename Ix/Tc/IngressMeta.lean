@@ -532,17 +532,23 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
           stack := stack.push (.appDone mdata)
             |>.push (.process a currentIdx) |>.push (.process f currentIdx)
       | .lam _ ty body =>
-        let (name, bi, tyArena, bodyArena) ← match node with
-          | .binder nameAddr info tyChild bodyChild =>
-            pure (resolveName ixonEnv nameAddr, info, tyChild, bodyChild)
-          | _ => do
-            let n ← synthName
-            pure (n, Lean.BinderInfo.default, currentIdx, currentIdx)
-        stack := stack.push (.lamDone name bi mdata)
-          |>.push .binderPop
-          |>.push (.process body bodyArena)
-          |>.push (.binderPush name)
-          |>.push (.process ty tyArena)
+        match node with
+        | .etaCallSite _ _ _ _ wrapperMeta =>
+          -- Decompile consumes the eta tag; kernel ingress follows the
+          -- ordinary synthesized Binder/CallSite metadata tree.
+          stack := stack.push (.process e wrapperMeta)
+        | _ =>
+          let (name, bi, tyArena, bodyArena) ← match node with
+            | .binder nameAddr info tyChild bodyChild =>
+              pure (resolveName ixonEnv nameAddr, info, tyChild, bodyChild)
+            | _ => do
+              let n ← synthName
+              pure (n, Lean.BinderInfo.default, currentIdx, currentIdx)
+          stack := stack.push (.lamDone name bi mdata)
+            |>.push .binderPop
+            |>.push (.process body bodyArena)
+            |>.push (.binderPush name)
+            |>.push (.process ty tyArena)
       | .all _ _ ty body =>
         let (name, bi, tyArena, bodyArena) ← match node with
           | .binder nameAddr info tyChild bodyChild =>

@@ -36,13 +36,14 @@ pub fn empty_ctx_addr() -> CtxAddr {
   *ADDR
 }
 
-/// Maximum iterations in the WHNF delta loop (local per-call).
+/// Maximum iterations in auxiliary WHNF loops (local per-call).
 pub const MAX_WHNF_FUEL: u32 = 10_000;
 
 /// Maximum recursion depth for `is_def_eq`.
 pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 
-/// Shared recursive fuel budget, consumed by each call to whnf/infer/isDefEq.
+/// Shared recursive fuel budget, consumed by recursive whnf/infer/isDefEq
+/// entries and by productive structural-WHNF beta/zeta/iota transitions.
 /// lean4lean uses 10,000 with step-indexed recursion; the lean4 C++ kernel
 /// uses ~200,000 heartbeats. We use a higher budget than both because this
 /// kernel lacks compiled native reduction and checks some large proof terms

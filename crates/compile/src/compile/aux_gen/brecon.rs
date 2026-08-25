@@ -1393,6 +1393,95 @@ fn mk_eq_of_heq(
   mk_app_n(eq_of_heq, &[alpha.clone(), a.clone(), b.clone(), h.clone()])
 }
 
+/// Elaborator-strength def-eq for Lean's `mkEqAndProof` Eq-vs-HEq
+/// binder decision (`refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`).
+///
+/// Lean decides with `Meta.isDefEq`, which is stronger than kernel
+/// def-eq in one way that matters here: `isDefEqUnitLike`
+/// (`refs/lean4/src/Lean/Meta/ExprDefEq.lean:2181`) makes any two terms
+/// of a non-recursive, index-free inductive with a single 0-field
+/// constructor definitionally equal (eta for unit-like structures;
+/// always on under the default `etaStruct := .all` config `mkBRecOn`
+/// elaborates with). So `I A j =?= I A j'` succeeds whenever every
+/// mismatching argument pair has a unit-like type — and Lean then
+/// generalizes with homogeneous `Eq` instead of `HEq`.
+///
+/// Kernel def-eq (`TcScope::is_def_eq`) has no unit-like rule — kernel
+/// struct-eta needs a literal constructor application on one side — so
+/// this extends it: kernel def-eq first, then the unit-like rule on the
+/// pair, then app-congruence (same head constant) with the extended
+/// check per argument. Fixture:
+/// `Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDefUnit`.
+fn meta_defeq(
+  tc: &mut super::expr_utils::TcScope<'_>,
+  lean_env: &LeanEnv,
+  a: &LeanExpr,
+  b: &LeanExpr,
+) -> bool {
+  if tc.is_def_eq(a, b) {
+    return true;
+  }
+  if is_unit_like_pair(tc, lean_env, a, b) {
+    return true;
+  }
+  let (ha, aargs) = decompose_apps(a);
+  let (hb, bargs) = decompose_apps(b);
+  if aargs.is_empty() || aargs.len() != bargs.len() {
+    return false;
+  }
+  let heads_match = match (ha.as_data(), hb.as_data()) {
+    (ExprData::Const(n1, l1, _), ExprData::Const(n2, l2, _)) => {
+      n1 == n2 && l1 == l2
+    },
+    _ => false,
+  };
+  if !heads_match {
+    return false;
+  }
+  aargs.iter().zip(bargs.iter()).all(|(x, y)| meta_defeq(tc, lean_env, x, y))
+}
+
+/// `Meta.isDefEqUnitLike`: `a`'s type (whnf) is an application of a
+/// non-recursive inductive with no indices and a single 0-field
+/// constructor (`matchConstNonRecStructure` + `numFields == 0`), and
+/// `b`'s type is def-eq to it.
+fn is_unit_like_pair(
+  tc: &mut super::expr_utils::TcScope<'_>,
+  lean_env: &LeanEnv,
+  a: &LeanExpr,
+  b: &LeanExpr,
+) -> bool {
+  let Some(ta) = tc.infer_lean(a) else {
+    return false;
+  };
+  let ta = tc.whnf_lean(&ta);
+  let (head, _) = decompose_apps(&ta);
+  let ExprData::Const(head_name, _, _) = head.as_data() else {
+    return false;
+  };
+  let is_unit_like = match lean_env.get(head_name).as_deref() {
+    Some(ConstantInfo::InductInfo(iv)) => {
+      !iv.is_rec
+        && try_nat_to_usize(&iv.num_indices) == Ok(0)
+        && iv.ctors.len() == 1
+        && match lean_env.get(&iv.ctors[0]).as_deref() {
+          Some(ConstantInfo::CtorInfo(cv)) => {
+            try_nat_to_usize(&cv.num_fields) == Ok(0)
+          },
+          _ => false,
+        }
+    },
+    _ => false,
+  };
+  if !is_unit_like {
+    return false;
+  }
+  let Some(tb) = tc.infer_lean(b) else {
+    return false;
+  };
+  tc.is_def_eq(&ta, &tb)
+}
+
 /// Build `.brecOn.eq` type and value (FVar-based).
 ///
 /// Type: `∀ binders, @Eq (motive_ci args) (brecOn args) (F_ci args (go args).2)`
@@ -1568,6 +1657,7 @@ fn build_type_brecon_eq_fvar(
       &eq_cases_univs,
       cases_on_spec_params,
       rec_level_params,
+      lean_env,
       stt,
       kctx,
     );
@@ -1738,8 +1828,16 @@ fn build_type_brecon_eq_fvar(
 ///   (Eq.refl outer_idx_0) … (HEq.refl outer_major)
 /// ```
 ///
+/// Every equality binder — the per-index `h_i` AND `h_major` — gets
+/// Lean's `mkEqAndProof` Eq-vs-HEq decision via `meta_defeq`. The shape
+/// above shows the usual outcome (`Eq` indices, `HEq` major); for
+/// unit-like-indexed families the major's types are Meta-defEq, so the
+/// binder becomes a homogeneous `Eq (I outer_idxs) outer_major new_major`
+/// discharged by `Eq.refl outer_major`.
+///
 /// Each minor's body chains `Eq.ndrec` over each index, then one final
-/// `Eq.ndrec` for the major discharged via `Eq.symm ∘ eq_of_heq`. When
+/// `Eq.ndrec` for the major discharged via `Eq.symm ∘ eq_of_heq` (`HEq`
+/// major) or `Eq.symm` of the binder fvar directly (`Eq` major). When
 /// `ret_args[i]` is an expression (not a bound fvar), the intermediate
 /// motive adds an extra major binder that is consumed by applying the
 /// `Eq.ndrec` result to the outer major.
@@ -1780,6 +1878,9 @@ fn build_indexed_eq_value(
   // `Eq` and `HEq` binders (matching Lean's `mkEqAndProof` in
   // `refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`).
   rec_level_params: &[Name],
+  // For the unit-like inductive lookup inside `meta_defeq`'s
+  // `is_unit_like_pair` (the elaborator-strength Eq/HEq decision).
+  lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Option<LeanExpr> {
@@ -1897,9 +1998,14 @@ fn build_indexed_eq_value(
   //   - For `Quiver.Hom ... a b`, the signature IS dependent on a, b.
   //     With a ≠ a_1, it's NOT defEq — Lean uses `HEq`.
   //
-  // We use `TcScope::is_def_eq` for the decision.
+  // We use `meta_defeq` — `TcScope::is_def_eq` extended with the
+  // elaborator's unit-like rule — for the decision.
   let mut eq_tc =
     super::expr_utils::TcScope::new(all_decls, rec_level_params, stt, kctx);
+  // The compared "new" types mention the generalized index fvars
+  // (`new_idx_decls`), which are not part of `all_decls` — push them so
+  // inference inside `meta_defeq` (the unit-like check) can type them.
+  eq_tc.push_locals(&new_idx_decls);
   // Track which index binders are HEq (for the remaining-list construction
   // below in `build_minor_via_cases_sim`).
   let mut idx_is_heq: Vec<bool> = Vec::with_capacity(n_indices);
@@ -1908,7 +2014,7 @@ fn build_indexed_eq_value(
   for (i, idx_decl) in index_decls.iter().enumerate() {
     let outer_type = &idx_decl.domain;
     let new_type = &new_idx_decls[i].domain;
-    let types_defeq = eq_tc.is_def_eq(outer_type, new_type);
+    let types_defeq = meta_defeq(&mut eq_tc, lean_env, outer_type, new_type);
     let eq_ty = if types_defeq {
       mk_eq(&idx_sort(i), outer_type, &index_fvars[i], &new_idx_fvars[i])
     } else {
@@ -1930,19 +2036,33 @@ fn build_indexed_eq_value(
     idx_is_heq.push(!types_defeq);
     idx_new_types.push(new_type.clone());
   }
+  // The MAJOR's equality binder gets the same `mkEqAndProof` decision as
+  // the indices: Lean compares `I A j =?= I A j'` with `Meta.isDefEq`,
+  // which succeeds when every index pair is unit-like-defeq — and then
+  // emits a homogeneous `Eq` at the OUTER major type (`mkApp3 Eq lhsType
+  // lhs rhs` — α from the LHS only; generically ill-typed inside the
+  // motive lambda but valid under the kernel's infer-only proof
+  // checking), discharged by `Eq.refl` and consumed by a plain
+  // `Eq.ndrec` in the minors. Fixture: `TypeBrecOnEqDefUnit`.
+  let major_types_defeq =
+    meta_defeq(&mut eq_tc, lean_env, major_type, &new_major_type);
   drop(eq_tc); // release the TC before building the rest of the term
-  let heq_ty = mk_heq(
-    major_level,
-    major_type,
-    outer_major,
-    &new_major_type,
-    &new_major_fvar,
-  );
+  let major_eq_ty = if major_types_defeq {
+    mk_eq(major_level, major_type, outer_major, &new_major_fvar)
+  } else {
+    mk_heq(
+      major_level,
+      major_type,
+      outer_major,
+      &new_major_type,
+      &new_major_fvar,
+    )
+  };
   let (hm_name, _) = fresh_fvar("ieq_hm", 0);
   mw_decls.push(LocalDecl {
     fvar_name: hm_name,
     binder_name: Name::str(Name::anon(), "h".to_string()),
-    domain: heq_ty,
+    domain: major_eq_ty,
     info: BinderInfo::Default,
   });
   let mw_body = mk_forall(outer_eq_body.clone(), &mw_decls);
@@ -2035,6 +2155,7 @@ fn build_indexed_eq_value(
       motive_fvars,
       f_fvars,
       &idx_is_heq,
+      !major_types_defeq,
     )?;
 
     eq_val = LeanExpr::app(eq_val, minor_value);
@@ -2058,8 +2179,12 @@ fn build_indexed_eq_value(
     };
     eq_val = LeanExpr::app(eq_val, refl);
   }
-  eq_val =
-    LeanExpr::app(eq_val, mk_heq_refl(major_level, major_type, outer_major));
+  let major_refl = if major_types_defeq {
+    mk_eq_refl(major_level, major_type, outer_major)
+  } else {
+    mk_heq_refl(major_level, major_type, outer_major)
+  };
+  eq_val = LeanExpr::app(eq_val, major_refl);
 
   Some(mk_lambda(eq_val, all_decls))
 }
@@ -2584,6 +2709,11 @@ fn build_minor_via_cases_sim(
   // `h_i` binder was built as `HEq` (because the types aren't defEq),
   // and the cases-sim's `remaining` list should match.
   idx_is_heq: &[bool],
+  // Whether the motive's MAJOR binder was built as `HEq` (types not
+  // Meta-defEq — the usual case). `false` for unit-like-indexed
+  // families, where Lean generalizes the major with a homogeneous `Eq`
+  // at the outer major type.
+  major_is_heq: bool,
 ) -> Option<LeanExpr> {
   let n_indices = index_decls.len();
 
@@ -2646,16 +2776,21 @@ fn build_minor_via_cases_sim(
     });
   }
 
-  // Build the heq binder decl.
+  // Build the major's equality binder decl — `HEq` or homogeneous `Eq`
+  // (at the OUTER major type), matching the motive's `major_is_heq`
+  // choice.
   let ctor_ret_type =
     build_specialized_major_type(major_type, index_fvars, ret_args);
-  let heq_ty =
-    mk_heq(major_level, major_type, outer_major, &ctor_ret_type, ctor_applied);
+  let major_eq_ty = if major_is_heq {
+    mk_heq(major_level, major_type, outer_major, &ctor_ret_type, ctor_applied)
+  } else {
+    mk_eq(major_level, major_type, outer_major, ctor_applied)
+  };
   let (heq_name, _) = fresh_fvar(&format!("ieq_heq_c{ctor_idx}"), 0);
   let heq_decl = LocalDecl {
     fvar_name: heq_name,
     binder_name: Name::str(Name::anon(), "h_m".to_string()),
-    domain: heq_ty,
+    domain: major_eq_ty,
     info: BinderInfo::Default,
   };
 
@@ -2706,14 +2841,23 @@ fn build_minor_via_cases_sim(
     };
     remaining.push((kind, decl.clone()));
   }
-  let heq_kind = EqBinderKind::HEq {
-    alpha: major_type.clone(),
-    a: outer_major.clone(),
-    beta: ctor_ret_type,
-    b: ctor_applied.clone(),
-    level: major_level.clone(),
+  let major_kind = if major_is_heq {
+    EqBinderKind::HEq {
+      alpha: major_type.clone(),
+      a: outer_major.clone(),
+      beta: ctor_ret_type,
+      b: ctor_applied.clone(),
+      level: major_level.clone(),
+    }
+  } else {
+    EqBinderKind::Eq {
+      alpha: major_type.clone(),
+      lhs: outer_major.clone(),
+      rhs: ctor_applied.clone(),
+      level: major_level.clone(),
+    }
   };
-  remaining.push((heq_kind, heq_decl));
+  remaining.push((major_kind, heq_decl));
 
   // Build the local_context — the list of outer fvars visible at the
   // start of the minor, ordered by introduction. `collect_forward_deps`

@@ -125,6 +125,6 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[validate-aux] {filtered.length} constants"
 
   IO.println "[validate-aux] calling Rust FFI..."
-  let failures := Ix.CompileM.rsCompileValidateAuxFFI filtered
+  let failures := Ix.CompileM.rsCompileValidateAuxFFI filtered ""
   IO.println s!"[validate-aux] total failures: {failures}"
   return if failures == 0 then 0 else 1

@@ -822,9 +822,30 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"fetch-main: no reports for {backend}/{mode} @ {sha.take 8}"
     return exitRejected
 
+  -- The LIST endpoint stopped inlining each report's `results` (it now
+  -- carries only a `counts` summary), which read here as "report found,
+  -- zero rows" and sent every caller down the full base-rerun fallback.
+  -- Fetch each matched report by uuid — the single-report GET still
+  -- returns full results; the inline array is used when a future API
+  -- (or cached response) populates it again.
+  let mut detailed : Array Json := #[]
+  for r in atSha do
+    let inline := (r.getObjVal? "results").toOption.bind (·.getArr?.toOption)
+      |>.getD #[]
+    if !inline.isEmpty then
+      detailed := detailed.push r
+    else
+      let some uuid := (r.getObjVal? "uuid").toOption.bind (·.getStr?.toOption)
+        | continue
+      match ← curlJson s!"https://api.bencher.dev/v0/projects/ix/reports/{uuid}" with
+      | .error e =>
+        IO.println s!"fetch-main: bencher API error (report {uuid}): {e}"
+        return exitRejected
+      | .ok full => detailed := detailed.push full
+
   let mut rows : Array (String × Json) := #[]
   let mut seen : Array String := #[]
-  for r in atSha do
+  for r in detailed do
     let iterations := (r.getObjVal? "results").toOption.bind (·.getArr?.toOption)
       |>.getD #[]
     for iteration in iterations do
@@ -1134,8 +1155,9 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     (fun e => constsByEnv.any (·.1 == e))).toArray
 
   -- Env defaults, per backend, when BENCH_ENVS is absent: the env-keyed
-  -- backends (`inputs := .perEnv` — compile, decompile) cover their full
-  -- registry env set — their row IS the env, so a compiler PR sees every
+  -- backends (`inputs := .perEnv` — compile, decompile, aiur-sharded-env) cover
+  -- their registry env set (the full set, or the spec's `envs`
+  -- restriction) — their row IS the env, so a compiler PR sees every
   -- env's delta without asking — while the per-constant backends default
   -- to the light InitStd (a Mathlib prove is too heavy for an unasked-for
   -- default). An explicit BENCH_ENVS applies to every requested backend —
@@ -1148,7 +1170,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       constEnvs
     else if !envs.isEmpty then envs
     else if b.inputs == .perEnv then
-      (Ix.Cli.BenchCmd.envSpecs.map (·.name)).toArray
+      (b.envs.getD (Ix.Cli.BenchCmd.envSpecs.map (·.name))).toArray
     else #["InitStd"]
 
   let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>

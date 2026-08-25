@@ -7,7 +7,7 @@
 #![allow(clippy::cast_precision_loss)]
 
 use dashmap::{DashMap, DashSet};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
   cmp::Ordering,
   sync::{Arc, atomic::Ordering as AtomicOrdering},
@@ -76,6 +76,13 @@ pub static IX_TIMING: std::sync::LazyLock<bool> =
 pub static IX_LOG_AUX_NAMES: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_LOG_AUX_NAMES").is_ok());
 
+/// Trace call-site surgery decisions at the apply site: for every App whose
+/// head has a `call_site_plans` entry, print the compiling constant, the
+/// guard outcomes, and the applied/expected arg counts. Set via
+/// IX_SURGERY_APPLY_DEBUG=1.
+pub static IX_SURGERY_APPLY_DEBUG: std::sync::LazyLock<bool> =
+  std::sync::LazyLock::new(|| std::env::var("IX_SURGERY_APPLY_DEBUG").is_ok());
+
 /// Options controlling whole-environment compilation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CompileOptions {
@@ -112,8 +119,7 @@ pub struct KernelCtx {
   /// by later aux registration reads as unseen and re-ingresses under
   /// the new id, exactly as the per-call sets healed it. Must be cleared
   /// together with `kenv` (the entries it vouches for die with it).
-  pub aux_ingress_seen:
-    rustc_hash::FxHashSet<ix_kernel::id::KId<ix_kernel::mode::Meta>>,
+  pub aux_ingress_seen: FxHashSet<ix_kernel::id::KId<ix_kernel::mode::Meta>>,
 }
 
 impl Default for KernelCtx {
@@ -126,7 +132,7 @@ impl KernelCtx {
   pub fn new() -> Self {
     KernelCtx {
       kenv: ix_kernel::env::KEnv::new(),
-      aux_ingress_seen: rustc_hash::FxHashSet::default(),
+      aux_ingress_seen: FxHashSet::default(),
     }
   }
 }
@@ -755,6 +761,134 @@ pub fn collect_mut_const_exprs<'a>(
 // Expression compilation
 // ===========================================================================
 
+fn compiling_is_aux_regen(cache: &BlockCache, stt: &CompileState) -> bool {
+  cache.compiling.as_ref().is_some_and(|c| {
+    crate::decompile::is_aux_gen_suffix(c)
+      && (stt.aux_name_to_addr.contains_key(c)
+        || stt.env.named.get(c).is_some_and(|n| n.has_original()))
+  })
+}
+
+fn eta_adapter_needed(
+  name: &Name,
+  n_args: usize,
+  cache: &BlockCache,
+  stt: &CompileState,
+) -> bool {
+  if compiling_is_aux_regen(cache, stt) {
+    return false;
+  }
+  plan_head_arity(stt, name)
+    .is_some_and(|arity| !arity.head_rewrite && n_args < arity.floor)
+}
+
+/// Build the source-interface eta wrapper for a short plan-bearing
+/// application. Binder types/names/info come from the source declaration's
+/// stored Pi telescope after universe and applied-prefix instantiation.
+fn synthesize_eta_call_site(
+  name: &Name,
+  levels: &[Level],
+  applied: &[&LeanExpr],
+  stt: &CompileState,
+) -> Result<(LeanExpr, usize), CompileError> {
+  let lean_env = stt.lean_env.as_deref().ok_or_else(|| {
+    CompileError::InvalidMutualBlock {
+      reason: format!(
+        "eta call-site adapter for '{}' needs the source Lean environment",
+        name.pretty()
+      ),
+    }
+  })?;
+  let ci = lean_env.get(name).ok_or_else(|| CompileError::MissingConstant {
+    name: name.pretty(),
+    caller: "synthesize_eta_call_site".into(),
+  })?;
+  let instantiated_type = aux_gen::expr_utils::subst_levels(
+    ci.get_type(),
+    ci.get_level_params(),
+    levels,
+  );
+  let applied_owned: Vec<LeanExpr> =
+    applied.iter().map(|arg| (*arg).clone()).collect();
+  let residual = aux_gen::expr_utils::instantiate_pi_params(
+    &instantiated_type,
+    applied_owned.len(),
+    &applied_owned,
+  );
+
+  let mut binders: Vec<(Name, LeanExpr, BinderInfo)> = Vec::new();
+  let mut cur = residual;
+  while let ExprData::ForallE(binder_name, ty, body, info, _) = cur.as_data() {
+    binders.push((binder_name.clone(), ty.clone(), info.clone()));
+    cur = body.clone();
+  }
+  if binders.is_empty() {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "eta call-site adapter for '{}' found no residual Pi binders after {} args",
+        name.pretty(),
+        applied_owned.len()
+      ),
+    });
+  }
+
+  let n_synth = binders.len();
+  let mut full_args: Vec<LeanExpr> = applied_owned
+    .iter()
+    .map(|arg| aux_gen::expr_utils::shift_vars(arg, n_synth, 0))
+    .collect();
+  for i in 0..n_synth {
+    full_args.push(LeanExpr::bvar(Nat::from((n_synth - 1 - i) as u64)));
+  }
+  let mut body = LeanExpr::cnst(name.clone(), levels.to_vec());
+  for arg in full_args {
+    body = LeanExpr::app(body, arg);
+  }
+  for (binder_name, ty, info) in binders.into_iter().rev() {
+    body = LeanExpr::lam(binder_name, ty, body, info);
+  }
+  Ok((body, n_synth))
+}
+
+fn compile_const_expr_raw(
+  name: &Name,
+  levels: &[Level],
+  univ_params: &[Name],
+  mut_ctx: &MutCtx,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Result<(Arc<Expr>, u64), CompileError> {
+  let compiled = compile_univ_indices(levels, univ_params, cache)?;
+  let univ_indices: Vec<u64> = compiled.iter().map(|(c, _)| *c).collect();
+  let patch_idxs: Option<Vec<u64>> =
+    if compiled.iter().any(|(_, o)| o.is_some()) {
+      Some(compiled.iter().map(|(c, o)| o.unwrap_or(*c)).collect())
+    } else {
+      None
+    };
+  let name_addr = compile_name(name, stt);
+  let expr = if let Some(idx) = mut_ctx.get(name) {
+    let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
+    Expr::rec(idx_u64, univ_indices)
+  } else {
+    let const_addr = stt.resolve_addr(name).ok_or_else(|| {
+      let who =
+        cache.compiling.as_ref().map_or_else(|| "?".into(), |n| n.pretty());
+      CompileError::MissingConstant {
+        name: name.pretty(),
+        caller: format!("{who} @ compile_expr(Const)"),
+      }
+    })?;
+    let (ref_idx, _) = cache.refs.insert_full(const_addr.clone());
+    Expr::reference(ref_idx as u64, univ_indices)
+  };
+  let root = cache.arena.alloc(ExprMetaData::Ref { name: name_addr });
+  if let Some(univ_idxs) = patch_idxs {
+    cache.univ_patches.push(UnivPatch { arena_idx: root, univ_idxs });
+  }
+  Ok((expr, root))
+}
+
 /// Compile a Lean expression to an Ixon expression.
 /// Builds arena-based metadata in cache.arena with bottom-up allocation.
 pub fn compile_expr(
@@ -769,6 +903,9 @@ pub fn compile_expr(
   // Stack-based iterative compilation to avoid stack overflow
   enum Frame {
     Compile(LeanExpr),
+    /// Compile the Const at the head of a canonical call-site body without
+    /// interpreting the bare Const itself as another partial reference.
+    CompileCallSiteHead(LeanExpr),
     BuildApp,
     BuildLam(Address, BinderInfo),
     BuildAll(Address, BinderInfo),
@@ -790,11 +927,19 @@ pub fn compile_expr(
       /// `CallSite.orig_head` pointer instead of a source-order entry.
       orig_head_collapsed: bool,
     },
+    /// Replace the ordinary synthesized Binder/CallSite root with the
+    /// decompile-facing eta marker after the wrapper has compiled.
+    BuildEtaCallSite {
+      n_synth: usize,
+      n_applied: usize,
+    },
   }
 
   // Top-level cache check (O(1) with arena)
   let expr_key = Address::from_blake3_hash(*expr.get_hash());
-  if let Some(cached) = cache.exprs.get(&expr_key).cloned() {
+  let root_is_eta = matches!(expr.as_data(), ExprData::Const(name, _, _)
+    if eta_adapter_needed(name, 0, cache, stt));
+  if !root_is_eta && let Some(cached) = cache.exprs.get(&expr_key).cloned() {
     cache.arena_roots.push(cached.arena_root);
     return Ok(cached.expr);
   }
@@ -804,9 +949,28 @@ pub fn compile_expr(
 
   while let Some(frame) = stack.pop() {
     match frame {
+      Frame::CompileCallSiteHead(e) => {
+        let ExprData::Const(name, levels, _) = e.as_data() else {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: "call-site canonical head is not a Const".into(),
+          });
+        };
+        let (head, root) = compile_const_expr_raw(
+          name,
+          levels,
+          univ_params,
+          mut_ctx,
+          cache,
+          stt,
+        )?;
+        results.push(head);
+        cache.arena_roots.push(root);
+      },
       Frame::Compile(e) => {
         let e_key = Address::from_blake3_hash(*e.get_hash());
-        if let Some(cached) = cache.exprs.get(&e_key).cloned() {
+        let is_eta = matches!(e.as_data(), ExprData::Const(name, _, _)
+          if eta_adapter_needed(name, 0, cache, stt));
+        if !is_eta && let Some(cached) = cache.exprs.get(&e_key).cloned() {
           // O(1) cache hit: arena root already valid
           results.push(cached.expr);
           cache.arena_roots.push(cached.arena_root);
@@ -839,58 +1003,23 @@ pub fn compile_expr(
           },
 
           ExprData::Const(name, levels, _) => {
-            let compiled = compile_univ_indices(levels, univ_params, cache)?;
-            let univ_indices: Vec<u64> =
-              compiled.iter().map(|(c, _)| *c).collect();
-            // Canonicity §10.6: when ANY level arg's spelling changed,
-            // the patch carries the FULL original list in the virtual
-            // index space (unchanged args point at their canonical
-            // primary entries).
-            let patch_idxs: Option<Vec<u64>> =
-              if compiled.iter().any(|(_, o)| o.is_some()) {
-                Some(compiled.iter().map(|(c, o)| o.unwrap_or(*c)).collect())
-              } else {
-                None
-              };
-            let name_addr = compile_name(name, stt);
-
-            // Check if this is a mutual reference
-            if let Some(idx) = mut_ctx.get(name) {
-              let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
-              results.push(Expr::rec(idx_u64, univ_indices));
-              let root =
-                cache.arena.alloc(ExprMetaData::Ref { name: name_addr });
-              cache.arena_roots.push(root);
-              if let Some(univ_idxs) = patch_idxs {
-                cache
-                  .univ_patches
-                  .push(UnivPatch { arena_idx: root, univ_idxs });
-              }
-            } else {
-              // External reference — check both name_to_addr and
-              // aux_name_to_addr (aux_gen constants compiled during
-              // the same block's compilation).
-              let const_addr = stt.resolve_addr(name).ok_or_else(|| {
-                let who = cache
-                  .compiling
-                  .as_ref()
-                  .map_or_else(|| "?".into(), |n| n.pretty());
-                CompileError::MissingConstant {
-                  name: name.pretty(),
-                  caller: format!("{who} @ compile_expr(Const)"),
-                }
-              })?;
-              let (ref_idx, _) = cache.refs.insert_full(const_addr.clone());
-              results.push(Expr::reference(ref_idx as u64, univ_indices));
-              let root =
-                cache.arena.alloc(ExprMetaData::Ref { name: name_addr });
-              cache.arena_roots.push(root);
-              if let Some(univ_idxs) = patch_idxs {
-                cache
-                  .univ_patches
-                  .push(UnivPatch { arena_idx: root, univ_idxs });
-              }
+            if is_eta {
+              let (wrapper, n_synth) =
+                synthesize_eta_call_site(name, levels, &[], stt)?;
+              stack.push(Frame::BuildEtaCallSite { n_synth, n_applied: 0 });
+              stack.push(Frame::Compile(wrapper));
+              continue;
             }
+            let (raw, root) = compile_const_expr_raw(
+              name,
+              levels,
+              univ_params,
+              mut_ctx,
+              cache,
+              stt,
+            )?;
+            results.push(raw);
+            cache.arena_roots.push(root);
           },
 
           ExprData::App(_, _, _) => {
@@ -972,6 +1101,28 @@ pub fn compile_expr(
                     && (stt.aux_name_to_addr.contains_key(c)
                       || stt.env.named.get(c).is_some_and(|n| n.has_original()))
                 });
+              if *IX_SURGERY_APPLY_DEBUG
+                && let Some(plan) = stt.call_site_plans.get(name)
+              {
+                let expected_total = plan.n_params
+                  + plan.n_source_motives
+                  + plan.n_source_minors
+                  + plan.n_indices
+                  + 1;
+                eprintln!(
+                  "[surgery-apply] head={} compiling={} aux_regen={} \
+                   identity={} args={} expected={}",
+                  name.pretty(),
+                  cache
+                    .compiling
+                    .as_ref()
+                    .map_or_else(|| "<none>".to_string(), |c| c.pretty()),
+                  compiling_is_aux_regen,
+                  plan.is_identity(),
+                  args.len(),
+                  expected_total,
+                );
+              }
               if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name)
                   && !plan.is_identity()
@@ -1150,15 +1301,11 @@ pub fn compile_expr(
                     for arg in canonical_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
                     }
-                    stack.push(Frame::Compile(head_for_canon));
+                    stack.push(Frame::CompileCallSiteHead(head_for_canon));
                     continue;
                   }
-                  let expected_total = plan.n_params
-                    + plan.n_source_motives
-                    + plan.n_source_minors
-                    + plan.n_indices
-                    + 1; // major
-                  if args.len() >= expected_total {
+                  let minimal_full_prefix = plan.minimal_full_prefix();
+                  if args.len() >= minimal_full_prefix {
                     // Surgery path: separate args into kept/collapsed,
                     // reorder kept to canonical, compile everything.
                     let name_addr = compile_name(name, stt);
@@ -1297,7 +1444,7 @@ pub fn compile_expr(
                     for arg in sorted_canon.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
                     }
-                    stack.push(Frame::Compile(head_expr.clone()));
+                    stack.push(Frame::CompileCallSiteHead(head_expr.clone()));
                     continue;
                   }
                 }
@@ -1316,11 +1463,8 @@ pub fn compile_expr(
                   // in place, so one identity tail covers indices+major,
                   // ctor fields, and casesOn target-motive+indices+
                   // major+minors alike.
-                  let is_head = surgery::below_plan_key_is_head(name);
-                  let expected_total = plan.n_params
-                    + plan.n_source_motives
-                    + if is_head { plan.n_indices + 1 } else { 0 };
-                  if args.len() >= expected_total {
+                  let minimal_full_prefix = plan.below_minimal_full_prefix();
+                  if args.len() >= minimal_full_prefix {
                     let name_addr = compile_name(name, stt);
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1396,7 +1540,7 @@ pub fn compile_expr(
                     for arg in sorted_canon.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
                     }
-                    stack.push(Frame::Compile(head_expr.clone()));
+                    stack.push(Frame::CompileCallSiteHead(head_expr.clone()));
                     continue;
                   }
                 }
@@ -1404,10 +1548,7 @@ pub fn compile_expr(
                   && !plan.is_identity()
                 {
                   let fixed_tail_len = plan.n_indices + 1; // indices + major
-                  let expected_total = plan.n_params
-                    + plan.n_source_motives
-                    + fixed_tail_len
-                    + plan.n_source_motives;
+                  let expected_total = plan.brecon_minimal_full_prefix();
                   if args.len() >= expected_total {
                     let name_addr = compile_name(name, stt);
 
@@ -1528,9 +1669,19 @@ pub fn compile_expr(
                     for arg in sorted_canon.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
                     }
-                    stack.push(Frame::Compile(head_expr.clone()));
+                    stack.push(Frame::CompileCallSiteHead(head_expr.clone()));
                     continue;
                   }
+                }
+                if eta_adapter_needed(name, args.len(), cache, stt) {
+                  let (wrapper, n_synth) =
+                    synthesize_eta_call_site(name, levels, &args, stt)?;
+                  stack.push(Frame::BuildEtaCallSite {
+                    n_synth,
+                    n_applied: args.len(),
+                  });
+                  stack.push(Frame::Compile(wrapper));
+                  continue;
                 }
               }
             }
@@ -1721,6 +1872,80 @@ pub fn compile_expr(
         }
       },
 
+      Frame::BuildEtaCallSite { n_synth, n_applied } => {
+        let wrapper_root = cache
+          .arena_roots
+          .pop()
+          .expect("BuildEtaCallSite missing wrapper root");
+        let wrapper_expr =
+          results.pop().expect("BuildEtaCallSite missing wrapper result");
+
+        let mut body_root = wrapper_root;
+        for _ in 0..n_synth {
+          body_root = match cache.arena.nodes.get(body_root as usize) {
+            Some(ExprMetaData::Binder { children, .. }) => children[1],
+            other => {
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "eta adapter metadata expected {n_synth} Binder nodes, \
+                   found {other:?}"
+                ),
+              });
+            },
+          };
+        }
+
+        let (name, mut entries, canon_meta, orig_head) =
+          match cache.arena.nodes.get(body_root as usize) {
+            Some(ExprMetaData::CallSite {
+              name,
+              entries,
+              canon_meta,
+              orig_head,
+            }) => {
+              (name.clone(), entries.clone(), canon_meta.clone(), *orig_head)
+            },
+            other => {
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "eta adapter body did not compile to CallSite metadata: \
+                   {other:?}"
+                ),
+              });
+            },
+          };
+        if orig_head.is_some() || entries.len() != n_applied + n_synth {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "eta adapter body metadata mismatch: {} source entries for {} \
+               applied + {} synthesized args (orig_head={})",
+              entries.len(),
+              n_applied,
+              n_synth,
+              orig_head.is_some()
+            ),
+          });
+        }
+        entries.truncate(n_applied);
+        let eta_root = cache.arena.alloc(ExprMetaData::EtaCallSite {
+          n_synth: n_synth as u64,
+          name,
+          entries,
+          canon_meta,
+          wrapper_meta: wrapper_root,
+        });
+        if let Some(body_patch) =
+          cache.univ_patches.iter().find(|p| p.arena_idx == body_root)
+        {
+          cache.univ_patches.push(UnivPatch {
+            arena_idx: eta_root,
+            univ_idxs: body_patch.univ_idxs.clone(),
+          });
+        }
+        results.push(wrapper_expr);
+        cache.arena_roots.push(eta_root);
+      },
+
       Frame::BuildCallSite {
         name_addr,
         mut entries,
@@ -1855,6 +2080,184 @@ pub fn compile_expr(
   results
     .pop()
     .ok_or(CompileError::UnsupportedExpr { desc: "empty result".into() })
+}
+
+/// Arity information for a source-visible head carrying non-identity
+/// call-site surgery.
+#[derive(Clone, Copy)]
+struct PlanHeadArity {
+  /// Prefix at which Tier-A permutation preserves the residual interface.
+  floor: usize,
+  /// Full public telescope count when it is statically known.
+  expected: usize,
+  /// Evaporated-aux head rewrites do not yet have a Tier-B adapter.
+  head_rewrite: bool,
+}
+
+fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
+  if let Some(plan) = stt.call_site_plans.get(name)
+    && !plan.is_identity()
+  {
+    let expected = plan.n_params
+      + plan.n_source_motives
+      + plan.n_source_minors
+      + plan.n_indices
+      + 1;
+    return Some(PlanHeadArity {
+      floor: plan.minimal_full_prefix(),
+      expected,
+      head_rewrite: plan.head_rewrite.is_some(),
+    });
+  }
+  if let Some(plan) = stt.below_call_site_plans.get(name)
+    && !plan.is_identity()
+  {
+    let floor = plan.below_minimal_full_prefix();
+    let expected = if surgery::below_plan_key_is_head(name) {
+      floor + plan.n_indices + 1
+    } else {
+      floor
+    };
+    return Some(PlanHeadArity { floor, expected, head_rewrite: false });
+  }
+  if let Some(plan) = stt.brec_on_call_site_plans.get(name)
+    && !plan.is_identity()
+  {
+    let expected = plan.brecon_minimal_full_prefix();
+    return Some(PlanHeadArity {
+      floor: expected,
+      expected,
+      head_rewrite: false,
+    });
+  }
+  None
+}
+
+/// Read-only pre-walk over an ORIGINAL Lean expression.  Tier B handles
+/// ordinary partial and bare references locally; this audit closes the two
+/// deliberately unsupported holes that would otherwise silently reach the
+/// kernel: an under-applied evaporated-aux head rewrite, and a plan head whose
+/// App spine is split by `Mdata`/`LetE` (the telescope collector cannot see the
+/// surrounding arguments).
+fn audit_plan_head_arities(
+  owner: &Name,
+  top: &LeanExpr,
+  stt: &CompileState,
+) -> Result<usize, CompileError> {
+  if stt.call_site_plans.is_empty()
+    && stt.below_call_site_plans.is_empty()
+    && stt.brec_on_call_site_plans.is_empty()
+  {
+    return Ok(0);
+  }
+
+  // `obscured` means this expression occurs in the function part of an outer
+  // App whose telescope stopped at a non-App wrapper.  A short plan spine in
+  // that position cannot be assigned a local source-order interface safely.
+  //
+  // Lean expressions are DAGs.  In particular, large tactic proofs can reuse
+  // the same subexpression through exponentially many tree paths.  The real
+  // compiler memoizes those nodes, so this preflight walk must do the same;
+  // otherwise the audit alone can turn a sub-second proof into minutes of
+  // repeated traversal.  `obscured` is part of the key because the same node
+  // is safe in an argument position but may be invalid in a wrapped function
+  // position.
+  let mut seen: FxHashSet<(blake3::Hash, bool)> = FxHashSet::default();
+  let mut stack: Vec<(LeanExpr, bool)> = vec![(top.clone(), false)];
+  while let Some((e, obscured)) = stack.pop() {
+    if !seen.insert((*e.get_hash(), obscured)) {
+      continue;
+    }
+    match e.as_data() {
+      ExprData::App(..) => {
+        let (head, args) = surgery::collect_lean_telescope(&e);
+        match head.as_data() {
+          ExprData::Const(name, _, _) => {
+            if let Some(arity) = plan_head_arity(stt, name)
+              && args.len()
+                < if arity.head_rewrite { arity.expected } else { arity.floor }
+              && (obscured || arity.head_rewrite)
+            {
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "plan-head arity audit while compiling '{}': head '{}' has \
+                   {} args, expected at least {}{}",
+                  owner.pretty(),
+                  name.pretty(),
+                  args.len(),
+                  if arity.head_rewrite { arity.expected } else { arity.floor },
+                  if obscured {
+                    " (application spine obscured by mdata/let)"
+                  } else {
+                    ""
+                  },
+                ),
+              });
+            }
+          },
+          // Lambda-headed applications are the supported split-redex shape.
+          // Recurse into the lambda normally; its inner partial plan head gets
+          // the same local Tier-B adapter as every other short reference.
+          ExprData::Lam(..) => stack.push((head.clone(), false)),
+          _ => stack.push((head.clone(), true)),
+        }
+        for arg in args {
+          stack.push((arg.clone(), false));
+        }
+      },
+      ExprData::Const(name, _, _) => {
+        if let Some(arity) = plan_head_arity(stt, name)
+          && (obscured || arity.head_rewrite)
+        {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "plan-head arity audit while compiling '{}': head '{}' has 0 \
+               args, expected at least {}{}",
+              owner.pretty(),
+              name.pretty(),
+              if arity.head_rewrite { arity.expected } else { arity.floor },
+              if obscured {
+                " (application spine obscured by mdata/let)"
+              } else {
+                ""
+              },
+            ),
+          });
+        }
+      },
+      ExprData::Lam(_, ty, body, _, _)
+      | ExprData::ForallE(_, ty, body, _, _) => {
+        stack.push((body.clone(), obscured));
+        stack.push((ty.clone(), false));
+      },
+      ExprData::LetE(_, ty, val, body, _, _) => {
+        stack.push((body.clone(), obscured));
+        stack.push((val.clone(), false));
+        stack.push((ty.clone(), false));
+      },
+      ExprData::Mdata(_, inner, _) => stack.push((inner.clone(), obscured)),
+      ExprData::Proj(_, _, s, _) => stack.push((s.clone(), false)),
+      _ => {},
+    }
+  }
+  Ok(seen.len())
+}
+
+fn audit_constant_info_plan_heads(
+  ci: &LeanConstantInfo,
+  stt: &CompileState,
+) -> Result<(), CompileError> {
+  let owner = ci.get_name();
+  audit_plan_head_arities(owner, ci.get_type(), stt)?;
+  if let Some(value) = ci.get_value() {
+    audit_plan_head_arities(owner, value, stt)?;
+  }
+  if let LeanConstantInfo::RecInfo(rec) = ci {
+    for rule in &rec.rules {
+      audit_plan_head_arities(owner, &rule.rhs, stt)?;
+    }
+  }
+  Ok(())
 }
 
 /// Compile a Lean DataValue to Ixon DataValue.
@@ -3659,6 +4062,7 @@ fn compile_const_inner(
       caller: "compile_const".into(),
     })?
     .clone();
+  audit_constant_info_plan_heads(&cnst, stt)?;
   let _cnst_kind = match &cnst {
     LeanConstantInfo::DefnInfo(_) => "defn",
     LeanConstantInfo::ThmInfo(_) => "thm",
@@ -3939,8 +4343,18 @@ fn compile_mutual(
         caller: "compile_mutual".into(),
       });
     };
+    audit_constant_info_plan_heads(&const_info, stt)?;
     let mut_const = match &const_info {
       LeanConstantInfo::InductInfo(val) => {
+        for ctor_name in &val.ctors {
+          let ctor = lean_env.get(ctor_name).ok_or_else(|| {
+            CompileError::MissingConstant {
+              name: ctor_name.pretty(),
+              caller: "plan-head arity audit (constructor)".into(),
+            }
+          })?;
+          audit_constant_info_plan_heads(&ctor, stt)?;
+        }
         MutConst::Indc(mk_indc(val, lean_env)?)
       },
       LeanConstantInfo::DefnInfo(val) => MutConst::Defn(Def::mk_defn(val)),
@@ -4362,20 +4776,40 @@ fn compile_mutual(
             && lean_env.get(&brecon_name).is_some()
           {
             let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
-            if stt
-              .brec_on_call_site_plans
-              .get(&brecon_name)
-              .is_some_and(|existing| *existing != new_plan)
-            {
-              return Err(CompileError::InvalidMutualBlock {
-                reason: format!(
-                  "conflicting brecOn call-site plans for '{}' — two blocks \
-                   claim one source-indexed aux name",
-                  brecon_name.pretty(),
-                ),
-              });
+            // Type-level brecOn splits into `.go` (the PProd-packed
+            // worker) and `.eq` (its unfolding lemma). Lean's
+            // auto-generated equation-lemma proofs (`f.eq_def`) reference
+            // both DIRECTLY with explicit motive/handler arguments, and
+            // their telescopes are identical to `.brecOn`'s (params,
+            // motives, indices, major, handlers) — so they need the same
+            // call-site permutation. Without these keys, eq_def proofs
+            // ship source-order motives against the canonical-order
+            // regenerated `.go`/`.eq` (the torchlean
+            // `NN.GraphSpec.DAG.*.eq_def` AppTypeMismatch family; fixture
+            // `Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDef`).
+            let mut plan_keys = vec![brecon_name.clone()];
+            for sub in ["go", "eq"] {
+              let sub_name = Name::str(brecon_name.clone(), sub.to_string());
+              if lean_env.get(&sub_name).is_some() {
+                plan_keys.push(sub_name);
+              }
             }
-            stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
+            for key in plan_keys {
+              if stt
+                .brec_on_call_site_plans
+                .get(&key)
+                .is_some_and(|existing| *existing != new_plan)
+              {
+                return Err(CompileError::InvalidMutualBlock {
+                  reason: format!(
+                    "conflicting brecOn call-site plans for '{}' — two \
+                     blocks claim one source-indexed aux name",
+                    key.pretty(),
+                  ),
+                });
+              }
+              stt.brec_on_call_site_plans.insert(key, new_plan.clone());
+            }
           }
           if let Some(below_name) = surgery::rec_name_to_below_name(&name)
             && let Some(below_ci) = lean_env.get(&below_name)
@@ -4671,6 +5105,89 @@ mod tests {
       },
       _ => panic!("expected Str"),
     }
+  }
+
+  #[test]
+  fn test_plan_head_arity_audit_rejects_mdata_split_spine() {
+    let stt = CompileState::default();
+    let head =
+      Name::str(Name::str(Name::anon(), "A".to_string()), "rec".to_string());
+    stt.call_site_plans.insert(
+      head.clone(),
+      surgery::CallSitePlan {
+        n_params: 0,
+        n_source_motives: 2,
+        n_source_minors: 2,
+        n_indices: 0,
+        motive_keep: vec![true, true],
+        minor_keep: vec![true, true],
+        source_to_canon_motive: vec![1, 0],
+        source_to_canon_minor: vec![1, 0],
+        source_in_block: vec![true, true],
+        head_rewrite: None,
+      },
+    );
+
+    // App(Mdata(App(App(A.rec, m1), m2)), minor): the outer telescope
+    // cannot see through Mdata, while the inner plan spine is too short.
+    let inner = LeanExpr::app(
+      LeanExpr::app(
+        LeanExpr::cnst(head.clone(), vec![]),
+        LeanExpr::bvar(Nat::from(0u64)),
+      ),
+      LeanExpr::bvar(Nat::from(1u64)),
+    );
+    let split = LeanExpr::app(
+      LeanExpr::mdata(vec![], inner),
+      LeanExpr::bvar(Nat::from(2u64)),
+    );
+    let owner = Name::str(Name::anon(), "offending".to_string());
+    let err = audit_plan_head_arities(&owner, &split, &stt)
+      .expect_err("mdata-split plan spine must fail the preflight audit")
+      .to_string();
+    assert!(err.contains("offending"), "missing owner in: {err}");
+    assert!(err.contains("A.rec"), "missing head in: {err}");
+    assert!(err.contains("has 2 args"), "missing arity in: {err}");
+    assert!(err.contains("at least 4"), "missing floor in: {err}");
+    assert!(err.contains("obscured by mdata/let"), "missing cause in: {err}");
+  }
+
+  #[test]
+  fn test_plan_head_arity_audit_visits_shared_dag_once() {
+    let stt = CompileState::default();
+    let head =
+      Name::str(Name::str(Name::anon(), "A".to_string()), "rec".to_string());
+    stt.call_site_plans.insert(
+      head,
+      surgery::CallSitePlan {
+        n_params: 0,
+        n_source_motives: 2,
+        n_source_minors: 2,
+        n_indices: 0,
+        motive_keep: vec![true, true],
+        minor_keep: vec![true, true],
+        source_to_canon_motive: vec![1, 0],
+        source_to_canon_minor: vec![1, 0],
+        source_in_block: vec![true, true],
+        head_rewrite: None,
+      },
+    );
+
+    // Each lambda reuses the exact previous DAG node as both its domain and
+    // body. A tree walk sees 2^40 paths; the audit must see 41 unique nodes.
+    let mut shared = LeanExpr::bvar(Nat::from(0u64));
+    for _ in 0..40 {
+      shared = LeanExpr::lam(
+        Name::anon(),
+        shared.clone(),
+        shared.clone(),
+        BinderInfo::Default,
+      );
+    }
+    let owner = Name::str(Name::anon(), "shared-dag".to_string());
+    let visited = audit_plan_head_arities(&owner, &shared, &stt)
+      .expect("shared DAG without plan references should pass the audit");
+    assert_eq!(visited, 41, "audit should expand each shared node once");
   }
 
   #[test]

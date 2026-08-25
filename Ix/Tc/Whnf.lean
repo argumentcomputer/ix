@@ -743,6 +743,25 @@ inductive NativeReductionPlan (m : Mode) where
   | done (result : Option (KExpr m))
   | marker (isReduceBool : Bool) (arg : KExpr m)
 
+/-- Result of probing Rule-K constructor synthesis. A definitive rejection is
+produced only by a full-strength DefEq failure; cheap-mode false negatives
+remain inconclusive and retain the conservative major-WHNF fallback. -/
+inductive KSynthOutcome (m : Mode) where
+  | synthesized (ctor : KExpr m)
+  | definitiveReject
+  | inconclusive
+
+namespace KSynthOutcome
+
+/-- Select the major used by iota after a K-synthesis probe. `none` is the
+definitive stuck result; an inconclusive probe preserves the original major. -/
+def selectMajor (fallback : KExpr m) : KSynthOutcome m → Option (KExpr m)
+  | .synthesized ctor => some ctor
+  | .definitiveReject => none
+  | .inconclusive => some fallback
+
+end KSynthOutcome
+
 mutual
 
 /-- Full WHNF: loop of whnf-no-delta → native/nat/decidable/string → delta. -/
@@ -942,7 +961,7 @@ def whnfCoreWithFlagsStep (cur : KExpr m) (flags : WhnfFlags) :
 def whnfCoreWithFlagsUncached (e : KExpr m) (flags : WhnfFlags) :
     RecM m (KExpr m) :=
   runBounded (fun cur => whnfCoreWithFlagsStep cur flags)
-    maxWhnfFuel.toNat e
+    maxWhnfCoreFuel.toNat e
 
 /-- WHNF without delta: whnf-core → proj-app → nat/native/string → quot. -/
 def whnfNoDelta (e : KExpr m) : RecM m (KExpr m) :=
@@ -1095,7 +1114,9 @@ def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
   -- K-like: synthesize a nullary ctor from the major's type before WHNF.
   let major := spine[recr.majorIdx]!
   let major ← if recr.k then
-      pure ((← synthCtorWhenK major recId recr recUs).getD major)
+      match (← synthCtorWhenK major recId recr recUs).selectMajor major with
+      | some selected => pure selected
+      | none => return none
     else pure major
   let major := (← cleanupNatOffsetMajor major).getD major
   -- WHNF the major (cheap mode skips delta on the major itself).
@@ -1199,22 +1220,24 @@ stays in `synthCtorWhenK`; this seam owns all intern, stats, and final DefEq
 effects, including the counted silent rejection. -/
 def verifyKSynthCandidate (majorTyW : KExpr m) (ctorId : KId m)
     (tyUs : Array (KUniv m)) (tyArgs : Array (KExpr m)) (params : Nat) :
-    RecM m (Option (KExpr m)) := do
+    RecM m (KSynthOutcome m) := do
   let ctorApp ← TcM.intern (KExpr.mkConst ctorId tyUs)
   let ctorApp ← finishAppResult ctorApp
     (tyArgs.extract 0 (min params tyArgs.size)) 0
   let some ctorTy ← tryOptional (inferOnlyRec ctorApp)
-    | return none
+    | return .inconclusive
   TcM.bumpStats (m := m) fun s =>
     { s with kSynthAttempts := s.kSynthAttempts + 1 }
+  let fullStrength := (← get).cheapRecursionDepth == 0
   if !(← callIsDefEq majorTyW ctorTy) then
-    -- Silent fallback (the caller keeps the stuck major — `.getD major`;
-    -- Rust parity: `.unwrap_or_else`). Counted so reject totals can be
-    -- compared cross-kernel (IX_TC_STATS ↔ Rust IX_KSYNTH_LOG).
     TcM.bumpStats (m := m) fun s =>
       { s with kSynthRejects := s.kSynthRejects + 1 }
-    return none
-  return some ctorApp
+    -- Full DefEq has proved that the major's inferred type is not the sole
+    -- nullary constructor's type. Subject reduction therefore rules out WHNF
+    -- exposing that constructor. Cheap projection reduction can report a
+    -- false negative, so its rejection remains inconclusive.
+    return if fullStrength then .definitiveReject else .inconclusive
+  return .synthesized ctorApp
 
 /-- Finish K-synthesis after the recursor scan has selected its major
 inductive.  Naming this defensive catalog transaction exposes the address
@@ -1222,36 +1245,36 @@ check, repeated inductive lookup, empty-constructor fallback, and candidate
 result without changing their order or state scope. -/
 def selectKSynthCandidate (majorTyW : KExpr m) (tyHeadId : KId m)
     (tyUs : Array (KUniv m)) (tyArgs : Array (KExpr m))
-    (indId : KId m) (params : Nat) : RecM m (Option (KExpr m)) := do
+    (indId : KId m) (params : Nat) : RecM m (KSynthOutcome m) := do
   if tyHeadId.addr != indId.addr then
-    return none
+    return .inconclusive
   let ctorId ← match (← TcM.tryGetConst indId) with
     | some (.indc (ctors := ctors) ..) =>
       match ctors[0]? with
       | some c => pure c
-      | none => return none
-    | _ => return none
+      | none => return .inconclusive
+    | _ => return .inconclusive
   verifyKSynthCandidate majorTyW ctorId tyUs tyArgs params
 
 /-- K-like recursors: when the major isn't a ctor but its type matches the
     target inductive, build `ctor₀ params…` and def-eq-verify its type. -/
 def synthCtorWhenK (major : KExpr m) (recId : KId m)
     (recr : IotaInfo m) (recUs : Array (KUniv m)) :
-    RecM m (Option (KExpr m)) := do
+    RecM m (KSynthOutcome m) := do
   if recUs.size.toUInt64 != recr.lvls then
-    return none
+    return .inconclusive
   let some majorTy ← tryOptional (inferOnlyRec major)
-    | return none
-  let some majorTyW ← tryOptional (whnfRec majorTy) | return none
+    | return .inconclusive
+  let some majorTyW ← tryOptional (whnfRec majorTy) | return .inconclusive
   let (tyHead, tyArgs) := majorTyW.collectSpine
-  let .const tyHeadId tyUs _ := tyHead | return none
+  let .const tyHeadId tyUs _ := tyHead | return .inconclusive
   let recTy ← match (← TcM.tryGetConst recId) with
     | some c => pure c.ty
-    | none => return none
+    | none => return .inconclusive
   let skip := (recr.params + recr.motives + recr.minors + recr.indices).toUInt64
   let some indId ← tryOptional (do
     let recTy ← TcM.instantiateUnivParams recTy recUs
-    getMajorInductiveId recTy skip) | return none
+    getMajorInductiveId recTy skip) | return .inconclusive
   selectKSynthCandidate majorTyW tyHeadId tyUs tyArgs indId recr.params
 
 /- Projection reduction is split at the String-literal preprocessing

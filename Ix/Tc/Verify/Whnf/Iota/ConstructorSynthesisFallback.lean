@@ -48,7 +48,7 @@ theorem verifyKSynthCandidate_inferMiss
     (hinfer : (tryOptional (inferOnlyRec ctorApp)).run methods sCtorApp =
       .ok none sf) :
     (verifyKSynthCandidate majorTyW ctorId tyUs tyArgs params).run methods s =
-      .ok none sf := by
+      .ok .inconclusive sf := by
   unfold verifyKSynthCandidate
   rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind (TcM.intern (KExpr.mkConst ctorId tyUs)) _ s = _
@@ -87,7 +87,7 @@ theorem verifyKSynthCandidate_inferError
           .ok ctorApp sCtorApp)
     (hinfer : (inferOnlyRec ctorApp).run methods sCtorApp = .error err sf) :
     (verifyKSynthCandidate majorTyW ctorId tyUs tyArgs params).run methods s =
-      .ok none sf :=
+      .ok .inconclusive sf :=
   verifyKSynthCandidate_inferMiss hhead happs (tryOptional_error hinfer)
 
 /-- Unlike the three optional probes, the final DefEq callback is not caught:
@@ -155,7 +155,7 @@ theorem selectKSynthCandidate_mismatch
     {tyArgs : Array (KExpr .anon)} {params : Nat} {s : TcState .anon}
     (hmismatch : (tyHeadId.addr != indId.addr) = true) :
     (selectKSynthCandidate majorTyW tyHeadId tyUs tyArgs indId params).run
-      methods s = .ok none s := by
+      methods s = .ok .inconclusive s := by
   unfold selectKSynthCandidate
   rw [hmismatch]
   rfl
@@ -168,7 +168,7 @@ theorem selectKSynthCandidate_missing
     (hsame : (tyHeadId.addr != indId.addr) = false)
     (hlookup : TcM.tryGetConst indId s = .ok none sf) :
     (selectKSynthCandidate majorTyW tyHeadId tyUs tyArgs indId params).run
-      methods s = .ok none sf := by
+      methods s = .ok .inconclusive sf := by
   unfold selectKSynthCandidate
   rw [hsame]
   simp only [Bool.false_eq_true, if_false, pure_bind]
@@ -187,7 +187,7 @@ theorem selectKSynthCandidate_nonInductive
     (hlookup : TcM.tryGetConst indId s = .ok (some entry) sf)
     (hshape : KSynthNonInductive entry) :
     (selectKSynthCandidate majorTyW tyHeadId tyUs tyArgs indId params).run
-      methods s = .ok none sf := by
+      methods s = .ok .inconclusive sf := by
   unfold selectKSynthCandidate
   rw [hsame]
   simp only [Bool.false_eq_true, if_false, pure_bind]
@@ -209,7 +209,7 @@ theorem selectKSynthCandidate_empty
       .ok (some (.indc () () lvls indParams indices isUnsafe block memberIdx
         indTy #[] ())) sf) :
     (selectKSynthCandidate majorTyW tyHeadId tyUs tyArgs indId params).run
-      methods s = .ok none sf := by
+      methods s = .ok .inconclusive sf := by
   unfold selectKSynthCandidate
   rw [hsame]
   simp only [Bool.false_eq_true, if_false, pure_bind]
@@ -226,7 +226,7 @@ theorem selectKSynthCandidate_selected
     {params : Nat} {s sLookup sf : TcState .anon}
     {lvls indParams indices : UInt64} {isUnsafe : Bool}
     {memberIdx : UInt64} {indTy : KExpr .anon}
-    {ctors : Array (KId .anon)} {result : Option (KExpr .anon)}
+    {ctors : Array (KId .anon)} {result : KSynthOutcome .anon}
     (hsame : (tyHeadId.addr != indId.addr) = false)
     (hlookup : TcM.tryGetConst indId s =
       .ok (some (.indc () () lvls indParams indices isUnsafe block memberIdx
@@ -280,7 +280,8 @@ theorem synthCtorWhenK_levelMismatch
     {recr : IotaInfo .anon} {recUs : Array (KUniv .anon)}
     {s : TcState .anon}
     (hlevels : (recUs.size.toUInt64 != recr.lvls) = true) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none s := by
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive s := by
   unfold synthCtorWhenK
   rw [hlevels]
   rfl
@@ -293,7 +294,8 @@ theorem synthCtorWhenK_majorInferMiss
     {s sf : TcState .anon}
     (hlevels : recUs.size.toUInt64 = recr.lvls)
     (hinfer : (tryOptional (inferOnlyRec major)).run methods s = .ok none sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf := by
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf := by
   unfold synthCtorWhenK
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
@@ -312,7 +314,8 @@ theorem synthCtorWhenK_majorInferError
     {s sf : TcState .anon} {err : TcError .anon}
     (hlevels : recUs.size.toUInt64 = recr.lvls)
     (hinfer : (inferOnlyRec major).run methods s = .error err sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf :=
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf :=
   synthCtorWhenK_majorInferMiss hlevels (tryOptional_error hinfer)
 
 /-- Major-type WHNF failure is caught after retaining the inference state. -/
@@ -326,7 +329,8 @@ theorem synthCtorWhenK_majorWhnfMiss
       .ok (some majorTy) sInfer)
     (hwhnf : (tryOptional (whnfRec majorTy)).run methods sInfer =
       .ok none sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf := by
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf := by
   unfold synthCtorWhenK
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
@@ -353,7 +357,8 @@ theorem synthCtorWhenK_majorWhnfError
     (hinfer : (tryOptional (inferOnlyRec major)).run methods s =
       .ok (some majorTy) sInfer)
     (hwhnf : (whnfRec majorTy).run methods sInfer = .error err sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf :=
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf :=
   synthCtorWhenK_majorWhnfMiss hlevels hinfer (tryOptional_error hwhnf)
 
 /-- A normalized major type whose spine head is not a constant stops before
@@ -370,7 +375,8 @@ theorem synthCtorWhenK_nonConstHead
       .ok (some majorTyW) sf)
     (hspine : majorTyW.collectSpine = (tyHead, tyArgs))
     (hshape : KSynthNonConstHead tyHead) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf := by
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf := by
   unfold synthCtorWhenK
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
@@ -405,7 +411,8 @@ theorem synthCtorWhenK_recursorMissing
     (hspine : majorTyW.collectSpine =
       (.const tyHeadId tyUs tyHeadInfo, tyArgs))
     (hlookup : TcM.tryGetConst recId sWhnf = .ok none sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf := by
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf := by
   unfold synthCtorWhenK
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
@@ -452,7 +459,8 @@ theorem synthCtorWhenK_majorInductiveMiss
         getMajorInductiveId recTy
           (recr.params + recr.motives + recr.minors +
             recr.indices).toUInt64)).run methods sRec = .ok none sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf := by
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf := by
   unfold synthCtorWhenK
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
@@ -511,7 +519,8 @@ theorem synthCtorWhenK_majorInductiveError
         getMajorInductiveId recTy
           (recr.params + recr.motives + recr.minors +
             recr.indices).toUInt64).run methods sRec = .error err sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf :=
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf :=
   synthCtorWhenK_majorInductiveMiss hlevels hinfer hwhnf hspine hlookup hrecTy
     (tryOptional_error hscan)
 
@@ -556,7 +565,7 @@ namespace SynthCtorWhenKSelectionTrace
 theorem eval
     (h : SynthCtorWhenKSelectionTrace methods major recId recr recUs s)
     {outcome : EStateM.Result (TcError .anon) (TcState .anon)
-      (Option (KExpr .anon))}
+      (KSynthOutcome .anon)}
     (hselect :
       (selectKSynthCandidate h.majorTyW h.tyHeadId h.tyUs h.tyArgs h.indId
         recr.params).run methods h.sScan = outcome) :
@@ -601,7 +610,7 @@ theorem mismatch
     (h : SynthCtorWhenKSelectionTrace methods major recId recr recUs s)
     (hmismatch : (h.tyHeadId.addr != h.indId.addr) = true) :
     (synthCtorWhenK major recId recr recUs).run methods s =
-      .ok none h.sScan :=
+      .ok .inconclusive h.sScan :=
   h.eval (selectKSynthCandidate_mismatch hmismatch)
 
 theorem missing
@@ -609,7 +618,8 @@ theorem missing
     {sf : TcState .anon}
     (hsame : (h.tyHeadId.addr != h.indId.addr) = false)
     (hlookup : TcM.tryGetConst h.indId h.sScan = .ok none sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf :=
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf :=
   h.eval (selectKSynthCandidate_missing hsame hlookup)
 
 theorem nonInductive
@@ -618,7 +628,8 @@ theorem nonInductive
     (hsame : (h.tyHeadId.addr != h.indId.addr) = false)
     (hlookup : TcM.tryGetConst h.indId h.sScan = .ok (some entry) sf)
     (hshape : KSynthNonInductive entry) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf :=
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf :=
   h.eval (selectKSynthCandidate_nonInductive hsame hlookup hshape)
 
 theorem empty
@@ -630,7 +641,8 @@ theorem empty
     (hlookup : TcM.tryGetConst h.indId h.sScan =
       .ok (some (.indc () () lvls indParams indices isUnsafe block memberIdx
         indTy #[] ())) sf) :
-    (synthCtorWhenK major recId recr recUs).run methods s = .ok none sf :=
+    (synthCtorWhenK major recId recr recUs).run methods s =
+      .ok .inconclusive sf :=
   h.eval (selectKSynthCandidate_empty hsame hlookup)
 
 theorem selected
@@ -638,7 +650,7 @@ theorem selected
     {sLookup sf : TcState .anon} {block ctorId : KId .anon}
     {lvls indParams indices : UInt64} {isUnsafe : Bool}
     {memberIdx : UInt64} {indTy : KExpr .anon}
-    {ctors : Array (KId .anon)} {result : Option (KExpr .anon)}
+    {ctors : Array (KId .anon)} {result : KSynthOutcome .anon}
     (hsame : (h.tyHeadId.addr != h.indId.addr) = false)
     (hlookup : TcM.tryGetConst h.indId h.sScan =
       .ok (some (.indc () () lvls indParams indices isUnsafe block memberIdx

@@ -33,6 +33,8 @@ public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
 public import Ix.Cli.NameResolve
+public import Ix.Benchmark.Results
+public import Ix.TracingTexray
 
 public section
 
@@ -127,6 +129,69 @@ inductive Target where
   | addr  (a : Address)
   | shard (owned : Array Address)
   | leanW (w : IxVM.ClaimHarness.ClaimWitness)
+
+/-- Batch PARALLEL check over one `.ixe`: resolve the targets (explicit
+    names, or every named constant when `names` is empty), hand the
+    address list to Rust in one call (`checkAddrsWithEnv`), and let a
+    rayon pool of `jobs` threads check them — each claim through the
+    exact single-claim machinery over task-private data (its own
+    witness io and query record), nothing shared between tasks but the
+    read-only toplevel and env. Failures come back as batch indices
+    and resolve to labels here. -/
+def runBatchCheck (ixePath : String) (names : List String) (jobs : Nat)
+    (toplevel : Aiur.Source.Toplevel) (useBytecode : Bool) : IO UInt32 := do
+  let compiled : Aiur.CompiledToplevel ← match toplevel.compile with
+    | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+    | .ok h => pure h
+  let bytes ← IO.FS.readBinFile ixePath
+  let ixonEnv ← match Ixon.deEnvAnon bytes with
+    | .error e => IO.eprintln s!"Failed to deserialize {ixePath}: {e}"; return 1
+    | .ok env => pure env
+  IO.println s!"Loaded {ixePath}: {ixonEnv.namedCount} named, \
+    {ixonEnv.constCount} consts, {ixonEnv.blobCount} blobs"
+  -- Unresolved names are recorded and reported with the check
+  -- failures rather than aborting: the batch is inherently
+  -- keep-going (every target's result comes back), so resolution
+  -- failures get the same treatment.
+  let mut targets : Array (String × Address) := #[]
+  let mut unresolved : Array String := #[]
+  if names.isEmpty then
+    let sorted := ixonEnv.named.toArray.qsort
+      (fun a b => toString a.1 < toString b.1)
+    for (ixName, named) in sorted do
+      targets := targets.push (toString (ixNameToLeanName ixName), named.addr)
+  else
+    for arg in names do
+      match resolveIxeAddr ixonEnv arg with
+      | none =>
+        IO.eprintln s!"{arg} not found in {ixePath}"
+        unresolved := unresolved.push arg
+      | some addr => targets := targets.push (arg, addr)
+  let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+  let mut blob := ByteArray.empty
+  for (_, a) in targets do blob := blob ++ a.hash
+  IO.println s!"Typechecking {targets.size} constant(s), {jobs} thread(s)"
+  (← IO.getStdout).flush
+  match compiled.bytecode.checkAddrsWithEnv funIdx envHandle blob
+      useBytecode jobs with
+  | .error e => IO.eprintln s!"batch check: {e}"; return 1
+  | .ok failures =>
+    if failures.isEmpty && unresolved.isEmpty then
+      IO.println s!"All {targets.size} constant(s) passed"
+      return 0
+    for (idxStr, err) in failures do
+      let label := match idxStr.toNat? with
+        | some i =>
+          if h : i < targets.size then targets[i].1 else s!"index {idxStr}"
+        | none => s!"index {idxStr}"
+      IO.eprintln s!"{label}: IxVM-native Aiur execution error: {err}"
+    IO.eprintln
+      s!"{failures.size} of {targets.size} checked constant(s) FAILED\
+        {if unresolved.isEmpty then "" else s!", {unresolved.size} unresolved"}"
+    return 1
 
 /-- Run a single check claim through the codegen'd IxVM Rust kernel.
     The `envHandle?` is `none` only for `.leanW` targets (`--interp`
@@ -452,6 +517,7 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
     one env parse. -/
 def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
     (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
+    (shapes : Array Aiur.CircuitShape)
     (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
@@ -468,6 +534,13 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
     return 1
   | .ok (_output, _ioBuffer, queryCounts) =>
+    -- Prover RAM projection from this shard's executed heights: the
+    -- input to split/merge decisions against a prover budget.
+    let stats := Aiur.computeStats compiled queryCounts shapes
+    let bytes := stats.projectedProverBytes
+    let gib := Float.ofNat bytes / 1073741824.0
+    IO.println s!"[shard {shardK}] projected prover RAM: \
+      {gib} GiB (padded committed traces × blowup)"
     if printStats then emitStats compiled queryCounts statsOut
     pure 0
 
@@ -493,7 +566,9 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks shardK
+      let shapes := Aiur.circuitShapes compiled.bytecode
+        Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+      runShardOwnedNative envHandle compiled printStats statsOut useBytecode shapes ixonEnv blocks shardK
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -543,14 +618,24 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
   pure ok
 
-/-- IxVM-native check over EVERY shard. Builds the `EnvHandle` ONCE
-    and shares it across every shard's FFI call (no per-shard
-    re-mmap). Coverage-gates the manifest before running any shard —
-    exit 0 has to mean "every env const was checked by some shard",
-    same soundness contract as `runShardCheckAll`. -/
-def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
-    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
+/-- Whole-partition check as ONE Rust rayon batch: work-stealing across
+    shards, no chunk barriers (measured 2.3–2.5x faster than the
+    per-shard Lean-task scheduler it replaced, whose chunk-of-N full
+    barrier idled workers on each wave's slowest shard). Each shard
+    runs the identical single-shard machinery over its own record; per
+    shard the analytic prover RAM peak of the executed record is
+    reported — the input to split (over a prover budget) / merge (far
+    under it) decisions. Builds the `EnvHandle` ONCE, shared by every
+    shard. Coverage-gates the manifest before running any shard — exit
+    0 has to mean "every env const was checked by some shard", same
+    soundness contract as `runShardCheckAll`. -/
+def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
+    (compiled : Aiur.CompiledToplevel) (useBytecode : Bool)
+    (json? : Option (String × String) := none) : IO UInt32 := do
+  -- The row's peak-rss needs the process-tree RSS sampler running
+  -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
+  -- load so the peak covers the whole run, like `check-rs`.
+  if json?.isSome then TracingTexray.startSampler
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
@@ -558,17 +643,73 @@ def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Na
     let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
       | .ok h => pure h
-    let maxJobs := max 1 (jobs?.getD shards.size)
-    let mut rc : UInt32 := 0
-    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-      let tasks ← chunk.mapM fun (blocks, k) =>
-        IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks k)
-      for t in tasks do
-        match t.get with
-        | .ok r => if r != 0 then rc := 1
-        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
-    pure rc
+    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+    let jobs := jobs?.getD 0
+    -- Assign every const to its shard in ONE env pass. Calling
+    -- `ownedConstsForBlocks` per shard rescans all consts each time —
+    -- at env scale (241 shards × 688k consts) that is ~30 min of setup.
+    -- Each shard's array keeps env-iteration order, identical to what
+    -- the per-shard filter produces, so claim digests are unchanged.
+    let mut blockToShard : Std.HashMap Address Nat := {}
+    for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
+      for blk in blocks do blockToShard := blockToShard.insert blk k
+    let mut ownedPerShard : Array (Array Address) := Array.replicate shards.size #[]
+    for (addr, lc) in ixonEnv.consts do
+      let some c := lc.get? | continue
+      match blockToShard.get? (blockAddrOf addr c) with
+      | some k => ownedPerShard := ownedPerShard.modify k (·.push addr)
+      | none => pure ()
+    let mut blob := ByteArray.empty
+    for owned in ownedPerShard do
+      let n := owned.size.toUInt32
+      blob := blob.push n.toUInt8
+      blob := blob.push (n >>> 8).toUInt8
+      blob := blob.push (n >>> 16).toUInt8
+      blob := blob.push (n >>> 24).toUInt8
+      for a in owned do blob := blob ++ a.hash
+    IO.println s!"Typechecking {shards.size} shard(s) in one rayon \
+      batch, {jobs} thread(s) (0 = all)"
+    (← IO.getStdout).flush
+    let totalConsts := ownedPerShard.foldl (· + ·.size) 0
+    let start ← IO.monoMsNow
+    match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle blob
+        useBytecode jobs Aiur.defaultCommitmentParameters
+        Aiur.defaultFriParameters with
+    | .error e => IO.eprintln s!"shard batch: {e}"; return 1
+    | .ok results =>
+      let elapsedMs := (← IO.monoMsNow) - start
+      let mut failures : Nat := 0
+      for k in [:results.size] do
+        let (err, peak) := results[k]!
+        if err.isEmpty then
+          let gib := Float.ofNat peak / 1073741824.0
+          IO.println s!"[shard {k}] ok, projected prover peak {gib} GiB"
+        else
+          IO.eprintln s!"[shard {k}] FAILED: {err}"
+          failures := failures + 1
+      -- One env-keyed results row for `ix bench run --backend aiur-sharded-env`:
+      -- the measured window is the batch FFI call (env load and blob
+      -- setup are excluded, matching what the benchmark tracks — the
+      -- execution engine, not the loader).
+      if let some (path, key) := json? then
+        let secs := elapsedMs.toFloat / 1000.0
+        let tput := if elapsedMs > 0
+          then totalConsts.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
+        let peakRss ← TracingTexray.peakTreeRssBytes
+        let status := if failures == 0 then "ok" else "rejected"
+        Ix.Benchmark.Results.writeRow path key status
+          [ ("constants", Lean.toJson totalConsts)
+          , ("shards", Lean.toJson results.size)
+          , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
+          , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
+          , ("peak-rss", Lean.toJson peakRss) ]
+      if failures == 0 then
+        IO.println s!"All {results.size} shard(s) passed"
+        return 0
+      IO.eprintln s!"{failures} of {results.size} shard(s) FAILED"
+      -- Under `--json` a kernel rejection is the benchmark's `rejected`
+      -- exit (the row is already written), same contract as `check-rs`.
+      return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
 
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
@@ -681,10 +822,25 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      return (← runShardManifestAllNative manifest ixe
-        ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut useBytecode)
+      let json? := (p.flag? "json").map fun f =>
+        (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "env")
+      return (← runShardBatchNative manifest ixe
+        ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode json?)
   | _, _, _ =>
-    forEachClaim ixePath claimHex names keepGoing "check" interpSource runOne
+    -- `--jobs N` (N ≠ 1) with an `--ixe` env and no `--claim` takes the
+    -- parallel batch path: one FFI call, rayon over the target list,
+    -- each claim checked over task-private data. `--jobs 1` (or no
+    -- flag) keeps the sequential per-claim loop unchanged.
+    match (p.flag? "jobs").map (·.as! Nat), ixePath with
+    | some jobs, some ixe =>
+      if jobs != 1 && !interpSource && claimHex.isNone then
+        runBatchCheck ixe names jobs toplevel useBytecode
+      else
+        forEachClaim ixePath claimHex names keepGoing "check" interpSource
+          runOne
+    | _, _ =>
+      forEachClaim ixePath claimHex names keepGoing "check" interpSource
+        runOne
 
 end Ix.Cli.CheckCmd
 
@@ -701,7 +857,9 @@ def checkCmd : Cli.Cmd := `[Cli|
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
-    "jobs"      : Nat;      "Max shards to check concurrently when checking a whole partition (--ixes without --shard). Default: all at once. Lower it to bound peak RAM — each in-flight shard re-ingests its closure into its own IO buffer."
+    "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
+    "json"      : String;   "With --ixes (no --shard): append one env-keyed results row (see Ix.Benchmark.Results) for the batch to this file — check-time, throughput, peak-rss, constants, shards. Used by `ix bench run --backend aiur-sharded-env`."
+    "json-name" : String;   "Row key for the --json row (default: `env`)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."

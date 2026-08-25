@@ -31,13 +31,13 @@
 
     # Blake3 Rust bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean";
+      url = "github:argumentcomputer/Blake3.lean/1b0fbd2bd78b2b873e14264037af8c8b1536b9e9";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };
 
     # Zisk dev shell (cargo-zisk, ziskemu, RISC-V toolchain) for `zisk-guest`.
-    zisk.url = "github:argumentcomputer/zisk.nix/fixups";
+    zisk.url = "github:argumentcomputer/zisk.nix/blake3-precompile";
 
     # SP1 dev shell (cargo-prove + succinct Rust toolchain) for `sp1/guest`.
     sp1 = {

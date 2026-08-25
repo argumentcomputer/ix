@@ -1217,6 +1217,72 @@ mod tests {
     check_rejects(&mut env, &id);
   }
 
+  /// A conclusive Rule-K rejection must not be followed by normalization of
+  /// the same major premise.  This is the small reducer shape behind the
+  /// TauCeti `castLpₗᵢ` regression: the constructor candidate has already
+  /// proved that the equality indices differ, while the propositional proof
+  /// itself can be arbitrarily expensive to expose.
+  #[test]
+  fn rule_k_reject_skips_expensive_major_whnf() {
+    let mut env = eq_inductive_env();
+
+    let tf_eq = apps(
+      cnst("Eq", &[usucc(uzero())]),
+      &[cnst("Bool", &[]), cnst("Bool.true", &[]), cnst("Bool.false", &[])],
+    );
+    let (impossible_id, impossible) =
+      mk_axiom("impossibleEq", 0, vec![], tf_eq.clone());
+    env.insert(impossible_id, impossible);
+
+    // A valid proof term whose WHNF takes more shared ticks than this test
+    // grants.  Inference sees the declared equality type immediately; only
+    // the redundant post-rejection major WHNF enters this beta chain.
+    let mut slow_proof = cnst("impossibleEq", &[]);
+    for _ in 0..1024 {
+      slow_proof = app(nlam("h", tf_eq.clone(), var(0)), slow_proof);
+    }
+    let (slow_id, slow) = mk_defn(
+      "slowImpossibleEq",
+      0,
+      vec![],
+      tf_eq,
+      slow_proof,
+      ix_common::env::ReducibilityHints::Abbrev,
+    );
+    env.insert(slow_id, slow);
+
+    let motive = nlam(
+      "_",
+      cnst("Bool", &[]),
+      nlam(
+        "_",
+        apps(
+          cnst("Eq", &[usucc(uzero())]),
+          &[cnst("Bool", &[]), cnst("Bool.true", &[]), var(0)],
+        ),
+        cnst("Bool", &[]),
+      ),
+    );
+    let rec_app = apps(
+      cnst("Eq.rec", &[usucc(uzero()), usucc(uzero())]),
+      &[
+        cnst("Bool", &[]),
+        cnst("Bool.true", &[]),
+        motive,
+        cnst("Bool.true", &[]),
+        cnst("Bool.false", &[]),
+        cnst("slowImpossibleEq", &[]),
+      ],
+    );
+
+    let mut tc = crate::tc::TypeChecker::new(&mut env);
+    tc.rec_fuel = 512;
+    let reduced = tc.whnf(&rec_app).expect(
+      "a definitive K rejection should not normalize the expensive major",
+    );
+    assert_eq!(reduced.hash_key(), rec_app.hash_key());
+  }
+
   // ==========================================================================
   // Projection tests (Tutorial.lean 760–900)
   // Requires And as structure

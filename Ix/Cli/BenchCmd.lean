@@ -13,7 +13,7 @@
   3. spawns the run's measured tool — `bench-typecheck` (aiur),
      `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
      `bench-lean4lean` (lean4lean; olean-driven, no `.ixe`),
-     `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`:
+     `ix compile` (compile) — wrapped in the RAM watchdog (`Ix.Watchdog`:
      cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
      at the ceiling). The per-constant backends (aiur, zkVM) spawn
      ONE PROCESS PER CONSTANT: a kill costs exactly that constant (its row
@@ -40,6 +40,7 @@ public import Lean.Data.Json
 public import Ix.BenchConstants
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
+public import Ix.Watchdog
 
 public section
 
@@ -97,6 +98,10 @@ structure EnvSpec where
 def envSpecs : List EnvSpec := [
   { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
   { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
+  -- Init+Std+Lean+Batteries as ONE env: the whole-env Aiur execution
+  -- benchmark's fast tier (the union deduplicates — Lean already
+  -- carries Init and Std).
+  { name := "ISLB",    module := "Benchmarks/Compile/CompileISLB.lean" },
   { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" },
   { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean" }
 ]
@@ -156,6 +161,11 @@ structure BackendSpec where
   defaultMode : String
   /-- The inputs (envs and row names) this backend's runs fan over. -/
   inputs : BenchInputs
+  /-- For a `perEnv` backend: restrict the fan-out to these registry env
+      names instead of every compiled env (`none` = all). Ignored for
+      the per-constant backends, whose env set comes from `Vectors.csv`
+      row selection. -/
+  envs : Option (List String) := none
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
@@ -264,6 +274,26 @@ def backendSpecs : List BackendSpec := [
                    ("fri-verifier-proof-size", "0.05", "_"),
                    ("ixvm-verify-time", "0.10", "_"),
                    ("fri-verifier-verify-time", "0.10", "_")] },
+  -- aiur-sharded-env: whole-env Aiur execution — the sharded feeder pipeline
+  -- end-to-end at env scale, one row per env. Shards the `.ixe` for the
+  -- runner's RAM (`ix shard --max-ram 100`: naive sizing → ~3.5 GB
+  -- execution RSS per shard on a 128 GB runner), then one gated
+  -- full-width rayon batch (`ix check --ixe --ixes`) over the whole
+  -- manifest — the byte-weighted RamGate, not a thread cap, bounds peak
+  -- RSS, so the same entry is correct on any runner class. ISLB only
+  -- for now (~10 min/run); add "FLT" / "Mathlib" to `envs` for the
+  -- env-scale tiers (~30-45 min each on the 32x runner) when their
+  -- per-push cost is warranted. `shards` is deterministic per
+  -- (env bytes, budget) and only drops on a real compression win →
+  -- upper-only pin.
+  { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
+    envs := some ["ISLB"],
+    testbeds := [("execute", "aiur-sharded-env-check-x64-32x")],
+    metrics := [("execute", ["check-time", "throughput", "peak-rss",
+                             "constants", "shards"])],
+    thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
+                   ("check-time", "0.10", "_"), ("throughput", "_", "0.10"),
+                   ("peak-rss", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -319,6 +349,10 @@ def backendSpecs : List BackendSpec := [
   -- CONSUMER — it reuses the compile run's fresh `.ixe` rather than
   -- producing one.
   { name := "decompile", defaultMode := "execute", inputs := .perEnv,
+    -- Pinned to the pre-ISLB env set: ISLB exists for the aiur-sharded-env
+    -- whole-env execution benchmark, and its content is Lean +
+    -- Batteries — a decompile row would mostly re-measure Lean's.
+    envs := some ["InitStd", "Lean", "Mathlib", "FLT"],
     testbeds := [("execute", "ix-decompile-x64-32x")],
     metrics := [("execute", ["decompile-time", "throughput", "peak-rss",
                              "file-size", "constants"])],
@@ -376,7 +410,9 @@ def BackendSpec.scheduledModes (b : BackendSpec) : List String :=
 def BackendSpec.envNames (b : BackendSpec) : List String :=
   let names := envSpecs.map (·.name)
   match b.inputs with
-  | .perEnv => names
+  | .perEnv => match b.envs with
+    | some restricted => names.filter restricted.contains
+    | none => names
   | .perConstant | .perConstantWithEnv =>
     names.filter fun env =>
       b.scheduledModes.any fun m =>
@@ -391,7 +427,7 @@ def BackendSpec.envNames (b : BackendSpec) : List String :=
 def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
     Array String := Id.run do
   match b.inputs with
-  | .perEnv => return (envSpecs.map (·.name)).toArray
+  | .perEnv => return b.envNames.toArray
   | .perConstant | .perConstantWithEnv =>
     let mut ns : Array String := #[]
     for env in b.envNames do
@@ -399,22 +435,9 @@ def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
       ns := ns ++ (selectNames env b.name mode).map (·.name)
     return ns
 
-/-- Default RAM watchdog ceiling, same rule for all backends: the
-    machine's total RAM minus 15 GB (the ~123 GiB CI runner lands at
-    ~108 — above Mathlib `ix compile`'s ~100 GB peak, the largest
-    legitimate workload). Enforced as cgroup `memory.max` on a systemd
-    user scope: the kernel OOM-kills the tool at the ceiling (exit 137);
-    the 15 GB stays outside the cap for the OS, runner agent, and page
-    cache. `--ceiling-gb` overrides. -/
-def defaultCeilingGb : IO Nat := do
-  let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
-  let kb := (s.splitOn "\n").findSome? fun l =>
-    if l.startsWith "MemTotal:" then
-      ((l.splitOn " ").filter (· ≠ "") |>.drop 1).head?.bind (·.toNat?)
-    else none
-  return match kb with
-    | some kb => max 8 (kb / (1024 * 1024) - 15)
-    | none => 16
+/-- Default RAM watchdog ceiling (`--ceiling-gb` overrides): see
+    `Ix.Watchdog.defaultCeilingGb`, the one rule for every consumer. -/
+def defaultCeilingGb : IO Nat := Ix.Watchdog.defaultCeilingGb
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
     checkout measures the base's code), else PATH. -/
@@ -424,20 +447,22 @@ def resolveBin (repo : String) (name : String) : IO String := do
     return inTree
   return name
 
-/-- Spawn `cmd args` (inheriting stdio) under the RAM watchdog when one is
-    configured, and wait for its exit code. -/
-def runGuarded (watchdog : Option String) (ceilingGb : Nat)
+/-- Spawn `cmd args` (inheriting stdio) under the RAM watchdog when
+    `watchdog` is set (`Ix.Watchdog.run`: cgroup scope, whole-tree kill
+    at the ceiling), and wait for its exit code. -/
+def runGuarded (watchdog : Bool) (ceilingGb : Nat)
     (cmd : String) (args : Array String) (cwd : Option String := none) :
     IO UInt32 := do
-  let (cmd, args) := match watchdog with
-    | some wd => (wd, #[toString ceilingGb, cmd] ++ args)
-    | none => (cmd, args)
-  IO.eprintln s!"[bench] run: {cmd} {" ".intercalate args.toList}"
-  let child ← IO.Process.spawn {
-    cmd, args
-    cwd := cwd.map FilePath.mk
-  }
-  child.wait
+  let guard := if watchdog then s!" (≤{ceilingGb}G)" else ""
+  IO.eprintln s!"[bench] run{guard}: {cmd} {" ".intercalate args.toList}"
+  if watchdog then
+    Ix.Watchdog.run ceilingGb cmd args (cwd.map FilePath.mk)
+  else
+    let child ← IO.Process.spawn {
+      cmd, args
+      cwd := cwd.map FilePath.mk
+    }
+    child.wait
 
 /-- Merge a kill `status` (`oom` or `crash`) into a constant's row,
     PRESERVING metrics the tool flushed before the kill (e.g.
@@ -553,7 +578,7 @@ def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
     throw <| IO.userError s!"--ixe {path} not found"
   let ixe := s!"{repo}/{info.name}.ixe"
   let ix ← resolveBin repo "ix"
-  let exit ← runGuarded none 0 ix
+  let exit ← runGuarded false 0 ix
     #["compile", s!"{repo}/{info.module}", "--out", ixe]
   if exit != 0 then
     throw <| IO.userError s!"ix compile {info.module} failed (exit {exit})"
@@ -582,7 +607,7 @@ def cutClosureShards (ix : String) (envIxe : String)
     , #["shard", subIxe, "--profile", prof, "--max-ram", toString maxRamGb,
         "--out", manifest] ]
   for args in steps do
-    let exit ← runGuarded none 0 ix args
+    let exit ← runGuarded false 0 ix args
     if exit != 0 then
       IO.eprintln s!"[bench] shard pipeline failed for '{name}' (exit {exit}); falling back to single leaf"
       return none
@@ -653,16 +678,16 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
     | some f => pure (f.as! Nat)
     | none => defaultCeilingGb
-  let watchdogPath := (p.flag? "watchdog").map (·.as! String)
-    |>.getD s!"{repo}/.github/scripts/watchdog.sh"
-  -- Absolute: the zkVM hosts spawn with their workspace as cwd, where a
-  -- repo-relative script path would fail to exec. No watchdog, no run —
-  -- an unenforced ceiling is not a benchmark run.
-  let watchdog : Option String ←
-    if ← FilePath.pathExists watchdogPath then
-      pure (some (← IO.FS.realPath watchdogPath).toString)
+  -- No watchdog, no run — an unenforced ceiling is not a benchmark run.
+  -- `Ix.Watchdog.available` probes the whole path end to end (systemd
+  -- user scope, oom.group shim) before any tool spawns.
+  let watchdog : Bool ←
+    if ← Ix.Watchdog.available then
+      pure true
     else do
-      p.printError s!"error: no watchdog at {watchdogPath} (--watchdog overrides)"
+      p.printError "error: RAM watchdog unavailable (systemd user scope \
+with cgroup memory.oom.group failed the probe) — an unenforced ceiling \
+is not a benchmark run"
       return exitUsage
   -- `--consts` overrides the shared-set selection — a one-off local run,
   -- or bench-pr's targeted base run over just the constants bencher
@@ -721,6 +746,27 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         #["check-rs", ixe, "--anon", "--consts-file", namesFile, "--json", out]
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
+  | "aiur-sharded-env" =>
+    -- Whole-env sharded Aiur execution: shard the env for the runner's
+    -- RAM (naive `--max-ram 100` sizing → ~3.5 GB execution RSS per
+    -- shard), then ONE gated full-width rayon batch over the manifest —
+    -- the RamGate bounds peak RSS, so no `--jobs` is passed. The check
+    -- writes the env-keyed row itself (`--json`): check-time,
+    -- throughput, peak-rss, constants, shards. The shard step is
+    -- deterministic setup, not part of the measured window.
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ix ← resolveBin repo "ix"
+    let manifest := s!"{env}-exec.ixes"
+    let exit ← runGuarded watchdog ceilingGb ix
+      #["shard", ixe, "--max-ram", "100", "--out", manifest]
+    if exit != 0 then
+      IO.eprintln s!"[bench] ix shard failed (exit {exit})"
+      return 1
+    let exit ← runGuarded watchdog ceilingGb ix
+      #["check", "--ixe", ixe, "--ixes", manifest,
+        "--json", out, "--json-name", info.name]
+    if exit != 0 && exit != exitRejected then
+      IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"
   | "lean4lean" =>
     -- The reference Lean4-in-Lean4 kernel checks the env's library from
     -- its oleans, so no `.ixe` is resolved. The tool takes the same
@@ -768,7 +814,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       pure (← IO.FS.realPath out).toString
     let host := s!"{backend}-host"
     let work := s!"{repo}/{backend}"
-    let build ← runGuarded none 0 "cargo"
+    let build ← runGuarded false 0 "cargo"
       #["build", "--quiet", "--release", "--bin", host] (cwd := some work)
     if build != 0 then
       IO.eprintln s!"[bench] cargo build {host} failed (exit {build})"
@@ -847,7 +893,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | zisk | sp1 | ooc | lean4lean | compile | decompile"
+    backend      : String; "aiur | aiur-sharded-env | zisk | sp1 | ooc | lean4lean | compile | decompile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
@@ -855,7 +901,6 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     consts       : String; "Run exactly these comma-separated names instead of the shared benchConstants selection (same grammar as the tools' --consts)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 15 GB)"
-    watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
 
 open Ix.Cli.BenchCmd in

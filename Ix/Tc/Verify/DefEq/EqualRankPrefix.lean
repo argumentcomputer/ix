@@ -3,9 +3,9 @@ import Ix.Tc.Verify.DefEq.EqualRankCache
 /-!
 # Equal-rank prefix assembly
 
-This module assembles regular-hint lookup, the cached same-head attempt, and
-the already-proved two-sided reduction continuation into the complete
-equal-rank lazy-delta contract.
+This module assembles hint lookup, the cached bounded/unbounded same-head
+attempt, and the already-proved two-sided reduction continuation into the
+complete equal-rank lazy-delta contract.
 -/
 
 namespace Ix.Tc
@@ -44,16 +44,17 @@ theorem defEqLazyDeltaStepWithEqualRank_wf
       cases rightHead with
       | none => exact hafter hpair
       | some rightId =>
-          apply RecM.WF.bind (isRegular_wf hfault leftId)
-          intro regular afterRegular _
-          cases hguard : (leftId.addr == rightId.addr && regular) with
+          cases hguard : (leftId.addr == rightId.addr) with
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [hguard, Bool.false_eq_true, if_false]
               exact hafter hpair
           | true =>
-              simp only [if_true]
+              simp only [hguard, if_true]
+              apply RecM.WF.bind (isRegular_wf hfault leftId)
+              intro regular afterRegular _
               apply RecM.WF.bind <|
-                hcached hpair.leftSupport hpair.rightSupport hleft hright
+                hcached (speculative := !regular) hpair.leftSupport
+                  hpair.rightSupport hleft hright
               intro result afterAttempt hresult
               cases result with
               | none => exact hafter hpair

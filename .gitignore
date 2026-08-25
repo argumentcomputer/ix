@@ -12,3 +12,7 @@ result*
 *.ixe
 plans
 refs
+
+# TruthMines corpus artifacts: a .ixc is a self-contained directory
+# (manifest + pieces + build cache) — never checked in.
+*.ixc/

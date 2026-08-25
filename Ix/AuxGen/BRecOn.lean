@@ -440,7 +440,7 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
     (indexFvars : Array Expr) (indexDecls : Array LocalDecl)
     (indexSortLevels : Array Level) (outerMajor : Expr) (majorType : Expr)
     (majorLevel : Level) (paramFvars motiveFvars fFvars : Array Expr)
-    (idxIsHeq : Array Bool) : Option Expr := Id.run do
+    (idxIsHeq : Array Bool) (majorIsHeq : Bool) : Option Expr := Id.run do
   let nIndices := indexDecls.size
 
   -- Extract fvar names for outer indices and major.
@@ -482,13 +482,18 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
       { fvarName := fvName, binderName := Name.mkStr .mkAnon "h",
         domain := eqTy, info := .default }
 
-  -- The heq binder decl.
+  -- The major's equality binder decl — `HEq` or homogeneous `Eq` (at the
+  -- OUTER major type), matching the motive's `majorIsHeq` choice.
   let ctorRetType := buildSpecializedMajorType majorType indexFvars retArgs
-  let heqTy := mkHeq majorLevel majorType outerMajor ctorRetType ctorApplied
+  let majorEqTy :=
+    if majorIsHeq then
+      mkHeq majorLevel majorType outerMajor ctorRetType ctorApplied
+    else
+      mkEq majorLevel majorType outerMajor ctorApplied
   let (heqName, _) := freshFVar s!"ieq_heq_c{ctorIdx}" 0
   let heqDecl : LocalDecl :=
     { fvarName := heqName, binderName := Name.mkStr .mkAnon "h_m",
-      domain := heqTy, info := .default }
+      domain := majorEqTy, info := .default }
 
   -- fvar_order for symm determination. Canonical introduction order:
   -- params < motives < F's < outer_idxs < outer_major < non_ih.
@@ -519,9 +524,13 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
         EqBinderKind.eq indexDecls[i]!.domain indexFvars[i]! retArgs[i]!
           (idxSort i)
     remaining := remaining.push (kind, decl)
-  let heqKind := EqBinderKind.heq majorType outerMajor ctorRetType
-    ctorApplied majorLevel
-  remaining := remaining.push (heqKind, heqDecl)
+  let majorKind :=
+    if majorIsHeq then
+      EqBinderKind.heq majorType outerMajor ctorRetType ctorApplied
+        majorLevel
+    else
+      EqBinderKind.eq majorType outerMajor ctorApplied majorLevel
+  remaining := remaining.push (majorKind, heqDecl)
 
   -- local_context — outer fvars visible at the start of the minor,
   -- ordered by introduction: outer indices, major, non-IH fields.
@@ -547,6 +556,59 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
   return some (mkLambda proof nonIhDecls)
 
 /-! ## Indexed-inductive `.brecOn.eq` value construction (brecon.rs:1718) -/
+
+/-- Mirrors Rust `is_unit_like_pair` (brecon.rs): `Meta.isDefEqUnitLike`
+    (`refs/lean4/src/Lean/Meta/ExprDefEq.lean:2181`) — `a`'s type (whnf)
+    is an application of a non-recursive inductive with no indices and a
+    single 0-field constructor (`matchConstNonRecStructure` +
+    `numFields == 0`), and `b`'s type is def-eq to it. -/
+def isUnitLikePair (eqTc : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
+  let some ta ← eqTc.inferLean a | return false
+  let ta ← eqTc.whnfLean ta
+  let (head, _) := decomposeApps ta
+  let .const headName _ _ := head | return false
+  let isUnitLike ← do
+    match ← lookupConst? headName with
+    | some (.inductInfo iv) =>
+      if iv.isRec || iv.numIndices != 0 || iv.ctors.size != 1 then
+        pure false
+      else
+        match ← lookupConst? iv.ctors[0]! with
+        | some (.ctorInfo cv) => pure (cv.numFields == 0)
+        | _ => pure false
+    | _ => pure false
+  if !isUnitLike then
+    return false
+  let some tb ← eqTc.inferLean b | return false
+  eqTc.isDefEq ta tb
+
+/-- Mirrors Rust `meta_defeq` (brecon.rs): elaborator-strength def-eq for
+    Lean's `mkEqAndProof` Eq-vs-HEq binder decision
+    (`refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`). `Meta.isDefEq`
+    is stronger than kernel def-eq via `isDefEqUnitLike` (eta for
+    unit-like structures; always on under the default `etaStruct := .all`
+    config `mkBRecOn` elaborates with), so `I A j =?= I A j'` succeeds
+    whenever every mismatching argument pair has a unit-like type — and
+    Lean then generalizes with homogeneous `Eq` instead of `HEq`. Kernel
+    def-eq first, then the unit-like rule on the pair, then
+    app-congruence (same head constant) with the extended check per
+    argument. Fixture: `Tests/Ix/Compile/Mutual.lean`
+    `TypeBrecOnEqDefUnit`. -/
+partial def metaDefeq (eqTc : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
+  if ← eqTc.isDefEq a b then
+    return true
+  if ← isUnitLikePair eqTc a b then
+    return true
+  let (ha, aargs) := decomposeApps a
+  let (hb, bargs) := decomposeApps b
+  if aargs.isEmpty || aargs.size != bargs.size then
+    return false
+  let headsMatch := match ha, hb with
+    | .const n1 l1 _, .const n2 l2 _ => n1 == n2 && l1 == l2
+    | _, _ => false
+  if !headsMatch then
+    return false
+  (aargs.zip bargs).allM fun (x, y) => metaDefeq eqTc x y
 
 /-- Mirrors Rust `build_indexed_eq_value` (brecon.rs:1747).
 
@@ -628,16 +690,21 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
 
   -- Decide between `Eq` and `HEq` for each index's equality binder,
   -- matching Lean's `mkEqAndProof`
-  -- (`refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`): `isDefEq` on
-  -- the outer and new index types decides — Eq if defEq, HEq otherwise.
+  -- (`refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`): `metaDefeq`
+  -- (kernel def-eq + the elaborator's unit-like rule) on the outer and
+  -- new index types decides — Eq if defEq, HEq otherwise.
   let eqTc ← TcScopeSt.new allDecls recLevelParams maps
+  -- The compared "new" types mention the generalized index fvars
+  -- (`newIdxDecls`), which are not part of `allDecls` — push them so
+  -- inference inside `metaDefeq` (the unit-like check) can type them.
+  let eqTc ← eqTc.pushLocals newIdxDecls
   let mut idxIsHeq : Array Bool := #[]
   let mut idxNewTypes : Array Expr := #[]
   let mut mwDecls : Array LocalDecl := #[]
   for (idxDecl, i) in indexDecls.zipIdx do
     let outerType := idxDecl.domain
     let newType := newIdxDecls[i]!.domain
-    let typesDefeq ← eqTc.isDefEq outerType newType
+    let typesDefeq ← metaDefeq eqTc outerType newType
     let eqTy :=
       if typesDefeq then
         mkEq (idxSort i) outerType indexFvars[i]! newIdxFvars[i]!
@@ -649,13 +716,24 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
         domain := eqTy, info := .default }
     idxIsHeq := idxIsHeq.push !typesDefeq
     idxNewTypes := idxNewTypes.push newType
+  -- The MAJOR's equality binder gets the same `mkEqAndProof` decision as
+  -- the indices: when `I A j =?= I A j'` is Meta-defEq (every index pair
+  -- unit-like-defeq), Lean emits a homogeneous `Eq` at the OUTER major
+  -- type (`mkApp3 Eq lhsType lhs rhs` — α from the LHS only; generically
+  -- ill-typed inside the motive lambda but valid under the kernel's
+  -- infer-only proof checking), discharged by `Eq.refl` and consumed by
+  -- a plain `Eq.ndrec` in the minors. Fixture: `TypeBrecOnEqDefUnit`.
+  let majorTypesDefeq ← metaDefeq eqTc majorType newMajorType
   -- (Rust `drop(eq_tc)` — a no-op here; the next `TcScopeSt.new` resets.)
-  let heqTy := mkHeq majorLevel majorType outerMajor newMajorType
-    newMajorFvar
+  let majorEqTy :=
+    if majorTypesDefeq then
+      mkEq majorLevel majorType outerMajor newMajorFvar
+    else
+      mkHeq majorLevel majorType outerMajor newMajorType newMajorFvar
   let (hmName, _) := freshFVar "ieq_hm" 0
   mwDecls := mwDecls.push
     { fvarName := hmName, binderName := Name.mkStr .mkAnon "h",
-      domain := heqTy, info := .default }
+      domain := majorEqTy, info := .default }
   let mwBody := mkForall outerEqBody mwDecls
   let motiveBinders : Array LocalDecl := newIdxDecls.push newMajorDecl
   let motiveWrapped := mkLambda mwBody motiveBinders
@@ -714,7 +792,7 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
     let some minorValue := buildMinorViaCasesSim ctorIdx nonIhDecls retArgs
         ctorApplied outerEqBody indexFvars indexDecls indexSortLevels
         outerMajor majorType majorLevel paramFvars motiveFvars fFvars
-        idxIsHeq
+        idxIsHeq !majorTypesDefeq
       | return none
 
     eqVal := Expr.mkApp eqVal minorValue
@@ -729,7 +807,12 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
       else
         mkEqRefl (idxSort i) idxDecl.domain idxFv
     eqVal := Expr.mkApp eqVal refl
-  eqVal := Expr.mkApp eqVal (mkHeqRefl majorLevel majorType outerMajor)
+  let majorRefl :=
+    if majorTypesDefeq then
+      mkEqRefl majorLevel majorType outerMajor
+    else
+      mkHeqRefl majorLevel majorType outerMajor
+  eqVal := Expr.mkApp eqVal majorRefl
 
   return some (mkLambda eqVal allDecls)
 

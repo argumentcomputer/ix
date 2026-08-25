@@ -391,6 +391,13 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>
     ioBuffer ← seedTreeAt tree trees ioBuffer
+  | .catalog _ _ _ =>
+    -- Deliberately unsupported: a catalog claim is verified by
+    -- COMPOSITION of per-piece CheckEnv claims with set discharge
+    -- (plan §5.3) — interpreting the whole catalog in one circuit run
+    -- would recreate exactly the union bound the `.ixc` removes.
+    throw "catalog claims have no single-run witness; verify by \
+composition of per-piece check-env claims"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
