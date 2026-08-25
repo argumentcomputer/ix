@@ -24,13 +24,16 @@ require batteries from git
 /- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
 Theory/Verify specification surface, while `bench-lean4lean` and the ignored
 `lean4lean` test runner exercise the implementation. The default `ix` target
-still does not build this dependency. Pin the audited Argument fork exactly:
-this revision carries the upstream v4.32/v4.33 kernel hardening — including
-the `checkNoMVarNoFVar` check on an opaque's value (leanprover/lean4#14498),
-which the replay path in `Benchmarks/Lean4Lean.lean` reaches — on top of the
-fork's certified inductive-environment and projection development. -/
+still does not build this dependency. Pin `argumentcomputer/lean4ix` exactly --
+the Argument development line, a standalone repository rather than a GitHub
+fork of digama0/lean4lean: this revision carries the upstream v4.32/v4.33
+kernel hardening — including the `checkNoMVarNoFVar` check on an opaque's
+value (leanprover/lean4#14498), which the replay path in
+`Benchmarks/Lean4Lean.lean` reaches — on top of that line's certified
+inductive-environment and projection development, and tracks Lean v4.33.1 as
+this package does. -/
 require lean4lean from git
-  "https://github.com/argumentcomputer/lean4lean" @ "0d9a73e93a29aec110000944ae886daca36c6255"
+  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
 
 /-! ## FFI
 
