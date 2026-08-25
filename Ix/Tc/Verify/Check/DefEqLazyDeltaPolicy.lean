@@ -140,23 +140,23 @@ theorem defEqLazyDeltaStepWithEqualRank_preservesInferOnly
           exact defEqLazyDeltaStepAfterSameHeadMiss_preservesInferOnly hmethods
             hcheapNoDelta left right
       | some rightId =>
-          refine bind_preservesInferOnly
-            (isRegular_preservesInferOnly leftId) ?_
-          intro regular
-          by_cases hguard : leftId.addr == rightId.addr && regular
+          by_cases hguard : leftId.addr == rightId.addr
           · simp only [hguard, if_true]
             refine bind_preservesInferOnly
-              (trySameHeadSpineCached_preservesInferOnly hmethods left right) ?_
+              (isRegular_preservesInferOnly leftId) ?_
+            intro regular
+            refine bind_preservesInferOnly
+              (trySameHeadSpineCached_preservesInferOnly hmethods (!regular)
+                left right) ?_
             intro result
             cases result with
             | some answer =>
                 exact TcM.PreservesInferOnly.pure
                   (BoundedStep.done (LazyDeltaLoopResult.answer answer))
             | none =>
-                exact
-                  defEqLazyDeltaStepAfterSameHeadMiss_preservesInferOnly
-                    hmethods hcheapNoDelta left right
-          · simp only [hguard, Bool.false_eq_true, if_false, pure_bind]
+                exact defEqLazyDeltaStepAfterSameHeadMiss_preservesInferOnly
+                  hmethods hcheapNoDelta left right
+          · simp only [hguard, Bool.false_eq_true, if_false]
             exact defEqLazyDeltaStepAfterSameHeadMiss_preservesInferOnly
               hmethods hcheapNoDelta left right
 

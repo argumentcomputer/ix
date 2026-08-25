@@ -887,6 +887,20 @@ def isDefEq (scope : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
   | .ok r => return r
   | .error _ => return false
 
+/-- Infer the type of a `LeanExpr` in the current context. Decision
+    support only (the Eq-vs-HEq binder choice's unit-like check): the
+    result is never emitted into generated terms, so — unlike
+    `whnfLean` — no source-name restoration is performed. `none` on
+    kernel errors (callers treat an uninferrable side as "not
+    unit-like"). Mirrors Rust `TcScope::infer_lean`. -/
+def inferLean (scope : TcScopeSt) (e : Expr) : KBridgeM (Option Expr) := do
+  let depth := scope.depth
+  let ke := toKexprStatic e scope.fvarLevels depth scope.paramNames scope.maps
+  match ← runTc (Ix.Tc.TcM.infer ke) with
+  | .ok ty => return some (kexprToLean ty depth scope.fvarLevels 0
+      scope.paramNames)
+  | .error _ => return none
+
 end TcScopeSt
 
 end Ix.AuxGen

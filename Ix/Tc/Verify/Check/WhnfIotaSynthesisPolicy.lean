@@ -215,7 +215,7 @@ theorem verifyKSynthCandidate_preservesInferOnly
       (inferOnlyRec_preservesInferOnly hmethods ctorApp)) ?_
   intro ctorTyResult
   cases ctorTyResult with
-  | none => exact TcM.PreservesInferOnly.pure none
+  | none => exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
   | some ctorTy =>
       simp only []
       refine bindTcM_preservesInferOnly
@@ -224,13 +224,16 @@ theorem verifyKSynthCandidate_preservesInferOnly
             kSynthAttempts := state.kSynthAttempts + 1 })
           (fun _ => rfl)) ?_
       intro _
+      refine bindTcM_preservesInferOnly TcM.PreservesInferOnly.get ?_
+      intro state
       refine bind_preservesInferOnly
         (callIsDefEq_preservesInferOnly hmethods majorTyW ctorTy) ?_
       intro equal
       cases equal with
       | true =>
           simp only [Bool.not_true, pure_bind]
-          exact TcM.PreservesInferOnly.pure (some ctorApp)
+          exact TcM.PreservesInferOnly.pure
+            (KSynthOutcome.synthesized ctorApp)
       | false =>
           simp only [Bool.not_false, if_true]
           refine bindTcM_preservesInferOnly
@@ -239,7 +242,9 @@ theorem verifyKSynthCandidate_preservesInferOnly
                 kSynthRejects := state.kSynthRejects + 1 })
               (fun _ => rfl)) ?_
           intro _
-          exact TcM.PreservesInferOnly.pure none
+          exact TcM.PreservesInferOnly.pure
+            (if state.cheapRecursionDepth == 0 then
+              KSynthOutcome.definitiveReject else KSynthOutcome.inconclusive)
 
 attribute [local irreducible] verifyKSynthCandidate
 
@@ -253,13 +258,13 @@ theorem selectKSynthCandidate_preservesInferOnly
   unfold selectKSynthCandidate
   by_cases hmismatch : tyHeadId.addr != indId.addr
   · simp only [hmismatch, if_pos]
-    exact TcM.PreservesInferOnly.pure none
+    exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
   · simp only [hmismatch, Bool.false_eq_true, if_false, pure_bind]
     refine bindTcM_preservesInferOnly
       (TcM.PreservesInferOnly.tryGetConst indId) ?_
     intro declaration
     cases declaration with
-    | none => exact TcM.PreservesInferOnly.pure none
+    | none => exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
     | some declaration =>
         cases declaration with
         | indc name levelParams lvls indParams indices isUnsafe block memberIdx
@@ -268,14 +273,14 @@ theorem selectKSynthCandidate_preservesInferOnly
             cases hctor : ctors[0]? with
             | none =>
                 simp only []
-                exact TcM.PreservesInferOnly.pure none
+                exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
             | some ctorId =>
                 simp only []
                 exact verifyKSynthCandidate_preservesInferOnly hmethods
                   majorTyW ctorId tyUs tyArgs params
         | axio | defn | quot | ctor | recr =>
             simp only []
-            exact TcM.PreservesInferOnly.pure none
+            exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
 
 attribute [local irreducible] selectKSynthCandidate
 
@@ -288,14 +293,14 @@ theorem synthCtorWhenK_preservesInferOnly
   unfold synthCtorWhenK
   by_cases hlevels : recUs.size.toUInt64 != recr.lvls
   · simp only [hlevels, if_pos]
-    exact TcM.PreservesInferOnly.pure none
+    exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
   · simp only [hlevels, Bool.false_eq_true, if_false, pure_bind]
     refine bind_preservesInferOnly
       (tryOptional_preservesInferOnly
         (inferOnlyRec_preservesInferOnly hmethods major)) ?_
     intro majorTyResult
     cases majorTyResult with
-    | none => exact TcM.PreservesInferOnly.pure none
+    | none => exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
     | some majorTy =>
         simp only []
         refine bind_preservesInferOnly
@@ -303,7 +308,7 @@ theorem synthCtorWhenK_preservesInferOnly
             (whnfRec_preservesInferOnly hmethods majorTy)) ?_
         intro majorTyWResult
         cases majorTyWResult with
-        | none => exact TcM.PreservesInferOnly.pure none
+        | none => exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
         | some majorTyW =>
             simp only []
             rcases hspine : majorTyW.collectSpine with ⟨tyHead, tyArgs⟩
@@ -313,7 +318,8 @@ theorem synthCtorWhenK_preservesInferOnly
                   (TcM.PreservesInferOnly.tryGetConst recId) ?_
                 intro declaration
                 cases declaration with
-                | none => exact TcM.PreservesInferOnly.pure none
+                | none =>
+                    exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
                 | some declaration =>
                     let recTy := declaration.ty
                     let skip :=
@@ -335,12 +341,14 @@ theorem synthCtorWhenK_preservesInferOnly
                       (tryOptional_preservesInferOnly hscan) ?_
                     intro indResult
                     cases indResult with
-                    | none => exact TcM.PreservesInferOnly.pure none
+                    | none =>
+                        exact TcM.PreservesInferOnly.pure
+                          KSynthOutcome.inconclusive
                     | some indId =>
                         exact selectKSynthCandidate_preservesInferOnly hmethods
                           majorTyW tyHeadId tyUs tyArgs indId recr.params
             | var | fvar | sort | app | lam | all | letE | prj | nat | str =>
-                exact TcM.PreservesInferOnly.pure none
+                exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
 
 end RecM
 end Ix.Tc

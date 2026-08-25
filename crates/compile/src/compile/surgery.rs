@@ -125,6 +125,14 @@ impl CallSitePlan {
       + 1 // major premise
   }
 
+  /// Smallest source-order application prefix that can be permuted without
+  /// changing the residual call-site interface.  Once the complete
+  /// motive/minor band is present, the remaining indices+major suffix is
+  /// identity-mapped; shorter applications require an eta adapter.
+  pub fn minimal_full_prefix(&self) -> usize {
+    self.n_params + self.n_source_motives + self.n_source_minors
+  }
+
   /// Whether this plan is an identity (no reordering, no collapse).
   pub fn is_identity(&self) -> bool {
     self.head_rewrite.is_none()
@@ -166,6 +174,24 @@ impl BRecOnCallSitePlan {
 
   pub fn n_canonical_motives(&self) -> usize {
     self.motive_keep.iter().filter(|&&k| k).count()
+  }
+
+  /// Smallest safe prefix for a `.below`-family plan.  Its only permuted
+  /// band is params+motives; every following argument is an identity tail.
+  pub fn below_minimal_full_prefix(&self) -> usize {
+    self.n_params + self.n_source_motives
+  }
+
+  /// Smallest safe prefix for `.brecOn`.  The handlers form a second
+  /// permuted motive band at the end of the public telescope, so the whole
+  /// source telescope must be present before a prefix-only permutation is
+  /// possible.
+  pub fn brecon_minimal_full_prefix(&self) -> usize {
+    self.n_params
+      + self.n_source_motives
+      + self.n_indices
+      + 1
+      + self.n_source_motives
   }
 
   pub fn is_identity(&self) -> bool {

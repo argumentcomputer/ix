@@ -7,6 +7,7 @@ public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
+import Std.Internal.UV.System
 
 public section
 
@@ -19,6 +20,12 @@ private def defaultOutPathFor (pathStr : String) : String :=
   stem.toLower ++ ".ixe"
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
+  -- Keep the environment-variable interface for scripts, while giving the
+  -- CLI an ordinary discoverable switch. The Rust compiler and serializer
+  -- both consult IX_VERBOSE, so setting it once enables the whole pipeline.
+  if p.hasFlag "verbose" then
+    Std.Internal.UV.System.osSetenv "IX_VERBOSE" "1"
+
   let some path := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a Lean source file"
       return 1
@@ -146,8 +153,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- through `Ixon.Env::get`, so later runs (e.g. `ix check-ixon`) can
   -- skip the Lean → IxOn compile step.
   let allowPartial := p.hasFlag "allow-partial"
+  let strictAnon := p.hasFlag "anon"
   let start ← IO.monoMsNow
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  let status ← if strictAnon then
+      Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
+    else
+      Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 
@@ -229,6 +240,7 @@ def compileCmd : Cli.Cmd := `[Cli|
   "Compile Lean file to Ixon"
 
   FLAGS:
+    v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
     "consts-file"  : String; "Additionally read seed constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
@@ -238,6 +250,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     json           : String; "Write the compile's benchmark results row (compile-time, file-size, constants, throughput) to this path, merging into any existing rows object."
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
     "allow-partial" ;        "Serialize the grounded subset and exit 0 even when some requested constants fail to compile. Default is fail-closed: any ungrounded constant means a nonzero exit and NO output file."
+    anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
 
   ARGS:

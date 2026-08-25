@@ -357,11 +357,66 @@ theorem trySameHeadSpine_preservesInferOnly
               simp only [Bool.not_true, Bool.false_eq_true, if_false]
               exact TcM.PreservesInferOnly.pure (some true)
 
+/-- Bounded speculation restores the caller-visible fuel frame and preserves
+the inference-only flag on success, caught exhaustion, and propagated
+errors. -/
+theorem trySameHeadSpineSpeculative_preservesInferOnly
+    {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)
+    (left right : KExpr .anon) :
+    ((trySameHeadSpineSpeculative left right).run
+      methods).PreservesInferOnly := by
+  unfold trySameHeadSpineSpeculative
+  refine bindTcM_preservesInferOnly TcM.PreservesInferOnly.get ?_
+  intro (saved : TcState .anon)
+  cases hskip :
+      (!(saved.recFuel <= sameHeadSpeculationAttemptFuel) &&
+        saved.fuelBudget - saved.recFuel >=
+          sameHeadSpeculationStartFuel) with
+  | true =>
+      simp only [hskip, if_true]
+      exact TcM.PreservesInferOnly.pure none
+  | false =>
+      simp only [hskip, Bool.false_eq_true, if_false, pure_bind]
+      refine bindTcM_preservesInferOnly
+        (TcM.PreservesInferOnly.modify
+          (f := fun state : TcState .anon =>
+            { state with recFuel :=
+              (min saved.recFuel sameHeadSpeculationAttemptFuel) })
+          (fun _ => rfl)) ?_
+      intro _
+      refine bind_preservesInferOnly
+        (x := try
+          let answer ← trySameHeadSpine left right
+          pure (Except.ok answer)
+        catch error =>
+          pure (Except.error error))
+        (captureErrors_preservesInferOnly
+          (trySameHeadSpine_preservesInferOnly hmethods left right)) ?_
+      intro result
+      refine bindTcM_preservesInferOnly TcM.PreservesInferOnly.get ?_
+      intro afterCallback
+      refine bindTcM_preservesInferOnly
+        (TcM.PreservesInferOnly.modify
+          (f := fun state : TcState .anon =>
+            { state with recFuel := saved.recFuel -
+              (min saved.recFuel
+                (min saved.recFuel sameHeadSpeculationAttemptFuel -
+                  afterCallback.recFuel)) })
+          (fun _ => rfl)) ?_
+      intro _
+      cases result with
+      | ok answer => exact TcM.PreservesInferOnly.pure answer
+      | error error =>
+          cases error <;>
+            first
+            | exact TcM.PreservesInferOnly.pure none
+            | exact TcM.PreservesInferOnly.throw _
+
 /-- The narrow same-head rejection cache updates only the environment. -/
 theorem trySameHeadSpineCached_preservesInferOnly
     {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)
-    (left right : KExpr .anon) :
-    ((trySameHeadSpineCached left right).run
+    (speculative : Bool) (left right : KExpr .anon) :
+    ((trySameHeadSpineCached speculative left right).run
       methods).PreservesInferOnly := by
   unfold trySameHeadSpineCached
   refine bindTcM_preservesInferOnly
@@ -373,7 +428,15 @@ theorem trySameHeadSpineCached_preservesInferOnly
   split
   · exact TcM.PreservesInferOnly.pure none
   · apply TcM.PreservesInferOnly.bind
-      (trySameHeadSpine_preservesInferOnly hmethods left right)
+      (by
+        cases speculative with
+        | false =>
+            simp only [Bool.false_eq_true, if_false]
+            exact trySameHeadSpine_preservesInferOnly hmethods left right
+        | true =>
+            simp only [if_true]
+            exact trySameHeadSpineSpeculative_preservesInferOnly hmethods
+              left right)
     intro result
     cases result with
     | some accepted => exact TcM.PreservesInferOnly.pure (some accepted)

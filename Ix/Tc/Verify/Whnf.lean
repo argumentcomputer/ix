@@ -2616,14 +2616,14 @@ theorem meaning {layer : WhnfLayer} {semantics : CacheSemantics}
   | next hI hstep hI' hmeaning htail ih =>
       exact theory.transMeaning hI.2.1.wf hmeaning ih
 
-/-- Specialize trace execution to the actual 10,000-fuel uncached driver. -/
+/-- Specialize trace execution to the production uncached driver. -/
 theorem uncached_eval {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
     {uvars : Nat} {Δ : KVLCtx} {methods : Methods .anon}
     {flags : WhnfFlags} {source result : KExpr .anon}
     {s s' : TcState .anon}
     (h : WhnfCoreTrace layer semantics trProj world support uvars Δ methods
-      flags maxWhnfFuel.toNat source s result s') :
+      flags maxWhnfCoreFuel.toNat source s result s') :
     (whnfCoreWithFlagsUncached source flags).run methods s = .ok result s' := by
   unfold whnfCoreWithFlagsUncached
   exact h.eval
@@ -2638,7 +2638,7 @@ theorem uncached_acceptance {layer : WhnfLayer}
     {source result : KExpr .anon} {s s' : TcState .anon}
     (theory : WhnfTheory trProj world uvars)
     (h : WhnfCoreTrace layer semantics trProj world support uvars Δ methods
-      flags maxWhnfFuel.toNat source s result s') :
+      flags maxWhnfCoreFuel.toNat source s result s') :
     (whnfCoreWithFlagsUncached source flags).run methods s = .ok result s' ∧
       WhnfStateInv layer semantics trProj world support uvars Δ s ∧
       WhnfStateInv layer semantics trProj world support uvars Δ s' ∧
@@ -2666,12 +2666,12 @@ theorem uncached_wf {layer : WhnfLayer} {semantics : CacheSemantics}
       (WhnfLoopError stepError) := by
   intro methods hmethods hI
   have hcomplete := WhnfCoreTrace.complete hstep hmethods
-    (fuel := maxWhnfFuel.toNat) (source := source) (s := s)
+    (fuel := maxWhnfCoreFuel.toNat) (source := source) (s := s)
     ⟨hsupport, sourceV, hsource⟩ hI
   unfold whnfCoreWithFlagsUncached
   match hrun :
       (runBounded (fun cur => whnfCoreWithFlagsStep cur flags)
-        maxWhnfFuel.toNat source).run methods s with
+        maxWhnfCoreFuel.toNat source).run methods s with
   | .ok result s' =>
       rw [hrun] at hcomplete
       simp only at hcomplete ⊢
@@ -3075,7 +3075,7 @@ theorem whnfCoreWithFlags_fullMiss_acceptance
       .ok false s₂)
     (hmiss : s₂.env.whnfCoreCache[key]? = none)
     (htrace : WhnfCoreTrace layer (whnfCacheSemantics keys trProj fallback)
-      trProj world support keys.uvars Δ methods flags maxWhnfFuel.toNat
+      trProj world support keys.uvars Δ methods flags maxWhnfCoreFuel.toNat
       source s₂ result s₃)
     (hnew : CacheProvenance (whnfCacheSemantics keys trProj fallback)
       (CacheAuthority.stable world) support (.expr .whnfCore key result)) :
@@ -3110,7 +3110,7 @@ theorem whnfCoreWithFlags_cheapMiss_acceptance
       .ok false s₂)
     (hmiss : s₂.env.whnfCoreCheapCache[key]? = none)
     (htrace : WhnfCoreTrace layer (whnfCacheSemantics keys trProj fallback)
-      trProj world support keys.uvars Δ methods flags maxWhnfFuel.toNat
+      trProj world support keys.uvars Δ methods flags maxWhnfCoreFuel.toNat
       source s₂ result s₃)
     (hnew : CacheProvenance (whnfCacheSemantics keys trProj fallback)
       (CacheAuthority.stable world) support
@@ -3144,7 +3144,7 @@ theorem whnfCoreWithFlags_transient_acceptance
     (htransient : (isTransientNatLiteralWork source).run methods s₁ =
       .ok true s₂)
     (htrace : WhnfCoreTrace layer (whnfCacheSemantics keys trProj fallback)
-      trProj world support keys.uvars Δ methods flags maxWhnfFuel.toNat
+      trProj world support keys.uvars Δ methods flags maxWhnfCoreFuel.toNat
       source s₂ result s₃) :
     (whnfCoreWithFlags source flags).run methods s = .ok result s₃ ∧
       WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
@@ -6933,7 +6933,7 @@ theorem whnfCoreWithFlagsStep_appChangedIotaError_acceptance
 /-- Generic two-iteration equation for the production bounded driver: one
 successful `.next` step followed by a structural leaf.  Keeping this seam
 branch-agnostic lets beta, both zeta paths, and later projection/iota proofs
-share the exact 10,000-fuel argument. -/
+share the exact production-fuel argument. -/
 theorem whnfCoreWithFlagsUncached_nextLeaf
     {methods : Methods .anon} {s s' : TcState .anon}
     {source result : KExpr .anon} {flags : WhnfFlags}
@@ -6943,7 +6943,7 @@ theorem whnfCoreWithFlagsUncached_nextLeaf
     (whnfCoreWithFlagsUncached source flags).run methods s =
       .ok result s' := by
   unfold whnfCoreWithFlagsUncached
-  rw [show maxWhnfFuel.toNat = 10000 by rfl]
+  rw [show maxWhnfCoreFuel.toNat = 10000000 by rfl]
   rw [RecM.runBounded]
   rw [ReaderT.run_bind]
   change EStateM.bind
@@ -7161,7 +7161,7 @@ theorem whnfCoreWithFlagsUncached_fvarZeta_acceptance
   ⟨whnfCoreWithFlagsUncached_fvarZeta hfind hleaf, hI,
     WhnfMeaning.zetaFVar hI.2.1 htp hfind hcon hclosed hbig⟩
 
-/-- The actual 10,000-iteration production driver performs the direct beta
+/-- The production driver performs the direct beta
 step and then terminates when the walker result is a structural leaf. -/
 theorem whnfCoreWithFlagsUncached_betaOne
     {methods : Methods .anon} {s s' : TcState .anon}
@@ -7176,7 +7176,7 @@ theorem whnfCoreWithFlagsUncached_betaOne
       (.app (.lam nm bi ty body lamMd) arg appMd) flags).run methods s =
       .ok result s' := by
   unfold whnfCoreWithFlagsUncached
-  rw [show maxWhnfFuel.toNat = 10000 by rfl]
+  rw [show maxWhnfCoreFuel.toNat = 10000000 by rfl]
   rw [RecM.runBounded]
   rw [ReaderT.run_bind]
   change EStateM.bind

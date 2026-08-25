@@ -22,10 +22,10 @@ use ix_compile::decompile::{check_decompile, decompile_env};
 use std::sync::Arc;
 
 use lean_ffi::nat::Nat;
-use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanList, LeanOwned, LeanRef, LeanShared,
 };
+use lean_ffi::object::{LeanNat, LeanString};
 
 use crate::lean::{
   LeanIxAxiomVal, LeanIxConstantInfo, LeanIxConstantVal, LeanIxConstructorVal,
@@ -1855,6 +1855,50 @@ impl PhaseResult {
       println!("{VALIDATE_PREFIX}     ✗ {f}");
     }
   }
+
+  /// Row for the `--report` phase table. `failures` carries the same
+  /// capped (≤ 20) sample `report()` prints.
+  fn json(&self) -> serde_json::Value {
+    serde_json::json!({
+      "name": self.name,
+      "pass": self.pass,
+      "fail": self.fail,
+      "elapsedSecs": self.started.elapsed().as_secs_f32(),
+      "failures": self.failures,
+    })
+  }
+}
+
+/// Write the machine-readable phase table for `ix validate --report`
+/// (the Lean CLI wraps this core with input/toolchain metadata).
+/// Best-effort: a failed write goes to stderr and never masks the
+/// verdict — the caller's return value stays the failure count.
+fn write_validate_phase_report(
+  path: &str,
+  phases: &[serde_json::Value],
+  total_failures: usize,
+  aborted: Option<&str>,
+  total_secs: f32,
+) {
+  if path.is_empty() {
+    return;
+  }
+  let report = serde_json::json!({
+    "phases": phases,
+    "totalFailures": total_failures,
+    "aborted": aborted,
+    "elapsedSecs": total_secs,
+  });
+  let rendered = match serde_json::to_string_pretty(&report) {
+    Ok(s) => s,
+    Err(e) => {
+      eprintln!("{VALIDATE_PREFIX} --report serialization failed: {e}");
+      return;
+    },
+  };
+  if let Err(e) = std::fs::write(path, rendered + "\n") {
+    eprintln!("{VALIDATE_PREFIX} --report write to {path} failed: {e}");
+  }
 }
 
 /// Comprehensive 8-phase validation of the aux_gen compile pipeline.
@@ -1868,12 +1912,21 @@ impl PhaseResult {
 /// same binary entry point, just two callers.
 ///
 /// Returns total failure count across all phases.
+///
+/// `report_path` (empty = disabled) receives the machine-readable
+/// phase-table JSON — written on completion AND on every abort path,
+/// so a report requested is a report delivered whenever the process
+/// survives.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compile_validate_aux(
   obj: LeanList<LeanBorrowed<'_>>,
+  report_path: LeanString<LeanBorrowed<'_>>,
 ) -> usize {
   use ix_compile::congruence::const_alpha_eq;
   use rustc_hash::FxHashSet;
+
+  let report_path = report_path.as_str().to_string();
+  let mut phase_rows: Vec<serde_json::Value> = Vec::new();
 
   let t_total = std::time::Instant::now();
 
@@ -1907,9 +1960,17 @@ extern "C" fn rs_compile_validate_aux(
       Ok(Err(e)) => {
         p1.record_fail(format!("compile_env FAILED: {e}"));
         p1.report();
+        phase_rows.push(p1.json());
         println!(
           "{VALIDATE_PREFIX} RESULT: {} total failures (aborted after Phase 1)",
           p1.fail
+        );
+        write_validate_phase_report(
+          &report_path,
+          &phase_rows,
+          p1.fail,
+          Some("after Phase 1"),
+          t_total.elapsed().as_secs_f32(),
         );
         return p1.fail;
       },
@@ -1921,9 +1982,17 @@ extern "C" fn rs_compile_validate_aux(
           .unwrap_or("(non-string panic)");
         p1.record_fail(format!("compile_env PANICKED: {msg}"));
         p1.report();
+        phase_rows.push(p1.json());
         println!(
           "{VALIDATE_PREFIX} RESULT: {} total failures (aborted after Phase 1)",
           p1.fail
+        );
+        write_validate_phase_report(
+          &report_path,
+          &phase_rows,
+          p1.fail,
+          Some("after Phase 1"),
+          t_total.elapsed().as_secs_f32(),
         );
         return p1.fail;
       },
@@ -1963,6 +2032,7 @@ extern "C" fn rs_compile_validate_aux(
     p1.failures = fail_msgs.into_inner().unwrap();
   }
   p1.report();
+  phase_rows.push(p1.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Phase 2: Aux_gen congruence (post-compilation, uses real CompileState)
@@ -2517,6 +2587,7 @@ extern "C" fn rs_compile_validate_aux(
     }
   }
   p2.report();
+  phase_rows.push(p2.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Phase 3: No ephemeral constant leaks
@@ -2567,6 +2638,7 @@ extern "C" fn rs_compile_validate_aux(
     p3.failures = fail_msgs.into_inner().unwrap();
   }
   p3.report();
+  phase_rows.push(p3.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Phase 4: Alpha-equivalence group canonicity
@@ -2633,6 +2705,7 @@ extern "C" fn rs_compile_validate_aux(
     p4.failures = fail_msgs.into_inner().unwrap();
   }
   p4.report();
+  phase_rows.push(p4.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Phase 4b: Explicit cross-namespace canonicity fixtures
@@ -3655,6 +3728,7 @@ extern "C" fn rs_compile_validate_aux(
     }
   }
   p4b.report();
+  phase_rows.push(p4b.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Phase 5: Decompile with debug info
@@ -3703,6 +3777,7 @@ extern "C" fn rs_compile_validate_aux(
     }
   }
   p5.report();
+  phase_rows.push(p5.json());
 
   let aux_compare_contexts =
     stt.lean_env.as_ref().map_or_else(FxHashMap::default, |lean_env| {
@@ -3780,6 +3855,7 @@ extern "C" fn rs_compile_validate_aux(
     }
   }
   p6.report();
+  phase_rows.push(p6.json());
 
   // ── Free Phase 1-6 state before Phase 7 ──────────────────────────────
   //
@@ -3843,6 +3919,7 @@ extern "C" fn rs_compile_validate_aux(
   if let Err(e) = compile_env_only.put(&mut serialized) {
     p7.record_fail(format!("serialize FAILED: {e}"));
     p7.report();
+    phase_rows.push(p7.json());
     let total = p1.fail
       + p2.fail
       + p3.fail
@@ -3852,6 +3929,13 @@ extern "C" fn rs_compile_validate_aux(
       + p6.fail
       + p7.fail;
     println!("{VALIDATE_PREFIX} RESULT: {total} total failures");
+    write_validate_phase_report(
+      &report_path,
+      &phase_rows,
+      total,
+      Some("after Phase 7 serialize"),
+      t_total.elapsed().as_secs_f32(),
+    );
     return total;
   }
   println!(
@@ -3956,6 +4040,7 @@ extern "C" fn rs_compile_validate_aux(
     }
   };
   p7.report();
+  phase_rows.push(p7.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Phase 7b: Per-constant roundtrip fidelity (out-of-band)
@@ -4055,6 +4140,7 @@ extern "C" fn rs_compile_validate_aux(
     p7b.record_fail("skipped: phase 7 decompilation failed".into());
   }
   p7b.report();
+  phase_rows.push(p7b.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Phase 8: Nested detection verification
@@ -4150,6 +4236,7 @@ extern "C" fn rs_compile_validate_aux(
     }
   }
   p8.report();
+  phase_rows.push(p8.json());
 
   // ══════════════════════════════════════════════════════════════════════
   // Summary
@@ -4169,6 +4256,13 @@ extern "C" fn rs_compile_validate_aux(
     t_total.elapsed().as_secs_f32()
   );
   println!("{VALIDATE_PREFIX} RESULT: {total} total failures");
+  write_validate_phase_report(
+    &report_path,
+    &phase_rows,
+    total,
+    None,
+    t_total.elapsed().as_secs_f32(),
+  );
 
   // Skip destructors on the CLI path. Mirrors the `rs_compile_env`
   // treatment (`src/ffi/compile.rs`). On Mathlib the remaining live state

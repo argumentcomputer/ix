@@ -37,6 +37,10 @@ def claimUnits : TestSeq :=
        (claimSerde (.checkEnv addr1 (some addr2)))
   -- Contains
   ++ test "Contains roundtrip" (claimSerde (.contains addr1 addr2))
+  -- Catalog (the first multi-byte claim tag)
+  ++ test "Catalog no-asm roundtrip" (claimSerde (.catalog addr1 addr2 none))
+  ++ test "Catalog with-asm roundtrip"
+       (claimSerde (.catalog addr1 addr2 (some addr3)))
   -- Reveal claim variants (carried over from previous suite)
   ++ test "Reveal defn safety-only" (claimSerde (.reveal addr1
     (.defn none (some .safe) none none none)))
@@ -101,10 +105,48 @@ def claimEncodingTests : TestSeq :=
   ++ test "Contains tag byte is 0xE7" (containsBytes.data[0]! == 0xE7)
   ++ test "Contains size is 65" (containsBytes.size == 65)
 
+/-! ## Catalog claim: wire pin + Rust digest parity
+
+  The catalog claim is the first multi-byte claim tag (`0xE8 0x08` —
+  claim variants 0–7 are full). Its exact wire form is a
+  cross-serializer commitment: `catalog_claim_wire_bytes_pinned` in
+  `crates/ixon/src/proof.rs` asserts the SAME digest hex over the same
+  fixture, so the two serializers cannot drift on the large-tag path
+  without one of the pins going red.
+-/
+
+private def catMembers : Address := Address.blake3 "members".toUTF8
+private def catContent : Address := Address.blake3 "content".toUTF8
+private def catAsm : Address := Address.blake3 "assumptions".toUTF8
+
+/-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
+private def catalogDigestPin : String :=
+  "608af1f5477517d14427da664ae7a62d46cd9236b2183481c7801910683579bf"
+
+def catalogClaimTests : TestSeq :=
+  let someBytes := Claim.ser (.catalog catMembers catContent (some catAsm))
+  let noneBytes := Claim.ser (.catalog catMembers catContent none)
+  let proof : Ixon.Proof := { claim := .catalog catMembers catContent none
+                              proof := .empty }
+  let proofBytes := Ixon.Proof.ser proof
+  let proofRoundtrips : Bool := match Ixon.Proof.de proofBytes with
+    | .ok p => p.claim == proof.claim && p.proof == proof.proof
+    | .error _ => false
+  test "Catalog tag is 2 bytes 0xE8 0x08"
+    (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x08)
+  ++ test "Catalog no-asm size is 99" (noneBytes.size == 2 + 64 + 1)
+  ++ test "Catalog with-asm size is 131" (someBytes.size == 2 + 64 + 33)
+  ++ test "Catalog digest parity with Rust pin"
+       (toString (Address.blake3 someBytes) == catalogDigestPin)
+  ++ test "Catalog proof wrapper tag is single-byte 0xF5"
+       (proofBytes.data[0]! == 0xF5)
+  ++ test "Catalog proof wrapper roundtrips" proofRoundtrips
+
 /-! ## Suite -/
 
 public def Tests.Claim.suite : List TestSeq := [
   claimUnits,
   claimEncodingTests,
+  catalogClaimTests,
   checkIO "Claim serde roundtrips" (∀ c : Claim, claimSerde c),
 ]

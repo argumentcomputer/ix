@@ -205,6 +205,45 @@ def breconPlanTests : TestSeq :=
   ++ test "BRecOnCallSitePlan.isIdentity on an identity motive layout"
     ((BRecOnCallSitePlan.fromRecPlan identityPlan).isIdentity : Bool)
 
+/-! ## Plan-head arity audit -/
+
+def auditRejectsMdataSplit : Bool :=
+  let head := nn "A" "rec"
+  let plan : CallSitePlan := {
+    nParams := 0
+    nSourceMotives := 2
+    nSourceMinors := 2
+    nIndices := 0
+    motiveKeep := #[true, true]
+    minorKeep := #[true, true]
+    sourceToCanonMotive := #[1, 0]
+    sourceToCanonMinor := #[1, 0]
+    sourceInBlock := #[true, true]
+    headRewrite := none
+  }
+  let cenv : Ix.CompileM.CompileEnv := {
+    Ix.CompileM.CompileEnv.new { consts := {} } with
+    callSitePlans := ({} : Std.HashMap Name CallSitePlan).insert head plan
+  }
+  let benv : Ix.CompileM.BlockEnv := {
+    all := {}, current := nm "offending", mutCtx := default, univCtx := []
+  }
+  let inner := Expr.mkApp
+    (Expr.mkApp (Expr.mkConst head #[]) (Expr.mkBVar 0))
+    (Expr.mkBVar 1)
+  let split := Expr.mkApp (Expr.mkMData #[] inner) (Expr.mkBVar 2)
+  match Ix.CompileM.CompileM.run cenv benv {}
+      (Ix.CompileM.auditPlanHeadArities (nm "offending") split) with
+  | .error (.invalidMutualBlock reason) =>
+    reason.contains "offending" && reason.contains "A.rec" &&
+      reason.contains "has 2 args" && reason.contains "at least 4" &&
+      reason.contains "obscured by mdata/let"
+  | _ => false
+
+def auditTests : TestSeq :=
+  test "plan-head arity audit rejects an mdata-split short spine"
+    auditRejectsMdataSplit
+
 /-! ## Name mappers (surgery.rs:177/189) -/
 
 def nameMapperTests : TestSeq :=
@@ -407,7 +446,7 @@ def auxMinorSpanTests : TestSeq :=
       == some true : Bool)
 
 def suite : List TestSeq :=
-  [telescopeTests, identityTests, breconPlanTests, nameMapperTests,
+  [telescopeTests, identityTests, breconPlanTests, auditTests, nameMapperTests,
    noCollapseTests, reorderTests, collapseTests, minorCollapseTests,
    nestedIdentityTests, nestedReorderTests, lcnfTests, recNTests,
    auxPermTests, outOfSccTests, auxMinorSpanTests]

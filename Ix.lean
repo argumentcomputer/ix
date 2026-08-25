@@ -12,6 +12,7 @@ public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.CompileM
 public import Ix.DecompileM
+public import Ix.Replay
 public import Ix.Catalog
 public import Ix.ImportIxe
 public import Ix.IxEval
@@ -21,6 +22,7 @@ public import Ix.Claim
 public import Ix.Merkle
 public import Ix.AssumptionTree
 public import Ix.Commit
+public import Ix.Watchdog
 public import Ix.Benchmark.Bench
 public import Ix.Aiur
 public import Ix.TracingTexray

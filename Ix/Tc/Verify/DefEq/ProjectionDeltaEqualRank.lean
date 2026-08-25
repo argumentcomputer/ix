@@ -4,11 +4,12 @@ import Ix.Tc.Verify.DefEq.ProjectionDeltaUnfolding
 /-!
 # Equal-rank projection-delta reduction
 
-At equal reducibility rank the compact projection loop first attempts raw
-same-head spine congruence, then unfolds both operands and structurally
-normalizes every successful unfold.  The rejection-only cache used by the
-main DefEq iteration is intentionally absent here; this proof follows the
-actual compact helper.
+At equal reducibility rank the compact projection loop first looks up the
+head hint and attempts raw same-head spine congruence, bounded for
+non-Regular heads, then unfolds both operands and structurally normalizes
+every successful unfold.  The rejection-only cache used by the main DefEq
+iteration is intentionally absent here; this proof follows the actual
+compact helper.
 -/
 
 namespace Ix.Tc
@@ -109,8 +110,8 @@ theorem lazyDeltaReductionStepAfterSameHeadMiss_wf
             ⟨hreducedLeftSupport, hreducedRightSupport, hleftReduced,
               hrightReduced⟩
 
-/-- Complete equal-rank compact branch, including the regular-hint lookup,
-every raw same-head result, and the two-sided reduction tail. -/
+/-- Complete equal-rank compact branch, including hint lookup, every raw
+same-head result, and the two-sided reduction tail. -/
 theorem lazyDeltaReductionStepWithEqualRank_wf
     {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
@@ -133,30 +134,52 @@ theorem lazyDeltaReductionStepWithEqualRank_wf
   obtain ⟨leftV, hleft, hleftEq⟩ := hpair.left
   obtain ⟨rightV, hright, hrightEq⟩ := hpair.right
   unfold lazyDeltaReductionStepWithEqualRank
-  apply RecM.WF.bind (isRegular_wf hfault leftId)
-  intro regular afterRegular _
-  cases hguard : (leftId.addr == rightId.addr && regular) with
+  cases hguard : (leftId.addr == rightId.addr) with
   | false =>
       simp only [Bool.false_eq_true, if_false]
       exact lazyDeltaReductionStepAfterSameHeadMiss_wf context hDelta hpair
   | true =>
       simp only [if_true]
-      apply RecM.WF.bind <|
-        hsame hpair.leftSupport hpair.rightSupport hleft hright
-      intro result afterSame hresult
-      cases result with
-      | none =>
-          exact lazyDeltaReductionStepAfterSameHeadMiss_wf context hDelta
-            hpair
-      | some answer =>
-          cases answer with
-          | false =>
-              exact lazyDeltaReductionStepAfterSameHeadMiss_wf context
-                hDelta hpair
-          | true =>
-              exact RecM.WF.pure fun _ =>
-                hleftEq.trans world.venvWF hDelta <|
-                  (hresult rfl).trans world.venvWF hDelta hrightEq.symm
+      apply RecM.WF.bind (isRegular_wf hfault leftId)
+      intro regular afterRegular _
+      cases regular with
+      | false =>
+          simp only [Bool.false_eq_true, if_false]
+          apply RecM.WF.bind <|
+            trySameHeadSpineSpeculative_wf hsame hpair.leftSupport
+              hpair.rightSupport hleft hright
+          intro result afterSame hresult
+          cases result with
+          | none =>
+              exact lazyDeltaReductionStepAfterSameHeadMiss_wf context hDelta
+                hpair
+          | some answer =>
+              cases answer with
+              | false =>
+                  exact lazyDeltaReductionStepAfterSameHeadMiss_wf context
+                    hDelta hpair
+              | true =>
+                  exact RecM.WF.pure fun _ =>
+                    hleftEq.trans world.venvWF hDelta <|
+                      (hresult rfl).trans world.venvWF hDelta hrightEq.symm
+      | true =>
+          simp only [if_true]
+          apply RecM.WF.bind <|
+            hsame hpair.leftSupport hpair.rightSupport hleft hright
+          intro result afterSame hresult
+          cases result with
+          | none =>
+              exact lazyDeltaReductionStepAfterSameHeadMiss_wf context hDelta
+                hpair
+          | some answer =>
+              cases answer with
+              | false =>
+                  exact lazyDeltaReductionStepAfterSameHeadMiss_wf context
+                    hDelta hpair
+              | true =>
+                  exact RecM.WF.pure fun _ =>
+                    hleftEq.trans world.venvWF hDelta <|
+                      (hresult rfl).trans world.venvWF hDelta hrightEq.symm
 
 end RecM
 

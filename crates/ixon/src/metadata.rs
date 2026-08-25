@@ -89,6 +89,22 @@ pub enum ExprMetaData {
     /// args) instead of reading levels off the stored canonical head.
     orig_head: Option<(u64, u64)>,
   },
+  /// Eta adapter for a partial plan-bearing reference. The corresponding
+  /// Ixon expression is a synthesized lambda telescope whose body is a normal
+  /// canonical `CallSite`. Decompile strips `n_synth` lambdas and rebuilds
+  /// only the originally-applied source prefix from `entries`.
+  ///
+  /// `wrapper_meta` points at the ordinary Binder/CallSite metadata tree for
+  /// the synthesized wrapper. Kernel meta-ingress follows it so binder-type
+  /// references retain complete metadata; source decompile intentionally
+  /// discards that wrapper tree.
+  EtaCallSite {
+    n_synth: u64,
+    name: Address,
+    entries: Vec<CallSiteEntry>,
+    canon_meta: Vec<u64>,
+    wrapper_meta: u64,
+  },
 }
 
 /// Arena for expression metadata within a single constant.
@@ -350,7 +366,8 @@ impl ConstantMeta {
           ExprMetaData::Binder { name, .. }
           | ExprMetaData::LetBinder { name, .. }
           | ExprMetaData::Ref { name }
-          | ExprMetaData::CallSite { name, .. } => names.push(name.clone()),
+          | ExprMetaData::CallSite { name, .. }
+          | ExprMetaData::EtaCallSite { name, .. } => names.push(name.clone()),
           ExprMetaData::Prj { struct_name, .. } => {
             names.push(struct_name.clone());
           },
@@ -1038,6 +1055,34 @@ impl ExprMetaData {
           },
         }
       },
+      Self::EtaCallSite {
+        n_synth,
+        name,
+        entries,
+        canon_meta,
+        wrapper_meta,
+      } => {
+        put_u8(11, buf);
+        put_u64(*n_synth, buf);
+        put_idx(name, idx, buf)?;
+        put_vec_len(entries.len(), buf);
+        for entry in entries {
+          match entry {
+            CallSiteEntry::Kept { canon_idx, meta } => {
+              put_u8(0, buf);
+              put_u64(*canon_idx, buf);
+              put_u64(*meta, buf);
+            },
+            CallSiteEntry::Collapsed { sharing_idx, meta } => {
+              put_u8(1, buf);
+              put_u64(*sharing_idx, buf);
+              put_u64(*meta, buf);
+            },
+          }
+        }
+        put_u64_vec(canon_meta, buf);
+        put_u64(*wrapper_meta, buf);
+      },
     }
     Ok(())
   }
@@ -1117,6 +1162,37 @@ impl ExprMetaData {
           },
         };
         Ok(Self::CallSite { name, entries, canon_meta, orig_head })
+      },
+      11 => {
+        let n_synth = get_u64(buf)?;
+        let name = get_idx(buf, rev)?;
+        let n_entries = get_vec_len(buf)?;
+        let mut entries = Vec::with_capacity(n_entries);
+        for _ in 0..n_entries {
+          let entry = match get_u8(buf)? {
+            0 => {
+              let canon_idx = get_u64(buf)?;
+              let meta = get_u64(buf)?;
+              CallSiteEntry::Kept { canon_idx, meta }
+            },
+            1 => {
+              let sharing_idx = get_u64(buf)?;
+              let meta = get_u64(buf)?;
+              CallSiteEntry::Collapsed { sharing_idx, meta }
+            },
+            x => return Err(format!("CallSiteEntry::get: invalid tag {x}")),
+          };
+          entries.push(entry);
+        }
+        let canon_meta = get_u64_vec(buf)?;
+        let wrapper_meta = get_u64(buf)?;
+        Ok(Self::EtaCallSite {
+          n_synth,
+          name,
+          entries,
+          canon_meta,
+          wrapper_meta,
+        })
       },
       x => Err(format!("ExprMetaData::get: invalid tag {x}")),
     }
@@ -1496,7 +1572,16 @@ mod tests {
       mdata: vec![vec![(addr1.clone(), DataValue::OfBool(true))]],
       child: app,
     });
-    let _ = mdata;
+    let _eta = arena.alloc(ExprMetaData::EtaCallSite {
+      n_synth: 3,
+      name: addr1.clone(),
+      entries: vec![
+        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
+        CallSiteEntry::Collapsed { sharing_idx: 2, meta: ref_node },
+      ],
+      canon_meta: vec![leaf, ref_node],
+      wrapper_meta: mdata,
+    });
 
     let mut buf = Vec::new();
     arena.put_with(NamePut::Indexed(&idx), &mut buf).unwrap();

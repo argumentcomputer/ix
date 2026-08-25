@@ -87,11 +87,43 @@ def runValidateCmd (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"Running Ix validator on {pathStr}"
   IO.println s!"Total constants: {constList.length}"
 
+  let reportPath := (p.flag? "report").map (·.as! String)
   let start ← IO.monoMsNow
+  -- Non-empty report path ⇒ the Rust side writes the phase-table core
+  -- there (on completion and on abort paths alike); the wrapper below
+  -- then rewrites the file with CLI metadata around that core.
   let failures := Ix.CompileM.rsCompileValidateAuxFFI constList
+    (reportPath.getD "")
   let elapsed := (← IO.monoMsNow) - start
 
   IO.println s!"[validate] total failures: {failures} (in {elapsed.formatMs})"
+
+  -- `--report`: machine-readable verdict, the `ix compile --report`
+  -- shape — phase table from the Rust core, wrapped with the input/
+  -- toolchain metadata only this layer knows.
+  if let some path := reportPath then
+    let phaseCore : Option Lean.Json ← try
+        pure (Lean.Json.parse (← IO.FS.readFile path)).toOption
+      catch _ => pure none
+    let coreField (name : String) : Lean.Json :=
+      (phaseCore.bind fun core => (core.getObjVal? name).toOption)
+        |>.getD Lean.Json.null
+    let report := Lean.Json.mkObj
+      [ ("schemaVersion", Lean.toJson (1 : Nat))
+      , ("tool", Lean.Json.str "validate")
+      , ("ixVersion", Lean.Json.str Ix.versionString)
+      , ("leanToolchain", Lean.Json.str Lean.versionString)
+      , ("input", Lean.Json.str pathStr)
+      , ("ns", (p.flag? "ns").map (Lean.Json.str <| ·.as! String)
+          |>.getD Lean.Json.null)
+      , ("constants", Lean.toJson constList.length)
+      , ("phases", coreField "phases")
+      , ("aborted", coreField "aborted")
+      , ("totalFailures", Lean.toJson failures.toNat)
+      , ("passed", Lean.toJson (failures == 0))
+      , ("elapsedMs", Lean.toJson elapsed) ]
+    IO.FS.writeFile path (report.pretty ++ "\n")
+
   return if failures == 0 then 0 else 1
 
 def validateCmd : Cli.Cmd := `[Cli|
@@ -100,6 +132,7 @@ def validateCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     ns   : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
+    report : String; "Write a machine-readable JSON report (phase table + pass/fail + counts) to this path. Written on abort paths too."
 
   ARGS:
     path : String; "Path to the Lean source file whose env should be validated."

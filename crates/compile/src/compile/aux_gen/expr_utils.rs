@@ -735,10 +735,10 @@ fn instantiate_rev_at(
 /// Matches Lean C++ `instantiate_pi_params` (`inductive.cpp:954-960`):
 /// peel n foralls (taking just the body), then substitute all at once.
 ///
-/// Equivalent to calling `instantiate1(body, args[i])` iteratively
-/// for each peeled forall, which is what our recursor builder does
-/// inline. This function packages that pattern for the expand phase.
-pub(super) fn instantiate_pi_params(
+/// Each peeled argument is instantiated with [`instantiate_rev`] so loose
+/// BVars in the argument are lifted beneath any binders that remain in the
+/// telescope. Closed arguments behave exactly as with [`instantiate1`].
+pub(crate) fn instantiate_pi_params(
   typ: &LeanExpr,
   n: usize,
   args: &[LeanExpr],
@@ -753,7 +753,7 @@ pub(super) fn instantiate_pi_params(
   for arg in args.iter().take(n) {
     match cur.as_data() {
       ExprData::ForallE(_, _, body, _, _) => {
-        cur = instantiate1(body, arg);
+        cur = instantiate_rev(body, std::slice::from_ref(arg));
       },
       _ => break,
     }
@@ -806,7 +806,7 @@ pub(super) fn instantiate_spec_with_fvars(
 ///
 /// Used internally by `instantiate_rev_at` when substituting args under
 /// inner binders (each args element is re-shifted by the current depth).
-pub(super) fn shift_vars(
+pub(crate) fn shift_vars(
   expr: &LeanExpr,
   amount: usize,
   cutoff: usize,
@@ -851,6 +851,59 @@ pub(super) fn shift_vars(
     },
     ExprData::Mdata(kvs, e, _) => {
       LeanExpr::mdata(kvs.clone(), shift_vars(e, amount, cutoff))
+    },
+    _ => expr.clone(),
+  }
+}
+
+/// Inverse of [`shift_vars`] for an expression known to have been lifted by
+/// `amount`: lower loose BVars while leaving variables bound inside the
+/// expression untouched.
+pub(crate) fn lower_vars(
+  expr: &LeanExpr,
+  amount: usize,
+  cutoff: usize,
+) -> LeanExpr {
+  if amount == 0 {
+    return expr.clone();
+  }
+  match expr.as_data() {
+    ExprData::Bvar(idx, _) => {
+      let i = nat_to_usize(idx);
+      if i >= cutoff + amount {
+        LeanExpr::bvar(Nat::from((i - amount) as u64))
+      } else {
+        expr.clone()
+      }
+    },
+    ExprData::App(f, a, _) => LeanExpr::app(
+      lower_vars(f, amount, cutoff),
+      lower_vars(a, amount, cutoff),
+    ),
+    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
+      n.clone(),
+      lower_vars(t, amount, cutoff),
+      lower_vars(b, amount, cutoff + 1),
+      bi.clone(),
+    ),
+    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
+      n.clone(),
+      lower_vars(t, amount, cutoff),
+      lower_vars(b, amount, cutoff + 1),
+      bi.clone(),
+    ),
+    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
+      n.clone(),
+      lower_vars(t, amount, cutoff),
+      lower_vars(v, amount, cutoff),
+      lower_vars(b, amount, cutoff + 1),
+      *nd,
+    ),
+    ExprData::Proj(n, i, e, _) => {
+      LeanExpr::proj(n.clone(), i.clone(), lower_vars(e, amount, cutoff))
+    },
+    ExprData::Mdata(kvs, e, _) => {
+      LeanExpr::mdata(kvs.clone(), lower_vars(e, amount, cutoff))
     },
     _ => expr.clone(),
   }
@@ -2721,6 +2774,22 @@ impl<'a> TcScope<'a> {
       to_kexpr_static(b, &self.fvar_levels, depth, self.param_names, self.stt);
     self.tc.is_def_eq(&ka, &kb).unwrap_or(false)
   }
+
+  /// Infer the type of a `LeanExpr` in the current FVar context via the
+  /// Rust kernel's `infer`. Decision support only (the Eq-vs-HEq binder
+  /// choice's unit-like check): the result is never emitted into
+  /// generated terms, so — unlike `whnf_lean` — no source-name
+  /// restoration is performed on the egressed expression.
+  ///
+  /// Returns `None` on kernel errors (conservative: callers treat an
+  /// uninferrable side as "not unit-like").
+  pub(super) fn infer_lean(&mut self, e: &LeanExpr) -> Option<LeanExpr> {
+    let depth = self.base_depth + self.extra_locals;
+    let ke =
+      to_kexpr_static(e, &self.fvar_levels, depth, self.param_names, self.stt);
+    let ty = self.tc.infer(&ke).ok()?;
+    Some(kexpr_to_lean(&ty, depth, &self.fvar_levels, 0, self.param_names))
+  }
 }
 
 // No Drop impl needed — the TC is owned and discarded with the scope.
@@ -3740,6 +3809,34 @@ mod tests {
     assert_eq!(f.get_hash(), a.get_hash());
     assert_eq!(args.len(), 1);
     assert_eq!(args[0].get_hash(), b.get_hash());
+  }
+
+  #[test]
+  fn instantiate_pi_params_lifts_loose_argument_under_residual_binder() {
+    // In an ambient context, instantiate
+    //   (forall (p : Sort 0) (x : Sort 0), p)
+    // with loose BVar(2). Under the residual `x` binder that argument must
+    // become BVar(3), rather than being captured as BVar(2).
+    let typ = LeanExpr::all(
+      mk_name_for("p"),
+      sort0(),
+      LeanExpr::all(mk_name_for("x"), sort0(), bvar_at(1), BinderInfo::Default),
+      BinderInfo::Default,
+    );
+    let got = instantiate_pi_params(&typ, 1, &[bvar_at(2)]);
+    let expected =
+      LeanExpr::all(mk_name_for("x"), sort0(), bvar_at(3), BinderInfo::Default);
+    assert_eq!(got.get_hash(), expected.get_hash());
+  }
+
+  #[test]
+  fn lower_vars_inverts_lift_for_loose_bvars_under_binders() {
+    // The lambda binds BVar(0); BVar(2) in its body is loose at index 1.
+    let expr =
+      LeanExpr::lam(mk_name_for("x"), sort0(), bvar_at(2), BinderInfo::Default);
+    let lifted = shift_vars(&expr, 3, 0);
+    let lowered = lower_vars(&lifted, 3, 0);
+    assert_eq!(lowered.get_hash(), expr.get_hash());
   }
 
   // ---- subst_fvar ----

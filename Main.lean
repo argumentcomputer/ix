@@ -13,6 +13,7 @@ import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
 import Ix.Cli.IngressCmd
+import Ix.Cli.MergeCmd
 import Ix.Cli.NameOfCmd
 import Ix.Cli.PackCmd
 import Ix.Cli.ProfileCmd
@@ -37,6 +38,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     catalogCmd;
     compileCmd;
     decompileCmd;
+    mergeCmd;
     checkCmd;
     checkRsCmd;
     checkLeanCmd;

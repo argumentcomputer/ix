@@ -104,6 +104,13 @@ def nCanonicalArgs (plan : CallSitePlan) : Nat :=
     + plan.nIndices
     + 1 -- major premise
 
+/-- Smallest source-order prefix whose residual telescope is unchanged by
+    recursor surgery. Once motives+minors are all applied, the remaining
+    indices+major suffix is identity-mapped. Mirrors Rust
+    `CallSitePlan::minimal_full_prefix`. -/
+def minimalFullPrefix (plan : CallSitePlan) : Nat :=
+  plan.nParams + plan.nSourceMotives + plan.nSourceMinors
+
 /-- Whether this plan is an identity (no reordering, no collapse).
     Mirrors Rust `CallSitePlan::is_identity` (surgery.rs:129). -/
 def isIdentity (plan : CallSitePlan) : Bool :=
@@ -146,6 +153,18 @@ def fromRecPlan (plan : CallSitePlan) : BRecOnCallSitePlan :=
 /-- Mirrors Rust `BRecOnCallSitePlan::n_canonical_motives` (surgery.rs:167). -/
 def nCanonicalMotives (plan : BRecOnCallSitePlan) : Nat :=
   plan.motiveKeep.foldl (fun acc k => if k then acc + 1 else acc) 0
+
+/-- Smallest safe prefix for a `.below`-family plan: params+motives.
+    Mirrors Rust `BRecOnCallSitePlan::below_minimal_full_prefix`. -/
+def belowMinimalFullPrefix (plan : BRecOnCallSitePlan) : Nat :=
+  plan.nParams + plan.nSourceMotives
+
+/-- Smallest safe prefix for `.brecOn`: its trailing handlers are a second
+    permuted motive band, so the complete public telescope is required.
+    Mirrors Rust `BRecOnCallSitePlan::brecon_minimal_full_prefix`. -/
+def brecOnMinimalFullPrefix (plan : BRecOnCallSitePlan) : Nat :=
+  plan.nParams + plan.nSourceMotives + plan.nIndices + 1
+    + plan.nSourceMotives
 
 /-- Mirrors Rust `BRecOnCallSitePlan::is_identity` (surgery.rs:171). -/
 def isIdentity (plan : BRecOnCallSitePlan) : Bool :=

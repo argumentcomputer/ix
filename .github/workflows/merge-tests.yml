@@ -40,7 +40,7 @@ jobs:
             runner: warp-ubuntu-latest-x64-32x
             test_args: >-
               --ignored
-              shard-map catalog-fixtures commit-io
+              shard-map catalog-dedup commit-io fidelity-initstd
               kernel-ixon-roundtrip kernel-tutorial kernel-check-env kernel-check-const
               rust-kernel-build-primitives rust-kernel-build-prim-origs ixvm
             zk_voting: true
@@ -111,6 +111,14 @@ jobs:
           build: true
           build-args: "IxTests"
           use-github-cache: false
+
+      # The misc partition drives `.lake/build/bin/ix` in subprocesses. The
+      # prefix cache can contain an executable from an older SHA because the
+      # ordinary CI cache is saved before its all-targets lint builds `ix`.
+      # Rebuild it explicitly so the CLI and the checked-out tests agree.
+      - name: Build current ix CLI for subprocess tests
+        if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}
+        run: lake build ix
 
       - name: Run ignored Lake test partition
         if: ${{ matrix.kind == 'lake' }}

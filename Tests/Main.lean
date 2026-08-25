@@ -21,6 +21,10 @@ import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.Kernel.BuildPrimOrigs
 import Tests.Ix.Kernel.CheckEnv
+import Tests.Ix.Kernel.CheckCompPoly
+import Tests.Ix.Kernel.CheckPrimeGaps
+import Tests.Ix.Kernel.CheckTauCeti
+import Tests.Ix.Kernel.CheckTauCetiReduction
 import Tests.Ix.Kernel.Roundtrip
 import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
@@ -55,10 +59,12 @@ import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
+import Tests.Ix.CatalogDedup
+import Tests.Ix.CompileDeterminism
+import Tests.Ix.CompileFidelity
 import Tests.Ix.ImportIxe
-import Tests.Ix.CatalogFixtures
-import Tests.Ix.CatalogQualified
-import Tests.Ix.CatalogSpine
+import Tests.Ix.TruthMinesRecords
+import Tests.Ix.TruthMines
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -75,7 +81,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),
   ("import-ixe", Tests.Ix.ImportIxe.suite),
-  ("catalog-qualified", Tests.Ix.CatalogQualified.suite),
+  ("truthmines-spec", Tests.Ix.TruthMinesRecords.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
   ("claim", Tests.Claim.suite),
@@ -105,8 +111,16 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
 def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("shard-map", Tests.ShardMap.suite),
-  ("catalog-fixtures", Tests.Ix.CatalogFixtures.suite),
-  ("catalog-spine", Tests.Ix.CatalogSpine.suite),
+  ("compile-determinism", Tests.Ix.CompileDeterminism.suite),
+  ("fidelity-initstd", Tests.Ix.CompileFidelity.initStdSuite),
+  ("fidelity-flt", Tests.Ix.CompileFidelity.fltSuite),
+  ("fidelity-mathlib", Tests.Ix.CompileFidelity.mathlibSuite),
+  ("catalog-dedup", Tests.Ix.CatalogDedup.suite),
+  ("truthmines", Tests.Ix.TruthMines.buildSuite),
+  ("truthmines-check", Tests.Ix.TruthMines.checkSuite),
+  ("truthmines-mini", Tests.Ix.TruthMines.miniSuite),
+  ("truthmines-validate", Tests.Ix.TruthMines.validateSuite),
+  ("truthmines-validate-mini", Tests.Ix.TruthMines.validateMiniSuite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
   ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),
@@ -124,6 +138,10 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-tutorial", Tests.Ix.Kernel.Tutorial.suite),
   ("kernel-check-env", Tests.Ix.Kernel.CheckEnv.suite),
   ("kernel-check-const", Tests.Ix.Kernel.CheckEnv.constSuite),
+  ("kernel-check-comppoly", Tests.Ix.Kernel.CheckCompPoly.suite),
+  ("kernel-check-primegaps", Tests.Ix.Kernel.CheckPrimeGaps.suite),
+  ("kernel-check-tauceti", Tests.Ix.Kernel.CheckTauCeti.suite),
+  ("kernel-check-tauceti-reduction", Tests.Ix.Kernel.CheckTauCetiReduction.suite),
   ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
   ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
   ("tc-anon-diff", Tests.Tc.AnonDiff.suite),

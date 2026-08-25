@@ -361,14 +361,25 @@ def installDecompileCallSitePlans
         if auxMemberNames.contains breconName
             || decompiledView.contains breconName then
           let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
-          match brecOnPlans.get? breconName with
-          | some existing =>
-            if existing != newPlan then
-              throw s!"conflicting brecOn call-site plans for \
-'{breconName.pretty}' across stored blocks"
-          | none =>
-            brecOnPlans := brecOnPlans.insert breconName newPlan
-            newBrec := newBrec.push (breconName, newPlan)
+          -- Mirror the compile side: Type-level `.brecOn.go` /
+          -- `.brecOn.eq` share `.brecOn`'s telescope and are referenced
+          -- directly by equation-lemma proofs, so they carry the same
+          -- plan keys (decompile.rs `install_decompile_call_site_plans`).
+          let mut planKeys : Array Ix.Name := #[breconName]
+          for sub in ["go", "eq"] do
+            let subName := Ix.Name.mkStr breconName sub
+            if auxMemberNames.contains subName
+                || decompiledView.contains subName then
+              planKeys := planKeys.push subName
+          for key in planKeys do
+            match brecOnPlans.get? key with
+            | some existing =>
+              if existing != newPlan then
+                throw s!"conflicting brecOn call-site plans for \
+'{key.pretty}' across stored blocks"
+            | none =>
+              brecOnPlans := brecOnPlans.insert key newPlan
+              newBrec := newBrec.push (key, newPlan)
       if let some belowName := Ix.AuxGen.recNameToBelowName name then
         if auxMemberNames.contains belowName
             || decompiledView.contains belowName then

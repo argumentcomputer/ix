@@ -8,6 +8,7 @@
 
 pub mod assumption_tree;
 pub mod canon_univ;
+pub mod catalog;
 pub mod comm;
 pub mod constant;
 #[cfg(not(target_arch = "riscv64"))]

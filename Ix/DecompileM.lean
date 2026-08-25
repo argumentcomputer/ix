@@ -15,6 +15,7 @@ public import Ix.Ixon
 public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
+public import Ix.AuxGen.ExprUtils
 
 public section
 
@@ -412,6 +413,56 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
+  -- Eta adapter replay: strip the synthesized lambda telescope, read the
+  -- canonical body spine, and rebuild only the source prefix that was
+  -- originally present. Existing source arguments were lifted under the
+  -- wrapper, so lower their loose BVars after decompilation.
+  | .etaCallSite nSynth nameAddr entries canonMeta _wrapperMeta, _ => do
+    let ctx ← getCtx
+    let mut body := e
+    for _ in [0:nSynth.toNat] do
+      repeat
+        match body with
+        | .share idx =>
+          match ctx.sharing[idx.toNat]? with
+          | some shared => body := shared
+          | none => throw (.invalidShareIndex idx ctx.sharing.size
+              "etaCallSite wrapper")
+        | _ => break
+      match body with
+      | .lam _ b => body := b
+      | _ => throw (.badConstantFormat s!"EtaCallSite: expected \
+{nSynth} synthesized lambdas")
+    let (headIxon, canonicalArgs) ← collectIxonTelescopeExpandingShares body
+    if canonMeta.size != canonicalArgs.size then
+      throw (.badConstantFormat s!"EtaCallSite: {canonMeta.size} canonical \
+metadata entries but body telescope has {canonicalArgs.size} args")
+    let headName ← lookupNameAddr nameAddr
+    let headPatch := ctx.univPatches.get? currentIdx
+    let levels ← match headPatch, headIxon with
+      | some idxs, .ref .. => decompileUnivIndices idxs
+      | some idxs, .recur .. => decompileUnivIndices idxs
+      | none, .ref _ univIndices => decompileUnivIndices univIndices
+      | none, .recur _ univIndices => decompileUnivIndices univIndices
+      | _, _ => pure #[]
+    let mut spine := Ix.Expr.mkConst headName levels
+    for entry in entries do
+      let arg ← match entry with
+        | .kept canonIdx metaIdx =>
+          match canonicalArgs[canonIdx.toNat]? with
+          | some argIxon => decompileExpr argIxon metaIdx
+          | none => throw (.badConstantFormat s!"EtaCallSite: Kept \
+canonIdx {canonIdx} out of bounds (body telescope has \
+{canonicalArgs.size} args)")
+        | .collapsed sharingIdx metaIdx =>
+          match ctx.metaSharing[sharingIdx.toNat]? with
+          | some shared => decompileExpr shared metaIdx
+          | none => throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
+              "etaCallSite collapsed")
+      spine := Ix.Expr.mkApp spine
+        (Ix.AuxGen.lowerVars arg nSynth.toNat 0)
+    pure (applyMdata spine mdataLayers)
+
   -- Call-site surgery replay: reconstruct the SOURCE-order application
   -- spine from the canonical Ixon spine plus the metadata extension
   -- tables (Rust decompile.rs:975-1120). Entries walk in source order:

@@ -116,6 +116,7 @@ lean_lib Tests
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
+  needs := #[`@/ix]
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where
@@ -164,6 +165,23 @@ lean_exe «bench-lean4lean» where
 
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
+
+/- Typed TruthMines corpus records: the package catalog, the frozen admission
+spec, fail-closed validation (elaboration-time `run_cmd` gate), and workspace
+projections consumed by the `truthmines` driver and the `truthmines-spec`
+suite. Pure data and pure functions; the nested corpus workspace they project
+lives in `Benchmarks/TruthMines/`. -/
+lean_lib TruthMinesSpec where
+  globs := #[.submodules `Benchmarks.TruthMinesSpec]
+
+/- The corpus driver: `gen [--check]` projects `Benchmarks/TruthMines/`
+(lakefile, toolchain, per-member `Drivers/<Q>.lean`) from the typed
+records, `spec` prints the member/driver table, and `build` compiles
+per-member pieces (`pieces/<Q>.ixe`, one watchdogged `ix compile`
+process each) and assembles + verifies the `truthmines.ixc` catalog
+manifest. Needs `lake build ix` first for the `build` verb. -/
+lean_exe truthmines where
+  root := `Benchmarks.TruthMinesSpec.Main
 
 end Benchmarks
 
