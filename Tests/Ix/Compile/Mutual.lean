@@ -837,6 +837,26 @@ def arWkEqDef := @Ar.wk.eq_def
 
 end TypeBrecOnEqDefUnit
 
+-- Indexed `.brecOn.eq` with constructor fields whose dependency sets overlap
+-- only after an earlier index substitution. Lean's `substCore` reverts each
+-- forward dependency and re-introduces it at the end of the surviving local
+-- context. Thus, in `recThenPayload`, substituting `i` first moves the
+-- recursive field behind the unaffected `Payload j` field; the subsequent
+-- substitution of `j` must see `Payload` before `Indexed`. Preserving the
+-- fields' original positions instead produced the Plfl failures
+-- `Compositional.Holed.brecOn.eq` and `Inference.TyS.brecOn.eq`.
+namespace TypeBrecOnForwardDepOrder
+
+public inductive Payload : Nat → Type where
+  | mk {j : Nat} : Payload j
+
+public inductive Indexed : Nat → Nat → Type where
+  | base {i : Nat} : Indexed i i
+  | recThenPayload {i j : Nat} : Indexed i j → Payload j → Indexed i j
+  | payloadThenRec {i j : Nat} : Payload j → Indexed i j → Indexed i j
+
+end TypeBrecOnForwardDepOrder
+
 -- Mutual Prop-valued inductive predicates consumed through the raw mutual
 -- recursor with explicit motives (the PhiConfluence `Par`/`ParB` shape;
 -- phiconfluence.ixe check-rs failures of 2026-08-22: `parB_domain`,

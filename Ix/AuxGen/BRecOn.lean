@@ -385,15 +385,20 @@ partial def handleSubstcoreStep (decl : LocalDecl)
     (substInEqBinderKind k abstractedFvarName replacement,
      { d with domain := substFVar d.domain abstractedFvarName replacement })
 
-  -- Continuation local context: forward deps replaced by their
-  -- substituted versions; the abstracted fvar removed (`clearH := true`).
-  let newLocalContext : Array LocalDecl := localContext.filterMap fun d =>
-    if d.fvarName == abstractedFvarName then
+  -- Continuation local context: `substCore` reverts the abstracted fvar and
+  -- all forward dependencies, then re-introduces the forward dependencies
+  -- after every unaffected declaration. This movement is observable by the
+  -- next substitution: for `C : I i j → T j → I i j`, substituting `i`
+  -- moves `C` behind `T`, so substituting `j` must discover them in `T, C`
+  -- order. Remove the old declarations and append their substituted forms;
+  -- replacing them in place would preserve the stale pre-revert order.
+  let survivingLocalContext : Array LocalDecl := localContext.filterMap fun d =>
+    if d.fvarName == abstractedFvarName
+        || forwardDeps.any fun fd => fd.fvarName == d.fvarName then
       none
     else
-      match newForwardDeps.find? (fun nd => nd.fvarName == d.fvarName) with
-      | some newD => some newD
-      | none => some d
+      some d
+  let newLocalContext := survivingLocalContext ++ newForwardDeps
 
   let some innerProof := buildProofForRemaining newRest newBody
       newLocalContext fvarOrder ctorIdx (depth + 1)

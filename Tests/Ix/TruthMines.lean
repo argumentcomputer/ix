@@ -24,9 +24,10 @@
   * `truthmines-validate` / `truthmines-validate-mini` — the METADATA
     fidelity rung (Q1): `truthmines validate [--mini]`, the 8-phase
     `ix validate` pipeline (aux-gen congruence, alpha canonicity,
-    decompile both ways, per-constant roundtrip) over every member's
-    driver module. The anon check sweep never touches §4/§5; this leg
-    is what gates them, per constituent library.
+    decompile both ways, per-constant roundtrip) over every native
+    member's driver module, plus Palomar.ix as one aggregate library in
+    the full tier. The anon check sweep never touches §4/§5; this leg is
+    what gates them, per validation target.
 
   All heavy steps run under the driver's `Ix.Watchdog` ceilings. Needs
   `lake build ix truthmines` first; network + `lake exe cache get` on
@@ -155,7 +156,7 @@ private def driverValidate (mini : Bool) :
 
 def validateSuite : List TestSeq := [
   .individualIO
-    "truthmines-validate: 8-phase metadata fidelity over every corpus member"
+    "truthmines-validate: 8-phase metadata fidelity over every validation target"
     none (driverValidate false) .done ]
 
 def validateMiniSuite : List TestSeq := [
