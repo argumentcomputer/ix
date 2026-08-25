@@ -6,6 +6,21 @@ public section
 namespace IxVM
 
 def ixon := ⟦
+  -- Ixon v2 binder usage. The wire representation is the enum ordinal.
+  enum Uses {
+    Erased,
+    Linear,
+    Affine,
+    Many
+  }
+
+  -- Ixon v2 forall-result ownership. The wire representation is the enum
+  -- ordinal in bit 2 of the forall mode byte.
+  enum Owned {
+    Unique,
+    Shared
+  }
+
   -- Expression type
   enum Expr {
     Srt(U64),
@@ -16,8 +31,8 @@ def ixon := ⟦
     Str(U64),
     Nat(U64),
     App(&Expr, &Expr),
-    Lam(&Expr, &Expr),
-    All(&Expr, &Expr),
+    Lam(Uses, &Expr, &Expr),
+    All(Uses, Owned, &Expr, &Expr),
     Let(U64, &Expr, &Expr, &Expr),
     Share(U64)
   }

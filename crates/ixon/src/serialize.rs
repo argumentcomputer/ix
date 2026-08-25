@@ -403,7 +403,7 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
         }
         // Push in reverse order: args (reversed back to normal), then func
         for arg in &args {
-          stack.push(PutExprFrame::Expr(*arg));
+          stack.push(PutExprFrame::Expr(arg));
         }
         stack.push(PutExprFrame::Expr(e)); // func last, processed first
       },

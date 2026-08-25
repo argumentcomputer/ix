@@ -2741,12 +2741,7 @@ mod tests {
           let (o2, s2) = count_occ(a, sharing, affected, seen_shares);
           (o1 + o2, s1 + s2)
         },
-        E::Lam(_, t, b) => {
-          let (o1, s1) = count_occ(t, sharing, affected, seen_shares);
-          let (o2, s2) = count_occ(b, sharing, affected, seen_shares);
-          (o1 + o2, s1 + s2)
-        },
-        E::All(_, _, t, b) => {
+        E::Lam(_, t, b) | E::All(_, _, t, b) => {
           let (o1, s1) = count_occ(t, sharing, affected, seen_shares);
           let (o2, s2) = count_occ(b, sharing, affected, seen_shares);
           (o1 + o2, s1 + s2)

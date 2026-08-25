@@ -135,33 +135,76 @@ def ixonDeserialize := ⟦
     }
   }
 
-  -- Lam telescope: read count types then body, wrap as nested Lams
+  -- Ixon v2 encodes one usage byte before each lambda binder type.
+  fn get_lam_mode(stream: ByteStream) -> (Uses, ByteStream) {
+    let ListNode.Cons(mode, s) = load(stream);
+    assert_eq!(u8_less_than(mode, 4u8), 1, "invalid lambda mode");
+    match mode {
+      0 => (Uses.Erased, s),
+      1 => (Uses.Linear, s),
+      2 => (Uses.Affine, s),
+      3 => (Uses.Many, s),
+    }
+  }
+
+  -- Ixon v2 forall mode: usage in bits 0-1, result ownership in bit 2.
+  -- Values above 7 carry reserved bits and are rejected by the host codecs.
+  fn get_all_mode(stream: ByteStream) -> ((Uses, Owned), ByteStream) {
+    let ListNode.Cons(mode, s) = load(stream);
+    assert_eq!(u8_less_than(mode, 8u8), 1, "invalid forall mode");
+    match mode {
+      0 => ((Uses.Erased, Owned.Unique), s),
+      1 => ((Uses.Linear, Owned.Unique), s),
+      2 => ((Uses.Affine, Owned.Unique), s),
+      3 => ((Uses.Many, Owned.Unique), s),
+      4 => ((Uses.Erased, Owned.Shared), s),
+      5 => ((Uses.Linear, Owned.Shared), s),
+      6 => ((Uses.Affine, Owned.Shared), s),
+      7 => ((Uses.Many, Owned.Shared), s),
+    }
+  }
+
+  -- Lam telescope: read count (mode, type) binders then body, wrap as nested
+  -- Lams. The base may not itself be a Lam: the v2 encoding requires maximal
+  -- telescope compression.
   fn get_lam_telescope(stream: ByteStream, count: U64) -> (&Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 =>
-        -- No more types, read the body
-        get_expr(stream),
+        let (body, s) = get_expr(stream);
+        match load(body) {
+          Expr.Lam(_, _, _) =>
+            assert_eq!(0, 1, "non-canonical lambda telescope");
+            (body, s),
+          _ => (body, s),
+        },
       0 =>
-        -- Read one type, recurse for remaining types + body
-        let (ty, s) = get_expr(stream);
-        let (inner, s2) = get_lam_telescope(s, relaxed_u64_pred(count));
-        (store(Expr.Lam(ty, inner)), s2),
+        let (uses, s) = get_lam_mode(stream);
+        let (ty, s2) = get_expr(s);
+        let (inner, s3) = get_lam_telescope(s2, relaxed_u64_pred(count));
+        (store(Expr.Lam(uses, ty, inner)), s3),
     }
   }
 
-  -- All telescope: read count types then body, wrap as nested Alls
+  -- All telescope: read count (mode, type) binders then body, wrap as nested
+  -- Alls, again requiring maximal telescope compression.
   fn get_all_telescope(stream: ByteStream, count: U64) -> (&Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 =>
-        -- No more types, read the body
-        get_expr(stream),
+        let (body, s) = get_expr(stream);
+        match load(body) {
+          Expr.All(_, _, _, _) =>
+            assert_eq!(0, 1, "non-canonical forall telescope");
+            (body, s),
+          _ => (body, s),
+        },
       0 =>
-        -- Read one type, recurse for remaining types + body
-        let (ty, s) = get_expr(stream);
-        let (inner, s2) = get_all_telescope(s, relaxed_u64_pred(count));
-        (store(Expr.All(ty, inner)), s2),
+        let (mode, s) = get_all_mode(stream);
+        let (uses, owned) = mode;
+        let (ty, s2) = get_expr(s);
+        let (inner, s3) = get_all_telescope(s2, relaxed_u64_pred(count));
+        (store(Expr.All(uses, owned, ty, inner)), s3),
     }
   }
 
@@ -216,14 +259,21 @@ def ixonDeserialize := ⟦
       0x7 =>
         assert_eq!(u64_is_zero(size), 0, "App with zero arguments");
         let (func, s2) = get_expr(s);
-        get_app_telescope(func, s2, size),
+        -- Telescope compression is maximal: a nested App in the base
+        -- would serialize as one larger telescope in every host codec.
+        match load(func) {
+          Expr.App(_, _) =>
+            assert_eq!(0, 1, "non-canonical application telescope");
+            get_app_telescope(func, s2, size),
+          _ => get_app_telescope(func, s2, size),
+        },
 
-      -- Lam: Tag4(0x8, count) + types... + body
+      -- Lam: Tag4(0x8, count) + (uses, type)... + body
       0x8 =>
         assert_eq!(u64_is_zero(size), 0, "Lam with zero binders");
         get_lam_telescope(s, size),
 
-      -- All: Tag4(0x9, count) + types... + body
+      -- All: Tag4(0x9, count) + (uses|owned<<2, type)... + body
       0x9 =>
         assert_eq!(u64_is_zero(size), 0, "All with zero binders");
         get_all_telescope(s, size),
@@ -239,6 +289,9 @@ def ixonDeserialize := ⟦
   -- Let arm of get_expr, split out: three recursive `get_expr` calls make it the
   -- widest (and a rare) arm, so inlined it taxes every get_expr row.
   fn get_expr_let(s: ByteStream, size: U64) -> (&Expr, ByteStream) {
+    let is_dep = u64_eq(size, [0u8; 8]);
+    let is_non_dep = u64_eq(size, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    assert_eq!(is_dep + is_non_dep, 1, "invalid let nonDep flag");
     let (ty, s2) = get_expr(s);
     let (val, s3) = get_expr(s2);
     let (body, s4) = get_expr(s3);
