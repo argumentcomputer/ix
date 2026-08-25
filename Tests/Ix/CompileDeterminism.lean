@@ -18,9 +18,9 @@
     real library through the sub-workspace bootstrap path
     (`buildFile` + oleans), minutes.
 
-  Ignored suite (`lake test -- --ignored compile-determinism`): needs
-  `lake build ix` first; the Batteries leg needs network on the first
-  workspace build.
+  `IxTests` depends on the `ix` executable target, so the ignored suite
+  (`lake test -- --ignored compile-determinism`) is self-contained. The
+  Batteries leg needs network on the first workspace build.
 -/
 module
 

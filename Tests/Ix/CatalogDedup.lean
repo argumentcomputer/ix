@@ -4,9 +4,10 @@
 
   The RelocFixture collision pair (packages A and B, both declaring
   `Collision.Tree` with DIFFERENT definitions, sharing the toolchain
-  base) is compiled as two SEPARATE pieces in two separate `ix compile`
-  processes — no qualification, no relocation, no shared frontend —
-  and assembled into a `.ixc`. The gates:
+  base) is compiled from its two minimal local Lake workspaces as two
+  SEPARATE pieces in two separate `ix compile` processes — no
+  qualification, no relocation, no shared frontend — and assembled
+  into a `.ixc`. The gates:
 
   - Assembly succeeds: colliding source NAMES are no conflict at all
     in anon space (names play no part in catalog identity).
@@ -18,15 +19,14 @@
     either piece — the two `Collision.Tree`s are distinct content at
     distinct addresses, coexisting without any namespace work.
 
-  Needs `lake build ix` and the generated TruthMines workspace
-  (`lake exe truthmines gen`); the fixture pieces are tiny (fixture
-  packages + Init-class closure), so this is the merge-queue-scale
-  leg (`catalog-fixtures`'s replacement).
+  `IxTests` depends on the `ix` executable target. The fixture pieces
+  are otherwise self-contained (fixture packages + Init-class closure),
+  so this is the merge-queue-scale leg (`catalog-fixtures`'s replacement)
+  without materializing the full TruthMines dependency graph.
 -/
 module
 
 public import LSpec
-public import Benchmarks.TruthMinesSpec.Projection
 public import Ix.Cli.CatalogCmd
 
 public section
@@ -36,6 +36,12 @@ open LSpec
 namespace Tests.Ix.CatalogDedup
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
+
+private def fixtureA : System.FilePath :=
+  "Benchmarks" / "Catalog" / "RelocFixtureA" / "FixtureA.lean"
+
+private def fixtureB : System.FilePath :=
+  "Benchmarks" / "Catalog" / "RelocFixtureB" / "FixtureB.lean"
 
 private def compilePiece (exe : System.FilePath) (driver out : String) :
     IO (Except String Unit) := do
@@ -49,21 +55,18 @@ private def compilePiece (exe : System.FilePath) (driver out : String) :
 private def dedupTest : IO (Bool × Nat × Nat × Option String) := do
   unless (← ixExe.pathExists) do
     return (false, 0, 0, some s!"{ixExe} missing — run `lake build ix` first")
-  let driverA := TruthMinesSpec.driverModulePath `A
-  let driverB := TruthMinesSpec.driverModulePath `B
-  for driver in [driverA, driverB] do
-    unless (← driver.pathExists) do
-      return (false, 0, 0,
-        some s!"{driver} missing — run `lake exe truthmines gen` first")
+  for fixture in [fixtureA, fixtureB] do
+    unless (← fixture.pathExists) do
+      return (false, 0, 0, some s!"fixture source missing: {fixture}")
   let exe ← IO.FS.realPath ixExe
   let dir ← IO.FS.createTempDir
   try
     let pieceA := (dir / "A.ixe").toString
     let pieceB := (dir / "B.ixe").toString
     -- Two separate processes: nothing shared but the source tree.
-    if let .error e ← compilePiece exe driverA.toString pieceA then
+    if let .error e ← compilePiece exe fixtureA.toString pieceA then
       return (false, 0, 0, some e)
-    if let .error e ← compilePiece exe driverB.toString pieceB then
+    if let .error e ← compilePiece exe fixtureB.toString pieceB then
       return (false, 0, 0, some e)
     -- Assemble the self-contained .ixc dir via the CLI, then gate on
     -- the manifest through the in-process core (info/verify FFI) — no

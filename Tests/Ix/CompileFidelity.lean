@@ -12,10 +12,11 @@
   (`ValidateCmd.lean`'s constraint) and exercises exactly what a user
   runs.
 
-  Ignored suites (`lake test -- --ignored fidelity-<lib>`): need
-  `lake build ix` first; FLT/Mathlib legs are heavy and manual, with
-  network + `lake exe cache get` on the first workspace build.
-  `fidelity-initstd` is the cheap merge-queue leg.
+  `IxTests` depends on the `ix` executable target, so ignored suites
+  (`lake test -- --ignored fidelity-<lib>`) are self-contained. The
+  FLT/Mathlib legs are heavy and manual, with network +
+  `lake exe cache get` on the first workspace build. `fidelity-initstd`
+  is the cheap merge-queue leg.
 -/
 module
 
