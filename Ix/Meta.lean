@@ -157,7 +157,15 @@ def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
   let manifest := root / "lake-manifest.json"
   let contents ← IO.FS.readFile manifest
   if contents.contains "leanprover-community/mathlib4" then
-    let mathlibBuild := root / ".lake" / "packages" / "mathlib" / ".lake" / "build"
+    let packagesDir :=
+      (Lean.Json.parse contents).toOption
+        |>.bind (fun json => (json.getObjVal? "packagesDir").toOption)
+        |>.bind (fun value => value.getStr?.toOption)
+        |>.map FilePath.mk
+        |>.getD (".lake" / "packages")
+    let packagesRoot :=
+      if packagesDir.isAbsolute then packagesDir else root / packagesDir
+    let mathlibBuild := packagesRoot / "mathlib" / ".lake" / "build"
     if ← mathlibBuild.pathExists then
       println! "Mathlib cache already present, skipping fetch."
       return

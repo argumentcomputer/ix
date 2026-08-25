@@ -58,8 +58,12 @@ def runValidateCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- `buildFile` also runs `lake exe cache get` if the target depends on
   -- Mathlib, so large-env validation (`Benchmarks/Compile/CompileMathlib.lean`)
-  -- works out of the box without a prior `lake build`.
-  buildFile pathStr
+  -- works out of the box without a prior `lake build`. Corpus orchestrators
+  -- can instead prebuild several targets in one authoritative Lake process
+  -- and pass `--no-build`; this avoids racing concurrent Lake processes over
+  -- a shared package store while the validators themselves run in parallel.
+  unless p.hasFlag "no-build" do
+    buildFile pathStr
   let fe ← getFileEnvCore pathStr
   let leanEnv := fe.env
 
@@ -133,6 +137,7 @@ def validateCmd : Cli.Cmd := `[Cli|
   FLAGS:
     ns   : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
     report : String; "Write a machine-readable JSON report (phase table + pass/fail + counts) to this path. Written on abort paths too."
+    "no-build"; "Skip the Lake build/cache step. The caller must have already built the input and all of its imports. Intended for orchestrators that prebuild targets once before running validators in parallel."
 
   ARGS:
     path : String; "Path to the Lean source file whose env should be validated."

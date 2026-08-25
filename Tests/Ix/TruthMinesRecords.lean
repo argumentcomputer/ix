@@ -6,9 +6,10 @@
     elaboration; re-asserting here reports the errors instead of a build
     failure when records are edited);
   * one toolchain by construction: the derived `expectedToolchain` equals
-    the repo's `lean-toolchain` and the generated workspace's copy;
-  * the generated workspace files are byte-identical to their projections
-    (`lake exe truthmines gen --check` as a test);
+    the repo's `lean-toolchain` and both nested workspaces' copies;
+  * every generated workspace and per-library compile-driver file is
+    byte-identical to its projection (`lake exe truthmines gen --check`
+    as a test);
   * Lake's lockfile pins every admitted git record at exactly the recorded
     revision, carries the two local fixtures at their ported paths, and
     names no direct git package outside the workspace pin set (inherited
@@ -41,18 +42,30 @@ private def validationTest : IO (Bool × Nat × Nat × Option String) := do
 private def toolchainTest : IO (Bool × Nat × Nat × Option String) := do
   let repo := (← IO.FS.readFile "lean-toolchain").trimAscii.toString
   let workspace := (← IO.FS.readFile workspaceToolchainPath).trimAscii.toString
+  let compileWorkspace :=
+    (← IO.FS.readFile compileWorkspaceToolchainPath).trimAscii.toString
   if repo != expectedToolchain then
     return check false
       s!"repo lean-toolchain `{repo}` != derived `{expectedToolchain}`"
   if workspace != expectedToolchain then
     return check false
       s!"workspace lean-toolchain `{workspace}` != derived `{expectedToolchain}`"
+  if compileWorkspace != expectedToolchain then
+    return check false
+      s!"compile workspace lean-toolchain `{compileWorkspace}` != derived `{expectedToolchain}`"
   return check true ""
 
 private def projectionTest : IO (Bool × Nat × Nat × Option String) := do
-  let expected := [
+  let mut expected := [
     (workspaceLakefilePath, renderWorkspaceLakefile),
-    (workspaceToolchainPath, renderWorkspaceToolchain)]
+    (workspaceToolchainPath, renderWorkspaceToolchain),
+    (compileWorkspaceLakefilePath, renderCompileWorkspaceLakefile),
+    (compileWorkspaceToolchainPath, renderWorkspaceToolchain),
+    (compilePalomarModulePath, renderCompilePalomarModule)]
+  for lib in driverLibs do
+    expected := expected ++ [
+      (driverModulePath lib.qualifier, renderDriverModule lib),
+      (compileMemberModulePath lib.qualifier, renderCompileMemberModule lib)]
   for (path, content) in expected do
     unless (← path.pathExists) do
       return check false s!"{path} missing — run `lake exe truthmines gen`"
@@ -114,6 +127,49 @@ private def manifestTest : IO (Bool × Nat × Nat × Option String) := do
     return check errors.isEmpty
       s!"lockfile/record drift:\n{String.intercalate "\n" errors.toList}"
 
+/-- The independent fidelity workspace shares the canonical package store and
+    adds exactly one authored source pin: the aggregate Palomar.ix library. -/
+private def compileManifestErrors (content : String) : Except String (Array String) := do
+  let json ← Lean.Json.parse content
+  let packagesDir ← (← json.getObjVal? "packagesDir").getStr?
+  let packages ← (← json.getObjVal? "packages").getArr?
+  let mut errors := #[]
+  unless packagesDir == "../../TruthMines/.lake/packages" do
+    errors := errors.push
+      s!"compile lockfile packagesDir is `{packagesDir}`"
+  let mut foundPalomar := false
+  let mut foundTruthMines := false
+  for package in packages do
+    let name := stripGuillemets <| ← (← package.getObjVal? "name").getStr?
+    if name == "palomar_ix" then
+      foundPalomar := true
+      let url ← (← package.getObjVal? "url").getStr?
+      let rev ← (← package.getObjVal? "rev").getStr?
+      let inherited ← (← package.getObjVal? "inherited").getBool?
+      unless url == palomarRepoUrl && rev == palomarRev && !inherited do
+        errors := errors.push
+          s!"compile lockfile Palomar pin is `{url}@{rev}` (inherited={inherited})"
+    if name == "truthmines" then
+      foundTruthMines := true
+      let type ← (← package.getObjVal? "type").getStr?
+      let dir ← (← package.getObjVal? "dir").getStr?
+      unless type == "path" && dir == "../../TruthMines" do
+        errors := errors.push
+          s!"compile lockfile TruthMines source is `{type}:{dir}`"
+  unless foundPalomar do
+    errors := errors.push "compile lockfile is missing direct Palomar.ix pin"
+  unless foundTruthMines do
+    errors := errors.push "compile lockfile is missing canonical TruthMines path"
+  return errors
+
+private def compileManifestTest : IO (Bool × Nat × Nat × Option String) := do
+  let content ← IO.FS.readFile compileWorkspaceManifestPath
+  match compileManifestErrors content with
+  | .error error => return check false s!"compile lockfile walk failed: {error}"
+  | .ok errors =>
+    return check errors.isEmpty
+      s!"compile lockfile drift:\n{String.intercalate "\n" errors.toList}"
+
 /-- The positional member vector is what `ix catalog` receives: one
 `Qualifier=Root[,Root…]` entry per member, parseable by the same
 splitting the CLI does (`=` once, roots comma-joined, no whitespace or
@@ -149,6 +205,8 @@ def suite : List TestSeq := [
     none projectionTest .done,
   .individualIO "truthmines records: lockfile pins match the records"
     none manifestTest .done,
+  .individualIO "truthmines records: compile workspace pins are coherent"
+    none compileManifestTest .done,
   .individualIO "truthmines records: positional spec argv is well-formed"
     none specArgvTest .done ]
 
