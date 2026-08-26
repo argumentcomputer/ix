@@ -109,7 +109,7 @@ private opaque prove' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
-    ProveResult
+    Except String ProveResult
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 then generates a proof of the computation. Returns the claim
@@ -117,16 +117,16 @@ then generates a proof of the computation. Returns the claim
 updated `IOBuffer`. -/
 def prove (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
-    Array G × Proof × IOBuffer :=
-  let r := prove' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray
-  (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
+    Except String (Array G × Proof × IOBuffer) :=
+  (prove' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+    fun r => (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_prove_ixvm"]
 private opaque proveIxVM' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
-    ProveResult
+    Except String ProveResult
 
 /-- IxVM-native prove: same shape as `prove`, but routes execution
     through the codegen'd Rust kernel (`execute_generated`) instead
@@ -135,9 +135,9 @@ private opaque proveIxVM' : @& AiurSystem →
     `system.toplevel` is the IxVM kernel's bytecode. -/
 def proveIxVM (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
-    Array G × Proof × IOBuffer :=
-  let r := proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray
-  (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
+    Except String (Array G × Proof × IOBuffer) :=
+  (proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+    fun r => (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
 
 /-- Prove the MultiStark recursive verifier over raw proof/vk/claims
     byte blobs. The IO advice buffer is built natively in Rust (see
@@ -152,7 +152,7 @@ def proveIxVM (system : @& AiurSystem)
 opaque proveMultiStark (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
   (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
-    Array G × Proof
+    Except String (Array G × Proof)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →

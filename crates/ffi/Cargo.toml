@@ -48,6 +48,7 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 [features]
 default = []
 parallel = ["aiur/parallel"]
+cuda = ["aiur/cuda"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 
