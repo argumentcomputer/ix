@@ -1278,6 +1278,11 @@ pub struct ShardInfo {
   /// root over the foreign part of the shard's static reference closure. `None`
   /// until populated by the env-aware layer (the pure partitioner has no `Env`).
   pub assumption_root: Option<Address>,
+  /// Measured projected prover peak of this shard's executed record
+  /// (`AiurSystem::peak_prove_bytes`), recorded when the manifest was
+  /// emitted from a run that executed the shard; 0 = unmeasured (planner
+  /// output). The scheduling signal: STARK prove wall is ~linear in it.
+  pub measured_peak_bytes: u64,
 }
 
 /// The sharding manifest: the partition plus its cost metrics. Assumption-tree
@@ -1345,6 +1350,7 @@ impl ShardManifest {
         foreign_blocks,
         cross_ingress,
         assumption_root: None,
+        measured_peak_bytes: 0,
       });
     }
     ShardManifest {
@@ -1434,6 +1440,12 @@ impl ShardManifest {
       },
       None => out.push(0),
     }
+    // Trailing measured-peaks section (same older-readers-ignore contract
+    // as the tree): presence byte, then one u64 LE per shard in order.
+    out.push(1);
+    for sh in &self.shards {
+      out.extend_from_slice(&sh.measured_peak_bytes.to_le_bytes());
+    }
     out
   }
 
@@ -1462,6 +1474,7 @@ impl ShardManifest {
         foreign_blocks,
         cross_ingress,
         assumption_root,
+        measured_peak_bytes: 0,
       });
     }
     // Optional trailing tree section. Absent (end-of-input) on pre-tree
@@ -1471,6 +1484,12 @@ impl ShardManifest {
     } else {
       None
     };
+    // Optional trailing measured-peaks section; absent on older manifests.
+    if c.pos < c.buf.len() && c.u8()? == 1 {
+      for sh in &mut shards {
+        sh.measured_peak_bytes = c.u64()?;
+      }
+    }
     // The tree is the aggregation plan: a leaf set that is not exactly the
     // shard id set (each id once) would silently drop or duplicate proven
     // shards in the fold, so a manifest carrying such a tree is invalid.
@@ -1883,6 +1902,42 @@ pub fn shard_esp(
     max_block_hb,
     note,
   ))
+}
+
+/// Write a `.ixes` manifest for an EXPLICIT shard assignment — the
+/// partition a prove run actually produced (splits included) rather
+/// than a planner's output. Same manifest construction as
+/// [`shard_static`]'s tail: [`ShardManifest::build`] recomputes
+/// own sizes, foreign blocks and cross-ingress from the profile, and
+/// each shard's assumption root is the canonical merkle root of its
+/// foreign blocks. No aggregation tree is attached (consumers fall
+/// back to the flat tree-fold); heartbeat figures carry whatever proxy
+/// the profile was built with (serialized size, on the static path).
+/// `peaks` (empty, or one measured prover-peak per shard in order)
+/// fills each shard's `measured_peak_bytes` — the run's measurement
+/// riding along for schedulers to bin-pack on.
+pub fn shard_manifest_explicit(
+  profile: &BlockProfile,
+  shard_of: &[u32],
+  num_shards: usize,
+  peaks: &[u64],
+  out_path: &str,
+) -> Result<String, String> {
+  if !peaks.is_empty() && peaks.len() != num_shards {
+    return Err(format!(
+      "measured peaks: {} values for {num_shards} shards",
+      peaks.len()
+    ));
+  }
+  let mut manifest = ShardManifest::build(profile, shard_of, num_shards);
+  for (i, shard) in manifest.shards.iter_mut().enumerate() {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+    shard.measured_peak_bytes = peaks.get(i).copied().unwrap_or(0);
+  }
+  std::fs::write(out_path, manifest.to_bytes())
+    .map_err(|e| format!("write {out_path}: {e}"))?;
+  Ok(manifest.summary())
 }
 
 /// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget

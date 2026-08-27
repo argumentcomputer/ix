@@ -853,12 +853,14 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   profile: bool,
   check_const_idx: LeanNat<LeanBorrowed<'_>>,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   use rayon::prelude::*;
   let toplevel = decode_toplevel(&toplevel_obj);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let jobs = lean_unbox_nat_as_usize(jobs.inner());
   let check_const_idx = lean_unbox_nat_as_usize(check_const_idx.inner());
+  let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
   let mut shards: Vec<Vec<ix_common::address::Address>> = Vec::new();
   {
     let bytes = shards_blob.as_bytes();
@@ -924,7 +926,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
       max as f64 / gib,
     );
   }
-  let check_batch = || -> Vec<(String, usize, Vec<u8>)> {
+  let check_batch = || -> Vec<(String, usize, Vec<u8>, usize)> {
     shards
       .par_iter()
       .zip(estimates.par_iter())
@@ -934,7 +936,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
           match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
             env, owned,
           ) {
-            Err(e) => (format!("witness build: {e}"), 0, Vec::new()),
+            Err(e) => (format!("witness build: {e}"), 0, Vec::new(), 1),
             Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
               &toplevel,
               fun_idx,
@@ -943,11 +945,11 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
               use_bytecode,
               profile,
             ) {
-              Err(e) => (e, 0, Vec::new()),
-              // Both reductions happen here, while the record is still
-              // owned by this task: it is dropped before `gate.release`,
-              // so admission keeps bounding peak RSS by the shards in
-              // flight rather than by the whole partition.
+              Err(e) => (e, 0, Vec::new(), 1),
+              // All three reductions happen here, while the record is
+              // still owned by this task: it is dropped before
+              // `gate.release`, so admission keeps bounding peak RSS by
+              // the shards in flight rather than by the whole partition.
               Ok((record, _output)) => {
                 let peak = system.peak_prove_bytes(&record).peak;
                 let weights = if profile {
@@ -955,7 +957,12 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
                 } else {
                   Vec::new()
                 };
-                (String::new(), peak, weights)
+                let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
+                  system.suggested_split_parts(&record, max_ram_bytes)
+                } else {
+                  1
+                };
+                (String::new(), peak, weights, parts)
               },
             },
           };
@@ -976,11 +983,12 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
     pool.install(check_batch)
   };
   let arr = LeanArray::alloc(results.len());
-  for (i, (err, peak, weights)) in results.iter().enumerate() {
+  for (i, (err, peak, weights, parts)) in results.iter().enumerate() {
     let row = LeanAiurShardResult::alloc(0);
     row.set_obj(0, LeanString::new(err));
     row.set_obj(1, LeanOwned::box_usize(*peak));
     row.set_obj(2, LeanByteArray::from_bytes(weights));
+    row.set_obj(3, LeanOwned::box_usize(*parts));
     arr.set(i, row);
   }
   LeanExcept::ok(arr)
@@ -1113,12 +1121,19 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
 /// `/proc/meminfo` disables the check rather than guessing at it.
 ///
 /// Over budget, the record is dropped and `proof` comes back as `none`
-/// with the measured `peakBytes`. That is a RESULT, not an error: the
-/// caller's answer is to split the shard and prove the halves, and it
-/// needs the peak to decide. Learning this here costs one execution
-/// instead of an OOM part-way through an FFT.
+/// with the measured `peakBytes` and `suggestedParts` — the part count
+/// the peak model projects will fit the budget
+/// ([`AiurSystem::suggested_split_parts`], measured on the record while
+/// it still exists). That is a RESULT, not an error: the caller's
+/// answer is to cut the shard into that many parts and prove those.
+/// Learning it here costs one execution instead of an OOM part-way
+/// through an FFT. `suggestedParts` is `1` whenever the prove ran.
 ///
-/// Returns `(claimBytes, proof?, peakBytes)`. The final IO buffer is
+/// `exec_only` stops after execution + measurement: `proof` is `none`
+/// either way, and `suggestedParts` is 1 exactly when the peak fits —
+/// the split loop runs on executions alone, no STARK ever starts.
+///
+/// Returns `(claimBytes, proof?, peakBytes, suggestedParts)`. The final IO buffer is
 /// deliberately NOT returned: it is the shard's whole ingested byte
 /// scope, both Lean callers discarded it, and marshalling it back is
 /// pure cost on the largest buffers in the system.
@@ -1132,6 +1147,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
+  exec_only: bool,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
@@ -1158,23 +1174,36 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   } else {
     available_ram_bytes().map(|b| b / 100 * 85)
   };
-  let proved = aiur_system_obj.get().prove_ixvm_within_budget(
-    fun_idx,
-    &input,
-    &mut io_buffer,
-    // The prove path never profiles.
-    |toplevel, fun_idx, input, io_buffer| {
-      ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-        toplevel, fun_idx, input, io_buffer, false,
-      )
-    },
-    budget,
-  );
-  let (proof, peak) = match proved {
-    Ok((_aiur_claim_arr, proof, peak)) => (LeanOption::some(
-      LeanExternal::alloc(&AIUR_PROOF_CLASS, proof),
-    ), peak),
-    Err(peak) => (LeanOption::none(), peak),
+  // The prove path never profiles.
+  let executor = |toplevel: &_, fun_idx, input, io_buffer: &mut _| {
+    ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+      toplevel, fun_idx, input, io_buffer, false,
+    )
+  };
+  let (proof, peak, parts) = if exec_only {
+    // Execute + measure, no STARK: `parts` is 1 exactly when the peak
+    // fits, so the caller's split loop drives off it unchanged.
+    let (peak, parts) = aiur_system_obj.get().execute_peak_ixvm(
+      fun_idx,
+      &input,
+      &mut io_buffer,
+      executor,
+      budget,
+    );
+    (LeanOption::none(), peak, parts)
+  } else {
+    match aiur_system_obj.get().prove_ixvm_within_budget(
+      fun_idx,
+      &input,
+      &mut io_buffer,
+      executor,
+      budget,
+    ) {
+      Ok((_aiur_claim_arr, proof, peak)) => (LeanOption::some(
+        LeanExternal::alloc(&AIUR_PROOF_CLASS, proof),
+      ), peak, 1),
+      Err((peak, parts)) => (LeanOption::none(), peak, parts),
+    }
   };
   drop(io_buffer);
 
@@ -1184,6 +1213,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
   result.set_obj(1, proof);
   result.set_obj(2, LeanOwned::box_usize(peak));
+  result.set_obj(3, LeanOwned::box_usize(parts));
   LeanExcept::ok(result)
 }
 

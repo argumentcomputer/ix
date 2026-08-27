@@ -302,6 +302,54 @@ impl AiurSystem {
     }
   }
 
+  /// Smallest power-of-two part count whose projected per-part peak
+  /// fits `max_bytes`, assuming the record's rows divide evenly across
+  /// parts. The gadget circuits keep their constant heights — they are
+  /// the same size in every shard and are most of the model's fixed
+  /// floor, which dividing cannot shrink.
+  ///
+  /// The estimate is optimistic: a part re-executes dependencies shared
+  /// across the cut, so its real rows exceed its 1/n share. A caller
+  /// splitting on this number must still gate each part on its own
+  /// executed record and re-split the ones that miss. Optimism is the
+  /// right bias — an under-split costs one cheap re-execution, while an
+  /// over-split pays the per-proof floor on every extra part forever.
+  ///
+  /// Returns 1 when the record already fits.
+  pub fn suggested_split_parts(
+    &self,
+    record: &QueryRecord,
+    max_bytes: usize,
+  ) -> usize {
+    let record_bytes = crate::execute::record_retained_bytes(record);
+    let mut parts = 1usize;
+    // A shard still over budget at 2^20 parts is not splittable by row
+    // count; stop rather than search forever.
+    while parts < (1 << 20) {
+      let peak = self
+        .peak_prove_bytes_by(
+          |_, ct| match ct {
+            CircuitType::Function { idx } => {
+              record.function_queries[*idx].len().div_ceil(parts)
+            },
+            CircuitType::Memory { width } => record
+              .memory_queries
+              .get(width)
+              .map_or(0, |m| m.len().div_ceil(parts)),
+            CircuitType::Bytes1 => 256,
+            CircuitType::Bytes2 => 65536,
+          },
+          record_bytes / parts,
+        )
+        .peak;
+      if peak <= max_bytes {
+        break;
+      }
+      parts *= 2;
+    }
+    parts
+  }
+
   /// Prove an execution that has ALREADY happened: everything from the
   /// witness phase on, over a record the caller hands across.
   ///
@@ -432,8 +480,11 @@ impl AiurSystem {
   /// not estimated from serialized bytes, so an over-budget shard is
   /// caught in the gap between execution and the witness phase — before
   /// the LDE/commit/FRI phases that would actually exhaust the box. The
-  /// record is dropped rather than proven and the peak comes back as
-  /// `Err(peak)`, which is the number a caller splits the shard against.
+  /// record is dropped rather than proven and `Err((peak, parts))`
+  /// comes back: the measured peak, and the part count
+  /// [`Self::suggested_split_parts`] projects will fit — computed here
+  /// because this is the last moment the record exists to read counts
+  /// from.
   ///
   /// On success the peak is returned too: proving a shard measures it for
   /// free, so a prove run yields the same split/merge signal a check run
@@ -450,7 +501,7 @@ impl AiurSystem {
     io_buffer: &mut IOBuffer,
     executor: F,
     max_bytes: Option<usize>,
-  ) -> Result<(Vec<G>, AiurProof, usize), usize>
+  ) -> Result<(Vec<G>, AiurProof, usize), (usize, usize)>
   where
     F: FnOnce(
       &Toplevel,
@@ -467,12 +518,53 @@ impl AiurSystem {
     drop(_g);
 
     let peak = self.peak_prove_bytes(&query_record).peak;
-    if max_bytes.is_some_and(|max| peak > max) {
-      return Err(peak);
+    if let Some(max) = max_bytes
+      && peak > max
+    {
+      return Err((peak, self.suggested_split_parts(&query_record, max)));
     }
     let (claim, proof) =
       self.prove_from_execution(fun_idx, input, io_buffer, query_record, &output);
     Ok((claim, proof, peak))
+  }
+
+  /// Execute-only twin of [`Self::prove_ixvm_within_budget`]: run the
+  /// execution, measure the record's projected peak, and go no further.
+  ///
+  /// Returns `(peak, parts)`: `parts` is 1 when the peak fits
+  /// `max_bytes` (or no budget is given), else the split count
+  /// [`Self::suggested_split_parts`] projects will fit. This is the dry
+  /// leg of the split loop — sizing or auditing a partition costs
+  /// executions only, never a STARK.
+  pub fn execute_peak_ixvm<F>(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &mut IOBuffer,
+    executor: F,
+    max_bytes: Option<usize>,
+  ) -> (usize, usize)
+  where
+    F: FnOnce(
+      &Toplevel,
+      FunIdx,
+      Vec<G>,
+      &mut IOBuffer,
+    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
+  {
+    let _g = tracing::info_span!("aiur/execute_ixvm").entered();
+    let (query_record, _output) =
+      executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
+        .expect("IxVM-native Aiur execution failed during execute_peak");
+    drop(_g);
+    let peak = self.peak_prove_bytes(&query_record).peak;
+    let parts = match max_bytes {
+      Some(max) if peak > max => {
+        self.suggested_split_parts(&query_record, max)
+      },
+      _ => 1,
+    };
+    (peak, parts)
   }
 
   #[inline]

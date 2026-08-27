@@ -276,7 +276,8 @@ private opaque checkAddrsWithEnv' : @& Bytecode.Toplevel →
     through the exact single-claim machinery over task-private data
     (own witness io, own query record), nothing shared between tasks
     but the read-only toplevel and env. Returns the FAILURES as
-    `(addrHex, error)` pairs; empty means all passed. Per-claim
+    `(batch index as a decimal string, error)` pairs, resolving back to
+    the caller's label order; empty means all passed. Per-claim
     outputs/records are not returned — use `checkAddrWithEnv` for a
     single claim's full result. -/
 def checkAddrsWithEnv (toplevel : @& Bytecode.Toplevel)

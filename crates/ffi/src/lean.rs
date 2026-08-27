@@ -294,10 +294,10 @@ lean_ffi::lean_inductive! {
   LeanAiurProveResult    [ { num_obj: 4 } ];
   // claimBytes, proof, ioData, ioMap
   LeanAiurProveEnvResult [ { num_obj: 4 } ];
-  // error, peakBytes, weights
-  LeanAiurShardResult    [ { num_obj: 3 } ];
-  // claimBytes, proof, peakBytes
-  LeanAiurShardProveResult [ { num_obj: 3 } ];
+  // error, peakBytes, weights, suggestedParts
+  LeanAiurShardResult    [ { num_obj: 4 } ];
+  // claimBytes, proof, peakBytes, suggestedParts
+  LeanAiurShardProveResult [ { num_obj: 4 } ];
 
   // --- Block / comparison types ---
 
