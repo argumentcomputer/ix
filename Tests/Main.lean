@@ -184,6 +184,7 @@ def primaryRunners : List (String × IO UInt32) := [
   -- factorial-prove → recursive-verify → reject-tampering pipeline.
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
+  ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/

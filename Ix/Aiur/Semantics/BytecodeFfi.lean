@@ -174,6 +174,21 @@ opaque executeMultiStark (toplevel : @& Bytecode.Toplevel)
   (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
+/-- Native execution of the aggregate-first `join_two` entrypoint. The two
+child proofs/claims and the fixed vk/output/allowed blobs are passed without
+per-byte Lean field boxing. `preimagesBlob` and `treesBlob` use the compact
+count/key/length framing produced by `MultiStark.joinPreimagesBlob` and
+`MultiStark.joinTreesBlob`; Rust expands them directly into IO channels 4 and
+5. As with `executeMultiStark`, `useBytecode` selects the generic interpreter
+over the generated production verifier. -/
+@[extern "rs_aiur_multi_stark_join_execute"]
+opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
+  (leftProofBytes rightProofBytes recursionVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Array QueryCount)
+
 -- (EnvHandle opaque type + constructors live above `namespace
 -- Bytecode.Toplevel`; see `Aiur.EnvHandle`. The with-env FFI
 -- declarations below reference `EnvHandle` and `Bytecode.Toplevel`

@@ -18,6 +18,7 @@ public import Ix.Common
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
+public import Ix.MultiStark
 public import Ix.Store
 public import Ix.Cli.CheckCmd
 
@@ -78,6 +79,62 @@ def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel))
     | .error e => return .error s!"compilation failed: {e}"
     | .ok compiled =>
       return .ok (Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters, compiled)
+
+/-- Build the two deterministic systems whose identities are committed by an
+aggregate root: the IxVM vk and the combined lift/join recursion vk. -/
+private def buildAggregateBackend :
+    IO (Except String (Aiur.AiurSystem × Aiur.Bytecode.FunIdx × ByteArray)) := do
+  let ixvmCompiled ← match IxVM.ixVM with
+    | .error e => return .error s!"IxVM toplevel merging failed: {e}"
+    | .ok top => match top.compile with
+      | .error e => return .error s!"IxVM compilation failed: {e}"
+      | .ok compiled => pure compiled
+  let recursionCompiled ← match MultiStark.multiStark with
+    | .error e => return .error s!"recursion toplevel merging failed: {e}"
+    | .ok top => match top.compile with
+      | .error e => return .error s!"recursion compilation failed: {e}"
+      | .ok compiled => pure compiled
+  let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
+  let liftIdx := recursionCompiled.getFuncIdx `verify_multi_stark_proof |>.get!
+  let joinIdx := recursionCompiled.getFuncIdx `join_two |>.get!
+  let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
+    commitmentParameters friParameters
+  let recursionSystem := Aiur.AiurSystem.build recursionCompiled.bytecode
+    commitmentParameters friParameters
+  let recursionVk := recursionSystem.vkBytes
+  let allowed := MultiStark.allowedBlob ixvmSystem.vkBytes verifyIdx
+    recursionVk liftIdx joinIdx
+  return .ok (recursionSystem, joinIdx, allowed)
+
+private def verifyAggregateProof (recursionSystem : Aiur.AiurSystem)
+    (joinIdx : Aiur.Bytecode.FunIdx) (allowed : ByteArray)
+    (expectedEnv? : Option Ixon.Env) (proofAddr : Address) : IO UInt32 := do
+  let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read proofAddr)))
+  let .checkEnv root assumptions := wrapper.claim | do
+    IO.eprintln s!"error: aggregate proof {proofAddr} does not bundle a CheckEnv claim"
+    return 1
+  match expectedEnv? with
+  | some env =>
+    let some expectedTree := IxVM.ClaimHarness.envCanonicalTree env | do
+      IO.eprintln "error: cannot verify an aggregate against an empty environment"
+      return 1
+    if root != expectedTree.root then
+      IO.eprintln s!"error: aggregate subject root {root} does not match env root {expectedTree.root}"
+      return 1
+    if assumptions.isSome then
+      IO.eprintln s!"error: aggregate retains assumptions {assumptions}"
+      return 1
+  | none => pure ()
+  let claimBytes := Ix.Claim.ser wrapper.claim
+  let pubInput := MultiStark.joinPubInput allowed claimBytes
+  let outerClaim := Aiur.buildClaim joinIdx pubInput #[]
+  match recursionSystem.verify outerClaim (Aiur.Proof.ofBytes wrapper.proof) with
+  | .error e =>
+    IO.eprintln s!"error: aggregate verification failed: {e}"
+    return 1
+  | .ok () =>
+    IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
+    return 0
 
 /-- Shard-aware verification (parity with `check`/`prove`):
     - `--shard K`, no proof: print shard K's reconstructed `CheckEnv` claim
@@ -148,6 +205,24 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
+  if p.hasFlag "aggregate" then
+    if proofs.isEmpty then
+      p.printError "error: --aggregate requires at least one aggregate proof address"
+      return 1
+    let expectedEnv? ← match (p.flag? "ixe").map (·.as! String) with
+      | none => pure none
+      | some path => match Ixon.deEnvAnon (← IO.FS.readBinFile path) with
+        | .error e => IO.eprintln s!"deserialize {path} failed: {e}"; return 1
+        | .ok env => pure (some env)
+    let (recursionSystem, joinIdx, allowed) ← match ← buildAggregateBackend with
+      | .error e => IO.eprintln e; return 1
+      | .ok backend => pure backend
+    let mut rc : UInt32 := 0
+    for hex in proofs do
+      let proofAddr ← addrOfHex! "aggregate proof" hex
+      if (← verifyAggregateProof recursionSystem joinIdx allowed expectedEnv? proofAddr) != 0 then
+        rc := 1
+    return rc
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
@@ -175,6 +250,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe)."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
+    "aggregate";      "Interpret proof arguments as aggregate-first recursive roots. Rebuilds and pins both vks; with --ixe, also requires an unconditional claim for that exact env root."
 
   ARGS:
     ...proofs : String; "32-byte hex address(es) of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. Omit when using --ixe + --ixes."

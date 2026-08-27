@@ -5,6 +5,10 @@ public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.MultiStark
+public import Ix.Cli.CheckCmd
+public import Ix.Claim
+public import Ix.AssumptionTree
+public import Ix.Merkle
 public import Blake3.Rust
 
 /-!
@@ -224,6 +228,254 @@ def endToEndSuite : IO UInt32 := do
     test "codegen'd verifier matches interpreter (output + query counts)" parity,
     expectErr "tampered proof advice rejected (verification checks)" tamperedProof,
     expectErr "tampered claim rejected (OOD/accumulator mismatch)" tamperedClaim,
+  ])]) []
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- `aggregate-first`: execute a real two-child canonical set-discharge join
+-- ═════════════════════════════════════════════════════════════════════════════
+
+/-- A tiny stand-in recursion system used to exercise `join_two` without first
+proving the full recursive verifier (the production lift needs tens of GiB).
+The join still verifies two real Multi-STARK proofs and enforces their vk,
+entrypoint, public-input, and nested-claim bindings. -/
+def joinChildProgram : Source.Toplevel := ⟦
+  pub fn fake_verify_claim(_digest: [G; 8]) { () }
+  pub fn fake_lift(_system_digest: [G; 8], _claims_digest: [G; 8]) { () }
+  pub fn fake_join(allowed_digest: [G; 8], _out_claim_digest: [G; 8]) {
+    assert_eq!(load(store(allowed_digest[0])), allowed_digest[0]);
+    ()
+  }
+⟧
+
+private def bytesAsGs (bytes : ByteArray) : Array Aiur.G :=
+  bytes.data.map .ofUInt8
+
+private def u32le4 (n : Nat) : Array UInt8 :=
+  (Array.range 4).map fun i => UInt8.ofNat ((n >>> (8 * i)) % 256)
+
+private def minimalIxes (treeTail : Array UInt8) : ByteArray :=
+  let shard := fun id => u32le4 id ++ Array.replicate 24 0 ++ #[0] ++
+    u32le4 0 ++ u32le4 0
+  ⟨#[0x49, 0x58, 0x45, 0x53, 0, 0, 0, 0] ++ Array.replicate 16 0 ++
+    u32le4 2 ++ shard 0 ++ shard 1 ++ treeTail⟩
+
+private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
+  (Ix.AssumptionTree.canonical leaves).get!
+
+private def seedJoinTree (io : IOBuffer) (tree : Ix.AssumptionTree) : IOBuffer :=
+  io.extend 5 (bytesAsGs tree.root.hash)
+    (bytesAsGs (Ix.AssumptionTree.ser tree))
+
+private def seedJoinTrees (io : IOBuffer)
+    (trees : Array Ix.AssumptionTree) : IOBuffer :=
+  trees.foldl seedJoinTree io
+
+def joinSmokeSuite : IO UInt32 := do
+  let childCompiled ← match joinChildProgram.compile with
+    | .error e => IO.eprintln s!"join child compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let childSystem := AiurSystem.build childCompiled.bytecode recCommitParams innerFri
+  let verifyIdx := childCompiled.getFuncIdx `fake_verify_claim |>.get!
+  let liftIdx := childCompiled.getFuncIdx `fake_lift |>.get!
+  let childJoinIdx := childCompiled.getFuncIdx `fake_join |>.get!
+
+  -- Two conditional shard statements whose assumptions cross the subject
+  -- boundary.  The join must compute
+  --   subjects    = {a,b} ∪ {c}       = {a,b,c}
+  --   assumptions = ({c,d} ∪ {a}) ∖ {a,b,c} = {d}.
+  let a := Address.blake3 "aggregate-a".toUTF8
+  let b := Address.blake3 "aggregate-b".toUTF8
+  let c := Address.blake3 "aggregate-c".toUTF8
+  let d := Address.blake3 "aggregate-d".toUTF8
+  let e := Address.blake3 "aggregate-extra".toUTF8
+  let leftSubjects := canonicalTree #[a, b]
+  let leftAssumptions := canonicalTree #[c, d]
+  let rightSubjects := canonicalTree #[c]
+  let rightAssumptions := canonicalTree #[a]
+  let leftStatement : MultiStark.CheckEnvTrees :=
+    { subjects := leftSubjects, assumptions := some leftAssumptions }
+  let rightStatement : MultiStark.CheckEnvTrees :=
+    { subjects := rightSubjects, assumptions := some rightAssumptions }
+  let outputStatement := leftStatement.join rightStatement
+  let outputSubjects := outputStatement.subjects
+  let outputAssumptions := outputStatement.assumptions.get!
+  let adviceTrees := MultiStark.CheckEnvTrees.adviceTrees
+    leftStatement rightStatement outputStatement
+  let leftClaimBytes := Ix.Claim.ser leftStatement.claim
+  let rightClaimBytes := Ix.Claim.ser rightStatement.claim
+
+  -- A lift's outer claim commits to serialized IxVM claims. Build those
+  -- nested preimages exactly as production does, then prove two cheap stand-in
+  -- lift executions under one vk.
+  let mkLift (claimBytes : ByteArray) :=
+    let innerInput := MultiStark.digestGs claimBytes
+    let innerClaim := Aiur.buildClaim verifyIdx innerInput #[]
+    let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
+    let fakeIxvmVk : ByteArray := ⟨#[0x49, 0x58, 0x56, 0x4d]⟩
+    let liftInput := MultiStark.verifierPubInput fakeIxvmVk innerClaimsBytes
+    let (outerClaim, proof, _) := childSystem.prove liftIdx liftInput default
+    (fakeIxvmVk, innerClaimsBytes, outerClaim, proof)
+  let (fakeIxvmVk, leftInnerClaims, leftOuter, leftProof) := mkLift leftClaimBytes
+  let (_, rightInnerClaims, rightOuter, rightProof) := mkLift rightClaimBytes
+
+  let recursionVk := childSystem.vkBytes
+  let allowed := MultiStark.allowedBlob fakeIxvmVk verifyIdx recursionVk
+    liftIdx childJoinIdx
+  let outputClaimBytes := Ix.Claim.ser outputStatement.claim
+  let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
+
+  let leftOuterBytes := MultiStark.serializeClaims #[leftOuter]
+  let rightOuterBytes := MultiStark.serializeClaims #[rightOuter]
+  let leftInnerDigest := MultiStark.digestGs leftInnerClaims
+  let rightInnerDigest := MultiStark.digestGs rightInnerClaims
+  let leftClaimDigest := MultiStark.digestGs leftClaimBytes
+  let rightClaimDigest := MultiStark.digestGs rightClaimBytes
+  let preimagesBlob := MultiStark.joinPreimagesBlob
+    #[leftInnerClaims, rightInnerClaims, leftClaimBytes, rightClaimBytes]
+  let treesBlob := MultiStark.joinTreesBlob
+    adviceTrees
+  let zeroKey := #[Aiur.G.ofNat 0]
+  let oneKey := #[Aiur.G.ofNat 1]
+  let twoKey := #[Aiur.G.ofNat 2]
+  let io := seedJoinTrees ((default : IOBuffer)
+    |>.extend 0 zeroKey (bytesAsGs leftProof.toBytes)
+    |>.extend 0 oneKey (bytesAsGs rightProof.toBytes)
+    |>.extend 1 zeroKey (bytesAsGs recursionVk)
+    |>.extend 2 zeroKey (bytesAsGs leftOuterBytes)
+    |>.extend 2 oneKey (bytesAsGs rightOuterBytes)
+    |>.extend 2 twoKey (bytesAsGs outputClaimBytes)
+    |>.extend 3 zeroKey (bytesAsGs allowed)
+    |>.extend 4 leftInnerDigest (bytesAsGs leftInnerClaims)
+    |>.extend 4 rightInnerDigest (bytesAsGs rightInnerClaims)
+    |>.extend 4 leftClaimDigest (bytesAsGs leftClaimBytes)
+    |>.extend 4 rightClaimDigest (bytesAsGs rightClaimBytes))
+    adviceTrees
+
+  let top ← match MultiStark.multiStark with
+    | .error e => IO.eprintln s!"aggregate toplevel merge failed: {e}"; return 1
+    | .ok t => pure t
+  let compiled ← match top.compile with
+    | .error e => IO.eprintln s!"aggregate compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let joinIdx := compiled.getFuncIdx `join_two |>.get!
+  let honestInterp := compiled.bytecode.execute joinIdx pubInput io
+  let honest := compiled.bytecode.executeMultiStarkJoin joinIdx pubInput
+    leftProof.toBytes rightProof.toBytes recursionVk leftOuterBytes rightOuterBytes
+    outputClaimBytes allowed preimagesBlob treesBlob
+  let nativeParity : Bool := match honest, honestInterp with
+    | .ok (out, qc), .ok (outI, _, qcI) =>
+      out == outI && qc.size == qcI.size &&
+        (qc.zip qcI).all fun (x, y) =>
+          x.uniqueRows == y.uniqueRows && x.totalHits == y.totalHits
+    | _, _ => false
+
+  let malformedFraming := compiled.bytecode.executeMultiStarkJoin joinIdx pubInput
+    leftProof.toBytes rightProof.toBytes recursionVk leftOuterBytes rightOuterBytes
+    outputClaimBytes allowed ⟨#[]⟩ treesBlob
+
+  -- Exercise the other child decoder arm: an aggregate child must expose the
+  -- same allowed digest transitively, while its output-claim preimage replaces
+  -- a lift's two nested preimages.
+  let joinChildInput := MultiStark.joinPubInput allowed leftClaimBytes
+  let (joinChildOuter, joinChildProof, _) :=
+    childSystem.prove childJoinIdx joinChildInput default
+  let joinChildOuterBytes := MultiStark.serializeClaims #[joinChildOuter]
+  let joinChildLayout :=
+    joinChildOuter.extract 2 10 == MultiStark.digestGs allowed &&
+    joinChildOuter.extract 10 18 == MultiStark.digestGs leftClaimBytes
+  let joinChildNativeVerify := childSystem.verify joinChildOuter joinChildProof
+  let joinChildIo := io
+    |>.extend 0 zeroKey (bytesAsGs joinChildProof.toBytes)
+    |>.extend 2 zeroKey (bytesAsGs joinChildOuterBytes)
+  let transitiveJoin := compiled.bytecode.execute joinIdx pubInput joinChildIo
+
+  let wrongAllowed := allowed.set! 0
+    (UInt8.ofNat ((allowed.data[0]!.toNat + 1) % 256))
+  let wrongJoinChildInput := MultiStark.joinPubInput wrongAllowed leftClaimBytes
+  let (wrongJoinOuter, wrongJoinProof, _) :=
+    childSystem.prove childJoinIdx wrongJoinChildInput default
+  let wrongJoinOuterBytes := MultiStark.serializeClaims #[wrongJoinOuter]
+  let wrongJoinIo := io
+    |>.extend 0 zeroKey (bytesAsGs wrongJoinProof.toBytes)
+    |>.extend 2 zeroKey (bytesAsGs wrongJoinOuterBytes)
+  let wrongTransitiveAllowed :=
+    compiled.bytecode.execute joinIdx pubInput wrongJoinIo
+
+  -- Digest-consistent semantic failures exercise the set checks rather than
+  -- merely failing the public output-claim hash binding.
+  let omittedAsmBytes := Ix.Claim.ser (.checkEnv outputSubjects.root none)
+  let omittedAsmInput := MultiStark.joinPubInput allowed omittedAsmBytes
+  let omittedAsmIo := io.extend 2 twoKey (bytesAsGs omittedAsmBytes)
+  let omittedAsm := compiled.bytecode.execute joinIdx omittedAsmInput omittedAsmIo
+
+  let extraSubjects := canonicalTree #[a, b, c, e]
+  let extraSubjectBytes := Ix.Claim.ser
+    (.checkEnv extraSubjects.root (some outputAssumptions.root))
+  let extraSubjectInput := MultiStark.joinPubInput allowed extraSubjectBytes
+  let extraSubjectIo := seedJoinTree
+    (io.extend 2 twoKey (bytesAsGs extraSubjectBytes)) extraSubjects
+  let extraSubject :=
+    compiled.bytecode.execute joinIdx extraSubjectInput extraSubjectIo
+
+  -- A free-form tree with the expected leaves in descending order has a
+  -- self-consistent serialization/root pair, but is not a canonical set tree.
+  let sortedOutputLeaves :=
+    (#[a, b, c]).qsort fun x y => compare x y == .lt
+  let unsortedSubjects : Ix.AssumptionTree :=
+    .node (.node (.leaf sortedOutputLeaves[2]!) (.leaf sortedOutputLeaves[1]!))
+      (.leaf sortedOutputLeaves[0]!)
+  let unsortedBytes := Ix.Claim.ser
+    (.checkEnv unsortedSubjects.root (some outputAssumptions.root))
+  let unsortedInput := MultiStark.joinPubInput allowed unsortedBytes
+  let unsortedIo := seedJoinTree
+    (io.extend 2 twoKey (bytesAsGs unsortedBytes)) unsortedSubjects
+  let unsorted := compiled.bytecode.execute joinIdx unsortedInput unsortedIo
+
+  let badLeftProofBytes := leftProof.toBytes.set! 0
+    (UInt8.ofNat ((leftProof.toBytes.data[0]!.toNat + 1) % 256))
+  let badProofIo := io.extend 0 zeroKey (bytesAsGs badLeftProofBytes)
+  let badProof := compiled.bytecode.execute joinIdx pubInput badProofIo
+
+  let hostFoldCorrect :=
+    outputSubjects.leaves == (canonicalTree #[a, b, c]).leaves &&
+    outputStatement.assumptions.map (·.leaves) == some (canonicalTree #[d]).leaves
+  let manifestPlan :=
+    (Ix.Cli.CheckCmd.AggregationTree.node
+      (.node (.leaf 0) (.leaf 1)) (.leaf 2)).foldPlan
+  let expectedPlan : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp :=
+    #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3]
+  let parsedManifestPlan : Bool :=
+    let valid := minimalIxes (#[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 1)
+    match Ix.Cli.CheckCmd.parseIxesManifest valid with
+    | .ok view => view.aggregationTree.foldPlan ==
+      (#[.leaf 0, .leaf 1, .join 0 1] :
+        Array Ix.Cli.CheckCmd.AggregationTree.FoldOp)
+    | .error _ => false
+  let malformedManifestRejected : Bool :=
+    let duplicate := minimalIxes (#[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 0)
+    match Ix.Cli.CheckCmd.parseIxesManifest duplicate with
+    | .error _ => true
+    | .ok _ => false
+
+  lspecIO (.ofList [("aggregate-first", [
+    test "host fold constructs canonical union/discharge trees" hostFoldCorrect,
+    test "manifest tree lowers to post-order binary slots" (manifestPlan == expectedPlan),
+    test "manifest parser exposes its validated bisection tree" parsedManifestPlan,
+    test "manifest parser rejects repeated aggregation leaves" malformedManifestRejected,
+    test "stand-in lift/join entrypoints survive compiler dedup separately"
+      (liftIdx != childJoinIdx),
+    expectOk "join accepts canonical union and cross-child discharge" honest,
+    test "join child outer claim carries allowed/output digests" joinChildLayout,
+    expectOk "stand-in join child proof verifies natively" joinChildNativeVerify,
+    expectOk "join accepts a transitively pinned join child" transitiveJoin,
+    expectErr "join rejects a join child with a different allowed digest"
+      wrongTransitiveAllowed,
+    test "codegen'd join matches interpreter (output + query counts)" nativeParity,
+    expectErr "native join rejects malformed keyed-blob framing" malformedFraming,
+    expectErr "join rejects an omitted undischarged assumption" omittedAsm,
+    expectErr "join rejects an extra output subject" extraSubject,
+    expectErr "join rejects an unsorted output subject tree" unsorted,
+    expectErr "join rejects a tampered child proof" badProof,
   ])]) []
 
 end Tests.MultiStark
