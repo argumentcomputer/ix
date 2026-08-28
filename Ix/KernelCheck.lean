@@ -207,23 +207,6 @@ opaque rsShardEnvStaticFFI :
     @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 
-/-- FFI: write a `.ixes` manifest for an EXPLICIT partition — the block
-    lists a run actually produced (splits included) rather than a
-    planner's output. `shardsBlob`: per shard, a 4-byte LE block count
-    followed by that many 32-byte block addresses; every env block must
-    appear in exactly one shard. Own sizes, foreign blocks,
-    cross-ingress and assumption roots are recomputed from the env's
-    static profile; each shard's `measured_peak_bytes` comes from
-    `peaksBlob` (empty, or one 8-byte LE peak per shard in order).
-    Prints the manifest summary to stderr. -/
-@[extern "rs_shard_manifest_from_partition"]
-opaque rsShardManifestFromPartitionFFI :
-    @& String →                          -- .ixe path
-    @& ByteArray →                       -- partition blob
-    @& ByteArray →                       -- measured-peaks blob
-    @& String →                          -- .ixes output path
-    IO Unit
-
 /-- FFI: dump the static block-level reference graph of a `.ixe` as text:
     `block <hex> <bytes> <consts>` per ingress unit and
     `edge <consumer> <producer>` per deduped claim-walk edge at block

@@ -116,8 +116,13 @@ def emitStats (compiled : Aiur.CompiledToplevel)
     line per constrained `check_const` query. The address is recovered by
     dereferencing the `Addr` argument — the LAST input slot, since `ci`
     is passed flattened by value — through `memory[32]`; `vspan` is the
-    constant's standalone check cost (memo hits replay the callee's
-    recorded span, so the numbers are order-independent shard weights).
+    constant's standalone check cost within its shard (memo hits replay
+    the callee's recorded span). Order-independent within a partition,
+    but NOT exact across partitions: a callee owned by a foreign shard
+    is assumed rather than replayed, so its span drops out of its
+    callers' rows (measured: ~10% of a 360-const fixture's rows shift
+    between a 1-shard and a 4-shard partition, a few by >2x). Schedule
+    off a profile measured under the partition being scheduled.
     Requires the execution to have run with `profile := true`, else
     every span reads 0. -/
 def dumpProfile (compiled : Aiur.CompiledToplevel)
@@ -505,20 +510,54 @@ private def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
   | .dPrj prj => prj.block
   | _ => addr
 
-/-- Owned constants of a shard: every env constant whose check-schedule block
-    is in `blocks`.
+/-- Each block address mapped to the index of the list owning it. -/
+def blockIndexOf (lists : Array (Array Address)) :
+    Std.HashMap Address Nat :=
+  (lists.mapIdx fun k l => (k, l)).foldl (init := {}) fun m (k, l) =>
+    l.foldl (fun m blk => m.insert blk k) m
 
-    Constants whose bytes do not parse are skipped and therefore owned by
-    NOBODY. That is safe only because `shardsCover` fails the run when any
-    exist, so this is never reached with one present; without that gate a
-    silent skip here means a constant no shard ever checks. -/
-def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) : Array Address := Id.run do
-  let blockSet : Std.HashSet Address := blocks.foldl (·.insert ·) {}
-  let mut o : Array Address := #[]
-  for (addr, lc) in ixonEnv.consts do
-    let some c := lc.get? | continue
-    if blockSet.contains (blockAddrOf addr c) then o := o.push addr
-  return o
+/-- Owned constants per entry, in ONE env pass: `result[k]` is every env
+    constant whose check-schedule block is in `lists[k]`, in
+    env-iteration order (identical to a per-entry filter, so claim
+    digests are unchanged). Per-entry filtering rescans all consts each
+    call — at env scale (241 shards × 688k consts) that is ~30 min of
+    setup, vs seconds here.
+
+    Constants whose bytes do not parse are owned by NOBODY. That is safe
+    only because `shardsCover` fails the run when any exist; without
+    that gate a silent skip here means a constant no shard ever
+    checks. -/
+def ownedConstsPer (ixonEnv : Ixon.Env) (lists : Array (Array Address)) :
+    Array (Array Address) :=
+  let blockTo := blockIndexOf lists
+  ixonEnv.consts.fold (init := Array.replicate lists.size #[])
+    fun owned addr lc =>
+      match lc.get? with
+      | none => owned
+      | some c =>
+        match blockTo.get? (blockAddrOf addr c) with
+        | some k => owned.modify k (·.push addr)
+        | none => owned
+
+/-- Owned constants of one shard: `ownedConstsPer` over a singleton. -/
+def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) :
+    Array Address :=
+  (ownedConstsPer ixonEnv #[blocks])[0]!
+
+/-- Partition a shard's already-known `owned` constants among `parts`
+    (block lists) by check-schedule block: one pass over the owned
+    consts, none over the env — the split-time companion of
+    `ownedConstsPer`, whose full env pass runs once per run. -/
+def partitionOwned (ixonEnv : Ixon.Env) (owned : Array Address)
+    (parts : Array (Array Address)) : Array (Array Address) :=
+  let blockTo := blockIndexOf parts
+  owned.foldl (init := Array.replicate parts.size #[]) fun acc a =>
+    match (ixonEnv.consts.get? a).bind (·.get?) with
+    | none => acc
+    | some c =>
+      match blockTo.get? (blockAddrOf a c) with
+      | some k => acc.modify k (·.push a)
+      | none => acc
 
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the
@@ -555,7 +594,7 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
     one env parse. -/
 def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
     (printStats : Bool) (statsOut : Option String) (profileOut : Option String)
-    (useBytecode : Bool) (shapes : Array Aiur.CircuitShape)
+    (useBytecode : Bool)
     (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
@@ -572,13 +611,6 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
     return 1
   | .ok r =>
-    -- Prover RAM projection from this shard's executed heights: the
-    -- input to split/merge decisions against a prover budget.
-    let stats := Aiur.computeStats compiled r.queryCounts shapes
-    let bytes := stats.projectedProverBytes
-    let gib := Float.ofNat bytes / 1073741824.0
-    IO.println s!"[shard {shardK}] projected prover RAM: \
-      {gib} GiB (padded committed traces × blowup)"
     if printStats then emitStats compiled r.queryCounts statsOut
     if let some out := profileOut then
       dumpProfile compiled r.record out (ixonEnv.addrToName.get? ·)
@@ -607,10 +639,8 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      let shapes := Aiur.circuitShapes compiled.bytecode
-        Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
       runShardOwnedNative envHandle compiled printStats statsOut profileOut
-        useBytecode shapes ixonEnv blocks shardK
+        useBytecode ixonEnv blocks shardK
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -675,26 +705,31 @@ def cutBlocks (blocks : Array Address) (p : Nat) : Array (Array Address) :=
 
 /-- Measured-peaks blob for the manifest emit: one 8-byte LE value per
     shard, in shard order. -/
-def peaksBlob (peaks : Array Nat) : ByteArray := Id.run do
-  let mut blob := ByteArray.empty
-  for pk in peaks do
-    let v := pk.toUInt64
-    for b in [0 : 8] do
-      blob := blob.push (v >>> (8 * b.toUInt64)).toUInt8
-  return blob
+def peaksBlob (peaks : Array Nat) : ByteArray :=
+  peaks.foldl (init := ByteArray.empty) fun blob pk =>
+    blob ++ pk.toUInt64.toLEBytes
 
 /-- Wire encoding shared by the shard batch FFI and the manifest emit:
     per entry, a 4-byte LE count followed by the 32-byte addresses. -/
-def addrListsBlob (lists : Array (Array Address)) : ByteArray := Id.run do
-  let mut blob := ByteArray.empty
-  for l in lists do
-    let n := l.size.toUInt32
-    blob := blob.push n.toUInt8
-    blob := blob.push (n >>> 8).toUInt8
-    blob := blob.push (n >>> 16).toUInt8
-    blob := blob.push (n >>> 24).toUInt8
-    for a in l do blob := blob ++ a.hash
-  return blob
+def addrListsBlob (lists : Array (Array Address)) : ByteArray :=
+  lists.foldl (init := ByteArray.empty) fun blob l =>
+    l.foldl (fun b a => b ++ a.hash) (blob ++ l.size.toUInt32.toLEBytes)
+
+/-- Emit the partition a run actually validated as a `.ixes` manifest,
+    measured peaks included — the shared tail of `ix prove --out-ixes`
+    and `ix check --ram-budget --out-ixes`. Skipped with a note when any
+    shard failed: a corrected manifest describes a fully-validated
+    partition. -/
+def emitCorrectedManifest (tag : String) (envHandle : Aiur.EnvHandle)
+    (out : String) (partition : Array (Array Address × Nat))
+    (failures : Nat) : IO Unit := do
+  if failures == 0 then
+    Aiur.shardManifestFromPartition envHandle
+      (addrListsBlob (partition.map (·.1)))
+      (peaksBlob (partition.map (·.2))) out
+    IO.println s!"[{tag}] corrected manifest → {out}"
+  else
+    IO.eprintln s!"--out-ixes {out} skipped: {failures} failure(s)"
 
 /-- Whole-partition check as ONE Rust rayon batch: work-stealing across
     shards, no chunk barriers (measured 2.3–2.5x faster than the
@@ -710,8 +745,8 @@ def addrListsBlob (lists : Array (Array Address)) : ByteArray := Id.run do
 def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     (compiled : Aiur.CompiledToplevel) (useBytecode : Bool)
     (profileOut : Option String)
-    (json? : Option (String × String) := none)
-    (maxRamBytes : Nat := 0) (outIxes : Option String := none) :
+    (json? : Option (String × String))
+    (maxRamBytes : Nat) (outIxes : Option String) :
     IO UInt32 := do
   -- The row's peak-rss needs the process-tree RSS sampler running
   -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
@@ -726,44 +761,31 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       | .ok h => pure h
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
     let jobs := jobs?.getD 0
-    -- Assign every const to its shard in ONE env pass. Calling
-    -- `ownedConstsForBlocks` per shard rescans all consts each time —
-    -- at env scale (241 shards × 688k consts) that is ~30 min of setup.
-    -- Each shard's array keeps env-iteration order, identical to what
-    -- the per-shard filter produces, so claim digests are unchanged.
-    let ownedFor (waveBlocks : Array (Array Address)) :
-        Array (Array Address) := Id.run do
-      let mut blockToShard : Std.HashMap Address Nat := {}
-      for (blocks, k) in waveBlocks.mapIdx (fun k b => (b, k)) do
-        for blk in blocks do blockToShard := blockToShard.insert blk k
-      let mut owned : Array (Array Address) :=
-        Array.replicate waveBlocks.size #[]
-      for (addr, lc) in ixonEnv.consts do
-        let some c := lc.get? | continue
-        match blockToShard.get? (blockAddrOf addr c) with
-        | some k => owned := owned.modify k (·.push addr)
-        | none => pure ()
-      return owned
     -- `check_const`'s queries are what the weight rows are read from; a
     -- toplevel without it can still check, just not profile.
     let checkConstIdx := (compiled.getFuncIdx `check_const).getD 0
     if profileOut.isSome && (compiled.getFuncIdx `check_const).isNone then
       IO.eprintln "--profile: no `check_const` in compiled toplevel"
-    let cutLabeled (label : String) (blocks : Array Address) (p : Nat) :
-        Array (String × Array Address) :=
-      (cutBlocks blocks p).mapIdx fun i part => (s!"{label}.{i}", part)
+    let cutLabeled (label : String) (blocks owned : Array Address)
+        (p : Nat) : Array (String × Array Address × Array Address) :=
+      let parts := cutBlocks blocks p
+      (parts.zip (partitionOwned ixonEnv owned parts)).mapIdx
+        fun i (part, po) => (s!"{label}.{i}", part, po)
     -- One loop over execution waves. Wave 0 is the planned partition;
-    -- with `--max-ram` every over-budget shard is cut into the peak
+    -- with `--ram-budget` every over-budget shard is cut into the peak
     -- model's suggested part count and the parts re-batched as the next
     -- wave, until everything fits or is a single block. Without a
     -- budget the FFI answers 1 part everywhere and the loop is a single
     -- wave — the plain batch check. Waves after the first never
-    -- profile: vspans are partition-invariant, so wave 0 already
-    -- carries every constant's row.
-    let mut wave : Array (String × Array Address) :=
-      shards.mapIdx fun k b => (s!"{k}", b)
+    -- profile: wave 0 already carries one row per constant, measured
+    -- under the planned partition — the one schedulers consume.
+    -- The whole run's ownership assignment: one env pass here, and
+    -- every later wave's parts inherit their parent's owned consts via
+    -- `partitionOwned` — no wave ever rescans the env.
+    let mut wave : Array (String × Array Address × Array Address) :=
+      (shards.zip (ownedConstsPer ixonEnv shards)).mapIdx
+        fun k (b, o) => (s!"{k}", b, o)
     let mut waveNum := 0
-    let mut failures : Nat := 0
     let mut failed : Array String := #[]
     let mut final : Array (Array Address × Nat) := #[]
     let mut totalConsts := 0
@@ -775,13 +797,12 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       else
         IO.println s!"[wave {waveNum}] re-executing {wave.size} part(s)"
       (← IO.getStdout).flush
-      let ownedPer := ownedFor (wave.map (·.2))
-      let profile := profileOut.isSome && waveNum == 0
+      let ownedPer := wave.map (·.2.2)
       let start ← IO.monoMsNow
       match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle
           (addrListsBlob ownedPer) useBytecode jobs
           Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-          profile checkConstIdx maxRamBytes with
+          (profileOut.isSome && waveNum == 0) checkConstIdx maxRamBytes with
       | .error e => IO.eprintln s!"shard batch (wave {waveNum}): {e}"; return 1
       | .ok rs =>
         if waveNum == 0 then
@@ -790,14 +811,11 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
           -- extras outside the benchmarked engine window.
           elapsedMs := (← IO.monoMsNow) - start
           totalConsts := ownedPer.foldl (· + ·.size) 0
-        let mut next : Array (String × Array Address) := #[]
-        for j in [:rs.size] do
-          let r := rs[j]!
-          let (label, blocks) := wave[j]!
-          let gib := Float.ofNat r.peakBytes / 1073741824.0
+        let mut next : Array (String × Array Address × Array Address) := #[]
+        for (r, label, blocks, owned) in rs.zip wave do
+          let gib := toGib r.peakBytes
           if !r.error.isEmpty then
             IO.eprintln s!"[shard {label}] FAILED: {r.error}"
-            failures := failures + 1
             failed := failed.push s!"shard {label}: {r.error}"
             final := final.push (blocks, r.peakBytes)
           else if r.suggestedParts <= 1 then
@@ -806,17 +824,16 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
           else if blocks.size <= 1 then
             IO.eprintln s!"[shard {label}] peak {gib} GiB over budget and a \
               single block — cannot split"
-            failures := failures + 1
             failed := failed.push s!"shard {label}: single block over budget"
             final := final.push (blocks, r.peakBytes)
           else
             IO.println s!"[shard {label}] peak {gib} GiB over budget — cut \
               into {r.suggestedParts}"
-            next := next ++ cutLabeled label blocks r.suggestedParts
+            next := next ++ cutLabeled label blocks owned r.suggestedParts
         -- Weight rows are appended once, from wave 0: Rust already
         -- reduced each shard's record under its own task, so nothing
         -- here holds a record alive.
-        if profile then
+        if waveNum == 0 then
           if let some out := profileOut then
             let h ← IO.FS.Handle.mk out .append
             for r in rs do
@@ -829,16 +846,21 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
         waveNum := waveNum + 1
     if maxRamBytes > 0 then
       IO.println s!"[split-audit] {final.size} part(s) from {shards.size} \
-        planned shard(s), {waveNum - 1} split wave(s), {failures} failure(s)"
+        planned shard(s), {waveNum - 1} split wave(s), {failed.size} failure(s)"
+      -- Consolidation is arithmetic, never an execution: the measured
+      -- sum only shrinks as shards get coarser, so this count is a safe
+      -- under-count — and the next run's mandatory executions verify it
+      -- inline. 95%: margin for the model's +1.7% under-projection.
+      let sum := final.foldl (· + ·.2) 0
+      let target := maxRamBytes * 95 / 100
+      let n1 := max 1 ((sum + target - 1) / target)
+      if failed.isEmpty && n1 < final.size then
+        IO.println s!"[split-audit] measured total {toGib sum} GiB — \
+          {n1} shard(s) would fit the budget: re-shard with --shards {n1}"
     -- The recalibrated partition — what this run actually validated —
     -- written as the manifest the next run should start from.
     if let some out := outIxes then
-      if failures == 0 then
-        Ix.KernelCheck.rsShardManifestFromPartitionFFI ixePath
-          (addrListsBlob (final.map (·.1))) (peaksBlob (final.map (·.2))) out
-        IO.println s!"[split-audit] recalibrated manifest → {out}"
-      else
-        IO.eprintln s!"--out-ixes {out} skipped: {failures} failure(s)"
+      emitCorrectedManifest "split-audit" envHandle out final failed.size
     -- One env-keyed results row for `ix bench run --backend aiur-sharded-env`:
     -- the measured window is the wave-0 batch FFI call (env load and
     -- blob setup are excluded, matching what the benchmark tracks — the
@@ -848,17 +870,17 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       let tput := if elapsedMs > 0
         then totalConsts.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
       let peakRss ← TracingTexray.peakTreeRssBytes
-      let status := if failures == 0 then "ok" else "rejected"
+      let status := if failed.isEmpty then "ok" else "rejected"
       Ix.Benchmark.Results.writeRow path key status
         [ ("constants", Lean.toJson totalConsts)
         , ("shards", Lean.toJson final.size)
         , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
         , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
         , ("peak-rss", Lean.toJson peakRss) ]
-    if failures == 0 then
+    if failed.isEmpty then
       IO.println s!"All {final.size} shard(s) passed"
       return 0
-    IO.eprintln s!"{failures} of {final.size} shard(s) FAILED:"
+    IO.eprintln s!"{failed.size} of {final.size} shard(s) FAILED:"
     for f in failed do IO.eprintln s!"  {f}"
     -- Under `--json` a kernel rejection is the benchmark's `rejected`
     -- exit (the row is already written), same contract as `check-rs`.
@@ -988,7 +1010,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "env")
       return (← runShardBatchNative manifest ixe
         ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode profileOut json?
-        (((p.flag? "max-ram").map (·.as! Nat)).getD 0 * 1073741824)
+        (((p.flag? "ram-budget").map (·.as! Nat)).getD 0 * gibBytes)
         ((p.flag? "out-ixes").map (·.as! String)))
   | _, _, _ =>
     -- `--jobs N` (N ≠ 1) with an `--ixe` env and no `--claim` takes the
@@ -1019,14 +1041,14 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
-    "profile"   : String;   "Append per-constant virtual-gas costs to this file: one `<addr_hex> <vspan> <mult> [name]` line per `check_const` query, read from the execution's QueryRecordHandle (names joined on the shard paths, where the env's addr→name index is loaded). The vspan is the constant's standalone check cost — memo hits replay the callee's recorded span — so the numbers are order-independent shard weights. Not available with `--interp source`."
+    "profile"   : String;   "Append per-constant virtual-gas costs to this file: one `<addr_hex> <vspan> <mult> [name]` line per `check_const` query, read from the execution's QueryRecordHandle (names joined on the shard paths, where the env's addr→name index is loaded). The vspan is the constant's standalone check cost within its shard — memo hits replay the callee's recorded span. Order-independent within a partition, but spans of constants whose dependency cone crosses an assumption boundary shift between partitions (foreign callees are assumed, not replayed); schedule off a profile measured under the partition being scheduled. Not available with `--interp source`."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
     "json"      : String;   "With --ixes (no --shard): append one env-keyed results row (see Ix.Benchmark.Results) for the batch to this file — check-time, throughput, peak-rss, constants, shards. Used by `ix bench run --backend aiur-sharded-env`."
     "json-name" : String;   "Row key for the --json row (default: `env`)."
-    "max-ram"   : Nat;      "Per-shard prover-RAM budget, GiB (with --ixes, no --shard): after the batch, cut every shard whose projected prover peak exceeds the budget into the peak model's suggested part count and re-batch the parts, wave by wave, until everything fits. Executions only — the cheap audit of a partition's split behavior; the wave count is the recursion depth. Omit for a plain check."
-    "out-ixes"  : String;   "With --max-ram: write the recalibrated partition — the block lists the wave loop actually validated, splits included — as a `.ixes` manifest to this path. Skipped if any shard failed. The manifest the next run of this env should start from."
+    "ram-budget" : Nat;     "The destination prove box's per-shard RAM budget, GiB (with --ixes, no --shard): after the batch, cut every shard whose projected prover peak exceeds the budget into the peak model's suggested part count and re-batch the parts, wave by wave, until everything fits — the exec-only split audit. Under-filled partitions get a printed suggestion (the shard count the measured total says would fit), never an extra execution: re-shard with --shards N and let the next run's mandatory executions verify it inline. Same unit and model as `ix prove --max-ram`, but no auto-detection: the budget describes the prove box the partition is destined for, not the machine running the check. Omit for a plain check."
+    "out-ixes"  : String;   "With --ram-budget: write the recalibrated partition — the block lists the wave loop actually validated, splits included — as a `.ixes` manifest to this path. Skipped if any shard failed. The manifest the next run of this env should start from."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."

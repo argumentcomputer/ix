@@ -1389,9 +1389,28 @@ impl ShardManifest {
     let empty = self.shards.iter().filter(|s| s.blocks.is_empty()).count();
     let max_cross =
       self.shards.iter().map(|s| s.cross_ingress).max().unwrap_or(0);
+    let peaks: Vec<u64> = self
+      .shards
+      .iter()
+      .map(|s| s.measured_peak_bytes)
+      .filter(|&p| p != 0)
+      .collect();
+    #[allow(clippy::cast_precision_loss)]
+    let measured = if peaks.is_empty() {
+      String::new()
+    } else {
+      let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
+      format!(
+        " measured-peaks[{}/{} shards, min={:.1} max={:.1} GiB]",
+        peaks.len(),
+        self.shards.len(),
+        gib(peaks.iter().copied().min().unwrap_or(0)),
+        gib(peaks.iter().copied().max().unwrap_or(0)),
+      )
+    };
     format!(
       "shards={} (empty={}) heartbeats[min={} mean={} max={}] imbalance={:.2}x \
-       cross_ingress_total={} max_shard_cross={}",
+       cross_ingress_total={} max_shard_cross={}{measured}",
       self.shards.len(),
       empty,
       min,
@@ -1442,9 +1461,15 @@ impl ShardManifest {
     }
     // Trailing measured-peaks section (same older-readers-ignore contract
     // as the tree): presence byte, then one u64 LE per shard in order.
-    out.push(1);
-    for sh in &self.shards {
-      out.extend_from_slice(&sh.measured_peak_bytes.to_le_bytes());
+    // Absent when nothing was measured, so planner manifests stay
+    // byte-identical to the pre-peaks format.
+    if self.shards.iter().any(|s| s.measured_peak_bytes != 0) {
+      out.push(1);
+      for sh in &self.shards {
+        out.extend_from_slice(&sh.measured_peak_bytes.to_le_bytes());
+      }
+    } else {
+      out.push(0);
     }
     out
   }
@@ -1816,14 +1841,7 @@ pub fn shard_static(
   );
   let mut manifest =
     ShardManifest::build(profile, &shard_of, num_shards).with_tree(tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   let costs = static_predicted_costs(profile, &shard_of, num_shards);
   let (mut lo, mut hi, mut sum) = (f64::INFINITY, 0.0f64, 0.0f64);
   for &c in &costs {
@@ -1868,14 +1886,7 @@ pub fn shard_esp(
   let (shard_of, tree) = h.partition_with_tree(num_shards, balance);
   let mut manifest =
     ShardManifest::build(&profile, &shard_of, num_shards).with_tree(tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   // The largest single block's heartbeats is the *floor* on achievable
   // per-shard balance: a mutual block is atomic and cannot be split, so no
   // partition can drive max-shard heartbeats below it. When the heaviest shard
@@ -1904,6 +1915,24 @@ pub fn shard_esp(
   ))
 }
 
+/// Seal every shard's assumption root (the canonical merkle root over
+/// its foreign blocks) and write the manifest when a path is given.
+/// Shared tail of every manifest-producing entry point.
+fn seal_and_write(
+  manifest: &mut ShardManifest,
+  out_path: Option<&str>,
+) -> Result<(), String> {
+  for shard in &mut manifest.shards {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+  }
+  if let Some(op) = out_path {
+    std::fs::write(op, manifest.to_bytes())
+      .map_err(|e| format!("write {op}: {e}"))?;
+  }
+  Ok(())
+}
+
 /// Write a `.ixes` manifest for an EXPLICIT shard assignment — the
 /// partition a prove run actually produced (splits included) rather
 /// than a planner's output. Same manifest construction as
@@ -1923,20 +1952,17 @@ pub fn shard_manifest_explicit(
   peaks: &[u64],
   out_path: &str,
 ) -> Result<String, String> {
-  if !peaks.is_empty() && peaks.len() != num_shards {
+  if peaks.len() != num_shards {
     return Err(format!(
       "measured peaks: {} values for {num_shards} shards",
       peaks.len()
     ));
   }
   let mut manifest = ShardManifest::build(profile, shard_of, num_shards);
-  for (i, shard) in manifest.shards.iter_mut().enumerate() {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-    shard.measured_peak_bytes = peaks.get(i).copied().unwrap_or(0);
+  for (shard, &peak) in manifest.shards.iter_mut().zip(peaks) {
+    shard.measured_peak_bytes = peak;
   }
-  std::fs::write(out_path, manifest.to_bytes())
-    .map_err(|e| format!("write {out_path}: {e}"))?;
+  seal_and_write(&mut manifest, Some(out_path))?;
   Ok(manifest.summary())
 }
 
@@ -1959,14 +1985,7 @@ pub fn shard_esp_cap(
   let mut manifest =
     ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
       .with_tree(plan.tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   let note = if plan.infeasible_atomic_floor {
     "\n  [INFEASIBLE: a single atomic block exceeds the cap — split it upstream, raise the cap, or use a bigger box]"
   } else {

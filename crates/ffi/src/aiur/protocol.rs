@@ -23,7 +23,7 @@ use crate::{
 use aiur::{
   G,
   execute::{IOBuffer, IOKeyInfo, QueryRecord},
-  synthesis::{AiurProof, AiurSystem, CircuitShape},
+  synthesis::{AiurProof, AiurSystem, CircuitShape, GatedProve},
 };
 
 // =============================================================================
@@ -685,6 +685,34 @@ extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
   LeanExcept::ok(arr)
 }
 
+/// Decode a counted address-list blob (`Ix.Cli.CheckCmd.addrListsBlob`):
+/// per list, a 4-byte LE count followed by that many 32-byte addresses.
+/// The wire format of every partition crossing the FFI (the shard
+/// batch, the manifest emit).
+pub(crate) fn decode_addr_lists(
+  bytes: &[u8],
+) -> Result<Vec<Vec<ix_common::address::Address>>, String> {
+  let mut lists = Vec::new();
+  let mut off = 0usize;
+  while off < bytes.len() {
+    if off + 4 > bytes.len() {
+      return Err("addr lists: truncated count".into());
+    }
+    let n =
+      u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
+    off += 4;
+    if off + n * 32 > bytes.len() {
+      return Err("addr lists: truncated addresses".into());
+    }
+    lists.push(
+      ix_common::address::Address::unpack(&bytes[off..off + n * 32])
+        .collect(),
+    );
+    off += n * 32;
+  }
+  Ok(lists)
+}
+
 /// Byte-weighted admission gate: a counting semaphore over estimated
 /// execution RSS, expressed with the std Mutex+Condvar construction.
 /// Bounds MEMORY in flight instead of shards in flight, so the rayon
@@ -728,7 +756,27 @@ impl RamGate {
 /// RSS): 5.7 MB owned -> ~9.6 GB and 1.4 MB -> ~5.5 GB, giving
 /// ~4 GiB + ~1000x; both terms rounded up for cross-shard spread.
 const EXEC_RSS_FIXED_BYTES: usize = 9 * (1 << 29); // 4.5 GiB
-const EXEC_RSS_PER_OWNED_BYTE: usize = 1100;
+// Per-owned-byte execution footprint is ENV-DEPENDENT: ~1000x measured
+// on ISLB's shards, ~2300x on Mathlib's (whose constants expand more
+// per serialized byte). The gate's contract is NEVER OOM, so the slope
+// carries the worst measured env; light envs pay narrower admission,
+// not a crash. History: a 1100x slope (ISLB refit) over-admitted a
+// 132-shard Mathlib batch to 486/495 GB (OOM, 2026-08-29); the
+// original 2500x was itself the fix for the same crash on Mathlib's
+// first full-width run (bench-2026-08-22/RESULTS.md), and the 4.5 GiB
+// fixed term is ISLB's fix for the inverse small-shard under-reserve.
+const EXEC_RSS_PER_OWNED_BYTE: usize = 2500;
+
+/// Detected prover/execution RAM budget:
+/// [`ix_kernel::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
+/// the rest for the OS. `None` (no gate) when meminfo is unreadable —
+/// disabling the check beats guessing at it.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)] // MemAvailable and the fraction are positive
+fn detected_ram_budget() -> Option<usize> {
+  available_ram_bytes()
+    .map(|b| (b as f64 * ix_kernel::shard::RAM_USABLE_FRAC) as usize)
+}
 
 /// `MemAvailable` from `/proc/meminfo`, in bytes (Linux; includes
 /// reclaimable page cache). `None` if unreadable — the caller then
@@ -768,10 +816,14 @@ const CONST_WEIGHT_ROW: usize = 48;
 /// entries name the constants this shard actually checked. The address is
 /// the LAST input slot — `ci` is passed flattened by value — dereferenced
 /// through `memory[32]`. `vspan` is the constant's standalone check cost
-/// (memo hits replay the callee's recorded span), so the weights are
-/// order-independent and stay valid for planning a DIFFERENT partition
-/// than the one that measured them. Unconstrained hint rows
-/// (multiplicity 0) are skipped: they are not checks.
+/// within its shard (memo hits replay the callee's recorded span):
+/// order-independent within a partition, but NOT exact across partitions —
+/// a callee owned by a foreign shard is assumed rather than replayed, so
+/// its span drops out of its callers' rows (measured: ~10% of a 360-const
+/// fixture's rows shift between a 1-shard and a 4-shard partition, a few
+/// by >2x). Schedule off a profile measured under the partition being
+/// scheduled. Unconstrained hint rows (multiplicity 0) are skipped: they
+/// are not checks.
 ///
 /// Empty unless the execution ran with `profile = true`; without it every
 /// span reads 0 and the rows carry no signal.
@@ -861,29 +913,10 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   let jobs = lean_unbox_nat_as_usize(jobs.inner());
   let check_const_idx = lean_unbox_nat_as_usize(check_const_idx.inner());
   let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
-  let mut shards: Vec<Vec<ix_common::address::Address>> = Vec::new();
-  {
-    let bytes = shards_blob.as_bytes();
-    let mut off = 0usize;
-    while off < bytes.len() {
-      if off + 4 > bytes.len() {
-        return LeanExcept::error_string("shards_blob: truncated count");
-      }
-      let n =
-        u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
-      off += 4;
-      if off + n * 32 > bytes.len() {
-        return LeanExcept::error_string("shards_blob: truncated addresses");
-      }
-      shards.push(
-        bytes[off..off + n * 32]
-          .chunks_exact(32)
-          .map(|c| ix_common::address::Address::from_slice(c).unwrap())
-          .collect(),
-      );
-      off += n * 32;
-    }
-  }
+  let shards = match decode_addr_lists(shards_blob.as_bytes()) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
   let env = &env_handle.get().env;
   // One system build for the whole batch: the RAM model reads circuit
   // widths and lookup counts off the compiled circuits.
@@ -912,7 +945,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   let gate = RamGate {
     reserved: std::sync::Mutex::new(0),
     cv: std::sync::Condvar::new(),
-    budget: available_ram_bytes().map_or(usize::MAX, |b| b / 100 * 85),
+    budget: detected_ram_budget().unwrap_or(usize::MAX),
   };
   {
     let gib = 1024.0 * 1024.0 * 1024.0;
@@ -1169,41 +1202,27 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 
   // 0 = detect. Matching the check batch's gate keeps one RAM policy in
   // the system rather than two that can disagree.
-  let budget = if max_ram_bytes > 0 {
-    Some(max_ram_bytes)
-  } else {
-    available_ram_bytes().map(|b| b / 100 * 85)
-  };
-  // The prove path never profiles.
-  let executor = |toplevel: &_, fun_idx, input, io_buffer: &mut _| {
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-      toplevel, fun_idx, input, io_buffer, false,
-    )
-  };
-  let (proof, peak, parts) = if exec_only {
-    // Execute + measure, no STARK: `parts` is 1 exactly when the peak
-    // fits, so the caller's split loop drives off it unchanged.
-    let (peak, parts) = aiur_system_obj.get().execute_peak_ixvm(
-      fun_idx,
-      &input,
-      &mut io_buffer,
-      executor,
-      budget,
-    );
-    (LeanOption::none(), peak, parts)
-  } else {
-    match aiur_system_obj.get().prove_ixvm_within_budget(
-      fun_idx,
-      &input,
-      &mut io_buffer,
-      executor,
-      budget,
-    ) {
-      Ok((_aiur_claim_arr, proof, peak)) => (LeanOption::some(
-        LeanExternal::alloc(&AIUR_PROOF_CLASS, proof),
-      ), peak, 1),
-      Err((peak, parts)) => (LeanOption::none(), peak, parts),
-    }
+  let budget =
+    if max_ram_bytes > 0 { Some(max_ram_bytes) } else { detected_ram_budget() };
+  let proved = aiur_system_obj.get().prove_ixvm_within_budget(
+    fun_idx,
+    &input,
+    &mut io_buffer,
+    // The prove path never profiles.
+    |toplevel, fun_idx, input, io_buffer| {
+      ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+        toplevel, fun_idx, input, io_buffer, false,
+      )
+    },
+    budget,
+    exec_only,
+  );
+  let (proof, peak, parts) = match proved {
+    GatedProve::Proved { proof, peak, .. } => (LeanOption::some(
+      LeanExternal::alloc(&AIUR_PROOF_CLASS, proof),
+    ), peak, 1),
+    GatedProve::Split { peak, parts } => (LeanOption::none(), peak, parts),
+    GatedProve::Measured { peak } => (LeanOption::none(), peak, 1),
   };
   drop(io_buffer);
 

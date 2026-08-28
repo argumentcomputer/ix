@@ -31,7 +31,9 @@
 -/
 module
 public import Cli
+public import Ix.Common
 public import Ix.KernelCheck
+public import Ix.Cli.CheckLeanCmd
 public import Ix.Cli.ConstsFile
 
 public section
@@ -143,13 +145,11 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   | none =>
     -- STATIC strategy (no out-of-circuit profiling): byte-balanced min-cut
     -- over the env's walk-edge nets + predicted-FFT rebalance post-pass.
-    -- Shard count comes from `--shards N`, or NAIVELY from `--max-ram G`:
-    -- without a profile the planner cannot know a shard's real prover
-    -- peak, so it estimates it from serialized env bytes via a measured
-    -- amplification factor and picks N so the estimated per-shard peak
-    -- fits the budget. The projections printed by an executed run
-    -- (`ix check --ixes --batch`) are the ground truth that corrects
-    -- the estimate — over-budget shards re-split, far-under merge.
+    -- Shard count comes from `--shards N`, or from the SEED heuristic
+    -- under `--max-ram G` — a bracketed order-of-magnitude count, never
+    -- a sizer: boundaries and budget fitting are measured where
+    -- execution happens anyway (the prove gate splits over-budget
+    -- shards inline and the corrected manifest remembers the leaves).
     if maxCycles.isSome then
       p.printError "error: --max-cycles requires --profile (its budget \
         model is calibrated on profiled op counters)"
@@ -159,17 +159,28 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
       | none, some gib =>
         if gib == 0 then
           p.printError "error: --max-ram must be positive"; return 1
+        -- SEED heuristic, not a sizer, calibrated to MATHLIB-CLASS
+        -- amplification because that is the common shape of real Lean
+        -- libraries (Mathlib and everything importing it), not an
+        -- outlier. Measured peak-per-env-byte at fitting granularity:
+        -- Mathlib ~20,200x at 132 shards and rising with count (a
+        -- 17,000x midpoint seed put 129/132 shards over a 400 GiB
+        -- budget, costing a full extra execution wave, 2026-08-29);
+        -- FLT ~19,600x at 241; init only ~12,500-14,000x. Targeting
+        -- 2/3 of the budget with the 20,000x class constant lands
+        -- Mathlib-class envs at ~70% fill with single-digit splits
+        -- (measured: FLT 241 shards, 6 over; Mathlib 233, mean 285).
+        -- Low-amplification small envs over-shard instead (init: ~50%
+        -- first-run fill) — the cheap direction, reclaimed by the
+        -- printed consolidation count; gated execution corrects every
+        -- boundary either way.
+        let seedAmp := 20000
         let envBytes := (← System.FilePath.metadata envPath).byteSize.toNat
-        -- Prover-peak-per-env-byte, measured on init and FLT partitions
-        -- (2026-08-21): analytic prover peaks landed at ~20,000-21,000x
-        -- the shard's serialized bytes. Target ~2/3 of the budget so
-        -- the median sits under it with headroom for the measured
-        -- ~2.5x median-to-max spread across shards of one partition.
-        let amplification := 20000
-        let targetBytes := gib * 1024 * 1024 * 1024 * 2 / 3
-        let n := max 1 ((envBytes * amplification + targetBytes - 1) / targetBytes)
-        IO.println s!"[shard] naive RAM sizing: {envBytes} env bytes × \
-          {amplification} / ({gib} GiB × 2/3) → {n} shard(s)"
+        let targetBytes := gib * gibBytes * 2 / 3
+        let n := max 1 ((envBytes * seedAmp + targetBytes - 1) / targetBytes)
+        IO.println s!"[shard] seed count: {envBytes} env bytes × \
+          {seedAmp} / ({gib} GiB × 2/3) → {n} shard(s) (heuristic; gated \
+          execution corrects every boundary)"
         pure n
       | none, none =>
         p.printError "error: the static strategy (no --profile) requires \
@@ -208,7 +219,7 @@ def shardCmd : Cli.Cmd := `[Cli|
     profile      : String; "Path to a `.ixprof` from `ix profile`. When given, use the profiled strategy (cap budgeting / balanced min-cut over measured costs); when absent, the static strategy partitions the `.ixe` directly."
     shards       : Nat;    "Fixed number of shards N (static strategy; overrides --max-ram sizing and the profiled default budget sizing)"
     "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
-    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: NAIVE sizing — estimates per-shard prover peak from serialized env bytes (measured ~20,000x amplification) and picks the shard count so the estimate fits ~2/3 of the budget; executed projections then correct it (split/merge). Profiled strategy: budget from measured op counters (default: detected system RAM)."
+    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: SEED heuristic for the shard count — Mathlib-class amplification (~20,000× env bytes, the common shape of real Lean libraries) against 2/3 of the budget, landing that class at ~70% fill with single-digit splits; small low-amplification envs over-shard instead (the cheap, reclaimable direction). The prove gate corrects every boundary by execution. Profiled strategy: budget from measured op counters (default: detected system RAM)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"

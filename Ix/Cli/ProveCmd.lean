@@ -139,9 +139,8 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
     (ixonEnv : Ixon.Env) (aiurSystem : Aiur.AiurSystem)
     (funIdx : Aiur.Bytecode.FunIdx) (maxRamBytes : Nat)
     (execOnly : Bool) (label : String)
-    (blocks : Array Address) :
+    (blocks owned : Array Address) :
     IO (Except String (Array (Array Address × Nat))) := do
-  let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks
   let mut blob := ByteArray.empty
   for a in owned do
     blob := blob ++ a.hash
@@ -151,12 +150,12 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       execOnly with
   | .error e => return .error s!"{label}: shardProveWithEnv error: {e}"
   | .ok { claimBytes, proof, peakBytes, suggestedParts } =>
-    let gib := Float.ofNat peakBytes / 1073741824.0
+    let gib := toGib peakBytes
     match proof with
     | none =>
-      -- Exec-only leaf: the peak fit (parts = 1), there is just no
-      -- STARK behind it. The partition bookkeeping is identical.
-      if execOnly && suggestedParts <= 1 then
+      -- The peak fit but nothing proved: reachable only in exec-only
+      -- mode (a budgeted prove either proves or suggests ≥ 2 parts).
+      if suggestedParts <= 1 then
         IO.println s!"[{label}] prover peak {gib} GiB (exec-only)"
         return .ok #[(blocks, peakBytes)]
       -- A single block is the atom the kernel checks together; there is
@@ -167,10 +166,12 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       let cut := Ix.Cli.CheckCmd.cutBlocks blocks suggestedParts
       IO.println s!"[{label}] peak {gib} GiB over budget — cutting \
         {blocks.size} blocks into {cut.size} parts"
+      let cutOwned := Ix.Cli.CheckCmd.partitionOwned ixonEnv owned cut
       let mut proven : Array (Array Address × Nat) := #[]
-      for i in [0 : cut.size] do
+      for (i, part, po) in (cut.zip cutOwned).mapIdx
+          (fun i (part, po) => (i, part, po)) do
         match ← proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx
-            maxRamBytes execOnly s!"{label}.{i}" cut[i]! with
+            maxRamBytes execOnly s!"{label}.{i}" part po with
         | .error e => return .error e
         | .ok parts => proven := proven ++ parts
       return .ok proven
@@ -191,16 +192,16 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
 /-- Prove shard `shardK` of the partition, splitting it as needed.
     Returns the block sets actually proven for that shard. -/
 def runShardProveNative (envHandle : Aiur.EnvHandle) (ixonEnv : Ixon.Env)
-    (shards : Array (Array Address)) (shardK : Nat)
+    (shards ownedPerShard : Array (Array Address)) (shardK : Nat)
     (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
     (maxRamBytes : Nat) (execOnly : Bool) :
     IO (Except String (Array (Array Address × Nat))) := do
-  match shards[shardK]? with
-  | none => return .error s!"shard {shardK} out of range (0..{shards.size})"
-  | some blocks =>
+  match shards[shardK]?, ownedPerShard[shardK]? with
+  | some blocks, some owned =>
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
     proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx maxRamBytes
-      execOnly s!"shard {shardK}" blocks
+      execOnly s!"shard {shardK}" blocks owned
+  | _, _ => return .error s!"shard {shardK} out of range (0..{shards.size})"
 
 /-- Report the partition a prove run actually produced against the one
     its manifest planned. They differ exactly when a shard was split. -/
@@ -222,18 +223,18 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   -- partition was sized against, re-checked here against each shard's
   -- measured peak. 0 = detect (85% of `MemAvailable`, the check batch's
   -- gate policy — see `shardProveWithEnv`).
-  let maxRamBytes := ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * 1073741824
+  let maxRamBytes :=
+    ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * gibBytes
   let execOnly := p.hasFlag "exec-only"
   let outIxes := (p.flag? "out-ixes").map (·.as! String)
   -- Both `--ixes` branches end the same way: the partition the run
   -- actually proved, written as the manifest to start the next run from.
-  let emitCorrected (ixe : String) (partition : Array (Array Address × Nat)) :
+  let emitCorrected (envHandle : Aiur.EnvHandle)
+      (partition : Array (Array Address × Nat)) (failures : Nat) :
       IO Unit := do
     if let some out := outIxes then
-      Ix.KernelCheck.rsShardManifestFromPartitionFFI ixe
-        (Ix.Cli.CheckCmd.addrListsBlob (partition.map (·.1)))
-        (Ix.Cli.CheckCmd.peaksBlob (partition.map (·.2))) out
-      IO.println s!"[prove] corrected manifest → {out}"
+      Ix.Cli.CheckCmd.emitCorrectedManifest "prove" envHandle out partition
+        failures
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
@@ -255,7 +256,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
-      match ← runShardProveNative envHandle ixonEnv shards k aiurSystem
+      match ← runShardProveNative envHandle ixonEnv shards
+          (Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards) k aiurSystem
           compiled maxRamBytes execOnly with
       | .error e => IO.eprintln e; return 1
       | .ok parts =>
@@ -263,10 +265,11 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         -- partition.
         reportPartition parts 1
         -- The corrected whole partition: the plan with shard k replaced
-        -- by the parts this run actually proved.
-        emitCorrected ixe
+        -- by the parts this run actually proved (other shards stay
+        -- unmeasured — this run never executed them).
+        emitCorrected envHandle
           ((shards.extract 0 k).map (·, 0) ++ parts
-            ++ (shards.extract (k + 1) shards.size).map (·, 0))
+            ++ (shards.extract (k + 1) shards.size).map (·, 0)) 0
         return 0
   | some ixe, some manifest, none =>
     -- IxVM-native all-shards prove. Same envHandle reused across
@@ -279,24 +282,35 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         | .ok h => pure h
       -- Accumulate the partition the run actually produced. Splits stay
       -- in this process, so the manifest describing them is written
-      -- once at the end rather than rewritten per split.
+      -- once at the end rather than rewritten per split. Ownership is
+      -- assigned in ONE env pass here; splits inherit it.
+      let ownedPer := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
       let mut proven : Array (Array Address × Nat) := #[]
-      let mut failed : Array (Nat × String) := #[]
+      let mut failed : Array String := #[]
       for k in [0 : shards.size] do
-        match ← runShardProveNative envHandle ixonEnv shards k aiurSystem
-            compiled maxRamBytes execOnly with
-        | .error e => IO.eprintln e; failed := failed.push (k, e)
+        match ← runShardProveNative envHandle ixonEnv shards ownedPer k
+            aiurSystem compiled maxRamBytes execOnly with
+        | .error e => IO.eprintln e; failed := failed.push e
         | .ok parts => proven := proven ++ parts
       if failed.isEmpty then
         reportPartition proven shards.size
-        emitCorrected ixe proven
-        return 0
-      IO.eprintln s!"[prove] {failed.size} of {shards.size} shard(s) FAILED:"
-      for (k, e) in failed do
-        IO.eprintln s!"  shard {k}: {e}"
-      if let some out := outIxes then
-        IO.eprintln s!"--out-ixes {out} skipped: {failed.size} failure(s)"
-      return 1
+        -- Consolidation is arithmetic from the peaks this run already
+        -- measured, never an extra execution: the measured sum only
+        -- shrinks as shards get coarser, so the count is a safe
+        -- under-count, verified inline by the next run's own gate.
+        if maxRamBytes > 0 then
+          let sum := proven.foldl (· + ·.2) 0
+          let n1 := max 1 ((sum + maxRamBytes * 95 / 100 - 1)
+            / (maxRamBytes * 95 / 100))
+          if n1 < proven.size then
+            IO.println s!"[prove] measured total {toGib sum} GiB — {n1} \
+              shard(s) would fit the budget: re-shard with --shards {n1}"
+      else
+        IO.eprintln s!"[prove] {failed.size} of {shards.size} shard(s) FAILED:"
+        for e in failed do
+          IO.eprintln s!"  {e}"
+      emitCorrected envHandle proven failed.size
+      return if failed.isEmpty then 0 else 1
   | _, _, _ =>
     Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
 

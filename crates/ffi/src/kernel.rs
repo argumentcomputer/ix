@@ -41,8 +41,9 @@ use lean_ffi::object::LeanNat;
 use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanIOResult, LeanList,
-  LeanOption, LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExternal,
+  LeanIOResult, LeanList, LeanOption, LeanOwned, LeanProd, LeanRef,
+  LeanString,
 };
 
 use crate::lean::LeanIxCheckError;
@@ -2389,67 +2390,56 @@ pub extern "C" fn rs_shard_env_static(
 /// construction (splits partition their parent), so a gap or duplicate
 /// here is an input error, not a policy choice.
 ///
-/// `peaks_blob`: empty, or one 8-byte LE measured prover peak per
-/// shard in shard order — the run's `peak_prove_bytes` measurements,
-/// recorded on each manifest shard for schedulers to bin-pack on.
+/// `peaks_blob`: one 8-byte LE measured prover peak per shard in shard
+/// order — the run's `peak_prove_bytes` measurements, recorded on each
+/// manifest shard for schedulers to bin-pack on.
+///
+/// Takes the caller's live `EnvHandle`: both call sites hold one for
+/// this env already, so the emit costs a profile build, not an env
+/// re-parse.
 #[allow(clippy::cast_possible_truncation)] // block/shard ids are u32 by construction
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_manifest_from_partition(
-  env_path: LeanString<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
   shards_blob: LeanByteArray<LeanBorrowed<'_>>,
   peaks_blob: LeanByteArray<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let path = env_path.to_string();
   let out = out_path.to_string();
-  let env = match IxonEnv::get_anon_mmap(std::path::Path::new(&path)) {
-    Ok(e) => e,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_shard_manifest_from_partition: failed to load {path}: {e}"
-      ));
-    },
-  };
-  let profile = static_block_profile(&env);
+  let profile = static_block_profile(&env_handle.get().env);
   let block_id: FxHashMap<Address, u32> = profile
     .blocks()
     .iter()
     .enumerate()
     .map(|(i, b)| (b.addr.clone(), i as u32))
     .collect();
-  let bytes = shards_blob.as_bytes();
+  let lists =
+    match crate::aiur::protocol::decode_addr_lists(shards_blob.as_bytes()) {
+      Ok(v) => v,
+      Err(e) => return LeanIOResult::error_string(&e),
+    };
+  let num_shards = lists.len();
   let mut shard_of = vec![u32::MAX; profile.num_blocks()];
-  let mut num_shards = 0usize;
-  let mut off = 0usize;
-  while off < bytes.len() {
-    if off + 4 > bytes.len() {
-      return LeanIOResult::error_string("shards_blob: truncated count");
-    }
-    let n =
-      u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
-    off += 4;
-    if off + n * 32 > bytes.len() {
-      return LeanIOResult::error_string("shards_blob: truncated addresses");
-    }
-    for c in bytes[off..off + n * 32].chunks_exact(32) {
-      let addr = Address::from_slice(c).unwrap();
-      let Some(&b) = block_id.get(&addr) else {
+  for (k, list) in lists.iter().enumerate() {
+    for addr in list {
+      let Some(&b) = block_id.get(addr) else {
         return LeanIOResult::error_string(&format!(
-          "shard {num_shards}: block {} not in the env's block profile",
+          "shard {k}: block {} not in the env's block profile",
           addr.hex()
         ));
       };
       if shard_of[b as usize] != u32::MAX {
         return LeanIOResult::error_string(&format!(
-          "block {} appears in shards {} and {num_shards}",
+          "block {} appears in shards {} and {k}",
           addr.hex(),
           shard_of[b as usize]
         ));
       }
-      shard_of[b as usize] = num_shards as u32;
+      shard_of[b as usize] = k as u32;
     }
-    off += n * 32;
-    num_shards += 1;
   }
   let uncovered = shard_of.iter().filter(|&&s| s == u32::MAX).count();
   if uncovered > 0 {

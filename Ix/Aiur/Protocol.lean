@@ -230,6 +230,19 @@ opaque verify : @& AiurSystem →
 
 end AiurSystem
 
+/-- Write a `.ixes` manifest for an EXPLICIT partition — the block lists
+    a run actually produced (splits included) rather than a planner's
+    output. `shardsBlob`: per shard, a 4-byte LE block count followed by
+    that many 32-byte block addresses; every env block must appear in
+    exactly one shard. `peaksBlob`: one 8-byte LE measured prover peak
+    per shard in order, recorded on the manifest for schedulers. Own
+    sizes, foreign blocks, cross-ingress and assumption roots are
+    recomputed from the env's static profile; prints the manifest
+    summary to stderr. -/
+@[extern "rs_shard_manifest_from_partition"]
+opaque shardManifestFromPartition : @& EnvHandle →
+  @& ByteArray → @& ByteArray → @& String → IO Unit
+
 namespace Bytecode.Toplevel
 
 /-- One shard's result from `shardCheckBatchWithEnv`. `weights` is the
@@ -253,23 +266,19 @@ structure ShardResult where
 /-- Bytes per packed `weights` row: 32 address + 8 vspan + 8 mult. -/
 def shardWeightRow : Nat := 48
 
-/-- Little-endian `UInt64` at `off`. -/
-private def readU64LE (ba : ByteArray) (off : Nat) : UInt64 := Id.run do
-  let mut v : UInt64 := 0
-  for b in [0 : 8] do
-    v := v ||| ((ba.get! (off + b)).toUInt64 <<< (8 * b).toUInt64)
-  return v
-
 /-- Fold `f` over the packed `(addrBytes, vspan, mult)` rows of `weights`.
     Trailing bytes that do not complete a row are ignored. -/
 @[inline] def ShardResult.foldWeights {α : Type} (r : ShardResult) (init : α)
-    (f : α → ByteArray → UInt64 → UInt64 → α) : α := Id.run do
-  let mut acc := init
-  for i in [0 : r.weights.size / shardWeightRow] do
-    let off := i * shardWeightRow
-    acc := f acc (r.weights.extract off (off + 32))
-      (readU64LE r.weights (off + 32)) (readU64LE r.weights (off + 40))
-  return acc
+    (f : α → ByteArray → UInt64 → UInt64 → α) : α :=
+  go (r.weights.size / shardWeightRow) 0 init
+where
+  go : Nat → Nat → α → α
+    | 0, _, acc => acc
+    | rows + 1, off, acc =>
+      go rows (off + shardWeightRow) <| f acc
+        (r.weights.extract off (off + 32))
+        (r.weights.extract (off + 32) (off + 40)).toUInt64LE!
+        (r.weights.extract (off + 40) (off + 48)).toUInt64LE!
 
 @[extern "rs_aiur_toplevel_shard_check_batch"]
 private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →

@@ -38,6 +38,22 @@ pub struct PeakProveBytes {
   pub peak: usize,
 }
 
+/// Outcome of a budget-gated prove
+/// ([`AiurSystem::prove_ixvm_within_budget`]). Only the case that ran a
+/// STARK carries a proof; the other two report the measured peak the
+/// caller decides with.
+// One short-lived value per prove; the variant size gap is irrelevant.
+#[allow(clippy::large_enum_variant)]
+pub enum GatedProve {
+  /// Fit the budget; proven from the gating record.
+  Proved { claim: Vec<G>, proof: AiurProof, peak: usize },
+  /// Over budget: the record was dropped, and `parts` is the count
+  /// [`AiurSystem::suggested_split_parts`] projects will fit.
+  Split { peak: usize, parts: usize },
+  /// `exec_only` with a fitting peak: measured, nothing left to do.
+  Measured { peak: usize },
+}
+
 pub struct AiurSystem {
   toplevel: Toplevel,
   // perhaps remove the key from the system in verifier only mode?
@@ -71,6 +87,27 @@ pub struct CircuitShape {
   pub quotient_degree: usize,
   pub preprocessed_width: usize,
   pub preprocessed_height: usize,
+}
+
+/// Raw row count of a circuit under `record`, ceil-divided into `parts`
+/// even shares — `parts = 1` is the record's exact heights. The byte
+/// gadgets keep their fixed heights: they are the same size in every
+/// shard and are most of the peak model's floor, which dividing cannot
+/// shrink.
+fn raw_of(
+  record: &QueryRecord,
+  parts: usize,
+) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+  move |_, ct| match ct {
+    CircuitType::Function { idx } => {
+      record.function_queries[*idx].len().div_ceil(parts)
+    },
+    CircuitType::Memory { width } => {
+      record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
+    },
+    CircuitType::Bytes1 => 256,
+    CircuitType::Bytes2 => 65536,
+  }
 }
 
 impl AiurSystem {
@@ -230,14 +267,7 @@ impl AiurSystem {
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      |_, ct| match ct {
-        CircuitType::Function { idx } => record.function_queries[*idx].len(),
-        CircuitType::Memory { width } => {
-          record.memory_queries.get(width).map_or(0, |m| m.len())
-        },
-        CircuitType::Bytes1 => 256,
-        CircuitType::Bytes2 => 65536,
-      },
+      raw_of(record, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -302,6 +332,48 @@ impl AiurSystem {
     }
   }
 
+  /// Per-circuit raw heights of `record` in system order, with the
+  /// record's retained bytes as the trailing element — the composable
+  /// measurement the shard-planning group bound sums: per-circuit
+  /// unions are bounded by elementwise sums, so summed vectors feed
+  /// [`Self::peak_of_raws`] as a sound upper bound on a merged shard.
+  pub fn raw_heights(&self, record: &QueryRecord) -> Vec<u64> {
+    let f = raw_of(record, 1);
+    let mut v: Vec<u64> = self
+      .circuit_types()
+      .iter()
+      .enumerate()
+      .map(|(i, ct)| f(i, ct) as u64)
+      .collect();
+    v.push(crate::execute::record_retained_bytes(record) as u64);
+    v
+  }
+
+  /// Evaluate the peak model on a raw-height vector from
+  /// [`Self::raw_heights`] — possibly an elementwise SUM of several
+  /// segments' vectors, in which case the result is an upper bound on
+  /// the merged shard's peak. Gadget circuits are re-fixed to their
+  /// constant heights internally, so dumb elementwise summation stays
+  /// valid. `None` on a length mismatch.
+  pub fn peak_of_raws(&self, raws: &[u64]) -> Option<usize> {
+    let ncirc = self.system.circuits.len();
+    if raws.len() != ncirc + 1 {
+      return None;
+    }
+    let record_bytes = raws[ncirc] as usize;
+    let peak = self
+      .peak_prove_bytes_by(
+        |i, ct| match ct {
+          CircuitType::Bytes1 => 256,
+          CircuitType::Bytes2 => 65536,
+          _ => raws[i] as usize,
+        },
+        record_bytes,
+      )
+      .peak;
+    Some(peak)
+  }
+
   /// Smallest power-of-two part count whose projected per-part peak
   /// fits `max_bytes`, assuming the record's rows divide evenly across
   /// parts. The gadget circuits keep their constant heights — they are
@@ -327,20 +399,7 @@ impl AiurSystem {
     // count; stop rather than search forever.
     while parts < (1 << 20) {
       let peak = self
-        .peak_prove_bytes_by(
-          |_, ct| match ct {
-            CircuitType::Function { idx } => {
-              record.function_queries[*idx].len().div_ceil(parts)
-            },
-            CircuitType::Memory { width } => record
-              .memory_queries
-              .get(width)
-              .map_or(0, |m| m.len().div_ceil(parts)),
-            CircuitType::Bytes1 => 256,
-            CircuitType::Bytes2 => 65536,
-          },
-          record_bytes / parts,
-        )
+        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
         .peak;
       if peak <= max_bytes {
         break;
@@ -465,30 +524,29 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
-    self
-      .prove_ixvm_within_budget(fun_idx, input, io_buffer, executor, None)
-      .map_or_else(
-        |_| unreachable!("an unbudgeted prove never rejects"),
-        |(claim, proof, _peak)| (claim, proof),
-      )
+    match self
+      .prove_ixvm_within_budget(fun_idx, input, io_buffer, executor, None, false)
+    {
+      GatedProve::Proved { claim, proof, .. } => (claim, proof),
+      _ => unreachable!("an unbudgeted prove always proves"),
+    }
   }
 
   /// `prove_ixvm`, but the record's projected prover peak has to fit
-  /// `max_bytes` before any proving starts. `None` skips the check.
+  /// `max_bytes` before any proving starts (`None` skips the check),
+  /// and `exec_only` stops after execution + measurement — the split
+  /// loop runs on executions alone, no STARK started.
   ///
   /// The peak is measured on the REAL record ([`Self::peak_prove_bytes`]),
   /// not estimated from serialized bytes, so an over-budget shard is
   /// caught in the gap between execution and the witness phase — before
-  /// the LDE/commit/FRI phases that would actually exhaust the box. The
-  /// record is dropped rather than proven and `Err((peak, parts))`
-  /// comes back: the measured peak, and the part count
-  /// [`Self::suggested_split_parts`] projects will fit — computed here
+  /// the LDE/commit/FRI phases that would actually exhaust the box: the
+  /// record is dropped and [`GatedProve::Split`] carries the part count
+  /// [`Self::suggested_split_parts`] projects will fit, computed here
   /// because this is the last moment the record exists to read counts
-  /// from.
-  ///
-  /// On success the peak is returned too: proving a shard measures it for
-  /// free, so a prove run yields the same split/merge signal a check run
-  /// does without a second execution.
+  /// from. Every outcome carries the measured peak: proving a shard
+  /// measures it for free, so a prove run yields the same split/merge
+  /// signal a check run does without a second execution.
   #[tracing::instrument(
     level = "info",
     skip_all,
@@ -501,7 +559,8 @@ impl AiurSystem {
     io_buffer: &mut IOBuffer,
     executor: F,
     max_bytes: Option<usize>,
-  ) -> Result<(Vec<G>, AiurProof, usize), (usize, usize)>
+    exec_only: bool,
+  ) -> GatedProve
   where
     F: FnOnce(
       &Toplevel,
@@ -521,50 +580,15 @@ impl AiurSystem {
     if let Some(max) = max_bytes
       && peak > max
     {
-      return Err((peak, self.suggested_split_parts(&query_record, max)));
+      let parts = self.suggested_split_parts(&query_record, max);
+      return GatedProve::Split { peak, parts };
+    }
+    if exec_only {
+      return GatedProve::Measured { peak };
     }
     let (claim, proof) =
       self.prove_from_execution(fun_idx, input, io_buffer, query_record, &output);
-    Ok((claim, proof, peak))
-  }
-
-  /// Execute-only twin of [`Self::prove_ixvm_within_budget`]: run the
-  /// execution, measure the record's projected peak, and go no further.
-  ///
-  /// Returns `(peak, parts)`: `parts` is 1 when the peak fits
-  /// `max_bytes` (or no budget is given), else the split count
-  /// [`Self::suggested_split_parts`] projects will fit. This is the dry
-  /// leg of the split loop — sizing or auditing a partition costs
-  /// executions only, never a STARK.
-  pub fn execute_peak_ixvm<F>(
-    &self,
-    fun_idx: FunIdx,
-    input: &[G],
-    io_buffer: &mut IOBuffer,
-    executor: F,
-    max_bytes: Option<usize>,
-  ) -> (usize, usize)
-  where
-    F: FnOnce(
-      &Toplevel,
-      FunIdx,
-      Vec<G>,
-      &mut IOBuffer,
-    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
-  {
-    let _g = tracing::info_span!("aiur/execute_ixvm").entered();
-    let (query_record, _output) =
-      executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
-        .expect("IxVM-native Aiur execution failed during execute_peak");
-    drop(_g);
-    let peak = self.peak_prove_bytes(&query_record).peak;
-    let parts = match max_bytes {
-      Some(max) if peak > max => {
-        self.suggested_split_parts(&query_record, max)
-      },
-      _ => 1,
-    };
-    (peak, parts)
+    GatedProve::Proved { claim, proof, peak }
   }
 
   #[inline]
