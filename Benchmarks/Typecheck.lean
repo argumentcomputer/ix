@@ -1,6 +1,7 @@
 import Cli
 import Ix.IxVM
 import Ix.IxVM.Toplevel
+import Ix.IxVM.ClaimHarness
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
@@ -42,8 +43,9 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  deps) instead of its whole transitive closure (verify_claim,
                  the default). Same flag as `zisk-host --skip-deps`; reserved
                  for targets too expensive to full-closure-check.
-  --json <path>  write per-constant results JSON to <path>. Off by default:
-                 normal CLI usage prints only the human-readable summary.
+  --json <path>  write results JSON to <path> (per constant, plus one pair row
+                 with --join). Off by default: normal CLI usage prints only
+                 the human-readable summary.
   --texray       enable the tracing-texray timeline + RAM breakdown. With
                  --json <path>, per-phase span timings are also written to
                  <path>.spans (JSON Lines) for the CI drill-down. Off by default.
@@ -71,10 +73,19 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  proves stream the same `stark/...` span names, so the summed
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.
+  --join         with --recursive and exactly two constants, benchmark the
+                 aggregate-first flat join after both singleton-CheckEnv
+                 proofs have been lifted. Emits one `left + right` JSON row
+                 carrying join-execute-time, join-fft-cost, join-prove-time,
+                 join-peak-rss, join-proof-size, and join-verify-time. This is
+                 an explicit W0/Section-13 diagnostic, not part of the default
+                 per-constant CI run.
 ```
 
-For each constant the harness STARK-checks `Ix.Claim.check addr none` (the full
-transitive typecheck) in two phases:
+By default, the harness STARK-checks `Ix.Claim.check addr none` for each
+constant (the full transitive typecheck). `--join` instead uses a singleton
+`CheckEnv` shard claim for each of its two children. Work proceeds in up to
+four phases:
 
 1. **Execute** (every constant): run the bytecode out-of-circuit. Cheap and
    deterministic, so we always record `constants` (the number of constants the
@@ -91,6 +102,11 @@ transitive typecheck) in two phases:
 3. **Recursive** (`--recursive` only, right after each constant's prove): feed
    the fresh proof + vk + claims to `verify_multi_stark_proof`, execute it,
    then prove the verifier execution — the end-to-end recursion cost.
+4. **Join** (`--recursive --join`, exactly two constants): use each requested
+   constant as a one-owned-constant `CheckEnv` shard, lift both resulting
+   proofs, then execute/prove/verify `join_two`. The pair gets a dedicated JSON
+   row because the join is one shared operation, not a cost attributable to
+   either child independently.
 
 When `--json` is set the file is rewritten after every prove, so an external
 `timeout` still leaves a complete file of the results collected so far (cheapest
@@ -110,6 +126,10 @@ KZG stages land), plus the pipeline ledger `"total-time"`, `"pipeline-throughput
 and throughput are scoped to that stage's own prove window. Any
 bencher-specific reshaping is the caller's job (see
 `.github/workflows/bench-main.yml`).
+
+With `--join`, the same object also contains one `"left + right"` row. It has
+`status`, the sum of the two child `constants`, and the six `join-*` measures;
+it intentionally has no per-child or pipeline ledger fields.
 -/
 
 open Lean (Json Name)
@@ -204,6 +224,34 @@ structure Result where
   recursiveVerifySec : Option Float := none
   deriving Inhabited
 
+/-- The successfully verified lift artifact retained for the optional binary
+    join phase. `innerClaimsBytes` is the serialized singleton list containing
+    the IxVM proof's Aiur claim; `checkEnvClaimBytes` is the nested Ix claim
+    preimage that the join opens below it. -/
+structure LiftArtifact where
+  label : String
+  constants : Nat
+  statement : MultiStark.CheckEnvTrees
+  innerClaimsBytes : ByteArray
+  checkEnvClaimBytes : ByteArray
+  outerClaim : Array Aiur.G
+  proof : Aiur.Proof
+
+/-- Measurements for the one pair-wide `join_two` operation. Kept separate
+    from `Result`: copying these fields onto both child rows would count the
+    same join twice, while attaching them to one child would make the result
+    order-dependent. -/
+structure JoinResult where
+  name : String
+  constants : Nat
+  fftCost : Float
+  executeSec : Float
+  proveSec : Float
+  peakRss : Nat
+  proofSize : Nat
+  verifySec : Option Float
+  failed : Bool := false
+
 /-- A `Json` number with at most `d` decimal places, rendered decimally.
     `Float`'s own `ToJson` prints the full binary representation
     (`0.02602000000000000146…`), so build the `JsonNumber` (mantissa ·
@@ -215,6 +263,23 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     if scaled < 0 then -Int.ofNat (-scaled).round.toUInt64.toNat
     else Int.ofNat scaled.round.toUInt64.toNat
   Json.num ⟨m, d⟩
+
+def JoinResult.toJsonEntry (r : JoinResult) : String × Json :=
+  if r.failed then
+    (r.name, Json.mkObj [("status", Json.str "rejected")])
+  else
+    let fields : List (String × Json) :=
+      [ ("status", Json.str "ok")
+      , ("constants", Lean.toJson r.constants)
+      , ("join-fft-cost", jsonRound 0 r.fftCost)
+      , ("join-execute-time", jsonRound 6 r.executeSec)
+      , ("join-prove-time", jsonRound 6 r.proveSec)
+      , ("join-peak-rss", Lean.toJson r.peakRss)
+      , ("join-proof-size", Lean.toJson r.proofSize) ]
+    let fields := match r.verifySec with
+      | some seconds => fields ++ [("join-verify-time", jsonRound 6 seconds)]
+      | none => fields
+    (r.name, Json.mkObj fields)
 
 /-- Flat results object: `name → { constants, … }`. No bencher-specific
     shaping.
@@ -342,12 +407,24 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Recursive: after each constant's prove, execute AND prove the in-circuit
   -- multi-stark verifier over the fresh proof (Phase 3).
   let recursive := p.hasFlag "recursive"
+  -- Join: retain exactly two successful recursive lifts, then benchmark one
+  -- production flat join over their singleton-CheckEnv statements.
+  let join := p.hasFlag "join"
   if recursive && executeOnly then
     IO.eprintln "error: --recursive measures the prove path; drop --execute-only"
+    return Ix.Benchmark.Results.exitUsage
+  if join && !recursive then
+    IO.eprintln "error: --join requires --recursive"
+    return Ix.Benchmark.Results.exitUsage
+  if join && skipDeps then
+    IO.eprintln "error: --join requires singleton CheckEnv shards; drop --skip-deps"
     return Ix.Benchmark.Results.exitUsage
   -- Off by default; CI passes --texray explicitly.
   let useTexray := p.hasFlag "texray"
   let useInterp := p.hasFlag "interp"
+  if join && useInterp then
+    IO.eprintln "error: --join requires the native singleton-shard prover; drop --interp"
+    return Ix.Benchmark.Results.exitUsage
   -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
   -- true high-water mark. With --texray, install the streaming subscriber up
   -- front: every phase span — aiur/execute_ixvm in Phase 1 included —
@@ -419,6 +496,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   if targets.isEmpty then
     IO.eprintln "no requested constants were found in the env"
     return 1
+  if join && targets.size != 2 then
+    IO.eprintln s!"error: --join requires exactly two resolved constants; got {targets.size}"
+    return Ix.Benchmark.Results.exitUsage
 
   -- Build the env once into a Rust-owned `EnvHandle` and share it
   -- across both Phase 1 and Phase 2 loops. Per-target FFI calls
@@ -426,6 +506,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
     | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
     | .ok h => pure h
+
+  let singletonOwnedBlob (addr : Address) : ByteArray := addr.hash
 
   -- Phase 1: execute every constant (cheap, deterministic structural metrics).
   -- For full-closure check claims, use `checkAddrWithEnv` against the
@@ -455,6 +537,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
           else
             compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+        else if join then
+          compiled.bytecode.shardCheckWithEnv funIdx envHandle
+            (singletonOwnedBlob addr) useInterp
         else
           compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash useInterp
       let execPeak ← TracingTexray.peakTreeRssBytes
@@ -506,6 +591,17 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         let (name, row) := Result.toJsonEntry executeOnly r
         Ix.Benchmark.Results.writeEntry path name row
     | none => pure ()
+  let writeJoinJson (result : JoinResult) : IO Unit :=
+    match jsonOut with
+    | some path =>
+      let (name, row) := result.toJsonEntry
+      Ix.Benchmark.Results.writeEntry path name row
+    | none => pure ()
+  let writeRejectedJoin (name : String) : IO Unit :=
+    match jsonOut with
+    | some path => Ix.Benchmark.Results.writeEntry path name <|
+        Json.mkObj [("status", Json.str "rejected")]
+    | none => pure ()
 
   -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is
   -- already complete with the execute metrics.
@@ -523,6 +619,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut ordered := execed.qsort (·.1.fftCost < ·.1.fftCost)
   writeJson (ordered.map (·.1))
   let mut spent : Float := 0.0
+  let mut lifted : Array LiftArtifact := #[]
   for i in [:ordered.size] do
     let (r, addr) := ordered[i]!
     if r.failed then continue
@@ -542,8 +639,17 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
               aiurSystem.prove funIdx witness.input witness.inputIOBuffer
             else
               aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
-          (.ok (claim, proof, ioBuf) :
-            Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer))
+          (.ok (claim, proof, ioBuf, none) : Except String
+            (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer × Option ByteArray))
+        else if join then
+          match aiurSystem.shardProveWithEnv funIdx envHandle
+              (singletonOwnedBlob addr) with
+          | .error e => .error e
+          | .ok (claimBytes, proof, ioBuf) =>
+            let digest := Address.blake3 claimBytes
+            let claim :=
+              Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
+            .ok (claim, proof, ioBuf, some claimBytes)
         else
           match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp with
           | .error e => .error e
@@ -555,10 +661,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             let digest := Address.blake3 claimBytes
             let claim :=
               Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
-            .ok (claim, proof, ioBuf)
-      match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
+            .ok (claim, proof, ioBuf, none)
+      match (proveRes : Except String
+          (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer × Option ByteArray)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
-      | .ok (claim, proof, _ioBuf) =>
+      | .ok (claim, proof, _ioBuf, checkEnvClaimBytes?) =>
         spent := spent + proveSec
         let peak ← TracingTexray.peakTreeRssBytes
         let proofBytes := Aiur.Proof.toBytes proof
@@ -592,14 +699,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if let some (vCompiled, vIdx, vSystem) := vCtx then
           IO.println s!"  [{i + 1}/{ordered.size}] recursively verifying {r.name} …"
           (← IO.getStdout).flush
-          let claimBytes := MultiStark.serializeClaims #[claim]
+          let innerClaimsBytes := MultiStark.serializeClaims #[claim]
           let vkBytes := aiurSystem.vkBytes
-          let pubInput := MultiStark.verifierPubInput vkBytes claimBytes
+          let pubInput := MultiStark.verifierPubInput vkBytes innerClaimsBytes
           -- Native path: the advice buffer is built in Rust from the raw
           -- byte blobs and execution routes through the codegen'd verifier.
           let (rvRes, rvSec) ← timed fun _ =>
             vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes
-              vkBytes claimBytes useInterp
+              vkBytes innerClaimsBytes useInterp
           match rvRes with
           | .error e =>
             IO.eprintln s!"  ❌ recursive verifier REJECTED {r.name}'s proof: {e}"
@@ -625,7 +732,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             TracingTexray.resetPeakTreeRss
             let ((rvClaim, rvProof), rvProveSec) ← timed fun _ =>
               vSystem.proveMultiStark vIdx pubInput proofBytes vkBytes
-                claimBytes useInterp
+                innerClaimsBytes useInterp
             let rvPeak ← TracingTexray.peakTreeRssBytes
             let rvProofBytes := Aiur.Proof.toBytes rvProof
             let (rvVerifyRes, rvVerifySec) ← timed fun _ =>
@@ -644,13 +751,144 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                         , recursiveProofSize := some rvProofBytes.size
                         , recursiveVerifySec := rvVerifySec? }, addr)
             writeJson (ordered.map (·.1))
+            if join && !r.failed then
+              match rvVerifyRes, checkEnvClaimBytes? with
+              | .ok (), some checkEnvClaimBytes =>
+                let (expectedClaim, trees) ← IO.ofExcept <|
+                  IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv #[addr]
+                if Ix.Claim.ser expectedClaim != checkEnvClaimBytes then
+                  throw <| IO.userError s!"join benchmark: native shard claim for \
+                    {r.name} differs from host reconstruction"
+                let statement ← IO.ofExcept <|
+                  MultiStark.CheckEnvTrees.ofClaim expectedClaim trees
+                lifted := lifted.push {
+                  label := r.name
+                  constants := r.constants
+                  statement
+                  innerClaimsBytes
+                  checkEnvClaimBytes
+                  outerClaim := rvClaim
+                  proof := rvProof
+                }
+              | .error _, _ => pure ()
+              | .ok (), none =>
+                throw <| IO.userError s!"join benchmark: missing CheckEnv claim \
+                  preimage for {r.name}"
     catch e =>
       IO.eprintln s!"  prove {r.name} threw: {e}"
 
+  -- Phase 4 (--recursive --join): one pair-wide flat aggregate join. The two
+  -- child rows remain ordinary IxVM/lift measurements; the shared join lands
+  -- under its own stable `left + right` row so it is neither duplicated nor
+  -- assigned arbitrarily to one child.
+  let mut joinRejected := false
+  if join then
+    IO.println "── Phase 4: flat join ──"
+    let leftLabel := targets[0]!.1
+    let rightLabel := targets[1]!.1
+    let pairName := s!"{leftLabel} + {rightLabel}"
+    let some left := lifted.find? fun artifact => artifact.label == leftLabel | do
+      IO.eprintln s!"join benchmark: no verified lift for {leftLabel}"
+      return 1
+    let some right := lifted.find? fun artifact => artifact.label == rightLabel | do
+      IO.eprintln s!"join benchmark: no verified lift for {rightLabel}"
+      return 1
+    let some (vCompiled, liftIdx, vSystem) := vCtx | do
+      IO.eprintln "join benchmark: recursion context was not built"
+      return 1
+    let some joinIdx := vCompiled.getFuncIdx `join_two | do
+      IO.eprintln "join benchmark: join_two entrypoint missing"
+      return 1
+    let some structuralJoinIdx := vCompiled.getFuncIdx `join_two_structural | do
+      IO.eprintln "join benchmark: join_two_structural entrypoint missing"
+      return 1
+    let ixvmVk := aiurSystem.vkBytes
+    let recursionVk := vSystem.vkBytes
+    let allowed := MultiStark.allowedBlob ixvmVk funIdx recursionVk liftIdx
+      joinIdx structuralJoinIdx
+    let outputStatement := left.statement.join right.statement
+    let outputClaimBytes := Ix.Claim.ser outputStatement.claim
+    let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
+    let leftOuterBytes := MultiStark.serializeClaims #[left.outerClaim]
+    let rightOuterBytes := MultiStark.serializeClaims #[right.outerClaim]
+    let preimagesBlob := MultiStark.joinPreimagesBlob
+      #[left.innerClaimsBytes, right.innerClaimsBytes,
+        left.checkEnvClaimBytes, right.checkEnvClaimBytes]
+    let treesBlob := MultiStark.joinTreesBlob <|
+      MultiStark.CheckEnvTrees.adviceTrees
+        left.statement right.statement outputStatement
+    let pathsBlob := MultiStark.joinPathsBlob #[]
+    IO.println s!"  executing join {pairName} …"
+    (← IO.getStdout).flush
+    let (joinExecuteResult, joinExecuteSec) ← timed fun _ =>
+      vCompiled.bytecode.executeMultiStarkJoin joinIdx pubInput
+        left.proof.toBytes right.proof.toBytes recursionVk
+        leftOuterBytes rightOuterBytes outputClaimBytes allowed
+        preimagesBlob treesBlob pathsBlob
+    let joinFftCost ← match joinExecuteResult with
+      | .error e =>
+        IO.eprintln s!"  ❌ join verifier REJECTED {pairName}: {e}"
+        writeRejectedJoin pairName
+        joinRejected := true
+        pure none
+      | .ok (_, queryCounts) =>
+        let stats := Aiur.computeStats vCompiled queryCounts vSystem.circuitShapes
+          (logBlowup := commitParams.logBlowup)
+        IO.println s!"  {pairName}: join-execute={joinExecuteSec}s \
+          join-fft-cost={stats.totalFftCost}"
+        if useTexray then Aiur.printStats stats
+        pure (some stats.totalFftCost)
+    if let some joinFftCost := joinFftCost then
+      IO.println s!"  proving join {pairName} …"
+      (← IO.getStdout).flush
+      TracingTexray.resetPeakTreeRss
+      let (joinProveResult, joinProveSec) ← timed fun _ =>
+        vSystem.proveMultiStarkJoin joinIdx pubInput
+          left.proof.toBytes right.proof.toBytes recursionVk
+          leftOuterBytes rightOuterBytes outputClaimBytes allowed
+          preimagesBlob treesBlob pathsBlob
+      match joinProveResult with
+      | .error e =>
+        IO.eprintln s!"  prove join {pairName} failed: {e}"
+        return 1
+      | .ok (joinClaim, joinProof) =>
+        let expectedClaim := Aiur.buildClaim joinIdx pubInput #[]
+        if joinClaim != expectedClaim then
+          IO.eprintln s!"  join {pairName} returned an unexpected outer claim"
+          return 1
+        let joinPeak ← TracingTexray.peakTreeRssBytes
+        let joinProofBytes := joinProof.toBytes
+        let (joinVerifyResult, joinVerifySec) ← timed fun _ =>
+          vSystem.verify joinClaim joinProof
+        let joinVerifySec? ← match joinVerifyResult with
+          | .ok () => pure (some joinVerifySec)
+          | .error e =>
+            IO.eprintln s!"  join verify {pairName} FAILED: {e}"
+            joinRejected := true
+            pure none
+        let joinResult : JoinResult := {
+          name := pairName
+          constants := left.constants + right.constants
+          fftCost := joinFftCost
+          executeSec := joinExecuteSec
+          proveSec := joinProveSec
+          peakRss := joinPeak
+          proofSize := joinProofBytes.size
+          verifySec := joinVerifySec?
+          failed := joinVerifySec?.isNone
+        }
+        writeJoinJson joinResult
+        IO.println s!"  {pairName}: join-prove={joinProveSec}s \
+          join-verify={joinVerifySec}s proof={joinProofBytes.size} bytes"
+
   match jsonOut with
-  | some path => IO.println s!"wrote {ordered.size} benchmarks to {path} ({spent}s proving)"
+  | some path =>
+    let rowCount := ordered.size + (if join && !joinRejected then 1 else 0)
+    IO.println s!"wrote {rowCount} benchmarks to {path} ({spent}s proving)"
   | none => IO.println s!"proved {ordered.size} constants ({spent}s); pass --json <path> to emit results"
-  return if ordered.any (·.1.failed) then Ix.Benchmark.Results.exitRejected else 0
+  return if ordered.any (·.1.failed) || joinRejected then
+      Ix.Benchmark.Results.exitRejected
+    else 0
 
 def typecheckCmd : Cli.Cmd := `[Cli|
   typecheck VIA runTypecheckCmd;
@@ -660,10 +898,11 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "ixe"          : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
     "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`, `zisk-host --consts`, and `sp1-host --consts`."
     "consts-file"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
-    "json"      : String; "Write per-constant results JSON to this path. Off by default; normal CLI usage prints only the human-readable summary."
+    "json"      : String; "Write results JSON to this path (per constant, plus one pair row with --join). Off by default; normal CLI usage prints only the human-readable summary."
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the fri-verifier-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
+    "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, lift both, then execute/prove/verify one flat aggregate join. Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."

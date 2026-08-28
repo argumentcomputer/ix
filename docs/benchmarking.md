@@ -70,6 +70,13 @@ ix bench run --backend aiur --env InitStd --mode execute \
 ix bench run --backend aiur --env InitStd --mode prove \
   --consts Nat.add_comm --ixe InitStd.ixe --ceiling-gb 50
 
+# Optional aggregate W0 diagnostic: prove two singleton CheckEnv shards,
+# lift both, then benchmark one flat join. This direct tool invocation emits
+# the two child rows plus `Nat.add_comm + String.append` with join-* metrics;
+# it is deliberately not part of the scheduled one-constant CI cell.
+bench-typecheck --ixe InitStd.ixe \
+  --consts Nat.add_comm,String.append --recursive --join --json join.json
+
 # Compare a local run against main's numbers straight from bencher.dev
 # (no token needed; --consts filters to your constants — the testbed
 # holds every benched env's):
@@ -93,13 +100,28 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`) | `bench-typecheck --recursive` |
+| `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; it remains unscheduled until a runner can carry W0. | `bench-typecheck --recursive` |
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (the runtime-planned partition size; 1 when the closure fits) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `lean4lean` | the reference Lean4-in-Lean4 kernel ([digama0/lean4lean](https://github.com/digama0/lean4lean), required by the lakefile at a pinned rev) — the external yardstick for the Ix kernels on the same libraries. Olean-driven (no `.ixe`): the whole-library row replays every module in the env's import closure through lean4lean, module-parallel (check-time, constants, throughput, peak-rss; tune parallelism with `LEAN_NUM_THREADS`), plus one full-closure row per constant (the name's transitive closure into a fresh kernel env), mirroring ooc's row shape. Registry-disabled for CI (no bencher testbed yet); `ix bench run --backend lean4lean` works locally regardless | `bench-lean4lean` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
+
+### Aggregate W0 baselines
+
+The pre-E2 lift-size pin (2026-08-28) uses the 247-function production
+recursion system, default q=100/PoW-20 parameters, and the verified
+one-constant aggregate fixture. Its lift proof is **7,986,166 bytes**;
+the containing `Ixon.Proof` wrapper is 7,986,204 bytes at store address
+`090bea6f1c976ef6677fad94f86286295b2eea751fefb7af4c82ce9f84ca1535`.
+Positive-PoW grinding may change the proof contents, but its structural byte
+length is stable. WP-E2 measures its proof-size delta against this value.
+
+The box-independent `--queries 0` join wiring gate produced a 246,014-byte
+flat-join proof, 10,280,903,348 FFT cost, 6.57 s prove time, 10,798,899,200-byte
+peak RSS, and 1.44 ms native verification. Those are smoke values, not W0 cost
+estimates; the q=50 join run remains a large-box benchmark.
 
 All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar. The ooc and zkVM cells share per-constant
