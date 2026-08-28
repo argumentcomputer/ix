@@ -397,6 +397,71 @@ def joinSmokeSuite : IO UInt32 := do
   let recursionVk := childSystem.vkBytes
   let allowed := MultiStark.allowedBlob fakeIxvmVk verifyIdx recursionVk
     liftIdx childJoinIdx childStructuralJoinIdx
+  let childRecursionParameters : MultiStark.RecursionParameters := {
+    commitment := recCommitParams
+    fri := innerFri
+  }
+  let liftCacheKey := Ix.Cli.AggregateCmd.aggregateCacheKey recursionVk
+    childRecursionParameters leftOuter
+  let cacheKeyInputsBound :=
+    liftCacheKey == Ix.Cli.AggregateCmd.aggregateCacheKey recursionVk
+      childRecursionParameters leftOuter &&
+    liftCacheKey != Ix.Cli.AggregateCmd.aggregateCacheKey recursionVk
+      childRecursionParameters rightOuter &&
+    liftCacheKey != Ix.Cli.AggregateCmd.aggregateCacheKey recursionVk
+      { childRecursionParameters with fri := tunedFri } leftOuter &&
+    liftCacheKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+      (recursionVk.set! 0 (recursionVk.data[0]! + 1))
+        childRecursionParameters leftOuter &&
+    liftCacheKey != Ix.Cli.AggregateCmd.aggregateCacheKey recursionVk
+      childRecursionParameters leftOuter
+        (Ix.Cli.AggregateCmd.aggregateCacheVersion + 1)
+  let cachedLiftWrapper : Ixon.Proof := {
+    claim := leftStatement.claim
+    proof := leftProof.toBytes
+  }
+  let validCachedLift := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
+    childSystem leftStatement.claim leftOuter cachedLiftWrapper
+  let wrongCachedStatement := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
+    childSystem rightStatement.claim leftOuter cachedLiftWrapper
+  let wrongCachedOuterClaim := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
+    childSystem leftStatement.claim rightOuter cachedLiftWrapper
+  let badCachedProofBytes := leftProof.toBytes.set! 0
+    (UInt8.ofNat ((leftProof.toBytes.data[0]!.toNat + 1) % 256))
+  let badCachedProof := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
+    childSystem leftStatement.claim leftOuter
+      { cachedLiftWrapper with proof := badCachedProofBytes }
+
+  -- Exercise the wipeable index hermetically. Its content is only an address;
+  -- wrapper binding and cryptographic validity are checked above.
+  let cacheRoot ← IO.FS.createTempDir
+  let cacheDir ← Ix.Cli.AggregateCmd.aggregateCacheDir (some cacheRoot)
+  let missingCacheEntry ←
+    Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir liftCacheKey
+  let cachedLiftAddress := Address.blake3 (Ixon.Proof.ser cachedLiftWrapper)
+  Ix.Cli.AggregateCmd.writeAggregateCacheAddress cacheDir liftCacheKey
+    cachedLiftAddress
+  let presentCacheEntry ←
+    Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir liftCacheKey
+  let tempEntryExists ← (cacheDir / s!"{liftCacheKey}.tmp").pathExists
+  let tempEntryGone := !tempEntryExists
+  IO.FS.writeFile (cacheDir / toString liftCacheKey) "corrupt-cache-entry"
+  let corruptCacheEntry ←
+    Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir liftCacheKey
+  Ix.Cli.AggregateCmd.writeAggregateCacheAddress cacheDir liftCacheKey
+    cachedLiftAddress
+  let recoveredCacheEntry ←
+    Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir liftCacheKey
+  let cacheIndexRoundTrip : Bool := match missingCacheEntry, presentCacheEntry with
+    | .miss, .hit address => address == cachedLiftAddress && tempEntryGone
+    | _, _ => false
+  let corruptCacheIndexRejected : Bool := match corruptCacheEntry with
+    | .invalid _ => true
+    | _ => false
+  let corruptCacheIndexRecovers : Bool := match recoveredCacheEntry with
+    | .hit address => address == cachedLiftAddress
+    | _ => false
+
   let reconstructedLiftClaim :=
     Ix.Cli.VerifyCmd.aggregateLiftOuterClaim fakeIxvmVk verifyIdx liftIdx
       leftStatement.claim
@@ -405,6 +470,48 @@ def joinSmokeSuite : IO UInt32 := do
     childSystem.verify reconstructedLiftClaim leftProof
   let outputClaimBytes := Ix.Claim.ser outputStatement.claim
   let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
+  let cachePlan : Array Ix.Cli.AggregateCmd.ScheduledFold := #[
+    { op := .leaf 0, subjectCount := 2, structural := false },
+    { op := .leaf 1, subjectCount := 1, structural := false },
+    { op := .join 0 1, subjectCount := 3, structural := false }
+  ]
+  let cachePrepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
+    { claim := leftStatement.claim, statement := leftStatement },
+    { claim := rightStatement.claim, statement := rightStatement }
+  ]
+  let cacheSpecs := Ix.Cli.AggregateCmd.buildAggregateSlotSpecs cachePlan
+    cachePrepared fakeIxvmVk recursionVk allowed verifyIdx liftIdx childJoinIdx
+    childStructuralJoinIdx childRecursionParameters
+  let cacheSpecsComplete : Bool := match cacheSpecs with
+    | .ok specs => match specs[0]?, specs[1]?, specs[2]? with
+      | some left, some right, some root =>
+        specs.size == 3 && left.outerClaim == leftOuter &&
+          right.outerClaim == rightOuter &&
+          root.statement.claim == outputStatement.claim &&
+          root.outerClaim == Aiur.buildClaim childJoinIdx pubInput #[] &&
+          left.cacheKey == liftCacheKey
+      | _, _, _ => false
+    | .error _ => false
+  let cachedLiftBytes := Ixon.Proof.ser cachedLiftWrapper
+  let resumedLift? ← match cacheSpecs with
+    | .ok specs =>
+      match specs[0]? with
+      | some spec =>
+        Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
+          (fun _ => pure cachedLiftBytes) cacheDir 0 spec childSystem
+      | none => pure none
+    | .error _ => pure none
+  let corruptStoreLift? ← match cacheSpecs with
+    | .ok specs =>
+      match specs[0]? with
+      | some spec =>
+        Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
+          (fun _ => pure (cachedLiftBytes.push 0xff))
+          cacheDir 0 spec childSystem
+      | none => pure none
+    | .error _ => pure none
+  let verifiedResumeHit := resumedLift?.isSome
+  let corruptStoreFallsThrough := corruptStoreLift?.isNone
 
   let leftOuterBytes := MultiStark.serializeClaims #[leftOuter]
   let rightOuterBytes := MultiStark.serializeClaims #[rightOuter]
@@ -713,6 +820,28 @@ def joinSmokeSuite : IO UInt32 := do
       defaultFriEncodingStable,
     test "FRI and commitment overrides independently change recursion identity"
       recursionParametersIndependent,
+    test "aggregate cache key binds version, recursion vk, FRI params, and outer claim"
+      cacheKeyInputsBound,
+    test "all aggregate slot claims and cache keys are prepared before proving"
+      cacheSpecsComplete,
+    test "aggregate cache index atomically round-trips a store address"
+      cacheIndexRoundTrip,
+    test "aggregate cache treats a corrupt index as an invalid hint"
+      corruptCacheIndexRejected,
+    test "aggregate cache atomically replaces a corrupt index after re-proving"
+      corruptCacheIndexRecovers,
+    test "aggregate cache resumes from a content-addressed verified wrapper"
+      verifiedResumeHit,
+    test "aggregate cache treats corrupt store content as a miss"
+      corruptStoreFallsThrough,
+    expectOk "aggregate cache accepts an exactly bound valid wrapper"
+      validCachedLift,
+    expectErr "aggregate cache rejects a wrapper for a different CheckEnv"
+      wrongCachedStatement,
+    expectErr "aggregate cache rejects a proof under a different outer claim"
+      wrongCachedOuterClaim,
+    expectErr "aggregate cache rejects a corrupted proof"
+      badCachedProof,
     test "host fold constructs canonical union/discharge trees" hostFoldCorrect,
     test "manifest tree lowers to post-order binary slots" (manifestPlan == expectedPlan),
     test "manifest parser exposes its validated bisection tree" parsedManifestPlan,

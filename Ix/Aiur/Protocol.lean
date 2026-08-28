@@ -25,6 +25,12 @@ opaque toBytes : @& Proof → ByteArray
 @[extern "rs_aiur_proof_of_bytes"]
 opaque ofBytes : @& ByteArray → Proof
 
+/-- Decode an untrusted serialized proof without aborting the process. Cache
+and network boundaries must use this variant; `ofBytes` remains for callers
+whose bytes were produced in-process or already validated. -/
+@[extern "rs_aiur_proof_of_bytes_checked"]
+opaque ofBytesChecked : @& ByteArray → Except String Proof
+
 end Proof
 
 structure CommitmentParameters where
