@@ -220,7 +220,7 @@ private def addrOfHex (label value : String) : Except String Address :=
 private def prepareShard (env : Ixon.Env) (blocks : Array Address) :
     Except String PreparedShard := do
   let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks env blocks
-  let (claim, _, trees) ← IxVM.ClaimHarness.shardCheckEnvClaim env owned
+  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   let statement ← MultiStark.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
 

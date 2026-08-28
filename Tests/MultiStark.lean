@@ -300,6 +300,23 @@ private def singletonIxonEnv : Ixon.Env × Address :=
   let address := Address.blake3 (Ixon.serConstant constant)
   (({} : Ixon.Env).storeConst address constant, address)
 
+/-- Two owned constants with one shared dependency. This is the shape that made
+the old shard preparation path repeatedly traverse the same large core. -/
+private def sharedClosureIxonEnv : Ixon.Env × Array Address × Address :=
+  let shared : Ixon.Constant :=
+    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+  let sharedAddress := Address.blake3 (Ixon.serConstant shared)
+  let left : Ixon.Constant :=
+    ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[sharedAddress], #[]⟩
+  let right : Ixon.Constant :=
+    ⟨.axio ⟨true, 0, .ref 0 #[]⟩, #[], #[sharedAddress], #[]⟩
+  let leftAddress := Address.blake3 (Ixon.serConstant left)
+  let rightAddress := Address.blake3 (Ixon.serConstant right)
+  let env := (({} : Ixon.Env).storeConst sharedAddress shared)
+    |>.storeConst leftAddress left
+    |>.storeConst rightAddress right
+  (env, #[leftAddress, rightAddress], sharedAddress)
+
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!
 
@@ -803,6 +820,29 @@ def joinSmokeSuite : IO UInt32 := do
         statement.claim == .checkEnv (canonicalTree #[singleAddr]).root none
       | _ => false
     | .error _ => false
+  let shardPrepPreservesSemantics : Bool :=
+    let (sharedEnv, owned, sharedAddress) := sharedClosureIxonEnv
+    let legacyClosure : Std.HashSet Address := Id.run do
+      let mut closure : Std.HashSet Address := {}
+      for address in owned do
+        closure := closure.union
+          (IxVM.ClaimHarness.closureFrom sharedEnv address)
+      return closure
+    let expectedOwned := canonicalTree owned
+    let expectedFrontier := canonicalTree #[sharedAddress]
+    match IxVM.ClaimHarness.shardCheckEnvClaimTrees sharedEnv owned,
+        IxVM.ClaimHarness.shardCheckEnvClaim sharedEnv owned with
+    | .ok (claimOnly, treesOnly), .ok (claimFull, closure, treesFull) =>
+      let sameClosure := closure.size == legacyClosure.size &&
+        closure.toArray.all legacyClosure.contains
+      claimOnly == .checkEnv expectedOwned.root (some expectedFrontier.root) &&
+        claimFull == claimOnly && sameClosure &&
+        treesOnly.size == 2 && treesFull.size == 2 &&
+        treesOnly.contains expectedOwned.root &&
+        treesOnly.contains expectedFrontier.root &&
+        treesFull.contains expectedOwned.root &&
+        treesFull.contains expectedFrontier.root
+    | _, _ => false
   let mixedScheduleCorrect : Bool :=
     match Ix.Cli.AggregateCmd.schedulePlan manifestPlan #[2, 2, 1] 4 with
     | .ok scheduled =>
@@ -850,6 +890,8 @@ def joinSmokeSuite : IO UInt32 := do
     test "empty manifest leaves contract and retained ids remap densely"
       emptyPruningCorrect,
     test "one retained shard folds to a lift root" singleManifestLiftRoot,
+    test "shard claim-only prep preserves trees and one-pass closure semantics"
+      shardPrepPreservesSemantics,
     test "stand-in lift/flat/structural entrypoints survive compiler dedup separately"
       (liftIdx != childJoinIdx && liftIdx != childStructuralJoinIdx &&
         childJoinIdx != childStructuralJoinIdx),

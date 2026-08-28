@@ -140,7 +140,7 @@ private def buildAggregateBackend
 private def shardStatement (env : Ixon.Env) (blocks : Array Address) :
     Except String MultiStark.CheckEnvTrees := do
   let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks env blocks
-  let (claim, _, trees) ← IxVM.ClaimHarness.shardCheckEnvClaim env owned
+  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   MultiStark.CheckEnvTrees.ofClaim claim trees
 
 /-- Reproduce the lift/flat/structural statement fold from a coverage-validated
