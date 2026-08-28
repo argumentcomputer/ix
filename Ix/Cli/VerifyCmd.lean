@@ -102,7 +102,8 @@ structure ExpectedAggregate where
 
 /-- Build the two deterministic systems whose identities are committed by an
 aggregate root: the IxVM vk and the combined lift/join recursion vk. -/
-private def buildAggregateBackend :
+private def buildAggregateBackend
+    (recursionParameters : MultiStark.RecursionParameters) :
     IO (Except String AggregateBackend) := do
   let ixvmCompiled ← match IxVM.ixVM with
     | .error e => return .error s!"IxVM toplevel merging failed: {e}"
@@ -120,8 +121,8 @@ private def buildAggregateBackend :
   let structuralJoinIdx := recursionCompiled.getFuncIdx `join_two_structural |>.get!
   let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
     commitmentParameters friParameters
-  let recursionSystem := Aiur.AiurSystem.build recursionCompiled.bytecode
-    commitmentParameters friParameters
+  let recursionSystem := MultiStark.buildRecursionSystem recursionCompiled.bytecode
+    recursionParameters
   let ixvmVk := ixvmSystem.vkBytes
   let recursionVk := recursionSystem.vkBytes
   let allowed := MultiStark.allowedBlob ixvmVk verifyIdx
@@ -293,7 +294,10 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       IO.println s!"[verify] OK: composed verdict — all {shards.size} shards proven + disjoint cover"
     return rc
 
-def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
+/-- Verify with an explicit aggregate-recursion configuration. Ordinary IxVM
+proof verification remains pinned to its independent canonical parameters. -/
+def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
+    (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
   if p.hasFlag "aggregate" then
     if proofs.isEmpty then
@@ -337,7 +341,7 @@ def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
           return 1
         pure (some { claim := statement.claim, kinds := #[kind] })
       | none, some _ => unreachable!
-    let backend ← match ← buildAggregateBackend with
+    let backend ← match ← buildAggregateBackend recursionParameters with
       | .error e => IO.eprintln e; return 1
       | .ok backend => pure backend
     let mut rc : UInt32 := 0
@@ -361,6 +365,9 @@ def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
       let proofAddr ← addrOfHex! "proof" hex
       if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
     return rc
+
+def runVerifyCmd (p : Cli.Parsed) : IO UInt32 :=
+  runVerifyCmdWith MultiStark.defaultRecursionParameters p
 
 end Ix.Cli.VerifyCmd
 

@@ -114,7 +114,12 @@ private def printPlan (plan : Array ScheduledFold) (shardIds : Array Nat)
       IO.println s!"  slot {slot}: {mode} join slots {left}, {right} \
         ({item.subjectCount} subjects)"
 
-def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
+/-- Aggregate with an explicit recursion-proof configuration. The CLI wrapper
+below supplies `defaultRecursionParameters`; keeping this seam explicit lets a
+future policy or cache layer select a recursion configuration without changing
+the canonical IxVM proof parameters. -/
+def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
+    (p : Cli.Parsed) : IO UInt32 := do
   let some ixePath := (p.flag? "ixe").map (·.as! String) | do
     p.printError "error: aggregate requires --ixe <env.ixe>"
     return 1
@@ -209,8 +214,8 @@ def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   let structuralJoinIdx := recursionCompiled.getFuncIdx `join_two_structural |>.get!
   let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-  let recursionSystem := Aiur.AiurSystem.build recursionCompiled.bytecode
-    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+  let recursionSystem := MultiStark.buildRecursionSystem recursionCompiled.bytecode
+    recursionParameters
   let ixvmVk := ixvmSystem.vkBytes
   let recursionVk := recursionSystem.vkBytes
   let allowed := MultiStark.allowedBlob ixvmVk verifyIdx recursionVk liftIdx
@@ -334,6 +339,9 @@ def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   let proofAddress ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
   IO.println s!"[aggregate] root proof: {proofAddress}"
   return 0
+
+def runAggregateCmd (p : Cli.Parsed) : IO UInt32 :=
+  runAggregateCmdWith MultiStark.defaultRecursionParameters p
 
 end Ix.Cli.AggregateCmd
 

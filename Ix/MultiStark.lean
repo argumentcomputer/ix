@@ -132,6 +132,46 @@ digest-bound. These helpers are that recipe's single home. -/
 def u64le (n : Nat) : Array UInt8 :=
   (Array.range 8).map (fun i => UInt8.ofNat ((n >>> (8 * i)) % 256))
 
+/-! ## Recursion proof parameters
+
+IxVM proofs and aggregate recursion proofs deliberately have separate host
+configuration, even while both configurations retain today's canonical values.
+Keeping the recursion pair here gives aggregation and aggregate verification a
+single construction path; a later policy change cannot silently update only one
+side.
+-/
+
+/-- Commitment and FRI parameters for lift/join proofs. These parameters are
+already bound by `AiurSystem.vkBytes`; this structure is host configuration, not
+an additional circuit public input. -/
+structure RecursionParameters where
+  commitment : Aiur.CommitmentParameters
+  fri : Aiur.FriParameters
+
+/-- Compatibility default for aggregate recursion proofs. Policy changes (for
+example, reducing the query count) must be explicit updates to this value and
+must not change the canonical IxVM proof parameters. -/
+def defaultRecursionParameters : RecursionParameters := {
+  commitment := Aiur.defaultCommitmentParameters
+  fri := Aiur.defaultFriParameters
+}
+
+/-- Stable 40-byte serialization used as the `fri_params_ser` component of the
+future aggregate cache key: five `u64` little-endian fields in verifying-key
+order. Commitment parameters need no separate cache-key component because a
+change to them changes the recursion-vk digest that the key also contains. -/
+def RecursionParameters.cacheFriBytes (parameters : RecursionParameters) : ByteArray :=
+  let fri := parameters.fri
+  ⟨u64le fri.logFinalPolyLen ++ u64le fri.maxLogArity ++
+    u64le fri.numQueries ++ u64le fri.commitProofOfWorkBits ++
+    u64le fri.queryProofOfWorkBits⟩
+
+/-- Build a recursion proving/verifying system through the shared aggregate
+parameter path. Both `AggregateCmd` and `VerifyCmd` use this helper. -/
+def buildRecursionSystem (bytecode : Aiur.Bytecode.Toplevel)
+    (parameters : RecursionParameters) : Aiur.AiurSystem :=
+  Aiur.AiurSystem.build bytecode parameters.commitment parameters.fri
+
 /-- Serialize public claims to `read_claims`'s wire format (which is also what
 the prover's Fiat-Shamir transcript observes): a length-prefixed list of
 length-prefixed claims, every word a little-endian `u64`. -/

@@ -53,6 +53,7 @@ import Tests.Ix.CondenseM
 import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
+import Tests.MultiStarkActivation
 import Tests.Cli
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -317,6 +318,12 @@ def main (args : List String) : IO UInt32 := do
   -- Special case: cli tests have their own runner
   if args.contains "cli" then
     return ← Tests.Cli.suite
+
+  -- Section 13 WP-D diagnostic: keep the 98-case, twice-executed activation
+  -- matrix out of the default primary suite while making its gate explicit and
+  -- independent of the large compiled Lean environment used by ignored tests.
+  if args.contains "aggregate-activation" then
+    return ← Tests.MultiStark.activationAudit
 
   let runIgnored := args.contains "--ignored"
   let includeIgnored := args.contains "--include-ignored"

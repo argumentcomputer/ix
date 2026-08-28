@@ -241,13 +241,33 @@ proving the full recursive verifier (the production lift needs tens of GiB).
 The join still verifies two real Multi-STARK proofs and enforces their vk,
 entrypoint, public-input, and nested-claim bindings. -/
 def joinChildProgram : Source.Toplevel := ⟦
-  pub fn fake_verify_claim(_digest: [G; 8]) { () }
-  pub fn fake_lift(_system_digest: [G; 8], _claims_digest: [G; 8]) { () }
+  fn activation_height_probe(n: G) {
+    match n {
+      0 => (),
+      _ => activation_height_probe(n - 1),
+    }
+  }
+
+  fn activation_vary_height(digest: [G; 8]) {
+    match u32_less_than(digest[0], digest[1]) {
+      1 => activation_height_probe(1),
+      _ => activation_height_probe(4),
+    }
+  }
+
+  pub fn fake_verify_claim(digest: [G; 8]) {
+    activation_vary_height(digest)
+  }
+  pub fn fake_lift(system_digest: [G; 8], _claims_digest: [G; 8]) {
+    activation_vary_height(system_digest)
+  }
   pub fn fake_join(allowed_digest: [G; 8], _out_claim_digest: [G; 8]) {
+    activation_vary_height(allowed_digest);
     assert_eq!(load(store(allowed_digest[0])), allowed_digest[0]);
     ()
   }
   pub fn fake_struct_join(allowed_digest: [G; 8], _out_claim_digest: [G; 8]) {
+    activation_vary_height(allowed_digest);
     assert_eq!(load(store(allowed_digest[1])), allowed_digest[1]);
     assert_eq!(load(store(allowed_digest[2])), allowed_digest[2]);
     ()
@@ -296,6 +316,40 @@ def joinSmokeSuite : IO UInt32 := do
     | .error e => IO.eprintln s!"join child compilation failed: {e}"; return 1
     | .ok c => pure c
   let childSystem := AiurSystem.build childCompiled.bytecode recCommitParams innerFri
+
+  -- Pin the new recursion-parameter seam before exercising the join protocol.
+  -- The default helper must reproduce the former direct construction exactly;
+  -- the stable FRI bytes are the future cache-key component from the plan.
+  let recursionDefaults := MultiStark.defaultRecursionParameters
+  let defaultRecursionSystem :=
+    MultiStark.buildRecursionSystem childCompiled.bytecode recursionDefaults
+  let legacyDefaultRecursionSystem := AiurSystem.build childCompiled.bytecode
+    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+  let expectedDefaultFriBytes : ByteArray :=
+    ⟨u64le 0 ++ u64le 1 ++ u64le 100 ++ u64le 0 ++ u64le 20⟩
+  let tunedFri : Aiur.FriParameters :=
+    { recursionDefaults.fri with numQueries := 50 }
+  let tunedFriParameters : MultiStark.RecursionParameters :=
+    { recursionDefaults with fri := tunedFri }
+  let tunedFriSystem :=
+    MultiStark.buildRecursionSystem childCompiled.bytecode tunedFriParameters
+  let tunedCommitment : Aiur.CommitmentParameters :=
+    { recursionDefaults.commitment with logBlowup := 3 }
+  let tunedCommitmentParameters : MultiStark.RecursionParameters :=
+    { recursionDefaults with commitment := tunedCommitment }
+  let tunedCommitmentSystem :=
+    MultiStark.buildRecursionSystem childCompiled.bytecode tunedCommitmentParameters
+  let defaultRecursionIdentityPreserved :=
+    defaultRecursionSystem.vkBytes == legacyDefaultRecursionSystem.vkBytes
+  let defaultFriEncodingStable :=
+    recursionDefaults.cacheFriBytes.size == 40 &&
+      recursionDefaults.cacheFriBytes == expectedDefaultFriBytes
+  let recursionParametersIndependent :=
+    tunedFriParameters.cacheFriBytes != recursionDefaults.cacheFriBytes &&
+      tunedFriSystem.vkBytes != defaultRecursionSystem.vkBytes &&
+      tunedCommitmentParameters.cacheFriBytes == recursionDefaults.cacheFriBytes &&
+      tunedCommitmentSystem.vkBytes != defaultRecursionSystem.vkBytes
+
   let verifyIdx := childCompiled.getFuncIdx `fake_verify_claim |>.get!
   let liftIdx := childCompiled.getFuncIdx `fake_lift |>.get!
   let childJoinIdx := childCompiled.getFuncIdx `fake_join |>.get!
@@ -653,6 +707,12 @@ def joinSmokeSuite : IO UInt32 := do
     | .error _ => false
 
   lspecIO (.ofList [("aggregate-first", [
+    test "default recursion parameters preserve the legacy verifying key"
+      defaultRecursionIdentityPreserved,
+    test "recursion FRI cache encoding is the pinned 40-byte layout"
+      defaultFriEncodingStable,
+    test "FRI and commitment overrides independently change recursion identity"
+      recursionParametersIndependent,
     test "host fold constructs canonical union/discharge trees" hostFoldCorrect,
     test "manifest tree lowers to post-order binary slots" (manifestPlan == expectedPlan),
     test "manifest parser exposes its validated bisection tree" parsedManifestPlan,
