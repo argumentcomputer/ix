@@ -354,21 +354,24 @@ impl AiurSystem {
   /// segments' vectors, in which case the result is an upper bound on
   /// the merged shard's peak. Gadget circuits are re-fixed to their
   /// constant heights internally, so dumb elementwise summation stays
-  /// valid. `None` on a length mismatch.
+  /// valid. `None` on a length mismatch or a value beyond `usize`.
   pub fn peak_of_raws(&self, raws: &[u64]) -> Option<usize> {
     let ncirc = self.system.circuits.len();
     if raws.len() != ncirc + 1 {
       return None;
     }
-    let record_bytes = raws[ncirc] as usize;
+    let raws: Vec<usize> = raws
+      .iter()
+      .map(|&r| usize::try_from(r).ok())
+      .collect::<Option<_>>()?;
     let peak = self
       .peak_prove_bytes_by(
         |i, ct| match ct {
           CircuitType::Bytes1 => 256,
           CircuitType::Bytes2 => 65536,
-          _ => raws[i] as usize,
+          _ => raws[i],
         },
-        record_bytes,
+        raws[ncirc],
       )
       .peak;
     Some(peak)
@@ -524,9 +527,9 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
-    match self
-      .prove_ixvm_within_budget(fun_idx, input, io_buffer, executor, None, false)
-    {
+    match self.prove_ixvm_within_budget(
+      fun_idx, input, io_buffer, executor, None, false,
+    ) {
       GatedProve::Proved { claim, proof, .. } => (claim, proof),
       _ => unreachable!("an unbudgeted prove always proves"),
     }
@@ -586,8 +589,13 @@ impl AiurSystem {
     if exec_only {
       return GatedProve::Measured { peak };
     }
-    let (claim, proof) =
-      self.prove_from_execution(fun_idx, input, io_buffer, query_record, &output);
+    let (claim, proof) = self.prove_from_execution(
+      fun_idx,
+      input,
+      io_buffer,
+      query_record,
+      &output,
+    );
     GatedProve::Proved { claim, proof, peak }
   }
 

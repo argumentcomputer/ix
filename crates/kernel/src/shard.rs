@@ -1672,7 +1672,8 @@ fn static_seed_shards_for_score(score: f64, ram_gib: u64) -> usize {
   let budget = ram_gib.max(1) as f64;
   let scaled = STATIC_SEED_REFERENCE_SHARDS
     * (score / STATIC_SEED_REFERENCE_SCORE).powf(STATIC_SEED_SCORE_EXPONENT)
-    * (STATIC_SEED_REFERENCE_RAM_GIB / budget).powf(STATIC_SEED_BUDGET_EXPONENT);
+    * (STATIC_SEED_REFERENCE_RAM_GIB / budget)
+      .powf(STATIC_SEED_BUDGET_EXPONENT);
   scaled.round().max(1.0) as usize
 }
 
@@ -2643,7 +2644,10 @@ mod tests {
       spread.block(addr(i), 0, 1000, 1, OpCounts::default());
     }
 
-    assert!(static_env_score(&concentrated.finish()) > static_env_score(&spread.finish()));
+    assert!(
+      static_env_score(&concentrated.finish())
+        > static_env_score(&spread.finish())
+    );
   }
 
   #[test]

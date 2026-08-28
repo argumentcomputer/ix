@@ -52,8 +52,7 @@ impl QueryRecord {
       .functions
       .iter()
       .map(|f| {
-        let weight =
-          if f.constrained { f.layout.width() as u64 } else { 0 };
+        let weight = if f.constrained { f.layout.width() as u64 } else { 0 };
         QueryMap::new(f.layout.input_size, weight, profile)
       })
       .collect();
@@ -372,8 +371,7 @@ impl Function {
             let mult = record.function_queries[*callee_idx].mult_at(i);
             if callee_unconstrained || !mult.is_zero() {
               if !callee_unconstrained {
-                let replay =
-                  record.function_queries[*callee_idx].replay_at(i);
+                let replay = record.function_queries[*callee_idx].replay_at(i);
                 record.virt += replay;
               }
               cached_output = Some(
@@ -433,14 +431,16 @@ impl Function {
             .ok()
             .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
           if ptr_usize >= memory_queries.len() {
-            return Err(ExecError::UnboundPointer { ptr: ptr_u64, size: *size });
+            return Err(ExecError::UnboundPointer {
+              ptr: ptr_u64,
+              size: *size,
+            });
           }
           if !unconstrained {
             record.virt += memory_queries.replay_at(ptr_usize);
           }
-          let (args, _) = memory_queries
-            .get_index(ptr_usize)
-            .expect("bounds checked above");
+          let (args, _) =
+            memory_queries.get_index(ptr_usize).expect("bounds checked above");
           map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
@@ -760,8 +760,7 @@ impl Function {
           if !unconstrained {
             record.virt += record.function_queries[fun_idx].weight();
           }
-          let vsnap =
-            callers_states_stack.last().map_or(0, |cs| cs.vsnap);
+          let vsnap = callers_states_stack.last().map_or(0, |cs| cs.vsnap);
           record.function_queries[fun_idx].finish(
             &map[..input_size],
             &output,

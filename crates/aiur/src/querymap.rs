@@ -363,7 +363,13 @@ impl QueryMap {
   /// (own-row touch included); recorded only when profiling. Function
   /// maps must insert exclusively through here so `vspans` stays aligned
   /// with the entry arenas.
-  pub fn finish(&mut self, key: &[G], output: &[G], constrained: bool, span: u64) {
+  pub fn finish(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    constrained: bool,
+    span: u64,
+  ) {
     if let Some(i) = self.get_index_of(key) {
       // The only ordinary way to execute an already cached function is
       // constrained promotion of an unconstrained hint entry.

@@ -7,8 +7,7 @@ use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOption, LeanOwned, LeanProd, LeanRef,
-  LeanString,
+  LeanExternal, LeanNat, LeanOption, LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::{
@@ -419,11 +418,8 @@ extern "C" fn rs_aiur_qr_fn_vspan(
 ) -> LeanOwned {
   let idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let i = lean_unbox_nat_as_usize(i.inner());
-  let span = handle
-    .get()
-    .function_queries
-    .get(idx)
-    .map_or(0, |m| m.vspan_at(i));
+  let span =
+    handle.get().function_queries.get(idx).map_or(0, |m| m.vspan_at(i));
   LeanOwned::box_usize(usize::try_from(span).expect("vspan fits usize"))
 }
 
@@ -705,8 +701,7 @@ pub(crate) fn decode_addr_lists(
       return Err("addr lists: truncated addresses".into());
     }
     lists.push(
-      ix_common::address::Address::unpack(&bytes[off..off + n * 32])
-        .collect(),
+      ix_common::address::Address::unpack(&bytes[off..off + n * 32]).collect(),
     );
     off += n * 32;
   }
@@ -1232,9 +1227,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     exec_only,
   );
   let (proof, peak, parts) = match proved {
-    GatedProve::Proved { proof, peak, .. } => (LeanOption::some(
-      LeanExternal::alloc(&AIUR_PROOF_CLASS, proof),
-    ), peak, 1),
+    GatedProve::Proved { proof, peak, .. } => {
+      (LeanOption::some(LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)), peak, 1)
+    },
     GatedProve::Split { peak, parts } => (LeanOption::none(), peak, parts),
     GatedProve::Measured { peak } => (LeanOption::none(), peak, 1),
   };

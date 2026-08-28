@@ -41,9 +41,8 @@ use lean_ffi::object::LeanNat;
 use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExternal,
-  LeanIOResult, LeanList, LeanOption, LeanOwned, LeanProd, LeanRef,
-  LeanString,
+  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExternal, LeanIOResult,
+  LeanList, LeanOption, LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::lean::LeanIxCheckError;
