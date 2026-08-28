@@ -2331,21 +2331,30 @@ fn static_block_profile(env: &IxonEnv) -> BlockProfile {
   builder.finish()
 }
 
-/// FFI: partition a `.ixe` into `num_shards` shards with the STATIC
-/// strategy — no out-of-circuit profiling run. Builds the static block
-/// profile ([`static_block_profile`]), byte-balanced min-cut over the
-/// walk-edge nets, then the predicted-cost rebalance post-pass
+/// FFI: partition a `.ixe` with the STATIC strategy — no out-of-circuit
+/// profiling run. An explicit nonzero `num_shards` fixes the count. Otherwise,
+/// `ram_gib` seeds it from the static block-shape score after the profile is
+/// loaded ([`ix_kernel::shard::static_seed_shards`]). Builds the static block
+/// profile ([`static_block_profile`]), byte-balanced min-cut over the walk-edge
+/// nets, then the predicted-cost rebalance post-pass
 /// (`ix_kernel::shard::shard_static`). Writes a `.ixes` manifest.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
   env_path: LeanString<LeanBorrowed<'_>>,
   num_shards: LeanString<LeanBorrowed<'_>>,
+  ram_gib: LeanString<LeanBorrowed<'_>>,
   balance_pct: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
-  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
+  let requested_shards = num_shards.to_string().parse::<usize>().unwrap_or(0);
+  let ram_gib = ram_gib.to_string().parse::<u64>().unwrap_or(0);
+  if requested_shards == 0 && ram_gib == 0 {
+    return LeanIOResult::error_string(
+      "rs_shard_env_static: pass a positive shard count or RAM budget",
+    );
+  }
   let balance =
     (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
   let out = out_path.to_string();
@@ -2369,6 +2378,21 @@ pub extern "C" fn rs_shard_env_static(
     profile.num_blocks(),
     profile.num_edges()
   );
+  let num_shards = if requested_shards > 0 {
+    requested_shards
+  } else {
+    let score = ix_kernel::shard::static_env_score(&profile);
+    let n = ix_kernel::shard::static_seed_shards(&profile, ram_gib);
+    eprintln!(
+      "[shard] static seed: score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
+      ix_kernel::shard::STATIC_SEED_REFERENCE_SHARDS,
+      ix_kernel::shard::STATIC_SEED_REFERENCE_SCORE,
+      ix_kernel::shard::STATIC_SEED_SCORE_EXPONENT,
+      ix_kernel::shard::STATIC_SEED_REFERENCE_RAM_GIB,
+      ix_kernel::shard::STATIC_SEED_BUDGET_EXPONENT,
+    );
+    n
+  };
   match ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt) {
     Ok(report) => {
       eprintln!("[rs_shard_static]\n{report}");

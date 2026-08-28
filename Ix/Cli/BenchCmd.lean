@@ -286,7 +286,7 @@ def backendSpecs : List BackendSpec := [
   -- waves are audit extras outside it. ISLB only for now (~10 min/run);
   -- add "FLT" / "Mathlib" to `envs` for the env-scale tiers when their
   -- per-push cost is warranted. `shards` counts leaves — deterministic
-  -- per (env bytes, budget), rising only when the seed under-counts →
+  -- per (env static block profile, budget), rising only when the seed under-counts →
   -- upper-only pin, re-pin on a justified seed or split change.
   { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
     envs := some ["ISLB"],
@@ -749,13 +749,13 @@ is not a benchmark run"
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur-sharded-env" =>
-    -- Whole-env sharded Aiur execution: shard the env for the runner's
-    -- RAM (naive `--max-ram 100` sizing → ~3.5 GB execution RSS per
-    -- shard), then ONE gated full-width rayon batch over the manifest —
-    -- the RamGate bounds peak RSS, so no `--jobs` is passed. The check
-    -- writes the env-keyed row itself (`--json`): check-time,
-    -- throughput, peak-rss, constants, shards. The shard step is
-    -- deterministic setup, not part of the measured window.
+    -- Whole-env sharded Aiur execution: seed the env for the runner's RAM
+    -- from its static block-shape score (`--max-ram 100`), then ONE gated
+    -- full-width rayon batch over the manifest — the RamGate bounds peak
+    -- RSS, so no `--jobs` is passed. The check writes the env-keyed row
+    -- itself (`--json`): check-time, throughput, peak-rss, constants,
+    -- shards. The shard step is deterministic setup, not part of the
+    -- measured window.
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ix ← resolveBin repo "ix"
     let manifest := s!"{env}-exec.ixes"
