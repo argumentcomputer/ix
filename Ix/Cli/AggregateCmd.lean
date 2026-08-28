@@ -9,11 +9,12 @@
   persisted wrapper carries the aggregate `CheckEnv` claim and recursive proof
   bytes.
 
-  The host driver remains serial, but every completed lift/join is persisted in
-  a verified, content-addressed resume cache. Parallel slot scheduling remains
-  a follow-up optimization rather than a protocol change.
+  The host driver schedules the fold as a dependency DAG. Ready slots run on
+  dedicated tasks under explicit job and RAM reservations; every completed
+  lift/join is persisted in a verified, content-addressed resume cache.
 -/
 module
+import Std.Sync
 public import Cli
 public import Ix.Cli.CheckCmd
 public import Ix.IxVM
@@ -67,7 +68,158 @@ structure ScheduledFold where
   structural : Bool
   deriving BEq, Repr
 
+/-- The immutable result of simulating aggregate-slot admission. Runtime and
+unit tests share the same admission function; the simulator completes the
+lowest-numbered in-flight slot after every admission pass solely to make its
+trace deterministic. -/
+structure AggregateScheduleTrace where
+  admissionOrder : Array Nat
+  admissionBatches : Array (Array Nat)
+  maxReservedBytes : Nat
+  deriving BEq, Repr
+
 def defaultStructuralAbove : Nat := 4096
+
+def aggregateGiB : Nat := 1024 * 1024 * 1024
+
+/-- Calibration-pending q=100 lift reserve from the measured §3.2 upper
+bound. A slot heavier than the configured budget is admitted only by itself,
+matching the existing Rust-side `RamGate` and avoiding deadlock. -/
+def aggregateLiftRamBytes : Nat := 195 * aggregateGiB
+
+/-- Structural joins are dominated by the same two recursive-proof checks as
+lifts. Keep the conservative lift reserve until the real E2E calibration. -/
+def aggregateStructuralJoinRamBytes : Nat := aggregateLiftRamBytes
+
+/-- Flat joins add canonical subject-tree work to the recursive-proof base.
+One MiB per subject is a deliberately conservative placeholder: at Init's
+~52k-subject root it adds ~51 GiB, consistent with the §11.4 estimate. The
+default structural threshold caps this term near 4 GiB in production. -/
+def aggregateFlatJoinRamPerSubjectBytes : Nat := 1024 * 1024
+
+/-- Calibration-pending per-slot RAM weight used by the Lean admission gate. -/
+def aggregateSlotRamBytes (item : ScheduledFold) : Nat :=
+  match item.op with
+  | .leaf _ => aggregateLiftRamBytes
+  | .join _ _ =>
+    if item.structural then aggregateStructuralJoinRamBytes
+    else aggregateStructuralJoinRamBytes +
+      item.subjectCount * aggregateFlatJoinRamPerSubjectBytes
+
+def aggregateSlotRamWeights (plan : Array ScheduledFold) : Array Nat :=
+  plan.map aggregateSlotRamBytes
+
+private def aggregateScheduleInputsValid (plan : Array ScheduledFold)
+    (weights : Array Nat) : Except String Unit := do
+  if weights.size != plan.size then
+    throw s!"aggregate scheduler received {weights.size} weights for {plan.size} slots"
+  for (item, slotIdx) in plan.mapIdx fun slotIdx item => (item, slotIdx) do
+    if weights[slotIdx]! == 0 then
+      throw s!"aggregate scheduler slot {slotIdx} has zero RAM weight"
+    match item.op with
+    | .leaf _ => pure ()
+    | .join left right =>
+      if left >= slotIdx || right >= slotIdx then
+        throw s!"aggregate scheduler slot {slotIdx} has non-prior child {left}, {right}"
+
+private def aggregateDependenciesComplete (item : ScheduledFold)
+    (completed : Array Bool) : Bool :=
+  match item.op with
+  | .leaf _ => true
+  | .join left right =>
+    (completed[left]?).getD false && (completed[right]?).getD false
+
+/-- Select one deterministic admission batch from the currently ready slots.
+Candidates are ordered by descending RAM weight, then ascending slot number.
+Slots that do not fit are skipped so lighter work can use the remaining
+budget. An individually oversized slot may run only when nothing else is
+reserved, following the Rust `RamGate` admit-when-alone rule. `jobs = 0`
+means no concurrency cap beyond the number of plan slots. -/
+def admitAggregateReady (plan : Array ScheduledFold) (weights : Array Nat)
+    (completed inFlight : Array Bool) (reservedBytes budgetBytes jobs : Nat) :
+    Array Nat := Id.run do
+  let active := inFlight.count true
+  let maxJobs := if jobs == 0 then max 1 plan.size else max 1 jobs
+  if active >= maxJobs then return #[]
+  let openJobs := maxJobs - active
+  let mut ready : Array Nat := #[]
+  for slotIdx in [:plan.size] do
+    if !(completed[slotIdx]?).getD false &&
+        !(inFlight[slotIdx]?).getD false then
+      if let some item := plan[slotIdx]? then
+        if aggregateDependenciesComplete item completed then
+          ready := ready.push slotIdx
+  ready := ready.qsort fun left right =>
+    let leftWeight := (weights[left]?).getD 0
+    let rightWeight := (weights[right]?).getD 0
+    leftWeight > rightWeight || (leftWeight == rightWeight && left < right)
+  let mut admitted : Array Nat := #[]
+  let mut admittedBytes := 0
+  for slotIdx in ready do
+    if admitted.size >= openJobs then break
+    let weight := (weights[slotIdx]?).getD 0
+    let nextReserved := reservedBytes + admittedBytes + weight
+    if nextReserved <= budgetBytes ||
+        (reservedBytes == 0 && admitted.isEmpty) then
+      admitted := admitted.push slotIdx
+      admittedBytes := admittedBytes + weight
+  return admitted
+
+/-- Pure deterministic exercise of the runtime admission algorithm. This is
+used to gate heaviest-first ordering, dependency release, job caps, and peak
+reservation without starting proof tasks. -/
+def simulateAggregateSchedule (plan : Array ScheduledFold)
+    (weights : Array Nat) (jobs budgetBytes : Nat) :
+    Except String AggregateScheduleTrace := do
+  aggregateScheduleInputsValid plan weights
+  if budgetBytes == 0 then throw "aggregate scheduler RAM budget must be positive"
+  let mut completed := Array.replicate plan.size false
+  let mut inFlight := Array.replicate plan.size false
+  let mut completedCount := 0
+  let mut reservedBytes := 0
+  let mut maxReservedBytes := 0
+  let mut admissionOrder : Array Nat := #[]
+  let mut admissionBatches : Array (Array Nat) := #[]
+  while completedCount < plan.size do
+    let admitted := admitAggregateReady plan weights completed inFlight
+      reservedBytes budgetBytes jobs
+    if !admitted.isEmpty then
+      admissionBatches := admissionBatches.push admitted
+      for slotIdx in admitted do
+        inFlight := inFlight.set! slotIdx true
+        reservedBytes := reservedBytes + weights[slotIdx]!
+        admissionOrder := admissionOrder.push slotIdx
+      maxReservedBytes := max maxReservedBytes reservedBytes
+    let mut finish? : Option Nat := none
+    for slotIdx in [:plan.size] do
+      if finish?.isNone && inFlight[slotIdx]! then finish? := some slotIdx
+    let some finished := finish?
+      | throw "aggregate scheduler deadlocked with unfinished slots"
+    inFlight := inFlight.set! finished false
+    completed := completed.set! finished true
+    reservedBytes := reservedBytes - weights[finished]!
+    completedCount := completedCount + 1
+  pure { admissionOrder, admissionBatches, maxReservedBytes }
+
+private def formatAggregateGiB (bytes : Nat) : String :=
+  let tenths := bytes * 10 / aggregateGiB
+  s!"{tenths / 10}.{tenths % 10}"
+
+/-- Linux `MemTotal` parser kept separate so the 92% default has a pure seam.
+The fallback only affects non-Linux hosts; admit-when-alone still guarantees
+progress without pretending the fallback is a calibrated capacity. -/
+def aggregateMemTotalBytes (contents : String) : Option Nat :=
+  (contents.splitOn "\n").findSome? fun line =>
+    if line.startsWith "MemTotal:" then
+      ((line.splitOn " ").filter (· != "") |>.drop 1).head?.bind fun kib =>
+        kib.toNat?.map (· * 1024)
+    else none
+
+def defaultAggregateRamBudgetBytes : IO Nat := do
+  let contents ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
+  return match aggregateMemTotalBytes contents with
+    | some total => total / 100 * 92
+    | none => 16 * aggregateGiB
 
 /-- Bump when aggregate advice framing changes without changing the recursion
 verifying key. Encoded as `u64` little-endian in every cache key. -/
@@ -233,6 +385,124 @@ private def compileToplevel (label : String)
     | .error e => return Except.error s!"{label} compilation failed: {e}"
     | .ok compiled => return Except.ok compiled
 
+/-- Execute a post-order aggregate plan as a dependency-driven DAG. The
+controller is the sole owner of completion and reservation state: it admits a
+heaviest-first batch, starts one dedicated task per slot, then releases child
+dependencies as results arrive. `runSlot` receives an immutable snapshot in
+which every declared child is complete.
+
+On the first failure no further work is admitted, but already-running tasks
+are drained before returning. This prevents orphan proof tasks and permits
+successful independent slots to finish publishing cache entries safely. -/
+def runAggregateDag (plan : Array ScheduledFold) (weights : Array Nat)
+    (jobs budgetBytes : Nat)
+    (runSlot : Nat → Array (Option α) → IO (Except String α))
+    (trace : Bool := false) : IO (Except String (Array α)) := do
+  match aggregateScheduleInputsValid plan weights with
+  | .error e => return .error e
+  | .ok () => pure ()
+  if budgetBytes == 0 then
+    return .error "aggregate scheduler RAM budget must be positive"
+
+  let resultChan ← Std.CloseableChannel.Sync.new
+    (α := Nat × Nat × Except String α)
+  let mut tasks : Array (Task (Except IO.Error Unit)) := #[]
+  let mut slots : Array (Option α) := Array.replicate plan.size none
+  let mut completed := Array.replicate plan.size false
+  let mut inFlight := Array.replicate plan.size false
+  let mut completedCount := 0
+  let mut active := 0
+  let mut reservedBytes := 0
+  let mut failures : Array (Nat × String) := #[]
+  let maxJobs := if jobs == 0 then max 1 plan.size else max 1 jobs
+
+  while completedCount < plan.size do
+    if failures.isEmpty then
+      let admitted := admitAggregateReady plan weights completed inFlight
+        reservedBytes budgetBytes jobs
+      for slotIdx in admitted do
+        let weight := weights[slotIdx]!
+        inFlight := inFlight.set! slotIdx true
+        active := active + 1
+        reservedBytes := reservedBytes + weight
+        if trace then
+          let overBudget := if weight > budgetBytes then "; over-budget slot runs alone" else ""
+          IO.println s!"[aggregate] slot {slotIdx}: admitted {formatAggregateGiB weight} GiB; \
+            reserved {formatAggregateGiB reservedBytes}/{formatAggregateGiB budgetBytes} GiB; \
+            active {active}/{maxJobs}{overBudget}"
+        let snapshot := slots
+        let task ← IO.asTask (prio := .dedicated) do
+          let result ← try runSlot slotIdx snapshot catch e =>
+            pure (.error s!"uncaught IO error: {e}")
+          discard <| resultChan.send (slotIdx, weight, result)
+        tasks := tasks.push task
+
+    if active == 0 then
+      if failures.isEmpty then
+        failures := failures.push
+          (plan.size, "aggregate scheduler deadlocked with unfinished slots")
+      break
+
+    match ← resultChan.recv with
+    | none =>
+      failures := failures.push
+        (plan.size, "aggregate scheduler result channel closed unexpectedly")
+      break
+    | some (slotIdx, weight, result) =>
+      if !(inFlight[slotIdx]?).getD false then
+        failures := failures.push
+          (slotIdx, "aggregate scheduler received a duplicate or unknown result")
+      else
+        inFlight := inFlight.set! slotIdx false
+        active := active - 1
+        reservedBytes := reservedBytes - weight
+        match result with
+        | .error e => failures := failures.push (slotIdx, e)
+        | .ok value =>
+          slots := slots.set! slotIdx (some value)
+          completed := completed.set! slotIdx true
+          completedCount := completedCount + 1
+
+  -- A failure stops admission but never abandons tasks already inside an FFI
+  -- prove. Drain their channel results before closing and joining handles.
+  while active > 0 do
+    match ← resultChan.recv with
+    | none =>
+      failures := failures.push
+        (plan.size, "aggregate scheduler result channel closed while draining")
+      active := 0
+    | some (slotIdx, weight, result) =>
+      if (inFlight[slotIdx]?).getD false then
+        inFlight := inFlight.set! slotIdx false
+        active := active - 1
+        reservedBytes := reservedBytes - weight
+      match result with
+      | .error e => failures := failures.push (slotIdx, e)
+      | .ok value =>
+        slots := slots.set! slotIdx (some value)
+        if !(completed[slotIdx]?).getD false then
+          completed := completed.set! slotIdx true
+          completedCount := completedCount + 1
+  discard <| resultChan.close
+  for task in tasks do
+    match task.get with
+    | .ok () => pure ()
+    | .error e =>
+      failures := failures.push (plan.size,
+        s!"aggregate scheduler task failed: {e}")
+
+  if !failures.isEmpty then
+    let sortedFailures := failures.qsort fun left right => left.1 < right.1
+    let (slotIdx, e) := sortedFailures[0]!
+    return .error (if slotIdx < plan.size then s!"slot {slotIdx}: {e}" else e)
+
+  let mut result : Array α := #[]
+  for slotIdx in [:plan.size] do
+    let some value := (slots[slotIdx]?).join
+      | return .error s!"aggregate scheduler completed without slot {slotIdx}"
+    result := result.push value
+  pure (.ok result)
+
 def loadCachedAggregateProofWith
     (readStore : Address → IO ByteArray) (dir : System.FilePath) (slotIdx : Nat)
     (spec : AggregateSlotSpec) (recursionSystem : Aiur.AiurSystem) :
@@ -306,6 +576,135 @@ private def printPlan (plan : Array ScheduledFold) (shardIds : Array Nat)
       IO.println s!"  slot {slot}: {mode} join slots {left}, {right} \
         ({item.subjectCount} subjects)"
 
+private structure AggregateProveContext where
+  plan : Array ScheduledFold
+  specs : Array AggregateSlotSpec
+  prepared : Array PreparedShard
+  proofsByShard : Std.HashMap Nat Ixon.Proof
+  shardIds : Array Nat
+  ixvmSystem : Aiur.AiurSystem
+  recursionSystem : Aiur.AiurSystem
+  ixvmVk : ByteArray
+  recursionVk : ByteArray
+  allowed : ByteArray
+  verifyIdx : Aiur.Bytecode.FunIdx
+  liftIdx : Aiur.Bytecode.FunIdx
+  joinIdx : Aiur.Bytecode.FunIdx
+  structuralJoinIdx : Aiur.Bytecode.FunIdx
+  cacheDir? : Option System.FilePath
+
+/-- Prove or resume one slot whose dependencies have already completed. The
+scheduler catches IO exceptions around this function; protocol and validation
+failures stay explicit so the lowest failed slot can be reported
+deterministically after all admitted tasks drain. -/
+private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
+    (slots : Array (Option AggregateSlot)) : IO (Except String AggregateSlot) := do
+  let some item := ctx.plan[slotIdx]?
+    | return .error "missing scheduled fold item"
+  let some spec := ctx.specs[slotIdx]?
+    | return .error "missing prepared aggregate slot"
+  match item.op with
+  | .leaf shard =>
+    let originalShard := (ctx.shardIds[shard]?).getD shard
+    let some wrapper := ctx.proofsByShard.get? shard
+      | return .error s!"no proof for shard {originalShard}"
+    let some preparedShard := ctx.prepared[shard]?
+      | return .error s!"no statement for shard {originalShard}"
+    let claimBytes := Ix.Claim.ser preparedShard.claim
+    let verifyInput := IxVM.ClaimHarness.packedDigestKey
+      (Address.blake3 claimBytes)
+    let innerClaim := Aiur.buildClaim ctx.verifyIdx verifyInput #[]
+    let innerProof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
+      | .error e =>
+        return Except.error s!"shard {originalShard} proof does not decode: {e}"
+      | .ok proof => pure proof
+    match ctx.ixvmSystem.verify innerClaim innerProof with
+    | .error e =>
+      return Except.error s!"shard {originalShard} proof fails native verification: {e}"
+    | .ok () => pure ()
+    let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
+    let cached? ← match ctx.cacheDir? with
+      | none => pure none
+      | some dir => loadCachedAggregateProof dir slotIdx spec ctx.recursionSystem
+    let (proof, proofAddress?) ← match cached? with
+      | some cached => pure (cached.proof, some cached.address)
+      | none =>
+        let pubInput := MultiStark.verifierPubInput ctx.ixvmVk innerClaimsBytes
+        IO.println s!"[aggregate] lifting shard {originalShard} into slot {slotIdx}"
+        (← IO.getStdout).flush
+        let (outerClaim, proof) := ctx.recursionSystem.proveMultiStark
+          ctx.liftIdx pubInput wrapper.proof ctx.ixvmVk innerClaimsBytes
+        if outerClaim != spec.outerClaim then
+          return .error "lift produced an unexpected outer claim"
+        let proofAddress? ← match ctx.cacheDir? with
+          | none => pure none
+          | some dir => persistAggregateCacheProof dir slotIdx spec proof
+        pure (proof, proofAddress?)
+    return .ok {
+      statement := spec.statement
+      subjectCount := spec.subjectCount
+      outerClaim := spec.outerClaim
+      proof
+      proofAddress?
+      openPreimages := #[innerClaimsBytes, claimBytes]
+    }
+  | .join leftIdx rightIdx =>
+    let some left := (slots[leftIdx]?).join
+      | return .error s!"missing completed left slot {leftIdx}"
+    let some right := (slots[rightIdx]?).join
+      | return .error s!"missing completed right slot {rightIdx}"
+    let output := spec.statement
+    let outputClaimBytes := Ix.Claim.ser output.claim
+    let cached? ← match ctx.cacheDir? with
+      | none => pure none
+      | some dir => loadCachedAggregateProof dir slotIdx spec ctx.recursionSystem
+    let (proof, proofAddress?) ← match cached? with
+      | some cached => pure (cached.proof, some cached.address)
+      | none =>
+        let pubInput := MultiStark.joinPubInput ctx.allowed outputClaimBytes
+        let leftClaimsBytes := MultiStark.serializeClaims #[left.outerClaim]
+        let rightClaimsBytes := MultiStark.serializeClaims #[right.outerClaim]
+        let preimagesBlob := MultiStark.joinPreimagesBlob
+          (left.openPreimages ++ right.openPreimages)
+        let trees := if item.structural then
+            MultiStark.CheckEnvTrees.structuralAdviceTrees
+              left.statement right.statement output
+          else
+            MultiStark.CheckEnvTrees.adviceTrees
+              left.statement right.statement output
+        let treesBlob := MultiStark.joinTreesBlob trees
+        let pathsBlob := if item.structural then
+            MultiStark.joinPathsBlob
+              (MultiStark.CheckEnvTrees.structuralPathAdvice
+                left.statement right.statement output)
+          else
+            MultiStark.joinPathsBlob #[]
+        let joinFunIdx := if item.structural then ctx.structuralJoinIdx else ctx.joinIdx
+        let mode := if item.structural then "structural" else "flat"
+        IO.println s!"[aggregate] {mode}-joining slots {leftIdx}, {rightIdx} into {slotIdx}"
+        (← IO.getStdout).flush
+        let result := ctx.recursionSystem.proveMultiStarkJoin joinFunIdx pubInput
+          left.proof.toBytes right.proof.toBytes ctx.recursionVk
+          leftClaimsBytes rightClaimsBytes outputClaimBytes ctx.allowed
+          preimagesBlob treesBlob pathsBlob
+        let (outerClaim, proof) ← match result with
+          | .error e => return .error e
+          | .ok result => pure result
+        if outerClaim != spec.outerClaim then
+          return .error "join produced an unexpected outer claim"
+        let proofAddress? ← match ctx.cacheDir? with
+          | none => pure none
+          | some dir => persistAggregateCacheProof dir slotIdx spec proof
+        pure (proof, proofAddress?)
+    return .ok {
+      statement := output
+      subjectCount := spec.subjectCount
+      outerClaim := spec.outerClaim
+      proof
+      proofAddress?
+      openPreimages := #[outputClaimBytes]
+    }
+
 /-- Aggregate with an explicit recursion-proof configuration. The CLI wrapper
 below supplies `defaultRecursionParameters`; keeping this seam explicit lets a
 future policy or cache layer select a recursion configuration without changing
@@ -340,6 +739,21 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
     | .error e => IO.eprintln e; return 1
     | .ok plan => pure plan
   printPlan plan view.shardIds structuralAbove
+  let jobs := ((p.flag? "jobs").map (·.as! Nat)).getD 0
+  let maxRamGb? := (p.flag? "max-ram").map (·.as! Nat)
+  if maxRamGb? == some 0 then
+    IO.eprintln "error: --max-ram must be positive"
+    return 1
+  let ramBudgetBytes ← match maxRamGb? with
+    | some gib => pure (gib * aggregateGiB)
+    | none => defaultAggregateRamBudgetBytes
+  let slotWeights := aggregateSlotRamWeights plan
+  let jobsLabel := if jobs == 0 then "all ready slots" else toString jobs
+  let budgetSource := if maxRamGb?.isSome then "--max-ram" else "92% MemTotal"
+  IO.println s!"[aggregate] scheduler: jobs={jobsLabel}, RAM budget \
+    {formatAggregateGiB ramBudgetBytes} GiB ({budgetSource}); \
+    lift/structural reserve {formatAggregateGiB aggregateLiftRamBytes} GiB, \
+    flat +1 MiB/subject (calibration pending)"
   if p.hasFlag "plan-only" then return 0
 
   let proofHexes := (p.variableArgsAs! String).toList
@@ -422,116 +836,15 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
     else
       pure (some (← aggregateCacheDir))
 
-  let mut slots : Array AggregateSlot := #[]
-  for (item, slotIdx) in plan.mapIdx fun slotIdx item => (item, slotIdx) do
-    let some spec := specs[slotIdx]? | do
-      IO.eprintln s!"internal: missing prepared aggregate slot {slotIdx}"
-      return 1
-    match item.op with
-    | .leaf shard =>
-      let originalShard := (view.shardIds[shard]?).getD shard
-      let some wrapper := proofsByShard.get? shard | do
-        IO.eprintln s!"internal: no proof for shard {originalShard}"
-        return 1
-      let some preparedShard := prepared[shard]? | do
-        IO.eprintln s!"internal: no statement for shard {originalShard}"
-        return 1
-      let claimBytes := Ix.Claim.ser preparedShard.claim
-      let verifyInput := IxVM.ClaimHarness.packedDigestKey
-        (Address.blake3 claimBytes)
-      let innerClaim := Aiur.buildClaim verifyIdx verifyInput #[]
-      let innerProof := Aiur.Proof.ofBytes wrapper.proof
-      match ixvmSystem.verify innerClaim innerProof with
-      | .error e =>
-        IO.eprintln s!"shard {originalShard} proof fails native verification: {e}"
-        return 1
-      | .ok () => pure ()
-      let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
-      let cached? ← match cacheDir? with
-        | none => pure none
-        | some dir => loadCachedAggregateProof dir slotIdx spec recursionSystem
-      let (proof, proofAddress?) ← match cached? with
-        | some cached => pure (cached.proof, some cached.address)
-        | none =>
-          let pubInput := MultiStark.verifierPubInput ixvmVk innerClaimsBytes
-          IO.println s!"[aggregate] lifting shard {originalShard} into slot {slotIdx}"
-          (← IO.getStdout).flush
-          let (outerClaim, proof) := recursionSystem.proveMultiStark liftIdx pubInput
-            wrapper.proof ixvmVk innerClaimsBytes
-          if outerClaim != spec.outerClaim then
-            IO.eprintln s!"internal: lift slot {slotIdx} produced an unexpected outer claim"
-            return 1
-          let proofAddress? ← match cacheDir? with
-            | none => pure none
-            | some dir => persistAggregateCacheProof dir slotIdx spec proof
-          pure (proof, proofAddress?)
-      slots := slots.push {
-        statement := spec.statement
-        subjectCount := spec.subjectCount
-        outerClaim := spec.outerClaim
-        proof
-        proofAddress?
-        openPreimages := #[innerClaimsBytes, claimBytes]
-      }
-    | .join leftIdx rightIdx =>
-      let some left := slots[leftIdx]? | do
-        IO.eprintln s!"invalid aggregate plan: missing left slot {leftIdx}"
-        return 1
-      let some right := slots[rightIdx]? | do
-        IO.eprintln s!"invalid aggregate plan: missing right slot {rightIdx}"
-        return 1
-      let output := spec.statement
-      let outputClaimBytes := Ix.Claim.ser output.claim
-      let cached? ← match cacheDir? with
-        | none => pure none
-        | some dir => loadCachedAggregateProof dir slotIdx spec recursionSystem
-      let (proof, proofAddress?) ← match cached? with
-        | some cached => pure (cached.proof, some cached.address)
-        | none =>
-          let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
-          let leftClaimsBytes := MultiStark.serializeClaims #[left.outerClaim]
-          let rightClaimsBytes := MultiStark.serializeClaims #[right.outerClaim]
-          let preimagesBlob := MultiStark.joinPreimagesBlob
-            (left.openPreimages ++ right.openPreimages)
-          let trees := if item.structural then
-              MultiStark.CheckEnvTrees.structuralAdviceTrees
-                left.statement right.statement output
-            else
-              MultiStark.CheckEnvTrees.adviceTrees
-                left.statement right.statement output
-          let treesBlob := MultiStark.joinTreesBlob trees
-          let pathsBlob := if item.structural then
-              MultiStark.joinPathsBlob
-                (MultiStark.CheckEnvTrees.structuralPathAdvice
-                  left.statement right.statement output)
-            else
-              MultiStark.joinPathsBlob #[]
-          let joinFunIdx := if item.structural then structuralJoinIdx else joinIdx
-          let mode := if item.structural then "structural" else "flat"
-          IO.println s!"[aggregate] {mode}-joining slots {leftIdx}, {rightIdx} into {slotIdx}"
-          (← IO.getStdout).flush
-          let result := recursionSystem.proveMultiStarkJoin joinFunIdx pubInput
-            left.proof.toBytes right.proof.toBytes recursionVk
-            leftClaimsBytes rightClaimsBytes outputClaimBytes allowed
-            preimagesBlob treesBlob pathsBlob
-          let (outerClaim, proof) ← match result with
-            | .error e => IO.eprintln s!"join slot {slotIdx}: {e}"; return 1
-            | .ok result => pure result
-          if outerClaim != spec.outerClaim then
-            IO.eprintln s!"internal: join slot {slotIdx} produced an unexpected outer claim"
-            return 1
-          let proofAddress? ← match cacheDir? with
-            | none => pure none
-            | some dir => persistAggregateCacheProof dir slotIdx spec proof
-          pure (proof, proofAddress?)
-      slots := slots.push {
-        statement := output
-        subjectCount := spec.subjectCount
-        outerClaim := spec.outerClaim
-        proof
-        proofAddress?
-        openPreimages := #[outputClaimBytes]
-      }
+  let proveContext : AggregateProveContext := {
+    plan, specs, prepared, proofsByShard, shardIds := view.shardIds
+    ixvmSystem, recursionSystem, ixvmVk, recursionVk, allowed
+    verifyIdx, liftIdx, joinIdx, structuralJoinIdx, cacheDir?
+  }
+  let slots ← match ← runAggregateDag plan slotWeights jobs ramBudgetBytes
+      (proveAggregateSlot proveContext) true with
+    | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
+    | .ok slots => pure slots
 
   let some root := slots.back? | do
     IO.eprintln "aggregate plan produced no root slot"
@@ -577,6 +890,8 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
     "plan-only";     "Validate coverage and print the lift/join slot plan without loading or proving shard proofs."
     "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted."
+    "jobs" : Nat;    "Maximum aggregate slots proving concurrently (default 0: all ready slots, subject to the RAM gate)."
+    "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
 
   ARGS:

@@ -779,6 +779,74 @@ def joinSmokeSuite : IO UInt32 := do
   let badProofIo := io.extend 0 zeroKey (bytesAsGs badLeftProofBytes)
   let badProof := compiled.bytecode.execute joinIdx pubInput badProofIo
 
+  -- Run the same two-lift/one-join proof DAG through the WP-B executor at
+  -- jobs=1 and jobs=2. Both leaves are admitted together in the parallel run,
+  -- exercising concurrent calls through the same Aiur prover used by the
+  -- production wrapper; the stand-in bytecode deliberately uses the ordinary
+  -- witness path because the specialized MultiStark witness builder has a
+  -- fixed production input shape. Use zero query PoW here because the pinned
+  -- dependency's positive-PoW grind legitimately returns whichever passing
+  -- witness rayon finds first, making even repeated serial proof bytes differ.
+  -- Zero PoW has a canonical witness, so complete-wrapper equality isolates
+  -- scheduling determinism rather than PoW-search nondeterminism.
+  let scheduledProofSystem := AiurSystem.build childCompiled.bytecode
+    recCommitParams { innerFri with queryProofOfWorkBits := 0 }
+  let scheduledProofSlot (slotIdx : Nat)
+      (slots : Array (Option ByteArray)) : IO (Except String ByteArray) := do
+    match slotIdx with
+    | 0 | 1 =>
+      let claimsBytes := if slotIdx == 0 then leftInnerClaims else rightInnerClaims
+      let expectedOuter := if slotIdx == 0 then leftOuter else rightOuter
+      let liftInput := MultiStark.verifierPubInput fakeIxvmVk claimsBytes
+      let (outer, proof, _) := scheduledProofSystem.prove liftIdx liftInput default
+      if outer != expectedOuter then return .error "scheduled lift claim mismatch"
+      pure (.ok proof.toBytes)
+    | 2 =>
+      let some leftBytes := (slots[0]?).join
+        | return .error "scheduled join missing left proof"
+      let some rightBytes := (slots[1]?).join
+        | return .error "scheduled join missing right proof"
+      let leftProof ← match Aiur.Proof.ofBytesChecked leftBytes with
+        | .error e => return .error e
+        | .ok proof => pure proof
+      let rightProof ← match Aiur.Proof.ofBytesChecked rightBytes with
+        | .error e => return .error e
+        | .ok proof => pure proof
+      match scheduledProofSystem.verify leftOuter leftProof,
+          scheduledProofSystem.verify rightOuter rightProof with
+      | .ok (), .ok () => pure ()
+      | .error e, _ | _, .error e => return .error e
+      let (outer, proof, _) := scheduledProofSystem.prove childJoinIdx pubInput default
+      if outer != Aiur.buildClaim childJoinIdx pubInput #[] then
+        return .error "scheduled join claim mismatch"
+      pure (.ok proof.toBytes)
+    | _ => pure (.error "unexpected scheduled proof slot")
+  let scheduledWrapperBytes (proofs : Array ByteArray) : Array ByteArray :=
+    proofs.mapIdx fun slotIdx proof =>
+      let claim := if slotIdx == 0 then leftStatement.claim
+        else if slotIdx == 1 then rightStatement.claim
+        else outputStatement.claim
+      Ixon.Proof.ser { claim, proof }
+  let serialScheduledProofs ← Ix.Cli.AggregateCmd.runAggregateDag cachePlan
+    #[8, 8, 4] 1 16 scheduledProofSlot
+  let parallelScheduledProofs ← Ix.Cli.AggregateCmd.runAggregateDag cachePlan
+    #[8, 8, 4] 2 16 scheduledProofSlot
+  let parallelProofWrappersStable ←
+    match serialScheduledProofs, parallelScheduledProofs with
+    | .ok serial, .ok parallel =>
+      let serialWrappers := scheduledWrapperBytes serial
+      let parallelWrappers := scheduledWrapperBytes parallel
+      if serialWrappers != parallelWrappers then
+        IO.eprintln s!"scheduled proof mismatch: serial={serialWrappers.map Address.blake3}, \
+          parallel={parallelWrappers.map Address.blake3}"
+      pure (serialWrappers == parallelWrappers)
+    | .error e, _ =>
+      IO.eprintln s!"serial scheduled proof failed: {e}"
+      pure false
+    | _, .error e =>
+      IO.eprintln s!"parallel scheduled proof failed: {e}"
+      pure false
+
   let hostFoldCorrect :=
     outputSubjects.leaves == (canonicalTree #[a, b, c]).leaves &&
     outputStatement.assumptions.map (·.leaves) == some (canonicalTree #[d]).leaves
@@ -853,6 +921,92 @@ def joinSmokeSuite : IO UInt32 := do
       | _, _ => false
     | .error _ => false
 
+  -- WP-B's pure admission gate: three leaves are initially ready, but the
+  -- heaviest 8-byte stand-in occupies the 10-byte budget alone. Once it
+  -- completes, the 6- and 3-byte leaves run together; joins become eligible
+  -- only after both declared children complete.
+  let schedulerPlan := Ix.Cli.AggregateCmd.schedulePlan
+    manifestPlan #[2, 2, 1] 4
+  let fakeWeights : Array Nat := #[8, 3, 4, 6, 5]
+  let schedulerTrace := schedulerPlan.bind fun scheduled =>
+    Ix.Cli.AggregateCmd.simulateAggregateSchedule scheduled fakeWeights 2 10
+  let schedulerHeaviestFirst : Bool := match schedulerTrace with
+    | .ok trace =>
+      trace.admissionOrder == #[0, 3, 1, 2, 4] &&
+        trace.admissionBatches == #[#[0], #[3, 1], #[2], #[4]]
+    | .error _ => false
+  let schedulerWithinLimits : Bool := match schedulerTrace with
+    | .ok trace =>
+      trace.maxReservedBytes <= 10 &&
+        trace.admissionBatches.all (fun batch => batch.size <= 2)
+    | .error _ => false
+  let schedulerDependenciesHold : Bool := match schedulerTrace with
+    | .ok trace =>
+      let position (slot : Nat) := trace.admissionOrder.findIdx? (· == slot)
+      match position 0, position 1, position 2, position 3, position 4 with
+      | some p0, some p1, some p2, some p3, some p4 =>
+        p0 < p2 && p1 < p2 && p2 < p4 && p3 < p4
+      | _, _, _, _, _ => false
+    | .error _ => false
+  let oversizedRunsAlone : Bool := match schedulerPlan.bind fun scheduled =>
+      Ix.Cli.AggregateCmd.simulateAggregateSchedule scheduled
+        #[11, 3, 4, 6, 5] 2 10 with
+    | .ok trace => trace.admissionBatches[0]? == some #[0] &&
+        trace.admissionBatches.all fun batch =>
+          batch.size == 1 || batch.all fun slot => fakeWeights[slot]! <= 10
+    | .error _ => false
+  let flatWeightAffine :=
+    Ix.Cli.AggregateCmd.aggregateSlotRamBytes
+      { op := .join 0 1, subjectCount := 7, structural := false } ==
+      Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
+        7 * Ix.Cli.AggregateCmd.aggregateFlatJoinRamPerSubjectBytes
+  let memTotalParsing :=
+    Ix.Cli.AggregateCmd.aggregateMemTotalBytes
+      "MemTotal:       1024 kB\nMemFree: 512 kB\n" == some (1024 * 1024)
+
+  -- Exercise the actual task/channel executor at jobs=1 and jobs=2. The fake
+  -- payload is content-derived exactly like a wrapper: leaves encode their
+  -- shard and slot, while joins concatenate both completed child payloads.
+  let fakeRun (scheduled : Array Ix.Cli.AggregateCmd.ScheduledFold)
+      (slotIdx : Nat) (slots : Array (Option ByteArray)) :
+      IO (Except String ByteArray) := do
+    let some item := scheduled[slotIdx]?
+      | return .error "missing fake slot"
+    match item.op with
+    | .leaf shard =>
+      pure (.ok ⟨#[UInt8.ofNat shard, UInt8.ofNat slotIdx]⟩)
+    | .join left right =>
+      let some leftBytes := (slots[left]?).join
+        | return .error "missing fake left child"
+      let some rightBytes := (slots[right]?).join
+        | return .error "missing fake right child"
+      pure (.ok ((leftBytes ++ rightBytes).push (UInt8.ofNat slotIdx)))
+  let schedulerSerialParallelParity ← match schedulerPlan with
+    | .error _ => pure false
+    | .ok scheduled =>
+      let serial ← Ix.Cli.AggregateCmd.runAggregateDag scheduled fakeWeights
+        1 10 (fakeRun scheduled)
+      let parallel ← Ix.Cli.AggregateCmd.runAggregateDag scheduled fakeWeights
+        2 10 (fakeRun scheduled)
+      pure <| match serial, parallel with
+        | .ok serial, .ok parallel => serial == parallel
+        | _, _ => false
+  let dependentStarted ← IO.mkRef false
+  let failureRun (slotIdx : Nat) (_ : Array (Option Nat)) :
+      IO (Except String Nat) := do
+    if slotIdx == 0 then return .error "intentional leaf failure"
+    if slotIdx == 2 then dependentStarted.set true
+    pure (.ok slotIdx)
+  let schedulerStopsAfterFailure ← match schedulerPlan with
+    | .error _ => pure false
+    | .ok scheduled =>
+      let result ← Ix.Cli.AggregateCmd.runAggregateDag scheduled fakeWeights
+        2 10 failureRun
+      let started ← dependentStarted.get
+      pure <| match result with
+        | .error e => e.startsWith "slot 0: intentional leaf failure" && !started
+        | .ok _ => false
+
   lspecIO (.ofList [("aggregate-first", [
     test "default recursion parameters preserve the legacy verifying key"
       defaultRecursionIdentityPreserved,
@@ -919,6 +1073,24 @@ def joinSmokeSuite : IO UInt32 := do
       transitiveStructural,
     test "threshold scheduling is flat below and structural above monotonically"
       mixedScheduleCorrect,
+    test "RAM-gated scheduler admits ready work heaviest-first"
+      schedulerHeaviestFirst,
+    test "RAM-gated scheduler respects job and byte budgets"
+      schedulerWithinLimits,
+    test "RAM-gated scheduler never admits joins before both children"
+      schedulerDependenciesHold,
+    test "an individually oversized scheduler slot is admitted alone"
+      oversizedRunsAlone,
+    test "flat-join RAM reserve is affine in subject leaves"
+      flatWeightAffine,
+    test "aggregate scheduler parses MemTotal for its default budget"
+      memTotalParsing,
+    test "jobs=2 DAG execution is byte-identical to jobs=1"
+      schedulerSerialParallelParity,
+    test "a failed slot drains peers without starting dependent joins"
+      schedulerStopsAfterFailure,
+    test "jobs=2 zero-PoW proof wrappers are byte-identical to jobs=1"
+      parallelProofWrappersStable,
     expectErr "structural join rejects a path to the wrong root" wrongRootPath,
     expectErr "structural join rejects a tampered path sibling" tamperedPath,
     expectErr "structural join rejects a candidate with no path choice"
