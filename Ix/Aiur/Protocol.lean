@@ -173,17 +173,44 @@ def proveAddrWithEnv (system : @& AiurSystem)
   (proveAddrWithEnv' system funIdx envHandle addrBytes useBytecode).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
+/-- Result of a per-shard prove: the claim's wire bytes, the proof, and
+    the projected prover RAM peak of the record that produced it
+    (`AiurSystem::peak_prove_bytes`).
+
+    `proof` is `none` exactly when the peak exceeded the budget — a
+    RESULT rather than an error, since the caller's answer is to split
+    the shard and prove the halves, and `peakBytes` is what it decides
+    on. The claim bytes are filled either way (the claim is known before
+    proving starts).
+
+    The final IO buffer is not returned — it is the shard's whole
+    ingested byte scope and no caller reads it. -/
+structure ShardProveResult where
+  claimBytes : ByteArray
+  proof : Option Proof
+  peakBytes : Nat
+
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
-    Except String ProveEnvResult
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& Nat →
+    Except String ShardProveResult
 
-/-- Per-shard prove against a Rust-owned `EnvHandle`. -/
+/-- Per-shard prove against a Rust-owned `EnvHandle`: ONE execution,
+    whose record is proven from directly.
+
+    `maxRamBytes` is a per-shard prover-RAM budget checked against that
+    record's projected peak before the witness phase begins; `0` means
+    detect (85% of `MemAvailable`, the policy the check batch's RAM gate
+    uses), and an unreadable `/proc/meminfo` disables the check rather
+    than guessing. Over budget, the record is dropped and `proof` is
+    `none` — learning that here costs one execution instead of an OOM
+    part-way through an FFT. The peak comes back either way, so a prove
+    run yields the same split/merge signal a check run does. -/
 def shardProveWithEnv (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (ownedBlob : ByteArray) :
-    Except String (ByteArray × Proof × IOBuffer) :=
-  (shardProveWithEnv' system funIdx envHandle ownedBlob).map
-    fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (ownedBlob : ByteArray) (maxRamBytes : Nat := 0) :
+    Except String ShardProveResult :=
+  shardProveWithEnv' system funIdx envHandle ownedBlob maxRamBytes
 
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →
@@ -193,21 +220,59 @@ end AiurSystem
 
 namespace Bytecode.Toplevel
 
+/-- One shard's result from `shardCheckBatchWithEnv`. `weights` is the
+    shard's per-constant virtual-gas table, packed as 48-byte rows —
+    32-byte address, then `vspan` and `mult` as little-endian `UInt64`s
+    (see `ShardResult.foldWeights`). Empty unless the batch ran with
+    `profile := true`; the record it is read from is reduced to these
+    rows and dropped inside the shard's own task, so a whole partition's
+    weights fit in RAM when its records could not. -/
+structure ShardResult where
+  error : String
+  peakBytes : Nat
+  weights : ByteArray
+  deriving Inhabited
+
+/-- Bytes per packed `weights` row: 32 address + 8 vspan + 8 mult. -/
+def shardWeightRow : Nat := 48
+
+/-- Little-endian `UInt64` at `off`. -/
+private def readU64LE (ba : ByteArray) (off : Nat) : UInt64 := Id.run do
+  let mut v : UInt64 := 0
+  for b in [0 : 8] do
+    v := v ||| ((ba.get! (off + b)).toUInt64 <<< (8 * b).toUInt64)
+  return v
+
+/-- Fold `f` over the packed `(addrBytes, vspan, mult)` rows of `weights`.
+    Trailing bytes that do not complete a row are ignored. -/
+@[inline] def ShardResult.foldWeights {α : Type} (r : ShardResult) (init : α)
+    (f : α → ByteArray → UInt64 → UInt64 → α) : α := Id.run do
+  let mut acc := init
+  for i in [0 : r.weights.size / shardWeightRow] do
+    let off := i * shardWeightRow
+    acc := f acc (r.weights.extract off (off + 32))
+      (readU64LE r.weights (off + 32)) (readU64LE r.weights (off + 40))
+  return acc
+
 @[extern "rs_aiur_toplevel_shard_check_batch"]
 private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → @& Nat →
-  @& CommitmentParameters → @& FriParameters →
-    Except String (Array (String × Nat))
+  @& CommitmentParameters → @& FriParameters → Bool → @& Nat →
+    Except String (Array ShardResult)
 
 /-- Check EVERY shard of a partition in one call: rayon over the shard
     list with true work-stealing (no chunk barriers), each shard
     through the exact single-shard machinery over its own private
     record and witness io. `shardsBlob` encodes, per shard, a 4-byte LE
     owned-constant count followed by that many 32-byte addresses.
-    Returns one `(error, peakBytes)` pair per shard in shard order:
-    empty error = clean, and `peakBytes` is the analytic prover RAM
-    peak ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's
-    executed record — the split/merge input (0 on failure).
+    Returns one `ShardResult` per shard in shard order: empty error =
+    clean, and `peakBytes` is the analytic prover RAM peak
+    ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's executed
+    record — the split/merge input (0 on failure). `profile` turns on the
+    virtual-gas meter and fills each result's `weights` with the shard's
+    per-constant cost rows, read off the record inside the shard's own
+    task; `checkConstIdx` names the `check_const` function whose queries
+    those rows come from (ignored when not profiling).
     `jobs = 0` uses rayon's default pool width (all cores): peak RSS
     is bounded by the Rust-side RAM gate (a byte-weighted admission
     semaphore over estimated per-shard execution RSS vs available
@@ -218,9 +283,10 @@ def shardCheckBatchWithEnv (toplevel : @& Bytecode.Toplevel)
   (shardsBlob : ByteArray) (useBytecode : Bool := false) (jobs : Nat := 0)
   (commitmentParameters : CommitmentParameters := defaultCommitmentParameters)
   (friParameters : FriParameters := defaultFriParameters)
-  : Except String (Array (String × Nat)) :=
+  (profile : Bool := false) (checkConstIdx : Nat := 0)
+  : Except String (Array ShardResult) :=
   shardCheckBatchWithEnv' toplevel funIdx envHandle shardsBlob useBytecode
-    jobs commitmentParameters friParameters
+    jobs commitmentParameters friParameters profile checkConstIdx
 
 end Bytecode.Toplevel
 

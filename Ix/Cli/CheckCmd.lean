@@ -672,6 +672,7 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     soundness contract as `runShardCheckAll`. -/
 def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     (compiled : Aiur.CompiledToplevel) (useBytecode : Bool)
+    (profileOut : Option String)
     (json? : Option (String × String) := none) : IO UInt32 := do
   -- The row's peak-rss needs the process-tree RSS sampler running
   -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
@@ -713,21 +714,37 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     (← IO.getStdout).flush
     let totalConsts := ownedPerShard.foldl (· + ·.size) 0
     let start ← IO.monoMsNow
+    -- `check_const`'s queries are what the weight rows are read from; a
+    -- toplevel without it can still check, just not profile.
+    let checkConstIdx := (compiled.getFuncIdx `check_const).getD 0
+    if profileOut.isSome && (compiled.getFuncIdx `check_const).isNone then
+      IO.eprintln "--profile: no `check_const` in compiled toplevel"
     match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle blob
         useBytecode jobs Aiur.defaultCommitmentParameters
-        Aiur.defaultFriParameters with
+        Aiur.defaultFriParameters profileOut.isSome checkConstIdx with
     | .error e => IO.eprintln s!"shard batch: {e}"; return 1
     | .ok results =>
       let elapsedMs := (← IO.monoMsNow) - start
       let mut failures : Nat := 0
       for k in [:results.size] do
-        let (err, peak) := results[k]!
-        if err.isEmpty then
-          let gib := Float.ofNat peak / 1073741824.0
+        let r := results[k]!
+        if r.error.isEmpty then
+          let gib := Float.ofNat r.peakBytes / 1073741824.0
           IO.println s!"[shard {k}] ok, projected prover peak {gib} GiB"
         else
-          IO.eprintln s!"[shard {k}] FAILED: {err}"
+          IO.eprintln s!"[shard {k}] FAILED: {r.error}"
           failures := failures + 1
+      -- Weight rows are appended once for the whole batch: Rust already
+      -- reduced each shard's record under its own task, so nothing here
+      -- holds a record alive.
+      if let some out := profileOut then
+        let h ← IO.FS.Handle.mk out .append
+        for r in results do
+          h.putStr <| r.foldWeights "" fun acc addrBytes vspan mult =>
+            let addr : Address := ⟨addrBytes⟩
+            let name := (ixonEnv.addrToName.get? addr).map (s!" {·}") |>.getD ""
+            acc ++ s!"{addr} {vspan} {mult}{name}\n"
+        h.flush
       -- One env-keyed results row for `ix bench run --backend aiur-sharded-env`:
       -- the measured window is the batch FFI call (env load and blob
       -- setup are excluded, matching what the benchmark tracks — the
@@ -751,42 +768,6 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       -- Under `--json` a kernel rejection is the benchmark's `rejected`
       -- exit (the row is already written), same contract as `check-rs`.
       return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
-
-/-- Per-shard IxVM-native check over EVERY shard, one Lean task per
-    shard. Slower than `runShardBatchNative` (chunk barriers idle
-    workers on each wave's slowest shard), but it keeps each shard's
-    `QueryRecord` Lean-side, which is what `--profile` needs: the
-    batch FFI returns only a per-shard verdict and prover peak, not
-    the records the virtual-gas dump reads. Builds the `EnvHandle`
-    ONCE and shares it across every shard's FFI call (no per-shard
-    re-mmap). Coverage-gates the manifest before running any shard —
-    exit 0 has to mean "every env const was checked by some shard",
-    same soundness contract as `runShardCheckAll`. -/
-def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
-    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (profileOut : Option String)
-    (useBytecode : Bool) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) =>
-    if !(← shardsCover ixonEnv shards) then return 1
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
-      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
-      | .ok h => pure h
-    let shapes := Aiur.circuitShapes compiled.bytecode
-      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-    let maxJobs := max 1 (jobs?.getD shards.size)
-    let mut rc : UInt32 := 0
-    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-      let tasks ← chunk.mapM fun (blocks, k) =>
-        IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut profileOut
-            useBytecode shapes ixonEnv blocks k)
-      for t in tasks do
-        match t.get with
-        | .ok r => if r != 0 then rc := 1
-        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
-    pure rc
 
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
@@ -908,17 +889,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      -- `--profile` needs each shard's `QueryRecord`, which the rayon
-      -- batch does not hand back; that run takes the per-shard Lean
-      -- task path instead.
-      if profileOut.isSome then
-        return (← runShardManifestAllNative manifest ixe
-          ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut
-          profileOut useBytecode)
       let json? := (p.flag? "json").map fun f =>
         (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "env")
       return (← runShardBatchNative manifest ixe
-        ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode json?)
+        ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode profileOut json?)
   | _, _, _ =>
     -- `--jobs N` (N ≠ 1) with an `--ixe` env and no `--claim` takes the
     -- parallel batch path: one FFI call, rayon over the target list,

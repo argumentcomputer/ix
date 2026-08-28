@@ -86,7 +86,13 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
       | .error e =>
         IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
         return 1
-      | .ok (_claimBytes, proof, _outIO) => pure proof
+      | .ok r => match r.proof with
+        | some proof => pure proof
+        | none =>
+          IO.eprintln s!"{label}: projected prover peak {r.peakBytes} bytes \
+            exceeds the budget; this target is not a manifest shard, so it \
+            cannot be split — raise --max-ram"
+          return 1
     | .leanW witness, _ =>
       let (_aiurClaim, proof, _outIO) :=
         aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
@@ -99,47 +105,98 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
   IO.println (toString proofAddr)
   return 0
 
-/-- Per-shard prove via the end-to-end Rust path
-    (`shardProveIxVM`): witness build, `execute_ixvm`, and STARK
-    prove run in one FFI trip with the parallel Rust witness
-    builder. -/
-def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
-    (ixonEnv : Ixon.Env) (shards : Array (Array Address)) (shardK : Nat)
-    (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (_printStats : Bool) : IO UInt32 := do
-  match shards[shardK]? with
-  | none => IO.eprintln s!"shard {shardK} out of range (0..{shards.size})"; return 1
-  | some blocks => do
-    let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks
-    let mut blob := ByteArray.empty
-    for a in owned do
-      blob := blob ++ a.hash
-    let label := s!"shard {shardK}"
-    IO.println s!"Proving {label}"
-    (← IO.getStdout).flush
-    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-    match aiurSystem.shardProveWithEnv funIdx envHandle blob with
-    | .error e =>
-      IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
-      return 1
-    | .ok (claimBytes, proof, _outIO) =>
+/-- Prove the constants owned by `blocks` as ONE shard, splitting and
+    recursing whenever the executed record's projected prover peak
+    exceeds the budget.
+
+    A shard is only a plan, never part of a statement: its claim is
+    `checkEnv(ownedRoot, asmRoot)`, a pure function of `(env, owned)`
+    with the frontier recomputed from the owned set. So halving `blocks`
+    yields two claims exactly as valid as the parent's — each half's
+    grown frontier is discharged by its sibling — and the split costs
+    only the parent's execution, the cheap half of the run. Splitting on
+    BLOCKS rather than constants is what keeps mutual-recursion groups
+    intact, since every constant maps to exactly one block.
+
+    Returns the block sets actually proven, in proof order: the parent's
+    own when it fit, otherwise its descendants'. That is the partition
+    the run really produced, which is what an updated manifest has to
+    describe once the whole pipeline is done. -/
+partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
+    (ixonEnv : Ixon.Env) (aiurSystem : Aiur.AiurSystem)
+    (funIdx : Aiur.Bytecode.FunIdx) (maxRamBytes : Nat) (label : String)
+    (blocks : Array Address) : IO (Except String (Array (Array Address))) := do
+  let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks
+  let mut blob := ByteArray.empty
+  for a in owned do
+    blob := blob ++ a.hash
+  IO.println s!"Proving {label} ({blocks.size} blocks, {owned.size} consts)"
+  (← IO.getStdout).flush
+  match aiurSystem.shardProveWithEnv funIdx envHandle blob maxRamBytes with
+  | .error e => return .error s!"{label}: shardProveWithEnv error: {e}"
+  | .ok { claimBytes, proof, peakBytes } =>
+    let gib := Float.ofNat peakBytes / 1073741824.0
+    match proof with
+    | none =>
+      -- A single block is the atom the kernel checks together; there is
+      -- no smaller shard to fall back to.
+      if blocks.size <= 1 then
+        return .error s!"{label}: projected prover peak {gib} GiB exceeds \
+          the budget and the shard is a single block — raise --max-ram"
+      let mid := blocks.size / 2
+      IO.println s!"[{label}] peak {gib} GiB over budget — splitting \
+        {blocks.size} blocks into {mid} + {blocks.size - mid}"
+      match ← proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx
+          maxRamBytes s!"{label}.0" (blocks.extract 0 mid) with
+      | .error e => return .error e
+      | .ok lo =>
+        match ← proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx
+            maxRamBytes s!"{label}.1" (blocks.extract mid blocks.size) with
+        | .error e => return .error e
+        | .ok hi => return .ok (lo ++ hi)
+    | some proof =>
+      IO.println s!"[{label}] prover peak {gib} GiB"
       -- Rust returns the canonical CheckEnv claim's wire bytes; deserialize
       -- back to `Ix.Claim` to persist alongside the proof. Avoids
       -- recomputing the closure walk + canonical AssumptionTree Lean-side.
       match Ixon.runGet Ix.Claim.get claimBytes with
-      | .error e =>
-        IO.eprintln s!"{label}: Claim wire-decode failed: {e}"
-        return 1
+      | .error e => return .error s!"{label}: Claim wire-decode failed: {e}"
       | .ok claim => do
         let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
         let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
         let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
         IO.println (toString proofAddr)
-        let _ := manifestPath  -- kept for parity with previous signature
-        return 0
+        return .ok #[blocks]
+
+/-- Prove shard `shardK` of the partition, splitting it as needed.
+    Returns the block sets actually proven for that shard. -/
+def runShardProveNative (envHandle : Aiur.EnvHandle) (ixonEnv : Ixon.Env)
+    (shards : Array (Array Address)) (shardK : Nat)
+    (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
+    (maxRamBytes : Nat) : IO (Except String (Array (Array Address))) := do
+  match shards[shardK]? with
+  | none => return .error s!"shard {shardK} out of range (0..{shards.size})"
+  | some blocks =>
+    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+    proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx maxRamBytes
+      s!"shard {shardK}" blocks
+
+/-- Report the partition a prove run actually produced against the one
+    its manifest planned. They differ exactly when a shard was split. -/
+def reportPartition (proven : Array (Array Address)) (planned : Nat) : IO Unit := do
+  if proven.size == planned then
+    IO.println s!"[prove] {proven.size} shard(s) proven, partition unchanged"
+  else
+    IO.println s!"[prove] {proven.size} shard(s) proven from {planned} planned \
+      ({proven.size - planned} from splits) — re-shard with this partition to \
+      skip the splits next run"
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let keepGoing := p.hasFlag "keep-going"
+  -- Same units as `ix shard --max-ram`: the per-shard prover budget the
+  -- partition was sized against, re-checked here against each shard's
+  -- measured peak. 0 = unchecked.
+  let maxRamBytes := ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * 1073741824
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
@@ -161,7 +218,12 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
-      runShardProveNative manifest envHandle ixonEnv shards k aiurSystem compiled false
+      match ← runShardProveNative envHandle ixonEnv shards k aiurSystem
+          compiled maxRamBytes with
+      | .error e => IO.eprintln e; return 1
+      | .ok parts =>
+        reportPartition parts shards.size
+        return 0
   | some ixe, some manifest, none =>
     -- IxVM-native all-shards prove. Same envHandle reused across
     -- every shard.
@@ -171,11 +233,18 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
+      -- Accumulate the partition the run actually produced. Splits stay
+      -- in this process, so the manifest describing them is written
+      -- once at the end rather than rewritten per split.
+      let mut proven : Array (Array Address) := #[]
       let mut rc : UInt32 := 0
       for k in [0 : shards.size] do
-        if (← runShardProveNative manifest envHandle ixonEnv shards k
-              aiurSystem compiled false) != 0 then
-          rc := 1
+        match ← runShardProveNative envHandle ixonEnv shards k aiurSystem
+            compiled maxRamBytes with
+        | .error e => IO.eprintln e; rc := 1
+        | .ok parts => proven := proven ++ parts
+      if rc == 0 then reportPartition proven shards.size
+      let _ := manifest
       pure rc
   | _, _, _ =>
     Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
@@ -193,6 +262,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
     "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."
     "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
+    "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is reported (split it and re-run) instead of being taken into the FFT phases that would exhaust the box. Omit to prove unconditionally."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

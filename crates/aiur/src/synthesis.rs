@@ -302,26 +302,32 @@ impl AiurSystem {
     }
   }
 
-  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
-  pub fn prove(
+  /// Prove an execution that has ALREADY happened: everything from the
+  /// witness phase on, over a record the caller hands across.
+  ///
+  /// Taking `query_record` by value is the point. The record is the
+  /// witness phase's dominant residency, and it is dropped here the
+  /// instant the traces exist — before the LDE/commit/FRI phases that
+  /// actually set the prover's peak (see [`Self::peak_prove_bytes`]).
+  /// A caller that keeps its own copy alive past this call pays that
+  /// peak *on top of* the record, which at shard scale is the
+  /// difference between fitting in RAM and not.
+  ///
+  /// `input`, `io_buffer` and `output` must be the ones the execution
+  /// ran on: they reconstruct the claim the proof commits to, and the
+  /// witness reads the buffer the execution left behind.
+  ///
+  /// Deliberately not `#[tracing::instrument]`ed — the `aiur/witness`
+  /// span below stays directly under the caller's `aiur/prove*` span,
+  /// so the stage-scoped measurements keep their existing shape.
+  pub fn prove_from_execution(
     &self,
     fun_idx: FunIdx,
     input: &[G],
-    io_buffer: &mut IOBuffer,
+    io_buffer: &IOBuffer,
+    query_record: QueryRecord,
+    output: &[G],
   ) -> (Vec<G>, AiurProof) {
-    tracing_texray::examine_current();
-
-    // Execute the Aiur bytecode.
-    let _g = tracing::info_span!("aiur/execute").entered();
-    // Execute the Aiur bytecode. The prover assumes inputs are valid; any
-    // execution error here is a programmer bug, so we unwrap.
-    let (query_record, output) = self
-      .toplevel
-      .execute(fun_idx, input.to_vec(), io_buffer, false)
-      .expect("Aiur execution failed during prove");
-    drop(_g);
-
-    // Build the `SystemWitness`
     let _g = tracing::info_span!("aiur/witness").entered();
     let circuit_types = self.circuit_types();
     let witness_data = circuit_types
@@ -363,6 +369,28 @@ impl AiurSystem {
     (claim, proof)
   }
 
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
+  pub fn prove(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &mut IOBuffer,
+  ) -> (Vec<G>, AiurProof) {
+    tracing_texray::examine_current();
+
+    // Execute the Aiur bytecode.
+    let _g = tracing::info_span!("aiur/execute").entered();
+    // Execute the Aiur bytecode. The prover assumes inputs are valid; any
+    // execution error here is a programmer bug, so we unwrap.
+    let (query_record, output) = self
+      .toplevel
+      .execute(fun_idx, input.to_vec(), io_buffer, false)
+      .expect("Aiur execution failed during prove");
+    drop(_g);
+
+    self.prove_from_execution(fun_idx, input, io_buffer, query_record, &output)
+  }
+
   /// IxVM-native prove: identical to `prove` except the execute step
   /// is provided by the caller as `executor` (a closure that runs
   /// the codegen'd Rust kernel `ix::aiur_ixvm_runner::execute_ixvm`
@@ -389,6 +417,48 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
+    self
+      .prove_ixvm_within_budget(fun_idx, input, io_buffer, executor, None)
+      .map_or_else(
+        |_| unreachable!("an unbudgeted prove never rejects"),
+        |(claim, proof, _peak)| (claim, proof),
+      )
+  }
+
+  /// `prove_ixvm`, but the record's projected prover peak has to fit
+  /// `max_bytes` before any proving starts. `None` skips the check.
+  ///
+  /// The peak is measured on the REAL record ([`Self::peak_prove_bytes`]),
+  /// not estimated from serialized bytes, so an over-budget shard is
+  /// caught in the gap between execution and the witness phase — before
+  /// the LDE/commit/FRI phases that would actually exhaust the box. The
+  /// record is dropped rather than proven and the peak comes back as
+  /// `Err(peak)`, which is the number a caller splits the shard against.
+  ///
+  /// On success the peak is returned too: proving a shard measures it for
+  /// free, so a prove run yields the same split/merge signal a check run
+  /// does without a second execution.
+  #[tracing::instrument(
+    level = "info",
+    skip_all,
+    name = "aiur/prove_ixvm_within_budget"
+  )]
+  pub fn prove_ixvm_within_budget<F>(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &mut IOBuffer,
+    executor: F,
+    max_bytes: Option<usize>,
+  ) -> Result<(Vec<G>, AiurProof, usize), usize>
+  where
+    F: FnOnce(
+      &Toplevel,
+      FunIdx,
+      Vec<G>,
+      &mut IOBuffer,
+    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
+  {
     tracing_texray::examine_current();
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
     let (query_record, output) =
@@ -396,43 +466,13 @@ impl AiurSystem {
         .expect("IxVM-native Aiur execution failed during prove_ixvm");
     drop(_g);
 
-    let _g = tracing::info_span!("aiur/witness").entered();
-    let circuit_types = self.circuit_types();
-    let witness_data = circuit_types
-      .into_par_iter()
-      .enumerate()
-      .map(|(circuit_idx, circuit_type)| {
-        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
-        match circuit_type {
-          CircuitType::Function { idx } => self.toplevel.witness_data(
-            idx,
-            &query_record,
-            io_buffer,
-            &slot_arg_widths,
-          ),
-          CircuitType::Memory { width } => {
-            Memory::witness_data(width, &query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes1 => {
-            Bytes1.witness_data(&query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes2 => {
-            Bytes2.witness_data(&query_record, &slot_arg_widths)
-          },
-        }
-      })
-      .collect::<Vec<_>>();
-    drop(query_record);
-    let (traces, lookups) = witness_data.into_iter().unzip();
-    let witness = SystemWitness { traces, lookups };
-    drop(_g);
-
-    let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
-    claim.extend(input);
-    claim.extend(output);
-
-    let proof = self.system.prove(&self.key, &claim, witness);
-    (claim, proof)
+    let peak = self.peak_prove_bytes(&query_record).peak;
+    if max_bytes.is_some_and(|max| peak > max) {
+      return Err(peak);
+    }
+    let (claim, proof) =
+      self.prove_from_execution(fun_idx, input, io_buffer, query_record, &output);
+    Ok((claim, proof, peak))
   }
 
   #[inline]

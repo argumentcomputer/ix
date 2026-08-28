@@ -7,7 +7,8 @@ use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanExternal, LeanNat, LeanOption, LeanOwned, LeanProd, LeanRef,
+  LeanString,
 };
 
 use crate::{
@@ -15,7 +16,8 @@ use crate::{
   lean::{
     LeanAiurCircuitShape, LeanAiurCommitmentParameters, LeanAiurExecuteResult,
     LeanAiurFriParameters, LeanAiurIOKeyInfo, LeanAiurProveEnvResult,
-    LeanAiurProveResult, LeanAiurQueryCount, LeanAiurToplevel,
+    LeanAiurProveResult, LeanAiurQueryCount, LeanAiurShardProveResult,
+    LeanAiurShardResult, LeanAiurToplevel,
   },
 };
 use aiur::{
@@ -738,6 +740,80 @@ fn available_ram_bytes() -> Option<usize> {
   Some(kib * 1024)
 }
 
+/// Decode a `memory[32]` entry as a 32-byte address. Every limb has to be a
+/// byte: an entry whose limbs are not byte-valued is some other `&[T; 32]`
+/// the pointer aliased, not an `Addr`, so the caller skips that row rather
+/// than recording a truncated address.
+fn limbs_to_addr(limbs: &[G]) -> Option<[u8; 32]> {
+  let mut addr = [0u8; 32];
+  if limbs.len() != addr.len() {
+    return None;
+  }
+  for (byte, limb) in addr.iter_mut().zip(limbs) {
+    *byte = u8::try_from(limb.as_canonical_u64()).ok()?;
+  }
+  Some(addr)
+}
+
+/// Serialized width of one [`const_weights`] row: 32-byte address, then
+/// `vspan` and `mult` as little-endian `u64`s.
+const CONST_WEIGHT_ROW: usize = 48;
+
+/// Reduce an executed record to per-constant weights, so the record can be
+/// dropped inside the task that produced it: at env scale the records of a
+/// whole partition do not fit in RAM at once, but one 48-byte row per
+/// checked constant does.
+///
+/// Rows come from the `check_const` query map (`check_const_idx`), whose
+/// entries name the constants this shard actually checked. The address is
+/// the LAST input slot — `ci` is passed flattened by value — dereferenced
+/// through `memory[32]`. `vspan` is the constant's standalone check cost
+/// (memo hits replay the callee's recorded span), so the weights are
+/// order-independent and stay valid for planning a DIFFERENT partition
+/// than the one that measured them. Unconstrained hint rows
+/// (multiplicity 0) are skipped: they are not checks.
+///
+/// Empty unless the execution ran with `profile = true`; without it every
+/// span reads 0 and the rows carry no signal.
+fn const_weights(
+  record: &QueryRecord,
+  toplevel: &aiur::bytecode::Toplevel,
+  check_const_idx: usize,
+) -> Vec<u8> {
+  let (Some(map), Some(function)) = (
+    record.function_queries.get(check_const_idx),
+    toplevel.functions.get(check_const_idx),
+  ) else {
+    return Vec::new();
+  };
+  let Some(addr_pos) = function.layout.input_size.checked_sub(1) else {
+    return Vec::new();
+  };
+  let memory = record.memory_queries.get(&32);
+  let mut rows = Vec::with_capacity(map.len() * CONST_WEIGHT_ROW);
+  for i in 0..map.len() {
+    let mult = map.mult_at(i).as_canonical_u64();
+    if mult == 0 {
+      continue;
+    }
+    let Some(ptr) = map.get_index(i).and_then(|(key, _)| key.get(addr_pos))
+    else {
+      continue;
+    };
+    let ptr = usize::try_from(ptr.as_canonical_u64()).unwrap_or(usize::MAX);
+    let Some(addr) = memory
+      .and_then(|m| m.get_index(ptr).map(|(k, _)| k))
+      .and_then(limbs_to_addr)
+    else {
+      continue;
+    };
+    rows.extend_from_slice(&addr);
+    rows.extend_from_slice(&map.vspan_at(i).to_le_bytes());
+    rows.extend_from_slice(&mult.to_le_bytes());
+  }
+  rows
+}
+
 /// `Bytecode.Toplevel.shardCheckBatchWithEnv`: check EVERY shard of a
 /// partition in one call — rayon over the shard list with true
 /// work-stealing (no chunk barriers), each shard through the exact
@@ -748,12 +824,14 @@ fn available_ram_bytes() -> Option<usize> {
 ///
 /// `shards_blob` encodes the partition as, per shard, a 4-byte LE
 /// owned-constant count followed by that many 32-byte addresses.
-/// Returns one `(error, peak_bytes)` pair PER SHARD in shard order:
+/// Returns one `(error, peak_bytes, weights)` triple PER SHARD in shard order:
 /// an empty error string means the shard checked clean, and
 /// `peak_bytes` is the analytic prover peak
 /// ([`aiur::synthesis::AiurSystem::peak_prove_bytes`]) of its executed
 /// record — the number split/merge decisions compare against a prover
-/// budget (0 when the shard failed). `jobs = 0` uses rayon's default
+/// budget (0 when the shard failed). `weights` is the shard's
+/// [`const_weights`] blob — empty unless `profile`, which also enables
+/// the per-entry virtual-gas meter the blob reads. `jobs = 0` uses rayon's default
 /// pool width (all cores) — safe at full width because admission is
 /// bounded by [`RamGate`], not by thread count; pass `jobs` only to
 /// narrow CPU use.
@@ -773,11 +851,14 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   jobs: LeanNat<LeanBorrowed<'_>>,
   commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
   fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  profile: bool,
+  check_const_idx: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   use rayon::prelude::*;
   let toplevel = decode_toplevel(&toplevel_obj);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let jobs = lean_unbox_nat_as_usize(jobs.inner());
+  let check_const_idx = lean_unbox_nat_as_usize(check_const_idx.inner());
   let mut shards: Vec<Vec<ix_common::address::Address>> = Vec::new();
   {
     let bytes = shards_blob.as_bytes();
@@ -843,7 +924,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
       max as f64 / gib,
     );
   }
-  let check_batch = || -> Vec<(String, usize)> {
+  let check_batch = || -> Vec<(String, usize, Vec<u8>)> {
     shards
       .par_iter()
       .zip(estimates.par_iter())
@@ -853,19 +934,28 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
           match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
             env, owned,
           ) {
-            Err(e) => (format!("witness build: {e}"), 0),
+            Err(e) => (format!("witness build: {e}"), 0, Vec::new()),
             Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
               &toplevel,
               fun_idx,
               input,
               &mut io_buffer,
               use_bytecode,
-              // No vspan meter: only the prover peak is read back per shard.
-              false,
+              profile,
             ) {
-              Err(e) => (e, 0),
+              Err(e) => (e, 0, Vec::new()),
+              // Both reductions happen here, while the record is still
+              // owned by this task: it is dropped before `gate.release`,
+              // so admission keeps bounding peak RSS by the shards in
+              // flight rather than by the whole partition.
               Ok((record, _output)) => {
-                (String::new(), system.peak_prove_bytes(&record).peak)
+                let peak = system.peak_prove_bytes(&record).peak;
+                let weights = if profile {
+                  const_weights(&record, &toplevel, check_const_idx)
+                } else {
+                  Vec::new()
+                };
+                (String::new(), peak, weights)
               },
             },
           };
@@ -886,9 +976,12 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
     pool.install(check_batch)
   };
   let arr = LeanArray::alloc(results.len());
-  for (i, (err, peak)) in results.iter().enumerate() {
-    arr
-      .set(i, LeanProd::new(LeanString::new(err), LeanOwned::box_usize(*peak)));
+  for (i, (err, peak, weights)) in results.iter().enumerate() {
+    let row = LeanAiurShardResult::alloc(0);
+    row.set_obj(0, LeanString::new(err));
+    row.set_obj(1, LeanOwned::box_usize(*peak));
+    row.set_obj(2, LeanByteArray::from_bytes(weights));
+    arr.set(i, row);
   }
   LeanExcept::ok(arr)
 }
@@ -1010,9 +1103,25 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
 }
 
-/// `AiurSystem.shardProveWithEnv`: per-shard prove against a
-/// Rust-owned `EnvHandle`. Same `ProveEnvResult` return shape as
-/// `proveAddrWithEnv`.
+/// `AiurSystem.shardProveWithEnv`: per-shard prove against a Rust-owned
+/// `EnvHandle`, executing ONCE and proving from that record.
+///
+/// `max_ram_bytes` is a per-shard prover-RAM budget checked against the
+/// executed record's projected peak, in the gap between execution and
+/// the witness phase. `0` means "detect": 85% of `MemAvailable`, the
+/// same policy the check batch's RAM gate uses. An unreadable
+/// `/proc/meminfo` disables the check rather than guessing at it.
+///
+/// Over budget, the record is dropped and `proof` comes back as `none`
+/// with the measured `peakBytes`. That is a RESULT, not an error: the
+/// caller's answer is to split the shard and prove the halves, and it
+/// needs the peak to decide. Learning this here costs one execution
+/// instead of an OOM part-way through an FFT.
+///
+/// Returns `(claimBytes, proof?, peakBytes)`. The final IO buffer is
+/// deliberately NOT returned: it is the shard's whole ingested byte
+/// scope, both Lean callers discarded it, and marshalling it back is
+/// pure cost on the largest buffers in the system.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_shard_prove_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -1022,8 +1131,10 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     LeanBorrowed<'_>,
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
   let owned = match decode_owned_blob(&owned_blob) {
     Ok(v) => v,
     Err(e) => return LeanExcept::error_string(&e),
@@ -1040,7 +1151,14 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       },
     };
 
-  let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
+  // 0 = detect. Matching the check batch's gate keeps one RAM policy in
+  // the system rather than two that can disagree.
+  let budget = if max_ram_bytes > 0 {
+    Some(max_ram_bytes)
+  } else {
+    available_ram_bytes().map(|b| b / 100 * 85)
+  };
+  let proved = aiur_system_obj.get().prove_ixvm_within_budget(
     fun_idx,
     &input,
     &mut io_buffer,
@@ -1050,9 +1168,23 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
         toplevel, fun_idx, input, io_buffer, false,
       )
     },
+    budget,
   );
+  let (proof, peak) = match proved {
+    Ok((_aiur_claim_arr, proof, peak)) => (LeanOption::some(
+      LeanExternal::alloc(&AIUR_PROOF_CLASS, proof),
+    ), peak),
+    Err(peak) => (LeanOption::none(), peak),
+  };
+  drop(io_buffer);
 
-  LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let result = LeanAiurShardProveResult::alloc(0);
+  result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
+  result.set_obj(1, proof);
+  result.set_obj(2, LeanOwned::box_usize(peak));
+  LeanExcept::ok(result)
 }
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
