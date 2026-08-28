@@ -24,31 +24,31 @@ jobs:
           client-id: ${{ secrets.TOKEN_APP_ID }}
           private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
 
-      # `dev` carries the fork's bump_mode/release_channel support; `main` only
-      # mirrors upstream, which silently ignores these inputs. A PR is opened
-      # on an update/lean-{release} branch whether or not the build passes, so
-      # an incompatible release shows up as a failing PR to review. Dependencies
-      # pinned to a Lean version tag move with the toolchain; a dependency
-      # pinned to a commit hash is reported and left alone.
-      - uses: argumentcomputer/lean-update@dev
+      # `exclude-dir` carries the fork's bump_mode/release_channel support plus
+      # the `!` exclusion syntax below; `main` only mirrors upstream, which
+      # silently ignores these inputs. Move back to `dev` once the exclusion
+      # lands there. A PR is opened on an update/lean-{release} branch whether
+      # or not the build passes, so an incompatible release shows up as a
+      # failing PR to review. Dependencies pinned to a Lean version tag move
+      # with the toolchain; a dependency pinned to a commit hash is reported
+      # and left alone.
+      - uses: argumentcomputer/lean-update@exclude-dir
         with:
           # The root package plus the benchmark packages. `/**` walks a whole
           # subtree, reaching packages nested inside another package (Catalog's
           # relocation fixtures, Compile's TruthMines) and skipping dotted
-          # directories so `.lake` dependency checkouts are never swept up; it
-          # matches descendants only, hence Benchmarks/Compile alongside it.
+          # directories so `.lake` dependency checkouts are never swept up.
           #
-          # The list is spelled out rather than globbed as Benchmarks/** because
-          # the action has no exclusion syntax and Benchmarks/CompileFC must
-          # stay pinned: it builds against formal-conjectures at a commit hash,
-          # which the action leaves alone, so moving its toolchain off v4.27.0
-          # only breaks the build. A new benchmark package has to be added here.
+          # `!` subtracts a directory and everything beneath it, so the glob can
+          # cover Benchmarks while sparing CompileFC, which must stay pinned: it
+          # builds against formal-conjectures at a commit hash, which the action
+          # leaves alone, so moving its toolchain off v4.27.0 only breaks the
+          # build. An exclusion takes no glob of its own, and one matching
+          # nothing is reported in the log rather than passing silently.
           lake_package_directory: >-
             .
-            Benchmarks/Catalog/**
-            Benchmarks/Compile
-            Benchmarks/Compile/**
-            Benchmarks/TruthMines
+            Benchmarks/**
+            !Benchmarks/CompileFC
           bump_mode: pinned-tags
           pr: true
           token: ${{ steps.app-token.outputs.token }}
