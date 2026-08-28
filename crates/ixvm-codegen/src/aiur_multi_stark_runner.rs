@@ -42,6 +42,15 @@ pub struct JoinTree<'a> {
   pub bytes: &'a [u8],
 }
 
+/// One carried/discharged choice consumed by `join_two_structural` on IO
+/// channel 6. Candidates use the same raw-address key representation as trees;
+/// the circuit strictly parses the choice and verifies every discharge path.
+#[derive(Clone, Copy, Debug)]
+pub struct JoinPath<'a> {
+  pub candidate: [u8; 32],
+  pub bytes: &'a [u8],
+}
+
 /// Raw advice for one binary aggregate-first join.
 ///
 /// This is deliberately a borrowed view: real shard and recursive proofs are
@@ -56,6 +65,7 @@ pub struct JoinAdvice<'a> {
   pub allowed: &'a [u8],
   pub preimages: &'a [JoinPreimage<'a>],
   pub trees: &'a [JoinTree<'a>],
+  pub paths: &'a [JoinPath<'a>],
 }
 
 /// Decode the compact host/FFI representation of digest-addressed join
@@ -77,6 +87,18 @@ pub fn decode_join_preimages(
 pub fn decode_join_trees(blob: &[u8]) -> Result<Vec<JoinTree<'_>>, String> {
   decode_keyed_blobs(blob, "join trees").map(|entries| {
     entries.into_iter().map(|(root, bytes)| JoinTree { root, bytes }).collect()
+  })
+}
+
+/// Decode the compact candidate-addressed structural-discharge choices. Its
+/// framing is identical to [`decode_join_preimages`]; payload semantics are
+/// checked by the circuit.
+pub fn decode_join_paths(blob: &[u8]) -> Result<Vec<JoinPath<'_>>, String> {
+  decode_keyed_blobs(blob, "join paths").map(|entries| {
+    entries
+      .into_iter()
+      .map(|(candidate, bytes)| JoinPath { candidate, bytes })
+      .collect()
   })
 }
 
@@ -222,7 +244,7 @@ pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
   io
 }
 
-/// Build `join_two`'s six-channel IO advice buffer.
+/// Build the flat/structural join entrypoints' seven-channel IO advice buffer.
 ///
 /// Layout (the circuit binds every digest-addressed blob before decoding):
 ///
@@ -231,7 +253,8 @@ pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
 /// * ch 2 `[0]`, `[1]`, `[2]`: child outer claims and output `CheckEnv` claim;
 /// * ch 3 `[0]`: the digest-bound allowed-vk blob;
 /// * ch 4 `packed(blake3)`: nested claim preimages;
-/// * ch 5 `root bytes`: serialized subject/assumption trees.
+/// * ch 5 `root bytes`: serialized subject/assumption trees;
+/// * ch 6 `candidate bytes`: carried/discharged choices and Merkle paths.
 pub fn join_io_buffer(advice: &JoinAdvice<'_>) -> IOBuffer {
   let mut io =
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() };
@@ -254,6 +277,14 @@ pub fn join_io_buffer(advice: &JoinAdvice<'_>) -> IOBuffer {
   }
   for tree in advice.trees {
     extend_bytes(&mut io, G::from_u8(5), address_key(&tree.root), tree.bytes);
+  }
+  for path in advice.paths {
+    extend_bytes(
+      &mut io,
+      G::from_u8(6),
+      address_key(&path.candidate),
+      path.bytes,
+    );
   }
 
   io
@@ -300,6 +331,7 @@ mod tests {
     }
     let preimages = [JoinPreimage { digest, bytes: &[11, 12] }];
     let trees = [JoinTree { root, bytes: &[13, 14, 15] }];
+    let paths = [JoinPath { candidate: root, bytes: &[1, 0] }];
     let advice = JoinAdvice {
       proofs: [&[1, 2], &[3]],
       recursion_vk: &[4, 5],
@@ -308,6 +340,7 @@ mod tests {
       allowed: &[10],
       preimages: &preimages,
       trees: &trees,
+      paths: &paths,
     };
 
     let io = join_io_buffer(&advice);
@@ -324,6 +357,7 @@ mod tests {
     assert_eq!(info(&io, 3, index_key(0)), (0, 1));
     assert_eq!(info(&io, 4, packed_digest_key(&digest)), (0, 2));
     assert_eq!(info(&io, 5, address_key(&root)), (0, 3));
+    assert_eq!(info(&io, 6, address_key(&root)), (0, 2));
     assert_ne!(packed_digest_key(&digest), address_key(&digest));
   }
 
@@ -345,8 +379,13 @@ mod tests {
     assert_eq!(trees[0].root, key);
     assert_eq!(trees[0].bytes, &[8, 9, 10]);
 
+    let paths = decode_join_paths(&blob).expect("valid path blob");
+    assert_eq!(paths[0].candidate, key);
+    assert_eq!(paths[0].bytes, &[8, 9, 10]);
+
     blob.push(11);
     assert!(decode_join_preimages(&blob).is_err());
     assert!(decode_join_trees(&[1, 0, 0]).is_err());
+    assert!(decode_join_paths(&[1, 0, 0]).is_err());
   }
 }

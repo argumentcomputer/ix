@@ -579,6 +579,22 @@ def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) : Array A
     if blockSet.contains (blockAddrOf addr c) then o := o.push addr
   return o
 
+/-- Count each shard's owned constants in one environment pass. Callers first
+run `shardsCover`, so every check-schedule block has exactly one owner. This is
+the subject-leaf count used by aggregate structural-threshold scheduling. -/
+def ownedConstCountsForShards (ixonEnv : Ixon.Env)
+    (shards : Array (Array Address)) : Array Nat := Id.run do
+  let mut blockToShard : Std.HashMap Address Nat := {}
+  for (blocks, shard) in shards.mapIdx fun shard blocks => (blocks, shard) do
+    for block in blocks do
+      blockToShard := blockToShard.insert block shard
+  let mut counts := Array.replicate shards.size 0
+  for (addr, lc) in ixonEnv.consts do
+    let some c := lc.get? | continue
+    let some shard := blockToShard.get? (blockAddrOf addr c) | continue
+    counts := counts.modify shard (· + 1)
+  return counts
+
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the
     digest `prove --shard K` produced, so a proof can be bound to its shard. -/

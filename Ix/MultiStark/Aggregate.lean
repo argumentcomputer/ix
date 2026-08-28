@@ -15,6 +15,11 @@ sets behind their roots, and emit
 
 `assumptions = (assumptions_L ∪ assumptions_R) ∖ subjects`.
 
+`join_two_structural` is the mode-2 variant for large upper levels. It commits
+to the subject forest structurally (`nodeHash(leftRoot, rightRoot)`) and proves
+assumption discharge with per-candidate Merkle paths, avoiding a full subject
+tree re-open and canonical re-root at every upper node.
+
 All address-list operations use bytewise address comparison. Pointer identity
 is never used as set equality: Aiur memory constrains pointers to be unique,
 not stored values to be globally deduplicated.
@@ -384,6 +389,86 @@ def aggregate := ⟦
     }
   }
 
+  /- ## Structural assumption discharge
+
+  Structural joins do not open their subject tree. Instead, channel 6 carries
+  one choice for every unique input-assumption candidate, keyed by the raw
+  candidate address. A carried candidate must occur next in the canonical
+  output-assumption list; a discharged candidate must supply a valid Merkle
+  path into the one-hash structural output root.
+  -/
+
+  fn join_fold_path(hash: Addr, remaining: G, stream: ByteStream)
+      -> (Addr, ByteStream) {
+    match remaining {
+      0 => (hash, stream),
+      _ =>
+        let (side, s1) = join_read_byte(stream);
+        assert_eq!(u8_less_than(side, 2u8), 1,
+          "structural join: path side must be 0 or 1");
+        let (sibling, s2) = join_read_address(s1);
+        let parent = match side {
+          0 => join_node_hash(sibling, hash),
+          _ => join_node_hash(hash, sibling),
+        };
+        join_fold_path(parent, remaining - 1, s2),
+    }
+  }
+
+  -- Return 1 when `candidate` is discharged by a path into `root`, or 0
+  -- when it is explicitly carried. The payload is strict:
+  --   carried:    0
+  --   discharged: 1 || count:u8 || (side:u8 || sibling:32)*
+  fn join_discharge_choice(candidate: Addr, root: Addr) -> G {
+    let (idx, len) = io_get_info(6, load(candidate));
+    let bytes = #read_byte_stream(6, idx, len);
+    let (choice, rest) = join_read_byte(bytes);
+    assert_eq!(u8_less_than(choice, 2u8), 1,
+      "structural join: discharge choice must be 0 or 1");
+    match choice {
+      0 =>
+        assert_eq!(load(rest), ListNode.Nil,
+          "structural join: carried choice has trailing bytes");
+        0,
+      _ =>
+        let (count, path) = join_read_byte(rest);
+        assert_eq!(u8_less_than(count, 65u8), 1,
+          "structural join: Merkle path exceeds 64 steps");
+        let (actual, stop) = join_fold_path(join_leaf_hash(candidate),
+          to_field(count), path);
+        assert_eq!(load(stop), ListNode.Nil,
+          "structural join: trailing bytes after Merkle path");
+        assert_eq!(address_eq(actual, root), 1,
+          "structural join: assumption path does not reach subject root");
+        1,
+    }
+  }
+
+  -- Every unique candidate from `left ∪ right` is either discharged by a
+  -- membership path or consumed from the strictly-sorted output list. A
+  -- candidate may be over-carried even when a path exists; that only weakens
+  -- the output claim and cannot pass an unconditional root check.
+  fn join_assert_structural_difference(left: List‹Addr›, right: List‹Addr›,
+      subject_root: Addr, output: List‹Addr›) {
+    match join_next_assumption(left, right) {
+      JoinNextAssumption.Done =>
+        assert_eq!(load(output), ListNode.Nil,
+          "structural join: output has an extra assumption");
+        (),
+      JoinNextAssumption.More(candidate, left_rest, right_rest) =>
+        match join_discharge_choice(candidate, subject_root) {
+          1 => join_assert_structural_difference(left_rest, right_rest,
+            subject_root, output),
+          _ =>
+            let ListNode.Cons(actual, output_rest) = load(output);
+            assert_eq!(address_eq(candidate, actual), 1,
+              "structural join: outstanding assumption mismatch");
+            join_assert_structural_difference(left_rest, right_rest,
+              subject_root, output_rest),
+        },
+    }
+  }
+
   fn join_get_opt_address(stream: ByteStream) -> (Option‹Addr›, ByteStream) {
     let (tag, rest) = join_read_byte(stream);
     match tag {
@@ -483,12 +568,13 @@ def aggregate := ⟦
     join_parse_check_env(join_load_preimage(check_env_digest))
   }
 
-  -- Decode a verified child as either a lift or a transitive join. Function
+  -- Decode a verified child as either a lift or a transitive flat/structural
+  -- join. Function
   -- indices live in the digest-bound allowed blob because Source programs have
   -- no primitive for materializing their compiler-assigned numeric index.
   fn join_decode_child(outer_claims: List‹List‹U64››,
       ixvm_vk_digest: [G; 8], allowed_digest: [G; 8],
-      verify_claim_idx: G, lift_idx: G, join_idx: G)
+      verify_claim_idx: G, lift_idx: G, join_idx: G, struct_join_idx: G)
       -> (Addr, Option‹Addr›) {
     let outer = join_only_claim(outer_claims);
     assert_eq!(list_length(outer), 18,
@@ -501,8 +587,13 @@ def aggregate := ⟦
         join_assert_digest(join_claim_digest(outer, 2), ixvm_vk_digest);
         join_decode_lift_claim(outer, verify_claim_idx),
       _ =>
-        assert_eq!(child_idx, join_idx,
-          "join: child is neither lift nor join");
+        match eq_zero(child_idx - join_idx) {
+          1 => (),
+          _ =>
+            assert_eq!(child_idx, struct_join_idx,
+              "join: child is neither lift, flat join, nor structural join");
+            (),
+        };
         join_assert_digest(join_claim_digest(outer, 2), allowed_digest);
         let output_digest = join_claim_digest(outer, 10);
         join_parse_check_env(join_load_preimage(output_digest)),
@@ -518,8 +609,11 @@ def aggregate := ⟦
   pub fn join_two(allowed_digest: [G; 8], out_claim_digest: [G; 8]) {
     -- Allowed blob:
     --   ixvm_vk_digest(32) ‖ verify_claim_idx(u64 LE) ‖
-    --   recursion_vk_digest(32) ‖ lift_idx(u64 LE) ‖ join_idx(u64 LE).
+    --   recursion_vk_digest(32) ‖ lift_idx(u64 LE) ‖ join_idx(u64 LE) ‖
+    --   struct_join_idx(u64 LE).
     let (aidx, alen) = io_get_info(3, [0]);
+    assert_eq!(alen, 96,
+      "join: allowed blob must be exactly 96 bytes");
     let allowed_bytes = #read_byte_stream(3, aidx, alen);
     assert_eq!(@b3_pack(@blake3(allowed_bytes)), allowed_digest,
       "join: allowed blob digest mismatch");
@@ -527,14 +621,16 @@ def aggregate := ⟦
     let (verify_idx_limb, as2) = @read_u64(as1);
     let (rec_digest_addr, as3) = join_read_address(as2);
     let (lift_idx_limb, as4) = @read_u64(as3);
-    let (join_idx_limb, astop) = @read_u64(as4);
+    let (join_idx_limb, as5) = @read_u64(as4);
+    let (struct_join_idx_limb, astop) = @read_u64(as5);
     assert_eq!(load(astop), ListNode.Nil,
-      "join: allowed blob must be exactly 88 bytes");
+      "join: allowed blob must be exactly 96 bytes");
     let ixvm_vk_digest = join_pack_address(ixvm_digest_addr);
     let rec_vk_digest = join_pack_address(rec_digest_addr);
     let verify_claim_idx = flatten_u64(verify_idx_limb);
     let lift_idx = flatten_u64(lift_idx_limb);
     let join_idx = flatten_u64(join_idx_limb);
+    let struct_join_idx = flatten_u64(struct_join_idx_limb);
 
     -- Deserialize and bind this recursion system's vk once; both children
     -- verify against the same system.
@@ -548,9 +644,11 @@ def aggregate := ⟦
     let left_claims = join_verify_child(sys, 0);
     let right_claims = join_verify_child(sys, 1);
     let (left_root, left_asm) = join_decode_child(left_claims,
-      ixvm_vk_digest, allowed_digest, verify_claim_idx, lift_idx, join_idx);
+      ixvm_vk_digest, allowed_digest, verify_claim_idx, lift_idx, join_idx,
+      struct_join_idx);
     let (right_root, right_asm) = join_decode_child(right_claims,
-      ixvm_vk_digest, allowed_digest, verify_claim_idx, lift_idx, join_idx);
+      ixvm_vk_digest, allowed_digest, verify_claim_idx, lift_idx, join_idx,
+      struct_join_idx);
 
     -- Bind and decode the current join's output claim.
     let (oidx, olen) = io_get_info(2, [2]);
@@ -569,6 +667,72 @@ def aggregate := ⟦
     join_assert_union(left_subjects, right_subjects, output_subjects);
     join_assert_difference(left_assumptions, right_assumptions,
       output_subjects, output_assumptions);
+    ()
+  }
+
+  /- ## Structural root-of-roots join -/
+
+  -- Verify the same child forms as `join_two`, but commit to subjects with one
+  -- free-form node hash and discharge assumptions through channel-6 Merkle
+  -- paths. Assumption trees remain canonical and are the only trees loaded on
+  -- channel 5.
+  pub fn join_two_structural(allowed_digest: [G; 8], out_claim_digest: [G; 8]) {
+    -- Allowed blob v2:
+    --   ixvm_vk_digest(32) ‖ verify_claim_idx(u64 LE) ‖
+    --   recursion_vk_digest(32) ‖ lift_idx(u64 LE) ‖ join_idx(u64 LE) ‖
+    --   struct_join_idx(u64 LE).
+    let (aidx, alen) = io_get_info(3, [0]);
+    assert_eq!(alen, 96,
+      "structural join: allowed blob must be exactly 96 bytes");
+    let allowed_bytes = #read_byte_stream(3, aidx, alen);
+    assert_eq!(@b3_pack(@blake3(allowed_bytes)), allowed_digest,
+      "structural join: allowed blob digest mismatch");
+    let (ixvm_digest_addr, as1) = join_read_address(allowed_bytes);
+    let (verify_idx_limb, as2) = @read_u64(as1);
+    let (rec_digest_addr, as3) = join_read_address(as2);
+    let (lift_idx_limb, as4) = @read_u64(as3);
+    let (join_idx_limb, as5) = @read_u64(as4);
+    let (struct_join_idx_limb, astop) = @read_u64(as5);
+    assert_eq!(load(astop), ListNode.Nil,
+      "structural join: allowed blob must be exactly 96 bytes");
+    let ixvm_vk_digest = join_pack_address(ixvm_digest_addr);
+    let rec_vk_digest = join_pack_address(rec_digest_addr);
+    let verify_claim_idx = flatten_u64(verify_idx_limb);
+    let lift_idx = flatten_u64(lift_idx_limb);
+    let join_idx = flatten_u64(join_idx_limb);
+    let struct_join_idx = flatten_u64(struct_join_idx_limb);
+
+    let (sidx, slen) = io_get_info(1, [0]);
+    let sbytes = #read_byte_stream(1, sidx, slen);
+    assert_eq!(@b3_pack(@blake3(sbytes)), rec_vk_digest,
+      "structural join: recursion vk digest mismatch");
+    let (sys, srest) = @read_system(sbytes);
+    assert_eq!(load(srest), ListNode.Nil);
+
+    let left_claims = join_verify_child(sys, 0);
+    let right_claims = join_verify_child(sys, 1);
+    let (left_root, left_asm) = join_decode_child(left_claims,
+      ixvm_vk_digest, allowed_digest, verify_claim_idx, lift_idx, join_idx,
+      struct_join_idx);
+    let (right_root, right_asm) = join_decode_child(right_claims,
+      ixvm_vk_digest, allowed_digest, verify_claim_idx, lift_idx, join_idx,
+      struct_join_idx);
+
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = #read_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "structural join: output claim digest mismatch");
+    let (output_root, output_asm) = join_parse_check_env(output_bytes);
+
+    let expected_root = join_node_hash(left_root, right_root);
+    assert_eq!(address_eq(output_root, expected_root), 1,
+      "structural join: output subject root is not nodeHash(left, right)");
+
+    let left_assumptions = join_load_optional_tree(left_asm);
+    let right_assumptions = join_load_optional_tree(right_asm);
+    let output_assumptions = join_load_optional_tree(output_asm);
+    join_assert_structural_difference(left_assumptions, right_assumptions,
+      output_root, output_assumptions);
     ()
   }
 ⟧

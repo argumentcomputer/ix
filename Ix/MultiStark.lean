@@ -34,9 +34,10 @@ statement, while costing an extra in-circuit hash over those bytes.
 The verifying key and claims, by contrast, ARE digest-bound (`system_digest`,
 `claims_digest`): they determine *what was proven*.
 
-The second production entrypoint, `join_two`, verifies two lift/join proofs
-under one pinned recursion vk and folds their `CheckEnv` statements by
-canonical subject union and assumption discharge. Its implementation lives in
+The two production join entrypoints verify lift/join proofs under one pinned
+recursion vk and fold their `CheckEnv` statements. `join_two` uses canonical
+subject union; `join_two_structural` commits to a root-of-roots and discharges
+assumptions with Merkle paths. Their implementation lives in
 `Ix/MultiStark/Aggregate.lean`.
 
 Fixed protocol assumptions (our system): `capHeight = 0`, `maxLogArity = 1`,
@@ -111,14 +112,15 @@ def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel := do
   t.merge entrypoints
 
 /-- The production recursion toplevel: `multiStarkFull` pruned to the combined
-call closures of `verify_multi_stark_proof` (lift) and `join_two`. Every
+call closures of `verify_multi_stark_proof` (lift), `join_two` (flat join), and
+`join_two_structural`. Every
 compiled function is a committed circuit whose openings pad every proof of the
 system's execution, so functions only reachable from unrelated entries
 (kernel-oriented helpers of the shared modules, test/bench entries) cost real
 proof bytes if kept. -/
 def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← multiStarkFull
-  pure (t.prune [`verify_multi_stark_proof, `join_two])
+  pure (t.prune [`verify_multi_stark_proof, `join_two, `join_two_structural])
 
 /-! ## Lean-side input assembly
 
@@ -159,30 +161,32 @@ def verifierPubInput (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
 
 /-! ## Aggregate-first input assembly
 
-These helpers define the host half of the `join_two` wire contract from
+These helpers define the host half of the recursive join wire contracts from
 `plans/aggregate-first-pipeline.md` §10.  Keeping the byte layout and digest
 packing next to `verifierPubInput` prevents the CLI, tests, and FFI callers from
 growing subtly different encodings while the join entrypoint is brought up.
 -/
 
-/-- The digest-bound 88-byte allowlist preimage for a recursive join:
+/-- The digest-bound 96-byte allowlist preimage for a recursive join:
 
 `blake3(ixvm vk) ‖ verify_claim index as u64-LE ‖ blake3(recursion vk) ‖
-lift index as u64-LE ‖ join index as u64-LE`.
+lift index as u64-LE ‖ flat join index as u64-LE ‖ structural join index as
+u64-LE`.
 
-The verifying keys stay outside the public input. Their digests and all three
+The verifying keys stay outside the public input. Their digests and all four
 entrypoint indices form the stable identity that every join in an aggregation
 tree pins transitively. The indices must be explicit because the Source DSL
 cannot materialize its compiler-assigned function index inside a circuit. -/
 def allowedBlob (ixvmVkBytes : ByteArray) (verifyClaimIdx : Nat)
-    (recursionVkBytes : ByteArray) (liftIdx joinIdx : Nat) : ByteArray :=
+    (recursionVkBytes : ByteArray) (liftIdx joinIdx structuralJoinIdx : Nat) : ByteArray :=
   let ixvmDigest := (Blake3.Rust.hash ixvmVkBytes).val.data
   let recursionDigest := (Blake3.Rust.hash recursionVkBytes).val.data
   ⟨ixvmDigest ++ u64le verifyClaimIdx ++ recursionDigest ++
-    u64le liftIdx ++ u64le joinIdx⟩
+    u64le liftIdx ++ u64le joinIdx ++ u64le structuralJoinIdx⟩
 
-/-- Public input for `join_two`: the packed Blake3 digest of the allowlist
-blob followed by the packed digest of the output `CheckEnv` claim bytes. -/
+/-- Public input for either join entrypoint: the packed Blake3 digest of the
+allowlist blob followed by the packed digest of the output `CheckEnv` claim
+bytes. -/
 def joinPubInput (allowed outClaimBytes : ByteArray) : Array Aiur.G :=
   digestGs allowed ++ digestGs outClaimBytes
 
@@ -221,6 +225,32 @@ independently checks strict leaf order and recomputes the canonical root. -/
 def joinTreesBlob (trees : Array Ix.AssumptionTree) : ByteArray :=
   joinKeyedBlobs <| trees.map fun tree =>
     (tree.root.hash, Ix.AssumptionTree.ser tree)
+
+/-- Encode one structural-discharge choice. A `none` path means "carry" and
+encodes as one zero byte. A present path means "discharge" and encodes as
+
+`1 ‖ count:u8 ‖ (side:u8 ‖ sibling:32)*`,
+
+where side `0` places the sibling on the left and side `1` places it on the
+right. Paths are bounded to 64 steps in both the host encoder and circuit. -/
+def joinPathPayload (path? : Option Ix.Merkle.MerklePath) : ByteArray := Id.run do
+  match path? with
+  | none => return ⟨#[0]⟩
+  | some path =>
+    assert! path.size ≤ 64
+    let mut out : Array UInt8 := #[1, UInt8.ofNat path.size]
+    for (sibling, isLeft) in path do
+      -- MerklePath's Bool says whether the sibling is on the left.
+      out := out.push (if isLeft then 0 else 1)
+      out := out ++ sibling.hash.data
+    return ⟨out⟩
+
+/-- Pack one structural-discharge choice per unique input-assumption candidate
+for IO channel 6. -/
+def joinPathsBlob
+    (paths : Array (Address × Option Ix.Merkle.MerklePath)) : ByteArray :=
+  joinKeyedBlobs <| paths.map fun (candidate, path?) =>
+    (candidate.hash, joinPathPayload path?)
 
 /-- The verifier toplevel PLUS its self-test entrypoints
 (`Ix/MultiStark/Tests.lean`), unpruned. Kept separate from `multiStark`

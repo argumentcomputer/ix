@@ -3,8 +3,10 @@
 
   Bind persisted shard proof wrappers to every shard in a manifest, lift each
   IxVM proof into the Multi-STARK recursion system, then execute/prove binary
-  joins in the manifest's bisection-tree order. The final persisted wrapper
-  carries the aggregate `CheckEnv` claim and recursive proof bytes.
+  joins in the manifest's bisection-tree order. Small joins use flat canonical
+  subjects; joins above `--structural-above` use an O(1) root-of-roots subject
+  fold plus assumption-membership paths. The final persisted wrapper carries
+  the aggregate `CheckEnv` claim and recursive proof bytes.
 
   This first host driver is intentionally serial and cache-free. Its slot
   model and content-addressed inputs make parallel scheduling and resumable
@@ -30,11 +32,46 @@ structure PreparedShard where
 
 structure AggregateSlot where
   statement : MultiStark.CheckEnvTrees
+  subjectCount : Nat
   outerClaim : Array Aiur.G
   proof : Aiur.Proof
   /-- Preimages needed when this slot is decoded by its parent. A lift exposes
   its inner claims plus `CheckEnv`; a join exposes only its output `CheckEnv`. -/
   openPreimages : Array ByteArray
+
+/-- A manifest fold operation annotated with the cumulative subject count and
+the monotone flat/structural choice used by the prover. -/
+structure ScheduledFold where
+  op : Ix.Cli.CheckCmd.AggregationTree.FoldOp
+  subjectCount : Nat
+  structural : Bool
+  deriving BEq, Repr
+
+def defaultStructuralAbove : Nat := 4096
+
+/-- Resolve subject counts and the structural threshold once, before proving.
+Because parent counts only grow, `count > structuralAbove` makes the mode
+monotone: a flat join is never scheduled above a structural child. -/
+def schedulePlan (plan : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp)
+    (shardCounts : Array Nat) (structuralAbove : Nat) :
+    Except String (Array ScheduledFold) := do
+  let mut scheduled : Array ScheduledFold := #[]
+  for op in plan do
+    match op with
+    | .leaf shard =>
+      let some count := shardCounts[shard]?
+        | throw s!"aggregate plan references missing shard {shard}"
+      scheduled := scheduled.push { op, subjectCount := count, structural := false }
+    | .join left right =>
+      let some leftSlot := scheduled[left]?
+        | throw s!"aggregate plan references missing left slot {left}"
+      let some rightSlot := scheduled[right]?
+        | throw s!"aggregate plan references missing right slot {right}"
+      let count := leftSlot.subjectCount + rightSlot.subjectCount
+      scheduled := scheduled.push {
+        op, subjectCount := count, structural := count > structuralAbove
+      }
+  pure scheduled
 
 private def addrOfHex (label value : String) : Except String Address :=
   match Address.fromString value with
@@ -58,15 +95,21 @@ private def compileToplevel (label : String)
     | .error e => return Except.error s!"{label} compilation failed: {e}"
     | .ok compiled => return Except.ok compiled
 
-private def printPlan (plan : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp) : IO Unit := do
-  let leaves := plan.countP fun op => match op with
+private def printPlan (plan : Array ScheduledFold) (structuralAbove : Nat) : IO Unit := do
+  let lifts := plan.countP fun item => match item.op with
     | .leaf _ => true
     | .join _ _ => false
-  IO.println s!"[aggregate] plan: {leaves} lifts + {plan.size - leaves} binary joins"
-  for (op, slot) in plan.mapIdx fun slot op => (op, slot) do
-    match op with
-    | .leaf shard => IO.println s!"  slot {slot}: lift shard {shard}"
-    | .join left right => IO.println s!"  slot {slot}: join slots {left}, {right}"
+  let structural := plan.countP (·.structural)
+  IO.println s!"[aggregate] plan: {lifts} lifts + {plan.size - lifts} binary joins \
+    ({structural} structural; threshold > {structuralAbove} subject leaves)"
+  for (item, slot) in plan.mapIdx fun slot item => (item, slot) do
+    match item.op with
+    | .leaf shard =>
+      IO.println s!"  slot {slot}: lift shard {shard} ({item.subjectCount} subjects)"
+    | .join left right =>
+      let mode := if item.structural then "structural" else "flat"
+      IO.println s!"  slot {slot}: {mode} join slots {left}, {right} \
+        ({item.subjectCount} subjects)"
 
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   let some ixePath := (p.flag? "ixe").map (·.as! String) | do
@@ -87,12 +130,17 @@ def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   if view.shards.size < 2 then
     IO.eprintln "aggregate currently requires at least two shards (single-shard lift packaging is not yet exposed)"
     return 1
-  if view.shards.any (·.isEmpty) then
+  let shardCounts := Ix.Cli.CheckCmd.ownedConstCountsForShards env view.shards
+  if shardCounts.any (· == 0) then
     IO.eprintln "aggregate currently requires non-empty shards; regenerate or prune empty manifest leaves"
     return 1
 
-  let plan := view.aggregationTree.foldPlan
-  printPlan plan
+  let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
+    defaultStructuralAbove
+  let plan ← match schedulePlan view.aggregationTree.foldPlan shardCounts structuralAbove with
+    | .error e => IO.eprintln e; return 1
+    | .ok plan => pure plan
+  printPlan plan structuralAbove
   if p.hasFlag "plan-only" then return 0
 
   let proofHexes := (p.variableArgsAs! String).toList
@@ -153,25 +201,31 @@ def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
   let liftIdx := recursionCompiled.getFuncIdx `verify_multi_stark_proof |>.get!
   let joinIdx := recursionCompiled.getFuncIdx `join_two |>.get!
+  let structuralJoinIdx := recursionCompiled.getFuncIdx `join_two_structural |>.get!
   let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
   let recursionSystem := Aiur.AiurSystem.build recursionCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
   let ixvmVk := ixvmSystem.vkBytes
   let recursionVk := recursionSystem.vkBytes
-  let allowed := MultiStark.allowedBlob ixvmVk verifyIdx recursionVk liftIdx joinIdx
+  let allowed := MultiStark.allowedBlob ixvmVk verifyIdx recursionVk liftIdx
+    joinIdx structuralJoinIdx
 
   let mut slots : Array AggregateSlot := #[]
-  for (op, slotIdx) in plan.mapIdx fun slotIdx op => (op, slotIdx) do
-    match op with
+  for (item, slotIdx) in plan.mapIdx fun slotIdx item => (item, slotIdx) do
+    match item.op with
     | .leaf shard =>
       let some wrapper := proofsByShard.get? shard | do
         IO.eprintln s!"internal: no proof for shard {shard}"
         return 1
-      let some item := prepared[shard]? | do
+      let some preparedShard := prepared[shard]? | do
         IO.eprintln s!"internal: no statement for shard {shard}"
         return 1
-      let claimBytes := Ix.Claim.ser item.claim
+      if preparedShard.statement.subjectCount != item.subjectCount then
+        IO.eprintln s!"internal: shard {shard} has {preparedShard.statement.subjectCount} \
+          reconstructed subjects, but the schedule records {item.subjectCount}"
+        return 1
+      let claimBytes := Ix.Claim.ser preparedShard.claim
       let verifyInput := IxVM.ClaimHarness.packedDigestKey
         (Address.blake3 claimBytes)
       let innerClaim := Aiur.buildClaim verifyIdx verifyInput #[]
@@ -188,7 +242,8 @@ def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
       let (outerClaim, proof) := recursionSystem.proveMultiStark liftIdx pubInput
         wrapper.proof ixvmVk innerClaimsBytes
       slots := slots.push {
-        statement := item.statement
+        statement := preparedShard.statement
+        subjectCount := item.subjectCount
         outerClaim
         proof
         openPreimages := #[innerClaimsBytes, claimBytes]
@@ -200,26 +255,49 @@ def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
       let some right := slots[rightIdx]? | do
         IO.eprintln s!"invalid aggregate plan: missing right slot {rightIdx}"
         return 1
-      let output := left.statement.join right.statement
+      if left.subjectCount + right.subjectCount != item.subjectCount then
+        IO.eprintln s!"internal: join slot {slotIdx} has inconsistent scheduled subject counts"
+        return 1
+      let output := if item.structural then
+          left.statement.joinStructural right.statement
+        else
+          left.statement.join right.statement
+      if output.subjectCount != item.subjectCount then
+        IO.eprintln s!"internal: join slot {slotIdx} reconstructed {output.subjectCount} \
+          subjects, but the schedule records {item.subjectCount}"
+        return 1
       let outputClaimBytes := Ix.Claim.ser output.claim
       let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
       let leftClaimsBytes := MultiStark.serializeClaims #[left.outerClaim]
       let rightClaimsBytes := MultiStark.serializeClaims #[right.outerClaim]
       let preimagesBlob := MultiStark.joinPreimagesBlob
         (left.openPreimages ++ right.openPreimages)
-      let treesBlob := MultiStark.joinTreesBlob
-        (MultiStark.CheckEnvTrees.adviceTrees left.statement right.statement output)
-      IO.println s!"[aggregate] joining slots {leftIdx}, {rightIdx} into {slotIdx}"
+      let trees := if item.structural then
+          MultiStark.CheckEnvTrees.structuralAdviceTrees
+            left.statement right.statement output
+        else
+          MultiStark.CheckEnvTrees.adviceTrees left.statement right.statement output
+      let treesBlob := MultiStark.joinTreesBlob trees
+      let pathsBlob := if item.structural then
+          MultiStark.joinPathsBlob
+            (MultiStark.CheckEnvTrees.structuralPathAdvice
+              left.statement right.statement output)
+        else
+          MultiStark.joinPathsBlob #[]
+      let joinFunIdx := if item.structural then structuralJoinIdx else joinIdx
+      let mode := if item.structural then "structural" else "flat"
+      IO.println s!"[aggregate] {mode}-joining slots {leftIdx}, {rightIdx} into {slotIdx}"
       (← IO.getStdout).flush
-      let result := recursionSystem.proveMultiStarkJoin joinIdx pubInput
+      let result := recursionSystem.proveMultiStarkJoin joinFunIdx pubInput
         left.proof.toBytes right.proof.toBytes recursionVk
         leftClaimsBytes rightClaimsBytes outputClaimBytes allowed
-        preimagesBlob treesBlob
+        preimagesBlob treesBlob pathsBlob
       let (outerClaim, proof) ← match result with
         | .error e => IO.eprintln s!"join slot {slotIdx}: {e}"; return 1
         | .ok result => pure result
       slots := slots.push {
         statement := output
+        subjectCount := item.subjectCount
         outerClaim
         proof
         openPreimages := #[outputClaimBytes]
@@ -231,8 +309,11 @@ def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   let some envTree := IxVM.ClaimHarness.envCanonicalTree env | do
     IO.eprintln "cannot aggregate an empty environment"
     return 1
-  if root.statement.subjects.root != envTree.root then
-    IO.eprintln s!"aggregate root {root.statement.subjects.root} does not match env root {envTree.root}"
+  let some canonicalRoot := Ix.AssumptionTree.canonical root.statement.subjects.leaves | do
+    IO.eprintln "aggregate root subject tree has no real leaves"
+    return 1
+  if canonicalRoot.root != envTree.root then
+    IO.eprintln s!"aggregate root subjects canonicalize to {canonicalRoot.root}, not env root {envTree.root}"
     return 1
   if root.statement.assumptions.isSome then
     IO.eprintln s!"aggregate root retains undischarged assumptions {root.statement.assumptions.map (·.root)}"
@@ -259,6 +340,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "ixe" : String;  "Path to the serialized environment whose shards were proven."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
     "plan-only";     "Validate coverage and print the lift/join slot plan without loading or proving shard proofs."
+    "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
 
   ARGS:
     ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (exactly one per shard unless --plan-only)."

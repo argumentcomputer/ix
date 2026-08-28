@@ -1019,13 +1019,16 @@ fn build_multi_stark_join_io_buffer(
   allowed: &[u8],
   preimages_blob: &[u8],
   trees_blob: &[u8],
+  paths_blob: &[u8],
 ) -> Result<IOBuffer, String> {
   use ixvm_codegen::aiur_multi_stark_runner::{
-    JoinAdvice, decode_join_preimages, decode_join_trees, join_io_buffer,
+    JoinAdvice, decode_join_paths, decode_join_preimages, decode_join_trees,
+    join_io_buffer,
   };
 
   let preimages = decode_join_preimages(preimages_blob)?;
   let trees = decode_join_trees(trees_blob)?;
+  let paths = decode_join_paths(paths_blob)?;
   Ok(join_io_buffer(&JoinAdvice {
     proofs: [left_proof, right_proof],
     recursion_vk,
@@ -1034,12 +1037,13 @@ fn build_multi_stark_join_io_buffer(
     allowed,
     preimages: &preimages,
     trees: &trees,
+    paths: &paths,
   }))
 }
 
-/// `Bytecode.Toplevel.executeMultiStarkJoin`: execute `join_two` over raw
-/// proof/claim/tree blobs. The native builder expands the compact keyed
-/// preimage/tree framing directly into the circuit's six-channel IO buffer.
+/// `Bytecode.Toplevel.executeMultiStarkJoin`: execute either join entrypoint over raw
+/// proof/claim/tree/path blobs. The native builder expands the compact keyed
+/// framing directly into the circuit's seven-channel IO buffer.
 /// As with `rs_aiur_multi_stark_execute`, callers may select either generated
 /// execution or the generic bytecode interpreter.
 #[unsafe(no_mangle)]
@@ -1057,6 +1061,7 @@ extern "C" fn rs_aiur_multi_stark_join_execute(
   allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
   preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
   trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
@@ -1071,6 +1076,7 @@ extern "C" fn rs_aiur_multi_stark_join_execute(
     allowed_bytes.as_bytes(),
     preimages_blob.as_bytes(),
     trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
   ) {
     Ok(io) => io,
     Err(err) => return LeanExcept::error_string(&err),
@@ -1139,7 +1145,7 @@ extern "C" fn rs_aiur_multi_stark_prove(
   result.into()
 }
 
-/// `AiurSystem.proveMultiStarkJoin`: prove one valid `join_two` execution
+/// `AiurSystem.proveMultiStarkJoin`: prove one valid join-entrypoint execution
 /// using the same native advice builder and generated/interpreted executor
 /// selection as `rs_aiur_multi_stark_join_execute`.
 #[unsafe(no_mangle)]
@@ -1157,6 +1163,7 @@ extern "C" fn rs_aiur_multi_stark_join_prove(
   allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
   preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
   trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1170,6 +1177,7 @@ extern "C" fn rs_aiur_multi_stark_join_prove(
     allowed_bytes.as_bytes(),
     preimages_blob.as_bytes(),
     trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
   ) {
     Ok(io) => io,
     Err(err) => return LeanExcept::error_string(&err),

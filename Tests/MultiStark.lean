@@ -5,6 +5,7 @@ public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.MultiStark
+public import Ix.Cli.AggregateCmd
 public import Ix.Cli.CheckCmd
 public import Ix.Claim
 public import Ix.AssumptionTree
@@ -234,7 +235,7 @@ def endToEndSuite : IO UInt32 := do
 -- `aggregate-first`: execute a real two-child canonical set-discharge join
 -- ═════════════════════════════════════════════════════════════════════════════
 
-/-- A tiny stand-in recursion system used to exercise `join_two` without first
+/-- A tiny stand-in recursion system used to exercise both join modes without first
 proving the full recursive verifier (the production lift needs tens of GiB).
 The join still verifies two real Multi-STARK proofs and enforces their vk,
 entrypoint, public-input, and nested-claim bindings. -/
@@ -243,6 +244,11 @@ def joinChildProgram : Source.Toplevel := ⟦
   pub fn fake_lift(_system_digest: [G; 8], _claims_digest: [G; 8]) { () }
   pub fn fake_join(allowed_digest: [G; 8], _out_claim_digest: [G; 8]) {
     assert_eq!(load(store(allowed_digest[0])), allowed_digest[0]);
+    ()
+  }
+  pub fn fake_struct_join(allowed_digest: [G; 8], _out_claim_digest: [G; 8]) {
+    assert_eq!(load(store(allowed_digest[1])), allowed_digest[1]);
+    assert_eq!(load(store(allowed_digest[2])), allowed_digest[2]);
     ()
   }
 ⟧
@@ -278,6 +284,7 @@ def joinSmokeSuite : IO UInt32 := do
   let verifyIdx := childCompiled.getFuncIdx `fake_verify_claim |>.get!
   let liftIdx := childCompiled.getFuncIdx `fake_lift |>.get!
   let childJoinIdx := childCompiled.getFuncIdx `fake_join |>.get!
+  let childStructuralJoinIdx := childCompiled.getFuncIdx `fake_struct_join |>.get!
 
   -- Two conditional shard statements whose assumptions cross the subject
   -- boundary.  The join must compute
@@ -320,7 +327,7 @@ def joinSmokeSuite : IO UInt32 := do
 
   let recursionVk := childSystem.vkBytes
   let allowed := MultiStark.allowedBlob fakeIxvmVk verifyIdx recursionVk
-    liftIdx childJoinIdx
+    liftIdx childJoinIdx childStructuralJoinIdx
   let outputClaimBytes := Ix.Claim.ser outputStatement.claim
   let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
 
@@ -334,6 +341,7 @@ def joinSmokeSuite : IO UInt32 := do
     #[leftInnerClaims, rightInnerClaims, leftClaimBytes, rightClaimBytes]
   let treesBlob := MultiStark.joinTreesBlob
     adviceTrees
+  let emptyPathsBlob := MultiStark.joinPathsBlob #[]
   let zeroKey := #[Aiur.G.ofNat 0]
   let oneKey := #[Aiur.G.ofNat 1]
   let twoKey := #[Aiur.G.ofNat 2]
@@ -358,10 +366,11 @@ def joinSmokeSuite : IO UInt32 := do
     | .error e => IO.eprintln s!"aggregate compilation failed: {e}"; return 1
     | .ok c => pure c
   let joinIdx := compiled.getFuncIdx `join_two |>.get!
+  let structuralJoinIdx := compiled.getFuncIdx `join_two_structural |>.get!
   let honestInterp := compiled.bytecode.execute joinIdx pubInput io
   let honest := compiled.bytecode.executeMultiStarkJoin joinIdx pubInput
     leftProof.toBytes rightProof.toBytes recursionVk leftOuterBytes rightOuterBytes
-    outputClaimBytes allowed preimagesBlob treesBlob
+    outputClaimBytes allowed preimagesBlob treesBlob emptyPathsBlob
   let nativeParity : Bool := match honest, honestInterp with
     | .ok (out, qc), .ok (outI, _, qcI) =>
       out == outI && qc.size == qcI.size &&
@@ -371,7 +380,95 @@ def joinSmokeSuite : IO UInt32 := do
 
   let malformedFraming := compiled.bytecode.executeMultiStarkJoin joinIdx pubInput
     leftProof.toBytes rightProof.toBytes recursionVk leftOuterBytes rightOuterBytes
-    outputClaimBytes allowed ⟨#[]⟩ treesBlob
+    outputClaimBytes allowed ⟨#[]⟩ treesBlob emptyPathsBlob
+
+  -- Structural mode commits to `nodeHash(leftRoot, rightRoot)` and replaces
+  -- the full subject-list merge with one path choice per assumption candidate.
+  let structuralOutput := leftStatement.joinStructural rightStatement
+  let structuralClaimBytes := Ix.Claim.ser structuralOutput.claim
+  let structuralInput := MultiStark.joinPubInput allowed structuralClaimBytes
+  let structuralTreesBlob := MultiStark.joinTreesBlob
+    (MultiStark.CheckEnvTrees.structuralAdviceTrees
+      leftStatement rightStatement structuralOutput)
+  let structuralPathAdvice := MultiStark.CheckEnvTrees.structuralPathAdvice
+    leftStatement rightStatement structuralOutput
+  let structuralPathsBlob := MultiStark.joinPathsBlob structuralPathAdvice
+  let structuralHonest := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
+    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
+    structuralTreesBlob structuralPathsBlob
+  let structuralInterp := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
+    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
+    structuralTreesBlob structuralPathsBlob true
+  let structuralParity : Bool := match structuralHonest, structuralInterp with
+    | .ok (out, qc), .ok (outI, qcI) =>
+      out == outI && qc.size == qcI.size &&
+        (qc.zip qcI).all fun (x, y) =>
+          x.uniqueRows == y.uniqueRows && x.totalHits == y.totalHits
+    | _, _ => false
+  let structuralHostCorrect :=
+    structuralOutput.subjects.root ==
+      Ix.Merkle.nodeHash leftStatement.subjects.root rightStatement.subjects.root &&
+    structuralOutput.assumptions.map (·.leaves) == some (canonicalTree #[d]).leaves &&
+    structuralPathAdvice.size == 3
+
+  -- A path that stops at the left child root never reaches the structural
+  -- output root.
+  let wrongRootPathAdvice := structuralPathAdvice.map fun (candidate, path?) =>
+    if candidate == a then (candidate, leftSubjects.merkleProof candidate)
+    else (candidate, path?)
+  let wrongRootPath := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
+    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
+    structuralTreesBlob (MultiStark.joinPathsBlob wrongRootPathAdvice)
+
+  -- Alter one sibling while retaining a syntactically valid path.
+  let tamperedPathAdvice := structuralPathAdvice.map fun (candidate, path?) =>
+    if candidate == a then
+      match path? with
+      | some path => match path[0]? with
+        | some (_, side) => (candidate, some (path.set! 0 (e, side)))
+        | none => (candidate, path?)
+      | none => (candidate, path?)
+    else (candidate, path?)
+  let tamperedPath := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
+    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
+    structuralTreesBlob (MultiStark.joinPathsBlob tamperedPathAdvice)
+
+  -- Omitting a candidate's keyed choice makes its mandatory channel-6 lookup
+  -- fail; there is no implicit "not discharged" default.
+  let droppedPathAdvice := structuralPathAdvice.filter fun (candidate, _) =>
+    candidate != d
+  let droppedAssumption := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
+    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
+    structuralTreesBlob (MultiStark.joinPathsBlob droppedPathAdvice)
+
+  -- Candidate d chooses "carried", but this output claim/list omits it.
+  let missingCarriedOutput : MultiStark.CheckEnvTrees :=
+    { subjects := structuralOutput.subjects, assumptions := none }
+  let missingCarriedBytes := Ix.Claim.ser missingCarriedOutput.claim
+  let missingCarriedInput := MultiStark.joinPubInput allowed missingCarriedBytes
+  let missingCarriedTrees := MultiStark.joinTreesBlob
+    (MultiStark.CheckEnvTrees.structuralAdviceTrees
+      leftStatement rightStatement missingCarriedOutput)
+  let missingCarriedPaths := MultiStark.joinPathsBlob
+    (MultiStark.CheckEnvTrees.structuralPathAdvice
+      leftStatement rightStatement missingCarriedOutput)
+  let missingCarried := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
+    missingCarriedInput leftProof.toBytes rightProof.toBytes recursionVk
+    leftOuterBytes rightOuterBytes missingCarriedBytes allowed preimagesBlob
+    missingCarriedTrees missingCarriedPaths
+
+  -- The v1 identity blob is digest-consistent but lacks struct_join_idx.
+  let oldAllowed := allowed.extract 0 88
+  let oldAllowedInput := MultiStark.joinPubInput oldAllowed structuralClaimBytes
+  let oldAllowedRejected := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
+    oldAllowedInput leftProof.toBytes rightProof.toBytes recursionVk
+    leftOuterBytes rightOuterBytes structuralClaimBytes oldAllowed preimagesBlob
+    structuralTreesBlob structuralPathsBlob
 
   -- Exercise the other child decoder arm: an aggregate child must expose the
   -- same allowed digest transitively, while its output-claim preimage replaces
@@ -400,6 +497,53 @@ def joinSmokeSuite : IO UInt32 := do
     |>.extend 2 zeroKey (bytesAsGs wrongJoinOuterBytes)
   let wrongTransitiveAllowed :=
     compiled.bytecode.execute joinIdx pubInput wrongJoinIo
+
+  -- A structural child exposes the same allowed/output public digests as a
+  -- flat child, distinguished only by its pinned function index.
+  let structuralChildInput := MultiStark.joinPubInput allowed structuralClaimBytes
+  let (structuralChildOuter, structuralChildProof, _) :=
+    childSystem.prove childStructuralJoinIdx structuralChildInput default
+  let structuralChildOuterBytes :=
+    MultiStark.serializeClaims #[structuralChildOuter]
+  let structuralChildLayout :=
+    structuralChildOuter.extract 2 10 == MultiStark.digestGs allowed &&
+    structuralChildOuter.extract 10 18 == MultiStark.digestGs structuralClaimBytes
+  let structuralChildNativeVerify :=
+    childSystem.verify structuralChildOuter structuralChildProof
+
+  -- Structural-of-structural: the left child root is opaque to the parent;
+  -- only its outer proof/claim and assumption tree are opened.
+  let structuralParentOutput :=
+    structuralOutput.joinStructural rightStatement
+  let structuralParentBytes := Ix.Claim.ser structuralParentOutput.claim
+  let structuralParentInput := MultiStark.joinPubInput allowed structuralParentBytes
+  let structuralParentPreimages := MultiStark.joinPreimagesBlob
+    #[structuralClaimBytes, rightInnerClaims, rightClaimBytes]
+  let structuralParentTrees := MultiStark.joinTreesBlob
+    (MultiStark.CheckEnvTrees.structuralAdviceTrees
+      structuralOutput rightStatement structuralParentOutput)
+  let structuralParentPaths := MultiStark.joinPathsBlob
+    (MultiStark.CheckEnvTrees.structuralPathAdvice
+      structuralOutput rightStatement structuralParentOutput)
+  let transitiveStructural := compiled.bytecode.executeMultiStarkJoin
+    structuralJoinIdx structuralParentInput structuralChildProof.toBytes
+    rightProof.toBytes recursionVk structuralChildOuterBytes rightOuterBytes
+    structuralParentBytes allowed structuralParentPreimages structuralParentTrees
+    structuralParentPaths
+
+  -- A flat join is intentionally unable to re-open this genuinely free-form
+  -- child root as a canonical tree, pinning the monotone mode-ordering rule.
+  let flatAboveStructuralOutput := structuralOutput.join rightStatement
+  let flatAboveStructuralBytes := Ix.Claim.ser flatAboveStructuralOutput.claim
+  let flatAboveStructuralInput :=
+    MultiStark.joinPubInput allowed flatAboveStructuralBytes
+  let flatAboveStructuralTrees := MultiStark.joinTreesBlob
+    (MultiStark.CheckEnvTrees.adviceTrees
+      structuralOutput rightStatement flatAboveStructuralOutput)
+  let flatAboveStructural := compiled.bytecode.executeMultiStarkJoin joinIdx
+    flatAboveStructuralInput structuralChildProof.toBytes rightProof.toBytes
+    recursionVk structuralChildOuterBytes rightOuterBytes flatAboveStructuralBytes
+    allowed structuralParentPreimages flatAboveStructuralTrees emptyPathsBlob
 
   -- Digest-consistent semantic failures exercise the set checks rather than
   -- merely failing the public output-claim hash binding.
@@ -456,20 +600,54 @@ def joinSmokeSuite : IO UInt32 := do
     match Ix.Cli.CheckCmd.parseIxesManifest duplicate with
     | .error _ => true
     | .ok _ => false
+  let mixedScheduleCorrect : Bool :=
+    match Ix.Cli.AggregateCmd.schedulePlan manifestPlan #[2, 2, 1] 4 with
+    | .ok scheduled =>
+      match scheduled[2]?, scheduled[4]? with
+      | some lower, some upper =>
+        scheduled.size == 5 && lower.subjectCount == 4 && !lower.structural &&
+          upper.subjectCount == 5 && upper.structural
+      | _, _ => false
+    | .error _ => false
 
   lspecIO (.ofList [("aggregate-first", [
     test "host fold constructs canonical union/discharge trees" hostFoldCorrect,
     test "manifest tree lowers to post-order binary slots" (manifestPlan == expectedPlan),
     test "manifest parser exposes its validated bisection tree" parsedManifestPlan,
     test "manifest parser rejects repeated aggregation leaves" malformedManifestRejected,
-    test "stand-in lift/join entrypoints survive compiler dedup separately"
-      (liftIdx != childJoinIdx),
+    test "stand-in lift/flat/structural entrypoints survive compiler dedup separately"
+      (liftIdx != childJoinIdx && liftIdx != childStructuralJoinIdx &&
+        childJoinIdx != childStructuralJoinIdx),
     expectOk "join accepts canonical union and cross-child discharge" honest,
     test "join child outer claim carries allowed/output digests" joinChildLayout,
     expectOk "stand-in join child proof verifies natively" joinChildNativeVerify,
     expectOk "join accepts a transitively pinned join child" transitiveJoin,
     expectErr "join rejects a join child with a different allowed digest"
       wrongTransitiveAllowed,
+    test "structural host fold is root-of-roots with canonical survivors"
+      structuralHostCorrect,
+    expectOk "structural join accepts path discharge plus one carried assumption"
+      structuralHonest,
+    test "codegen'd structural join matches interpreter (output + query counts)"
+      structuralParity,
+    test "structural child outer claim carries allowed/output digests"
+      structuralChildLayout,
+    expectOk "stand-in structural child proof verifies natively"
+      structuralChildNativeVerify,
+    expectOk "structural join accepts a transitively pinned structural child"
+      transitiveStructural,
+    test "threshold scheduling is flat below and structural above monotonically"
+      mixedScheduleCorrect,
+    expectErr "structural join rejects a path to the wrong root" wrongRootPath,
+    expectErr "structural join rejects a tampered path sibling" tamperedPath,
+    expectErr "structural join rejects a candidate with no path choice"
+      droppedAssumption,
+    expectErr "structural join rejects a carried assumption missing from output"
+      missingCarried,
+    expectErr "structural join rejects the old 88-byte allowed blob"
+      oldAllowedRejected,
+    expectErr "flat join rejects a genuinely structural child subject root"
+      flatAboveStructural,
     test "codegen'd join matches interpreter (output + query counts)" nativeParity,
     expectErr "native join rejects malformed keyed-blob framing" malformedFraming,
     expectErr "join rejects an omitted undischarged assumption" omittedAsm,

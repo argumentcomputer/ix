@@ -6,18 +6,20 @@ public import Std.Data.HashSet
 /-!
 # Host-side aggregate-first statement folding
 
-The circuit rechecks all of this from serialized trees. These helpers give the
-CLI one canonical implementation for constructing its claimed output and the
-six tree preimages supplied to `join_two`.
+The circuit rechecks all of this from serialized trees and Merkle paths. These
+helpers give the CLI one implementation for constructing flat and structural
+outputs plus their channel-5/channel-6 advice.
 -/
 
 public section
 
 namespace MultiStark
 
-/-- A `CheckEnv` statement together with the canonical trees whose roots it
-commits to. `assumptions = none` is represented by no tree, never by an empty
-or padding-only serialization. -/
+/-- A `CheckEnv` statement together with the trees whose roots it commits to.
+Leaf and flat-join subject trees are canonical; structural joins use free-form
+root-of-roots subject trees. Assumption trees always remain canonical.
+`assumptions = none` is represented by no tree, never by an empty or
+padding-only serialization. -/
 structure CheckEnvTrees where
   subjects : Ix.AssumptionTree
   assumptions : Option Ix.AssumptionTree
@@ -27,6 +29,9 @@ namespace CheckEnvTrees
 
 def claim (statement : CheckEnvTrees) : Ix.Claim :=
   .checkEnv statement.subjects.root (statement.assumptions.map (·.root))
+
+def subjectCount (statement : CheckEnvTrees) : Nat :=
+  statement.subjects.leaves.size
 
 private def canonicalizeAt (label : String) (expected : Address)
     (tree : Ix.AssumptionTree) : Except String Ix.AssumptionTree := do
@@ -56,6 +61,17 @@ def ofClaim (claim : Ix.Claim)
         assumptionRoot assumptionTree))
   pure { subjects, assumptions }
 
+private def assumptionLeaves (statement : CheckEnvTrees) : Array Address :=
+  statement.assumptions.map (·.leaves) |>.getD #[]
+
+/-- The sorted, deduplicated candidate stream consumed by either discharge
+mode: `assumptionsL ∪ assumptionsR`. -/
+def assumptionCandidates (left right : CheckEnvTrees) : Array Address :=
+  match Ix.AssumptionTree.canonical
+      (assumptionLeaves left ++ assumptionLeaves right) with
+  | none => #[]
+  | some tree => tree.leaves
+
 /-- Canonical mode-1 fold:
 
 `subjects = subjectsL ∪ subjectsR`
@@ -69,11 +85,28 @@ def join (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjects := (Ix.AssumptionTree.canonical subjectLeaves).get!
   let subjectSet := subjects.leaves.foldl (fun set addr => set.insert addr)
     ({} : Std.HashSet Address)
-  let leftAssumptions := left.assumptions.map (·.leaves) |>.getD #[]
-  let rightAssumptions := right.assumptions.map (·.leaves) |>.getD #[]
-  let remaining := (leftAssumptions ++ rightAssumptions).filter
+  let remaining := assumptionCandidates left right |>.filter
     (fun addr => !subjectSet.contains addr)
   { subjects, assumptions := Ix.AssumptionTree.canonical remaining }
+
+/-- Structural mode-2 fold. Subjects are committed in O(1) as a free-form
+node over the two child roots. Assumptions retain canonical set semantics and
+drop precisely those candidates for which the resulting subject forest can
+produce a membership path. -/
+def joinStructural (left right : CheckEnvTrees) : CheckEnvTrees :=
+  let subjects := Ix.AssumptionTree.join left.subjects right.subjects
+  let remaining := assumptionCandidates left right |>.filter
+    (fun addr => !subjects.contains addr)
+  { subjects, assumptions := Ix.AssumptionTree.canonical remaining }
+
+/-- One channel-6 choice per structural join candidate. `some path` discharges
+the candidate against the structural output root; `none` carries it into the
+output assumption set. `AssumptionTree.merkleProof` chooses one valid path when
+a free-form subject forest contains duplicate leaves. -/
+def structuralPathAdvice (left right output : CheckEnvTrees) :
+    Array (Address × Option Ix.Merkle.MerklePath) :=
+  assumptionCandidates left right |>.map fun candidate =>
+    (candidate, output.subjects.merkleProof candidate)
 
 /-- The present trees in channel-5 order for one binary join. Optional empty
 assumption sets contribute no advice entry. -/
@@ -81,6 +114,13 @@ def adviceTrees (left right output : CheckEnvTrees) : Array Ix.AssumptionTree :=
   #[left.subjects] ++ left.assumptions.toArray ++
   #[right.subjects] ++ right.assumptions.toArray ++
   #[output.subjects] ++ output.assumptions.toArray
+
+/-- Structural joins never open subject trees. Only the canonical input/output
+assumption trees are needed on channel 5. -/
+def structuralAdviceTrees (left right output : CheckEnvTrees) :
+    Array Ix.AssumptionTree :=
+  left.assumptions.toArray ++ right.assumptions.toArray ++
+    output.assumptions.toArray
 
 end CheckEnvTrees
 
