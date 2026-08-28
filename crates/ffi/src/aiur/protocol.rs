@@ -756,16 +756,31 @@ impl RamGate {
 /// RSS): 5.7 MB owned -> ~9.6 GB and 1.4 MB -> ~5.5 GB, giving
 /// ~4 GiB + ~1000x; both terms rounded up for cross-shard spread.
 const EXEC_RSS_FIXED_BYTES: usize = 9 * (1 << 29); // 4.5 GiB
-// Per-owned-byte execution footprint is ENV-DEPENDENT: ~1000x measured
-// on ISLB's shards, ~2300x on Mathlib's (whose constants expand more
-// per serialized byte). The gate's contract is NEVER OOM, so the slope
-// carries the worst measured env; light envs pay narrower admission,
-// not a crash. History: a 1100x slope (ISLB refit) over-admitted a
-// 132-shard Mathlib batch to 486/495 GB (OOM, 2026-08-29); the
-// original 2500x was itself the fix for the same crash on Mathlib's
-// first full-width run (bench-2026-08-22/RESULTS.md), and the 4.5 GiB
-// fixed term is ISLB's fix for the inverse small-shard under-reserve.
-const EXEC_RSS_PER_OWNED_BYTE: usize = 2500;
+// Two calibrations, each accurate in its own regime, combined as a MAX
+// in `exec_rss_estimate` because the per-owned-byte execution footprint
+// is env-dependent and the gate's contract is NEVER OOM:
+// - The affine fit (4.5 GiB + 1100x) measured on ISLB's small shards
+//   (1.4-5.7 MB owned; a pure ratio under-reserved them and OOM'd a
+//   128 GB box).
+// - The pure ratio (2500x, ~2300x measured + margin) validated on
+//   Mathlib's full-width 233-shard batch at +2% of estimate; the
+//   affine slope alone under-reserved Mathlib-class shards and
+//   over-admitted a 132-shard full-width batch to 486/495 GB
+//   (OOM, 2026-08-29 — the first Mathlib full-width run under the
+//   affine constant).
+// The max reproduces each fit where it was measured: small shards take
+// the affine branch (ISLB bench reservations unchanged), large shards
+// the ratio branch.
+const EXEC_RSS_PER_OWNED_BYTE: usize = 1100;
+const EXEC_RSS_RATIO_PER_OWNED_BYTE: usize = 2500;
+
+/// Per-shard execution-RSS reserve: the max of the two measured fits
+/// (see the constants above).
+fn exec_rss_estimate(owned_bytes: usize) -> usize {
+  EXEC_RSS_FIXED_BYTES
+    .saturating_add(owned_bytes.saturating_mul(EXEC_RSS_PER_OWNED_BYTE))
+    .max(owned_bytes.saturating_mul(EXEC_RSS_RATIO_PER_OWNED_BYTE))
+}
 
 /// Detected prover/execution RAM budget:
 /// [`ix_kernel::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
@@ -933,12 +948,11 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   let estimates: Vec<usize> = shards
     .iter()
     .map(|owned| {
-      EXEC_RSS_FIXED_BYTES.saturating_add(
+      exec_rss_estimate(
         owned
           .iter()
           .filter_map(|a| env.get_const_bytes(a).map(|b| b.len()))
-          .sum::<usize>()
-          .saturating_mul(EXEC_RSS_PER_OWNED_BYTE),
+          .sum::<usize>(),
       )
     })
     .collect();
