@@ -471,10 +471,25 @@ where
       let (rightIdx, ops) := go right ops
       (ops.size, ops.push (.join leftIdx rightIdx))
 
+/-- Drop removed shard leaves, contract unary nodes, and rewrite retained shard
+ids to their dense indices in a pruned manifest view. The input tree has
+already passed `validateAggregationTree`, so an out-of-range mapping entry is
+an internal inconsistency rather than untrusted manifest input. -/
+partial def pruneAndRemap (remap : Array (Option Nat)) :
+    AggregationTree → Option AggregationTree
+  | .leaf shard => (remap[shard]?).join.map .leaf
+  | .node left right =>
+    match pruneAndRemap remap left, pruneAndRemap remap right with
+    | some left, some right => some (.node left right)
+    | some tree, none | none, some tree => some tree
+    | none, none => none
+
 end AggregationTree
 
 structure IxesManifestView where
   shards : Array (Array Address)
+  /-- Original manifest shard id for each (possibly pruned) dense array slot. -/
+  shardIds : Array Nat
   aggregationTree : AggregationTree
   deriving BEq, Repr
 
@@ -545,7 +560,7 @@ def parseIxesManifest (bytes : ByteArray) : Except String IxesManifestView :=
     let (buffer, position) ← get
     if position != buffer.size then
       throw s!"ixes: {buffer.size - position} trailing bytes after aggregation tree"
-    pure { shards, aggregationTree := tree }
+    pure { shards, shardIds := Array.range n.toNat, aggregationTree := tree }
   go.run' (bytes, 0)
 
 /-- Backward-compatible shard-only view used by check/prove/verify paths that
@@ -594,6 +609,36 @@ def ownedConstCountsForShards (ixonEnv : Ixon.Env)
     let some shard := blockToShard.get? (blockAddrOf addr c) | continue
     counts := counts.modify shard (· + 1)
   return counts
+
+/-- Remove manifest shards that provably own no environment constants, then
+contract and densely reindex the corresponding aggregation-tree leaves.
+
+Callers must run `shardsCover` on the unpruned view first. That gate establishes
+that every constant is owned exactly once; the zero counts here therefore prove
+that dropping these leaves cannot omit a checked subject. `shardIds` preserves
+the original ids for diagnostics and for matching legacy manifests. -/
+def IxesManifestView.pruneEmpty (view : IxesManifestView)
+    (ixonEnv : Ixon.Env) : Except String (IxesManifestView × Array Nat) := do
+  if view.shards.size != view.shardIds.size then
+    throw "ixes: internal shard/id cardinality mismatch"
+  let counts := ownedConstCountsForShards ixonEnv view.shards
+  let mut remap : Array (Option Nat) := Array.replicate view.shards.size none
+  let mut shards : Array (Array Address) := #[]
+  let mut shardIds : Array Nat := #[]
+  let mut keptCounts : Array Nat := #[]
+  for (count, oldIdx) in counts.mapIdx fun oldIdx count => (count, oldIdx) do
+    if count != 0 then
+      let some blocks := view.shards[oldIdx]?
+        | throw s!"ixes: internal missing shard {oldIdx}"
+      let some originalId := view.shardIds[oldIdx]?
+        | throw s!"ixes: internal missing shard id {oldIdx}"
+      remap := remap.set! oldIdx (some shards.size)
+      shards := shards.push blocks
+      shardIds := shardIds.push originalId
+      keptCounts := keptCounts.push count
+  let some aggregationTree := view.aggregationTree.pruneAndRemap remap
+    | throw "aggregate: manifest has no shard owning an environment constant"
+  pure ({ shards, shardIds, aggregationTree }, keptCounts)
 
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the

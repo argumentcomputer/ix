@@ -7,6 +7,7 @@ public import Ix.Aiur.Compiler
 public import Ix.MultiStark
 public import Ix.Cli.AggregateCmd
 public import Ix.Cli.CheckCmd
+public import Ix.Cli.VerifyCmd
 public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.Merkle
@@ -259,11 +260,25 @@ private def bytesAsGs (bytes : ByteArray) : Array Aiur.G :=
 private def u32le4 (n : Nat) : Array UInt8 :=
   (Array.range 4).map fun i => UInt8.ofNat ((n >>> (8 * i)) % 256)
 
-private def minimalIxes (treeTail : Array UInt8) : ByteArray :=
-  let shard := fun id => u32le4 id ++ Array.replicate 24 0 ++ #[0] ++
-    u32le4 0 ++ u32le4 0
+private def minimalIxesFor (shards : Array (Array Address))
+    (treeTail : Array UInt8) : ByteArray :=
+  let putAddresses := fun (addresses : Array Address) =>
+    addresses.foldl (fun out address => out ++ address.hash.data)
+      (u32le4 addresses.size)
+  let shard := fun id blocks => u32le4 id ++ Array.replicate 24 0 ++ #[0] ++
+    putAddresses blocks ++ u32le4 0
+  let body := (shards.mapIdx shard).foldl (· ++ ·) #[]
   ⟨#[0x49, 0x58, 0x45, 0x53, 0, 0, 0, 0] ++ Array.replicate 16 0 ++
-    u32le4 2 ++ shard 0 ++ shard 1 ++ treeTail⟩
+    u32le4 shards.size ++ body ++ treeTail⟩
+
+private def minimalIxes (treeTail : Array UInt8) : ByteArray :=
+  minimalIxesFor #[#[], #[]] treeTail
+
+private def singletonIxonEnv : Ixon.Env × Address :=
+  let constant : Ixon.Constant :=
+    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+  let address := Address.blake3 (Ixon.serConstant constant)
+  (({} : Ixon.Env).storeConst address constant, address)
 
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!
@@ -328,6 +343,12 @@ def joinSmokeSuite : IO UInt32 := do
   let recursionVk := childSystem.vkBytes
   let allowed := MultiStark.allowedBlob fakeIxvmVk verifyIdx recursionVk
     liftIdx childJoinIdx childStructuralJoinIdx
+  let reconstructedLiftClaim :=
+    Ix.Cli.VerifyCmd.aggregateLiftOuterClaim fakeIxvmVk verifyIdx liftIdx
+      leftStatement.claim
+  let liftClaimReconstruction := reconstructedLiftClaim == leftOuter
+  let reconstructedLiftVerifies :=
+    childSystem.verify reconstructedLiftClaim leftProof
   let outputClaimBytes := Ix.Claim.ser outputStatement.claim
   let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
 
@@ -600,6 +621,27 @@ def joinSmokeSuite : IO UInt32 := do
     match Ix.Cli.CheckCmd.parseIxesManifest duplicate with
     | .error _ => true
     | .ok _ => false
+  let (singleEnv, singleAddr) := singletonIxonEnv
+  let singleTreeTail := #[1, 1, 0] ++ u32le4 0 ++ #[1, 0] ++
+    u32le4 1 ++ #[0] ++ u32le4 2
+  let singleManifest := Ix.Cli.CheckCmd.parseIxesManifest
+    (minimalIxesFor #[#[], #[singleAddr], #[]] singleTreeTail)
+  let singleCoverage ← match singleManifest with
+    | .ok view => Ix.Cli.CheckCmd.shardsCover singleEnv view.shards
+    | .error _ => pure false
+  let emptyPruningCorrect : Bool := match singleManifest with
+    | .ok view => match view.pruneEmpty singleEnv with
+      | .ok (pruned, counts) =>
+        pruned.shards == #[#[singleAddr]] && pruned.shardIds == #[1] &&
+          pruned.aggregationTree == .leaf 0 && counts == #[1]
+      | .error _ => false
+    | .error _ => false
+  let singleManifestLiftRoot : Bool := match singleManifest with
+    | .ok view => match Ix.Cli.VerifyCmd.expectedFromManifest singleEnv view 0 with
+      | .ok (statement, .lift) =>
+        statement.claim == .checkEnv (canonicalTree #[singleAddr]).root none
+      | _ => false
+    | .error _ => false
   let mixedScheduleCorrect : Bool :=
     match Ix.Cli.AggregateCmd.schedulePlan manifestPlan #[2, 2, 1] 4 with
     | .ok scheduled =>
@@ -615,9 +657,17 @@ def joinSmokeSuite : IO UInt32 := do
     test "manifest tree lowers to post-order binary slots" (manifestPlan == expectedPlan),
     test "manifest parser exposes its validated bisection tree" parsedManifestPlan,
     test "manifest parser rejects repeated aggregation leaves" malformedManifestRejected,
+    test "coverage accepts legacy zero-constant manifest leaves" singleCoverage,
+    test "empty manifest leaves contract and retained ids remap densely"
+      emptyPruningCorrect,
+    test "one retained shard folds to a lift root" singleManifestLiftRoot,
     test "stand-in lift/flat/structural entrypoints survive compiler dedup separately"
       (liftIdx != childJoinIdx && liftIdx != childStructuralJoinIdx &&
         childJoinIdx != childStructuralJoinIdx),
+    test "aggregate verifier reconstructs the single-shard lift claim"
+      liftClaimReconstruction,
+    expectOk "reconstructed single-shard lift root verifies natively"
+      reconstructedLiftVerifies,
     expectOk "join accepts canonical union and cross-child discharge" honest,
     test "join child outer claim carries allowed/output digests" joinChildLayout,
     expectOk "stand-in join child proof verifies natively" joinChildNativeVerify,

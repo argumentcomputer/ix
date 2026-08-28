@@ -5,10 +5,10 @@
 //! builders sit above it. They take an `Env` so they can compute the
 //! `assumptions` merkle root over the constant's transitive deps.
 //!
-//! All builders default to the *canonical* merkle builder (sorted +
-//! deduped leaves) — when recursive aggregation lands, free-form roots
-//! from `merkle_join` will also be acceptable, but builders that start
-//! from an env always produce canonical roots.
+//! These env-derived builders intentionally use the *canonical* merkle builder
+//! (sorted + deduped leaves). `Claim::CheckEnv` itself treats its root as an
+//! opaque Merkle commitment and already accepts free-form roots produced by
+//! recursive `merkle_join`; there is no canonical-root validator on claims.
 
 use rustc_hash::FxHashSet;
 
