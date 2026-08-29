@@ -71,6 +71,104 @@ mutual
 
 end
 
+/-- Pointwise value graphs have equal source and runtime vector lengths. -/
+@[simp] theorem ValuesGraph.length {funRel : FunctionRel} {store : Store} :
+    ∀ {values : List IxIR0.Value} {runtimeValues : List RVal},
+      ValuesGraph funRel store values runtimeValues →
+      values.length = runtimeValues.length
+  | _, _, .nil => rfl
+  | _, _, .cons _ tail => by simp [tail.length]
+
+/-- Pointwise value graphs concatenate in lockstep. -/
+theorem ValuesGraph.append {funRel : FunctionRel} {store : Store}
+    {sourceLeft sourceRight : List IxIR0.Value}
+    {runtimeLeft runtimeRight : List RVal}
+    (hleft : ValuesGraph funRel store sourceLeft runtimeLeft)
+    (hright : ValuesGraph funRel store sourceRight runtimeRight) :
+    ValuesGraph funRel store (sourceLeft ++ sourceRight)
+      (runtimeLeft ++ runtimeRight) := by
+  induction sourceLeft generalizing runtimeLeft with
+  | nil =>
+    cases hleft
+    simpa using hright
+  | cons source sourceLeft ih =>
+    cases hleft with
+    | cons hhead htail => exact .cons hhead (ih htail)
+
+/-- Pointwise value graphs are insensitive to reversing both vectors. -/
+theorem ValuesGraph.reverse {funRel : FunctionRel} {store : Store}
+    : ∀ {sourceValues : List IxIR0.Value} {runtimeValues : List RVal},
+      ValuesGraph funRel store sourceValues runtimeValues →
+      ValuesGraph funRel store sourceValues.reverse runtimeValues.reverse
+  | _, _, .nil => .nil
+  | _, _, .cons hhead htail => by
+      simpa [List.reverse_cons] using
+        htail.reverse.append (ValuesGraph.cons hhead ValuesGraph.nil)
+
+/-- Split a pointwise graph at corresponding source/runtime prefixes. -/
+theorem ValuesGraph.splitAppend {funRel : FunctionRel} {store : Store}
+    {sourceLeft sourceRight : List IxIR0.Value}
+    {runtimeLeft runtimeRight : List RVal}
+    (hlength : sourceLeft.length = runtimeLeft.length)
+    (graph : ValuesGraph funRel store (sourceLeft ++ sourceRight)
+      (runtimeLeft ++ runtimeRight)) :
+    ValuesGraph funRel store sourceLeft runtimeLeft ∧
+      ValuesGraph funRel store sourceRight runtimeRight := by
+  induction sourceLeft generalizing runtimeLeft with
+  | nil =>
+    have hruntime : runtimeLeft = [] :=
+      List.length_eq_zero_iff.mp hlength.symm
+    subst runtimeLeft
+    exact ⟨.nil, by simpa using graph⟩
+  | cons source sourceLeft ih =>
+    cases runtimeLeft with
+    | nil => simp at hlength
+    | cons runtime runtimeLeft =>
+      simp only [List.length_cons, Nat.succ.injEq] at hlength
+      change ValuesGraph funRel store
+        (source :: (sourceLeft ++ sourceRight))
+        (runtime :: (runtimeLeft ++ runtimeRight)) at graph
+      cases graph with
+      | cons hhead htail =>
+        obtain ⟨hleft, hright⟩ := ih hlength htail
+        exact ⟨.cons hhead hleft, hright⟩
+
+/-- Restrict a pointwise graph to equal numeric prefixes. -/
+theorem ValuesGraph.take {funRel : FunctionRel} {store : Store}
+    {sourceValues : List IxIR0.Value} {runtimeValues : List RVal}
+    (graph : ValuesGraph funRel store sourceValues runtimeValues)
+    (count : Nat) :
+    ValuesGraph funRel store (sourceValues.take count)
+      (runtimeValues.take count) := by
+  have hsource := List.take_append_drop count sourceValues
+  have hruntime := List.take_append_drop count runtimeValues
+  have hlength : (sourceValues.take count).length =
+      (runtimeValues.take count).length := by
+    simp [graph.length]
+  have hwhole : ValuesGraph funRel store
+      (sourceValues.take count ++ sourceValues.drop count)
+      (runtimeValues.take count ++ runtimeValues.drop count) := by
+    simpa [hsource, hruntime] using graph
+  exact (hwhole.splitAppend hlength).1
+
+/-- Restrict a pointwise graph to corresponding suffixes. -/
+theorem ValuesGraph.drop {funRel : FunctionRel} {store : Store}
+    {sourceValues : List IxIR0.Value} {runtimeValues : List RVal}
+    (graph : ValuesGraph funRel store sourceValues runtimeValues)
+    (count : Nat) :
+    ValuesGraph funRel store (sourceValues.drop count)
+      (runtimeValues.drop count) := by
+  have hsource := List.take_append_drop count sourceValues
+  have hruntime := List.take_append_drop count runtimeValues
+  have hlength : (sourceValues.take count).length =
+      (runtimeValues.take count).length := by
+    simp [graph.length]
+  have hwhole : ValuesGraph funRel store
+      (sourceValues.take count ++ sourceValues.drop count)
+      (runtimeValues.take count ++ runtimeValues.drop count) := by
+    simpa [hsource, hruntime] using graph
+  exact (hwhole.splitAppend hlength).2
+
 /-- One-way preservation of live heap shape. Existing live locations keep
 their world and node contents, while reference counts may change and the
 target store may contain additional live nodes. This is exactly the store
@@ -323,6 +421,22 @@ theorem invoke_fn_result_hasWorld {ctx : Ctx} {fuel : Nat}
         subst out
         exact hw
 
+/-- Every successful invocation supplied exactly the declaration arity,
+independently of whether the target is a function or scalar extern. -/
+theorem invoke_success_length {ctx : Ctx} {fuel : Nat} {f : Address}
+    {args : List RVal} {store store' : Store} {value : RVal} {d : Decl}
+    (hdecl : ctx.decls f = some d)
+    (hinvoke : invoke ctx fuel f args store = .ok (store', value)) :
+    args.length = declArity d := by
+  cases fuel with
+  | zero => simp [invoke] at hinvoke
+  | succ fuel =>
+    cases d <;> simp only [invoke, hdecl] at hinvoke
+    all_goals
+      split at hinvoke
+      next hne => contradiction
+      next heq => simpa [declArity] using heq
+
 /-- Source values with ownership demands, realized by target roots. -/
 inductive RootsGraph (funRel : FunctionRel) (store : Store) :
     List (Owned × IxIR0.Value) → List Root → Prop where
@@ -334,6 +448,54 @@ inductive RootsGraph (funRel : FunctionRel) (store : Store) :
       ValueGraph funRel store v root.value →
       RootsGraph funRel store vs roots →
       RootsGraph funRel store ((world, v) :: vs) (root :: roots)
+
+@[simp] theorem RootsGraph.lengths {funRel : FunctionRel} {store : Store}
+    {sourceRoots : List (Owned × IxIR0.Value)} {roots : List Root}
+    (graph : RootsGraph funRel store sourceRoots roots) :
+    sourceRoots.length = roots.length := by
+  induction graph <;> simp_all
+
+/-- Concatenate two independently related root frames. -/
+theorem RootsGraph.append {funRel : FunctionRel} {store : Store}
+    {sourceLeft sourceRight : List (Owned × IxIR0.Value)}
+    {left right : List Root}
+    (hleft : RootsGraph funRel store sourceLeft left)
+    (hright : RootsGraph funRel store sourceRight right) :
+    RootsGraph funRel store (sourceLeft ++ sourceRight) (left ++ right) := by
+  induction hleft with
+  | nil => simpa using hright
+  | cons hrootWorld hworld hvalue _ ih =>
+    exact .cons hrootWorld hworld hvalue ih
+
+/-- Split a related concatenated frame at a prefix whose source/runtime
+lengths agree. The length premise prevents an arbitrary mismatched cut from
+dividing the two lockstep lists at different positions. -/
+theorem RootsGraph.splitAppend {funRel : FunctionRel} {store : Store}
+    {sourceLeft sourceRight : List (Owned × IxIR0.Value)}
+    {left right : List Root}
+    (hlength : sourceLeft.length = left.length)
+    (graph : RootsGraph funRel store
+      (sourceLeft ++ sourceRight) (left ++ right)) :
+    RootsGraph funRel store sourceLeft left ∧
+      RootsGraph funRel store sourceRight right := by
+  induction sourceLeft generalizing left with
+  | nil =>
+    have hleft : left = [] := List.length_eq_zero_iff.mp hlength.symm
+    subst left
+    exact ⟨.nil, by simpa using graph⟩
+  | cons source sourceLeft ih =>
+    cases left with
+    | nil => simp at hlength
+    | cons root left =>
+      rcases source with ⟨world, value⟩
+      simp only [List.length_cons, Nat.succ.injEq] at hlength
+      change RootsGraph funRel store
+        ((world, value) :: (sourceLeft ++ sourceRight))
+        (root :: (left ++ right)) at graph
+      cases graph with
+      | cons hrootWorld hworld hvalue htail =>
+        obtain ⟨hprefix, hsuffix⟩ := ih hlength htail
+        exact ⟨.cons hrootWorld hworld hvalue hprefix, hsuffix⟩
 
 /-- Root-list realization is monotone under the same heap-shape extension as
 individual values. Root worlds and runtime values remain unchanged. -/
@@ -589,6 +751,52 @@ def rootsForWorlds : List Owned → List RVal → List Root
   | world :: worlds, value :: values =>
       ⟨world, value⟩ :: rootsForWorlds worlds values
   | _, _ => []
+
+/-- Turn a pointwise value graph into a homogeneous root frame once every
+runtime value is known live in the chosen ownership world. -/
+theorem ValuesGraph.rootsGraph {funRel : FunctionRel} {store : Store}
+    {sourceValues : List IxIR0.Value} {runtimeValues : List RVal}
+    (world : Owned)
+    (graphs : ValuesGraph funRel store sourceValues runtimeValues)
+    (hworld : ∀ runtime, runtime ∈ runtimeValues →
+      HasWorld store world runtime) :
+    RootsGraph funRel store
+      (sourceValues.map fun value => (world, value))
+      (rootsFor world runtimeValues) := by
+  induction sourceValues generalizing runtimeValues with
+  | nil =>
+    cases graphs
+    exact .nil
+  | cons source sources ih =>
+    cases graphs with
+    | cons hvalue hvalues =>
+      simp only [List.map_cons, rootsFor]
+      exact RootsGraph.cons rfl
+        (hworld _ (by simp)) hvalue
+        (ih hvalues (fun candidate hmember =>
+          hworld candidate (by simp [hmember])))
+
+/-- Forget the homogeneous ownership annotations of a root frame, recovering
+the underlying pointwise value graph. -/
+theorem RootsGraph.valuesGraph {funRel : FunctionRel} {store : Store}
+    {sourceValues : List IxIR0.Value} {runtimeValues : List RVal}
+    {world : Owned}
+    (graphs : RootsGraph funRel store
+      (sourceValues.map fun value => (world, value))
+      (rootsFor world runtimeValues)) :
+    ValuesGraph funRel store sourceValues runtimeValues := by
+  induction sourceValues generalizing runtimeValues with
+  | nil =>
+    cases runtimeValues with
+    | nil => exact .nil
+    | cons runtime runtimes => cases graphs
+  | cons source sources ih =>
+    cases runtimeValues with
+    | nil => cases graphs
+    | cons runtime runtimes =>
+      simp only [List.map_cons, rootsFor] at graphs
+      cases graphs with
+      | cons _ _ hvalue htail => exact .cons hvalue (ih htail)
 
 /-- With matching telescope lengths, every runtime value occurs in the
 heterogeneous root list at the world paired with one of its positions. -/
@@ -2797,6 +3005,52 @@ private theorem dupVals_cons_ok_inv {store store' : Store}
     rw [hmiddle, bindOk] at heval
     exact heval
 
+/-- Retaining one shared value changes at most a refcount and therefore
+preserves every pre-existing live node shape. -/
+private theorem dupVals_single_extends {store store' : Store}
+    {value : RVal} (heval : dupVals store [value] = .ok store') :
+    StoreGraphExtends store store' := by
+  cases value with
+  | lit literal =>
+    simp [dupVals] at heval
+    subst store'
+    exact StoreGraphExtends.refl store
+  | erased =>
+    simp [dupVals] at heval
+    subst store'
+    exact StoreGraphExtends.refl store
+  | loc loc =>
+    cases hget : store.get? loc with
+    | none => simp [dupVals, hget] at heval
+    | some box =>
+      cases box with
+      | mk world rc node =>
+        cases world with
+        | unique => simp [dupVals, hget] at heval
+        | shared =>
+          have hresult :
+              (store.setBox loc
+                ⟨.shared, rc + 1, node⟩).rcTick = store' := by
+            simpa [dupVals, hget] using heval
+          subst store'
+          intro other otherWorld otherRc otherNode hother
+          exact (StoreGraphExtends.incRcStore hget) hother
+
+/-- `dupVals` is a sequence of refcount-only extensions. -/
+theorem dupVals_extends {store store' : Store} {values : List RVal}
+    (heval : dupVals store values = .ok store') :
+    StoreGraphExtends store store' := by
+  induction values generalizing store with
+  | nil =>
+    change (.ok store : Except Err Store) = .ok store' at heval
+    injection heval with hstore
+    subst store'
+    exact StoreGraphExtends.refl store
+  | cons head tail ih =>
+    obtain ⟨middle, hhead, htail⟩ := dupVals_cons_ok_inv heval
+    exact StoreGraphExtends.trans (dupVals_single_extends hhead)
+      (ih htail)
+
 /-- `dupVals` turns a list of borrowed shared values into owned roots. -/
 theorem dupVals_borrowedMany_preserves {store store' : Store}
     {values : List RVal} {roots : List Root}
@@ -4170,7 +4424,20 @@ theorem applyOwnershipPreservesAt_of_sharedDeclsBelow
   | succ fuel =>
     cases function with
     | lit literal => simp [applyGo] at hrun
-    | erased => simp [applyGo] at hrun
+    | erased =>
+      have hargsOwn : RootOwnership store
+          (rootsFor .shared args ++ rest) :=
+        hown.dropNoLocation rfl
+      simp only [applyGo] at hrun
+      cases hdrop : dropMany ctx fuel store args with
+      | error err =>
+        rw [hdrop, bindErr] at hrun
+        contradiction
+      | ok dropped =>
+        rw [hdrop, bindOk] at hrun
+        injection hrun with hpair
+        cases hpair
+        exact (dropMany_preserves hargsOwn hdrop).addNoLocation rfl
     | loc loc =>
       cases hget : store.get? loc with
       | none => simp [applyGo, hget] at hrun

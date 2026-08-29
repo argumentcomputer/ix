@@ -75,20 +75,23 @@ private theorem parameterEntries_mem_not_recSelf (base : Nat) :
     ∀ (modes : List Uses) (remaining : Nat → Nat) entry,
       entry ∈ parameterEntries base modes remaining →
       ∀ arity, entry ≠ VEntry.recSelf arity := by
-  intro modes
-  induction modes generalizing base with
-  | nil =>
-    intro remaining entry hmember
-    simp [parameterEntries] at hmember
-  | cons mode modes ih =>
-    intro remaining entry hmember arity heq
-    rw [parameterEntries, List.mem_append] at hmember
-    cases hmember with
-    | inl htail => exact ih (base + 1) remaining entry htail arity heq
-    | inr hlast =>
-      simp only [List.mem_singleton] at hlast
-      subst entry
-      contradiction
+  intro modes remaining
+  exact parameterEntries_traverse remaining
+    (Result := fun _ _ entries =>
+      ∀ entry ∈ entries, ∀ arity, entry ≠ VEntry.recSelf arity)
+    (hnil := by
+      intro current entry hmember
+      simp at hmember)
+    (hcons := by
+      intro current mode rest tail htail entry hmember arity heq
+      rw [List.mem_append] at hmember
+      cases hmember with
+      | inl hinner => exact htail entry hinner arity heq
+      | inr hlast =>
+        simp only [List.mem_singleton] at hlast
+        subst entry
+        contradiction)
+    base modes
 
 /-- Canonical ordinary-function parameter layouts contain only slots. -/
 theorem parameterEntries_noRecSelf (base : Nat) (modes : List Uses)
@@ -99,15 +102,44 @@ theorem parameterEntries_noRecSelf (base : Nat) (modes : List Uses)
   exact parameterEntries_mem_not_recSelf base modes remaining entry hmember
     arity
 
+/-- Foundational dependent traversal for the pure `releaseAll` fold.  Empty,
+constant, and slot normalization plus environment and emitter threading
+recurse once; clients provide only their three result constructors. -/
+theorem releaseAll_traverse_core
+    {Result : VEnv → List AVal → VEnv → Emit → Prop}
+    (hnil : ∀ input,
+      Result input [] input (_root_.id : Emit))
+    (hconst : ∀ {input : VEnv} {atom : Atom} {rest : List AVal}
+        {output : VEnv} {emit : Emit},
+      Result input rest output emit →
+      Result input (.constA atom :: rest) output emit)
+    (hslot : ∀ {input : VEnv} {abs : Nat} {rest : List AVal}
+        {output : VEnv} {tailEmit : Emit},
+      Result input.bump rest output tailEmit →
+      Result input (.slotA abs :: rest) output
+        (emitOp (.drop (.var (input.rel abs))) ∘ tailEmit))
+    (input : VEnv) (values : List AVal) :
+    Result input values (releaseAll input values).1
+      (releaseAll input values).2 := by
+  induction values generalizing input with
+  | nil => exact hnil input
+  | cons value rest ih =>
+    cases value with
+    | constA atom =>
+      simpa [releaseAll] using hconst (ih input)
+    | slotA abs =>
+      simpa [releaseAll] using hslot (ih input.bump)
+
 theorem NoRecSelf.releaseAll (input : VEnv) (values : List AVal)
     (h : NoRecSelf input) :
     NoRecSelf (releaseAll input values).1 := by
-  induction values generalizing input with
-  | nil => exact h
-  | cons value rest ih =>
-    cases value with
-    | constA atom => exact ih input h
-    | slotA abs => exact ih input.bump h.bump
+  exact releaseAll_traverse_core
+    (Result := fun initial _ output _ =>
+      NoRecSelf initial → NoRecSelf output)
+    (hnil := fun _ hinitial => hinitial)
+    (hconst := fun htail hinitial => htail hinitial)
+    (hslot := fun htail hinitial => htail hinitial.bump)
+    input values h
 
 private theorem throw_run_not_ok {α : Type} {message : String}
     {initial final : LowSt} {result : α}
@@ -136,6 +168,91 @@ private theorem bind_run_ok_inv {error state α β : Type}
     rw [haction] at hrun
     contradiction
 
+/-- Source-neutral operational traversal for a successful `lowerCaptures`
+run.  Empty recovery, both bind inversions, compiler-state threading, and
+final tuple reconstruction happen once; clients supply only their empty
+judgment and one successful-capture composition step. -/
+theorem lowerCaptures_run_core
+    (e : IxIR0.Expr)
+    {Result : VEnv → VEnv → List Nat → Emit → List AVal → Prop}
+    (hnil : ∀ input,
+      Result input input [] (_root_.id : Emit) [])
+    (hcons : ∀ {index : Nat} {rest : List Nat}
+        {input middle output : VEnv} {headEmit tailEmit : Emit}
+        {headValue : AVal} {tailValues : List AVal}
+        {state middleState : LowSt},
+      (lowerCapture e input index).run state =
+        .ok (middle, headEmit, headValue) middleState →
+      Result middle output rest tailEmit tailValues →
+      Result input output (index :: rest) (headEmit ∘ tailEmit)
+        (headValue :: tailValues))
+    {captures : List Nat} {input output : VEnv}
+    {emit : Emit} {values : List AVal} {state finalState : LowSt}
+    (hrun : (lowerCaptures e input captures).run state =
+      .ok (output, emit, values) finalState) :
+    Result input output captures emit values := by
+  induction captures generalizing input output emit values state finalState with
+  | nil =>
+    have hpure :
+        (input, (_root_.id : Emit), []) = (output, emit, values) ∧
+          state = finalState := by
+      simpa [lowerCaptures] using hrun
+    obtain ⟨hresult, hstate⟩ := hpure
+    cases hresult
+    subst finalState
+    exact hnil _
+  | cons index rest ih =>
+    simp only [lowerCaptures] at hrun
+    obtain ⟨headResult, middleState, hheadRun, hafterHead⟩ :=
+      bind_run_ok_inv hrun
+    rcases headResult with ⟨middle, headEmit, headValue⟩
+    obtain ⟨tailResult, tailState, htailRun, hafterTail⟩ :=
+      bind_run_ok_inv hafterHead
+    rcases tailResult with ⟨tailOutput, tailEmit, tailValues⟩
+    have hpure :
+        (tailOutput, headEmit ∘ tailEmit, headValue :: tailValues) =
+            (output, emit, values) ∧ tailState = finalState := by
+      simpa using hafterTail
+    obtain ⟨hresult, hstate⟩ := hpure
+    cases hresult
+    subst finalState
+    exact hcons hheadRun (ih htailRun)
+
+/-- Property-polymorphic action traversal for `lowerCaptures`.  Its
+left-to-right `lowerCapture` sequencing and final pure tuple construction
+recurse once for every action invariant closed under `pure` and `bind`. -/
+theorem lowerCaptures_action_core
+    (e : IxIR0.Expr)
+    {ActionProperty : {α : Type} → LowerM α → Prop}
+    (hpure : ∀ {α : Type} (value : α),
+      ActionProperty (pure value : LowerM α))
+    (hbind : ∀ {α β : Type} {action : LowerM α}
+        {next : α → LowerM β},
+      ActionProperty action →
+      (∀ value, ActionProperty (next value)) →
+      ActionProperty (action >>= next))
+    (hcapture : ∀ input index,
+      ActionProperty (lowerCapture e input index)) :
+    ∀ (input : VEnv) (captures : List Nat),
+      ActionProperty (lowerCaptures e input captures) := by
+  intro input captures
+  induction captures generalizing input with
+  | nil =>
+    change ActionProperty
+      (pure (input, (_root_.id : Emit), ([] : List AVal)) :
+        LowerM (VEnv × Emit × List AVal))
+    exact hpure _
+  | cons index rest ih =>
+    simp only [lowerCaptures]
+    apply hbind (hcapture input index)
+    intro headResult
+    rcases headResult with ⟨middle, headEmit, headValue⟩
+    apply hbind (ih middle)
+    intro tailResult
+    rcases tailResult with ⟨output, tailEmit, tailValues⟩
+    exact hpure
+      (output, headEmit ∘ tailEmit, headValue :: tailValues)
+
 private theorem map_run_ok_inv {α β : Type} {action : LowerM α}
     {f : α → β} {initial final : LowSt} {result : β}
     (hrun : (f <$> action).run initial = .ok result final) :
@@ -150,23 +267,45 @@ private theorem map_run_ok_inv {α β : Type} {action : LowerM α}
   cases hresult.2
   exact ⟨value, haction, hresult.1⟩
 
-theorem releaseSlots_noRecSelf (input : VEnv) :
-    ∀ {drops output emit state finalState},
-      (releaseSlots input drops).run state =
-        .ok (output, emit) finalState →
-      NoRecSelf input → NoRecSelf output := by
-  intro drops
-  induction drops generalizing input with
+/-- Source-neutral operational traversal for a successful `releaseSlots`
+run.  Mode rejection, environment rewriting, depth advancement, tail-run
+recovery, and emitter composition recurse once; clients supply only their
+empty, affine-drop, and shared-drop judgments. -/
+theorem releaseSlots_run_core
+    {Result : VEnv → VEnv → List SlotDrop → Emit → Prop}
+    (hnil : ∀ input,
+      Result input input [] (_root_.id : Emit))
+    (haffine : ∀ {entry abs : Nat} {rest : List SlotDrop}
+        {input output : VEnv} {tailEmit : Emit},
+      Result
+        (input.setEntry entry (.slot abs 0 .affine false)).bump
+        output rest tailEmit →
+      Result input output
+        (⟨entry, abs, .affine⟩ :: rest)
+        (emitOp (.dropU (.var (input.rel abs))) ∘ tailEmit))
+    (hmany : ∀ {entry abs : Nat} {rest : List SlotDrop}
+        {input output : VEnv} {tailEmit : Emit},
+      Result
+        (input.setEntry entry (.slot abs 0 .many false)).bump
+        output rest tailEmit →
+      Result input output
+        (⟨entry, abs, .many⟩ :: rest)
+        (emitOp (.drop (.var (input.rel abs))) ∘ tailEmit))
+    {input output : VEnv} {drops : List SlotDrop} {emit : Emit}
+    {state finalState : LowSt}
+    (hrun : (releaseSlots input drops).run state =
+      .ok (output, emit) finalState) :
+    Result input output drops emit := by
+  induction drops generalizing input output emit state finalState with
   | nil =>
-    intro output emit state finalState hrun hno
     have hpure :
         (input, (_root_.id : Emit)) = (output, emit) ∧
           state = finalState := by
       simpa [releaseSlots] using hrun
-    cases hpure.1
-    exact hno
+    obtain ⟨hresult, _⟩ := hpure
+    cases hresult
+    exact hnil input
   | cons drop rest ih =>
-    intro output emit state finalState hrun hno
     rcases drop with ⟨entry, abs, uses⟩
     cases uses with
     | erased =>
@@ -189,11 +328,13 @@ theorem releaseSlots_noRecSelf (input : VEnv) :
         simpa [releaseSlots] using hrun
       obtain ⟨tailResult, htailRun, hvalue⟩ := map_run_ok_inv hmap
       rcases tailResult with ⟨actualOutput, tailEmit⟩
-      have houtput : actualOutput = output :=
-        congrArg Prod.fst hvalue
+      have houtput : actualOutput = output := congrArg Prod.fst hvalue
+      have hemit :
+          emitOp (.dropU (.var (input.rel abs))) ∘ tailEmit = emit :=
+        congrArg Prod.snd hvalue
       subst output
-      exact ih _ htailRun
-        (hno.setSlot entry abs 0 .affine false).bump
+      subst emit
+      exact haffine (ih htailRun)
     | many =>
       have hmap :
           ((fun result : VEnv × Emit =>
@@ -206,11 +347,82 @@ theorem releaseSlots_noRecSelf (input : VEnv) :
         simpa [releaseSlots] using hrun
       obtain ⟨tailResult, htailRun, hvalue⟩ := map_run_ok_inv hmap
       rcases tailResult with ⟨actualOutput, tailEmit⟩
-      have houtput : actualOutput = output :=
-        congrArg Prod.fst hvalue
+      have houtput : actualOutput = output := congrArg Prod.fst hvalue
+      have hemit :
+          emitOp (.drop (.var (input.rel abs))) ∘ tailEmit = emit :=
+        congrArg Prod.snd hvalue
       subst output
-      exact ih _ htailRun
-        (hno.setSlot entry abs 0 .many false).bump
+      subst emit
+      exact hmany (ih htailRun)
+
+/-- Property-polymorphic action traversal for `releaseSlots`.  Its mode
+dispatch, state-free head action, environment threading, tail action, and
+pure emitter assembly recurse once for every property closed under `pure`,
+`bind`, and an immediately throwing bind. -/
+theorem releaseSlots_action_core
+    {ActionProperty : {α : Type} → LowerM α → Prop}
+    (hpure : ∀ {α : Type} (value : α),
+      ActionProperty (pure value : LowerM α))
+    (hbind : ∀ {α β : Type} {action : LowerM α}
+        {next : α → LowerM β},
+      ActionProperty action →
+      (∀ value, ActionProperty (next value)) →
+      ActionProperty (action >>= next))
+    (hthrowBind : ∀ {α β : Type} (message : String)
+        (next : α → LowerM β),
+      ActionProperty
+        ((EStateM.throw message : LowerM α) >>= next)) :
+    ∀ (input : VEnv) (drops : List SlotDrop),
+      ActionProperty (releaseSlots input drops) := by
+  intro input drops
+  induction drops generalizing input with
+  | nil =>
+    change ActionProperty
+      (pure (input, (_root_.id : Emit)) : LowerM (VEnv × Emit))
+    exact hpure _
+  | cons drop rest ih =>
+    simp only [releaseSlots]
+    cases drop.uses with
+    | erased => exact hthrowBind _ _
+    | linear => exact hthrowBind _ _
+    | affine =>
+      apply hbind (hpure _)
+      intro headEmit
+      apply hbind
+        (ih (input.setEntry drop.entry
+          (.slot drop.abs 0 .affine false)).bump)
+      intro tailResult
+      rcases tailResult with ⟨output, tailEmit⟩
+      exact hpure (output, headEmit ∘ tailEmit)
+    | many =>
+      apply hbind (hpure _)
+      intro headEmit
+      apply hbind
+        (ih (input.setEntry drop.entry
+          (.slot drop.abs 0 .many false)).bump)
+      intro tailResult
+      rcases tailResult with ⟨output, tailEmit⟩
+      exact hpure (output, headEmit ∘ tailEmit)
+
+theorem releaseSlots_noRecSelf (input : VEnv) :
+    ∀ {drops output emit state finalState},
+      (releaseSlots input drops).run state =
+        .ok (output, emit) finalState →
+      NoRecSelf input → NoRecSelf output := by
+  intro drops output emit state finalState hrun hno
+  exact releaseSlots_run_core
+    (Result := fun initial final _ _ =>
+      NoRecSelf initial → NoRecSelf final)
+    (hnil := fun _ h => h)
+    (haffine := by
+      intro entry abs rest initial final tailEmit htail hinitial
+      exact htail
+        (hinitial.setSlot entry abs 0 .affine false).bump)
+    (hmany := by
+      intro entry abs rest initial final tailEmit htail hinitial
+      exact htail
+        (hinitial.setSlot entry abs 0 .many false).bump)
+    hrun hno
 
 theorem lowerCapture_noRecSelf (expr : IxIR0.Expr) (input : VEnv)
     (index : Nat) {output : VEnv} {emit : Emit} {value : AVal}
@@ -272,38 +484,17 @@ theorem lowerCaptures_noRecSelf (expr : IxIR0.Expr) :
       (lowerCaptures expr input indices).run state =
         .ok (output, emit, values) finalState →
       NoRecSelf input → NoRecSelf output := by
-  intro indices
-  induction indices with
-  | nil =>
-    intro input output emit values state finalState hrun hno
-    have hvalue := congrArg
-      (fun result : EStateM.Result String LowSt
-          (VEnv × Emit × List AVal) =>
-        match result with
-        | .ok value _ => value.1
-        | .error _ _ => input) hrun
-    have : output = input := by simpa [lowerCaptures] using hvalue.symm
-    subst output
+  intro indices input output emit values state finalState hrun
+  apply lowerCaptures_run_core
+    (Result := fun input output _ _ _ =>
+      NoRecSelf input → NoRecSelf output)
+    (e := expr) (hrun := hrun)
+  · intro input hno
     exact hno
-  | cons index rest ih =>
-    intro input output emit values state finalState hrun hno
-    simp only [lowerCaptures] at hrun
-    obtain ⟨headResult, middleState, hheadRun, hafterHead⟩ :=
-      bind_run_ok_inv hrun
-    rcases headResult with ⟨middle, headEmit, headValue⟩
-    obtain ⟨tailResult, tailState, htailRun, hafterTail⟩ :=
-      bind_run_ok_inv hafterHead
-    rcases tailResult with ⟨actualOutput, tailEmit, tailValues⟩
-    have houtput : actualOutput = output := by
-      have hvalue := congrArg
-        (fun result : EStateM.Result String LowSt
-            (VEnv × Emit × List AVal) =>
-          match result with
-          | .ok value _ => value.1
-          | .error _ _ => input) hafterTail
-      simpa using hvalue
-    subst actualOutput
-    exact ih htailRun (lowerCapture_noRecSelf expr input index hheadRun hno)
+  · intro index rest input middle output headEmit tailEmit headValue
+      tailValues state middleState hheadRun htail hno
+    exact htail
+      (lowerCapture_noRecSelf expr input index hheadRun hno)
 
 def LowerEPreservesNoRecSelf (src : IxIR0.Env) (fuel : Nat) : Prop :=
   ∀ {input : VEnv} {world : Owned} {expr : IxIR0.Expr}
@@ -1222,14 +1413,15 @@ theorem EntryCountPreserved.bump {input output : VEnv}
 
 theorem releaseAll_preservesEntryCount (input : VEnv) (values : List AVal) :
     EntryCountPreserved input (releaseAll input values).1 := by
-  induction values generalizing input with
-  | nil => rfl
-  | cons value rest ih =>
-    cases value with
-    | constA atom => exact ih input
-    | slotA abs =>
-      change EntryCountPreserved input (releaseAll input.bump rest).1
-      simpa [EntryCountPreserved, VEnv.bump] using ih input.bump
+  exact releaseAll_traverse_core
+    (Result := fun initial _ output _ =>
+      EntryCountPreserved initial output)
+    (hnil := EntryCountPreserved.refl)
+    (hconst := fun htail => htail)
+    (hslot := by
+      intro initial abs rest output tailEmit htail
+      simpa [EntryCountPreserved, VEnv.bump] using htail)
+    input values
 
 /-- Entry releases update slots in place and therefore preserve logical-entry
 cardinality even though each emitted drop bumps the physical depth. -/
@@ -1238,60 +1430,18 @@ theorem releaseSlots_preservesEntryCount (input : VEnv) :
       (releaseSlots input drops).run state =
         .ok (output, emit) finalState →
       EntryCountPreserved input output := by
-  intro drops
-  induction drops generalizing input with
-  | nil =>
-    intro output emit state finalState hrun
-    have hpure :
-        (input, (_root_.id : Emit)) = (output, emit) ∧
-          state = finalState := by
-      simpa [releaseSlots] using hrun
-    cases hpure.1
-    exact .refl input
-  | cons drop rest ih =>
-    intro output emit state finalState hrun
-    rcases drop with ⟨entry, abs, uses⟩
-    cases uses with
-    | erased =>
-      obtain ⟨_, _, hthrow, _⟩ := bind_run_ok_inv (by
-        simpa [releaseSlots] using hrun)
-      exact (throw_run_not_ok hthrow).elim
-    | linear =>
-      obtain ⟨_, _, hthrow, _⟩ := bind_run_ok_inv (by
-        simpa [releaseSlots] using hrun)
-      exact (throw_run_not_ok hthrow).elim
-    | affine =>
-      have hmap :
-          ((fun result : VEnv × Emit =>
-              (result.1,
-                emitOp (.dropU (.var (input.rel abs))) ∘ result.2)) <$>
-            releaseSlots
-              (input.setEntry entry
-                (.slot abs 0 .affine false)).bump rest).run state =
-            .ok (output, emit) finalState := by
-        simpa [releaseSlots] using hrun
-      obtain ⟨tailResult, htailRun, hvalue⟩ := map_run_ok_inv hmap
-      rcases tailResult with ⟨actualOutput, tailEmit⟩
-      have houtput : actualOutput = output := congrArg Prod.fst hvalue
-      subst output
-      have htail := ih _ htailRun
-      simpa [EntryCountPreserved, VEnv.bump, VEnv.setEntry] using htail
-    | many =>
-      have hmap :
-          ((fun result : VEnv × Emit =>
-              (result.1,
-                emitOp (.drop (.var (input.rel abs))) ∘ result.2)) <$>
-            releaseSlots
-              (input.setEntry entry
-                (.slot abs 0 .many false)).bump rest).run state =
-            .ok (output, emit) finalState := by
-        simpa [releaseSlots] using hrun
-      obtain ⟨tailResult, htailRun, hvalue⟩ := map_run_ok_inv hmap
-      rcases tailResult with ⟨actualOutput, tailEmit⟩
-      have houtput : actualOutput = output := congrArg Prod.fst hvalue
-      subst output
-      have htail := ih _ htailRun
-      simpa [EntryCountPreserved, VEnv.bump, VEnv.setEntry] using htail
+  intro drops output emit state finalState hrun
+  exact releaseSlots_run_core
+    (Result := fun initial final _ _ =>
+      EntryCountPreserved initial final)
+    (hnil := EntryCountPreserved.refl)
+    (haffine := by
+      intro entry abs rest initial final tailEmit htail
+      simpa [EntryCountPreserved, VEnv.bump, VEnv.setEntry] using htail)
+    (hmany := by
+      intro entry abs rest initial final tailEmit htail
+      simpa [EntryCountPreserved, VEnv.bump, VEnv.setEntry] using htail)
+    hrun
 
 theorem lowerCapture_preservesEntryCount (expr : IxIR0.Expr) (input : VEnv)
     (index : Nat) {output : VEnv} {emit : Emit} {value : AVal}
@@ -1353,39 +1503,17 @@ theorem lowerCaptures_preservesEntryCount (expr : IxIR0.Expr) :
       (lowerCaptures expr input indices).run state =
         .ok (output, emit, values) finalState →
       EntryCountPreserved input output := by
-  intro indices
-  induction indices with
-  | nil =>
-    intro input output emit values state finalState hrun
-    have hvalue := congrArg
-      (fun result : EStateM.Result String LowSt
-          (VEnv × Emit × List AVal) =>
-        match result with
-        | .ok value _ => value.1
-        | .error _ _ => input) hrun
-    have : output = input := by simpa [lowerCaptures] using hvalue.symm
-    subst output
+  intro indices input output emit values state finalState hrun
+  apply lowerCaptures_run_core
+    (Result := fun input output _ _ _ =>
+      EntryCountPreserved input output)
+    (e := expr) (hrun := hrun)
+  · intro input
     exact .refl input
-  | cons index rest ih =>
-    intro input output emit values state finalState hrun
-    simp only [lowerCaptures] at hrun
-    obtain ⟨headResult, middleState, hheadRun, hafterHead⟩ :=
-      bind_run_ok_inv hrun
-    rcases headResult with ⟨middle, headEmit, headValue⟩
-    obtain ⟨tailResult, tailState, htailRun, hafterTail⟩ :=
-      bind_run_ok_inv hafterHead
-    rcases tailResult with ⟨actualOutput, tailEmit, tailValues⟩
-    have houtput : actualOutput = output := by
-      have hvalue := congrArg
-        (fun result : EStateM.Result String LowSt
-            (VEnv × Emit × List AVal) =>
-          match result with
-          | .ok value _ => value.1
-          | .error _ _ => input) hafterTail
-      simpa using hvalue
-    subst actualOutput
+  · intro index rest input middle output headEmit tailEmit headValue
+      tailValues state middleState hheadRun htail
     exact (lowerCapture_preservesEntryCount expr input index hheadRun).trans
-      (ih htailRun)
+      htail
 
 def LowerEPreservesEntryCount (src : IxIR0.Env) (fuel : Nat) : Prop :=
   ∀ {input : VEnv} {world : Owned} {expr : IxIR0.Expr}
@@ -2243,12 +2371,13 @@ theorem RecSelfAt.pop_succ {input : VEnv} {index arity : Nat}
 theorem releaseAll_recSelfAt (input : VEnv) (values : List AVal)
     {index arity : Nat} (hself : RecSelfAt input index arity) :
     RecSelfAt (releaseAll input values).1 index arity := by
-  induction values generalizing input with
-  | nil => exact hself
-  | cons value rest ih =>
-    cases value with
-    | constA atom => exact ih input hself
-    | slotA abs => exact ih input.bump hself.bump
+  exact releaseAll_traverse_core
+    (Result := fun initial _ output _ =>
+      RecSelfAt initial index arity → RecSelfAt output index arity)
+    (hnil := fun _ hinitial => hinitial)
+    (hconst := fun htail hinitial => htail hinitial)
+    (hslot := fun htail hinitial => htail hinitial.bump)
+    input values hself
 
 theorem lowerCapture_recSelfAt (expr : IxIR0.Expr) (input : VEnv)
     (captured : Nat) {output : VEnv} {emit : Emit} {value : AVal}
@@ -2314,39 +2443,16 @@ theorem lowerCaptures_recSelfAt (expr : IxIR0.Expr) :
       (lowerCaptures expr input captures).run state =
         .ok (output, emit, values) finalState →
       RecSelfAt input index arity → RecSelfAt output index arity := by
-  intro captures
-  induction captures with
-  | nil =>
-    intro input output emit values state finalState index arity hrun hself
-    have hvalue := congrArg
-      (fun result : EStateM.Result String LowSt
-          (VEnv × Emit × List AVal) =>
-        match result with
-        | .ok value _ => value.1
-        | .error _ _ => input) hrun
-    have houtput : output = input := by
-      simpa [lowerCaptures] using hvalue.symm
-    subst output
+  intro captures input output emit values state finalState index arity hrun
+  apply lowerCaptures_run_core
+    (Result := fun input output _ _ _ =>
+      RecSelfAt input index arity → RecSelfAt output index arity)
+    (e := expr) (hrun := hrun)
+  · intro input hself
     exact hself
-  | cons captured rest ih =>
-    intro input output emit values state finalState index arity hrun hself
-    simp only [lowerCaptures] at hrun
-    obtain ⟨headResult, middleState, hheadRun, hafterHead⟩ :=
-      bind_run_ok_inv hrun
-    rcases headResult with ⟨middle, headEmit, headValue⟩
-    obtain ⟨tailResult, tailState, htailRun, hafterTail⟩ :=
-      bind_run_ok_inv hafterHead
-    rcases tailResult with ⟨actualOutput, tailEmit, tailValues⟩
-    have houtput : actualOutput = output := by
-      have hvalue := congrArg
-        (fun result : EStateM.Result String LowSt
-            (VEnv × Emit × List AVal) =>
-          match result with
-          | .ok value _ => value.1
-          | .error _ _ => input) hafterTail
-      simpa using hvalue
-    subst actualOutput
-    exact ih htailRun
+  · intro captured rest input middle output headEmit tailEmit headValue
+      tailValues state middleState hheadRun htail hself
+    exact htail
       (lowerCapture_recSelfAt expr input captured hheadRun hself)
 
 def LowerEPreservesRecSelf (src : IxIR0.Env) (fuel : Nat) : Prop :=

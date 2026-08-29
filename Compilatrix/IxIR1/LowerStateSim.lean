@@ -41,6 +41,20 @@ theorem trackedBindRun_ok_inv {error state α β : Type}
     rw [haction] at h
     contradiction
 
+theorem trackedMapRun_ok_inv {error state α β : Type}
+    {action : EStateM error state α} {f : α → β}
+    {initial final : state} {result : β}
+    (hrun : (f <$> action).run initial = .ok result final) :
+    ∃ value, action.run initial = .ok value final ∧ f value = result := by
+  have hbind : (action >>= fun value => pure (f value)).run initial =
+      .ok result final := by
+    simpa only [bind_pure_comp] using hrun
+  obtain ⟨value, middle, haction, hpure⟩ := trackedBindRun_ok_inv hbind
+  have hresult : f value = result ∧ middle = final := by
+    simpa using hpure
+  cases hresult.2
+  exact ⟨value, haction, hresult.1⟩
+
 def EntryTracksAt (Γ : VEnv) (index abs : Nat) (uses : Uses)
     (remaining : Nat) : Prop :=
   Γ.entries[index]? =
@@ -249,80 +263,25 @@ theorem parameterDrops_releasePlan_tracked_atDepth (base depth : Nat)
         ⟨parameterEntries base modes remaining, depth⟩
         (parameterDrops base modes remaining) output emit ∧
       EntriesTrackCounts output modes.length remaining := by
-  induction modes generalizing base depth with
-  | nil =>
-    refine ⟨⟨[], depth⟩, (_root_.id : Emit), ReleasePlan.nil, ?_⟩
-    intro index hindex
-    simp at hindex
-  | cons mode modes ih =>
-    obtain ⟨htail, hmode⟩ := hadmissible
-    obtain ⟨innerOutput, innerEmit, hinner, hinnerTracks⟩ :=
-      ih (base + 1) depth htail
-    let outerEntry : VEntry :=
-      .slot base (remaining modes.length) mode true
-    let framedOutput := frameVEnvEntries innerOutput [outerEntry]
-    have hinnerFull : ReleasePlan
-        ⟨parameterEntries base (mode :: modes) remaining, depth⟩
-        (parameterDrops (base + 1) modes remaining)
-        framedOutput innerEmit := by
-      have hframed := hinner.frameEntries [outerEntry]
-      have hinputEq :
-          frameVEnvEntries
-              ⟨parameterEntries (base + 1) modes remaining, depth⟩
-              [outerEntry] =
-            ⟨parameterEntries base (mode :: modes) remaining, depth⟩ := by
-        simp [frameVEnvEntries, parameterEntries, outerEntry]
-      rw [hinputEq] at hframed
-      simpa [framedOutput, outerEntry] using hframed
-    have hlength : innerOutput.entries.length = modes.length := by
-      calc
-        innerOutput.entries.length =
-            (parameterEntries (base + 1) modes remaining).length :=
-          hinner.entries_length
-        _ = modes.length := parameterEntries_length _ _ _
-    by_cases hzero : remaining modes.length = 0
-    · rcases hmode hzero with rfl | rfl
-      · have hentry : framedOutput.entries[modes.length]? =
-            some (.slot base 0 .many true) := by
-          simp [framedOutput, frameVEnvEntries, outerEntry, hlength, hzero]
-        let finalOutput :=
-          (framedOutput.setEntry modes.length
-            (.slot base 0 .many false)).bump
-        have houter : ReleasePlan framedOutput
-            [⟨modes.length, base, .many⟩] finalOutput
-            (emitOp (.drop (.var (framedOutput.rel base))) ∘
-              (_root_.id : Emit)) := by
-          exact ReleasePlan.many hentry ReleasePlan.nil
-        refine ⟨finalOutput, innerEmit ∘
-          (emitOp (.drop (.var (framedOutput.rel base))) ∘
-            (_root_.id : Emit)), ?_, ?_⟩
-        · simpa [parameterDrops, hzero] using hinnerFull.comp houter
-        · have htracks := EntriesTrackCounts.frameReleasedSlot
-            (abs := base) (uses := .many) hinnerTracks hlength hzero
-          simpa [finalOutput, framedOutput, outerEntry, hzero] using htracks
-      · have hentry : framedOutput.entries[modes.length]? =
-            some (.slot base 0 .affine true) := by
-          simp [framedOutput, frameVEnvEntries, outerEntry, hlength, hzero]
-        let finalOutput :=
-          (framedOutput.setEntry modes.length
-            (.slot base 0 .affine false)).bump
-        have houter : ReleasePlan framedOutput
-            [⟨modes.length, base, .affine⟩] finalOutput
-            (emitOp (.dropU (.var (framedOutput.rel base))) ∘
-              (_root_.id : Emit)) := by
-          exact ReleasePlan.affine hentry ReleasePlan.nil
-        refine ⟨finalOutput, innerEmit ∘
-          (emitOp (.dropU (.var (framedOutput.rel base))) ∘
-            (_root_.id : Emit)), ?_, ?_⟩
-        · simpa [parameterDrops, hzero] using hinnerFull.comp houter
-        · have htracks := EntriesTrackCounts.frameReleasedSlot
-            (abs := base) (uses := .affine) hinnerTracks hlength hzero
-          simpa [finalOutput, framedOutput, outerEntry, hzero] using htracks
-    · refine ⟨framedOutput, innerEmit, ?_, ?_⟩
-      · simpa [parameterDrops, hzero] using hinnerFull
-      · have htracks := EntriesTrackCounts.frameLiveSlot
-          (abs := base) (uses := mode) hinnerTracks hlength hzero
-        simpa [framedOutput, outerEntry] using htracks
+  exact parameterDrops_releasePlan_traverse remaining
+    (Result := fun _ _ sourceModes output =>
+      EntriesTrackCounts output sourceModes.length remaining)
+    (hnil := by
+      intro _ _ index hindex
+      simp at hindex)
+    (hlive := by
+      intro current _ mode rest innerOutput htracks hlength hlive
+      simpa using EntriesTrackCounts.frameLiveSlot
+        (abs := current) (uses := mode) htracks hlength hlive)
+    (hmany := by
+      intro current _ rest innerOutput htracks hlength hdead
+      simpa using EntriesTrackCounts.frameReleasedSlot
+        (abs := current) (uses := .many) htracks hlength hdead)
+    (haffine := by
+      intro current _ rest innerOutput htracks hlength hdead
+      simpa using EntriesTrackCounts.frameReleasedSlot
+        (abs := current) (uses := .affine) htracks hlength hdead)
+    base depth modes hadmissible
 
 /-- Canonical ordinary-function entry specialization. -/
 theorem parameterDrops_releasePlan_tracked (base : Nat)
@@ -350,82 +309,89 @@ theorem recursorFieldRetains_plan_tracked
       EntriesTrackCounts output fieldCount
         (fun index => countUses index rhs) := by
   dsimp only
-  induction fieldCount generalizing fieldAbs depth with
-  | zero =>
-    refine ⟨⟨[], depth⟩, (_root_.id : Emit), FieldRetainPlan.nil, ?_⟩
-    intro index hindex
-    simp at hindex
-  | succ fieldCount ih =>
-    let dead : VEntry := .slot 0 0 .many false
-    let uses := countUses fieldCount rhs
-    have hrep : List.replicate (fieldCount + 1) dead =
-        List.replicate fieldCount dead ++ [dead] := by
-      symm
-      simpa using (List.replicate_append_replicate
-        (n := fieldCount) (m := 1) (a := dead))
-    by_cases hzero : uses = 0
-    · obtain ⟨tailOutput, tailEmit, htail, htailTracks⟩ :=
-        ih (fieldAbs + 1) depth
-      have hframed := htail.frameEntries [dead]
-      have hlength : tailOutput.entries.length = fieldCount := by
-        calc
-          tailOutput.entries.length =
-              (List.replicate fieldCount dead).length :=
-            htail.entries_length
-          _ = fieldCount := by simp
-      have htracks := EntriesTrackCounts.frameCanonicalSlot
-        (abs := 0) (uses := .many) htailTracks hlength
-      refine ⟨frameVEnvEntries tailOutput [dead], tailEmit, ?_, ?_⟩
-      · rw [hrep]
-        simpa [recursorFieldRetains, uses, hzero, dead,
-          frameVEnvEntries] using hframed
-      · simpa [dead, uses, hzero] using htracks
-    · obtain ⟨tailOutput, tailEmit, htail, htailTracks⟩ :=
-        ih (fieldAbs + 1) (depth + 1)
-      let held : VEntry := .slot depth uses .many true
-      have hframed := htail.frameEntries [held]
-      let input : VEnv :=
-        ⟨List.replicate (fieldCount + 1) dead, depth⟩
-      have hentry : input.entries[fieldCount]? = some dead := by
-        simp [input, dead]
-      have hnext :
-          ((input.setEntry fieldCount held).bump) =
-            frameVEnvEntries
-              ⟨List.replicate fieldCount dead, depth + 1⟩ [held] := by
-        simp only [input, VEnv.setEntry, VEnv.bump]
-        rw [hrep]
-        simp [held, dead, frameVEnvEntries, List.set_append_right]
-      have htailFull : FieldRetainPlan
-          ((input.setEntry fieldCount held).bump)
-          (recursorFieldRetains (fieldAbs + 1) rhs fieldCount)
-          (frameVEnvEntries tailOutput [held]) tailEmit := by
-        rw [hnext]
-        exact hframed
-      have hfirst := FieldRetainPlan.retain
-        (fieldAbs := fieldAbs) hentry htailFull
-      have hlength : tailOutput.entries.length = fieldCount := by
-        calc
-          tailOutput.entries.length =
-              (List.replicate fieldCount dead).length :=
-            htail.entries_length
-          _ = fieldCount := by simp
-      have htracks := EntriesTrackCounts.frameLiveSlot
-        (abs := depth) (uses := .many) htailTracks hlength
-        (by simpa [uses] using hzero)
-      refine ⟨frameVEnvEntries tailOutput [held],
-        emitOp (.dup (.var (input.rel fieldAbs))) ∘ tailEmit, ?_, ?_⟩
-      · simpa [input, recursorFieldRetains, uses, hzero, dead, held]
-          using hfirst
-      · simpa [held, uses] using htracks
+  exact recursorFieldRetains_plan_traverse rhs
+    (Result := fun _ _ currentCount output =>
+      EntriesTrackCounts output currentCount
+        (fun index => countUses index rhs))
+    (hnilResult := by
+      intro _ _ index hindex
+      simp at hindex)
+    (hskipResult := by
+      intro _ _ currentCount tailOutput htracks hlength hzero
+      simpa [hzero] using EntriesTrackCounts.frameCanonicalSlot
+        (abs := 0) (uses := .many) htracks hlength)
+    (hretainResult := by
+      intro _ currentDepth currentCount tailOutput htracks hlength
+        hnonzero
+      simpa using EntriesTrackCounts.frameLiveSlot
+        (abs := currentDepth) (uses := .many) htracks hlength hnonzero)
+    fieldAbs depth fieldCount
 
 theorem replicate_many_parameterDropsAdmissible
     (count : Nat) (remaining : Nat → Nat) :
-    ParameterDropsAdmissible (List.replicate count .many) remaining := by
-  induction count with
-  | zero => simp [ParameterDropsAdmissible]
-  | succ count ih =>
-    simp only [List.replicate_succ, ParameterDropsAdmissible]
-    exact ⟨ih, by simp⟩
+    ParameterDropsAdmissible (List.replicate count .many) remaining :=
+  parameterDropsAdmissible_replicate_many count remaining
+
+/-- Every descriptor in a successfully executed release list has a runtime
+release mode.  The other two source modes are precisely the error branches
+of `releaseSlots`. -/
+theorem releaseSlots_run_drop_admissible
+    {input output : VEnv} {drops : List SlotDrop} {emit : Emit}
+    {state finalState : LowSt}
+    (hrun : (releaseSlots input drops).run state =
+      .ok (output, emit) finalState) :
+    ∀ drop ∈ drops, drop.uses = .many ∨ drop.uses = .affine := by
+  exact releaseSlots_run_core
+    (Result := fun _ _ selectedDrops _ =>
+      ∀ drop ∈ selectedDrops,
+        drop.uses = .many ∨ drop.uses = .affine)
+    (hnil := by simp)
+    (haffine := by
+      intro entry abs rest initial final tailEmit htail selected hselected
+      rcases List.mem_cons.mp hselected with rfl | hrest
+      · exact Or.inr rfl
+      · exact htail selected hrest)
+    (hmany := by
+      intro entry abs rest initial final tailEmit htail selected hselected
+      rcases List.mem_cons.mp hselected with rfl | hrest
+      · exact Or.inl rfl
+      · exact htail selected hrest)
+    hrun
+
+/-- If every generated dead-parameter descriptor has a runtime release
+mode, the source telescope satisfies the exact syntactic admissibility
+predicate used by the function-entry proof. -/
+theorem parameterDropsAdmissible_of_drop_admissible
+    (base : Nat) (modes : List Uses) (remaining : Nat → Nat)
+    (hdrops : ∀ drop ∈ parameterDrops base modes remaining,
+      drop.uses = .many ∨ drop.uses = .affine) :
+    ParameterDropsAdmissible modes remaining := by
+  induction modes generalizing base with
+  | nil => trivial
+  | cons mode modes ih =>
+    constructor
+    · apply ih (base + 1)
+      intro drop hdrop
+      apply hdrops drop
+      simpa [parameterDrops] using
+        List.mem_append_left
+          (if remaining modes.length == 0 then
+            [⟨modes.length, base, mode⟩]
+          else []) hdrop
+    · intro hzero
+      apply hdrops ⟨modes.length, base, mode⟩
+      simp [parameterDrops, hzero]
+
+/-- Successful execution of the compiler-generated parameter release list
+is itself the missing admissibility certificate. -/
+theorem parameterDropsAdmissible_of_releaseSlots_run
+    (base : Nat) (modes : List Uses) (remaining : Nat → Nat)
+    {input output : VEnv} {emit : Emit} {state finalState : LowSt}
+    (hrun : (releaseSlots input (parameterDrops base modes remaining)).run
+      state = .ok (output, emit) finalState) :
+    ParameterDropsAdmissible modes remaining :=
+  parameterDropsAdmissible_of_drop_admissible base modes remaining
+    (releaseSlots_run_drop_admissible hrun)
 
 /-- The exact generated field/parameter prefix establishes the logical RHS
 layout needed by occurrence accounting: every ordinary entry is tracked by
@@ -690,12 +656,15 @@ theorem releaseAll_entries_eq (input : VEnv) :
     ∀ values : List AVal,
       (releaseAll input values).1.entries = input.entries := by
   intro values
-  induction values generalizing input with
-  | nil => rfl
-  | cons value rest ih =>
-    cases value with
-    | constA atom => exact ih input
-    | slotA abs => exact ih input.bump
+  exact releaseAll_traverse_core
+    (Result := fun initial _ output _ =>
+      output.entries = initial.entries)
+    (hnil := fun _ => rfl)
+    (hconst := fun htail => htail)
+    (hslot := by
+      intro initial abs rest output tailEmit htail
+      simpa [VEnv.bump] using htail)
+    input values
 
 theorem releaseAll_consumes_zero (input : VEnv) (values : List AVal) :
     EntryConsumption input (releaseAll input values).1 (fun _ => 0) :=
@@ -1850,37 +1819,18 @@ theorem lowerCaptures_consumesEntries (expr : IxIR0.Expr) :
     (lowerCaptures expr input captures).run state =
       .ok (output, emit, values) finalState →
     EntryConsumption input output (captureUseCount expr captures) := by
-  intro captures
-  induction captures with
-  | nil =>
-    intro input output state finalState emit values hrun
-    have hpure :
-        (input, (_root_.id : Emit), []) = (output, emit, values) ∧
-          state = finalState := by
-      simpa [lowerCaptures] using hrun
-    obtain ⟨hvalue, hstate⟩ := hpure
-    cases hvalue
-    subst finalState
+  intro captures input output state finalState emit values hrun
+  apply lowerCaptures_run_core
+    (Result := fun input output captures _ _ =>
+      EntryConsumption input output (captureUseCount expr captures))
+    (e := expr) (hrun := hrun)
+  · intro input
     rw [captureUseCount_nil]
     exact EntryConsumption.zero input
-  | cons captured rest ih =>
-    intro input output state finalState emit values hrun
-    simp only [lowerCaptures] at hrun
-    obtain ⟨headResult, middleState, hheadRun, hafterHead⟩ :=
-      trackedBindRun_ok_inv hrun
-    rcases headResult with ⟨middle, headEmit, headValue⟩
-    obtain ⟨tailResult, tailState, htailRun, hpureRun⟩ :=
-      trackedBindRun_ok_inv hafterHead
-    rcases tailResult with ⟨actualOutput, tailEmit, tailValues⟩
-    have hpure :
-        (actualOutput, headEmit ∘ tailEmit, headValue :: tailValues) =
-            (output, emit, values) ∧ tailState = finalState := by
-      simpa using hpureRun
-    obtain ⟨hvalue, hstate⟩ := hpure
-    cases hvalue
-    subst finalState
+  · intro captured rest input middle output headEmit tailEmit headValue
+      tailValues state middleState hheadRun htail
     have hcomposed :=
-      (lowerCapture_consumesEntries hheadRun).comp (ih htailRun)
+      (lowerCapture_consumesEntries hheadRun).comp htail
     rw [captureUseCount_cons]
     exact hcomposed
 
@@ -1923,55 +1873,20 @@ theorem lowerLamConsumesEntries_succ
     {src : IxIR0.Env} {fuel : Nat} :
     LowerLamConsumesEntries src (fuel + 1) := by
   intro input expr state finalState output emit av hrun
-  cases hp : papSafe expr with
-  | false =>
-    simp [lowerLam, hp] at hrun
-  | true =>
-    simp only [lowerLam] at hrun
-    simp only [hp, ↓reduceIte, bind_pure_comp] at hrun
-    let captures := (List.range input.entries.length).filter
-      (fun i => countUses i expr > 0)
-    have hcaptures : captures =
-        (List.range input.entries.length).filter
-          (fun i => countUses i expr > 0) := rfl
-    rw [← hcaptures] at hrun
-    obtain ⟨captureResult, captureState, hcaptureRun, hafterCapture⟩ :=
-      trackedBindRun_ok_inv hrun
-    rcases captureResult with
-      ⟨captureOutput, captureEmit, captureValues⟩
-    obtain ⟨fnAddr, addressState, _, hafterAddress⟩ :=
-      trackedBindRun_ok_inv hafterCapture
-    obtain ⟨code, bodyState, _, hafterBody⟩ :=
-      trackedBindRun_ok_inv hafterAddress
-    change
-      (pushExtra
-          (fnAddr, .fn
-            ⟨captures.length + lamArity expr, .shared, code⟩) >>= fun _ =>
-        pure (captureOutput.bump,
-          captureEmit ∘ emitOp (.papp fnAddr
-            (captureValues.map (·.toAtom captureOutput)).toArray),
-          AVal.slotA captureOutput.depth)).run bodyState =
-        .ok (output, emit, av) finalState at hafterBody
-    obtain ⟨unitValue, pushedState, _, hpureRun⟩ :=
-      trackedBindRun_ok_inv hafterBody
-    cases unitValue
-    have hpure :
-        (captureOutput.bump,
-          captureEmit ∘ emitOp (.papp fnAddr
-            (captureValues.map (·.toAtom captureOutput)).toArray),
-          AVal.slotA captureOutput.depth) = (output, emit, av) ∧
-          pushedState = finalState := by
-      simpa using hpureRun
-    obtain ⟨hvalue, hstate⟩ := hpure
-    cases hvalue
-    subst finalState
-    have hselected :
-        (lowerCaptures expr input
-          ((List.range input.entries.length).filter
-            (fun i => countUses i expr > 0))).run state =
-          .ok (captureOutput, captureEmit, captureValues) captureState := by
-      simpa [hcaptures] using hcaptureRun
-    exact (lowerCaptures_selected_consumesEntries hselected).bump
+  apply lowerLam_run_core
+    (Result := fun _ output _ _ =>
+      EntryConsumption input output (fun index => countUses index expr))
+    (hrun := hrun)
+  intro _bodyFuel captureOutput captureEmit captureValues captureState
+    _fnAddr _addressState _code _bodyState _hfuel _hp hcaptureRun _hfreshRun
+    _hbodyRun
+  have hselected :
+      (lowerCaptures expr input
+        ((List.range input.entries.length).filter
+          (fun index => countUses index expr > 0))).run state =
+        .ok (captureOutput, captureEmit, captureValues) captureState := by
+    simpa [liftCaptureIndices] using hcaptureRun
+  exact (lowerCaptures_selected_consumesEntries hselected).bump
 
 theorem lowerE_let_consumesEntries
     {src : IxIR0.Env} {fuel : Nat}
@@ -2695,6 +2610,59 @@ theorem applyRestPreservesBelow_zero
   exact (applyRest_noSuccess_zero src input resultWorld pre function args
     hrun).elim
 
+/-- Shared compiler-fuel recursion for reachable semantic and progress
+clusters.  The cluster fields and their one-step constructors are predicate
+parameters, so the zero case, the special spine-at-one case, and the
+two-predecessor successor case are assembled once without identifying any
+public interface or proof flavor. -/
+theorem lowerValueClusterWithin_core
+    {Expr Borrow Spine Args ApplyRest Cluster : Nat → Prop}
+    (hzero : Cluster 0)
+    (hclusterExpr : ∀ {fuel}, Cluster fuel → Expr fuel)
+    (hclusterBorrow : ∀ {fuel}, Cluster fuel → Borrow fuel)
+    (hclusterSpine : ∀ {fuel}, Cluster fuel → Spine fuel)
+    (hclusterArgs : ∀ {fuel}, Cluster fuel → Args fuel)
+    (hclusterApplyRest : ∀ {fuel}, Cluster fuel → ApplyRest fuel)
+    (hmake : ∀ {fuel}, Expr fuel → Borrow fuel → Spine fuel →
+      Args fuel → ApplyRest fuel → Cluster fuel)
+    (hargsSucc : ∀ {fuel}, Expr fuel → Args fuel → Args (fuel + 1))
+    (happlyRestSucc : ∀ {fuel}, Args fuel → ApplyRest (fuel + 1))
+    (hborrowSucc : ∀ {fuel}, Expr fuel → Borrow (fuel + 1))
+    (hspineOne : Spine 1)
+    (hspineSucc : ∀ {fuel},
+      Spine (fuel + 1) → Expr (fuel + 1) → Args fuel →
+      ApplyRest fuel → ApplyRest (fuel + 1) → Spine (fuel + 2))
+    (hexprSucc : ∀ {fuel},
+      Expr fuel → Spine fuel → Borrow fuel → Args (fuel + 1) →
+      ApplyRest (fuel + 1) → Expr (fuel + 1)) :
+    ∀ fuel, Cluster fuel := by
+  intro fuel
+  induction fuel using Nat.strongRecOn with
+  | ind fuel ih =>
+    cases fuel with
+    | zero => exact hzero
+    | succ previous =>
+      have hprev : Cluster previous :=
+        ih previous (Nat.lt_succ_self previous)
+      have hargs : Args (previous + 1) :=
+        hargsSucc (hclusterExpr hprev) (hclusterArgs hprev)
+      have hrest : ApplyRest (previous + 1) :=
+        happlyRestSucc (hclusterArgs hprev)
+      have hborrow : Borrow (previous + 1) :=
+        hborrowSucc (hclusterExpr hprev)
+      have hspine : Spine (previous + 1) := by
+        cases previous with
+        | zero => exact hspineOne
+        | succ prior =>
+          have hprior : Cluster prior := ih prior (by omega)
+          exact hspineSucc (hclusterSpine hprev) (hclusterExpr hprev)
+            (hclusterArgs hprior) (hclusterApplyRest hprior)
+            (hclusterApplyRest hprev)
+      exact hmake
+        (hexprSucc (hclusterExpr hprev) (hclusterSpine hprev)
+          (hclusterBorrow hprev) hargs hrest)
+        hborrow hspine hargs hrest
+
 /-- The mutually recursive semantic compiler invariant at one fuel. Its
 successful-run premises are reachable-state premises: the target context
 need represent only the declarations in that run's final lowering state. -/
@@ -2730,69 +2698,1545 @@ theorem lowerClusterPreservesBelow
     {ctx : Ctx} {cur : FnDef} {limit : Nat} {src : IxIR0.Env}
     (happly : ApplyOwnershipContractBelow ctx limit)
     (hdecls : SourceDeclContractsBelow src ctx limit) :
-    ∀ fuel, LowerClusterPreservesBelow ctx cur limit src fuel
-  | 0 => by
-      exact {
-        expr := lowerEPreservesBelow_zero
-        borrow := lowerBorrowPreservesBelow_zero
-        spine := lowerSpinePreservesBelow_zero
-        args := lowerArgsPreservesBelow_zero
-        applyRest := applyRestPreservesBelow_zero }
-  | fuel + 1 => by
-      have hprev := lowerClusterPreservesBelow (cur := cur) happly hdecls fuel
-      have hargs : LowerArgsPreservesBelow ctx cur limit src (fuel + 1) :=
-        lowerArgsPreservesBelow_succ hprev.expr hprev.args
-          (lowerExtraMonotone src fuel).args
-      have hrest : ApplyRestPreservesBelow ctx cur limit src (fuel + 1) :=
-        applyRestPreservesBelow_succ hprev.args happly
-      have hborrow : LowerBorrowPreservesBelow ctx cur limit src (fuel + 1) :=
-        lowerBorrowPreservesBelow_succ hprev.expr
-      cases fuel with
-      | zero =>
-        have hspine : LowerSpinePreservesBelow ctx cur limit src 1 :=
-          lowerSpinePreservesBelow_one
-        have hexpr : LowerEPreservesBelow ctx cur limit src 1 := by
-          intro input world expr state finalState output emit av hrun
-            hrepresented havailable
-          exact lowerE_run_sound_below hprev.expr hprev.spine hargs
-            (lowerExtraMonotone src 1).args hrest
-            (lowerExtraMonotone src 1).applyRest hprev.borrow hdecls
-            (fun body => lowerE_releasesTrackedFirst src 0 body)
-            hrepresented hrun havailable
-        exact {
-          expr := hexpr
-          borrow := hborrow
-          spine := hspine
-          args := hargs
-          applyRest := hrest }
-      | succ fuel =>
-        have hprior := lowerClusterPreservesBelow (cur := cur) happly hdecls fuel
-        have hspine : LowerSpinePreservesBelow ctx cur limit src
-            (fuel + 2) := by
-          intro input world head args state finalState output emit av hrun
-            hrepresented havailable
-          exact lowerSpine_run_sound_below hprev.spine hprev.expr
-            hprior.args (lowerExtraMonotone src fuel).args
-            hprior.applyRest hprev.applyRest
-            (lowerExtraMonotone src fuel).applyRest
-            (lowerExtraMonotone src (fuel + 1)).applyRest hdecls hrun
-            hrepresented havailable
-        have hexpr : LowerEPreservesBelow ctx cur limit src
-            (fuel + 2) := by
-          intro input world expr state finalState output emit av hrun
-            hrepresented havailable
-          exact lowerE_run_sound_below hprev.expr hprev.spine hargs
-            (lowerExtraMonotone src (fuel + 2)).args hrest
-            (lowerExtraMonotone src (fuel + 2)).applyRest hprev.borrow
-            hdecls
-            (fun body => lowerE_releasesTrackedFirst src (fuel + 1) body)
-            hrepresented hrun havailable
-        exact {
-          expr := hexpr
-          borrow := hborrow
-          spine := hspine
-          args := hargs
-          applyRest := hrest }
+    ∀ fuel, LowerClusterPreservesBelow ctx cur limit src fuel :=
+  lowerValueClusterWithin_core
+    (Expr := LowerEPreservesBelow ctx cur limit src)
+    (Borrow := LowerBorrowPreservesBelow ctx cur limit src)
+    (Spine := LowerSpinePreservesBelow ctx cur limit src)
+    (Args := LowerArgsPreservesBelow ctx cur limit src)
+    (ApplyRest := ApplyRestPreservesBelow ctx cur limit src)
+    (Cluster := LowerClusterPreservesBelow ctx cur limit src)
+    (hzero := {
+      expr := lowerEPreservesBelow_zero
+      borrow := lowerBorrowPreservesBelow_zero
+      spine := lowerSpinePreservesBelow_zero
+      args := lowerArgsPreservesBelow_zero
+      applyRest := applyRestPreservesBelow_zero })
+    (hclusterExpr := fun hcluster => hcluster.expr)
+    (hclusterBorrow := fun hcluster => hcluster.borrow)
+    (hclusterSpine := fun hcluster => hcluster.spine)
+    (hclusterArgs := fun hcluster => hcluster.args)
+    (hclusterApplyRest := fun hcluster => hcluster.applyRest)
+    (hmake := fun hexpr hborrow hspine hargs hrest => {
+      expr := hexpr
+      borrow := hborrow
+      spine := hspine
+      args := hargs
+      applyRest := hrest })
+    (hargsSucc := by
+      intro fuel hexpr hargs
+      exact lowerArgsPreservesBelow_succ hexpr hargs
+        (lowerExtraMonotone src fuel).args)
+    (happlyRestSucc := fun hargs =>
+      applyRestPreservesBelow_succ hargs happly)
+    (hborrowSucc := fun hexpr =>
+      lowerBorrowPreservesBelow_succ hexpr)
+    (hspineOne := lowerSpinePreservesBelow_one)
+    (hspineSucc := by
+      intro fuel hprevSpine hprevExpr hpriorArgs hpriorRest hprevRest
+      intro input world head args state finalState output emit av hrun
+        hrepresented havailable
+      exact lowerSpine_run_sound_below hprevSpine hprevExpr hpriorArgs
+        (lowerExtraMonotone src fuel).args hpriorRest hprevRest
+        (lowerExtraMonotone src fuel).applyRest
+        (lowerExtraMonotone src (fuel + 1)).applyRest hdecls hrun
+        hrepresented havailable)
+    (hexprSucc := by
+      intro fuel hprevExpr hprevSpine hprevBorrow hargs hrest
+      intro input world expr state finalState output emit av hrun
+        hrepresented havailable
+      exact lowerE_run_sound_below hprevExpr hprevSpine hargs
+        (lowerExtraMonotone src (fuel + 1)).args hrest
+        (lowerExtraMonotone src (fuel + 1)).applyRest hprevBorrow
+        hdecls (fun body => lowerE_releasesTrackedFirst src fuel body)
+        hrepresented hrun havailable)
+
+/-! ### Closed reachable-state value induction -/
+
+/-- At compiler fuel one, `lowerSpine` still cannot complete: every branch
+reaches a zero-fuel recursive action first. This is the semantic companion
+to `lowerSpinePreservesBelow_one`. -/
+theorem lowerSpineValuePreservesWithin_one
+    {funRel : Sim.FunctionRel} {recSelfRel : RecSelfRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {cur : FnDef}
+    {src : IxIR0.Env} {ambient : LowSt} :
+    LowerSpineValuePreservesWithin funRel recSelfRel sourceCtx ctx cur src
+      ambient 1 := by
+  intro input output world head args sourceEnv sourceResult state finalState
+    emit av _ hrun _ _
+  exact (lowerSpine_noSuccess_one src input world head args hrun).elim
+
+/-- The complete reachable-state semantic invariant for the mutually
+recursive lowering cluster at one compiler-fuel index. All function
+provenance is indexed by the ambient state of the enclosing whole-pass run;
+individual successful subruns supply only an `ExtraExtends` suffix proof. -/
+structure LowerValueClusterWithin
+    (sourceCtx : IxIR0.Ctx) (src : IxIR0.Env) (ambient : LowSt)
+    (recSelfRel : RecSelfRel) (ctx : Ctx) (cur : FnDef)
+    (fuel : Nat) : Prop where
+  expr : LowerEValuePreservesWithin
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur src ambient fuel
+  borrow : LowerBorrowValuePreservesWithin
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur src ambient fuel
+  spine : LowerSpineValuePreservesWithin
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur src ambient fuel
+  args : LowerArgsValuePreservesWithin
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur src ambient fuel
+  applyRest : ApplyRestNonErasedValuePreservesWithin
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur src ambient fuel
+
+/-- Complete compiler-fuel induction for value correspondence. The static
+declaration and higher-order application hypotheses are semantic contracts
+of the final target context; compiler recursion, erased reflection, let
+cleanup, and generated-declaration reachability are all discharged here. -/
+theorem lowerValueClusterWithin
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx} {cur : FnDef}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx) :
+    ∀ fuel,
+      LowerValueClusterWithin sourceCtx src ambient recSelfRel ctx cur fuel :=
+  lowerValueClusterWithin_core
+    (Expr := LowerEValuePreservesWithin
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur src ambient)
+    (Borrow := LowerBorrowValuePreservesWithin
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur src ambient)
+    (Spine := LowerSpineValuePreservesWithin
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur src ambient)
+    (Args := LowerArgsValuePreservesWithin
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur src ambient)
+    (ApplyRest := ApplyRestNonErasedValuePreservesWithin
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur src ambient)
+    (Cluster := LowerValueClusterWithin sourceCtx src ambient recSelfRel ctx
+      cur)
+    (hzero := {
+      expr := lowerEValuePreservesWithin_zero src ambient
+      borrow := lowerBorrowValuePreservesWithin_zero src ambient
+      spine := lowerSpineValuePreservesWithin_zero src ambient
+      args := lowerArgsValuePreservesWithin_zero src ambient
+      applyRest := applyRestNonErasedValuePreservesWithin_zero src ambient })
+    (hclusterExpr := fun hcluster => hcluster.expr)
+    (hclusterBorrow := fun hcluster => hcluster.borrow)
+    (hclusterSpine := fun hcluster => hcluster.spine)
+    (hclusterArgs := fun hcluster => hcluster.args)
+    (hclusterApplyRest := fun hcluster => hcluster.applyRest)
+    (hmake := fun hexpr hborrow hspine hargs hrest => {
+      expr := hexpr
+      borrow := hborrow
+      spine := hspine
+      args := hargs
+      applyRest := hrest })
+    (hargsSucc := fun hexpr hargs =>
+      lowerArgsValuePreservesWithin_succ hexpr hargs)
+    (happlyRestSucc := fun hargs =>
+      applyRestNonErasedValuePreservesWithin_succ hargs
+        hcontracts.apply hvalues.apply)
+    (hborrowSucc := fun hexpr =>
+      lowerBorrowValuePreservesWithin_succ hexpr)
+    (hspineOne := lowerSpineValuePreservesWithin_one)
+    (hspineSucc := by
+      intro fuel hprevSpine hprevExpr hpriorArgs hpriorRest hprevRest
+      intro input output world head args sourceEnv sourceResult state
+        finalState emit av hsource hrun hextends havailable
+      exact lowerSpine_run_value_sound_within (fuel := fuel) henv
+        hprevSpine hprevExpr
+        (lowerE_reflectsErased sourceCtx src (fuel + 1)) hpriorArgs
+        hpriorRest hprevRest
+        (lowerExtraMonotone src (fuel + 1)).knownCall hcontracts hvalues
+        hsource hrun hextends hrepresented havailable)
+    (hexprSucc := by
+      intro fuel hprevExpr hprevSpine hprevBorrow hargs hrest
+      intro input output world expr sourceEnv sourceFuel sourceValue state
+        finalState emit av hsource hrun hextends havailable
+      exact lowerE_run_value_sound_within (fuel := fuel) henv hprevExpr
+        hprevSpine hprevBorrow hargs hrest
+        (lowerExtraMonotone src (fuel + 2)).knownCall hcontracts hvalues
+        (fun body => lowerE_releasesTrackedFirst src fuel body)
+        hsource hrun hextends hrepresented havailable)
+
+/-- At compiler fuel one, the bounded semantic spine interface is likewise
+vacuous because every executable branch reaches a zero-fuel subaction. -/
+theorem lowerSpineValuePreservesWithinBelow_one
+    {funRel : Sim.FunctionRel} {recSelfRel : RecSelfRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {cur : FnDef}
+    {limit : Nat} {src : IxIR0.Env} {ambient : LowSt} :
+    LowerSpineValuePreservesWithinBelow funRel recSelfRel sourceCtx ctx cur
+      limit src ambient 1 := by
+  intro input output world head args sourceEnv sourceResult state finalState
+    emit av _ hrun _ _
+  exact (lowerSpine_noSuccess_one src input world head args hrun).elim
+
+/-- Fuel-bounded reachable-state semantic invariant for the complete
+mutually recursive lowering cluster. -/
+structure LowerValueClusterWithinBelow
+    (sourceCtx : IxIR0.Ctx) (src : IxIR0.Env) (ambient : LowSt)
+    (recSelfRel : RecSelfRel) (ctx : Ctx) (cur : FnDef)
+    (limit fuel : Nat) : Prop where
+  expr : LowerEValuePreservesWithinBelow
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur limit src ambient fuel
+  borrow : LowerBorrowValuePreservesWithinBelow
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur limit src ambient fuel
+  spine : LowerSpineValuePreservesWithinBelow
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur limit src ambient fuel
+  args : LowerArgsValuePreservesWithinBelow
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur limit src ambient fuel
+  applyRest : ApplyRestNonErasedValuePreservesWithinBelow
+    (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+    cur limit src ambient fuel
+
+/-- Complete compiler-fuel induction under semantic contracts bounded at a
+single target evaluator limit. This is the contractive cluster used while
+the declaration and higher-order apply contracts themselves are sealed. -/
+theorem lowerValueClusterWithinBelow
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx} {cur : FnDef} {limit : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit) :
+    ∀ fuel, LowerValueClusterWithinBelow sourceCtx src ambient recSelfRel
+      ctx cur limit fuel :=
+  lowerValueClusterWithin_core
+    (Expr := LowerEValuePreservesWithinBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur limit src ambient)
+    (Borrow := LowerBorrowValuePreservesWithinBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur limit src ambient)
+    (Spine := LowerSpineValuePreservesWithinBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur limit src ambient)
+    (Args := LowerArgsValuePreservesWithinBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur limit src ambient)
+    (ApplyRest := ApplyRestNonErasedValuePreservesWithinBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur limit src ambient)
+    (Cluster := LowerValueClusterWithinBelow sourceCtx src ambient
+      recSelfRel ctx cur limit)
+    (hzero := {
+      expr := lowerEValuePreservesWithinBelow_zero src ambient
+      borrow := lowerBorrowValuePreservesWithinBelow_zero src ambient
+      spine := lowerSpineValuePreservesWithinBelow_zero src ambient
+      args := lowerArgsValuePreservesWithinBelow_zero src ambient
+      applyRest :=
+        applyRestNonErasedValuePreservesWithinBelow_zero src ambient })
+    (hclusterExpr := fun hcluster => hcluster.expr)
+    (hclusterBorrow := fun hcluster => hcluster.borrow)
+    (hclusterSpine := fun hcluster => hcluster.spine)
+    (hclusterArgs := fun hcluster => hcluster.args)
+    (hclusterApplyRest := fun hcluster => hcluster.applyRest)
+    (hmake := fun hexpr hborrow hspine hargs hrest => {
+      expr := hexpr
+      borrow := hborrow
+      spine := hspine
+      args := hargs
+      applyRest := hrest })
+    (hargsSucc := fun hexpr hargs =>
+      lowerArgsValuePreservesWithinBelow_succ hexpr hargs)
+    (happlyRestSucc := fun hargs =>
+      applyRestNonErasedValuePreservesWithinBelow_succ hargs
+        (hcontracts.apply.below limit) hvalues.apply)
+    (hborrowSucc := fun hexpr =>
+      lowerBorrowValuePreservesWithinBelow_succ hexpr)
+    (hspineOne := lowerSpineValuePreservesWithinBelow_one)
+    (hspineSucc := by
+      intro fuel hprevSpine hprevExpr hpriorArgs hpriorRest hprevRest
+      intro input output world head args sourceEnv sourceResult state
+        finalState emit av hsource hrun hextends havailable
+      exact lowerSpine_run_value_sound_within_below (fuel := fuel) henv
+        hprevSpine hprevExpr
+        (lowerE_reflectsErased sourceCtx src (fuel + 1)) hpriorArgs
+        hpriorRest hprevRest
+        (lowerExtraMonotone src (fuel + 1)).knownCall hcontracts hvalues
+        hsource hrun hextends hrepresented havailable)
+    (hexprSucc := by
+      intro fuel hprevExpr hprevSpine hprevBorrow hargs hrest
+      intro input output world expr sourceEnv sourceFuel sourceValue state
+        finalState emit av hsource hrun hextends havailable
+      exact lowerE_run_value_sound_within_below (fuel := fuel) henv
+        hprevExpr hprevSpine hprevBorrow hargs hrest
+        (lowerExtraMonotone src (fuel + 2)).knownCall hcontracts hvalues
+        (fun body => lowerE_releasesTrackedFirst src fuel body)
+        hsource hrun hextends hrepresented havailable)
+
+/-- Bounded ordinary-expression interface with no recursive-self entry. -/
+theorem lowerE_run_value_sound_within_noRecSelf_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx} {cur : FnDef} {limit : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    {fuel : Nat} {input output : VEnv} {world : Owned}
+    {expr : IxIR0.Expr} {sourceEnv : List IxIR0.Value}
+    {sourceFuel : Nat} {sourceValue : IxIR0.Value}
+    {state finalState : LowSt} {emit : Emit} {av : AVal}
+    (hsource : IxIR0.eval sourceCtx sourceFuel sourceEnv expr =
+      .ok sourceValue)
+    (hrun : (lowerE src fuel input world expr).run state =
+      .ok (output, emit, av) finalState)
+    (hextends : ExtraExtends finalState ambient)
+    (hno : NoRecSelf input) :
+    LowerResultValueSoundBelow (CompilerFunctionRel sourceCtx src ambient)
+      recSelfRel ctx cur limit input output sourceEnv sourceEnv sourceValue
+      world emit av :=
+  (lowerValueClusterWithinBelow (recSelfRel := recSelfRel) (cur := cur)
+    henv hrepresented hcontracts hvalues fuel).expr hsource hrun hextends
+      (SelfValueAvailableBelow.of_noRecSelf hno)
+
+/-- Bounded recursor-rule expression interface with current-self semantics. -/
+theorem lowerE_run_value_sound_within_currentSelf_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx} {cur : FnDef} {limit : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    {fuel : Nat} {input output : VEnv} {world : Owned}
+    {expr : IxIR0.Expr} {sourceEnv : List IxIR0.Value}
+    {sourceFuel : Nat} {sourceValue : IxIR0.Value}
+    {state finalState : LowSt} {emit : Emit} {av : AVal}
+    (hsource : IxIR0.eval sourceCtx sourceFuel sourceEnv expr =
+      .ok sourceValue)
+    (hrun : (lowerE src fuel input world expr).run state =
+      .ok (output, emit, av) finalState)
+    (hextends : ExtraExtends finalState ambient)
+    (hself : CurrentSelfValueContractBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur limit) :
+    LowerResultValueSoundBelow (CompilerFunctionRel sourceCtx src ambient)
+      recSelfRel ctx cur limit input output sourceEnv sourceEnv sourceValue
+      world emit av :=
+  (lowerValueClusterWithinBelow (recSelfRel := recSelfRel) (cur := cur)
+    henv hrepresented hcontracts hvalues fuel).expr hsource hrun hextends
+      (SelfValueAvailableBelow.of_contract hself)
+
+/-- Ordinary expressions expose the closed semantic compiler induction
+without requiring a current recursive-self contract. -/
+theorem lowerE_run_value_sound_within_noRecSelf
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx} {cur : FnDef}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx)
+    {fuel : Nat} {input output : VEnv} {world : Owned}
+    {expr : IxIR0.Expr} {sourceEnv : List IxIR0.Value}
+    {sourceFuel : Nat} {sourceValue : IxIR0.Value}
+    {state finalState : LowSt} {emit : Emit} {av : AVal}
+    (hsource : IxIR0.eval sourceCtx sourceFuel sourceEnv expr =
+      .ok sourceValue)
+    (hrun : (lowerE src fuel input world expr).run state =
+      .ok (output, emit, av) finalState)
+    (hextends : ExtraExtends finalState ambient)
+    (hno : NoRecSelf input) :
+    LowerResultValueSound (CompilerFunctionRel sourceCtx src ambient)
+      recSelfRel ctx cur input output sourceEnv sourceEnv sourceValue world
+      emit av :=
+  (lowerValueClusterWithin (recSelfRel := recSelfRel) (cur := cur) henv
+    hrepresented hcontracts hvalues fuel).expr hsource hrun hextends
+      (SelfValueAvailable.of_noRecSelf hno)
+
+/-- Recursor-rule expressions use the same closed semantic induction with
+the generated current-function value contract. -/
+theorem lowerE_run_value_sound_within_currentSelf
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx} {cur : FnDef}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx)
+    {fuel : Nat} {input output : VEnv} {world : Owned}
+    {expr : IxIR0.Expr} {sourceEnv : List IxIR0.Value}
+    {sourceFuel : Nat} {sourceValue : IxIR0.Value}
+    {state finalState : LowSt} {emit : Emit} {av : AVal}
+    (hsource : IxIR0.eval sourceCtx sourceFuel sourceEnv expr =
+      .ok sourceValue)
+    (hrun : (lowerE src fuel input world expr).run state =
+      .ok (output, emit, av) finalState)
+    (hextends : ExtraExtends finalState ambient)
+    (hself : CurrentSelfValueContract
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur) :
+    LowerResultValueSound (CompilerFunctionRel sourceCtx src ambient)
+      recSelfRel ctx cur input output sourceEnv sourceEnv sourceValue world
+      emit av :=
+  (lowerValueClusterWithin (recSelfRel := recSelfRel) (cur := cur) henv
+    hrepresented hcontracts hvalues fuel).expr hsource hrun hextends
+      (SelfValueAvailable.of_contract hself)
+
+/-! ### Source saturation lemmas for declaration contracts -/
+
+/-- Evaluating an expression and then supplying exactly its leading lambda
+telescope is the same source computation as evaluating `stripLams` in the
+reversed argument environment. Fuel witnesses remain existential because
+source fuel is a totality witness, not a cost. -/
+theorem sourceEval_stripLams_of_applies (sourceCtx : IxIR0.Ctx) :
+    ∀ {sourceEnv : List IxIR0.Value} {expr : IxIR0.Expr}
+      {function result : IxIR0.Value} {args : List IxIR0.Value}
+      {evalFuel : Nat},
+      IxIR0.eval sourceCtx evalFuel sourceEnv expr = .ok function →
+      args.length = lamArity expr →
+      SourceApplies sourceCtx function args result →
+      ∃ bodyFuel,
+        IxIR0.eval sourceCtx bodyFuel (args.reverse ++ sourceEnv)
+          (stripLams expr) = .ok result := by
+  intro sourceEnv expr
+  induction expr generalizing sourceEnv with
+  | var index =>
+    intro function result args evalFuel heval hlength happlies
+    have hnil : args = [] :=
+      List.eq_nil_of_length_eq_zero (by simpa [lamArity] using hlength)
+    subst args
+    cases happlies
+    exact ⟨evalFuel, by simpa [stripLams] using heval⟩
+  | ref address =>
+    intro function result args evalFuel heval hlength happlies
+    have hnil : args = [] :=
+      List.eq_nil_of_length_eq_zero (by simpa [lamArity] using hlength)
+    subst args
+    cases happlies
+    exact ⟨evalFuel, by simpa [stripLams] using heval⟩
+  | app fn arg =>
+    intro function result args evalFuel heval hlength happlies
+    have hnil : args = [] :=
+      List.eq_nil_of_length_eq_zero (by simpa [lamArity] using hlength)
+    subst args
+    cases happlies
+    exact ⟨evalFuel, by simpa [stripLams] using heval⟩
+  | lam uses body ih =>
+    intro function result args evalFuel heval hlength happlies
+    cases evalFuel with
+    | zero => simp [IxIR0.eval] at heval
+    | succ evalFuel =>
+      have hfunction : function = .clos uses sourceEnv body := by
+        simpa [IxIR0.eval] using heval.symm
+      subst function
+      cases args with
+      | nil => simp [lamArity] at hlength
+      | cons argument arguments =>
+        have htailLength : arguments.length = lamArity body := by
+          simpa [lamArity] using hlength
+        cases happlies with
+        | @cons _ _ middle _ _ applyFuel hstep htail =>
+          cases applyFuel with
+          | zero => simp [IxIR0.apply] at hstep
+          | succ applyFuel =>
+            have hbodyEval : IxIR0.eval sourceCtx applyFuel
+                (argument :: sourceEnv) body = .ok middle := by
+              simpa [IxIR0.apply] using hstep
+            obtain ⟨bodyFuel, hresult⟩ :=
+              ih hbodyEval htailLength htail
+            refine ⟨bodyFuel, ?_⟩
+            simpa [stripLams, List.reverse_cons, List.append_assoc] using
+              hresult
+  | letE uses value body =>
+    intro function result args evalFuel heval hlength happlies
+    have hnil : args = [] :=
+      List.eq_nil_of_length_eq_zero (by simpa [lamArity] using hlength)
+    subst args
+    cases happlies
+    exact ⟨evalFuel, by simpa [stripLams] using heval⟩
+  | proj index value =>
+    intro function result args evalFuel heval hlength happlies
+    have hnil : args = [] :=
+      List.eq_nil_of_length_eq_zero (by simpa [lamArity] using hlength)
+    subst args
+    cases happlies
+    exact ⟨evalFuel, by simpa [stripLams] using heval⟩
+  | lit literal =>
+    intro function result args evalFuel heval hlength happlies
+    have hnil : args = [] :=
+      List.eq_nil_of_length_eq_zero (by simpa [lamArity] using hlength)
+    subst args
+    cases happlies
+    exact ⟨evalFuel, by simpa [stripLams] using heval⟩
+  | erased =>
+    intro function result args evalFuel heval hlength happlies
+    have hnil : args = [] :=
+      List.eq_nil_of_length_eq_zero (by simpa [lamArity] using hlength)
+    subst args
+    cases happlies
+    exact ⟨evalFuel, by simpa [stripLams] using heval⟩
+
+/-- Complete a residual lifted-closure prefix with the remaining arguments.
+The resulting source environment is exactly the selected prefix's full
+application order reversed, followed by the original closure environment. -/
+theorem LambdaPrefix.saturate
+    {sourceCtx : IxIR0.Ctx} {sourceEnv : List IxIR0.Value}
+    {expr : IxIR0.Expr} {supplied remaining : List IxIR0.Value}
+    {function result : IxIR0.Value}
+    (hprefix : LambdaPrefix sourceEnv expr supplied function)
+    (hlength : (supplied ++ remaining).length = lamArity expr)
+    (happlies : SourceApplies sourceCtx function remaining result) :
+    ∃ fuel,
+      IxIR0.eval sourceCtx fuel
+        ((supplied ++ remaining).reverse ++ sourceEnv)
+        (stripLams expr) = .ok result := by
+  exact (LambdaPrefix.traverse
+    (Result := fun currentEnv currentExpr currentSupplied currentFunction =>
+      (currentSupplied ++ remaining).length = lamArity currentExpr →
+      SourceApplies sourceCtx currentFunction remaining result →
+      ∃ fuel,
+        IxIR0.eval sourceCtx fuel
+          ((currentSupplied ++ remaining).reverse ++ currentEnv)
+          (stripLams currentExpr) = .ok result)
+    (hnil := by
+      intro currentEnv uses body hlength happlies
+      have heval : IxIR0.eval sourceCtx 1 currentEnv (.lam uses body) =
+          .ok (.clos uses currentEnv body) := by
+        simp [IxIR0.eval]
+      simpa using sourceEval_stripLams_of_applies sourceCtx heval
+        (by simpa using hlength) happlies)
+    (hcons := by
+      intro currentEnv uses body argument currentSupplied currentFunction
+        hinner ih hlength happlies
+      have hinnerLength : (currentSupplied ++ remaining).length =
+          lamArity body := by
+        simpa [lamArity] using hlength
+      obtain ⟨fuel, hresult⟩ := ih hinnerLength happlies
+      refine ⟨fuel, ?_⟩
+      simpa [stripLams, List.reverse_cons, List.append_assoc] using hresult)
+    (h := hprefix)) hlength happlies
+
+/-- A source definition reference exposes the exact closed evaluation of its
+body, independent of the existential reference fuel. -/
+theorem SourceRefValue.defnBody
+    {sourceCtx : IxIR0.Ctx} {address : Ixon.Address}
+    {world : Owned} {body : IxIR0.Expr} {function : IxIR0.Value}
+    (hlookup : sourceCtx.env address = some (.defn world body))
+    (href : SourceRefValue sourceCtx address function) :
+    ∃ fuel, IxIR0.eval sourceCtx fuel [] body = .ok function := by
+  obtain ⟨fuel, href⟩ := href
+  cases fuel with
+  | zero => simp [IxIR0.eval] at href
+  | succ fuel =>
+    exact ⟨fuel, by simpa [IxIR0.eval, hlookup] using href⟩
+
+/-- Saturating a source definition reference reaches its stripped body under
+the reversed source argument vector. -/
+theorem SourceRefValue.defnSaturate
+    {sourceCtx : IxIR0.Ctx} {address : Ixon.Address}
+    {world : Owned} {body : IxIR0.Expr}
+    {function result : IxIR0.Value} {args : List IxIR0.Value}
+    (hlookup : sourceCtx.env address = some (.defn world body))
+    (href : SourceRefValue sourceCtx address function)
+    (hlength : args.length = lamArity body)
+    (happlies : SourceApplies sourceCtx function args result) :
+    ∃ fuel, IxIR0.eval sourceCtx fuel args.reverse
+      (stripLams body) = .ok result := by
+  obtain ⟨evalFuel, heval⟩ := href.defnBody hlookup
+  simpa using sourceEval_stripLams_of_applies sourceCtx heval hlength
+    happlies
+
+/-! ### Semantic function closure -/
+
+/-- Closing a semantic lowering result with its generated `ret` exposes the
+source result graph and preserves an arbitrary semantic caller frame. This
+is the value-level counterpart of `LowerResultSound.close`; ownership of the
+returned root remains available through the parent judgment when needed. -/
+theorem LowerResultValueSound.closeGraph
+    {funRel : Sim.FunctionRel} {recSelfRel : RecSelfRel}
+    {ctx : Ctx} {cur : FnDef} {input output : VEnv}
+    {sourceInput sourceOutput : List IxIR0.Value}
+    {sourceValue : IxIR0.Value} {world : Owned}
+    {emit : Emit} {av : AVal}
+    (hsound : LowerResultValueSound funRel recSelfRel ctx cur input output
+      sourceInput sourceOutput sourceValue world emit av)
+    (hreleased : EntriesReleased output.entries)
+    (sourceRest : List (Owned × IxIR0.Value)) (rest : List Root) :
+    CodeOwns ctx cur
+      (GraphOwnsVEnv funRel recSelfRel input sourceInput sourceRest rest)
+      (fun store value =>
+        Sim.ValueGraph funRel store sourceValue value ∧
+          Sim.RootsGraph funRel store sourceRest rest)
+      (emit (.ret (av.toAtom output))) := by
+  have hret : CodeOwns ctx cur
+      (GraphOwnsResultProtected funRel recSelfRel output sourceOutput
+        sourceValue world av sourceRest rest [])
+      (fun store value =>
+        Sim.ValueGraph funRel store sourceValue value ∧
+          Sim.RootsGraph funRel store sourceRest rest)
+      (.ret (av.toAtom output)) := by
+    intro fuel store env store' value hprotected hrun
+    obtain ⟨⟨roots, result, houtput, hav, hvalue, hframe, _⟩, _⟩ :=
+      hprotected
+    have hroots : roots = [] :=
+      EntriesRealize.eq_nil_of_released hreleased
+        houtput.entries.entriesRealize
+    subst roots
+    cases fuel with
+    | zero => simp [runCode] at hrun
+    | succ fuel =>
+      rw [Nat.add_one] at hrun
+      rw [runCode.eq_def] at hrun
+      dsimp only at hrun
+      rw [hav.resolveAtom] at hrun
+      have hpair : (store, result) = (store', value) :=
+        Except.ok.inj hrun
+      cases hpair
+      exact ⟨hvalue, hframe⟩
+  intro fuel store env store' value hpre hrun
+  exact hsound.graphEmits sourceRest rest []
+    (fun store value =>
+      Sim.ValueGraph funRel store sourceValue value ∧
+        Sim.RootsGraph funRel store sourceRest rest)
+    (.ret (av.toAtom output)) hret
+    ⟨hpre, SlotsRealize.nil⟩ hrun
+
+/-- Bounded counterpart of `closeGraph`; this is the function-exit rule used
+while mutually recursive declaration contracts are available only below the
+current evaluator index. -/
+theorem LowerResultValueSoundBelow.closeGraph
+    {funRel : Sim.FunctionRel} {recSelfRel : RecSelfRel}
+    {ctx : Ctx} {cur : FnDef} {limit : Nat}
+    {input output : VEnv}
+    {sourceInput sourceOutput : List IxIR0.Value}
+    {sourceValue : IxIR0.Value} {world : Owned}
+    {emit : Emit} {av : AVal}
+    (hsound : LowerResultValueSoundBelow funRel recSelfRel ctx cur limit
+      input output sourceInput sourceOutput sourceValue world emit av)
+    (hreleased : EntriesReleased output.entries)
+    (sourceRest : List (Owned × IxIR0.Value)) (rest : List Root) :
+    CodeOwnsBelow ctx cur limit
+      (GraphOwnsVEnv funRel recSelfRel input sourceInput sourceRest rest)
+      (fun store value =>
+        Sim.ValueGraph funRel store sourceValue value ∧
+          Sim.RootsGraph funRel store sourceRest rest)
+      (emit (.ret (av.toAtom output))) := by
+  have hret : CodeOwnsBelow ctx cur limit
+      (GraphOwnsResultProtected funRel recSelfRel output sourceOutput
+        sourceValue world av sourceRest rest [])
+      (fun store value =>
+        Sim.ValueGraph funRel store sourceValue value ∧
+          Sim.RootsGraph funRel store sourceRest rest)
+      (.ret (av.toAtom output)) := by
+    intro fuel store env store' value _ hprotected hrun
+    obtain ⟨⟨roots, result, houtput, hav, hvalue, hframe, _⟩, _⟩ :=
+      hprotected
+    have hroots : roots = [] :=
+      EntriesRealize.eq_nil_of_released hreleased
+        houtput.entries.entriesRealize
+    subst roots
+    cases fuel with
+    | zero => simp [runCode] at hrun
+    | succ fuel =>
+      rw [Nat.add_one] at hrun
+      rw [runCode.eq_def] at hrun
+      dsimp only at hrun
+      rw [hav.resolveAtom] at hrun
+      have hpair : (store, result) = (store', value) :=
+        Except.ok.inj hrun
+      cases hpair
+      exact ⟨hvalue, hframe⟩
+  intro fuel store env store' value hfuel hpre hrun
+  exact hsound.graphEmits sourceRest rest [] limit (Nat.le_refl _)
+    (fun store value =>
+      Sim.ValueGraph funRel store sourceValue value ∧
+        Sim.RootsGraph funRel store sourceRest rest)
+    (.ret (av.toAtom output)) hret hfuel
+    ⟨hpre, SlotsRealize.nil⟩ hrun
+
+/-- Contractive function-entry/exit adapter. A bounded expression theorem
+for the lowered body is enough to prove the function at the bound itself;
+all declaration/apply dependencies used by that expression theorem may
+therefore remain strictly below the bound. -/
+theorem lowerFnBody_parameterEntries_valuePreservesAt_below
+    {funRel : Sim.FunctionRel} {recSelfRel : RecSelfRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {src : IxIR0.Env}
+    {compilerFuel limit : Nat}
+    (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
+    {state finalState : LowSt} {code : Code}
+    (hbodyPreserves : LowerEValuePreservesBelow funRel recSelfRel
+      sourceCtx ctx ⟨modes.length, world, code⟩ limit src compilerFuel)
+    (hadmissible : ParameterDropsAdmissible modes
+      (fun index => countUses index body))
+    (hrun : (lowerFnBody src (compilerFuel + 1)
+      ⟨parameterEntries 0 modes (fun index => countUses index body),
+        modes.length⟩
+      (parameterDrops 0 modes (fun index => countUses index body))
+      world body).run state = .ok code finalState)
+    {sourceFunction : IxIR0.Value}
+    (hsaturates : ∀ {sourceArgs : List IxIR0.Value}
+        {sourceResult : IxIR0.Value},
+      sourceArgs.length = modes.length →
+      SourceApplies sourceCtx sourceFunction sourceArgs sourceResult →
+      ∃ sourceFuel,
+        IxIR0.eval sourceCtx sourceFuel sourceArgs.reverse body =
+          .ok sourceResult) :
+    FnValuePreservesAt funRel sourceCtx ctx
+      ⟨modes.length, world, code⟩ (modes.map worldOfUses)
+      sourceFunction limit := by
+  let remaining : Nat → Nat := fun index => countUses index body
+  let input : VEnv :=
+    ⟨parameterEntries 0 modes remaining, modes.length⟩
+  let drops := parameterDrops 0 modes remaining
+  have hrun' :
+      (lowerFnBody src (compilerFuel + 1) input drops world body).run state =
+        .ok code finalState := by
+    simpa [input, drops, remaining] using hrun
+  simp only [lowerFnBody] at hrun'
+  obtain ⟨releaseResult, releaseState, hreleaseRun, hafterRelease⟩ :=
+    trackedBindRun_ok_inv hrun'
+  rcases releaseResult with ⟨middle, releaseEmit⟩
+  obtain ⟨bodyResult, bodyState, hbodyRun, hafterBody⟩ :=
+    trackedBindRun_ok_inv hafterRelease
+  rcases bodyResult with ⟨output, emit, av⟩
+  have hpure :
+      (releaseEmit ∘ emit) (.ret (av.toAtom output)) = code ∧
+        bodyState = finalState := by
+    simpa using hafterBody
+  obtain ⟨hcode, hbodyState⟩ := hpure
+  subst bodyState
+  obtain ⟨plannedMiddle, plannedEmit, hplan, htracks⟩ :=
+    parameterDrops_releasePlan_tracked 0 modes remaining
+      (by simpa [remaining] using hadmissible)
+  have hplan' : ReleasePlan input drops plannedMiddle plannedEmit := by
+    simpa [input, drops] using hplan
+  have hplanRun : (releaseSlots input drops).run state =
+      .ok (plannedMiddle, plannedEmit) state := hplan'.run state
+  have heq :
+      (plannedMiddle, plannedEmit) = (middle, releaseEmit) ∧
+        state = releaseState := by
+    simpa using hplanRun.symm.trans hreleaseRun
+  have hmiddle : plannedMiddle = middle := congrArg Prod.fst heq.1
+  have hemit : plannedEmit = releaseEmit := congrArg Prod.snd heq.1
+  subst middle
+  subst releaseEmit
+  cases heq.2
+  have hconsume := lowerE_consumesEntries hbodyRun
+  have hcount := lowerE_preservesEntryCount hbodyRun
+  have hmiddleLength : plannedMiddle.entries.length = modes.length := by
+    calc
+      plannedMiddle.entries.length = input.entries.length :=
+        hplan'.entries_length
+      _ = modes.length := by simp [input, remaining]
+  have hreleased : EntriesReleased output.entries :=
+    hconsume.entriesReleased htracks (Eq.trans hcount hmiddleLength)
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hlength hargs happlies hframe hown hcodeRun
+  have hargsLength : args.length = modes.length := by
+    simpa using hlength
+  have hsourceArgsLength : sourceArgs.length = args.length := by
+    simpa using hargs.length
+  obtain ⟨sourceFuel, hsource⟩ := hsaturates
+    (hsourceArgsLength.trans hargsLength) happlies
+  have hbodySound : LowerResultValueSoundBelow funRel recSelfRel ctx
+      ⟨modes.length, world, code⟩ limit plannedMiddle output
+      sourceArgs.reverse sourceArgs.reverse sourceResult world emit av :=
+    hbodyPreserves hsource hbodyRun
+  have hfull : LowerResultValueSoundBelow funRel recSelfRel ctx
+      ⟨modes.length, world, code⟩ limit input output
+      sourceArgs.reverse sourceArgs.reverse sourceResult world
+      (plannedEmit ∘ emit) av :=
+    hbodySound.afterRelease (hplan'.valueSoundBelow sourceArgs.reverse)
+  have hpre : GraphOwnsVEnv funRel recSelfRel input sourceArgs.reverse
+      sourceRest rest store args.reverse := by
+    refine ⟨(rootsForWorlds (modes.map worldOfUses) args).reverse,
+      ?_, hframe, ?_⟩
+    · simpa [input] using VEnvValueGraph.parameterEntries
+        (recSelfRel := recSelfRel) modes remaining hargsLength hargs hown
+    · exact hown.perm
+        ((List.reverse_perm
+          (rootsForWorlds (modes.map worldOfUses) args)).symm.append_right
+            rest)
+  have hcodeRun' : runCode ctx limit
+      ⟨modes.length, world, code⟩ store args.reverse
+      ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
+        .ok (store', value) := by
+    rw [hcode]
+    exact hcodeRun
+  exact hfull.closeGraph hreleased sourceRest rest (Nat.le_refl _)
+    hpre hcodeRun'
+
+/-- Contractive ordinary-declaration producer. Once the bounded expression
+induction is available for the actual emitted function, this proves that
+function at the current evaluator bound without assuming its own unbounded
+semantic contract. -/
+theorem lowerDecl_defn_valuePreservesAt_below
+    {funRel : Sim.FunctionRel} {sourceCtx : IxIR0.Ctx}
+    {src : IxIR0.Env} {ctx : Ctx} {compilerFuel limit : Nat}
+    {address : Ixon.Address} {result : Owned} {body : IxIR0.Expr}
+    {state finalState : LowSt} {d : FnDef}
+    {sourceFunction : IxIR0.Value}
+    (hlookup : sourceCtx.env address = some (.defn result body))
+    (href : SourceRefValue sourceCtx address sourceFunction)
+    (hbodyPreserves : LowerEValuePreservesBelow funRel
+      (fun _ _ => False) sourceCtx ctx d limit src compilerFuel)
+    (hadmissible : ParameterDropsAdmissible (lamUses body)
+      (fun index => countUses index (stripLams body)))
+    (hrun : (lowerDecl src (compilerFuel + 1)
+      (address, .defn result body)).run state =
+        .ok (some (address, .fn d)) finalState) :
+    FnValuePreservesAt funRel sourceCtx ctx d
+      ((lamUses body).map worldOfUses) sourceFunction limit := by
+  simp only [lowerDecl] at hrun
+  obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
+    trackedBindRun_ok_inv hrun
+  have hpure :
+      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+          some (address, Decl.fn d) ∧
+        bodyState = finalState := by
+    simpa using hpureRun
+  have hd : d = ⟨lamArity body, result, code⟩ := by
+    have hp := Option.some.inj hpure.1
+    exact Decl.fn.inj (Prod.mk.inj hp).2.symm
+  cases hpure.2
+  subst d
+  have hbodyPreserves' : LowerEValuePreservesBelow funRel
+      (fun _ _ => False) sourceCtx ctx
+      ⟨(lamUses body).length, result, code⟩ limit src compilerFuel := by
+    intro input output world expr sourceEnv sourceFuel sourceValue
+      state finalState emit av hsource hrun
+    simpa using hbodyPreserves hsource hrun
+  have hpreserves : FnValuePreservesAt funRel sourceCtx ctx
+      ⟨(lamUses body).length, result, code⟩
+      ((lamUses body).map worldOfUses) sourceFunction limit :=
+    lowerFnBody_parameterEntries_valuePreservesAt_below
+      (recSelfRel := fun _ _ => False)
+      (compilerFuel := compilerFuel) (limit := limit)
+      (lamUses body) result (stripLams body) hbodyPreserves'
+      hadmissible (by simpa using hbodyRun)
+      (by
+        intro sourceArgs sourceResult hlength happlies
+        exact href.defnSaturate hlookup (by simpa using hlength) happlies)
+  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
+      ⟨lamArity body, result, code⟩ := by
+    rw [lamUses_length]
+  rw [← hfn]
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hlength hargs happlies hframe hown hcodeRun
+  exact hpreserves hlength hargs happlies hframe hown hcodeRun
+
+/-- Reachable-state specialization of the contractive function-entry
+adapter.  Unlike `lowerFnBody_parameterEntries_valuePreservesAt_below`, this
+version follows the one actual body run into the ambient final lowering
+state.  That is the shape supplied by `lowerAllAction`: generated function
+provenance is only known in the final accumulated state, and
+`ExtraExtends` transports it back to this particular body run. -/
+theorem lowerFnBody_parameterEntries_valuePreservesAt_within_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx}
+    {compilerFuel limit : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
+    {state finalState : LowSt} {code : Code}
+    (hadmissible : ParameterDropsAdmissible modes
+      (fun index => countUses index body))
+    (hrun : (lowerFnBody src (compilerFuel + 1)
+      ⟨parameterEntries 0 modes (fun index => countUses index body),
+        modes.length⟩
+      (parameterDrops 0 modes (fun index => countUses index body))
+      world body).run state = .ok code finalState)
+    (hextends : ExtraExtends finalState ambient)
+    {sourceFunction : IxIR0.Value}
+    (hsaturates : ∀ {sourceArgs : List IxIR0.Value}
+        {sourceResult : IxIR0.Value},
+      sourceArgs.length = modes.length →
+      SourceApplies sourceCtx sourceFunction sourceArgs sourceResult →
+      ∃ sourceFuel,
+        IxIR0.eval sourceCtx sourceFuel sourceArgs.reverse body =
+          .ok sourceResult) :
+    FnValuePreservesAt (CompilerFunctionRel sourceCtx src ambient)
+      sourceCtx ctx ⟨modes.length, world, code⟩
+      (modes.map worldOfUses) sourceFunction limit := by
+  let remaining : Nat → Nat := fun index => countUses index body
+  let input : VEnv :=
+    ⟨parameterEntries 0 modes remaining, modes.length⟩
+  let drops := parameterDrops 0 modes remaining
+  have hrun' :
+      (lowerFnBody src (compilerFuel + 1) input drops world body).run state =
+        .ok code finalState := by
+    simpa [input, drops, remaining] using hrun
+  simp only [lowerFnBody] at hrun'
+  obtain ⟨releaseResult, releaseState, hreleaseRun, hafterRelease⟩ :=
+    trackedBindRun_ok_inv hrun'
+  rcases releaseResult with ⟨middle, releaseEmit⟩
+  obtain ⟨bodyResult, bodyState, hbodyRun, hafterBody⟩ :=
+    trackedBindRun_ok_inv hafterRelease
+  rcases bodyResult with ⟨output, emit, av⟩
+  have hpure :
+      (releaseEmit ∘ emit) (.ret (av.toAtom output)) = code ∧
+        bodyState = finalState := by
+    simpa using hafterBody
+  obtain ⟨hcode, hbodyState⟩ := hpure
+  subst bodyState
+  have hmiddleNo : NoRecSelf middle :=
+    releaseSlots_noRecSelf input hreleaseRun (by
+      simpa [input, remaining] using
+        parameterEntries_noRecSelf 0 modes remaining modes.length)
+  obtain ⟨plannedMiddle, plannedEmit, hplan, htracks⟩ :=
+    parameterDrops_releasePlan_tracked 0 modes remaining
+      (by simpa [remaining] using hadmissible)
+  have hplan' : ReleasePlan input drops plannedMiddle plannedEmit := by
+    simpa [input, drops] using hplan
+  have hplanRun : (releaseSlots input drops).run state =
+      .ok (plannedMiddle, plannedEmit) state := hplan'.run state
+  have heq :
+      (plannedMiddle, plannedEmit) = (middle, releaseEmit) ∧
+        state = releaseState := by
+    simpa using hplanRun.symm.trans hreleaseRun
+  have hmiddle : plannedMiddle = middle := congrArg Prod.fst heq.1
+  have hemit : plannedEmit = releaseEmit := congrArg Prod.snd heq.1
+  subst middle
+  subst releaseEmit
+  cases heq.2
+  have hconsume := lowerE_consumesEntries hbodyRun
+  have hcount := lowerE_preservesEntryCount hbodyRun
+  have hmiddleLength : plannedMiddle.entries.length = modes.length := by
+    calc
+      plannedMiddle.entries.length = input.entries.length :=
+        hplan'.entries_length
+      _ = modes.length := by simp [input, remaining]
+  have hreleased : EntriesReleased output.entries :=
+    hconsume.entriesReleased htracks (Eq.trans hcount hmiddleLength)
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hlength hargs happlies hframe hown hcodeRun
+  have hargsLength : args.length = modes.length := by
+    simpa using hlength
+  have hsourceArgsLength : sourceArgs.length = args.length := by
+    simpa using hargs.length
+  obtain ⟨sourceFuel, hsource⟩ := hsaturates
+    (hsourceArgsLength.trans hargsLength) happlies
+  have hbodySound : LowerResultValueSoundBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
+      ⟨modes.length, world, code⟩ limit plannedMiddle output
+      sourceArgs.reverse sourceArgs.reverse sourceResult world emit av :=
+    lowerE_run_value_sound_within_noRecSelf_below
+      (recSelfRel := recSelfRel)
+      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      henv hrepresented hcontracts hvalues hsource hbodyRun hextends
+      hmiddleNo
+  have hfull : LowerResultValueSoundBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
+      ⟨modes.length, world, code⟩ limit input output
+      sourceArgs.reverse sourceArgs.reverse sourceResult world
+      (plannedEmit ∘ emit) av :=
+    hbodySound.afterRelease (hplan'.valueSoundBelow sourceArgs.reverse)
+  have hpre : GraphOwnsVEnv
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel input
+      sourceArgs.reverse sourceRest rest store args.reverse := by
+    refine ⟨(rootsForWorlds (modes.map worldOfUses) args).reverse,
+      ?_, hframe, ?_⟩
+    · simpa [input] using VEnvValueGraph.parameterEntries
+        (recSelfRel := recSelfRel) modes remaining hargsLength hargs hown
+    · exact hown.perm
+        ((List.reverse_perm
+          (rootsForWorlds (modes.map worldOfUses) args)).symm.append_right
+            rest)
+  have hcodeRun' : runCode ctx limit
+      ⟨modes.length, world, code⟩ store args.reverse
+      ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
+        .ok (store', value) := by
+    rw [hcode]
+    exact hcodeRun
+  exact hfull.closeGraph hreleased sourceRest rest (Nat.le_refl _)
+    hpre hcodeRun'
+
+/-- A successful ordinary declaration run proves its own dead-parameter
+admissibility: `lowerFnBody` executes the generated release list before any
+body lowering, and the forbidden modes are exactly its error cases. -/
+theorem lowerDecl_defn_parameterDropsAdmissible
+    {src : IxIR0.Env} {compilerFuel : Nat}
+    {address : Ixon.Address} {result : Owned} {body : IxIR0.Expr}
+    {state finalState : LowSt} {d : FnDef}
+    (hrun : (lowerDecl src compilerFuel (address, .defn result body)).run
+      state = .ok (some (address, .fn d)) finalState) :
+    ParameterDropsAdmissible (lamUses body)
+      (fun index => countUses index (stripLams body)) := by
+  simp only [lowerDecl] at hrun
+  obtain ⟨code, bodyState, hbodyRun, _⟩ :=
+    trackedBindRun_ok_inv hrun
+  cases compilerFuel with
+  | zero =>
+    exact (trackedThrowRun_not_ok (by
+      simpa [lowerFnBody] using hbodyRun)).elim
+  | succ bodyFuel =>
+    simp only [lowerFnBody] at hbodyRun
+    obtain ⟨releaseResult, releaseState, hreleaseRun, _⟩ :=
+      trackedBindRun_ok_inv hbodyRun
+    exact parameterDropsAdmissible_of_releaseSlots_run 0 (lamUses body)
+      (fun index => countUses index (stripLams body)) hreleaseRun
+
+/-- An ordinary source declaration produced by a reachable whole-pass run
+satisfies the exact semantic contract at the current evaluator index using
+only strictly-smaller semantic declaration/application contracts. -/
+theorem lowerDecl_defn_valuePreservesAt_within_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {compilerFuel limit : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    {address : Ixon.Address} {result : Owned} {body : IxIR0.Expr}
+    {state finalState : LowSt} {d : FnDef}
+    {sourceFunction : IxIR0.Value}
+    (hsrc : src address = some (.defn result body))
+    (href : SourceRefValue sourceCtx address sourceFunction)
+    (hadmissible : ParameterDropsAdmissible (lamUses body)
+      (fun index => countUses index (stripLams body)))
+    (hrun : (lowerDecl src (compilerFuel + 1)
+      (address, .defn result body)).run state =
+        .ok (some (address, .fn d)) finalState)
+    (hextends : ExtraExtends finalState ambient) :
+    FnValuePreservesAt
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx d
+      ((lamUses body).map worldOfUses) sourceFunction limit := by
+  simp only [lowerDecl] at hrun
+  obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
+    trackedBindRun_ok_inv hrun
+  have hpure :
+      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+          some (address, Decl.fn d) ∧
+        bodyState = finalState := by
+    simpa using hpureRun
+  have hd : d = ⟨lamArity body, result, code⟩ := by
+    have hp := Option.some.inj hpure.1
+    exact Decl.fn.inj (Prod.mk.inj hp).2.symm
+  cases hpure.2
+  subst d
+  have hlookup : sourceCtx.env address = some (.defn result body) := by
+    rw [henv]
+    exact hsrc
+  have hpreserves : FnValuePreservesAt
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
+      ⟨(lamUses body).length, result, code⟩
+      ((lamUses body).map worldOfUses) sourceFunction limit :=
+    lowerFnBody_parameterEntries_valuePreservesAt_within_below
+      (recSelfRel := fun _ _ => False)
+      (compilerFuel := compilerFuel) (limit := limit)
+      henv hrepresented hcontracts hvalues (lamUses body) result
+      (stripLams body) hadmissible (by simpa using hbodyRun) hextends
+      (by
+        intro sourceArgs sourceResult hlength happlies
+        exact href.defnSaturate hlookup (by simpa using hlength) happlies)
+  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
+      ⟨lamArity body, result, code⟩ := by
+    rw [lamUses_length]
+  rw [← hfn]
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hlength hargs happlies hframe hown hcodeRun
+  exact hpreserves hlength hargs happlies hframe hown hcodeRun
+
+/-- A successfully lowered ordinary body realizes any source function whose
+saturated applications evaluate the source body in the canonical reversed
+argument environment. This is the semantic function-entry/exit adapter;
+recursive call contracts remain explicit in `hvalues`. -/
+theorem lowerFnBody_parameterEntries_valuePreservesAt
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx}
+    {compilerFuel targetFuel : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx)
+    (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
+    {state finalState : LowSt} {code : Code}
+    (hadmissible : ParameterDropsAdmissible modes
+      (fun index => countUses index body))
+    (hrun : (lowerFnBody src (compilerFuel + 1)
+      ⟨parameterEntries 0 modes (fun index => countUses index body),
+        modes.length⟩
+      (parameterDrops 0 modes (fun index => countUses index body))
+      world body).run state = .ok code finalState)
+    (hextends : ExtraExtends finalState ambient)
+    {sourceFunction : IxIR0.Value}
+    (hsaturates : ∀ {sourceArgs : List IxIR0.Value}
+        {sourceResult : IxIR0.Value},
+      sourceArgs.length = modes.length →
+      SourceApplies sourceCtx sourceFunction sourceArgs sourceResult →
+      ∃ sourceFuel,
+        IxIR0.eval sourceCtx sourceFuel sourceArgs.reverse body =
+          .ok sourceResult) :
+    FnValuePreservesAt (CompilerFunctionRel sourceCtx src ambient)
+      sourceCtx ctx ⟨modes.length, world, code⟩
+      (modes.map worldOfUses) sourceFunction targetFuel := by
+  let remaining : Nat → Nat := fun index => countUses index body
+  let input : VEnv :=
+    ⟨parameterEntries 0 modes remaining, modes.length⟩
+  let drops := parameterDrops 0 modes remaining
+  have hrun' :
+      (lowerFnBody src (compilerFuel + 1) input drops world body).run state =
+        .ok code finalState := by
+    simpa [input, drops, remaining] using hrun
+  simp only [lowerFnBody] at hrun'
+  obtain ⟨releaseResult, releaseState, hreleaseRun, hafterRelease⟩ :=
+    trackedBindRun_ok_inv hrun'
+  rcases releaseResult with ⟨middle, releaseEmit⟩
+  obtain ⟨bodyResult, bodyState, hbodyRun, hafterBody⟩ :=
+    trackedBindRun_ok_inv hafterRelease
+  rcases bodyResult with ⟨output, emit, av⟩
+  have hpure :
+      (releaseEmit ∘ emit) (.ret (av.toAtom output)) = code ∧
+        bodyState = finalState := by
+    simpa using hafterBody
+  obtain ⟨hcode, hbodyState⟩ := hpure
+  subst bodyState
+  have hmiddleNo : NoRecSelf middle :=
+    releaseSlots_noRecSelf input hreleaseRun (by
+      simpa [input, remaining] using
+        parameterEntries_noRecSelf 0 modes remaining modes.length)
+  obtain ⟨plannedMiddle, plannedEmit, hplan, htracks⟩ :=
+    parameterDrops_releasePlan_tracked 0 modes remaining
+      (by simpa [remaining] using hadmissible)
+  have hplan' : ReleasePlan input drops plannedMiddle plannedEmit := by
+    simpa [input, drops] using hplan
+  have hplanRun : (releaseSlots input drops).run state =
+      .ok (plannedMiddle, plannedEmit) state := hplan'.run state
+  have heq :
+      (plannedMiddle, plannedEmit) = (middle, releaseEmit) ∧
+        state = releaseState := by
+    simpa using hplanRun.symm.trans hreleaseRun
+  have hmiddle : plannedMiddle = middle := congrArg Prod.fst heq.1
+  have hemit : plannedEmit = releaseEmit := congrArg Prod.snd heq.1
+  subst middle
+  subst releaseEmit
+  cases heq.2
+  have hconsume := lowerE_consumesEntries hbodyRun
+  have hcount := lowerE_preservesEntryCount hbodyRun
+  have hmiddleLength : plannedMiddle.entries.length = modes.length := by
+    calc
+      plannedMiddle.entries.length = input.entries.length :=
+        hplan'.entries_length
+      _ = modes.length := by simp [input, remaining]
+  have hreleased : EntriesReleased output.entries :=
+    hconsume.entriesReleased htracks (Eq.trans hcount hmiddleLength)
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hlength hargs happlies hframe hown hcodeRun
+  have hargsLength : args.length = modes.length := by
+    simpa using hlength
+  have hsourceArgsLength : sourceArgs.length = args.length := by
+    simpa using hargs.length
+  obtain ⟨sourceFuel, hsource⟩ := hsaturates
+    (hsourceArgsLength.trans hargsLength) happlies
+  have hbodySound : LowerResultValueSound
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
+      ⟨modes.length, world, code⟩ plannedMiddle output
+      sourceArgs.reverse sourceArgs.reverse sourceResult world emit av :=
+    lowerE_run_value_sound_within_noRecSelf
+      (recSelfRel := recSelfRel)
+      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      henv hrepresented hcontracts hvalues hsource hbodyRun hextends
+      hmiddleNo
+  have hfull : LowerResultValueSound
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
+      ⟨modes.length, world, code⟩ input output
+      sourceArgs.reverse sourceArgs.reverse sourceResult world
+      (plannedEmit ∘ emit) av :=
+    hbodySound.afterRelease (hplan'.valueSound sourceArgs.reverse)
+  have hpre : GraphOwnsVEnv
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel input
+      sourceArgs.reverse sourceRest rest store args.reverse := by
+    refine ⟨(rootsForWorlds (modes.map worldOfUses) args).reverse,
+      ?_, hframe, ?_⟩
+    · simpa [input] using VEnvValueGraph.parameterEntries
+        (recSelfRel := recSelfRel) modes remaining hargsLength hargs hown
+    · exact hown.perm
+        ((List.reverse_perm
+          (rootsForWorlds (modes.map worldOfUses) args)).symm.append_right
+            rest)
+  have hcodeRun' : runCode ctx targetFuel
+      ⟨modes.length, world, code⟩ store args.reverse
+      ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
+        .ok (store', value) := by
+    rw [hcode]
+    exact hcodeRun
+  exact hfull.closeGraph hreleased sourceRest rest hpre hcodeRun'
+
+/-- An actual successful ordinary `lowerDecl` run satisfies the exact-fuel
+semantic contract of the source definition it compiled. The public source
+reference fixes the source function, while `defnSaturate` supplies the body
+evaluation required by the generic function-entry adapter. -/
+theorem lowerDecl_defn_valuePreservesAt
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {compilerFuel targetFuel : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx)
+    {address : Ixon.Address} {result : Owned} {body : IxIR0.Expr}
+    {state finalState : LowSt} {d : FnDef}
+    {sourceFunction : IxIR0.Value}
+    (hsrc : src address = some (.defn result body))
+    (href : SourceRefValue sourceCtx address sourceFunction)
+    (hadmissible : ParameterDropsAdmissible (lamUses body)
+      (fun index => countUses index (stripLams body)))
+    (hrun : (lowerDecl src (compilerFuel + 1)
+      (address, .defn result body)).run state =
+        .ok (some (address, .fn d)) finalState)
+    (hextends : ExtraExtends finalState ambient) :
+    FnValuePreservesAt
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx d
+      ((lamUses body).map worldOfUses) sourceFunction targetFuel := by
+  simp only [lowerDecl] at hrun
+  obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
+    trackedBindRun_ok_inv hrun
+  have hpure :
+      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+          some (address, Decl.fn d) ∧
+        bodyState = finalState := by
+    simpa using hpureRun
+  have hd : d = ⟨lamArity body, result, code⟩ := by
+    have hp := Option.some.inj hpure.1
+    exact Decl.fn.inj (Prod.mk.inj hp).2.symm
+  cases hpure.2
+  subst d
+  have hlookup : sourceCtx.env address = some (.defn result body) := by
+    rw [henv]
+    exact hsrc
+  have hpreserves : FnValuePreservesAt
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
+      ⟨(lamUses body).length, result, code⟩
+      ((lamUses body).map worldOfUses) sourceFunction targetFuel :=
+    lowerFnBody_parameterEntries_valuePreservesAt
+      (recSelfRel := fun _ _ => False)
+      (compilerFuel := compilerFuel) (targetFuel := targetFuel)
+      henv hrepresented hcontracts hvalues (lamUses body) result
+      (stripLams body) hadmissible (by simpa using hbodyRun) hextends
+      (by
+        intro sourceArgs sourceResult hlength happlies
+        exact href.defnSaturate hlookup (by simpa using hlength) happlies)
+  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
+      ⟨lamArity body, result, code⟩ := by
+    rw [lamUses_length]
+  rw [← hfn]
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hlength hargs happlies hframe hown hcodeRun
+  exact hpreserves hlength hargs happlies hframe hown hcodeRun
+
+/-- Unbounded packaging of the ordinary declaration adapter. This theorem
+does not seal the mutually recursive compiler contracts—`hvalues` is still
+an explicit premise—but it removes all function-entry, cleanup, and source
+saturation obligations from that eventual contractive construction. -/
+theorem lowerDecl_defn_valueContract
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {compilerFuel : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx)
+    {address : Ixon.Address} {result : Owned} {body : IxIR0.Expr}
+    {state finalState : LowSt} {d : FnDef}
+    {sourceFunction : IxIR0.Value}
+    (hsrc : src address = some (.defn result body))
+    (href : SourceRefValue sourceCtx address sourceFunction)
+    (hadmissible : ParameterDropsAdmissible (lamUses body)
+      (fun index => countUses index (stripLams body)))
+    (hrun : (lowerDecl src (compilerFuel + 1)
+      (address, .defn result body)).run state =
+        .ok (some (address, .fn d)) finalState)
+    (hextends : ExtraExtends finalState ambient) :
+    FnValueContract (CompilerFunctionRel sourceCtx src ambient)
+      sourceCtx ctx d ((lamUses body).map worldOfUses) sourceFunction := by
+  have hshape : d.arity = lamArity body := by
+    have hrunShape := hrun
+    simp only [lowerDecl] at hrunShape
+    obtain ⟨code, bodyState, _, hpureRun⟩ :=
+      trackedBindRun_ok_inv hrunShape
+    have hpure :
+        some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+            some (address, Decl.fn d) ∧
+          bodyState = finalState := by
+      simpa using hpureRun
+    have hd : d = ⟨lamArity body, result, code⟩ := by
+      have hp := Option.some.inj hpure.1
+      exact Decl.fn.inj (Prod.mk.inj hp).2.symm
+    rw [hd]
+  refine ⟨?_, ?_⟩
+  · calc
+      ((lamUses body).map worldOfUses).length = lamArity body := by simp
+      _ = d.arity := hshape.symm
+  · intro targetFuel
+    exact lowerDecl_defn_valuePreservesAt
+      (targetFuel := targetFuel) henv hrepresented hcontracts hvalues
+      hsrc href hadmissible hrun hextends
+
+/-! ### Whole-main value agreement -/
+
+/-- Recover the exact main-body lowering run from a successful whole-program
+action. Declaration traversal supplies the initial state; the trailing
+`get` and `pure` leave the main body's final state unchanged. -/
+theorem lowerAllAction_main_trace
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {fuel : Nat} {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    (hrun : (lowerAllAction decls main mainWorld fuel).run initial =
+      .ok (targetDecls, mainCode) finalState) :
+    ∃ mainInitial,
+      (lowerFnBody (IxIR0.Env.ofList decls) fuel ⟨[], 0⟩ [] mainWorld
+        main).run mainInitial = .ok mainCode finalState := by
+  simp only [lowerAllAction] at hrun
+  obtain ⟨base, baseState, _, hafterBase⟩ :=
+    trackedBindRun_ok_inv hrun
+  obtain ⟨compiledMain, mainState, hmain, hafterMain⟩ :=
+    trackedBindRun_ok_inv hafterBase
+  obtain ⟨observed, getState, hget, hpure⟩ :=
+    trackedBindRun_ok_inv hafterMain
+  have hget' : mainState = observed ∧ mainState = getState := by
+    simpa using hget
+  obtain ⟨hobserved, hgetState⟩ := hget'
+  subst observed
+  subst getState
+  have hpure' :
+      (base ++ mainState.extra, compiledMain) =
+          (targetDecls, mainCode) ∧
+        mainState = finalState := by
+    simpa using hpure
+  have hcode : compiledMain = mainCode := congrArg Prod.snd hpure'.1
+  subst mainCode
+  refine ⟨baseState, ?_⟩
+  rw [← hpure'.2]
+  exact hmain
+
+/-- Every successful execution of an actually lowered closed main owns
+exactly its declared result root.  This is the ownership half of
+`Reclamation`; unlike value agreement it needs no successful source run. -/
+theorem lowerAllAction_main_owned
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx} {targetFuel : Nat} {targetStore : Store}
+    {targetValue : RVal}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    (htarget : runMain ctx mainCode targetFuel =
+      .ok (targetStore, targetValue)) :
+    RootOwnership targetStore [⟨mainWorld, targetValue⟩] := by
+  obtain ⟨mainInitial, hmain⟩ := lowerAllAction_main_trace hlower
+  cases compilerFuel with
+  | zero =>
+    simp only [lowerFnBody] at hmain
+    exact (trackedThrowRun_not_ok hmain).elim
+  | succ bodyFuel =>
+    simp only [lowerFnBody] at hmain
+    obtain ⟨releaseResult, releaseState, hrelease, hafterRelease⟩ :=
+      trackedBindRun_ok_inv hmain
+    rcases releaseResult with ⟨middle, releaseEmit⟩
+    obtain ⟨bodyResult, bodyState, hbodyRun, hafterBody⟩ :=
+      trackedBindRun_ok_inv hafterRelease
+    rcases bodyResult with ⟨output, emit, av⟩
+    have hpure :
+        (releaseEmit ∘ emit) (.ret (av.toAtom output)) = mainCode ∧
+          bodyState = finalState := by
+      simpa using hafterBody
+    obtain ⟨hcode, hbodyState⟩ := hpure
+    subst bodyState
+    let input : VEnv := ⟨[], 0⟩
+    have hplan : ReleasePlan input [] input (_root_.id : Emit) := .nil
+    have hplanRun : (releaseSlots input []).run mainInitial =
+        .ok (input, (_root_.id : Emit)) mainInitial :=
+      hplan.run mainInitial
+    have heq :
+        (input, (_root_.id : Emit)) = (middle, releaseEmit) ∧
+          mainInitial = releaseState := by
+      simpa [input] using hplanRun.symm.trans hrelease
+    have hmiddle : input = middle := congrArg Prod.fst heq.1
+    have hemitting : (_root_.id : Emit) = releaseEmit :=
+      congrArg Prod.snd heq.1
+    subst middle
+    subst releaseEmit
+    cases heq.2
+    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    have hbodySound : LowerResultSoundBelow ctx cur targetFuel input output
+        mainWorld emit av :=
+      (lowerClusterPreservesBelow (cur := cur)
+        (hcontracts.apply.below targetFuel)
+        (hcontracts.decls.below targetFuel) bodyFuel).expr
+        hbodyRun hrepresented
+        (SelfAvailableBelow.of_noRecSelf
+          (by intro index arity hentry; simp [input] at hentry))
+    have hfull : LowerResultSoundBelow ctx cur targetFuel input output
+        mainWorld ((_root_.id : Emit) ∘ emit) av :=
+      hbodySound.afterRelease hplan.soundBelow
+    have hcount := lowerE_preservesEntryCount hbodyRun
+    have houtputEntries : output.entries = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [EntryCountPreserved, input] using hcount
+    have hreleased : EntriesReleased output.entries := by
+      rw [houtputEntries]
+      exact .nil
+    have hpre : OwnsVEnv input [] ({} : Store) [] := by
+      refine ⟨[], ?_, ?_⟩
+      · exact ⟨by simp [input], EntriesRealize.nil⟩
+      · simpa using RootOwnership.empty
+    have htarget' : runCode ctx targetFuel cur ({} : Store) []
+        (((_root_.id : Emit) ∘ emit) (.ret (av.toAtom output))) =
+          .ok (targetStore, targetValue) := by
+      unfold runMain at htarget
+      change runCode ctx targetFuel cur ({} : Store) [] mainCode =
+        .ok (targetStore, targetValue) at htarget
+      rw [hcode]
+      exact htarget
+    exact hfull.close hreleased [] (Nat.le_refl _) hpre htarget'
+
+/-- Generic value agreement for the compiled whole-program main. The theorem
+deliberately accepts a successful target execution: proving that such an
+execution exists for every successful source run is the separate progress
+obligation (`MemoryErrorUnreachable` and ordinary-stuck exclusion). -/
+theorem lowerAllAction_main_value_graph
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx} {sourceFuel targetFuel : Nat}
+    {sourceValue : IxIR0.Value} {targetStore : Store}
+    {targetValue : RVal}
+    (henv : sourceCtx.env = IxIR0.Env.ofList decls)
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx (IxIR0.Env.ofList decls) ctx)
+    (hsource : IxIR0.eval sourceCtx sourceFuel [] main = .ok sourceValue)
+    (htarget : runMain ctx mainCode targetFuel =
+      .ok (targetStore, targetValue)) :
+    Sim.ValueGraph
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      targetStore sourceValue targetValue := by
+  obtain ⟨mainInitial, hmain⟩ := lowerAllAction_main_trace hlower
+  cases compilerFuel with
+  | zero =>
+    simp only [lowerFnBody] at hmain
+    exact (trackedThrowRun_not_ok hmain).elim
+  | succ bodyFuel =>
+    simp only [lowerFnBody] at hmain
+    obtain ⟨releaseResult, releaseState, hrelease, hafterRelease⟩ :=
+      trackedBindRun_ok_inv hmain
+    rcases releaseResult with ⟨middle, releaseEmit⟩
+    obtain ⟨bodyResult, bodyState, hbodyRun, hafterBody⟩ :=
+      trackedBindRun_ok_inv hafterRelease
+    rcases bodyResult with ⟨output, emit, av⟩
+    have hpure :
+        (releaseEmit ∘ emit) (.ret (av.toAtom output)) = mainCode ∧
+          bodyState = finalState := by
+      simpa using hafterBody
+    obtain ⟨hcode, hbodyState⟩ := hpure
+    subst bodyState
+    let input : VEnv := ⟨[], 0⟩
+    have hplan : ReleasePlan input [] input (_root_.id : Emit) := by
+      exact .nil
+    have hplanRun : (releaseSlots input []).run mainInitial =
+        .ok (input, (_root_.id : Emit)) mainInitial :=
+      hplan.run mainInitial
+    have heq :
+        (input, (_root_.id : Emit)) = (middle, releaseEmit) ∧
+          mainInitial = releaseState := by
+      simpa [input] using hplanRun.symm.trans hrelease
+    have hmiddle : input = middle := congrArg Prod.fst heq.1
+    have hemitting : (_root_.id : Emit) = releaseEmit :=
+      congrArg Prod.snd heq.1
+    subst middle
+    subst releaseEmit
+    cases heq.2
+    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    have hbodySound : LowerResultValueSound
+        (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+        (fun _ _ => False) ctx cur input output [] [] sourceValue
+        mainWorld emit av :=
+      lowerE_run_value_sound_within_noRecSelf
+        (recSelfRel := fun _ _ => False) (cur := cur) henv hrepresented
+        hcontracts hvalues hsource hbodyRun (ExtraExtends.refl _)
+        (by intro index arity hentry; simp [input] at hentry)
+    have hfull : LowerResultValueSound
+        (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+        (fun _ _ => False) ctx cur input output [] [] sourceValue
+        mainWorld ((_root_.id : Emit) ∘ emit) av :=
+      hbodySound.afterRelease (hplan.valueSound [])
+    have hcount := lowerE_preservesEntryCount hbodyRun
+    have houtputEntries : output.entries = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [EntryCountPreserved, input] using hcount
+    have hreleased : EntriesReleased output.entries := by
+      rw [houtputEntries]
+      exact .nil
+    have hpre : GraphOwnsVEnv
+        (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+        (fun _ _ => False) input [] [] [] ({} : Store) [] := by
+      refine ⟨[], ?_, Sim.RootsGraph.nil, RootOwnership.empty⟩
+      exact ⟨by simp [input], EntriesValueGraph.nil⟩
+    have htarget' : runCode ctx targetFuel cur ({} : Store) []
+        (((_root_.id : Emit) ∘ emit) (.ret (av.toAtom output))) =
+          .ok (targetStore, targetValue) := by
+      unfold runMain at htarget
+      change runCode ctx targetFuel cur ({} : Store) [] mainCode =
+        .ok (targetStore, targetValue) at htarget
+      rw [hcode]
+      exact htarget
+    exact (hfull.closeGraph hreleased [] [] hpre htarget').1
+
+/-- Lift whole-main value agreement to the public forward-simulation
+proposition once target progress is supplied independently. This statement
+makes the remaining split explicit: compiler value contracts establish
+agreement, while the progress premise establishes existence of a successful
+target run. -/
+theorem lowerAllAction_semanticForwardSimulation_of_targetProgress
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (henv : sourceCtx.env = IxIR0.Env.ofList decls)
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    (hvalues : CompilerValueContracts
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx (IxIR0.Env.ofList decls) ctx)
+    (hprogress : ∀ {sourceFuel sourceValue},
+      IxIR0.eval sourceCtx sourceFuel [] main = .ok sourceValue →
+      ∃ targetFuel targetStore targetValue,
+        runMain ctx mainCode targetFuel = .ok (targetStore, targetValue)) :
+    SemanticForwardSimulation sourceCtx ctx main mainCode
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls)
+        finalState) := by
+  intro sourceFuel sourceValue hsource
+  obtain ⟨targetFuel, targetStore, targetValue, htarget⟩ :=
+    hprogress hsource
+  refine ⟨targetFuel, targetStore, targetValue, htarget, ?_⟩
+  exact lowerAllAction_main_value_graph henv hlower hrepresented
+    hcontracts hvalues hsource htarget
 
 /-- Ordinary generated bodies need no current-self assumption: successful
 lowering from a self-free logical environment is covered directly by the
@@ -3068,6 +4512,296 @@ theorem recursorRulesPlanBelow_of_run
     exact RecursorRulesPlanBelow.cons hheadRun hheadContract
       (ih htailRun hrepresented)
 
+/-- Invert one successful generated-rule lowering into the two exact prefix
+plans and the concrete semantic RHS run.  The static retain/release plans
+also prove that neither prefix phase changes the compiler state. -/
+theorem lowerRecursorRule_run_plan_inv
+    {src : IxIR0.Env} {fuel numArgs : Nat}
+    {rule : IxIR0.RecRule} {tag : Nat}
+    {state finalState : LowSt} {alt : Alt}
+    (hrun : (lowerRecursorRule src fuel numArgs (rule, tag)).run state =
+      .ok alt finalState) :
+    ∃ fieldOutput fieldEmit rhsInput parameterEmit
+        output bodyEmit av,
+      FieldRetainPlan
+        ⟨List.replicate rule.fields (.slot 0 0 .many false),
+          (numArgs + 1) + rule.fields⟩
+        (recursorFieldRetains (numArgs + 1) rule.rhs rule.fields)
+        fieldOutput fieldEmit ∧
+      ReleasePlan
+        ⟨fieldOutput.entries ++
+            parameterEntries 0 (List.replicate numArgs .many)
+              (fun i => countUses (rule.fields + i) rule.rhs) ++
+            [.recSelf (numArgs + 1)],
+          fieldOutput.depth + 1⟩
+        ((parameterDrops 0 (List.replicate numArgs .many)
+            (fun i => countUses (rule.fields + i) rule.rhs)).map
+          (SlotDrop.offsetEntry rule.fields))
+        rhsInput parameterEmit ∧
+      (lowerE src fuel rhsInput .shared rule.rhs).run state =
+        .ok (output, bodyEmit, av) finalState ∧
+      alt = .mk tag rule.fields
+        (fieldEmit
+          (emitOp (.drop (.var (fieldOutput.rel numArgs)))
+            (parameterEmit
+              (bodyEmit (.ret (av.toAtom output)))))) := by
+  obtain ⟨fieldOutput, fieldEmit, hfieldPlan⟩ :=
+    recursorFieldRetains_plan (numArgs + 1)
+      ((numArgs + 1) + rule.fields) rule.fields rule.rhs
+  have hfieldLength : fieldOutput.entries.length = rule.fields := by
+    calc
+      fieldOutput.entries.length =
+          (⟨List.replicate rule.fields (.slot 0 0 .many false),
+            (numArgs + 1) + rule.fields⟩ : VEnv).entries.length :=
+        hfieldPlan.entries_length
+      _ = rule.fields := by simp
+  obtain ⟨rhsInput, parameterEmit, hparameterPlan⟩ :=
+    recursorParameterDrops_releasePlan numArgs rule.fields
+      (fieldOutput.depth + 1) rule.rhs fieldOutput.entries hfieldLength
+  have hfieldRun := hfieldPlan.run
+  have horiginal := hrun
+  simp only [lowerRecursorRule] at hrun
+  rw [hfieldRun] at hrun
+  simp only at hrun
+  obtain ⟨releaseResult, releaseState, hreleaseRun, hafterRelease⟩ :=
+    trackedBindRun_ok_inv hrun
+  rcases releaseResult with ⟨actualRhsInput, actualParameterEmit⟩
+  have hparameterRun := hparameterPlan.run state
+  have hreleaseEq :
+      (rhsInput, parameterEmit) =
+          (actualRhsInput, actualParameterEmit) ∧
+        state = releaseState := by
+    simpa [VEnv.bump, List.append_assoc] using
+      hparameterRun.symm.trans hreleaseRun
+  obtain ⟨hrhsInput, hreleaseState⟩ := hreleaseEq
+  have hparameterEmit : parameterEmit = actualParameterEmit :=
+    congrArg Prod.snd hrhsInput
+  have hrhsInputOnly : rhsInput = actualRhsInput :=
+    congrArg Prod.fst hrhsInput
+  subst actualRhsInput
+  subst actualParameterEmit
+  subst releaseState
+  obtain ⟨bodyResult, bodyState, hbodyRun, hafterBody⟩ :=
+    trackedBindRun_ok_inv hafterRelease
+  rcases bodyResult with ⟨output, bodyEmit, av⟩
+  have hpure :
+      Alt.mk tag rule.fields
+          (fieldEmit
+            (emitOp (.drop (.var (fieldOutput.rel numArgs)))
+              (parameterEmit
+                (bodyEmit (.ret (av.toAtom output)))))) = alt ∧
+        bodyState = finalState := by
+    simpa using hafterBody
+  obtain ⟨halt, hbodyState⟩ := hpure
+  subst bodyState
+  exact ⟨fieldOutput, fieldEmit, rhsInput, parameterEmit,
+    output, bodyEmit, av, hfieldPlan,
+    by simpa [List.append_assoc] using hparameterPlan,
+    hbodyRun, halt.symm⟩
+
+/-- Invert a successful target alternative selection all the way back to
+the indexed source rule that generated it.  Besides the exact rule lookup,
+the result retains both executable prefix plans, the semantic RHS run, and
+the remaining state-threaded traversal after the selected rule. -/
+theorem RecursorRulesPlanBelow.find?_run_plan_inv
+    {ctx : Ctx} {cur : FnDef} {limit : Nat} {src : IxIR0.Env}
+    {fuel numArgs : Nat} {state finalState : LowSt}
+    {rules : Array IxIR0.RecRule} {alts : List Alt}
+    (hplan : RecursorRulesPlanBelow ctx cur limit src fuel numArgs
+      state rules.toList.zipIdx finalState alts)
+    {cidx selectedTag fieldCount : Nat} {body : Code}
+    (hfind : alts.toArray.find? (fun alt => alt.cidx == cidx) =
+      some (.mk selectedTag fieldCount body)) :
+    ∃ rule headState nextState tailRules tailAlts
+        fieldOutput fieldEmit rhsInput parameterEmit
+        output bodyEmit av,
+      rules[cidx]? = some rule ∧
+      selectedTag = cidx ∧
+      fieldCount = rule.fields ∧
+      FieldRetainPlan
+        ⟨List.replicate rule.fields (.slot 0 0 .many false),
+          (numArgs + 1) + rule.fields⟩
+        (recursorFieldRetains (numArgs + 1) rule.rhs rule.fields)
+        fieldOutput fieldEmit ∧
+      ReleasePlan
+        ⟨fieldOutput.entries ++
+            parameterEntries 0 (List.replicate numArgs .many)
+              (fun i => countUses (rule.fields + i) rule.rhs) ++
+            [.recSelf (numArgs + 1)],
+          fieldOutput.depth + 1⟩
+        ((parameterDrops 0 (List.replicate numArgs .many)
+            (fun i => countUses (rule.fields + i) rule.rhs)).map
+          (SlotDrop.offsetEntry rule.fields))
+        rhsInput parameterEmit ∧
+      (lowerE src fuel rhsInput .shared rule.rhs).run headState =
+        .ok (output, bodyEmit, av) nextState ∧
+      body = fieldEmit
+        (emitOp (.drop (.var (fieldOutput.rel numArgs)))
+          (parameterEmit
+            (bodyEmit (.ret (av.toAtom output))))) ∧
+      RecursorRulesPlanBelow ctx cur limit src fuel numArgs
+        nextState tailRules finalState tailAlts := by
+  have hmember : (.mk selectedTag fieldCount body : Alt) ∈ alts := by
+    simpa using Array.mem_of_find?_eq_some hfind
+  obtain ⟨rule, tag, headState, nextState, tailRules, tailAlts,
+      hsourceMember, hheadRun, htailPlan⟩ :=
+    hplan.trace_mem (.mk selectedTag fieldCount body) hmember
+  obtain ⟨fieldOutput, fieldEmit, rhsInput, parameterEmit,
+      output, bodyEmit, av, hfieldPlan, hparameterPlan,
+      hbodyRun, halt⟩ :=
+    lowerRecursorRule_run_plan_inv hheadRun
+  have hselectedTag : selectedTag = cidx := by
+    have hmatch := Array.find?_some
+      (p := fun alt : Alt => alt.cidx == cidx)
+      (a := .mk selectedTag fieldCount body)
+      (xs := alts.toArray) hfind
+    exact beq_iff_eq.mp hmatch
+  have htag : selectedTag = tag := by
+    injection halt
+  have hfieldCount : fieldCount = rule.fields := by
+    injection halt
+  have hbody : body = fieldEmit
+      (emitOp (.drop (.var (fieldOutput.rel numArgs)))
+        (parameterEmit
+          (bodyEmit (.ret (av.toAtom output))))) := by
+    injection halt
+  have htagCidx : tag = cidx := htag.symm.trans hselectedTag
+  obtain ⟨_, htagBound, hruleElem⟩ :=
+    List.mem_zipIdx hsourceMember
+  have htagLt : tag < rules.toList.length := by
+    simpa using htagBound
+  have hruleTag : rules[tag]? = some rule := by
+    rw [← Array.getElem?_toList]
+    rw [List.getElem?_eq_getElem htagLt]
+    exact congrArg some hruleElem.symm
+  have hrule : rules[cidx]? = some rule := by
+    rwa [← htagCidx]
+  exact ⟨rule, headState, nextState, tailRules, tailAlts,
+    fieldOutput, fieldEmit, rhsInput, parameterEmit,
+    output, bodyEmit, av, hrule, hselectedTag, hfieldCount,
+    hfieldPlan, hparameterPlan, hbodyRun, hbody, htailPlan⟩
+
+/-- Execute the exact generated prefix and RHS for one selected recursor
+rule while transporting the source result and the caller's framed graphs.
+This is independent of how the case dispatcher represented the major; the
+caller supplies the corresponding source/target field graph and field-world
+facts. -/
+theorem lowerRecursorRule_branch_value_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {recSelfRel : RecSelfRel} {ctx : Ctx} {cur : FnDef} {limit : Nat}
+    {fuel numArgs : Nat} {rule : IxIR0.RecRule}
+    {headState nextState : LowSt}
+    {fieldOutput rhsInput output : VEnv}
+    {fieldEmit parameterEmit bodyEmit : Emit} {av : AVal}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    (hself : CurrentSelfValueContractBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      cur limit)
+    (hfieldPlan : FieldRetainPlan
+      ⟨List.replicate rule.fields (.slot 0 0 .many false),
+        (numArgs + 1) + rule.fields⟩
+      (recursorFieldRetains (numArgs + 1) rule.rhs rule.fields)
+      fieldOutput fieldEmit)
+    (hparameterPlan : ReleasePlan
+      ⟨fieldOutput.entries ++
+          parameterEntries 0 (List.replicate numArgs .many)
+            (fun i => countUses (rule.fields + i) rule.rhs) ++
+          [.recSelf (numArgs + 1)],
+        fieldOutput.depth + 1⟩
+      ((parameterDrops 0 (List.replicate numArgs .many)
+          (fun i => countUses (rule.fields + i) rule.rhs)).map
+        (SlotDrop.offsetEntry rule.fields))
+      rhsInput parameterEmit)
+    (hbodyRun : (lowerE src fuel rhsInput .shared rule.rhs).run headState =
+      .ok (output, bodyEmit, av) nextState)
+    (hextends : ExtraExtends nextState ambient)
+    {sourcePre : List IxIR0.Value} {pre : List RVal}
+    {sourceFields : List IxIR0.Value} {fields : List RVal}
+    {sourceSelf sourceValue : IxIR0.Value} {major : RVal}
+    {sourceFuel : Nat}
+    (hsource : IxIR0.eval sourceCtx sourceFuel
+      (sourceFields.reverse ++ sourcePre.reverse ++ [sourceSelf])
+      rule.rhs = .ok sourceValue)
+    (hpreLength : pre.length = numArgs)
+    (hfieldsLength : fields.length = rule.fields)
+    {store store' : Store} {value : RVal}
+    {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root}
+    (hpreGraphs : Sim.ValuesGraph
+      (CompilerFunctionRel sourceCtx src ambient) store sourcePre pre)
+    (hfieldGraphs : Sim.ValuesGraph
+      (CompilerFunctionRel sourceCtx src ambient) store sourceFields fields)
+    (hsourceSelf : recSelfRel sourceSelf (numArgs + 1))
+    (hframe : Sim.RootsGraph
+      (CompilerFunctionRel sourceCtx src ambient) store sourceRest rest)
+    (hown : RootOwnership store
+      (rootsFor .shared (pre ++ [major]) ++ rest))
+    (hfieldWorld : ∀ field ∈ fields, HasWorld store .shared field)
+    {branchFuel : Nat} (hbound : branchFuel ≤ limit)
+    (hbranchRun : runCode ctx branchFuel cur store
+      (fields.reverse ++ major :: pre.reverse)
+      (fieldEmit
+        (emitOp (.drop (.var (fieldOutput.rel numArgs)))
+          (parameterEmit
+            (bodyEmit (.ret (av.toAtom output)))))) =
+        .ok (store', value)) :
+    Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient) store'
+        sourceValue value ∧
+      Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient) store'
+        sourceRest rest := by
+  have hentry := recursorAltEntry_value_state
+    (funRel := CompilerFunctionRel sourceCtx src ambient)
+    (recSelfRel := recSelfRel) numArgs rule.fields rule.rhs
+    hpreLength hfieldsLength hpreGraphs hfieldGraphs hsourceSelf hframe hown
+    hfieldWorld
+  have hprefix := recursorPrefixPlans_valueSoundBelow
+    (funRel := CompilerFunctionRel sourceCtx src ambient)
+    (recSelfRel := recSelfRel) (ctx := ctx) (cur := cur) (limit := limit)
+    numArgs rule.fields rule.rhs hfieldPlan hparameterPlan
+    (sourceFields.reverse ++ sourcePre.reverse ++ [sourceSelf])
+    sourceRest rest major fields
+  have hbodySound := lowerE_run_value_sound_within_currentSelf_below
+    henv hrepresented hcontracts hvalues hsource hbodyRun hextends hself
+  have hnextRepresented : ExtraRepresented ctx nextState :=
+    hrepresented.of_extends hextends
+  have hownershipSelf : CurrentSelfContractBelow ctx cur limit :=
+    ⟨hself.result, hself.ownership⟩
+  have hfieldRun := hfieldPlan.run
+  have hparameterRun := hparameterPlan.run headState
+  obtain ⟨_, hreleased⟩ := lowerRecursorRule_rhs_sound_below
+    (hcontracts.below limit).apply (hcontracts.below limit).decls
+    hownershipSelf hfieldRun hparameterRun hbodyRun hnextRepresented
+  have hbodyCode : CodeOwnsBelow ctx cur limit
+      (GraphOwnsVEnv (CompilerFunctionRel sourceCtx src ambient)
+        recSelfRel rhsInput
+        (sourceFields.reverse ++ sourcePre.reverse ++ [sourceSelf])
+        sourceRest rest)
+      (fun resultStore resultValue =>
+        Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient)
+            resultStore sourceValue resultValue ∧
+          Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient)
+            resultStore sourceRest rest)
+      (bodyEmit (.ret (av.toAtom output))) :=
+    hbodySound.closeGraph hreleased sourceRest rest
+  exact hprefix limit (Nat.le_refl limit)
+    (fun resultStore resultValue =>
+      Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient)
+          resultStore sourceValue resultValue ∧
+        Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient)
+          resultStore sourceRest rest)
+    (bodyEmit (.ret (av.toAtom output))) hbodyCode
+    (fuel := branchFuel) (store := store)
+    (env := fields.reverse ++ major :: pre.reverse)
+    (store' := store') (value := value) hbound hentry
+    (by simpa [Function.comp_def] using hbranchRun)
+
+private theorem lowerStateSimExceptBindOk {error α β : Type}
+    (value : α) (next : α → Except error β) :
+    (Except.ok value >>= next) = next value := rfl
+
 /-- Actual successful lowering of an entire recursor reconstructs the rule
 plan and yields its exact-index function ownership theorem. -/
 theorem lowerRecursor_preservesAt
@@ -3116,6 +4850,297 @@ theorem lowerRecursor_preservesAt
   intro store store' args value rest hlength hown hcodeRun
   exact hpreserves hlength hown hcodeRun
 
+/-- Exact-fuel semantic preservation for a successfully generated source
+recursor.  Source saturation identifies the chosen rule and its evaluator
+environment; target case dispatch is then joined to the exact generated
+prefix/RHS trace for that same indexed rule. -/
+theorem lowerRecursor_valuePreservesAt_within_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {limit compilerFuel numArgs : Nat}
+    {natLit : Bool} {rules : Array IxIR0.RecRule}
+    {address : Ixon.Address} {sourceFunction : IxIR0.Value}
+    {state finalState : LowSt} {d : FnDef}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    (hsrc : src address = some (.recursor numArgs natLit rules))
+    (hdecl : ctx.decls address = some (.fn d))
+    (href : SourceRefValue sourceCtx address sourceFunction)
+    (hrun : (lowerRecursor src compilerFuel numArgs natLit rules).run state =
+      .ok d finalState)
+    (hextends : ExtraExtends finalState ambient) :
+    FnValuePreservesAt (CompilerFunctionRel sourceCtx src ambient)
+      sourceCtx ctx d (List.replicate (numArgs + 1) .shared)
+      sourceFunction limit := by
+  simp only [lowerRecursor] at hrun
+  obtain ⟨alts, rulesState, hrulesRun, hafterRules⟩ :=
+    trackedBindRun_ok_inv hrun
+  have hpure :
+      (⟨numArgs + 1, .shared,
+          .case (.var 0) natLit alts.toArray⟩ : FnDef) = d ∧
+        rulesState = finalState := by
+    simpa using hafterRules
+  obtain ⟨hd, hstate⟩ := hpure
+  subst d
+  subst rulesState
+  have hsourceLookup : sourceCtx.env address =
+      some (.recursor numArgs natLit rules) := by
+    rw [henv]
+    exact hsrc
+  have hsourceFunction := href.recursorValue hsourceLookup
+  subst sourceFunction
+  let recSelfRel : RecSelfRel := fun value arity =>
+    value = .pap (.rec_ address (numArgs + 1)) [] ∧
+      arity = numArgs + 1
+  obtain ⟨ownedD, hownedDecl, _, _, hownedContract⟩ :=
+    hcontracts.decls.recursor hsrc
+  have hownedD : ownedD =
+      (⟨numArgs + 1, .shared,
+        .case (.var 0) natLit alts.toArray⟩ : FnDef) := by
+    have hsame : some (Decl.fn ownedD) = some
+        (.fn ⟨numArgs + 1, .shared,
+          .case (.var 0) natLit alts.toArray⟩) :=
+      hownedDecl.symm.trans hdecl
+    exact Decl.fn.inj (Option.some.inj hsame)
+  subst ownedD
+  have hvalueContract : FnValueContractBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
+      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      (List.replicate (numArgs + 1) .shared)
+      (.pap (.rec_ address (numArgs + 1)) []) limit := by
+    apply hvalues.decls.fnContract hsrc (by rfl) hdecl href
+    simp
+  have hself : CurrentSelfValueContractBelow
+      (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
+      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      limit := by
+    refine ⟨rfl, ?_, ?_⟩
+    · simpa using hownedContract.below limit
+    · intro candidate hcandidate
+      change candidate = .pap (.rec_ address (numArgs + 1)) [] ∧
+        numArgs + 1 = numArgs + 1 at hcandidate
+      rcases hcandidate with ⟨rfl, _⟩
+      exact hvalueContract
+  have hfinalRepresented : ExtraRepresented ctx finalState :=
+    hrepresented.of_extends hextends
+  have hownershipSelf : CurrentSelfContractBelow ctx
+      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      limit := ⟨hself.result, hself.ownership⟩
+  have hplan : RecursorRulesPlanBelow ctx
+      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      limit src compilerFuel numArgs state rules.toList.zipIdx
+      finalState alts :=
+    recursorRulesPlanBelow_of_run (hcontracts.below limit).apply
+      (hcontracts.below limit).decls hownershipSelf rfl
+      compilerFuel numArgs hrulesRun hfinalRepresented
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hargsLength hargs happlies hframe hown htarget
+  have hargsArity : args.length = numArgs + 1 := by
+    simpa using hargsLength
+  have hrootShape :
+      rootsForWorlds (List.replicate (numArgs + 1) .shared) args =
+        rootsFor .shared args :=
+    rootsForWorlds_replicate_eq_rootsFor .shared hargsArity
+  rw [hrootShape] at hown
+  cases limit with
+  | zero => simp [runCode] at htarget
+  | succ branchFuel =>
+    cases hreverse : args.reverse with
+    | nil =>
+      have hargsNil : args = [] := by
+        have h := congrArg List.reverse hreverse
+        simpa using h
+      simp [hargsNil] at hargsArity
+    | cons major runtimePre =>
+      have hargsForm : args = runtimePre.reverse ++ [major] := by
+        have h := congrArg List.reverse hreverse
+        simpa [List.reverse_cons] using h
+      have hruntimePreLength : runtimePre.length = numArgs := by
+        rw [hargsForm] at hargsArity
+        simp only [List.length_append, List.length_reverse,
+          List.length_singleton] at hargsArity
+        omega
+      obtain ⟨sourcePre, sourceMajor, hsourceArgsForm,
+          hsourcePreLength, hpreGraphs, hmajorGraph⟩ :=
+        valuesGraph_splitLast hargs hargsForm hruntimePreLength
+      rw [hsourceArgsForm] at happlies
+      obtain ⟨sourceTag, sourceFields, sourceRule, sourceFuel,
+          hsourceMajor, hsourceRule, hsourceFieldsLength, hsourceEval⟩ :=
+        sourceRecursorRef_saturates_inv hsourceLookup href
+          hsourcePreLength happlies
+      have hmajorWorld : HasWorld store .shared major := by
+        apply hown.roots_world ⟨.shared, major⟩
+        apply List.mem_append_left rest
+        simp [rootsFor, hargsForm]
+      have hentryOwn : RootOwnership store
+          (rootsFor .shared (runtimePre.reverse ++ [major]) ++ rest) := by
+        simpa [hargsForm] using hown
+      rw [hreverse] at htarget
+      change runCode ctx (branchFuel + 1)
+          ⟨numArgs + 1, .shared,
+            .case (.var 0) natLit alts.toArray⟩
+          store (major :: runtimePre)
+          (.case (.var 0) natLit alts.toArray) =
+        .ok (store', value) at htarget
+      have hdispatch := htarget
+      rw [runCode.eq_def] at hdispatch
+      dsimp only at hdispatch
+      rw [show resolveAtom (major :: runtimePre) (.var 0) = .ok major
+        from rfl, lowerStateSimExceptBindOk] at hdispatch
+      have finish {cidx selectedTag fieldCount : Nat} {body : Code}
+          (halt : alts.toArray.find? (fun alt => alt.cidx == cidx) =
+            some (.mk selectedTag fieldCount body))
+          (hcidx : cidx = sourceTag)
+          {targetFields : List RVal}
+          (hfieldGraphs : Sim.ValuesGraph
+            (CompilerFunctionRel sourceCtx src ambient) store
+            sourceFields targetFields)
+          (htargetFieldsLength : targetFields.length = fieldCount)
+          (hfieldWorld : ∀ field ∈ targetFields,
+            HasWorld store .shared field)
+          (hbranchRun : runCode ctx branchFuel
+            ⟨numArgs + 1, .shared,
+              .case (.var 0) natLit alts.toArray⟩
+            store (targetFields.reverse ++ major :: runtimePre) body =
+              .ok (store', value)) :
+          Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient)
+              store' sourceResult value ∧
+            Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient)
+              store' sourceRest rest := by
+        obtain ⟨rule, headState, nextState, tailRules, tailAlts,
+            fieldOutput, fieldEmit, rhsInput, parameterEmit,
+            output, bodyEmit, av, hrule, _, hfieldCount,
+            hfieldPlan, hparameterPlan, hbodyRun, hbody, htailPlan⟩ :=
+          hplan.find?_run_plan_inv halt
+        have hsourceRuleAt : rules[cidx]? = some sourceRule := by
+          rw [hcidx]
+          exact hsourceRule
+        have hruleEq : rule = sourceRule :=
+          Option.some.inj (hrule.symm.trans hsourceRuleAt)
+        subst rule
+        have htargetRuleLength : targetFields.length = sourceRule.fields :=
+          htargetFieldsLength.trans hfieldCount
+        have htailExtends : ExtraExtends nextState finalState :=
+          (ExtraMonotone.listMapM
+            (lowerRecursorRule src compilerFuel numArgs)
+            (lowerRecursorRule_extraMonotone src compilerFuel numArgs)
+            tailRules) htailPlan.run
+        have hnextExtends : ExtraExtends nextState ambient :=
+          htailExtends.trans hextends
+        rw [hbody] at hbranchRun
+        exact lowerRecursorRule_branch_value_below
+          (recSelfRel := recSelfRel) (limit := branchFuel + 1)
+          (branchFuel := branchFuel)
+          henv hrepresented hcontracts hvalues
+          hself hfieldPlan hparameterPlan hbodyRun hnextExtends
+          (sourcePre := sourcePre) (pre := runtimePre.reverse)
+          (sourceFields := sourceFields) (fields := targetFields)
+          (sourceSelf := .pap (.rec_ address (numArgs + 1)) [])
+          (sourceValue := sourceResult) (major := major)
+          hsourceEval (by simpa using hruntimePreLength)
+          htargetRuleLength hpreGraphs hfieldGraphs ⟨rfl, rfl⟩
+          hframe hentryOwn hfieldWorld (by omega)
+          (by simpa using hbranchRun)
+      cases hmajorGraph with
+      | @lit literal =>
+        cases literal with
+        | str string => simp [IxIR0.majorCtor] at hsourceMajor
+        | nat n =>
+          cases hpeel : natLit with
+          | false => simp [IxIR0.majorCtor, hpeel] at hsourceMajor
+          | true =>
+              cases n with
+              | zero =>
+                have hmajorPair :
+                    0 = sourceTag ∧ sourceFields = [] := by
+                  simpa [IxIR0.majorCtor, hpeel] using hsourceMajor
+                have htag : sourceTag = 0 :=
+                  hmajorPair.1.symm
+                have hfields : sourceFields = [] :=
+                  hmajorPair.2
+                subst sourceTag
+                subst sourceFields
+                cases halt : alts.toArray.find?
+                    (fun alt => alt.cidx == 0) with
+                | none => simp [hpeel, halt] at hdispatch
+                | some alt =>
+                  cases alt with
+                  | mk selectedTag fieldCount body =>
+                    cases fieldCount with
+                    | zero =>
+                      have hbranch := hdispatch
+                      simp [hpeel, halt] at hbranch
+                      exact finish halt rfl Sim.ValuesGraph.nil rfl
+                        (by simp) (by simpa [hpeel] using hbranch)
+                    | succ fieldCount =>
+                      simp [hpeel, halt] at hdispatch
+              | succ n =>
+                have hmajorPair :
+                    1 = sourceTag ∧
+                      [.lit (.nat n)] = sourceFields := by
+                  simpa [IxIR0.majorCtor, hpeel] using hsourceMajor
+                have htag : sourceTag = 1 :=
+                  hmajorPair.1.symm
+                have hfields : sourceFields = [.lit (.nat n)] :=
+                  hmajorPair.2.symm
+                subst sourceTag
+                subst sourceFields
+                cases halt : alts.toArray.find?
+                    (fun alt => alt.cidx == 1) with
+                | none => simp [hpeel, halt] at hdispatch
+                | some alt =>
+                  cases alt with
+                  | mk selectedTag fieldCount body =>
+                    by_cases hfieldCount : fieldCount = 1
+                    · subst fieldCount
+                      have hbranch := hdispatch
+                      simp [hpeel, halt] at hbranch
+                      exact finish halt rfl
+                        (.cons .lit .nil) rfl (by simp [HasWorld])
+                        (by simpa [hpeel] using hbranch)
+                    · simp [hpeel, halt, hfieldCount] at hdispatch
+      | erased => simp [IxIR0.majorCtor] at hsourceMajor
+      | @ctor sourceAddress sourceCtorTag sourceCtorFields loc
+          world rc cid targetFields hget haddress htag hfieldGraphs =>
+        have hmajorPair :
+            sourceCtorTag = sourceTag ∧
+              sourceCtorFields = sourceFields := by
+          simpa [IxIR0.majorCtor] using hsourceMajor
+        have hsourceTagEq : sourceTag = sourceCtorTag :=
+          hmajorPair.1.symm
+        have hsourceFieldsEq : sourceFields = sourceCtorFields :=
+          hmajorPair.2.symm
+        subst sourceTag
+        subst sourceFields
+        obtain ⟨ownedBox, hownedBox, hownedWorld⟩ := hmajorWorld
+        rw [hget] at hownedBox
+        have hboxEq :
+            (⟨world, rc, .ctorN cid targetFields⟩ : NodeBox) =
+              ownedBox := Option.some.inj hownedBox
+        subst ownedBox
+        dsimp only [NodeBox.world] at hownedWorld
+        subst world
+        cases halt : alts.toArray.find?
+            (fun alt => alt.cidx == cid.cidx) with
+        | none => simp [hget, halt] at hdispatch
+        | some alt =>
+          cases alt with
+          | mk selectedTag fieldCount body =>
+            by_cases hsize : targetFields.size = fieldCount
+            · have hbranch := htarget
+              rw [runCode_case_ctor rfl hget halt hsize] at hbranch
+              rw [Array.foldl_cons_eq_reverse_append] at hbranch
+              exact finish halt htag
+                (by simpa using hfieldGraphs)
+                (by simpa using hsize)
+                (hown.caseFieldsBorrowed hget)
+                hbranch
+            · simp [hget, halt, hsize] at hdispatch
+      | function hget hfun hcaptures =>
+        simp [hget] at hdispatch
+
 /-- Declaration-facing recursor rule over the actual `lowerDecl` result. -/
 theorem lowerDecl_recursor_preservesAt
     {ctx : Ctx} {limit : Nat} {src : IxIR0.Env}
@@ -3147,6 +5172,51 @@ theorem lowerDecl_recursor_preservesAt
   intro store store' args value rest hlength hown hcodeRun
   exact lowerRecursor_preservesAt
     happly hdecls hself hrecursorRun hrepresented hlength hown hcodeRun
+
+/-- Declaration-facing semantic recursor rule over the actual `lowerDecl`
+result.  The declaration adapter contributes no runtime behavior; it only
+recovers the exact generated recursor body and final compiler state used by
+`lowerRecursor_valuePreservesAt_within_below`. -/
+theorem lowerDecl_recursor_valuePreservesAt_within_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {limit compilerFuel numArgs : Nat}
+    {natLit : Bool} {rules : Array IxIR0.RecRule}
+    {address : Ixon.Address} {sourceFunction : IxIR0.Value}
+    {state finalState : LowSt} {d : FnDef}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    (hsrc : src address = some (.recursor numArgs natLit rules))
+    (hdecl : ctx.decls address = some (.fn d))
+    (href : SourceRefValue sourceCtx address sourceFunction)
+    (hrun :
+      (lowerDecl src compilerFuel
+        (address, .recursor numArgs natLit rules)).run state =
+          .ok (some (address, .fn d)) finalState)
+    (hextends : ExtraExtends finalState ambient) :
+    FnValuePreservesAt (CompilerFunctionRel sourceCtx src ambient)
+      sourceCtx ctx d (List.replicate (numArgs + 1) .shared)
+      sourceFunction limit := by
+  simp only [lowerDecl] at hrun
+  obtain ⟨actual, recursorState, hrecursorRun, hafterRecursor⟩ :=
+    trackedBindRun_ok_inv hrun
+  have hpure :
+      some (address, Decl.fn actual) = some (address, Decl.fn d) ∧
+        recursorState = finalState := by
+    simpa using hafterRecursor
+  have hd : actual = d := by
+    have hp := Option.some.inj hpure.1
+    exact Decl.fn.inj (Prod.mk.inj hp).2
+  have hrecursorState : recursorState = finalState := hpure.2
+  subst actual
+  subst recursorState
+  intro store store' args value sourceArgs sourceResult sourceRest rest
+    hlength hargs happlies hframe hown hcodeRun
+  exact lowerRecursor_valuePreservesAt_within_below
+    henv hrepresented hcontracts hvalues hsrc hdecl href
+    hrecursorRun hextends hlength hargs happlies hframe hown hcodeRun
 
 /-- Declaration-facing inversion of an ordinary successful `lowerFnBody`.
 The returned expression proof is self-contract-free; only the canonical
@@ -3363,41 +5433,141 @@ private theorem selectedEntriesFrom_entriesRealize
       EntriesRealize Γ env
         (selectedEntriesFrom selected remaining indices next)
         (rootsFor .shared values) := by
-  intro indices
-  induction indices with
-  | nil =>
-    intro next values hlength _ _ _
-    cases values with
-    | nil => exact EntriesRealize.nil
-    | cons value values => simp at hlength
-  | cons entry entries ih =>
-    intro next values hlength hpositive hbound hslots
-    cases hselected : selected entry with
-    | false =>
-      simp only [selectedEntriesFrom, hselected, Bool.false_eq_true, if_false]
+  intro indices next values hlength hpositive hbound hslots
+  exact selectedEntriesFrom_traverse selected remaining
+    (Result := fun sourceIndices current entries =>
+      ∀ runtimeValues,
+        runtimeValues.length = (sourceIndices.filter selected).length →
+        0 < Γ.depth →
+        current + runtimeValues.length ≤ Γ.depth →
+        (∀ index, index < runtimeValues.length →
+          env[Γ.rel (current + index)]? = runtimeValues[index]?) →
+        EntriesRealize Γ env entries (rootsFor .shared runtimeValues))
+    (hnil := by
+      intro current runtimeValues hlength _ _ _
+      cases runtimeValues with
+      | nil => exact EntriesRealize.nil
+      | cons value values => simp at hlength)
+    (hfalse := by
+      intro entry entries current tail hselected ih runtimeValues hlength
+        hpositive hbound hslots
       apply EntriesRealize.released (by omega)
-      apply ih next values
+      apply ih runtimeValues
       · simpa [hselected] using hlength
       · exact hpositive
       · exact hbound
-      · exact hslots
-    | true =>
-      cases values with
+      · exact hslots)
+    (htrue := by
+      intro entry entries current tail hselected ih runtimeValues hlength
+        hpositive hbound hslots
+      cases runtimeValues with
       | nil => simp [hselected] at hlength
       | cons value values =>
-        simp only [selectedEntriesFrom, hselected, ↓reduceIte, rootsFor,
-          List.map_cons]
+        simp only [rootsFor, List.map_cons]
         apply EntriesRealize.held
         · exact Nat.lt_of_lt_of_le (by simp) hbound
         · have hhead := hslots 0 (by simp)
           simpa using hhead
-        · apply ih (next + 1) values
+        · apply ih values
           · simpa [hselected] using hlength
           · exact hpositive
           · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hbound
           · intro index hindex
             have htail := hslots (index + 1) (by simp [hindex])
-            simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using htail
+            simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using htail)
+    indices next values hlength hpositive hbound hslots
+
+/-- Semantic companion to `selectedEntriesFrom_entriesRealize`.  The first
+`ValuesAt` witness supplies every logical source entry, while the filtered
+witness and pointwise runtime graph supply exactly the held capture subset;
+unselected entries remain present on the source side but own no root. -/
+private theorem selectedEntriesFrom_entriesValueGraph
+    {funRel : Sim.FunctionRel} {recSelfRel : RecSelfRel}
+    {store : Store} {Γ : VEnv} {env : List RVal}
+    {sourceEnv : List IxIR0.Value}
+    (selected : Nat → Bool) (remaining : Nat → Nat) :
+    ∀ (indices : List Nat) (next : Nat)
+        (allSources selectedSources : List IxIR0.Value)
+        (values : List RVal),
+      ValuesAt sourceEnv indices allSources →
+      ValuesAt sourceEnv (indices.filter selected) selectedSources →
+      Sim.ValuesGraph funRel store selectedSources values →
+      0 < Γ.depth →
+      next + values.length ≤ Γ.depth →
+      (∀ index, index < values.length →
+        env[Γ.rel (next + index)]? = values[index]?) →
+      (∀ value, value ∈ values → HasWorld store .shared value) →
+      EntriesValueGraph funRel recSelfRel store Γ env
+        (selectedEntriesFrom selected remaining indices next)
+        allSources (rootsFor .shared values) := by
+  intro indices next allSources selectedSources values hall hselected hgraphs
+    hpositive hbound hslots hworlds
+  exact selectedEntriesFrom_traverse selected remaining
+    (Result := fun sourceIndices current entries =>
+      ∀ allSourceValues selectedSourceValues runtimeValues,
+        ValuesAt sourceEnv sourceIndices allSourceValues →
+        ValuesAt sourceEnv (sourceIndices.filter selected)
+          selectedSourceValues →
+        Sim.ValuesGraph funRel store selectedSourceValues runtimeValues →
+        0 < Γ.depth →
+        current + runtimeValues.length ≤ Γ.depth →
+        (∀ index, index < runtimeValues.length →
+          env[Γ.rel (current + index)]? = runtimeValues[index]?) →
+        (∀ value, value ∈ runtimeValues → HasWorld store .shared value) →
+        EntriesValueGraph funRel recSelfRel store Γ env entries
+          allSourceValues (rootsFor .shared runtimeValues))
+    (hnil := by
+      intro current allSourceValues selectedSourceValues runtimeValues
+        hall hselected hgraphs _ _ _ _
+      cases hall
+      cases hselected
+      cases hgraphs
+      exact EntriesValueGraph.nil)
+    (hfalse := by
+      intro entry entries current tail hselectedBit ih allSourceValues
+        selectedSourceValues runtimeValues hall hselected hgraphs hpositive
+        hbound hslots hworlds
+      cases hall with
+      | @cons _ source _ tailSources hsource htailAll =>
+        simp only [List.filter_cons, hselectedBit, Bool.false_eq_true,
+          if_false] at hselected
+        apply EntriesValueGraph.released (by omega)
+        exact ih tailSources selectedSourceValues runtimeValues htailAll
+          hselected hgraphs hpositive hbound hslots hworlds)
+    (htrue := by
+      intro entry entries current tail hselectedBit ih allSourceValues
+        selectedSourceValues runtimeValues hall hselected hgraphs hpositive
+        hbound hslots hworlds
+      cases hall with
+      | @cons _ source _ tailSources hsource htailAll =>
+        simp only [List.filter_cons, hselectedBit, ↓reduceIte] at hselected
+        cases hselected with
+        | @cons _ selectedSource _ selectedTail hselectedSource
+            hselectedTail =>
+          cases hgraphs with
+          | @cons _ runtimeValue _ runtimeTail hvalue htailGraphs =>
+            have hsourceEq : selectedSource = source := by
+              exact Option.some.inj (hselectedSource.symm.trans hsource)
+            subst selectedSource
+            simp only [rootsFor, List.map_cons]
+            apply EntriesValueGraph.held
+            · exact Nat.lt_of_lt_of_le (by simp) hbound
+            · have hhead := hslots 0 (by simp)
+              simpa using hhead
+            · exact hworlds runtimeValue (by simp)
+            · exact hvalue
+            · apply ih tailSources selectedTail runtimeTail htailAll
+                hselectedTail htailGraphs hpositive
+              · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+                  using hbound
+              · intro index hindex
+                have htail := hslots (index + 1) (by simp [hindex])
+                simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+                  using htail
+              · intro value hvalueMem
+                exact hworlds value (by simp [hvalueMem]))
+    indices next allSources selectedSources values hall hselected hgraphs
+      hpositive hbound hslots hworlds
 
 /-- Reading a bottom-indexed absolute slot from the evaluator's reversed
 function environment recovers the corresponding source-order argument. -/
@@ -3409,6 +5579,151 @@ private theorem getElem?_reverse_at_absolute
   have hreverse := List.getElem?_reverse (l := values) hbound
   have heq : values.length - 1 - (depth - 1 - index) = index := by omega
   simpa [heq] using hreverse
+
+/-- Consecutive valid source-environment indices select the corresponding
+list segment. -/
+private theorem ValuesAt.range'_of_get (sourceEnv : List IxIR0.Value) :
+    ∀ (start : Nat) (values : List IxIR0.Value),
+      (∀ offset, offset < values.length →
+        sourceEnv[start + offset]? = values[offset]?) →
+      ValuesAt sourceEnv (List.range' start values.length) values := by
+  intro start values
+  induction values generalizing start with
+  | nil =>
+    intro _
+    exact ValuesAt.nil
+  | cons head tail ih =>
+    intro hget
+    have hhead : sourceEnv[start]? = some head := by
+      have h := hget 0 (by simp)
+      simpa using h
+    apply ValuesAt.cons hhead
+    have htail := ih (start + 1) (by
+      intro offset hoffset
+      have h := hget (offset + 1) (by simp [hoffset])
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using h)
+    simpa [List.range'_succ] using htail
+
+/-- The full source environment is selected by its canonical index range. -/
+private theorem ValuesAt.range_self (sourceEnv : List IxIR0.Value) :
+    ValuesAt sourceEnv (List.range sourceEnv.length) sourceEnv := by
+  have h := ValuesAt.range'_of_get sourceEnv 0 sourceEnv (by
+    intro offset hoffset
+    simp)
+  simpa [List.range_eq_range'] using h
+
+/-- Semantic entry graph for a lifted function's public
+capture-then-parameter calling convention.  Runtime arguments are supplied
+in public order, while both the evaluator stack and the leading source
+parameter environment are reversed at function entry. -/
+theorem VEnvValueGraph.lifted
+    {funRel : Sim.FunctionRel} {recSelfRel : RecSelfRel} {store : Store}
+    (entryCount : Nat) (modes : List Uses)
+    (parameterRemaining : Nat → Nat)
+    (selected : Nat → Bool) (captureRemaining : Nat → Nat)
+    {sourceEnv selectedSources parameterSources : List IxIR0.Value}
+    {captureArgs parameterArgs : List RVal} {rest : List Root}
+    (hsourceLength : sourceEnv.length = entryCount)
+    (hselected : ValuesAt sourceEnv
+      ((List.range entryCount).filter selected) selectedSources)
+    (hcaptureLength : captureArgs.length =
+      ((List.range entryCount).filter selected).length)
+    (hparameterLength : parameterArgs.length = modes.length)
+    (hcaptures : Sim.ValuesGraph funRel store selectedSources captureArgs)
+    (hparameters : Sim.ValuesGraph funRel store parameterSources
+      parameterArgs)
+    (hpositive : 0 < modes.length)
+    (hshared : modes.map worldOfUses =
+      List.replicate modes.length .shared)
+    (hown : RootOwnership store
+      (rootsFor .shared (captureArgs ++ parameterArgs) ++ rest)) :
+    let captures := (List.range entryCount).filter selected
+    let Γ : VEnv :=
+      ⟨Lower.parameterEntries captures.length modes parameterRemaining ++
+          selectedEntriesFrom selected captureRemaining
+            (List.range entryCount) 0,
+        captures.length + modes.length⟩
+    VEnvValueGraph funRel recSelfRel store Γ
+      (parameterSources.reverse ++ sourceEnv)
+      (captureArgs ++ parameterArgs).reverse
+      ((rootsForWorlds (modes.map worldOfUses) parameterArgs).reverse ++
+        rootsFor .shared captureArgs) := by
+  dsimp only
+  let captures := (List.range entryCount).filter selected
+  let args := captureArgs ++ parameterArgs
+  let Γ : VEnv :=
+    ⟨Lower.parameterEntries captures.length modes parameterRemaining ++
+        selectedEntriesFrom selected captureRemaining
+          (List.range entryCount) 0,
+      captures.length + modes.length⟩
+  have hcaptureLength' : captureArgs.length = captures.length := by
+    simpa [captures] using hcaptureLength
+  have htotal : args.length = captures.length + modes.length := by
+    simp [args, hcaptureLength', hparameterLength]
+  have hrootShape : rootsFor .shared args =
+      rootsFor .shared captureArgs ++ rootsFor .shared parameterArgs := by
+    simp [args, rootsFor]
+  have hparameterWorlds : ∀ root,
+      root ∈ rootsForWorlds (modes.map worldOfUses) parameterArgs →
+      HasWorld store root.world root.value := by
+    intro root hroot
+    rw [hshared,
+      rootsForWorlds_replicate_eq_rootsFor .shared hparameterLength] at hroot
+    apply hown.roots_world root
+    rw [hrootShape]
+    exact List.mem_append_left rest (List.mem_append_right _ hroot)
+  have hparameter₀ := parameterEntries_entriesValueGraph
+    (funRel := funRel) (recSelfRel := recSelfRel) (store := store)
+    parameterRemaining captures.length modes
+    (sourceArgs := parameterSources) (args := parameterArgs)
+    (suffix := captureArgs.reverse) hparameterLength
+    (by simp [hcaptureLength']) hparameters hparameterWorlds
+  have hparameter : EntriesValueGraph funRel recSelfRel store Γ
+      args.reverse
+      (Lower.parameterEntries captures.length modes parameterRemaining)
+      parameterSources.reverse
+      (rootsForWorlds (modes.map worldOfUses) parameterArgs).reverse := by
+    have htransport := hparameter₀.of_depth_eq (Δ := Γ) (by simp [Γ])
+    have henv : args.reverse =
+        parameterArgs.reverse ++ captureArgs.reverse := by
+      simp [args, List.reverse_append]
+    simpa [henv] using htransport
+  have hall : ValuesAt sourceEnv (List.range entryCount) sourceEnv := by
+    rw [← hsourceLength]
+    exact ValuesAt.range_self sourceEnv
+  have hcaptureWorlds : ∀ value, value ∈ captureArgs →
+      HasWorld store .shared value := by
+    intro value hvalue
+    apply hown.roots_world ⟨.shared, value⟩
+    rw [hrootShape]
+    apply List.mem_append_left rest
+    exact List.mem_append_left _ (by simpa [rootsFor] using hvalue)
+  have hcaptureEntries : EntriesValueGraph funRel recSelfRel store Γ
+      args.reverse
+      (selectedEntriesFrom selected captureRemaining
+        (List.range entryCount) 0)
+      sourceEnv (rootsFor .shared captureArgs) := by
+    apply selectedEntriesFrom_entriesValueGraph selected captureRemaining
+      (sourceEnv := sourceEnv)
+    · exact hall
+    · exact hselected
+    · exact hcaptures
+    · dsimp [Γ]
+      exact Nat.add_pos_right captures.length hpositive
+    · simp [Γ, hcaptureLength']
+    · intro index hindex
+      have hindexArgs : index < args.length := by omega
+      have hindexTotal : index < captures.length + modes.length := by omega
+      have hreverse := getElem?_reverse_at_absolute
+        (values := args) htotal hindexTotal
+      have happend : args[index]? = captureArgs[index]? := by
+        exact List.getElem?_append_left
+          (by simpa [hcaptureLength'] using hindex)
+      simpa [Γ, VEnv.rel, htotal] using hreverse.trans happend
+    · exact hcaptureWorlds
+  refine ⟨?_, ?_⟩
+  · simpa [Γ, args, Nat.add_comm] using htotal
+  · simpa [Γ, args] using hparameter.append hcaptureEntries
 
 /-- A lifted function's mixed logical environment realizes its public
 capture-then-parameter calling convention. Captures occupy the first shared
@@ -3635,20 +5950,17 @@ theorem selectedEntriesFrom_noRecSelf
     ∀ (indices : List Nat) (next depth : Nat),
       NoRecSelf
         ⟨selectedEntriesFrom selected remaining indices next, depth⟩ := by
-  intro indices
-  induction indices with
-  | nil =>
-    intro next depth
-    exact NoRecSelf.empty
-  | cons index indices ih =>
-    intro next depth
-    cases hselected : selected index with
-    | false =>
-      simpa [selectedEntriesFrom, hselected] using
-        (ih next depth).consSlot 0 0 .many false
-    | true =>
-      simpa [selectedEntriesFrom, hselected] using
-        (ih (next + 1) depth).consSlot next (remaining index) .many true
+  intro indices next depth
+  exact selectedEntriesFrom_traverse selected remaining
+    (Result := fun _ _ entries => NoRecSelf ⟨entries, depth⟩)
+    (hnil := fun _ => NoRecSelf.empty)
+    (hfalse := by
+      intro index rest current tail hselected htail
+      exact htail.consSlot 0 0 .many false)
+    (htrue := by
+      intro index rest current tail hselected htail
+      exact htail.consSlot current (remaining index) .many true)
+    indices next
 
 /-- Concatenating two self-free logical entry blocks remains self-free. -/
 theorem NoRecSelf.appendEntries
@@ -3789,6 +6101,765 @@ theorem lowerFnBody_liftedEntries_preservesAt
   · exact hreleased
   · exact hcode
 
+/-- Semantic execution of one generated lifted body at an exact target
+fuel.  The stored capture prefix and the remaining lambda parameters are
+separated explicitly: selected outer values populate the framed source
+environment, while the complete supplied-parameter vector is reversed in
+front of it, exactly as in the source evaluator. -/
+theorem lowerFnBody_liftedEntries_run_value_within_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {limit compilerFuel targetFuel : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    (entryCount : Nat) (modes : List Uses) (body : IxIR0.Expr)
+    (selected : Nat → Bool)
+    {state finalState : LowSt} {code : Code}
+    (hadmissible : ParameterDropsAdmissible modes
+      (fun index => countUses index body))
+    (hselectDef : ∀ index, index < entryCount →
+      selected index = (countUses (modes.length + index) body != 0))
+    (hpositive : 0 < modes.length)
+    (hshared : modes.map worldOfUses =
+      List.replicate modes.length .shared)
+    (hrun : (lowerFnBody src (compilerFuel + 1)
+      (let captures := (List.range entryCount).filter selected
+       ⟨parameterEntries captures.length modes
+            (fun index => countUses index body) ++
+          selectedEntriesFrom selected
+            (fun index => countUses (modes.length + index) body)
+            (List.range entryCount) 0,
+        captures.length + modes.length⟩)
+      (let captures := (List.range entryCount).filter selected
+       parameterDrops captures.length modes
+          (fun index => countUses index body))
+      .shared body).run state = .ok code finalState)
+    (hextends : ExtraExtends finalState ambient)
+    {sourceEnv selectedSources parameterSources : List IxIR0.Value}
+    {sourceResult : IxIR0.Value}
+    {store store' : Store} {captureArgs parameterArgs : List RVal}
+    {value : RVal} {sourceRest : List (Owned × IxIR0.Value)}
+    {rest : List Root}
+    (hsourceLength : sourceEnv.length = entryCount)
+    (hselectedValues : ValuesAt sourceEnv
+      ((List.range entryCount).filter selected) selectedSources)
+    (hcaptureLength : captureArgs.length =
+      ((List.range entryCount).filter selected).length)
+    (hparameterLength : parameterArgs.length = modes.length)
+    (hcaptureGraph : Sim.ValuesGraph
+      (CompilerFunctionRel sourceCtx src ambient) store selectedSources
+      captureArgs)
+    (hparameterGraph : Sim.ValuesGraph
+      (CompilerFunctionRel sourceCtx src ambient) store parameterSources
+      parameterArgs)
+    (hsource : ∃ sourceFuel, IxIR0.eval sourceCtx sourceFuel
+      (parameterSources.reverse ++ sourceEnv) body = .ok sourceResult)
+    (hframe : Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient)
+      store sourceRest rest)
+    (hown : RootOwnership store
+      (rootsFor .shared (captureArgs ++ parameterArgs) ++ rest))
+    (htarget : targetFuel ≤ limit)
+    (hcodeRun : runCode ctx targetFuel
+      ⟨((List.range entryCount).filter selected).length + modes.length,
+        .shared, code⟩ store (captureArgs ++ parameterArgs).reverse code =
+      .ok (store', value)) :
+    Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient) store'
+        sourceResult value ∧
+      Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient) store'
+        sourceRest rest := by
+  let captures := (List.range entryCount).filter selected
+  let parameterRemaining : Nat → Nat := fun index => countUses index body
+  let captureRemaining : Nat → Nat :=
+    fun index => countUses (modes.length + index) body
+  let outerEntries := selectedEntriesFrom selected captureRemaining
+    (List.range entryCount) 0
+  let input : VEnv :=
+    ⟨parameterEntries captures.length modes parameterRemaining ++ outerEntries,
+      captures.length + modes.length⟩
+  let drops := parameterDrops captures.length modes parameterRemaining
+  have hrun' :
+      (lowerFnBody src (compilerFuel + 1) input drops .shared body).run state =
+        .ok code finalState := by
+    simpa [input, drops, outerEntries, parameterRemaining, captureRemaining,
+      captures] using hrun
+  simp only [lowerFnBody] at hrun'
+  obtain ⟨releaseResult, releaseState, hreleaseRun, hafterRelease⟩ :=
+    trackedBindRun_ok_inv hrun'
+  rcases releaseResult with ⟨middle, releaseEmit⟩
+  obtain ⟨bodyResult, bodyState, hbodyRun, hafterBody⟩ :=
+    trackedBindRun_ok_inv hafterRelease
+  rcases bodyResult with ⟨output, emit, av⟩
+  have hpure :
+      (releaseEmit ∘ emit) (.ret (av.toAtom output)) = code ∧
+        bodyState = finalState := by
+    simpa using hafterBody
+  obtain ⟨hcode, hbodyState⟩ := hpure
+  subst bodyState
+  have hinputNo : NoRecSelf input := by
+    apply NoRecSelf.appendEntries
+    · exact parameterEntries_noRecSelf captures.length modes
+        parameterRemaining (captures.length + modes.length)
+    · simpa [outerEntries] using
+        selectedEntriesFrom_noRecSelf selected captureRemaining
+          (List.range entryCount) 0 (captures.length + modes.length)
+  have hmiddleNo : NoRecSelf middle :=
+    releaseSlots_noRecSelf input hreleaseRun hinputNo
+  obtain ⟨parameterOutput, plannedEmit, hparameterPlan,
+      hparameterTracks⟩ :=
+    parameterDrops_releasePlan_tracked_atDepth captures.length
+      (captures.length + modes.length) modes parameterRemaining
+      (by simpa [parameterRemaining] using hadmissible)
+  let plannedMiddle := frameVEnvEntries parameterOutput outerEntries
+  have hplan : ReleasePlan input drops plannedMiddle plannedEmit := by
+    have hframed := hparameterPlan.frameEntries outerEntries
+    simpa [input, drops, plannedMiddle, outerEntries, frameVEnvEntries]
+      using hframed
+  have hplanRun : (releaseSlots input drops).run state =
+      .ok (plannedMiddle, plannedEmit) state := hplan.run state
+  have heq :
+      (plannedMiddle, plannedEmit) = (middle, releaseEmit) ∧
+        state = releaseState := by
+    simpa using hplanRun.symm.trans hreleaseRun
+  have hmiddle : plannedMiddle = middle := congrArg Prod.fst heq.1
+  have hemit : plannedEmit = releaseEmit := congrArg Prod.snd heq.1
+  subst middle
+  subst releaseEmit
+  cases heq.2
+  have hparameterOutputLength : parameterOutput.entries.length =
+      modes.length := by
+    calc
+      parameterOutput.entries.length =
+          (parameterEntries captures.length modes parameterRemaining).length :=
+        hparameterPlan.entries_length
+      _ = modes.length := parameterEntries_length _ _ _
+  have htracks : EntriesTrackCounts plannedMiddle
+      (modes.length + entryCount) (fun index => countUses index body) := by
+    have hframed := hparameterTracks.frameSelectedRange
+      hparameterOutputLength selected captureRemaining 0 entryCount 0
+      (fun offset hoffset => by
+        simpa [captureRemaining] using hselectDef offset hoffset)
+      (fun offset hoffset => by
+        simp [captureRemaining, parameterRemaining])
+    simpa [plannedMiddle, outerEntries, List.range_eq_range'] using hframed
+  have hconsume := lowerE_consumesEntries hbodyRun
+  have hcount := lowerE_preservesEntryCount hbodyRun
+  have hmiddleLength : plannedMiddle.entries.length =
+      modes.length + entryCount := by
+    calc
+      plannedMiddle.entries.length = input.entries.length :=
+        hplan.entries_length
+      _ = modes.length + entryCount := by
+        simp [input, outerEntries, parameterRemaining, captureRemaining]
+  have hreleased : EntriesReleased output.entries :=
+    hconsume.entriesReleased htracks (Eq.trans hcount hmiddleLength)
+  obtain ⟨sourceFuel, hsourceEval⟩ := hsource
+  have hbodySound : LowerResultValueSoundBelow
+      (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) ctx
+      ⟨captures.length + modes.length, .shared, code⟩ limit plannedMiddle
+      output (parameterSources.reverse ++ sourceEnv)
+      (parameterSources.reverse ++ sourceEnv) sourceResult .shared emit av :=
+    lowerE_run_value_sound_within_noRecSelf_below
+      (recSelfRel := fun _ _ => False)
+      (cur := (⟨captures.length + modes.length, .shared, code⟩ : FnDef))
+      henv hrepresented hcontracts hvalues hsourceEval hbodyRun hextends
+      hmiddleNo
+  have hfull : LowerResultValueSoundBelow
+      (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) ctx
+      ⟨captures.length + modes.length, .shared, code⟩ limit input output
+      (parameterSources.reverse ++ sourceEnv)
+      (parameterSources.reverse ++ sourceEnv) sourceResult .shared
+      (plannedEmit ∘ emit) av :=
+    hbodySound.afterRelease
+      (hplan.valueSoundBelow (parameterSources.reverse ++ sourceEnv))
+  have hentryGraph : VEnvValueGraph
+      (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) store
+      input (parameterSources.reverse ++ sourceEnv)
+      (captureArgs ++ parameterArgs).reverse
+      ((rootsForWorlds (modes.map worldOfUses) parameterArgs).reverse ++
+        rootsFor .shared captureArgs) := by
+    simpa [input, outerEntries, parameterRemaining, captureRemaining,
+      captures] using
+      VEnvValueGraph.lifted (recSelfRel := fun _ _ => False)
+        entryCount modes parameterRemaining selected captureRemaining
+        hsourceLength hselectedValues hcaptureLength hparameterLength
+        hcaptureGraph hparameterGraph hpositive hshared hown
+  have hparameterRoots :
+      rootsForWorlds (modes.map worldOfUses) parameterArgs =
+        rootsFor .shared parameterArgs := by
+    rw [hshared]
+    exact rootsForWorlds_replicate_eq_rootsFor .shared hparameterLength
+  have hpre : GraphOwnsVEnv
+      (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) input
+      (parameterSources.reverse ++ sourceEnv) sourceRest rest store
+      (captureArgs ++ parameterArgs).reverse := by
+    refine ⟨(rootsForWorlds
+        (modes.map worldOfUses) parameterArgs).reverse ++
+          rootsFor .shared captureArgs, hentryGraph, hframe, ?_⟩
+    have hrootPerm :
+        (rootsFor .shared (captureArgs ++ parameterArgs) ++ rest).Perm
+          (((rootsForWorlds (modes.map worldOfUses) parameterArgs).reverse ++
+              rootsFor .shared captureArgs) ++ rest) := by
+      rw [hparameterRoots]
+      simp only [rootsFor, List.map_append]
+      exact (List.perm_append_comm.trans
+        ((List.reverse_perm
+          (parameterArgs.map fun value => (⟨.shared, value⟩ : Root))).symm
+            |>.append_right (captureArgs.map fun value =>
+              (⟨.shared, value⟩ : Root)))).append_right rest
+    exact hown.perm hrootPerm
+  have hcodeRun' : runCode ctx targetFuel
+      ⟨captures.length + modes.length, .shared, code⟩ store
+      (captureArgs ++ parameterArgs).reverse
+      ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
+        .ok (store', value) := by
+    rw [hcode]
+    simpa [captures] using hcodeRun
+  exact hfull.closeGraph hreleased sourceRest rest htarget hpre hcodeRun'
+
+/-- A compiler-provenanced lifted pap computes its residual source closure
+when the stored prefix plus the newly supplied arguments saturate the
+generated declaration.  This is the generated-function branch needed by
+the semantic `applyGo` proof; unlike `FnValuePreservesAt`, selected outer
+captures are target calling arguments but are not source applications. -/
+theorem invoke_lifted_value_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {limit fuel : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    {sourceFunction sourceResult : IxIR0.Value}
+    {address : Ixon.Address} {arity : Nat}
+    {captures sourceArgs : List IxIR0.Value}
+    {store store' : Store} {got args : List RVal} {value : RVal}
+    {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root}
+    (hlifted : CompilerLiftedFunctionRel src ambient sourceFunction address
+      arity captures)
+    (hgot : Sim.ValuesGraph (CompilerFunctionRel sourceCtx src ambient)
+      store captures got)
+    (hargs : Sim.ValuesGraph (CompilerFunctionRel sourceCtx src ambient)
+      store sourceArgs args)
+    (happlies : SourceApplies sourceCtx sourceFunction sourceArgs
+      sourceResult)
+    (hframe : Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient)
+      store sourceRest rest)
+    (hown : RootOwnership store
+      (rootsFor .shared (got ++ args) ++ rest))
+    (hfuel : fuel ≤ limit)
+    (hinvoke : invoke ctx fuel address (got ++ args) store =
+      .ok (store', value)) :
+    Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient) store'
+        sourceResult value ∧
+      Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient) store'
+        sourceRest rest := by
+  obtain ⟨sourceEnv, expr, selectedSources, suppliedSources, hliftCode,
+      hselectedValues, hcaptures, harity, hprefix⟩ := hlifted
+  subst captures
+  subst arity
+  obtain ⟨bodyCompilerFuel, bodyInitial, bodyFinal, code, hsafe,
+      hbodyRun, hbodyExtends, hmember⟩ := hliftCode
+  have hselectedLength := hselectedValues.length
+  rw [← hselectedLength] at hmember
+  have hdecl : ctx.decls address = some (.fn
+      ⟨selectedSources.length + lamArity expr, .shared, code⟩) :=
+    hrepresented.decl hmember
+  have hmodes := papSafe_lamUses_eq_replicate hsafe
+  have hadmissible : ParameterDropsAdmissible (lamUses expr)
+      (fun index => countUses index (stripLams expr)) := by
+    rw [hmodes]
+    exact parameterDropsAdmissible_replicate_many _ _
+  have hselectDef : ∀ index, index < sourceEnv.length →
+      decide (0 < countUses index expr) =
+        (countUses ((lamUses expr).length + index) (stripLams expr) != 0) := by
+    intro index _
+    rw [lamUses_length]
+    rw [← countUses_eq_stripLams_shift expr index]
+    cases countUses index expr <;> rfl
+  have hshared : (lamUses expr).map worldOfUses =
+      List.replicate (lamUses expr).length .shared := by
+    rw [hmodes]
+    simp [worldOfUses]
+  have hpositive : 0 < (lamUses expr).length := by
+    have hunder := hprefix.length_lt_lamArity
+    rw [lamUses_length]
+    omega
+  cases bodyCompilerFuel with
+  | zero =>
+      exact (trackedThrowRun_not_ok
+        (by simpa [lowerFnBody] using hbodyRun)).elim
+  | succ compilerFuel =>
+    let selectedArgs := got.take selectedSources.length
+    let suppliedArgs := got.drop selectedSources.length
+    have hgotSplit : selectedArgs ++ suppliedArgs = got := by
+      exact List.take_append_drop selectedSources.length got
+    have hselectedGraph : Sim.ValuesGraph
+        (CompilerFunctionRel sourceCtx src ambient) store selectedSources
+        selectedArgs := by
+      simpa [selectedArgs] using hgot.take selectedSources.length
+    have hsuppliedGraph : Sim.ValuesGraph
+        (CompilerFunctionRel sourceCtx src ambient) store suppliedSources
+        suppliedArgs := by
+      simpa [suppliedArgs] using hgot.drop selectedSources.length
+    have hparameterGraph : Sim.ValuesGraph
+        (CompilerFunctionRel sourceCtx src ambient) store
+        (suppliedSources ++ sourceArgs) (suppliedArgs ++ args) :=
+      hsuppliedGraph.append hargs
+    have hselectedArgsLength : selectedArgs.length =
+        (liftCaptureIndices sourceEnv.length expr).length := by
+      calc
+        selectedArgs.length = selectedSources.length := by
+          simpa [selectedArgs] using hselectedGraph.length.symm
+        _ = (liftCaptureIndices sourceEnv.length expr).length :=
+          hselectedValues.length
+    have htotalSplit : selectedArgs ++ (suppliedArgs ++ args) =
+        got ++ args := by
+      rw [← List.append_assoc, hgotSplit]
+    have hownSplit : RootOwnership store
+        (rootsFor .shared (selectedArgs ++ (suppliedArgs ++ args)) ++
+          rest) := by
+      rw [htotalSplit]
+      exact hown
+    have hbodyRun' :
+        (lowerFnBody src (compilerFuel + 1)
+          (liftedBodyVEnv sourceEnv.length expr)
+          (liftedBodyDrops sourceEnv.length expr) .shared
+          (stripLams expr)).run bodyInitial = .ok code bodyFinal := by
+      simpa using hbodyRun
+    cases fuel with
+    | zero => simp [invoke] at hinvoke
+    | succ innerFuel =>
+      simp only [invoke, hdecl] at hinvoke
+      split at hinvoke
+      · contradiction
+      next hlength =>
+        have htotalLength : (got ++ args).length =
+            selectedSources.length + lamArity expr := by
+          simpa using hlength
+        have hparameterLength : (suppliedArgs ++ args).length =
+            (lamUses expr).length := by
+          have hgotLength : got.length =
+              selectedSources.length + suppliedSources.length := by
+            simpa using hgot.length.symm
+          have hsuppliedLength : suppliedArgs.length =
+              suppliedSources.length := hsuppliedGraph.length.symm
+          simp only [List.length_append] at htotalLength ⊢
+          rw [lamUses_length]
+          omega
+        have hlambdaLength : (suppliedSources ++ sourceArgs).length =
+            lamArity expr := by
+          calc
+            (suppliedSources ++ sourceArgs).length =
+                (suppliedArgs ++ args).length := hparameterGraph.length
+            _ = (lamUses expr).length := hparameterLength
+            _ = lamArity expr := lamUses_length expr
+        obtain ⟨sourceFuel, hsourceEval⟩ :=
+          hprefix.saturate hlambdaLength happlies
+        cases hcodeEval : runCode ctx innerFuel
+            ⟨selectedSources.length + lamArity expr, .shared, code⟩ store
+            (got ++ args).reverse code with
+        | error error =>
+            rw [hcodeEval] at hinvoke
+            change (.error error : Except Err (Store × RVal)) =
+              .ok (store', value) at hinvoke
+            contradiction
+        | ok out =>
+            rw [hcodeEval] at hinvoke
+            change checkResultWorld .shared out = .ok (store', value) at hinvoke
+            obtain ⟨hpair, _⟩ := checkResultWorld_ok hinvoke
+            subst out
+            have hcodeEval' : runCode ctx innerFuel
+                ⟨(liftCaptureIndices sourceEnv.length expr).length +
+                    (lamUses expr).length,
+                  .shared, code⟩ store
+                (selectedArgs ++ (suppliedArgs ++ args)).reverse code =
+                .ok (store', value) := by
+              rw [htotalSplit, ← hselectedLength, lamUses_length]
+              exact hcodeEval
+            exact lowerFnBody_liftedEntries_run_value_within_below
+              (compilerFuel := compilerFuel) (targetFuel := innerFuel)
+              henv hrepresented hcontracts hvalues sourceEnv.length
+              (lamUses expr) (stripLams expr)
+              (fun index => countUses index expr > 0)
+              hadmissible hselectDef hpositive hshared
+              (by simpa [liftedBodyVEnv, liftedBodyDrops,
+                liftCaptureIndices] using hbodyRun')
+              hbodyExtends (sourceEnv := sourceEnv)
+              (selectedSources := selectedSources)
+              (parameterSources := suppliedSources ++ sourceArgs)
+              (captureArgs := selectedArgs)
+              (parameterArgs := suppliedArgs ++ args)
+              (sourceResult := sourceResult) rfl
+              (by simpa [liftCaptureIndices] using hselectedValues)
+              (by simpa [liftCaptureIndices] using hselectedArgsLength)
+              hparameterLength hselectedGraph hparameterGraph
+              ⟨sourceFuel, hsourceEval⟩ hframe hownSplit (by omega)
+              hcodeEval'
+
+/-- Semantic companion of `applyGo_preparePap_owned`.  Retaining the stored
+pap values is a graph extension; consuming the old pap is a restriction, and
+the exact post-state ownership roots keep every stored argument, new
+argument, and caller-frame graph live across both steps. -/
+theorem applyGo_preparePap_valueGraphs
+    {funRel : Sim.FunctionRel} {ctx : Ctx} {fuel : Nat}
+    {store dupStore readyStore : Store} {loc rc : Nat}
+    {address : Ixon.Address} {arity : Nat} {got : Array RVal}
+    {args : List RVal} {captures sourceArgs : List IxIR0.Value}
+    {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root}
+    (hget : store.get? loc = some
+      ⟨.shared, rc, .papN address arity got⟩)
+    (hcaptures : Sim.ValuesGraph funRel store captures got.toList)
+    (hargs : Sim.ValuesGraph funRel store sourceArgs args)
+    (hframe : Sim.RootsGraph funRel store sourceRest rest)
+    (hown : RootOwnership store
+      (⟨.shared, .loc loc⟩ :: rootsFor .shared args ++ rest))
+    (hdup : dupVals store got.toList = .ok dupStore)
+    (hdrop : dropVal ctx fuel dupStore (.loc loc) = .ok readyStore) :
+    Sim.ValuesGraph funRel readyStore captures got.toList ∧
+      Sim.ValuesGraph funRel readyStore sourceArgs args ∧
+      Sim.RootsGraph funRel readyStore sourceRest rest ∧
+      RootOwnership readyStore
+        (rootsFor .shared (got.toList ++ args) ++ rest) := by
+  have hready : RootOwnership readyStore
+      (rootsFor .shared (got.toList ++ args) ++ rest) :=
+    applyGo_preparePap_owned hget hown hdup hdrop
+  have hextends : StoreGraphExtends store dupStore := dupVals_extends hdup
+  have hrestricts : StoreGraphRestricts dupStore readyStore :=
+    dropVal_restricts hdrop
+  have hcombined : Sim.ValuesGraph funRel dupStore
+      (captures ++ sourceArgs) (got.toList ++ args) :=
+    (hcaptures.append hargs).monoStore hextends
+  have hcombinedReady : Sim.ValuesGraph funRel readyStore
+      (captures ++ sourceArgs) (got.toList ++ args) := by
+    apply hcombined.ofRestrictsIn hrestricts hready
+    intro runtime hmember
+    exact ⟨.shared, List.mem_append_left rest (by
+      simpa [rootsFor] using hmember)⟩
+  obtain ⟨hcapturesReady, hargsReady⟩ :=
+    hcombinedReady.splitAppend hcaptures.length
+  have hframeReady : Sim.RootsGraph funRel readyStore sourceRest rest := by
+    apply hframe.monoStore hextends |>.ofRestrictsIn hrestricts hready
+    intro root hmember
+    exact List.mem_append_right _ hmember
+  exact ⟨hcapturesReady, hargsReady, hframeReady, hready⟩
+
+/-- Ownership half of lifted-function invocation, recovered directly from
+the same exact generated-body provenance used by
+`invoke_lifted_value_below`. -/
+theorem invoke_lifted_owned_below
+    {src : IxIR0.Env} {ambient : LowSt} {ctx : Ctx} {fuel : Nat}
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    {sourceFunction : IxIR0.Value} {address : Ixon.Address} {arity : Nat}
+    {captures : List IxIR0.Value} {runtimeArgs : List RVal}
+    {store store' : Store} {value : RVal} {rest : List Root}
+    (hlifted : CompilerLiftedFunctionRel src ambient sourceFunction address
+      arity captures)
+    (hown : RootOwnership store
+      (rootsFor .shared runtimeArgs ++ rest))
+    (hinvoke : invoke ctx fuel address runtimeArgs store =
+      .ok (store', value)) :
+    RootOwnership store' (⟨.shared, value⟩ :: rest) := by
+  obtain ⟨sourceEnv, expr, selectedSources, suppliedSources, hliftCode,
+      hselectedValues, _, _, hprefix⟩ := hlifted
+  obtain ⟨bodyCompilerFuel, bodyInitial, bodyFinal, code, hsafe,
+      hbodyRun, hbodyExtends, hmember⟩ := hliftCode
+  have hdecl : ctx.decls address = some (.fn
+      ⟨(liftCaptureIndices sourceEnv.length expr).length + lamArity expr,
+        .shared, code⟩) := hrepresented.decl hmember
+  have hmodes := papSafe_lamUses_eq_replicate hsafe
+  have hadmissible : ParameterDropsAdmissible (lamUses expr)
+      (fun index => countUses index (stripLams expr)) := by
+    rw [hmodes]
+    exact parameterDropsAdmissible_replicate_many _ _
+  have hselectDef : ∀ index, index < sourceEnv.length →
+      decide (0 < countUses index expr) =
+        (countUses ((lamUses expr).length + index) (stripLams expr) != 0) := by
+    intro index _
+    rw [lamUses_length]
+    rw [← countUses_eq_stripLams_shift expr index]
+    cases countUses index expr <;> rfl
+  have hshared : (lamUses expr).map worldOfUses =
+      List.replicate (lamUses expr).length .shared := by
+    rw [hmodes]
+    simp [worldOfUses]
+  have hpositive : 0 < (lamUses expr).length := by
+    have hunder := hprefix.length_lt_lamArity
+    rw [lamUses_length]
+    omega
+  cases bodyCompilerFuel with
+  | zero =>
+      exact (trackedThrowRun_not_ok
+        (by simpa [lowerFnBody] using hbodyRun)).elim
+  | succ compilerFuel =>
+    have hbodyRun' :
+        (lowerFnBody src (compilerFuel + 1)
+          (liftedBodyVEnv sourceEnv.length expr)
+          (liftedBodyDrops sourceEnv.length expr) .shared
+          (stripLams expr)).run bodyInitial = .ok code bodyFinal := by
+      simpa using hbodyRun
+    have hbodyRepresented : ExtraRepresented ctx bodyFinal :=
+      hrepresented.of_extends hbodyExtends
+    have hownership : FnOwnershipContractBelow ctx
+        ⟨(liftCaptureIndices sourceEnv.length expr).length + lamArity expr,
+          .shared, code⟩
+        (List.replicate
+          ((liftCaptureIndices sourceEnv.length expr).length +
+            lamArity expr) .shared) fuel := by
+      constructor
+      · simp
+      · intro smaller hsmaller
+        have hpreserves : FnOwnershipPreservesAt ctx
+            ⟨(liftCaptureIndices sourceEnv.length expr).length +
+                (lamUses expr).length,
+              .shared, code⟩
+            (List.replicate
+              ((liftCaptureIndices sourceEnv.length expr).length +
+                (lamUses expr).length) .shared) smaller :=
+          lowerFnBody_liftedEntries_preservesAt
+          (limit := smaller) (fuel := compilerFuel)
+          (state := bodyInitial) (finalState := bodyFinal) (code := code)
+          (hcontracts.apply.below smaller)
+          (hcontracts.decls.below smaller) sourceEnv.length
+          (lamUses expr) (stripLams expr)
+          (fun index => countUses index expr > 0)
+          hadmissible hselectDef hpositive hshared
+          (by simpa [liftedBodyVEnv, liftedBodyDrops,
+            liftCaptureIndices] using hbodyRun') hbodyRepresented
+        intro callStore callStore' callArgs callValue callRest hlength
+          hcallOwn hcallRun
+        exact hpreserves
+          (by simpa [lamUses_length] using hlength)
+          (by simpa [lamUses_length] using hcallOwn)
+          (by simpa [lamUses_length] using hcallRun)
+    have hargsLength : runtimeArgs.length =
+        (liftCaptureIndices sourceEnv.length expr).length +
+          lamArity expr := by
+      simpa [declArity] using invoke_success_length hdecl hinvoke
+    have hroots : rootsForWorlds
+        (List.replicate
+          ((liftCaptureIndices sourceEnv.length expr).length +
+            lamArity expr) .shared) runtimeArgs =
+        rootsFor .shared runtimeArgs :=
+      rootsForWorlds_replicate_eq_rootsFor .shared hargsLength
+    have hown' : RootOwnership store
+        (rootsForWorlds
+          (List.replicate
+            ((liftCaptureIndices sourceEnv.length expr).length +
+              lamArity expr) .shared) runtimeArgs ++ rest) := by
+      rwa [hroots]
+    exact invoke_fn_owned_below hdecl hownership hown' hinvoke
+
+/-- Saturating invocation for every origin admitted by
+`CompilerFunctionRel`.  Besides source-result and caller-frame graphs, the
+paired ownership conclusion is retained for an over-application tail. -/
+theorem invoke_compilerFunction_value_owned_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {limit fuel : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
+    (hwrapperValue : ∀ (memo : WrapperMemo)
+        (baseFunction : IxIR0.Value),
+      sourceCtx.env memo.source = some (.ctor memo.tag memo.arity) →
+      SourceRefValue sourceCtx memo.source baseFunction →
+      FnValueContract (CompilerFunctionRel sourceCtx src ambient)
+        sourceCtx ctx
+        ⟨memo.arity, .shared,
+          .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
+            (descendingVars memo.arity).toArray) (.ret (.var 0))⟩
+        (List.replicate memo.arity .shared) baseFunction)
+    (hwrapperOwnership : ∀ memo : WrapperMemo,
+      FnOwnershipContract ctx
+        ⟨memo.arity, .shared,
+          .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
+            (descendingVars memo.arity).toArray) (.ret (.var 0))⟩
+        (List.replicate memo.arity .shared))
+    {sourceFunction sourceResult : IxIR0.Value}
+    {address : Ixon.Address} {arity : Nat}
+    {captures sourceArgs : List IxIR0.Value}
+    {store store' : Store} {got args : List RVal} {value : RVal}
+    {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root}
+    (hrel : CompilerFunctionRel sourceCtx src ambient sourceFunction address
+      arity captures)
+    (hcaptures : Sim.ValuesGraph
+      (CompilerFunctionRel sourceCtx src ambient) store captures got)
+    (hargs : Sim.ValuesGraph (CompilerFunctionRel sourceCtx src ambient)
+      store sourceArgs args)
+    (happlies : SourceApplies sourceCtx sourceFunction sourceArgs
+      sourceResult)
+    (hframe : Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient)
+      store sourceRest rest)
+    (hown : RootOwnership store
+      (rootsFor .shared (got ++ args) ++ rest))
+    (hfuel : fuel ≤ limit)
+    (hinvoke : invoke ctx fuel address (got ++ args) store =
+      .ok (store', value)) :
+    Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient) store'
+        sourceResult value ∧
+      Sim.RootsGraph (CompilerFunctionRel sourceCtx src ambient) store'
+          sourceRest rest ∧
+        RootOwnership store' (⟨.shared, value⟩ :: rest) := by
+  cases hrel with
+  | @source relatedFunction baseFunction targetAddress targetArity
+      storedSources source hsrc heligible harity href hprefix hunder =>
+    have hfullGraph : Sim.ValuesGraph
+        (CompilerFunctionRel sourceCtx src ambient) store
+        (captures ++ sourceArgs) (got ++ args) :=
+      hcaptures.append hargs
+    have hfullApply : SourceApplies sourceCtx baseFunction
+        (captures ++ sourceArgs) sourceResult :=
+      hprefix.append happlies
+    cases source with
+    | defn result body =>
+      obtain ⟨hresultShared, hsafe⟩ := heligible
+      subst result
+      obtain ⟨d, hdecl, harityDef, hresultDef, hownership⟩ :=
+        hcontracts.decls.defn hsrc
+      have hvalueContract : FnValueContractBelow
+          (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx d
+          ((lamUses body).map worldOfUses) baseFunction limit := by
+        apply hvalues.decls.fnContract hsrc (by rfl) hdecl href
+        simpa using harityDef.symm
+      have hmodes := papSafe_lamUses_eq_replicate hsafe
+      have hworlds : (lamUses body).map worldOfUses =
+          List.replicate (lamUses body).length .shared := by
+        rw [hmodes]
+        simp [worldOfUses]
+      have htotalLength : (got ++ args).length =
+          (lamUses body).length := by
+        have hinvokeLength := invoke_success_length hdecl hinvoke
+        simpa [declArity, harityDef] using hinvokeLength
+      have hroots : rootsForWorlds
+          ((lamUses body).map worldOfUses) (got ++ args) =
+          rootsFor .shared (got ++ args) := by
+        rw [hworlds]
+        exact rootsForWorlds_replicate_eq_rootsFor .shared htotalLength
+      have hown' : RootOwnership store
+          (rootsForWorlds ((lamUses body).map worldOfUses)
+            (got ++ args) ++ rest) := by
+        rwa [hroots]
+      have hsemantic := invoke_fn_value_below hdecl
+        hvalueContract.arity_eq
+        (fun {smaller} hsmaller => hvalueContract.preserves
+          (Nat.lt_of_lt_of_le hsmaller hfuel))
+        hfullGraph hfullApply hframe hown' hinvoke
+      have howned := invoke_fn_owned hdecl hownership hown' hinvoke
+      rw [hresultDef] at howned
+      exact ⟨hsemantic.1, hsemantic.2, howned⟩
+    | ctor tag ctorArity => exact heligible.elim
+    | recursor numArgs natLit rules =>
+      obtain ⟨d, hdecl, harityRec, hresultRec, hownership⟩ :=
+        hcontracts.decls.recursor hsrc
+      have hvalueContract : FnValueContractBelow
+          (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx d
+          (List.replicate (numArgs + 1) .shared) baseFunction limit := by
+        apply hvalues.decls.fnContract hsrc (by rfl) hdecl href
+        simpa using harityRec.symm
+      have htotalLength : (got ++ args).length = numArgs + 1 := by
+        have hinvokeLength := invoke_success_length hdecl hinvoke
+        simpa [declArity, harityRec] using hinvokeLength
+      have hroots : rootsForWorlds
+          (List.replicate (numArgs + 1) .shared) (got ++ args) =
+          rootsFor .shared (got ++ args) :=
+        rootsForWorlds_replicate_eq_rootsFor .shared htotalLength
+      have hown' : RootOwnership store
+          (rootsForWorlds (List.replicate (numArgs + 1) .shared)
+            (got ++ args) ++ rest) := by
+        rwa [hroots]
+      have hsemantic := invoke_fn_value_below hdecl
+        hvalueContract.arity_eq
+        (fun {smaller} hsmaller => hvalueContract.preserves
+          (Nat.lt_of_lt_of_le hsmaller hfuel))
+        hfullGraph hfullApply hframe hown' hinvoke
+      have howned := invoke_fn_owned hdecl hownership hown' hinvoke
+      rw [hresultRec] at howned
+      exact ⟨hsemantic.1, hsemantic.2, howned⟩
+    | extern externArity =>
+      have hdecl := hcontracts.decls.extern hsrc
+      have hlookup : sourceCtx.env address =
+          some (.extern externArity) := by
+        rw [henv]
+        exact hsrc
+      have hsourceLength : (captures ++ sourceArgs).length =
+          externArity := by
+        have hinvokeLength := invoke_success_length hdecl hinvoke
+        have hgraphLength := hfullGraph.length
+        simpa [declArity] using hgraphLength.trans hinvokeLength
+      cases fuel with
+      | zero => simp [invoke] at hinvoke
+      | succ innerFuel =>
+        simp only [invoke, hdecl] at hinvoke
+        split at hinvoke
+        · contradiction
+        next _ =>
+          cases horacle : callScalarOracle ctx address (got ++ args) with
+          | error error =>
+              rw [horacle] at hinvoke
+              contradiction
+          | ok runtimeResult =>
+              rw [horacle] at hinvoke
+              have hpair : (store, runtimeResult) = (store', value) :=
+                Except.ok.inj hinvoke
+              cases hpair
+              have hvalueGraph := hvalues.extern.preserves hlookup href
+                hsourceLength hfullApply hfullGraph horacle
+              have hscalar := callScalarOracle_ok horacle
+              have howned : RootOwnership store
+                  (⟨.shared, value⟩ :: rest) :=
+                (hown.dropScalars hscalar.1).addNoLocation
+                  (RVal.rvalLocation?_eq_none_of_isScalar hscalar.2)
+              exact ⟨hvalueGraph, hframe, howned⟩
+  | @wrapper relatedFunction baseFunction storedSources memo hmember hsrc
+      href hprefix hunder =>
+    let wrapperDef : FnDef :=
+      ⟨memo.arity, .shared,
+        .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
+          (descendingVars memo.arity).toArray) (.ret (.var 0))⟩
+    have hdecl : ctx.decls memo.wrapper = some (.fn wrapperDef) := by
+      simpa [wrapperDef, ctorWrapperDecl] using
+        hrepresented.wrapper hmember
+    have hlookup : sourceCtx.env memo.source =
+        some (.ctor memo.tag memo.arity) := by
+      rw [henv]
+      exact hsrc
+    have hfullGraph : Sim.ValuesGraph
+        (CompilerFunctionRel sourceCtx src ambient) store
+        (captures ++ sourceArgs) (got ++ args) :=
+      hcaptures.append hargs
+    have hfullApply : SourceApplies sourceCtx baseFunction
+        (captures ++ sourceArgs) sourceResult :=
+      hprefix.append happlies
+    have hvalueContract := hwrapperValue memo baseFunction hlookup href
+    have hownership := hwrapperOwnership memo
+    have htotalLength : (got ++ args).length = memo.arity := by
+      have hinvokeLength := invoke_success_length hdecl hinvoke
+      simpa [wrapperDef, declArity] using hinvokeLength
+    have hroots : rootsForWorlds
+        (List.replicate memo.arity .shared) (got ++ args) =
+        rootsFor .shared (got ++ args) :=
+      rootsForWorlds_replicate_eq_rootsFor .shared htotalLength
+    have hown' : RootOwnership store
+        (rootsForWorlds (List.replicate memo.arity .shared)
+          (got ++ args) ++ rest) := by
+      rwa [hroots]
+    have hsemantic := invoke_fn_value_below hdecl hvalueContract.arity_eq
+      (fun {_} _ => hvalueContract.preserves) hfullGraph hfullApply hframe
+      hown' hinvoke
+    have howned := invoke_fn_owned hdecl hownership hown' hinvoke
+    exact ⟨hsemantic.1, hsemantic.2, howned⟩
+  | lifted hlifted =>
+    have hsemantic := invoke_lifted_value_below henv hrepresented
+      hcontracts hvalues hlifted hcaptures hargs happlies hframe hown hfuel
+      hinvoke
+    have howned := invoke_lifted_owned_below hrepresented hcontracts
+      hlifted hown hinvoke
+    exact ⟨hsemantic.1, hsemantic.2, howned⟩
+
 /-- A successful lambda lowering adds the generated lifted declaration to the
 compile state, and that declaration has the all-shared ownership contract
 advertised by the emitted partial application. -/
@@ -3813,113 +6884,111 @@ theorem lowerLam_generatedFn_preservesAt
       FnOwnershipPreservesAt ctx
         ⟨captures.length + lamArity expr, .shared, code⟩
         (List.replicate (captures.length + lamArity expr) .shared) limit := by
-  dsimp only
-  cases hp : papSafe expr with
-  | false => simp [lowerLam, hp] at hrun
-  | true =>
-    simp only [lowerLam] at hrun
-    simp only [hp, ↓reduceIte, bind_pure_comp] at hrun
-    let captures := (List.range input.entries.length).filter
-      (fun index => countUses index expr > 0)
-    have hcaptures : captures = (List.range input.entries.length).filter
-        (fun index => countUses index expr > 0) := rfl
-    rw [← hcaptures] at hrun
-    obtain ⟨captureResult, captureState, hcaptureRun, hafterCapture⟩ :=
-      trackedBindRun_ok_inv hrun
-    rcases captureResult with ⟨captureOutput, captureEmit, captureValues⟩
-    obtain ⟨fnAddr, addressState, hfreshRun, hafterFresh⟩ :=
-      trackedBindRun_ok_inv hafterCapture
-    obtain ⟨code, bodyState, hbodyRun, hafterBody⟩ :=
-      trackedBindRun_ok_inv hafterFresh
-    change
-      (pushExtra (fnAddr, .fn
-          ⟨captures.length + lamArity expr, .shared, code⟩) >>= fun _ =>
-        pure (captureOutput.bump,
-          captureEmit ∘ emitOp (.papp fnAddr
-            (captureValues.map (·.toAtom captureOutput)).toArray),
-          .slotA captureOutput.depth)).run bodyState =
-        .ok (output, emit, value) finalState at hafterBody
-    obtain ⟨unitValue, pushedState, hpushRun, hpureRun⟩ :=
-      trackedBindRun_ok_inv hafterBody
-    cases unitValue
-    have hpure :
-        (captureOutput.bump,
-            captureEmit ∘ emitOp (.papp fnAddr
-              (captureValues.map (·.toAtom captureOutput)).toArray),
-            AVal.slotA captureOutput.depth) = (output, emit, value) ∧
-          pushedState = finalState := by
-      simpa using hpureRun
-    have hstate := hpure.2
-    subst finalState
-    have hbodyRepresented : ExtraRepresented ctx bodyState :=
-      hrepresented.of_extends (pushExtra_extraExtends hpushRun)
-    have hmember :
-        (fnAddr, .fn
+  let captures := liftCaptureIndices input.entries.length expr
+  change ∃ address code,
+    (address, .fn
+      ⟨captures.length + lamArity expr, .shared, code⟩) ∈
+        finalState.extra ∧
+    ctx.decls address = some (.fn
+      ⟨captures.length + lamArity expr, .shared, code⟩) ∧
+    FnOwnershipPreservesAt ctx
+      ⟨captures.length + lamArity expr, .shared, code⟩
+      (List.replicate (captures.length + lamArity expr) .shared) limit
+  refine lowerLam_run_core
+    (Result := fun finalState _ _ _ =>
+      ExtraRepresented ctx finalState →
+      ∃ address code,
+        (address, .fn
           ⟨captures.length + lamArity expr, .shared, code⟩) ∈
-            pushedState.extra := by
-      simp [pushExtra] at hpushRun
-      subst pushedState
-      simp
-    have hdecl := hrepresented.decl hmember
-    have hmodes := papSafe_lamUses_eq_replicate hp
-    have hentryCount : captureOutput.entries.length = input.entries.length :=
-      lowerCaptures_preservesEntryCount expr hcaptureRun
-    have hadmissible : ParameterDropsAdmissible (lamUses expr)
-        (fun index => countUses index (stripLams expr)) := by
-      rw [hmodes]
-      exact parameterDropsAdmissible_replicate_many _ _
-    have hselected : ∀ index, index < input.entries.length →
-        decide (0 < countUses index expr) =
-          (countUses ((lamUses expr).length + index) (stripLams expr) != 0) := by
-      intro index _
-      rw [lamUses_length]
-      rw [← countUses_eq_stripLams_shift expr index]
-      cases countUses index expr <;> rfl
-    have hshared : (lamUses expr).map worldOfUses =
-        List.replicate (lamUses expr).length .shared := by
-      rw [hmodes]
-      simp [worldOfUses]
-    cases fuel with
-    | zero =>
-      exact (trackedThrowRun_not_ok
-        (by simpa [lowerFnBody] using hbodyRun)).elim
-    | succ bodyFuel =>
-      have hbodyRun' :
-          (lowerFnBody src (bodyFuel + 1)
-            (let generatedCaptures :=
-                (List.range input.entries.length).filter
-                  (fun index => countUses index expr > 0)
-             ⟨parameterEntries generatedCaptures.length (lamUses expr)
-                  (fun index => countUses index (stripLams expr)) ++
-                selectedEntriesFrom
-                  (fun index => countUses index expr > 0)
-                  (fun index => countUses ((lamUses expr).length + index)
-                    (stripLams expr))
-                  (List.range input.entries.length) 0,
-              generatedCaptures.length + (lamUses expr).length⟩)
-            (let generatedCaptures :=
-                (List.range input.entries.length).filter
-                  (fun index => countUses index expr > 0)
-             parameterDrops generatedCaptures.length (lamUses expr)
-                (fun index => countUses index (stripLams expr)))
-            .shared (stripLams expr)).run addressState =
-              .ok code bodyState := by
-        simpa [captures, lamUses_length, hentryCount] using hbodyRun
-      have hpreserves : FnOwnershipPreservesAt ctx
-          ⟨captures.length + (lamUses expr).length, .shared, code⟩
+            finalState.extra ∧
+        ctx.decls address = some (.fn
+          ⟨captures.length + lamArity expr, .shared, code⟩) ∧
+        FnOwnershipPreservesAt ctx
+          ⟨captures.length + lamArity expr, .shared, code⟩
           (List.replicate
-            (captures.length + (lamUses expr).length) .shared) limit := by
-        exact lowerFnBody_liftedEntries_preservesAt
-          (fuel := bodyFuel) (state := addressState)
-          (finalState := bodyState) (code := code)
-          happly hdecls input.entries.length
-          (lamUses expr) (stripLams expr)
-          (fun index => countUses index expr > 0)
-          hadmissible hselected (by simpa using hpositive) hshared
-          hbodyRun' hbodyRepresented
-      refine ⟨fnAddr, code, hmember, hdecl, ?_⟩
-      rw [lamUses_length] at hpreserves
-      exact hpreserves
+            (captures.length + lamArity expr) .shared) limit)
+    ?_ hrun hrepresented
+  intro bodyFuel _captureOutput _captureEmit _captureValues _captureState
+    fnAddr addressState code bodyState _hfuel hp _hcaptureRun _hfreshRun hbodyRun
+    hrepresented
+  let ambient : LowSt :=
+    { bodyState with
+      extra := (fnAddr, .fn
+        ⟨captures.length + lamArity expr, .shared, code⟩) ::
+          bodyState.extra }
+  change ExtraRepresented ctx ambient at hrepresented
+  have hextends : ExtraExtends bodyState ambient := by
+    refine ⟨[(fnAddr, .fn
+      ⟨captures.length + lamArity expr, .shared, code⟩)], [], ?_, ?_, ?_⟩
+    · simp [ambient]
+    · simp [ambient]
+    · simp
+  have hbodyRepresented : ExtraRepresented ctx bodyState :=
+    hrepresented.of_extends hextends
+  have hmember :
+      (fnAddr, .fn
+        ⟨captures.length + lamArity expr, .shared, code⟩) ∈
+          ambient.extra := by
+    simp [ambient]
+  have hdecl := hrepresented.decl hmember
+  have hmodes := papSafe_lamUses_eq_replicate hp
+  have hadmissible : ParameterDropsAdmissible (lamUses expr)
+      (fun index => countUses index (stripLams expr)) := by
+    rw [hmodes]
+    exact parameterDropsAdmissible_replicate_many _ _
+  have hselected : ∀ index, index < input.entries.length →
+      decide (0 < countUses index expr) =
+        (countUses ((lamUses expr).length + index) (stripLams expr) != 0) := by
+    intro index _
+    rw [lamUses_length]
+    rw [← countUses_eq_stripLams_shift expr index]
+    cases countUses index expr <;> rfl
+  have hshared : (lamUses expr).map worldOfUses =
+      List.replicate (lamUses expr).length .shared := by
+    rw [hmodes]
+    simp [worldOfUses]
+  cases bodyFuel with
+  | zero =>
+    exact (trackedThrowRun_not_ok
+      (by simpa [lowerFnBody] using hbodyRun)).elim
+  | succ innerFuel =>
+    have hbodyRun' :
+        (lowerFnBody src (innerFuel + 1)
+          (let generatedCaptures :=
+              (List.range input.entries.length).filter
+                (fun index => countUses index expr > 0)
+           ⟨parameterEntries generatedCaptures.length (lamUses expr)
+                (fun index => countUses index (stripLams expr)) ++
+              selectedEntriesFrom
+                (fun index => countUses index expr > 0)
+                (fun index => countUses ((lamUses expr).length + index)
+                  (stripLams expr))
+                (List.range input.entries.length) 0,
+            generatedCaptures.length + (lamUses expr).length⟩)
+          (let generatedCaptures :=
+              (List.range input.entries.length).filter
+                (fun index => countUses index expr > 0)
+           parameterDrops generatedCaptures.length (lamUses expr)
+              (fun index => countUses index (stripLams expr)))
+          .shared (stripLams expr)).run addressState =
+            .ok code bodyState := by
+      simpa [liftedBodyVEnv, liftedBodyDrops, liftCaptureIndices,
+        lamUses_length] using hbodyRun
+    have hpreserves : FnOwnershipPreservesAt ctx
+        ⟨captures.length + (lamUses expr).length, .shared, code⟩
+        (List.replicate
+          (captures.length + (lamUses expr).length) .shared) limit := by
+      exact lowerFnBody_liftedEntries_preservesAt
+        (fuel := innerFuel) (state := addressState)
+        (finalState := bodyState) (code := code)
+        happly hdecls input.entries.length
+        (lamUses expr) (stripLams expr)
+        (fun index => countUses index expr > 0)
+        hadmissible hselected (by simpa using hpositive) hshared
+        hbodyRun' hbodyRepresented
+    refine ⟨fnAddr, code, hmember, hdecl, ?_⟩
+    rw [lamUses_length] at hpreserves
+    exact hpreserves
 
 private theorem wrapperBindOk {error α β : Type} (value : α)
     (next : α → Except error β) :
@@ -3998,6 +7067,538 @@ theorem ctorWrapper_fnOwnershipContract (ctx : Ctx)
         apply RootOwnership.allocNode
         · simpa [nodeChildren] using hinput
         · trivial
+
+/-- A constructor eta-wrapper has the corresponding source semantics at
+every target evaluator index.  The wrapper's allocation is fresh, so the
+argument graphs become constructor-field graphs while the caller frame is
+transported through the one-node store extension. -/
+theorem ctorWrapper_fnValueContract
+    {funRel : Sim.FunctionRel} (sourceCtx : IxIR0.Ctx) (ctx : Ctx)
+    (source : Ixon.Address) (tag arity : Nat)
+    (sourceFunction : IxIR0.Value)
+    (hlookup : sourceCtx.env source = some (.ctor tag arity))
+    (href : SourceRefValue sourceCtx source sourceFunction) :
+    FnValueContract funRel sourceCtx ctx
+      ⟨arity, .shared,
+        .letOp (.alloc .shared (ctorIdOf source tag)
+          (descendingVars arity).toArray)
+          (.ret (.var 0))⟩
+      (List.replicate arity .shared) sourceFunction := by
+  constructor
+  · simp
+  · intro fuel store store' args value sourceArgs sourceResult
+      sourceRest rest hlength hargs hsource hframe hown hrun
+    have hargsLength : args.length = arity := by simpa using hlength
+    have hsourceArgsLength : sourceArgs.length = arity := by
+      simpa [hargsLength] using hargs.length
+    have hcanonical : SourceApplies sourceCtx sourceFunction sourceArgs
+        (.ctor source tag sourceArgs) :=
+      sourceCtorRef_saturates hlookup href hsourceArgsLength
+    have hsourceResult : sourceResult = .ctor source tag sourceArgs :=
+      hsource.deterministic hcanonical
+    subst sourceResult
+    have hresolve : resolveAtoms args.reverse
+        (descendingVars arity).toArray = .ok args := by
+      rw [← hargsLength]
+      exact descendingVars_resolveAtoms args
+    have hroots : rootsForWorlds (List.replicate arity .shared) args =
+        rootsFor .shared args :=
+      rootsForWorlds_replicate_eq_rootsFor .shared hargsLength
+    have hinput : RootOwnership store
+        (rootsFor .shared args ++ rest) := by
+      rwa [hroots] at hown
+    cases fuel with
+    | zero => simp [runCode] at hrun
+    | succ outerFuel =>
+      cases outerFuel with
+      | zero => simp [runCode, runOp, wrapperBindErr] at hrun
+      | succ innerFuel =>
+        simp only [runCode] at hrun
+        simp only [runOp] at hrun
+        rw [hresolve] at hrun
+        simp [resolveAtom, wrapperBindOk] at hrun
+        obtain ⟨hstore, hvalue⟩ := hrun
+        subst store'
+        subst value
+        let node : Node :=
+          .ctorN (ctorIdOf source tag) args.toArray
+        let allocated := store.allocNode .shared node
+        have hextends : Sim.StoreGraphExtends store allocated.1 :=
+          Sim.StoreGraphExtends.allocNode store .shared node
+        have hfields : Sim.ValuesGraph funRel allocated.1 sourceArgs args :=
+          hargs.monoStore hextends
+        have hresultGraph : Sim.ValueGraph funRel allocated.1
+            (.ctor source tag sourceArgs) (.loc allocated.2) := by
+          apply Sim.ValueGraph.ctor
+          · exact Sim.HeapIso.get?_allocNode_new store .shared node
+          · rfl
+          · rfl
+          · simpa [node] using hfields
+        have hframeAfter : Sim.RootsGraph funRel allocated.1
+            sourceRest rest := hframe.monoStore hextends
+        simpa [allocated, node] using And.intro hresultGraph hframeAfter
+
+/-- Exact semantic preservation for `applyGo` at the current evaluator
+index.  Declaration and recursive-application semantics are required only
+strictly below this index through `hvalues`; generated lifted bodies are
+recovered from their compiler provenance. -/
+theorem applyValuePreservesAt_within_below
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ambient : LowSt}
+    {ctx : Ctx} {limit : Nat}
+    (henv : sourceCtx.env = src)
+    (hrepresented : ExtraRepresented ctx ambient)
+    (hcontracts : CompilerContracts src ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit) :
+    ApplyValuePreservesAt (CompilerFunctionRel sourceCtx src ambient)
+      sourceCtx ctx limit := by
+  intro store store' function args value sourceFunction sourceArgs
+    sourceResult sourceRest rest hfunction hargs happlies hframe hown hrun
+  cases limit with
+  | zero => simp [applyGo] at hrun
+  | succ fuel =>
+    cases hfunction with
+    | lit => simp [applyGo] at hrun
+    | erased =>
+      have hsourceResult : sourceResult = .erased :=
+        happlies.deterministic (SourceApplies.erased sourceCtx sourceArgs)
+      subst sourceResult
+      have hargsOwn : RootOwnership store
+          (rootsFor .shared args ++ rest) :=
+        hown.dropNoLocation rfl
+      simp only [applyGo] at hrun
+      cases hdrop : dropMany ctx fuel store args with
+      | error error =>
+        rw [hdrop, wrapperBindErr] at hrun
+        contradiction
+      | ok dropped =>
+        rw [hdrop, wrapperBindOk] at hrun
+        have hrestOwn : RootOwnership dropped rest :=
+          dropMany_preserves hargsOwn hdrop
+        have hrestrict : StoreGraphRestricts store dropped :=
+          dropMany_restricts hdrop
+        injection hrun with hpair
+        cases hpair
+        exact ⟨.erased,
+          hframe.ofRestricts hrestrict hrestOwn⟩
+    | @ctor sourceAddress sourceTag sourceFields loc boxWorld rc cid fields
+        hget haddress htag hfields =>
+      simp [applyGo, hget] at hrun
+    | @function relatedFunction address arity captures loc rc got hget hfun
+        hgot =>
+      simp only [applyGo] at hrun
+      rw [hget] at hrun
+      dsimp only at hrun
+      cases hdup : dupVals store got.toList with
+      | error error =>
+        rw [hdup, wrapperBindErr] at hrun
+        contradiction
+      | ok dupStore =>
+        rw [hdup, wrapperBindOk] at hrun
+        cases hdrop : dropVal ctx fuel dupStore (.loc loc) with
+        | error error =>
+          rw [hdrop, wrapperBindErr] at hrun
+          contradiction
+        | ok readyStore =>
+          rw [hdrop, wrapperBindOk] at hrun
+          let total := got.toList ++ args
+          obtain ⟨hgotReady, hargsReady, hframeReady, hready⟩ :=
+            applyGo_preparePap_valueGraphs hget hgot hargs hframe hown
+              hdup hdrop
+          split at hrun
+          next hunder =>
+            have hsourceUnder : (captures ++ sourceArgs).length < arity := by
+              have htotalGraph := hgotReady.append hargsReady
+              have hlength := htotalGraph.length
+              rw [hlength]
+              simpa [total] using hunder
+            have hnewRel := hfun.underfilledApply happlies hsourceUnder
+            injection hrun with hpair
+            cases hpair
+            let node : Node := .papN address arity total.toArray
+            let allocated := readyStore.allocNode .shared node
+            have hextends : StoreGraphExtends readyStore allocated.1 :=
+              StoreGraphExtends.allocNode readyStore .shared node
+            have htotalGraph : Sim.ValuesGraph
+                (CompilerFunctionRel sourceCtx src ambient) allocated.1
+                (captures ++ sourceArgs) total := by
+              exact (hgotReady.append hargsReady).monoStore hextends
+            have hresultGraph : Sim.ValueGraph
+                (CompilerFunctionRel sourceCtx src ambient) allocated.1
+                sourceResult (.loc allocated.2) := by
+              apply Sim.ValueGraph.function
+              · exact Sim.HeapIso.get?_allocNode_new readyStore .shared node
+              · exact hnewRel
+              · simpa [node] using htotalGraph
+            have hframeAfter := hframeReady.monoStore hextends
+            simpa [allocated, node, total] using
+              And.intro hresultGraph hframeAfter
+          next hnotUnder =>
+            split at hrun
+            next hexact =>
+              have hcalled := invoke_compilerFunction_value_owned_below
+                henv hrepresented hcontracts hvalues
+                (fun memo baseFunction hlookup href =>
+                  ctorWrapper_fnValueContract
+                    (funRel := CompilerFunctionRel sourceCtx src ambient)
+                    sourceCtx ctx memo.source memo.tag memo.arity
+                    baseFunction hlookup href)
+                (fun memo => ctorWrapper_fnOwnershipContract ctx memo.source
+                  memo.tag memo.arity)
+                hfun hgotReady hargsReady happlies hframeReady hready
+                (Nat.le_succ fuel) hrun
+              exact ⟨hcalled.1, hcalled.2.1⟩
+            next hover =>
+              have hfunUnder := hfun.underfilled
+              have hgotUnder : got.toList.length < arity := by
+                have hlength := hgotReady.length
+                omega
+              have hgotLe : got.toList.length ≤ arity :=
+                Nat.le_of_lt hgotUnder
+              have hoverLength : arity < total.length := by
+                have hnotExact : total.length ≠ arity := by
+                  intro heq
+                  apply hover
+                  simpa [total] using heq
+                have hle : arity ≤ total.length :=
+                  Nat.le_of_not_gt hnotUnder
+                omega
+              let missing := arity - got.toList.length
+              have hmissing : got.toList.length + missing = arity := by
+                exact Nat.add_sub_of_le hgotLe
+              have hmissingLe : missing ≤ args.length := by
+                simp only [total, List.length_append] at hoverLength
+                omega
+              have htakeTotal : total.take arity =
+                  got.toList ++ args.take missing := by
+                rw [List.take_append]
+                rw [List.take_of_length_le hgotLe]
+              have hdropTotal : total.drop arity = args.drop missing := by
+                rw [List.drop_append]
+                rw [List.drop_eq_nil_of_le hgotLe]
+                rfl
+              have hsourceWhole : SourceApplies sourceCtx sourceFunction
+                  (sourceArgs.take missing ++ sourceArgs.drop missing)
+                  sourceResult := by
+                rw [List.take_append_drop]
+                exact happlies
+              obtain ⟨middleSource, hprefixApply, htailApply⟩ :=
+                hsourceWhole.split
+              have hprefixGraph := hargsReady.take missing
+              have htailGraph := hargsReady.drop missing
+              have htailWorld : ∀ runtime,
+                  runtime ∈ args.drop missing →
+                  HasWorld readyStore .shared runtime := by
+                intro runtime hmember
+                apply hready.roots_world ⟨.shared, runtime⟩
+                apply List.mem_append_left rest
+                have hmemberArgs : runtime ∈ args :=
+                  List.mem_of_mem_drop hmember
+                have hmemberTotal : runtime ∈ total := by
+                  exact List.mem_append_right got.toList hmemberArgs
+                simpa [total, rootsFor] using hmemberTotal
+              let tailSourceRest : List (Owned × IxIR0.Value) :=
+                (sourceArgs.drop missing).map
+                  (fun source => (.shared, source))
+              let tailRoots : List Root :=
+                rootsFor .shared (args.drop missing)
+              have htailFrame : Sim.RootsGraph
+                  (CompilerFunctionRel sourceCtx src ambient) readyStore
+                  tailSourceRest tailRoots := by
+                exact htailGraph.rootsGraph .shared htailWorld
+              have hcombinedFrame : Sim.RootsGraph
+                  (CompilerFunctionRel sourceCtx src ambient) readyStore
+                  (tailSourceRest ++ sourceRest) (tailRoots ++ rest) :=
+                htailFrame.append hframeReady
+              have hrootsSplit : rootsFor .shared total =
+                  rootsFor .shared (total.take arity) ++
+                    rootsFor .shared (total.drop arity) := by
+                unfold rootsFor
+                rw [← List.map_append]
+                exact congrArg _ (List.take_append_drop arity total).symm
+              have hpartition : RootOwnership readyStore
+                  (rootsFor .shared (got.toList ++ args.take missing) ++
+                    (tailRoots ++ rest)) := by
+                have hsplit := hready
+                rw [hrootsSplit] at hsplit
+                rw [htakeTotal, hdropTotal] at hsplit
+                simpa [tailRoots, List.append_assoc] using hsplit
+              cases hinvoke : invoke ctx fuel address
+                  (total.take arity) readyStore with
+              | error error =>
+                  rw [hinvoke, wrapperBindErr] at hrun
+                  contradiction
+              | ok called =>
+                rcases called with ⟨calledStore, calledValue⟩
+                rw [hinvoke, wrapperBindOk] at hrun
+                have hinvokePrefix : invoke ctx fuel address
+                    (got.toList ++ args.take missing) readyStore =
+                    .ok (calledStore, calledValue) := by
+                  rw [← htakeTotal]
+                  exact hinvoke
+                have hcalled := invoke_compilerFunction_value_owned_below
+                  henv hrepresented hcontracts hvalues
+                  (fun memo baseFunction hlookup href =>
+                    ctorWrapper_fnValueContract
+                      (funRel := CompilerFunctionRel sourceCtx src ambient)
+                      sourceCtx ctx memo.source memo.tag memo.arity
+                      baseFunction hlookup href)
+                  (fun memo => ctorWrapper_fnOwnershipContract ctx
+                    memo.source memo.tag memo.arity)
+                  hfun hgotReady hprefixGraph hprefixApply hcombinedFrame
+                  hpartition (Nat.le_succ fuel) hinvokePrefix
+                have htailLength : tailSourceRest.length = tailRoots.length := by
+                  simp [tailSourceRest, tailRoots, rootsFor,
+                    hargsReady.length]
+                obtain ⟨htailFrameAfter, hframeAfter⟩ :=
+                  hcalled.2.1.splitAppend htailLength
+                have htailGraphAfter : Sim.ValuesGraph
+                    (CompilerFunctionRel sourceCtx src ambient) calledStore
+                    (sourceArgs.drop missing) (args.drop missing) := by
+                  exact htailFrameAfter.valuesGraph
+                have hrecursiveRun : applyGo ctx fuel calledStore calledValue
+                    (args.drop missing) = .ok (store', value) := by
+                  change applyGo ctx fuel calledStore calledValue
+                    (total.drop arity) = .ok (store', value) at hrun
+                  rw [hdropTotal] at hrun
+                  exact hrun
+                exact hvalues.apply.preserves (Nat.lt_succ_self fuel)
+                  hcalled.1 htailGraphAfter htailApply hframeAfter
+                  hcalled.2.2 hrecursiveRun
+
+/-! ### Whole-pass semantic contract sealing -/
+
+/-- A successful lookup in the source list environment identifies the exact
+source declaration occurrence traversed by `lowerAllAction`.  No no-duplicate
+assumption is needed in this direction: `Env.ofList` returns an actual
+`find?` member. -/
+theorem sourceEnv_ofList_lookup_mem
+    {decls : List (Ixon.Address × IxIR0.Decl)}
+    {address : Ixon.Address} {source : IxIR0.Decl}
+    (hlookup : IxIR0.Env.ofList decls address = some source) :
+    (address, source) ∈ decls := by
+  unfold IxIR0.Env.ofList at hlookup
+  obtain ⟨item, hfind, hvalue⟩ :=
+    Option.map_eq_some_iff.mp hlookup
+  rcases item with ⟨itemAddress, itemSource⟩
+  have hbeq : itemAddress == address :=
+    List.find?_some
+      (p := fun item : Ixon.Address × IxIR0.Decl =>
+        item.1 == address) hfind
+  have haddress : itemAddress = address :=
+    Ixon.Address.eq_of_beq hbeq
+  have hsource : itemSource = source := by
+    simpa using hvalue
+  subst itemAddress
+  subst itemSource
+  exact List.mem_of_find?_eq_some hfind
+
+/-- Recover the exact same-address callable declaration run selected by the
+final target context.  This is the semantic counterpart of the concrete
+fixture's `addLowerDecl_run`, generalized to any successful whole pass. -/
+theorem lowerAllAction_callable_decl_trace
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx} {address : Ixon.Address} {source : IxIR0.Decl}
+    {worlds : List Owned} {result : Owned} {d : FnDef}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hsrc : IxIR0.Env.ofList decls address = some source)
+    (hsignature : sourceCallableSignature source = some (worlds, result))
+    (hdecl : ctx.decls address = some (.fn d)) :
+    ∃ itemInitial itemFinal,
+      (lowerDecl (IxIR0.Env.ofList decls) compilerFuel
+        (address, source)).run itemInitial =
+          .ok (some (address, .fn d)) itemFinal ∧
+      ExtraExtends itemFinal finalState := by
+  obtain ⟨itemInitial, itemFinal, output, hrun, hextends, houtput⟩ :=
+    lowerAllAction_decl_trace hlower (sourceEnv_ofList_lookup_mem hsrc)
+  obtain ⟨generated, hgenerated⟩ :=
+    lowerDecl_output_fn_of_callable hsignature hrun
+  have hgeneratedDecl : ctx.decls address = some (.fn generated) :=
+    htarget (houtput _ hgenerated)
+  have hd : generated = d := by
+    have heq : some (Decl.fn generated) = some (Decl.fn d) :=
+      hgeneratedDecl.symm.trans hdecl
+    exact Decl.fn.inj (Option.some.inj heq)
+  subst generated
+  rw [hgenerated] at hrun
+  exact ⟨itemInitial, itemFinal, hrun, hextends⟩
+
+/-- At one evaluator index, every source-backed callable emitted by an
+actual whole-pass run satisfies its semantic function contract using only
+the mutually recursive semantic contracts below that index. -/
+theorem lowerAllAction_sourceFnValuePreservesAt_within_below
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel limit : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (henv : sourceCtx.env = IxIR0.Env.ofList decls)
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    (hvalues : CompilerValueContractsBelow
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx (IxIR0.Env.ofList decls) ctx limit) :
+    SourceFnValuePreservesAt
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx (IxIR0.Env.ofList decls) ctx limit := by
+  intro address source worlds result d sourceFunction
+    hsrc hsignature hdecl href
+  obtain ⟨itemInitial, itemFinal, hrun, hextends⟩ :=
+    lowerAllAction_callable_decl_trace hlower htarget hsrc hsignature hdecl
+  cases source with
+  | defn sourceResult body =>
+    simp only [sourceCallableSignature, Option.some.injEq,
+      Prod.mk.injEq] at hsignature
+    obtain ⟨rfl, rfl⟩ := hsignature
+    cases compilerFuel with
+    | zero =>
+      simp only [lowerDecl] at hrun
+      obtain ⟨code, bodyState, hbodyRun, _⟩ :=
+        trackedBindRun_ok_inv hrun
+      exact (trackedThrowRun_not_ok (by
+        simpa [lowerFnBody] using hbodyRun)).elim
+    | succ bodyFuel =>
+      have hadmissible := lowerDecl_defn_parameterDropsAdmissible hrun
+      intro store store' args value sourceArgs sourceValue sourceRest rest
+        hlength hargs happlies hframe hown hcodeRun
+      exact lowerDecl_defn_valuePreservesAt_within_below
+        (compilerFuel := bodyFuel) (limit := limit)
+        henv hrepresented hcontracts hvalues hsrc href hadmissible
+        (by simpa [Nat.succ_eq_add_one] using hrun) hextends
+        hlength hargs happlies hframe hown hcodeRun
+  | ctor tag arity =>
+    simp [sourceCallableSignature] at hsignature
+  | recursor numArgs natLit rules =>
+    simp only [sourceCallableSignature, Option.some.injEq,
+      Prod.mk.injEq] at hsignature
+    obtain ⟨rfl, rfl⟩ := hsignature
+    intro store store' args value sourceArgs sourceValue sourceRest rest
+      hlength hargs happlies hframe hown hcodeRun
+    exact lowerDecl_recursor_valuePreservesAt_within_below
+      (compilerFuel := compilerFuel) (limit := limit)
+      henv hrepresented hcontracts hvalues hsrc hdecl href hrun hextends
+      hlength hargs happlies hframe hown hcodeRun
+  | extern arity =>
+    simp [sourceCallableSignature] at hsignature
+
+/-- Seal the actual whole-pass declaration and `applyGo` producers by strong
+evaluator-fuel induction.  Generated lifted functions and constructor
+wrappers need no separate semantic environment: their exact compiler
+provenance is reconstructed inside the application producer. -/
+theorem lowerAllAction_compilerValueContracts
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (henv : sourceCtx.env = IxIR0.Env.ofList decls)
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    (hextern : ExternValueContract
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx ctx) :
+    CompilerValueContracts
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx (IxIR0.Env.ofList decls) ctx := by
+  apply compilerValueContracts_of_below_step hextern
+  intro limit hvalues
+  constructor
+  · exact lowerAllAction_sourceFnValuePreservesAt_within_below
+      henv hlower htarget hrepresented hcontracts hvalues
+  · exact applyValuePreservesAt_within_below
+      henv hrepresented hcontracts hvalues
+
+/-- Whole-main value agreement with semantic compiler contracts constructed
+from this very whole-pass output.  Only ownership contracts and the explicit
+extern-oracle compatibility boundary remain as semantic premises. -/
+theorem lowerAllAction_main_value_graph_sealed
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx} {sourceFuel targetFuel : Nat}
+    {sourceValue : IxIR0.Value} {targetStore : Store}
+    {targetValue : RVal}
+    (henv : sourceCtx.env = IxIR0.Env.ofList decls)
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htargetDecls : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    (hextern : ExternValueContract
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx ctx)
+    (hsource : IxIR0.eval sourceCtx sourceFuel [] main = .ok sourceValue)
+    (htargetRun : runMain ctx mainCode targetFuel =
+      .ok (targetStore, targetValue)) :
+    Sim.ValueGraph
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      targetStore sourceValue targetValue := by
+  have hvalues := lowerAllAction_compilerValueContracts
+    henv hlower htargetDecls hrepresented hcontracts hextern
+  exact lowerAllAction_main_value_graph henv hlower hrepresented
+    hcontracts hvalues hsource htargetRun
+
+/-- Public semantic forward simulation after the semantic contract seal.
+Target-run existence remains deliberately separate as the progress premise;
+all value-agreement contracts now come from the actual compiler output. -/
+theorem lowerAllAction_semanticForwardSimulation_of_targetProgress_sealed
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (henv : sourceCtx.env = IxIR0.Env.ofList decls)
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htargetDecls : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    (hextern : ExternValueContract
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx ctx)
+    (hprogress : ∀ {sourceFuel sourceValue},
+      IxIR0.eval sourceCtx sourceFuel [] main = .ok sourceValue →
+      ∃ targetFuel targetStore targetValue,
+        runMain ctx mainCode targetFuel = .ok (targetStore, targetValue)) :
+    SemanticForwardSimulation sourceCtx ctx main mainCode
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls)
+        finalState) := by
+  have hvalues := lowerAllAction_compilerValueContracts
+    henv hlower htargetDecls hrepresented hcontracts hextern
+  intro sourceFuel sourceValue hsource
+  exact lowerAllAction_semanticForwardSimulation_of_targetProgress
+    henv hlower hrepresented hcontracts hvalues hprogress hsource
 
 /-- Package the exact declaration shape and callable contract of a generated
 constructor wrapper. -/
