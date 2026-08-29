@@ -400,7 +400,11 @@ composition of per-piece check-env claims"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
-/-- the kernel shard claim with a THIN frontier: asm = the DIRECT out-of-owned
+/-- The kernel shard claim and its canonical subject/assumption trees, without
+    constructing the witness byte closure. This is the claim-only path for
+    callers such as aggregation that do not consume dependency bytes.
+
+    The frontier is THIN: asm = the DIRECT out-of-owned
     walk edges (refs + Prj→block) of the owned constants, not the full
     `closure ∖ owned`. the kernel's env walk exits the shard only through a
     direct external edge and stops there, so everything below the first
@@ -412,15 +416,9 @@ composition of per-piece check-env claims"
     from `env.consts` is not something the kernel walk can reach, so
     including it would inflate the asm tree and break digest agreement
     between the Rust prover and this verifier. -/
-def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
-    Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
-  let closure : Std.HashSet Address := Id.run do
-    let mut s : Std.HashSet Address := {}
-    for a in owned do
-      for x in (closureFrom env a).toArray do
-        s := s.insert x
-    return s
   let frontier : Array Address := Id.run do
     let mut fs : Std.HashSet Address := {}
     for o in owned do
@@ -457,6 +455,19 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
+  pure (claim, trees)
+
+/-- Claim/tree construction plus the byte closure needed by a Lean-built shard
+    witness. -/
+def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+  let (claim, trees) ← shardCheckEnvClaimTrees env owned
+  let closure : Std.HashSet Address := Id.run do
+    let mut s : Std.HashSet Address := {}
+    for a in owned do
+      for x in (closureFrom env a).toArray do
+        s := s.insert x
+    return s
   pure (claim, closure, trees)
 
 /-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
