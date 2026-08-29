@@ -184,35 +184,57 @@ def extern_declarations(path: Path, text: str) -> list[tuple[str, str]]:
     return declarations
 
 
+LAKE_TARGET_PATTERN = re.compile(
+    r"^[ \t]*(?P<kind>lean_lib|lean_exe)\s+"
+    r"(?P<name>«[^»]+»|[A-Za-z_][A-Za-z0-9_'-]*)(?:\s+where)?",
+    re.MULTILINE,
+)
+LAKE_MODULE_PATTERN = re.compile(r"`([A-Za-z_][A-Za-z0-9_'.]*)")
+
+
 def lakefile_roots(root: Path) -> list[tuple[str, str]]:
-    """(srcDir, module) roots declared by lakefile.toml [[lean_lib]]/[[lean_exe]]
-    sections, so a new top-level module cannot escape the source inventory."""
-    lakefile = root / "lakefile.toml"
-    need(lakefile.is_file(), f"lakefile.toml is missing under {root}")
-    try:
-        with lakefile.open("rb") as stream:
-            data = tomllib.load(stream)
-    except OSError as error:
-        reject(f"cannot read {lakefile}: {error}")
+    """Read the controlled `lean_lib`/`lean_exe` subset of lakefile.lean.
+
+    The configuration file is itself integrity-pinned. We still derive the
+    source roots from its target declarations so a new executable or top-level
+    library cannot escape the Lean source inventory after a reviewed pin
+    update. Unsupported or empty root spellings fail closed.
+    """
+    lakefile = root / "lakefile.lean"
+    need(lakefile.is_file(), f"lakefile.lean is missing under {root}")
+    text = strip_lean_comments(lakefile.read_text(encoding="utf-8"))
+    matches = list(LAKE_TARGET_PATTERN.finditer(text))
+    need(matches, "lakefile.lean declares no lean_lib/lean_exe roots; refusing an empty source inventory")
+    need(
+        len(matches) == len(re.findall(r"\b(?:lean_lib|lean_exe)\b", text)),
+        "lakefile.lean contains a lean_lib/lean_exe declaration outside the auditable syntax",
+    )
+
     roots: list[tuple[str, str]] = []
-    for kind in ("lean_lib", "lean_exe"):
-        sections = data.get(kind, [])
-        need(isinstance(sections, list), f"lakefile.toml [[{kind}]] must be an array of tables")
-        for section in sections:
-            need(isinstance(section, dict), f"lakefile.toml [[{kind}]] section is not a table: {section!r}")
-            source_dir = section.get("srcDir", ".")
-            declared = section.get("roots")
-            if declared is None:
-                single = section.get("root", section.get("name"))
-                need(bool(single), f"lakefile.toml [[{kind}]] section lacks name/root/roots: {section!r}")
-                declared = [single]
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        section = text[match.end() : end]
+        name = match.group("name").removeprefix("«").removesuffix("»")
+        source_match = re.search(r'\bsrcDir\s*:=\s*"([^"\n]+)"', section)
+        source_dir = source_match.group(1) if source_match else "."
+        roots_match = re.search(r"\broots\s*:=\s*#\[(.*?)\]", section, re.DOTALL)
+        root_match = re.search(r"\broot\s*:=\s*`([A-Za-z_][A-Za-z0-9_'.]*)", section)
+        need(
+            not (roots_match and root_match),
+            f"lakefile.lean target {name} declares both root and roots",
+        )
+        if roots_match:
+            modules = LAKE_MODULE_PATTERN.findall(roots_match.group(1))
+            need(modules, f"lakefile.lean target {name} has an empty or unsupported roots field")
+        elif root_match:
+            modules = [root_match.group(1)]
+        else:
             need(
-                isinstance(declared, list) and declared,
-                f"lakefile.toml [[{kind}]] roots must be a nonempty list: {section!r}",
+                re.fullmatch(r"[A-Za-z_][A-Za-z0-9_'.]*", name) is not None,
+                f"lakefile.lean target {name!r} needs an explicit root",
             )
-            for module in declared:
-                roots.append((source_dir, module))
-    need(bool(roots), "lakefile.toml declares no lean_lib/lean_exe roots; refusing an empty source inventory")
+            modules = [name]
+        roots.extend((source_dir, module) for module in modules)
     return roots
 
 
@@ -228,7 +250,7 @@ def lean_sources(root: Path) -> list[Path]:
             found.extend(module_dir.rglob("*.lean"))
         need(
             bool(found),
-            f"lakefile.toml root {module} has no Lean sources ({module_file} or {module_dir}/)",
+            f"lakefile.lean root {module} has no Lean sources ({module_file} or {module_dir}/)",
         )
         sources.update(found)
     need(bool(sources), f"no Lean sources found below {root}")
@@ -269,7 +291,7 @@ def validate_source_hygiene(root: Path, texts: dict[Path, str]) -> None:
 
 
 def validate_shape(ledger: dict) -> tuple[list[dict], list[dict]]:
-    need(ledger.get("schema_version") == 1, "unsupported or missing ledger schema_version")
+    need(ledger.get("schema_version") == 2, "unsupported or missing ledger schema_version")
     interfaces = ledger.get("native_interfaces")
     seeds = ledger.get("seed_and_build_trust")
     need(isinstance(interfaces, list) and interfaces, "native_interfaces must be nonempty")
@@ -281,17 +303,23 @@ def validate_shape(ledger: dict) -> tuple[list[dict], list[dict]]:
             "id",
             "status",
             "owner",
-            "lake_package",
-            "import_root",
+            "source_kind",
             "lean_module",
             "semantics_assumed",
             "proof_effect",
             "trust_basis",
             "tests",
             "retirement",
-            "pins",
         ):
             need(entry.get(field), f"native interface is missing nonempty {field}: {entry!r}")
+        source_kind = entry["source_kind"]
+        need(source_kind in {"dependency", "project"}, f"{entry['id']} has unknown source_kind {source_kind!r}")
+        if source_kind == "dependency":
+            for field in ("lake_package", "import_root", "pins"):
+                need(entry.get(field), f"dependency native interface {entry['id']} lacks {field}")
+        else:
+            for field in ("foreign_source", "source_sha256"):
+                need(entry.get(field), f"project native interface {entry['id']} lacks {field}")
         retirement = entry["retirement"]
         need(retirement.get("milestone"), f"{entry['id']} has no retirement milestone")
         need(retirement.get("replacement"), f"{entry['id']} has no retirement replacement")
@@ -320,9 +348,25 @@ def validate_shape(ledger: dict) -> tuple[list[dict], list[dict]]:
     need(len(ids) == len(set(ids)), "ledger entry ids must be unique")
     modeled = ledger.get("modeled_oracles")
     need(isinstance(modeled, list) and modeled, "modeled_oracles must be nonempty")
+    modeled_ids: list[str] = []
     for oracle in modeled:
+        for field in ("id", "address", "declaration", "scope", "semantics"):
+            need(oracle.get(field), f"modeled oracle is missing nonempty {field}: {oracle!r}")
+        need(isinstance(oracle.get("arity"), int), f"modeled oracle has non-integer arity: {oracle!r}")
+        coherence = oracle.get("address_coherence")
+        need(isinstance(coherence, dict), f"modeled oracle lacks address_coherence: {oracle!r}")
+        need(
+            coherence.get("status") in {"proved", "stable-key", "unsupported"},
+            f"modeled oracle has unknown address-coherence status: {oracle!r}",
+        )
+        need(coherence.get("evidence"), f"modeled oracle lacks coherence evidence: {oracle!r}")
+        if coherence["status"] != "unsupported":
+            need(coherence.get("fixture"), f"modeled oracle lacks a coherence fixture: {oracle!r}")
         need(oracle.get("native_code") is False, f"modeled oracle is marked native: {oracle!r}")
         need(oracle.get("production_approved") is False, f"modeled oracle is production-approved: {oracle!r}")
+        modeled_ids.append(oracle["id"])
+    need(len(modeled_ids) == len(set(modeled_ids)), "modeled oracle ids must be unique")
+    need(not set(ids) & set(modeled_ids), "modeled oracle ids overlap trusted interface/build ids")
     return interfaces, seeds
 
 
@@ -352,7 +396,11 @@ def validate_lake_and_imports(root: Path, ledger: dict, interfaces: list[dict], 
     manifest = read_json(root / "lake-manifest.json")
     packages = manifest.get("packages", [])
     actual_packages = {package["name"]: package.get("rev") for package in packages}
-    expected_packages = {entry["lake_package"]: entry["pins"].get("lake_rev") for entry in interfaces}
+    dependency_interfaces = [entry for entry in interfaces if entry["source_kind"] == "dependency"]
+    expected_packages = {
+        entry["lake_package"]: entry["pins"].get("lake_rev")
+        for entry in dependency_interfaces
+    }
     need(
         actual_packages == expected_packages,
         f"Lake dependency inventory drifted:\nledger={expected_packages}\nactual={actual_packages}",
@@ -366,7 +414,7 @@ def validate_lake_and_imports(root: Path, ledger: dict, interfaces: list[dict], 
         for module in IMPORT_PATTERN.findall(text)
         if module.split(".", 1)[0] not in local_roots
     }
-    expected_external_roots = {entry["import_root"] for entry in interfaces}
+    expected_external_roots = {entry["import_root"] for entry in dependency_interfaces}
     need(
         actual_external_roots == expected_external_roots,
         f"external Lean import roots drifted:\nledger={expected_external_roots}\nactual={actual_external_roots}",
@@ -396,7 +444,40 @@ def dependency_root(
     return (project_root / packages_dir / package).resolve()
 
 
-def validate_native_dependencies(
+C_COMMENT_OR_LITERAL_PATTERN = re.compile(
+    r"//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'",
+    re.DOTALL,
+)
+C_EXPORT_PATTERN = re.compile(
+    r"\bLEAN_EXPORT\b(?:(?![;{}]).)*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+    re.DOTALL,
+)
+
+
+def strip_c_comments_and_literals(text: str) -> str:
+    return C_COMMENT_OR_LITERAL_PATTERN.sub(
+        lambda match: "".join(char if char == "\n" else " " for char in match.group(0)),
+        text,
+    )
+
+
+def validate_reachability(entry: dict, imported_modules: set[str]) -> None:
+    for symbol in entry["foreign_symbols"]:
+        claims_import = symbol["reachability"].startswith("imported")
+        claims_unimported = symbol["reachability"].startswith("present, unimported")
+        need(
+            claims_import or claims_unimported,
+            f"{entry['id']} symbol {symbol['symbol']} reachability must start with "
+            f"'imported' or 'present, unimported': {symbol['reachability']!r}",
+        )
+        need(
+            claims_import == (symbol["module"] in imported_modules),
+            f"{entry['id']} symbol {symbol['symbol']} reachability disagrees with project imports "
+            f"of {symbol['module']}: {symbol['reachability']!r}",
+        )
+
+
+def validate_native_interfaces(
     root: Path,
     ledger: dict,
     interfaces: list[dict],
@@ -406,26 +487,64 @@ def validate_native_dependencies(
     manifest = read_json(root / "lake-manifest.json")
     flake_lock = read_json(root / "flake.lock")
     stripped_texts = {path: strip_lean_comments(text) for path, text in texts.items()}
-    project_symbols = {
-        symbol
-        for path, text in stripped_texts.items()
-        for symbol, _name in extern_declarations(path, text)
-    }
-    ledger_symbols = {
-        symbol["symbol"]
-        for entry in interfaces
+    project_interfaces = [entry for entry in interfaces if entry["source_kind"] == "project"]
+    dependency_interfaces = [entry for entry in interfaces if entry["source_kind"] == "dependency"]
+
+    actual_project_symbols: set[tuple[str, str, str]] = set()
+    for path, text in stripped_texts.items():
+        module = ".".join(path.relative_to(root).with_suffix("").parts)
+        for symbol, declared_name in extern_declarations(path, text):
+            lean_name = declared_name if "." in declared_name else f"{module}.{declared_name}"
+            actual_project_symbols.add((module, lean_name, symbol))
+    expected_project_symbols = {
+        (symbol["module"], symbol["lean_name"], symbol["symbol"])
+        for entry in project_interfaces
         for symbol in entry["foreign_symbols"]
     }
     need(
-        project_symbols <= ledger_symbols,
-        f"project-defined @[extern] symbols lack ledger entries: {project_symbols - ledger_symbols}",
+        actual_project_symbols == expected_project_symbols,
+        "project extern inventory drifted:\n"
+        f"ledger={sorted(expected_project_symbols)}\nactual={sorted(actual_project_symbols)}",
     )
 
     imported_modules = {
         module for text in stripped_texts.values() for module in IMPORT_PATTERN.findall(text)
     }
 
-    for entry in interfaces:
+    lakefile_text = strip_lean_comments((root / "lakefile.lean").read_text(encoding="utf-8"))
+    actual_foreign_sources = set(re.findall(r'"([^"\n]+\.c)"', lakefile_text))
+    expected_foreign_sources = {entry["foreign_source"] for entry in project_interfaces}
+    need(
+        actual_foreign_sources == expected_foreign_sources,
+        "project foreign-source inventory drifted:\n"
+        f"ledger={sorted(expected_foreign_sources)}\nactual={sorted(actual_foreign_sources)}",
+    )
+    for entry in project_interfaces:
+        module_path = root / (entry["lean_module"].replace(".", "/") + ".lean")
+        need(module_path.is_file(), f"project native module source is missing: {module_path}")
+        source_path = (root / entry["foreign_source"]).resolve()
+        need(root == source_path or root in source_path.parents, f"foreign source escapes project root: {source_path}")
+        need(source_path.is_file(), f"project foreign source is missing: {source_path}")
+        need(
+            sha256(source_path) == entry["source_sha256"],
+            f"foreign source hash drifted for {entry['id']}: actual {sha256(source_path)}",
+        )
+        need(
+            entry["foreign_source"] in lakefile_text,
+            f"project foreign source is not referenced by lakefile.lean: {entry['foreign_source']}",
+        )
+        actual_exports = set(C_EXPORT_PATTERN.findall(strip_c_comments_and_literals(
+            source_path.read_text(encoding="utf-8")
+        )))
+        expected_exports = {symbol["symbol"] for symbol in entry["foreign_symbols"]}
+        need(
+            actual_exports == expected_exports,
+            f"{entry['id']} C export inventory drifted:\n"
+            f"ledger={sorted(expected_exports)}\nactual={sorted(actual_exports)}",
+        )
+        validate_reachability(entry, imported_modules)
+
+    for entry in dependency_interfaces:
         package_root = dependency_root(root, manifest, overrides, entry["lake_package"])
         need(package_root.is_dir(), f"dependency source is missing for {entry['lake_package']}: {package_root}")
         module_path = package_root / (entry["lean_module"].replace(".", "/") + ".lean")
@@ -459,19 +578,7 @@ def validate_native_dependencies(
             f"ledger={sorted(expected_symbols)}\nactual={sorted(actual_symbols)}",
         )
 
-        for symbol in entry["foreign_symbols"]:
-            claims_import = symbol["reachability"].startswith("imported")
-            claims_unimported = symbol["reachability"].startswith("present, unimported")
-            need(
-                claims_import or claims_unimported,
-                f"{entry['id']} symbol {symbol['symbol']} reachability must start with "
-                f"'imported' or 'present, unimported': {symbol['reachability']!r}",
-            )
-            need(
-                claims_import == (symbol["module"] in imported_modules),
-                f"{entry['id']} symbol {symbol['symbol']} reachability disagrees with project imports "
-                f"of {symbol['module']}: {symbol['reachability']!r}",
-            )
+        validate_reachability(entry, imported_modules)
 
         cargo = entry.get("cargo_lock")
         if cargo:
@@ -561,7 +668,7 @@ def main() -> int:
         validate_integrity(root, ledger)
         validate_source_hygiene(root, texts)
         validate_lake_and_imports(root, ledger, interfaces, texts)
-        validate_native_dependencies(
+        validate_native_interfaces(
             root,
             ledger,
             interfaces,

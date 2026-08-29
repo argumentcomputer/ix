@@ -1,6 +1,6 @@
 # Trusted-extern ledger
 
-Last reviewed: 2026-08-19. The machine-readable ledger is
+Last reviewed: 2026-08-26. The machine-readable ledger is
 [`trusted-externs.json`](trusted-externs.json); `nix flake check` validates
 it with [`scripts/check_trusted_externs.py`](../scripts/check_trusted_externs.py).
 
@@ -16,25 +16,30 @@ pretending they are `@[extern]` declarations.
 
 ## Change-control rule
 
-Every external Lake package and external Lean import root must have an entry.
-For a native package, every `@[extern]` symbol anywhere in its pinned source
-tree is listed — including sibling modules this repository does not import and
-exports it does not call — with the shipping module and current reachability
-recorded per symbol. Each entry names the semantics assumed, owner, evidence,
-proof effect, and an observable retirement condition.
+Every native interface, whether project-local or supplied by an external Lake
+package, must have an entry. For a native dependency, every `@[extern]` symbol
+anywhere in its pinned source tree is listed — including sibling modules this
+repository does not import and exports it does not call. Project-local Lean
+extern declarations and C `LEAN_EXPORT`s are exact, separately checked
+inventories. Every symbol records its shipping module and current reachability;
+each interface names the semantics assumed, owner, evidence, proof effect, and
+an observable retirement condition.
 
 The checker deliberately fails closed on changes to:
 
 - Lake dependencies and revisions;
-- the Lean source inventory itself, derived from `lakefile.toml`
-  `[[lean_lib]]`/`[[lean_exe]]` roots (a missing root or an empty root set is
-  a hard failure, so a new top-level module cannot escape the scan);
+- the Lean source inventory itself, derived from the controlled
+  `lakefile.lean` `lean_lib`/`lean_exe` declarations (unsupported syntax, a
+  missing root, or an empty root set is a hard failure, so a new top-level
+  module cannot escape the scan);
 - external import roots and qualified native entry points used in project
   sources;
 - the complete extern inventory of every `.lean` file in each pinned package
   source tree, covering `@[extern ...] opaque`/`def` declarations and
   post-hoc `attribute [extern ...]` commands, plus each symbol's
   imported/unimported reachability claim (checked against actual imports);
+- the exact project-local Lean extern inventory, each Lake-referenced C source,
+  its pinned SHA-256, and its exact `LEAN_EXPORT` inventory;
 - declaration-level `axiom`, standalone `sorry`, or `native_decide` tokens in
   the checked project sources (a tripwire on comment/string-stripped lines);
 - every package/version and the complete checksum-bearing Cargo lockfile;
@@ -55,8 +60,8 @@ criteria are met and the coverage check confirms that its boundary vanished.
 | Owner | Compilatr.ix maintainers |
 | Project entry point | `Blake3.Rust.hash` in `Compilatrix/Ixon/Hash.lean` |
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
-| Logical/proof status | Assumption: no Lean refinement theorem currently connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. |
-| Evidence | Official empty-input vector, output length, determinism/input-sensitivity checks, and a full constant-address fixture in `Tests.lean` |
+| Logical/proof status | Assumption: no Lean refinement theorem currently connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, and one-root, recursive, and self-call-aware main local-post-fixpoint HPT case pruning are hash-independent and stay in the ordinary logical axiom set. Production addressed-lowering corollaries and checked HPT cache/summary/consumer results consume native digests, so `Compilatrix/Fence.lean` pins their exact additional `Blake3.HasherOps.hash._native.native_decide.ax_1✝` dependency. |
+| Evidence | Official empty-input vector, output length, determinism/input-sensitivity checks, a full constant-address fixture, complete IxIR₀/IxIR₁ declaration byte+address fixtures, frozen dependency-chain/nested-lambda/constructor-wrapper readdressing digests, executable semantic audits, a protected-source-identity collision regression, the frozen ledger-oracle cyclic block/member digests, and five version-3 HPT cache keys plus five checked recursively field-aware summary addresses exercised through deterministic production, persistent canonical record/store ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, file-backed corruption recovery, depth-two fetch/case refinement, checked case-binder field recovery through the ordinary checker and deterministic producer, and checked finite-constructor case pruning at one root, recursively across a supplied fragment, through a terminating dynamic self call, and across a completely readdressed declaration graph in `Tests.lean` |
 | Primary pin | Blake3.lean `aaf530784082a2c00b0a93648741429d274102ca` |
 | Rust implementation | `blake3` 1.8.4; `lean-ffi` `cc98ebf67bf453ac3827cb767f78b13ea674dd6a` |
 | Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend after M3 |
@@ -99,6 +104,105 @@ address fixtures either remain byte-identical or undergo an explicit versioned
 address roll, the official vector corpus passes, and the Rust static library
 is absent from the runtime closure.
 
+The proof fence separates the semantic transport from this boundary. Generic
+`Readdress.evalTransportAt` and `Readdress.runMain_mapAddresses` depend only on
+the ordinary logical axioms. The indexed production theorems for protected
+source identities, exact runs, addressed forward simulation, all three dynamic
+error exclusions, and cost counters additionally expose the native hash axiom
+above because their premise is an actual successful production post-pass. This
+is a mechanically checked trust effect, not an implicit claim that BLAKE3 has
+been verified in Lean.
+
+The HPT certificate checker uses two additional versioned native-digest
+domains for cache-query and summary identities. The current `/3` domains are
+the explicit address roll for recursively nested field facts; earlier digest
+domains are not reinterpreted. Persistent artifact records and sorted store
+containers have separate, independently versioned
+`hpt-cache-record/2` and `hpt-cache-store/1` framing domains. Success theorems
+expose the candidate post-fixpoint gate, exact
+returned content-address audit, and accepted-row evaluator soundness; their
+axiom cones are pinned beside the addressed-lowering cones. The generic
+evaluator concretization itself remains inside the ordinary logical axiom set,
+while composing it with a successfully materialized certificate exposes the
+native hash axiom. The five-key and five-summary frozen fixture includes a
+genuine recursive SCC and verifies that widening one leaf changes its summary
+and dependent query while leaving an unrelated detailed-constructor summary
+unchanged. Its allocation→fetch branch checks a scalar field fact against
+concrete storage and projection. A separate depth-two fixture checks recursive
+allocation, double fetch, nested cases, exact/one-below depth limits, cache
+codec roundtrips, and conservative shallow-budget production. Case transfer
+filters matching constructors by
+tag and exact arity, reverses source-order fields into evaluator binder order,
+joins matching alternatives pointwise, widens identity-only and unknown
+matches, and recovers Nat-successor predecessors as scalar. The constructor
+and Nat case-binder concretization lemmas remain in the ordinary logical axiom
+set; the recursive field order and root/field conversion lemmas are likewise
+pinned separately. A dedicated checker/producer regression covers
+precise and multi-shape fields, wrong-tag filtering, widening, alias-forgotten
+fields, Nat peeling, and the concrete projected result. A separate alias/reuse
+regression rejects a stale exact-constructor claim and observes the
+conservatively accepted concrete result. The deterministic SCC-local producer
+remains outside this boundary:
+its returned `Production` stores proof that the ordinary checker accepted the
+exact candidate/result pair. Precision, repeatability, exact and one-below
+round/field/depth limits, and independent shape/field-budget fallbacks are
+compiled tests; the post-fixpoint, audit, and evaluator projections from `Production`
+are axiom-fenced with the same native exception. The persistent scheduler's
+`Cache.Production` stores the same ordinary-checker equality, and all three
+projections plus the pipeline corollary are separately fenced. Canonical
+record/store roundtrips, cold/warm schedules, malformed-record repair,
+dependency-cone rekeying, duplicate/noncanonical/outer corruption rejection,
+exact cache budgets, record-streamed pure-codec parity and malformed framing
+rejection, metadata-indexed lazy chunk reads, stale-corruption isolation,
+selected-chunk repair, power-loss-durable sibling staging, ignored orphan
+transactions, and temporary-file/directory ingress are compiled tests. The first
+consumer's one-root, recursive, and self-call-aware main local-post-fixpoint
+theorems likewise stay in the ordinary axiom set, while their checked,
+directly produced, and cached pipeline specializations expose exactly the same
+native digest exception. Its compiled precise/top fixtures remove one root
+branch and two branches nested across separate alternative bodies, preserve
+concrete execution, and confirm that an accepted universal row does not prune;
+a terminating Nat-peeling fixture reaches its rewritten base case through
+three dynamic self calls. A checked artifact-main fixture also crosses the
+pipeline API and preserves the exact finite-fuel self-loop result.
+
+## Active native interface: durable filesystem synchronization
+
+| Field | Ledger value |
+| --- | --- |
+| Owner | Compilatr.ix maintainers |
+| Project entry points | `Compilatrix.DurableSync.file` and `.directory`, used only by `IxIR1.HPT.CacheIO`, `IxIR1.HPT.CacheDirIO`, and compiled boundary tests |
+| Assumed semantics | On the x86_64-linux baseline, successful type-checked `fsync` calls make the regular staged file or directory-entry set stable according to the kernel/filesystem/device contract. Apple regular files request `F_FULLFSYNC` first and fall back to `fsync` only when unsupported; Apple directories use `fsync` |
+| Logical/proof status | Operational availability/durability boundary only. Cache bytes still cross bounded decoding, address checks, and the ordinary HPT certificate checker; no theorem assumes the barrier's result |
+| Evidence | Exact Lean-extern and C-export inventories, pinned C-source SHA-256, traced Lake object build, compiled successful file/directory calls, wrong-kind rejection, byte-exact snapshot replacement, independently durable chunk repair, and transaction cleanup |
+| Retirement | An upstream durable Lean filesystem API or the verified runtime/syscall boundary, preserving the same staged-file/rename/directory ordering and passing controlled power-cut recovery tests |
+
+Lean's portable filesystem API exposes buffered handle flush but no stable-file
+or directory-entry barrier. `native/hpt_cache_sync.c` is therefore a narrow
+two-symbol boundary. It retries interrupted opens and synchronization calls,
+rejects symlinks and wrong file kinds, propagates synchronization and close
+errors through Lean `IO.Error`, and contains no cache parsing or path-selection
+policy.
+
+`HPTCacheIO` first streams and verifies the staged cache, synchronizes that
+regular file and its transaction directory, atomically renames it into the
+destination parent, synchronizes the destination and source directories,
+removes the empty transaction directory, and synchronizes the parent again.
+`HPTCacheDirIO` reuses the exact protocol for each rebuilt singleton chunk and
+also synchronizes a newly created cache directory and its parent before use.
+On a synchronization failure after rename, the new destination may already be
+visible, but the API returns an error and makes no false durable-commit claim.
+The old-or-new atomicity and persistence statement remains conditional on the
+filesystem and hardware honoring their successful barrier results; controlled
+power-cut testing is still desirable platform evidence.
+
+Schema 2 of the JSON ledger distinguishes this project-owned interface from
+dependency-owned BLAKE3. The checker requires exact equality for the complete
+local Lean `@[extern]` inventory and the C `LEAN_EXPORT` inventory, derives the
+C source set from the integrity-pinned Lake configuration, and checks the
+source hash. A dependency symbol can therefore no longer accidentally cover an
+unreviewed local extern with the same foreign name.
+
 ## Seed, runtime, and build trust
 
 These entries explain what can affect a Gen-0 build without mislabeling it as
@@ -108,7 +212,7 @@ a project FFI symbol.
 | --- | --- | --- |
 | Lean 4.33.0 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the ix4lean-derived verified checker |
 | GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled in the no-runtime fragment after M3 |
-| Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean and Rust | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
+| Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean/Rust and implements the ledgered `open`/`fstat`/`fsync`/`close` durability shim | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
 | Locked Nix supply chain | nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, Clang/LLD, rsync, binary substitution | Locked hashes now; later diverse reproduction and address-exact output comparison remove it from the semantic TCB |
 | GitHub runner/actions | Runs the locked flake automatically | CI is advisory; release attestation must reproduce the flake independently |
 
@@ -124,14 +228,36 @@ The current concrete oracles are test fixtures:
 - IxIR₀ address `[0x40; 32]`: two literal `Nat`s map to their sum; any
   constructor-shaped input is rejected.
 - IxIR₁ address `[0x67; 32]`: two scalar literal `Nat`s map to their sum.
+- The Ixon→IxIR₀ erasure fixture configures a two-argument source axiom
+  and target extern that both return literal `42` on the pinned arguments.
 
 Neither is linked foreign code or production-approved. They test the formal
 hook through which a future per-address ledger entry will connect to the IR.
-Likewise, erasure may represent source opaque/partial/axiom declarations as
-`IxIR0.Decl.extern`, but the proof-producing erasure validator currently
-rejects that frontier. Lowering a declaration does **not** authorize an
-implementation. Production execution requires a new per-address entry and a
-source/target oracle correspondence proof.
+The IxIR₀ model now has an exact address-adapter proof:
+`Readdress.Oracle.Readdressable.examples_of_run_eq_ok` derives its coherence
+from the successful whole-program audit's bidirectional isolation of reserved,
+stable, and declaration/main external identities. The compiled
+`ReaddressOracleFixtures.ledgerCycleOk` fixture pins a genuine mutual block and
+both member digests, calls the modeled extern, and returns literal `42` before
+and after readdressing. `mainExternalCaptureRejected` separately ensures an
+external identity mentioned only by main cannot be captured by a derived
+member key. These theorem cones are pinned in `Compilatrix/Fence.lean`.
+
+IxIR₁ extern declarations keep explicit identity entries in `ReaddressAll`;
+direct undeclared extern references are outside the producer map. Its Nat-add
+fixture therefore uses the generic oracle-pullback transport without an
+address-specific adapter instance. The JSON ledger records these two distinct
+coherence statuses and the checker requires status and evidence for every
+modeled oracle.
+
+Erasure may represent explicitly configured source opaque/partial/axiom
+declarations as `IxIR0.Decl.extern`. The proof-producing validator checks the
+resolved kind, configured source arity, and exact target declaration, while
+the simulation theorem separately requires `OracleRelAt` for each configured
+address. Lowering or structurally certifying a declaration does **not**
+authorize an implementation. Production execution still requires a
+per-address ledger entry and its source/target oracle correspondence proof;
+the composed pipeline currently supplies no such extern configuration.
 
 ## Known limitations
 
