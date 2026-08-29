@@ -193,6 +193,25 @@ opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
+/-- Native execution of the `ix_aggr` aggregation entrypoint. Expanded child
+proof advice (from `AiurSystem.proofToAdviceBytes`), claims, and the fixed
+vk/output/allowed blobs are passed without
+per-byte Lean field boxing; `preimagesBlob` and `treesBlob` use the compact
+count/key/length framing produced by `Aggr.preimagesBlob` and
+`Aggr.treesBlob`. Rust expands them directly into IO channels 0–6 (the
+shape hint lands on channel 6). Wrap shapes pass empty right-child blobs —
+the circuit never reads them. As with `executeMultiStark`, `useBytecode`
+selects the generic interpreter over the generated production aggregator,
+and the codegen'd path is only valid when `toplevel` is the production
+`Aggr.ixAggr` bytecode. -/
+@[extern "rs_aiur_ix_aggr_execute"]
+opaque executeIxAggr (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
+  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Array QueryCount)
+
 -- (EnvHandle opaque type + constructors live above `namespace
 -- Bytecode.Toplevel`; see `Aiur.EnvHandle`. The with-env FFI
 -- declarations below reference `EnvHandle` and `Bytecode.Toplevel`

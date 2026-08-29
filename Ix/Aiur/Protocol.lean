@@ -25,12 +25,11 @@ opaque toBytes : @& Proof → ByteArray
 @[extern "rs_aiur_proof_of_bytes"]
 opaque ofBytes : @& ByteArray → Proof
 
-/-- Decode an untrusted serialized proof without aborting the process. Cache
+/-- Decode an untrusted serialized proof without aborting the process. Store
 and network boundaries must use this variant; `ofBytes` remains for callers
 whose bytes were produced in-process or already validated. -/
 @[extern "rs_aiur_proof_of_bytes_checked"]
 opaque ofBytesChecked : @& ByteArray → Except String Proof
-
 end Proof
 
 structure CommitmentParameters where
@@ -177,6 +176,24 @@ opaque proveMultiStarkJoin (system : @& AiurSystem)
   (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
   (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Proof)
+
+/-- Prove one `ix_aggr` execution — any shape — over raw child proof/claim
+advice. Both proof blobs must come from `AiurSystem.proofToAdviceBytes`;
+compact `Proof.toBytes` values remain the persisted representation. The
+compact preimage/tree blobs are produced by
+`Aggr.preimagesBlob` and `Aggr.treesBlob`; wrap shapes pass empty
+right-child blobs. Malformed framing is returned as an error; as with
+`prove`/`proveMultiStark`, callers must supply an accepting execution
+witness. Only valid when `system` was built from the production
+`Aggr.ixAggr` bytecode (unless `useBytecode` is set). The final native IO
+buffer is intentionally not marshalled back to Lean. -/
+@[extern "rs_aiur_ix_aggr_prove"]
+opaque proveIxAggr (system : @& AiurSystem)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
+  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]

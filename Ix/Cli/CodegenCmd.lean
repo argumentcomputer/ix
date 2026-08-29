@@ -1,10 +1,12 @@
 /-
-  `ix codegen`: write the IxVM kernel and the MultiStark recursive
-  verifier as Rust source files via the Bytecode → Rust codegen pass.
+  `ix codegen`: write the IxVM kernel, the MultiStark recursive
+  verifier, and the ixAggr aggregation system as Rust source files via
+  the Bytecode → Rust codegen pass.
 
   Output paths are fixed at compile time:
   - `crates/ixvm-codegen/src/aiur_ixvm.rs` (the IxVM kernel)
   - `crates/ixvm-codegen/src/aiur_multi_stark.rs` (the recursive verifier)
+  - `crates/ixvm-codegen/src/aiur_ix_aggr.rs` (the heterogeneous aggregator)
   The generated files are the single destinations; no flag overrides.
 
   Output per target: a Rust module body containing one `fn aiur_fn_N(...)`
@@ -26,6 +28,7 @@
 -/
 module
 public import Cli
+public import Ix.Aggr
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Stages.Codegen
 public import Ix.IxVM
@@ -53,7 +56,12 @@ def targets : List Target := [
   { label := "ixvm", source := IxVM.ixVM,
     outPath := "crates/ixvm-codegen/src/aiur_ixvm.rs" },
   { label := "multi-stark", source := MultiStark.multiStark,
-    outPath := "crates/ixvm-codegen/src/aiur_multi_stark.rs" }
+    outPath := "crates/ixvm-codegen/src/aiur_multi_stark.rs" },
+  -- `ix aggr` proving/verification must select the SAME toplevel for its
+  -- function-index table (`Aggr.ixAggr`), or `ix_aggr` lookups resolve
+  -- against a different function set than the generated code.
+  { label := "ix-aggr", source := Aggr.ixAggr,
+    outPath := "crates/ixvm-codegen/src/aiur_ix_aggr.rs" }
 ]
 
 /-- Emit one target. In `--check` mode, compares against the on-disk file

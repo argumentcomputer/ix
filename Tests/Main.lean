@@ -54,6 +54,7 @@ import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
 import Tests.MultiStarkActivation
+import Tests.Aggr
 import Tests.Cli
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -186,6 +187,9 @@ def primaryRunners : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
+  -- Heterogeneous aggregation circuit: all five `ix_aggr` shapes over
+  -- stand-in child systems, plus one negative case per broken binding.
+  ("ix-aggr", Tests.Aggr.smokeSuite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
