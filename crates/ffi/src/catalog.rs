@@ -127,9 +127,8 @@ pub extern "C" fn rs_catalog_assemble(
       return LeanIOResult::error_string(&format!("rs_catalog_assemble: {e}"));
     },
   };
-  let manifest_bytes = std::fs::metadata(dir.join(cat::MANIFEST_FILE))
-    .map(|m| m.len())
-    .unwrap_or(0);
+  let manifest_bytes =
+    std::fs::metadata(dir.join(cat::MANIFEST_FILE)).map_or(0, |m| m.len());
   let mut summary = catalog_json(&catalog);
   summary["bytes"] = serde_json::json!(manifest_bytes);
   summary["out"] = serde_json::json!(out_path);
@@ -196,9 +195,8 @@ pub extern "C" fn rs_catalog_info(
       return LeanIOResult::error_string(&format!("rs_catalog_info: {e}"));
     },
   };
-  let manifest_bytes = std::fs::metadata(dir.join(cat::MANIFEST_FILE))
-    .map(|m| m.len())
-    .unwrap_or(0);
+  let manifest_bytes =
+    std::fs::metadata(dir.join(cat::MANIFEST_FILE)).map_or(0, |m| m.len());
   let mut summary = catalog_json(&catalog);
   summary["bytes"] = serde_json::json!(manifest_bytes);
   LeanIOResult::ok(LeanString::new(&summary.to_string()))

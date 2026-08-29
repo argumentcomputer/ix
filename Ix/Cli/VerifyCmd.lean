@@ -52,7 +52,11 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
     (proofAddr : Address) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
-  let proof := Aiur.Proof.ofBytes wrapper.proof
+  let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
+    | .ok proof => pure proof
+    | .error e =>
+      IO.eprintln s!"error: proof {proofAddr} does not decode: {e}"
+      return 1
   -- `verify_claim` takes the packed 8-G blake3 digest of the serialized
   -- claim (4 LE bytes per element; see `ClaimHarness.packedDigestKey`).
   let claimDigest := Address.blake3 (Ix.Claim.ser wrapper.claim)
@@ -204,7 +208,11 @@ private def verifyAggregateProof (backend : AggregateBackend)
       IO.eprintln s!"error: aggregate claim {wrapper.claim} does not match expected {expected.claim}"
       return 1
   | none => pure ()
-  let proof := Aiur.Proof.ofBytes wrapper.proof
+  let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
+    | .ok proof => pure proof
+    | .error e =>
+      IO.eprintln s!"error: aggregate proof {proofAddr} does not decode: {e}"
+      return 1
   let claimBytes := Ix.Claim.ser wrapper.claim
   let joinPubInput := MultiStark.joinPubInput backend.allowed claimBytes
   let outerClaim : AggregateRootKind → Array Aiur.G

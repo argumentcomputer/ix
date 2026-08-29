@@ -416,6 +416,12 @@ def joinSmokeSuite : IO UInt32 := do
     (fakeIxvmVk, innerClaimsBytes, outerClaim, proof)
   let (fakeIxvmVk, leftInnerClaims, leftOuter, leftProof) := mkLift leftClaimBytes
   let (_, rightInnerClaims, rightOuter, rightProof) := mkLift rightClaimBytes
+  let leftProofAdvice ← match childSystem.proofToAdviceBytes leftOuter leftProof with
+    | .error e => IO.eprintln s!"left proof advice encoding failed: {e}"; return 1
+    | .ok bytes => pure bytes
+  let rightProofAdvice ← match childSystem.proofToAdviceBytes rightOuter rightProof with
+    | .error e => IO.eprintln s!"right proof advice encoding failed: {e}"; return 1
+    | .ok bytes => pure bytes
 
   let recursionVk := childSystem.vkBytes
   let allowed := MultiStark.allowedBlob fakeIxvmVk verifyIdx recursionVk
@@ -551,8 +557,8 @@ def joinSmokeSuite : IO UInt32 := do
   let oneKey := #[Aiur.G.ofNat 1]
   let twoKey := #[Aiur.G.ofNat 2]
   let io := seedJoinTrees ((default : IOBuffer)
-    |>.extend 0 zeroKey (bytesAsGs leftProof.toBytes)
-    |>.extend 0 oneKey (bytesAsGs rightProof.toBytes)
+    |>.extend 0 zeroKey (bytesAsGs leftProofAdvice)
+    |>.extend 0 oneKey (bytesAsGs rightProofAdvice)
     |>.extend 1 zeroKey (bytesAsGs recursionVk)
     |>.extend 2 zeroKey (bytesAsGs leftOuterBytes)
     |>.extend 2 oneKey (bytesAsGs rightOuterBytes)
@@ -574,7 +580,7 @@ def joinSmokeSuite : IO UInt32 := do
   let structuralJoinIdx := compiled.getFuncIdx `join_two_structural |>.get!
   let honestInterp := compiled.bytecode.execute joinIdx pubInput io
   let honest := compiled.bytecode.executeMultiStarkJoin joinIdx pubInput
-    leftProof.toBytes rightProof.toBytes recursionVk leftOuterBytes rightOuterBytes
+    leftProofAdvice rightProofAdvice recursionVk leftOuterBytes rightOuterBytes
     outputClaimBytes allowed preimagesBlob treesBlob emptyPathsBlob
   let nativeParity : Bool := match honest, honestInterp with
     | .ok (out, qc), .ok (outI, _, qcI) =>
@@ -584,7 +590,7 @@ def joinSmokeSuite : IO UInt32 := do
     | _, _ => false
 
   let malformedFraming := compiled.bytecode.executeMultiStarkJoin joinIdx pubInput
-    leftProof.toBytes rightProof.toBytes recursionVk leftOuterBytes rightOuterBytes
+    leftProofAdvice rightProofAdvice recursionVk leftOuterBytes rightOuterBytes
     outputClaimBytes allowed ⟨#[]⟩ treesBlob emptyPathsBlob
 
   -- Structural mode commits to `nodeHash(leftRoot, rightRoot)` and replaces
@@ -599,11 +605,11 @@ def joinSmokeSuite : IO UInt32 := do
     leftStatement rightStatement structuralOutput
   let structuralPathsBlob := MultiStark.joinPathsBlob structuralPathAdvice
   let structuralHonest := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
-    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    structuralInput leftProofAdvice rightProofAdvice recursionVk
     leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
     structuralTreesBlob structuralPathsBlob
   let structuralInterp := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
-    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    structuralInput leftProofAdvice rightProofAdvice recursionVk
     leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
     structuralTreesBlob structuralPathsBlob true
   let structuralParity : Bool := match structuralHonest, structuralInterp with
@@ -624,7 +630,7 @@ def joinSmokeSuite : IO UInt32 := do
     if candidate == a then (candidate, leftSubjects.merkleProof candidate)
     else (candidate, path?)
   let wrongRootPath := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
-    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    structuralInput leftProofAdvice rightProofAdvice recursionVk
     leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
     structuralTreesBlob (MultiStark.joinPathsBlob wrongRootPathAdvice)
 
@@ -638,7 +644,7 @@ def joinSmokeSuite : IO UInt32 := do
       | none => (candidate, path?)
     else (candidate, path?)
   let tamperedPath := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
-    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    structuralInput leftProofAdvice rightProofAdvice recursionVk
     leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
     structuralTreesBlob (MultiStark.joinPathsBlob tamperedPathAdvice)
 
@@ -647,7 +653,7 @@ def joinSmokeSuite : IO UInt32 := do
   let droppedPathAdvice := structuralPathAdvice.filter fun (candidate, _) =>
     candidate != d
   let droppedAssumption := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
-    structuralInput leftProof.toBytes rightProof.toBytes recursionVk
+    structuralInput leftProofAdvice rightProofAdvice recursionVk
     leftOuterBytes rightOuterBytes structuralClaimBytes allowed preimagesBlob
     structuralTreesBlob (MultiStark.joinPathsBlob droppedPathAdvice)
 
@@ -663,7 +669,7 @@ def joinSmokeSuite : IO UInt32 := do
     (MultiStark.CheckEnvTrees.structuralPathAdvice
       leftStatement rightStatement missingCarriedOutput)
   let missingCarried := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
-    missingCarriedInput leftProof.toBytes rightProof.toBytes recursionVk
+    missingCarriedInput leftProofAdvice rightProofAdvice recursionVk
     leftOuterBytes rightOuterBytes missingCarriedBytes allowed preimagesBlob
     missingCarriedTrees missingCarriedPaths
 
@@ -671,7 +677,7 @@ def joinSmokeSuite : IO UInt32 := do
   let oldAllowed := allowed.extract 0 88
   let oldAllowedInput := MultiStark.joinPubInput oldAllowed structuralClaimBytes
   let oldAllowedRejected := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
-    oldAllowedInput leftProof.toBytes rightProof.toBytes recursionVk
+    oldAllowedInput leftProofAdvice rightProofAdvice recursionVk
     leftOuterBytes rightOuterBytes structuralClaimBytes oldAllowed preimagesBlob
     structuralTreesBlob structuralPathsBlob
 
@@ -686,8 +692,12 @@ def joinSmokeSuite : IO UInt32 := do
     joinChildOuter.extract 2 10 == MultiStark.digestGs allowed &&
     joinChildOuter.extract 10 18 == MultiStark.digestGs leftClaimBytes
   let joinChildNativeVerify := childSystem.verify joinChildOuter joinChildProof
+  let joinChildProofAdvice ← match childSystem.proofToAdviceBytes
+      joinChildOuter joinChildProof with
+    | .error e => IO.eprintln s!"join child advice encoding failed: {e}"; return 1
+    | .ok bytes => pure bytes
   let joinChildIo := io
-    |>.extend 0 zeroKey (bytesAsGs joinChildProof.toBytes)
+    |>.extend 0 zeroKey (bytesAsGs joinChildProofAdvice)
     |>.extend 2 zeroKey (bytesAsGs joinChildOuterBytes)
   let transitiveJoin := compiled.bytecode.execute joinIdx pubInput joinChildIo
 
@@ -697,8 +707,12 @@ def joinSmokeSuite : IO UInt32 := do
   let (wrongJoinOuter, wrongJoinProof, _) :=
     childSystem.prove childJoinIdx wrongJoinChildInput default
   let wrongJoinOuterBytes := MultiStark.serializeClaims #[wrongJoinOuter]
+  let wrongJoinProofAdvice ← match childSystem.proofToAdviceBytes
+      wrongJoinOuter wrongJoinProof with
+    | .error e => IO.eprintln s!"wrong join child advice encoding failed: {e}"; return 1
+    | .ok bytes => pure bytes
   let wrongJoinIo := io
-    |>.extend 0 zeroKey (bytesAsGs wrongJoinProof.toBytes)
+    |>.extend 0 zeroKey (bytesAsGs wrongJoinProofAdvice)
     |>.extend 2 zeroKey (bytesAsGs wrongJoinOuterBytes)
   let wrongTransitiveAllowed :=
     compiled.bytecode.execute joinIdx pubInput wrongJoinIo
@@ -715,6 +729,11 @@ def joinSmokeSuite : IO UInt32 := do
     structuralChildOuter.extract 10 18 == MultiStark.digestGs structuralClaimBytes
   let structuralChildNativeVerify :=
     childSystem.verify structuralChildOuter structuralChildProof
+  let structuralChildProofAdvice ← match childSystem.proofToAdviceBytes
+      structuralChildOuter structuralChildProof with
+    | .error e =>
+      IO.eprintln s!"structural child advice encoding failed: {e}"; return 1
+    | .ok bytes => pure bytes
 
   -- Structural-of-structural: the left child root is opaque to the parent;
   -- only its outer proof/claim and assumption tree are opened.
@@ -731,8 +750,8 @@ def joinSmokeSuite : IO UInt32 := do
     (MultiStark.CheckEnvTrees.structuralPathAdvice
       structuralOutput rightStatement structuralParentOutput)
   let transitiveStructural := compiled.bytecode.executeMultiStarkJoin
-    structuralJoinIdx structuralParentInput structuralChildProof.toBytes
-    rightProof.toBytes recursionVk structuralChildOuterBytes rightOuterBytes
+    structuralJoinIdx structuralParentInput structuralChildProofAdvice
+    rightProofAdvice recursionVk structuralChildOuterBytes rightOuterBytes
     structuralParentBytes allowed structuralParentPreimages structuralParentTrees
     structuralParentPaths
 
@@ -746,7 +765,7 @@ def joinSmokeSuite : IO UInt32 := do
     (MultiStark.CheckEnvTrees.adviceTrees
       structuralOutput rightStatement flatAboveStructuralOutput)
   let flatAboveStructural := compiled.bytecode.executeMultiStarkJoin joinIdx
-    flatAboveStructuralInput structuralChildProof.toBytes rightProof.toBytes
+    flatAboveStructuralInput structuralChildProofAdvice rightProofAdvice
     recursionVk structuralChildOuterBytes rightOuterBytes flatAboveStructuralBytes
     allowed structuralParentPreimages flatAboveStructuralTrees emptyPathsBlob
 
@@ -780,8 +799,8 @@ def joinSmokeSuite : IO UInt32 := do
     (io.extend 2 twoKey (bytesAsGs unsortedBytes)) unsortedSubjects
   let unsorted := compiled.bytecode.execute joinIdx unsortedInput unsortedIo
 
-  let badLeftProofBytes := leftProof.toBytes.set! 0
-    (UInt8.ofNat ((leftProof.toBytes.data[0]!.toNat + 1) % 256))
+  let badLeftProofBytes := leftProofAdvice.set! 0
+    (UInt8.ofNat ((leftProofAdvice.data[0]!.toNat + 1) % 256))
   let badProofIo := io.extend 0 zeroKey (bytesAsGs badLeftProofBytes)
   let badProof := compiled.bytecode.execute joinIdx pubInput badProofIo
 

@@ -629,11 +629,16 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
     let (proof, proofAddress?) ← match cached? with
       | some cached => pure (cached.proof, some cached.address)
       | none =>
+        let innerProofAdvice ← match ctx.ixvmSystem.proofToAdviceBytes
+            innerClaim innerProof with
+          | .error e =>
+            return .error s!"shard {originalShard} proof advice encoding failed: {e}"
+          | .ok bytes => pure bytes
         let pubInput := MultiStark.verifierPubInput ctx.ixvmVk innerClaimsBytes
         IO.println s!"[aggregate] lifting shard {originalShard} into slot {slotIdx}"
         (← IO.getStdout).flush
         let (outerClaim, proof) := ctx.recursionSystem.proveMultiStark
-          ctx.liftIdx pubInput wrapper.proof ctx.ixvmVk innerClaimsBytes
+          ctx.liftIdx pubInput innerProofAdvice ctx.ixvmVk innerClaimsBytes
         if outerClaim != spec.outerClaim then
           return .error "lift produced an unexpected outer claim"
         let proofAddress? ← match ctx.cacheDir? with
@@ -681,10 +686,18 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
             MultiStark.joinPathsBlob #[]
         let joinFunIdx := if item.structural then ctx.structuralJoinIdx else ctx.joinIdx
         let mode := if item.structural then "structural" else "flat"
+        let leftProofAdvice ← match ctx.recursionSystem.proofToAdviceBytes
+            left.outerClaim left.proof with
+          | .error e => return .error s!"left child proof advice encoding failed: {e}"
+          | .ok bytes => pure bytes
+        let rightProofAdvice ← match ctx.recursionSystem.proofToAdviceBytes
+            right.outerClaim right.proof with
+          | .error e => return .error s!"right child proof advice encoding failed: {e}"
+          | .ok bytes => pure bytes
         IO.println s!"[aggregate] {mode}-joining slots {leftIdx}, {rightIdx} into {slotIdx}"
         (← IO.getStdout).flush
         let result := ctx.recursionSystem.proveMultiStarkJoin joinFunIdx pubInput
-          left.proof.toBytes right.proof.toBytes ctx.recursionVk
+          leftProofAdvice rightProofAdvice ctx.recursionVk
           leftClaimsBytes rightClaimsBytes outputClaimBytes ctx.allowed
           preimagesBlob treesBlob pathsBlob
         let (outerClaim, proof) ← match result with

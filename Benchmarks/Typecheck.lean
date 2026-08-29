@@ -398,6 +398,10 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln "error: provide at least one constant via --consts <n1,n2,…> and/or --consts-file <path>"
     return 1
   let jsonOut : Option String := (p.flag? "json").map (·.as! String)
+  let queryCount? := (p.flag? "queries").map (·.as! Nat)
+  if queryCount? == some 0 then
+    IO.eprintln "error: --queries must be positive"
+    return Ix.Benchmark.Results.exitUsage
   -- skip-deps: check just the target (`verify_const`, trusting its deps)
   -- instead of re-checking the whole transitive closure (`verify_claim`).
   let skipDeps := p.hasFlag "skip-deps"
@@ -463,7 +467,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `--queries N` overrides the selected parameter set's FRI query count
   -- (inner and outer proof alike in --recursive mode, which builds both
   -- systems from `friParams`).
-  let friParams := match (p.flag? "queries").map (·.as! Nat) with
+  let friParams := match queryCount? with
     | some n => { friParams with numQueries := n }
     | none => friParams
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams friParams
@@ -826,11 +830,23 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       MultiStark.CheckEnvTrees.adviceTrees
         left.statement right.statement outputStatement
     let pathsBlob := MultiStark.joinPathsBlob #[]
+    let leftProofAdvice ← match vSystem.proofToAdviceBytes
+        left.outerClaim left.proof with
+      | .error e =>
+        IO.eprintln s!"join benchmark: left proof advice encoding failed: {e}"
+        return 1
+      | .ok bytes => pure bytes
+    let rightProofAdvice ← match vSystem.proofToAdviceBytes
+        right.outerClaim right.proof with
+      | .error e =>
+        IO.eprintln s!"join benchmark: right proof advice encoding failed: {e}"
+        return 1
+      | .ok bytes => pure bytes
     IO.println s!"  executing join {pairName} …"
     (← IO.getStdout).flush
     let (joinExecuteResult, joinExecuteSec) ← timed fun _ =>
       vCompiled.bytecode.executeMultiStarkJoin joinIdx pubInput
-        left.proof.toBytes right.proof.toBytes recursionVk
+        leftProofAdvice rightProofAdvice recursionVk
         leftOuterBytes rightOuterBytes outputClaimBytes allowed
         preimagesBlob treesBlob pathsBlob
     let joinFftCost ← match joinExecuteResult with
@@ -852,7 +868,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.resetPeakTreeRss
       let (joinProveResult, joinProveSec) ← timed fun _ =>
         vSystem.proveMultiStarkJoin joinIdx pubInput
-          left.proof.toBytes right.proof.toBytes recursionVk
+          leftProofAdvice rightProofAdvice recursionVk
           leftOuterBytes rightOuterBytes outputClaimBytes allowed
           preimagesBlob treesBlob pathsBlob
       match joinProveResult with
@@ -912,7 +928,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the fri-verifier-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
     "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, lift both, then execute/prove/verify one flat aggregate join. Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
-    "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
+    "queries"   : Nat;    "Override the positive FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
 ]

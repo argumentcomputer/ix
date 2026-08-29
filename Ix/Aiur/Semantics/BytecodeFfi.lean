@@ -160,6 +160,8 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
     advice buffer (channel 0 = proof, 1 = vk, 2 = claims, key `[0]`
     each) is built natively in Rust from the raw byte blobs — no
     per-byte boxing into Lean `G`s, no buffer marshalling across FFI.
+    `proofAdviceBytes` is the expanded per-query transport returned by
+    `AiurSystem.proofToAdviceBytes`, not compact `Proof.toBytes` wire data.
     `useBytecode` selects the generic Aiur bytecode interpreter over
     the codegen'd verifier (`crates/ixvm-codegen/src/aiur_multi_stark.rs`);
     as with `executeIxVM`, the codegen'd path is only valid when
@@ -171,11 +173,12 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
 @[extern "rs_aiur_multi_stark_execute"]
 opaque executeMultiStark (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+  (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
 /-- Native execution of either aggregate-first join entrypoint. The two
-child proofs/claims and the fixed vk/output/allowed blobs are passed without
+child proof-advice blobs (from `AiurSystem.proofToAdviceBytes`), child claims,
+and the fixed vk/output/allowed blobs are passed without
 per-byte Lean field boxing. `preimagesBlob` and `treesBlob` use the compact
 count/key/length framing produced by `MultiStark.joinPreimagesBlob` and
 `MultiStark.joinTreesBlob`; `pathsBlob` carries structural discharge choices.
@@ -185,7 +188,7 @@ generated production verifier. -/
 @[extern "rs_aiur_multi_stark_join_execute"]
 opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (leftProofBytes rightProofBytes recursionVkBytes : @& ByteArray)
+  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
   (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)

@@ -188,10 +188,10 @@ fn index_key(index: u8) -> Vec<G> {
 #[inline]
 fn packed_digest_key(digest: &[u8; 32]) -> Vec<G> {
   digest
-    .chunks_exact(4)
-    .map(|word| {
-      G::from_u32(u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
-    })
+    .as_chunks::<4>()
+    .0
+    .iter()
+    .map(|word| G::from_u32(u32::from_le_bytes(*word)))
     .collect()
 }
 

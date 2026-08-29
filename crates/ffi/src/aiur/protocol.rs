@@ -1001,7 +1001,9 @@ extern "C" fn rs_aiur_system_prove_ixvm(
 }
 
 /// `Bytecode.Toplevel.executeMultiStark`: run the MultiStark recursive
-/// verifier over raw proof/vk/claims byte blobs. The IO advice buffer
+/// verifier over proof-advice/vk/claims byte blobs. The proof blob is the
+/// expanded per-query transport produced by `proof_to_advice_bytes`, not the
+/// compact persisted `Proof::to_bytes` representation. The IO advice buffer
 /// (channel 0 = proof, 1 = vk, 2 = claims, key `[0]` each) is built
 /// natively via `verifier_io_buffer` — no per-byte Lean boxing, no
 /// buffer marshalling across FFI. `use_bytecode` selects the executor:
@@ -1084,8 +1086,9 @@ fn build_multi_stark_join_io_buffer(
   }))
 }
 
-/// `Bytecode.Toplevel.executeMultiStarkJoin`: execute either join entrypoint over raw
-/// proof/claim/tree/path blobs. The native builder expands the compact keyed
+/// `Bytecode.Toplevel.executeMultiStarkJoin`: execute either join entrypoint over
+/// child proof-advice/claim/tree/path blobs. Each proof is expanded with
+/// `proof_to_advice_bytes` before crossing this boundary. The native builder expands the compact keyed
 /// framing directly into the circuit's seven-channel IO buffer.
 /// As with `rs_aiur_multi_stark_execute`, callers may select either generated
 /// execution or the generic bytecode interpreter.
@@ -1147,7 +1150,9 @@ extern "C" fn rs_aiur_multi_stark_join_execute(
 }
 
 /// `AiurSystem.proveMultiStark`: prove the MultiStark recursive
-/// verifier over raw proof/vk/claims byte blobs. Buffer construction
+/// verifier over proof-advice/vk/claims byte blobs. The proof blob is the
+/// expanded per-query transport, while `Proof::to_bytes` remains the compact
+/// storage/wire representation. Buffer construction
 /// and executor selection as in `rs_aiur_multi_stark_execute`; the
 /// prove itself reuses the executor-generic `AiurSystem::prove_ixvm`.
 /// Returns `(claim, proof)`; the final buffer is not returned.

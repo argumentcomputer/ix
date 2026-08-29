@@ -130,6 +130,9 @@ def main (args : List String) : IO UInt32 := do
   let mode := (argStr args "--mode").getD "native"
   let skipDeps := args.contains "--skip-deps"
   let fri := friParams (argNat args "--queries" 100)
+  if fri.numQueries == 0 then
+    IO.eprintln "error: --queries must be positive"
+    return 1
   let depth := argNat args "--depth" 2
   let stackLimit := argNat args "--stack" 40
   IO.FS.createDirAll dir

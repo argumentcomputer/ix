@@ -260,13 +260,18 @@ def runLift (label : String) (prepared : PreparedShard) (wrapper : Ixon.Proof)
        ("peak-rss-bytes", Lean.toJson innerVerifyPeak),
        ("proof-bytes", Lean.toJson wrapper.proof.size)])
 
+  let innerProofAdvice ← match ixvmSystem.proofToAdviceBytes innerClaim innerProof with
+    | .error error =>
+      return .error s!"{label}: inner proof advice encoding failed: {error}"
+    | .ok bytes => pure bytes
+
   let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
   let pubInput := MultiStark.verifierPubInput ixvmVk innerClaimsBytes
   IO.println s!"[pair-bench] proving {label}"
   (← IO.getStdout).flush
   TracingTexray.resetPeakTreeRss
   let ((outerClaim, proof), proveSeconds) ← timed fun _ =>
-    recursionSystem.proveMultiStark liftIdx pubInput wrapper.proof ixvmVk innerClaimsBytes
+    recursionSystem.proveMultiStark liftIdx pubInput innerProofAdvice ixvmVk innerClaimsBytes
   let provePeak ← TracingTexray.peakTreeRssBytes
   if outerClaim != spec.outerClaim then
     let error := "produced an unexpected outer claim"
@@ -326,13 +331,23 @@ def runJoin (item : ScheduledFold) (left right : AggregateSlot)
     else MultiStark.joinPathsBlob #[]
   let joinFunIdx := if item.structural then structuralJoinIdx else joinIdx
   let label := if item.structural then "structural-join" else "flat-join"
+  let leftProofAdvice ← match recursionSystem.proofToAdviceBytes
+      left.outerClaim left.proof with
+    | .error error =>
+      return .error s!"{label}: left child proof advice encoding failed: {error}"
+    | .ok bytes => pure bytes
+  let rightProofAdvice ← match recursionSystem.proofToAdviceBytes
+      right.outerClaim right.proof with
+    | .error error =>
+      return .error s!"{label}: right child proof advice encoding failed: {error}"
+    | .ok bytes => pure bytes
 
   IO.println s!"[pair-bench] proving {label}"
   (← IO.getStdout).flush
   TracingTexray.resetPeakTreeRss
   let (proved, proveSeconds) ← timed fun _ =>
     recursionSystem.proveMultiStarkJoin joinFunIdx pubInput
-      left.proof.toBytes right.proof.toBytes recursionVk
+      leftProofAdvice rightProofAdvice recursionVk
       leftClaimsBytes rightClaimsBytes outputClaimBytes allowed
       preimagesBlob treesBlob pathsBlob
   let provePeak ← TracingTexray.peakTreeRssBytes

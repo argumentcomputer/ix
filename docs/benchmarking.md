@@ -116,12 +116,27 @@ one-constant aggregate fixture. Its lift proof is **7,986,166 bytes**;
 the containing `Ixon.Proof` wrapper is 7,986,204 bytes at store address
 `090bea6f1c976ef6677fad94f86286295b2eea751fefb7af4c82ce9f84ca1535`.
 Positive-PoW grinding may change the proof contents, but its structural byte
-length is stable. WP-E2 measures its proof-size delta against this value.
+length is stable. This is the WP-E2 comparison baseline.
 
-The box-independent `--queries 0` join wiring gate produced a 246,014-byte
-flat-join proof, 10,280,903,348 FFT cost, 6.57 s prove time, 10,798,899,200-byte
-peak RSS, and 1.44 ms native verification. Those are smoke values, not W0 cost
-estimates; the q=50 join run remains a large-box benchmark.
+The post-E2 default-q=100/PoW-20 run (2026-08-29) produced a verified
+**7,443,023-byte** lift proof in a 7,443,061-byte wrapper at store address
+`b5644a2956b544220dbf54a4768658cb727b24737fc383200e4c475b1f2aa6b6`:
+543,143 bytes, or 6.80%, below the pre-E2 lift pin. Unlike the old per-query
+path encoding, a pruned multiproof's byte length depends on how its sampled
+query paths overlap. Positive-PoW grinding can therefore vary both contents
+and length after E2; this is a measured sample, not a byte-exact regression
+pin. The deterministic q=100/PoW-0 benchmark is the stable local signal: its
+outer proof was 7,447,279 bytes and its recursive-verifier FFT cost was
+38,850,942,825. The default-PoW debug path separately measured a
+3,861,528-byte compact inner proof, 4,304,576 bytes after expansion to
+per-query advice, and 38,311,558,162 recursive-verifier FFT cost.
+
+The historical pre-E2 `--queries 0` join wiring gate produced a 246,014-byte
+flat-join proof and 10,280,903,348 FFT cost. P3 v0.6 requires at least one FRI
+query, so the post-E2 replacement is `--queries 1` (still PoW 0): a
+397,177-byte flat-join proof, 15,204,157,391 FFT cost, 6.64 s prove time,
+11,451,486,208-byte peak RSS, and 2.69 ms native verification. These are smoke
+values, not W0 cost estimates; the q=50 join run remains a large-box benchmark.
 
 All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar. The ooc and zkVM cells share per-constant

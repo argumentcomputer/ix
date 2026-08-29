@@ -145,8 +145,10 @@ def proveIxVM (system : @& AiurSystem)
   let r := proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray
   (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
 
-/-- Prove the MultiStark recursive verifier over raw proof/vk/claims
-    byte blobs. The IO advice buffer is built natively in Rust (see
+/-- Prove the MultiStark recursive verifier over proof-advice/vk/claims
+byte blobs. `proofAdviceBytes` must come from
+`AiurSystem.proofToAdviceBytes`; compact `Proof.toBytes` wire bytes are not
+an in-circuit input. The IO advice buffer is built natively in Rust (see
     `Bytecode.Toplevel.executeMultiStark`); the execute step inside
     the prove routes through the codegen'd verifier
     (`crates/ixvm-codegen/src/aiur_multi_stark.rs`) unless
@@ -157,11 +159,13 @@ def proveIxVM (system : @& AiurSystem)
 @[extern "rs_aiur_multi_stark_prove"]
 opaque proveMultiStark (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+  (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
     Array G × Proof
 
-/-- Prove one flat or structural aggregate-first binary join over raw child
-proof/claim advice. The compact preimage/tree/path blobs are produced by
+/-- Prove one flat or structural aggregate-first binary join over child
+proof/claim advice. Both proof blobs must come from
+`AiurSystem.proofToAdviceBytes`; compact child `Proof.toBytes` values remain
+the persisted/cache representation. The compact preimage/tree/path blobs are produced by
 `MultiStark.joinPreimagesBlob`, `MultiStark.joinTreesBlob`, and
 `MultiStark.joinPathsBlob`. Malformed
 framing is returned as an error; as with `prove`/`proveMultiStark`, callers
@@ -170,7 +174,7 @@ intentionally not marshalled back to Lean. -/
 @[extern "rs_aiur_multi_stark_join_prove"]
 opaque proveMultiStarkJoin (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (leftProofBytes rightProofBytes recursionVkBytes : @& ByteArray)
+  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
   (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)

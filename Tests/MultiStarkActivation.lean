@@ -141,7 +141,7 @@ private structure PreparedChild where
 
 private def prepareChild (system : Aiur.AiurSystem) (indices : Indices)
     (config : HeightConfig) (kind : ChildKind)
-    (statement : MultiStark.CheckEnvTrees) : PreparedChild :=
+    (statement : MultiStark.CheckEnvTrees) : Except String PreparedChild := do
   let claimBytes := Ix.Claim.ser statement.claim
   match kind with
   | .lift =>
@@ -150,9 +150,12 @@ private def prepareChild (system : Aiur.AiurSystem) (indices : Indices)
     let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
     let input := MultiStark.verifierPubInput config.fakeIxvmVk innerClaimsBytes
     let (outer, proof, _) := system.prove indices.lift input default
-    { proofBytes := proof.toBytes
+    let adviceBytes ← system.proofToAdviceBytes outer proof
+    pure ({
+      proofBytes := adviceBytes
       outerClaimsBytes := MultiStark.serializeClaims #[outer]
-      preimages := #[innerClaimsBytes, claimBytes] }
+      preimages := #[innerClaimsBytes, claimBytes]
+    } : PreparedChild)
   | .flat | .structural =>
     let idx := match kind with
       | .flat => indices.flat
@@ -160,9 +163,12 @@ private def prepareChild (system : Aiur.AiurSystem) (indices : Indices)
       | .lift => unreachable!
     let input := MultiStark.joinPubInput config.allowed claimBytes
     let (outer, proof, _) := system.prove idx input default
-    { proofBytes := proof.toBytes
+    let adviceBytes ← system.proofToAdviceBytes outer proof
+    pure ({
+      proofBytes := adviceBytes
       outerClaimsBytes := MultiStark.serializeClaims #[outer]
-      preimages := #[claimBytes] }
+      preimages := #[claimBytes]
+    } : PreparedChild)
 
 private structure JoinCase where
   label : String
@@ -192,7 +198,7 @@ The right child remains a lift. Both child positions call the same decoder, so
 varying one side covers all three decoder arms while retaining a mixed-shape
 case for the flat and structural child kinds. -/
 private def prepareJoinCases (system : Aiur.AiurSystem) (indices : Indices)
-    (configs : Array HeightConfig) : Array JoinCase := Id.run do
+    (configs : Array HeightConfig) : Except String (Array JoinCase) := do
   let a := Address.blake3 "activation-subject-left".toUTF8
   let b := Address.blake3 "activation-subject-right".toUTF8
   let c := Address.blake3 "activation-carry-left".toUTF8
@@ -220,9 +226,9 @@ private def prepareJoinCases (system : Aiur.AiurSystem) (indices : Indices)
             leftAsm disposition
           let right := selectStatement rightNone rightDischarge rightCarry
             rightAsm disposition
-          let rightChild := prepareChild system indices config .lift right
+          let rightChild ← prepareChild system indices config .lift right
           for childKind in #[ChildKind.lift, .flat, .structural] do
-            let leftChild := prepareChild system indices config childKind left
+            let leftChild ← prepareChild system indices config childKind left
             cases := cases.push {
               label := s!"height={config.height.label},left-asm={assumptionLabel leftAsm},\
                 right-asm={assumptionLabel rightAsm},disposition={disposition.label},\
@@ -246,10 +252,11 @@ private def runLift (compiled : Aiur.CompiledToplevel)
     Except String Sample := do
   let input := MultiStark.digestGs config.fakeIxvmVk
   let (innerClaim, proof, _) := childSystem.prove indices.verify input default
+  let proofBytes ← childSystem.proofToAdviceBytes innerClaim proof
   let claimBytes := MultiStark.serializeClaims #[innerClaim]
   let pubInput := MultiStark.verifierPubInput childVk claimBytes
   let (_, queryCounts) ← compiled.bytecode.executeMultiStark productionLiftIdx
-    pubInput proof.toBytes childVk claimBytes
+    pubInput proofBytes childVk claimBytes
   pure {
     label := s!"lift/height={config.height.label}"
     entrypoint := .lift
@@ -471,7 +478,9 @@ def run : IO UInt32 := do
       ({short.probeRows} vs {tall.probeRows} rows)"
     return 1
   let configs := #[short, tall]
-  let cases := prepareJoinCases childSystem indices configs
+  let cases ← match prepareJoinCases childSystem indices configs with
+    | .error e => IO.eprintln s!"activation audit input preparation failed: {e}"; return 1
+    | .ok cases => pure cases
   if cases.size != 48 then
     IO.eprintln s!"activation audit: expected 48 join cases, built {cases.size}"
     return 1
