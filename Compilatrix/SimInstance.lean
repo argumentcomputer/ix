@@ -1,6 +1,8 @@
 import Compilatrix.EraseValidator
-import Compilatrix.IxIR1.LowerStateSim
+import Compilatrix.IxIR1.LowerProgress
+import Compilatrix.IxIR1.CostTrace
 import Compilatrix.IxIR0.Mono
+import Compilatrix.IxIR0.ProjectionFree
 
 /-!
 # The first theorem, applied
@@ -29,12 +31,36 @@ theorem and the executable pass:
 - a second fixture stores a definition behind a valid sharing table, runs the
   sharing-aware program and expression validators, and instantiates
   `erasure_sim_inlineSharing_closed`.
-- a two-parameter `Pair.mk` fixture certifies the executable constructor drop
-  spine and a projection from the resulting value.
+- a two-parameter `Pair.mk` fixture certifies both the complete constructor
+  drop spine and a partial pap that escapes through a let, consumes its final
+  parameter through a variable head, and projects the contentful field `22`.
 - a one-parameter List-shaped fixture certifies a parameterized recursor,
   including its ghost parameter slot and a two-field constructor rule.
-- a one-index family certifies a complete pre-major recursor spine whose
-  source-only index is dropped before both evaluators fire on the major.
+- a two-constructor, one-index family certifies complete and escaping partial
+  pre-major recursor spines, plus a step rule whose indexed `recur` self call
+  processes a contentful base value; the source-only index is consumed before
+  either evaluator fires on the major.
+- an unfoldable `dPrj` fixture follows the emitted member alias and returns
+  `91`; a mixed mutual block evaluates a non-self inductive `recur` through an
+  escaping application before both sides return the contentful literal `88`.
+- a simultaneous member certificate closes a genuinely cyclic pair of
+  unfoldable definitions, while a second certificate closes two Nat recursors
+  whose successor rules alternate across the block; exact program/expression
+  certificates and source/target runs return `71` and `77`, respectively, and
+  an incomplete-plan guard pins fail-closed validation.
+- an unfoldable mutual member calls a configured opaque sibling and a public
+  projection aliases that sibling directly; both same-address oracle paths
+  return `83`, with missing-configuration and arity-drift guards.
+- a contentful ordinary-definition fixture evaluates a source-only ghost
+  argument to `7̂`, discards it through the independently checked declaration
+  and implementation telescopes, and returns `9̂` on both sides; a negative
+  guard pins rejection of mismatched target result ownership.
+- configured quotient fixtures certify the exact emitted `Quot.mk`,
+  `Quot.lift`, and `Quot.ind` definitions and return the wrapped
+  representative `37` contentfully on both sides.
+- a configured two-argument axiom crosses an explicit source/target oracle
+  ledger and returns `42` contentfully; a separate opaque-definition witness
+  exercises the same structural extern validation path.
 
 If any relation clause failed to cover what the eraser actually
 emits, this file would not elaborate.
@@ -258,7 +284,8 @@ theorem addSim {fuel : Nat} {v : Ixon.Eval.Value}
     (hev : Ixon.Eval.eval ectxI fuel testFI [] addE = .ok v) :
     ∃ fuel' v', IxIR0.eval ictxI fuel' [] addE' = .ok v' ∧
       ValRel ectxI ictxI v v' :=
-  erasure_sim_closed hev addEDer
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hev addEDer
 
 -- The hypothesis is inhabited: the source run computes `5̂`…
 private def srcNatOf? : Nat → Ixon.Eval.Value → Option Nat
@@ -2231,6 +2258,94 @@ private theorem add_source_exact : IxIR0.eval ictxI 23 [] addE' =
     IxIR0.Head.arity,
     hzero, hsucc, hnrec, hanrec, hadd, ixNatValue, bind, Except.bind]
 
+private theorem add_projectionFreeCtx :
+    IxIR0.ProjectionFree.CtxSafe ictxI := by
+  constructor
+  · intro address declaration hlookup
+    change IxIR0.Env.ofList erasedList address = some declaration at hlookup
+    obtain ⟨⟨itemAddress, itemDeclaration⟩, hmem, haddress,
+      hdeclaration⟩ := envOfList_some_mem hlookup
+    dsimp only at haddress hdeclaration
+    subst itemAddress
+    subst itemDeclaration
+    simp only [erasedList, List.mem_cons, List.not_mem_nil, or_false] at hmem
+    rcases hmem with hmem | hmem | hmem | hmem | hmem | hmem | hmem
+    all_goals
+      cases hmem
+      simp [IxIR0.ProjectionFree.declSafe,
+        IxIR0.ProjectionFree.syntaxSafe, succRuleBody', addBody']
+  · intro address args result hargs horacle
+    simp [ictxI] at horacle
+
+private theorem add_projectionFreeExpr :
+    IxIR0.ProjectionFree.ExprSafe addE' := by
+  change IxIR0.ProjectionFree.syntaxSafe addE' = true
+  rfl
+
+/-- The certified erasure trace for `add 2 3` retains the dynamically entered
+closure and recursive rule bodies. -/
+private theorem add_source_callAwareTrace :
+    ∃ sourceFuel,
+      IxIR0.ProjectionSafe.Eval ictxI sourceFuel [] addE'
+        (ixNatValue 5) := by
+  exact ⟨23, IxIR0.ProjectionFree.Eval.of_run add_projectionFreeCtx
+    IxIR0.ProjectionFree.ValuesSafe.nil add_projectionFreeExpr
+    add_source_exact⟩
+
+private theorem add_source_profile :
+    ∃ sourceFuel profile,
+      IxIR0.DynamicCost.Eval ictxI sourceFuel [] addE'
+        (ixNatValue 5) profile := by
+  obtain ⟨sourceFuel, htrace⟩ := add_source_callAwareTrace
+  obtain ⟨profile, hprofile⟩ :=
+    IxIR0.DynamicCost.Eval.ofTrace htrace
+  exact ⟨sourceFuel, profile, hprofile⟩
+
+/-- Exact target counters for the compiled recursive `add 2 3` execution. -/
+def addIxIR1ExactCost : CostObservation :=
+  { allocs := 12, reuses := 0, frees := 6, rcops := 24 }
+
+set_option maxRecDepth 4000 in
+private theorem add_target_cost_exact :
+    costObservation topResultStore = addIxIR1ExactCost := by
+  rfl
+
+/-- The recursive fixture uses the compiler-facing ownership-amortized
+tariff.  Unlike the original witness-calibrated model, these weights contain
+no counter from this particular target run. -/
+def addIxIR1ProfileWeights : IxIR1.CostTrace.ProfileWeights :=
+  IxIR1.CostTrace.ownershipAmortizedWeights
+
+def AddDynamicCostSpec (_value : IxIR0.Value)
+    (profile : IxIR0.DynamicCost.Profile)
+    (observation : CostObservation) : Prop :=
+  observation = addIxIR1ExactCost ∧
+    IxIR1.CostTrace.WithinBudget addIxIR1ProfileWeights profile observation
+
+/-- The actual whole-pass recursive fixture has an explicit dynamic source
+profile and satisfies both its exact target counter equation and the induced
+linear profile budget at every successful source/target fuel. -/
+theorem addIxIR1DynamicCostRefinement :
+    IxIR1.CostTrace.ProfileCostRefinement ictxI addTargetCtx addE'
+      addMainCode (fun _ _ _ _ => False) AddDynamicCostSpec := by
+  obtain ⟨sourceFuel, profile, hprofile⟩ := add_source_profile
+  apply IxIR1.CostTrace.ProfileCostRefinement.of_witness
+    hprofile add_runMain_exact
+  constructor
+  · exact add_target_cost_exact
+  · rw [add_target_cost_exact]
+    have hevals : 15 ≤ profile.evals := by
+      simpa [addE', natE', IxIR0.DynamicCost.surfaceEvals] using
+        hprofile.surfaceEvals_le
+    simp [IxIR1.CostTrace.WithinBudget,
+      IxIR1.CostTrace.ObservationLE,
+      IxIR1.CostTrace.ProfileWeights.budget,
+      IxIR1.CostTrace.observationAdd,
+      IxIR1.CostTrace.observationScale,
+      IxIR1.CostTrace.ownershipAmortizedWeights,
+      addIxIR1ProfileWeights, addIxIR1ExactCost]
+    omega
+
 theorem addIxIR1SemanticForwardSimulation :
     SemanticForwardSimulation ictxI addTargetCtx addE' addMainCode
       (fun _ _ _ _ => False) := by
@@ -2248,6 +2363,15 @@ theorem addIxIR1SemanticForwardSimulation :
   exact ⟨46, topResultStore, .loc topResultLoc,
     add_runMain_exact, add_value_graph⟩
 
+/-- The exact compiled `add 2 3` main cannot expose a dynamic memory error
+at any evaluator fuel. One kernel-checked successful run is sufficient:
+success is monotone above fuel 46, while a memory error below it would
+persist upward and contradict that run. -/
+theorem addIxIR1MemoryErrorUnreachable :
+    IxIR1.LowerSim.MemoryErrorUnreachable addTargetCtx addMainCode :=
+  IxIR1.LowerSim.SemanticForwardSimulation.memoryErrorUnreachable
+    addIxIR1SemanticForwardSimulation add_source_exact
+
 
 end IxIR1SemanticSimulation
 
@@ -2255,6 +2379,9 @@ end IxIR1SemanticSimulation
 
 private def aPairBlock : Ixon.Address := addrOf 0x20
 private def aPairMk : Ixon.Address := addrOf 0x21
+private def aPairLeft : Ixon.Address := addrOf 0x22
+private def aPairRight : Ixon.Address := addrOf 0x23
+private def aPairType : Ixon.Address := addrOf 0x24
 
 private def pairInd : Compilatrix.Ixon.Inductive :=
   { isUnsafe := false, lvls := 0, params := 2, indices := 0
@@ -2270,25 +2397,33 @@ private def cPairBlock : Constant :=
 private def cPairMk : Constant :=
   prjConst (.cPrj { idx := 0, cidx := 0, block := aPairBlock })
 
+private def cPairType : Constant :=
+  prjConst (.iPrj { idx := 0, block := aPairBlock })
+
 private def pairStore : List (Ixon.Address × Constant) :=
-  [(aPairBlock, cPairBlock), (aPairMk, cPairMk)]
+  [(aPairBlock, cPairBlock), (aPairMk, cPairMk), (aPairType, cPairType)]
 
 private def pairResolver : Ixon.Address → Option Constant := fun a =>
   (pairStore.find? (fun p => p.1 == a)).map (·.2)
 
 private def pairEctx : Ixon.Eval.EvalCtx :=
-  { resolve := pairResolver }
+  { resolve := pairResolver
+    blobs := fun address =>
+      if address = aPairLeft then some (.natB 11)
+      else if address = aPairRight then some (.natB 22)
+      else none }
 
 private def pairMember : Ixon.Address := Erase.memberAddr aPairBlock 0
 
 private def pairErased : List (Ixon.Address × IxIR0.Decl) :=
-  [(pairMember, .defn .shared .erased), (aPairMk, .ctor 0 2)]
+  [(pairMember, .defn .shared .erased), (aPairMk, .ctor 0 2),
+   (aPairType, .defn .shared .erased)]
 
 private def pairIctx : IxIR0.Ctx :=
   { env := IxIR0.Env.ofList pairErased }
 
 private def pairFrame : Ixon.Eval.Frame :=
-  { refs := #[aPairMk], univs := #[.zero] }
+  { refs := #[aPairMk, aPairLeft, aPairRight, aPairType], univs := #[.zero] }
 
 private def pairTables : Erase.ETables :=
   { refs := pairFrame.refs, selfMuts := pairFrame.selfMuts }
@@ -2303,15 +2438,34 @@ private def pairTarget : IxIR0.Expr :=
 private def pairPartialSource : Ixon.Expr :=
   .app (.ref 0 #[]) (.sort 0)
 
-private def pairProjectionSource : Ixon.Expr := .prj 0 1 pairSource
+/-- A one-parameter constructor pap escapes through a let; its remaining
+parameter and two contentful fields are supplied through an unknown variable
+head. -/
+private def pairSplitSource : Ixon.Expr :=
+  .letE false (.sort 0) (.app (.ref 0 #[]) (.sort 0))
+    (.app (.app (.app (.var 0) (.sort 0)) (.nat 1)) (.nat 2))
+
+private def pairSplitTarget : IxIR0.Expr :=
+  .letE .many (.lam .many (.ref aPairMk))
+    (.app (.app (.app (.var 0) .erased) (.lit (.nat 11)))
+      (.lit (.nat 22)))
+
+private def pairSplitProjectionSource : Ixon.Expr :=
+  .prj 3 1 pairSplitSource
+
+private def pairSplitProjectionTarget : IxIR0.Expr :=
+  .proj 1 pairSplitTarget
+
+private def pairProjectionSource : Ixon.Expr := .prj 3 1 pairSource
 private def pairProjectionTarget : IxIR0.Expr := .proj 1 pairTarget
 
 private def pairNoCover : EraseValidator.CoverOracle pairEctx pairIctx :=
   fun _ => none
 
--- The constructor declaration is emitted by the real program eraser.  It is
--- intentionally absent from the ordinary `Covered` database: a bare
--- parameterized constructor head is not yet a related value.
+-- The constructor declaration is emitted by the real program eraser. It is
+-- intentionally absent from the ordinary `Covered` database: parameterized
+-- constructor expressions use the stronger `ctorW`/`ctorP` structural
+-- certificates instead of the generic reference rule.
 #guard (match EraseValidator.certifyProgram pairEctx pairStore [] 100 100 with
   | .ok cert => cert.target == pairErased && cert.coverage.isEmpty
   | .error _ => false)
@@ -2321,11 +2475,29 @@ private def pairNoCover : EraseValidator.CoverOracle pairEctx pairIctx :=
   | .ok cert => cert.target == pairTarget
   | .error _ => false)
 
--- A constructor pap that escapes before its complete dropped prefix remains
--- outside the relation; the target has already stuttered to the bare head.
+-- A partial visible prefix is now certified against one ignored target
+-- wrapper, rather than exposing the two-field target constructor early.
 #guard (match EraseValidator.certifyExpr pairEctx pairIctx pairNoCover none
     pairTables pairFrame.selfAddr [] pairPartialSource 100 100 with
-  | .error (.relation "constructor parameter prefix is incomplete") => true
+  | .ok cert => cert.target == .lam .many (.ref aPairMk)
+  | _ => false)
+
+#guard (match EraseValidator.validateExpr pairEctx pairIctx pairNoCover none
+    pairTables.refs pairTables.selfMuts pairFrame.selfAddr [] 100
+    pairPartialSource (.lam .many (.lam .many (.ref aPairMk))) with
+  | .error "constructor wrapper body mismatch" => true
+  | _ => false)
+
+-- The wrapper is first-class: it may escape through a let and receive the
+-- remaining parameter through a variable head before the kept fields.
+#guard (match EraseValidator.certifyExpr pairEctx pairIctx pairNoCover none
+    pairTables pairFrame.selfAddr [] pairSplitSource 100 100 with
+  | .ok cert => cert.target == pairSplitTarget
+  | _ => false)
+
+#guard (match EraseValidator.certifyExpr pairEctx pairIctx pairNoCover none
+    pairTables pairFrame.selfAddr [] pairSplitProjectionSource 100 100 with
+  | .ok cert => cert.target == pairSplitProjectionTarget
   | _ => false)
 
 #guard (match EraseValidator.certifyExpr pairEctx pairIctx pairNoCover none
@@ -2340,13 +2512,33 @@ private theorem pairProjectionDer :
     (cover := pairNoCover) (fuel := 100)
   decide
 
+private theorem pairSplitProjectionDer :
+    PErase pairEctx pairIctx none pairFrame.refs pairFrame.selfMuts
+      pairFrame.selfAddr [] pairSplitProjectionSource
+        pairSplitProjectionTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := pairNoCover) (fuel := 100)
+  decide
+
 theorem pairProjectionSim {fuel : Nat} {v : Ixon.Eval.Value}
     (hev : Ixon.Eval.eval pairEctx fuel pairFrame [] pairProjectionSource =
       .ok v) :
     ∃ fuel' v',
       IxIR0.eval pairIctx fuel' [] pairProjectionTarget = .ok v' ∧
       ValRel pairEctx pairIctx v v' :=
-  erasure_sim_closed hev pairProjectionDer
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hev pairProjectionDer
+
+/-- Forward simulation for a split constructor-parameter pap that escapes
+through a let and returns the contentful second field. -/
+theorem pairSplitProjectionSim {fuel : Nat} {v : Ixon.Eval.Value}
+    (hev : Ixon.Eval.eval pairEctx fuel pairFrame []
+      pairSplitProjectionSource = .ok v) :
+    ∃ fuel' v',
+      IxIR0.eval pairIctx fuel' [] pairSplitProjectionTarget = .ok v' ∧
+      ValRel pairEctx pairIctx v v' :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hev pairSplitProjectionDer
 
 #guard (match Ixon.Eval.eval pairEctx 100 pairFrame [] pairSource with
   | .ok (.ctorV block 0 0 [_, _, _, _]) => block == aPairBlock
@@ -2354,6 +2546,15 @@ theorem pairProjectionSim {fuel : Nat} {v : Ixon.Eval.Value}
 
 #guard (match IxIR0.eval pairIctx 100 [] pairTarget with
   | .ok (.ctor address 0 [.erased, .erased]) => address == aPairMk
+  | _ => false)
+
+#guard (match Ixon.Eval.eval pairEctx 100 pairFrame []
+    pairSplitProjectionSource with
+  | .ok (.litV (.natL 22)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval pairIctx 100 [] pairSplitProjectionTarget with
+  | .ok (.lit (.nat 22)) => true
   | _ => false)
 
 #guard (match Ixon.Eval.eval pairEctx 100 pairFrame [] pairProjectionSource with
@@ -2497,7 +2698,8 @@ theorem parameterizedListRecSim {fuel : Nat} {v : Ixon.Eval.Value}
     ∃ fuel' v',
       IxIR0.eval listIctx fuel' [] listRecTarget = .ok v' ∧
       ValRel listEctx listIctx v v' :=
-  erasure_sim_closed hev listRecDer
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hev listRecDer
 
 #guard (match Ixon.Eval.eval listEctx 200 listFrame [] listRecSource with
   | .ok (.sortV 0) => true
@@ -2512,27 +2714,50 @@ theorem parameterizedListRecSim {fuel : Nat} {v : Ixon.Eval.Value}
 private def aIxBlock : Ixon.Address := addrOf 0x40
 private def aIxCtor : Ixon.Address := addrOf 0x41
 private def aIxRec : Ixon.Address := addrOf 0x42
+private def aIxMinor : Ixon.Address := addrOf 0x43
+private def aIxField : Ixon.Address := addrOf 0x44
+private def aIxStep : Ixon.Address := addrOf 0x45
 
-/-- A one-index family with one unary constructor.  The field is runtime
-data; the family index is supplied to the recursor but absent from its erased
+/-- A one-index family with base and step constructors.  Both carry one
+runtime field; the step fixture stores another family value in that field.
+The family index is supplied to the recursor but absent from its erased
 pre-major application spine. -/
 private def ixInd : Compilatrix.Ixon.Inductive :=
   { isUnsafe := false, lvls := 0, params := 0, indices := 1
     typ := .sort 0
     ctors := #[
       { isUnsafe := false, lvls := 0, cidx := 0, params := 0, fields := 1
+        typ := .sort 0 },
+      { isUnsafe := false, lvls := 0, cidx := 1, params := 0, fields := 1
         typ := .sort 0 }] }
 
-/-- The sole rule returns its constructor field.  Its lambda chain contains
-the motive, minor, and field binders; the source-only index is intentionally
-not part of the rule environment. -/
+/-- The base rule returns its field.  The step rule recursively applies the
+same indexed recursor to its field.  Each lambda chain contains the motive,
+two minors, and field binders; the source-only index is intentionally not part
+of the rule environment. -/
+private def ixRecStepBody : Ixon.Expr :=
+  .app
+    (.app
+      (.app
+        (.app
+          (.app (.recur 1 #[]) (.var 3))
+          (.var 2))
+        (.var 1))
+      (.sort 0))
+    (.var 0)
+
+private def ixRuleBody (body : Ixon.Expr) : Ixon.Expr :=
+  .lam .many (.sort 0)
+    (.lam .many (.sort 0)
+      (.lam .many (.sort 0)
+        (.lam .many (.sort 0) body)))
+
 private def ixRec : Recursor :=
   { k := false, isUnsafe := false, lvls := 0, params := 0, indices := 1
-    motives := 1, minors := 1, typ := .sort 0
+    motives := 1, minors := 2, typ := .sort 0
     rules := #[
-      { fields := 1
-        rhs := .lam .many (.sort 0) (.lam .many (.sort 0)
-          (.lam .many (.sort 0) (.var 0))) }] }
+      { fields := 1, rhs := ixRuleBody (.var 0) },
+      { fields := 1, rhs := ixRuleBody ixRecStepBody }] }
 
 private def cIxBlock : Constant :=
   { info := .muts #[.indc ixInd, .recr ixRec]
@@ -2544,48 +2769,91 @@ private def cIxCtor : Constant :=
 private def cIxRec : Constant :=
   prjConst (.rPrj { idx := 1, block := aIxBlock })
 
+private def cIxStep : Constant :=
+  prjConst (.cPrj { idx := 0, cidx := 1, block := aIxBlock })
+
 private def ixStore : List (Ixon.Address × Constant) :=
-  [(aIxBlock, cIxBlock), (aIxCtor, cIxCtor), (aIxRec, cIxRec)]
+  [(aIxBlock, cIxBlock), (aIxCtor, cIxCtor), (aIxRec, cIxRec),
+   (aIxStep, cIxStep)]
 
 private def ixResolver : Ixon.Address → Option Constant := fun a =>
   (ixStore.find? (fun p => p.1 == a)).map (·.2)
 
 private def ixEctx : Ixon.Eval.EvalCtx :=
-  { resolve := ixResolver }
+  { resolve := ixResolver
+    blobs := fun address =>
+      if address = aIxMinor then some (.natB 17)
+      else if address = aIxField then some (.natB 73)
+      else none }
 
 private def maIx : Ixon.Address := Erase.memberAddr aIxBlock 0
 private def maIxRec : Ixon.Address := Erase.memberAddr aIxBlock 1
 
 private def ixErased : List (Ixon.Address × IxIR0.Decl) :=
   [(maIx, .defn .shared .erased),
-   (maIxRec, .recursor 2 false #[{ fields := 1, rhs := .var 0 }]),
+   (maIxRec, .recursor 3 false #[
+      { fields := 1, rhs := .var 0 },
+      { fields := 1
+        rhs := .app
+          (.app (.app (.app (.var 4) .erased) (.var 2)) (.var 1))
+          (.var 0) }]),
    (aIxCtor, .ctor 0 1),
-   (aIxRec, .defn .shared (.ref maIxRec))]
+   (aIxRec, .defn .shared (.ref maIxRec)),
+   (aIxStep, .ctor 1 1)]
 
 private def ixIctx : IxIR0.Ctx :=
   { env := IxIR0.Env.ofList ixErased }
 
 private def ixFrame : Ixon.Eval.Frame :=
-  { refs := #[aIxRec, aIxCtor], univs := #[.zero] }
+  { refs := #[aIxRec, aIxCtor, aIxStep, aIxMinor, aIxField],
+    univs := #[.zero] }
 
 private def ixTables : Erase.ETables :=
   { refs := ixFrame.refs, selfMuts := ixFrame.selfMuts }
 
 private def ixMajorSource : Ixon.Expr :=
-  .app (.ref 1 #[]) (.sort 0)
+  .app (.ref 1 #[]) (.nat 4)
 
 private def ixMajorTarget : IxIR0.Expr :=
-  .app (.ref aIxCtor) .erased
+  .app (.ref aIxCtor) (.lit (.nat 73))
 
-/-- Motive, minor, source-only index, then major. -/
+/-- Motive, two minors, source-only index, then major. -/
 private def ixPreMajorSource : Ixon.Expr :=
-  .app (.app (.app (.ref 0 #[]) (.sort 0)) (.sort 0)) (.sort 0)
+  .app
+    (.app (.app (.app (.ref 0 #[]) (.sort 0)) (.nat 3)) (.sort 0))
+    (.sort 0)
 
 private def ixPreMajorTarget : IxIR0.Expr :=
-  .app (.app (.ref aIxRec) .erased) .erased
+  .app (.app (.app (.ref aIxRec) .erased) (.lit (.nat 17))) .erased
 
 private def ixIncompleteSource : Ixon.Expr :=
-  .app (.app (.ref 0 #[]) (.sort 0)) (.sort 0)
+  .app (.app (.app (.ref 0 #[]) (.sort 0)) (.nat 3)) (.sort 0)
+
+private def ixIncompleteTarget : IxIR0.Expr :=
+  Erase.captureThenIgnoreN 1 ixPreMajorTarget
+
+/-- The protected pre-major pap escapes through a let, receives its erased
+index through an ordinary variable-headed application, and only then receives
+the constructor major. -/
+private def ixSplitSource : Ixon.Expr :=
+  .letE false (.sort 0) ixIncompleteSource
+    (.app (.app (.var 0) (.sort 0)) ixMajorSource)
+
+private def ixSplitTarget : IxIR0.Expr :=
+  .letE .many ixIncompleteTarget
+    (.app (.app (.var 0) .erased) ixMajorTarget)
+
+private def ixRecursiveMajorSource : Ixon.Expr :=
+  .app (.ref 2 #[]) ixMajorSource
+
+private def ixRecursiveMajorTarget : IxIR0.Expr :=
+  .app (.ref aIxStep) ixMajorTarget
+
+private def ixRecursiveSource : Ixon.Expr :=
+  .app ixPreMajorSource ixRecursiveMajorSource
+
+private def ixRecursiveTarget : IxIR0.Expr :=
+  .app ixPreMajorTarget ixRecursiveMajorTarget
 
 private def ixRecSource : Ixon.Expr :=
   .app ixPreMajorSource ixMajorSource
@@ -2599,8 +2867,13 @@ private theorem covIxCtor : Covered ixEctx ixIctx aIxCtor := by
   apply EraseValidator.covered_of_validate (db := []) (fuel := 200)
   decide
 
+private theorem covIxStep : Covered ixEctx ixIctx aIxStep := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 200)
+  decide
+
 private def ixCoverage : EraseValidator.CoverageDB ixEctx ixIctx :=
-  [{ address := aIxCtor, covered := covIxCtor }]
+  [{ address := aIxCtor, covered := covIxCtor },
+   { address := aIxStep, covered := covIxStep }]
 
 private def ixCover : EraseValidator.CoverOracle ixEctx ixIctx :=
   ixCoverage.oracle
@@ -2633,10 +2906,11 @@ private def ixRecMembers : EraseValidator.RecMemberOracle ixEctx ixIctx :=
     else none
 
 -- The indexed projection is intentionally not `Covered`; only the unary
--- constructor is scheduled. The member declaration is used by the entry
+-- constructors are scheduled. The member declaration is used by the entry
 -- oracle directly.
-#guard (match EraseValidator.certifyProgram ixEctx ixStore [aIxCtor] 200 200 with
-  | .ok cert => cert.target == ixErased && cert.coverage.length == 1
+#guard (match EraseValidator.certifyProgram ixEctx ixStore
+    [aIxCtor, aIxStep] 200 200 with
+  | .ok cert => cert.target == ixErased && cert.coverage.length == 2
   | .error _ => false)
 
 #guard (match EraseValidator.certifyExprWithRec ixEctx ixIctx ixCover
@@ -2644,13 +2918,29 @@ private def ixRecMembers : EraseValidator.RecMemberOracle ixEctx ixIctx :=
   | .ok cert => cert.target == ixRecTarget
   | .error _ => false)
 
--- The target pap is already one argument from firing at this point, while the
--- source still owes its index and major.  It must not escape into `ValRel`.
 #guard (match EraseValidator.certifyExprWithRec ixEctx ixIctx ixCover
     ixRecMembers none ixTables ixFrame.selfAddr [] ixIncompleteSource
     200 200 with
+  | .ok cert => cert.target == ixIncompleteTarget
+  | .error _ => false)
+
+-- Exposing the raw pre-major pap would let the target fire while the source
+-- still owes its index, so the validator accepts only the protected shape.
+#guard (match EraseValidator.validateExprWithRec ixEctx ixIctx ixCover
+    ixRecMembers none ixTables.refs ixTables.selfMuts ixFrame.selfAddr [] 200
+    ixIncompleteSource ixPreMajorTarget with
   | .error _ => true
   | .ok _ => false)
+
+#guard (match EraseValidator.certifyExprWithRec ixEctx ixIctx ixCover
+    ixRecMembers none ixTables ixFrame.selfAddr [] ixSplitSource 200 200 with
+  | .ok cert => cert.target == ixSplitTarget
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExprWithRec ixEctx ixIctx ixCover
+    ixRecMembers none ixTables ixFrame.selfAddr [] ixRecursiveSource 300 300 with
+  | .ok cert => cert.target == ixRecursiveTarget
+  | .error _ => false)
 
 private theorem ixRecDer :
     PErase ixEctx ixIctx none ixFrame.refs ixFrame.selfMuts
@@ -2664,15 +2954,1451 @@ theorem indexedRecSim {fuel : Nat} {v : Ixon.Eval.Value}
     ∃ fuel' v',
       IxIR0.eval ixIctx fuel' [] ixRecTarget = .ok v' ∧
       ValRel ixEctx ixIctx v v' :=
-  erasure_sim_closed hev ixRecDer
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hev ixRecDer
+
+private theorem ixSplitDer :
+    PErase ixEctx ixIctx none ixFrame.refs ixFrame.selfMuts
+      ixFrame.selfAddr [] ixSplitSource ixSplitTarget := by
+  apply EraseValidator.related_of_validateExprWithRec
+    (cover := ixCover) (recMembers := ixRecMembers) (fuel := 200)
+  decide
+
+theorem indexedRecSplitSim {fuel : Nat} {v : Ixon.Eval.Value}
+    (hev : Ixon.Eval.eval ixEctx fuel ixFrame [] ixSplitSource = .ok v) :
+    ∃ fuel' v',
+      IxIR0.eval ixIctx fuel' [] ixSplitTarget = .ok v' ∧
+      ValRel ixEctx ixIctx v v' :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hev ixSplitDer
+
+private theorem ixRecursiveDer :
+    PErase ixEctx ixIctx none ixFrame.refs ixFrame.selfMuts
+      ixFrame.selfAddr [] ixRecursiveSource ixRecursiveTarget := by
+  apply EraseValidator.related_of_validateExprWithRec
+    (cover := ixCover) (recMembers := ixRecMembers) (fuel := 300)
+  decide
+
+theorem indexedRecSelfSim {fuel : Nat} {v : Ixon.Eval.Value}
+    (hev : Ixon.Eval.eval ixEctx fuel ixFrame [] ixRecursiveSource = .ok v) :
+    ∃ fuel' v',
+      IxIR0.eval ixIctx fuel' [] ixRecursiveTarget = .ok v' ∧
+      ValRel ixEctx ixIctx v v' :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hev ixRecursiveDer
 
 #guard (match Ixon.Eval.eval ixEctx 200 ixFrame [] ixRecSource with
-  | .ok (.sortV 0) => true
+  | .ok (.litV (.natL 73)) => true
   | _ => false)
 
 #guard (match IxIR0.eval ixIctx 200 [] ixRecTarget with
-  | .ok .erased => true
+  | .ok (.lit (.nat 73)) => true
   | _ => false)
+
+#guard (match Ixon.Eval.eval ixEctx 200 ixFrame [] ixSplitSource with
+  | .ok (.litV (.natL 73)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval ixIctx 200 [] ixSplitTarget with
+  | .ok (.lit (.nat 73)) => true
+  | _ => false)
+
+#guard (match Ixon.Eval.eval ixEctx 300 ixFrame [] ixRecursiveSource with
+  | .ok (.litV (.natL 73)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval ixIctx 300 [] ixRecursiveTarget with
+  | .ok (.lit (.nat 73)) => true
+  | _ => false)
+
+/-! ## Definition projections into mutual blocks
+
+The source enters an unfoldable definition member through `dPrj`, switching
+to the block's refs and self tables.  Erasure emits both the member declaration
+and the public projection alias; the certificate follows that exact two-hop
+target lookup and returns the contentful blob `91` on both sides. -/
+
+private def aMutDefBlock : Ixon.Address := addrOf 0x60
+private def aMutDefProj : Ixon.Address := addrOf 0x61
+private def aMutDefResult : Ixon.Address := addrOf 0x62
+
+private def mutDef : Compilatrix.Ixon.Definition :=
+  { kind := .defn, safety := .safe, lvls := 0
+    typ := .sort 0, value := .nat 0 }
+
+private def cMutDefBlock : Constant :=
+  { info := .muts #[.defn mutDef]
+    sharing := #[], refs := #[aMutDefResult], univs := #[] }
+
+private def cMutDefProj : Constant :=
+  prjConst (.dPrj { idx := 0, block := aMutDefBlock })
+
+private def mutDefStore : List (Ixon.Address × Constant) :=
+  [(aMutDefBlock, cMutDefBlock), (aMutDefProj, cMutDefProj)]
+
+private def mutDefResolver : Ixon.Address → Option Constant := fun address =>
+  (mutDefStore.find? (fun entry => entry.1 == address)).map (·.2)
+
+private def mutDefEctx : Ixon.Eval.EvalCtx :=
+  { resolve := mutDefResolver
+    blobs := fun address =>
+      if address = aMutDefResult then some (.natB 91) else none }
+
+private def maMutDef : Ixon.Address := Erase.memberAddr aMutDefBlock 0
+
+private def mutDefErased : List (Ixon.Address × IxIR0.Decl) :=
+  [(maMutDef, .defn .shared (.lit (.nat 91))),
+   (aMutDefProj, .defn .shared (.ref maMutDef))]
+
+private def mutDefIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList mutDefErased }
+
+private theorem mutDefCovered : Covered mutDefEctx mutDefIctx aMutDefProj := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+private def mutDefCoverage :
+    EraseValidator.CoverageDB mutDefEctx mutDefIctx :=
+  [{ address := aMutDefProj, covered := mutDefCovered }]
+
+private def mutDefCover :
+    EraseValidator.CoverOracle mutDefEctx mutDefIctx :=
+  mutDefCoverage.oracle
+
+private def mutDefFrame : Ixon.Eval.Frame :=
+  { refs := #[aMutDefProj] }
+
+private def mutDefTables : Erase.ETables :=
+  { refs := mutDefFrame.refs }
+
+private def mutDefSource : Ixon.Expr := .ref 0 #[]
+private def mutDefTarget : IxIR0.Expr := .ref aMutDefProj
+
+#guard (match EraseValidator.certifyProgram mutDefEctx mutDefStore
+    [aMutDefProj] 100 100 with
+  | .ok cert => cert.target == mutDefErased && cert.coverage.length == 1
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr mutDefEctx mutDefIctx mutDefCover none
+    mutDefTables mutDefFrame.selfAddr [] mutDefSource 100 100 with
+  | .ok cert => cert.target == mutDefTarget
+  | .error _ => false)
+
+private theorem mutDefDer :
+    PErase mutDefEctx mutDefIctx none mutDefFrame.refs mutDefFrame.selfMuts
+      mutDefFrame.selfAddr [] mutDefSource mutDefTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := mutDefCover) (fuel := 100)
+  decide
+
+theorem definitionProjectionSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (hsource : Ixon.Eval.eval mutDefEctx fuel mutDefFrame [] mutDefSource =
+      .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval mutDefIctx targetFuel [] mutDefTarget = .ok targetValue ∧
+      ValRel mutDefEctx mutDefIctx value targetValue :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hsource mutDefDer
+
+#guard (match Ixon.Eval.eval mutDefEctx 100 mutDefFrame [] mutDefSource with
+  | .ok (.litV (.natL 91)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval mutDefIctx 100 [] mutDefTarget with
+  | .ok (.lit (.nat 91)) => true
+  | _ => false)
+
+/-! ## Non-self inductive members inside mutual definitions
+
+This mixed block enters its definition through `dPrj`, then evaluates a
+`recur` that names the block's other, inductive member.  The neutral source
+member escapes through a let and accepts an ordinary argument; the erased
+inductive declaration and every application of it remain `◻`, after which
+both sides return the contentful literal `88`. -/
+
+private def aMixedBlock : Ixon.Address := addrOf 0x63
+private def aMixedProj : Ixon.Address := addrOf 0x64
+private def aMixedResult : Ixon.Address := addrOf 0x65
+
+private def mixedInd : Compilatrix.Ixon.Inductive :=
+  { isUnsafe := false, lvls := 0, params := 0, indices := 0
+    typ := .sort 0
+    ctors := #[
+      { isUnsafe := false, lvls := 0, cidx := 0, params := 0, fields := 0
+        typ := .sort 0 }] }
+
+private def mixedDef : Compilatrix.Ixon.Definition :=
+  { kind := .defn, safety := .safe, lvls := 0
+    typ := .sort 0
+    value := .letE false (.sort 0) (.recur 0 #[])
+      (.letE false (.sort 0) (.app (.var 0) (.sort 0)) (.nat 0)) }
+
+private def cMixedBlock : Constant :=
+  { info := .muts #[.indc mixedInd, .defn mixedDef]
+    sharing := #[], refs := #[aMixedResult], univs := #[.zero] }
+
+private def cMixedProj : Constant :=
+  prjConst (.dPrj { idx := 1, block := aMixedBlock })
+
+private def mixedStore : List (Ixon.Address × Constant) :=
+  [(aMixedBlock, cMixedBlock), (aMixedProj, cMixedProj)]
+
+private def mixedResolver : Ixon.Address → Option Constant := fun address =>
+  (mixedStore.find? (fun entry => entry.1 == address)).map (·.2)
+
+private def mixedEctx : Ixon.Eval.EvalCtx :=
+  { resolve := mixedResolver
+    blobs := fun address =>
+      if address = aMixedResult then some (.natB 88) else none }
+
+private def maMixedInd : Ixon.Address := Erase.memberAddr aMixedBlock 0
+private def maMixedDef : Ixon.Address := Erase.memberAddr aMixedBlock 1
+
+private def mixedDefTarget : IxIR0.Expr :=
+  .letE .many (.ref maMixedInd)
+    (.letE .many (.app (.var 0) .erased) (.lit (.nat 88)))
+
+private def mixedErased : List (Ixon.Address × IxIR0.Decl) :=
+  [(maMixedInd, .defn .shared .erased),
+   (maMixedDef, .defn .shared mixedDefTarget),
+   (aMixedProj, .defn .shared (.ref maMixedDef))]
+
+private def mixedIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList mixedErased }
+
+private theorem mixedCovered : Covered mixedEctx mixedIctx aMixedProj := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+private def mixedCoverage :
+    EraseValidator.CoverageDB mixedEctx mixedIctx :=
+  [{ address := aMixedProj, covered := mixedCovered }]
+
+private def mixedCover :
+    EraseValidator.CoverOracle mixedEctx mixedIctx :=
+  mixedCoverage.oracle
+
+private def mixedFrame : Ixon.Eval.Frame :=
+  { refs := #[aMixedProj] }
+
+private def mixedTables : Erase.ETables :=
+  { refs := mixedFrame.refs }
+
+private def mixedSource : Ixon.Expr := .ref 0 #[]
+private def mixedTarget : IxIR0.Expr := .ref aMixedProj
+
+#guard (match EraseValidator.certifyProgram mixedEctx mixedStore
+    [aMixedProj] 100 100 with
+  | .ok cert => cert.target == mixedErased && cert.coverage.length == 1
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr mixedEctx mixedIctx mixedCover none
+    mixedTables mixedFrame.selfAddr [] mixedSource 100 100 with
+  | .ok cert => cert.target == mixedTarget
+  | .error _ => false)
+
+private def mixedIndDrift : Compilatrix.Ixon.Inductive :=
+  { mixedInd with indices := 1 }
+
+-- The validator ties the runtime frame slot to the resolver-selected member;
+-- matching only the synthetic target address is insufficient.
+#guard (match EraseValidator.validateExpr mixedEctx mixedIctx mixedCover none
+    #[aMixedResult] #[.indc mixedIndDrift, .defn mixedDef]
+    (some aMixedBlock) [] 100
+    (.recur 0 #[]) (.ref maMixedInd) with
+  | .error "non-self recur mutual member mismatch" => true
+  | _ => false)
+
+private theorem mixedDer :
+    PErase mixedEctx mixedIctx none mixedFrame.refs mixedFrame.selfMuts
+      mixedFrame.selfAddr [] mixedSource mixedTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := mixedCover) (fuel := 100)
+  decide
+
+theorem mutualInductiveMemberSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (hsource : Ixon.Eval.eval mixedEctx fuel mixedFrame [] mixedSource =
+      .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval mixedIctx targetFuel [] mixedTarget = .ok targetValue ∧
+      ValRel mixedEctx mixedIctx value targetValue :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    hsource mixedDer
+
+#guard (match Ixon.Eval.eval mixedEctx 100 mixedFrame [] mixedSource with
+  | .ok (.litV (.natL 88)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval mixedIctx 100 [] mixedTarget with
+  | .ok (.lit (.nat 88)) => true
+  | _ => false)
+
+/-! ## Simultaneously certified cyclic definitions
+
+Member zero evaluates member one before returning `71`; member one contains a
+closure whose body calls member zero. Thus the syntactic member graph is a
+real cycle, while the selected execution traverses one cross-member edge and
+terminates contentfully. No topological ordering of the two body proofs
+exists: both are closed by one `MemberCoverage` certificate. -/
+
+private def aCyclicDefBlock : Ixon.Address := addrOf 0x66
+private def aCyclicDefProj : Ixon.Address := addrOf 0x67
+private def aCyclicDefResult0 : Ixon.Address := addrOf 0x68
+private def aCyclicDefResult1 : Ixon.Address := addrOf 0x69
+
+private def cyclicDef0 : Compilatrix.Ixon.Definition :=
+  { kind := .defn, safety := .safe, lvls := 0
+    typ := .sort 0
+    value := .letE false (.sort 0) (.recur 1 #[]) (.nat 0) }
+
+private def cyclicDef1 : Compilatrix.Ixon.Definition :=
+  { kind := .defn, safety := .safe, lvls := 0
+    typ := .sort 0
+    value := .letE false (.sort 0)
+      (.lam .many (.sort 0) (.recur 0 #[])) (.nat 1) }
+
+private def cCyclicDefBlock : Constant :=
+  { info := .muts #[.defn cyclicDef0, .defn cyclicDef1]
+    sharing := #[]
+    refs := #[aCyclicDefResult0, aCyclicDefResult1]
+    univs := #[] }
+
+private def cCyclicDefProj : Constant :=
+  prjConst (.dPrj { idx := 0, block := aCyclicDefBlock })
+
+private def cyclicDefStore : List (Ixon.Address × Constant) :=
+  [(aCyclicDefBlock, cCyclicDefBlock),
+   (aCyclicDefProj, cCyclicDefProj)]
+
+private def cyclicDefResolver : Ixon.Address → Option Constant :=
+  fun address =>
+    (cyclicDefStore.find? (fun entry => entry.1 == address)).map (·.2)
+
+private def cyclicDefEctx : Ixon.Eval.EvalCtx :=
+  { resolve := cyclicDefResolver
+    blobs := fun address =>
+      if address = aCyclicDefResult0 then some (.natB 71)
+      else if address = aCyclicDefResult1 then some (.natB 72)
+      else none }
+
+private def maCyclicDef0 : Ixon.Address :=
+  Erase.memberAddr aCyclicDefBlock 0
+private def maCyclicDef1 : Ixon.Address :=
+  Erase.memberAddr aCyclicDefBlock 1
+
+private def cyclicDefBody0 : IxIR0.Expr :=
+  .letE .many (.ref maCyclicDef1) (.lit (.nat 71))
+
+private def cyclicDefBody1 : IxIR0.Expr :=
+  .letE .many (.lam .many (.ref maCyclicDef0)) (.lit (.nat 72))
+
+private def cyclicDefErased : List (Ixon.Address × IxIR0.Decl) :=
+  [(maCyclicDef0, .defn .shared cyclicDefBody0),
+   (maCyclicDef1, .defn .shared cyclicDefBody1),
+   (aCyclicDefProj, .defn .shared (.ref maCyclicDef0))]
+
+private def cyclicDefIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList cyclicDefErased }
+
+@[instance_reducible] private def cyclicDefMemberScope : MemberScope :=
+  { plan := [⟨aCyclicDefBlock, 0⟩, ⟨aCyclicDefBlock, 1⟩] }
+
+section CyclicDefinitionMembers
+
+local instance : MemberScope := cyclicDefMemberScope
+
+private theorem cyclicDefCovered :
+    Covered cyclicDefEctx cyclicDefIctx aCyclicDefProj := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 200)
+  decide
+
+private def cyclicDefCoverage :
+    EraseValidator.CoverageDB cyclicDefEctx cyclicDefIctx :=
+  [{ address := aCyclicDefProj, covered := cyclicDefCovered }]
+
+private def cyclicDefCover :
+    EraseValidator.CoverOracle cyclicDefEctx cyclicDefIctx :=
+  cyclicDefCoverage.oracle
+
+private theorem cyclicDefMembers :
+    MemberCoverage cyclicDefEctx cyclicDefIctx
+      cyclicDefMemberScope.plan := by
+  apply EraseValidator.memberCoverage_of_validate
+    (db := cyclicDefCoverage) (fuel := 200)
+  decide
+
+private def cyclicDefFrame : Ixon.Eval.Frame :=
+  { refs := #[aCyclicDefProj] }
+
+private def cyclicDefTables : Erase.ETables :=
+  { refs := cyclicDefFrame.refs }
+
+private def cyclicDefSource : Ixon.Expr := .ref 0 #[]
+private def cyclicDefTarget : IxIR0.Expr := .ref aCyclicDefProj
+
+#guard (match EraseValidator.certifyProgram cyclicDefEctx cyclicDefStore
+    [aCyclicDefProj] 200 200 with
+  | .ok cert => cert.target == cyclicDefErased && cert.coverage.length == 1
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr cyclicDefEctx cyclicDefIctx
+    cyclicDefCover none cyclicDefTables cyclicDefFrame.selfAddr []
+    cyclicDefSource 200 200 with
+  | .ok cert => cert.target == cyclicDefTarget
+  | .error _ => false)
+
+private theorem cyclicDefDer :
+    PErase cyclicDefEctx cyclicDefIctx none cyclicDefFrame.refs
+      cyclicDefFrame.selfMuts cyclicDefFrame.selfAddr [] cyclicDefSource
+      cyclicDefTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := cyclicDefCover) (fuel := 200)
+  decide
+
+theorem cyclicDefinitionMembersSim {fuel : Nat}
+    {value : Ixon.Eval.Value}
+    (hsource : Ixon.Eval.eval cyclicDefEctx fuel cyclicDefFrame []
+      cyclicDefSource = .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval cyclicDefIctx targetFuel [] cyclicDefTarget =
+        .ok targetValue ∧
+      ValRel cyclicDefEctx cyclicDefIctx value targetValue := by
+  exact erasure_sim_with_members cyclicDefMembers
+    (OracleRel.of_externFree (by intro address; rfl)) hsource cyclicDefDer .nil
+
+#guard (match Ixon.Eval.eval cyclicDefEctx 200 cyclicDefFrame []
+    cyclicDefSource with
+  | .ok (.litV (.natL 71)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval cyclicDefIctx 200 [] cyclicDefTarget with
+  | .ok (.lit (.nat 71)) => true
+  | _ => false)
+
+end CyclicDefinitionMembers
+
+/-- Omitting either endpoint does not silently turn the simultaneous proof
+into an acyclic one: validation encounters the missing cross-member edge. -/
+@[instance_reducible] private def incompleteCyclicDefMemberScope :
+    MemberScope :=
+  { plan := [⟨aCyclicDefBlock, 0⟩] }
+
+section IncompleteCyclicDefinitionMembers
+
+local instance : MemberScope := incompleteCyclicDefMemberScope
+
+#guard (match EraseValidator.validateMemberCoverage cyclicDefEctx
+    cyclicDefIctx [] 200 incompleteCyclicDefMemberScope.plan with
+  | .error message =>
+      message == "definition member is absent from the simultaneous plan"
+  | .ok _ => false)
+
+end IncompleteCyclicDefinitionMembers
+
+/-! ## Alternating cyclic recursors
+
+Two Nat-shaped recursors occupy the same block. Each successor rule invokes
+the other member on the predecessor, so evaluation over three successors
+traverses `r0 → r1 → r0 → r1` before the shared base minor returns
+`77`. Their rule certificates are mutually cyclic and are closed by the same
+finite plan used for definition members above. -/
+
+private def aCyclicRecBlock : Ixon.Address := addrOf 0x6A
+private def aCyclicRecNat : Ixon.Address := addrOf 0x6B
+private def aCyclicRecZero : Ixon.Address := addrOf 0x6C
+private def aCyclicRecSucc : Ixon.Address := addrOf 0x6D
+private def aCyclicRecProj0 : Ixon.Address := addrOf 0x6E
+private def aCyclicRecResult : Ixon.Address := addrOf 0x6F
+
+private def cyclicRecStepRule (other : UInt64) : RecursorRule :=
+  { fields := 1
+    rhs := .lam .many (.sort 0) (.lam .many (.sort 0)
+      (.lam .many (.sort 0) (.lam .many (.recur 0 #[])
+        (.app (.app (.var 1) (.var 0))
+          (.app (.app (.app (.app (.recur other #[]) (.var 3)) (.var 2))
+            (.var 1)) (.var 0)))))) }
+
+private def cyclicRecursor (other : UInt64) : Recursor :=
+  { k := false, isUnsafe := false, lvls := 0
+    params := 0, indices := 0, motives := 1, minors := 2
+    typ := .sort 0
+    rules := #[
+      { fields := 0
+        rhs := .lam .many (.sort 0) (.lam .many (.sort 0)
+          (.lam .many (.sort 0) (.var 1))) },
+      cyclicRecStepRule other] }
+
+private def cyclicRec0 : Recursor := cyclicRecursor 2
+private def cyclicRec1 : Recursor := cyclicRecursor 1
+
+private def cCyclicRecBlock : Constant :=
+  { info := .muts #[.indc natInd, .recr cyclicRec0, .recr cyclicRec1]
+    sharing := #[], refs := #[], univs := #[] }
+
+private def cCyclicRecNat : Constant :=
+  prjConst (.iPrj { idx := 0, block := aCyclicRecBlock })
+private def cCyclicRecZero : Constant :=
+  prjConst (.cPrj { idx := 0, cidx := 0, block := aCyclicRecBlock })
+private def cCyclicRecSucc : Constant :=
+  prjConst (.cPrj { idx := 0, cidx := 1, block := aCyclicRecBlock })
+private def cCyclicRecProj0 : Constant :=
+  prjConst (.rPrj { idx := 1, block := aCyclicRecBlock })
+
+private def cyclicRecStore : List (Ixon.Address × Constant) :=
+  [(aCyclicRecBlock, cCyclicRecBlock),
+   (aCyclicRecNat, cCyclicRecNat),
+   (aCyclicRecZero, cCyclicRecZero),
+   (aCyclicRecSucc, cCyclicRecSucc),
+   (aCyclicRecProj0, cCyclicRecProj0)]
+
+private def cyclicRecResolver : Ixon.Address → Option Constant :=
+  fun address =>
+    (cyclicRecStore.find? (fun entry => entry.1 == address)).map (·.2)
+
+private def cyclicRecEctx : Ixon.Eval.EvalCtx :=
+  { resolve := cyclicRecResolver
+    blobs := fun address =>
+      if address = aCyclicRecResult then some (.natB 77) else none
+    natBlock := some aCyclicRecBlock }
+
+private def maCyclicRecNat : Ixon.Address :=
+  Erase.memberAddr aCyclicRecBlock 0
+private def maCyclicRec0 : Ixon.Address :=
+  Erase.memberAddr aCyclicRecBlock 1
+private def maCyclicRec1 : Ixon.Address :=
+  Erase.memberAddr aCyclicRecBlock 2
+
+private def cyclicRecTargetStep (other : Ixon.Address) : IxIR0.Expr :=
+  .app (.app (.var 1) (.var 0))
+    (.app (.app (.app (.app (.ref other) .erased) (.var 2)) (.var 1))
+      (.var 0))
+
+private def cyclicRecTargetRules (other : Ixon.Address) :
+    Array IxIR0.RecRule :=
+  #[{ fields := 0, rhs := .var 1 },
+    { fields := 1, rhs := cyclicRecTargetStep other }]
+
+private def cyclicRecErased : List (Ixon.Address × IxIR0.Decl) :=
+  [(maCyclicRecNat, .defn .shared .erased),
+   (maCyclicRec0, .recursor 3 true (cyclicRecTargetRules maCyclicRec1)),
+   (maCyclicRec1, .recursor 3 true (cyclicRecTargetRules maCyclicRec0)),
+   (aCyclicRecNat, .defn .shared .erased),
+   (aCyclicRecZero, .ctor 0 0),
+   (aCyclicRecSucc, .ctor 1 1),
+   (aCyclicRecProj0, .defn .shared (.ref maCyclicRec0))]
+
+private def cyclicRecIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList cyclicRecErased }
+
+@[instance_reducible] private def cyclicRecMemberScope : MemberScope :=
+  { plan := [⟨aCyclicRecBlock, 1⟩, ⟨aCyclicRecBlock, 2⟩] }
+
+section CyclicRecursorMembers
+
+local instance : MemberScope := cyclicRecMemberScope
+
+private theorem cyclicRecNatCovered :
+    Covered cyclicRecEctx cyclicRecIctx aCyclicRecNat := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 300)
+  decide
+
+private theorem cyclicRecZeroCovered :
+    Covered cyclicRecEctx cyclicRecIctx aCyclicRecZero := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 300)
+  decide
+
+private theorem cyclicRecSuccCovered :
+    Covered cyclicRecEctx cyclicRecIctx aCyclicRecSucc := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 300)
+  decide
+
+private def cyclicRecBaseCoverage :
+    EraseValidator.CoverageDB cyclicRecEctx cyclicRecIctx :=
+  [{ address := aCyclicRecSucc, covered := cyclicRecSuccCovered },
+   { address := aCyclicRecZero, covered := cyclicRecZeroCovered },
+   { address := aCyclicRecNat, covered := cyclicRecNatCovered }]
+
+private theorem cyclicRecProjCovered :
+    Covered cyclicRecEctx cyclicRecIctx aCyclicRecProj0 := by
+  apply EraseValidator.covered_of_validate
+    (db := cyclicRecBaseCoverage) (fuel := 300)
+  decide
+
+private def cyclicRecCoverage :
+    EraseValidator.CoverageDB cyclicRecEctx cyclicRecIctx :=
+  { address := aCyclicRecProj0, covered := cyclicRecProjCovered } ::
+    cyclicRecBaseCoverage
+
+private def cyclicRecCover :
+    EraseValidator.CoverOracle cyclicRecEctx cyclicRecIctx :=
+  cyclicRecCoverage.oracle
+
+private theorem cyclicRecMembers :
+    MemberCoverage cyclicRecEctx cyclicRecIctx
+      cyclicRecMemberScope.plan := by
+  apply EraseValidator.memberCoverage_of_validate
+    (db := cyclicRecCoverage) (fuel := 300)
+  decide
+
+private def cyclicRecFrame : Ixon.Eval.Frame :=
+  { refs := #[aCyclicRecProj0, aCyclicRecZero, aCyclicRecSucc,
+      aCyclicRecResult, aCyclicRecNat]
+    univs := #[.zero] }
+
+private def cyclicRecTables : Erase.ETables :=
+  { refs := cyclicRecFrame.refs }
+
+private def cyclicRecNatSource : Nat → Ixon.Expr
+  | 0 => .ref 1 #[]
+  | n + 1 => .app (.ref 2 #[]) (cyclicRecNatSource n)
+
+private def cyclicRecNatTarget : Nat → IxIR0.Expr
+  | 0 => .ref aCyclicRecZero
+  | n + 1 => .app (.ref aCyclicRecSucc) (cyclicRecNatTarget n)
+
+private def cyclicRecMinor : Ixon.Expr :=
+  .lam .many (.ref 4 #[])
+    (.lam .many (.ref 4 #[]) (.var 0))
+
+private def cyclicRecMinorTarget : IxIR0.Expr :=
+  .lam .many (.lam .many (.var 0))
+
+private def cyclicRecSource : Ixon.Expr :=
+  .app
+    (.app
+      (.app (.app (.ref 0 #[]) (.sort 0)) (.nat 3))
+      cyclicRecMinor)
+    (cyclicRecNatSource 3)
+
+private def cyclicRecTarget : IxIR0.Expr :=
+  .app
+    (.app
+      (.app (.app (.ref aCyclicRecProj0) .erased) (.lit (.nat 77)))
+      cyclicRecMinorTarget)
+    (cyclicRecNatTarget 3)
+
+#guard (match EraseValidator.certifyProgram cyclicRecEctx cyclicRecStore
+    [aCyclicRecNat, aCyclicRecZero, aCyclicRecSucc, aCyclicRecProj0]
+    300 300 with
+  | .ok cert => cert.target == cyclicRecErased && cert.coverage.length == 4
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr cyclicRecEctx cyclicRecIctx
+    cyclicRecCover none cyclicRecTables cyclicRecFrame.selfAddr []
+    cyclicRecSource 300 300 with
+  | .ok cert => cert.target == cyclicRecTarget
+  | .error _ => false)
+
+private theorem cyclicRecDer :
+    PErase cyclicRecEctx cyclicRecIctx none cyclicRecFrame.refs
+      cyclicRecFrame.selfMuts cyclicRecFrame.selfAddr [] cyclicRecSource
+      cyclicRecTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := cyclicRecCover) (fuel := 300)
+  decide
+
+theorem cyclicRecursorMembersSim {fuel : Nat}
+    {value : Ixon.Eval.Value}
+    (hsource : Ixon.Eval.eval cyclicRecEctx fuel cyclicRecFrame []
+      cyclicRecSource = .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval cyclicRecIctx targetFuel [] cyclicRecTarget =
+        .ok targetValue ∧
+      ValRel cyclicRecEctx cyclicRecIctx value targetValue := by
+  exact erasure_sim_with_members cyclicRecMembers
+    (OracleRel.of_externFree (by intro address; rfl)) hsource cyclicRecDer .nil
+
+#guard (match Ixon.Eval.eval cyclicRecEctx 300 cyclicRecFrame []
+    cyclicRecSource with
+  | .ok (.litV (.natL 77)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval cyclicRecIctx 300 [] cyclicRecTarget with
+  | .ok (.lit (.nat 77)) => true
+  | _ => false)
+
+end CyclicRecursorMembers
+
+/-! ## Opaque mutual-definition members
+
+An unfoldable member calls an opaque sibling at its synthetic member address,
+while a second public projection aliases that opaque member directly.  The
+source and target evaluators therefore cross one same-address, two-argument
+oracle ledger on both entry paths and return the contentful literal `83`. -/
+
+private def aOpaqueMutBlock : Ixon.Address := addrOf 0x70
+private def aOpaqueMutWrapper : Ixon.Address := addrOf 0x71
+private def aOpaqueMutLeaf : Ixon.Address := addrOf 0x72
+private def aOpaqueMutLeft : Ixon.Address := addrOf 0x73
+private def aOpaqueMutRight : Ixon.Address := addrOf 0x74
+
+private def maOpaqueMutWrapper : Ixon.Address :=
+  Erase.memberAddr aOpaqueMutBlock 0
+
+private def maOpaqueMutLeaf : Ixon.Address :=
+  Erase.memberAddr aOpaqueMutBlock 1
+
+private def opaqueMutType : Ixon.Expr :=
+  .all .many .shared (.var 0)
+    (.all .many .shared (.var 0) (.sort 0))
+
+private def opaqueMutWrapperDef : Compilatrix.Ixon.Definition :=
+  { kind := .defn, safety := .safe, lvls := 0
+    typ := opaqueMutType
+    value := .lam .many (.var 0)
+      (.lam .many (.var 0)
+        (.app (.app (.recur 1 #[]) (.var 1)) (.var 0))) }
+
+private def opaqueMutLeafDef : Compilatrix.Ixon.Definition :=
+  { kind := .opaq, safety := .safe, lvls := 0
+    typ := opaqueMutType, value := .sort 0 }
+
+private def cOpaqueMutBlock : Constant :=
+  { info := .muts #[.defn opaqueMutWrapperDef, .defn opaqueMutLeafDef]
+    sharing := #[], refs := #[], univs := #[] }
+
+private def cOpaqueMutWrapper : Constant :=
+  prjConst (.dPrj { idx := 0, block := aOpaqueMutBlock })
+
+private def cOpaqueMutLeaf : Constant :=
+  prjConst (.dPrj { idx := 1, block := aOpaqueMutBlock })
+
+private def opaqueMutStore : List (Ixon.Address × Constant) :=
+  [(aOpaqueMutBlock, cOpaqueMutBlock),
+   (aOpaqueMutWrapper, cOpaqueMutWrapper),
+   (aOpaqueMutLeaf, cOpaqueMutLeaf)]
+
+private def opaqueMutResolver : Ixon.Address → Option Constant :=
+  fun address =>
+    (opaqueMutStore.find? (fun entry => entry.1 == address)).map (·.2)
+
+private def opaqueMutSourceOracle (address : Ixon.Address)
+    (args : List Ixon.Eval.Value) : Option Ixon.Eval.Value :=
+  if address = maOpaqueMutLeaf then
+    if args.length = 2 then some (.litV (.natL 83)) else none
+  else none
+
+private def opaqueMutTargetOracle (address : Ixon.Address)
+    (args : List IxIR0.Value) : Option IxIR0.Value :=
+  if address = maOpaqueMutLeaf then
+    if args.length = 2 then some (.lit (.nat 83)) else none
+  else none
+
+private def opaqueMutEctx : Ixon.Eval.EvalCtx :=
+  { resolve := opaqueMutResolver
+    blobs := fun address =>
+      if address = aOpaqueMutLeft then some (.natB 31)
+      else if address = aOpaqueMutRight then some (.natB 52)
+      else none
+    externArity := fun address =>
+      if address = maOpaqueMutLeaf then some 2 else none
+    oracle := opaqueMutSourceOracle }
+
+private def opaqueMutWrapperBody : IxIR0.Expr :=
+  .lam .many (.lam .many
+    (.app (.app (.ref maOpaqueMutLeaf) (.var 1)) (.var 0)))
+
+private def opaqueMutErased : List (Ixon.Address × IxIR0.Decl) :=
+  [(maOpaqueMutWrapper, .defn .shared opaqueMutWrapperBody),
+   (maOpaqueMutLeaf, .extern 2),
+   (aOpaqueMutWrapper, .defn .shared (.ref maOpaqueMutWrapper)),
+   (aOpaqueMutLeaf, .defn .shared (.ref maOpaqueMutLeaf))]
+
+private def opaqueMutIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList opaqueMutErased
+    oracle := opaqueMutTargetOracle }
+
+@[instance_reducible] private def opaqueMutMemberScope : MemberScope :=
+  { plan := [⟨aOpaqueMutBlock, 0⟩, ⟨aOpaqueMutBlock, 1⟩] }
+
+section OpaqueMutualDefinitionMembers
+
+local instance : MemberScope := opaqueMutMemberScope
+
+private theorem opaqueMutWrapperCovered :
+    Covered opaqueMutEctx opaqueMutIctx aOpaqueMutWrapper := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 200)
+  decide
+
+private theorem opaqueMutLeafCovered :
+    Covered opaqueMutEctx opaqueMutIctx aOpaqueMutLeaf := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 200)
+  decide
+
+private def opaqueMutCoverage :
+    EraseValidator.CoverageDB opaqueMutEctx opaqueMutIctx :=
+  [{ address := aOpaqueMutLeaf, covered := opaqueMutLeafCovered },
+   { address := aOpaqueMutWrapper, covered := opaqueMutWrapperCovered }]
+
+private def opaqueMutCover :
+    EraseValidator.CoverOracle opaqueMutEctx opaqueMutIctx :=
+  opaqueMutCoverage.oracle
+
+private theorem opaqueMutMembers :
+    MemberCoverage opaqueMutEctx opaqueMutIctx opaqueMutMemberScope.plan := by
+  apply EraseValidator.memberCoverage_of_validate
+    (db := opaqueMutCoverage) (fuel := 200)
+  decide
+
+private def opaqueMutFrame : Ixon.Eval.Frame :=
+  { refs := #[aOpaqueMutWrapper, aOpaqueMutLeaf,
+      aOpaqueMutLeft, aOpaqueMutRight] }
+
+private def opaqueMutTables : Erase.ETables :=
+  { refs := opaqueMutFrame.refs }
+
+private def opaqueMutWrapperSource : Ixon.Expr :=
+  .app (.app (.ref 0 #[]) (.nat 2)) (.nat 3)
+
+private def opaqueMutWrapperTarget : IxIR0.Expr :=
+  .app (.app (.ref aOpaqueMutWrapper) (.lit (.nat 31))) (.lit (.nat 52))
+
+private def opaqueMutLeafSource : Ixon.Expr :=
+  .app (.app (.ref 1 #[]) (.nat 2)) (.nat 3)
+
+private def opaqueMutLeafTarget : IxIR0.Expr :=
+  .app (.app (.ref aOpaqueMutLeaf) (.lit (.nat 31))) (.lit (.nat 52))
+
+#guard (match EraseValidator.certifyProgram opaqueMutEctx opaqueMutStore
+    [aOpaqueMutWrapper, aOpaqueMutLeaf] 200 200 with
+  | .ok cert => cert.target == opaqueMutErased && cert.coverage.length == 2
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr opaqueMutEctx opaqueMutIctx
+    opaqueMutCover none opaqueMutTables none [] opaqueMutWrapperSource 200 200 with
+  | .ok cert => cert.target == opaqueMutWrapperTarget
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr opaqueMutEctx opaqueMutIctx
+    opaqueMutCover none opaqueMutTables none [] opaqueMutLeafSource 200 200 with
+  | .ok cert => cert.target == opaqueMutLeafTarget
+  | .error _ => false)
+
+private theorem opaqueMutWrapperPErase :
+    PErase opaqueMutEctx opaqueMutIctx none opaqueMutFrame.refs
+      opaqueMutFrame.selfMuts opaqueMutFrame.selfAddr []
+      opaqueMutWrapperSource opaqueMutWrapperTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := opaqueMutCover) (fuel := 200)
+  decide
+
+private theorem opaqueMutLeafPErase :
+    PErase opaqueMutEctx opaqueMutIctx none opaqueMutFrame.refs
+      opaqueMutFrame.selfMuts opaqueMutFrame.selfAddr []
+      opaqueMutLeafSource opaqueMutLeafTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := opaqueMutCover) (fuel := 200)
+  decide
+
+private theorem opaqueMutValsLength {sourceArgs : List Ixon.Eval.Value}
+    {targetArgs : List IxIR0.Value}
+    (hargs : ValsRel opaqueMutEctx opaqueMutIctx sourceArgs targetArgs) :
+    sourceArgs.length = targetArgs.length := by
+  cases hargs with
+  | nil => rfl
+  | cons _ htail => simp [opaqueMutValsLength htail]
+termination_by sourceArgs
+
+private theorem opaqueMutOracleRel : OracleRel opaqueMutEctx opaqueMutIctx := by
+  intro address arity hconfigured
+  by_cases haddress : address = maOpaqueMutLeaf
+  · subst address
+    simp [opaqueMutEctx] at hconfigured
+    subst arity
+    intro sourceArgs targetArgs sourceValue hsourceLength hargs horacle
+    have hsourceValue : (.litV (.natL 83) : Ixon.Eval.Value) =
+        sourceValue := by
+      simpa [opaqueMutEctx, opaqueMutSourceOracle, hsourceLength] using horacle
+    subst sourceValue
+    have htargetLength : targetArgs.length = 2 := by
+      rw [← opaqueMutValsLength hargs, hsourceLength]
+    refine ⟨.lit (.nat 83), ?_, .litNat⟩
+    simp [opaqueMutIctx, opaqueMutTargetOracle, htargetLength]
+  · simp [opaqueMutEctx, haddress] at hconfigured
+
+/-- An unfoldable member may call a configured opaque sibling through the
+same synthetic extern identity emitted for that sibling. -/
+theorem opaqueMutualMemberSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (hsource : Ixon.Eval.eval opaqueMutEctx fuel opaqueMutFrame []
+      opaqueMutWrapperSource = .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval opaqueMutIctx targetFuel [] opaqueMutWrapperTarget =
+        .ok targetValue ∧
+      ValRel opaqueMutEctx opaqueMutIctx value targetValue := by
+  exact erasure_sim_with_members opaqueMutMembers opaqueMutOracleRel hsource
+    opaqueMutWrapperPErase .nil
+
+/-- The public projection of that opaque member uses the same oracle key. -/
+theorem opaqueMutualProjectionSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (hsource : Ixon.Eval.eval opaqueMutEctx fuel opaqueMutFrame []
+      opaqueMutLeafSource = .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval opaqueMutIctx targetFuel [] opaqueMutLeafTarget =
+        .ok targetValue ∧
+      ValRel opaqueMutEctx opaqueMutIctx value targetValue := by
+  exact erasure_sim_with_members opaqueMutMembers opaqueMutOracleRel hsource
+    opaqueMutLeafPErase .nil
+
+#guard (match Ixon.Eval.eval opaqueMutEctx 200 opaqueMutFrame []
+    opaqueMutWrapperSource with
+  | .ok (.litV (.natL 83)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval opaqueMutIctx 200 [] opaqueMutWrapperTarget with
+  | .ok (.lit (.nat 83)) => true
+  | _ => false)
+
+#guard (match Ixon.Eval.eval opaqueMutEctx 200 opaqueMutFrame []
+    opaqueMutLeafSource with
+  | .ok (.litV (.natL 83)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval opaqueMutIctx 200 [] opaqueMutLeafTarget with
+  | .ok (.lit (.nat 83)) => true
+  | _ => false)
+
+private def opaqueMutUnconfiguredEctx : Ixon.Eval.EvalCtx :=
+  { opaqueMutEctx with externArity := fun _ => none }
+
+#guard (match EraseValidator.validateCovered opaqueMutUnconfiguredEctx
+    opaqueMutIctx [] 100 aOpaqueMutLeaf with
+  | .error "opaque definition member extern is not configured" => true
+  | _ => false)
+
+private def opaqueMutWrongArityIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList
+      [(maOpaqueMutWrapper, .defn .shared opaqueMutWrapperBody),
+       (maOpaqueMutLeaf, .extern 1),
+       (aOpaqueMutWrapper, .defn .shared (.ref maOpaqueMutWrapper)),
+       (aOpaqueMutLeaf, .defn .shared (.ref maOpaqueMutLeaf))]
+    oracle := opaqueMutTargetOracle }
+
+#guard (match EraseValidator.validateMemberRel opaqueMutEctx
+    opaqueMutWrongArityIctx [] 100 ⟨aOpaqueMutBlock, 1⟩ with
+  | .error "opaque definition member extern arity mismatch" => true
+  | _ => false)
+
+end OpaqueMutualDefinitionMembers
+
+/-! ## Ghost arguments at ordinary definition heads
+
+The source ghost argument evaluates to `7̂`, so it cannot independently
+relate to target `◻`.  The unfoldable definition's declaration type and
+literal implementation lambda both classify the position as ghost; after
+discarding that argument, both evaluators return the contentful `9̂` body.
+This pins the `PErase.appDG` theorem/validator path on the executable eraser's
+exact output. -/
+
+private def aGhostDef : Ixon.Address := addrOf 0xD0
+private def aGhostArgument : Ixon.Address := addrOf 0xD1
+private def aGhostResult : Ixon.Address := addrOf 0xD2
+
+private def cGhostDef : Ixon.Constant :=
+  { info := .defn
+      { kind := .defn, safety := .safe, lvls := 0
+        typ := .all .many .shared (.sort 0) (.sort 0)
+        value := .lam .many (.sort 0) (.nat 0) }
+    sharing := #[], refs := #[aGhostResult], univs := #[.zero] }
+
+private def ghostStore : List (Ixon.Address × Ixon.Constant) :=
+  [(aGhostDef, cGhostDef)]
+
+private def ghostEctx : Ixon.Eval.EvalCtx :=
+  { resolve := fun address =>
+      if address = aGhostDef then some cGhostDef else none
+    blobs := fun address =>
+      if address = aGhostArgument then some (.natB 7)
+      else if address = aGhostResult then some (.natB 9)
+      else none }
+
+private def ghostTargetList : List (Ixon.Address × IxIR0.Decl) :=
+  [(aGhostDef, .defn .shared (.lam .many (.lit (.nat 9))))]
+
+private def ghostIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList ghostTargetList }
+
+private def ghostWrongOwnedIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList
+      [(aGhostDef, .defn .unique (.lam .many (.lit (.nat 9))))] }
+
+#guard (match EraseValidator.validateCovered ghostEctx ghostWrongOwnedIctx
+    [] 100 aGhostDef with
+  | .error "definition result ownership mismatch" => true
+  | _ => false)
+
+private theorem ghostCovered : Covered ghostEctx ghostIctx aGhostDef := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+private def ghostCoverage : EraseValidator.CoverageDB ghostEctx ghostIctx :=
+  [{ address := aGhostDef, covered := ghostCovered }]
+
+private def ghostCover : EraseValidator.CoverOracle ghostEctx ghostIctx :=
+  ghostCoverage.oracle
+
+private def ghostFrame : Ixon.Eval.Frame :=
+  { refs := #[aGhostDef, aGhostArgument] }
+
+private def ghostSource : Ixon.Expr :=
+  .app (.ref 0 #[]) (.nat 1)
+
+private def ghostTarget : IxIR0.Expr :=
+  .app (.ref aGhostDef) .erased
+
+private def ghostTables : Erase.ETables :=
+  { refs := ghostFrame.refs }
+
+#guard (match EraseValidator.certifyProgram ghostEctx ghostStore
+    [aGhostDef] 100 100 with
+  | .ok cert => cert.target == ghostTargetList && cert.coverage.length == 1
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr ghostEctx ghostIctx ghostCover none
+    ghostTables none [] ghostSource 100 100 with
+  | .ok cert => cert.target == ghostTarget
+  | .error _ => false)
+
+private theorem ghostPErase :
+    PErase ghostEctx ghostIctx none ghostFrame.refs ghostFrame.selfMuts
+      ghostFrame.selfAddr [] ghostSource ghostTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := ghostCover) (fuel := 100)
+  decide
+
+/-- A contentful ordinary-definition application certified through the new
+ghost-head clause. -/
+theorem ghostDefinitionHeadSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (heval : Ixon.Eval.eval ghostEctx fuel ghostFrame [] ghostSource =
+      .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval ghostIctx targetFuel [] ghostTarget = .ok targetValue ∧
+      ValRel ghostEctx ghostIctx value targetValue :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    heval ghostPErase
+
+#guard (match Ixon.Eval.eval ghostEctx 100 ghostFrame [] ghostSource with
+  | .ok (.litV (.natL 9)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval ghostIctx 100 [] ghostTarget with
+  | .ok (.lit (.nat 9)) => true
+  | _ => false)
+
+/-! ## Configured quotient primitives
+
+These constants use deliberately all-kept telescopes, isolating the quotient
+semantic seam from argument-policy erasure.  The source evaluator preserves a
+distinct `quotV` wrapper after `mk`; `lift` and `ind` open that wrapper and run
+their supplied function.  IxIR₀ executes the exact lambda bodies emitted by
+`eraseProgram`, and the validator reconstructs `Covered.quot` for each global.
+-/
+
+private def aQuotCtorI : Ixon.Address := addrOf 0x50
+private def aQuotLiftI : Ixon.Address := addrOf 0x51
+private def aQuotIndI : Ixon.Address := addrOf 0x52
+private def aQuotPayloadI : Ixon.Address := addrOf 0x53
+
+private def quotientTestType : Nat → Ixon.Expr
+  | 0 => .var 0
+  | n + 1 => .all .many .shared (.var 0) (quotientTestType n)
+
+private def quotientConstant (kind : Ixon.QuotKind) (arity : Nat) :
+    Ixon.Constant :=
+  { info := .quot { kind, lvls := 0, typ := quotientTestType arity }
+    sharing := #[], refs := #[], univs := #[] }
+
+private def quotientStore : List (Ixon.Address × Ixon.Constant) :=
+  [(aQuotCtorI, quotientConstant .ctor 3),
+   (aQuotLiftI, quotientConstant .lift 6),
+   (aQuotIndI, quotientConstant .ind 5)]
+
+private def quotientResolver : Ixon.Address → Option Ixon.Constant := fun a =>
+  (quotientStore.find? (fun entry => entry.1 == a)).map (·.2)
+
+private def quotientKindAt : Ixon.Address → Option Ixon.QuotKind := fun a =>
+  if a == aQuotCtorI then some .ctor
+  else if a == aQuotLiftI then some .lift
+  else if a == aQuotIndI then some .ind
+  else none
+
+private def quotientEctx : Ixon.Eval.EvalCtx :=
+  { resolve := quotientResolver
+    blobs := fun a => if a == aQuotPayloadI then some (.natB 37) else none
+    quotientKind := quotientKindAt }
+
+private def quotientUnconfiguredEctx : Ixon.Eval.EvalCtx :=
+  { resolve := quotientResolver
+    blobs := quotientEctx.blobs }
+
+private def quotientMismatchedEctx : Ixon.Eval.EvalCtx :=
+  { resolve := quotientResolver
+    blobs := quotientEctx.blobs
+    quotientKind := fun a =>
+      if a == aQuotCtorI then some .lift else quotientKindAt a }
+
+private def quotientTargetList : List (Ixon.Address × IxIR0.Decl) :=
+  [(aQuotCtorI, .defn .shared (Erase.quotientBody .ctor)),
+   (aQuotLiftI, .defn .shared (Erase.quotientBody .lift)),
+   (aQuotIndI, .defn .shared (Erase.quotientBody .ind))]
+
+private def quotientIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList quotientTargetList }
+
+private def quotientWrongOwnedIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList
+      [(aQuotCtorI, .defn .unique (Erase.quotientBody .ctor))] }
+
+private def quotientWrongBodyIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList
+      [(aQuotCtorI, .defn .shared .erased)] }
+
+private def quotientCoverageOrder : List Ixon.Address :=
+  [aQuotCtorI, aQuotLiftI, aQuotIndI]
+
+#guard (match EraseValidator.certifyProgram quotientEctx quotientStore
+    quotientCoverageOrder 200 200 with
+  | .ok cert =>
+      cert.target == quotientTargetList && cert.coverage.length == 3
+  | .error _ => false)
+
+#guard (match EraseValidator.validateCovered quotientUnconfiguredEctx
+    quotientIctx [] 100 aQuotCtorI with
+  | .error "quotient address is not configured" => true
+  | _ => false)
+
+#guard (match EraseValidator.validateCovered quotientMismatchedEctx
+    quotientIctx [] 100 aQuotCtorI with
+  | .error "configured quotient kind mismatch" => true
+  | _ => false)
+
+#guard (match EraseValidator.validateCovered quotientEctx
+    quotientWrongOwnedIctx [] 100 aQuotCtorI with
+  | .error "quotient result ownership mismatch" => true
+  | _ => false)
+
+#guard (match EraseValidator.validateCovered quotientEctx
+    quotientWrongBodyIctx [] 100 aQuotCtorI with
+  | .error "erased quotient body mismatch" => true
+  | _ => false)
+
+private theorem quotientCtorCovered :
+    Covered quotientEctx quotientIctx aQuotCtorI := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+private theorem quotientLiftCovered :
+    Covered quotientEctx quotientIctx aQuotLiftI := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+private theorem quotientIndCovered :
+    Covered quotientEctx quotientIctx aQuotIndI := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+private def quotientCoverage :
+    EraseValidator.CoverageDB quotientEctx quotientIctx :=
+  [{ address := aQuotCtorI, covered := quotientCtorCovered },
+   { address := aQuotLiftI, covered := quotientLiftCovered },
+   { address := aQuotIndI, covered := quotientIndCovered }]
+
+private def quotientCover :
+    EraseValidator.CoverOracle quotientEctx quotientIctx :=
+  quotientCoverage.oracle
+
+private def quotientFrame : Ixon.Eval.Frame :=
+  { refs := #[aQuotCtorI, aQuotLiftI, aQuotIndI, aQuotPayloadI]
+    univs := #[.zero] }
+
+private def quotientTables : Erase.ETables :=
+  { refs := quotientFrame.refs }
+
+private def quotientSourceApps (head : Ixon.Expr)
+    (args : List Ixon.Expr) : Ixon.Expr :=
+  args.foldl .app head
+
+private def quotientTargetApps (head : IxIR0.Expr)
+    (args : List IxIR0.Expr) : IxIR0.Expr :=
+  args.foldl .app head
+
+private def quotientMk37 : Ixon.Expr :=
+  quotientSourceApps (.ref 0 #[]) [.sort 0, .sort 0, .nat 3]
+
+private def quotientLift37 : Ixon.Expr :=
+  quotientSourceApps (.ref 1 #[])
+    [.sort 0, .sort 0, .sort 0,
+     .lam .many (.var 0) (.var 0), .sort 0, quotientMk37]
+
+private def quotientInd37 : Ixon.Expr :=
+  quotientSourceApps (.ref 2 #[])
+    [.sort 0, .sort 0, .sort 0,
+     .lam .many (.var 0) (.var 0), quotientMk37]
+
+private def quotientMk37Target : IxIR0.Expr :=
+  quotientTargetApps (.ref aQuotCtorI)
+    [.erased, .erased, .lit (.nat 37)]
+
+private def quotientLift37Target : IxIR0.Expr :=
+  quotientTargetApps (.ref aQuotLiftI)
+    [.erased, .erased, .erased, .lam .many (.var 0), .erased,
+      quotientMk37Target]
+
+private def quotientInd37Target : IxIR0.Expr :=
+  quotientTargetApps (.ref aQuotIndI)
+    [.erased, .erased, .erased, .lam .many (.var 0),
+      quotientMk37Target]
+
+#guard (match EraseValidator.certifyExpr quotientEctx quotientIctx
+    quotientCover none quotientTables none [] quotientLift37 200 200 with
+  | .ok cert => cert.target == quotientLift37Target
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr quotientEctx quotientIctx
+    quotientCover none quotientTables none [] quotientInd37 200 200 with
+  | .ok cert => cert.target == quotientInd37Target
+  | .error _ => false)
+
+private theorem quotientLiftPErase :
+    PErase quotientEctx quotientIctx none quotientFrame.refs
+      quotientFrame.selfMuts quotientFrame.selfAddr [] quotientLift37
+      quotientLift37Target := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := quotientCover) (fuel := 200)
+  decide
+
+private theorem quotientIndPErase :
+    PErase quotientEctx quotientIctx none quotientFrame.refs
+      quotientFrame.selfMuts quotientFrame.selfAddr [] quotientInd37
+      quotientInd37Target := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := quotientCover) (fuel := 200)
+  decide
+
+/-- Configured `Quot.lift` preserves the contentful representative through
+the executable quotient compilation scheme. -/
+theorem quotientLiftSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (heval : Ixon.Eval.eval quotientEctx fuel quotientFrame []
+      quotientLift37 = .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval quotientIctx targetFuel [] quotientLift37Target =
+        .ok targetValue ∧
+      ValRel quotientEctx quotientIctx value targetValue :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    heval quotientLiftPErase
+
+/-- Configured `Quot.ind` preserves the contentful representative through
+the executable quotient compilation scheme. -/
+theorem quotientIndSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (heval : Ixon.Eval.eval quotientEctx fuel quotientFrame [] quotientInd37 =
+      .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval quotientIctx targetFuel [] quotientInd37Target =
+        .ok targetValue ∧
+      ValRel quotientEctx quotientIctx value targetValue :=
+  erasure_sim_closed ⟨rfl, rfl⟩ (OracleRel.of_externFree (by intro address; rfl))
+    heval quotientIndPErase
+
+#guard (match Ixon.Eval.eval quotientEctx 200 quotientFrame []
+    quotientLift37 with
+  | .ok (.litV (.natL 37)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval quotientIctx 200 [] quotientLift37Target with
+  | .ok (.lit (.nat 37)) => true
+  | _ => false)
+
+#guard (match Ixon.Eval.eval quotientEctx 200 quotientFrame []
+    quotientInd37 with
+  | .ok (.litV (.natL 37)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval quotientIctx 200 [] quotientInd37Target with
+  | .ok (.lit (.nat 37)) => true
+  | _ => false)
+
+/-! ## Configured axioms and opaque definitions
+
+Extern lowering is only structural: the compiler emits an arity, while this
+fixture supplies the semantic relation separately. Both oracles deliberately
+return the contentful literal `42` only at the configured address and exact
+two-argument saturation. -/
+
+private def aExtern : Ixon.Address := addrOf 0xE2
+private def aExternLeft : Ixon.Address := addrOf 0xE3
+private def aExternRight : Ixon.Address := addrOf 0xE4
+private def aOpaque : Ixon.Address := addrOf 0xE5
+
+private def externType : Ixon.Expr :=
+  .all .many .shared (.var 0)
+    (.all .many .shared (.var 0) (.sort 0))
+
+private def cExtern : Ixon.Constant :=
+  { info := .axio { isUnsafe := false, lvls := 0, typ := externType }
+    sharing := #[], refs := #[], univs := #[] }
+
+private def externSourceOracle (address : Ixon.Address)
+    (args : List Ixon.Eval.Value) : Option Ixon.Eval.Value :=
+  if address = aExtern then
+    if args.length = 2 then some (.litV (.natL 42)) else none
+  else none
+
+private def externTargetOracle (address : Ixon.Address)
+    (args : List IxIR0.Value) : Option IxIR0.Value :=
+  if address = aExtern then
+    if args.length = 2 then some (.lit (.nat 42)) else none
+  else none
+
+private def externEctx : Ixon.Eval.EvalCtx :=
+  { resolve := fun address =>
+      if address = aExtern then some cExtern else none
+    blobs := fun address =>
+      if address = aExternLeft then some (.natB 17)
+      else if address = aExternRight then some (.natB 25)
+      else none
+    externArity := fun address =>
+      if address = aExtern then some 2 else none
+    oracle := externSourceOracle }
+
+private def externIctx : IxIR0.Ctx :=
+  { env := fun address =>
+      if address = aExtern then some (.extern 2) else none
+    oracle := externTargetOracle }
+
+private def externFrame : Ixon.Eval.Frame :=
+  { refs := #[aExtern, aExternLeft, aExternRight] }
+
+private def externSource : Ixon.Expr :=
+  .app (.app (.ref 0 #[]) (.nat 1)) (.nat 2)
+
+private def externTarget : IxIR0.Expr :=
+  .app (.app (.ref aExtern) (.lit (.nat 17))) (.lit (.nat 25))
+
+private theorem externCovered : Covered externEctx externIctx aExtern := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+private def externCoverage : EraseValidator.CoverageDB externEctx externIctx :=
+  [{ address := aExtern, covered := externCovered }]
+
+private def externCover : EraseValidator.CoverOracle externEctx externIctx :=
+  externCoverage.oracle
+
+private def externTables : Erase.ETables :=
+  { refs := externFrame.refs }
+
+private theorem externPErase :
+    PErase externEctx externIctx none externFrame.refs externFrame.selfMuts
+      externFrame.selfAddr [] externSource externTarget := by
+  apply EraseValidator.related_of_validateExpr
+    (cover := externCover) (fuel := 100)
+  decide
+
+private theorem externValsLength {sourceArgs : List Ixon.Eval.Value}
+    {targetArgs : List IxIR0.Value}
+    (hargs : ValsRel externEctx externIctx sourceArgs targetArgs) :
+    sourceArgs.length = targetArgs.length := by
+  cases hargs with
+  | nil => rfl
+  | cons _ htail => simp [externValsLength htail]
+termination_by sourceArgs
+
+private theorem externOracleRel : OracleRel externEctx externIctx := by
+  intro address arity hconfigured
+  by_cases haddress : address = aExtern
+  · subst address
+    simp [externEctx] at hconfigured
+    subst arity
+    intro sourceArgs targetArgs sourceValue hsourceLength hargs horacle
+    have hsourceValue : (.litV (.natL 42) : Ixon.Eval.Value) =
+        sourceValue := by
+      simpa [externEctx, externSourceOracle, hsourceLength] using horacle
+    subst sourceValue
+    have htargetLength : targetArgs.length = 2 := by
+      rw [← externValsLength hargs, hsourceLength]
+    refine ⟨.lit (.nat 42), ?_, .litNat⟩
+    simp [externIctx, externTargetOracle, htargetLength]
+  · simp [externEctx, haddress] at hconfigured
+
+#guard (match EraseValidator.certifyProgram externEctx [(aExtern, cExtern)]
+    [aExtern] 100 100 with
+  | .ok cert => cert.target == [(aExtern, .extern 2)]
+  | .error _ => false)
+
+#guard (match EraseValidator.certifyExpr externEctx externIctx externCover none
+    externTables none [] externSource 100 100 with
+  | .ok cert => cert.target == externTarget
+  | .error _ => false)
+
+/-- A configured axiom crosses the explicit per-address oracle ledger at exact
+saturation and preserves its contentful result. -/
+theorem externAnswerSim {fuel : Nat} {value : Ixon.Eval.Value}
+    (heval : Ixon.Eval.eval externEctx fuel externFrame [] externSource =
+      .ok value) :
+    ∃ targetFuel targetValue,
+      IxIR0.eval externIctx targetFuel [] externTarget = .ok targetValue ∧
+      ValRel externEctx externIctx value targetValue :=
+  erasure_sim_closed ⟨rfl, rfl⟩ externOracleRel heval externPErase
+
+#guard (match Ixon.Eval.eval externEctx 100 externFrame [] externSource with
+  | .ok (.litV (.natL 42)) => true
+  | _ => false)
+
+#guard (match IxIR0.eval externIctx 100 [] externTarget with
+  | .ok (.lit (.nat 42)) => true
+  | _ => false)
+
+private def externUnconfiguredEctx : Ixon.Eval.EvalCtx :=
+  { externEctx with externArity := fun _ => none }
+
+#guard (match EraseValidator.validateCovered externUnconfiguredEctx externIctx
+    [] 100 aExtern with
+  | .error "extern address is not configured" => true
+  | _ => false)
+
+private def externWrongArityIctx : IxIR0.Ctx :=
+  { externIctx with env := fun address =>
+      if address = aExtern then some (.extern 1) else none }
+
+#guard (match EraseValidator.validateCovered externEctx externWrongArityIctx
+    [] 100 aExtern with
+  | .error "configured extern arity mismatch" => true
+  | _ => false)
+
+private def externMissingOracleEctx : Ixon.Eval.EvalCtx :=
+  { externEctx with oracle := fun _ _ => none }
+
+#guard (match Ixon.Eval.eval externMissingOracleEctx 100 externFrame []
+    externSource with
+  | .error (.oracleMissing address) => address == aExtern
+  | _ => false)
+
+private def opaqueType : Ixon.Expr :=
+  .all .many .shared (.sort 0) (.sort 0)
+
+private def cOpaque : Ixon.Constant :=
+  { info := .defn
+      { kind := .opaq, safety := .safe, lvls := 0
+        typ := opaqueType, value := .sort 0 }
+    sharing := #[], refs := #[], univs := #[] }
+
+private def opaqueEctx : Ixon.Eval.EvalCtx :=
+  { resolve := fun address =>
+      if address = aOpaque then some cOpaque else none
+    externArity := fun address =>
+      if address = aOpaque then some 1 else none }
+
+private def opaqueIctx : IxIR0.Ctx :=
+  { env := fun address =>
+      if address = aOpaque then some (.extern 1) else none }
+
+private theorem opaqueCovered : Covered opaqueEctx opaqueIctx aOpaque := by
+  apply EraseValidator.covered_of_validate (db := []) (fuel := 100)
+  decide
+
+#guard (match EraseValidator.certifyProgram opaqueEctx [(aOpaque, cOpaque)]
+    [aOpaque] 100 100 with
+  | .ok cert => cert.target == [(aOpaque, .extern 1)]
+  | .error _ => false)
 
 /-! ## Sharing composition instance
 
@@ -2698,16 +4424,18 @@ private def sharedEctx : Ixon.Eval.EvalCtx :=
 
 private theorem sharedEctxWF : sharedEctx.SharingWF := by
   constructor
-  intro address c hresolve
-  by_cases haddress : address = aShared
-  · simp [sharedEctx, haddress] at hresolve
-    subst c
-    simp [cShared, Ixon.Constant.sharingWF, Ixon.Sharing.layer1WF,
-      Ixon.Sharing.tableWF, Ixon.Sharing.entriesWF,
-      Ixon.Sharing.entryWF, Ixon.Sharing.sharesBelow,
-      Ixon.Sharing.entriesUsedTwice, Ixon.Sharing.countShare,
-      Ixon.ConstantInfo.exprs, Ixon.Definition.exprs]
-  · simp [sharedEctx, haddress] at hresolve
+  · intro address c hresolve
+    by_cases haddress : address = aShared
+    · simp [sharedEctx, haddress] at hresolve
+      subst c
+      simp [cShared, Ixon.Constant.sharingWF, Ixon.Sharing.layer1WF,
+        Ixon.Sharing.tableWF, Ixon.Sharing.entriesWF,
+        Ixon.Sharing.entryWF, Ixon.Sharing.sharesBelow,
+        Ixon.Sharing.entriesUsedTwice, Ixon.Sharing.countShare,
+        Ixon.ConstantInfo.exprs, Ixon.Definition.exprs]
+    · simp [sharedEctx, haddress] at hresolve
+  · intro address args value hargs horacle
+    simp [sharedEctx] at horacle
 
 private def sharedIctx : IxIR0.Ctx :=
   { env := fun address =>
@@ -2730,6 +4458,8 @@ private theorem sharedCovered :
       Ixon.Sharing.substSharesList, dSharedInlined]
   · rfl
   · simp [sharedIctx]
+  · refine ⟨none, ?_, rfl⟩
+    exact .terminal rfl
   · exact .sortE
 
 private def sharedCoverage :
@@ -2784,7 +4514,8 @@ theorem sharedDefinitionSim {fuel : Nat} {v : Ixon.Eval.Value}
     ∃ fuel' v',
       IxIR0.eval sharedIctx fuel' [] (.ref aShared) = .ok v' ∧
       InlinedValRel sharedEctx sharedIctx v v' := by
-  apply erasure_sim_inlineSharing_closed sharedEctxWF sharedFrameWF
+  apply erasure_sim_inlineSharing_closed ⟨rfl, rfl⟩ sharedEctxWF sharedFrameWF
+    (OracleRel.of_externFree (by intro address; rfl))
     (e := sharedSource) (e' := .ref aShared)
   · decide
   · exact hev

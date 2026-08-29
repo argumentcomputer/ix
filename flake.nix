@@ -24,7 +24,7 @@
     # Blake3 FFI: the flake-built package (prebuilt Rust static lib)
     # overrides the Lake dep, whose lakefile shells out to cargo — the
     # sandbox forbids that. Keep the rev in lockstep with
-    # lakefile.toml/lake-manifest.json. Nested inputs (crane, fenix,
+    # lakefile.lean/lake-manifest.json. Nested inputs (crane, fenix,
     # blake3 source, flake-parts) are pinned at lock time to ix's
     # flake.lock revs — the combination proven on this machine.
     # NB: no lean4-nix follows — blake3-lean uses the lenianiva
@@ -63,11 +63,14 @@
         leanSrc = pkgs.lib.fileset.toSource {
           root = ./.;
           fileset = pkgs.lib.fileset.unions [
-            ./lakefile.toml
+            ./lakefile.lean
             ./lake-manifest.json
             ./lean-toolchain
+            ./native/hpt_cache_sync.c
             ./Compilatrix.lean
             ./Tests.lean
+            ./CatalogContact.lean
+            ./fixtures/ixon-std-contact
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
           ];
         };
@@ -82,12 +85,15 @@
           fileset = pkgs.lib.fileset.unions [
             ./flake.nix
             ./flake.lock
-            ./lakefile.toml
+            ./lakefile.lean
             ./lake-manifest.json
             ./lean-toolchain
+            ./native/hpt_cache_sync.c
             ./.envrc
             ./Compilatrix.lean
             ./Tests.lean
+            ./CatalogContact.lean
+            ./fixtures/ixon-std-contact
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             ./docs/trusted-externs.json
             ./scripts/check_trusted_externs.py
@@ -134,6 +140,17 @@
           '';
         };
 
+        # Compile the standalone directory adapter/contact executable as its
+        # own target. The byte-exact outcome is exercised by `tests`; this
+        # check prevents the operational CLI root from silently going stale.
+        catalogContactCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "catalog-contact";
+          installArtifacts = false;
+        };
+
         # Fail closed when source imports, native symbols, dependency
         # graphs, build pins, or CI actions drift from the reviewed ledger.
         trustedExternCheck =
@@ -173,6 +190,7 @@
           ci-workflow = ciWorkflowCheck;
           trusted-extern-ledger = trustedExternCheck;
           tests = testsCheck;
+          catalog-contact = catalogContactCheck;
         };
 
         devShells.default = pkgs.mkShell {

@@ -1,7 +1,10 @@
 import Compilatrix.Ixon.UsageCheck
-import Compilatrix.Erase
+import Compilatrix.Ixon.Work
+import Compilatrix.EraseAddressed
 import Compilatrix.EraseValidator
-import Compilatrix.IxIR1.Lower
+import Compilatrix.IxIR1.LowerFullyAddressed
+import Compilatrix.IxIR1.HPTCacheDirIO
+import Compilatrix.IxIR1.HPTCasePruneProgram
 
 /-!
 # Checked source-to-IxIR₁ pipeline
@@ -11,8 +14,13 @@ gatekeepers:
 
 1. every Ixon constant passes `UsageCheck.checkConstant` against the
    same closed-world resolver;
-2. the checked program is erased by `Erase.eraseProgram`;
-3. the actual erased declarations are lowered by `IxIR1.lowerAll`.
+2. the checked program is erased through `EraseAddressed.run`, retaining the
+   exact legacy erasure while replacing mutual-member temporary keys by
+   canonical block-derived keys;
+3. the addressed IxIR₀ declarations are lowered, the complete IxIR₁ graph
+   is partitioned into SCCs, and source/generated functions are rekeyed to
+   ordinary declaration hashes or cycle-safe mutual-block identities.  Opaque
+   extern keys and constructor identities remain stable.
 
 `compile` is that engineering gate, not yet the end-to-end theorem:
 UsageCheck's recorded higher-order limitations remain, erasure is
@@ -34,23 +42,615 @@ open Compilatrix.Ixon (Address Constant Owned)
 inductive Error where
   | usage (address : Address) (error : Ixon.UsageCheck.UsageErr)
   | erase (error : Erase.EraseErr)
+  | readdress (message : String)
   /-- The erasure validator rejected this declaration (or the main
   entry) with the given diagnostic — `compileValidated` only. -/
   | validate (address : Address) (message : String)
   | lower (message : String)
+  | resource (exceeded : Ixon.Work.Exceeded)
   deriving BEq, Repr
+
+/-- Inclusive structural limits for one compilation unit.  These are
+deterministic preflight counters, not machine-dependent timeouts.  The
+certificate limits deliberately bound both proof-database size and the
+quadratic dependency-discovery fixpoint. -/
+structure Limits where
+  maxConstants : Nat := 16 * 1024
+  maxExpressionUnits : Nat := 1024 * 1024
+  maxExpandedExpressionUnits : Nat := 1024 * 1024
+  maxLayer1NodeVisits : Nat := 64 * 1024 * 1024
+  maxErasedDeclarations : Nat := 32 * 1024
+  maxErasureAppendCells : Nat := 64 * 1024 * 1024
+  maxCertificateCandidates : Nat := 512
+  maxCertificateValidationAttempts : Nat := 512 * 513 / 2 + 512
+  maxCertificateSourceNodeWork : Nat := 128 * 1024 * 1024
+  maxUsageFuel : Nat := Ixon.UsageCheck.defaultFuel
+  maxErasureFuel : Nat := Erase.defaultFuel
+  maxValidationFuel : Nat := Erase.defaultFuel
+  maxLoweringFuel : Nat := 100000
+  deriving BEq, Repr
+
+def defaultLimits : Limits := {}
 
 /-- Non-constant inputs needed while erasing a closed Ixon program. -/
 structure Config where
   blobs : Address → Option Ixon.Eval.Blob := fun _ => none
   natBlock : Option Address := none
+  limits : Limits := {}
 
-/-- The two executable compiler boundaries, retained together so
-tests and future validators can inspect the exact intermediate. -/
+/-- The executable compiler boundaries, retained together so validators and
+artifact consumers can inspect both the theorem-facing legacy erasure and the
+cycle-safe addressed program. -/
 structure Artifact where
+  /-- Exact output of the existing proof-facing eraser. -/
+  rawErasedDecls : List (Address × IxIR0.Decl)
+  /-- Executable IxIR₀ environment after mutual-block readdressing. -/
   erasedDecls : List (Address × IxIR0.Decl)
-  targetDecls : List (Address × IxIR1.Decl)
+  erasedBlocks : List IxIR0.MutualBlock.Result
+  /-- Legacy mutual-member key to final block-derived key. -/
+  erasedAddressMap : IxIR0.MutualBlock.Renaming
+  /-- Dependency-ordered stable, ordinary, and mutual target artifacts. -/
+  targetArtifacts : List IxIR1.ReaddressAll.Artifact
   main : IxIR1.Code
+  /-- Complete raw IxIR₁ producer name to emitted identity map.  It includes
+  identity entries for stable extern ABI declarations; no nonidentity domain
+  key remains in the target declarations or main code. -/
+  targetAddressMap : IxIR1.ReaddressAll.Renaming
+
+namespace Artifact
+
+/-- Flat evaluator environment projected from the richer target artifacts. -/
+def targetDecls (artifact : Artifact) : List (Address × IxIR1.Decl) :=
+  artifact.targetArtifacts.flatMap IxIR1.ReaddressAll.Artifact.declarations
+
+/-- The exact evaluator declaration environment committed to by the target
+artifact graph and used to interpret checked HPT facts. -/
+def targetDeclEnv (artifact : Artifact) : IxIR1.Env :=
+  IxIR1.HPT.programDeclEnv artifact.targetArtifacts
+
+def targetBlocks (artifact : Artifact) : List IxIR1.MutualBlock.Result :=
+  artifact.targetArtifacts.filterMap fun
+    | .stable _ _ | .ordinary _ _ => none
+    | .mutual block => some block
+
+/-- Install a rebuilt target graph while composing the compiler's original
+producer-to-target map through the old-target-to-new-target rebuild map. -/
+def withRebuiltTarget (artifact : Artifact)
+    (result : IxIR1.ReaddressAll.Result) : Artifact :=
+  { artifact with
+    targetArtifacts := result.artifacts
+    main := result.main
+    targetAddressMap := artifact.targetAddressMap.map fun mapping =>
+      (mapping.1, IxIR1.Readdress.Renaming.apply result.addressMap mapping.2) }
+
+/-- Resource-configurable validation and cache addressing of an untrusted HPT
+result against this artifact's exact dependency-ordered target graph. -/
+def checkHPTWith (artifact : Artifact) (limits : IxIR1.HPT.Limits)
+    (certificate : IxIR1.HPT.Certificate) :
+    Except String IxIR1.HPT.Result :=
+  IxIR1.HPT.runWith limits artifact.targetArtifacts certificate
+
+/-- Default-budget HPT checking. Analysis remains optional until an
+optimization consumes it; callers cannot substitute a different program. -/
+def checkHPT (artifact : Artifact) (certificate : IxIR1.HPT.Certificate) :
+    Except String IxIR1.HPT.Result :=
+  artifact.checkHPTWith IxIR1.HPT.defaultLimits certificate
+
+/-- Deterministically produce, validate, and content-address an HPT
+certificate for this artifact's exact target graph. -/
+def produceHPTWith (artifact : Artifact)
+    (limits : IxIR1.HPT.ProducerLimits) :
+    Except String
+      (IxIR1.HPT.Production limits.checker artifact.targetArtifacts) :=
+  IxIR1.HPT.produceWith limits artifact.targetArtifacts
+
+def produceHPT (artifact : Artifact) :
+    Except String
+      (IxIR1.HPT.Production IxIR1.HPT.defaultProducerLimits.checker
+        artifact.targetArtifacts) :=
+  artifact.produceHPTWith IxIR1.HPT.defaultProducerLimits
+
+/-- Validate dependency-addressed persistent cache hits and rebuild misses
+artifact-locally before crossing the ordinary whole-program HPT checker. -/
+def produceHPTCachedWith (artifact : Artifact)
+    (limits : IxIR1.HPT.Cache.Limits) (store : IxIR1.HPT.Cache.Store) :
+    Except String
+      (IxIR1.HPT.Cache.Production limits artifact.targetArtifacts) :=
+  IxIR1.HPT.Cache.runWith limits artifact.targetArtifacts store
+
+def produceHPTCached (artifact : Artifact)
+    (store : IxIR1.HPT.Cache.Store) :
+    Except String
+      (IxIR1.HPT.Cache.Production IxIR1.HPT.Cache.defaultLimits
+        artifact.targetArtifacts) :=
+  artifact.produceHPTCachedWith IxIR1.HPT.Cache.defaultLimits store
+
+/-- Persistent specialization: cold-start an absent file, validate every
+present hit against this artifact, rebuild misses, and save the merged store. -/
+def produceHPTCachedFileWith (artifact : Artifact)
+    (limits : IxIR1.HPT.Cache.Limits) (path : System.FilePath) :
+    IO (Except IxIR1.HPT.CacheIO.Error
+      (IxIR1.HPT.Cache.Production limits artifact.targetArtifacts)) :=
+  IxIR1.HPT.CacheIO.refreshFileWith limits artifact.targetArtifacts path
+
+def produceHPTCachedFile (artifact : Artifact) (path : System.FilePath) :
+    IO (Except IxIR1.HPT.CacheIO.Error
+      (IxIR1.HPT.Cache.Production IxIR1.HPT.Cache.defaultLimits
+        artifact.targetArtifacts)) :=
+  artifact.produceHPTCachedFileWith IxIR1.HPT.Cache.defaultLimits path
+
+/-- Scaling specialization: index canonical per-key chunks without retaining
+their payloads, lazily read only dependency-selected records, rebuild local
+misses/rejections, and durably publish each changed chunk. -/
+def produceHPTCachedDirectoryWith (artifact : Artifact)
+    (limits : IxIR1.HPT.CacheDirIO.Limits) (directory : System.FilePath) :
+    IO (Except IxIR1.HPT.CacheIO.Error
+      (IxIR1.HPT.Cache.Production limits.cache artifact.targetArtifacts)) :=
+  IxIR1.HPT.CacheDirIO.refreshDirectoryWith limits artifact.targetArtifacts
+    directory
+
+def produceHPTCachedDirectory (artifact : Artifact)
+    (directory : System.FilePath) :
+    IO (Except IxIR1.HPT.CacheIO.Error
+      (IxIR1.HPT.Cache.Production IxIR1.HPT.CacheDirIO.defaultLimits.cache
+        artifact.targetArtifacts)) :=
+  artifact.produceHPTCachedDirectoryWith
+    IxIR1.HPT.CacheDirIO.defaultLimits directory
+
+/-! ## First checked HPT consumer -/
+
+/-- Check an untrusted HPT certificate against this exact artifact graph and
+then use it to prune one root `call`→`case` redex. -/
+def checkAndPruneCaseWith (artifact : Artifact) (limits : IxIR1.HPT.Limits)
+    (certificate : IxIR1.HPT.Certificate) (input : IxIR1.Code) :
+    Except String (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.Outcome) := do
+  let analysis ← artifact.checkHPTWith limits certificate
+  return (analysis, IxIR1.HPT.CasePrune.run artifact.targetDeclEnv
+    certificate.summaryEnv input)
+
+def checkAndPruneCase (artifact : Artifact)
+    (certificate : IxIR1.HPT.Certificate) (input : IxIR1.Code) :
+    Except String (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.Outcome) :=
+  artifact.checkAndPruneCaseWith IxIR1.HPT.defaultLimits certificate input
+
+/-- Directly produced summaries have already crossed the same checker. -/
+def pruneCaseWithProducedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts)
+    (input : IxIR1.Code) : IxIR1.HPT.CasePrune.Outcome :=
+  IxIR1.HPT.CasePrune.run artifact.targetDeclEnv
+    production.certificate.summaryEnv input
+
+/-- Cached hits and local rebuilds likewise carry whole-program checker
+evidence before they can drive the consumer. -/
+def pruneCaseWithCachedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts)
+    (input : IxIR1.Code) : IxIR1.HPT.CasePrune.Outcome :=
+  IxIR1.HPT.CasePrune.run artifact.targetDeclEnv
+    production.certificate.summaryEnv input
+
+/-- Check an untrusted HPT certificate and recursively prune every eligible
+`call`→`case` redex in the supplied code fragment. -/
+def checkAndPruneCasesRecursiveWith (artifact : Artifact)
+    (limits : IxIR1.HPT.Limits) (certificate : IxIR1.HPT.Certificate)
+    (input : IxIR1.Code) :
+    Except String (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.Outcome) := do
+  let analysis ← artifact.checkHPTWith limits certificate
+  return (analysis, IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+    certificate.summaryEnv input)
+
+def checkAndPruneCasesRecursive (artifact : Artifact)
+    (certificate : IxIR1.HPT.Certificate) (input : IxIR1.Code) :
+    Except String (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.Outcome) :=
+  artifact.checkAndPruneCasesRecursiveWith IxIR1.HPT.defaultLimits
+    certificate input
+
+/-- Recursively consume a directly produced, already checked summary. -/
+def pruneCasesRecursiveWithProducedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts)
+    (input : IxIR1.Code) : IxIR1.HPT.CasePrune.Outcome :=
+  IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+    production.certificate.summaryEnv input
+
+/-- Recursively consume a persistent-cache production, whose hits and
+rebuilt misses have crossed whole-program checking. -/
+def pruneCasesRecursiveWithCachedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts)
+    (input : IxIR1.Code) : IxIR1.HPT.CasePrune.Outcome :=
+  IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+    production.certificate.summaryEnv input
+
+/-- Check a certificate and recursively prune the artifact's unhashed main.
+The resulting main is safe for `runMain`, including `callSelf` re-entry. -/
+def checkAndPruneMainWith (artifact : Artifact) (limits : IxIR1.HPT.Limits)
+    (certificate : IxIR1.HPT.Certificate) :
+    Except String (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.Outcome) := do
+  let analysis ← artifact.checkHPTWith limits certificate
+  return (analysis, IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+    certificate.summaryEnv artifact.main)
+
+def checkAndPruneMain (artifact : Artifact)
+    (certificate : IxIR1.HPT.Certificate) :
+    Except String (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.Outcome) :=
+  artifact.checkAndPruneMainWith IxIR1.HPT.defaultLimits certificate
+
+/-- Recursively prune the main with a directly produced checked summary. -/
+def pruneMainWithProducedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts) :
+    IxIR1.HPT.CasePrune.Outcome :=
+  IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+    production.certificate.summaryEnv artifact.main
+
+/-- Recursively prune the main with a checked persistent-cache production. -/
+def pruneMainWithCachedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts) :
+    IxIR1.HPT.CasePrune.Outcome :=
+  IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+    production.certificate.summaryEnv artifact.main
+
+/-! ## Readdressed declaration-graph case pruning -/
+
+/-- Check an untrusted HPT certificate, recursively prune every stored
+function body and the main, and rebuild all affected content addresses.  The
+returned HPT analysis describes the input graph and must not be reused as a
+certificate for the rebuilt graph. -/
+def checkAndPruneProgramWith (artifact : Artifact)
+    (limits : IxIR1.HPT.Limits) (certificate : IxIR1.HPT.Certificate) :
+    Except String
+      (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.ProgramOutcome) := do
+  let analysis ← artifact.checkHPTWith limits certificate
+  let outcome ← IxIR1.HPT.CasePrune.rebuildProgram []
+    artifact.targetArtifacts certificate.summaryEnv artifact.main
+  return (analysis, outcome)
+
+def checkAndPruneProgram (artifact : Artifact)
+    (certificate : IxIR1.HPT.Certificate) :
+    Except String
+      (IxIR1.HPT.Result × IxIR1.HPT.CasePrune.ProgramOutcome) :=
+  artifact.checkAndPruneProgramWith IxIR1.HPT.defaultLimits certificate
+
+/-- Rebuild a complete program using a directly produced checked summary. -/
+def pruneProgramWithProducedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts) :
+    Except String IxIR1.HPT.CasePrune.ProgramOutcome :=
+  IxIR1.HPT.CasePrune.rebuildProgram [] artifact.targetArtifacts
+    production.certificate.summaryEnv artifact.main
+
+/-- Rebuild a complete program using a checked persistent-cache production. -/
+def pruneProgramWithCachedHPT (artifact : Artifact)
+    {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts) :
+    Except String IxIR1.HPT.CasePrune.ProgramOutcome :=
+  IxIR1.HPT.CasePrune.rebuildProgram [] artifact.targetArtifacts
+    production.certificate.summaryEnv artifact.main
+
+/-- Materialize the pipeline artifact represented by a successful complete
+program pruning outcome. -/
+def installPrunedProgram (artifact : Artifact)
+    (outcome : IxIR1.HPT.CasePrune.ProgramOutcome) : Artifact :=
+  artifact.withRebuiltTarget outcome.result
+
+/-- Logical old-keyed declaration rows supplied to the rebuild stage. -/
+def prunedTargetEntries (artifact : Artifact)
+    (summaries : IxIR1.HPT.SummaryEnv) :
+    List (Address × IxIR1.Decl) :=
+  IxIR1.HPT.CasePrune.rewriteEntries
+    (IxIR1.HPT.programDeclEnv artifact.targetArtifacts) summaries
+    (IxIR1.HPT.declarationEntries artifact.targetArtifacts)
+
+/-- Source evaluator context paired with a rebuilt graph's oracle pullback. -/
+def pruneProgramSourceCtx (artifact : Artifact)
+    (summaries : IxIR1.HPT.SummaryEnv)
+    (outcome : IxIR1.HPT.CasePrune.ProgramOutcome)
+    (oracle : Address → List IxIR1.RVal → Option IxIR1.RVal) : IxIR1.Ctx :=
+  IxIR1.HPT.CasePrune.rebuildOriginalCtx outcome.result
+    (artifact.prunedTargetEntries summaries)
+    (IxIR1.HPT.programDeclEnv artifact.targetArtifacts) oracle
+
+/-- Checked complete-graph pruning transports the full evaluator result,
+including address-bearing heap nodes and errors. -/
+theorem runMain_pruneProgram_of_checkHPTWith_eq_ok
+    {artifact : Artifact} {limits : IxIR1.HPT.Limits}
+    {certificate : IxIR1.HPT.Certificate} {analysis : IxIR1.HPT.Result}
+    {outcome : IxIR1.HPT.CasePrune.ProgramOutcome}
+    (hcheck : artifact.checkHPTWith limits certificate = .ok analysis)
+    (hrebuild : IxIR1.HPT.CasePrune.rebuildProgram []
+      artifact.targetArtifacts certificate.summaryEnv artifact.main =
+      .ok outcome)
+    (oracle : Address → List IxIR1.RVal → Option IxIR1.RVal :=
+      fun _ _ => none)
+    (fuel : Nat := 100000) :
+    IxIR1.runMain (outcome.result.addressedCtx oracle)
+        outcome.result.main fuel =
+      IxIR1.Readdress.mapRunResult
+        (outcome.result.rebuildRename
+          (artifact.prunedTargetEntries certificate.summaryEnv))
+        (IxIR1.runMain
+          (artifact.pruneProgramSourceCtx certificate.summaryEnv
+            outcome oracle)
+          artifact.main fuel) := by
+  exact IxIR1.HPT.CasePrune.runMain_rebuildProgram_of_runWith_eq_ok
+    (by simpa [checkHPTWith] using hcheck) hrebuild oracle fuel
+
+/-- One successful combined pipeline call carries both checker and rebuild
+evidence needed by the complete evaluator transport theorem. -/
+theorem runMain_pruneProgram_of_checkAndPruneProgramWith_eq_ok
+    {artifact : Artifact} {limits : IxIR1.HPT.Limits}
+    {certificate : IxIR1.HPT.Certificate} {analysis : IxIR1.HPT.Result}
+    {outcome : IxIR1.HPT.CasePrune.ProgramOutcome}
+    (hrun : artifact.checkAndPruneProgramWith limits certificate =
+      .ok (analysis, outcome))
+    (oracle : Address → List IxIR1.RVal → Option IxIR1.RVal :=
+      fun _ _ => none)
+    (fuel : Nat := 100000) :
+    IxIR1.runMain (outcome.result.addressedCtx oracle)
+        outcome.result.main fuel =
+      IxIR1.Readdress.mapRunResult
+        (outcome.result.rebuildRename
+          (artifact.prunedTargetEntries certificate.summaryEnv))
+        (IxIR1.runMain
+          (artifact.pruneProgramSourceCtx certificate.summaryEnv
+            outcome oracle)
+          artifact.main fuel) := by
+  unfold checkAndPruneProgramWith at hrun
+  simp only [bind, Except.bind] at hrun
+  cases hcheck : artifact.checkHPTWith limits certificate with
+  | error message =>
+      rw [hcheck] at hrun
+      contradiction
+  | ok checked =>
+      rw [hcheck] at hrun
+      cases hrebuild : IxIR1.HPT.CasePrune.rebuildProgram []
+          artifact.targetArtifacts certificate.summaryEnv artifact.main with
+      | error message =>
+          rw [hrebuild] at hrun
+          contradiction
+      | ok rebuilt =>
+          rw [hrebuild] at hrun
+          have hpair : (checked, rebuilt) = (analysis, outcome) := by
+            injection hrun
+          have hanalysis : checked = analysis := congrArg Prod.fst hpair
+          have houtcome : rebuilt = outcome := congrArg Prod.snd hpair
+          subst analysis
+          subst outcome
+          exact runMain_pruneProgram_of_checkHPTWith_eq_ok
+            hcheck hrebuild oracle fuel
+
+/-- Checked pipeline specialization of the core exact evaluator theorem. -/
+theorem runCode_pruneCase_of_checkHPTWith_eq_ok
+    {artifact : Artifact} {limits : IxIR1.HPT.Limits}
+    {certificate : IxIR1.HPT.Certificate} {analysis : IxIR1.HPT.Result}
+    (hcheck : artifact.checkHPTWith limits certificate = .ok analysis)
+    {ctx : IxIR1.Ctx} {current : IxIR1.FnDef} {store : IxIR1.Store}
+    {environment : List IxIR1.RVal} {input : IxIR1.Code} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runCode ctx fuel current store environment
+        (IxIR1.HPT.CasePrune.run artifact.targetDeclEnv
+          certificate.summaryEnv input).code =
+      IxIR1.runCode ctx fuel current store environment input := by
+  exact IxIR1.HPT.CasePrune.runCode_run_eq_of_runWith_eq_ok
+    (program := artifact.targetArtifacts)
+    (by simpa [checkHPTWith] using hcheck)
+    (by simpa [targetDeclEnv] using hctx)
+
+/-- Direct-production consumer specialization. -/
+theorem runCode_pruneCaseWithProducedHPT_eq
+    {artifact : Artifact} {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {current : IxIR1.FnDef} {store : IxIR1.Store}
+    {environment : List IxIR1.RVal} {input : IxIR1.Code} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runCode ctx fuel current store environment
+        (artifact.pruneCaseWithProducedHPT production input).code =
+      IxIR1.runCode ctx fuel current store environment input := by
+  exact IxIR1.HPT.CasePrune.runCode_run_eq_of_postFixpoint
+    production.postFixpoint (by simpa [targetDeclEnv] using hctx)
+
+/-- Persistent-cache consumer specialization. -/
+theorem runCode_pruneCaseWithCachedHPT_eq
+    {artifact : Artifact} {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {current : IxIR1.FnDef} {store : IxIR1.Store}
+    {environment : List IxIR1.RVal} {input : IxIR1.Code} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runCode ctx fuel current store environment
+        (artifact.pruneCaseWithCachedHPT production input).code =
+      IxIR1.runCode ctx fuel current store environment input := by
+  exact IxIR1.HPT.CasePrune.runCode_run_eq_of_postFixpoint
+    production.postFixpoint (by simpa [targetDeclEnv] using hctx)
+
+/-- Checked pipeline specialization for recursive supplied-code pruning. -/
+theorem runCode_pruneCasesRecursive_of_checkHPTWith_eq_ok
+    {artifact : Artifact} {limits : IxIR1.HPT.Limits}
+    {certificate : IxIR1.HPT.Certificate} {analysis : IxIR1.HPT.Result}
+    (hcheck : artifact.checkHPTWith limits certificate = .ok analysis)
+    {ctx : IxIR1.Ctx} {current : IxIR1.FnDef} {store : IxIR1.Store}
+    {environment : List IxIR1.RVal} {input : IxIR1.Code} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runCode ctx fuel current store environment
+        (IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+          certificate.summaryEnv input).code =
+      IxIR1.runCode ctx fuel current store environment input := by
+  exact IxIR1.HPT.CasePrune.runCode_runRecursive_eq_of_runWith_eq_ok
+    (program := artifact.targetArtifacts)
+    (by simpa [checkHPTWith] using hcheck)
+    (by simpa [targetDeclEnv] using hctx)
+
+/-- Direct-production specialization for recursive supplied-code pruning. -/
+theorem runCode_pruneCasesRecursiveWithProducedHPT_eq
+    {artifact : Artifact} {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {current : IxIR1.FnDef} {store : IxIR1.Store}
+    {environment : List IxIR1.RVal} {input : IxIR1.Code} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runCode ctx fuel current store environment
+        (artifact.pruneCasesRecursiveWithProducedHPT production input).code =
+      IxIR1.runCode ctx fuel current store environment input := by
+  exact IxIR1.HPT.CasePrune.runCode_runRecursive_eq_of_postFixpoint
+    production.postFixpoint (by simpa [targetDeclEnv] using hctx)
+
+/-- Persistent-cache specialization for recursive supplied-code pruning. -/
+theorem runCode_pruneCasesRecursiveWithCachedHPT_eq
+    {artifact : Artifact} {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {current : IxIR1.FnDef} {store : IxIR1.Store}
+    {environment : List IxIR1.RVal} {input : IxIR1.Code} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runCode ctx fuel current store environment
+        (artifact.pruneCasesRecursiveWithCachedHPT production input).code =
+      IxIR1.runCode ctx fuel current store environment input := by
+  exact IxIR1.HPT.CasePrune.runCode_runRecursive_eq_of_postFixpoint
+    production.postFixpoint (by simpa [targetDeclEnv] using hctx)
+
+/-- A checked candidate preserves exact `runMain` behavior for the recursively
+pruned artifact main, including self calls. -/
+theorem runMain_pruneMain_of_checkHPTWith_eq_ok
+    {artifact : Artifact} {limits : IxIR1.HPT.Limits}
+    {certificate : IxIR1.HPT.Certificate} {analysis : IxIR1.HPT.Result}
+    (hcheck : artifact.checkHPTWith limits certificate = .ok analysis)
+    {ctx : IxIR1.Ctx} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runMain ctx
+        (IxIR1.HPT.CasePrune.runRecursive artifact.targetDeclEnv
+          certificate.summaryEnv artifact.main).code fuel =
+      IxIR1.runMain ctx artifact.main fuel := by
+  exact IxIR1.HPT.CasePrune.runMain_runRecursive_eq_of_runWith_eq_ok
+    (program := artifact.targetArtifacts)
+    (by simpa [checkHPTWith] using hcheck)
+    (by simpa [targetDeclEnv] using hctx)
+
+/-- Direct-production specialization for recursive main pruning. -/
+theorem runMain_pruneMainWithProducedHPT_eq
+    {artifact : Artifact} {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runMain ctx (artifact.pruneMainWithProducedHPT production).code
+        fuel =
+      IxIR1.runMain ctx artifact.main fuel := by
+  exact IxIR1.HPT.CasePrune.runMain_runRecursive_eq_of_postFixpoint
+    production.postFixpoint (by simpa [targetDeclEnv] using hctx)
+
+/-- Persistent-cache specialization for recursive main pruning. -/
+theorem runMain_pruneMainWithCachedHPT_eq
+    {artifact : Artifact} {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv) :
+    IxIR1.runMain ctx (artifact.pruneMainWithCachedHPT production).code fuel =
+      IxIR1.runMain ctx artifact.main fuel := by
+  exact IxIR1.HPT.CasePrune.runMain_runRecursive_eq_of_postFixpoint
+    production.postFixpoint (by simpa [targetDeclEnv] using hctx)
+
+/-- A function fact admitted by configurable HPT checking covers every
+successful invocation in a context backed by this artifact's exact target
+declaration environment. -/
+theorem functionSummary_sound_of_checkHPTWith_eq_ok
+    {artifact : Artifact} {limits : IxIR1.HPT.Limits}
+    {certificate : IxIR1.HPT.Certificate} {result : IxIR1.HPT.Result}
+    {ctx : IxIR1.Ctx} {address : Address} {function : IxIR1.FnDef}
+    {claimed : IxIR1.HPT.Fact} {arguments : List IxIR1.RVal}
+    {store outputStore : IxIR1.Store} {outputValue : IxIR1.RVal}
+    {fuel : Nat}
+    (hcheck : artifact.checkHPTWith limits certificate = .ok result)
+    (hctx : ctx.decls = artifact.targetDeclEnv)
+    (hdeclaration : artifact.targetDeclEnv address = some (.fn function))
+    (hsummary : certificate.summaryEnv address = some claimed)
+    (hinvoke : IxIR1.invoke ctx fuel address arguments store =
+      .ok (outputStore, outputValue)) :
+    claimed.Holds artifact.targetDeclEnv outputStore outputValue := by
+  exact IxIR1.HPT.functionSummary_sound_of_runWith_eq_ok
+    (program := artifact.targetArtifacts) (by simpa [checkHPTWith] using hcheck)
+    (by simpa [targetDeclEnv] using hctx)
+    (by simpa [targetDeclEnv] using hdeclaration) hsummary hinvoke
+
+/-- Default-limit specialization of
+`functionSummary_sound_of_checkHPTWith_eq_ok`. -/
+theorem functionSummary_sound_of_checkHPT_eq_ok
+    {artifact : Artifact} {certificate : IxIR1.HPT.Certificate}
+    {result : IxIR1.HPT.Result} {ctx : IxIR1.Ctx} {address : Address}
+    {function : IxIR1.FnDef} {claimed : IxIR1.HPT.Fact}
+    {arguments : List IxIR1.RVal} {store outputStore : IxIR1.Store}
+    {outputValue : IxIR1.RVal} {fuel : Nat}
+    (hcheck : artifact.checkHPT certificate = .ok result)
+    (hctx : ctx.decls = artifact.targetDeclEnv)
+    (hdeclaration : artifact.targetDeclEnv address = some (.fn function))
+    (hsummary : certificate.summaryEnv address = some claimed)
+    (hinvoke : IxIR1.invoke ctx fuel address arguments store =
+      .ok (outputStore, outputValue)) :
+    claimed.Holds artifact.targetDeclEnv outputStore outputValue := by
+  exact functionSummary_sound_of_checkHPTWith_eq_ok
+    (limits := IxIR1.HPT.defaultLimits)
+    (by simpa [checkHPT] using hcheck) hctx hdeclaration hsummary hinvoke
+
+/-- A row returned by deterministic production has the same evaluator
+guarantee as an accepted external certificate. -/
+theorem functionSummary_sound_of_producedHPT
+    {artifact : Artifact} {limits : IxIR1.HPT.ProducerLimits}
+    (production :
+      IxIR1.HPT.Production limits.checker artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {address : Address} {function : IxIR1.FnDef}
+    {claimed : IxIR1.HPT.Fact} {arguments : List IxIR1.RVal}
+    {store outputStore : IxIR1.Store} {outputValue : IxIR1.RVal}
+    {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv)
+    (hdeclaration : artifact.targetDeclEnv address = some (.fn function))
+    (hsummary : production.certificate.summaryEnv address = some claimed)
+    (hinvoke : IxIR1.invoke ctx fuel address arguments store =
+      .ok (outputStore, outputValue)) :
+    claimed.Holds artifact.targetDeclEnv outputStore outputValue := by
+  exact production.functionSummary_sound
+    (by simpa [targetDeclEnv] using hctx)
+    (by simpa [targetDeclEnv] using hdeclaration) hsummary hinvoke
+
+/-- Cache hits and rebuilt rows have the same evaluator guarantee as ordinary
+checked and directly produced summaries. -/
+theorem functionSummary_sound_of_cachedHPT
+    {artifact : Artifact} {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts)
+    {ctx : IxIR1.Ctx} {address : Address} {function : IxIR1.FnDef}
+    {claimed : IxIR1.HPT.Fact} {arguments : List IxIR1.RVal}
+    {store outputStore : IxIR1.Store} {outputValue : IxIR1.RVal}
+    {fuel : Nat}
+    (hctx : ctx.decls = artifact.targetDeclEnv)
+    (hdeclaration : artifact.targetDeclEnv address = some (.fn function))
+    (hsummary : production.certificate.summaryEnv address = some claimed)
+    (hinvoke : IxIR1.invoke ctx fuel address arguments store =
+      .ok (outputStore, outputValue)) :
+    claimed.Holds artifact.targetDeclEnv outputStore outputValue := by
+  exact production.functionSummary_sound
+    (by simpa [targetDeclEnv] using hctx)
+    (by simpa [targetDeclEnv] using hdeclaration) hsummary hinvoke
+
+/-- Compatibility projection for consumers interested only in compiler-
+generated producer labels.  The authoritative provenance is the complete
+`targetAddressMap`; this view removes source-backed IxIR₀ declaration keys. -/
+def generatedAddressMap (artifact : Artifact) : IxIR1.Readdress.Renaming :=
+  let sourceKeys := artifact.erasedDecls.map Prod.fst
+  artifact.targetAddressMap.filter fun entry => !sourceKeys.contains entry.1
+
+end Artifact
 
 /-- Turn an enumerable closed world into the proof-friendly resolver
 shared by checking and erasure. -/
@@ -59,14 +659,93 @@ def resolverOf (constants : List (Address × Constant)) :
   fun address =>
     (constants.find? (fun entry => entry.1 == address)).map (·.2)
 
-/-- Check every constant, reporting which address failed. -/
-def checkProgram (constants : List (Address × Constant))
-    (fuel : Nat := Ixon.UsageCheck.defaultFuel) : Except Error Unit := do
-  let resolve := resolverOf constants
+/-- Prebuilt source-constant index for corpus execution. Its two stages are
+explicit so repeated usage-check/evaluator resolution shares one hash map. -/
+abbrev ResolverIndex := AddressEnv.Index Constant
+
+def ResolverIndex.ofList (constants : List (Address × Constant)) :
+    ResolverIndex :=
+  AddressEnv.build constants
+
+def ResolverIndex.resolve (index : ResolverIndex) :
+    Address → Option Constant :=
+  AddressEnv.lookup index
+
+@[simp] theorem ResolverIndex.resolve_ofList
+    (constants : List (Address × Constant)) :
+    (ResolverIndex.ofList constants).resolve = resolverOf constants := by
+  exact AddressEnv.lookup_build constants
+
+private def enforce (metric : Ixon.Work.Metric) (actual limit : Nat) :
+    Except Error Unit :=
+  match Ixon.Work.ensure metric actual limit with
+  | .ok _ => .ok ()
+  | .error exceeded => .error (.resource exceeded)
+
+/-- Budget the shared checking prefix and return its single computed stats
+record so later stages do not need to rescan the source merely to preflight. -/
+def preflightCheck (limits : Limits)
+    (constants : List (Address × Constant)) (checkFuel : Nat) :
+    Except Error Ixon.Work.ProgramStats := do
+  let stats := Ixon.Work.programStats constants
+  enforce .programConstants stats.constants limits.maxConstants
+  enforce .programExpressionUnits stats.expressionUnits
+    limits.maxExpressionUnits
+  enforce .programExpandedExpressionUnits stats.expandedExpressionUnits
+    limits.maxExpandedExpressionUnits
+  enforce .layer1NodeVisits stats.layer1NodeVisits
+    limits.maxLayer1NodeVisits
+  enforce .usageFuel checkFuel limits.maxUsageFuel
+  return stats
+
+/-- Preflight the unvalidated compiler path, including the current
+append-based whole-program eraser. -/
+def preflightCompile (limits : Limits)
+    (constants : List (Address × Constant)) (checkFuel eraseFuel lowerFuel : Nat) :
+    Except Error Ixon.Work.ProgramStats := do
+  let stats ← preflightCheck limits constants checkFuel
+  enforce .erasedDeclarations stats.erasedDeclarations
+    limits.maxErasedDeclarations
+  enforce .erasureAppendCells stats.erasureAppendCells
+    limits.maxErasureAppendCells
+  enforce .erasureFuel eraseFuel limits.maxErasureFuel
+  enforce .loweringFuel lowerFuel limits.maxLoweringFuel
+  return stats
+
+/-- Preflight the proof-producing compiler path.  The attempt count charges
+the worst dependency order (one newly covered declaration per round) plus the
+final ordered certificate pass.  No catalog-wide `decide` is used: an
+over-sized proof-producing job is rejected before validation starts. -/
+def preflightValidated (limits : Limits)
+    (constants : List (Address × Constant))
+    (checkFuel eraseFuel validateFuel lowerFuel : Nat) :
+    Except Error Ixon.Work.ProgramStats := do
+  let stats ← preflightCompile limits constants checkFuel eraseFuel lowerFuel
+  enforce .certificateCandidates stats.certificateCandidates
+    limits.maxCertificateCandidates
+  enforce .certificateValidationAttempts stats.certificateValidationAttempts
+    limits.maxCertificateValidationAttempts
+  enforce .certificateSourceNodeWork stats.certificateSourceNodeWork
+    limits.maxCertificateSourceNodeWork
+  enforce .validationFuel validateFuel limits.maxValidationFuel
+  return stats
+
+/-- Check every constant after the caller has completed structural preflight. -/
+private def checkProgramCore (constants : List (Address × Constant))
+    (fuel : Nat) : Except Error Unit := do
+  let resolverIndex := ResolverIndex.ofList constants
+  let resolve := resolverIndex.resolve
   for (address, constant) in constants do
     match Ixon.UsageCheck.checkConstant resolve constant fuel with
     | .ok _ => pure ()
     | .error error => throw (.usage address error)
+
+/-- Check every constant, reporting which address failed. -/
+def checkProgram (constants : List (Address × Constant))
+    (fuel : Nat := Ixon.UsageCheck.defaultFuel)
+    (limits : Limits := {}) : Except Error Unit := do
+  let _ ← preflightCheck limits constants fuel
+  checkProgramCore constants fuel
 
 /-- Check, erase, and lower a closed program. `mainAddress` names the
 closed entry value or computation in the source environment; lowering
@@ -74,27 +753,38 @@ rejects an unknown address or an entry incompatible with the requested
 result demand.
 
 The erasure step is **unvalidated**: this entry point accepts
-out-of-fragment programs (externs, axioms, opaque definitions, shapes
-beyond the current `Covered`/`PErase` fragment) that the
-proof-producing validator cannot yet certify. Use `compileValidated`
-when every declaration must carry a simulation certificate. -/
+declarations and expression shapes beyond the configured
+`Covered`/`PErase` fragment. Use `compileValidated` when every
+declaration must carry a simulation certificate. -/
 def compile (constants : List (Address × Constant))
     (mainAddress : Address) (config : Config := {})
     (mainWorld : Owned := .shared)
     (checkFuel : Nat := Ixon.UsageCheck.defaultFuel)
     (eraseFuel : Nat := Erase.defaultFuel)
     (lowerFuel : Nat := 10000) : Except Error Artifact := do
-  checkProgram constants checkFuel
-  let resolve := resolverOf constants
+  let _ ← preflightCompile config.limits constants checkFuel eraseFuel lowerFuel
+  checkProgramCore constants checkFuel
+  let resolverIndex := ResolverIndex.ofList constants
+  let resolve := resolverIndex.resolve
   let eraseCtx : Erase.EraseCtx :=
     { resolve, blobs := config.blobs, natBlock := config.natBlock }
-  let erasedDecls ←
-    match Erase.eraseProgram eraseCtx constants eraseFuel with
-    | .ok decls => pure decls
-    | .error error => throw (.erase error)
-  match IxIR1.Lower.lowerAll erasedDecls (.ref mainAddress) mainWorld lowerFuel with
-  | .ok (targetDecls, main) =>
-    pure { erasedDecls, targetDecls, main }
+  let erased ←
+    match EraseAddressed.run eraseCtx constants (.ref mainAddress) eraseFuel with
+    | .ok result => pure result
+    | .error (.erase error) => throw (.erase error)
+    | .error (.readdress message) => throw (.readdress message)
+  match IxIR1.Lower.lowerAllIndexedFullyAddressed
+      erased.declarations erased.main
+      mainWorld lowerFuel with
+  | .ok addressed =>
+    pure
+      { rawErasedDecls := erased.raw
+        erasedDecls := erased.declarations
+        erasedBlocks := erased.addressed.blocks
+        erasedAddressMap := erased.addressMap
+        targetArtifacts := addressed.artifacts
+        main := addressed.main
+        targetAddressMap := addressed.addressMap }
   | .error message => throw (.lower message)
 
 /-! ## The validator-gated entry point
@@ -112,11 +802,33 @@ projection constants (`iPrj`/`cPrj`/`rPrj`/`dPrj`); an erased direct
 member reference without a certified projection fails closed at the
 referencing declaration. -/
 
+/-- Every executable definition/recursor member receives one finite slot in
+the simultaneous validator scope.  Inductive members have no executable body
+to certify. -/
+private def memberPlanForBlock (block : Address) :
+    Nat → List Ixon.MutConst → List Sim.MemberKey
+  | _, [] => []
+  | index, .indc _ :: rest =>
+      memberPlanForBlock block (index + 1) rest
+  | index, .defn _ :: rest =>
+      { block, idx := index } :: memberPlanForBlock block (index + 1) rest
+  | index, .recr _ :: rest =>
+      { block, idx := index } :: memberPlanForBlock block (index + 1) rest
+
+/-- Runtime-derived simultaneous-member scope for the exact closed program. -/
+private def programMemberPlan
+    (constants : List (Address × Constant)) : List Sim.MemberKey :=
+  constants.flatMap fun entry =>
+    match entry.2.info with
+    | .muts members => memberPlanForBlock entry.1 0 members.toList
+    | _ => []
+
 /-- One fixpoint round of coverage validation: attempt every pending
 address against the current database, extending it in place. Returns
 the grown database, this round's successes (in attempt order), and the
 still-rejected addresses with their diagnostics (in attempt order). -/
-private def coverageRound (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
+private def coverageRound [Sim.MemberScope]
+    (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
     (validateFuel : Nat) (db : EraseValidator.CoverageDB ectx ictx) :
     List Address →
       EraseValidator.CoverageDB ectx ictx × List Address ×
@@ -137,7 +849,8 @@ repeat `coverageRound` until every candidate validates. Fail-closed —
 a round without progress reports the first still-rejected address and
 its validator diagnostic. At most `candidates + 1` rounds are needed,
 since a productive round covers at least one address. -/
-private def coveragePlan (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
+private def coveragePlan [Sim.MemberScope]
+    (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
     (validateFuel : Nat) :
     Nat → EraseValidator.CoverageDB ectx ictx → List Address →
       List Address → Except (Address × String) (List Address)
@@ -166,26 +879,30 @@ then are the erased declarations lowered. The first declaration the
 validator rejects is reported as `Error.validate` with the validator's
 own diagnostic; `mainAddress` itself must be a certifiable declaration.
 Out-of-fragment programs belong to `compile`. -/
-def compileValidated (constants : List (Address × Constant))
-    (mainAddress : Address) (config : Config := {})
-    (mainWorld : Owned := .shared)
-    (checkFuel : Nat := Ixon.UsageCheck.defaultFuel)
-    (eraseFuel : Nat := Erase.defaultFuel)
-    (validateFuel : Nat := Erase.defaultFuel)
-    (lowerFuel : Nat := 10000) : Except Error Artifact := do
-  checkProgram constants checkFuel
-  let resolve := resolverOf constants
+private def compileValidatedCore [Sim.MemberScope]
+    (constants : List (Address × Constant))
+    (mainAddress : Address) (config : Config)
+    (mainWorld : Owned) (checkFuel eraseFuel validateFuel lowerFuel : Nat) :
+    Except Error Artifact := do
+  let _ ← preflightValidated config.limits constants checkFuel eraseFuel
+    validateFuel lowerFuel
+  checkProgramCore constants checkFuel
+  let resolverIndex := ResolverIndex.ofList constants
+  let resolve := resolverIndex.resolve
   let ectx : Ixon.Eval.EvalCtx :=
     { resolve, blobs := config.blobs, natBlock := config.natBlock }
   -- the artifact of record: the strict pipeline eraser (split
   -- constructor spines already fail closed here)
   let eraseCtx : Erase.EraseCtx :=
     { resolve, blobs := config.blobs, natBlock := config.natBlock }
-  let erasedDecls ←
-    match Erase.eraseProgram eraseCtx constants eraseFuel with
-    | .ok decls => pure decls
-    | .error error => throw (.erase error)
-  let ictx : IxIR0.Ctx := { env := IxIR0.Env.ofList erasedDecls }
+  let erased ←
+    match EraseAddressed.run eraseCtx constants (.ref mainAddress) eraseFuel with
+    | .ok result => pure result
+    | .error (.erase error) => throw (.erase error)
+    | .error (.readdress message) => throw (.readdress message)
+  let rawErasedDecls := erased.raw
+  let erasedIndex := IxIR0.Env.Index.ofList rawErasedDecls
+  let ictx : IxIR0.Ctx := { env := erasedIndex.toEnv }
   -- blocks carry no block-level judgment; everything else must certify
   let candidates := constants.filterMap fun entry =>
     match entry.2.info with
@@ -217,13 +934,36 @@ def compileValidated (constants : List (Address × Constant))
         | .ok cert => pure cert.target
   -- the certificate re-runs the (validator-configured) eraser; its
   -- recorded target must be exactly what this pipeline lowers
-  unless certifiedTarget == erasedDecls do
+  unless certifiedTarget == rawErasedDecls do
     throw (.validate mainAddress
       "certified erasure differs from the compiled erasure")
-  match IxIR1.Lower.lowerAll erasedDecls (.ref mainAddress) mainWorld lowerFuel with
-  | .ok (targetDecls, main) =>
-    pure { erasedDecls, targetDecls, main }
+  match IxIR1.Lower.lowerAllIndexedFullyAddressed
+      erased.declarations erased.main
+      mainWorld lowerFuel with
+  | .ok addressed =>
+    pure
+      { rawErasedDecls
+        erasedDecls := erased.declarations
+        erasedBlocks := erased.addressed.blocks
+        erasedAddressMap := erased.addressMap
+        targetArtifacts := addressed.artifacts
+        main := addressed.main
+        targetAddressMap := addressed.addressMap }
   | .error message => throw (.lower message)
+
+/-- Validator-gated production compiler with a simultaneous-member scope
+derived from the exact runtime program. -/
+def compileValidated (constants : List (Address × Constant))
+    (mainAddress : Address) (config : Config := {})
+    (mainWorld : Owned := .shared)
+    (checkFuel : Nat := Ixon.UsageCheck.defaultFuel)
+    (eraseFuel : Nat := Erase.defaultFuel)
+    (validateFuel : Nat := Erase.defaultFuel)
+    (lowerFuel : Nat := 10000) : Except Error Artifact :=
+  letI _memberScope : Sim.MemberScope :=
+    { plan := programMemberPlan constants }
+  compileValidatedCore constants mainAddress config mainWorld checkFuel
+    eraseFuel validateFuel lowerFuel
 
 /-! ## End-to-end integration fixture
 
@@ -339,13 +1079,117 @@ private def blobs : Address → Option Ixon.Eval.Blob := fun a =>
   else if a == aTwentyTwo then some (.natB 22)
   else none
 
+/-! Exact structural-budget boundary fixtures.  Every field is set to the
+measured requirement of this program; lowering any one field by one must name
+that precise metric, actual value, and limit before checking begins. -/
+
+private def budgetStats : Ixon.Work.ProgramStats :=
+  Ixon.Work.programStats constants
+
+private def exactLimits : Limits :=
+  { maxConstants := budgetStats.constants
+    maxExpressionUnits := budgetStats.expressionUnits
+    maxExpandedExpressionUnits := budgetStats.expandedExpressionUnits
+    maxLayer1NodeVisits := budgetStats.layer1NodeVisits
+    maxErasedDeclarations := budgetStats.erasedDeclarations
+    maxErasureAppendCells := budgetStats.erasureAppendCells
+    maxCertificateCandidates := budgetStats.certificateCandidates
+    maxCertificateValidationAttempts :=
+      budgetStats.certificateValidationAttempts
+    maxCertificateSourceNodeWork := budgetStats.certificateSourceNodeWork
+    maxUsageFuel := Ixon.UsageCheck.defaultFuel
+    maxErasureFuel := Erase.defaultFuel
+    maxValidationFuel := Erase.defaultFuel
+    maxLoweringFuel := 10000 }
+
+private def validatedPreflight (limits : Limits) :
+    Except Error Ixon.Work.ProgramStats :=
+  preflightValidated limits constants Ixon.UsageCheck.defaultFuel
+    Erase.defaultFuel Erase.defaultFuel 10000
+
+private def rejectsResource (metric : Ixon.Work.Metric)
+    (actual limit : Nat) (result : Except Error Ixon.Work.ProgramStats) : Bool :=
+  match result with
+  | .error (.resource exceeded) =>
+    exceeded.metric == metric && exceeded.actual == actual &&
+      exceeded.limit == limit
+  | _ => false
+
+private def exactBudgetAccepted : Bool :=
+  match validatedPreflight exactLimits with
+  | .ok stats => stats == budgetStats
+  | .error _ => false
+
+private def everyOneBelowBudgetRejected : Bool :=
+  let s := budgetStats
+  #[
+    rejectsResource .programConstants s.constants (s.constants - 1)
+      (validatedPreflight
+        { exactLimits with maxConstants := s.constants - 1 }),
+    rejectsResource .programExpressionUnits s.expressionUnits
+      (s.expressionUnits - 1)
+      (validatedPreflight
+        { exactLimits with maxExpressionUnits := s.expressionUnits - 1 }),
+    rejectsResource .programExpandedExpressionUnits s.expandedExpressionUnits
+      (s.expandedExpressionUnits - 1)
+      (validatedPreflight
+        { exactLimits with maxExpandedExpressionUnits :=
+            s.expandedExpressionUnits - 1 }),
+    rejectsResource .layer1NodeVisits s.layer1NodeVisits
+      (s.layer1NodeVisits - 1)
+      (validatedPreflight
+        { exactLimits with maxLayer1NodeVisits := s.layer1NodeVisits - 1 }),
+    rejectsResource .usageFuel Ixon.UsageCheck.defaultFuel
+      (Ixon.UsageCheck.defaultFuel - 1)
+      (validatedPreflight
+        { exactLimits with maxUsageFuel := Ixon.UsageCheck.defaultFuel - 1 }),
+    rejectsResource .erasedDeclarations s.erasedDeclarations
+      (s.erasedDeclarations - 1)
+      (validatedPreflight
+        { exactLimits with maxErasedDeclarations := s.erasedDeclarations - 1 }),
+    rejectsResource .erasureAppendCells s.erasureAppendCells
+      (s.erasureAppendCells - 1)
+      (validatedPreflight
+        { exactLimits with maxErasureAppendCells :=
+            s.erasureAppendCells - 1 }),
+    rejectsResource .erasureFuel Erase.defaultFuel
+      (Erase.defaultFuel - 1)
+      (validatedPreflight
+        { exactLimits with maxErasureFuel := Erase.defaultFuel - 1 }),
+    rejectsResource .loweringFuel 10000 9999
+      (validatedPreflight { exactLimits with maxLoweringFuel := 9999 }),
+    rejectsResource .certificateCandidates s.certificateCandidates
+      (s.certificateCandidates - 1)
+      (validatedPreflight
+        { exactLimits with maxCertificateCandidates :=
+            s.certificateCandidates - 1 }),
+    rejectsResource .certificateValidationAttempts
+      s.certificateValidationAttempts (s.certificateValidationAttempts - 1)
+      (validatedPreflight
+        { exactLimits with maxCertificateValidationAttempts :=
+            s.certificateValidationAttempts - 1 }),
+    rejectsResource .certificateSourceNodeWork s.certificateSourceNodeWork
+      (s.certificateSourceNodeWork - 1)
+      (validatedPreflight
+        { exactLimits with maxCertificateSourceNodeWork :=
+            s.certificateSourceNodeWork - 1 }),
+    rejectsResource .validationFuel Erase.defaultFuel
+      (Erase.defaultFuel - 1)
+      (validatedPreflight
+        { exactLimits with maxValidationFuel := Erase.defaultFuel - 1 })
+  ].all id
+
+#guard exactBudgetAccepted
+#guard everyOneBelowBudgetRejected
+
 private def compiled : Except Error Artifact :=
   compile constants aMain { blobs }
 
 /-- The source evaluator returns the box built from the second
 argument, after rebuilding it through the recursor. -/
 private def sourceAgrees : Bool :=
-  let ctx : Ixon.Eval.EvalCtx := { resolve := resolverOf constants, blobs }
+  let resolverIndex := ResolverIndex.ofList constants
+  let ctx : Ixon.Eval.EvalCtx := { resolve := resolverIndex.resolve, blobs }
   let frame : Ixon.Eval.Frame := { refs := #[aMain] }
   match Ixon.Eval.evalClosed ctx frame (.ref 0 #[]) with
   | .ok (.ctorV block 0 1 [.litV (.natL 22)]) => block == aBlock
@@ -357,14 +1201,27 @@ private def recursorCrossesBothPasses : Bool :=
   match compiled with
   | .error _ => false
   | .ok artifact =>
-    let member := Erase.memberAddr aBlock 1
-    match artifact.erasedDecls.find? (fun entry => entry.1 == member),
-        artifact.targetDecls.find? (fun entry => entry.1 == member) with
-    | some (_, .recursor 0 false rules), some (_, .fn fn) =>
-      rules.size == 2 && fn.arity == 1 &&
-        match fn.body with
-        | .case _ false alts => alts.size == 2
+    let transient := Erase.memberAddr aBlock 1
+    match artifact.erasedAddressMap.lookup transient,
+        artifact.rawErasedDecls.find? (fun entry => entry.1 == transient) with
+    | some member, some (_, .recursor 0 false rawRules) =>
+      match artifact.erasedDecls.find? (fun entry => entry.1 == member),
+          artifact.targetAddressMap.lookup member with
+      | some (_, .recursor 0 false rules), some targetMember =>
+        match artifact.targetDecls.find? (fun entry =>
+            entry.1 == targetMember) with
+        | some (_, .fn fn) =>
+          member != transient && targetMember != member &&
+          artifact.erasedBlocks.length == 1 &&
+          rawRules.size == 2 && rules.size == 2 && fn.arity == 1 &&
+          !(artifact.erasedDecls.map (·.1)).contains transient &&
+          !(artifact.targetDecls.map (·.1)).contains transient &&
+          !(artifact.targetDecls.map (·.1)).contains member &&
+          match fn.body with
+          | .case _ false alts => alts.size == 2
+          | _ => false
         | _ => false
+      | _, _ => false
     | _, _ => false
 
 /-- Runtime result and cost facts for the composed pipeline. Before
@@ -375,7 +1232,8 @@ private def targetAgrees : Bool :=
   match compiled with
   | .error _ => false
   | .ok artifact =>
-    let ctx : IxIR1.Ctx := { decls := IxIR1.Env.ofList artifact.targetDecls }
+    let targetIndex := IxIR1.Env.Index.ofList artifact.targetDecls
+    let ctx : IxIR1.Ctx := { decls := targetIndex.toEnv }
     match IxIR1.runMain ctx artifact.main with
     | .ok (store, value@(.loc location)) =>
       let shape := match store.get? location with
@@ -415,9 +1273,6 @@ private def rejectsBadUsage : Bool :=
   | _ => false
 
 #guard sourceAgrees
-#guard recursorCrossesBothPasses
-#guard targetAgrees
-#guard rejectsBadUsage
 
 /-! ### The validated entry point
 
@@ -435,9 +1290,15 @@ the same runtime result and cost facts as `targetAgrees` pins. -/
 private def validatedAgrees : Bool :=
   match compiled, validated with
   | .ok direct, .ok gated =>
+    direct.rawErasedDecls == gated.rawErasedDecls &&
     direct.erasedDecls == gated.erasedDecls &&
+    direct.erasedAddressMap == gated.erasedAddressMap &&
+    direct.targetAddressMap == gated.targetAddressMap &&
+    direct.targetBlocks.map (·.blockAddress) ==
+      gated.targetBlocks.map (·.blockAddress) &&
     direct.targetDecls.map (·.1) == gated.targetDecls.map (·.1) &&
-    (let ctx : IxIR1.Ctx := { decls := IxIR1.Env.ofList gated.targetDecls }
+    (let targetIndex := IxIR1.Env.Index.ofList gated.targetDecls
+     let ctx : IxIR1.Ctx := { decls := targetIndex.toEnv }
      match IxIR1.runMain ctx gated.main with
      | .ok (store, .loc location) =>
        (match store.get? location with
@@ -454,9 +1315,10 @@ private def validatedAgrees : Bool :=
   | _, _ => false
 
 /-- An axiom is UsageCheck-clean and erases to an extern, so the
-unvalidated pipeline accepts it — but the validator has no `Covered`
-judgment for axioms, so the gated pipeline must fail closed, naming
-the axiom and the validator's own diagnostic. -/
+unvalidated pipeline accepts it. The validator only certifies an axiom
+when its source address has an explicit external arity configuration;
+`Pipeline.Config` deliberately supplies none, so the gated pipeline
+must fail closed with the validator's own diagnostic. -/
 private def aGhostAxiom := address 0x78
 
 private def cGhostAxiom : Constant :=
@@ -475,12 +1337,22 @@ private def rejectsOutOfFragment : Bool :=
   match compileValidated outOfFragment aMain { blobs } with
   | .error (.validate rejected message) =>
     rejected == aGhostAxiom &&
-      message == "constant kind is outside the current Covered fragment"
+      message == "extern address is not configured"
   | _ => false
 
-#guard validatedAgrees
-#guard acceptsOutOfFragment
-#guard rejectsOutOfFragment
+/-- Native integration fixtures are evaluated by the compiled test executable:
+the cycle-safe block pass invokes the BLAKE3 FFI and therefore cannot live in
+an elaboration-time `#guard`. -/
+def nativeIntegrationChecks : List (String × Bool) :=
+  [("addressed recursor crosses erasure and lowering",
+      recursorCrossesBothPasses),
+   ("addressed pipeline runtime and cost", targetAgrees),
+   ("usage rejection precedes addressed erasure", rejectsBadUsage),
+   ("validated and direct addressed pipelines agree", validatedAgrees),
+   ("unvalidated addressed pipeline accepts configured fragment",
+      acceptsOutOfFragment),
+   ("validated addressed pipeline rejects uncovered extern",
+      rejectsOutOfFragment)]
 
 end Guards
 

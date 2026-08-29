@@ -15,11 +15,14 @@ Two ideas carry the design:
   the `many`/`shared` fragment; the extension enables Rust-style
   compilation — erasure, in-place reuse, and ultimately GC-free code —
   without changing the kernel's definitional equality.
-- **Content addressing as compiler infrastructure.** Every object is
-  addressed by the blake3 hash of its canonical serialization, and
-  decoding is designed to be strict (one accepted byte spelling per
-  value, with no address splitting). The current codec enforces this
-  discipline and pins it with proofs, rejection tests, and exact-byte tests.
+- **Content addressing as compiler infrastructure.** Every identity-bearing
+  object passes its pinned exact sharing policy, wire-representability, and
+  local-semantic checks before its canonical serialization receives a blake3
+  address; decoding is
+  strict (one accepted byte spelling per value, with no address splitting).
+  The current codec enforces this discipline and pins it with proofs,
+  rejection tests, exact-byte tests, and deterministic mutation/random-byte
+  tests.
   All five top-level codecs have global accepted-byte canonicality;
   `Address` and `Univ` also have global roundtrip, `Expr` and `ConstantInfo`
   roundtrip on their exact u64-count-representable domains, and `Constant`
@@ -41,14 +44,48 @@ explicit-memory IR, with the source-to-erased segment carrying a staged
 correctness theorem: a strict canonical codec with proved
 roundtrip/canonicality laws and a frozen sharing policy
 (`Compilatrix/Ixon/`, [wire spec](docs/ixon-v2-wire.md),
-[sharing policy](docs/sharing-policy.md)); blake3 content addressing; a
-usage-checker gate; a reference evaluator with sharing-inlining coherence;
+[sharing policy](docs/sharing-policy.md)), plus resource-bounded structured
+ingress, a checked writer, and an address gate for local table bounds,
+universe scope, recursor slicing coherence, wire count bounds, quadratic
+sharing work, and pre-allocation sharing expansion; an exact ix `.ixc`/anonymous
+`.ixe` catalog boundary with a bounded directory adapter, pinned upstream
+sharing-image recognition, deep address/root binding, fat-vs-chunk duplicate
+policy, aggregate budgets, and store-wide projection/constructor coherence
+([catalog ingress](docs/catalog-ingress.md)), exercised by a byte-exact
+production [Std contact](docs/corpus-contact.md); blake3 content addressing,
+including versioned IxIR₀/IxIR₁ declaration and mutual-block preimages,
+cycle-safe whole-program rekeying at both IR layers, and complete production
+provenance maps
+([IR addressing](docs/ixir-content-addressing.md)); a bounded initial IxIR₁
+result-shape post-fixpoint checker with a kernel-checked evaluator
+concretization theorem, a bounded deterministic SCC-local producer,
+SCC-granular versioned cache summaries, bounded recursive constructor field
+facts with sound allocation/fetch/reuse and case-binder transfers, canonical
+resource-bounded persistent cache record/store decoding, checked artifact-local
+miss repair, a bounded record-streaming/power-loss-durable single-file adapter,
+a metadata-indexed chunk directory that lazily opens only dependency-selected
+records and durably repairs them per key, and a first
+checked consumer that prunes impossible
+constructor alternatives from immediate call-result cases at one root,
+recursively throughout a supplied code fragment, or across every stored body
+and the main followed by an exact content-addressed graph rebuild. Its
+evaluator-preservation theorems cover dynamic self calls and complete-result
+address transport, with dependency-cone plus
+alias/reuse/corruption regression fixtures
+([HPT certificates](docs/hpt-certificates.md));
+proved build-once hash indexes for closed-world execution while proofs retain
+transparent list lookup; structural compilation-unit budgets for eraser append
+cost, output size, requested fuels, and proof-producing certificate scaling
+([budget policy](docs/resource-budgets.md)); a
+usage-checker gate; a reference evaluator with sharing-inlining coherence and
+configured `Quot.mk`/`Quot.lift`/`Quot.ind` reduction;
 checked erasure to IxIR₀ with a sorry-free fragment simulation theorem
 (`erasure_sim`, `Compilatrix/Sim.lean`) and a proof-producing validator
 connecting the executable eraser to it per program
 (`Compilatrix/EraseValidator.lean`); mode-directed lowering to IxIR₁ — a
 GRIN-style store IR with RC/unique worlds and exact memory counters — under
-differential and leak-freedom guards; and an in-progress formal
+differential and leak-freedom guards, including a seeded replayable
+[well-moded property corpus](docs/well-moded-generator.md); and an in-progress formal
 memory-ownership simulation for that lowering
 (`Compilatrix/IxIR1/{Sim,LowerSim}.lean`).
 
@@ -59,8 +96,8 @@ table. Local `plans/` files are design notebooks and decision records. The
 proof decomposition is recorded in the
 [simulation strategy](docs/simulation-strategy.md), the sharing identity
 boundary in [canonical sharing](docs/canonical-sharing.md), and every
-opaque dependency (BLAKE3 today; eventually syscalls, the store, and
-others) in the tracked
+opaque dependency (BLAKE3 and the narrow durable-sync syscall shim today;
+eventually the store and others) in the tracked
 [trusted-extern ledger](docs/trusted-extern-ledger.md), which separates
 target extern assumptions from the Lean/GMP/Nix Gen-0 seed and records
 observable retirement criteria. Vendoring a
@@ -71,8 +108,9 @@ the kernel-specification bridge.
 
 ```sh
 nix build                          # library + elaboration-time test suites
-nix flake check                    # + the compiled FFI/blake3 golden tests
+nix flake check                    # + compiled native-boundary/golden tests
 nix develop -c lake build          # dev loop (or `direnv allow` once)
+lake exe catalog-contact -- DIR    # deep-load one bounded .ixc, then pipeline
 ```
 
 Most tests are elaboration-time `#guard`s and run on every build; the
