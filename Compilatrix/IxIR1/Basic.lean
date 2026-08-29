@@ -54,7 +54,7 @@ inductive Atom where
   | var (idx : Nat)
   | lit (l : Literal)
   | erased
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 /-- Constructor identity: the inductive's block address + member
 index, and the constructor index — matching the source-side `ctorV`. -/
@@ -62,7 +62,7 @@ structure CtorId where
   block : Address
   indIdx : Nat
   cidx : Nat
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 mutual
 
@@ -138,12 +138,31 @@ inductive Decl where
   | fn (d : FnDef)
   | extern (arity : Nat)
 
-/-- The closed world of declarations. -/
+/-- The closed world of declarations. The transparent list model is retained
+for proofs and compiled through the proved hash-index implementation below. -/
 abbrev Env := Address → Option Decl
 
 def Env.empty : Env := fun _ => none
 
 def Env.ofList (l : List (Address × Decl)) : Env :=
   fun a => (l.find? (fun p => p.1 == a)).map (·.2)
+
+namespace Env
+
+/-- The explicitly staged runtime representation of an environment. -/
+abbrev Index := AddressEnv.Index Decl
+
+def Index.ofList (l : List (Address × Decl)) : Index :=
+  AddressEnv.build l
+
+def Index.toEnv (index : Index) : Env :=
+  AddressEnv.lookup index
+
+/-- The runtime index implements the transparent first-binding-wins model. -/
+@[simp] theorem Index.toEnv_ofList (l : List (Address × Decl)) :
+    (Index.ofList l).toEnv = Env.ofList l := by
+  exact AddressEnv.lookup_build l
+
+end Env
 
 end Compilatrix.IxIR1

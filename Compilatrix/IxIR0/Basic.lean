@@ -1,5 +1,5 @@
 import Compilatrix.Ixon.Uses
-import Compilatrix.Ixon.Address
+import Compilatrix.AddressEnv
 
 /-!
 # IxIR₀: the erased core IR
@@ -63,14 +63,18 @@ produce; hand-written examples must obey the same discipline:
   *mutually-inductive* recursor families need block references and
   arrive when real corpora do (via the ix merge — the standalone
   importer is skipped, JCB 2026-08-12).
-- Literal↔constructor coherence beyond `natLit` major-peeling (the
-  GMP-extern vs unary-ctor story is a recorded gate for the Ixon
-  semantics too).
+- Literal↔constructor coherence beyond `natLit` major-peeling. The source
+  evaluator has opt-in, address-configured String constructor expansion, but
+  certified erasure disables it until this target has a representation-aware
+  counterpart. The GMP-extern vs unary-ctor story remains a separate gate.
 - K-like reduction, structure eta, and `False.rec`-style
   unreachability (erasure will need an answer; candidates: `erased`,
   or an explicit `unreachable` extern on the ledger).
-- A codec/content addressing for IxIR₀ itself (needed later for
-  cached fixpoints, not for hand-written testing).
+- Canonical declaration preimages and BLAKE3 address APIs live in
+  `IxIR0/Serialize.lean`; strict declaration decoding lives in `Decode.lean`,
+  and the cycle-safe symbolic block envelope plus final-key materializer live
+  in `MutualBlock.lean`. Threading that block map through erasure and its
+  simulations remains active before cached fixpoints can consume every key.
 -/
 
 namespace Compilatrix.IxIR0
@@ -83,7 +87,7 @@ these. -/
 inductive Literal where
   | nat (n : Nat)
   | str (s : String)
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 /-- IxIR₀ expressions: nameless (de Bruijn), erased, curried. -/
 inductive Expr where
@@ -104,7 +108,7 @@ inductive Expr where
   /-- ◻: an erased occurrence in a relevant position. Absorbs
   application and projection. -/
   | erased
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 /-- One ι-rule of a recursor, selected by the major premise's
 constructor tag. `rhs` is an open term evaluated in the environment
@@ -125,7 +129,7 @@ constructor, checked at ι-time. -/
 structure RecRule where
   fields : Nat
   rhs : Expr
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 /-- Global declarations, keyed by content address in an `Env`. The
 inductive *type* itself has no declaration — types are erased; only
@@ -150,16 +154,34 @@ inductive Decl where
   /-- A trusted extern of the given arity; semantics supplied by the
   evaluation oracle (the ledger's formal hook). -/
   | extern (arity : Nat)
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-- The closed world: a Merkle-DAG of declarations as a partial map.
-A function, not a hash map — proof-friendly, and spec-grade
-performance is fine (the backend compiles). -/
+/-- The closed world: a Merkle-DAG of declarations as a partial map. The
+kernel-facing representation stays a proof-friendly function; its list
+constructor has a proved hash-index implementation for generated code. -/
 abbrev Env := Address → Option Decl
 
 def Env.empty : Env := fun _ => none
 
 def Env.ofList (l : List (Address × Decl)) : Env :=
   fun a => (l.find? (fun p => p.1 == a)).map (·.2)
+
+namespace Env
+
+/-- The explicitly staged runtime representation of an environment. -/
+abbrev Index := AddressEnv.Index Decl
+
+def Index.ofList (l : List (Address × Decl)) : Index :=
+  AddressEnv.build l
+
+def Index.toEnv (index : Index) : Env :=
+  AddressEnv.lookup index
+
+/-- The runtime index implements the transparent first-binding-wins model. -/
+@[simp] theorem Index.toEnv_ofList (l : List (Address × Decl)) :
+    (Index.ofList l).toEnv = Env.ofList l := by
+  exact AddressEnv.lookup_build l
+
+end Env
 
 end Compilatrix.IxIR0
