@@ -45,9 +45,6 @@ structure AggregateSlot where
   proofAddress? : Option Address
   /-- Serialized singleton outer-claim list consumed by a parent. -/
   claimsBytes : ByteArray := ByteArray.empty
-  /-- Legacy benchmark preimage closure retained through M1-f. The converged
-  parent only needs the direct `CheckEnv` preimage for each child. -/
-  openPreimages : Array ByteArray
 
 /-- Everything claim-derived about a slot, computed for the whole fold before
 the first cache lookup or proof. -/
@@ -365,68 +362,7 @@ def schedulePlan (plan : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp)
       }
   pure scheduled
 
-/-- Derive every slot statement, outer claim, and cache key before proving.
-This makes resume independent of execution order and lets manifest changes
-invalidate only the claim-changed subtree. -/
-def buildAggregateSlotSpecs (plan : Array ScheduledFold)
-    (prepared : Array PreparedShard) (ixvmVk recursionVk allowed : ByteArray)
-    (verifyIdx liftIdx joinIdx structuralJoinIdx : Aiur.Bytecode.FunIdx)
-    (recursionParameters : MultiStark.RecursionParameters) :
-    Except String (Array AggregateSlotSpec) := do
-  let mut specs : Array AggregateSlotSpec := #[]
-  for item in plan do
-    match item.op with
-    | .leaf shard =>
-      let some preparedShard := prepared[shard]?
-        | throw s!"aggregate plan references missing prepared shard {shard}"
-      if preparedShard.claim != preparedShard.statement.claim then
-        throw s!"prepared shard {shard} claim and statement disagree"
-      if preparedShard.statement.subjectCount != item.subjectCount then
-        throw s!"prepared shard {shard} has {preparedShard.statement.subjectCount} \
-          subjects, but the schedule records {item.subjectCount}"
-      let claimBytes := Ix.Claim.ser preparedShard.claim
-      let verifyInput := IxVM.ClaimHarness.packedDigestKey
-        (Address.blake3 claimBytes)
-      let innerClaim := Aiur.buildClaim verifyIdx verifyInput #[]
-      let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
-      let pubInput := MultiStark.verifierPubInput ixvmVk innerClaimsBytes
-      let outerClaim := Aiur.buildClaim liftIdx pubInput #[]
-      specs := specs.push {
-        statement := preparedShard.statement
-        subjectCount := item.subjectCount
-        outerClaim
-        cacheKey := aggregateCacheKey recursionVk recursionParameters outerClaim
-      }
-    | .join leftIdx rightIdx =>
-      let some left := specs[leftIdx]?
-        | throw s!"aggregate plan references missing left spec {leftIdx}"
-      let some right := specs[rightIdx]?
-        | throw s!"aggregate plan references missing right spec {rightIdx}"
-      if left.subjectCount + right.subjectCount != item.subjectCount then
-        throw "aggregate plan has inconsistent joined subject counts"
-      let output := if item.structural then
-          left.statement.joinStructural right.statement
-        else
-          left.statement.join right.statement
-      if output.subjectCount != item.subjectCount then
-        throw s!"aggregate join reconstructs {output.subjectCount} subjects, \
-          but the schedule records {item.subjectCount}"
-      let outputClaimBytes := Ix.Claim.ser output.claim
-      let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
-      let joinFunIdx := if item.structural then structuralJoinIdx else joinIdx
-      let outerClaim := Aiur.buildClaim joinFunIdx pubInput #[]
-      specs := specs.push {
-        statement := output
-        subjectCount := item.subjectCount
-        outerClaim
-        cacheKey := aggregateCacheKey recursionVk recursionParameters outerClaim
-      }
-  pure specs
-
-/-! ## Converged single-entrypoint slot derivation
-
-The legacy helper above remains temporarily available to the M1-e/M1-f test
-and benchmark union. Production uses the helpers below exclusively. -/
+/-! ## Converged single-entrypoint slot derivation -/
 
 /-- Convert the old host record used by the scheduler/cache tests into the
 converged host record. Both commit to the same subject and assumption trees. -/
@@ -793,7 +729,6 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
         proof := innerProof
         proofAddress? := none
         claimsBytes := innerClaimsBytes
-        openPreimages := #[claimBytes]
       }
     | .aggr =>
       let cached? ← match ctx.cacheDir? with
@@ -832,7 +767,6 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
         proof
         proofAddress?
         claimsBytes := MultiStark.serializeClaims #[spec.outerClaim]
-        openPreimages := #[claimBytes]
       }
   | .join leftIdx rightIdx =>
     let some left := (slots[leftIdx]?).join
@@ -908,7 +842,6 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
       proof
       proofAddress?
       claimsBytes := MultiStark.serializeClaims #[spec.outerClaim]
-      openPreimages := #[outputClaimBytes]
     }
 
 /-- Aggregate with an explicit recursion-proof configuration. The CLI wrapper

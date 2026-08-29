@@ -6,6 +6,7 @@ import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
 import Ix.MultiStark
+import Ix.Aggr
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
 import Ix.Benchmark.Results
@@ -74,8 +75,8 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.
   --join         with --recursive and exactly two constants, benchmark the
-                 aggregate-first flat join after both singleton-CheckEnv
-                 proofs have been lifted. Emits one `left + right` JSON row
+                 converged ix_aggr direct flat pair (shape 2) over the two
+                 singleton-CheckEnv IxVM proofs. Emits one `left + right` JSON row
                  carrying join-execute-time, join-fft-cost, join-prove-time,
                  join-peak-rss, join-proof-size, and join-verify-time. This is
                  an explicit W0/Section-13 diagnostic, not part of the default
@@ -103,10 +104,10 @@ four phases:
    the fresh proof + vk + claims to `verify_multi_stark_proof`, execute it,
    then prove the verifier execution — the end-to-end recursion cost.
 4. **Join** (`--recursive --join`, exactly two constants): use each requested
-   constant as a one-owned-constant `CheckEnv` shard, lift both resulting
-   proofs, then execute/prove/verify `join_two`. The pair gets a dedicated JSON
-   row because the join is one shared operation, not a cost attributable to
-   either child independently.
+   constant as a one-owned-constant `CheckEnv` shard, then execute/prove/verify
+   the converged `ix_aggr` direct flat pair (shape 2) over those IxVM proofs.
+   The pair gets a dedicated JSON row because the join is one shared operation,
+   not a cost attributable to either child independently.
 
 When `--json` is set the file is rewritten after every prove, so an external
 `timeout` still leaves a complete file of the results collected so far (cheapest
@@ -224,11 +225,11 @@ structure Result where
   recursiveVerifySec : Option Float := none
   deriving Inhabited
 
-/-- The successfully verified lift artifact retained for the optional binary
+/-- The successfully verified IxVM artifact retained for the optional binary
     join phase. `innerClaimsBytes` is the serialized singleton list containing
     the IxVM proof's Aiur claim; `checkEnvClaimBytes` is the nested Ix claim
-    preimage that the join opens below it. -/
-structure LiftArtifact where
+    preimage that the converged join opens below it. -/
+structure JoinArtifact where
   label : String
   constants : Nat
   statement : MultiStark.CheckEnvTrees
@@ -237,7 +238,7 @@ structure LiftArtifact where
   outerClaim : Array Aiur.G
   proof : Aiur.Proof
 
-/-- Measurements for the one pair-wide `join_two` operation. Kept separate
+/-- Measurements for the one pair-wide `ix_aggr` shape-2 operation. Kept separate
     from `Result`: copying these fields onto both child rows would count the
     same join twice, while attaching them to one child would make the result
     order-dependent. -/
@@ -484,6 +485,20 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | throw (IO.userError "verify_multi_stark_proof entrypoint missing")
       pure (some (vCompiled, vIdx,
         Aiur.AiurSystem.build vCompiled.bytecode commitParams friParams))
+  -- The opt-in pair metric uses the converged production aggregator while the
+  -- generic recursive phase above remains the standalone Multi-STARK verifier
+  -- benchmark. Compile the second system only when `--join` requests it.
+  let aggrCtx : Option
+      (Aiur.CompiledToplevel × Aiur.Bytecode.FunIdx × Aiur.AiurSystem) ←
+    if !join then pure none else do
+      let .ok aggrTop := Aggr.ixAggr
+        | throw (IO.userError "Merging ix_aggr failed")
+      let .ok aggrCompiled := aggrTop.compile
+        | throw (IO.userError "Compilation of ix_aggr failed")
+      let some aggrIdx := aggrCompiled.getFuncIdx `ix_aggr
+        | throw (IO.userError "ix_aggr entrypoint missing")
+      pure (some (aggrCompiled, aggrIdx,
+        Aiur.AiurSystem.build aggrCompiled.bytecode commitParams friParams))
 
   -- Load the serialized env lazily (the `ix check --ixe` path, #445): byte-window
   -- constants over the backing buffer, so only the checked closure is ever
@@ -623,7 +638,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut ordered := execed.qsort (·.1.fftCost < ·.1.fftCost)
   writeJson (ordered.map (·.1))
   let mut spent : Float := 0.0
-  let mut lifted : Array LiftArtifact := #[]
+  let mut joinArtifacts : Array JoinArtifact := #[]
   for i in [:ordered.size] do
     let (r, addr) := ordered[i]!
     if r.failed then continue
@@ -773,14 +788,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                     {r.name} differs from host reconstruction"
                 let statement ← IO.ofExcept <|
                   MultiStark.CheckEnvTrees.ofClaim expectedClaim trees
-                lifted := lifted.push {
+                joinArtifacts := joinArtifacts.push {
                   label := r.name
                   constants := r.constants
                   statement
                   innerClaimsBytes
                   checkEnvClaimBytes
-                  outerClaim := rvClaim
-                  proof := rvProof
+                  outerClaim := claim
+                  proof := proof
                 }
               | .error _, _ => pure ()
               | .ok (), none =>
@@ -789,74 +804,72 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     catch e =>
       IO.eprintln s!"  prove {r.name} threw: {e}"
 
-  -- Phase 4 (--recursive --join): one pair-wide flat aggregate join. The two
-  -- child rows remain ordinary IxVM/lift measurements; the shared join lands
-  -- under its own stable `left + right` row so it is neither duplicated nor
-  -- assigned arbitrarily to one child.
+  -- Phase 4 (--recursive --join): one pair-wide converged direct join. The two
+  -- child rows retain their ordinary IxVM/recursive-verifier measurements;
+  -- the shared ix_aggr shape-2 proof lands under its own stable `left + right`
+  -- row so it is neither duplicated nor assigned arbitrarily to one child.
   let mut joinRejected := false
   if join then
-    IO.println "── Phase 4: flat join ──"
+    IO.println "── Phase 4: ix_aggr direct flat pair (shape 2) ──"
     let leftLabel := targets[0]!.1
     let rightLabel := targets[1]!.1
     let pairName := s!"{leftLabel} + {rightLabel}"
-    let some left := lifted.find? fun artifact => artifact.label == leftLabel | do
-      IO.eprintln s!"join benchmark: no verified lift for {leftLabel}"
+    let some left := joinArtifacts.find? fun artifact => artifact.label == leftLabel | do
+      IO.eprintln s!"join benchmark: no verified IxVM proof for {leftLabel}"
       return 1
-    let some right := lifted.find? fun artifact => artifact.label == rightLabel | do
-      IO.eprintln s!"join benchmark: no verified lift for {rightLabel}"
+    let some right := joinArtifacts.find? fun artifact => artifact.label == rightLabel | do
+      IO.eprintln s!"join benchmark: no verified IxVM proof for {rightLabel}"
       return 1
-    let some (vCompiled, liftIdx, vSystem) := vCtx | do
-      IO.eprintln "join benchmark: recursion context was not built"
-      return 1
-    let some joinIdx := vCompiled.getFuncIdx `join_two | do
-      IO.eprintln "join benchmark: join_two entrypoint missing"
-      return 1
-    let some structuralJoinIdx := vCompiled.getFuncIdx `join_two_structural | do
-      IO.eprintln "join benchmark: join_two_structural entrypoint missing"
+    let some (aggrCompiled, aggrIdx, aggrSystem) := aggrCtx | do
+      IO.eprintln "join benchmark: ix_aggr context was not built"
       return 1
     let ixvmVk := aiurSystem.vkBytes
-    let recursionVk := vSystem.vkBytes
-    let allowed := MultiStark.allowedBlob ixvmVk funIdx recursionVk liftIdx
-      joinIdx structuralJoinIdx
-    let outputStatement := left.statement.join right.statement
+    let aggrVk := aggrSystem.vkBytes
+    let allowed := Aggr.allowedBlob ixvmVk funIdx aggrVk aggrIdx
+    let leftStatement : Aggr.CheckEnvTrees := {
+      subjects := left.statement.subjects
+      assumptions := left.statement.assumptions
+    }
+    let rightStatement : Aggr.CheckEnvTrees := {
+      subjects := right.statement.subjects
+      assumptions := right.statement.assumptions
+    }
+    let outputStatement := leftStatement.join rightStatement
     let outputClaimBytes := Ix.Claim.ser outputStatement.claim
-    let pubInput := MultiStark.joinPubInput allowed outputClaimBytes
-    let leftOuterBytes := MultiStark.serializeClaims #[left.outerClaim]
-    let rightOuterBytes := MultiStark.serializeClaims #[right.outerClaim]
-    let preimagesBlob := MultiStark.joinPreimagesBlob
-      #[left.innerClaimsBytes, right.innerClaimsBytes,
-        left.checkEnvClaimBytes, right.checkEnvClaimBytes]
-    let treesBlob := MultiStark.joinTreesBlob <|
-      MultiStark.CheckEnvTrees.adviceTrees
-        left.statement right.statement outputStatement
-    let pathsBlob := MultiStark.joinPathsBlob #[]
-    let leftProofAdvice ← match vSystem.proofToAdviceBytes
+    let pubInput := Aggr.pubInput allowed outputClaimBytes
+    let preimagesBlob := Aggr.preimagesBlob
+      #[left.checkEnvClaimBytes, right.checkEnvClaimBytes]
+    let treesBlob := Aggr.treesBlob <|
+      Aggr.CheckEnvTrees.adviceTrees leftStatement rightStatement outputStatement
+    let pathsBlob := Aggr.pathsBlob #[]
+    let leftProofAdvice ← match aiurSystem.proofToAdviceBytes
         left.outerClaim left.proof with
       | .error e =>
         IO.eprintln s!"join benchmark: left proof advice encoding failed: {e}"
         return 1
       | .ok bytes => pure bytes
-    let rightProofAdvice ← match vSystem.proofToAdviceBytes
+    let rightProofAdvice ← match aiurSystem.proofToAdviceBytes
         right.outerClaim right.proof with
       | .error e =>
         IO.eprintln s!"join benchmark: right proof advice encoding failed: {e}"
         return 1
       | .ok bytes => pure bytes
+    let shape := Aggr.shapeCode (.ixvm, some .ixvm)
     IO.println s!"  executing join {pairName} …"
     (← IO.getStdout).flush
     let (joinExecuteResult, joinExecuteSec) ← timed fun _ =>
-      vCompiled.bytecode.executeMultiStarkJoin joinIdx pubInput
-        leftProofAdvice rightProofAdvice recursionVk
-        leftOuterBytes rightOuterBytes outputClaimBytes allowed
+      aggrCompiled.bytecode.executeIxAggr aggrIdx pubInput shape
+        leftProofAdvice rightProofAdvice ixvmVk aggrVk
+        left.innerClaimsBytes right.innerClaimsBytes outputClaimBytes allowed
         preimagesBlob treesBlob pathsBlob
     let joinFftCost ← match joinExecuteResult with
       | .error e =>
-        IO.eprintln s!"  ❌ join verifier REJECTED {pairName}: {e}"
+        IO.eprintln s!"  ❌ ix_aggr direct join REJECTED {pairName}: {e}"
         writeRejectedJoin pairName
         joinRejected := true
         pure none
       | .ok (_, queryCounts) =>
-        let stats := Aiur.computeStats vCompiled queryCounts vSystem.circuitShapes
+        let stats := Aiur.computeStats aggrCompiled queryCounts aggrSystem.circuitShapes
           (logBlowup := commitParams.logBlowup)
         IO.println s!"  {pairName}: join-execute={joinExecuteSec}s \
           join-fft-cost={stats.totalFftCost}"
@@ -867,23 +880,23 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       (← IO.getStdout).flush
       TracingTexray.resetPeakTreeRss
       let (joinProveResult, joinProveSec) ← timed fun _ =>
-        vSystem.proveMultiStarkJoin joinIdx pubInput
-          leftProofAdvice rightProofAdvice recursionVk
-          leftOuterBytes rightOuterBytes outputClaimBytes allowed
+        aggrSystem.proveIxAggr aggrIdx pubInput shape
+          leftProofAdvice rightProofAdvice ixvmVk aggrVk
+          left.innerClaimsBytes right.innerClaimsBytes outputClaimBytes allowed
           preimagesBlob treesBlob pathsBlob
       match joinProveResult with
       | .error e =>
         IO.eprintln s!"  prove join {pairName} failed: {e}"
         return 1
       | .ok (joinClaim, joinProof) =>
-        let expectedClaim := Aiur.buildClaim joinIdx pubInput #[]
+        let expectedClaim := Aiur.buildClaim aggrIdx pubInput #[]
         if joinClaim != expectedClaim then
           IO.eprintln s!"  join {pairName} returned an unexpected outer claim"
           return 1
         let joinPeak ← TracingTexray.peakTreeRssBytes
         let joinProofBytes := joinProof.toBytes
         let (joinVerifyResult, joinVerifySec) ← timed fun _ =>
-          vSystem.verify joinClaim joinProof
+          aggrSystem.verify joinClaim joinProof
         let joinVerifySec? ← match joinVerifyResult with
           | .ok () => pure (some joinVerifySec)
           | .error e =>

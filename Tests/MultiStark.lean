@@ -508,41 +508,31 @@ def joinSmokeSuite : IO UInt32 := do
     { op := .leaf 1, subjectCount := 1, structural := false },
     { op := .join 0 1, subjectCount := 3, structural := false }
   ]
-  let cachePrepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
-    { claim := leftStatement.claim, statement := leftStatement },
-    { claim := rightStatement.claim, statement := rightStatement }
+  -- Keep the legacy backend's cache regression self-contained now that the
+  -- pre-convergence production slot-derivation shim has been retired.
+  let rootOuter := Aiur.buildClaim childJoinIdx pubInput #[]
+  let cacheSpecs : Array Ix.Cli.AggregateCmd.AggregateSlotSpec := #[
+    { statement := leftStatement, subjectCount := 2, outerClaim := leftOuter,
+      cacheKey := liftCacheKey },
+    { statement := rightStatement, subjectCount := 1, outerClaim := rightOuter,
+      cacheKey := Ix.Cli.AggregateCmd.aggregateCacheKey recursionVk
+        childRecursionParameters rightOuter },
+    { statement := outputStatement, subjectCount := 3, outerClaim := rootOuter,
+      cacheKey := Ix.Cli.AggregateCmd.aggregateCacheKey recursionVk
+        childRecursionParameters rootOuter }
   ]
-  let cacheSpecs := Ix.Cli.AggregateCmd.buildAggregateSlotSpecs cachePlan
-    cachePrepared fakeIxvmVk recursionVk allowed verifyIdx liftIdx childJoinIdx
-    childStructuralJoinIdx childRecursionParameters
-  let cacheSpecsComplete : Bool := match cacheSpecs with
-    | .ok specs => match specs[0]?, specs[1]?, specs[2]? with
-      | some left, some right, some root =>
-        specs.size == 3 && left.outerClaim == leftOuter &&
-          right.outerClaim == rightOuter &&
-          root.statement.claim == outputStatement.claim &&
-          root.outerClaim == Aiur.buildClaim childJoinIdx pubInput #[] &&
-          left.cacheKey == liftCacheKey
-      | _, _, _ => false
-    | .error _ => false
   let cachedLiftBytes := Ixon.Proof.ser cachedLiftWrapper
-  let resumedLift? ← match cacheSpecs with
-    | .ok specs =>
-      match specs[0]? with
-      | some spec =>
-        Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
-          (fun _ => pure cachedLiftBytes) cacheDir 0 spec childSystem
-      | none => pure none
-    | .error _ => pure none
-  let corruptStoreLift? ← match cacheSpecs with
-    | .ok specs =>
-      match specs[0]? with
-      | some spec =>
-        Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
-          (fun _ => pure (cachedLiftBytes.push 0xff))
-          cacheDir 0 spec childSystem
-      | none => pure none
-    | .error _ => pure none
+  let resumedLift? ← match cacheSpecs[0]? with
+    | some spec =>
+      Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
+        (fun _ => pure cachedLiftBytes) cacheDir 0 spec childSystem
+    | none => pure none
+  let corruptStoreLift? ← match cacheSpecs[0]? with
+    | some spec =>
+      Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
+        (fun _ => pure (cachedLiftBytes.push 0xff))
+        cacheDir 0 spec childSystem
+    | none => pure none
   let verifiedResumeHit := resumedLift?.isSome
   let corruptStoreFallsThrough := corruptStoreLift?.isNone
 
@@ -1045,8 +1035,6 @@ def joinSmokeSuite : IO UInt32 := do
       recursionParametersIndependent,
     test "aggregate cache key binds version, recursion vk, FRI params, and outer claim"
       cacheKeyInputsBound,
-    test "all aggregate slot claims and cache keys are prepared before proving"
-      cacheSpecsComplete,
     test "aggregate cache index atomically round-trips a store address"
       cacheIndexRoundTrip,
     test "aggregate cache treats a corrupt index as an invalid hint"

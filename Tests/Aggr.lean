@@ -154,6 +154,18 @@ def smokeSuite : IO UInt32 := do
     driverOps #[2, 1, 1] 3 true
   let singletonDirectPlan := Ix.Cli.AggregateCmd.schedulePlan
     #[.leaf 0] #[2] 0 true
+  -- M1-f's four-shard box fixture is a balanced post-order fold. With every
+  -- pair above the structural threshold, wrap-first proves 0×4 then 9×3;
+  -- direct mode keeps leaves raw, proves two shape-6 lower pairs, then shape 9.
+  let m1fOps : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp := #[
+    .leaf 0, .leaf 1, .join 0 1,
+    .leaf 2, .leaf 3, .join 3 4,
+    .join 2 5
+  ]
+  let m1fWrapPlan := Ix.Cli.AggregateCmd.schedulePlan
+    m1fOps #[2500, 2500, 2500, 2500] 4096
+  let m1fDirectPlan := Ix.Cli.AggregateCmd.schedulePlan
+    m1fOps #[2500, 2500, 2500, 2500] 4096 true
   let wrapFirstShapes : Bool := match defaultDriverPlan with
     | .ok plan =>
       plan.map (·.shape?) == #[some 0, some 0, some 5, some 0, some 9] &&
@@ -167,6 +179,19 @@ def smokeSuite : IO UInt32 := do
   let singletonStillWraps : Bool := match singletonDirectPlan with
     | .ok #[slot] => slot.kind == .aggr && slot.shape? == some 0
     | _ => false
+  let m1fWrapShapes : Bool := match m1fWrapPlan with
+    | .ok plan =>
+      plan.map (·.shape?) ==
+        #[some 0, some 0, some 9, some 0, some 0, some 9, some 9] &&
+      plan.all (·.kind == .aggr)
+    | .error _ => false
+  let m1fDirectShapes : Bool := match m1fDirectPlan with
+    | .ok plan =>
+      plan.map (·.shape?) ==
+        #[none, none, some 6, none, none, some 6, some 9] &&
+      plan.map (·.kind) ==
+        #[.ixvm, .ixvm, .aggr, .ixvm, .ixvm, .aggr, .aggr]
+    | .error _ => false
   let shapeWeightsBounded : Bool := match defaultDriverPlan, directDriverPlan with
     | .ok wraps, .ok direct =>
       Ix.Cli.AggregateCmd.aggregateSlotRamWeights wraps == #[
@@ -499,6 +524,9 @@ def smokeSuite : IO UInt32 := do
     test "direct-join policy selects raw leaves plus shapes 2 and 8"
       directShapes,
     test "direct mode still wraps a singleton root" singletonStillWraps,
+    test "M1-f wrap-first plan is shapes 0x4 then 9x3" m1fWrapShapes,
+    test "M1-f direct plan is raw leaves then shapes 6, 6, and 9"
+      m1fDirectShapes,
     test "scheduler RAM weights follow the selected ix_aggr shapes"
       shapeWeightsBounded,
     test "driver specs use uniform aggregate claims and cache version 2"

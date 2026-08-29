@@ -151,8 +151,8 @@ lean_exe «bench-recursion-debug» where
   root := `Benchmarks.RecursionDebug
   supportInterpreter := true
 
-lean_exe «bench-aggregate-pair» where
-  root := `Benchmarks.AggregatePair
+lean_exe «bench-aggregate-policy» where
+  root := `Benchmarks.AggregatePolicy
   supportInterpreter := true
   -- Keep ix_ffi ahead of Blake3's Rust staticlib. Importing the converged
   -- aggregator makes both archives direct dependencies; Rust allocator
