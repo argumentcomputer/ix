@@ -37,6 +37,15 @@ pub struct AggrTree<'a> {
   pub bytes: &'a [u8],
 }
 
+/// One carried/discharged choice consumed by structural `ix_aggr` shapes on
+/// IO channel 6. Candidates use the raw-address key representation; the
+/// circuit strictly parses each payload and verifies every discharge path.
+#[derive(Clone, Copy, Debug)]
+pub struct AggrPath<'a> {
+  pub candidate: [u8; 32],
+  pub bytes: &'a [u8],
+}
+
 /// Raw advice for one `ix_aggr` invocation, any shape.
 ///
 /// Borrowed view: real proofs are multi-megabyte blobs, so constructing an
@@ -54,6 +63,7 @@ pub struct AggrAdvice<'a> {
   pub allowed: &'a [u8],
   pub preimages: &'a [AggrPreimage<'a>],
   pub trees: &'a [AggrTree<'a>],
+  pub paths: &'a [AggrPath<'a>],
 }
 
 /// Decode the compact host/FFI representation of digest-addressed
@@ -75,6 +85,18 @@ pub fn decode_aggr_preimages(
 pub fn decode_aggr_trees(blob: &[u8]) -> Result<Vec<AggrTree<'_>>, String> {
   decode_keyed_blobs(blob, "aggr trees").map(|entries| {
     entries.into_iter().map(|(root, bytes)| AggrTree { root, bytes }).collect()
+  })
+}
+
+/// Decode compact candidate-addressed structural-discharge choices. Framing
+/// is identical to [`decode_aggr_preimages`]; payload semantics are checked by
+/// the circuit.
+pub fn decode_aggr_paths(blob: &[u8]) -> Result<Vec<AggrPath<'_>>, String> {
+  decode_keyed_blobs(blob, "aggr paths").map(|entries| {
+    entries
+      .into_iter()
+      .map(|(candidate, bytes)| AggrPath { candidate, bytes })
+      .collect()
   })
 }
 
@@ -209,7 +231,8 @@ pub fn execute_ix_aggr(
 /// * ch 3 `[0]`: the digest-bound 80-byte allowed blob;
 /// * ch 4 `packed(blake3)`: `CheckEnv` claim preimages;
 /// * ch 5 `root bytes`: serialized canonical assumption trees;
-/// * ch 6 `[0]`: the one-byte shape hint.
+/// * ch 6 `[0]`: the one-byte shape hint;
+/// * ch 6 `candidate bytes`: structural carried/discharged choices and paths.
 pub fn aggr_io_buffer(advice: &AggrAdvice<'_>) -> IOBuffer {
   let mut io =
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() };
@@ -235,6 +258,14 @@ pub fn aggr_io_buffer(advice: &AggrAdvice<'_>) -> IOBuffer {
     extend_bytes(&mut io, G::from_u8(5), address_key(&tree.root), tree.bytes);
   }
   extend_bytes(&mut io, G::from_u8(6), index_key(0), &[advice.shape]);
+  for path in advice.paths {
+    extend_bytes(
+      &mut io,
+      G::from_u8(6),
+      address_key(&path.candidate),
+      path.bytes,
+    );
+  }
 
   io
 }
@@ -269,6 +300,7 @@ mod tests {
     }
     let preimages = [AggrPreimage { digest, bytes: &[11, 12] }];
     let trees = [AggrTree { root, bytes: &[13, 14, 15] }];
+    let paths = [AggrPath { candidate: root, bytes: &[1, 0] }];
     let advice = AggrAdvice {
       shape: 3,
       proof_advice: [&[1, 2], &[3]],
@@ -279,6 +311,7 @@ mod tests {
       allowed: &[10],
       preimages: &preimages,
       trees: &trees,
+      paths: &paths,
     };
 
     let io = aggr_io_buffer(&advice);
@@ -299,8 +332,9 @@ mod tests {
     assert_eq!(info(&io, 3, index_key(0)), (0, 1));
     assert_eq!(info(&io, 4, packed_digest_key(&digest)), (0, 2));
     assert_eq!(info(&io, 5, address_key(&root)), (0, 3));
-    assert_eq!(arena_bytes(&io, 6), vec![3]);
+    assert_eq!(arena_bytes(&io, 6), vec![3, 1, 0]);
     assert_eq!(info(&io, 6, index_key(0)), (0, 1));
+    assert_eq!(info(&io, 6, address_key(&root)), (1, 2));
     assert_ne!(packed_digest_key(&digest), address_key(&digest));
   }
 
@@ -322,8 +356,13 @@ mod tests {
     assert_eq!(trees[0].root, key);
     assert_eq!(trees[0].bytes, &[8, 9, 10]);
 
+    let paths = decode_aggr_paths(&blob).expect("valid path blob");
+    assert_eq!(paths[0].candidate, key);
+    assert_eq!(paths[0].bytes, &[8, 9, 10]);
+
     blob.push(11);
     assert!(decode_aggr_preimages(&blob).is_err());
     assert!(decode_aggr_trees(&[1, 0, 0]).is_err());
+    assert!(decode_aggr_paths(&[1, 0, 0]).is_err());
   }
 }

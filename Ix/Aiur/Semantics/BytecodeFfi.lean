@@ -196,10 +196,11 @@ opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
 /-- Native execution of the `ix_aggr` aggregation entrypoint. Expanded child
 proof advice (from `AiurSystem.proofToAdviceBytes`), claims, and the fixed
 vk/output/allowed blobs are passed without
-per-byte Lean field boxing; `preimagesBlob` and `treesBlob` use the compact
+per-byte Lean field boxing; `preimagesBlob`, `treesBlob`, and `pathsBlob` use the compact
 count/key/length framing produced by `Aggr.preimagesBlob` and
-`Aggr.treesBlob`. Rust expands them directly into IO channels 0–6 (the
-shape hint lands on channel 6). Wrap shapes pass empty right-child blobs —
+`Aggr.treesBlob` / `Aggr.pathsBlob`. Rust expands them directly into IO
+channels 0–6 (the shape hint and structural paths share channel 6 with
+disjoint key shapes). Wrap shapes pass empty right-child/path blobs —
 the circuit never reads them. As with `executeMultiStark`, `useBytecode`
 selects the generic interpreter over the generated production aggregator,
 and the codegen'd path is only valid when `toplevel` is the production
@@ -209,7 +210,7 @@ opaque executeIxAggr (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
   (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
   (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
-  (preimagesBlob treesBlob : @& ByteArray) (useBytecode : Bool := false) :
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
 -- (EnvHandle opaque type + constructors live above `namespace

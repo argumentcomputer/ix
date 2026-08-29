@@ -6,8 +6,8 @@ public import Ix.MultiStark.Verifier
 /-!
 # Heterogeneous recursive aggregation circuit
 
-One entrypoint, `ix_aggr`, subsumes lifting and joining. A non-deterministic
-shape hint (IO channel 6) selects one of five verified forms:
+One entrypoint, `ix_aggr`, subsumes wrapping and joining. A non-deterministic
+shape hint (IO channel 6) selects one of ten verified forms:
 
 | shape | children                  | statement fold                          |
 |-------|---------------------------|-----------------------------------------|
@@ -17,6 +17,10 @@ shape hint (IO channel 6) selects one of five verified forms:
 | 3     | IxVM, `ix_aggr`           | union / difference                      |
 | 4     | `ix_aggr`, IxVM           | union / difference                      |
 | 5     | `ix_aggr`, `ix_aggr`      | union / difference                      |
+| 6     | IxVM, IxVM                | structural root / path discharge        |
+| 7     | IxVM, `ix_aggr`           | structural root / path discharge        |
+| 8     | `ix_aggr`, IxVM           | structural root / path discharge        |
+| 9     | `ix_aggr`, `ix_aggr`      | structural root / path discharge        |
 
 The hint is advice, not trust: every shape verifies its children against the
 verifying key demanded by that shape (digest-bound to the allowed blob) and
@@ -45,12 +49,17 @@ Child claims normalize to one `CheckEnv` statement each:
 * `ix_aggr` child — 18-word claim `[0, aggr_idx, allowed(8), digest(8)]`.
 
 Wrap shapes bind the output digest to the child's `CheckEnv` digest directly
-and open nothing. Pair shapes open both `CheckEnv` preimages (channel 4),
+and open nothing. Flat pair shapes open both `CheckEnv` preimages (channel 4),
 re-root the canonical subject/assumption trees (channel 5), and prove
 
 `subjects = subjects_L ∪ subjects_R`
 
 `assumptions = (assumptions_L ∪ assumptions_R) ∖ subjects`.
+
+Structural pair shapes instead bind
+`subjects = nodeHash(subjects_L.root, subjects_R.root)` and account for every
+input assumption by either carrying it into the canonical output assumptions
+or discharging it with a strict Merkle inclusion path on channel 6.
 
 All address-list operations use bytewise address comparison. Pointer identity
 is never used as set equality: Aiur memory constrains pointers to be unique,
@@ -66,7 +75,7 @@ not stored values to be globally deduplicated.
 | 3       | `[0]`                | 80-byte allowed blob                     |
 | 4       | packed digest        | `CheckEnv` claim preimages               |
 | 5       | raw 32-byte root     | serialized canonical `AssumptionTree`s   |
-| 6       | `[0]`                | one shape byte (0–5)                     |
+| 6       | `[0]` / address      | shape byte (0–9) / structural path choice |
 -/
 
 public section
@@ -432,6 +441,84 @@ def circuit := ⟦
     }
   }
 
+  /- ## Structural assumption discharge
+
+  Structural pairs do not open their subject trees. Channel 6 carries one
+  choice for every unique input-assumption candidate, keyed by the raw
+  candidate address. A carried candidate must occur next in the canonical
+  output-assumption list; a discharged candidate must supply a valid Merkle
+  path into the one-hash structural output root.
+  -/
+
+  fn aggr_fold_path(hash: Addr, remaining: G, stream: ByteStream)
+      -> (Addr, ByteStream) {
+    match remaining {
+      0 => (hash, stream),
+      _ =>
+        let (side, s1) = aggr_read_byte(stream);
+        assert_eq!(u8_less_than(side, 2u8), 1,
+          "aggr structural: path side must be 0 or 1");
+        let (sibling, s2) = aggr_read_address(s1);
+        let parent = match side {
+          0 => aggr_node_hash(sibling, hash),
+          _ => aggr_node_hash(hash, sibling),
+        };
+        aggr_fold_path(parent, remaining - 1, s2),
+    }
+  }
+
+  -- Return 1 when `candidate` is discharged by a path into `root`, or 0
+  -- when it is explicitly carried. The payload is strict:
+  --   carried:     0
+  --   discharged: 1 || count:u8 || (side:u8 || sibling:32)*
+  fn aggr_discharge_choice(candidate: Addr, root: Addr) -> G {
+    let (idx, len) = io_get_info(6, load(candidate));
+    let bytes = #read_byte_stream(6, idx, len);
+    let (choice, rest) = aggr_read_byte(bytes);
+    assert_eq!(u8_less_than(choice, 2u8), 1,
+      "aggr structural: discharge choice must be 0 or 1");
+    match choice {
+      0 =>
+        assert_eq!(load(rest), ListNode.Nil,
+          "aggr structural: carried choice has trailing bytes");
+        0,
+      _ =>
+        let (count, path) = aggr_read_byte(rest);
+        assert_eq!(u8_less_than(count, 65u8), 1,
+          "aggr structural: Merkle path exceeds 64 steps");
+        let (actual, stop) = aggr_fold_path(aggr_leaf_hash(candidate),
+          to_field(count), path);
+        assert_eq!(load(stop), ListNode.Nil,
+          "aggr structural: trailing bytes after Merkle path");
+        assert_eq!(address_eq(actual, root), 1,
+          "aggr structural: assumption path does not reach subject root");
+        1,
+    }
+  }
+
+  -- Every unique candidate from `left ∪ right` is either discharged by a
+  -- membership path or consumed from the strictly-sorted output list.
+  fn aggr_assert_structural_difference(left: List‹Addr›, right: List‹Addr›,
+      subject_root: Addr, output: List‹Addr›) {
+    match aggr_next_assumption(left, right) {
+      AggrNextAssumption.Done =>
+        assert_eq!(load(output), ListNode.Nil,
+          "aggr structural: output has an extra assumption");
+        (),
+      AggrNextAssumption.More(candidate, left_rest, right_rest) =>
+        match aggr_discharge_choice(candidate, subject_root) {
+          1 => aggr_assert_structural_difference(left_rest, right_rest,
+            subject_root, output),
+          _ =>
+            let ListNode.Cons(actual, output_rest) = load(output);
+            assert_eq!(address_eq(candidate, actual), 1,
+              "aggr structural: outstanding assumption mismatch");
+            aggr_assert_structural_difference(left_rest, right_rest,
+              subject_root, output_rest),
+        },
+    }
+  }
+
   fn aggr_get_opt_address(stream: ByteStream) -> (Option‹Addr›, ByteStream) {
     let (tag, rest) = aggr_read_byte(stream);
     match tag {
@@ -616,6 +703,40 @@ def circuit := ⟦
     ()
   }
 
+  -- Structural pair: verify the same heterogeneous child forms, commit to
+  -- subjects with one free-form node hash, and discharge assumptions through
+  -- channel-6 Merkle paths. Only canonical assumption trees are opened.
+  fn aggr_pair_structural(left_kind: G, right_kind: G,
+      ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let left_digest = aggr_child_check_env_digest(left_kind, 0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let right_digest = aggr_child_check_env_digest(right_kind, 1,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let (left_root, left_asm) =
+      aggr_parse_check_env(aggr_load_preimage(left_digest));
+    let (right_root, right_asm) =
+      aggr_parse_check_env(aggr_load_preimage(right_digest));
+
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = #read_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "aggr structural: output claim digest mismatch");
+    let (output_root, output_asm) = aggr_parse_check_env(output_bytes);
+
+    let expected_root = aggr_node_hash(left_root, right_root);
+    assert_eq!(address_eq(output_root, expected_root), 1,
+      "aggr structural: output subject root is not nodeHash(left, right)");
+
+    let left_assumptions = aggr_load_optional_tree(left_asm);
+    let right_assumptions = aggr_load_optional_tree(right_asm);
+    let output_assumptions = aggr_load_optional_tree(output_asm);
+    aggr_assert_structural_difference(left_assumptions, right_assumptions,
+      output_root, output_assumptions);
+    ()
+  }
+
   /- ## Entrypoint -/
 
   -- Public input is `blake3(allowed_blob) ‖ blake3(output_claim_bytes)`,
@@ -643,8 +764,8 @@ def circuit := ⟦
 
     -- Shape hint: exactly one advice byte.
     --   0 = wrap IxVM        1 = wrap self
-    --   2 = (IxVM, IxVM)     3 = (IxVM, self)
-    --   4 = (self, IxVM)     5 = (self, self)
+    --   2–5 = flat pairs:       2 + 2·left + right
+    --   6–9 = structural pairs: 6 + 2·left + right
     let (hidx, hlen) = io_get_info(6, [0]);
     assert_eq!(hlen, 1, "aggr: shape hint must be exactly one byte");
     let hint = #read_byte_stream(6, hidx, hlen);
@@ -663,6 +784,14 @@ def circuit := ⟦
       4 => aggr_pair(1, 0, ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
       5 => aggr_pair(1, 1, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      6 => aggr_pair_structural(0, 0, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      7 => aggr_pair_structural(0, 1, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      8 => aggr_pair_structural(1, 0, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      9 => aggr_pair_structural(1, 1, ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
     }
   }

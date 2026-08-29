@@ -154,6 +154,10 @@ lean_exe «bench-recursion-debug» where
 lean_exe «bench-aggregate-pair» where
   root := `Benchmarks.AggregatePair
   supportInterpreter := true
+  -- Keep ix_ffi ahead of Blake3's Rust staticlib. Importing the converged
+  -- aggregator makes both archives direct dependencies; Rust allocator
+  -- symbols are then resolved from ix_ffi and not pulled twice.
+  moreLinkObjs := #[ix_rs]
 
 /- The lean4lean replay machinery as an importable lib: the
 `bench-lean4lean` exe root and the ignored `lean4lean` test runner both

@@ -57,7 +57,7 @@ def targets : List Target := [
     outPath := "crates/ixvm-codegen/src/aiur_ixvm.rs" },
   { label := "multi-stark", source := MultiStark.multiStark,
     outPath := "crates/ixvm-codegen/src/aiur_multi_stark.rs" },
-  -- `ix aggr` proving/verification must select the SAME toplevel for its
+  -- `ix aggregate` proving/verification must select the SAME toplevel for its
   -- function-index table (`Aggr.ixAggr`), or `ix_aggr` lookups resolve
   -- against a different function set than the generated code.
   { label := "ix-aggr", source := Aggr.ixAggr,
@@ -112,10 +112,10 @@ end Ix.Cli.CodegenCmd
 open Ix.Cli.CodegenCmd in
 def codegenCmd : Cli.Cmd := `[Cli|
   "codegen" VIA runCodegenCmd;
-  "Compile the IxVM Aiur kernel and the MultiStark recursive verifier to Rust source via the Bytecode → Rust codegen pass. Writes to `crates/ixvm-codegen/src/aiur_ixvm.rs` and `crates/ixvm-codegen/src/aiur_multi_stark.rs` (fixed paths, no override). PARITY UNVERIFIED — run the generated code on test fixtures against the interpreter before trusting any witness it produces."
+  "Compile the IxVM kernel, MultiStark verifier, and single-entrypoint ixAggr system to Rust via the Bytecode → Rust codegen pass (fixed output paths, no override). PARITY UNVERIFIED — run their generated/interpreter fixture checks before trusting any witness."
 
   FLAGS:
-    "check"; "CI mode: compare the emitted source against the on-disk files at `crates/ixvm-codegen/src/aiur_ixvm.rs` and `crates/ixvm-codegen/src/aiur_multi_stark.rs` and exit 0 if identical, 1 otherwise. Does not modify the files."
+    "check"; "CI mode: compare all three emitted sources (`aiur_ixvm.rs`, `aiur_multi_stark.rs`, `aiur_ix_aggr.rs`) against disk and exit 0 if identical, 1 otherwise. Does not modify files."
 ]
 
 end

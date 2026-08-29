@@ -1,7 +1,6 @@
 --import Ix.Cli.StoreCmd
 import Ix.Cli.AddrOfCmd
 import Ix.Cli.AggregateCmd
-import Ix.Cli.AggrCmd
 import Ix.Cli.BenchReport
 import Ix.Cli.CheckCmd
 import Ix.Cli.CodegenCmd
@@ -36,7 +35,6 @@ def ixCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     --storeCmd;
-    aggrCmd;
     benchCmd;
     aggregateCmd;
     catalogCmd;

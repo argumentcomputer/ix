@@ -492,8 +492,12 @@ def joinSmokeSuite : IO UInt32 := do
     | _ => false
 
   let reconstructedLiftClaim :=
-    Ix.Cli.VerifyCmd.aggregateLiftOuterClaim fakeIxvmVk verifyIdx liftIdx
-      leftStatement.claim
+    let claimBytes := Ix.Claim.ser leftStatement.claim
+    let innerClaim := Aiur.buildClaim verifyIdx
+      (IxVM.ClaimHarness.packedDigestKey (Address.blake3 claimBytes)) #[]
+    let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
+    Aiur.buildClaim liftIdx
+      (MultiStark.verifierPubInput fakeIxvmVk innerClaimsBytes) #[]
   let liftClaimReconstruction := reconstructedLiftClaim == leftOuter
   let reconstructedLiftVerifies :=
     childSystem.verify reconstructedLiftClaim leftProof
@@ -907,9 +911,9 @@ def joinSmokeSuite : IO UInt32 := do
           pruned.aggregationTree == .leaf 0 && counts == #[1]
       | .error _ => false
     | .error _ => false
-  let singleManifestLiftRoot : Bool := match singleManifest with
+  let singleManifestValueRoot : Bool := match singleManifest with
     | .ok view => match Ix.Cli.VerifyCmd.expectedFromManifest singleEnv view 0 with
-      | .ok (statement, .lift) =>
+      | .ok statement =>
         statement.claim == .checkEnv (canonicalTree #[singleAddr]).root none
       | _ => false
     | .error _ => false
@@ -1068,7 +1072,8 @@ def joinSmokeSuite : IO UInt32 := do
     test "coverage accepts legacy zero-constant manifest leaves" singleCoverage,
     test "empty manifest leaves contract and retained ids remap densely"
       emptyPruningCorrect,
-    test "one retained shard folds to a lift root" singleManifestLiftRoot,
+    test "one retained shard reconstructs one value-based root"
+      singleManifestValueRoot,
     test "shard claim-only prep preserves trees and one-pass closure semantics"
       shardPrepPreservesSemantics,
     test "stand-in lift/flat/structural entrypoints survive compiler dedup separately"

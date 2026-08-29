@@ -85,12 +85,17 @@ def ChildKind.code : ChildKind → Nat
   | .ixvm => 0
   | .aggr => 1
 
-/-- The advice byte selecting the verified form: `0`/`1` wrap one IxVM /
-`ix_aggr` child; `2`–`5` fold a pair, `2 + 2·left + right` with IxVM = 0 and
-`ix_aggr` = 1. -/
+/-- The advice byte selecting a wrap or flat pair: `0`/`1` wrap one IxVM /
+`ix_aggr` child; `2`–`5` fold a flat pair, `2 + 2·left + right` with IxVM = 0
+and `ix_aggr` = 1. -/
 def shapeCode : (children : ChildKind × Option ChildKind) → Nat
   | (kind, none) => kind.code
   | (left, some right) => 2 + 2 * left.code + right.code
+
+/-- Structural pair shapes `6`–`9`: `6 + 2·left + right`. Wraps have no
+structural form. -/
+def structuralShapeCode (left right : ChildKind) : Nat :=
+  6 + 2 * left.code + right.code
 
 /-! ## Native-FFI advice framing
 
@@ -131,6 +136,28 @@ def treesBlob (trees : Array Ix.AssumptionTree) : ByteArray :=
   keyedBlobs <| trees.map fun tree =>
     (tree.root.hash, Ix.AssumptionTree.ser tree)
 
+/-- Encode one structural-discharge choice. A missing path means "carry" and
+encodes as `0`; a present path encodes as
+`1 ‖ count:u8 ‖ (side:u8 ‖ sibling:32)*`. The side byte is zero when the
+sibling is on the left and one when it is on the right. -/
+def pathPayload (path? : Option Ix.Merkle.MerklePath) : ByteArray := Id.run do
+  match path? with
+  | none => return ⟨#[0]⟩
+  | some path =>
+    assert! path.size ≤ 64
+    let mut out : Array UInt8 := #[1, UInt8.ofNat path.size]
+    for (sibling, isLeft) in path do
+      out := out.push (if isLeft then 0 else 1)
+      out := out ++ sibling.hash.data
+    return ⟨out⟩
+
+/-- Pack one structural-discharge choice per unique input-assumption candidate
+for IO channel 6. -/
+def pathsBlob
+    (paths : Array (Address × Option Ix.Merkle.MerklePath)) : ByteArray :=
+  keyedBlobs <| paths.map fun (candidate, path?) =>
+    (candidate.hash, pathPayload path?)
+
 /-! ## Interpreter-side advice assembly
 
 These helpers place advice on the IO channels exactly as the circuit reads
@@ -152,6 +179,13 @@ The circuit independently checks strict leaf order and recomputes the
 canonical root. -/
 def extendTree (io : Aiur.IOBuffer) (tree : Ix.AssumptionTree) : Aiur.IOBuffer :=
   io.extend 5 (byteGs tree.root.hash) (byteGs (Ix.AssumptionTree.ser tree))
+
+/-- Channel 6: one structural carried/discharged choice keyed by the raw
+candidate address. The 32-element address key cannot collide with the shape's
+one-element `[0]` key. -/
+def extendPath (io : Aiur.IOBuffer) (candidate : Address)
+    (path? : Option Ix.Merkle.MerklePath) : Aiur.IOBuffer :=
+  io.extend 6 (byteGs candidate.hash) (byteGs (pathPayload path?))
 
 /-- Channels 0/2 for one child slot: expanded proof advice and serialized
 claims. Compact proof wire bytes are not an in-circuit input. -/

@@ -181,8 +181,8 @@ opaque proveMultiStarkJoin (system : @& AiurSystem)
 /-- Prove one `ix_aggr` execution — any shape — over raw child proof/claim
 advice. Both proof blobs must come from `AiurSystem.proofToAdviceBytes`;
 compact `Proof.toBytes` values remain the persisted representation. The
-compact preimage/tree blobs are produced by
-`Aggr.preimagesBlob` and `Aggr.treesBlob`; wrap shapes pass empty
+compact preimage/tree/path blobs are produced by `Aggr.preimagesBlob`,
+`Aggr.treesBlob`, and `Aggr.pathsBlob`; wrap and flat shapes pass empty
 right-child blobs. Malformed framing is returned as an error; as with
 `prove`/`proveMultiStark`, callers must supply an accepting execution
 witness. Only valid when `system` was built from the production
@@ -193,7 +193,7 @@ opaque proveIxAggr (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
   (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
   (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
-  (preimagesBlob treesBlob : @& ByteArray) (useBytecode : Bool := false) :
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]

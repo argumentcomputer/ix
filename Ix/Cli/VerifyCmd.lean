@@ -18,6 +18,7 @@ public import Ix.Common
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
+public import Ix.Aggr
 public import Ix.MultiStark
 public import Ix.Store
 public import Ix.Cli.AggregateCmd
@@ -87,25 +88,14 @@ def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel))
 
 structure AggregateBackend where
   system : Aiur.AiurSystem
-  ixvmVk : ByteArray
-  verifyClaimIdx : Aiur.Bytecode.FunIdx
-  liftIdx : Aiur.Bytecode.FunIdx
-  flatJoinIdx : Aiur.Bytecode.FunIdx
-  structuralJoinIdx : Aiur.Bytecode.FunIdx
+  aggrIdx : Aiur.Bytecode.FunIdx
   allowed : ByteArray
-
-inductive AggregateRootKind where
-  | lift
-  | flat
-  | structural
-  deriving BEq, Repr
 
 structure ExpectedAggregate where
   claim : Ix.Claim
-  kinds : Array AggregateRootKind
 
 /-- Build the two deterministic systems whose identities are committed by an
-aggregate root: the IxVM vk and the combined lift/join recursion vk. -/
+aggregate root: the IxVM vk and the single-entrypoint recursion vk. -/
 private def buildAggregateBackend
     (recursionParameters : MultiStark.RecursionParameters) :
     IO (Except String AggregateBackend) := do
@@ -114,49 +104,42 @@ private def buildAggregateBackend
     | .ok top => match top.compile with
       | .error e => return .error s!"IxVM compilation failed: {e}"
       | .ok compiled => pure compiled
-  let recursionCompiled ← match MultiStark.multiStark with
+  let aggrCompiled ← match Aggr.ixAggr with
     | .error e => return .error s!"recursion toplevel merging failed: {e}"
     | .ok top => match top.compile with
       | .error e => return .error s!"recursion compilation failed: {e}"
       | .ok compiled => pure compiled
   let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
-  let liftIdx := recursionCompiled.getFuncIdx `verify_multi_stark_proof |>.get!
-  let joinIdx := recursionCompiled.getFuncIdx `join_two |>.get!
-  let structuralJoinIdx := recursionCompiled.getFuncIdx `join_two_structural |>.get!
+  let aggrIdx := aggrCompiled.getFuncIdx `ix_aggr |>.get!
   let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
     commitmentParameters friParameters
-  let recursionSystem := MultiStark.buildRecursionSystem recursionCompiled.bytecode
+  let aggrSystem := MultiStark.buildRecursionSystem aggrCompiled.bytecode
     recursionParameters
   let ixvmVk := ixvmSystem.vkBytes
-  let recursionVk := recursionSystem.vkBytes
-  let allowed := MultiStark.allowedBlob ixvmVk verifyIdx
-    recursionVk liftIdx joinIdx structuralJoinIdx
+  let aggrVk := aggrSystem.vkBytes
+  let allowed := Aggr.allowedBlob ixvmVk verifyIdx aggrVk aggrIdx
   return .ok {
-    system := recursionSystem
-    ixvmVk
-    verifyClaimIdx := verifyIdx
-    liftIdx
-    flatJoinIdx := joinIdx
-    structuralJoinIdx
+    system := aggrSystem
+    aggrIdx
     allowed
   }
 
 private def shardStatement (env : Ixon.Env) (blocks : Array Address) :
-    Except String MultiStark.CheckEnvTrees := do
+    Except String Aggr.CheckEnvTrees := do
   let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks env blocks
   let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
-  MultiStark.CheckEnvTrees.ofClaim claim trees
+  Aggr.CheckEnvTrees.ofClaim claim trees
 
-/-- Reproduce the lift/flat/structural statement fold from a coverage-validated
+/-- Reproduce the flat/structural statement fold from a coverage-validated
 manifest. Zero-constant leaves are pruned exactly as in `ix aggregate`; no proof
 data is needed. -/
 def expectedFromManifest (env : Ixon.Env)
     (view : Ix.Cli.CheckCmd.IxesManifestView) (structuralAbove : Nat) :
-    Except String (MultiStark.CheckEnvTrees × AggregateRootKind) := do
+    Except String Aggr.CheckEnvTrees := do
   let (view, counts) ← view.pruneEmpty env
   let plan ← Ix.Cli.AggregateCmd.schedulePlan view.aggregationTree.foldPlan
     counts structuralAbove
-  let mut slots : Array MultiStark.CheckEnvTrees := #[]
+  let mut slots : Array Aggr.CheckEnvTrees := #[]
   for item in plan do
     match item.op with
     | .leaf shard =>
@@ -173,28 +156,7 @@ def expectedFromManifest (env : Ixon.Env)
       else
         leftStatement.join rightStatement
   let some root := slots.back? | throw "aggregate manifest produced no root"
-  let some rootPlan := plan.back? | throw "aggregate manifest produced no root slot"
-  let kind := match rootPlan.op with
-    | .leaf _ => AggregateRootKind.lift
-    | .join _ _ => if rootPlan.structural then .structural else .flat
-  pure (root, kind)
-
-/-- Reconstruct the exact outer claim of a single-shard lift from the bundled
-`CheckEnv` statement. This is the verification-side inverse of the leaf arm in
-`ix aggregate`: the wrapper claim determines the nested IxVM `verify_claim`,
-whose serialized singleton list determines the lift public input. -/
-def aggregateLiftOuterClaim (ixvmVk : ByteArray)
-    (verifyClaimIdx liftIdx : Aiur.Bytecode.FunIdx) (claim : Ix.Claim) : Array Aiur.G :=
-  let claimBytes := Ix.Claim.ser claim
-  let verifyInput := IxVM.ClaimHarness.packedDigestKey (Address.blake3 claimBytes)
-  let innerClaim := Aiur.buildClaim verifyClaimIdx verifyInput #[]
-  let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
-  Aiur.buildClaim liftIdx (MultiStark.verifierPubInput ixvmVk innerClaimsBytes) #[]
-
-private def aggregateRootKindLabel : AggregateRootKind → String
-  | .lift => "lift"
-  | .flat => "flat"
-  | .structural => "structural"
+  pure root
 
 private def verifyAggregateProof (backend : AggregateBackend)
     (expected? : Option ExpectedAggregate) (proofAddr : Address) : IO UInt32 := do
@@ -213,27 +175,15 @@ private def verifyAggregateProof (backend : AggregateBackend)
     | .error e =>
       IO.eprintln s!"error: aggregate proof {proofAddr} does not decode: {e}"
       return 1
-  let claimBytes := Ix.Claim.ser wrapper.claim
-  let joinPubInput := MultiStark.joinPubInput backend.allowed claimBytes
-  let outerClaim : AggregateRootKind → Array Aiur.G
-    | .lift => aggregateLiftOuterClaim backend.ixvmVk backend.verifyClaimIdx
-        backend.liftIdx wrapper.claim
-    | .flat => Aiur.buildClaim backend.flatJoinIdx joinPubInput #[]
-    | .structural => Aiur.buildClaim backend.structuralJoinIdx joinPubInput #[]
-  let kinds := expected?.map (·.kinds) |>.getD
-    #[.lift, .flat, .structural]
-  let mut errors : Array String := #[]
-  for kind in kinds do
-    match backend.system.verify (outerClaim kind) proof with
-    | .ok () =>
-      IO.println s!"ok: {aggregateRootKindLabel kind} aggregate proof \
-        {proofAddr} verifies {wrapper.claim}"
-      return 0
-    | .error e =>
-      errors := errors.push s!"{aggregateRootKindLabel kind}: {e}"
-  IO.eprintln s!"error: aggregate verification failed: \
-    {String.intercalate "; " errors.toList}"
-  return 1
+  let outerClaim := Ix.Cli.AggregateCmd.aggregateOuterClaim
+    backend.allowed backend.aggrIdx wrapper.claim
+  match backend.system.verify outerClaim proof with
+  | .ok () =>
+    IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
+    return 0
+  | .error e =>
+    IO.eprintln s!"error: aggregate verification failed: {e}"
+    return 1
 
 /-- Shard-aware verification (parity with `check`/`prove`):
     - `--shard K`, no proof: print shard K's reconstructed `CheckEnv` claim
@@ -327,10 +277,7 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
         let some expectedTree := IxVM.ClaimHarness.envCanonicalTree env | do
           IO.eprintln "error: cannot verify an aggregate against an empty environment"
           return 1
-        pure (some {
-          claim := .checkEnv expectedTree.root none
-          kinds := #[.lift, .flat]
-        })
+        pure (some { claim := .checkEnv expectedTree.root none })
       | some ixePath, some manifestPath =>
         let env ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
           | .error e => IO.eprintln s!"deserialize {ixePath} failed: {e}"; return 1
@@ -340,14 +287,14 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
           | .error e => IO.eprintln s!"manifest parse failed: {e}"; return 1
           | .ok view => pure view
         if !(← Ix.Cli.CheckCmd.shardsCover env view.shards) then return 1
-        let (statement, kind) ← match expectedFromManifest env view structuralAbove with
+        let statement ← match expectedFromManifest env view structuralAbove with
           | .error e => IO.eprintln e; return 1
           | .ok expected => pure expected
         if statement.assumptions.isSome then
           IO.eprintln s!"error: expected aggregate root retains assumptions \
             {statement.assumptions.map (·.root)}"
           return 1
-        pure (some { claim := statement.claim, kinds := #[kind] })
+        pure (some { claim := statement.claim })
       | none, some _ => unreachable!
     let backend ← match ← buildAggregateBackend recursionParameters with
       | .error e => IO.eprintln e; return 1
@@ -388,7 +335,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
-    "aggregate";      "Interpret proofs as aggregate-first roots. With --ixe alone, accepts a single lift or all-flat canonical root; add --ixes for the exact lift/flat/structural manifest root."
+    "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, bind the canonical environment claim; add --ixes for the exact manifest-relative hybrid root."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
 
   ARGS:

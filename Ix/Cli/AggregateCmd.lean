@@ -2,20 +2,22 @@
   `ix aggregate --ixe E --ixes M <shard-proof>...`
 
   Bind persisted shard proof wrappers to every nonempty shard in a manifest,
-  lift each IxVM proof into the Multi-STARK recursion system, then execute/prove
-  any binary joins in the manifest's bisection-tree order. Small joins use flat
-  canonical subjects; joins above `--structural-above` use an O(1)
-  root-of-roots subject fold plus assumption-membership paths. The final
-  persisted wrapper carries the aggregate `CheckEnv` claim and recursive proof
-  bytes.
+  wrap each IxVM proof into the single-entrypoint `ix_aggr` recursion system,
+  then execute/prove binary folds in the manifest's bisection-tree order.
+  Small folds use flat canonical subjects; folds above `--structural-above`
+  use an O(1) root-of-roots subject fold plus assumption-membership paths.
+  `--direct-joins` keeps raw IxVM leaves until their first parent as an
+  explicitly non-default policy. The final persisted wrapper carries the
+  aggregate `CheckEnv` claim and recursive proof bytes.
 
   The host driver schedules the fold as a dependency DAG. Ready slots run on
   dedicated tasks under explicit job and RAM reservations; every completed
-  lift/join is persisted in a verified, content-addressed resume cache.
+  wrap/fold is persisted in a verified, content-addressed resume cache.
 -/
 module
 import Std.Sync
 public import Cli
+public import Ix.Aggr
 public import Ix.Cli.CheckCmd
 public import Ix.IxVM
 public import Ix.IxVM.ClaimHarness
@@ -33,18 +35,24 @@ structure PreparedShard where
   statement : MultiStark.CheckEnvTrees
 
 structure AggregateSlot where
+  /-- Which verifying system a parent must use for this slot. Production
+  wrap-first slots are all `.aggr`; direct-join leaf slots remain `.ixvm`. -/
+  kind : Aggr.ChildKind := .aggr
   statement : MultiStark.CheckEnvTrees
   subjectCount : Nat
   outerClaim : Array Aiur.G
   proof : Aiur.Proof
   proofAddress? : Option Address
-  /-- Preimages needed when this slot is decoded by its parent. A lift exposes
-  its inner claims plus `CheckEnv`; a join exposes only its output `CheckEnv`. -/
+  /-- Serialized singleton outer-claim list consumed by a parent. -/
+  claimsBytes : ByteArray := ByteArray.empty
+  /-- Legacy benchmark preimage closure retained through M1-f. The converged
+  parent only needs the direct `CheckEnv` preimage for each child. -/
   openPreimages : Array ByteArray
 
 /-- Everything claim-derived about a slot, computed for the whole fold before
 the first cache lookup or proof. -/
 structure AggregateSlotSpec where
+  kind : Aggr.ChildKind := .aggr
   statement : MultiStark.CheckEnvTrees
   subjectCount : Nat
   outerClaim : Array Aiur.G
@@ -66,6 +74,11 @@ structure ScheduledFold where
   op : Ix.Cli.CheckCmd.AggregationTree.FoldOp
   subjectCount : Nat
   structural : Bool
+  /-- Result kind of this slot. Only direct-policy leaves are `.ixvm`. -/
+  kind : Aggr.ChildKind := .aggr
+  /-- `ix_aggr` shape proven by this slot. Direct-policy raw leaves have no
+  shape because they are verified and forwarded without a recursion proof. -/
+  shape? : Option Nat := none
   deriving BEq, Repr
 
 /-- The immutable result of simulating aggregate-slot admission. Runtime and
@@ -87,9 +100,23 @@ bound. A slot heavier than the configured budget is admitted only by itself,
 matching the existing Rust-side `RamGate` and avoiding deadlock. -/
 def aggregateLiftRamBytes : Nat := 195 * aggregateGiB
 
+/-- M1 name for shape-0 wrap cost. Keep the lift alias above while the
+benchmark/test union is migrated in M1-e/M1-f. -/
+def aggregateWrapRamBytes : Nat := aggregateLiftRamBytes
+
 /-- Structural joins are dominated by the same two recursive-proof checks as
 lifts. Keep the conservative lift reserve until the real E2E calibration. -/
 def aggregateStructuralJoinRamBytes : Nat := aggregateLiftRamBytes
+
+/-- Native verification and forwarding of a raw shard proof in direct mode.
+The expensive proof-advice expansion is charged to its consuming pair. -/
+def aggregateRawShardRamBytes : Nat := 4 * aggregateGiB
+
+/-- Measured upper envelope for an `IxVM + IxVM` pair (shapes 2/6). -/
+def aggregateDirectJoinRamBytes : Nat := 390 * aggregateGiB
+
+/-- Measured upper envelope for a mixed recursive/IxVM pair (shapes 3/4/7/8). -/
+def aggregateMixedJoinRamBytes : Nat := 340 * aggregateGiB
 
 /-- Flat joins add canonical subject-tree work to the recursive-proof base.
 One MiB per subject is a deliberately conservative placeholder: at Init's
@@ -97,14 +124,31 @@ One MiB per subject is a deliberately conservative placeholder: at Init's
 default structural threshold caps this term near 4 GiB in production. -/
 def aggregateFlatJoinRamPerSubjectBytes : Nat := 1024 * 1024
 
-/-- Calibration-pending per-slot RAM weight used by the Lean admission gate. -/
+/-- Per-shape RAM weight used by the Lean admission gate. Shape 5 retains the
+flat subject-count reserve; shape 9 is the O(1)-subject structural arm. The
+direct/mixed values are conservative round-ups of the §3.4 measurements. -/
+def aggregateShapeRamBytes (shape subjectCount : Nat) : Nat :=
+  match shape with
+  | 0 | 1 => aggregateWrapRamBytes
+  | 2 | 6 => aggregateDirectJoinRamBytes
+  | 3 | 4 | 7 | 8 => aggregateMixedJoinRamBytes
+  | 5 => aggregateStructuralJoinRamBytes +
+      subjectCount * aggregateFlatJoinRamPerSubjectBytes
+  | 9 => aggregateStructuralJoinRamBytes
+  | _ => aggregateDirectJoinRamBytes
+
+/-- Calibration-pending per-slot RAM weight used by the Lean admission gate.
+The `none` fallback preserves the pre-M1 meaning of hand-built test plans. -/
 def aggregateSlotRamBytes (item : ScheduledFold) : Nat :=
-  match item.op with
-  | .leaf _ => aggregateLiftRamBytes
-  | .join _ _ =>
-    if item.structural then aggregateStructuralJoinRamBytes
-    else aggregateStructuralJoinRamBytes +
-      item.subjectCount * aggregateFlatJoinRamPerSubjectBytes
+  match item.shape? with
+  | some shape => aggregateShapeRamBytes shape item.subjectCount
+  | none => match item.op with
+    | .leaf _ => if item.kind == .ixvm then aggregateRawShardRamBytes
+        else aggregateWrapRamBytes
+    | .join _ _ =>
+      if item.structural then aggregateStructuralJoinRamBytes
+      else aggregateStructuralJoinRamBytes +
+        item.subjectCount * aggregateFlatJoinRamPerSubjectBytes
 
 def aggregateSlotRamWeights (plan : Array ScheduledFold) : Array Nat :=
   plan.map aggregateSlotRamBytes
@@ -221,16 +265,17 @@ def defaultAggregateRamBudgetBytes : IO Nat := do
     | some total => total / 100 * 92
     | none => 16 * aggregateGiB
 
-/-- Bump when aggregate advice framing changes without changing the recursion
-verifying key. Encoded as `u64` little-endian in every cache key. -/
-def aggregateCacheVersion : Nat := 1
+/-- Bump when aggregate cache identity changes beyond the recursion verifying
+key. Version 2 marks M1's uniform `ix_aggr` outer claims. Encoded as `u64`
+little-endian in every cache key. -/
+def aggregateCacheVersion : Nat := 2
 
 /--
 `blake3(version ‖ recursion_vk_digest ‖ fri_params_ser ‖ outer_claim_bytes)`.
 
 `serializeClaims #[outerClaim]` is the canonical, length-delimited outer-claim
-encoding. The expected outer claim already commits to the entrypoint and public
-input; joins therefore transitively pin the allowed blob and output statement.
+encoding. The expected outer claim commits to the single entrypoint, allowed
+blob, and output statement at every persisted node.
 -/
 def aggregateCacheKey (recursionVk : ByteArray)
     (recursionParameters : MultiStark.RecursionParameters)
@@ -285,23 +330,38 @@ def validateAggregateCacheWrapper (recursionSystem : Aiur.AiurSystem)
 Because parent counts only grow, `count > structuralAbove` makes the mode
 monotone: a flat join is never scheduled above a structural child. -/
 def schedulePlan (plan : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp)
-    (shardCounts : Array Nat) (structuralAbove : Nat) :
+    (shardCounts : Array Nat) (structuralAbove : Nat)
+    (directJoins : Bool := false) :
     Except String (Array ScheduledFold) := do
   let mut scheduled : Array ScheduledFold := #[]
+  -- A singleton must still produce an `ix_aggr` wrapper. Larger direct plans
+  -- keep leaves raw so their first pair can select shapes 2–4/6–8.
+  let rawLeaves := directJoins && plan.size > 1
   for op in plan do
     match op with
     | .leaf shard =>
       let some count := shardCounts[shard]?
         | throw s!"aggregate plan references missing shard {shard}"
-      scheduled := scheduled.push { op, subjectCount := count, structural := false }
+      let kind := if rawLeaves then Aggr.ChildKind.ixvm else .aggr
+      let shape? := if rawLeaves then none
+        else some (Aggr.shapeCode (.ixvm, none))
+      scheduled := scheduled.push {
+        op, subjectCount := count, structural := false, kind, shape?
+      }
     | .join left right =>
       let some leftSlot := scheduled[left]?
         | throw s!"aggregate plan references missing left slot {left}"
       let some rightSlot := scheduled[right]?
         | throw s!"aggregate plan references missing right slot {right}"
       let count := leftSlot.subjectCount + rightSlot.subjectCount
+      let structural := count > structuralAbove
+      let shape := if structural then
+          Aggr.structuralShapeCode leftSlot.kind rightSlot.kind
+        else
+          Aggr.shapeCode (leftSlot.kind, some rightSlot.kind)
       scheduled := scheduled.push {
-        op, subjectCount := count, structural := count > structuralAbove
+        op, subjectCount := count, structural, kind := .aggr,
+        shape? := some shape
       }
   pure scheduled
 
@@ -360,6 +420,99 @@ def buildAggregateSlotSpecs (plan : Array ScheduledFold)
         subjectCount := item.subjectCount
         outerClaim
         cacheKey := aggregateCacheKey recursionVk recursionParameters outerClaim
+      }
+  pure specs
+
+/-! ## Converged single-entrypoint slot derivation
+
+The legacy helper above remains temporarily available to the M1-e/M1-f test
+and benchmark union. Production uses the helpers below exclusively. -/
+
+/-- Convert the old host record used by the scheduler/cache tests into the
+converged host record. Both commit to the same subject and assumption trees. -/
+def toAggrCheckEnvTrees (statement : MultiStark.CheckEnvTrees) :
+    Aggr.CheckEnvTrees :=
+  { subjects := statement.subjects, assumptions := statement.assumptions }
+
+/-- Convert a converged host fold back into the stable driver record while the
+M1-e test union still shares the pre-convergence public structures. -/
+def fromAggrCheckEnvTrees (statement : Aggr.CheckEnvTrees) :
+    MultiStark.CheckEnvTrees :=
+  { subjects := statement.subjects, assumptions := statement.assumptions }
+
+/-- Every persisted aggregate proof now has the same outer claim regardless
+of whether its witness used a wrap, flat pair, or structural pair. -/
+def aggregateOuterClaim (allowed : ByteArray) (aggrIdx : Aiur.Bytecode.FunIdx)
+    (claim : Ix.Claim) : Array Aiur.G :=
+  Aiur.buildClaim aggrIdx (Aggr.pubInput allowed (Ix.Claim.ser claim)) #[]
+
+/-- Derive every converged slot statement, uniform outer claim, kind, and
+cache key before proving. Wrap-first leaves use shape 0; direct-policy leaves
+remain raw IxVM claims and are deliberately not cache-consumed. -/
+def buildAggrSlotSpecs (plan : Array ScheduledFold)
+    (prepared : Array PreparedShard) (aggrVk allowed : ByteArray)
+    (verifyIdx aggrIdx : Aiur.Bytecode.FunIdx)
+    (recursionParameters : MultiStark.RecursionParameters) :
+    Except String (Array AggregateSlotSpec) := do
+  let mut specs : Array AggregateSlotSpec := #[]
+  for item in plan do
+    match item.op with
+    | .leaf shard =>
+      let some preparedShard := prepared[shard]?
+        | throw s!"aggregate plan references missing prepared shard {shard}"
+      if preparedShard.claim != preparedShard.statement.claim then
+        throw s!"prepared shard {shard} claim and statement disagree"
+      if preparedShard.statement.subjectCount != item.subjectCount then
+        throw s!"prepared shard {shard} has {preparedShard.statement.subjectCount} \
+          subjects, but the schedule records {item.subjectCount}"
+      let claimBytes := Ix.Claim.ser preparedShard.claim
+      let verifyInput := IxVM.ClaimHarness.packedDigestKey
+        (Address.blake3 claimBytes)
+      let innerClaim := Aiur.buildClaim verifyIdx verifyInput #[]
+      let outerClaim := match item.kind with
+        | .ixvm => innerClaim
+        | .aggr => aggregateOuterClaim allowed aggrIdx preparedShard.claim
+      match item.kind, item.shape? with
+      | .ixvm, none => pure ()
+      | .aggr, some 0 => pure ()
+      | _, _ => throw s!"aggregate leaf {shard} has inconsistent kind/shape"
+      specs := specs.push {
+        kind := item.kind
+        statement := preparedShard.statement
+        subjectCount := item.subjectCount
+        outerClaim
+        cacheKey := aggregateCacheKey aggrVk recursionParameters outerClaim
+      }
+    | .join leftIdx rightIdx =>
+      let some left := specs[leftIdx]?
+        | throw s!"aggregate plan references missing left spec {leftIdx}"
+      let some right := specs[rightIdx]?
+        | throw s!"aggregate plan references missing right spec {rightIdx}"
+      if left.subjectCount + right.subjectCount != item.subjectCount then
+        throw "aggregate plan has inconsistent joined subject counts"
+      let leftAggr := toAggrCheckEnvTrees left.statement
+      let rightAggr := toAggrCheckEnvTrees right.statement
+      let outputAggr := if item.structural then
+          leftAggr.joinStructural rightAggr
+        else
+          leftAggr.join rightAggr
+      let output := fromAggrCheckEnvTrees outputAggr
+      if output.subjectCount != item.subjectCount then
+        throw s!"aggregate join reconstructs {output.subjectCount} subjects, \
+          but the schedule records {item.subjectCount}"
+      let expectedShape := if item.structural then
+          Aggr.structuralShapeCode left.kind right.kind
+        else
+          Aggr.shapeCode (left.kind, some right.kind)
+      if item.kind != .aggr || item.shape? != some expectedShape then
+        throw s!"aggregate join {leftIdx},{rightIdx} has inconsistent kind/shape"
+      let outerClaim := aggregateOuterClaim allowed aggrIdx output.claim
+      specs := specs.push {
+        kind := .aggr
+        statement := output
+        subjectCount := item.subjectCount
+        outerClaim
+        cacheKey := aggregateCacheKey aggrVk recursionParameters outerClaim
       }
   pure specs
 
@@ -560,21 +713,28 @@ private def persistAggregateCacheProof (dir : System.FilePath) (slotIdx : Nat)
 
 private def printPlan (plan : Array ScheduledFold) (shardIds : Array Nat)
     (structuralAbove : Nat) : IO Unit := do
-  let lifts := plan.countP fun item => match item.op with
+  let leaves := plan.countP fun item => match item.op with
     | .leaf _ => true
     | .join _ _ => false
+  let wraps := plan.countP fun item => match item.op with
+    | .leaf _ => item.kind == .aggr
+    | .join _ _ => false
   let structural := plan.countP (·.structural)
-  IO.println s!"[aggregate] plan: {lifts} lifts + {plan.size - lifts} binary joins \
+  let directLeaves := leaves - wraps
+  let leafPolicy := if directLeaves == 0 then s!"{wraps} wraps"
+    else s!"{directLeaves} direct IxVM leaves"
+  IO.println s!"[aggregate] plan: {leafPolicy} + {plan.size - leaves} binary joins \
     ({structural} structural; threshold > {structuralAbove} subject leaves)"
   for (item, slot) in plan.mapIdx fun slot item => (item, slot) do
     match item.op with
     | .leaf shard =>
       let originalShard := (shardIds[shard]?).getD shard
-      IO.println s!"  slot {slot}: lift shard {originalShard} ({item.subjectCount} subjects)"
+      let mode := if item.kind == .ixvm then "raw shard" else "wrap shard"
+      IO.println s!"  slot {slot}: {mode} {originalShard} ({item.subjectCount} subjects)"
     | .join left right =>
       let mode := if item.structural then "structural" else "flat"
-      IO.println s!"  slot {slot}: {mode} join slots {left}, {right} \
-        ({item.subjectCount} subjects)"
+      IO.println s!"  slot {slot}: {mode} shape {item.shape?.getD 255} \
+        slots {left}, {right} ({item.subjectCount} subjects)"
 
 private structure AggregateProveContext where
   plan : Array ScheduledFold
@@ -583,14 +743,12 @@ private structure AggregateProveContext where
   proofsByShard : Std.HashMap Nat Ixon.Proof
   shardIds : Array Nat
   ixvmSystem : Aiur.AiurSystem
-  recursionSystem : Aiur.AiurSystem
+  aggrSystem : Aiur.AiurSystem
   ixvmVk : ByteArray
-  recursionVk : ByteArray
+  aggrVk : ByteArray
   allowed : ByteArray
   verifyIdx : Aiur.Bytecode.FunIdx
-  liftIdx : Aiur.Bytecode.FunIdx
-  joinIdx : Aiur.Bytecode.FunIdx
-  structuralJoinIdx : Aiur.Bytecode.FunIdx
+  aggrIdx : Aiur.Bytecode.FunIdx
   cacheDir? : Option System.FilePath
 
 /-- Prove or resume one slot whose dependencies have already completed. The
@@ -623,36 +781,59 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
       return Except.error s!"shard {originalShard} proof fails native verification: {e}"
     | .ok () => pure ()
     let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
-    let cached? ← match ctx.cacheDir? with
-      | none => pure none
-      | some dir => loadCachedAggregateProof dir slotIdx spec ctx.recursionSystem
-    let (proof, proofAddress?) ← match cached? with
-      | some cached => pure (cached.proof, some cached.address)
-      | none =>
-        let innerProofAdvice ← match ctx.ixvmSystem.proofToAdviceBytes
-            innerClaim innerProof with
-          | .error e =>
-            return .error s!"shard {originalShard} proof advice encoding failed: {e}"
-          | .ok bytes => pure bytes
-        let pubInput := MultiStark.verifierPubInput ctx.ixvmVk innerClaimsBytes
-        IO.println s!"[aggregate] lifting shard {originalShard} into slot {slotIdx}"
-        (← IO.getStdout).flush
-        let (outerClaim, proof) := ctx.recursionSystem.proveMultiStark
-          ctx.liftIdx pubInput innerProofAdvice ctx.ixvmVk innerClaimsBytes
-        if outerClaim != spec.outerClaim then
-          return .error "lift produced an unexpected outer claim"
-        let proofAddress? ← match ctx.cacheDir? with
-          | none => pure none
-          | some dir => persistAggregateCacheProof dir slotIdx spec proof
-        pure (proof, proofAddress?)
-    return .ok {
-      statement := spec.statement
-      subjectCount := spec.subjectCount
-      outerClaim := spec.outerClaim
-      proof
-      proofAddress?
-      openPreimages := #[innerClaimsBytes, claimBytes]
-    }
+    match spec.kind with
+    | .ixvm =>
+      if spec.outerClaim != innerClaim then
+        return .error "direct shard slot has an unexpected outer claim"
+      return .ok {
+        kind := .ixvm
+        statement := spec.statement
+        subjectCount := spec.subjectCount
+        outerClaim := innerClaim
+        proof := innerProof
+        proofAddress? := none
+        claimsBytes := innerClaimsBytes
+        openPreimages := #[claimBytes]
+      }
+    | .aggr =>
+      let cached? ← match ctx.cacheDir? with
+        | none => pure none
+        | some dir => loadCachedAggregateProof dir slotIdx spec ctx.aggrSystem
+      let (proof, proofAddress?) ← match cached? with
+        | some cached => pure (cached.proof, some cached.address)
+        | none =>
+          let innerProofAdvice ← match ctx.ixvmSystem.proofToAdviceBytes
+              innerClaim innerProof with
+            | .error e =>
+              return .error s!"shard {originalShard} proof advice encoding failed: {e}"
+            | .ok bytes => pure bytes
+          let shape := item.shape?.getD (Aggr.shapeCode (.ixvm, none))
+          let pubInput := Aggr.pubInput ctx.allowed claimBytes
+          IO.println s!"[aggregate] wrapping shard {originalShard} into slot {slotIdx}"
+          (← IO.getStdout).flush
+          let result := ctx.aggrSystem.proveIxAggr ctx.aggrIdx pubInput shape
+            innerProofAdvice ByteArray.empty ctx.ixvmVk ctx.aggrVk
+            innerClaimsBytes ByteArray.empty claimBytes ctx.allowed
+            (Aggr.preimagesBlob #[]) (Aggr.treesBlob #[]) (Aggr.pathsBlob #[])
+          let (outerClaim, proof) ← match result with
+            | .error e => return .error s!"wrap proving failed: {e}"
+            | .ok result => pure result
+          if outerClaim != spec.outerClaim then
+            return .error "wrap produced an unexpected outer claim"
+          let proofAddress? ← match ctx.cacheDir? with
+            | none => pure none
+            | some dir => persistAggregateCacheProof dir slotIdx spec proof
+          pure (proof, proofAddress?)
+      return .ok {
+        kind := .aggr
+        statement := spec.statement
+        subjectCount := spec.subjectCount
+        outerClaim := spec.outerClaim
+        proof
+        proofAddress?
+        claimsBytes := MultiStark.serializeClaims #[spec.outerClaim]
+        openPreimages := #[claimBytes]
+      }
   | .join leftIdx rightIdx =>
     let some left := (slots[leftIdx]?).join
       | return .error s!"missing completed left slot {leftIdx}"
@@ -662,42 +843,52 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
     let outputClaimBytes := Ix.Claim.ser output.claim
     let cached? ← match ctx.cacheDir? with
       | none => pure none
-      | some dir => loadCachedAggregateProof dir slotIdx spec ctx.recursionSystem
+      | some dir => loadCachedAggregateProof dir slotIdx spec ctx.aggrSystem
     let (proof, proofAddress?) ← match cached? with
       | some cached => pure (cached.proof, some cached.address)
       | none =>
-        let pubInput := MultiStark.joinPubInput ctx.allowed outputClaimBytes
-        let leftClaimsBytes := MultiStark.serializeClaims #[left.outerClaim]
-        let rightClaimsBytes := MultiStark.serializeClaims #[right.outerClaim]
-        let preimagesBlob := MultiStark.joinPreimagesBlob
-          (left.openPreimages ++ right.openPreimages)
+        let pubInput := Aggr.pubInput ctx.allowed outputClaimBytes
+        let leftClaimsBytes := left.claimsBytes
+        let rightClaimsBytes := right.claimsBytes
+        let leftStatement := toAggrCheckEnvTrees left.statement
+        let rightStatement := toAggrCheckEnvTrees right.statement
+        let outputStatement := toAggrCheckEnvTrees output
+        let preimagesBlob := Aggr.preimagesBlob
+          #[Ix.Claim.ser left.statement.claim, Ix.Claim.ser right.statement.claim]
         let trees := if item.structural then
-            MultiStark.CheckEnvTrees.structuralAdviceTrees
-              left.statement right.statement output
+            Aggr.CheckEnvTrees.structuralAdviceTrees
+              leftStatement rightStatement outputStatement
           else
-            MultiStark.CheckEnvTrees.adviceTrees
-              left.statement right.statement output
-        let treesBlob := MultiStark.joinTreesBlob trees
+            Aggr.CheckEnvTrees.adviceTrees
+              leftStatement rightStatement outputStatement
+        let treesBlob := Aggr.treesBlob trees
         let pathsBlob := if item.structural then
-            MultiStark.joinPathsBlob
-              (MultiStark.CheckEnvTrees.structuralPathAdvice
-                left.statement right.statement output)
+            Aggr.pathsBlob
+              (Aggr.CheckEnvTrees.structuralPathAdvice
+                leftStatement rightStatement outputStatement)
           else
-            MultiStark.joinPathsBlob #[]
-        let joinFunIdx := if item.structural then ctx.structuralJoinIdx else ctx.joinIdx
+            Aggr.pathsBlob #[]
         let mode := if item.structural then "structural" else "flat"
-        let leftProofAdvice ← match ctx.recursionSystem.proofToAdviceBytes
+        let leftSystem := match left.kind with
+          | .ixvm => ctx.ixvmSystem
+          | .aggr => ctx.aggrSystem
+        let rightSystem := match right.kind with
+          | .ixvm => ctx.ixvmSystem
+          | .aggr => ctx.aggrSystem
+        let leftProofAdvice ← match leftSystem.proofToAdviceBytes
             left.outerClaim left.proof with
           | .error e => return .error s!"left child proof advice encoding failed: {e}"
           | .ok bytes => pure bytes
-        let rightProofAdvice ← match ctx.recursionSystem.proofToAdviceBytes
+        let rightProofAdvice ← match rightSystem.proofToAdviceBytes
             right.outerClaim right.proof with
           | .error e => return .error s!"right child proof advice encoding failed: {e}"
           | .ok bytes => pure bytes
         IO.println s!"[aggregate] {mode}-joining slots {leftIdx}, {rightIdx} into {slotIdx}"
         (← IO.getStdout).flush
-        let result := ctx.recursionSystem.proveMultiStarkJoin joinFunIdx pubInput
-          leftProofAdvice rightProofAdvice ctx.recursionVk
+        let some shape := item.shape?
+          | return .error "aggregate pair is missing its ix_aggr shape"
+        let result := ctx.aggrSystem.proveIxAggr ctx.aggrIdx pubInput shape
+          leftProofAdvice rightProofAdvice ctx.ixvmVk ctx.aggrVk
           leftClaimsBytes rightClaimsBytes outputClaimBytes ctx.allowed
           preimagesBlob treesBlob pathsBlob
         let (outerClaim, proof) ← match result with
@@ -710,11 +901,13 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
           | some dir => persistAggregateCacheProof dir slotIdx spec proof
         pure (proof, proofAddress?)
     return .ok {
+      kind := .aggr
       statement := output
       subjectCount := spec.subjectCount
       outerClaim := spec.outerClaim
       proof
       proofAddress?
+      claimsBytes := MultiStark.serializeClaims #[spec.outerClaim]
       openPreimages := #[outputClaimBytes]
     }
 
@@ -748,7 +941,9 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
 
   let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
     defaultStructuralAbove
-  let plan ← match schedulePlan view.aggregationTree.foldPlan shardCounts structuralAbove with
+  let directJoins := p.hasFlag "direct-joins"
+  let plan ← match schedulePlan view.aggregationTree.foldPlan shardCounts
+      structuralAbove directJoins with
     | .error e => IO.eprintln e; return 1
     | .ok plan => pure plan
   printPlan plan view.shardIds structuralAbove
@@ -765,8 +960,9 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
   let budgetSource := if maxRamGb?.isSome then "--max-ram" else "92% MemTotal"
   IO.println s!"[aggregate] scheduler: jobs={jobsLabel}, RAM budget \
     {formatAggregateGiB ramBudgetBytes} GiB ({budgetSource}); \
-    lift/structural reserve {formatAggregateGiB aggregateLiftRamBytes} GiB, \
-    flat +1 MiB/subject (calibration pending)"
+    wrap/self reserve {formatAggregateGiB aggregateWrapRamBytes} GiB, \
+    direct {formatAggregateGiB aggregateDirectJoinRamBytes} GiB, mixed \
+    {formatAggregateGiB aggregateMixedJoinRamBytes} GiB, flat +1 MiB/subject"
   if p.hasFlag "plan-only" then return 0
 
   let proofHexes := (p.variableArgsAs! String).toList
@@ -792,7 +988,7 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
     prepared := prepared.push item
 
   -- Proof arguments may be in any order. Match them by their bundled claim and
-  -- reject duplicates/missing shards before starting an expensive lift.
+  -- reject duplicates/missing shards before starting an expensive wrap.
   let mut proofsByShard : Std.HashMap Nat Ixon.Proof := {}
   for proofHex in proofHexes do
     let proofAddress ← match addrOfHex "shard proof" proofHex with
@@ -823,24 +1019,20 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
   let ixvmCompiled ← match ← compileToplevel "IxVM" IxVM.ixVM with
     | .error e => IO.eprintln e; return 1
     | .ok compiled => pure compiled
-  let recursionCompiled ← match ← compileToplevel "MultiStark recursion"
-      MultiStark.multiStark with
+  let aggrCompiled ← match ← compileToplevel "ixAggr recursion" Aggr.ixAggr with
     | .error e => IO.eprintln e; return 1
     | .ok compiled => pure compiled
   let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
-  let liftIdx := recursionCompiled.getFuncIdx `verify_multi_stark_proof |>.get!
-  let joinIdx := recursionCompiled.getFuncIdx `join_two |>.get!
-  let structuralJoinIdx := recursionCompiled.getFuncIdx `join_two_structural |>.get!
+  let aggrIdx := aggrCompiled.getFuncIdx `ix_aggr |>.get!
   let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-  let recursionSystem := MultiStark.buildRecursionSystem recursionCompiled.bytecode
+  let aggrSystem := MultiStark.buildRecursionSystem aggrCompiled.bytecode
     recursionParameters
   let ixvmVk := ixvmSystem.vkBytes
-  let recursionVk := recursionSystem.vkBytes
-  let allowed := MultiStark.allowedBlob ixvmVk verifyIdx recursionVk liftIdx
-    joinIdx structuralJoinIdx
-  let specs ← match buildAggregateSlotSpecs plan prepared ixvmVk recursionVk allowed
-      verifyIdx liftIdx joinIdx structuralJoinIdx recursionParameters with
+  let aggrVk := aggrSystem.vkBytes
+  let allowed := Aggr.allowedBlob ixvmVk verifyIdx aggrVk aggrIdx
+  let specs ← match buildAggrSlotSpecs plan prepared aggrVk allowed
+      verifyIdx aggrIdx recursionParameters with
     | .error e => IO.eprintln s!"prepare aggregate slots: {e}"; return 1
     | .ok specs => pure specs
   let cacheDir? ← if p.hasFlag "no-cache" then
@@ -851,8 +1043,8 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
 
   let proveContext : AggregateProveContext := {
     plan, specs, prepared, proofsByShard, shardIds := view.shardIds
-    ixvmSystem, recursionSystem, ixvmVk, recursionVk, allowed
-    verifyIdx, liftIdx, joinIdx, structuralJoinIdx, cacheDir?
+    ixvmSystem, aggrSystem, ixvmVk, aggrVk, allowed
+    verifyIdx, aggrIdx, cacheDir?
   }
   let slots ← match ← runAggregateDag plan slotWeights jobs ramBudgetBytes
       (proveAggregateSlot proveContext) true with
@@ -861,6 +1053,9 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
 
   let some root := slots.back? | do
     IO.eprintln "aggregate plan produced no root slot"
+    return 1
+  if root.kind != .aggr then
+    IO.eprintln "aggregate plan produced a raw IxVM root instead of an ix_aggr proof"
     return 1
   let some envTree := IxVM.ClaimHarness.envCanonicalTree env | do
     IO.eprintln "cannot aggregate an empty environment"
@@ -874,7 +1069,7 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
   if root.statement.assumptions.isSome then
     IO.eprintln s!"aggregate root retains undischarged assumptions {root.statement.assumptions.map (·.root)}"
     return 1
-  match recursionSystem.verify root.outerClaim root.proof with
+  match aggrSystem.verify root.outerClaim root.proof with
   | .error e => IO.eprintln s!"aggregate root proof failed native verification: {e}"; return 1
   | .ok () => pure ()
 
@@ -896,16 +1091,17 @@ end Ix.Cli.AggregateCmd
 open Ix.Cli.AggregateCmd in
 def aggregateCmd : Cli.Cmd := `[Cli|
   aggregate VIA runAggregateCmd;
-  "Lift shard proofs and fold multi-shard manifests into one recursive aggregate"
+  "Wrap shard proofs and fold multi-shard manifests into one recursive aggregate"
 
   FLAGS:
     "ixe" : String;  "Path to the serialized environment whose shards were proven."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
-    "plan-only";     "Validate coverage and print the lift/join slot plan without loading or proving shard proofs."
+    "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."
     "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted."
     "jobs" : Nat;    "Maximum aggregate slots proving concurrently (default 0: all ready slots, subject to the RAM gate)."
     "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
+    "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
 
   ARGS:
     ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (exactly one per nonempty shard unless --plan-only)."

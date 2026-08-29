@@ -4,13 +4,14 @@ public import LSpec
 public import Ix.Aggr
 public import Ix.Claim
 public import Ix.AssumptionTree
+public import Ix.Cli.AggregateCmd
 public import Tests.MultiStark
 
 /-!
 # Tests for the heterogeneous `ix_aggr` circuit
 
 `ix-aggr` — `smokeSuite`. Executes the production `ix_aggr` entrypoint (the
-pure-Lean interpreter over a Lean-built IO buffer) across all five shapes, with
+pure-Lean interpreter over a Lean-built IO buffer) across all ten shapes, with
 real Multi-STARK child proofs from two cheap stand-in systems:
 
 * a "fake IxVM" system whose `fake_verify_claim` reproduces `verify_claim`'s
@@ -21,8 +22,9 @@ real Multi-STARK child proofs from two cheap stand-in systems:
 
 The circuit under test still verifies real proofs and enforces every binding:
 per-kind vk digests, entrypoint indices, the transitive allowed digest of self
-children, wrap digest pass-through, and the canonical union/difference fold.
-The negative cases each break exactly one of those bindings.
+children, wrap digest pass-through, canonical union/difference folding, and
+structural root/path folding. The negative cases each break exactly one of
+those bindings.
 
 Proving the real `ix_aggr` system recursively (self children that are actual
 `ix_aggr` proofs) needs the native prover and tens of GiB; that path belongs to
@@ -67,7 +69,9 @@ private def mkIO (allowed : ByteArray) (shape : Nat)
     (ixvmVk aggrVk : ByteArray) (children : Array ChildSlot)
     (outClaim? : Option ByteArray := none)
     (preimages : Array ByteArray := #[])
-    (trees : Array Ix.AssumptionTree := #[]) : IOBuffer := Id.run do
+    (trees : Array Ix.AssumptionTree := #[])
+    (paths : Array (Address × Option Ix.Merkle.MerklePath) := #[]) :
+    IOBuffer := Id.run do
   let mut io := Aggr.extendIdentity default allowed shape
   io := Aggr.extendVk io .ixvm ixvmVk
   io := Aggr.extendVk io .aggr aggrVk
@@ -79,6 +83,8 @@ private def mkIO (allowed : ByteArray) (shape : Nat)
     io := Aggr.extendPreimage io bytes
   for tree in trees do
     io := Aggr.extendTree io tree
+  for (candidate, path?) in paths do
+    io := Aggr.extendPath io candidate path?
   return io
 
 def smokeSuite : IO UInt32 := do
@@ -129,6 +135,83 @@ def smokeSuite : IO UInt32 := do
   let leftClaimBytes := Ix.Claim.ser leftStatement.claim
   let rightClaimBytes := Ix.Claim.ser rightStatement.claim
   let outputClaimBytes := Ix.Claim.ser outputStatement.claim
+  let structuralOutput := leftStatement.joinStructural rightStatement
+  let structuralClaimBytes := Ix.Claim.ser structuralOutput.claim
+  let structuralTrees := Aggr.CheckEnvTrees.structuralAdviceTrees
+    leftStatement rightStatement structuralOutput
+  let structuralPathAdvice := Aggr.CheckEnvTrees.structuralPathAdvice
+    leftStatement rightStatement structuralOutput
+
+  -- ── M1-d production policy / claim derivation ──────────────────────────
+  -- Three leaves make the direct policy exercise both the IxVM+IxVM and
+  -- aggregate+IxVM pair shapes. The threshold keeps the lower fold flat and
+  -- the root structural.
+  let driverOps : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp :=
+    #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3]
+  let defaultDriverPlan := Ix.Cli.AggregateCmd.schedulePlan
+    driverOps #[2, 1, 1] 3
+  let directDriverPlan := Ix.Cli.AggregateCmd.schedulePlan
+    driverOps #[2, 1, 1] 3 true
+  let singletonDirectPlan := Ix.Cli.AggregateCmd.schedulePlan
+    #[.leaf 0] #[2] 0 true
+  let wrapFirstShapes : Bool := match defaultDriverPlan with
+    | .ok plan =>
+      plan.map (·.shape?) == #[some 0, some 0, some 5, some 0, some 9] &&
+        plan.all (·.kind == .aggr)
+    | .error _ => false
+  let directShapes : Bool := match directDriverPlan with
+    | .ok plan =>
+      plan.map (·.shape?) == #[none, none, some 2, none, some 8] &&
+        plan.map (·.kind) == #[.ixvm, .ixvm, .aggr, .ixvm, .aggr]
+    | .error _ => false
+  let singletonStillWraps : Bool := match singletonDirectPlan with
+    | .ok #[slot] => slot.kind == .aggr && slot.shape? == some 0
+    | _ => false
+  let shapeWeightsBounded : Bool := match defaultDriverPlan, directDriverPlan with
+    | .ok wraps, .ok direct =>
+      Ix.Cli.AggregateCmd.aggregateSlotRamWeights wraps == #[
+        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
+        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
+        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
+          3 * Ix.Cli.AggregateCmd.aggregateFlatJoinRamPerSubjectBytes,
+        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
+        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes] &&
+      Ix.Cli.AggregateCmd.aggregateSlotRamWeights direct == #[
+        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
+        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
+        Ix.Cli.AggregateCmd.aggregateDirectJoinRamBytes,
+        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
+        Ix.Cli.AggregateCmd.aggregateMixedJoinRamBytes]
+    | _, _ => false
+  let driverPrepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
+    { claim := leftStatement.claim
+      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees leftStatement },
+    { claim := rightStatement.claim
+      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees rightStatement },
+    { claim := rightStatement.claim
+      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees rightStatement }
+  ]
+  let driverParameters : MultiStark.RecursionParameters := {
+    commitment := recCommitParams, fri := innerFri
+  }
+  let defaultDriverSpecs := defaultDriverPlan.bind fun plan =>
+    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
+      fakeVerifyIdx fakeAggrIdx driverParameters
+  let directDriverSpecs := directDriverPlan.bind fun plan =>
+    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
+      fakeVerifyIdx fakeAggrIdx driverParameters
+  let uniformDriverClaims : Bool := match defaultDriverSpecs, directDriverSpecs with
+    | .ok wraps, .ok direct => match wraps[0]?, wraps.back?, direct[0]?, direct.back? with
+      | some wrappedLeaf, some wrappedRoot, some rawLeaf, some directRoot =>
+        wrappedLeaf.outerClaim == Ix.Cli.AggregateCmd.aggregateOuterClaim
+          allowed fakeAggrIdx leftStatement.claim &&
+        rawLeaf.kind == .ixvm && directRoot.kind == .aggr &&
+        wrappedRoot.outerClaim == directRoot.outerClaim &&
+        Ix.Cli.AggregateCmd.aggregateCacheVersion == 2 &&
+        wrappedLeaf.cacheKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+          aggrVk driverParameters wrappedLeaf.outerClaim 1
+      | _, _, _, _ => false
+    | _, _ => false
 
   -- ── child proofs ────────────────────────────────────────────────────────
   -- Kind 0 ("IxVM"): claim = [0, fake_verify_claim, digest(CheckEnv bytes)].
@@ -155,19 +238,30 @@ def smokeSuite : IO UInt32 := do
   let rightSelf ← match mkSelfChild allowed rightClaimBytes with
     | .error e => IO.eprintln s!"right self proof advice encoding failed: {e}"; return 1
     | .ok child => pure child
+  let structuralSelf ← match mkSelfChild allowed structuralClaimBytes with
+    | .error e => IO.eprintln s!"structural self proof advice encoding failed: {e}"; return 1
+    | .ok child => pure child
 
   let run (shape : Nat) (children : Array ChildSlot) (outBytes : ByteArray)
       (outClaim? : Option ByteArray := none)
       (preimages : Array ByteArray := #[])
-      (trees : Array Ix.AssumptionTree := #[]) :=
+      (trees : Array Ix.AssumptionTree := #[])
+      (paths : Array (Address × Option Ix.Merkle.MerklePath) := #[]) :=
     aggrCompiled.bytecode.execute ixAggrIdx (Aggr.pubInput allowed outBytes)
-      (mkIO allowed shape ixvmVk aggrVk children outClaim? preimages trees)
+      (mkIO allowed shape ixvmVk aggrVk children outClaim? preimages trees paths)
   let pairShape (l r : Aggr.ChildKind) := Aggr.shapeCode (l, some r)
   let runPair (l r : Aggr.ChildKind) (leftChild rightChild : ChildSlot) :=
     run (pairShape l r) #[leftChild, rightChild] outputClaimBytes
       (outClaim? := some outputClaimBytes)
       (preimages := #[leftClaimBytes, rightClaimBytes])
       (trees := adviceTrees)
+  let runStructural (l r : Aggr.ChildKind)
+      (leftChild rightChild : ChildSlot)
+      (paths := structuralPathAdvice) :=
+    run (Aggr.structuralShapeCode l r) #[leftChild, rightChild]
+      structuralClaimBytes (outClaim? := some structuralClaimBytes)
+      (preimages := #[leftClaimBytes, rightClaimBytes])
+      (trees := structuralTrees) (paths := paths)
 
   IO.println "ix-aggr (proving stand-in children + interpreting all shapes)…"
   (← IO.getStdout).flush
@@ -179,6 +273,24 @@ def smokeSuite : IO UInt32 := do
   let pairIA := runPair .ixvm .aggr leftIxvm rightSelf
   let pairAI := runPair .aggr .ixvm leftSelf rightIxvm
   let pairAA := runPair .aggr .aggr leftSelf rightSelf
+  let structuralII := runStructural .ixvm .ixvm leftIxvm rightIxvm
+  let structuralIA := runStructural .ixvm .aggr leftIxvm rightSelf
+  let structuralAI := runStructural .aggr .ixvm leftSelf rightIxvm
+  let structuralAA := runStructural .aggr .aggr leftSelf rightSelf
+
+  -- A structural parent consumes a structural child's free-form subject root
+  -- opaquely. This is the monotone composition path used above the scheduler
+  -- threshold: once structural, all ancestors remain structural.
+  let nestedStructuralOutput := structuralOutput.joinStructural rightStatement
+  let nestedStructuralBytes := Ix.Claim.ser nestedStructuralOutput.claim
+  let nestedStructural := run (Aggr.structuralShapeCode .aggr .ixvm)
+    #[structuralSelf, rightIxvm] nestedStructuralBytes
+    (outClaim? := some nestedStructuralBytes)
+    (preimages := #[structuralClaimBytes, rightClaimBytes])
+    (trees := Aggr.CheckEnvTrees.structuralAdviceTrees
+      structuralOutput rightStatement nestedStructuralOutput)
+    (paths := Aggr.CheckEnvTrees.structuralPathAdvice
+      structuralOutput rightStatement nestedStructuralOutput)
 
   -- ── codegen/native parity ───────────────────────────────────────────────
   -- The generated Rust aggregator (`crates/ixvm-codegen/src/aiur_ix_aggr.rs`)
@@ -198,12 +310,101 @@ def smokeSuite : IO UInt32 := do
     leftIxvm.proofAdviceBytes rightIxvm.proofAdviceBytes ixvmVk aggrVk
     leftIxvm.claimsBytes rightIxvm.claimsBytes outputClaimBytes allowed
     (Aggr.preimagesBlob #[leftClaimBytes, rightClaimBytes])
-    (Aggr.treesBlob adviceTrees)
+    (Aggr.treesBlob adviceTrees) (Aggr.pathsBlob #[])
   let nativeWrap := aggrCompiled.bytecode.executeIxAggr ixAggrIdx
     (Aggr.pubInput allowed leftClaimBytes) (Aggr.shapeCode (.ixvm, none))
     leftIxvm.proofAdviceBytes ByteArray.empty ixvmVk aggrVk
     leftIxvm.claimsBytes ByteArray.empty leftClaimBytes allowed
-    (Aggr.preimagesBlob #[]) (Aggr.treesBlob #[])
+    (Aggr.preimagesBlob #[]) (Aggr.treesBlob #[]) (Aggr.pathsBlob #[])
+  let nativeStructural := aggrCompiled.bytecode.executeIxAggr ixAggrIdx
+    (Aggr.pubInput allowed structuralClaimBytes)
+    (Aggr.structuralShapeCode .ixvm .ixvm)
+    leftIxvm.proofAdviceBytes rightIxvm.proofAdviceBytes ixvmVk aggrVk
+    leftIxvm.claimsBytes rightIxvm.claimsBytes structuralClaimBytes allowed
+    (Aggr.preimagesBlob #[leftClaimBytes, rightClaimBytes])
+    (Aggr.treesBlob structuralTrees) (Aggr.pathsBlob structuralPathAdvice)
+
+  -- Native keyed-blob framing is strict: even an otherwise honest pair must
+  -- reject a preimage blob that omits its u32 entry count.
+  let malformedNativeFraming := aggrCompiled.bytecode.executeIxAggr ixAggrIdx
+    (Aggr.pubInput allowed outputClaimBytes) (pairShape .ixvm .ixvm)
+    leftIxvm.proofAdviceBytes rightIxvm.proofAdviceBytes ixvmVk aggrVk
+    leftIxvm.claimsBytes rightIxvm.claimsBytes outputClaimBytes allowed
+    ⟨#[]⟩ (Aggr.treesBlob adviceTrees) (Aggr.pathsBlob #[])
+
+  let structuralHostCorrect :=
+    structuralOutput.subjects.root ==
+      Ix.Merkle.nodeHash leftStatement.subjects.root rightStatement.subjects.root &&
+    structuralOutput.assumptions.map (·.leaves) == some #[d] &&
+    structuralPathAdvice.size == 3
+
+  -- A path that stops at the left child root never reaches the structural
+  -- output root.
+  let wrongRootPathAdvice := structuralPathAdvice.map fun (candidate, path?) =>
+    if candidate == a then
+      (candidate, leftStatement.subjects.merkleProof candidate)
+    else (candidate, path?)
+  let wrongRootPath := runStructural .ixvm .ixvm leftIxvm rightIxvm
+    (paths := wrongRootPathAdvice)
+
+  -- Alter one sibling while retaining a syntactically valid path.
+  let tamperedPathAdvice := structuralPathAdvice.map fun (candidate, path?) =>
+    if candidate == a then
+      match path? with
+      | some path => match path[0]? with
+        | some (_, side) => (candidate, some (path.set! 0 (e, side)))
+        | none => (candidate, path?)
+      | none => (candidate, path?)
+    else (candidate, path?)
+  let tamperedPath := runStructural .ixvm .ixvm leftIxvm rightIxvm
+    (paths := tamperedPathAdvice)
+
+  -- Every candidate requires an explicit keyed choice; there is no implicit
+  -- carry default.
+  let droppedPathAdvice := structuralPathAdvice.filter fun (candidate, _) =>
+    candidate != d
+  let droppedPath := runStructural .ixvm .ixvm leftIxvm rightIxvm
+    (paths := droppedPathAdvice)
+
+  -- Candidate d chooses carry, but this output omits it.
+  let missingCarriedOutput : Aggr.CheckEnvTrees :=
+    { subjects := structuralOutput.subjects, assumptions := none }
+  let missingCarriedBytes := Ix.Claim.ser missingCarriedOutput.claim
+  let missingCarried := run (Aggr.structuralShapeCode .ixvm .ixvm)
+    #[leftIxvm, rightIxvm] missingCarriedBytes
+    (outClaim? := some missingCarriedBytes)
+    (preimages := #[leftClaimBytes, rightClaimBytes])
+    (trees := Aggr.CheckEnvTrees.structuralAdviceTrees
+      leftStatement rightStatement missingCarriedOutput)
+    (paths := Aggr.CheckEnvTrees.structuralPathAdvice
+      leftStatement rightStatement missingCarriedOutput)
+
+  -- The same child statements cannot switch between flat and structural
+  -- semantics merely by changing the shape hint: each arm binds a different
+  -- output root equation.
+  let structuralHintOnFlatOutput := run
+    (Aggr.structuralShapeCode .ixvm .ixvm) #[leftIxvm, rightIxvm]
+    outputClaimBytes (outClaim? := some outputClaimBytes)
+    (preimages := #[leftClaimBytes, rightClaimBytes])
+    (trees := structuralTrees) (paths := structuralPathAdvice)
+  let flatHintOnStructuralOutput := run (pairShape .ixvm .ixvm)
+    #[leftIxvm, rightIxvm] structuralClaimBytes
+    (outClaim? := some structuralClaimBytes)
+    (preimages := #[leftClaimBytes, rightClaimBytes])
+    (trees := Aggr.CheckEnvTrees.adviceTrees
+      leftStatement rightStatement structuralOutput)
+
+  -- A flat parent must reopen every subject as a canonical tree. Feeding it
+  -- a genuinely structural child therefore rejects, while the structural
+  -- parent above accepts the same child root opaquely.
+  let flatAfterStructuralOutput := structuralOutput.join rightStatement
+  let flatAfterStructuralBytes := Ix.Claim.ser flatAfterStructuralOutput.claim
+  let flatFedStructuralChild := run (pairShape .aggr .ixvm)
+    #[structuralSelf, rightIxvm] flatAfterStructuralBytes
+    (outClaim? := some flatAfterStructuralBytes)
+    (preimages := #[structuralClaimBytes, rightClaimBytes])
+    (trees := Aggr.CheckEnvTrees.adviceTrees
+      structuralOutput rightStatement flatAfterStructuralOutput)
 
   -- ── negative cases — one broken binding each ────────────────────────────
   -- Shape hint lies about the child's system: a self proof cannot verify
@@ -261,20 +462,65 @@ def smokeSuite : IO UInt32 := do
   let mismatchedTree := aggrCompiled.bytecode.execute ixAggrIdx
     (Aggr.pubInput allowed outputClaimBytes) mismatchedIO
 
+  -- A self-consistent free-form tree with descending leaves is not a
+  -- canonical set tree, even when its root matches the public output claim.
+  let sortedOutputLeaves := (#[a, b, c]).qsort fun x y => compare x y == .lt
+  let unsortedSubjects : Ix.AssumptionTree :=
+    .node (.node (.leaf sortedOutputLeaves[2]!) (.leaf sortedOutputLeaves[1]!))
+      (.leaf sortedOutputLeaves[0]!)
+  let unsortedStatement : Aggr.CheckEnvTrees := {
+    subjects := unsortedSubjects
+    assumptions := outputStatement.assumptions
+  }
+  let unsortedBytes := Ix.Claim.ser unsortedStatement.claim
+  let unsorted := run (pairShape .ixvm .ixvm) #[leftIxvm, rightIxvm]
+    unsortedBytes (outClaim? := some unsortedBytes)
+    (preimages := #[leftClaimBytes, rightClaimBytes])
+    (trees := Aggr.CheckEnvTrees.adviceTrees
+      leftStatement rightStatement unsortedStatement)
+
+  -- Identity framing and shape dispatch are closed: shortened blobs and
+  -- out-of-range shape bytes cannot select a permissive arm.
+  let shortAllowed := allowed.extract 0 72
+  let shortIdentity := aggrCompiled.bytecode.execute ixAggrIdx
+    (Aggr.pubInput shortAllowed leftClaimBytes)
+    (mkIO shortAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
+      #[leftIxvm])
+  let invalidShape := run 10 #[leftIxvm] leftClaimBytes
+
   lspecIO (.ofList [("ix-aggr", [
     test "ixAggr prunes the Ix-agnostic lift entrypoint" liftPruned,
     test "pair fold leaves exactly one outstanding assumption"
       (outputStatement.assumptions.map (·.leaves) == some #[d]),
+    test "structural fold is nodeHash(left,right) with one carried assumption"
+      structuralHostCorrect,
+    test "production wrap-first policy selects shapes 0, 5, and 9"
+      wrapFirstShapes,
+    test "direct-join policy selects raw leaves plus shapes 2 and 8"
+      directShapes,
+    test "direct mode still wraps a singleton root" singletonStillWraps,
+    test "scheduler RAM weights follow the selected ix_aggr shapes"
+      shapeWeightsBounded,
+    test "driver specs use uniform aggregate claims and cache version 2"
+      uniformDriverClaims,
     expectOk "wrap of an IxVM child accepts" wrapIxvm,
     expectOk "wrap of a self child accepts" wrapSelf,
     expectOk "pair (IxVM, IxVM) accepts" pairII,
     expectOk "pair (IxVM, self) accepts" pairIA,
     expectOk "pair (self, IxVM) accepts" pairAI,
     expectOk "pair (self, self) accepts" pairAA,
+    expectOk "structural pair (IxVM, IxVM) accepts" structuralII,
+    expectOk "structural pair (IxVM, self) accepts" structuralIA,
+    expectOk "structural pair (self, IxVM) accepts" structuralAI,
+    expectOk "structural pair (self, self) accepts" structuralAA,
+    expectOk "structural parent accepts a structural self child"
+      nestedStructural,
     test "codegen'd pair matches interpreter (output + query counts)"
       (sameCounts nativePair pairII),
     test "codegen'd wrap matches interpreter (output + query counts)"
       (sameCounts nativeWrap wrapIxvm),
+    test "codegen'd structural pair matches interpreter (output + query counts)"
+      (sameCounts nativeStructural structuralII),
     expectErr "shape hint lying about the child system is rejected" shapeLie,
     expectErr "tampered proof advice is rejected" tampered,
     expectErr "self child under a foreign identity is rejected" foreignIdentity,
@@ -284,6 +530,23 @@ def smokeSuite : IO UInt32 := do
     expectErr "pair output with an extra subject is rejected" extraSubject,
     expectErr "tree advice not reproducing its keyed root is rejected"
       mismatchedTree,
+    expectErr "flat pair rejects a self-consistent unsorted subject tree"
+      unsorted,
+    expectErr "native pair rejects malformed keyed-blob framing"
+      malformedNativeFraming,
+    expectErr "ix_aggr rejects a shortened identity blob" shortIdentity,
+    expectErr "ix_aggr rejects an out-of-range shape hint" invalidShape,
+    expectErr "structural pair rejects a path to the wrong root" wrongRootPath,
+    expectErr "structural pair rejects a tampered path sibling" tamperedPath,
+    expectErr "structural pair rejects a missing path choice" droppedPath,
+    expectErr "structural pair rejects an omitted carried assumption"
+      missingCarried,
+    expectErr "structural shape hint rejects a flat output root"
+      structuralHintOnFlatOutput,
+    expectErr "flat shape hint rejects a structural output root"
+      flatHintOnStructuralOutput,
+    expectErr "flat pair rejects a genuinely structural child subject root"
+      flatFedStructuralChild,
   ])]) []
 
 end Tests.Aggr

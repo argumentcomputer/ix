@@ -1262,15 +1262,18 @@ fn build_ix_aggr_io_buffer(
   allowed: &[u8],
   preimages_blob: &[u8],
   trees_blob: &[u8],
+  paths_blob: &[u8],
 ) -> Result<IOBuffer, String> {
   use ixvm_codegen::aiur_ix_aggr_runner::{
-    AggrAdvice, aggr_io_buffer, decode_aggr_preimages, decode_aggr_trees,
+    AggrAdvice, aggr_io_buffer, decode_aggr_paths, decode_aggr_preimages,
+    decode_aggr_trees,
   };
 
   let shape = u8::try_from(shape)
     .map_err(|err| format!("aggr shape {shape} out of range: {err}"))?;
   let preimages = decode_aggr_preimages(preimages_blob)?;
   let trees = decode_aggr_trees(trees_blob)?;
+  let paths = decode_aggr_paths(paths_blob)?;
   Ok(aggr_io_buffer(&AggrAdvice {
     shape,
     proof_advice: [left_proof_advice, right_proof_advice],
@@ -1281,6 +1284,7 @@ fn build_ix_aggr_io_buffer(
     allowed,
     preimages: &preimages,
     trees: &trees,
+    paths: &paths,
   }))
 }
 
@@ -1307,6 +1311,7 @@ extern "C" fn rs_aiur_ix_aggr_execute(
   allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
   preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
   trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
@@ -1323,6 +1328,7 @@ extern "C" fn rs_aiur_ix_aggr_execute(
     allowed_bytes.as_bytes(),
     preimages_blob.as_bytes(),
     trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
   ) {
     Ok(io) => io,
     Err(err) => return LeanExcept::error_string(&err),
@@ -1369,6 +1375,7 @@ extern "C" fn rs_aiur_ix_aggr_prove(
   allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
   preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
   trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1384,6 +1391,7 @@ extern "C" fn rs_aiur_ix_aggr_prove(
     allowed_bytes.as_bytes(),
     preimages_blob.as_bytes(),
     trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
   ) {
     Ok(io) => io,
     Err(err) => return LeanExcept::error_string(&err),

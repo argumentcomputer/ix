@@ -53,8 +53,9 @@ import Tests.Ix.CondenseM
 import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
-import Tests.MultiStarkActivation
 import Tests.Aggr
+import Tests.AggrSemantics
+import Tests.AggrActivation
 import Tests.Cli
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -187,9 +188,9 @@ def primaryRunners : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
-  -- Heterogeneous aggregation circuit: all five `ix_aggr` shapes over
-  -- stand-in child systems, plus one negative case per broken binding.
-  ("ix-aggr", Tests.Aggr.smokeSuite),
+  -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
+  -- driver/cache semantics, and one negative case per broken binding.
+  ("ix-aggr", Tests.Aggr.convergedSuite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
@@ -323,11 +324,11 @@ def main (args : List String) : IO UInt32 := do
   if args.contains "cli" then
     return ← Tests.Cli.suite
 
-  -- Section 13 WP-D diagnostic: keep the 98-case, twice-executed activation
-  -- matrix out of the default primary suite while making its gate explicit and
-  -- independent of the large compiled Lean environment used by ignored tests.
+  -- Section 14 M1-e diagnostic: keep the 132-case, twice-executed `ix_aggr`
+  -- activation matrix out of the default primary suite while making its gate
+  -- explicit and independent of the large environment used by ignored tests.
   if args.contains "aggregate-activation" then
-    return ← Tests.MultiStark.activationAudit
+    return ← Tests.Aggr.activationAudit
 
   let runIgnored := args.contains "--ignored"
   let includeIgnored := args.contains "--include-ignored"
