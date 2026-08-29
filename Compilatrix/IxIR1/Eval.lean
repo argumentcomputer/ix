@@ -384,7 +384,10 @@ def applyGo (ctx : Ctx) (fuel : Nat) (store : Store) (fv : RVal)
             let (store', r) ← invoke ctx fuel f (total.take ar) store
             applyGo ctx fuel store' r (total.drop ar)
         | .ctorN .. => .error (.stuck "apply of a constructor node")
-    | _ => .error (.stuck "apply of a non-node value")
+    | .erased => do
+      let store ← dropMany ctx fuel store args
+      .ok (store, .erased)
+    | .lit _ => .error (.stuck "apply of a non-node value")
   termination_by fuel
 
 /-- Perceus-style deep drop of a shared value: decrement, and at zero

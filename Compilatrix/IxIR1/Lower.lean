@@ -108,8 +108,65 @@ Non-`many` functions must remain visible as saturated known calls. -/
 def papSafe (e : IxIR0.Expr) : Bool :=
   (lamUses e).all fun u => u == .many
 
-private def nonManyPapMsg : String :=
+/-- Stable diagnostic for the v0 no-freeze policy.  Kept public so the
+executable restriction corpus cannot drift from the lowerer. -/
+def freezeNeededMsg : String :=
+  "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)"
+
+/-- Stable diagnostic for first-class functions whose telescope is not
+all-`many`. -/
+def nonManyPapMsg : String :=
   "non-many function values require saturated known calls (one-shot paps deferred)"
+
+/-- Stable diagnostic for consuming projection from a unique source. -/
+def uniqueDestructuringMsg : String :=
+  "projection from a unique value (unique destructuring deferred)"
+
+/-- Stable diagnostic for a unique value captured by a shared closure. -/
+def uniqueCaptureMsg : String :=
+  "a lambda captures a unique value (deferred)"
+
+/-- Stable diagnostic for a recursive-self value used below saturation. -/
+def underAppliedRecSelfMsg : String :=
+  "under-applied recSelf (v1 requires saturated self-calls)"
+
+/-- The complete policy inventory for the current IxIR₀ → IxIR₁ lowerer.
+Each entry has an exact executable rejection witness in `Guards`; the design
+ledger and wake conditions live in `docs/lowering-restrictions.md`. -/
+inductive RestrictionKind where
+  | freeze
+  | uniqueDestructuring
+  | sharedFunctionValues
+  | uniqueCapture
+  | modeMonomorphicRecursors
+  | saturatedRecSelf
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+namespace RestrictionKind
+
+def all : Array RestrictionKind := #[
+  .freeze,
+  .uniqueDestructuring,
+  .sharedFunctionValues,
+  .uniqueCapture,
+  .modeMonomorphicRecursors,
+  .saturatedRecSelf
+]
+
+/-- The diagnostic pinned by the representative witness for each policy.
+Mode-monomorphic recursors reject a unique major through the already-decided
+no-freeze boundary, so those two categories deliberately share a message. -/
+def diagnostic : RestrictionKind → String
+  | .freeze | .modeMonomorphicRecursors => freezeNeededMsg
+  | .uniqueDestructuring => uniqueDestructuringMsg
+  | .sharedFunctionValues => nonManyPapMsg
+  | .uniqueCapture => uniqueCaptureMsg
+  | .saturatedRecSelf => underAppliedRecSelfMsg
+
+end RestrictionKind
+
+#guard RestrictionKind.all.size == 6
+#guard RestrictionKind.all.toList.eraseDups.length == 6
 
 /-- The world a binder mode assigns (gate B whole-value scoping):
 linear/affine values are unique, everything else shared. -/
@@ -242,6 +299,26 @@ def parameterEntries (base : Nat) :
     parameterEntries (base + 1) tail remaining ++
       [.slot base (remaining tail.length) uses true]
 
+/-- Dependent traversal for the canonical parameter-entry builder.  Tail
+layout, absolute-slot advancement, and outer-slot construction recurse once;
+clients provide only empty and appended-slot result constructors. -/
+theorem parameterEntries_traverse
+    (remaining : Nat → Nat)
+    {Result : Nat → List Uses → List VEntry → Prop}
+    (hnil : ∀ base, Result base [] [])
+    (hcons : ∀ {base : Nat} {mode : Uses} {modes : List Uses}
+        {tail : List VEntry},
+      Result (base + 1) modes tail →
+      Result base (mode :: modes)
+        (tail ++ [.slot base (remaining modes.length) mode true])) :
+    ∀ (base : Nat) (modes : List Uses),
+      Result base modes (parameterEntries base modes remaining) := by
+  intro base modes
+  induction modes generalizing base with
+  | nil => exact hnil base
+  | cons mode modes ih =>
+    simpa [parameterEntries] using hcons (ih (base + 1))
+
 /-- Logical entries for an ordered subset of older slots captured by a lifted
 lambda. Selected entries receive consecutive absolute capture slots; entries
 outside the subset remain as released proof-side placeholders so source
@@ -257,23 +334,68 @@ def selectedEntriesFrom (selected : Nat → Bool) (remaining : Nat → Nat) :
         .slot 0 0 .many false ::
           selectedEntriesFrom selected remaining rest next
 
+/-- Dependent traversal for the selected-entry builder.  Selection dispatch,
+absolute-slot advancement, and released/held entry construction recurse once;
+clients provide only empty, unselected, and selected result constructors. -/
+theorem selectedEntriesFrom_traverse
+    (selected : Nat → Bool) (remaining : Nat → Nat)
+    {Result : List Nat → Nat → List VEntry → Prop}
+    (hnil : ∀ next, Result [] next [])
+    (hfalse : ∀ {index : Nat} {rest : List Nat} {next : Nat}
+        {tail : List VEntry},
+      selected index = false →
+      Result rest next tail →
+      Result (index :: rest) next
+        (.slot 0 0 .many false :: tail))
+    (htrue : ∀ {index : Nat} {rest : List Nat} {next : Nat}
+        {tail : List VEntry},
+      selected index = true →
+      Result rest (next + 1) tail →
+      Result (index :: rest) next
+        (.slot next (remaining index) .many true :: tail)) :
+    ∀ (indices : List Nat) (next : Nat),
+      Result indices next
+        (selectedEntriesFrom selected remaining indices next) := by
+  intro indices
+  induction indices with
+  | nil => exact hnil
+  | cons index rest ih =>
+    intro next
+    cases hselected : selected index with
+    | false =>
+      simpa [selectedEntriesFrom, hselected] using
+        hfalse hselected (ih next)
+    | true =>
+      simpa [selectedEntriesFrom, hselected] using
+        htrue hselected (ih (next + 1))
+
 @[simp] theorem selectedEntriesFrom_length (selected : Nat → Bool)
     (remaining : Nat → Nat) (indices : List Nat) (next : Nat) :
     (selectedEntriesFrom selected remaining indices next).length =
       indices.length := by
-  induction indices generalizing next with
-  | nil => rfl
-  | cons index indices ih =>
-    cases hselected : selected index <;>
-      simp [selectedEntriesFrom, hselected, ih]
+  exact selectedEntriesFrom_traverse selected remaining
+    (Result := fun sourceIndices _ entries =>
+      entries.length = sourceIndices.length)
+    (hnil := fun _ => rfl)
+    (hfalse := by
+      intro index rest current tail hselected htail
+      simpa using congrArg Nat.succ htail)
+    (htrue := by
+      intro index rest current tail hselected htail
+      simpa using congrArg Nat.succ htail)
+    indices next
 
 @[simp] theorem parameterEntries_length (base : Nat) (modes : List Uses)
     (remaining : Nat → Nat) :
     (parameterEntries base modes remaining).length = modes.length := by
-  induction modes generalizing base with
-  | nil => rfl
-  | cons mode modes ih =>
-    simp [parameterEntries, ih]
+  exact parameterEntries_traverse remaining
+    (Result := fun _ sourceModes entries =>
+      entries.length = sourceModes.length)
+    (hnil := fun _ => rfl)
+    (hcons := by
+      intro current mode rest tail htail
+      simpa using congrArg Nat.succ htail)
+    base modes
 
 /-- One dead parameter to release at function entry. Recording both its
 source-entry index and absolute runtime slot lets the emitted operation and
@@ -349,6 +471,38 @@ def recursorFieldRetains (fieldAbs : Nat) (rhs : IxIR0.Expr) :
     (if uses == 0 then [] else [⟨fieldCount, fieldAbs, uses⟩]) ++
       recursorFieldRetains (fieldAbs + 1) rhs fieldCount
 
+/-- Dependent traversal for the canonical recursor-field retain builder.
+Descending source-entry indices, ascending absolute field slots, and the
+zero-use retain omission recurse once; clients provide only empty, skipped,
+and retained-field result constructors. -/
+theorem recursorFieldRetains_traverse
+    (rhs : IxIR0.Expr)
+    {Result : Nat → Nat → List RecursorFieldRetain → Prop}
+    (hnil : ∀ fieldAbs, Result fieldAbs 0 [])
+    (hskip : ∀ {fieldAbs fieldCount : Nat}
+        {tail : List RecursorFieldRetain},
+      countUses fieldCount rhs = 0 →
+      Result (fieldAbs + 1) fieldCount tail →
+      Result fieldAbs (fieldCount + 1) tail)
+    (hretain : ∀ {fieldAbs fieldCount : Nat}
+        {tail : List RecursorFieldRetain},
+      countUses fieldCount rhs ≠ 0 →
+      Result (fieldAbs + 1) fieldCount tail →
+      Result fieldAbs (fieldCount + 1)
+        (⟨fieldCount, fieldAbs, countUses fieldCount rhs⟩ :: tail)) :
+    ∀ (fieldAbs fieldCount : Nat),
+      Result fieldAbs fieldCount
+        (recursorFieldRetains fieldAbs rhs fieldCount) := by
+  intro fieldAbs fieldCount
+  induction fieldCount generalizing fieldAbs with
+  | zero => exact hnil fieldAbs
+  | succ fieldCount ih =>
+    by_cases hzero : countUses fieldCount rhs = 0
+    · simpa [recursorFieldRetains, hzero] using
+        hskip hzero (ih (fieldAbs + 1))
+    · simpa [recursorFieldRetains, hzero] using
+        hretain hzero (ih (fieldAbs + 1))
+
 /-- Execute a canonical field-retain list, updating the field-entry block and
 building the exact `dup` emitter used by a recursor alternative. -/
 def applyRecursorFieldRetains (Γ : VEnv) :
@@ -378,7 +532,7 @@ result type the lowering must conservatively respect the declaration. -/
 def requireResultWorld (actual demand : Owned) : LowerM Unit := do
   if actual == demand then pure ()
   else if actual == .unique then
-    throw "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)"
+    throw freezeNeededMsg
   else
     throw "call result is shared at unique demand"
 
@@ -405,7 +559,7 @@ def lowerE (src : IxIR0.Env) (fuel : Nat) (Γ : VEnv) (w : Owned)
         if !held then throw s!"internal: variable {i} used after release"
         else if worldOfUses uses != w then
           if worldOfUses uses == .unique then
-            throw "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)"
+            throw freezeNeededMsg
           else
             throw "dereliction: shared value at unique demand"
         else if remaining ≥ 2 then
@@ -534,7 +688,7 @@ def lowerBorrow (src : IxIR0.Env) (fuel : Nat) (Γ : VEnv)
       | some (.slot abs remaining uses held) =>
         if !held then throw s!"internal: variable {i} borrowed after release"
         else if worldOfUses uses == .unique then
-          throw "projection from a unique value (unique destructuring deferred)"
+          throw uniqueDestructuringMsg
         else if remaining == 1 then
           let Γ := Γ.setEntry i (.slot abs 0 uses false)
           pure (Γ, id, .slotA abs, true)   -- last occurrence: release after
@@ -567,7 +721,7 @@ def lowerSpine (src : IxIR0.Env) (fuel : Nat) (Γ : VEnv) (w : Owned)
       match Γ.entries[i]? with
       | some (.recSelf arity) =>
         if args.length < arity then
-          throw "under-applied recSelf (v1 requires saturated self-calls)"
+          throw underAppliedRecSelfMsg
         else do
           requireResultWorld .shared w
           knownCall src fuel Γ (.callSelf ·) arity
@@ -707,7 +861,7 @@ def lowerCapture (e : IxIR0.Expr) (Γ : VEnv) (i : Nat) :
   | some (.slot abs r uses held) =>
     if !held then throw "internal: capture of a released variable"
     else if worldOfUses uses == .unique then
-      throw "a lambda captures a unique value (deferred)"
+      throw uniqueCaptureMsg
     else
       let inLam := countUses i e
       if r > inLam then
@@ -863,7 +1017,9 @@ def lowerDecl (src : IxIR0.Env) (fuel : Nat) :
 
 /-- The stateful whole-program action. Factoring it from `lowerAll` exposes
 the final generated-declaration and wrapper-cache state to proofs while the
-public API continues to return only declarations and main code. -/
+transient lowering API returns only declarations and main code. Production
+artifacts cross `LowerAddressed.lowerAllAddressed`, which consumes this final
+state and replaces generated names with declaration content addresses. -/
 def lowerAllAction (decls : List (Address × IxIR0.Decl))
     (main : IxIR0.Expr) (mainW : Owned) (fuel : Nat) :
     LowerM (List (Address × Decl) × Code) := do
@@ -873,14 +1029,59 @@ def lowerAllAction (decls : List (Address × IxIR0.Decl))
   let st ← get
   pure (base ++ st.extra, mainC)
 
-/-- Lower a whole program plus a closed main expression, at the given
-result world for the main expression. -/
+/-- Lower a whole program plus a closed main expression, at the given result
+world for the main expression. This theorem-facing result still contains
+transient generated names; use `lowerAllAddressed` for an emitted artifact. -/
 def lowerAll (decls : List (Address × IxIR0.Decl)) (main : IxIR0.Expr)
     (mainW : Owned := .shared) (fuel : Nat := 10000) :
     Except String (List (Address × Decl) × Code) :=
   match (lowerAllAction decls main mainW fuel).run {} with
   | .ok v _ => .ok v
   | .error e _ => .error e
+
+/-- The indexed form of the stateful whole-program action.  Keeping the final
+state observable lets the compiled artifact boundary distinguish generated
+declarations from source-backed declarations without recognizing the
+temporary address spelling. -/
+def lowerAllIndexedAction (decls : List (Address × IxIR0.Decl))
+    (main : IxIR0.Expr) (mainW : Owned) (fuel : Nat) :
+    LowerM (List (Address × Decl) × Code) :=
+  let sourceIndex := IxIR0.Env.Index.ofList decls
+  let src := sourceIndex.toEnv
+  do
+    let base ← decls.filterMapM (lowerDecl src fuel)
+    let mainC ← lowerFnBody src fuel ⟨[], 0⟩ [] mainW main
+    let st ← get
+    pure (base ++ st.extra, mainC)
+
+/-- The indexed action is propositionally the transparent action: its
+captured index implements exactly `Env.ofList` lookup semantics. -/
+theorem lowerAllIndexedAction_eq_lowerAllAction
+    (decls : List (Address × IxIR0.Decl)) (main : IxIR0.Expr)
+    (mainW : Owned) (fuel : Nat) :
+    lowerAllIndexedAction decls main mainW fuel =
+      lowerAllAction decls main mainW fuel := by
+  simp only [lowerAllIndexedAction, lowerAllAction,
+    IxIR0.Env.Index.toEnv_ofList]
+
+/-- Corpus-scale transient entry point. It constructs the source address index
+once, then runs the same declaration/main lowering action against the captured
+lookup closure. `lowerAllIndexed_eq_lowerAll` keeps the transparent list
+environment as the proof specification; emitted artifacts use
+`lowerAllIndexedAddressed`. -/
+def lowerAllIndexed (decls : List (Address × IxIR0.Decl))
+    (main : IxIR0.Expr) (mainW : Owned := .shared) (fuel : Nat := 10000) :
+    Except String (List (Address × Decl) × Code) :=
+  match (lowerAllIndexedAction decls main mainW fuel).run {} with
+  | .ok value _ => .ok value
+  | .error error _ => .error error
+
+theorem lowerAllIndexed_eq_lowerAll
+    (decls : List (Address × IxIR0.Decl)) (main : IxIR0.Expr)
+    (mainW : Owned) (fuel : Nat) :
+    lowerAllIndexed decls main mainW fuel = lowerAll decls main mainW fuel := by
+  simp only [lowerAllIndexed, lowerAllIndexedAction, lowerAll, lowerAllAction,
+    IxIR0.Env.Index.toEnv_ofList]
 
 /-! ## Readback and the differential harness
 
@@ -1054,10 +1255,11 @@ transactional evaluator would make it checkable; today only successful
 runs carry a store to audit). -/
 def diffExpr (e : IxIR0.Expr) (mainW : Owned := .shared)
     (runFuel : Nat := 100000) : Bool :=
-  match lowerAll IxIR0.Examples.declList e mainW with
+  match lowerAllIndexed IxIR0.Examples.declList e mainW with
   | .error _ => false
   | .ok (ds, mainC) =>
-    let tctx : Ctx := { decls := Env.ofList ds, oracle := tgtOracle }
+    let targetIndex := Env.Index.ofList ds
+    let tctx : Ctx := { decls := targetIndex.toEnv, oracle := tgtOracle }
     match IxIR0.Examples.ctx.run e runFuel, runMain tctx mainC runFuel with
     | .ok v, .ok (store, r) =>
       (match treeOfVal 1000 v, treeOfR store 1000 r with
@@ -1072,10 +1274,11 @@ def diffExpr (e : IxIR0.Expr) (mainW : Owned := .shared)
 /-- Target-only run for counter guards. -/
 def checkLowered (e : IxIR0.Expr) (mainW : Owned)
     (p : Store → RVal → Bool) : Bool :=
-  match lowerAll IxIR0.Examples.declList e mainW with
+  match lowerAllIndexed IxIR0.Examples.declList e mainW with
   | .error _ => false
   | .ok (ds, mainC) =>
-    match runMain { decls := Env.ofList ds, oracle := tgtOracle } mainC with
+    let targetIndex := Env.Index.ofList ds
+    match runMain { decls := targetIndex.toEnv, oracle := tgtOracle } mainC with
     | .ok (store, r) => p store r
     | .error _ => false
 
@@ -1083,7 +1286,7 @@ def checkLowered (e : IxIR0.Expr) (mainW : Owned)
 the expected diagnostic. Keeping the message in the assertion stops
 one mode error from accidentally satisfying a guard for another. -/
 def lowersErr (e : IxIR0.Expr) (mainW : Owned) (expected : String) : Bool :=
-  match lowerAll IxIR0.Examples.declList e mainW with
+  match lowerAllIndexed IxIR0.Examples.declList e mainW with
   | .error msg => msg == expected
   | .ok _ => false
 
@@ -1219,12 +1422,12 @@ private def affDead : IxIR0.Expr := .letE .affine (natE 2) (natE 1)
 
 -- freeze needed: a unique value at shared demand
 #guard lowersErr (.letE .linear (natE 1) (.app (.ref natSucc) (.var 0)))
-  .shared "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)"
+  .shared freezeNeededMsg
 
 -- a unique value into a recursor (the all-`many` fragment)
 #guard lowersErr (.letE .linear (natE 1)
   (.app (.app (.ref natAddDef) (.var 0)) (natE 1))) .shared
-  "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)"
+  freezeNeededMsg
 
 -- function values live in the shared world
 #guard lowersErr (.letE .linear (.lam .many (.var 0)) (.var 0)) .shared
@@ -1234,7 +1437,66 @@ private def affDead : IxIR0.Expr := .letE .affine (natE 2) (natE 1)
 #guard lowersErr
   (.letE .linear (.app (.app (.ref pairMk) (natE 1)) (natE 2))
     (.proj 0 (.var 0))) .shared
-  "projection from a unique value (unique destructuring deferred)"
+  uniqueDestructuringMsg
+
+-- shared paps cannot own a captured unique value
+private def uniqueCaptureRestriction : IxIR0.Expr :=
+  .letE .linear (natE 1) (.lam .many (.var 1))
+
+#guard lowersErr uniqueCaptureRestriction .shared uniqueCaptureMsg
+
+-- a direct recursor call demands every argument in the shared world
+private def modeMonomorphicRecursorRestriction : IxIR0.Expr :=
+  .letE .linear (natE 1)
+    (.app
+      (.app
+        (.app (.ref natRec) (natE 0))
+        (.lam .many (.lam .many (.app (.ref natSucc) (.var 0)))))
+      (.var 0))
+
+#guard lowersErr modeMonomorphicRecursorRestriction .shared freezeNeededMsg
+
+-- `recSelf` exists only in recursor-rule environments.  A one-parameter
+-- recursor has self arity two, so this one-argument rule call witnesses the
+-- exact saturation restriction while the declaration itself is lowered.
+private def underAppliedRecSelfAddr : Address := synthAddr 92
+
+private def underAppliedRecSelfRule : IxIR0.RecRule :=
+  { fields := 0, rhs := .app (.var 1) (.var 0) }
+
+private def underAppliedRecSelfRejected : Bool :=
+  match lowerAll
+      (IxIR0.Examples.declList ++
+        [(underAppliedRecSelfAddr,
+          .recursor 1 false #[underAppliedRecSelfRule])])
+      (natE 0) with
+  | .error message => message == underAppliedRecSelfMsg
+  | .ok _ => false
+
+#guard underAppliedRecSelfRejected
+
+/-- Executable coverage for the complete six-entry policy inventory.  The
+individual guards above retain readable failure locations; this aggregate
+guard prevents a newly listed restriction from landing without a witness. -/
+private def restrictionWitness : RestrictionKind → Bool
+  | kind@(.freeze) =>
+    lowersErr (.letE .linear (natE 1) (.app (.ref natSucc) (.var 0)))
+      .shared kind.diagnostic
+  | kind@(.uniqueDestructuring) =>
+    lowersErr
+      (.letE .linear (.app (.app (.ref pairMk) (natE 1)) (natE 2))
+        (.proj 0 (.var 0)))
+      .shared kind.diagnostic
+  | kind@(.sharedFunctionValues) =>
+    lowersErr (.app (.lam .affine (.lit (.nat 7))) (natE 3))
+      .shared kind.diagnostic
+  | kind@(.uniqueCapture) =>
+    lowersErr uniqueCaptureRestriction .shared kind.diagnostic
+  | kind@(.modeMonomorphicRecursors) =>
+    lowersErr modeMonomorphicRecursorRestriction .shared kind.diagnostic
+  | .saturatedRecSelf => underAppliedRecSelfRejected
+
+#guard RestrictionKind.all.all restrictionWitness
 
 /-! Non-`many` function values are rejected before they can reach the
 all-shared `apply` path: direct lambdas, bare known references, and
@@ -1286,7 +1548,7 @@ deep-free the returned tree with no RC traffic. -/
 #guard
   match lowerAll uniqueResultDecls (.ref uniqueResultDef) .shared with
   | .error msg =>
-    msg == "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)"
+    msg == freezeNeededMsg
   | .ok _ => false
 
 /-! Mixed-mode telescopes: the binder-mode signature is
