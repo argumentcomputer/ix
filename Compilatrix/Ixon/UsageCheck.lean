@@ -4,9 +4,10 @@ import Compilatrix.Ixon.Const
 # Usage checker v0
 
 Whole-value mode checking over Ixon v2 constants — the checked
-pipeline's gate and the future hypothesis supplier for the erasure
-simulation (erasure drops 0-mode binders and arguments, which is sound
-only when the checker has certified they have no runtime occurrences).
+pipeline's gate and the executable hypothesis supplier for erasure
+non-interference. Erasure drops explicit 0-mode binders and also ordinary
+binders whose domains are syntactically sort-like; the checker uses that
+same classification and certifies that their runtime demand is zero.
 
 One bottom-up walk per constant computes, for every subterm:
 
@@ -20,12 +21,13 @@ One bottom-up walk per constant computes, for every subterm:
 Composition is CBV-additive (`Uses.add`); `Uses.mul` appears only as
 the erasure boundary, realized as **ghost mode**: types (all `lam`/
 `all`/`letE` annotations, `all` codomains) and arguments in
-erased-mode parameter positions are walked with all recording and
+eraser-dropped parameter positions are walked with all recording and
 enforcement off — QTT's 0-fragment. Checks:
 
 - **binders** (`lam`): declared `covers` computed; no dereliction is
   built into `covers` (`many` never satisfies a `linear`/`affine`
-  demand);
+  demand). A binder the eraser classifies as dropped is additionally
+  rejected if its computed head use is nonzero;
 - **applications**: parameter and argument worlds must agree — a
   `linear`/`affine` parameter demands a `unique` argument, while a
   `many` parameter demands a shared argument. Both dereliction and
@@ -40,8 +42,15 @@ enforcement off — QTT's 0-fragment. Checks:
 
 Parameter demands come from **syntactic telescopes**: `collectAll`-
 style walks over referenced constants' types (through their sharing
-tables, through `muts` blocks for projections and `recur`) — readable
-without evaluation precisely because modes are data on the binders.
+tables, through `muts` blocks for projections and `recur`). Each demand
+carries the eraser-aligned drop decision as well as its mode and result
+ownership, so normal `many` polymorphic parameters over `Sort` are
+zero-scaled exactly when erasure ghosts them.
+
+This module proves zero usage for every successful ghost walk and exposes
+the accepted-lambda head-zero bridge. `Compilatrix.UsageSound` aligns the
+checker classification with the eraser and derives successful-run semantic
+non-interference through their common erased observation.
 
 ## v0 limitations (recorded, deliberate)
 
@@ -104,7 +113,37 @@ def singleMoved (n i : Nat) : UseVec :=
 def add (a b : UseVec) : UseVec :=
   List.zipWith (fun x y => { uses := x.uses.add y.uses, moved := x.moved || y.moved }) a b
 
+/-- The one executable use of multiplicative grading: erase every recorded
+runtime demand at a source-only boundary. Nonzero modes are deliberately not
+scaled; they compose through `add` plus the flow-sensitive ownership rules. -/
+def zeroScale : UseVec → UseVec
+  | [] => []
+  | use :: rest =>
+    { uses := Uses.mul .erased use.uses, moved := false } :: zeroScale rest
+
+@[simp] theorem zeros_zero : zeros 0 = [] := rfl
+
+@[simp] theorem zeros_succ (n : Nat) :
+    zeros (n + 1) = {} :: zeros n := by
+  rw [zeros, List.replicate_succ]
+  rfl
+
+@[simp] theorem add_zeros (n : Nat) :
+    add (zeros n) (zeros n) = zeros n := by
+  simp [add, zeros]
+
+@[simp] theorem zeroScale_eq_zeros (uses : UseVec) :
+    zeroScale uses = zeros uses.length := by
+  induction uses with
+  | nil => rfl
+  | cons use rest ih =>
+    simp [zeroScale, zeros, List.replicate_succ, ih]
+
 end UseVec
+
+#guard UseVec.zeroScale
+    [{ uses := .many, moved := true }, { uses := .linear, moved := true }] ==
+  UseVec.zeros 2
 
 /-- The world a binder's value lives in, derived from its declared
 usage: `linear`/`affine` are the unique world, `many` the shared one.
@@ -122,6 +161,9 @@ inductive UsageErr where
   /-- A moved (unique-demand-consumed) variable was used more than
   once in total. -/
   | useAfterMove (computed : Uses)
+  /-- The eraser classifies a sort-like binder as compile-time-only,
+  but checking found a runtime use of its value. -/
+  | typeBinderRuntimeUse (computed : Uses)
   /-- A shared value was supplied where a `linear`/`affine` parameter
   demands a unique one. -/
   | dereliction (demanded : Uses)
@@ -158,9 +200,37 @@ def UsageErr.message : UsageErr → String
 
 /-! ## Telescopes from mode-annotated types -/
 
-/-- Per-argument demand: the parameter's `Uses`, and the `Owned` of
-the application's result at that point. -/
-abbrev Telescope := List (Uses × Owned)
+/-- Syntactic sort-valued telescope test, deliberately identical to the
+eraser's `sortLike`.  It lives here as well because UsageCheck is the
+upstream gate and does not import the erasure layer. -/
+def erasureSortLike (sharing : Array Expr) : Nat → Expr → Bool
+  | 0, _ => false
+  | fuel + 1, e =>
+    match e with
+    | .sort _ => true
+    | .all _ _ _ codomain => erasureSortLike sharing fuel codomain
+    | .share index =>
+      match sharing[index.toNat]? with
+      | some target => erasureSortLike sharing fuel target
+      | none => false
+    | _ => false
+
+/-- Binder classification shared extensionally with erasure: an explicit
+zero-mode binder or a syntactically sort-valued telescope is dropped. -/
+def erasureDropsBinder (sharing : Array Expr) (fuel : Nat)
+    (uses : Uses) (domain : Expr) : Bool :=
+  uses == .erased || erasureSortLike sharing fuel domain
+
+/-- Per-argument demand: the declared mode, the application's result world
+at that point, and the eraser-aligned zero-scaling decision.  The third field
+matters for ordinary Lean-style type parameters whose declared mode is
+`many` but whose domain is sort-like. -/
+structure Demand where
+  uses : Uses
+  owned : Owned
+  dropped : Bool
+
+abbrev Telescope := List Demand
 
 /-- Syntactic telescope of a type expression, expanding shares against
 the owning constant's table. Malformed foreign types degrade to a
@@ -171,10 +241,13 @@ def telescopeOf (sharing : Array Expr) (fuel : Nat) (e : Expr) : Telescope :=
   | 0 => []
   | fuel + 1 =>
     match e with
-    | .all u o _ cod => (u, o) :: telescopeOf sharing fuel cod
-    | .share i =>
-      match sharing[i.toNat]? with
-      | some e' => telescopeOf sharing fuel e'
+    | .all uses owned domain codomain =>
+      { uses, owned
+        dropped := erasureDropsBinder sharing fuel uses domain } ::
+        telescopeOf sharing fuel codomain
+    | .share index =>
+      match sharing[index.toNat]? with
+      | some target => telescopeOf sharing fuel target
       | none => []
     | _ => []
 
@@ -238,10 +311,6 @@ structure CheckCtx where
   refs : Array Address := #[]
   selfMuts : Array MutConst := #[]
 
-def selfMutsOf : ConstantInfo → Array MutConst
-  | .muts ms => ms
-  | _ => #[]
-
 def defaultFuel : Nat := 100000
 
 /-- Expand top-level shares (for head/argument shape analysis). -/
@@ -275,7 +344,9 @@ def telescopeOfHead (ctx : CheckCtx) (fuel : Nat) : Expr → Except UsageErr Tel
     match ctx.selfMuts[idx.toNat]? with
     | none => .error (.badRecurIdx idx.toNat)
     | some m => .ok (telescopeOf ctx.sharing fuel (mutTyp m))
-  | e@(.lam ..) => .ok ((Expr.collectLam e).1.map fun (u, _) => (u, .shared))
+  | e@(.lam ..) => .ok ((Expr.collectLam e).1.map fun (uses, domain) =>
+      { uses, owned := .shared
+        dropped := erasureDropsBinder ctx.sharing fuel uses domain })
   | _ => .ok []
 
 private def headEntry : UseVec → Except UsageErr (VarUse × UseVec)
@@ -332,6 +403,9 @@ def check (ctx : CheckCtx) (fuel : Nat) (ghost : Bool) (ws : List Owned)
       let (entry, rest) ← headEntry uvB
       unless ghost do
         unless u.covers entry.uses do throw (.binderCovers u entry.uses)
+        if erasureDropsBinder ctx.sharing fuel u ty &&
+            entry.uses != .erased then
+          throw (.typeBinderRuntimeUse entry.uses)
         if entry.moved && entry.uses != .linear then
           throw (.useAfterMove entry.uses)
         rejectUniqueCaptures 0 rest ws
@@ -358,7 +432,7 @@ def check (ctx : CheckCtx) (fuel : Nat) (ghost : Bool) (ws : List Owned)
       let (uvBase, _) ← check ctx fuel ghost ws base
       let uv ← checkArgs ctx fuel ghost ws tel 0 args uvBase
       let own := if ghost then Owned.shared
-        else ((tel[args.length - 1]?).map (·.2)).getD .shared
+        else ((tel[args.length - 1]?).map (·.owned)).getD .shared
       return (uv, own)
     | .share i =>
       match ctx.sharing[i.toNat]? with
@@ -378,23 +452,27 @@ def checkArgs (ctx : CheckCtx) (fuel : Nat) (ghost : Bool)
     | [] => .ok acc
     | arg :: rest => do
       let contrib ← match tel[i]? with
-        | some (.erased, _) => do
-          -- 0-scaling: the argument is compile-time only.
-          discard <| check ctx fuel true ws arg
-          pure (UseVec.zeros ws.length)
-        | some (q, _) => do
-          let argX ← expandShareE ctx fuel arg
-          let (uvA, ownA) ← check ctx fuel ghost ws argX
-          let uniqueDemand := q == Uses.linear || q == Uses.affine
-          if !ghost && uniqueDemand && ownA != .unique then
-            throw (.dereliction q)
-          if !ghost && !uniqueDemand && ownA == .unique then
-            throw .freezeNeeded
-          pure <| if !ghost && uniqueDemand then
-              match argX with
-              | .var j => UseVec.singleMoved ws.length j.toNat
-              | _ => uvA
-            else uvA
+        | some demand =>
+          if demand.dropped then
+            do
+              -- 0-scaling: the argument is compile-time only.
+              let (uvA, _) ← check ctx fuel true ws arg
+              pure (UseVec.zeroScale uvA)
+          else
+            do
+              let argX ← expandShareE ctx fuel arg
+              let (uvA, ownA) ← check ctx fuel ghost ws argX
+              let uniqueDemand := demand.uses == Uses.linear ||
+                demand.uses == Uses.affine
+              if !ghost && uniqueDemand && ownA != .unique then
+                throw (.dereliction demand.uses)
+              if !ghost && !uniqueDemand && ownA == .unique then
+                throw .freezeNeeded
+              pure <| if !ghost && uniqueDemand then
+                  match argX with
+                  | .var j => UseVec.singleMoved ws.length j.toNat
+                  | _ => uvA
+                else uvA
         | none => do
           -- Unknown demand: count (non-erased), no ownership check.
           let (uvA, _) ← check ctx fuel ghost ws arg
@@ -404,12 +482,389 @@ def checkArgs (ctx : CheckCtx) (fuel : Nat) (ghost : Bool)
 
 end
 
+/-! ## Executable-checker metatheory
+
+The first invariant makes the QTT zero fragment mechanical: a successful
+ghost walk contributes exactly the all-zero vector.  It is proved against the
+real mutually recursive checker, including application-spine collection and
+sharing expansion, rather than against a parallel declarative approximation.
+-/
+
+private def GhostZeroAt (fuel : Nat) : Prop :=
+  (∀ ctx ws e uv own,
+      check ctx fuel true ws e = .ok (uv, own) →
+      uv = UseVec.zeros ws.length) ∧
+  (∀ ctx ws tel i args uv,
+      checkArgs ctx fuel true ws tel i args (UseVec.zeros ws.length) =
+          .ok uv →
+      uv = UseVec.zeros ws.length)
+
+@[simp] private theorem exceptBindOk {α β : Type} (a : α)
+    (f : α → Except UsageErr β) :
+    (Except.ok a >>= f) = f a := rfl
+
+@[simp] private theorem exceptBindErr {α β : Type} (err : UsageErr)
+    (f : α → Except UsageErr β) :
+    (Except.error err >>= f) = Except.error err := rfl
+
+@[simp] private theorem exceptBindPure {α β : Type} (a : α)
+    (f : α → Except UsageErr β) :
+    (do let x ← (pure a : Except UsageErr α); f x) = f a := rfl
+
+@[simp] private theorem exceptDiscardOk {α : Type} (a : α) :
+    discard (Except.ok a : Except UsageErr α) = .ok () := rfl
+
+@[simp] private theorem exceptDiscardErr {α : Type} (err : UsageErr) :
+    discard (Except.error err : Except UsageErr α) = .error err := rfl
+
+@[simp] private theorem exceptThrow {α : Type} (err : UsageErr) :
+    (throw err : Except UsageErr α) = .error err := rfl
+
+private theorem exceptOkPairFst {α β : Type} {a b : α} {x y : β}
+    (h : (Except.ok (a, x) : Except UsageErr (α × β)) = .ok (b, y)) :
+    a = b :=
+  congrArg Prod.fst (Except.ok.inj h)
+
+private theorem ghostZeroAt : ∀ fuel, GhostZeroAt fuel := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    constructor
+    · intro ctx ws e uv own h
+      simp [check] at h
+    · intro ctx ws tel i args uv h
+      simp [checkArgs] at h
+  | succ fuel ih =>
+    obtain ⟨ihCheck, ihArgs⟩ := ih
+    constructor
+    · intro ctx ws e uv own h
+      cases e with
+      | var idx =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        split at h <;> simp_all
+      | sort idx =>
+        rw [check.eq_def] at h
+        exact (exceptOkPairFst h).symm
+      | str idx =>
+        rw [check.eq_def] at h
+        exact (exceptOkPairFst h).symm
+      | nat idx =>
+        rw [check.eq_def] at h
+        exact (exceptOkPairFst h).symm
+      | ref idx univs =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        split at h <;> simp_all
+      | recur idx univs =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        split at h <;> simp_all
+      | prj typeIdx fieldIdx value =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        cases hv : check ctx fuel true ws value with
+        | error err =>
+          rw [hv] at h
+          simp only [exceptBindErr] at h
+          contradiction
+        | ok result =>
+          rcases result with ⟨valueUses, valueOwn⟩
+          have hzero := ihCheck _ _ _ _ _ hv
+          rw [hv] at h
+          simp only [exceptBindOk] at h
+          exact (exceptOkPairFst h).symm.trans hzero
+      | lam uses domain body =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        cases hd : check ctx fuel true ws domain with
+        | error err =>
+          rw [hd] at h
+          contradiction
+        | ok domainResult =>
+          rw [hd] at h
+          cases hb : check ctx fuel true (worldOf uses :: ws) body with
+          | error err =>
+            rw [hb] at h
+            simp only [exceptBindErr] at h
+            contradiction
+          | ok bodyResult =>
+            rcases bodyResult with ⟨bodyUses, bodyOwn⟩
+            rw [hb] at h
+            simp only [exceptBindOk] at h
+            cases he : headEntry bodyUses with
+            | error err =>
+              rw [he] at h
+              simp only [exceptBindErr] at h
+              contradiction
+            | ok entryRest =>
+              rcases entryRest with ⟨entry, rest⟩
+              have hzero := ihCheck _ _ _ _ _ hb
+              have heShape := he
+              rw [hzero] at heShape
+              simp [headEntry] at heShape
+              rw [he] at h
+              simp only [exceptBindOk, if_true] at h
+              exact (exceptOkPairFst h).symm.trans heShape.2.symm
+      | all uses owned domain codomain =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        cases hd : check ctx fuel true ws domain with
+        | error err =>
+          rw [hd] at h
+          contradiction
+        | ok domainResult =>
+          rw [hd] at h
+          cases hc : check ctx fuel true (.shared :: ws) codomain with
+          | error err =>
+            rw [hc] at h
+            contradiction
+          | ok codomainResult =>
+            rw [hc] at h
+            exact (exceptOkPairFst h).symm
+      | letE nondep type value body =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        cases ht : check ctx fuel true ws type with
+        | error err =>
+          rw [ht] at h
+          simp only at h
+          contradiction
+        | ok typeResult =>
+          rw [ht] at h
+          simp only at h
+          cases hv : check ctx fuel true ws value with
+          | error err =>
+            rw [hv] at h
+            simp only [exceptBindErr] at h
+            contradiction
+          | ok valueResult =>
+            rcases valueResult with ⟨valueUses, valueOwn⟩
+            rw [hv] at h
+            simp only [exceptBindOk, Bool.not_true, Bool.false_and] at h
+            cases hb : check ctx fuel true (valueOwn :: ws) body with
+            | error err =>
+              rw [hb] at h
+              simp only [exceptBindErr] at h
+              contradiction
+            | ok bodyResult =>
+              rcases bodyResult with ⟨bodyUses, bodyOwn⟩
+              rw [hb] at h
+              simp only [exceptBindOk] at h
+              cases he : headEntry bodyUses with
+              | error err =>
+                rw [he] at h
+                simp only [exceptBindErr] at h
+                contradiction
+              | ok entryRest =>
+                rcases entryRest with ⟨entry, rest⟩
+                have hvzero := ihCheck _ _ _ _ _ hv
+                have hbzero := ihCheck _ _ _ _ _ hb
+                have heShape := he
+                rw [hbzero] at heShape
+                simp [headEntry] at heShape
+                rw [he] at h
+                simp only [exceptBindOk, if_true] at h
+                rw [← exceptOkPairFst h, hvzero, ← heShape.2]
+                exact UseVec.add_zeros ws.length
+      | app function argument =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        let collected := Expr.collectApp (.app function argument)
+        cases hx : expandShareE ctx fuel collected.2 with
+        | error err =>
+          rw [show Expr.collectApp (.app function argument) = collected from rfl,
+            hx] at h
+          simp only [exceptBindErr] at h
+          contradiction
+        | ok base =>
+          rw [show Expr.collectApp (.app function argument) = collected from rfl,
+            hx] at h
+          simp only [exceptBindOk] at h
+          cases ht : telescopeOfHead ctx fuel base with
+          | error err =>
+            rw [ht] at h
+            simp only [exceptBindErr] at h
+            contradiction
+          | ok telescope =>
+            rw [ht] at h
+            simp only [exceptBindOk] at h
+            cases hb : check ctx fuel true ws base with
+            | error err =>
+              rw [hb] at h
+              simp only [exceptBindErr] at h
+              contradiction
+            | ok baseResult =>
+              rcases baseResult with ⟨baseUses, baseOwn⟩
+              rw [hb] at h
+              simp only [exceptBindOk] at h
+              cases ha : checkArgs ctx fuel true ws telescope 0 collected.1
+                  baseUses with
+              | error err =>
+                rw [ha] at h
+                simp only [exceptBindErr] at h
+                contradiction
+              | ok argsUses =>
+                have hzero := ihCheck _ _ _ _ _ hb
+                have haZero := ha
+                rw [hzero] at haZero
+                have hazero := ihArgs _ _ _ _ _ _ haZero
+                rw [ha] at h
+                simp only [exceptBindOk, if_true] at h
+                exact (exceptOkPairFst h).symm.trans hazero
+      | share idx =>
+        rw [check.eq_def] at h
+        dsimp only at h
+        cases hs : ctx.sharing[idx.toNat]? with
+        | none =>
+          rw [hs] at h
+          contradiction
+        | some shared =>
+          rw [hs] at h
+          exact ihCheck _ _ _ _ _ h
+    · intro ctx ws tel i args uv h
+      cases args with
+      | nil =>
+        rw [checkArgs.eq_def] at h
+        exact (Except.ok.inj h).symm
+      | cons argument rest =>
+        rw [checkArgs.eq_def] at h
+        dsimp only at h
+        cases hp : tel[i]? with
+        | none =>
+          rw [hp] at h
+          simp only at h
+          cases ha : check ctx fuel true ws argument with
+          | error err =>
+            rw [ha] at h
+            simp only [exceptBindErr] at h
+            contradiction
+          | ok argResult =>
+            rcases argResult with ⟨argUses, argOwn⟩
+            have hzero := ihCheck _ _ _ _ _ ha
+            rw [ha] at h
+            simp only [exceptBindOk] at h
+            simp only [exceptBindPure] at h
+            rw [hzero, UseVec.add_zeros] at h
+            exact ihArgs _ _ _ _ _ _ h
+        | some policy =>
+          rcases policy with ⟨demandUses, resultOwn, dropped⟩
+          cases dropped with
+          | true =>
+            rw [hp] at h
+            simp only [if_true] at h
+            cases ha : check ctx fuel true ws argument with
+            | error err =>
+              rw [ha] at h
+              contradiction
+            | ok argResult =>
+              rcases argResult with ⟨argUses, argOwn⟩
+              have hzero := ihCheck _ _ _ _ _ ha
+              rw [ha] at h
+              simp only [exceptBindOk, exceptBindPure] at h
+              rw [hzero, UseVec.zeroScale_eq_zeros] at h
+              have hlength : (UseVec.zeros ws.length).length = ws.length := by
+                simp [UseVec.zeros]
+              rw [hlength, UseVec.add_zeros] at h
+              exact ihArgs _ _ _ _ _ _ h
+          | false =>
+            rw [hp] at h
+            simp only [Bool.false_eq_true, if_false] at h
+            cases hx : expandShareE ctx fuel argument with
+            | error err =>
+              rw [hx] at h
+              simp only [exceptBindErr] at h
+              contradiction
+            | ok expanded =>
+              rw [hx] at h
+              simp only [exceptBindOk] at h
+              cases ha : check ctx fuel true ws expanded with
+              | error err =>
+                rw [ha] at h
+                simp only [exceptBindErr] at h
+                contradiction
+              | ok argResult =>
+                rcases argResult with ⟨argUses, argOwn⟩
+                have hzero := ihCheck _ _ _ _ _ ha
+                rw [ha] at h
+                simp only [exceptBindOk] at h
+                simp only [Bool.not_true, Bool.false_and,
+                  Bool.false_eq_true, if_false,
+                  exceptBindPure] at h
+                rw [hzero, UseVec.add_zeros] at h
+                exact ihArgs _ _ _ _ _ _ h
+
+/-- Successful ghost checking records no runtime use of any binder. -/
+theorem check_ghost_zeros {ctx : CheckCtx} {fuel : Nat}
+    {ws : List Owned} {e : Expr} {uv : UseVec} {own : Owned}
+    (h : check ctx fuel true ws e = .ok (uv, own)) :
+    uv = UseVec.zeros ws.length :=
+  (ghostZeroAt fuel).1 _ _ _ _ _ h
+
+/-- Public elimination rule for the checker's private binder-vector splitter.
+Clients can consume checker certificates without depending on its helper's
+implementation name. -/
+theorem headEntry_ok_iff {uses : UseVec} {entry : VarUse} {rest : UseVec} :
+    headEntry uses = .ok (entry, rest) ↔ uses = entry :: rest := by
+  cases uses <;> simp [headEntry]
+
+/-- If the executable checker accepts a lambda whose binder the executable
+eraser classifies as dropped, the body's computed usage for that binder is
+exactly zero.  This covers both explicit `Uses.erased` and sort-like type
+binders; the latter is the gate condition that was previously implicit. -/
+theorem check_lam_dropped_entry_erased {ctx : CheckCtx} {fuel : Nat}
+    {ws : List Owned} {uses : Uses} {domain body : Expr}
+    {outerUses : UseVec} {own : Owned}
+    (hdrop : erasureDropsBinder ctx.sharing fuel uses domain = true)
+    (hcheck : check ctx (fuel + 1) false ws (.lam uses domain body) =
+      .ok (outerUses, own)) :
+    ∃ bodyUses bodyOwn entry rest,
+      check ctx fuel false (worldOf uses :: ws) body =
+        .ok (bodyUses, bodyOwn) ∧
+      headEntry bodyUses = .ok (entry, rest) ∧
+      entry.uses = .erased := by
+  rw [check.eq_def] at hcheck
+  dsimp only at hcheck
+  cases hd : check ctx fuel true ws domain with
+  | error err =>
+    rw [hd] at hcheck
+    contradiction
+  | ok domainResult =>
+    rw [hd] at hcheck
+    cases hb : check ctx fuel false (worldOf uses :: ws) body with
+    | error err =>
+      rw [hb] at hcheck
+      simp only [exceptBindErr] at hcheck
+      contradiction
+    | ok bodyResult =>
+      rcases bodyResult with ⟨bodyUses, bodyOwn⟩
+      rw [hb] at hcheck
+      simp only [exceptBindOk] at hcheck
+      cases he : headEntry bodyUses with
+      | error err =>
+        rw [he] at hcheck
+        simp only [exceptBindErr] at hcheck
+        contradiction
+      | ok entryRest =>
+        rcases entryRest with ⟨entry, rest⟩
+        have hentry : entry.uses = .erased := by
+          by_cases hzero : entry.uses = .erased
+          · exact hzero
+          · by_cases hcovers : uses.covers entry.uses = true
+            · simp [he, hcovers, hdrop, hzero, exceptThrow,
+                exceptBindErr] at hcheck
+            · simp [he, hcovers, exceptThrow, exceptBindErr] at hcheck
+        exact ⟨bodyUses, bodyOwn, entry, rest, rfl, he, hentry⟩
+
 /-! ## Constant-level entry points -/
 
-private def validateBinders : List Uses → UseVec → Except UsageErr Unit
+private def validateBinders : List (Uses × Bool) → UseVec →
+    Except UsageErr Unit
   | [], _ => .ok ()
-  | u :: us, entry :: uv => do
+  | (u, dropped) :: us, entry :: uv => do
     unless u.covers entry.uses do throw (.binderCovers u entry.uses)
+    if dropped && entry.uses != .erased then
+      throw (.typeBinderRuntimeUse entry.uses)
     if entry.moved && entry.uses != .linear then
       throw (.useAfterMove entry.uses)
     validateBinders us uv
@@ -420,16 +875,18 @@ telescope (exact mode agreement), then check the body under the
 accumulated binders. `lastOwned` tracks the promised result ownership
 of the innermost peeled arrow. -/
 def peelDefn (ctx : CheckCtx) (fuel : Nat) (tel : Telescope)
-    (lastOwned : Owned) (ws : List Owned) (declared : List Uses)
+    (lastOwned : Owned) (ws : List Owned)
+    (declared : List (Uses × Bool))
     (e : Expr) : Except UsageErr Unit :=
   match fuel with
   | 0 => .error .fuel
   | fuel + 1 =>
     match tel, e with
-    | (u', o') :: telRest, .lam u ty body => do
+    | demand :: telRest, .lam u ty body => do
       discard <| check ctx fuel true ws ty
-      unless u == u' do throw (.lamAllMismatch u u')
-      peelDefn ctx fuel telRest o' (worldOf u :: ws) (u :: declared) body
+      unless u == demand.uses do throw (.lamAllMismatch u demand.uses)
+      peelDefn ctx fuel telRest demand.owned (worldOf u :: ws)
+        ((u, erasureDropsBinder ctx.sharing fuel u ty) :: declared) body
     | tel', .share i =>
       match ctx.sharing[i.toNat]? with
       | none => .error (.badShareIdx i.toNat)
@@ -601,6 +1058,19 @@ private def failsWith (c : Constant) (p : UsageErr → Bool) : Bool :=
   (defnConst (.all .erased .shared X X) (.lam .erased X (.var 0)))
   (fun | .binderCovers .erased .linear => true | _ => false)
 
+-- A sort-like binder is erased even when its declared mode is `many`; the
+-- checker must therefore reject a computed runtime read before erasure.
+#guard failsWith
+  (defnConst (.all .many .shared (.sort 0) (.sort 0))
+    (.lam .many (.sort 0) (.var 0)))
+  (fun | .typeBinderRuntimeUse .linear => true | _ => false)
+
+-- Type-only use of that same binder stays in the zero fragment and passes.
+#guard ok? (defnConst
+  (.all .many .shared (.sort 0)
+    (.all .many .shared (.var 0) (.var 1)))
+  (.lam .many (.sort 0) (.lam .many (.var 0) (.var 0))))
+
 -- Unused linear binder (no silent leaks).
 #guard failsWith
   (defnConst (.all .linear .shared X X) (.lam .linear X c0Ref))
@@ -684,15 +1154,16 @@ private def failsWith (c : Constant) (p : UsageErr → Bool) : Bool :=
   (fun | .badRefIdx 99 => true | _ => false)
 #guard failsWith (defnConst X (.var 5))
   (fun | .unboundVar 5 => true | _ => false)
-#guard failsWith (defnConst X (.recur 0 #[]))
-  (fun | .badRecurIdx 0 => true | _ => false)
+#guard ok? (defnConst X (.recur 0 #[]))
+#guard failsWith (defnConst X (.recur 1 #[]))
+  (fun | .badRecurIdx 1 => true | _ => false)
 
 -- Stored definition types are ghost-walked rather than used only as
 -- an unchecked telescope hint.
 #guard failsWith (defnConst (.ref 99 #[]) c0Ref)
   (fun | .badRefIdx 99 => true | _ => false)
 
--- `recur` resolves demands through the enclosing muts block.
+-- `recur` resolves both singleton-collapsed standalones and explicit muts.
 #guard ok?
   { info := .muts #[.defn
       { kind := .defn, safety := .safe, lvls := 0

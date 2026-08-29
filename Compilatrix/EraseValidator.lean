@@ -4,11 +4,32 @@ import Compilatrix.Sim
 # Proof-producing executable-erasure validator
 
 `Erase.eraseExpr` intentionally accepts more syntax than the core fragment
-covered directly by `Sim.PErase`: dropped-variable reads, under-applied or
-split constructor-parameter/indexed-recursor spines, indexed recursive self
-calls, and externs still need their simulation machinery. Fully supplied,
-syntactically visible constructor parameter prefixes are certified by
-`CtorParamSpine`; complete indexed recursor spines use `RecEraseSpine`. Raw
+covered directly by `Sim.PErase`: general dropped-variable reads still need
+their simulation machinery. Unfoldable definition projections and non-self
+inductive members are checked structurally. Non-self unfoldable-definition and
+recursor heads are admitted through a finite `MemberScope`; after public
+coverage succeeds, `validateMemberCoverage` checks every named body/rule set
+against that same plan, closing cyclic blocks without recursive validator
+calls. Configured opaque mutual projections and members are admitted only when
+the source extern arity and target declaration agree at the exact synthetic
+member address; semantic oracle agreement remains a theorem premise.
+Constructor parameter prefixes are certified by `CtorParamSpine`; partial and
+split prefixes use ignored target wrappers, while complete visible prefixes
+expose the field-arity constructor. Indexed recursor spines use
+`RecEraseSpine`; a spine that stops in its source-only index suffix is
+certified by structurally reconstructing the let-captured ignored continuation
+(`PErase.recW`), including after escape through a variable or let. Rule-local
+indexed `recur` heads use the environment's already-certified self member, so
+rule validation does not recurse through its own member oracle.
+Ordinary unfoldable definition heads use `DefSpine`: declaration-type policy
+must agree with the literal implementation binder before a ghost argument is
+certified. Definition coverage also reconstructs the fuel-free
+`TeleResultOwned` relation, so the emitted declaration's ownership cannot
+drift from the source telescope. Configured quotient coverage checks the
+address/kind identity, exact compiler-generated lambda body, and the same
+result-ownership relation. Opaque definitions and axioms are certified only
+when the source evaluator is configured at the compiler-emitted extern arity;
+their semantic oracle correspondence remains an explicit theorem premise. Raw
 `.share` syntax also stays out of `PErase`, but the
 `certifyShared*` entry points validate the real eraser output against the
 semantically inlined source. This module provides the roadmap-approved
@@ -28,24 +49,19 @@ equation.
 
 namespace Compilatrix.EraseValidator
 
-open Compilatrix.Ixon (Address Constant MutConst Recursor RecursorRule Uses)
+open Compilatrix.Ixon (Address Constant MutConst Owned Recursor RecursorRule Uses)
 open Compilatrix.Sim
 
 /-- Use exactly the evaluator's resolver, blob store, and Nat identity when
-running the executable eraser for a simulation certificate.
+running the executable eraser for a simulation certificate. Quotient identity
+is not an eraser input: it remains on `ectx` and is checked by
+`validateCovered` before a quotient reference receives a certificate.
 
-`strictCtorParams` is deliberately off: the validator's substrate is the
-raw eraser output, and every shape the strict gate would refuse (a known
-parameterized constructor head without its complete visible parameter
-prefix) is outside `PErase`/`Covered` anyway — it is rejected here at the
-relation level, with the `.relation` diagnostics the simulation fixtures
-pin ("constructor parameter prefix is incomplete", "bare parameterized
-constructor heads are outside Covered"). Composed compilation keeps the
-gate on (`Pipeline.compile`/`compileValidated`), so nothing the gate stops
-can reach lowering unvalidated. -/
+Parameterized constructor heads use the same ignored-wrapper lowering as the
+executable eraser. The validator reconstructs that wrapper structurally; no
+configuration switch separates raw and certified erasure. -/
 def eraseCtxOf (ectx : Ixon.Eval.EvalCtx) : Erase.EraseCtx :=
-  { resolve := ectx.resolve, blobs := ectx.blobs, natBlock := ectx.natBlock
-    strictCtorParams := false }
+  { resolve := ectx.resolve, blobs := ectx.blobs, natBlock := ectx.natBlock }
 
 /-- Eraser tables corresponding to semantic full inlining.  Reference and
 rule-state metadata are unchanged; source roots in mutual members are inlined
@@ -80,6 +96,10 @@ view of the normalized evaluator frame. -/
 
 @[simp] theorem inlineTables_recSelf (T : Erase.ETables) :
     (inlineTables T).recSelf = T.recSelf := rfl
+
+section MemberScoped
+
+variable [scope : MemberScope]
 
 /-- Program-level facts are supplied independently of expression checking.
 This is the usual CompCert split: environment validation establishes
@@ -157,6 +177,51 @@ def recSpine? (ectx : Ixon.Eval.EvalCtx) (refs : Array Address)
         | none => none
       | _ => none
 
+/-- Dependent package returned while following an unfoldable ordinary
+definition through its literal implementation telescope. -/
+structure DefSpineCert (ectx : Ixon.Eval.EvalCtx)
+    (refs : Array Address) (e : Ixon.Expr) where
+  residual : Ixon.Expr
+  spine : DefSpine ectx refs e residual
+
+/-- Reconstruct the implementation-side definition spine used to justify a
+ghost application.  Declaration-type policy drives executable erasure; this
+second check ensures the lambda actually reached at run time drops the same
+argument. -/
+def defSpine? (ectx : Ixon.Eval.EvalCtx) (refs : Array Address) :
+    Nat → (e : Ixon.Expr) → Option (DefSpineCert ectx refs e)
+  | 0, _ => none
+  | fuel + 1, e =>
+    match e with
+    | .ref refIdx univIdxs =>
+      match hr : refs[refIdx.toNat]? with
+      | some address =>
+        match hc : ectx.resolve address with
+        | some constant =>
+          match hi : constant.info with
+          | .defn definition =>
+            match hu : Ixon.Eval.unfoldable definition with
+            | true => some
+                { residual := definition.value
+                  spine := .head hr hc hi hu }
+            | false => none
+          | _ => none
+        | none => none
+      | none => none
+    | .app function argument =>
+      match defSpine? ectx refs fuel function with
+      | some cert =>
+        match hr : cert.residual with
+        | .lam uses domain body => by
+            have hspine := cert.spine
+            rw [hr] at hspine
+            exact some
+              { residual := body
+                spine := .step hspine }
+        | _ => none
+      | none => none
+    | _ => none
+
 /-- Dependent package returned while reconstructing a syntactically visible
 constructor parameter spine. -/
 structure CtorParamSpineCert (ectx : Ixon.Eval.EvalCtx)
@@ -226,6 +291,111 @@ def ctorParamSpine? (ectx : Ixon.Eval.EvalCtx) (refs : Array Address) :
 private def fail {P : Prop} (msg : String) : Except String (PLift P) :=
   .error msg
 
+/-- Construct the fuel-free result-ownership relation.  Fuel controls only
+checker termination: exhaustion rejects instead of manufacturing the shared
+default, so a successful certificate is independent of the chosen bound. -/
+def validateTeleResultOwned (sharing : Array Ixon.Expr) :
+    Nat → (typ : Ixon.Expr) →
+      Except String (Σ candidate : Option Owned,
+        PLift (TeleResultOwned sharing typ candidate))
+  | 0, _ => .error "result-ownership validation fuel exhausted"
+  | fuel + 1, typ =>
+    match typ with
+    | .all _uses result _domain codomain => do
+      let cert ← validateTeleResultOwned sharing fuel codomain
+      match cert with
+      | ⟨none, proof⟩ =>
+        pure ⟨some result, ⟨.allHere proof.down⟩⟩
+      | ⟨some inner, proof⟩ =>
+        pure ⟨some inner, ⟨.allInner proof.down⟩⟩
+    | .share index =>
+      match hlookup : sharing[index.toNat]? with
+      | none => .ok ⟨none, ⟨.shareMissing hlookup⟩⟩
+      | some target => do
+        let cert ← validateTeleResultOwned sharing fuel target
+        pure ⟨cert.1, ⟨.share hlookup cert.2.down⟩⟩
+    | .sort _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .var _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .ref _ _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .recur _ _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .prj _ _ _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .str _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .nat _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .app _ _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .lam _ _ _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+    | .letE _ _ _ _ => .ok ⟨none, ⟨.terminal rfl⟩⟩
+
+/-- Recognize the four closed quotient definitions emitted by the eraser.
+Keeping this structural avoids assuming a global decidable-equality law for
+IxIR₀ expressions merely to validate these fixed compiler-generated bodies. -/
+private def validateQuotientBody (kind : Ixon.QuotKind)
+    (body : IxIR0.Expr) :
+    Except String (PLift (body = Erase.quotientBody kind)) :=
+  match kind, body with
+  | .type, .erased => .ok ⟨rfl⟩
+  | .ctor, .lam .many (.lam .many (.lam .many (.var 0))) => .ok ⟨rfl⟩
+  | .lift,
+      .lam .many (.lam .many (.lam .many (.lam .many (.lam .many
+        (.lam .many (.app (.var 2) (.var 0))))))) => .ok ⟨rfl⟩
+  | .ind,
+      .lam .many (.lam .many (.lam .many (.lam .many
+        (.lam .many (.app (.var 1) (.var 0)))))) => .ok ⟨rfl⟩
+  | _, _ => .error "erased quotient body mismatch"
+
+/-- Check an ignored constructor-parameter wrapper without assuming global
+decidable equality for target expressions. -/
+private def validateCtorWrapper : (remaining : Nat) → (address : Address) →
+    (body : IxIR0.Expr) →
+      Except String (PLift (body = Erase.lamManyN remaining (.ref address)))
+  | 0, address, .ref target =>
+    if haddress : target = address then by
+      subst target
+      exact .ok ⟨rfl⟩
+    else .error "constructor wrapper address mismatch"
+  | remaining + 1, address, .lam .many body =>
+    match validateCtorWrapper remaining address body with
+    | .ok hbody => by
+      rw [hbody.down]
+      exact .ok ⟨rfl⟩
+    | .error message => .error message
+  | _ + 1, _, .lam _ _ => .error "constructor wrapper binder mode mismatch"
+  | _, _, _ => .error "constructor wrapper body mismatch"
+
+/-- Check the body of an indexed-recursor continuation.  `anchor` remains
+constant while ignored binders are peeled because it names the let-captured
+pre-major pap below the entire wrapper telescope. -/
+private def validateRecIndexWrapper : (remaining anchor : Nat) →
+    (body : IxIR0.Expr) →
+      Except String
+        (PLift (body = Erase.lamManyN remaining (.var anchor)))
+  | 0, anchor, .var target =>
+    if hindex : target = anchor then by
+      subst target
+      exact .ok ⟨rfl⟩
+    else .error "indexed recursor wrapper capture mismatch"
+  | remaining + 1, anchor, .lam .many body =>
+    match validateRecIndexWrapper remaining anchor body with
+    | .ok hbody => by
+      rw [hbody.down]
+      exact .ok ⟨rfl⟩
+    | .error message => .error message
+  | _ + 1, _, .lam _ _ =>
+      .error "indexed recursor wrapper binder mode mismatch"
+  | _, _, _ => .error "indexed recursor wrapper body mismatch"
+
+/-- Certify that a pending recursor-policy suffix contains only source drops. -/
+private def validateDropSuffix : (rest : List Erase.ArgPolicy) →
+    Except String
+      (PLift (rest = List.replicate rest.length Erase.ArgPolicy.drop))
+  | [] => .ok ⟨rfl⟩
+  | .drop :: rest =>
+    match validateDropSuffix rest with
+    | .ok hrest => by
+      rw [hrest.down]
+      exact .ok ⟨by simp [List.replicate_succ]⟩
+    | .error message => .error message
+  | _ :: _ => .error "indexed recursor wrapper begins before the index suffix"
+
 private def validateRecurSafety (muts : Array MutConst) (recIdx : UInt64) :
     Except String (PLift (∀ r, muts[recIdx.toNat]? = some (.recr r) →
       r.indices.toNat = 0)) :=
@@ -293,6 +463,27 @@ mutual
               | .ok hb => exact .ok ⟨.lamK hd hb.down⟩
               | .error msg => exact .error msg
             else fail "kept lambda binder mode changed"
+        | source, .lam .many body' =>
+          match ctorParamSpine? ectx refs (fuel + 1) source with
+          | some cert =>
+            if hj : cert.consumed < cert.params then
+              match validateCtorWrapper
+                  (cert.params - cert.consumed - 1) cert.address body' with
+              | .error message => .error message
+              | .ok hbody => by
+                rw [hbody.down]
+                exact match he : ictx.env cert.address with
+                | some (.ctor tag fields) =>
+                  if ht : cert.cidx = tag then by
+                    subst tag
+                    exact if hf : cert.fields = fields then by
+                      subst fields
+                      exact .ok ⟨.ctorW cert.spine hj he⟩
+                    else fail "constructor field count mismatch"
+                  else fail "constructor tag mismatch"
+                | _ => fail "erased constructor declaration is missing"
+            else fail "constructor wrapper has no remaining parameters"
+          | none => fail "source is not a partial constructor parameter spine"
         | .app f a, .app f' .erased =>
           let normal (f₀ a₀ : Ixon.Expr) (f₀' a₀' : IxIR0.Expr) :
               Except String (PLift (PErase ectx ictx sc refs muts sa mask
@@ -314,6 +505,24 @@ mutual
                 pure ⟨.appE hd hf.down⟩
               | false => normal (.lam u dom body) a f' .erased
             | other => normal other a f' .erased
+          let definitionFallback : Except String
+              (PLift (PErase ectx ictx sc refs muts sa mask
+                (.app f a) (.app f' .erased))) :=
+            match defSpine? ectx refs (fuel + 1) f with
+            | some cert =>
+              match hr : cert.residual with
+              | .lam uses domain body =>
+                match hd : dropB uses domain with
+                | true => by
+                  have hspine := cert.spine
+                  rw [hr] at hspine
+                  exact do
+                    let hf ← validateExprWithRec ectx ictx cover recMembers sc
+                      refs muts sa mask fuel f f'
+                    pure ⟨.appDG hspine hd hf.down⟩
+                | false => fallback
+              | _ => fallback
+            | none => fallback
           match recSpine? ectx refs muts sa (fuel + 1) f with
           | some ⟨r, j, hs⟩ =>
             match hj : (recRulePolicy r)[j]? with
@@ -321,8 +530,8 @@ mutual
               let hf ← validateExprWithRec ectx ictx cover recMembers sc refs muts sa mask
                 fuel f f'
               pure ⟨.appG hs.down hj hf.down⟩
-            | _ => fallback
-          | none => fallback
+            | _ => definitionFallback
+          | none => definitionFallback
         | .app f a, .app f' a' => do
           let hf ← validateExprWithRec ectx ictx cover recMembers sc refs muts sa
             mask fuel f f'
@@ -352,12 +561,34 @@ mutual
               else fail "constructor drop spine has no parameters"
             else fail "constructor address mismatch"
           | none => fail "source is not a visible constructor parameter spine"
-        | .letE _ _ val body, .letE .many val' body' => do
-          let hv ← validateExprWithRec ectx ictx cover recMembers sc refs muts sa mask
-            fuel val val'
-          let hb ← validateExprWithRec ectx ictx cover recMembers sc refs muts sa
-            (true :: mask) fuel body body'
-          pure ⟨.letE hv.down hb.down⟩
+        | source, .letE .many val' body' =>
+          match validateRecSpine ectx ictx cover recMembers sc refs muts sa mask
+              fuel source val' with
+          | .ok ⟨r, rest, hs⟩ =>
+            if hpositive : 0 < rest.length then
+              match validateDropSuffix rest with
+              | .error message => .error message
+              | .ok hrest =>
+                match validateRecIndexWrapper rest.length rest.length body' with
+                | .error message => .error message
+                | .ok hbody => by
+                  rw [hrest.down] at hs
+                  rw [hbody.down]
+                  simpa [Erase.captureThenIgnoreN] using
+                    (.ok ⟨PErase.recW hs.down hpositive⟩ :
+                      Except String (PLift (PErase ectx ictx sc refs muts sa
+                        mask source
+                        (Erase.captureThenIgnoreN rest.length val'))))
+            else fail "indexed recursor wrapper has no pending indices"
+          | .error _ =>
+            match source with
+            | .letE _ _ val body => do
+              let hv ← validateExprWithRec ectx ictx cover recMembers sc refs
+                muts sa mask fuel val val'
+              let hb ← validateExprWithRec ectx ictx cover recMembers sc refs
+                muts sa (true :: mask) fuel body body'
+              pure ⟨.letE hv.down hb.down⟩
+            | _ => fail "target let is not an indexed recursor wrapper"
         | .ref idx us, .ref a' =>
           match hr : refs[idx.toNat]? with
           | some a =>
@@ -368,6 +599,68 @@ mutual
               | none => exact fail "reference lacks a Covered certificate"
             else fail "reference address mismatch"
           | none => fail s!"reference {idx.toNat} is out of range"
+        | .recur recIdx us, .ref member =>
+          match sa with
+          | some block =>
+            if hmember : member =
+                Erase.memberAddr block recIdx.toNat then by
+              subst member
+              exact match hm : Ixon.Eval.resolveMut ectx block
+                  recIdx.toNat with
+              | .ok (bc, .defn d) =>
+                if hrefs : refs = bc.refs then
+                  if hmuts : muts = Ixon.selfMutsOf bc.info then
+                    match hu : Ixon.Eval.unfoldable d with
+                    | true =>
+                      if hplan : (⟨block, recIdx.toNat⟩ : MemberKey) ∈
+                          scope.plan then
+                        .ok ⟨.recurD rfl hm hrefs hmuts hu hplan⟩
+                      else fail
+                        "definition member is absent from the simultaneous plan"
+                    | false =>
+                      match hconfigured : ectx.externArity
+                          (Erase.memberAddr block recIdx.toNat) with
+                      | none => fail
+                          "opaque definition member extern is not configured"
+                      | some arity =>
+                        if hplan : (⟨block, recIdx.toNat⟩ : MemberKey) ∈
+                            scope.plan then
+                          .ok ⟨.recurO rfl hm hrefs hmuts hu hconfigured hplan⟩
+                        else fail
+                          "opaque definition member is absent from the simultaneous plan"
+                  else fail "definition-member frame table mismatch"
+                else fail "definition-member refs mismatch"
+              | .ok (bc, .recr r) =>
+                if hrefs : refs = bc.refs then
+                  if hmuts : muts = Ixon.selfMutsOf bc.info then
+                    if hi : r.indices.toNat = 0 then
+                      if hplan : (⟨block, recIdx.toNat⟩ : MemberKey) ∈
+                          scope.plan then
+                        .ok ⟨.recurR rfl hm hrefs hmuts hi hplan⟩
+                      else fail
+                        "recursor member is absent from the simultaneous plan"
+                    else fail
+                      "indexed recursor member requires protected-spine validation"
+                  else fail "recursor-member frame table mismatch"
+                else fail "recursor-member refs mismatch"
+              | .ok (bc, .indc ind) =>
+                if hrefs : refs = bc.refs then
+                  match hi : muts[recIdx.toNat]? with
+                  | some (.indc frameInd) =>
+                    if hind : frameInd = ind then by
+                      subst frameInd
+                      exact match he : ictx.env
+                          (Erase.memberAddr block recIdx.toNat) with
+                      | some (.defn .shared .erased) =>
+                        .ok ⟨.recurI rfl hm hrefs hi he⟩
+                      | _ => fail "erased inductive member is missing"
+                    else fail "non-self recur mutual member mismatch"
+                  | _ => fail
+                      "non-self recur does not target an inductive member"
+                else fail "non-self recur refs mismatch"
+              | .error _ => fail "non-self recur member is unresolved"
+            else fail "non-self recur member address mismatch"
+          | none => fail "non-self recur is outside a mutual block"
         | .recur recIdx us, .var j =>
           match sc with
           | some (block, idx) =>
@@ -466,6 +759,61 @@ mutual
             else .error "indexed recursor projection address mismatch"
           | none => .error "indexed recursor source reference is out of range"
         | _ => .error "indexed recursor head did not erase to a reference"
+      | .recur recIdx univIdxs =>
+        match e' with
+        | .var targetIndex =>
+          match sc with
+          | some (block, idx) =>
+            if hself : recIdx.toNat = idx then
+              if hslot : mask.length = targetIndex then by
+                subst targetIndex
+                exact if hsa : sa = some block then
+                  match hm : Ixon.Eval.resolveMut ectx block idx with
+                  | .ok (bc, .recr r) =>
+                    if hx : 0 < r.indices.toNat then
+                      if hrefs : refs = bc.refs then
+                        match hlookup : muts[recIdx.toNat]? with
+                        | some (.recr selfR) =>
+                          if hrecur : selfR = r then by
+                            subst selfR
+                            exact .ok ⟨r, recPolicy r,
+                              ⟨.selfHead rfl hsa hself hm hrefs hlookup hx⟩⟩
+                          else .error
+                            "indexed recursive self recursor mismatch"
+                        | _ => .error
+                            "indexed recursive self mutual slot mismatch"
+                      else .error "indexed recursive self refs mismatch"
+                    else .error "recursive self has no source-only indices"
+                  | _ => .error "indexed recursive self does not resolve"
+                else .error "indexed recursive self block mismatch"
+              else .error "indexed recursive self slot mismatch"
+            else .error "indexed recursive self member mismatch"
+          | none => .error "indexed recursive self lacks a self context"
+        | .ref member =>
+          match sa with
+          | some block =>
+            if hmember : member =
+                Erase.memberAddr block recIdx.toNat then by
+              subst member
+              exact match hm : Ixon.Eval.resolveMut ectx block
+                  recIdx.toNat with
+              | .ok (bc, .recr r) =>
+                if hx : 0 < r.indices.toNat then
+                  if hrefs : refs = bc.refs then
+                    if hmuts : muts = Ixon.selfMutsOf bc.info then
+                      if hplan : (⟨block, recIdx.toNat⟩ : MemberKey) ∈
+                          scope.plan then
+                        .ok ⟨r, recPolicy r,
+                          ⟨.memberHead rfl hm hrefs hmuts hx hplan⟩⟩
+                      else .error
+                        "indexed recursor is absent from the simultaneous plan"
+                    else .error "indexed recursor frame table mismatch"
+                  else .error "indexed recursor refs mismatch"
+                else .error "recursor has no source-only indices"
+              | _ => .error "mutual member is not an indexed recursor"
+            else .error "indexed mutual recursor member address mismatch"
+          | none => .error "indexed mutual recursor is outside a block"
+        | _ => .error "indexed recursive self head did not erase to its slot"
       | .app f a =>
         match validateRecSpine ectx ictx cover recMembers sc refs muts sa mask
             fuel f e' with
@@ -607,7 +955,7 @@ def validateRecMember (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
     (hm : Ixon.Eval.resolveMut ectx block idx = .ok (bc, .recr r))
     (fuel : Nat) : Except String (PLift (RecMember ectx ictx block idx r)) :=
   match validateBlockParams r.params.toNat
-      (Ixon.Eval.selfMutsOf bc.info).toList with
+      (Ixon.selfMutsOf bc.info).toList with
   | .error msg => .error msg
   | .ok hparams =>
     match he : ictx.env (Erase.memberAddr block idx) with
@@ -616,7 +964,7 @@ def validateRecMember (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
           r.minors.toNat then
         if hl : natLit = (ectx.natBlock == some block) then
           match validateRules ectx ictx db block idx r bc.refs
-              (Ixon.Eval.selfMutsOf bc.info) fuel r.rules.toList
+              (Ixon.selfMutsOf bc.info) fuel r.rules.toList
               trules.toList with
           | .ok hrs => by
             subst n
@@ -654,12 +1002,38 @@ def validateCovered (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
         match hu : Ixon.Eval.unfoldable d with
         | true =>
           match he : ictx.env a with
-          | some (.defn _ body') => do
-            let hb ← validateExpr ectx ictx db.oracle none c.refs
-              (Ixon.Eval.selfMutsOf c.info) none [] fuel d.value body'
-            pure ⟨.defn hc hi hu he hb.down⟩
+          | some (.defn result body') => do
+            let hresult ← validateTeleResultOwned c.sharing fuel d.typ
+            if heq : result = hresult.1.getD .shared then
+              let hb ← validateExpr ectx ictx db.oracle none c.refs
+                (Ixon.selfMutsOf c.info) none [] fuel d.value body'
+              let howned : DefinitionResultOwned c.sharing d.typ result :=
+                ⟨hresult.1, hresult.2.down, heq⟩
+              pure ⟨.defn hc hi hu he howned hb.down⟩
+            else fail "definition result ownership mismatch"
           | _ => fail "erased definition is missing"
-        | false => fail "opaque/partial definitions are outside Covered"
+        | false =>
+          match hconfigured : ectx.externArity a with
+          | none => fail "extern address is not configured"
+          | some arity =>
+            match he : ictx.env a with
+            | some (.extern targetArity) =>
+              if harity : targetArity = arity then by
+                subst targetArity
+                exact .ok ⟨.externDefn hc hi hu hconfigured he⟩
+              else fail "configured extern arity mismatch"
+            | _ => fail "erased extern declaration is missing"
+      | .axio ax =>
+        match hconfigured : ectx.externArity a with
+        | none => fail "extern address is not configured"
+        | some arity =>
+          match he : ictx.env a with
+          | some (.extern targetArity) =>
+            if harity : targetArity = arity then by
+              subst targetArity
+              exact .ok ⟨.externAxio hc hi hconfigured he⟩
+            else fail "configured extern arity mismatch"
+          | _ => fail "erased extern declaration is missing"
       | .cPrj p =>
         match hm : Ixon.Eval.resolveMut ectx p.block p.idx.toNat with
         | .ok (bc, .indc ind) =>
@@ -688,6 +1062,94 @@ def validateCovered (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
         match he : ictx.env a with
         | some (.defn .shared .erased) => .ok ⟨.tyf hc hi he⟩
         | _ => fail "erased inductive-type projection is missing"
+      | .quot q =>
+        match hconfigured : ectx.quotientKind a with
+        | none => fail "quotient address is not configured"
+        | some kind =>
+          if hkind : kind = q.kind then by
+            subst kind
+            exact match he : ictx.env a with
+            | some (.defn result body) =>
+              match validateQuotientBody q.kind body with
+              | .error msg => .error msg
+              | .ok hbody => by
+                rw [hbody.down] at he
+                exact do
+                  let hresult ← validateTeleResultOwned c.sharing fuel q.typ
+                  if heq : result = hresult.1.getD .shared then
+                    let howned : DefinitionResultOwned c.sharing q.typ result :=
+                      ⟨hresult.1, hresult.2.down, heq⟩
+                    pure ⟨.quot hc hi hconfigured he howned⟩
+                  else fail "quotient result ownership mismatch"
+            | _ => fail "erased quotient declaration is missing"
+          else fail "configured quotient kind mismatch"
+      | .dPrj p =>
+        match hm : Ixon.Eval.resolveMut ectx p.block p.idx.toNat with
+        | .ok (bc, .defn d) =>
+          match hu : Ixon.Eval.unfoldable d with
+          | true =>
+            match ha : ictx.env a with
+            | some (.defn aliasResult (.ref member)) =>
+              if hmember : member =
+                  Erase.memberAddr p.block p.idx.toNat then by
+                subst member
+                exact match he : ictx.env
+                    (Erase.memberAddr p.block p.idx.toNat) with
+                | some (.defn result body') =>
+                  if hresult : aliasResult = result then
+                    match ho : validateTeleResultOwned bc.sharing fuel d.typ with
+                    | .error message => .error message
+                    | .ok ⟨candidate, howned⟩ =>
+                      if heq : result = candidate.getD .shared then
+                        match hb : validateExpr ectx ictx db.oracle none bc.refs
+                            (Ixon.selfMutsOf bc.info) (some p.block) []
+                            fuel d.value body' with
+                        | .error message => .error message
+                        | .ok hbody => by
+                          have halias : ictx.env a = some (.defn result
+                              (.ref (Erase.memberAddr p.block
+                                p.idx.toNat))) := by
+                            simpa [hresult] using ha
+                          exact .ok ⟨Covered.defnProj hc hi hm hu halias he
+                            ⟨candidate, howned.down, heq⟩ hbody.down⟩
+                      else fail
+                        "definition-projection result ownership mismatch"
+                  else fail "definition-projection alias ownership mismatch"
+                | _ => fail "erased definition member is missing"
+              else fail "definition projection points at the wrong member"
+            | _ => fail "erased definition projection is missing"
+          | false =>
+            match ha : ictx.env a with
+            | some (.defn aliasResult (.ref member)) =>
+              if hmember : member =
+                  Erase.memberAddr p.block p.idx.toNat then by
+                subst member
+                exact match hconfigured : ectx.externArity
+                    (Erase.memberAddr p.block p.idx.toNat) with
+                | none => fail
+                    "opaque definition member extern is not configured"
+                | some arity =>
+                  match he : ictx.env
+                      (Erase.memberAddr p.block p.idx.toNat) with
+                  | some (.extern targetArity) =>
+                    if harity : targetArity = arity then by
+                      subst targetArity
+                      exact match ho : validateTeleResultOwned bc.sharing fuel
+                          d.typ with
+                      | .error message => .error message
+                      | .ok ⟨candidate, howned⟩ =>
+                        if heq : aliasResult = candidate.getD .shared then
+                          let hresult : DefinitionResultOwned bc.sharing d.typ
+                              aliasResult := ⟨candidate, howned.down, heq⟩
+                          .ok ⟨Covered.externDefnProj hc hi hm hu hconfigured
+                            ha he hresult⟩
+                        else fail
+                          "definition-projection result ownership mismatch"
+                    else fail "opaque definition member extern arity mismatch"
+                  | _ => fail "erased opaque definition member extern is missing"
+              else fail "definition projection points at the wrong member"
+            | _ => fail "erased opaque definition projection is missing"
+        | _ => fail "definition projection does not resolve to a definition"
       | .rPrj p =>
         match hm : Ixon.Eval.resolveMut ectx p.block p.idx.toNat with
         | .ok (bc, .recr r) =>
@@ -726,6 +1188,77 @@ theorem covered_of_validate
     Covered ectx ictx a :=
   ((validateCovered ectx ictx db fuel a).toOption.get h).down
 
+/-- Validate one entry of a simultaneous mutual-member plan. The expression
+and rule bodies are checked against the already completed public coverage
+database, but recursive member edges close through `scope.plan` rather than
+recursing in the validator. -/
+def validateMemberRel (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
+    (db : CoverageDB ectx ictx) :
+    Nat → (key : MemberKey) →
+      Except String (PLift (MemberRel ectx ictx key))
+  | 0, _ => fail "member validation fuel exhausted"
+  | fuel + 1, ⟨block, idx⟩ =>
+    match hm : Ixon.Eval.resolveMut ectx block idx with
+    | .ok (bc, .defn d) =>
+      match hu : Ixon.Eval.unfoldable d with
+      | false =>
+        match hconfigured : ectx.externArity
+            (Erase.memberAddr block idx) with
+        | none => fail "opaque definition member extern is not configured"
+        | some arity =>
+          match he : ictx.env (Erase.memberAddr block idx) with
+          | some (.extern targetArity) =>
+            if harity : targetArity = arity then by
+              subst targetArity
+              exact .ok ⟨MemberRel.externDefn hm hu hconfigured he⟩
+            else fail "opaque definition member extern arity mismatch"
+          | _ => fail "erased opaque definition member extern is missing"
+      | true =>
+        match he : ictx.env (Erase.memberAddr block idx) with
+        | some (.defn result body') => do
+          let hresult ← validateTeleResultOwned bc.sharing fuel d.typ
+          if heq : result = hresult.1.getD .shared then
+            let hbody ← validateExpr ectx ictx db.oracle none bc.refs
+              (Ixon.selfMutsOf bc.info) (some block) [] fuel d.value body'
+            let howned : DefinitionResultOwned bc.sharing d.typ result :=
+              ⟨hresult.1, hresult.2.down, heq⟩
+            pure ⟨MemberRel.defn hm hu he howned hbody.down⟩
+          else fail "mutual-definition result ownership mismatch"
+        | _ => fail "erased mutual-definition member is missing"
+    | .ok (bc, .recr r) => do
+      let hmember ← validateRecMember ectx ictx db block idx bc r hm fuel
+      pure ⟨MemberRel.recr hmember.down⟩
+    | .ok (_, .indc _) =>
+      fail "inductive members do not require simultaneous body coverage"
+    | .error _ => fail "simultaneous member is unresolved"
+
+/-- Close every open member edge with one finite certificate. -/
+def validateMemberCoverage (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
+    (db : CoverageDB ectx ictx) :
+    Nat → (keys : List MemberKey) →
+      Except String (PLift (MemberCoverage ectx ictx keys))
+  | 0, _ => fail "member-plan validation fuel exhausted"
+  | _ + 1, [] =>
+    if hneutral : ectx.preserveNeutralElims = false then
+      if hstrings : ectx.stringLiteral = none then
+        .ok ⟨.nil ⟨hneutral, hstrings⟩⟩
+      else
+        fail "certified erasure requires String-literal expansion disabled"
+    else
+      fail "certified erasure requires strict neutral-elimination mode"
+  | fuel + 1, key :: rest => do
+    let hkey ← validateMemberRel ectx ictx db fuel key
+    let hrest ← validateMemberCoverage ectx ictx db fuel rest
+    pure ⟨.cons hkey.down hrest.down⟩
+
+/-- Extract simultaneous coverage from a successful checked computation. -/
+theorem memberCoverage_of_validate
+    {ectx : Ixon.Eval.EvalCtx} {ictx : IxIR0.Ctx}
+    {db : CoverageDB ectx ictx} {fuel : Nat} {keys : List MemberKey}
+    (h : (validateMemberCoverage ectx ictx db fuel keys).toOption.isSome) :
+    MemberCoverage ectx ictx keys :=
+  ((validateMemberCoverage ectx ictx db fuel keys).toOption.get h).down
+
 inductive CertErr where
   | erase (err : Erase.EraseErr)
   | relation (msg : String)
@@ -738,6 +1271,7 @@ structure CertifiedProgram (ectx : Ixon.Eval.EvalCtx)
   target : List (Address × IxIR0.Decl)
   erased : Erase.eraseProgram (eraseCtxOf ectx) consts eraseFuel = .ok target
   coverage : CoverageDB ectx { env := IxIR0.Env.ofList target }
+  members : MemberCoverage ectx { env := IxIR0.Env.ofList target } scope.plan
 
 /-- Run the real program eraser and validate a dependency-ordered list of
 addresses against its exact output.  The returned database is a reusable
@@ -750,26 +1284,40 @@ def certifyProgram (ectx : Ixon.Eval.EvalCtx)
   match he : Erase.eraseProgram (eraseCtxOf ectx) consts eraseFuel with
   | .error err => .error (.erase err)
   | .ok target =>
-    let ictx : IxIR0.Ctx := { env := IxIR0.Env.ofList target }
+    let targetIndex := IxIR0.Env.Index.ofList target
+    let ictx : IxIR0.Ctx := { env := targetIndex.toEnv }
     match validateCoveragePlan ectx ictx validateFuel [] coverageOrder with
     | .error msg => .error (.relation msg)
-    | .ok coverage => .ok ⟨target, he, coverage⟩
+    | .ok coverage =>
+      match validateMemberCoverage ectx ictx coverage validateFuel
+          scope.plan with
+      | .error msg => .error (.relation msg)
+      | .ok members =>
+        have hictx : ictx = { env := IxIR0.Env.ofList target } := by
+          simp [ictx, targetIndex]
+        .ok ⟨target, he, hictx ▸ coverage, hictx ▸ members.down⟩
+
+end MemberScoped
 
 /-- A real erasure of the original shared program, paired with coverage facts
 for the semantically inlined resolver.  The target environment is shared by
 both facts, so no unproved eraser/inliner equality is assumed. -/
 structure CertifiedSharedProgram (ectx : Ixon.Eval.EvalCtx)
-    (consts : List (Address × Constant)) (eraseFuel : Nat) where
+    (consts : List (Address × Constant)) (eraseFuel : Nat)
+    [scope : MemberScope] where
   target : List (Address × IxIR0.Decl)
   erased : Erase.eraseProgram (eraseCtxOf ectx) consts eraseFuel = .ok target
   coverage : CoverageDB ectx.inlineSharing
     { env := IxIR0.Env.ofList target }
+  members : MemberCoverage ectx.inlineSharing
+    { env := IxIR0.Env.ofList target } scope.plan
 
 /-- Run the executable eraser on the original shared constants, then validate
 its exact output against fully inlined constants obtained through the source
 resolver.  Success produces the `Covered` database needed by sharing-aware
 entry-expression certificates. -/
-def certifySharedProgram (ectx : Ixon.Eval.EvalCtx)
+def certifySharedProgram [scope : MemberScope]
+    (ectx : Ixon.Eval.EvalCtx)
     (consts : List (Address × Constant)) (coverageOrder : List Address)
     (eraseFuel : Nat := Erase.defaultFuel)
     (validateFuel : Nat := Erase.defaultFuel) :
@@ -777,11 +1325,23 @@ def certifySharedProgram (ectx : Ixon.Eval.EvalCtx)
   match he : Erase.eraseProgram (eraseCtxOf ectx) consts eraseFuel with
   | .error err => .error (.erase err)
   | .ok target =>
-    let ictx : IxIR0.Ctx := { env := IxIR0.Env.ofList target }
+    let targetIndex := IxIR0.Env.Index.ofList target
+    let ictx : IxIR0.Ctx := { env := targetIndex.toEnv }
     match validateCoveragePlan ectx.inlineSharing ictx validateFuel []
         coverageOrder with
     | .error msg => .error (.relation msg)
-    | .ok coverage => .ok ⟨target, he, coverage⟩
+    | .ok coverage =>
+      match validateMemberCoverage ectx.inlineSharing ictx coverage
+          validateFuel scope.plan with
+      | .error msg => .error (.relation msg)
+      | .ok members =>
+        have hictx : ictx = { env := IxIR0.Env.ofList target } := by
+          simp [ictx, targetIndex]
+        .ok ⟨target, he, hictx ▸ coverage, hictx ▸ members.down⟩
+
+section MemberScopedExpr
+
+variable [scope : MemberScope]
 
 /-- An executable result and its relational proof, tied to exactly the same
 source expression, tables, mask, and eraser invocation. -/
@@ -793,7 +1353,7 @@ structure CertifiedExpr (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
   related : PErase ectx ictx sc T.refs T.selfMuts sa mask source target
 
 /-- Run the real executable eraser, then validate its exact result, with
-member certificates available for complete indexed recursor spines. -/
+member certificates available for projection-headed indexed recursor spines. -/
 def certifyExprWithRec (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
     (cover : CoverOracle ectx ictx) (recMembers : RecMemberOracle ectx ictx)
     (sc : Option (Address × Nat)) (T : Erase.ETables) (sa : Option Address)
@@ -819,6 +1379,8 @@ def certifyExpr (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
     Except CertErr (CertifiedExpr ectx ictx sc T sa mask eraseFuel source) :=
   certifyExprWithRec ectx ictx cover noRecMembers sc T sa mask source
     eraseFuel validateFuel
+
+end MemberScopedExpr
 
 /-- An executable erasure of an original shared expression and a `PErase`
 proof for the fully inlined expression, both tied to the exact same target. -/
@@ -876,13 +1438,15 @@ theorem CertifiedSharedExpr.simulatesClosed
     {value : Ixon.Eval.Value}
     (cert : CertifiedSharedExpr ectx ictx none (tablesOfFrame F)
       F.selfAddr [] eraseFuel source)
+    (hstrict : ectx.Strict)
     (hctx : ectx.SharingWF) (hF : F.SharingWF)
+    (horacles : OracleRel ectx.inlineSharing ictx)
     (hsource : Ixon.Sharing.sharesBelow F.sharing.size source = true)
     (heval : Ixon.Eval.eval ectx fuel F [] source = .ok value) :
     ∃ fuel' targetValue,
       IxIR0.eval ictx fuel' [] cert.target = .ok targetValue ∧
       InlinedValRel ectx ictx value targetValue := by
-  apply erasure_sim_inlineSharing_closed hctx hF hsource heval
+  apply erasure_sim_inlineSharing_closed hstrict hctx hF horacles hsource heval
   have hrelated := cert.related
   rw [inlineTables_tablesOfFrame] at hrelated
   exact hrelated
@@ -894,6 +1458,18 @@ dropped slot (the exact obligation reserved for usage-checker soundness). -/
 private def emptyEctx : Ixon.Eval.EvalCtx :=
   { resolve := fun _ => none }
 
+private def openEctx : Ixon.Eval.EvalCtx :=
+  { emptyEctx with preserveNeutralElims := true }
+
+private def stringOpenEctx : Ixon.Eval.EvalCtx :=
+  { emptyEctx with
+      stringLiteral := some
+        { charType := Address.replicate 0xE0
+          charOfNat := Address.replicate 0xE1
+          stringOfList := Address.replicate 0xE2
+          listNil := Address.replicate 0xE3
+          listCons := Address.replicate 0xE4 } }
+
 private def emptyIctx : IxIR0.Ctx :=
   { env := fun _ => none }
 
@@ -901,6 +1477,18 @@ private def noCover : CoverOracle emptyEctx emptyIctx := fun _ => none
 
 private def noInlineCover : CoverOracle emptyEctx.inlineSharing emptyIctx :=
   fun _ => none
+
+-- Whole-program certification seals the strict runtime boundary used by the
+-- constructor-only projection simulation theorem.
+#guard (match certifyProgram openEctx [] [] 100 100 with
+  | .error (.relation
+      "certified erasure requires strict neutral-elimination mode") => true
+  | _ => false)
+
+#guard (match certifyProgram stringOpenEctx [] [] 100 100 with
+  | .error (.relation
+      "certified erasure requires String-literal expansion disabled") => true
+  | _ => false)
 
 private def certifies (e : Ixon.Expr) : Bool :=
   match certifyExpr emptyEctx emptyIctx noCover none {} none [] e 100 100 with

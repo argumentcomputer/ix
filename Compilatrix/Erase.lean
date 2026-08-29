@@ -18,6 +18,7 @@ argument slot), but
   are removed from spines outright — the two deliberate arity
   changes. Constructor values carry kept fields only (the IxIR₀
   object-model contract); complete visible indexed recursor spines
+  and protected partial spines whose remaining indices are supplied later
   are covered by the simulation theorem. Arity *trimming* of ghost
   slots is a later IxIR₀ˢ optimization, not erasure's job.
 
@@ -45,19 +46,22 @@ become `defn ◻`, opaque/partial definitions and axioms become
 `Decl.extern` (the ledger boundary), and quotients compile away
 (`mk ↦ λλλ.v₀`, `lift ↦ λ⁶. f q`, `ind ↦ λ⁵. mk q`).
 
-Known v1 gaps (recorded): unknown-telescope **ghost** positions
-(higher-order heads) keep their arguments — sound but unerased. The
-structural **drop** policies for constructor parameters and recursor
-indices require a syntactically visible known head; split or
-unknown-head spines can desynchronize source and target arities.
-For **constructor parameters** this is no longer a silent gap: a
-reference to a known constructor with a nonzero dropped-parameter
-count appearing outside a spine that supplies the complete parameter
-prefix is an erase-time error (`strictCtorParams`, on by default —
-the residual ghost parameters would otherwise still be applied by the
-surrounding context and saturate the target constructor early, i.e.
-stuck code where the source runs). Split **indexed recursor** spines
-remain a recorded gap, rejected only by the validator. Literal
+Known v1 boundaries (recorded): unknown-telescope **ghost** positions
+(higher-order heads) keep their arguments — sound but unerased; first-class
+unfoldable definition and recursor mutual-member references are certified only
+when named by a finite simultaneous member plan. Configured opaque mutual
+members use their synthetic member address as both source-oracle identity and
+target extern key; broader dropped-variable reads remain outside the certified
+relation. Split
+**constructor-parameter** spines are protected by ignored target closures: a
+visible prefix drops the parameters it consumes and wraps the target
+constructor for exactly the remaining source parameters. Split **indexed
+recursor** spines use a let-captured pre-major target pap plus one ignored
+closure binder per remaining source-only index. Either wrapper may escape
+through variables or lets; later generic applications consume it before the
+target constructor or recursor becomes fireable, so source and target cannot
+fire at different points. The indexed wrapper applies both to projection heads
+and rule-local recursive self heads. Literal
 blobs are resolved and inlined at erase time; `natLit` peeling is
 enabled by well-known-address comparison against the Nat block.
 
@@ -85,16 +89,6 @@ structure EraseCtx where
   /-- Well-known address of the `Nat` block: sets `natLit` on its
   recursor's erasure. -/
   natBlock : Option Address := none
-  /-- Reject a reference to a known constructor with a nonzero
-  dropped-parameter count unless it heads a visible application spine
-  supplying the complete parameter prefix. Such split/under-saturated
-  heads erase to code whose arity has desynchronized from the source
-  (the escaped ghost parameters are still applied by the surrounding
-  context and saturate the target constructor early — stuck code where
-  the source evaluates). On by default; the proof-producing validator
-  turns it off because its substrate is the raw eraser output and it
-  rejects the same shapes itself with relation-level diagnostics. -/
-  strictCtorParams : Bool := true
 
 /-- Tables of the constant being erased, plus rule-erasure state. -/
 structure ETables where
@@ -106,22 +100,16 @@ structure ETables where
   occurrences map to the recSelf slot. -/
   recSelf : Option Nat := none
 
-/-- Synthetic address for member `idx` of a mutual block (v1
-scaffolding — erased IR gets real content addressing later). The
-member number is mixed into the final eight bytes without changing
-the address width. -/
-def memberAddr (block : Address) (idx : Nat) : Address :=
-  Address.ofFn fun i =>
-    if i.val < 24 then block.get i
-    else block.get i ^^^
-      UInt8.ofNat (((idx + 1) >>> (8 * (i.val - 24))) % 256)
+/-! Keep the historical eraser-qualified name while sharing the constructor
+with the source evaluator's opaque-member semantics. -/
+abbrev memberAddr := Address.memberAddr
 
 @[simp] theorem memberAddr_get (block : Address) (idx : Nat) (i : Fin 32) :
     (memberAddr block idx).get i =
       if i.val < 24 then block.get i
       else block.get i ^^^
         UInt8.ofNat (((idx + 1) >>> (8 * (i.val - 24))) % 256) := by
-  simp [memberAddr]
+  exact Address.memberAddr_get block idx i
 
 def defaultFuel : Nat := 100000
 
@@ -266,6 +254,63 @@ def constPolicies (ctx : EraseCtx) (fuel : Nat) (c : Constant) :
   | .iPrj _ => []
   | .muts _ => []
 
+/-- Build `n` ignored, unrestricted target binders around `body`. -/
+def lamManyN : Nat → IxIR0.Expr → IxIR0.Expr
+  | 0, body => body
+  | n + 1, body => .lam .many (lamManyN n body)
+
+/-- Evaluate `value` before exposing `n` ignored binders, then return the
+captured value after those binders have been consumed.  The let is important:
+`value` may mention the surrounding environment, so wrapping it directly in
+lambdas would capture its de Bruijn variables. -/
+def captureThenIgnoreN (n : Nat) (value : IxIR0.Expr) : IxIR0.Expr :=
+  .letE .many value (lamManyN n (.var n))
+
+/-- Number of source-only recursor indices still missing from a visible
+reference spine, once every parameter/motive/minor argument has been supplied.
+Outside that half-open index window no protection is required. -/
+def refRecIndicesRemaining (ctx : EraseCtx) (T : ETables) (idx : UInt64)
+    (visibleArgs : Nat) : Nat :=
+  match T.refs[idx.toNat]? with
+  | some address =>
+    match ctx.resolve address with
+    | some c =>
+      match c.info with
+      | .rPrj p =>
+        match mutMember ctx p.block p.idx.toNat with
+        | some (_, .recr r) =>
+          let ruleArgs := r.params.toNat + r.motives.toNat + r.minors.toNat
+          let preMajor := ruleArgs + r.indices.toNat
+          if ruleArgs ≤ visibleArgs && visibleArgs < preMajor then
+            preMajor - visibleArgs
+          else 0
+        | _ => 0
+      | _ => 0
+    | none => 0
+  | none => 0
+
+/-- `recur`-head counterpart of `refRecIndicesRemaining`. -/
+def selfRecIndicesRemaining (T : ETables) (idx visibleArgs : Nat) : Nat :=
+  match T.selfMuts[idx]? with
+  | some (.recr r) =>
+    let ruleArgs := r.params.toNat + r.motives.toNat + r.minors.toNat
+    let preMajor := ruleArgs + r.indices.toNat
+    if ruleArgs ≤ visibleArgs && visibleArgs < preMajor then
+      preMajor - visibleArgs
+    else 0
+  | _ => 0
+
+/-- Protect a target pre-major recursor value while its source still owes
+source-only indices. -/
+def protectRecIndices (ctx : EraseCtx) (T : ETables)
+    (base : Compilatrix.Ixon.Expr) (visibleArgs : Nat)
+    (target : IxIR0.Expr) : IxIR0.Expr :=
+  let remaining := match base with
+    | .ref idx _ => refRecIndicesRemaining ctx T idx visibleArgs
+    | .recur idx _ => selfRecIndicesRemaining T idx.toNat visibleArgs
+    | _ => 0
+  if remaining = 0 then target else captureThenIgnoreN remaining target
+
 /-- Dropped-parameter count of reference `idx` when it resolves to a
 known constructor (`cPrj`); `0` for anything else or unresolved. -/
 def refCtorParams (ctx : EraseCtx) (T : ETables) (idx : UInt64) : Nat :=
@@ -285,22 +330,20 @@ def refCtorParams (ctx : EraseCtx) (T : ETables) (idx : UInt64) : Nat :=
         | _ => 0
       | _ => 0
 
-/-- The pinned `strictCtorParams` diagnostic (exact-message guarded). -/
-def splitCtorSpineMsg : String :=
-  "constructor parameter prefix is not fully applied (split or under-saturated constructor spine)"
-
-/-- The `strictCtorParams` gate: a known constructor reference with a
-nonzero dropped-parameter count must see its complete parameter prefix
-in the visible spine (`params ≤ visibleArgs`). Ordinary ghost arguments
-at definition heads are untouched — the check keys on `cPrj` structural
-drop counts only, never on `ghost` policies. -/
-def checkCtorSaturation (ctx : EraseCtx) (T : ETables) (idx : UInt64)
-    (visibleArgs : Nat) : Except EraseErr Unit :=
-  if !ctx.strictCtorParams then .ok ()
-  else
+/-- Erase a visible reference head. A parameterized constructor whose visible
+spine has not consumed every dropped source parameter becomes a chain of
+ignored target closures around the real constructor reference. Once the
+complete prefix is visible, the wrappers are unnecessary and the head erases
+directly to the target constructor. -/
+def eraseRefHead (ctx : EraseCtx) (T : ETables) (idx : UInt64)
+    (visibleArgs : Nat) : Except EraseErr IxIR0.Expr :=
+  match T.refs[idx.toNat]? with
+  | none => .error (.unsupported s!"ref {idx.toNat} out of range")
+  | some address =>
     let params := refCtorParams ctx T idx
-    if params == 0 || params ≤ visibleArgs then .ok ()
-    else .error (.unsupported splitCtorSpineMsg)
+    if visibleArgs < params then
+      .ok (lamManyN (params - visibleArgs) (.ref address))
+    else .ok (.ref address)
 
 /-- Target of a `recur` reference: the recSelf slot when erasing the
 recursor's own rules, a member address otherwise. -/
@@ -378,27 +421,23 @@ def eraseExpr (ctx : EraseCtx) (fuel : Nat) (T : ETables)
       match T.sharing[i.toNat]? with
       | none => .error (.unsupported s!"share {i.toNat} out of range")
       | some e' => eraseExpr ctx fuel T mask e'
-    | .ref idx _ => do
-      -- a bare reference sees zero spine arguments (spine heads are
-      -- checked against their visible argument count in `.app` below)
-      checkCtorSaturation ctx T idx 0
-      match T.refs[idx.toNat]? with
-      | some a => pure (.ref a)
-      | none => .error (.unsupported s!"ref {idx.toNat} out of range")
-    | .recur idx _ => recurTarget T mask idx.toNat
+    | e@(.ref idx _) => do
+      let head ← eraseRefHead ctx T idx 0
+      .ok (protectRecIndices ctx T e 0 head)
+    | e@(.recur idx _) => do
+      let head ← recurTarget T mask idx.toNat
+      .ok (protectRecIndices ctx T e 0 head)
     | .app f a => do
       let (args, base₀) := Compilatrix.Ixon.Expr.collectApp (.app f a)
       let base ← expandShare T.sharing fuel base₀
       let pols := headPolicies ctx fuel T base
       let head : IxIR0.Expr ←
         match base with
-        | .ref idx _ => do
-          checkCtorSaturation ctx T idx args.length
-          match T.refs[idx.toNat]? with
-          | some a => pure (.ref a)
-          | none => .error (.unsupported s!"ref {idx.toNat} out of range")
+        | .ref idx _ => eraseRefHead ctx T idx args.length
+        | .recur idx _ => recurTarget T mask idx.toNat
         | _ => eraseExpr ctx fuel T mask base
-      eraseArgs ctx fuel T mask pols 0 args head
+      let target ← eraseArgs ctx fuel T mask pols 0 args head
+      .ok (protectRecIndices ctx T base args.length target)
   termination_by fuel
 
 /-- Fold spine arguments over their policies onto the erased head. -/
@@ -454,16 +493,29 @@ def eraseRecursor (ctx : EraseCtx) (fuel : Nat) (T : ETables)
     pure ({ fields := rule.fields.toNat, rhs } : IxIR0.RecRule)
   pure (.recursor (p + m + mi) (ctx.natBlock == some blockAddr) rules)
 
-private def quotMkBody : IxIR0.Expr :=
-  .lam .many (.lam .many (.lam .many (.var 0)))
+def quotientCore : Ixon.QuotKind → IxIR0.Expr
+  | Ixon.QuotKind.type => .erased
+  | Ixon.QuotKind.ctor => .var 0
+  | Ixon.QuotKind.lift => .app (.var 2) (.var 0)
+  | Ixon.QuotKind.ind => .app (.var 1) (.var 0)
 
-private def quotLiftBody : IxIR0.Expr :=
-  .lam .many (.lam .many (.lam .many (.lam .many (.lam .many (.lam .many
-    (.app (.var 2) (.var 0)))))))
+def quotMkBody : IxIR0.Expr :=
+  lamManyN (Ixon.Eval.quotArity Ixon.QuotKind.ctor)
+    (quotientCore Ixon.QuotKind.ctor)
 
-private def quotIndBody : IxIR0.Expr :=
-  .lam .many (.lam .many (.lam .many (.lam .many (.lam .many
-    (.app (.var 1) (.var 0))))))
+def quotLiftBody : IxIR0.Expr :=
+  lamManyN (Ixon.Eval.quotArity Ixon.QuotKind.lift)
+    (quotientCore Ixon.QuotKind.lift)
+
+def quotIndBody : IxIR0.Expr :=
+  lamManyN (Ixon.Eval.quotArity Ixon.QuotKind.ind)
+    (quotientCore Ixon.QuotKind.ind)
+
+def quotientBody : Ixon.QuotKind → IxIR0.Expr
+  | Ixon.QuotKind.type => .erased
+  | Ixon.QuotKind.ctor => quotMkBody
+  | Ixon.QuotKind.lift => quotLiftBody
+  | Ixon.QuotKind.ind => quotIndBody
 
 /-- Erase one constant into environment entries (a block yields one
 entry per member). -/
@@ -472,7 +524,7 @@ def eraseConstant (ctx : EraseCtx) (adr : Address) (c : Constant)
     Except EraseErr (List (Address × IxIR0.Decl)) := do
   let T : ETables :=
     { sharing := c.sharing, refs := c.refs
-      selfMuts := Ixon.Eval.selfMutsOf c.info }
+      selfMuts := Ixon.selfMutsOf c.info }
   match c.info with
   | .defn d =>
     if unfoldable d then do
@@ -483,11 +535,7 @@ def eraseConstant (ctx : EraseCtx) (adr : Address) (c : Constant)
   | .axio a => pure [(adr, .extern (teleBinders c.sharing fuel a.typ).length)]
   | .quot q =>
     let result := teleResultOwned c.sharing fuel q.typ
-    match q.kind with
-    | .type => pure [(adr, .defn result .erased)]
-    | .ctor => pure [(adr, .defn result quotMkBody)]
-    | .lift => pure [(adr, .defn result quotLiftBody)]
-    | .ind => pure [(adr, .defn result quotIndBody)]
+    pure [(adr, .defn result (quotientBody q.kind))]
   | .recr r => do
     let d ← eraseRecursor ctx fuel { T with curBlock := some adr } adr 0 r
     pure [(adr, d)]
@@ -560,6 +608,7 @@ private def aTwo := addrOf 0x16
 private def aThree := addrOf 0x17
 private def aPairBlock := addrOf 0x20
 private def aMk := addrOf 0x21
+private def aPair := addrOf 0x23
 
 private def natInd : Compilatrix.Ixon.Inductive :=
   { isUnsafe := false, lvls := 0, params := 0, indices := 0
@@ -632,10 +681,12 @@ private def cPairBlock : Constant :=
     sharing := #[], refs := #[], univs := #[.zero] }
 
 private def cMk := prjConst (.cPrj { idx := 0, cidx := 0, block := aPairBlock })
+private def cPair := prjConst (.iPrj { idx := 0, block := aPairBlock })
 
 private def program : List (Address × Constant) :=
   [(aNatBlock, cNatBlock), (aNat, cNat), (aZero, cZero), (aSucc, cSucc),
-   (aNatRec, cNatRec), (aAdd, cAdd), (aPairBlock, cPairBlock), (aMk, cMk)]
+   (aNatRec, cNatRec), (aAdd, cAdd), (aPairBlock, cPairBlock), (aMk, cMk),
+   (aPair, cPair)]
 
 private def resolver : Address → Option Constant := fun a =>
   (program.find? (fun p => p.1 == a)).map (·.2)
@@ -652,13 +703,13 @@ private def ectx : EraseCtx :=
   { resolve := resolver, blobs := testBlobs, natBlock := some aNatBlock }
 
 /-- Test frame refs: 0 = add, 1 = zero, 2 = succ, 3 = blob 2,
-4 = blob 3, 5 = mk. -/
+4 = blob 3, 5 = mk, 6 = Pair. -/
 private def testF : Frame :=
-  { refs := #[aAdd, aZero, aSucc, aTwo, aThree, aMk]
+  { refs := #[aAdd, aZero, aSucc, aTwo, aThree, aMk, aPair]
     univs := #[.succ (.succ .zero)] }
 
 private def testT : ETables :=
-  { refs := #[aAdd, aZero, aSucc, aTwo, aThree, aMk] }
+  { refs := #[aAdd, aZero, aSucc, aTwo, aThree, aMk, aPair] }
 
 private def ienv : IxIR0.Env :=
   IxIR0.Env.ofList ((eraseProgram ectx program).toOption.getD [])
@@ -711,9 +762,9 @@ private def natE : Nat → Compilatrix.Ixon.Expr
 
 -- dropped ctor params + projections: mk A B x y, prj skips params on
 -- the source side and params are gone on the target side
-#guard diffNat (.prj 0 0 (.app (.app (.app (.app (.ref 5 #[]) (.sort 0))
+#guard diffNat (.prj 6 0 (.app (.app (.app (.app (.ref 5 #[]) (.sort 0))
   (.sort 0)) (natE 1)) (natE 2)))
-#guard diffNat (.prj 0 1 (.app (.app (.app (.app (.ref 5 #[]) (.sort 0))
+#guard diffNat (.prj 6 1 (.app (.app (.app (.app (.ref 5 #[]) (.sort 0))
   (.sort 0)) (natE 1)) (natE 2)))
 
 -- an erased-binder redex: the argument slot gets ◻ on the target side
@@ -739,17 +790,9 @@ private def natE : Nat → Compilatrix.Ixon.Expr
 #guard (match ienv aNatRec with
   | some (.defn .shared (.ref _)) => true | _ => false)
 
-/-! Split/under-saturated constructor-parameter spines are erase-time
-errors — the formerly silent stuck-code miscompile — pinned by exact
-message (the `lowersErr` house pattern). The complete visible prefix
-and ghost arguments at definition heads keep compiling as before. -/
-
-/-- The eraser statically rejects `e` with exactly the expected
-diagnostic. -/
-private def erasesErr (e : Compilatrix.Ixon.Expr) (expected : String) : Bool :=
-  match eraseExpr ectx defaultFuel testT [] e with
-  | .error (.unsupported msg) => msg == expected
-  | _ => false
+/-! Split/under-saturated constructor-parameter spines lower through ignored
+target wrappers. The formerly silent early-fire miscompile stays closed while
+partial constructor values may now escape and be applied later. -/
 
 /-- `(let f := mk A in f) B x y`: the dropped-parameter prefix escapes
 the visible spine. The source saturates fine through the binding. -/
@@ -757,26 +800,130 @@ private def splitSpine : Compilatrix.Ixon.Expr :=
   .app (.app (.app (.letE false (.sort 0)
     (.app (.ref 5 #[]) (.sort 0)) (.var 0)) (.sort 0)) (natE 1)) (natE 2)
 
--- differential negative: the source evaluates to the full pair while
--- erasure (previously stuck target code) now fails closed
+-- The source and the newly wrapped target both evaluate to the full pair.
 #guard (match evalClosed sctx testF splitSpine with
   | .ok (.ctorV _ 0 0 [_, _, _, _]) => true
   | _ => false)
-#guard erasesErr splitSpine splitCtorSpineMsg
 
--- bare head, under-param spine, and a bare head under a let binding
-#guard erasesErr (.ref 5 #[]) splitCtorSpineMsg
-#guard erasesErr (.app (.ref 5 #[]) (.sort 0)) splitCtorSpineMsg
-#guard erasesErr (.letE false (.sort 0) (.ref 5 #[])
-    (.app (.app (.app (.app (.var 0) (.sort 0)) (.sort 0)) (natE 1))
-      (natE 2)))
-  splitCtorSpineMsg
+#guard (match eraseExpr ectx defaultFuel testT [] splitSpine with
+  | .ok target =>
+    match IxIR0.eval ictx 100000 [] target with
+    | .ok (.ctor address 0 [_, _]) => address == aMk
+    | _ => false
+  | .error _ => false)
+
+-- A bare head gets two wrappers; one visible parameter leaves one wrapper.
+#guard (match eraseExpr ectx defaultFuel testT [] (.ref 5 #[]) with
+  | .ok (.lam .many (.lam .many (.ref address))) => address == aMk
+  | _ => false)
+#guard (match eraseExpr ectx defaultFuel testT []
+    (.app (.ref 5 #[]) (.sort 0)) with
+  | .ok (.lam .many (.ref address)) => address == aMk
+  | _ => false)
+
+-- A bare head may escape through a let and consume both wrappers later.
+#guard (match eraseExpr ectx defaultFuel testT []
+    (.letE false (.sort 0) (.ref 5 #[])
+      (.app (.app (.app (.app (.var 0) (.sort 0)) (.sort 0)) (natE 1))
+        (natE 2))) with
+  | .ok target =>
+    match IxIR0.eval ictx 100000 [] target with
+    | .ok (.ctor address 0 [_, _]) => address == aMk
+    | _ => false
+  | .error _ => false)
 
 -- the complete parameter prefix still erases to the first-class head
 #guard (match eraseExpr ectx defaultFuel testT []
     (.app (.app (.ref 5 #[]) (.sort 0)) (.sort 0)) with
   | .ok (.ref a) => a == aMk
   | _ => false)
+
+/-! Configured quotient primitives use their real source arities and the
+fixed erased definitions above.  These deliberately small, all-kept
+telescopes isolate the semantic seam: both `lift` and `ind` must open the
+representative stored by `mk`, while the target runs the emitted lambda
+bodies. -/
+
+private def aQuotCtor := addrOf 0x30
+private def aQuotLift := addrOf 0x31
+private def aQuotInd := addrOf 0x32
+private def aQuotPayload := addrOf 0x33
+
+private def quotTestType : Nat → Compilatrix.Ixon.Expr
+  | 0 => .var 0
+  | n + 1 => .all .many .shared (.var 0) (quotTestType n)
+
+private def quotConst (kind : Compilatrix.Ixon.QuotKind)
+    (arity : Nat) : Constant :=
+  { info := .quot { kind, lvls := 0, typ := quotTestType arity }
+    sharing := #[], refs := #[], univs := #[] }
+
+private def quotProgram : List (Address × Constant) :=
+  [(aQuotCtor, quotConst Compilatrix.Ixon.QuotKind.ctor 3),
+   (aQuotLift, quotConst Compilatrix.Ixon.QuotKind.lift 6),
+   (aQuotInd, quotConst Compilatrix.Ixon.QuotKind.ind 5)]
+
+private def quotResolver : Address → Option Constant := fun a =>
+  (quotProgram.find? (fun p => p.1 == a)).map (·.2)
+
+private def quotKindAt : Address → Option Compilatrix.Ixon.QuotKind := fun a =>
+  if a == aQuotCtor then some Compilatrix.Ixon.QuotKind.ctor
+  else if a == aQuotLift then some Compilatrix.Ixon.QuotKind.lift
+  else if a == aQuotInd then some Compilatrix.Ixon.QuotKind.ind
+  else none
+
+private def quotSctx : EvalCtx :=
+  { resolve := quotResolver
+    blobs := fun a => if a == aQuotPayload then some (.natB 37) else none
+    quotientKind := quotKindAt }
+
+private def quotEctx : EraseCtx :=
+  { resolve := quotResolver
+    blobs := fun a => if a == aQuotPayload then some (.natB 37) else none }
+
+private def quotF : Frame :=
+  { refs := #[aQuotCtor, aQuotLift, aQuotInd, aQuotPayload]
+    univs := #[.zero] }
+
+private def quotT : ETables :=
+  { refs := #[aQuotCtor, aQuotLift, aQuotInd, aQuotPayload] }
+
+private def quotIctx : IxIR0.Ctx :=
+  { env := IxIR0.Env.ofList
+      ((eraseProgram quotEctx quotProgram).toOption.getD []) }
+
+private def ixApps (head : Compilatrix.Ixon.Expr)
+    (args : List Compilatrix.Ixon.Expr) : Compilatrix.Ixon.Expr :=
+  args.foldl .app head
+
+private def quotMk37 : Compilatrix.Ixon.Expr :=
+  ixApps (.ref 0 #[]) [.sort 0, .sort 0, .nat 3]
+
+private def quotLift37 : Compilatrix.Ixon.Expr :=
+  ixApps (.ref 1 #[])
+    [.sort 0, .sort 0, .sort 0,
+     .lam .many (.var 0) (.var 0), .sort 0, quotMk37]
+
+private def quotInd37 : Compilatrix.Ixon.Expr :=
+  ixApps (.ref 2 #[])
+    [.sort 0, .sort 0, .sort 0,
+     .lam .many (.var 0) (.var 0), quotMk37]
+
+private def diffQuotNat (source : Compilatrix.Ixon.Expr) : Bool :=
+  let sourceResult := match evalClosed quotSctx quotF source with
+    | .ok (.litV (.natL n)) => some n
+    | _ => none
+  let targetResult :=
+    match eraseExpr quotEctx defaultFuel quotT [] source with
+    | .ok target =>
+      match IxIR0.eval quotIctx 100000 [] target with
+      | .ok (.lit (.nat n)) => some n
+      | _ => none
+    | .error _ => none
+  sourceResult == some 37 && sourceResult == targetResult
+
+#guard diffQuotNat quotLift37
+#guard diffQuotNat quotInd37
 
 end Tests
 

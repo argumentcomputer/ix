@@ -21,9 +21,10 @@ a compiler-correctness proof.
 
 ## Scaling Ixon → IxIR₀
 
-The theorem covers literals, definitions, constructors whose visible dropped
-parameter prefix is fully supplied, projections, and parameterized recursor ι
-whose source-only index segment is syntactically visible and complete. The
+The theorem covers literals, definitions, configured quotient primitives,
+constructors with complete or protected escaping dropped-parameter prefixes,
+projections, and parameterized recursor ι with complete or protected escaping
+source-only index segments, including rule-local indexed recursive self calls. The
 ordinary recursor-pap relation keeps source and target lengths aligned through
 the parameter/motive/minor segment; indexed spines are certified as one unit
 through the later source-only segment.
@@ -59,12 +60,26 @@ target lengths, and its append lemmas implement keep, ghost, and drop steps.
 `RuntimePolicyPrefix` is the runtime cursor used by recursor paps. `papRec`
 uses its slot-preserving parameter/motive/minor prefix for index-free partial
 applications. `RecEraseSpine` instead carries the complete policy, including
-source-only `drop` steps, until an indexed pre-major spine is fully supplied.
+source-only `drop` steps. A complete indexed pre-major spine produces
+`papRecI`. If a visible spine stops inside the index suffix,
+`captureThenIgnoreN` first evaluates and let-captures the target pap, then
+exposes one ignored continuation binder per remaining index. `PErase.recW` and
+`ValRel.papRecIW` certify that wrapper through arbitrary variable- or let-headed
+applications and transition to `papRecI` exactly when the last index is
+consumed. The let prevents surrounding de Bruijn variables in the pre-major
+pap from being captured by the new lambdas. `RecEraseSpine.selfHead` gives the
+same treatment to a rule-local indexed `recur` head; it obtains `RecMember`
+from `EnvRel.selfB` at simulation time instead of recursively requiring the
+member while its rule body is being certified.
 `ctorPolicy` plus `ctor_fields` extracts the retained field relation after the
 dropped parameter prefix. Constructor pap/value cases carry this cursor,
 including an explicit strict-under-saturation invariant. `CtorParamSpine`
-implements the target stutter for a visible complete parameter prefix; after
-that boundary, ordinary application advances through related fields.
+tracks any visible parameter prefix. A partial prefix emits one ignored target
+lambda per remaining parameter (`PErase.ctorW`); `ValRel.papCtorParams` relates
+the source pap to that closure and remains closed under generic application,
+even after the value escapes through a variable or let. The final wrapper
+application exposes the field-arity constructor, after which ordinary
+`papCtor`/`ctorV` application advances through related fields.
 
 There is one coupling that the original ordering understated. The current
 simulation is deliberately untyped. If a parameterized constructor value is
@@ -75,9 +90,10 @@ fields. Those checks need not agree. Consequently constructor-value
 generalization and recursor-major parameter compatibility landed together:
 source firing guards constructor-block identity and literal
 parameterlessness, while `RecMember` records `BlockParams` for the finite
-mutual table. The validator admits the syntactically known drop stutter only
-after the full parameter prefix, when its result is safe for the global value
-relation.
+mutual table. Before the full parameter prefix, `papCtorParams` exposes only
+an ignored closure, which cannot be mistaken for a recursor major. The final
+wrapper application transitions to `papCtor` or `ctorV`, where those block and
+layout guards apply.
 
 Rule environments now retain a mask derived from the policy list:
 
@@ -91,9 +107,10 @@ cursor directly into the reversed rule environment rather than re-proving
 segment arithmetic. For an indexed recursor, the full cursor is split at the
 drop suffix only after every index has been consumed; `papRecI` then records
 the source rule arguments and index arguments separately while exposing the
-same ready-to-fire target pap. This boundary is essential: an intermediate
+same ready-to-fire target pap. This boundary is essential: an intermediate raw
 target pap is already one application from firing, while its source counterpart
-still expects indices and a major, so it cannot safely enter global `ValRel`.
+still expects indices and a major, so only the protected `papRecIW`
+continuation may enter global `ValRel`.
 
 ### Shares factor out before erasure
 
@@ -119,24 +136,126 @@ wrapper run the real eraser on original shared input, then validate its exact
 target against the inlined `PErase` source. `CertifiedSharedExpr.simulatesClosed`
 connects that certificate directly to the composed theorem.
 
-### The three genuinely hard frontiers
+### Neutral eliminations, String literals, and the strict erasure boundary
 
-1. **Dropped-variable reads — usage soundness.** `EnvRel` intentionally leaves
-   dropped slots unconstrained, so a clause mapping a read to `erased` is
-   false. The dependency is a semantic non-interference theorem for
-   `UsageCheck`: changing a 0-mode binding cannot change evaluation in a
-   relevant result position. Prove that theorem (or an equivalent typed
-   logical relation) before extending `PErase.var`.
-2. **Externs — oracle correspondence.** Add an `OracleRel` indexed by ledger
-   address. Related argument lists plus a successful source oracle result must
-   produce a related target result. `Covered` may authorize an extern only
-   with that per-address witness; lowering to `Decl.extern` alone grants no
-   semantics.
-3. **Quotients — source ι first.** The target already compiles `Quot.mk/lift/ind`
-   to ordinary functions, while the source evaluator currently leaves
-   quotient constants neutral. Add and test source quotient ι, then prove the
-   compiled functions simulate it. Do not prove correctness against a source
-   semantics that lacks the reduction being compiled.
+Open evaluation and certified runtime evaluation deliberately use two modes.
+With `EvalCtx.preserveNeutralElims = true`, projecting a neutral value produces
+a `NeutralId.projection` pap whose first argument is the projected neutral;
+later applications extend that same spine. A recursor pap is classified as
+neutral only once it is saturated, and firing it on a neutral major preserves
+the complete recursor application. Mutual-member neutrals use
+`NeutralId.member block index`, so equal local indices in different blocks do
+not collapse. `EvalCtx.inlineSharing` preserves the mode, and the sharing
+coherence proof maps all of these values structurally.
+
+Projection identity is checked before either reduction or neutral-spine
+construction. The local `prj` type index must select a resolved `iPrj`; that
+projection must resolve to the named inductive member; and a constructor value
+must carry the same block and member index. Only then is the field selected
+after the inductive parameter prefix. Missing, non-`iPrj`, wrong-member,
+wrong-family, and out-of-range cases fail closed.
+
+Certified erasure stays in the default strict mode. Its projection theorem
+uses the fact that every successful source projection selected a real
+constructor; admitting a successful neutral projection would invalidate that
+constructor-only premise for the erased projection trace. Accordingly,
+String recursor majors have a second opt-in source behavior.
+`EvalCtx.stringLiteral` supplies the exact addresses of `Char`, `Char.ofNat`,
+`String.ofList`, and `List.nil/cons`. A literal is rebuilt in Unicode-scalar
+order as the upstream universe-zero `List Char` term, then all five heads and
+the current String representation compute through the ordinary resolver and
+application semantics. This deliberately avoids encoding a particular String
+constructor layout in the evaluator. Sharing coherence follows every resolved
+head and intermediate application.
+
+IxIR₀ does not yet represent that constructor expansion, so certified erasure
+must not claim those additional successful source runs. `EvalCtx.Strict`
+therefore packages both `preserveNeutralElims = false` and
+`stringLiteral = none`. `MemberCoverage.nil` carries the package, validated
+program coverage rejects either open feature, and empty-member-scope
+simulation and lowering theorems take it explicitly. Member-scoped theorems
+recover it from their coverage certificate. This is a semantic boundary, not
+merely a validator convention: the opt-in behaviors remain available to the
+source evaluator, but those runs are not claimed by the current IxIR₀
+simulation.
+
+### Configured quotient compilation
+
+Quotient computation is explicit closed-world configuration, not a name test.
+`EvalCtx.quotientKind` must assign a resolved quotient address exactly the kind
+stored in its constant. Unconfigured addresses retain the old neutral
+behavior, while a mismatched configured kind is stuck. A configured `quotH`
+uses the source arity of `Quot`, `Quot.mk`, `Quot.lift`, or `Quot.ind`.
+Saturated `mk` produces a distinct `quotV` wrapper rather than an
+over-applicable pap; `lift` and `ind` recover its representative and apply the
+supplied function at smaller evaluator fuel.
+
+Erasure emits fixed public lambda bodies (`quotientBody`). `ValRel.quotType`
+maps the type primitive to `◻`; `papQuot` relates every strict source prefix to
+the corresponding residual IxIR₀ closure; and `quotV` relates the wrapper
+through its representative. The generic application proof reuses the main
+simulation on a synthetic two-variable application for the eliminator call.
+`Covered.quot` and `EraseValidator.validateCovered` additionally pin the
+configured address/kind, exact emitted body, and source-telescope result
+ownership. `SimInstance.quotientLiftSim` and `quotientIndSim` certify real
+program and expression erasures and return the contentful representative
+`37` on both sides. Full sharing coherence preserves the quotient
+configuration and recursively inlines representatives inside `quotV`.
+
+### Hard frontiers and landed relation slices
+
+1. **Dropped-variable occurrences — landed fragment.** `EnvRel` intentionally
+   leaves dropped slots unconstrained, so a clause mapping a direct read to
+   `erased` remains false. The landed `UsageSound` theorem instead combines an
+   accepted-lambda computed-zero witness with exact `PErase` and two source
+   environments related to one target environment. Successful source runs
+   then share a common erased observation, not necessarily equal raw values
+   (closures can retain distinct irrelevant captures). The contentful fixture
+   passes the changed dropped variable as a known definition's ghost argument;
+   the checker zero-scales that occurrence, the eraser emits `◻`, and both
+   `7̂`/`8̂` runs return `9̂`. Direct live reads are rejected. Typed
+   higher-order heads and termination/error non-interference remain open.
+2. **Externs — landed explicit oracle correspondence.** Configured opaque
+   definitions and axioms have structural `Covered` cases that pin the source
+   kind and configured arity to the exact same-arity target `Decl.extern`.
+   `papExtern` relates every strict application prefix. At saturation,
+   `OracleRelAt` requires related argument lists and turns each successful
+   source-oracle result into a related target-oracle result. The validator can
+   reconstruct the structural witness but cannot authorize semantics, so
+   `OracleRel` stays an explicit theorem premise and is threaded through the
+   IxIR₁ progress composition. The old general neutral-to-erased clause is
+   restricted to resolved inductive-projection type heads. A contentful axiom
+   fixture returns `42` on both sides; negative guards cover absent
+   configuration, target-arity drift, and a configured source oracle miss.
+3. **Split indexed recursion — landed protected continuation.** The executable
+   eraser protects a pre-major target pap for exactly the remaining source-only
+   indices. The validator reconstructs the wrapper structurally, and the
+   theorem proves it closed under generic application after escape through a
+   let. A contentful two-constructor family exercises both the projection head
+   and a rule-local indexed self call, recursively reducing a step-wrapped base
+   value to `73` on both evaluators.
+4. **Mutual members — landed all emitted member kinds.**
+   `Covered.defnProj` follows an unfoldable public `dPrj` through the exact
+   synthetic member alias, checks result ownership once for both declarations,
+   and validates the member body in the block frame. `PErase.recurI` ties a
+   non-self runtime member slot to the same resolver-selected inductive whose
+   emitted declaration is `◻`; `ValRel.inductiveMember` stays closed under
+   arbitrary later application because both target reference and applications
+   absorb to `◻`. One fixture returns `91` through `dPrj`; a mixed block
+   evaluates an escaping inductive-member application and then returns `88`.
+   `MemberScope.plan` names the finite definition/recursor member set, while
+   `MemberCoverage` proves every body/rule set against the same holes rather
+   than nesting acyclic `Covered` proofs. `PErase.recurD`/`recurR` and
+   `RecEraseSpine.memberHead` consume that certificate, including through
+   recursor firing and the call-aware projection-safe trace. Exact fixtures
+   close a two-definition cycle returning `71` and alternating recursors
+   returning `77`; an incomplete plan is rejected. For an opaque definition,
+   source `.recur` and public `dPrj` evaluation now use the exact synthetic
+   member address emitted as the target extern key. `PErase.recurO`,
+   `MemberRel.externDefn`, and `Covered.externDefnProj` pin resolution,
+   configuration, alias shape, and arity, while the existing same-address
+   `OracleRel` supplies semantics. A wrapper call and direct public projection
+   both return `83`; missing configuration and target-arity drift are rejected.
 
 ### Proof-engineering automation
 
@@ -151,9 +270,13 @@ connects that certificate directly to the composed theorem.
 
 The landed order is: share-eval coherence → generic policy relation →
 constructor parameters → recursor parameters → complete visible recursor
-indices. The remaining order is usage non-interference → oracle
-correspondence → quotient ι; split/under-applied structural-drop paps require
-a separate protected relation before they can be admitted.
+indices → computed-erased successful-run non-interference → configured
+quotient ι and compilation → configured opaque/axiom extern correspondence.
+The constructor-wrapper lift, protected indexed-continuation/self-call lift,
+definition-projection/non-self-inductive lift, and simultaneous cyclic-member
+certificate follow that sequence, followed by opaque mutual-member identity.
+Remaining relation work is the typed higher-order/broader dropped-occurrence
+frontier; separately, real IR content addressing must retire `memberAddr`.
 
 ## Starting IxIR₀ → IxIR₁
 
