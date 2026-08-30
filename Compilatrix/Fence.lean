@@ -30,6 +30,7 @@ import Compilatrix.IxIR1.HPTCache
 import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.HPTCasePruneProgram
 import Compilatrix.IxIR1.HPTPAPFuse
+import Compilatrix.IxIR1.HPTPAPFuseProgram
 import Compilatrix.SimInstance
 import Compilatrix.UsageSound
 import Compilatrix.Ixon.Address
@@ -814,6 +815,15 @@ heap-history evaluator congruence and its executable local decision theorem. -/
 
 /-- info: 'Compilatrix.IxIR1.HPT.PAPFuse.fusePair?_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.PAPFuse.fusePair?_refines
+
+/-- info: 'Compilatrix.IxIR1.Sim.runCode_abstractEnvironment' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Sim.runCode_abstractEnvironment
+
+/-- info: 'Compilatrix.IxIR1.HPT.OptimizeProgram.runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.OptimizeProgram.runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle
 
 /-- info: 'Compilatrix.Pipeline.Artifact.runMain_pruneProgram_of_checkAndPruneProgramWith_eq_ok' depends on axioms: [propext,
  Classical.choice,

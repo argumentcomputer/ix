@@ -254,11 +254,16 @@ arbitrary fuel. The scalar-capture restriction is the current ownership
 boundary: IxIR₁ declarations retain result ownership but not parameter modes,
 so HPT cannot certify an arbitrary heap capture as shared.
 
-`HPTPAPFuseProgram.lean` composes case pruning and PAP fusion before one
-content-address rebuild. PAP fusion remains disabled in `defaultPolicy` until
-the local history refinement is lifted through this complete recursive
-declaration-context rewrite; version 1 can be enabled explicitly for testing
-and staged consumers.
+`EvalRewrite.lean` packages an abstract declaration-environment relation whose
+function clause preserves arity, result ownership, and successful body runs
+modulo heap allocation history. Its common evaluator induction covers direct
+calls, dynamic `callSelf`, PAP application, and reclamation entries.
+`HPTPAPFuseProgram.lean` instantiates that relation for the composed case/PAP
+rewrite, proves top-level main refinement under a fail-closed synthetic-owner
+condition, and transports the result through one exact content-address
+rebuild. A successful HPT check plus successful rebuild therefore authorizes
+`runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle`; PAP fusion version 1
+is enabled in `defaultPolicy`.
 
 Changed function bytes cannot retain their old content addresses.
 `ReaddressAll.rebuild` therefore alpha-renames function producers into a

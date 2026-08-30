@@ -2480,9 +2480,7 @@ def papFusionHarnessOk : Bool :=
       match artifact.produceHPT with
       | .error _ => false
       | .ok production =>
-          let policy : IxIR1.Optimizer.Policy :=
-            { casePrune := { enabled := false }
-              papFuse := { enabled := true } }
+          let policy := IxIR1.Optimizer.defaultPolicy
           let (optimized, report) :=
             artifact.optimizeWithProducedHPT policy production
           let oldCtx : IxIR1.Ctx := { decls := artifact.targetDeclEnv }

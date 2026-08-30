@@ -175,6 +175,78 @@ def symm {left right : Store} (iso : HeapHistoryIso left right) :
     · obtain ⟨leftBox, rightBox, hl, hr, hbox⟩ := hlive
       exact .inr ⟨rightBox, leftBox, hr, hl, hbox.symm⟩
 
+/-- Composition of allocation histories.  A dead/dead row composes only with
+another dead/dead row; a live middle location forces both sides to expose the
+same middle box, so node isomorphisms compose. -/
+def trans {left middle right : Store}
+    (first : HeapHistoryIso left middle)
+    (second : HeapHistoryIso middle right) : HeapHistoryIso left right where
+  locRel := fun leftLoc rightLoc =>
+    ∃ middleLoc, first.locRel leftLoc middleLoc ∧
+      second.locRel middleLoc rightLoc
+  left_unique := by
+    intro leftLoc right₁ right₂ h₁ h₂
+    obtain ⟨middle₁, hleft₁, hright₁⟩ := h₁
+    obtain ⟨middle₂, hleft₂, hright₂⟩ := h₂
+    have hmiddle : middle₁ = middle₂ :=
+      first.left_unique hleft₁ hleft₂
+    subst middle₂
+    exact second.left_unique hright₁ hright₂
+  right_unique := by
+    intro left₁ left₂ rightLoc h₁ h₂
+    obtain ⟨middle₁, hleft₁, hright₁⟩ := h₁
+    obtain ⟨middle₂, hleft₂, hright₂⟩ := h₂
+    have hmiddle : middle₁ = middle₂ :=
+      second.right_unique hright₁ hright₂
+    subst middle₂
+    exact first.right_unique hleft₁ hleft₂
+  left_bound := by
+    intro leftLoc rightLoc hrel
+    exact first.left_bound hrel.choose_spec.1
+  right_bound := by
+    intro leftLoc rightLoc hrel
+    exact second.right_bound hrel.choose_spec.2
+  left_total := by
+    intro leftLoc leftBox hleft
+    obtain ⟨middleLoc, hmiddleRel⟩ := first.left_total hleft
+    rcases first.related hmiddleRel with hdead | hlive
+    · exact False.elim
+        (Option.some_ne_none leftBox (hleft.symm.trans hdead.1))
+    · obtain ⟨foundLeft, middleBox, hfoundLeft, hmiddle, _⟩ := hlive
+      obtain ⟨rightLoc, hrightRel⟩ := second.left_total hmiddle
+      exact ⟨rightLoc, middleLoc, hmiddleRel, hrightRel⟩
+  right_total := by
+    intro rightLoc rightBox hright
+    obtain ⟨middleLoc, hmiddleRel⟩ := second.right_total hright
+    rcases second.related hmiddleRel with hdead | hlive
+    · exact False.elim
+        (Option.some_ne_none rightBox (hright.symm.trans hdead.2))
+    · obtain ⟨middleBox, foundRight, hmiddle, hfoundRight, _⟩ := hlive
+      obtain ⟨leftLoc, hleftRel⟩ := first.right_total hmiddle
+      exact ⟨leftLoc, middleLoc, hleftRel, hmiddleRel⟩
+  related := by
+    intro leftLoc rightLoc hrel
+    obtain ⟨middleLoc, hleftRel, hrightRel⟩ := hrel
+    rcases first.related hleftRel with hfirstDead | hfirstLive
+    · rcases second.related hrightRel with hsecondDead | hsecondLive
+      · exact .inl ⟨hfirstDead.1, hsecondDead.2⟩
+      · obtain ⟨middleBox, rightBox, hmiddle, _, _⟩ := hsecondLive
+        exact False.elim
+          (Option.some_ne_none middleBox (hmiddle.symm.trans hfirstDead.2))
+    · obtain ⟨leftBox, middleBox₁, hleft, hmiddle₁, hbox₁⟩ :=
+        hfirstLive
+      rcases second.related hrightRel with hsecondDead | hsecondLive
+      · exact False.elim
+          (Option.some_ne_none middleBox₁
+            (hmiddle₁.symm.trans hsecondDead.1))
+      · obtain ⟨middleBox₂, rightBox, hmiddle₂, hright, hbox₂⟩ :=
+          hsecondLive
+        have hmiddleBox : middleBox₁ = middleBox₂ :=
+          Option.some.inj (hmiddle₁.symm.trans hmiddle₂)
+        subst middleBox₂
+        exact .inr ⟨leftBox, rightBox, hleft, hright,
+          hbox₁.trans hbox₂⟩
+
 /-- Updating corresponding live boxes preserves allocation history. -/
 def setBox {left right : Store} (iso : HeapHistoryIso left right)
     {leftLoc rightLoc : Nat} (hrel : iso.locRel leftLoc rightLoc)
@@ -502,6 +574,22 @@ theorem mono {r₁ r₂ : Nat → Nat → Prop}
   | _, _, .cons hhead htail =>
       .cons (hhead.mono hmono) (mono hmono htail)
 
+theorem symm {r : Nat → Nat → Prop} :
+    ∀ {left right : List RVal}, RValsIso r left right →
+      RValsIso (fun rightLoc leftLoc => r leftLoc rightLoc) right left
+  | _, _, .nil => .nil
+  | _, _, .cons hhead htail => .cons hhead.symm htail.symm
+
+theorem trans {r₁ r₂ : Nat → Nat → Prop} :
+    ∀ {left middle right : List RVal},
+      RValsIso r₁ left middle → RValsIso r₂ middle right →
+      RValsIso (fun leftLoc rightLoc =>
+        ∃ middleLoc, r₁ leftLoc middleLoc ∧ r₂ middleLoc rightLoc)
+        left right
+  | _, _, _, .nil, .nil => .nil
+  | _, _, _, .cons hleft hlefts, .cons hright hrights =>
+      .cons (hleft.trans hright) (hlefts.trans hrights)
+
 @[simp] theorem lengths {r : Nat → Nat → Prop}
     {left right : List RVal} (h : RValsIso r left right) :
     left.length = right.length := by
@@ -647,7 +735,39 @@ def StoreHistoryIso {left right : Store}
     (leftOut rightOut : Store) : Prop :=
   ∃ heap : HeapHistoryIso leftOut rightOut, before.Extends heap
 
-private theorem resolveAtom_historyIso
+namespace RunHistoryIso
+
+/-- A result relation proved from a later entry history is also valid from
+any earlier history whose location pairs the later history retains. -/
+theorem weaken {left right beforeLeft beforeRight : Store}
+    {earlier : HeapHistoryIso left right}
+    {before : HeapHistoryIso beforeLeft beforeRight}
+    {leftOut rightOut : Store × RVal}
+    (hextends : earlier.Extends before)
+    (hrun : RunHistoryIso before leftOut rightOut) :
+    RunHistoryIso earlier leftOut rightOut := by
+  obtain ⟨after, hbefore, hvalue⟩ := hrun
+  exact ⟨after, hextends.trans hbefore, hvalue⟩
+
+/-- Sequentially related executions compose their output heaps and values. -/
+theorem trans {left middle right : Store}
+    {first : HeapHistoryIso left middle}
+    {second : HeapHistoryIso middle right}
+    {leftOut middleOut rightOut : Store × RVal}
+    (hfirst : RunHistoryIso first leftOut middleOut)
+    (hsecond : RunHistoryIso second middleOut rightOut) :
+    RunHistoryIso (first.trans second) leftOut rightOut := by
+  obtain ⟨firstHeap, hfirstExtends, hfirstValue⟩ := hfirst
+  obtain ⟨secondHeap, hsecondExtends, hsecondValue⟩ := hsecond
+  exact ⟨firstHeap.trans secondHeap,
+    (fun hrel =>
+      ⟨hrel.choose, hfirstExtends hrel.choose_spec.1,
+        hsecondExtends hrel.choose_spec.2⟩),
+    hfirstValue.trans hsecondValue⟩
+
+end RunHistoryIso
+
+theorem resolveAtom_historyIso
     {rel : Nat → Nat → Prop} {left right : List RVal}
     (henv : RValsIso rel left right) {atom : Atom} {leftValue : RVal}
     (hleft : resolveAtom left atom = .ok leftValue) :
@@ -711,7 +831,7 @@ private theorem List.resolveAtomsFrom_historyIso
             (leftAcc ++ [leftValue]) (rightAcc ++ [rightValue]) leftOut
             (hacc.append (.cons hvalueIso .nil)) hleft
 
-private theorem resolveAtoms_historyIso
+theorem resolveAtoms_historyIso
     {rel : Nat → Nat → Prop} {left right : List RVal}
     (henv : RValsIso rel left right) {atoms : Array Atom}
     {leftValues : List RVal}
@@ -739,7 +859,7 @@ private theorem RValIso.hasWorld_eq
         rw [hleft, hright]
         exact congrArg (fun found => found == world) hbox.world
 
-private theorem checkResultWorld_historyIso
+theorem checkResultWorld_historyIso
     {left right : Store} (iso : HeapHistoryIso left right)
     {leftValue rightValue : RVal}
     (hvalue : RValIso iso.locRel leftValue rightValue)
@@ -757,7 +877,7 @@ private theorem checkResultWorld_historyIso
     simp [hworld, hright]
   · simp [hworld] at hleft
 
-private theorem dupVals_historyIso
+theorem dupVals_historyIso
     {left right : Store} (iso : HeapHistoryIso left right) :
     ∀ {leftValues rightValues : List RVal},
       RValsIso iso.locRel leftValues rightValues →
@@ -831,7 +951,7 @@ private theorem dupVals_historyIso
                   refine ⟨rightOut, hrightOut', outIso, ?_⟩
                   exact fun h => hout h
 
-private theorem callScalarOracle_historyIso
+theorem callScalarOracle_historyIso
     {ctx : Ctx} {function : Compilatrix.Ixon.Address}
     {leftValues rightValues : List RVal}
     {rel : Nat → Nat → Prop} (hvalues : RValsIso rel leftValues rightValues)
@@ -869,7 +989,7 @@ private theorem List.foldl_cons_eq_reverse_append
       rw [ih]
       simp [List.reverse_cons, List.append_assoc]
 
-private theorem Array.foldl_cons_historyIso
+theorem Array.foldl_cons_historyIso
     {rel : Nat → Nat → Prop} {left right : Array RVal}
     (hvalues : RValsIso rel left.toList right.toList)
     {leftEnvironment rightEnvironment : List RVal}

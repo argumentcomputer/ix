@@ -1,12 +1,11 @@
 # IxIR₁ optimizer harness
 
-Status: O0 delivered 2026-08-30 for the default shrinking bundle. Its checked
-HPT consumer propagates facts through complete stored function bodies, prunes
-impossible alternatives, and collapses a certified detailed unary case to one
-checked `fetch`. O1 local PAP/application fusion now uses the same traversal,
-one-rebuild path, policy, and report, but remains opt-in until its proved local
-heap-history refinement is lifted through the complete declaration-context
-rewrite.
+Status: O1 PAP/application fusion joined the default shrinking bundle on
+2026-08-30. The checked HPT consumers propagate facts through complete stored
+function bodies, prune impossible alternatives, collapse a certified detailed
+unary case to one checked `fetch`, and fuse adjacent PAP/application pairs.
+Both consumers share one logical declaration rewrite and one content-address
+rebuild.
 
 The implementation is `Compilatrix/IxIR1/Optimizer.lean`, with compiler-facing
 entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
@@ -15,10 +14,10 @@ entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
 ## Policy and fallback
 
 `Optimizer.Policy` carries harness version 2, case-simplifier version 3, and
-PAP-fusion version 1. Both passes have independent enable bits; case pruning is
-enabled by default and PAP fusion is opt-in. The shared deterministic bounds
-cover input instructions, canonical code bytes, and checked-certificate bytes.
-The harness is disabled only when both pass bits are false.
+PAP-fusion version 1. Both passes have independent enable bits and are enabled
+by default. The shared deterministic bounds cover input instructions,
+canonical code bytes, and checked-certificate bytes. The harness is disabled
+only when both pass bits are false.
 
 PAP fusion recognizes adjacent `papp`/`apply` binders and classifies their
 combined arguments as under-, exactly-, or over-saturated. It retains both
@@ -85,23 +84,24 @@ The compiled tests pin five properties:
    root; and
 4. after HPT is recomputed on the transformed root, the default shrinking pass
    reports `unchanged` and reproduces that root; and
-5. the opt-in PAP pass fuses under-, exact-, and over-saturation in one graph,
+5. the default PAP pass fuses under-, exact-, and over-saturation in one graph,
    reports each class, rejects non-scalar captures and binder-sensitive shapes,
    preserves the scalar result with an empty live heap, and reaches a fixed
    point after HPT recomputation.
 
 The production Ixon→IxIR₁ integration fixture separately exercises default
 report generation and the disable path on compiler-emitted code. Default-pass
-semantic authority still comes from the checked case-simplification and
-readdressing theorems documented in [HPT certificates](hpt-certificates.md).
-For PAP fusion, `fusePair?_refines` proves every accepted local decision at
-arbitrary fuel modulo allocation-history isomorphism; the missing combined
-declaration-context lifting is why the policy defaults off.
+semantic authority comes from the checked whole-program history-refinement and
+exact readdressing theorems documented in
+[HPT certificates](hpt-certificates.md). `fusePair?_refines` proves each local
+PAP decision; `runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle` lifts
+those decisions through main, stored declarations, recursive self calls,
+direct calls, PAP application, and the final one-rebuild path.
 
 ## Next extension
 
 Each remaining O1 consumer must add a versioned control, pass-attributed
-counters, a canonical report entry, a fail-soft path, and a fixed-point
-regression. The next PAP step is its combined declaration-context theorem.
-Fetch forwarding, known-shape destruction, rooted reachability, and exact-case
-collapse beyond the checked unary form remain active work.
+counters, a canonical report entry, a fail-soft path, a whole-program theorem,
+and a fixed-point regression. Fetch forwarding, known-shape destruction,
+rooted reachability, and exact-case collapse beyond the checked unary form
+remain active work.

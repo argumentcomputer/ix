@@ -1297,6 +1297,15 @@ def LocalPostFixpoint (declarations : DeclEnv) (summaries : SummaryEnv) : Prop :
       inferFunction declarations summaries address function = .ok inferred ∧
         inferred.le claimed = true
 
+/-- An analysis owner is semantically usable either when it names the exact
+dynamic current function, or when it has no summary and every attempted
+`callSelf` transfer therefore fails closed.  The second form is the natural
+contract for a top-level main, which has a current frame but no declaration
+row. -/
+def AnalysisOwnerCompatible (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Address) (current : FnDef) : Prop :=
+  declarations owner = some (.fn current) ∨ summaries owner = none
+
 /-! ## Finite shape-fold coverage -/
 
 theorem holds_of_applyShapeFacts_member
@@ -1362,7 +1371,7 @@ private def CodeSoundAt (declarations : DeclEnv) (summaries : SummaryEnv)
     (fuel : Nat) : Prop :=
   ∀ ctx owner current store facts values code outputStore outputValue inferred,
     ctx.decls = declarations →
-    declarations owner = some (.fn current) →
+    AnalysisOwnerCompatible declarations summaries owner current →
     EnvironmentHolds declarations store facts values →
     analyzeCode declarations summaries owner current facts code = .ok inferred →
     runCode ctx fuel current store values code =
@@ -1378,7 +1387,7 @@ private theorem analyzeAlternatives_sound
     {cidx fieldCount : Nat} {body : Code} {fieldValues : List RVal}
     {outputStore : Store} {outputValue : RVal} {inferred : Fact}
     (hctx : ctx.decls = declarations)
-    (hcurrent : declarations owner = some (.fn current))
+    (hcurrent : AnalysisOwnerCompatible declarations summaries owner current)
     (henvironment : EnvironmentHolds declarations store facts values)
     (hmember : Alt.mk cidx fieldCount body ∈ alternatives)
     (hbinders : EnvironmentHolds declarations store
@@ -1425,11 +1434,11 @@ private theorem analyzeAlternatives_sound
                       (ih hmember htail))
 
 private def SoundAt (declarations : DeclEnv) (summaries : SummaryEnv)
-    (fuel : Nat) : Prop :=
+  (fuel : Nat) : Prop :=
   CodeSoundAt declarations summaries fuel ∧
   (∀ ctx owner current store facts values operation outputStore outputValue inferred,
     ctx.decls = declarations →
-    declarations owner = some (.fn current) →
+    AnalysisOwnerCompatible declarations summaries owner current →
     EnvironmentHolds declarations store facts values →
     analyzeOp declarations summaries owner current facts operation = .ok inferred →
     runOp ctx fuel current store values operation =
@@ -2073,8 +2082,14 @@ private theorem soundAt {declarations : DeclEnv} {summaries : SummaryEnv}
                         change Except.ok claimed = Except.ok inferred at habstract
                         injection habstract with hinferred
                         subst inferred
+                        have hcurrentDecl :
+                            declarations owner = some (.fn current) := by
+                          rcases hcurrent with hcurrent | hmissing
+                          · exact hcurrent
+                          · rw [hsummary] at hmissing
+                            contradiction
                         obtain ⟨localFact, hlocal, hle⟩ :=
-                          hpost owner current claimed hcurrent hsummary
+                          hpost owner current claimed hcurrentDecl hsummary
                         rw [runOp.eq_def] at hconcrete
                         dsimp only at hconcrete
                         cases harguments : resolveAtoms values arguments with
@@ -2324,7 +2339,7 @@ private theorem soundAt {declarations : DeclEnv} {summaries : SummaryEnv}
                               (List.replicate function.arity Fact.top)
                               arguments.reverse function.body outputStore
                               outputValue
-                              localFact hctx hdecl henvironment
+                              localFact hctx (.inl hdecl) henvironment
                               (by simpa [inferFunction] using hlocal) hbody
                             exact Fact.holds_of_le hle hbodySound
                 · simp [harity] at hconcrete
@@ -2740,8 +2755,27 @@ private theorem soundAt {declarations : DeclEnv} {summaries : SummaryEnv}
 
 /-! ## Public semantic interface -/
 
-/-- Successful concrete execution of analyzed code is covered by the inferred
-fact whenever the ambient summaries form a local post-fixpoint. -/
+/-- Successful concrete execution of analyzed code is covered when the owner
+is exact or self-analysis is forced to fail closed. -/
+theorem analyzeCode_sound_ownerCompatible
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef} {store outputStore : Store}
+    {facts : List Fact} {values : List RVal} {code : Code}
+    {outputValue : RVal} {inferred : Fact} {fuel : Nat}
+    (hctx : ctx.decls = declarations)
+    (howner : AnalysisOwnerCompatible declarations summaries owner current)
+    (henvironment : EnvironmentHolds declarations store facts values)
+    (habstract : analyzeCode declarations summaries owner current facts code =
+      .ok inferred)
+    (hconcrete : runCode ctx fuel current store values code =
+      .ok (outputStore, outputValue)) :
+    inferred.Holds declarations outputStore outputValue :=
+  (soundAt hpost fuel).1 ctx owner current store facts values code outputStore
+    outputValue inferred hctx howner henvironment habstract hconcrete
+
+/-- Exact stored-owner specialization of
+`analyzeCode_sound_ownerCompatible`. -/
 theorem analyzeCode_sound {declarations : DeclEnv} {summaries : SummaryEnv}
     (hpost : LocalPostFixpoint declarations summaries)
     {ctx : Ctx} {owner : Address} {current : FnDef} {store outputStore : Store}
@@ -2755,12 +2789,29 @@ theorem analyzeCode_sound {declarations : DeclEnv} {summaries : SummaryEnv}
     (hconcrete : runCode ctx fuel current store values code =
       .ok (outputStore, outputValue)) :
     inferred.Holds declarations outputStore outputValue :=
-  (soundAt hpost fuel).1 ctx owner current store facts values code outputStore
-    outputValue inferred hctx hcurrent henvironment habstract hconcrete
+  analyzeCode_sound_ownerCompatible hpost hctx (.inl hcurrent) henvironment
+    habstract hconcrete
 
-/-- Successful concrete execution of one analyzed primitive is covered by
-its inferred binding fact.  This is the operation-level interface used by
-checked consumers that carry the HPT environment through code themselves. -/
+/-- Operation-level form of `analyzeCode_sound_ownerCompatible`. -/
+theorem analyzeOp_sound_ownerCompatible
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef} {store outputStore : Store}
+    {facts : List Fact} {values : List RVal} {operation : Op}
+    {outputValue : RVal} {inferred : Fact} {fuel : Nat}
+    (hctx : ctx.decls = declarations)
+    (howner : AnalysisOwnerCompatible declarations summaries owner current)
+    (henvironment : EnvironmentHolds declarations store facts values)
+    (habstract : analyzeOp declarations summaries owner current facts operation =
+      .ok inferred)
+    (hconcrete : runOp ctx fuel current store values operation =
+      .ok (outputStore, outputValue)) :
+    inferred.Holds declarations outputStore outputValue :=
+  (soundAt hpost fuel).2.1 ctx owner current store facts values operation
+    outputStore outputValue inferred hctx howner henvironment habstract
+    hconcrete
+
+/-- Exact stored-owner specialization used by ordinary HPT consumers. -/
 theorem analyzeOp_sound {declarations : DeclEnv} {summaries : SummaryEnv}
     (hpost : LocalPostFixpoint declarations summaries)
     {ctx : Ctx} {owner : Address} {current : FnDef} {store outputStore : Store}
@@ -2774,9 +2825,8 @@ theorem analyzeOp_sound {declarations : DeclEnv} {summaries : SummaryEnv}
     (hconcrete : runOp ctx fuel current store values operation =
       .ok (outputStore, outputValue)) :
     inferred.Holds declarations outputStore outputValue :=
-  (soundAt hpost fuel).2.1 ctx owner current store facts values operation
-    outputStore outputValue inferred hctx hcurrent henvironment habstract
-    hconcrete
+  analyzeOp_sound_ownerCompatible hpost hctx (.inl hcurrent) henvironment
+    habstract hconcrete
 
 /-- Known invocation respects `callableResult` under a local post-fixpoint. -/
 theorem invoke_sound {declarations : DeclEnv} {summaries : SummaryEnv}

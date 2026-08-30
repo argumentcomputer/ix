@@ -206,9 +206,7 @@ structure CasePrunePolicy where
 
 structure PAPFusePolicy where
   version : Nat := currentPAPFuseVersion
-  /-- Opt-in until the local heap-history refinement is lifted through the
-  complete declaration-context rewrite. -/
-  enabled : Bool := false
+  enabled : Bool := true
   deriving BEq, Repr
 
 structure Policy where

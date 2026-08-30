@@ -1,4 +1,4 @@
-import Compilatrix.IxIR1.EvalIso
+import Compilatrix.IxIR1.EvalRewrite
 import Compilatrix.IxIR1.HPTSound
 
 /-!
@@ -732,6 +732,50 @@ def rewriteDeclaration (declarations : DeclEnv) (summaries : SummaryEnv)
   | .fn function => .fn (rewriteFunction declarations summaries owner function)
   | declaration@(.extern _) => declaration
 
+@[simp] private theorem runAlternativeWithFacts_cidx
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Address) (current : FnDef)
+    (scrutineeFact : Fact) (peelNat : Bool) (facts : List Fact)
+    (alternative : Alt) :
+    (runAlternativeWithFacts declarations summaries owner current
+      scrutineeFact peelNat facts alternative).alternative.cidx =
+        alternative.cidx := by
+  cases alternative
+  simp [runAlternativeWithFacts, Alt.cidx]
+
+private theorem runAlternativeWithFacts_predicate
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Address) (current : FnDef)
+    (scrutineeFact : Fact) (peelNat : Bool) (facts : List Fact)
+    (index : Nat) :
+    ((fun alternative : Alt => alternative.cidx == index) ∘
+        (fun result : AlternativeOutcome => result.alternative) ∘
+        runAlternativeWithFacts declarations summaries owner current
+          scrutineeFact peelNat facts) =
+      (fun alternative => alternative.cidx == index) := by
+  funext alternative
+  cases alternative
+  simp [Function.comp_def, runAlternativeWithFacts, Alt.cidx]
+
+private theorem find?_runAlternativeWithFacts
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Address) (current : FnDef)
+    (scrutineeFact : Fact) (peelNat : Bool) (facts : List Fact)
+    (alternatives : Array Alt) (index : Nat) :
+    ((alternatives.map
+        (runAlternativeWithFacts declarations summaries owner current
+          scrutineeFact peelNat facts)).map
+        (fun result => result.alternative)).find?
+          (fun alternative => alternative.cidx == index) =
+      (alternatives.find? (fun alternative => alternative.cidx == index)).map
+        (fun alternative =>
+          (runAlternativeWithFacts declarations summaries owner current
+            scrutineeFact peelNat facts alternative).alternative) := by
+  rw [Array.map_map, Array.find?_map,
+    runAlternativeWithFacts_predicate declarations summaries owner current
+      scrutineeFact peelNat facts index]
+  simp [Function.comp_def]
+
 @[simp] theorem declArity_rewriteDeclaration
     (declarations : DeclEnv) (summaries : SummaryEnv)
     (owner : Address) (declaration : Decl) :
@@ -1437,8 +1481,8 @@ private theorem fuseSpec_refinesAt
     {function : Address} {captured supplied : Array Atom} {rest : Code}
     {fusion : Fusion} {out : Store × RVal}
     (hctx : ctx.decls = declarations)
-    (hclosed : StoreClosed store)
-    (hbounds : Reclamation.ValuesInBounds store environment)
+    (base : HeapHistoryIso store store)
+    (henvIso : RValsIso base.locRel environment environment)
     (henvironment : EnvironmentHolds declarations store facts environment)
     (hspec : FuseSpec declarations facts function captured supplied rest
       fusion)
@@ -1448,7 +1492,7 @@ private theorem fuseSpec_refinesAt
     ∃ targetOut,
       runCode ctx (fuel + 4) current store environment fusion.code =
           .ok targetOut ∧
-        RunHistoryIso (HeapHistoryIso.refl store hclosed) out targetOut := by
+        RunHistoryIso base out targetOut := by
   cases hspec with
   | @under declaration lowered hdeclaration hcaptureArity hscalar hrest
       hlowered hunder =>
@@ -1503,9 +1547,6 @@ private theorem fuseSpec_refinesAt
         exact (congrArg Prod.snd hresultPair).symm
       subst resultStore
       subst resultValue
-      let base := HeapHistoryIso.refl store hclosed
-      have henvIso : RValsIso base.locRel environment environment := by
-        simpa [base] using RValsIso.refl_of_inBounds hclosed hbounds
       let omitted := base.omitDeadAllocLeft .shared
         (.papN function (declArity declaration) capturedValues.toArray)
       let readyHeap : HeapHistoryIso ready store :=
@@ -1615,9 +1656,6 @@ private theorem fuseSpec_refinesAt
           (capturedValues ++ suppliedValues) ready =
             .ok (resultStore, resultValue) := by
         simpa [htotalExact'] using hremainder
-      let base := HeapHistoryIso.refl store hclosed
-      have henvIso : RValsIso base.locRel environment environment := by
-        simpa [base] using RValsIso.refl_of_inBounds hclosed hbounds
       let omitted := base.omitDeadAllocLeft .shared
         (.papN function (declArity declaration) capturedValues.toArray)
       let readyHeap : HeapHistoryIso ready store :=
@@ -1733,9 +1771,6 @@ private theorem fuseSpec_refinesAt
               ((capturedValues ++ suppliedValues).drop
                 (declArity declaration))) = .ok (resultStore, resultValue) := by
         simpa [hnotUnder, hnotExact] using hremainder
-      let base := HeapHistoryIso.refl store hclosed
-      have henvIso : RValsIso base.locRel environment environment := by
-        simpa [base] using RValsIso.refl_of_inBounds hclosed hbounds
       let omitted := base.omitDeadAllocLeft .shared
         (.papN function (declArity declaration) capturedValues.toArray)
       let readyHeap : HeapHistoryIso ready store :=
@@ -1882,17 +1917,16 @@ private theorem fuseSpec_refinesAt
             (hrun := hrestIso)
           exact fun h => hcallApply (hreadyCall h)
 
-/-- Every executable fusion decision preserves successful evaluation modulo
-allocation history.  The theorem is deliberately stated at arbitrary fuel;
-the two source binders force four units before success is possible. -/
-theorem fusePair?_refines
+/-! The arbitrary-fuel adapter for an already supplied self-history.  The two
+source binders force four units before success is possible. -/
+private theorem fusePair?_refines_selfHistory
     {ctx : Ctx} {fuel : Nat} {current : FnDef} {store : Store}
     {environment : List RVal} {declarations : DeclEnv} {facts : List Fact}
     {function : Address} {captured supplied : Array Atom} {rest : Code}
     {fusion : Fusion} {out : Store × RVal}
     (hctx : ctx.decls = declarations)
-    (hclosed : StoreClosed store)
-    (hbounds : Reclamation.ValuesInBounds store environment)
+    (base : HeapHistoryIso store store)
+    (henvIso : RValsIso base.locRel environment environment)
     (henvironment : EnvironmentHolds declarations store facts environment)
     (hfusion : fusePair? declarations facts function captured supplied rest =
       some fusion)
@@ -1901,7 +1935,7 @@ theorem fusePair?_refines
         (.letOp (.apply (.var 0) supplied) rest)) = .ok out) :
     ∃ targetOut,
       runCode ctx fuel current store environment fusion.code = .ok targetOut ∧
-        RunHistoryIso (HeapHistoryIso.refl store hclosed) out targetOut := by
+        RunHistoryIso base out targetOut := by
   have hspec := fuseSpec_of_fusePair?_eq_some hfusion
   cases fuel with
   | zero => simp [runCode] at hrun
@@ -1967,7 +2001,748 @@ theorem fusePair?_refines
                           simp only [bind, Except.bind] at hrun
                           contradiction
               | succ fuel =>
-                  exact fuseSpec_refinesAt hctx hclosed hbounds henvironment
+                  exact fuseSpec_refinesAt hctx base henvIso henvironment
                     hspec hrun
+
+/-- Every accepted fusion commutes with an arbitrary incoming allocation
+history.  Facts need hold only for the source environment: evaluator
+congruence transports the fused execution to the related target heap. -/
+theorem fusePair?_refines_historyIso
+    {ctx : Ctx} {fuel : Nat} {current : FnDef} {left right : Store}
+    {leftEnvironment rightEnvironment : List RVal}
+    {declarations : DeclEnv} {facts : List Fact}
+    {function : Address} {captured supplied : Array Atom} {rest : Code}
+    {fusion : Fusion} {leftOut : Store × RVal}
+    (hctx : ctx.decls = declarations)
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (henvironment : EnvironmentHolds declarations left facts leftEnvironment)
+    (hfusion : fusePair? declarations facts function captured supplied rest =
+      some fusion)
+    (hrun : runCode ctx fuel current left leftEnvironment
+      (.letOp (.papp function captured)
+        (.letOp (.apply (.var 0) supplied) rest)) = .ok leftOut) :
+    ∃ rightOut,
+      runCode ctx fuel current right rightEnvironment fusion.code =
+          .ok rightOut ∧
+        RunHistoryIso heap leftOut rightOut := by
+  let self := heap.trans heap.symm
+  have hselfEnvironment : RValsIso self.locRel
+      leftEnvironment leftEnvironment := by
+    change RValsIso
+      (fun leftLoc rightLoc =>
+        ∃ middleLoc, heap.locRel leftLoc middleLoc ∧
+          heap.locRel rightLoc middleLoc)
+      leftEnvironment leftEnvironment
+    exact henvironments.trans henvironments.symm
+  obtain ⟨middleOut, hmiddleRun, hlocal⟩ :=
+    fusePair?_refines_selfHistory hctx self hselfEnvironment henvironment
+      hfusion hrun
+  obtain ⟨rightOut, hrightRun, htransport⟩ :=
+    runCode_historyIso heap henvironments hmiddleRun
+  refine ⟨rightOut, hrightRun, ?_⟩
+  apply runHistoryIso_weaken (earlier := heap)
+    (before := self.trans heap) (hrun := hlocal.trans htransport)
+  intro leftLoc rightLoc hrel
+  exact ⟨leftLoc, ⟨rightLoc, hrel, hrel⟩, hrel⟩
+
+/-! ## Recursive traversal refinement -/
+
+/-- One unchanged primitive followed by a recursively rewritten
+continuation.  Operation congruence produces the history used by both HPT's
+forget-heap transfer and the recursive hypothesis. -/
+private theorem runCode_letOpWithFacts_refines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef}
+    (hctx : ctx.decls = declarations)
+    (howner : AnalysisOwnerCompatible declarations summaries owner current)
+    {left right : Store} {facts : List Fact}
+    {leftEnvironment rightEnvironment : List RVal}
+    {operation : Op} {rest : Code} {bound : Fact}
+    {fuel : Nat} {leftOut : Store × RVal}
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (henvironment : EnvironmentHolds declarations left facts leftEnvironment)
+    (habstract : analyzeOp declarations summaries owner current facts operation =
+      .ok bound)
+    (hrun : runCode ctx (fuel + 1) current left leftEnvironment
+      (.letOp operation rest) = .ok leftOut)
+    (ih : ∀ {left right : Store} {facts : List Fact}
+      {leftEnvironment rightEnvironment : List RVal}
+      {input : Code} {leftOut : Store × RVal},
+      (heap : HeapHistoryIso left right) →
+      RValsIso heap.locRel leftEnvironment rightEnvironment →
+      EnvironmentHolds declarations left facts leftEnvironment →
+      runCode ctx fuel current left leftEnvironment input = .ok leftOut →
+      ∃ rightOut,
+        runCode ctx fuel current right rightEnvironment
+            (runWithFacts declarations summaries owner current facts input).code =
+          .ok rightOut ∧
+        RunHistoryIso heap leftOut rightOut) :
+    ∃ rightOut,
+      runCode ctx (fuel + 1) current right rightEnvironment
+          (.letOp operation
+            (runWithFacts declarations summaries owner current
+              (bound :: facts.map Fact.forgetHeap) rest).code) = .ok rightOut ∧
+        RunHistoryIso heap leftOut rightOut := by
+  rw [runCode.eq_def] at hrun ⊢
+  dsimp only at hrun ⊢
+  cases hleftOperation : runOp ctx fuel current left leftEnvironment operation with
+  | error error =>
+      rw [hleftOperation] at hrun
+      simp only [bind, Except.bind] at hrun
+      contradiction
+  | ok leftOperationOut =>
+      rcases leftOperationOut with ⟨leftNext, leftValue⟩
+      rw [hleftOperation] at hrun
+      simp only [bind, Except.bind] at hrun
+      have hbound := analyzeOp_sound_ownerCompatible hpost hctx howner
+        henvironment
+        habstract hleftOperation
+      have hold := EnvironmentHolds.forgetHeap
+        (after := leftNext) henvironment
+      obtain ⟨rightOperationOut, hrightOperation, hoperationIso⟩ :=
+        runOp_historyIso heap henvironments hleftOperation
+      rcases rightOperationOut with ⟨rightNext, rightValue⟩
+      obtain ⟨nextHeap, hentryNext, hvalue⟩ := hoperationIso
+      rw [hrightOperation]
+      simp only [bind, Except.bind]
+      obtain ⟨rightOut, hrightRest, hrestIso⟩ :=
+        ih nextHeap (.cons hvalue (hentryNext.rvals henvironments))
+          (.cons hbound hold) hrun
+      exact ⟨rightOut, hrightRest,
+        runHistoryIso_weaken hentryNext hrestIso⟩
+
+/-- Package the ordinary `let` equation so the main proof only has to
+separate the one adjacent PAP/apply shape handled specially by the pass. -/
+private theorem runCode_ordinaryLetWithFacts_refines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef}
+    (hctx : ctx.decls = declarations)
+    (howner : AnalysisOwnerCompatible declarations summaries owner current)
+    {left right : Store} {facts : List Fact}
+    {leftEnvironment rightEnvironment : List RVal}
+    {operation : Op} {rest : Code} {fuel : Nat}
+    {leftOut : Store × RVal}
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (henvironment : EnvironmentHolds declarations left facts leftEnvironment)
+    (hrun : runCode ctx (fuel + 1) current left leftEnvironment
+      (.letOp operation rest) = .ok leftOut)
+    (ih : ∀ {left right : Store} {facts : List Fact}
+      {leftEnvironment rightEnvironment : List RVal}
+      {input : Code} {leftOut : Store × RVal},
+      (heap : HeapHistoryIso left right) →
+      RValsIso heap.locRel leftEnvironment rightEnvironment →
+      EnvironmentHolds declarations left facts leftEnvironment →
+      runCode ctx fuel current left leftEnvironment input = .ok leftOut →
+      ∃ rightOut,
+        runCode ctx fuel current right rightEnvironment
+            (runWithFacts declarations summaries owner current facts input).code =
+          .ok rightOut ∧
+        RunHistoryIso heap leftOut rightOut)
+    (hordinary :
+      (runWithFacts declarations summaries owner current facts
+        (.letOp operation rest)).code =
+      match analyzeOp declarations summaries owner current facts operation with
+      | .error _ => .letOp operation rest
+      | .ok bound =>
+          .letOp operation
+            (runWithFacts declarations summaries owner current
+              (bound :: facts.map Fact.forgetHeap) rest).code) :
+    ∃ rightOut,
+      runCode ctx (fuel + 1) current right rightEnvironment
+          (runWithFacts declarations summaries owner current facts
+            (.letOp operation rest)).code = .ok rightOut ∧
+        RunHistoryIso heap leftOut rightOut := by
+  cases habstract : analyzeOp declarations summaries owner current facts
+      operation with
+  | error error =>
+      rw [hordinary, habstract]
+      exact runCode_historyIso heap henvironments hrun
+  | ok bound =>
+      rw [hordinary, habstract]
+      exact runCode_letOpWithFacts_refines hpost hctx howner heap
+        henvironments henvironment habstract hrun ih
+
+/-- The branch-body half of recursive fusion.  The source-side HPT facts are
+installed only after the concrete evaluator has selected a matching branch;
+the heap-history relation transports the selected fields to the target. -/
+private theorem runCode_caseWithFactsBodies_refines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    {owner : Address} {current : FnDef} {ctx : Ctx}
+    {left right : Store} {facts : List Fact}
+    {leftEnvironment rightEnvironment : List RVal}
+    {scrutinee : Atom} {peelNat : Bool} {alternatives : Array Alt}
+    {scrutineeFact : Fact} {fuel : Nat} {leftOut : Store × RVal}
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (henvironment : EnvironmentHolds declarations left facts leftEnvironment)
+    (habstract : resolveAtomFact facts scrutinee = .ok scrutineeFact)
+    (hrun : runCode ctx (fuel + 1) current left leftEnvironment
+      (.case scrutinee peelNat alternatives) = .ok leftOut)
+    (ih : ∀ {left right : Store} {facts : List Fact}
+      {leftEnvironment rightEnvironment : List RVal}
+      {input : Code} {leftOut : Store × RVal},
+      (heap : HeapHistoryIso left right) →
+      RValsIso heap.locRel leftEnvironment rightEnvironment →
+      EnvironmentHolds declarations left facts leftEnvironment →
+      runCode ctx fuel current left leftEnvironment input = .ok leftOut →
+      ∃ rightOut,
+        runCode ctx fuel current right rightEnvironment
+            (runWithFacts declarations summaries owner current facts input).code =
+          .ok rightOut ∧
+        RunHistoryIso heap leftOut rightOut) :
+    ∃ rightOut,
+      runCode ctx (fuel + 1) current right rightEnvironment
+          (.case scrutinee peelNat
+            ((alternatives.map
+              (runAlternativeWithFacts declarations summaries owner current
+                scrutineeFact peelNat facts)).map
+                  (fun result => result.alternative))) = .ok rightOut ∧
+        RunHistoryIso heap leftOut rightOut := by
+  obtain ⟨leftValue, hleftResolve⟩ :=
+    resolveAtom_complete henvironment habstract
+  have hscrutineeHolds :=
+    resolveAtom_sound henvironment habstract hleftResolve
+  obtain ⟨rightValue, hrightResolve, hvalue⟩ :=
+    resolveAtom_historyIso henvironments hleftResolve
+  rw [runCode.eq_def] at hrun ⊢
+  dsimp only at hrun ⊢
+  rw [hleftResolve] at hrun
+  rw [hrightResolve]
+  simp only [bind, Except.bind] at hrun ⊢
+  cases hvalue with
+  | erased => simp at hrun
+  | @lit literal =>
+      cases literal with
+      | str value => simp at hrun
+      | nat value =>
+          cases peelNat with
+          | false => simp at hrun
+          | true =>
+              cases value with
+              | zero =>
+                  simp only
+                  rw [find?_runAlternativeWithFacts]
+                  cases hfind : alternatives.find?
+                      (fun alternative => alternative.cidx == 0) with
+                  | none => simp [hfind] at hrun
+                  | some alternative =>
+                      cases alternative with
+                      | mk cidx fields body =>
+                          cases fields with
+                          | zero =>
+                              have hzero :
+                                  scrutineeFact.caseFields true cidx 0 = [] := by
+                                unfold Fact.caseFields
+                                split <;> rfl
+                              simp [hfind] at hrun
+                              simp only [Option.map_some]
+                              obtain ⟨rightOut, hrightRun, hout⟩ :=
+                                ih heap henvironments henvironment hrun
+                              exact ⟨rightOut, by
+                                simpa [runAlternativeWithFacts, hzero]
+                                  using hrightRun, hout⟩
+                          | succ fields =>
+                              simp [hfind, runAlternativeWithFacts] at hrun
+              | succ value =>
+                  simp only
+                  rw [find?_runAlternativeWithFacts]
+                  cases hfind : alternatives.find?
+                      (fun alternative => alternative.cidx == 1) with
+                  | none => simp [hfind] at hrun
+                  | some alternative =>
+                      cases alternative with
+                      | mk cidx fields body =>
+                          cases fields with
+                          | zero =>
+                              simp [hfind, runAlternativeWithFacts] at hrun
+                          | succ fields =>
+                              cases fields with
+                              | zero =>
+                                  have hcidx : cidx = 1 := by
+                                    have hmatch := Array.find?_some
+                                      (p := fun alternative : Alt =>
+                                        alternative.cidx == 1)
+                                      (a := .mk cidx 1 body)
+                                      (xs := alternatives) hfind
+                                    exact beq_iff_eq.mp hmatch
+                                  have hbinders :
+                                      EnvironmentHolds declarations left
+                                        (scrutineeFact.caseFields true cidx 1)
+                                        [.lit (.nat value)] := by
+                                    simpa [hcidx] using
+                                      (Fact.caseFields_natSucc_holds
+                                        hscrutineeHolds)
+                                  simp [hfind] at hrun
+                                  simp only [Option.map_some]
+                                  obtain ⟨rightOut, hrightRun, hout⟩ :=
+                                    ih heap (.cons .lit henvironments)
+                                      (hbinders.append henvironment) hrun
+                                  exact ⟨rightOut, by
+                                    simpa [runAlternativeWithFacts]
+                                      using hrightRun, hout⟩
+                              | succ fields =>
+                                  simp [hfind, runAlternativeWithFacts] at hrun
+  | @loc leftLoc rightLoc hrel =>
+      cases hleft : left.get? leftLoc with
+      | none => simp [hleft] at hrun
+      | some leftBox =>
+          obtain ⟨rightBox, hright, hbox⟩ := heap.boxes hrel hleft
+          rcases leftBox with ⟨leftWorld, leftRc, leftNode⟩
+          rcases rightBox with ⟨rightWorld, rightRc, rightNode⟩
+          rcases hbox with ⟨hworld, hrc, hnode⟩
+          change leftWorld = rightWorld at hworld
+          change leftRc = rightRc at hrc
+          change NodeIso heap.locRel leftNode rightNode at hnode
+          subst rightWorld
+          subst rightRc
+          simp only [hleft] at hrun
+          simp only [hright]
+          cases hnode with
+          | pap harguments => simp at hrun
+          | @ctor identity leftFields rightFields hfields =>
+              simp only
+              rw [find?_runAlternativeWithFacts]
+              cases hfind : alternatives.find?
+                  (fun alternative => alternative.cidx == identity.cidx) with
+              | none => simp [hfind] at hrun
+              | some alternative =>
+                  cases alternative with
+                  | mk cidx fieldCount body =>
+                      have hsizes : leftFields.size = rightFields.size := by
+                        simpa using hfields.lengths
+                      by_cases hcount : leftFields.size = fieldCount
+                      · have hrightCount :
+                            rightFields.size = fieldCount := by
+                          rw [← hsizes]
+                          exact hcount
+                        have hcidx : identity.cidx = cidx := by
+                          have hmatch := Array.find?_some
+                            (p := fun alternative : Alt =>
+                              alternative.cidx == identity.cidx)
+                            (a := .mk cidx fieldCount body)
+                            (xs := alternatives) hfind
+                          exact (beq_iff_eq.mp hmatch).symm
+                        have hbinders := Fact.caseFields_ctor_holds
+                          peelNat cidx fieldCount hscrutineeHolds hleft rfl
+                          hcidx hcount
+                        simp [hfind, hcount] at hrun
+                        simp only [Option.map_some]
+                        rw [Array.foldl_cons_eq_reverse_append]
+                        obtain ⟨rightOut, hrightRun, hout⟩ :=
+                          ih heap (hfields.reverse.append henvironments)
+                            (hbinders.append henvironment) hrun
+                        exact ⟨rightOut, by
+                          simpa [hrightCount, runAlternativeWithFacts]
+                            using hrightRun, hout⟩
+                      · have hrightCount :
+                            rightFields.size ≠ fieldCount := by
+                          intro heq
+                          exact hcount (hsizes.trans heq)
+                        simp [hfind, hcount, hrightCount,
+                          runAlternativeWithFacts] at hrun
+
+/-- Recursive HPT-guided PAP fusion preserves every successful run modulo
+allocation history.  The theorem is deliberately stated over an arbitrary
+incoming heap relation, so it can be used beneath calls and inside another
+owner-sensitive declaration rewrite. -/
+theorem runCode_runWithFacts_refines_ownerCompatible
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef}
+    {left right : Store} {facts : List Fact}
+    {leftEnvironment rightEnvironment : List RVal}
+    {input : Code} {fuel : Nat} {leftOut : Store × RVal}
+    (hctx : ctx.decls = declarations)
+    (howner : AnalysisOwnerCompatible declarations summaries owner current)
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (henvironment : EnvironmentHolds declarations left facts leftEnvironment)
+    (hrun : runCode ctx fuel current left leftEnvironment input = .ok leftOut) :
+    ∃ rightOut,
+      runCode ctx fuel current right rightEnvironment
+          (runWithFacts declarations summaries owner current facts input).code =
+        .ok rightOut ∧
+      RunHistoryIso heap leftOut rightOut := by
+  induction fuel generalizing left right facts leftEnvironment
+      rightEnvironment input leftOut with
+  | zero => simp [runCode] at hrun
+  | succ fuel ih =>
+      cases input with
+      | ret atom =>
+          simpa [runWithFacts] using
+            (runCode_historyIso heap henvironments hrun)
+      | case scrutinee peelNat alternatives =>
+          cases habstract : resolveAtomFact facts scrutinee with
+          | error error =>
+              simpa [runWithFacts, habstract] using
+                (runCode_historyIso heap henvironments hrun)
+          | ok scrutineeFact =>
+              simpa [runWithFacts, habstract] using
+                (runCode_caseWithFactsBodies_refines heap henvironments
+                  henvironment habstract hrun
+                  (fun nextHeap nextEnvironments nextFacts nextRun =>
+                    ih nextHeap nextEnvironments nextFacts nextRun))
+      | letOp operation rest =>
+          have ordinary {operation : Op} {rest : Code}
+              (hordinaryRun : runCode ctx (fuel + 1) current left
+                leftEnvironment (.letOp operation rest) = .ok leftOut)
+              (hordinary :
+                (runWithFacts declarations summaries owner current facts
+                  (.letOp operation rest)).code =
+                match analyzeOp declarations summaries owner current facts
+                    operation with
+                | .error _ => .letOp operation rest
+                | .ok bound =>
+                    .letOp operation
+                      (runWithFacts declarations summaries owner current
+                        (bound :: facts.map Fact.forgetHeap) rest).code) :=
+              runCode_ordinaryLetWithFacts_refines hpost hctx howner heap
+                henvironments henvironment hordinaryRun
+                (fun nextHeap nextEnvironments nextFacts nextRun =>
+                  ih nextHeap nextEnvironments nextFacts nextRun)
+                hordinary
+          by_cases hpair : ∃ function captured supplied tail,
+              operation = .papp function captured ∧
+                rest = .letOp (.apply (.var 0) supplied) tail
+          · obtain ⟨function, captured, supplied, tail, rfl, rfl⟩ := hpair
+            let pap := Op.papp function captured
+            let applyOperation := Op.apply (.var 0) supplied
+            cases hpap : analyzeOp declarations summaries owner current facts
+                pap with
+            | error error =>
+                simpa [runWithFacts, pap, applyOperation, hpap] using
+                  (runCode_historyIso heap henvironments hrun)
+            | ok papFact =>
+                let afterPap := papFact :: facts.map Fact.forgetHeap
+                cases happly : analyzeOp declarations summaries owner current
+                    afterPap applyOperation with
+                | error error =>
+                    simpa [runWithFacts, pap, applyOperation, afterPap, hpap,
+                      happly] using
+                        (runCode_historyIso heap henvironments hrun)
+                | ok resultFact =>
+                    let afterApply :=
+                      resultFact :: afterPap.map Fact.forgetHeap
+                    let nested := runWithFacts declarations summaries owner
+                      current afterApply tail
+                    have hpapConcrete : analyzeOp declarations summaries owner
+                        current facts (.papp function captured) =
+                          .ok papFact := by
+                      simpa [pap] using hpap
+                    have happlyConcrete : analyzeOp declarations summaries
+                        owner current (papFact :: facts.map Fact.forgetHeap)
+                        (.apply (.var 0) supplied) = .ok resultFact := by
+                      simpa [afterPap, applyOperation] using happly
+                    cases hfusion : fusePair? declarations facts function
+                        captured supplied nested.code with
+                    | none =>
+                        apply ordinary hrun
+                        simp only [runWithFacts, hpapConcrete,
+                          happlyConcrete]
+                        rw [hfusion]
+                    | some fusion =>
+                        rw [runCode.eq_def] at hrun
+                        dsimp only at hrun
+                        cases hleftPap : runOp ctx fuel current left
+                            leftEnvironment pap with
+                        | error error =>
+                            rw [hleftPap] at hrun
+                            simp only [bind, Except.bind] at hrun
+                            contradiction
+                        | ok leftPapOut =>
+                            rcases leftPapOut with ⟨leftNext, leftValue⟩
+                            rw [hleftPap] at hrun
+                            simp only [bind, Except.bind] at hrun
+                            have hpapFact := analyzeOp_sound_ownerCompatible
+                              hpost hctx howner henvironment hpap hleftPap
+                            have hold := EnvironmentHolds.forgetHeap
+                              (after := leftNext) henvironment
+                            have hafterPap : EnvironmentHolds declarations
+                                leftNext afterPap
+                                (leftValue :: leftEnvironment) := by
+                              exact .cons hpapFact hold
+                            obtain ⟨rightPapOut, hrightPap, hpapIso⟩ :=
+                              runOp_historyIso heap henvironments hleftPap
+                            rcases rightPapOut with ⟨rightNext, rightValue⟩
+                            obtain ⟨nextHeap, hentryNext, hvalue⟩ := hpapIso
+                            have hnextEnvironments : RValsIso nextHeap.locRel
+                                (leftValue :: leftEnvironment)
+                                (rightValue :: rightEnvironment) :=
+                              .cons hvalue (hentryNext.rvals henvironments)
+                            let self := nextHeap.trans nextHeap.symm
+                            have hselfEnvironment : RValsIso self.locRel
+                                (leftValue :: leftEnvironment)
+                                (leftValue :: leftEnvironment) := by
+                              change RValsIso
+                                (fun leftLoc rightLoc =>
+                                  ∃ middleLoc,
+                                    nextHeap.locRel leftLoc middleLoc ∧
+                                    nextHeap.locRel rightLoc middleLoc)
+                                (leftValue :: leftEnvironment)
+                                (leftValue :: leftEnvironment)
+                              exact hnextEnvironments.trans
+                                hnextEnvironments.symm
+                            obtain ⟨middleOut, hmiddleRun, hrewrite⟩ :=
+                              ih self hselfEnvironment hafterPap hrun
+                            have hmiddleRun' : runCode ctx fuel current leftNext
+                                (leftValue :: leftEnvironment)
+                                (.letOp applyOperation nested.code) =
+                                  .ok middleOut := by
+                              simpa [runWithFacts, applyOperation, afterPap,
+                                afterApply, nested, happly] using hmiddleRun
+                            have hsourceNested : runCode ctx (fuel + 1) current
+                                left leftEnvironment
+                                (.letOp pap
+                                  (.letOp applyOperation nested.code)) =
+                                    .ok middleOut := by
+                              rw [runCode.eq_def]
+                              dsimp only
+                              rw [hleftPap]
+                              simp only [bind, Except.bind]
+                              exact hmiddleRun'
+                            obtain ⟨rightOut, hrightRun, hfused⟩ :=
+                              fusePair?_refines_historyIso hctx heap
+                                henvironments henvironment hfusion hsourceNested
+                            obtain ⟨rewriteHeap, hselfRewrite,
+                              hrewriteValue⟩ := hrewrite
+                            obtain ⟨fusedHeap, hheapFused, hfusedValue⟩ :=
+                              hfused
+                            refine ⟨rightOut, ?_, rewriteHeap.trans fusedHeap,
+                              ?_, hrewriteValue.trans hfusedValue⟩
+                            · simp only [runWithFacts, hpapConcrete,
+                                happlyConcrete]
+                              rw [hfusion]
+                              exact hrightRun
+                            · intro leftLoc rightLoc hrel
+                              refine ⟨leftLoc, hselfRewrite ?_,
+                                hheapFused hrel⟩
+                              exact ⟨rightLoc, hentryNext hrel,
+                                hentryNext hrel⟩
+          · apply ordinary hrun
+            by_cases hpapp : ∃ function captured,
+                operation = .papp function captured
+            · obtain ⟨function, captured, rfl⟩ := hpapp
+              cases rest with
+              | ret atom =>
+                  simp only [runWithFacts]
+                  split <;> rfl
+              | case scrutinee peelNat alternatives =>
+                  simp only [runWithFacts]
+                  split <;> rfl
+              | letOp nextOperation tail =>
+                  by_cases happlyShape : ∃ applied supplied,
+                      nextOperation = .apply applied supplied
+                  · obtain ⟨applied, supplied, rfl⟩ := happlyShape
+                    by_cases hvarZero : applied = .var 0
+                    · subst applied
+                      exact False.elim
+                        (hpair ⟨function, captured, supplied, tail, rfl, rfl⟩)
+                    · cases applied with
+                      | var index =>
+                          cases index with
+                          | zero => exact False.elim (hvarZero rfl)
+                          | succ index =>
+                              simp only [runWithFacts]
+                              split <;> rfl
+                      | lit literal =>
+                          simp only [runWithFacts]
+                          split <;> rfl
+                      | erased =>
+                          simp only [runWithFacts]
+                          split <;> rfl
+                  · cases nextOperation <;>
+                      try { simp only [runWithFacts]; split <;> rfl }
+                    rename_i applied supplied
+                    exact False.elim
+                      (happlyShape ⟨applied, supplied, rfl⟩)
+            · cases operation <;>
+                try { simp only [runWithFacts]; split <;> rfl }
+              rename_i function captured
+              exact False.elim (hpapp ⟨function, captured, rfl⟩)
+
+/-- Exact declaration ownership is the common stored-function specialization
+of the owner-compatible recursive refinement theorem. -/
+theorem runCode_runWithFacts_refines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef}
+    {left right : Store} {facts : List Fact}
+    {leftEnvironment rightEnvironment : List RVal}
+    {input : Code} {fuel : Nat} {leftOut : Store × RVal}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current))
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (henvironment : EnvironmentHolds declarations left facts leftEnvironment)
+    (hrun : runCode ctx fuel current left leftEnvironment input = .ok leftOut) :
+    ∃ rightOut,
+      runCode ctx fuel current right rightEnvironment
+          (runWithFacts declarations summaries owner current facts input).code =
+        .ok rightOut ∧
+      RunHistoryIso heap leftOut rightOut :=
+  runCode_runWithFacts_refines_ownerCompatible hpost hctx (.inl hcurrent)
+    heap henvironments henvironment hrun
+
+/-- The owner-local traversal rewrites a body soundly while retaining the
+source current frame.  The generic evaluator fixed-point theorem is
+responsible for installing the rewritten frame around recursive self-calls. -/
+theorem rewriteFunction_staticBodyRefines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current)) :
+    StaticFunctionBodyRefines ctx current
+      (rewriteFunction declarations summaries owner current) := by
+  intro fuel store environment sourceOut base hlength henvironment hrun
+  have htop : EnvironmentHolds declarations store
+      (List.replicate current.arity Fact.top) environment := by
+    simpa [hlength] using
+      (EnvironmentHolds.top_replicate declarations store environment)
+  obtain ⟨targetOut, htargetRun, hiso⟩ :=
+    runCode_runWithFacts_refines hpost hctx hcurrent base henvironment htop hrun
+  exact ⟨targetOut, by
+    simpa [rewriteFunction, runFunction] using htargetRun, hiso⟩
+
+/-- Rewriting the current frame preserves arbitrary surrounding code,
+including recursive `callSelf` entries into its rewritten body. -/
+theorem runCode_rewriteFunction_refines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef}
+    {left right : Store} {fuel : Nat}
+    {leftEnvironment rightEnvironment : List RVal}
+    {input : Code} {sourceOut : Store × RVal}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current))
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (hrun : runCode ctx fuel current left leftEnvironment input =
+      .ok sourceOut) :
+    ∃ targetOut,
+      runCode ctx fuel
+          (rewriteFunction declarations summaries owner current)
+          right rightEnvironment input = .ok targetOut ∧
+        RunHistoryIso heap sourceOut targetOut :=
+  runCode_currentFrame_refines
+    (rewriteFunction_staticBodyRefines hpost hctx hcurrent)
+    rfl rfl heap henvironments hrun
+
+/-- The checked owner-local PAP traversal supplies the semantic function-body
+obligation consumed by `AbstractEnvironment`. -/
+theorem rewriteFunction_bodyRefines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current)) :
+    FunctionBodyRefines ctx current
+      (rewriteFunction declarations summaries owner current) :=
+  FunctionBodyRefines.ofStatic
+    (rewriteFunction_staticBodyRefines hpost hctx hcurrent) rfl rfl
+
+/-! ## Logical declaration environment
+
+The semantic traversal remains keyed by the source addresses.  Artifact
+readdressing is a later, separate transport step. -/
+
+/-- Rewrite every stored function under its source owner while retaining the
+old lookup keys. -/
+def rewriteDeclEnv (declarations : DeclEnv) (summaries : SummaryEnv) :
+    DeclEnv :=
+  fun owner => (declarations owner).map
+    (rewriteDeclaration declarations summaries owner)
+
+/-- Retain the scalar oracle and replace only the declaration environment. -/
+def rewriteCtx (declarations : DeclEnv) (summaries : SummaryEnv)
+    (ctx : Ctx) : Ctx :=
+  { ctx with decls := rewriteDeclEnv declarations summaries }
+
+/-- List form consumed by a subsequent content-address rebuild. -/
+def rewriteEntries (declarations : DeclEnv) (summaries : SummaryEnv)
+    (entries : List (Address × Decl)) : List (Address × Decl) :=
+  entries.map fun entry =>
+    (entry.1, rewriteDeclaration declarations summaries entry.1 entry.2)
+
+/-- PAP fusion's owner-local body theorem instantiates the generic declaration
+environment interface for every successful source lookup. -/
+theorem abstractEnvironment_rewriteCtx
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} (hctx : ctx.decls = declarations) :
+    AbstractEnvironment ctx (rewriteCtx declarations summaries ctx) := by
+  constructor
+  · rfl
+  · intro address arity hsource
+    have hdeclaration : declarations address = some (.extern arity) := by
+      rw [← hctx]
+      exact hsource
+    simp [rewriteCtx, rewriteDeclEnv, hdeclaration, rewriteDeclaration]
+  · intro address source hsource
+    have hdeclaration : declarations address = some (.fn source) := by
+      rw [← hctx]
+      exact hsource
+    refine ⟨rewriteFunction declarations summaries address source, ?_,
+      rfl, rfl, ?_⟩
+    · simp [rewriteCtx, rewriteDeclEnv, hdeclaration,
+        rewriteDeclaration]
+    · exact rewriteFunction_bodyRefines hpost hctx hdeclaration
+
+/-- Successful evaluation is preserved after logically replacing every
+stored function by its owner-sensitive PAP-fused body. -/
+theorem runCode_rewriteCtx_refines
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {current : FnDef} {left right : Store} {fuel : Nat}
+    {leftEnvironment rightEnvironment : List RVal}
+    {input : Code} {sourceOut : Store × RVal}
+    (hctx : ctx.decls = declarations)
+    (heap : HeapHistoryIso left right)
+    (henvironments : RValsIso heap.locRel
+      leftEnvironment rightEnvironment)
+    (hrun : runCode ctx fuel current left leftEnvironment input =
+      .ok sourceOut) :
+    ∃ targetOut,
+      runCode (rewriteCtx declarations summaries ctx) fuel current right
+          rightEnvironment input = .ok targetOut ∧
+        RunHistoryIso heap sourceOut targetOut :=
+  runCode_abstractEnvironment
+    (abstractEnvironment_rewriteCtx hpost hctx) heap henvironments hrun
+
+/-- Closed self-heap specialization of the general history theorem. -/
+theorem fusePair?_refines
+    {ctx : Ctx} {fuel : Nat} {current : FnDef} {store : Store}
+    {environment : List RVal} {declarations : DeclEnv} {facts : List Fact}
+    {function : Address} {captured supplied : Array Atom} {rest : Code}
+    {fusion : Fusion} {out : Store × RVal}
+    (hctx : ctx.decls = declarations)
+    (hclosed : StoreClosed store)
+    (hbounds : Reclamation.ValuesInBounds store environment)
+    (henvironment : EnvironmentHolds declarations store facts environment)
+    (hfusion : fusePair? declarations facts function captured supplied rest =
+      some fusion)
+    (hrun : runCode ctx fuel current store environment
+      (.letOp (.papp function captured)
+        (.letOp (.apply (.var 0) supplied) rest)) = .ok out) :
+    ∃ targetOut,
+      runCode ctx fuel current store environment fusion.code = .ok targetOut ∧
+        RunHistoryIso (HeapHistoryIso.refl store hclosed) out targetOut := by
+  let base := HeapHistoryIso.refl store hclosed
+  have henvIso : RValsIso base.locRel environment environment := by
+    simpa [base] using RValsIso.refl_of_inBounds hclosed hbounds
+  simpa [base] using
+    fusePair?_refines_selfHistory hctx base henvIso henvironment hfusion hrun
 
 end Compilatrix.IxIR1.HPT.PAPFuse
