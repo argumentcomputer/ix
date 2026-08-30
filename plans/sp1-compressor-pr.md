@@ -220,6 +220,14 @@ not bypass Aiur verification in either the native host or the SP1 guest, and
 the host still verifies the final SP1 proof and its public values. It should
 nonetheless be removed before treating the path as production-ready.
 
+The pinned SP1 6.3.1 dependency graph also carries six targeted RustSec
+exceptions: four unmaintained tooling/transitive crates
+(`ansi_term`, `number_prefix`, `proc-macro-error2`, and `rustls-pemfile`) and
+two `lru` soundness advisories. `RUSTSEC-2026-0253` additionally reaches the
+pre-existing Iroh 0.97 dependency. These are recorded individually in
+`deny.toml`; they do not disable advisory checking for any other ID and should
+be removed as the SP1 and Iroh pins gain compatible upgrades.
+
 A real persisted production `ix_aggr` root has not yet been executed through
 the terminal, and GPU Groth16/Plonk generation has not yet been benchmarked.
 The synthetic smoke below validates connector correctness and wire
@@ -252,6 +260,9 @@ The rebased stack passes:
 - Generated Aiur artifacts are fresh: `lake exe ix codegen --check`, including
   the 2,061,361-byte / 248-function converged `ix_aggr` executor.
 - Root, SP1 host, and SP1 guest `cargo fmt --check` passes.
+- The same all-features policy command used by CI passes:
+  `cargo deny --log-level warn --manifest-path ./Cargo.toml --all-features
+  check`.
 
 The end-to-end synthetic guest smoke also passed after rebasing to the current
 Multi-STARK revision:
