@@ -103,14 +103,14 @@
                 pkgs.libiconv
               ];
           };
-          # Build dependencies once with every feature enabled so the `net`
-          # stack (tokio/iroh) is compiled and cached here, then shared by the
-          # package builds and the all-features clippy check instead of being
-          # rebuilt per consumer.
+          # Build dependencies once with every host feature enabled so the
+          # `net` stack (tokio/iroh) is compiled and cached here, then shared
+          # by the package builds and clippy. CUDA remains opt-in and is
+          # compiled separately in CI with the CUDA toolkit available.
           cargoArtifacts = craneLib.buildDepsOnly (
             craneArgs
             // {
-              cargoExtraArgs = "--locked --all-features";
+              cargoExtraArgs = "--locked --features parallel,test-ffi,net";
             }
           );
 
@@ -151,15 +151,21 @@
 
           # Lake package
           lake2nix = pkgs.callPackage lean4-nix.lake { inherit lean; };
-          # Restrict the Lake build inputs to Lean-relevant files so edits to
-          # unrelated files (flake.nix, CI, docs) don't invalidate the whole
-          # Lean build. The Rust side gets the same via cleanCargoSource.
+          # Restrict the Lake build inputs to files traced by the Lean and
+          # Rust archive targets. Cargo itself is still handled by Crane, but
+          # Lake needs the Rust sources and manifests to calculate the archive
+          # dependency trace before copying the prebuilt static library.
           leanSrc = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               ./lakefile.lean
               ./lake-manifest.json
               ./lean-toolchain
+              ./Cargo.toml
+              ./Cargo.lock
+              (pkgs.lib.fileset.fileFilter
+                (f: f.hasExt "rs" || f.hasExt "toml")
+                ./crates)
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
             ];
           };
@@ -297,7 +303,7 @@
               craneArgs
               // {
                 inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --all-features";
+                cargoExtraArgs = "--locked --features parallel,test-ffi,net";
                 cargoClippyExtraArgs = "--all-targets -- -D warnings";
               }
             );
