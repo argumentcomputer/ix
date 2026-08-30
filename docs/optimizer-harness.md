@@ -1,12 +1,12 @@
 # IxIR₁ optimizer harness
 
-Status: scalar constructor-fetch forwarding joined the default O1 bundle on
-2026-08-30. The checked HPT consumers propagate facts through complete stored
-function bodies, prune impossible alternatives, collapse a certified detailed
-unary case to one checked `fetch`, forward certified scalar fields after
-allocation or successful reuse, and fuse adjacent PAP/application pairs. All
-three consumers share one logical declaration rewrite and one content-address
-rebuild.
+Status: checked rooted declaration reachability joined the default O1 bundle
+on 2026-08-30. The checked HPT consumers propagate facts through complete
+stored function bodies, prune impossible alternatives, collapse a certified
+detailed unary case to one checked `fetch`, forward certified scalar fields
+after allocation or successful reuse, and fuse adjacent PAP/application pairs.
+Rooted reachability then filters the rewritten old-keyed graph before all four
+consumers share one content-address rebuild.
 
 The implementation is `Compilatrix/IxIR1/Optimizer.lean`, with compiler-facing
 entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
@@ -14,11 +14,13 @@ entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
 
 ## Policy and fallback
 
-`Optimizer.Policy` carries harness version 3, case-simplifier version 3,
-fetch-forwarding version 1, and PAP-fusion version 1. The three passes have
-independent enable bits and are enabled by default. The shared deterministic
-bounds cover input instructions, canonical code bytes, and checked-certificate
-bytes. The harness is disabled only when all three pass bits are false.
+`Optimizer.Policy` carries harness version 4, case-simplifier version 3,
+fetch-forwarding version 1, PAP-fusion version 1, and reachability version 1.
+The four passes have independent enable bits and are enabled by default.
+Reachability additionally carries an ordered list of exported declaration
+roots. The shared deterministic bounds cover input instructions, canonical
+code bytes, and checked-certificate bytes. The harness is disabled only when
+all four pass bits are false.
 
 Fetch forwarding recognizes an `alloc` or `reuse` immediately followed by a
 fetch of any field from its result. The selected constructor argument must be
@@ -34,6 +36,15 @@ the rewrite unless the continuation cannot mention that slot. Captures must be
 HPT-proven scalar: IxIR₁ no longer carries function-parameter ownership modes,
 so the local checker cannot soundly classify an arbitrary heap capture as
 shared.
+
+Reachability hashes the exact ordered rewritten declaration rows, exact main,
+and exact configured roots into a checked certificate. Its retained list must
+be in input-key order, contain every exported root, and be closed under every
+direct `call` and `papp` edge in main and retained declarations. `callSelf`
+remains within its retained owner. Version 1 treats a reachable dynamic
+`apply` as open-world and accepts only the complete declaration set; an
+unreachable apply does not pin an otherwise dead component. A producer/checker
+disagreement or nonexistent configured root retains the complete input graph.
 
 Every inferred-optimization failure is fail-soft. An unsupported version,
 disabled pass, exhausted optimizer budget, or rejected content-address rebuild
@@ -70,16 +81,16 @@ spelling; its exact framed byte count is reported separately. A pass report
 contains the complete policy, typed disposition, input/output/certificate
 roots, certificate size, before/after observations, case-pruning counters,
 total forwarded fetches, total fused PAPs, under/exact/over fusion counters,
-and a rebuild diagnostic only on fallback. Report schema 4 uses
-`compilatrix/ixir1/optimizer-report/4\0`; pass behavior is versioned separately
-inside the encoded policy.
+removed declarations, and a rebuild diagnostic only on fallback. Report
+schema 5 uses `compilatrix/ixir1/optimizer-report/5\0`; pass behavior is
+versioned separately inside the encoded policy.
 
 This makes equality of reports executable byte equality rather than equality
 of human-formatted text.
 
 ## Regression boundary
 
-The compiled tests pin six properties:
+The compiled tests pin eight properties:
 
 1. two independent runs over the same checked input produce identical output
    roots, report bytes, and report addresses;
@@ -89,21 +100,29 @@ The compiled tests pin six properties:
    readdresses the changed caller, rewrites the main edge, and preserves
    pipeline producer-to-target provenance;
 3. disabled and one-below instruction-budget policies select the exact input
-   root; and
+   root;
 4. after HPT is recomputed on the transformed root, the default shrinking pass
-   reports `unchanged` and reproduces that root; and
+   reports `unchanged` and reproduces that root;
 5. the default PAP pass fuses under-, exact-, and over-saturation in one graph,
    reports each class, rejects non-scalar captures and binder-sensitive shapes,
    preserves the scalar result with an empty live heap, and reaches a fixed
-   point after HPT recomputation; and
+   point after HPT recomputation;
 6. the default fetch pass forwards one allocation projection and one successful
    reuse projection, checks the lifted variable form, rejects heap-valued and
    out-of-range sources, preserves the exact result and all heap counters, and
-   reaches a fixed point after HPT recomputation.
+   reaches a fixed point after HPT recomputation;
+7. a direct-call closure removes a dead two-function SCC, a PAP root retains
+   its target, and an explicit exported root retains the whole SCC; and
+8. stale input identity, substituted roots, and a canonical but non-closed
+   retained set fail closed, while reachable dynamic apply retains the whole
+   graph and both the filtered and rebuilt programs return the same result.
 
-The production Ixon→IxIR₁ integration fixture separately exercises default
-report generation and the disable path on compiler-emitted code. Default-pass
-semantic authority comes from the checked whole-program history-refinement and
+The production Ixon→IxIR₁ integration fixtures separately exercise default
+report generation and the disable path on compiler-emitted code. A
+constructor-only main also emits six stored functions, five of which have no
+runtime path from main; the default pass reports and removes those five while
+preserving the exact constructor result. Default-pass semantic authority comes
+from the checked whole-program history-refinement and
 exact readdressing theorems documented in
 [HPT certificates](hpt-certificates.md). `fusePair?_refines` proves each local
 PAP decision; `FetchForward.runCode_forwardHead?_eq` proves literal evaluator
@@ -116,5 +135,5 @@ calls, PAP application, and the final one-rebuild path.
 
 Each remaining O1 consumer must add a versioned control, pass-attributed
 counters, a canonical report entry, a fail-soft path, a whole-program theorem,
-and a fixed-point regression. Known-shape destruction, rooted reachability,
-and exact-case collapse beyond the checked unary form remain active work.
+and a fixed-point regression. Known-shape destruction and exact-case collapse
+beyond the checked unary form remain active work.

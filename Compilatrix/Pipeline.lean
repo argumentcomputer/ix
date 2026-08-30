@@ -1019,6 +1019,7 @@ private def aDropFirst := address 0x74
 private def aMain := address 0x75
 private def aEleven := address 0x76
 private def aTwentyTwo := address 0x77
+private def aUnused := address 0x78
 private def aSharedCtor := address 0x79
 
 private def boxType : Ixon.Expr := .ref 0 #[]
@@ -1095,6 +1096,29 @@ private def cMain : Constant :=
     refs := #[aBox, aDropFirst, aCtor, aRec, aEleven, aTwentyTwo,
       aSharedCtor]
     univs := #[.zero] }
+
+/-- A validated function deliberately absent from main's transitive runtime
+references. The compiler emits it; rooted reachability must remove
+its lowered declaration rather than relying only on a hand-written graph. -/
+private def cUnused : Constant :=
+  { info := .defn
+      { kind := .defn, safety := .safe, lvls := 0
+        typ := .all .many .shared boxType boxType
+        value := .lam .many boxType
+          (.app (.ref 1 #[]) (.var 0)) }
+    sharing := #[]
+    refs := #[aBox, aRec]
+    univs := #[.zero] }
+
+/-- A usage-valid shared constructor result whose lowered main contains no
+dynamic application. The surrounding catalog still emits stored functions,
+so it gives rooted reachability an observable compiler-produced deletion. -/
+private def cReachMain : Constant :=
+  { cMain with
+    info := .defn
+      { kind := .defn, safety := .safe, lvls := 0
+        typ := .ref 0 #[]
+        value := sharedBoxOfNat 4 } }
 
 private def constants : List (Address × Constant) :=
   [(aBlock, cBlock), (aBox, cBox), (aCtor, cCtor),
@@ -1281,7 +1305,7 @@ private def targetAgrees : Bool :=
     | _ => false
 
 /-- Optimizer observations run on actual compiler output, not only a
-hand-written IxIR₁ graph.  Independent runs must agree byte-for-byte on their
+hand-written IxIR₁ graph. Independent runs must agree byte-for-byte on their
 reports and output roots; disabling the pass must select the exact input
 graph. -/
 private def optimizerHarnessOnCompiled : Bool :=
@@ -1300,7 +1324,8 @@ private def optimizerHarnessOnCompiled : Bool :=
           let disabledPolicy : IxIR1.Optimizer.Policy :=
             { casePrune := { enabled := false }
               fetchForward := { enabled := false }
-              papFuse := { enabled := false } }
+              papFuse := { enabled := false }
+              reachability := { enabled := false } }
           let (disabledArtifact, disabledReport) :=
             artifact.optimizeWithProducedHPT disabledPolicy production
           let inputRoot := IxIR1.Optimizer.graphRoot artifact.targetArtifacts
@@ -1326,6 +1351,41 @@ private def optimizerHarnessOnCompiled : Bool :=
             disabledReport.outputRoot == inputRoot &&
             IxIR1.Optimizer.graphRoot disabledArtifact.targetArtifacts
               disabledArtifact.main == inputRoot
+
+private def reachabilityConstants : List (Address × Constant) :=
+  [(aBlock, cBlock), (aBox, cBox), (aCtor, cCtor),
+   (aSharedCtor, cSharedCtor), (aRec, cRec),
+   (aDropFirst, cDropFirst), (aMain, cReachMain),
+   (aUnused, cUnused)]
+
+/-- Production Ixon→IxIR₁ compilation emits stored functions which the
+default rooted pass then removes. This closes the compiler-emitted witness,
+rather than relying only on a hand-written IxIR₁ declaration graph. -/
+private def compilerReachabilityRemovesUnused : Bool :=
+  match compile reachabilityConstants aMain { blobs } with
+  | .error _ => false
+  | .ok artifact =>
+      match artifact.produceHPT with
+      | .error _ => false
+      | .ok production =>
+          let (optimized, report) := artifact.optimizeWithProducedHPT
+            IxIR1.Optimizer.defaultPolicy production
+          let ctx : IxIR1.Ctx := { decls := optimized.targetDeclEnv }
+          let result := IxIR1.runMain ctx optimized.main
+          report.disposition == .changed &&
+            report.removedDeclarations == 5 &&
+            report.before.functions == 6 && report.after.functions == 1 &&
+            match result with
+            | .ok (store, .loc location) =>
+                match store.get? location with
+                | some box =>
+                    match box.node with
+                    | .ctorN cid fields =>
+                        cid.block == aSharedCtor && cid.cidx == 1 &&
+                          fields.toList == [.lit (.nat 11)]
+                    | _ => false
+                | none => false
+            | _ => false
 
 /-- A double use of the affine parameter is stopped at the first
 pipeline gate, before erasure or lowering can observe the program. -/
@@ -1393,7 +1453,7 @@ unvalidated pipeline accepts it. The validator only certifies an axiom
 when its source address has an explicit external arity configuration;
 `Pipeline.Config` deliberately supplies none, so the gated pipeline
 must fail closed with the validator's own diagnostic. -/
-private def aGhostAxiom := address 0x78
+private def aGhostAxiom := address 0x7c
 
 private def cGhostAxiom : Constant :=
   { info := .axio { isUnsafe := false, lvls := 0, typ := .sort 0 }
@@ -1423,6 +1483,8 @@ def nativeIntegrationChecks : List (String × Bool) :=
    ("addressed pipeline runtime and cost", targetAgrees),
    ("compiler-produced optimizer report is deterministic and disable-safe",
       optimizerHarnessOnCompiled),
+   ("compiler-emitted unreachable declarations are removed",
+      compilerReachabilityRemovesUnused),
    ("usage rejection precedes addressed erasure", rejectsBadUsage),
    ("validated and direct addressed pipelines agree", validatedAgrees),
    ("unvalidated addressed pipeline accepts configured fragment",

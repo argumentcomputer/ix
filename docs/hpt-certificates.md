@@ -13,7 +13,9 @@ producer and case are not syntactically adjacent. Its whole-program path then
 performs a content-addressed graph rebuild; its proofs cover dynamic self calls
 and exact transport of the complete evaluator result. Conservative scalar
 fetch forwarding and PAP/application fusion now compose with that consumer
-through the same owner-sensitive traversal and one content-address rebuild.
+through the same owner-sensitive traversal. Checked rooted declaration
+reachability then filters their rewritten old-keyed graph before the shared
+content-address rebuild.
 This is a semantically justified analysis and optimization boundary, not yet
 the full heap-points-to optimization pass.
 
@@ -30,7 +32,9 @@ owner-sensitive fact-propagating rewrites. `HPTCasePruneProgram.lean` closes
 the declaration-environment recursion, content-address rebuild, and exact
 whole-program evaluator transport. `HPTFetchForward.lean` implements exact
 scalar projection forwarding, while `HPTPAPFuse.lean` implements local
-PAP/application fusion. `HPTPAPFuseProgram.lean` composes all three consumers.
+PAP/application fusion. `Reachability.lean` implements the exact rooted graph
+restriction and its independent checked certificate. `HPTPAPFuseProgram.lean`
+composes all four consumers.
 `Optimizer.lean` wraps that bundle in the versioned, deterministic, fail-soft
 policy and reporting boundary described in the
 [optimizer harness](optimizer-harness.md).
@@ -289,7 +293,33 @@ synthetic-owner condition, and transports the result through one exact
 content-address rebuild. A successful HPT check plus successful rebuild
 therefore authorizes
 `runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle`; fetch forwarding
-version 1 and PAP fusion version 1 are enabled in `defaultPolicy`.
+version 1, PAP fusion version 1, and reachability version 1 are enabled in
+`defaultPolicy`.
+
+`Reachability.lean` checks a second, deliberately small certificate after the
+body rewrites and before rebuilding. Its
+`compilatrix/ixir1/reachability-input/1\0` digest commits to the exact ordered
+old-key declaration rows and exact rewritten main; the certificate also
+commits to the exact configured exported-root list and a retained-key list in
+input order. A proper subset is accepted only when every root exists and is
+retained, and every direct `call` or `papp` edge in main and each retained body
+either names no local declaration or names another retained key. `callSelf`
+stays inside its retained owner. A reachable dynamic `apply` is conservatively
+open-world in version 1, so the checker accepts only the complete declaration
+set in that case.
+
+The deterministic closure producer is untrusted and immediately rechecked.
+Producer/checker disagreement, including a nonexistent configured root, keeps
+the complete graph. `runMain_filterEntries_eq_of_validate` proves exact
+evaluator equality for a valid restriction by a simultaneous fuel induction
+over code, primitive operations, and invocation; it covers case alternatives,
+direct calls, PAP lookup, self calls, externs, and recursive drop/free helpers.
+`runMain_run_eq` lifts that result through the fail-soft wrapper. The composed
+program proof first rewrites against the complete logical declaration
+environment, transports the result to the checked restriction, and only then
+uses the existing exact readdress theorem. Thus pruning a declaration or an
+entire dead SCC adds no second rebuild and does not weaken the successful-run
+history refinement of PAP fusion.
 
 Changed function bytes cannot retain their old content addresses.
 `ReaddressAll.rebuild` therefore alpha-renames function producers into a
@@ -303,8 +333,9 @@ source producer. `runMain_exact_of_rebuild_eq_ok` then transports from the
 exact old-keyed declaration environment, without installing final-key aliases.
 
 The composed optimizer joins that rebuild to the logical HPT theorems and
-reports removals, collapses, materialized fetches, forwarded fetches, and PAP
-fusion classes across the main and all declarations. The pipeline exposes
+reports declaration removals, alternative removals, collapses, materialized
+fetches, forwarded fetches, and PAP fusion classes across the main and all
+retained declarations. The pipeline exposes
 `checkAndPruneProgram[With]`, `pruneProgramWithProducedHPT`, and
 `pruneProgramWithCachedHPT`; `installPrunedProgram` installs the result while
 composing the artifact's original `targetAddressMap` through the rebuild map.
@@ -548,6 +579,24 @@ case with one materialized fetch, changes the caller's content address,
 rewrites the main edge, passes both ordinary and exact rebuild audits,
 preserves the detailed concrete result/store, and checks that artifact
 installation composes the original producer address map to the new caller.
+`reachabilityCertificateOk` starts from four content-addressed functions: main
+reaches a caller and leaf while a two-function mutual SCC is dead. The checked
+closure retains exactly the first two rows; exporting either SCC member retains
+both; a standalone PAP root retains its target; and reachable dynamic apply
+retains the complete graph. A nonexistent root fails soft to the input.
+Separate candidates with a stale input digest, substituted root list, and
+canonical-but-unclosed retained list are rejected. Original and filtered
+execution both return Nat `42`.
+`reachabilityHarnessOk` crosses HPT production, the default optimizer, and the
+single rebuild. It reports two removed declarations and four-to-two functions,
+removes the mutual artifact, preserves content-address audits and execution,
+honors the exported-root policy, and selects the original graph for an
+unsupported reachability version.
+The pipeline integration suite separately compiles a usage-checked Ixon
+constructor main alongside six stored functions with only one runtime-reachable
+target. The default optimizer removes the other five and preserves the exact
+shared constructor result, so declaration removal is pinned on compiler output
+as well as the hand-written IxIR₁ graph.
 Deterministic production reproduces the hand-written precise
 certificate and all five frozen summary identities in nine rounds. Repeating
 it returns the same candidate/result. Nine rounds is the exact global fixture
@@ -608,7 +657,10 @@ the ordinary `propext`/`Classical.choice`/`Quot.sound` set; composing it with an
 accepted, materialized certificate adds exactly that already-ledgered native
 hash axiom. Both direct-production and persistent-cache result layers,
 together with the one-root and recursive pipeline corollaries, are
-mechanically pinned.
+mechanically pinned. The two public reachability equalities are pinned as
+well. Their restriction induction is semantic, while their public validation
+premise exposes the same ledgered native BLAKE3 axiom because it commits to the
+exact reachability input digest.
 
 Record-streamed, power-loss-durable publication and the first disk-backed,
 per-artifact lazy chunk schedule are landed on the ledgered filesystem

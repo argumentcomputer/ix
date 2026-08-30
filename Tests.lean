@@ -2353,7 +2353,8 @@ def optimizerHarnessOk : Bool :=
           let disabledPolicy : IxIR1.Optimizer.Policy :=
             { casePrune := { enabled := false }
               fetchForward := { enabled := false }
-              papFuse := { enabled := false } }
+              papFuse := { enabled := false }
+              reachability := { enabled := false } }
           let disabled := IxIR1.Optimizer.runWithProducedHPT disabledPolicy
             artifact.targetArtifacts artifact.main production
           let budgetPolicy : IxIR1.Optimizer.Policy :=
@@ -2373,6 +2374,7 @@ def optimizerHarnessOk : Bool :=
               firstReport.collapsedCases == 1 &&
               firstReport.materializedFetches == 1 &&
               firstReport.forwardedFetches == 0 &&
+              firstReport.removedDeclarations == 0 &&
               firstReport.inputRoot != firstReport.outputRoot &&
               firstReport.outputRoot == firstRoot &&
               firstReport.before.counts.alternatives ==
@@ -2412,11 +2414,155 @@ def optimizerHarnessOk : Bool :=
                   secondReport.collapsedCases == 0 &&
                   secondReport.materializedFetches == 0 &&
                   secondReport.forwardedFetches == 0 &&
+                  secondReport.removedDeclarations == 0 &&
                   secondReport.inputRoot == firstReport.outputRoot &&
                   secondReport.outputRoot == firstReport.outputRoot &&
                   secondReport.before == secondReport.after &&
                   IxIR1.Optimizer.graphRoot secondArtifact.targetArtifacts
                     secondArtifact.main == firstReport.outputRoot
+
+/-! Checked rooted declaration reachability fixture. -/
+
+def reachRawLeaf : Address := Address.replicate 0xf1
+def reachRawMiddle : Address := Address.replicate 0xf2
+def reachRawDeadLeft : Address := Address.replicate 0xf3
+def reachRawDeadRight : Address := Address.replicate 0xf4
+
+def reachLeafDeclaration : IxIR1.Decl :=
+  .fn ⟨0, .shared, .ret (.lit (.nat 42))⟩
+
+def reachMiddleDeclaration : IxIR1.Decl :=
+  .fn ⟨0, .shared,
+    .letOp (.call reachRawLeaf #[]) (.ret (.var 0))⟩
+
+def reachDeadLeftDeclaration : IxIR1.Decl :=
+  .fn ⟨0, .shared,
+    .letOp (.call reachRawDeadRight #[]) (.ret (.var 0))⟩
+
+def reachDeadRightDeclaration : IxIR1.Decl :=
+  .fn ⟨0, .shared,
+    .letOp (.call reachRawDeadLeft #[]) (.ret (.var 0))⟩
+
+def reachRawDeclarations : List (Address × IxIR1.Decl) :=
+  [(reachRawMiddle, reachMiddleDeclaration),
+   (reachRawLeaf, reachLeafDeclaration),
+   (reachRawDeadLeft, reachDeadLeftDeclaration),
+   (reachRawDeadRight, reachDeadRightDeclaration)]
+
+def reachRawMain : IxIR1.Code :=
+  .letOp (.call reachRawMiddle #[]) (.ret (.var 0))
+
+private def isReachabilityResult :
+    Except IxIR1.Err (IxIR1.Store × IxIR1.RVal) → Bool
+  | .ok (store, .lit (.nat 42)) => store.live == 0
+  | _ => false
+
+/-- The untrusted producer and small checker agree on a direct-call closure,
+retain a rooted SCC as a unit, follow PAP edges, and fall back to the complete
+world for dynamic apply or an invalid configured root.  Stale identities,
+root substitution, and a canonical-but-not-closed retained set are rejected;
+filtering preserves the concrete result. -/
+def reachabilityCertificateOk : Bool :=
+  match IxIR1.ReaddressAll.run [] reachRawDeclarations reachRawMain with
+  | .error _ => false
+  | .ok program =>
+      let entries := program.declarations
+      let leaf := finalAddress program reachRawLeaf
+      let middle := finalAddress program reachRawMiddle
+      let deadLeft := finalAddress program reachRawDeadLeft
+      let deadRight := finalAddress program reachRawDeadRight
+      let outcome := IxIR1.Reachability.run [] entries program.main
+      let rooted := IxIR1.Reachability.run [deadLeft] entries program.main
+      let papMain : IxIR1.Code :=
+        .letOp (.papp leaf #[]) (.ret (.var 0))
+      let pap := IxIR1.Reachability.run [] entries papMain
+      let applyMain : IxIR1.Code :=
+        .letOp (.papp leaf #[])
+          (.letOp (.apply (.var 0) #[]) (.ret (.var 0)))
+      let dynamic := IxIR1.Reachability.run [] entries applyMain
+      let absent := Address.replicate 0xf5
+      let invalidRoot := IxIR1.Reachability.run [absent] entries program.main
+      let stale : IxIR1.Reachability.Certificate :=
+        { outcome.certificate with inputRoot := Address.replicate 0xf6 }
+      let notClosed : IxIR1.Reachability.Certificate :=
+        { outcome.certificate with
+          retained := (entries.map (fun entry => entry.1)).filter
+            (fun address => address != leaf) }
+      let entryKeys := entries.map (fun entry => entry.1)
+      let retainedKeys := outcome.entries.map (fun entry => entry.1)
+      let oldCtx : IxIR1.Ctx := { decls := IxIR1.Env.ofList entries }
+      let filteredCtx : IxIR1.Ctx :=
+        { decls := IxIR1.Env.ofList outcome.entries }
+      outcome.accepted && outcome.removedDeclarations == 2 &&
+        outcome.entries.length == 2 && retainedKeys.contains middle &&
+        retainedKeys.contains leaf && !retainedKeys.contains deadLeft &&
+        !retainedKeys.contains deadRight &&
+        rooted.accepted && rooted.removedDeclarations == 0 &&
+        rooted.entries.map (fun entry => entry.1) == entryKeys && pap.accepted &&
+        pap.certificate.retained.contains leaf &&
+        pap.removedDeclarations == 3 && dynamic.accepted &&
+        dynamic.removedDeclarations == 0 &&
+        dynamic.entries.map (fun entry => entry.1) == entryKeys &&
+        !invalidRoot.accepted &&
+        invalidRoot.entries.map (fun entry => entry.1) == entryKeys &&
+        !IxIR1.Reachability.validate entries program.main [] stale &&
+        !IxIR1.Reachability.validate entries program.main [deadLeft]
+          outcome.certificate &&
+        !IxIR1.Reachability.validate entries program.main [] notClosed &&
+        (match IxIR1.Reachability.check entries program.main []
+            outcome.certificate with
+         | .ok _ => true
+         | .error _ => false) &&
+        isReachabilityResult (IxIR1.runMain oldCtx program.main 64) &&
+        isReachabilityResult (IxIR1.runMain filteredCtx program.main 64)
+
+/-- The public optimizer removes the unreachable mutual component before its
+single rebuild, reports the exact declaration delta, preserves execution and
+content addressing, honors an exported root, and rejects an unsupported pass
+schema fail-softly. -/
+def reachabilityHarnessOk : Bool :=
+  match IxIR1.ReaddressAll.run [] reachRawDeclarations reachRawMain with
+  | .error _ => false
+  | .ok program =>
+      let artifact := artifactWithMain program program.main
+      match artifact.produceHPT with
+      | .error _ => false
+      | .ok production =>
+          let outcome := IxIR1.Optimizer.runWithProducedHPT
+            IxIR1.Optimizer.defaultPolicy program.artifacts program.main
+            production
+          let deadLeft := finalAddress program reachRawDeadLeft
+          let rootedPolicy : IxIR1.Optimizer.Policy :=
+            { reachability := { roots := [deadLeft] } }
+          let rooted := IxIR1.Optimizer.runWithProducedHPT rootedPolicy
+            program.artifacts program.main production
+          let unsupportedPolicy : IxIR1.Optimizer.Policy :=
+            { reachability := { version := 0 } }
+          let unsupported := IxIR1.Optimizer.runWithProducedHPT
+            unsupportedPolicy program.artifacts program.main production
+          let oldCtx : IxIR1.Ctx :=
+            { decls := IxIR1.HPT.programDeclEnv program.artifacts }
+          outcome.report.disposition == .changed &&
+            outcome.report.removedDeclarations == 2 &&
+            outcome.report.before.functions == 4 &&
+            outcome.report.after.functions == 2 &&
+            (match outcome.rebuilt with
+             | none => false
+             | some result =>
+                 result.declarations.length == 2 &&
+                   result.contentAddressed && result.noTransientKeys &&
+                   result.noTransientReferences &&
+                   isReachabilityResult
+                     (IxIR1.runMain oldCtx program.main 64) &&
+                   isReachabilityResult
+                     (IxIR1.runMain
+                       (result.addressedCtx (fun _ _ => none)) result.main 64)) &&
+            rooted.report.removedDeclarations == 0 &&
+            rooted.report.after.functions == 4 &&
+            unsupported.rebuilt.isNone &&
+            unsupported.report.disposition ==
+              .skipped (.unsupportedReachabilityVersion 0
+                IxIR1.Optimizer.currentReachabilityVersion)
 
 /-! Local PAP/application fusion fixture. -/
 
@@ -4421,6 +4567,12 @@ def main : IO UInt32 := do
         ok := false
       if !HPTFixtures.optimizerHarnessOk then
         IO.eprintln "FAIL: optimizer policy, observations, deterministic report, fail-soft controls, address transport, or idempotence drifted"
+        ok := false
+      if !HPTFixtures.reachabilityCertificateOk then
+        IO.eprintln "FAIL: rooted reachability production, validation, adversarial rejection, fallback, or exact execution drifted"
+        ok := false
+      if !HPTFixtures.reachabilityHarnessOk then
+        IO.eprintln "FAIL: rooted reachability optimizer reporting, exported roots, one-rebuild content addressing, or execution drifted"
         ok := false
       if !HPTFixtures.papFusionHarnessOk then
         IO.eprintln "FAIL: checked PAP/apply fusion drifted across saturation classes, rejection gates, reporting, execution, or idempotence"

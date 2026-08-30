@@ -58,6 +58,7 @@ import Compilatrix.IxIR1.HPTCacheDirIO
 import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.HPTCasePruneProgram
 import Compilatrix.IxIR1.HPTPAPFuse
+import Compilatrix.IxIR1.Reachability
 import Compilatrix.IxIR1.HPTPAPFuseProgram
 import Compilatrix.IxIR1.Optimizer
 import Compilatrix.IxIR1.Mono

@@ -60,8 +60,8 @@ criteria are met and the coverage check confirms that its boundary vanished.
 | Owner | Compilatr.ix maintainers |
 | Project entry point | `Blake3.Rust.hash` in `Compilatrix/Ixon/Hash.lean` |
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
-| Logical/proof status | Assumption: no Lean refinement theorem currently connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, and local PAP/application refinement are hash-independent and stay in the ordinary logical axiom set. Production addressed-lowering corollaries and checked HPT cache/summary/consumer results consume native digests, so `Compilatrix/Fence.lean` pins their exact additional `Blake3.HasherOps.hash._native.native_decide.ax_1✝` dependency. |
-| Evidence | Official empty-input vector, output length, determinism/input-sensitivity checks, a full constant-address fixture, complete IxIR₀/IxIR₁ declaration byte+address fixtures, frozen dependency-chain/nested-lambda/constructor-wrapper readdressing digests, executable semantic audits, a protected-source-identity collision regression, the frozen ledger-oracle cyclic block/member digests, and five version-3 HPT cache keys plus five checked recursively field-aware summary addresses exercised through deterministic production, persistent canonical record/store ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, file-backed corruption recovery, depth-two fetch/case refinement, checked case-binder field recovery through the ordinary checker and deterministic producer, checked finite-constructor case pruning, PAP fusion across all saturation classes, and exact scalar fetch forwarding after allocation and reuse through deterministic one-rebuild/fixed-point graph regressions in `Tests.lean` |
+| Logical/proof status | Assumption: no Lean refinement theorem currently connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and stay in the ordinary logical axiom set. Production addressed-lowering corollaries, checked HPT cache/summary/consumer results, and the public reachability theorems that validate an exact input digest consume native hashes, so `Compilatrix/Fence.lean` pins their exact additional `Blake3.HasherOps.hash._native.native_decide.ax_1✝` dependency. |
+| Evidence | Official empty-input vector, output length, determinism/input-sensitivity checks, a full constant-address fixture, complete IxIR₀/IxIR₁ declaration byte+address fixtures, frozen dependency-chain/nested-lambda/constructor-wrapper readdressing digests, executable semantic audits, a protected-source-identity collision regression, the frozen ledger-oracle cyclic block/member digests, and five version-3 HPT cache keys plus five checked recursively field-aware summary addresses exercised through deterministic production, persistent canonical record/store ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, file-backed corruption recovery, depth-two fetch/case refinement, checked case-binder field recovery through the ordinary checker and deterministic producer, checked finite-constructor case pruning, PAP fusion across all saturation classes, exact scalar fetch forwarding after allocation and reuse, and checked rooted declaration/SCC removal with exported-root and dynamic-apply fallbacks through deterministic one-rebuild regressions in `Tests.lean` |
 | Primary pin | Blake3.lean `aaf530784082a2c00b0a93648741429d274102ca` |
 | Rust implementation | `blake3` 1.8.4; `lean-ffi` `cc98ebf67bf453ac3827cb767f78b13ea674dd6a` |
 | Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend after M3 |
@@ -165,6 +165,19 @@ concrete execution, and confirm that an accepted universal row does not prune;
 a terminating Nat-peeling fixture reaches its rewritten base case through
 three dynamic self calls. A checked artifact-main fixture also crosses the
 pipeline API and preserves the exact finite-fuel self-loop result.
+
+The rooted-reachability checker adds the
+`compilatrix/ixir1/reachability-input/1\0` domain for the exact rewritten
+declaration rows and main. Its evaluator restriction induction does not reason
+about hashes, but the public `runMain_filterEntries_eq_of_validate` and
+`runMain_run_eq` theorem cones unfold the digest-bearing validation boundary
+and therefore expose the same native hash axiom. Both are pinned in the proof
+fence. Compiled fixtures remove a dead two-function SCC, retain it through an
+exported member root, follow direct-call and PAP edges, reject stale and
+non-closed certificates, preserve execution through the one rebuild, and
+retain the complete declaration set around reachable dynamic apply. A separate
+usage-checked Ixon compilation fixture removes five of six emitted stored
+functions while preserving its exact shared constructor result.
 
 ## Active native interface: durable filesystem synchronization
 

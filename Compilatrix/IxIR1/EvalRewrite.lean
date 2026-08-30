@@ -193,6 +193,32 @@ private theorem dropCtxEqAt (before after : Ctx) :
             | error error => rfl
             | ok next => exact smaller.dropManyU next rest
 
+/-- Deep shared destruction is independent of the declaration environment and
+oracle stored in the evaluator context. -/
+theorem dropVal_ctx_eq (before after : Ctx) (fuel : Nat)
+    (store : Store) (value : RVal) :
+    dropVal after fuel store value = dropVal before fuel store value :=
+  (dropCtxEqAt before after fuel).dropVal store value
+
+/-- Pointwise shared destruction is independent of the evaluator context. -/
+theorem dropMany_ctx_eq (before after : Ctx) (fuel : Nat)
+    (store : Store) (values : List RVal) :
+    dropMany after fuel store values = dropMany before fuel store values :=
+  (dropCtxEqAt before after fuel).dropMany store values
+
+/-- Deep unique destruction is independent of the declaration environment and
+oracle stored in the evaluator context. -/
+theorem dropUVal_ctx_eq (before after : Ctx) (fuel : Nat)
+    (store : Store) (value : RVal) :
+    dropUVal after fuel store value = dropUVal before fuel store value :=
+  (dropCtxEqAt before after fuel).dropUVal store value
+
+/-- Pointwise unique destruction is independent of the evaluator context. -/
+theorem dropManyU_ctx_eq (before after : Ctx) (fuel : Nat)
+    (store : Store) (values : List RVal) :
+    dropManyU after fuel store values = dropManyU before fuel store values :=
+  (dropCtxEqAt before after fuel).dropManyU store values
+
 /-- The context-changing part of the evaluator theorem.  Entry stores and
 values are literally shared; `base` supplies the self-history needed when a
 body rewrite removes allocations and later locations drift. -/

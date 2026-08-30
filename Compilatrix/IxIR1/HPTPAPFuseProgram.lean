@@ -1,5 +1,6 @@
 import Compilatrix.IxIR1.HPTCasePruneProgram
 import Compilatrix.IxIR1.HPTFetchForward
+import Compilatrix.IxIR1.Reachability
 
 /-!
 # One-rebuild composition of checked HPT consumers
@@ -24,17 +25,22 @@ structure Passes where
   casePrune : Bool := true
   fetchForward : Bool := true
   papFuse : Bool := true
+  reachability : Bool := true
+  roots : List Address := []
   deriving BEq, Repr
 
 structure Changes where
   casePrune : CasePrune.Changes := {}
   fetchForward : FetchForward.Changes := {}
   papFuse : PAPFuse.Changes := {}
+  removedDeclarations : Nat := 0
 
 def Changes.add (left right : Changes) : Changes :=
   { casePrune := left.casePrune.add right.casePrune
     fetchForward := left.fetchForward.add right.fetchForward
-    papFuse := left.papFuse.add right.papFuse }
+    papFuse := left.papFuse.add right.papFuse
+    removedDeclarations :=
+      left.removedDeclarations + right.removedDeclarations }
 
 structure CodeOutcome where
   code : Code
@@ -478,6 +484,35 @@ structure Outcome where
   result : ReaddressAll.Result
   changes : Changes
 
+/-- Apply checked rooted reachability after all body rewrites but before the
+single content-address rebuild.  A disabled pass retains every row. -/
+def selectReachable (passes : Passes) (entries : List (Address × Decl))
+    (main : Code) : Reachability.Outcome :=
+  if passes.reachability then
+    Reachability.run passes.roots entries main
+  else
+    { entries
+      certificate := Reachability.produce entries main passes.roots
+      accepted := false
+      removedDeclarations := 0 }
+
+/-- Checked reachability preserves the complete logical-program result; the
+disabled branch is literal equality. -/
+theorem runMain_selectReachable_eq (passes : Passes)
+    (entries : List (Address × Decl)) (main : Code)
+    (oracle : Address → List RVal → Option RVal := fun _ _ => none)
+    (fuel : Nat := 100000) :
+    runMain
+        { decls := Env.ofList (selectReachable passes entries main).entries
+          oracle }
+        main fuel =
+      runMain { decls := Env.ofList entries, oracle } main fuel := by
+  cases hreach : passes.reachability with
+  | false => simp [selectReachable, hreach]
+  | true =>
+      simpa [selectReachable, hreach] using
+        Reachability.runMain_run_eq passes.roots entries main oracle fuel
+
 /-- Compose enabled checked consumers and rebuild the addressed graph once. -/
 def rebuildProgram (passes : Passes) (reserved : List Address)
     (program : List ReaddressAll.Artifact) (summaries : SummaryEnv)
@@ -488,8 +523,12 @@ def rebuildProgram (passes : Passes) (reserved : List Address)
   let declarationDelta :=
     declarationsChanges passes environment summaries declarations
   let rewrittenMain := rewriteMain passes environment summaries main
-  let result ← ReaddressAll.rebuild reserved rewritten rewrittenMain.code
-  return ⟨result, declarationDelta.add rewrittenMain.changes⟩
+  let reachable := selectReachable passes rewritten rewrittenMain.code
+  let result ← ReaddressAll.rebuild reserved reachable.entries
+    rewrittenMain.code
+  return ⟨result,
+    (declarationDelta.add rewrittenMain.changes).add
+      { removedDeclarations := reachable.removedDeclarations }⟩
 
 /-- Project the exact graph-rebuild equation from a successful composed pass. -/
 theorem rebuild_of_rebuildProgram_eq_ok
@@ -499,15 +538,19 @@ theorem rebuild_of_rebuildProgram_eq_ok
     (hrun : rebuildProgram passes reserved program summaries main =
       .ok outcome) :
     ReaddressAll.rebuild reserved
-        (rewriteEntries passes (programDeclEnv program) summaries
-          (declarationEntries program))
+        (selectReachable passes
+          (rewriteEntries passes (programDeclEnv program) summaries
+            (declarationEntries program))
+          (rewriteMain passes (programDeclEnv program) summaries main).code).entries
         (rewriteMain passes (programDeclEnv program) summaries main).code =
       .ok outcome.result := by
   unfold rebuildProgram at hrun
   simp only [bind, Except.bind] at hrun
   cases hrebuild : ReaddressAll.rebuild reserved
-      (rewriteEntries passes (programDeclEnv program) summaries
-        (declarationEntries program))
+      (selectReachable passes
+        (rewriteEntries passes (programDeclEnv program) summaries
+          (declarationEntries program))
+        (rewriteMain passes (programDeclEnv program) summaries main).code).entries
       (rewriteMain passes (programDeclEnv program) summaries main).code with
   | error message =>
       rw [hrebuild] at hrun
@@ -516,10 +559,16 @@ theorem rebuild_of_rebuildProgram_eq_ok
       rw [hrebuild] at hrun
       have houtcome :
           (⟨result,
-            (declarationsChanges passes (programDeclEnv program) summaries
+            ((declarationsChanges passes (programDeclEnv program) summaries
               (declarationEntries program)).add
               (rewriteMain passes (programDeclEnv program) summaries
-                main).changes⟩ : Outcome) = outcome := by
+                main).changes).add
+              { removedDeclarations :=
+                  (selectReachable passes
+                    (rewriteEntries passes (programDeclEnv program) summaries
+                      (declarationEntries program))
+                    (rewriteMain passes (programDeclEnv program) summaries
+                      main).code).removedDeclarations }⟩ : Outcome) = outcome := by
         injection hrun
       have hresult : result = outcome.result :=
         congrArg Outcome.result houtcome
@@ -551,13 +600,17 @@ theorem runMain_rebuild_rewriteProgram
     (hentries : Env.ofList entries = declarations)
     (hpost : LocalPostFixpoint declarations summaries)
     (hrebuild : ReaddressAll.rebuild reserved
-      (rewriteEntries passes declarations summaries entries)
+      (selectReachable passes
+        (rewriteEntries passes declarations summaries entries)
+        (rewriteMain passes declarations summaries main).code).entries
       (rewriteMain passes declarations summaries main).code = .ok result)
     (oracle : Address → List RVal → Option RVal := fun _ _ => none)
     (fuel : Nat := 100000)
     (hrun : runMain
       (rebuildOriginalCtx result
-        (rewriteEntries passes declarations summaries entries)
+        (selectReachable passes
+          (rewriteEntries passes declarations summaries entries)
+          (rewriteMain passes declarations summaries main).code).entries
         declarations oracle)
       main fuel = .ok sourceOut) :
     ∃ targetOut,
@@ -565,28 +618,41 @@ theorem runMain_rebuild_rewriteProgram
           .ok
             (Readdress.Store.mapAddresses
               (result.rebuildRename
-                (rewriteEntries passes declarations summaries entries))
+                (selectReachable passes
+                  (rewriteEntries passes declarations summaries entries)
+                  (rewriteMain passes declarations summaries main).code).entries)
               targetOut.1,
             targetOut.2) ∧
         RunHistoryIso emptyHistoryIso sourceOut targetOut := by
   let rewritten := rewriteEntries passes declarations summaries entries
   let rewrittenMain := rewriteMain passes declarations summaries main
-  let before := rebuildOriginalCtx result rewritten declarations oracle
+  let reachable := selectReachable passes rewritten rewrittenMain.code
+  let before := rebuildOriginalCtx result reachable.entries declarations oracle
   have hbefore : before.decls = declarations := rfl
   have hctx : rewriteCtx passes declarations summaries before =
-      result.rebuildSourceCtx rewritten oracle := by
+      { decls := Env.ofList rewritten, oracle := before.oracle } := by
     simp [rewriteCtx, before, rewritten, rebuildOriginalCtx,
-      ReaddressAll.Result.rebuildSourceCtx,
       envOfList_rewriteEntries, hentries]
     funext address
     rfl
   obtain ⟨targetOut, htargetRun, hiso⟩ :=
     runMain_rewriteProgram_refines (passes := passes) hpost hbefore hrun
-  have htargetSource :
-      runMain (result.rebuildSourceCtx rewritten oracle) rewrittenMain.code
-          fuel = .ok targetOut := by
+  have hfullSource :
+      runMain { decls := Env.ofList rewritten, oracle := before.oracle }
+          rewrittenMain.code fuel = .ok targetOut := by
     rw [← hctx]
     simpa [rewrittenMain] using htargetRun
+  have hfilteredSource :
+      runMain
+          { decls := Env.ofList reachable.entries, oracle := before.oracle }
+          rewrittenMain.code fuel = .ok targetOut := by
+    exact (runMain_selectReachable_eq passes rewritten rewrittenMain.code
+      before.oracle fuel).trans hfullSource
+  have htargetSource :
+      runMain (result.rebuildSourceCtx reachable.entries oracle)
+          rewrittenMain.code fuel = .ok targetOut := by
+    simpa [before, reachable, rebuildOriginalCtx,
+      ReaddressAll.Result.rebuildSourceCtx] using hfilteredSource
   refine ⟨targetOut, ?_, hiso⟩
   exact ReaddressAll.runMain_exact_success_of_rebuild_eq_ok hrebuild oracle
     htargetSource
@@ -605,8 +671,11 @@ theorem runMain_rebuildProgram_of_runWith_eq_ok
     (fuel : Nat := 100000)
     (hrun : runMain
       (rebuildOriginalCtx outcome.result
-        (rewriteEntries passes (programDeclEnv program)
-          certificate.summaryEnv (declarationEntries program))
+        (selectReachable passes
+          (rewriteEntries passes (programDeclEnv program)
+            certificate.summaryEnv (declarationEntries program))
+          (rewriteMain passes (programDeclEnv program)
+            certificate.summaryEnv main).code).entries
         (programDeclEnv program) oracle)
       main fuel = .ok sourceOut) :
     ∃ targetOut,
@@ -614,8 +683,11 @@ theorem runMain_rebuildProgram_of_runWith_eq_ok
           .ok
             (Readdress.Store.mapAddresses
               (outcome.result.rebuildRename
-                (rewriteEntries passes (programDeclEnv program)
-                  certificate.summaryEnv (declarationEntries program)))
+                (selectReachable passes
+                  (rewriteEntries passes (programDeclEnv program)
+                    certificate.summaryEnv (declarationEntries program))
+                  (rewriteMain passes (programDeclEnv program)
+                    certificate.summaryEnv main).code).entries)
               targetOut.1,
             targetOut.2) ∧
         RunHistoryIso emptyHistoryIso sourceOut targetOut := by
@@ -645,8 +717,11 @@ theorem runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle
         .ok
           (Readdress.Store.mapAddresses
             (outcome.result.rebuildRename
-              (rewriteEntries passes (programDeclEnv program)
-                certificate.summaryEnv (declarationEntries program)))
+              (selectReachable passes
+                (rewriteEntries passes (programDeclEnv program)
+                  certificate.summaryEnv (declarationEntries program))
+                (rewriteMain passes (programDeclEnv program)
+                  certificate.summaryEnv main).code).entries)
             targetOut.1,
           targetOut.2) ∧
       RunHistoryIso emptyHistoryIso sourceOut targetOut := by
