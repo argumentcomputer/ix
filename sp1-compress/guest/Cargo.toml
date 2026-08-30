@@ -4,6 +4,7 @@
 name = "sp1-compress-guest"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Host-only span reporting does not build for the zkVM target.
