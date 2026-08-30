@@ -1995,6 +1995,11 @@ private def rootCallCaseIndices : IxIR1.Code → Option (List Nat)
       some (alternatives.toList.map (fun alternative => alternative.cidx))
   | _ => none
 
+private def rootCallHasUnaryFetch : IxIR1.Code → Bool
+  | .letOp (.call _ _)
+      (.letOp (.fetch (.var 0) 0) _) => true
+  | _ => false
+
 private def casePruneExecutionOk :
     Except IxIR1.Err (IxIR1.Store × IxIR1.RVal) → Bool
   | .ok (store, .lit (.nat 41)) =>
@@ -2007,9 +2012,9 @@ private def casePruneExecutionOk :
         | none => false
   | _ => false
 
-/-- The precise checked row removes exactly one impossible constructor branch
-and preserves concrete execution.  A separately checked top certificate is
-conservative and leaves the root unchanged at the branch-index level. -/
+/-- The precise checked row removes one impossible constructor branch,
+collapses the remaining unary case to a checked fetch, and preserves concrete
+execution. Conservative facts and duplicate matches remain pruning-only. -/
 def casePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
   let preciseCandidate := preciseCertificate program
   let topCandidate := IxIR1.HPT.Certificate.top program.artifacts
@@ -2022,16 +2027,70 @@ def casePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
         preciseCandidate.summaryEnv input
       let conservative := IxIR1.HPT.CasePrune.run declarations
         topCandidate.summaryEnv input
+      let constructor := finalAddress program rawConstructor
+      let identityOnlyFact :=
+        IxIR1.HPT.Fact.heap (.ctor constructorId none)
+      let exactUnaryFact :=
+        IxIR1.HPT.Fact.heap
+          (.ctor constructorId (some [IxIR1.HPT.FieldFact.scalar]))
+      let nullaryFact :=
+        IxIR1.HPT.Fact.heap (.ctor constructorId (some []))
+      let binaryFact :=
+        IxIR1.HPT.Fact.heap
+          (.ctor constructorId
+            (some [IxIR1.HPT.FieldFact.scalar,
+              IxIR1.HPT.FieldFact.scalar]))
+      let identityOnlySummary : IxIR1.HPT.SummaryEnv := fun address =>
+        if address == constructor then some identityOnlyFact else none
+      let exactUnarySummary : IxIR1.HPT.SummaryEnv := fun address =>
+        if address == constructor then some exactUnaryFact else none
+      let identityOnly := IxIR1.HPT.CasePrune.run declarations
+        identityOnlySummary input
+      let singletonInput : IxIR1.Code :=
+        .letOp (.call constructor #[])
+          (.case (.var 0) false #[
+            .mk 0 1 (.ret (.lit (.nat 41)))])
+      let singleton := IxIR1.HPT.CasePrune.run declarations
+        exactUnarySummary singletonInput
+      let duplicateInput : IxIR1.Code :=
+        .letOp (.call constructor #[])
+          (.case (.var 0) false #[
+            .mk 0 1 (.ret (.lit (.nat 41))),
+            .mk 0 1 (.ret (.lit (.nat 42))),
+            .mk 1 0 (.ret (.lit (.nat 99)))])
+      let duplicate := IxIR1.HPT.CasePrune.run declarations
+        exactUnarySummary duplicateInput
       let ctx : IxIR1.Ctx := { decls := declarations }
       -- `runCode_run_eq` deliberately holds the current frame fixed; this
       -- fixture contains no `callSelf`, so that boundary is explicit here.
       let current : IxIR1.FnDef := ⟨0, .shared, input⟩
       preciseAnalysis.semanticAudit && topAnalysis.semanticAudit &&
         pruned.removedAlternatives == 1 &&
+        pruned.collapsedCases == 1 &&
+        pruned.materializedFetches == 1 &&
         conservative.removedAlternatives == 0 &&
+        conservative.collapsedCases == 0 &&
+        conservative.materializedFetches == 0 &&
         rootCallCaseIndices input == some [0, 1] &&
-        rootCallCaseIndices pruned.code == some [0] &&
+        rootCallHasUnaryFetch pruned.code &&
         rootCallCaseIndices conservative.code == some [0, 1] &&
+        identityOnly.removedAlternatives == 1 &&
+        identityOnly.collapsedCases == 0 &&
+        identityOnly.materializedFetches == 0 &&
+        rootCallCaseIndices identityOnly.code == some [0] &&
+        singleton.removedAlternatives == 0 &&
+        singleton.collapsedCases == 1 &&
+        singleton.materializedFetches == 1 &&
+        rootCallHasUnaryFetch singleton.code &&
+        duplicate.removedAlternatives == 1 &&
+        duplicate.collapsedCases == 0 &&
+        duplicate.materializedFetches == 0 &&
+        rootCallCaseIndices duplicate.code == some [0, 0] &&
+        IxIR1.HPT.CasePrune.exactUnaryConstructor? exactUnaryFact ==
+          some constructorId &&
+        IxIR1.HPT.CasePrune.exactUnaryConstructor? identityOnlyFact == none &&
+        IxIR1.HPT.CasePrune.exactUnaryConstructor? nullaryFact == none &&
+        IxIR1.HPT.CasePrune.exactUnaryConstructor? binaryFact == none &&
         casePruneExecutionOk
           (IxIR1.runCode ctx 64 current {} [] input) &&
         casePruneExecutionOk
@@ -2056,9 +2115,18 @@ private def caseAlternativeRootIndices : IxIR1.Code →
       some (alternatives.toList.map alternativeRootCallCaseIndices)
   | _ => none
 
-/-- Recursive pruning reaches every alternative body, sums removal counts,
-preserves concrete execution, and remains conservative for a checked top
-certificate.  The one-root API intentionally leaves this input untouched. -/
+private def alternativeRootCallHasUnaryFetch : IxIR1.Alt → Bool
+  | .mk _ _ body => rootCallHasUnaryFetch body
+
+private def caseAlternativeRootUnaryFetches : IxIR1.Code →
+    Option (List Bool)
+  | .case _ _ alternatives =>
+      some (alternatives.toList.map alternativeRootCallHasUnaryFetch)
+  | _ => none
+
+/-- Recursive simplification reaches every alternative body, sums all pass
+counters, preserves concrete execution, and remains conservative for a
+checked top certificate. The one-root API leaves this input untouched. -/
 def recursiveCasePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
   let preciseCandidate := preciseCertificate program
   let topCandidate := IxIR1.HPT.Certificate.top program.artifacts
@@ -2077,12 +2145,19 @@ def recursiveCasePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
       let current : IxIR1.FnDef := ⟨0, .shared, input⟩
       preciseAnalysis.semanticAudit && topAnalysis.semanticAudit &&
         rootOnly.removedAlternatives == 0 &&
+        rootOnly.collapsedCases == 0 &&
+        rootOnly.materializedFetches == 0 &&
         pruned.removedAlternatives == 2 &&
+        pruned.collapsedCases == 2 &&
+        pruned.materializedFetches == 2 &&
         conservative.removedAlternatives == 0 &&
+        conservative.collapsedCases == 0 &&
+        conservative.materializedFetches == 0 &&
         caseAlternativeRootIndices rootOnly.code ==
           some [some [0, 1], some [0, 1]] &&
         caseAlternativeRootIndices pruned.code ==
-          some [some [0], some [0]] &&
+          some [none, none] &&
+        caseAlternativeRootUnaryFetches pruned.code == some [true, true] &&
         caseAlternativeRootIndices conservative.code ==
           some [some [0, 1], some [0, 1]] &&
         casePruneExecutionOk
@@ -2119,9 +2194,13 @@ def callSelfCasePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
       let ctx : IxIR1.Ctx := { decls := declarations }
       analysis.semanticAudit &&
         pruned.removedAlternatives == 1 &&
+        pruned.collapsedCases == 1 &&
+        pruned.materializedFetches == 1 &&
         caseAlternativeRootIndices input == some [some [0, 1], none] &&
-        caseAlternativeRootIndices pruned.code == some [some [0], none] &&
-        caseAlternativeRootIndices rewritten.body == some [some [0], none] &&
+        caseAlternativeRootIndices pruned.code == some [none, none] &&
+        caseAlternativeRootUnaryFetches pruned.code == some [true, false] &&
+        caseAlternativeRootIndices rewritten.body == some [none, none] &&
+        caseAlternativeRootUnaryFetches rewritten.body == some [true, false] &&
         casePruneExecutionOk
           (IxIR1.runCode ctx 128 current {} [.lit (.nat 3)] input) &&
         casePruneExecutionOk
@@ -2153,8 +2232,8 @@ private def isFuelError : Except IxIR1.Err (IxIR1.Store × IxIR1.RVal) → Bool
   | .error .fuel => true
   | _ => false
 
-/-- The checked pipeline main API prunes the artifact main and preserves an
-actual zero-argument `callSelf` loop's exact finite-fuel error. -/
+/-- The checked pipeline main API simplifies the artifact main and preserves
+an actual zero-argument `callSelf` loop's exact finite-fuel error. -/
 def pipelineCallSelfMainPruneOk
     (program : IxIR1.ReaddressAll.Result) : Bool :=
   let input := callSelfMainPruneInput program
@@ -2166,8 +2245,10 @@ def pipelineCallSelfMainPruneOk
       let ctx : IxIR1.Ctx := { decls := artifact.targetDeclEnv }
       analysis.semanticAudit &&
         pruned.removedAlternatives == 1 &&
+        pruned.collapsedCases == 1 &&
+        pruned.materializedFetches == 1 &&
         rootCallCaseIndices input == some [0, 1] &&
-        rootCallCaseIndices pruned.code == some [0] &&
+        rootCallHasUnaryFetch pruned.code &&
         isFuelError (IxIR1.runMain ctx input 64) &&
         isFuelError (IxIR1.runMain ctx pruned.code 64)
 
@@ -2193,9 +2274,9 @@ private def rootCallTarget : IxIR1.Code → Option Address
   | .letOp (.call function _) _ => some function
   | _ => none
 
-/-- Complete checked pruning rewrites a stored function body, changes its
-content address, rewrites the main edge, preserves execution, and composes the
-pipeline's original producer map through the rebuild. -/
+/-- Complete checked simplification rewrites a stored function body, changes
+its content address, rewrites the main edge, preserves execution, and composes
+the pipeline's original producer map through the rebuild. -/
 def declarationGraphCasePruneOk : Bool :=
   match IxIR1.ReaddressAll.run [constructorBlock]
       graphRawDeclarations graphRawMain with
@@ -2214,6 +2295,8 @@ def declarationGraphCasePruneOk : Bool :=
           let newCtx := outcome.result.addressedCtx (fun _ _ => none)
           analysis.semanticAudit &&
             outcome.removedAlternatives == 1 &&
+            outcome.collapsedCases == 1 &&
+            outcome.materializedFetches == 1 &&
             oldCaller != newCaller &&
             outcome.result.semanticAudit
               (artifact.prunedTargetEntries candidate.summaryEnv)
@@ -2231,7 +2314,7 @@ def declarationGraphCasePruneOk : Bool :=
               graphRawCaller == newCaller &&
             match IxIR1.Env.ofList outcome.result.declarations newCaller with
             | some (.fn function) =>
-                rootCallCaseIndices function.body == some [0] &&
+                rootCallHasUnaryFetch function.body &&
                   casePruneExecutionOk
                     (IxIR1.runMain oldCtx artifact.main 64) &&
                   casePruneExecutionOk
@@ -2275,10 +2358,16 @@ def optimizerHarnessOk : Bool :=
           let firstChecks :=
             firstReport.disposition == .changed &&
               firstReport.removedAlternatives == 1 &&
+              firstReport.collapsedCases == 1 &&
+              firstReport.materializedFetches == 1 &&
               firstReport.inputRoot != firstReport.outputRoot &&
               firstReport.outputRoot == firstRoot &&
               firstReport.before.counts.alternatives ==
-                firstReport.after.counts.alternatives + 1 &&
+                firstReport.after.counts.alternatives + 2 &&
+              firstReport.before.counts.cases ==
+                firstReport.after.counts.cases + 1 &&
+              firstReport.after.counts.fetches ==
+                firstReport.before.counts.fetches + 1 &&
               firstReport.after.codeBytes < firstReport.before.codeBytes &&
               firstReport.after == IxIR1.Optimizer.observe
                 firstArtifact.targetArtifacts firstArtifact.main &&
@@ -2288,7 +2377,7 @@ def optimizerHarnessOk : Bool :=
               rootCallTarget firstArtifact.main == some newCaller &&
               (match firstArtifact.targetDeclEnv newCaller with
                | some (.fn function) =>
-                   rootCallCaseIndices function.body == some [0]
+                   rootCallHasUnaryFetch function.body
                | _ => false) &&
               disabled.rebuilt.isNone &&
               disabled.report.disposition ==
@@ -2307,6 +2396,8 @@ def optimizerHarnessOk : Bool :=
                     IxIR1.Optimizer.defaultPolicy secondProduction
                 secondReport.disposition == .unchanged &&
                   secondReport.removedAlternatives == 0 &&
+                  secondReport.collapsedCases == 0 &&
+                  secondReport.materializedFetches == 0 &&
                   secondReport.inputRoot == firstReport.outputRoot &&
                   secondReport.outputRoot == firstReport.outputRoot &&
                   secondReport.before == secondReport.after &&
@@ -4076,19 +4167,19 @@ def main : IO UInt32 := do
         IO.eprintln "FAIL: recursive HPT fields lost depth-two projection, case-binder, budget, producer, or cache precision"
         ok := false
       if !HPTFixtures.casePruneOk program then
-        IO.eprintln "FAIL: checked HPT case pruning removed a possible branch, changed execution, or pruned a top fact"
+        IO.eprintln "FAIL: checked HPT case simplification changed execution or crossed a conservative collapse boundary"
         ok := false
       if !HPTFixtures.recursiveCasePruneOk program then
-        IO.eprintln "FAIL: recursive checked HPT case pruning missed a nested branch, changed execution, or pruned a top fact"
+        IO.eprintln "FAIL: recursive checked HPT case simplification missed a nested rewrite or changed execution"
         ok := false
       if !HPTFixtures.callSelfCasePruneOk program then
-        IO.eprintln "FAIL: recursive checked HPT case pruning changed a terminating callSelf execution or failed to rewrite its current frame"
+        IO.eprintln "FAIL: recursive checked HPT case simplification changed a terminating callSelf execution or failed to rewrite its current frame"
         ok := false
       if !HPTFixtures.pipelineCallSelfMainPruneOk program then
         IO.eprintln "FAIL: checked HPT artifact-main pruning changed an exact finite-fuel callSelf result"
         ok := false
       if !HPTFixtures.declarationGraphCasePruneOk then
-        IO.eprintln "FAIL: checked HPT declaration-graph pruning failed to readdress a changed body, rewrite its main edge, or preserve execution"
+        IO.eprintln "FAIL: checked HPT declaration-graph simplification failed to readdress a changed body, rewrite its main edge, or preserve execution"
         ok := false
       if !HPTFixtures.optimizerHarnessOk then
         IO.eprintln "FAIL: optimizer policy, observations, deterministic report, fail-soft controls, address transport, or idempotence drifted"

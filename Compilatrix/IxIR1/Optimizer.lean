@@ -5,8 +5,8 @@ import Compilatrix.IxIR1.HPTCasePruneProgram
 # Deterministic IxIR₁ optimizer harness
 
 This module is the O0 control and observation boundary for whole-program
-IxIR₁ optimization.  It does not add a new rewrite: it wraps the existing
-checked HPT case-pruning consumer with:
+IxIR₁ optimization.  It wraps the checked HPT call-result case simplifier
+(impossible-alternative pruning plus exact unary case collapse) with:
 
 - explicit harness and pass-policy versions;
 - deterministic, fail-soft resource controls;
@@ -31,7 +31,7 @@ open Compilatrix.Ixon (Address)
 open Compilatrix.IxIR
 
 def currentHarnessVersion : Nat := 1
-def currentCasePruneVersion : Nat := 1
+def currentCasePruneVersion : Nat := 2
 
 /-! ## Structural observations -/
 
@@ -235,6 +235,8 @@ structure Report where
   before : Observation
   after : Observation
   removedAlternatives : Nat
+  collapsedCases : Nat
+  materializedFetches : Nat
   /-- Populated only when the semantics-preserving rebuild rejected and the
   harness selected the original graph. -/
   diagnostic : String := ""
@@ -288,7 +290,7 @@ private def Disposition.bytes : Disposition → ByteArray
 namespace Report
 
 def addressDomain : ByteArray :=
-  Encoding.domain "compilatrix/ixir1/optimizer-report/1" ++ Encoding.tag 0
+  Encoding.domain "compilatrix/ixir1/optimizer-report/2" ++ Encoding.tag 0
 
 /-- Canonical machine-independent report spelling. -/
 def bytes (report : Report) : ByteArray :=
@@ -297,6 +299,8 @@ def bytes (report : Report) : ByteArray :=
     Encoding.address report.certificateRoot ++
     Encoding.nat report.certificateBytes ++ report.before.bytes ++
     report.after.bytes ++ Encoding.nat report.removedAlternatives ++
+    Encoding.nat report.collapsedCases ++
+    Encoding.nat report.materializedFetches ++
     Encoding.string report.diagnostic
 
 def address (report : Report) : Address :=
@@ -304,7 +308,7 @@ def address (report : Report) : Address :=
 
 end Report
 
-/-! ## Checked case-pruning execution -/
+/-! ## Checked case-simplification execution -/
 
 structure Outcome where
   /-- `none` means the original graph is the selected output. -/
@@ -358,6 +362,8 @@ private def skippedOutcome (policy : Policy) (reason : SkipReason)
         before
         after := before
         removedAlternatives := 0
+        collapsedCases := 0
+        materializedFetches := 0
         diagnostic } }
 
 private def runChecked (policy : Policy)
@@ -382,7 +388,9 @@ private def runChecked (policy : Policy)
             report :=
               { policy
                 disposition :=
-                  if pruned.removedAlternatives == 0 then .unchanged
+                  if pruned.removedAlternatives == 0 &&
+                      pruned.collapsedCases == 0 &&
+                      pruned.materializedFetches == 0 then .unchanged
                   else .changed
                 inputRoot
                 outputRoot
@@ -390,7 +398,9 @@ private def runChecked (policy : Policy)
                 certificateBytes := checkedBytes
                 before
                 after
-                removedAlternatives := pruned.removedAlternatives } }
+                removedAlternatives := pruned.removedAlternatives
+                collapsedCases := pruned.collapsedCases
+                materializedFetches := pruned.materializedFetches } }
 
 /-- Run the versioned harness from an in-process HPT production that already
 crossed the ordinary checker. -/

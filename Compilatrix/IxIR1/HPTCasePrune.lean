@@ -1,7 +1,7 @@
 import Compilatrix.IxIR1.HPTSound
 
 /-!
-# Checked HPT consumer: call-result case pruning
+# Checked HPT consumer: call-result case simplification
 
 This is the first transformation that consumes accepted HPT facts.  Its
 deliberately small rewrite window is
@@ -11,10 +11,13 @@ let x := call f(args); case x of alternatives
 ```
 
 When `f` has a finite heap-only result fact, alternatives whose constructor
-index is absent from that fact are removed.  Scalar or unknown-heap rows leave
-the code unchanged.  The semantic theorem below treats the summary as
-untrusted until it is backed by the same local post-fixpoint used by the HPT
-checker.
+index is absent from that fact are removed.  If the accepted fact describes
+exactly one unary constructor and filtering leaves exactly its unary branch,
+the case is replaced by one checked `fetch`; this preserves both the branch
+environment and exact evaluator fuel.  Scalar, unknown-heap, identity-only,
+and non-unary rows retain the conservative pruning behavior.  The semantic
+theorem below treats the summary as untrusted until it is backed by the same
+local post-fixpoint used by the HPT checker.
 
 `run` rewrites one supplied code root; `runRecursive` traverses every
 continuation and alternative body in a supplied fragment.  `rewriteCurrent`
@@ -39,12 +42,69 @@ def hasCtorIndex (fact : Fact) (index : Nat) : Bool :=
 def pruneAlternatives (fact : Fact) (alternatives : Array Alt) : Array Alt :=
   alternatives.filter fun alternative => hasCtorIndex fact alternative.cidx
 
+/-- The detailed singleton constructor fact required for exact unary case
+collapse.  Identity-only constructor facts deliberately return `none`: they
+do not certify that field zero exists or that the branch arity is one. -/
+def exactUnaryConstructor? (fact : Fact) : Option CtorId :=
+  match fact.shapes with
+  | [.ctor identity (some [_])] => some identity
+  | _ => none
+
+/-- Select the sole unary branch body when its dispatch index agrees with the
+sole detailed unary constructor fact. -/
+def exactUnaryBody? (fact : Fact) (alternatives : Array Alt) : Option Code :=
+  match exactUnaryConstructor? fact, alternatives.toList with
+  | some identity, [.mk cidx 1 body] =>
+      if cidx == identity.cidx then some body else none
+  | _, _ => none
+
+private theorem exactUnaryConstructor?_eq_some
+    {fact : Fact} {identity : CtorId}
+    (h : exactUnaryConstructor? fact = some identity) :
+    ∃ fieldFact,
+      fact.shapes = [.ctor identity (some [fieldFact])] := by
+  unfold exactUnaryConstructor? at h
+  split at h <;> simp_all
+
+private theorem exactUnaryBody?_eq_some
+    {fact : Fact} {alternatives : Array Alt} {body : Code}
+    (h : exactUnaryBody? fact alternatives = some body) :
+    ∃ identity fieldFact,
+      fact.shapes = [.ctor identity (some [fieldFact])] ∧
+        alternatives = #[.mk identity.cidx 1 body] := by
+  unfold exactUnaryBody? at h
+  split at h <;> simp_all
+  obtain ⟨fieldFact, hshapes⟩ :=
+    exactUnaryConstructor?_eq_some (by assumption)
+  refine ⟨_, ⟨fieldFact, hshapes⟩, Array.toList_inj.mp ?_⟩
+  simpa using (by assumption)
+
 /-- Observable output of the one-redex consumer. -/
 structure Outcome where
   code : Code
   removedAlternatives : Nat
+  collapsedCases : Nat
+  materializedFetches : Nat
 
-/-- Prune one root `call`→`case` redex.  Every other shape is returned
+/-- Pass-attributed counters without the rewritten syntax payload. -/
+structure Changes where
+  removedAlternatives : Nat := 0
+  collapsedCases : Nat := 0
+  materializedFetches : Nat := 0
+
+def Changes.add (left right : Changes) : Changes :=
+  { removedAlternatives :=
+      left.removedAlternatives + right.removedAlternatives
+    collapsedCases := left.collapsedCases + right.collapsedCases
+    materializedFetches :=
+      left.materializedFetches + right.materializedFetches }
+
+def Outcome.changes (outcome : Outcome) : Changes :=
+  { removedAlternatives := outcome.removedAlternatives
+    collapsedCases := outcome.collapsedCases
+    materializedFetches := outcome.materializedFetches }
+
+/-- Simplify one root `call`→`case` redex.  Every other shape is returned
 byte-for-byte at the inductive syntax level. -/
 def run (declarations : DeclEnv) (summaries : SummaryEnv)
     (input : Code) : Outcome :=
@@ -55,19 +115,27 @@ def run (declarations : DeclEnv) (summaries : SummaryEnv)
       | some (.fn _), some fact =>
           if preciseHeapOnly fact then
             let kept := pruneAlternatives fact alternatives
-            ⟨.letOp (.call function arguments)
-                (.case (.var 0) peelNat kept),
-              alternatives.size - kept.size⟩
+            match exactUnaryBody? fact kept with
+            | some body =>
+                ⟨.letOp (.call function arguments)
+                    (.letOp (.fetch (.var 0) 0) body),
+                  alternatives.size - kept.size, 1, 1⟩
+            | none =>
+                ⟨.letOp (.call function arguments)
+                    (.case (.var 0) peelNat kept),
+                  alternatives.size - kept.size, 0, 0⟩
           else
-            ⟨input, 0⟩
-      | _, _ => ⟨input, 0⟩
-  | _ => ⟨input, 0⟩
+            ⟨input, 0, 0, 0⟩
+      | _, _ => ⟨input, 0, 0, 0⟩
+  | _ => ⟨input, 0, 0, 0⟩
 
 /-- Internal result for recursively rewriting an alternative body while
 retaining its dispatch metadata. -/
 structure AlternativeOutcome where
   alternative : Alt
   removedAlternatives : Nat
+  collapsedCases : Nat
+  materializedFetches : Nat
 
 mutual
 
@@ -76,23 +144,31 @@ fragment.  This still does not rewrite declaration bodies or the evaluator's
 current-function frame. -/
 def runRecursive (declarations : DeclEnv) (summaries : SummaryEnv) :
     Code → Outcome
-  | .ret atom => ⟨.ret atom, 0⟩
+  | .ret atom => ⟨.ret atom, 0, 0, 0⟩
   | .letOp operation rest =>
       let nested := runRecursive declarations summaries rest
       let root := run declarations summaries (.letOp operation nested.code)
-      ⟨root.code, nested.removedAlternatives + root.removedAlternatives⟩
+      ⟨root.code,
+        nested.removedAlternatives + root.removedAlternatives,
+        nested.collapsedCases + root.collapsedCases,
+        nested.materializedFetches + root.materializedFetches⟩
   | .case scrutinee peelNat alternatives =>
       let nested := alternatives.map
         (runAlternativeRecursive declarations summaries)
       ⟨.case scrutinee peelNat (nested.map (fun result => result.alternative)),
         nested.foldl
-          (fun total result => total + result.removedAlternatives) 0⟩
+          (fun total result => total + result.removedAlternatives) 0,
+        nested.foldl
+          (fun total result => total + result.collapsedCases) 0,
+        nested.foldl
+          (fun total result => total + result.materializedFetches) 0⟩
 
 def runAlternativeRecursive (declarations : DeclEnv)
     (summaries : SummaryEnv) : Alt → AlternativeOutcome
   | .mk cidx fields body =>
       let nested := runRecursive declarations summaries body
-      ⟨.mk cidx fields nested.code, nested.removedAlternatives⟩
+      ⟨.mk cidx fields nested.code, nested.removedAlternatives,
+        nested.collapsedCases, nested.materializedFetches⟩
 
 end
 
@@ -204,6 +280,105 @@ private theorem unknownHeap_eq_false_of_preciseHeapOnly {fact : Fact}
   simp [preciseHeapOnly] at hprecise
   exact hprecise.2
 
+/-- A detailed singleton unary result fact exposes one concrete constructor
+field.  This is the semantic fact that makes the replacement `fetch` total. -/
+private theorem exists_of_exactUnary_holds
+    {declarations : DeclEnv} {store : Store} {value : RVal}
+    {identity : CtorId} {fieldFact : FieldFact}
+    (hholds : (⟨false, false,
+      [.ctor identity (some [fieldFact])]⟩ : Fact).Holds
+        declarations store value) :
+    ∃ location box field,
+      value = .loc location ∧
+        store.get? location = some box ∧
+        box.node = .ctorN identity #[field] := by
+  cases value with
+  | lit literal =>
+      change false = true at hholds
+      contradiction
+  | erased =>
+      change false = true at hholds
+      contradiction
+  | loc location =>
+      simp only [Fact.Holds] at hholds
+      rcases hholds with hunknown | ⟨shape, hmember, hshape⟩
+      · contradiction
+      · simp only [List.mem_singleton] at hmember
+        subst shape
+        simp only [HeapShape.Holds] at hshape
+        rcases hshape with ⟨box, fields, hget, hnode, hfields⟩
+        have hlength : fields.toList.length = 1 := by
+          simpa using (FieldFactsHold.length_eq hfields).symm
+        cases hlist : fields.toList with
+        | nil => simp [hlist] at hlength
+        | cons field tail =>
+            cases tail with
+            | nil =>
+                have harray : fields = #[field] := by
+                  apply Array.toList_inj.mp
+                  simpa using hlist
+                refine ⟨location, box, field, rfl, hget, ?_⟩
+                simpa [harray] using hnode
+            | cons next tail => simp [hlist] at hlength
+
+/-- For a certified unary constructor, one checked fetch installs exactly the
+environment that the matching case branch would have received, at the same
+code fuel. -/
+private theorem runCode_fetch_eq_exactUnaryCase_of_holds
+    {declarations : DeclEnv} {ctx : Ctx} {current : FnDef}
+    {store : Store} {environment : List RVal} {value : RVal}
+    {identity : CtorId} {fieldFact : FieldFact} {body : Code}
+    {peelNat : Bool} {fuel : Nat}
+    (hholds : (⟨false, false,
+      [.ctor identity (some [fieldFact])]⟩ : Fact).Holds
+        declarations store value) :
+    runCode ctx fuel current store (value :: environment)
+        (.letOp (.fetch (.var 0) 0) body) =
+      runCode ctx fuel current store (value :: environment)
+        (.case (.var 0) peelNat #[.mk identity.cidx 1 body]) := by
+  obtain ⟨location, box, field, hvalue, hget, hnode⟩ :=
+    exists_of_exactUnary_holds hholds
+  subst value
+  cases fuel with
+  | zero => simp [runCode]
+  | succ fuel =>
+      cases fuel with
+      | zero =>
+          simp [runCode, runOp, resolveAtom, Alt.cidx, bind, Except.bind,
+            hget, hnode]
+      | succ fuel =>
+          simp [runCode, runOp, resolveAtom, Alt.cidx, bind, Except.bind,
+            hget, hnode]
+
+/-- Successful executable collapse selection supplies exactly the fact and
+branch shape required by the concrete unary-fetch theorem. -/
+private theorem runCode_fetch_eq_of_exactUnaryBody
+    {declarations : DeclEnv} {ctx : Ctx} {current : FnDef}
+    {store : Store} {environment : List RVal} {value : RVal}
+    {fact : Fact} {alternatives : Array Alt} {body : Code}
+    {peelNat : Bool} {fuel : Nat}
+    (hprecise : preciseHeapOnly fact = true)
+    (hbody : exactUnaryBody? fact alternatives = some body)
+    (hholds : fact.Holds declarations store value) :
+    runCode ctx fuel current store (value :: environment)
+        (.letOp (.fetch (.var 0) 0) body) =
+      runCode ctx fuel current store (value :: environment)
+        (.case (.var 0) peelNat alternatives) := by
+  obtain ⟨identity, fieldFact, hshapes, halternatives⟩ :=
+    exactUnaryBody?_eq_some hbody
+  have hscalar := mayScalar_eq_false_of_preciseHeapOnly hprecise
+  have hunknown := unknownHeap_eq_false_of_preciseHeapOnly hprecise
+  cases fact with
+  | mk mayScalar unknownHeap shapes =>
+      change mayScalar = false at hscalar
+      change unknownHeap = false at hunknown
+      change shapes = [.ctor identity (some [fieldFact])] at hshapes
+      subst mayScalar
+      subst unknownHeap
+      subst shapes
+      subst alternatives
+      exact runCode_fetch_eq_exactUnaryCase_of_holds hholds
+
 /-- Once a concrete call result satisfies a finite heap-only row, pruning does
 not change evaluation of the immediately following case. -/
 private theorem runCode_case_pruned_eq_of_holds
@@ -311,6 +486,40 @@ private theorem runCode_prunedRedex_eq
           exact runCode_case_pruned_eq_of_holds hprecise
             (holds_of_runOp_call hpost hctx hdeclaration hsummary hcall)
 
+/-- Exact evaluator equality between a selected unary-fetch collapse and its
+already-pruned singleton case. -/
+private theorem runCode_collapsedRedex_eq
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {current currentFunction : FnDef} {store : Store}
+    {environment : List RVal} {function : Compilatrix.Ixon.Address}
+    {arguments : Array Atom} {fact : Fact} {peelNat : Bool}
+    {alternatives : Array Alt} {body : Code} {fuel : Nat}
+    (hctx : ctx.decls = declarations)
+    (hdeclaration : declarations function = some (.fn currentFunction))
+    (hsummary : summaries function = some fact)
+    (hprecise : preciseHeapOnly fact = true)
+    (hcollapse : exactUnaryBody? fact alternatives = some body) :
+    runCode ctx fuel current store environment
+        (.letOp (.call function arguments)
+          (.letOp (.fetch (.var 0) 0) body)) =
+      runCode ctx fuel current store environment
+        (.letOp (.call function arguments)
+          (.case (.var 0) peelNat alternatives)) := by
+  cases fuel with
+  | zero => simp [runCode]
+  | succ fuel =>
+      simp only [runCode]
+      cases hcall : runOp ctx fuel current store environment
+          (.call function arguments) with
+      | error error =>
+          simp [bind, Except.bind]
+      | ok output =>
+          rcases output with ⟨outputStore, outputValue⟩
+          simp only [bind, Except.bind]
+          exact runCode_fetch_eq_of_exactUnaryBody hprecise hcollapse
+            (holds_of_runOp_call hpost hctx hdeclaration hsummary hcall)
+
 /-- The executable consumer preserves the exact evaluator result for every
 fuel, store, environment, and current function whenever its summary
 environment is a local post-fixpoint for the runtime declaration environment.
@@ -354,10 +563,49 @@ theorem runCode_run_eq
                                 | false =>
                                     simp [run, hdeclaration, hsummary, hprecise]
                                 | true =>
-                                    simpa [run, hdeclaration, hsummary,
-                                      hprecise] using
-                                      runCode_prunedRedex_eq hpost hctx
-                                        hdeclaration hsummary hprecise
+                                    cases hcollapse : exactUnaryBody? fact
+                                        (pruneAlternatives fact alternatives) with
+                                    | none =>
+                                        simpa [run, hdeclaration, hsummary,
+                                          hprecise, hcollapse] using
+                                          runCode_prunedRedex_eq hpost hctx
+                                            hdeclaration hsummary hprecise
+                                    | some body =>
+                                        calc
+                                          runCode ctx fuel current store
+                                              environment
+                                              (run declarations summaries
+                                                (.letOp
+                                                  (.call function arguments)
+                                                  (.case (.var 0) peelNat
+                                                    alternatives))).code =
+                                            runCode ctx fuel current store
+                                              environment
+                                              (.letOp
+                                                (.call function arguments)
+                                                (.letOp
+                                                  (.fetch (.var 0) 0) body)) := by
+                                                    simp [run, hdeclaration,
+                                                      hsummary, hprecise,
+                                                      hcollapse]
+                                          _ = runCode ctx fuel current store
+                                                environment
+                                                (.letOp
+                                                  (.call function arguments)
+                                                  (.case (.var 0) peelNat
+                                                    (pruneAlternatives fact
+                                                      alternatives))) :=
+                                            runCode_collapsedRedex_eq hpost hctx
+                                              hdeclaration hsummary hprecise
+                                              hcollapse
+                                          _ = runCode ctx fuel current store
+                                                environment
+                                                (.letOp
+                                                  (.call function arguments)
+                                                  (.case (.var 0) peelNat
+                                                    alternatives)) :=
+                                            runCode_prunedRedex_eq hpost hctx
+                                              hdeclaration hsummary hprecise
 
 @[simp] private theorem runAlternativeRecursive_cidx
     (declarations : DeclEnv) (summaries : SummaryEnv) (alternative : Alt) :

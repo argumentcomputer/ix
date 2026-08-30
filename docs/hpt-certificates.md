@@ -7,14 +7,14 @@ field slice,
 and persistent checked cache ingress/rebuild paths landed 2026-08-26. The
 filesystem boundary now offers both a bounded single-file snapshot and a
 metadata-only per-key chunk index with dependency-selected lazy reads. A first
-proof-sized consumer now
-uses accepted finite constructor rows to prune impossible alternatives from
+proof-sized consumer now uses accepted finite constructor rows to simplify
 immediate call-result cases at one root, recursively throughout a supplied
 code fragment, or across every stored function body and the main followed by a
-content-addressed graph rebuild. Its proofs cover dynamic self calls and exact
-transport of the complete evaluator result. This is a semantically justified
-analysis and optimization boundary, not yet the full heap-points-to
-optimization pass.
+content-addressed graph rebuild. It prunes impossible alternatives and
+collapses the checked detailed-unary singleton case to one checked fetch. Its
+proofs cover dynamic self calls and exact transport of the complete evaluator
+result. This is a semantically justified analysis and optimization boundary,
+not yet the full heap-points-to optimization pass.
 
 The executable domain and checker are in `Compilatrix/IxIR1/HPT.lean`; their
 concrete interpretation and evaluator proof are in
@@ -152,14 +152,25 @@ row is finite and heap-only (`mayScalar = false` and `unknownHeap = false`),
 the pass retains exactly those alternatives whose runtime constructor index
 occurs in a constructor shape in the row. Constructor dispatch observes the
 index, rather than the constructor block identity; PAP shapes retain no case
-alternative. The output also reports the number of alternatives removed.
-Scalar-capable, unknown-heap, missing, extern, and all nonmatching syntax paths
-are returned unchanged.
+alternative. If the row contains exactly one detailed unary constructor and
+filtering leaves exactly one unary branch with that index, the pass replaces
+the case by `let field := fetch x 0; body`. The fetch and original case are
+both non-consuming, retain `x` beneath the field binder, and consume the same
+code fuel. The output reports removed alternatives, collapsed cases, and
+materialized fetches. Scalar-capable, unknown-heap, missing, extern, and all
+nonmatching syntax paths are returned unchanged; identity-only, nullary,
+multi-field, and duplicate matching branches remain pruning-only.
+
+The unary restriction is intentional under the current exact fuel-indexed
+theorem. Erasing a nullary case removes a code step, while materializing two or
+more fields as separate fetches adds code steps. General collapse therefore
+waits for a checked batch projection/tick representation or a deliberately
+weaker fuel simulation; the optimizer does not blur that semantic choice.
 
 `HPT.CasePrune.runRecursive` applies that same rewrite throughout a supplied
 `Code`: it descends through every `letOp` continuation and every case
-alternative body, preserves alternative dispatch metadata, and sums the
-number of removed alternatives. As a fragment operation, it does not itself
+alternative body, preserves alternative dispatch metadata, and sums all three
+pass counters. As a fragment operation, it does not itself
 rewrite declaration bodies or the evaluator's separate current-function
 frame; the whole-program layer below composes those rewrites explicitly.
 
@@ -174,9 +185,10 @@ top-level evaluation when both the supplied main and the frame synthesized by
 `CasePrune.runCode_run_eq` proves exact `runCode` equality for every fuel,
 store, environment, current function, success, and error whenever the supplied
 summary environment is a local post-fixpoint for the evaluator declaration
-environment. The key argument is that HPT soundness covers every successful
-call result, so a live constructor's first matching alternative survives the
-filter. `runCode_run_eq_of_runWith_eq_ok` specializes this to an accepted
+environment. HPT soundness ensures that a live constructor's first matching
+alternative survives filtering. For collapse, the detailed unary field vector
+proves that fetch zero succeeds and produces exactly the branch environment at
+the same fuel. `runCode_run_eq_of_runWith_eq_ok` specializes this to an accepted
 untrusted certificate. The core theorem uses only the ordinary Lean logical
 axioms; its checked specialization inherits exactly the ledgered native digest
 dependency already used to materialize HPT summaries.
@@ -220,7 +232,8 @@ source producer. `runMain_exact_of_rebuild_eq_ok` then transports from the
 exact old-keyed declaration environment, without installing final-key aliases.
 
 `CasePrune.rebuildProgram` joins that rebuild to the logical HPT theorem and
-reports removals across the main and all declarations. The pipeline exposes
+reports removals, collapses, and materialized fetches across the main and all
+declarations. The pipeline exposes
 `checkAndPruneProgram[With]`, `pruneProgramWithProducedHPT`, and
 `pruneProgramWithCachedHPT`; `installPrunedProgram` installs the result while
 composing the artifact's original `targetAddressMap` through the rebuild map.
@@ -440,26 +453,30 @@ B, and returns the older alias. The exact-A claim is rejected, the unknown-heap
 claim is accepted, concrete execution observes B, and
 `aliasReuseAcceptedFact_sound` instantiates the semantic theorem at that
 boundary. `casePruneOk` checks the first consumer at a real two-alternative
-call-result case: the accepted detailed row removes exactly the impossible
-branch, both original and pruned roots execute to the same scalar result and
-store observations, and a separately accepted universal row removes nothing.
+call-result case: the accepted detailed unary row removes the impossible
+branch, collapses the remaining case to one fetch, and preserves the exact
+scalar result and store observations. It also pins pruning-only behavior for
+identity-only, nullary, binary, duplicate-match, and universal facts, plus a
+singleton collapse whose removed-alternative count is zero.
 `recursiveCasePruneOk` nests that redex in both bodies of an outer case: the
-one-root API removes nothing, recursive traversal removes two alternatives
-(including the unexecuted outer branch), both executable paths agree, and the
-checked universal row again removes nothing.
+one-root API changes nothing, recursive traversal removes two alternatives,
+collapses two cases (including the unexecuted outer branch), materializes two
+fetches, both executable paths agree, and the checked universal row again
+changes nothing.
 `callSelfCasePruneOk` runs a one-argument current body that recursively peels
 `3` to zero, enters the rewritten base branch through three dynamic self calls,
 and confirms that original and rewritten current/body pairs return the same
-scalar and store after the impossible alternative is removed.
+scalar and store after the impossible alternative is removed and the unary
+case is collapsed.
 `pipelineCallSelfMainPruneOk` crosses the checked artifact-main pipeline on a
 zero-argument self-loop and confirms that the original and pruned mains have
 the same exact finite-fuel `.fuel` result.
 `declarationGraphCasePruneOk` crosses the complete checked program API: it
-rewrites a stored caller, removes one impossible alternative, changes the
-caller's content address, rewrites the main edge, passes both ordinary and
-exact rebuild audits, preserves the detailed concrete result/store, and
-checks that artifact installation composes the original producer address map
-to the new caller.
+rewrites a stored caller, removes one impossible alternative, collapses its
+case with one materialized fetch, changes the caller's content address,
+rewrites the main edge, passes both ordinary and exact rebuild audits,
+preserves the detailed concrete result/store, and checks that artifact
+installation composes the original producer address map to the new caller.
 Deterministic production reproduces the hand-written precise
 certificate and all five frozen summary identities in nine rounds. Repeating
 it returns the same candidate/result. Nine rounds is the exact global fixture

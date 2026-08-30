@@ -64,14 +64,15 @@ facts with sound allocation/fetch/reuse and case-binder transfers, canonical
 resource-bounded persistent cache record/store decoding, checked artifact-local
 miss repair, a bounded record-streaming/power-loss-durable single-file adapter,
 a metadata-indexed chunk directory that lazily opens only dependency-selected
-records and durably repairs them per key, and a first
-checked consumer that prunes impossible
-constructor alternatives from immediate call-result cases at one root,
-recursively throughout a supplied code fragment, or across every stored body
-and the main followed by an exact content-addressed graph rebuild; and a
-versioned fail-soft optimizer harness with deterministic budgets, static
-control/heap/call and byte counters, canonical input/output/certificate roots,
-per-pass enable/disable, and content-addressed before/after reports
+records and durably repairs them per key, and a first checked consumer that
+simplifies immediate call-result cases at one root, recursively throughout a
+supplied code fragment, or across every stored body and the main followed by
+an exact content-addressed graph rebuild: it prunes impossible constructor
+alternatives and collapses a certified detailed-unary singleton case to one
+checked fetch; and a versioned fail-soft optimizer harness with deterministic
+budgets, static control/heap/call and byte counters, canonical
+input/output/certificate roots, per-pass enable/disable, pass-attributed
+rewrite counters, and content-addressed before/after reports
 ([optimizer harness](docs/optimizer-harness.md)). Its
 evaluator-preservation theorems cover dynamic self calls and complete-result
 address transport, with dependency-cone plus

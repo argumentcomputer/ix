@@ -2,7 +2,7 @@ import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.ReaddressAllSim
 
 /-!
-# Whole-program semantic support for HPT case pruning
+# Whole-program semantic support for HPT case simplification
 
 `HPTCasePrune` proves one supplied fragment equivalent while the declaration
 environment stays fixed.  Rewriting stored function bodies changes the
@@ -529,28 +529,31 @@ theorem envOfList_rewriteEntries
 
 /-! ## Content-addressed program rebuild -/
 
-/-- Count the alternatives removed from one stored declaration. -/
-def declarationRemovedAlternatives (declarations : DeclEnv)
-    (summaries : SummaryEnv) : Decl → Nat
+/-- Collect all pass-attributed counters from one stored declaration with one
+recursive syntax traversal. -/
+def declarationChanges (declarations : DeclEnv)
+    (summaries : SummaryEnv) : Decl → Changes
   | .fn function =>
-      (runRecursive declarations summaries function.body).removedAlternatives
-  | .extern _ => 0
+      (runRecursive declarations summaries function.body).changes
+  | .extern _ => {}
 
-/-- Count declaration-body removals while retaining the original row order. -/
-def declarationsRemovedAlternatives (declarations : DeclEnv)
+/-- Sum declaration-body changes in original row order. -/
+def declarationsChanges (declarations : DeclEnv)
     (summaries : SummaryEnv)
-    (entries : List (Compilatrix.Ixon.Address × Decl)) : Nat :=
+    (entries : List (Compilatrix.Ixon.Address × Decl)) : Changes :=
   entries.foldl (fun total entry =>
-    total + declarationRemovedAlternatives declarations summaries entry.2) 0
+    total.add (declarationChanges declarations summaries entry.2)) {}
 
-/-- Observable result of pruning every function body and the main, then
+/-- Observable result of simplifying every function body and the main, then
 rebuilding the complete content-addressed declaration graph. -/
 structure ProgramOutcome where
   result : ReaddressAll.Result
   removedAlternatives : Nat
+  collapsedCases : Nat
+  materializedFetches : Nat
 
 /-- Readdress a complete already-addressed program after recursive HPT case
-pruning.  This low-level operation consumes supplied summaries; checked
+simplification.  This low-level operation consumes supplied summaries; checked
 pipeline entry points first validate those summaries against `program`. -/
 def rebuildProgram (reserved : List Compilatrix.Ixon.Address)
     (program : List ReaddressAll.Artifact) (summaries : SummaryEnv)
@@ -559,9 +562,14 @@ def rebuildProgram (reserved : List Compilatrix.Ixon.Address)
   let entries := declarationEntries program
   let rewritten := rewriteEntries declarations summaries entries
   let rewrittenMain := runRecursive declarations summaries main
+  let declarationChanges := declarationsChanges declarations summaries entries
   let result ← ReaddressAll.rebuild reserved rewritten rewrittenMain.code
   return ⟨result, rewrittenMain.removedAlternatives +
-    declarationsRemovedAlternatives declarations summaries entries⟩
+      declarationChanges.removedAlternatives,
+    rewrittenMain.collapsedCases +
+      declarationChanges.collapsedCases,
+    rewrittenMain.materializedFetches +
+      declarationChanges.materializedFetches⟩
 
 theorem rebuild_of_rebuildProgram_eq_ok
     {reserved : List Compilatrix.Ixon.Address}
@@ -587,8 +595,15 @@ theorem rebuild_of_rebuildProgram_eq_ok
       have houtcome :
           (⟨result,
             (runRecursive (programDeclEnv program) summaries main).removedAlternatives +
-              declarationsRemovedAlternatives (programDeclEnv program)
-                summaries (declarationEntries program)⟩ : ProgramOutcome) =
+              (declarationsChanges (programDeclEnv program) summaries
+                (declarationEntries program)).removedAlternatives,
+            (runRecursive (programDeclEnv program) summaries main).collapsedCases +
+              (declarationsChanges (programDeclEnv program) summaries
+                (declarationEntries program)).collapsedCases,
+            (runRecursive (programDeclEnv program) summaries main).materializedFetches +
+              (declarationsChanges (programDeclEnv program) summaries
+                (declarationEntries program)).materializedFetches⟩ :
+              ProgramOutcome) =
             outcome := by
         injection hrun
       have hresult : result = outcome.result :=
