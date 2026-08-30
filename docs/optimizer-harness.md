@@ -1,11 +1,12 @@
 # IxIR₁ optimizer harness
 
-Status: O0 delivered 2026-08-30 for the current shrinking bundle. Its checked
-HPT consumer now propagates facts through complete stored function bodies,
-prunes impossible alternatives, and collapses a certified detailed unary case
-to one checked `fetch`, including when intervening operations separate the
-producer from the case. Future consumers extend this harness; they do not
-introduce parallel policy or reporting paths.
+Status: O0 delivered 2026-08-30 for the default shrinking bundle. Its checked
+HPT consumer propagates facts through complete stored function bodies, prunes
+impossible alternatives, and collapses a certified detailed unary case to one
+checked `fetch`. O1 local PAP/application fusion now uses the same traversal,
+one-rebuild path, policy, and report, but remains opt-in until its proved local
+heap-history refinement is lifted through the complete declaration-context
+rewrite.
 
 The implementation is `Compilatrix/IxIR1/Optimizer.lean`, with compiler-facing
 entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
@@ -13,11 +14,19 @@ entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
 
 ## Policy and fallback
 
-`Optimizer.Policy` carries an independent harness version and case-simplifier
-pass version. Pass version 3 covers owner-sensitive fact propagation, pruning,
-and exact unary collapse. The pass has an explicit enable bit and deterministic
-bounds on input instructions, canonical code bytes, and checked-certificate
-bytes.
+`Optimizer.Policy` carries harness version 2, case-simplifier version 3, and
+PAP-fusion version 1. Both passes have independent enable bits; case pruning is
+enabled by default and PAP fusion is opt-in. The shared deterministic bounds
+cover input instructions, canonical code bytes, and checked-certificate bytes.
+The harness is disabled only when both pass bits are false.
+
+PAP fusion recognizes adjacent `papp`/`apply` binders and classifies their
+combined arguments as under-, exactly-, or over-saturated. It retains both
+binder slots, lowers supplied operands across the retired PAP slot, and rejects
+the rewrite unless the continuation cannot mention that slot. Captures must be
+HPT-proven scalar: IxIR₁ no longer carries function-parameter ownership modes,
+so the local checker cannot soundly classify an arbitrary heap capture as
+shared.
 
 Every inferred-optimization failure is fail-soft. An unsupported version,
 disabled pass, exhausted optimizer budget, or rejected content-address rebuild
@@ -52,10 +61,10 @@ address and payload, symbolic mutual-block payload, and exact main bytes.
 Checked HPT certificate identity is the digest of its canonical cache-store
 spelling; its exact framed byte count is reported separately. A pass report
 contains the complete policy, typed disposition, input/output/certificate
-roots, certificate size, before/after observations, removed-alternative count,
-collapsed-case count, materialized-fetch count, and a rebuild diagnostic only
-on fallback. The unchanged report schema remains version 2 and uses
-`compilatrix/ixir1/optimizer-report/2\0`; pass behavior is versioned separately
+roots, certificate size, before/after observations, case-pruning counters,
+total fused PAPs, under/exact/over fusion counters, and a rebuild diagnostic
+only on fallback. Report schema 3 uses
+`compilatrix/ixir1/optimizer-report/3\0`; pass behavior is versioned separately
 inside the encoded policy.
 
 This makes equality of reports executable byte equality rather than equality
@@ -63,7 +72,7 @@ of human-formatted text.
 
 ## Regression boundary
 
-The compiled tests pin four properties:
+The compiled tests pin five properties:
 
 1. two independent runs over the same checked input produce identical output
    roots, report bytes, and report addresses;
@@ -74,19 +83,25 @@ The compiled tests pin four properties:
    pipeline producer-to-target provenance;
 3. disabled and one-below instruction-budget policies select the exact input
    root; and
-4. after HPT is recomputed on the transformed root, the shrinking pass reports
-   `unchanged` and reproduces that root.
+4. after HPT is recomputed on the transformed root, the default shrinking pass
+   reports `unchanged` and reproduces that root; and
+5. the opt-in PAP pass fuses under-, exact-, and over-saturation in one graph,
+   reports each class, rejects non-scalar captures and binder-sensitive shapes,
+   preserves the scalar result with an empty live heap, and reaches a fixed
+   point after HPT recomputation.
 
-The production Ixon→IxIR₁ integration fixture separately exercises report
-generation and the disable path on compiler-emitted code. Semantic authority
-still comes from the checked case-simplification and readdressing theorems
-documented in [HPT certificates](hpt-certificates.md); the harness adds no
-trusted optimizer.
+The production Ixon→IxIR₁ integration fixture separately exercises default
+report generation and the disable path on compiler-emitted code. Default-pass
+semantic authority still comes from the checked case-simplification and
+readdressing theorems documented in [HPT certificates](hpt-certificates.md).
+For PAP fusion, `fusePair?_refines` proves every accepted local decision at
+arbitrary fuel modulo allocation-history isomorphism; the missing combined
+declaration-context lifting is why the policy defaults off.
 
 ## Next extension
 
 Each remaining O1 consumer must add a versioned control, pass-attributed
 counters, a canonical report entry, a fail-soft path, and a fixed-point
-regression. PAP/apply fusion, fetch forwarding, known-shape destruction,
-rooted reachability, and exact-case collapse beyond the checked unary form
-remain active work.
+regression. The next PAP step is its combined declaration-context theorem.
+Fetch forwarding, known-shape destruction, rooted reachability, and exact-case
+collapse beyond the checked unary form remain active work.

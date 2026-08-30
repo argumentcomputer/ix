@@ -2351,7 +2351,8 @@ def optimizerHarnessOk : Bool :=
             artifact.optimizeWithProducedHPT
               IxIR1.Optimizer.defaultPolicy production
           let disabledPolicy : IxIR1.Optimizer.Policy :=
-            { casePrune := { enabled := false } }
+            { casePrune := { enabled := false }
+              papFuse := { enabled := false } }
           let disabled := IxIR1.Optimizer.runWithProducedHPT disabledPolicy
             artifact.targetArtifacts artifact.main production
           let budgetPolicy : IxIR1.Optimizer.Policy :=
@@ -2413,6 +2414,129 @@ def optimizerHarnessOk : Bool :=
                   secondReport.before == secondReport.after &&
                   IxIR1.Optimizer.graphRoot secondArtifact.targetArtifacts
                     secondArtifact.main == firstReport.outputRoot
+
+/-! Local PAP/application fusion fixture. -/
+
+def papRawScalarTarget : Address := Address.replicate 0xe0
+def papRawMaker : Address := Address.replicate 0xe1
+def papRawUnary : Address := Address.replicate 0xe2
+
+def papScalarTargetDeclaration : IxIR1.Decl :=
+  .fn ⟨2, .shared, .ret (.lit (.nat 42))⟩
+
+def papUnaryDeclaration : IxIR1.Decl :=
+  .fn ⟨1, .shared, .ret (.lit (.nat 99))⟩
+
+def papMakerDeclaration : IxIR1.Decl :=
+  .fn ⟨2, .shared,
+    .letOp (.papp papRawUnary #[]) (.ret (.var 0))⟩
+
+def papFusionRawDeclarations : List (Address × IxIR1.Decl) :=
+  [(papRawScalarTarget, papScalarTargetDeclaration),
+   (papRawMaker, papMakerDeclaration),
+   (papRawUnary, papUnaryDeclaration)]
+
+/-- The first pair remains under-saturated and is explicitly released; the
+second saturates exactly; the third over-saturates a function which returns a
+unary PAP.  Literal captures make the scalar certificate independent of the
+entry environment. -/
+def papFusionRawMain : IxIR1.Code :=
+  .letOp (.papp papRawScalarTarget #[.lit (.nat 10)])
+    (.letOp (.apply (.var 0) #[])
+      (.letOp (.drop (.var 0))
+        (.letOp (.papp papRawScalarTarget #[.lit (.nat 20)])
+          (.letOp (.apply (.var 0) #[.lit (.nat 22)])
+            (.letOp (.papp papRawMaker #[.lit (.nat 1)])
+              (.letOp (.apply (.var 0)
+                  #[.lit (.nat 2), .lit (.nat 3)])
+                (.ret (.var 0))))))))
+
+private def hasFusedPAPShape : IxIR1.Code → Bool
+  | .letOp (.papp _ under)
+      (.letOp (.pure (.var 0))
+        (.letOp (.drop (.var 0))
+          (.letOp (.call _ exact)
+            (.letOp (.pure (.var 0))
+              (.letOp (.call _ saturated)
+                (.letOp (.apply (.var 0) residual) (.ret (.var 0)))))))) =>
+      under.size == 1 && exact.size == 2 && saturated.size == 2 &&
+        residual.size == 1
+  | _ => false
+
+private def isPapFusionResult :
+    Except IxIR1.Err (IxIR1.Store × IxIR1.RVal) → Bool
+  | .ok (store, .lit (.nat 99)) => store.live == 0
+  | _ => false
+
+/-- The versioned harness fuses all saturation classes through one rebuild,
+reports the operation delta, preserves the scalar result with no live heap,
+rejects every unsupported local shape, and reaches a fixed point after HPT is
+recomputed on the rewritten graph. -/
+def papFusionHarnessOk : Bool :=
+  match IxIR1.ReaddressAll.run [] papFusionRawDeclarations papFusionRawMain with
+  | .error _ => false
+  | .ok program =>
+      let artifact := artifactWithMain program program.main
+      match artifact.produceHPT with
+      | .error _ => false
+      | .ok production =>
+          let policy : IxIR1.Optimizer.Policy :=
+            { casePrune := { enabled := false }
+              papFuse := { enabled := true } }
+          let (optimized, report) :=
+            artifact.optimizeWithProducedHPT policy production
+          let oldCtx : IxIR1.Ctx := { decls := artifact.targetDeclEnv }
+          let newCtx : IxIR1.Ctx := { decls := optimized.targetDeclEnv }
+          let declarations := artifact.targetDeclEnv
+          let target := finalAddress program papRawScalarTarget
+          let accepted := IxIR1.HPT.PAPFuse.fusePair? declarations [] target
+            #[.lit (.nat 1)] #[.lit (.nat 2)] (.ret (.var 0))
+          let rejectsHeapCapture :=
+            (IxIR1.HPT.PAPFuse.fusePair? declarations [IxIR1.HPT.Fact.top]
+              target #[.var 0] #[.lit (.nat 2)] (.ret (.var 0))).isNone
+          let rejectsPAPOperand :=
+            (IxIR1.HPT.PAPFuse.fusePair? declarations [] target
+              #[.lit (.nat 1)] #[.var 0] (.ret (.var 0))).isNone
+          let rejectsLiveBinder :=
+            (IxIR1.HPT.PAPFuse.fusePair? declarations [] target
+              #[.lit (.nat 1)] #[.lit (.nat 2)] (.ret (.var 1))).isNone
+          let rejectsSaturatingCapture :=
+            (IxIR1.HPT.PAPFuse.fusePair? declarations [] target
+              #[.lit (.nat 1), .lit (.nat 2)] #[]
+              (.ret (.var 0))).isNone
+          report.disposition == .changed &&
+            report.removedAlternatives == 0 &&
+            report.collapsedCases == 0 &&
+            report.materializedFetches == 0 &&
+            report.fusedPaps == 3 &&
+            report.underSaturatedPaps == 1 &&
+            report.exactlySaturatedPaps == 1 &&
+            report.overSaturatedPaps == 1 &&
+            report.before.counts.papAllocations == 4 &&
+            report.after.counts.papAllocations == 2 &&
+            report.before.counts.applies == 3 &&
+            report.after.counts.applies == 1 &&
+            report.after.counts.directCalls ==
+              report.before.counts.directCalls + 2 &&
+            hasFusedPAPShape optimized.main && accepted.isSome &&
+            rejectsHeapCapture && rejectsPAPOperand && rejectsLiveBinder &&
+            rejectsSaturatingCapture &&
+            isPapFusionResult (IxIR1.runMain oldCtx artifact.main 128) &&
+            isPapFusionResult (IxIR1.runMain newCtx optimized.main 128) &&
+            match optimized.produceHPT with
+            | .error _ => false
+            | .ok secondProduction =>
+                let (fixed, fixedReport) :=
+                  optimized.optimizeWithProducedHPT policy secondProduction
+                fixedReport.disposition == .unchanged &&
+                  fixedReport.fusedPaps == 0 &&
+                  fixedReport.underSaturatedPaps == 0 &&
+                  fixedReport.exactlySaturatedPaps == 0 &&
+                  fixedReport.overSaturatedPaps == 0 &&
+                  fixedReport.inputRoot == report.outputRoot &&
+                  fixedReport.outputRoot == report.outputRoot &&
+                  IxIR1.Optimizer.graphRoot fixed.targetArtifacts fixed.main ==
+                    report.outputRoot
 
 def underclaimed (result : IxIR1.ReaddressAll.Result) :
     IxIR1.HPT.Certificate :=
@@ -4193,6 +4317,9 @@ def main : IO UInt32 := do
         ok := false
       if !HPTFixtures.optimizerHarnessOk then
         IO.eprintln "FAIL: optimizer policy, observations, deterministic report, fail-soft controls, address transport, or idempotence drifted"
+        ok := false
+      if !HPTFixtures.papFusionHarnessOk then
+        IO.eprintln "FAIL: checked PAP/apply fusion drifted across saturation classes, rejection gates, reporting, execution, or idempotence"
         ok := false
       if !HPTFixtures.cacheConeOk program precise widened then
         IO.eprintln "FAIL: HPT cache invalidation escaped or missed the dependency cone"

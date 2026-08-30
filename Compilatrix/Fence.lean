@@ -29,6 +29,7 @@ import Compilatrix.IxIR1.HPTProduce
 import Compilatrix.IxIR1.HPTCache
 import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.HPTCasePruneProgram
+import Compilatrix.IxIR1.HPTPAPFuse
 import Compilatrix.SimInstance
 import Compilatrix.UsageSound
 import Compilatrix.Ixon.Address
@@ -804,6 +805,15 @@ transformation-specific assumption. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.CasePrune.runMain_rebuild_rewriteProgram
+
+/-! The first allocation-shrinking consumer is pure through both the generic
+heap-history evaluator congruence and its executable local decision theorem. -/
+
+/-- info: 'Compilatrix.IxIR1.Sim.runCode_historyIso' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Sim.runCode_historyIso
+
+/-- info: 'Compilatrix.IxIR1.HPT.PAPFuse.fusePair?_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.PAPFuse.fusePair?_refines
 
 /-- info: 'Compilatrix.Pipeline.Artifact.runMain_pruneProgram_of_checkAndPruneProgramWith_eq_ok' depends on axioms: [propext,
  Classical.choice,

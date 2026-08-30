@@ -1,5 +1,5 @@
 import Compilatrix.IxIR1.HPTCache
-import Compilatrix.IxIR1.HPTCasePruneProgram
+import Compilatrix.IxIR1.HPTPAPFuseProgram
 
 /-!
 # Deterministic IxIR₁ optimizer harness
@@ -7,7 +7,7 @@ import Compilatrix.IxIR1.HPTCasePruneProgram
 This module is the O0 control and observation boundary for whole-program
 IxIR₁ optimization.  It wraps the checked, fact-propagating HPT case
 simplifier (impossible-alternative pruning plus exact unary case collapse)
-with:
+and the opt-in O1 local PAP/application fusion pass with:
 
 - explicit harness and pass-policy versions;
 - deterministic, fail-soft resource controls;
@@ -31,8 +31,9 @@ namespace Compilatrix.IxIR1.Optimizer
 open Compilatrix.Ixon (Address)
 open Compilatrix.IxIR
 
-def currentHarnessVersion : Nat := 1
+def currentHarnessVersion : Nat := 2
 def currentCasePruneVersion : Nat := 3
+def currentPAPFuseVersion : Nat := 1
 
 /-! ## Structural observations -/
 
@@ -203,9 +204,17 @@ structure CasePrunePolicy where
   budget : Budget := {}
   deriving BEq, Repr
 
+structure PAPFusePolicy where
+  version : Nat := currentPAPFuseVersion
+  /-- Opt-in until the local heap-history refinement is lifted through the
+  complete declaration-context rewrite. -/
+  enabled : Bool := false
+  deriving BEq, Repr
+
 structure Policy where
   version : Nat := currentHarnessVersion
   casePrune : CasePrunePolicy := {}
+  papFuse : PAPFusePolicy := {}
   deriving BEq, Repr
 
 def defaultPolicy : Policy := {}
@@ -213,6 +222,7 @@ def defaultPolicy : Policy := {}
 inductive SkipReason where
   | unsupportedHarnessVersion (actual expected : Nat)
   | unsupportedPassVersion (actual expected : Nat)
+  | unsupportedPAPFuseVersion (actual expected : Nat)
   | disabled
   | instructionBudget (actual limit : Nat)
   | codeByteBudget (actual limit : Nat)
@@ -238,6 +248,10 @@ structure Report where
   removedAlternatives : Nat
   collapsedCases : Nat
   materializedFetches : Nat
+  fusedPaps : Nat
+  underSaturatedPaps : Nat
+  exactlySaturatedPaps : Nat
+  overSaturatedPaps : Nat
   /-- Populated only when the semantics-preserving rebuild rejected and the
   harness selected the original graph. -/
   diagnostic : String := ""
@@ -267,21 +281,24 @@ private def Budget.bytes (budget : Budget) : ByteArray :=
 
 private def Policy.bytes (policy : Policy) : ByteArray :=
   Encoding.nat policy.version ++ Encoding.nat policy.casePrune.version ++
-    Encoding.bool policy.casePrune.enabled ++ policy.casePrune.budget.bytes
+    Encoding.bool policy.casePrune.enabled ++ policy.casePrune.budget.bytes ++
+    Encoding.nat policy.papFuse.version ++ Encoding.bool policy.papFuse.enabled
 
 private def SkipReason.bytes : SkipReason → ByteArray
   | .unsupportedHarnessVersion actual expected =>
       Encoding.tag 0 ++ natFields [actual, expected]
   | .unsupportedPassVersion actual expected =>
       Encoding.tag 1 ++ natFields [actual, expected]
-  | .disabled => Encoding.tag 2
+  | .unsupportedPAPFuseVersion actual expected =>
+      Encoding.tag 2 ++ natFields [actual, expected]
+  | .disabled => Encoding.tag 3
   | .instructionBudget actual limit =>
-      Encoding.tag 3 ++ natFields [actual, limit]
-  | .codeByteBudget actual limit =>
       Encoding.tag 4 ++ natFields [actual, limit]
-  | .certificateByteBudget actual limit =>
+  | .codeByteBudget actual limit =>
       Encoding.tag 5 ++ natFields [actual, limit]
-  | .rebuildRejected => Encoding.tag 6
+  | .certificateByteBudget actual limit =>
+      Encoding.tag 6 ++ natFields [actual, limit]
+  | .rebuildRejected => Encoding.tag 7
 
 private def Disposition.bytes : Disposition → ByteArray
   | .skipped reason => Encoding.tag 0 ++ reason.bytes
@@ -291,7 +308,7 @@ private def Disposition.bytes : Disposition → ByteArray
 namespace Report
 
 def addressDomain : ByteArray :=
-  Encoding.domain "compilatrix/ixir1/optimizer-report/2" ++ Encoding.tag 0
+  Encoding.domain "compilatrix/ixir1/optimizer-report/3" ++ Encoding.tag 0
 
 /-- Canonical machine-independent report spelling. -/
 def bytes (report : Report) : ByteArray :=
@@ -302,6 +319,10 @@ def bytes (report : Report) : ByteArray :=
     report.after.bytes ++ Encoding.nat report.removedAlternatives ++
     Encoding.nat report.collapsedCases ++
     Encoding.nat report.materializedFetches ++
+    Encoding.nat report.fusedPaps ++
+    Encoding.nat report.underSaturatedPaps ++
+    Encoding.nat report.exactlySaturatedPaps ++
+    Encoding.nat report.overSaturatedPaps ++
     Encoding.string report.diagnostic
 
 def address (report : Report) : Address :=
@@ -309,7 +330,7 @@ def address (report : Report) : Address :=
 
 end Report
 
-/-! ## Checked case-simplification execution -/
+/-! ## Checked optimization execution -/
 
 structure Outcome where
   /-- `none` means the original graph is the selected output. -/
@@ -334,7 +355,10 @@ private def skipReason? (policy : Policy) (before : Observation)
   else if policy.casePrune.version != currentCasePruneVersion then
     some (.unsupportedPassVersion policy.casePrune.version
       currentCasePruneVersion)
-  else if !policy.casePrune.enabled then
+  else if policy.papFuse.version != currentPAPFuseVersion then
+    some (.unsupportedPAPFuseVersion policy.papFuse.version
+      currentPAPFuseVersion)
+  else if !policy.casePrune.enabled && !policy.papFuse.enabled then
     some .disabled
   else if before.counts.instructions >
       policy.casePrune.budget.maxInputInstructions then
@@ -365,6 +389,10 @@ private def skippedOutcome (policy : Policy) (reason : SkipReason)
         removedAlternatives := 0
         collapsedCases := 0
         materializedFetches := 0
+        fusedPaps := 0
+        underSaturatedPaps := 0
+        exactlySaturatedPaps := 0
+        overSaturatedPaps := 0
         diagnostic } }
 
 private def runChecked (policy : Policy)
@@ -378,20 +406,27 @@ private def runChecked (policy : Policy)
   | some reason =>
       skippedOutcome policy reason inputRoot checkedRoot checkedBytes before
   | none =>
-      match HPT.CasePrune.rebuildProgram [] program summaries main with
+      let passes : HPT.OptimizeProgram.Passes :=
+        { casePrune := policy.casePrune.enabled
+          papFuse := policy.papFuse.enabled }
+      match HPT.OptimizeProgram.rebuildProgram passes [] program summaries
+          main with
       | .error message =>
           skippedOutcome policy .rebuildRejected inputRoot checkedRoot
             checkedBytes before message
       | .ok pruned =>
           let after := observe pruned.result.artifacts pruned.result.main
           let outputRoot := graphRoot pruned.result.artifacts pruned.result.main
+          let caseChanges := pruned.changes.casePrune
+          let papChanges := pruned.changes.papFuse
           { rebuilt := some pruned.result
             report :=
               { policy
                 disposition :=
-                  if pruned.removedAlternatives == 0 &&
-                      pruned.collapsedCases == 0 &&
-                      pruned.materializedFetches == 0 then .unchanged
+                  if caseChanges.removedAlternatives == 0 &&
+                      caseChanges.collapsedCases == 0 &&
+                      caseChanges.materializedFetches == 0 &&
+                      papChanges.fusedPaps == 0 then .unchanged
                   else .changed
                 inputRoot
                 outputRoot
@@ -399,9 +434,13 @@ private def runChecked (policy : Policy)
                 certificateBytes := checkedBytes
                 before
                 after
-                removedAlternatives := pruned.removedAlternatives
-                collapsedCases := pruned.collapsedCases
-                materializedFetches := pruned.materializedFetches } }
+                removedAlternatives := caseChanges.removedAlternatives
+                collapsedCases := caseChanges.collapsedCases
+                materializedFetches := caseChanges.materializedFetches
+                fusedPaps := papChanges.fusedPaps
+                underSaturatedPaps := papChanges.underSaturated
+                exactlySaturatedPaps := papChanges.exactlySaturated
+                overSaturatedPaps := papChanges.overSaturated } }
 
 /-- Run the versioned harness from an in-process HPT production that already
 crossed the ordinary checker. -/

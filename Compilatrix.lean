@@ -57,6 +57,8 @@ import Compilatrix.IxIR1.HPTCacheIO
 import Compilatrix.IxIR1.HPTCacheDirIO
 import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.HPTCasePruneProgram
+import Compilatrix.IxIR1.HPTPAPFuse
+import Compilatrix.IxIR1.HPTPAPFuseProgram
 import Compilatrix.IxIR1.Optimizer
 import Compilatrix.IxIR1.Mono
 import Compilatrix.IxIR1.Progress
@@ -69,6 +71,7 @@ import Compilatrix.IxIR1.LowerFullyAddressedSim
 import Compilatrix.IxIR1.WellModedGen
 import Compilatrix.IxIR1.ThesisBench
 import Compilatrix.IxIR1.Sim
+import Compilatrix.IxIR1.EvalIso
 import Compilatrix.IxIR1.LowerSim
 import Compilatrix.IxIR1.LowerStateSim
 import Compilatrix.IxIR1.NoReuse

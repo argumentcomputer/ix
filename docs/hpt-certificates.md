@@ -235,6 +235,31 @@ direct calls into rewritten bodies, dynamic `callSelf`,
 under/exact/over-application, successful stores and values, every error, and
 instruction counters.
 
+`HPTPAPFuse.lean` adds the first O1 consumer. Its executable checker recognizes
+an adjacent PAP allocation and application, validates the declaration arity,
+proves all captures scalar from the current HPT environment, lowers supplied
+operands across the consumed binder, and proves the continuation cannot observe
+that binder. It emits a larger PAP, a direct saturated call, or a direct call
+plus residual apply. Both binder positions remain in the target syntax, so the
+rewrite does not depend on a global de Bruijn substitution.
+
+Removing the source allocation cannot preserve literal `Store` equality: it
+changes dead slots, cost counters, and every later numeric allocation index.
+`EvalIso.lean` therefore proves all eight mutually recursive evaluator entries
+congruent under `HeapHistoryIso`, a finite partial heap bijection which covers
+live nodes, may remember dead/dead history, and ignores counter and hole
+numbering. `fusePair?_refines` uses that relation to prove every accepted
+under-, exact-, and over-saturated decision preserves successful evaluation at
+arbitrary fuel. The scalar-capture restriction is the current ownership
+boundary: IxIR₁ declarations retain result ownership but not parameter modes,
+so HPT cannot certify an arbitrary heap capture as shared.
+
+`HPTPAPFuseProgram.lean` composes case pruning and PAP fusion before one
+content-address rebuild. PAP fusion remains disabled in `defaultPolicy` until
+the local history refinement is lifted through this complete recursive
+declaration-context rewrite; version 1 can be enabled explicitly for testing
+and staged consumers.
+
 Changed function bytes cannot retain their old content addresses.
 `ReaddressAll.rebuild` therefore alpha-renames function producers into a
 domain-separated temporary namespace, runs the ordinary SCC-aware address

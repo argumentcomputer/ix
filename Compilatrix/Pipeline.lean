@@ -1297,7 +1297,8 @@ private def optimizerHarnessOnCompiled : Bool :=
             artifact.optimizeWithProducedHPT IxIR1.Optimizer.defaultPolicy
               production
           let disabledPolicy : IxIR1.Optimizer.Policy :=
-            { casePrune := { enabled := false } }
+            { casePrune := { enabled := false }
+              papFuse := { enabled := false } }
           let (disabledArtifact, disabledReport) :=
             artifact.optimizeWithProducedHPT disabledPolicy production
           let inputRoot := IxIR1.Optimizer.graphRoot artifact.targetArtifacts

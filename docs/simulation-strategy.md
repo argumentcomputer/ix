@@ -488,6 +488,15 @@ Correctness is split into independently checkable theorems:
 - **cost refinement:** alloc/reuse/free/RC counters satisfy separate equations
   and inequalities. Counter facts are not mixed into semantic equality.
 
+Shrinking heap optimizations use a second semantic equality boundary.
+`HeapHistoryIso` relates live heaps by a finite partial bijection, retains
+dead/dead rows when recursive reclamation still needs their historical names,
+permits unmatched dead allocation holes, and deliberately omits counters.
+The IxIR₁ evaluator commutes with this relation across code, operations,
+invocation, higher-order application, and all shared/unique drop entries. Local
+PAP/application fusion is the first consumer: removing its transient PAP is
+observable to literal stores but invisible through this history relation.
+
 Implementation order: graph/root relations and all primitive ownership
 interfaces through reuse/fetch (landed) → result `Owned` in declarations and
 the first call-result contract (landed) → exact call/case preservation
