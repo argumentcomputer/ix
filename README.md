@@ -65,11 +65,12 @@ resource-bounded persistent cache record/store decoding, checked artifact-local
 miss repair, a bounded record-streaming/power-loss-durable single-file adapter,
 a metadata-indexed chunk directory that lazily opens only dependency-selected
 records and durably repairs them per key, and a first checked consumer that
-simplifies immediate call-result cases at one root, recursively throughout a
-supplied code fragment, or across every stored body and the main followed by
-an exact content-addressed graph rebuild: it prunes impossible constructor
-alternatives and collapses a certified detailed-unary singleton case to one
-checked fetch; and a versioned fail-soft optimizer harness with deterministic
+propagates HPT facts through complete stored function bodies, simplifies cases
+beyond syntactically adjacent calls, and then performs an exact
+content-addressed graph rebuild: it prunes impossible constructor alternatives
+and collapses a certified detailed-unary singleton case to one checked fetch;
+its compatibility traversal also handles supplied fragments and the top-level
+main; and a versioned fail-soft optimizer harness with deterministic
 budgets, static control/heap/call and byte counters, canonical
 input/output/certificate roots, per-pass enable/disable, pass-attributed
 rewrite counters, and content-addressed before/after reports

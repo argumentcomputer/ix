@@ -56,10 +56,11 @@ status ledger here:
   addressing, and the current formal simulation spine.
 - A bounded HPT post-fixpoint checker, durable content-addressed summaries,
   recursive constructor-field facts, and the first semantics-preserving
-  whole-program call-result case simplifier: impossible-alternative pruning
-  plus checked detailed-unary exact-case collapse. It runs behind a versioned
-  fail-soft optimizer policy with canonical before/after reports,
-  pass-attributed counters, and deterministic fixed-point regressions.
+  whole-program fact consumer: owner-sensitive propagation through stored
+  function bodies, impossible-alternative pruning, and checked detailed-unary
+  exact-case collapse. It runs behind a versioned fail-soft optimizer policy
+  with canonical before/after reports, pass-attributed counters, and
+  deterministic fixed-point regressions.
   See [HPT certificates](hpt-certificates.md) and the
   [optimizer harness](optimizer-harness.md).
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
@@ -249,9 +250,9 @@ this repository's completion claims.
 1. **Close the M2b semantic spine.** Finish the shared LowerSim/LowerProgress
    traversal consolidation and expose one whole-pass theorem for the current
    validated fragment.
-2. **Land O1 HPT consumers.** Generalize the delivered immediate detailed-unary
-   collapse through whole-code fact propagation, then add local PAP fusion,
-   conservative fetch forwarding, known-shape destruction, and reachability.
+2. **Land the next O1 HPT consumers.** Add local PAP/apply fusion,
+   conservative fetch forwarding, known-shape destruction, and rooted
+   reachability on the owner-sensitive fact traversal.
 3. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement.

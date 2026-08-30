@@ -3,18 +3,17 @@
 Status: active. The bounded result-shape checker, deterministic SCC-local
 producer, SCC-granular content-addressed summary format, concrete-evaluator
 soundness proof, bounded recursive allocation/fetch/reuse and case-binder
-field slice,
-and persistent checked cache ingress/rebuild paths landed 2026-08-26. The
-filesystem boundary now offers both a bounded single-file snapshot and a
-metadata-only per-key chunk index with dependency-selected lazy reads. A first
-proof-sized consumer now uses accepted finite constructor rows to simplify
-immediate call-result cases at one root, recursively throughout a supplied
-code fragment, or across every stored function body and the main followed by a
-content-addressed graph rebuild. It prunes impossible alternatives and
-collapses the checked detailed-unary singleton case to one checked fetch. Its
-proofs cover dynamic self calls and exact transport of the complete evaluator
-result. This is a semantically justified analysis and optimization boundary,
-not yet the full heap-points-to optimization pass.
+field slice, and persistent checked cache ingress/rebuild paths landed
+2026-08-26. The filesystem boundary now offers both a bounded single-file
+snapshot and a metadata-only per-key chunk index with dependency-selected lazy
+reads. A first proof-sized consumer now propagates accepted facts through each
+complete stored function body, prunes impossible alternatives, and collapses
+the checked detailed-unary singleton case to one checked fetch even when the
+producer and case are not syntactically adjacent. Its whole-program path then
+performs a content-addressed graph rebuild; its proofs cover dynamic self calls
+and exact transport of the complete evaluator result. This is a semantically
+justified analysis and optimization boundary, not yet the full heap-points-to
+optimization pass.
 
 The executable domain and checker are in `Compilatrix/IxIR1/HPT.lean`; their
 concrete interpretation and evaluator proof are in
@@ -24,12 +23,12 @@ artifact's exact dependency-ordered IxIR₁ graph. `HPTProduce.lean` implements
 canonical local production, `HPTCache.lean` implements pure and effectful
 untrusted cache scheduling, `HPTCacheIO.lean` is the bounded one-file adapter,
 `HPTCacheDirIO.lean` is the metadata-indexed chunk adapter, and
-`HPTCasePrune.lean` implements the checked local and recursive consuming
-rewrite. `HPTCasePruneProgram.lean` closes the declaration-environment
-recursion, content-address rebuild, and exact whole-program evaluator
-transport. `Optimizer.lean` wraps that consumer in the versioned,
-deterministic, fail-soft O0 policy and reporting boundary described in the
-[optimizer harness](optimizer-harness.md).
+`HPTCasePrune.lean` implements the checked local, compatibility-recursive, and
+owner-sensitive fact-propagating rewrites. `HPTCasePruneProgram.lean` closes
+the declaration-environment recursion, content-address rebuild, and exact
+whole-program evaluator transport. `Optimizer.lean` wraps that consumer in the
+versioned, deterministic, fail-soft O0 policy and reporting boundary described
+in the [optimizer harness](optimizer-harness.md).
 
 ## Accepted claim
 
@@ -167,20 +166,34 @@ more fields as separate fetches adds code steps. General collapse therefore
 waits for a checked batch projection/tick representation or a deliberately
 weaker fuel simulation; the optimizer does not blur that semantic choice.
 
-`HPT.CasePrune.runRecursive` applies that same rewrite throughout a supplied
-`Code`: it descends through every `letOp` continuation and every case
-alternative body, preserves alternative dispatch metadata, and sums all three
-pass counters. As a fragment operation, it does not itself
-rewrite declaration bodies or the evaluator's separate current-function
-frame; the whole-program layer below composes those rewrites explicitly.
+`HPT.CasePrune.runWithFacts` is the whole-function form. It mirrors the HPT
+transfer at every program point: `analyzeOp` supplies each new binding fact,
+all older facts cross the analyzer's `forgetHeap` mutation boundary, and
+`Fact.caseFields` supplies the refined binder environment for each case
+alternative. A case may therefore consume a fact propagated through aliases,
+allocations, fetches, direct or self calls, PAP construction/application, and
+other analyzed primitives rather than requiring an adjacent call. An abstract
+transfer or atom-resolution error is fail-soft for that subtree.
 
-`HPT.CasePrune.rewriteCurrent` applies the same body rewrite while retaining a
-function frame's arity and result-world contract. A strong fuel induction
-shows that evaluation under this rewritten frame is unchanged: the only
-special operation is `callSelf`, which re-enters the rewritten body at
-strictly smaller fuel. Consequently `runMain_runRecursive_eq` proves exact
-top-level evaluation when both the supplied main and the frame synthesized by
-`runMain` are rewritten.
+`runCode_runWithFacts_eq` proves exact evaluator equality for this general
+traversal from a local post-fixpoint, the current function's owner binding, and
+a pointwise concrete interpretation of the input fact environment. The public
+`analyzeOp_sound` theorem is the operation-level bridge used to extend that
+environment after each successful primitive. Case alternatives use the
+constructor and scalar-Nat binder soundness lemmas directly. The result covers
+every fuel, success, and error without assuming well-moded code.
+
+`runFunction` seeds every parameter with `top`; `rewriteCurrentAt` retains the
+function's arity and result-world contract while making its address explicit
+for `callSelf`. A strong fuel induction proves both arbitrary-frame equality
+and combined rewritten-body/current-frame equality. Recursive self entry uses
+the owner-sensitive body theorem at strictly smaller fuel.
+
+`runRecursive` remains the fixed-environment compatibility traversal for a
+supplied `Code`, including the top-level main, which has no declaration owner.
+It descends through every continuation and alternative body and applies the
+adjacent-call `run` form. `rewriteCurrent` and `runMain_runRecursive_eq` account
+for the evaluator's synthetic main frame and dynamic `callSelf` re-entry.
 
 `CasePrune.runCode_run_eq` proves exact `runCode` equality for every fuel,
 store, environment, current function, success, and error whenever the supplied
@@ -211,12 +224,14 @@ pinned exact-evaluator corollaries. For the artifact's actual main,
 `pruneMainWithCachedHPT` expose the self-call-aware form and exact `runMain`
 corollaries.
 
-`rewriteDeclaration`, `rewriteEntries`, and `rewriteCtx` apply the traversal to
-every stored function while preserving extern declarations, function arities,
-and result-world contracts. `HPTCasePruneProgram.lean` proves this logical
-old-keyed program equivalent by one common fuel induction over `runCode`,
-`runOp`, direct invocation, PAP application, and all recursive drop entries.
-That proof covers direct calls into rewritten bodies, dynamic `callSelf`,
+`rewriteDeclarationAt`, `rewriteEntries`, and `rewriteCtx` apply the
+owner-sensitive traversal to every stored function while preserving extern
+declarations, function arities, and result-world contracts. The declaration
+address is threaded through both logical environment lookup and concrete list
+rebuilding. `HPTCasePruneProgram.lean` proves this logical old-keyed program
+equivalent by one common fuel induction over `runCode`, `runOp`, direct
+invocation, PAP application, and all recursive drop entries. That proof covers
+direct calls into rewritten bodies, dynamic `callSelf`,
 under/exact/over-application, successful stores and values, every error, and
 instruction counters.
 

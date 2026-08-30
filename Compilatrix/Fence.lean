@@ -607,6 +607,9 @@ root/field conversion used by allocation, fetch, and case binders. -/
 /-- info: 'Compilatrix.IxIR1.HPT.Fact.caseFields_natSucc_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.Fact.caseFields_natSucc_holds
 
+/-- info: 'Compilatrix.IxIR1.HPT.analyzeOp_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.analyzeOp_sound
+
 /-- info: 'Compilatrix.IxIR1.HPT.invoke_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.invoke_sound
 
@@ -691,11 +694,20 @@ The filesystem adapter carries no theorem and cannot weaken these cones. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Pipeline.Artifact.functionSummary_sound_of_cachedHPT
 
-/-! The first HPT consumer, including recursive supplied-code traversal,
-self-call-aware main rewriting, and declaration-graph rebuilding, is pure
-through its logical old-keyed layer. Checked, directly produced, cached, and
-content-address rebuild wrappers add exactly the already-ledgered native
-digest dependency, and no transformation-specific assumption. -/
+/-! The first HPT consumer, including owner-sensitive whole-function fact
+propagation, recursive supplied-code traversal, self-call-aware rewriting, and
+declaration-graph rebuilding, is pure through its logical old-keyed layer.
+Checked, directly produced, cached, and content-address rebuild wrappers add
+exactly the already-ledgered native digest dependency, and no
+transformation-specific assumption. -/
+
+/-- info: 'Compilatrix.IxIR1.HPT.CasePrune.runCode_runWithFacts_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.CasePrune.runCode_runWithFacts_eq
+
+/-- info: 'Compilatrix.IxIR1.HPT.CasePrune.runCode_rewriteCurrentAt_body_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.CasePrune.runCode_rewriteCurrentAt_body_eq
 
 /-- info: 'Compilatrix.IxIR1.HPT.CasePrune.runCode_run_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.CasePrune.runCode_run_eq

@@ -5,8 +5,9 @@ import Compilatrix.IxIR1.HPTCasePruneProgram
 # Deterministic IxIR₁ optimizer harness
 
 This module is the O0 control and observation boundary for whole-program
-IxIR₁ optimization.  It wraps the checked HPT call-result case simplifier
-(impossible-alternative pruning plus exact unary case collapse) with:
+IxIR₁ optimization.  It wraps the checked, fact-propagating HPT case
+simplifier (impossible-alternative pruning plus exact unary case collapse)
+with:
 
 - explicit harness and pass-policy versions;
 - deterministic, fail-soft resource controls;
@@ -31,7 +32,7 @@ open Compilatrix.Ixon (Address)
 open Compilatrix.IxIR
 
 def currentHarnessVersion : Nat := 1
-def currentCasePruneVersion : Nat := 2
+def currentCasePruneVersion : Nat := 3
 
 /-! ## Structural observations -/
 

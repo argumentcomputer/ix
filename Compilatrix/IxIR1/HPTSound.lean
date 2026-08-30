@@ -997,6 +997,36 @@ theorem resolveAtom_sound {declarations : DeclEnv} {store : Store}
       subst value
       simp [Fact.Holds, Fact.scalar]
 
+/-- A well-formed abstract environment cannot resolve an atom that the
+pointwise concrete environment fails to resolve. -/
+theorem resolveAtom_complete {declarations : DeclEnv} {store : Store}
+    {facts : List Fact} {values : List RVal} {atom : Atom} {fact : Fact}
+    (henvironment : EnvironmentHolds declarations store facts values)
+    (habstract : resolveAtomFact facts atom = .ok fact) :
+    ∃ value, resolveAtom values atom = .ok value := by
+  cases atom with
+  | lit literal => exact ⟨.lit literal, rfl⟩
+  | erased => exact ⟨.erased, rfl⟩
+  | var index =>
+      induction henvironment generalizing index fact with
+      | nil => simp [resolveAtomFact] at habstract
+      | @cons tailFacts tailValues headFact headValue hhead htail ih =>
+          cases index with
+          | zero => exact ⟨headValue, by simp [resolveAtom]⟩
+          | succ index =>
+              cases hfact : tailFacts[index]? with
+              | none => simp [resolveAtomFact, hfact] at habstract
+              | some resolved =>
+                  obtain ⟨value, hvalue⟩ := ih (fact := resolved)
+                    (index := index) (by simp [resolveAtomFact, hfact])
+                  unfold resolveAtom at hvalue ⊢
+                  cases hconcrete : tailValues[index]? with
+                  | none => simp [hconcrete] at hvalue
+                  | some resolvedValue =>
+                      simp only [hconcrete, Except.ok.injEq] at hvalue
+                      subst resolvedValue
+                      exact ⟨value, by simp [hconcrete]⟩
+
 private theorem List.resolveAtomFactsFrom_sound
     {declarations : DeclEnv} {store : Store}
     {facts : List Fact} {values : List RVal}
@@ -2727,6 +2757,26 @@ theorem analyzeCode_sound {declarations : DeclEnv} {summaries : SummaryEnv}
     inferred.Holds declarations outputStore outputValue :=
   (soundAt hpost fuel).1 ctx owner current store facts values code outputStore
     outputValue inferred hctx hcurrent henvironment habstract hconcrete
+
+/-- Successful concrete execution of one analyzed primitive is covered by
+its inferred binding fact.  This is the operation-level interface used by
+checked consumers that carry the HPT environment through code themselves. -/
+theorem analyzeOp_sound {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Address} {current : FnDef} {store outputStore : Store}
+    {facts : List Fact} {values : List RVal} {operation : Op}
+    {outputValue : RVal} {inferred : Fact} {fuel : Nat}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current))
+    (henvironment : EnvironmentHolds declarations store facts values)
+    (habstract : analyzeOp declarations summaries owner current facts operation =
+      .ok inferred)
+    (hconcrete : runOp ctx fuel current store values operation =
+      .ok (outputStore, outputValue)) :
+    inferred.Holds declarations outputStore outputValue :=
+  (soundAt hpost fuel).2.1 ctx owner current store facts values operation
+    outputStore outputValue inferred hctx hcurrent henvironment habstract
+    hconcrete
 
 /-- Known invocation respects `callableResult` under a local post-fixpoint. -/
 theorem invoke_sound {declarations : DeclEnv} {summaries : SummaryEnv}

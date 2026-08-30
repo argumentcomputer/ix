@@ -2256,12 +2256,15 @@ def pipelineCallSelfMainPruneOk
 
 def graphRawCaller : Address := Address.replicate 0xdb
 
-def graphCallerDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
-    .letOp (.call rawConstructor #[])
+def graphCallerBody : IxIR1.Code :=
+  .letOp (.call rawConstructor #[])
+    (.letOp (.pure (.var 0))
       (.case (.var 0) false #[
         .mk 0 1 (.ret (.lit (.nat 41))),
-        .mk 1 0 (.ret (.lit (.nat 99)))])⟩
+        .mk 1 0 (.ret (.lit (.nat 99))) ]))
+
+def graphCallerDeclaration : IxIR1.Decl :=
+  .fn ⟨0, .shared, graphCallerBody⟩
 
 def graphRawDeclarations : List (Address × IxIR1.Decl) :=
   [(graphRawCaller, graphCallerDeclaration),
@@ -2274,9 +2277,16 @@ private def rootCallTarget : IxIR1.Code → Option Address
   | .letOp (.call function _) _ => some function
   | _ => none
 
-/-- Complete checked simplification rewrites a stored function body, changes
-its content address, rewrites the main edge, preserves execution, and composes
-the pipeline's original producer map through the rebuild. -/
+private def rootCallAliasHasUnaryFetch : IxIR1.Code → Bool
+  | .letOp (.call _ _)
+      (.letOp (.pure (.var 0))
+        (.letOp (.fetch (.var 0) 0) _)) => true
+  | _ => false
+
+/-- Complete checked simplification propagates a call fact through an alias,
+rewrites the stored function body, changes its content address, rewrites the
+main edge, preserves execution, and composes the pipeline's original producer
+map through the rebuild. -/
 def declarationGraphCasePruneOk : Bool :=
   match IxIR1.ReaddressAll.run [constructorBlock]
       graphRawDeclarations graphRawMain with
@@ -2314,7 +2324,7 @@ def declarationGraphCasePruneOk : Bool :=
               graphRawCaller == newCaller &&
             match IxIR1.Env.ofList outcome.result.declarations newCaller with
             | some (.fn function) =>
-                rootCallHasUnaryFetch function.body &&
+                rootCallAliasHasUnaryFetch function.body &&
                   casePruneExecutionOk
                     (IxIR1.runMain oldCtx artifact.main 64) &&
                   casePruneExecutionOk
@@ -2377,7 +2387,7 @@ def optimizerHarnessOk : Bool :=
               rootCallTarget firstArtifact.main == some newCaller &&
               (match firstArtifact.targetDeclEnv newCaller with
                | some (.fn function) =>
-                   rootCallHasUnaryFetch function.body
+                   rootCallAliasHasUnaryFetch function.body
                | _ => false) &&
               disabled.rebuilt.isNone &&
               disabled.report.disposition ==

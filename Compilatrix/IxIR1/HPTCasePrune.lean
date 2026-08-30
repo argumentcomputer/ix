@@ -1,10 +1,10 @@
 import Compilatrix.IxIR1.HPTSound
 
 /-!
-# Checked HPT consumer: call-result case simplification
+# Checked HPT consumer: fact-driven case simplification
 
 This is the first transformation that consumes accepted HPT facts.  Its
-deliberately small rewrite window is
+compatibility entry point `run` has the deliberately small rewrite window
 
 ```text
 let x := call f(args); case x of alternatives
@@ -19,11 +19,16 @@ and non-unary rows retain the conservative pruning behavior.  The semantic
 theorem below treats the summary as untrusted until it is backed by the same
 local post-fixpoint used by the HPT checker.
 
-`run` rewrites one supplied code root; `runRecursive` traverses every
-continuation and alternative body in a supplied fragment.  `rewriteCurrent`
-mirrors that traversal into the dynamic frame used by `callSelf`, yielding an
-exact `runMain` theorem.  Declaration environments remain untouched because
-their bodies are content-addressed and require a separate readdressing stage.
+`runWithFacts` instead mirrors HPT transfer through a complete function body.
+It propagates primitive results, forgets older heap identities at the same
+mutation boundary as the analyzer, refines case binders, and simplifies every
+case from the fact available at that program point.  The function owner is
+explicit because `callSelf` transfer is owner-sensitive.
+
+`runRecursive` remains the fixed-environment traversal for supplied fragments
+such as a top-level main, which has no declaration owner.  Stored declarations
+use `runFunction` and `rewriteDeclarationAt`; changed bodies still require the
+separate content-address rebuild stage.
 -/
 
 namespace Compilatrix.IxIR1.HPT.CasePrune
@@ -172,6 +177,98 @@ def runAlternativeRecursive (declarations : DeclEnv)
 
 end
 
+/-! ## Owner-sensitive whole-code fact propagation -/
+
+/-- Simplify one case whose scrutinee fact has already been established by
+the ambient HPT environment.  Unlike `run`, this root does not require a
+syntactically adjacent call and may fetch from any resolved scrutinee atom. -/
+def runKnownCase (fact : Fact) (scrutinee : Atom) (peelNat : Bool)
+    (alternatives : Array Alt) : Outcome :=
+  let input := Code.case scrutinee peelNat alternatives
+  if preciseHeapOnly fact then
+    let kept := pruneAlternatives fact alternatives
+    match exactUnaryBody? fact kept with
+    | some body =>
+        ⟨.letOp (.fetch scrutinee 0) body,
+          alternatives.size - kept.size, 1, 1⟩
+    | none =>
+        ⟨.case scrutinee peelNat kept,
+          alternatives.size - kept.size, 0, 0⟩
+  else
+    ⟨input, 0, 0, 0⟩
+
+mutual
+
+/-- Mirror `analyzeCode` while simplifying every case from the fact available
+at that exact program point.  Transfer failures are fail-soft: the affected
+subtree is returned byte-for-byte with zero attributed changes. -/
+def runWithFacts (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (current : FnDef)
+    (facts : List Fact) : Code → Outcome
+  | .ret atom => ⟨.ret atom, 0, 0, 0⟩
+  | input@(.letOp operation rest) =>
+      match analyzeOp declarations summaries owner current facts operation with
+      | .error _ => ⟨input, 0, 0, 0⟩
+      | .ok bound =>
+          let nested := runWithFacts declarations summaries owner current
+            (bound :: facts.map Fact.forgetHeap) rest
+          ⟨.letOp operation nested.code,
+            nested.removedAlternatives, nested.collapsedCases,
+            nested.materializedFetches⟩
+  | input@(.case scrutinee peelNat alternatives) =>
+      match resolveAtomFact facts scrutinee with
+      | .error _ => ⟨input, 0, 0, 0⟩
+      | .ok fact =>
+          let nested := alternatives.map
+            (runAlternativeWithFacts declarations summaries owner current
+              fact peelNat facts)
+          let rewritten := nested.map (fun result => result.alternative)
+          let root := runKnownCase fact scrutinee peelNat rewritten
+          ⟨root.code,
+            nested.foldl
+                (fun total result => total + result.removedAlternatives) 0 +
+              root.removedAlternatives,
+            nested.foldl
+                (fun total result => total + result.collapsedCases) 0 +
+              root.collapsedCases,
+            nested.foldl
+                (fun total result => total + result.materializedFetches) 0 +
+              root.materializedFetches⟩
+
+/-- Rewrite one alternative under the exact HPT binder environment used by
+`analyzeAlternatives`. -/
+def runAlternativeWithFacts (declarations : DeclEnv)
+    (summaries : SummaryEnv) (owner : Compilatrix.Ixon.Address)
+    (current : FnDef) (scrutineeFact : Fact) (peelNat : Bool)
+    (facts : List Fact) : Alt → AlternativeOutcome
+  | .mk cidx fields body =>
+      let nested := runWithFacts declarations summaries owner current
+        (scrutineeFact.caseFields peelNat cidx fields ++ facts) body
+      ⟨.mk cidx fields nested.code, nested.removedAlternatives,
+        nested.collapsedCases, nested.materializedFetches⟩
+
+end
+
+/-- Analyze and simplify a complete function from HPT's universal parameter
+environment. -/
+def runFunction (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (current : FnDef) : Outcome :=
+  runWithFacts declarations summaries owner current
+    (List.replicate current.arity Fact.top) current.body
+
+/-- Owner-sensitive function rewrite used for stored declarations. -/
+def rewriteCurrentAt (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (current : FnDef) : FnDef :=
+  { current with body :=
+      (runFunction declarations summaries owner current).code }
+
+/-- Owner-sensitive declaration rewrite.  The address is semantically
+relevant to `callSelf` transfer. -/
+def rewriteDeclarationAt (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) : Decl → Decl
+  | .fn function => .fn (rewriteCurrentAt declarations summaries owner function)
+  | .extern arity => .extern arity
+
 /-- Rewrite a current-function body while retaining the dynamic arity and
 result-world contract used by `callSelf`. -/
 def rewriteCurrent (declarations : DeclEnv) (summaries : SummaryEnv)
@@ -191,9 +288,8 @@ body under its existing key.  This is an intermediate semantic object: a
 stored artifact must subsequently readdress the changed declarations. -/
 def rewriteDeclEnv (declarations : DeclEnv) (summaries : SummaryEnv) :
     DeclEnv :=
-  fun address =>
-    (declarations address).map
-      (rewriteDeclaration declarations summaries)
+  fun address => (declarations address).map
+    (rewriteDeclarationAt declarations summaries address)
 
 /-- Retain a context's oracle while replacing its declaration environment by
 the logical body-rewritten environment. -/
@@ -206,11 +302,20 @@ def rewriteEntries (declarations : DeclEnv) (summaries : SummaryEnv)
     (entries : List (Compilatrix.Ixon.Address × Decl)) :
     List (Compilatrix.Ixon.Address × Decl) :=
   entries.map fun entry =>
-    (entry.1, rewriteDeclaration declarations summaries entry.2)
+    (entry.1,
+      rewriteDeclarationAt declarations summaries entry.1 entry.2)
 
 @[simp] theorem declArity_rewriteDeclaration
     (declarations : DeclEnv) (summaries : SummaryEnv) (declaration : Decl) :
     declArity (rewriteDeclaration declarations summaries declaration) =
+      declArity declaration := by
+  cases declaration <;> rfl
+
+@[simp] theorem declArity_rewriteDeclarationAt
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (declaration : Decl) :
+    declArity
+        (rewriteDeclarationAt declarations summaries owner declaration) =
       declArity declaration := by
   cases declaration <;> rfl
 
@@ -604,8 +709,609 @@ theorem runCode_run_eq
                                                   (.call function arguments)
                                                   (.case (.var 0) peelNat
                                                     alternatives)) :=
-                                            runCode_prunedRedex_eq hpost hctx
+                                          runCode_prunedRedex_eq hpost hctx
                                               hdeclaration hsummary hprecise
+
+/-! ## Semantic support for propagated cases -/
+
+/-- A checked fetch from an arbitrary resolved atom installs exactly the
+environment of its matching detailed-unary case branch. -/
+private theorem runCode_fetchAtom_eq_exactUnaryCase_of_holds
+    {declarations : DeclEnv} {ctx : Ctx} {current : FnDef}
+    {store : Store} {environment : List RVal} {scrutinee : Atom}
+    {value : RVal} {identity : CtorId} {fieldFact : FieldFact}
+    {body : Code} {peelNat : Bool} {fuel : Nat}
+    (hresolve : resolveAtom environment scrutinee = .ok value)
+    (hholds : (⟨false, false,
+      [.ctor identity (some [fieldFact])]⟩ : Fact).Holds
+        declarations store value) :
+    runCode ctx fuel current store environment
+        (.letOp (.fetch scrutinee 0) body) =
+      runCode ctx fuel current store environment
+        (.case scrutinee peelNat #[.mk identity.cidx 1 body]) := by
+  obtain ⟨location, box, field, hvalue, hget, hnode⟩ :=
+    exists_of_exactUnary_holds hholds
+  subst value
+  cases fuel with
+  | zero => simp [runCode]
+  | succ fuel =>
+      cases fuel with
+      | zero =>
+          simp [runCode, runOp, hresolve, Alt.cidx, bind, Except.bind,
+            hget, hnode]
+      | succ fuel =>
+          simp [runCode, runOp, hresolve, Alt.cidx, bind, Except.bind,
+            hget, hnode]
+
+private theorem runCode_fetchAtom_eq_of_exactUnaryBody
+    {declarations : DeclEnv} {ctx : Ctx} {current : FnDef}
+    {store : Store} {environment : List RVal} {scrutinee : Atom}
+    {value : RVal} {fact : Fact} {alternatives : Array Alt} {body : Code}
+    {peelNat : Bool} {fuel : Nat}
+    (hresolve : resolveAtom environment scrutinee = .ok value)
+    (hprecise : preciseHeapOnly fact = true)
+    (hbody : exactUnaryBody? fact alternatives = some body)
+    (hholds : fact.Holds declarations store value) :
+    runCode ctx fuel current store environment
+        (.letOp (.fetch scrutinee 0) body) =
+      runCode ctx fuel current store environment
+        (.case scrutinee peelNat alternatives) := by
+  obtain ⟨identity, fieldFact, hshapes, halternatives⟩ :=
+    exactUnaryBody?_eq_some hbody
+  have hscalar := mayScalar_eq_false_of_preciseHeapOnly hprecise
+  have hunknown := unknownHeap_eq_false_of_preciseHeapOnly hprecise
+  cases fact with
+  | mk mayScalar unknownHeap shapes =>
+      change mayScalar = false at hscalar
+      change unknownHeap = false at hunknown
+      change shapes = [.ctor identity (some [fieldFact])] at hshapes
+      subst mayScalar
+      subst unknownHeap
+      subst shapes
+      subst alternatives
+      exact runCode_fetchAtom_eq_exactUnaryCase_of_holds hresolve hholds
+
+/-- Pruning from a fact resolved at an arbitrary program point preserves the
+case evaluator, including its first-match behavior and all errors. -/
+private theorem runCode_caseAtom_pruned_eq_of_holds
+    {declarations : DeclEnv} {ctx : Ctx} {current : FnDef}
+    {store : Store} {environment : List RVal} {scrutinee : Atom}
+    {value : RVal} {fact : Fact} {peelNat : Bool}
+    {alternatives : Array Alt} {fuel : Nat}
+    (hresolve : resolveAtom environment scrutinee = .ok value)
+    (hprecise : preciseHeapOnly fact = true)
+    (hholds : fact.Holds declarations store value) :
+    runCode ctx fuel current store environment
+        (.case scrutinee peelNat (pruneAlternatives fact alternatives)) =
+      runCode ctx fuel current store environment
+        (.case scrutinee peelNat alternatives) := by
+  cases fuel with
+  | zero => simp [runCode]
+  | succ fuel =>
+      simp only [runCode]
+      rw [hresolve]
+      simp only [bind, Except.bind]
+      cases value with
+      | lit literal =>
+          change fact.mayScalar = true at hholds
+          rw [mayScalar_eq_false_of_preciseHeapOnly hprecise] at hholds
+          contradiction
+      | erased =>
+          change fact.mayScalar = true at hholds
+          rw [mayScalar_eq_false_of_preciseHeapOnly hprecise] at hholds
+      | loc location =>
+          cases hget : store.get? location with
+          | none => simp [hget]
+          | some box =>
+              cases hnode : box.node with
+              | papN function arity arguments => simp [hget, hnode]
+              | ctorN identity fields =>
+                  have hfind := find?_pruneAlternatives
+                    (fact := fact) (alternatives := alternatives)
+                    (hasCtorIndex_of_holds_ctor
+                      (unknownHeap_eq_false_of_preciseHeapOnly hprecise)
+                      hholds hget hnode)
+                  simp [hget, hnode, hfind]
+
+/-- The environment-driven case root is exact whenever its abstract
+scrutinee resolution is backed by the concrete HPT environment. -/
+private theorem runCode_runKnownCase_eq
+    {declarations : DeclEnv} {ctx : Ctx} {current : FnDef}
+    {store : Store} {facts : List Fact} {environment : List RVal}
+    {fact : Fact} {scrutinee : Atom} {peelNat : Bool}
+    {alternatives : Array Alt} {fuel : Nat}
+    (henvironment : EnvironmentHolds declarations store facts environment)
+    (habstract : resolveAtomFact facts scrutinee = .ok fact) :
+    runCode ctx fuel current store environment
+        (runKnownCase fact scrutinee peelNat alternatives).code =
+      runCode ctx fuel current store environment
+        (.case scrutinee peelNat alternatives) := by
+  obtain ⟨value, hresolve⟩ := resolveAtom_complete henvironment habstract
+  have hholds := resolveAtom_sound henvironment habstract hresolve
+  cases hprecise : preciseHeapOnly fact with
+  | false => simp [runKnownCase, hprecise]
+  | true =>
+      cases hcollapse : exactUnaryBody? fact
+          (pruneAlternatives fact alternatives) with
+      | none =>
+          simpa [runKnownCase, hprecise, hcollapse] using
+            (runCode_caseAtom_pruned_eq_of_holds hresolve hprecise hholds)
+      | some body =>
+          calc
+            runCode ctx fuel current store environment
+                (runKnownCase fact scrutinee peelNat alternatives).code =
+              runCode ctx fuel current store environment
+                (.letOp (.fetch scrutinee 0) body) := by
+                  simp [runKnownCase, hprecise, hcollapse]
+            _ = runCode ctx fuel current store environment
+                  (.case scrutinee peelNat
+                    (pruneAlternatives fact alternatives)) :=
+              runCode_fetchAtom_eq_of_exactUnaryBody hresolve hprecise
+                hcollapse hholds
+            _ = runCode ctx fuel current store environment
+                  (.case scrutinee peelNat alternatives) :=
+              runCode_caseAtom_pruned_eq_of_holds hresolve hprecise hholds
+
+@[simp] private theorem runAlternativeWithFacts_cidx
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (current : FnDef)
+    (scrutineeFact : Fact) (peelNat : Bool) (facts : List Fact)
+    (alternative : Alt) :
+    (runAlternativeWithFacts declarations summaries owner current
+      scrutineeFact peelNat facts alternative).alternative.cidx =
+        alternative.cidx := by
+  cases alternative
+  simp [runAlternativeWithFacts, Alt.cidx]
+
+private theorem runAlternativeWithFacts_predicate
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (current : FnDef)
+    (scrutineeFact : Fact) (peelNat : Bool) (facts : List Fact)
+    (index : Nat) :
+    ((fun alternative : Alt => alternative.cidx == index) ∘
+        (fun result : AlternativeOutcome => result.alternative) ∘
+        runAlternativeWithFacts declarations summaries owner current
+          scrutineeFact peelNat facts) =
+      (fun alternative => alternative.cidx == index) := by
+  funext alternative
+  cases alternative
+  simp [Function.comp_def, runAlternativeWithFacts, Alt.cidx]
+
+private theorem find?_runAlternativeWithFacts
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (current : FnDef)
+    (scrutineeFact : Fact) (peelNat : Bool) (facts : List Fact)
+    (alternatives : Array Alt) (index : Nat) :
+    ((alternatives.map
+        (runAlternativeWithFacts declarations summaries owner current
+          scrutineeFact peelNat facts)).map
+        (fun result => result.alternative)).find?
+          (fun alternative => alternative.cidx == index) =
+      (alternatives.find? (fun alternative => alternative.cidx == index)).map
+        (fun alternative =>
+          (runAlternativeWithFacts declarations summaries owner current
+            scrutineeFact peelNat facts alternative).alternative) := by
+  rw [Array.map_map, Array.find?_map,
+    runAlternativeWithFacts_predicate declarations summaries owner current
+      scrutineeFact peelNat facts index]
+  simp [Function.comp_def]
+
+private theorem Array.foldl_cons_eq_reverse_append'
+    (fields : Array RVal) (environment : List RVal) :
+    fields.foldl (fun current field => field :: current) environment =
+      fields.toList.reverse ++ environment := by
+  rw [← Array.foldl_toList]
+  induction fields.toList generalizing environment with
+  | nil => rfl
+  | cons field fields ih =>
+      simp only [List.foldl_cons]
+      rw [ih]
+      simp [List.reverse_cons, List.append_assoc]
+
+/-- The alternative-body half of propagated case rewriting.  HPT's branch
+facts are installed only after the concrete evaluator has selected a matching
+alternative with the expected field count. -/
+private theorem runCode_caseWithFactsBodies_eq
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    {owner : Compilatrix.Ixon.Address} {current : FnDef}
+    {ctx : Ctx} {store : Store} {facts : List Fact}
+    {environment : List RVal} {scrutinee : Atom} {peelNat : Bool}
+    {alternatives : Array Alt} {scrutineeFact : Fact} {fuel : Nat}
+    (henvironment : EnvironmentHolds declarations store facts environment)
+    (habstract : resolveAtomFact facts scrutinee = .ok scrutineeFact)
+    (ih : ∀ {store : Store} {facts : List Fact}
+      {environment : List RVal} {input : Code},
+      EnvironmentHolds declarations store facts environment →
+      runCode ctx fuel current store environment
+          (runWithFacts declarations summaries owner current facts input).code =
+        runCode ctx fuel current store environment input) :
+    runCode ctx (fuel + 1) current store environment
+        (.case scrutinee peelNat
+          ((alternatives.map
+            (runAlternativeWithFacts declarations summaries owner current
+              scrutineeFact peelNat facts)).map
+                (fun result => result.alternative))) =
+      runCode ctx (fuel + 1) current store environment
+        (.case scrutinee peelNat alternatives) := by
+  obtain ⟨scrutineeValue, hresolve⟩ :=
+    resolveAtom_complete henvironment habstract
+  have hscrutineeHolds :=
+    resolveAtom_sound henvironment habstract hresolve
+  simp only [runCode]
+  rw [hresolve]
+  simp only [bind, Except.bind]
+  cases scrutineeValue with
+  | erased => rfl
+  | lit literal =>
+      cases literal with
+      | str value => rfl
+      | nat value =>
+          simp only
+          cases peelNat with
+          | false => rfl
+          | true =>
+              simp only
+              cases value with
+              | zero =>
+                  simp only
+                  rw [find?_runAlternativeWithFacts]
+                  cases hfind : alternatives.find?
+                      (fun alternative => alternative.cidx == 0) with
+                  | none => simp
+                  | some alternative =>
+                      cases alternative with
+                      | mk cidx fields body =>
+                          cases fields with
+                          | zero =>
+                              have hzero :
+                                  scrutineeFact.caseFields true cidx 0 = [] := by
+                                unfold Fact.caseFields
+                                split <;> rfl
+                              simpa [runAlternativeWithFacts, hzero] using
+                                (ih (input := body) henvironment)
+                          | succ fields => simp [runAlternativeWithFacts]
+              | succ value =>
+                  simp only
+                  rw [find?_runAlternativeWithFacts]
+                  cases hfind : alternatives.find?
+                      (fun alternative => alternative.cidx == 1) with
+                  | none => simp
+                  | some alternative =>
+                      cases alternative with
+                      | mk cidx fields body =>
+                          cases fields with
+                          | zero => simp [runAlternativeWithFacts]
+                          | succ fields =>
+                              cases fields with
+                              | zero =>
+                                  have hcidx : cidx = 1 := by
+                                    have hmatch := Array.find?_some
+                                      (p := fun alternative : Alt =>
+                                        alternative.cidx == 1)
+                                      (a := .mk cidx 1 body)
+                                      (xs := alternatives) hfind
+                                    exact beq_iff_eq.mp hmatch
+                                  have hbinders :
+                                      EnvironmentHolds declarations store
+                                        (scrutineeFact.caseFields true cidx 1)
+                                        [.lit (.nat value)] := by
+                                    simpa [hcidx] using
+                                      (Fact.caseFields_natSucc_holds
+                                        hscrutineeHolds)
+                                  simpa [runAlternativeWithFacts] using
+                                    (ih (input := body)
+                                      (hbinders.append henvironment))
+                              | succ fields =>
+                                  simp [runAlternativeWithFacts]
+  | loc location =>
+      simp only
+      cases hget : store.get? location with
+      | none => simp
+      | some box =>
+          simp only
+          cases hnode : box.node with
+          | papN function arity arguments => simp
+          | ctorN identity fields =>
+              simp only
+              rw [find?_runAlternativeWithFacts]
+              cases hfind : alternatives.find?
+                  (fun alternative => alternative.cidx == identity.cidx) with
+              | none => simp
+              | some alternative =>
+                  cases alternative with
+                  | mk cidx fieldCount body =>
+                      by_cases hfields : fields.size = fieldCount
+                      · have hcidx : identity.cidx = cidx := by
+                          have hmatch := Array.find?_some
+                            (p := fun alternative : Alt =>
+                              alternative.cidx == identity.cidx)
+                            (a := .mk cidx fieldCount body)
+                            (xs := alternatives) hfind
+                          exact (beq_iff_eq.mp hmatch).symm
+                        have hbinders := Fact.caseFields_ctor_holds
+                          peelNat cidx fieldCount hscrutineeHolds hget hnode
+                          hcidx hfields
+                        rw [Array.foldl_cons_eq_reverse_append']
+                        simpa [hfields, runAlternativeWithFacts] using
+                          (ih (input := body)
+                            (hbinders.append henvironment))
+                      · simp [hfields, runAlternativeWithFacts]
+
+/-- Exact evaluator equality for the owner-sensitive HPT traversal.  This is
+the reusable semantic boundary for subsequent fact-driven local consumers. -/
+theorem runCode_runWithFacts_eq
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Compilatrix.Ixon.Address} {current : FnDef}
+    {store : Store} {facts : List Fact} {environment : List RVal}
+    {input : Code} {fuel : Nat}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current))
+    (henvironment : EnvironmentHolds declarations store facts environment) :
+    runCode ctx fuel current store environment
+        (runWithFacts declarations summaries owner current facts input).code =
+      runCode ctx fuel current store environment input := by
+  induction fuel generalizing store facts environment input with
+  | zero => simp [runCode]
+  | succ fuel ih =>
+      cases input with
+      | ret atom => simp [runWithFacts, runCode]
+      | letOp operation rest =>
+          cases habstract : analyzeOp declarations summaries owner current
+              facts operation with
+          | error error => simp [runWithFacts, habstract]
+          | ok bound =>
+              simp only [runWithFacts, habstract, runCode]
+              cases hoperation : runOp ctx fuel current store environment
+                  operation with
+              | error error => simp [bind, Except.bind]
+              | ok output =>
+                  rcases output with ⟨outputStore, outputValue⟩
+                  simp only [bind, Except.bind]
+                  have hbound := analyzeOp_sound hpost hctx hcurrent
+                    henvironment habstract hoperation
+                  have hold := EnvironmentHolds.forgetHeap
+                    (after := outputStore) henvironment
+                  exact ih (store := outputStore)
+                    (facts := bound :: facts.map Fact.forgetHeap)
+                    (environment := outputValue :: environment)
+                    (input := rest) (.cons hbound hold)
+      | case scrutinee peelNat alternatives =>
+          cases habstract : resolveAtomFact facts scrutinee with
+          | error error => simp [runWithFacts, habstract]
+          | ok scrutineeFact =>
+              simp only [runWithFacts, habstract]
+              calc
+                runCode ctx (fuel + 1) current store environment
+                    (runKnownCase scrutineeFact scrutinee peelNat
+                      ((alternatives.map
+                        (runAlternativeWithFacts declarations summaries owner
+                          current scrutineeFact peelNat facts)).map
+                            (fun result => result.alternative))).code =
+                  runCode ctx (fuel + 1) current store environment
+                    (.case scrutinee peelNat
+                      ((alternatives.map
+                        (runAlternativeWithFacts declarations summaries owner
+                          current scrutineeFact peelNat facts)).map
+                            (fun result => result.alternative))) :=
+                  runCode_runKnownCase_eq henvironment habstract
+                _ = runCode ctx (fuel + 1) current store environment
+                      (.case scrutinee peelNat alternatives) :=
+                  runCode_caseWithFactsBodies_eq henvironment habstract
+                    (fun henv => ih henv)
+
+/-- Changing one owner-sensitive current body preserves a case step whenever
+the two current frames agree at the smaller fuel. -/
+private theorem runCode_case_rewriteCurrentAt_eq
+    (declarations : DeclEnv) (summaries : SummaryEnv)
+    (owner : Compilatrix.Ixon.Address) (current : FnDef)
+    {ctx : Ctx} {fuel : Nat}
+    (ih : ∀ {store : Store} {environment : List RVal} {input : Code},
+      runCode ctx fuel
+          (rewriteCurrentAt declarations summaries owner current)
+          store environment input =
+        runCode ctx fuel current store environment input)
+    (store : Store) (environment : List RVal)
+    (scrutinee : Atom) (peelNat : Bool) (alternatives : Array Alt) :
+    runCode ctx (fuel + 1)
+        (rewriteCurrentAt declarations summaries owner current)
+        store environment (.case scrutinee peelNat alternatives) =
+      runCode ctx (fuel + 1) current store environment
+        (.case scrutinee peelNat alternatives) := by
+  simp only [runCode]
+  cases hscrutinee : resolveAtom environment scrutinee with
+  | error error => simp [bind, Except.bind]
+  | ok value =>
+      simp only [bind, Except.bind]
+      cases value with
+      | erased => rfl
+      | lit literal =>
+          cases literal with
+          | str value => rfl
+          | nat value =>
+              simp only
+              cases peelNat with
+              | false => rfl
+              | true =>
+                  simp only
+                  cases value with
+                  | zero =>
+                      simp only
+                      cases hfind : alternatives.find?
+                          (fun alternative => alternative.cidx == 0) with
+                      | none => simp
+                      | some alternative =>
+                          cases alternative with
+                          | mk cidx fields body =>
+                              cases fields with
+                              | zero => exact ih
+                              | succ fields => simp
+                  | succ value =>
+                      simp only
+                      cases hfind : alternatives.find?
+                          (fun alternative => alternative.cidx == 1) with
+                      | none => simp
+                      | some alternative =>
+                          cases alternative with
+                          | mk cidx fields body =>
+                              cases fields with
+                              | zero => simp
+                              | succ fields =>
+                                  cases fields with
+                                  | zero => exact ih
+                                  | succ fields => simp
+      | loc location =>
+          simp only
+          cases hget : store.get? location with
+          | none => simp
+          | some box =>
+              simp only
+              cases hnode : box.node with
+              | papN function arity arguments => simp
+              | ctorN identity fields =>
+                  simp only
+                  cases hfind : alternatives.find?
+                      (fun alternative => alternative.cidx == identity.cidx) with
+                  | none => simp
+                  | some alternative =>
+                      cases alternative with
+                      | mk cidx fieldCount body =>
+                          by_cases hfields : fields.size = fieldCount
+                          · simpa [hfields] using
+                              ih (store := store)
+                                (environment := fields.foldl
+                                  (fun result field => field :: result)
+                                  environment)
+                                (input := body)
+                          · simp [hfields]
+
+/-- At one positive operation fuel, changing the owner-sensitive current body
+is invisible.  `callSelf` uses both the smaller-fuel frame hypothesis and the
+proved HPT traversal equality for the rewritten recursive body. -/
+private theorem runOp_rewriteCurrentAt_eq
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Compilatrix.Ixon.Address} {current : FnDef}
+    {fuel : Nat}
+    (ih : ∀ {store : Store} {environment : List RVal} {input : Code},
+      runCode ctx fuel
+          (rewriteCurrentAt declarations summaries owner current)
+          store environment input =
+        runCode ctx fuel current store environment input)
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current))
+    (store : Store) (environment : List RVal) (operation : Op) :
+    runOp ctx (fuel + 1)
+        (rewriteCurrentAt declarations summaries owner current)
+        store environment operation =
+      runOp ctx (fuel + 1) current store environment operation := by
+  cases operation <;> try simp [runOp, rewriteCurrentAt]
+  case callSelf arguments =>
+    cases harguments : resolveAtoms environment arguments with
+    | error error => simp [bind, Except.bind]
+    | ok values =>
+        by_cases harity : values.length = current.arity
+        · have henvironment : EnvironmentHolds declarations store
+              (List.replicate current.arity Fact.top) values.reverse := by
+            simpa [harity] using
+              (EnvironmentHolds.top_replicate declarations store
+                values.reverse)
+          have hbody :
+              runCode ctx fuel
+                  (rewriteCurrentAt declarations summaries owner current)
+                  store values.reverse
+                  (rewriteCurrentAt declarations summaries owner current).body =
+                runCode ctx fuel current store values.reverse current.body := by
+            calc
+              runCode ctx fuel
+                  (rewriteCurrentAt declarations summaries owner current)
+                  store values.reverse
+                  (rewriteCurrentAt declarations summaries owner current).body =
+                runCode ctx fuel current store values.reverse
+                  (rewriteCurrentAt declarations summaries owner current).body :=
+                ih
+              _ = runCode ctx fuel current store values.reverse current.body := by
+                simpa [rewriteCurrentAt, runFunction] using
+                  (runCode_runWithFacts_eq hpost hctx hcurrent henvironment)
+          simp only [rewriteCurrentAt] at hbody
+          simp [harity, bind, Except.bind]
+          rw [hbody]
+        · simp [harity, bind, Except.bind]
+
+/-- Rewriting a stored function from its owner-aware HPT environment is
+observationally irrelevant to arbitrary code executed under that current
+frame. -/
+theorem runCode_rewriteCurrentAt_eq
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Compilatrix.Ixon.Address} {current : FnDef}
+    {store : Store} {environment : List RVal} {input : Code} {fuel : Nat}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current)) :
+    runCode ctx fuel (rewriteCurrentAt declarations summaries owner current)
+        store environment input =
+      runCode ctx fuel current store environment input := by
+  induction fuel using Nat.strongRecOn generalizing store environment input with
+  | ind fuel ih =>
+      cases fuel with
+      | zero => simp [runCode]
+      | succ fuel =>
+          have hsmaller : ∀ {store : Store} {environment : List RVal}
+              {input : Code},
+              runCode ctx fuel
+                  (rewriteCurrentAt declarations summaries owner current)
+                  store environment input =
+                runCode ctx fuel current store environment input :=
+            ih fuel (Nat.lt_succ_self fuel)
+          cases input with
+          | ret atom => simp [runCode]
+          | case scrutinee peelNat alternatives =>
+              exact runCode_case_rewriteCurrentAt_eq declarations summaries
+                owner current hsmaller store environment scrutinee peelNat
+                alternatives
+          | letOp operation rest =>
+              cases fuel with
+              | zero => simp [runCode, runOp]
+              | succ smaller =>
+                  simp only [runCode]
+                  rw [runOp_rewriteCurrentAt_eq hpost
+                    (ih smaller (by omega)) hctx hcurrent]
+                  cases hoperation : runOp ctx (smaller + 1) current store
+                      environment operation with
+                  | error error => simp [bind, Except.bind]
+                  | ok output =>
+                      rcases output with ⟨outputStore, outputValue⟩
+                      simp only [bind, Except.bind]
+                      exact ih (smaller + 1) (by omega)
+                        (store := outputStore)
+                        (environment := outputValue :: environment)
+                        (input := rest)
+
+/-- Combined body-and-current equality used when invocation enters a rewritten
+stored function. -/
+theorem runCode_rewriteCurrentAt_body_eq
+    {declarations : DeclEnv} {summaries : SummaryEnv}
+    (hpost : LocalPostFixpoint declarations summaries)
+    {ctx : Ctx} {owner : Compilatrix.Ixon.Address} {current : FnDef}
+    {store : Store} {environment : List RVal} {fuel : Nat}
+    (hctx : ctx.decls = declarations)
+    (hcurrent : declarations owner = some (.fn current))
+    (henvironment : EnvironmentHolds declarations store
+      (List.replicate current.arity Fact.top) environment) :
+    runCode ctx fuel (rewriteCurrentAt declarations summaries owner current)
+        store environment
+        (rewriteCurrentAt declarations summaries owner current).body =
+      runCode ctx fuel current store environment current.body := by
+  calc
+    runCode ctx fuel (rewriteCurrentAt declarations summaries owner current)
+        store environment
+        (rewriteCurrentAt declarations summaries owner current).body =
+      runCode ctx fuel current store environment
+        (rewriteCurrentAt declarations summaries owner current).body :=
+      runCode_rewriteCurrentAt_eq hpost hctx hcurrent
+    _ = runCode ctx fuel current store environment current.body := by
+      simpa [rewriteCurrentAt, runFunction] using
+        (runCode_runWithFacts_eq hpost hctx hcurrent henvironment)
 
 @[simp] private theorem runAlternativeRecursive_cidx
     (declarations : DeclEnv) (summaries : SummaryEnv) (alternative : Alt) :

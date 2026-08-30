@@ -4,11 +4,12 @@ import Compilatrix.IxIR1.ReaddressAllSim
 /-!
 # Whole-program semantic support for HPT case simplification
 
-`HPTCasePrune` proves one supplied fragment equivalent while the declaration
-environment stays fixed.  Rewriting stored function bodies changes the
-environment itself: direct calls and PAP application subsequently enter the
-rewritten definitions.  This module closes that recursive seam by a common
-fuel induction over every evaluator entry point.
+`HPTCasePrune` proves supplied fragments equivalent in a fixed environment and
+proves each owner-sensitive, fact-propagated function rewrite equivalent in
+its original frame.  Rewriting every stored function changes the environment
+itself: direct calls and PAP application subsequently enter the rewritten
+definitions.  This module closes that recursive seam by a common fuel
+induction over every evaluator entry point.
 
 The result is still a logical, old-keyed environment.  A production artifact
 must readdress `rewriteEntries`; that content-address rebuild is kept separate
@@ -103,9 +104,9 @@ private theorem runCode_case_rewriteCtx_eq
                           · simp [hfields]
 
 /-- All mutually recursive evaluator entries agree after logically replacing
-every stored function body by `runRecursive`.  Calls are the substantive
-case; store-only recursion is bundled because `applyGo` and memory operations
-share the evaluator's fuel index. -/
+every stored function body by its owner-sensitive `runFunction` result. Calls
+are the substantive case; store-only recursion is bundled because `applyGo`
+and memory operations share the evaluator's fuel index. -/
 private structure EvalRewriteAt
     (declarations : DeclEnv) (summaries : SummaryEnv)
     (before : Ctx) (fuel : Nat) : Prop where
@@ -257,7 +258,7 @@ private theorem evalRewriteAt
                 | none => simp [rewriteCtx, rewriteDeclEnv, hdeclaration]
                 | some declaration =>
                     simp [rewriteCtx, rewriteDeclEnv, hdeclaration,
-                      declArity_rewriteDeclaration]
+                      declArity_rewriteDeclarationAt]
         | apply function atoms =>
             simp only [runOp]
             cases hfunction : resolveAtom environment function with
@@ -277,51 +278,48 @@ private theorem evalRewriteAt
         | some declaration =>
             cases declaration with
             | extern arity =>
-                simp [rewriteDeclaration, callScalarOracle]
+                simp [rewriteDeclarationAt, callScalarOracle]
             | fn definition =>
                 simp only [Option.map_some,
-                  rewriteDeclaration]
+                  rewriteDeclarationAt]
                 by_cases harity : arguments.length = definition.arity
                 · have harityBool :
                       (arguments.length != definition.arity) = false := by
                     simp [harity]
-                  simp only [rewriteCurrent, harityBool,
+                  simp only [rewriteCurrentAt, harityBool,
                     Bool.false_eq_true, ↓reduceIte]
+                  have henvironment : EnvironmentHolds declarations store
+                      (List.replicate definition.arity Fact.top)
+                      arguments.reverse := by
+                    simpa [harity] using
+                      (EnvironmentHolds.top_replicate declarations store
+                        arguments.reverse)
                   have hbody :
                       runCode before fuel
-                          (rewriteCurrent declarations summaries definition)
+                          (rewriteCurrentAt declarations summaries function
+                            definition)
                           store arguments.reverse
-                          (rewriteCurrent declarations summaries
+                          (rewriteCurrentAt declarations summaries function
                             definition).body =
                         runCode before fuel definition store arguments.reverse
                           definition.body := by
-                    calc
-                      runCode before fuel
-                          (rewriteCurrent declarations summaries definition)
-                          store arguments.reverse
-                          (rewriteCurrent declarations summaries
-                            definition).body =
-                        runCode before fuel
-                          (rewriteCurrent declarations summaries definition)
-                          store arguments.reverse
-                          (runRecursive declarations summaries
-                            definition.body).code := rfl
-                      _ = runCode before fuel definition store
-                          arguments.reverse definition.body :=
-                        runCode_runRecursive_rewriteCurrent_eq hpost hbefore
+                    exact runCode_rewriteCurrentAt_body_eq hpost hbefore
+                      hdeclaration henvironment
                   have hcombined :=
                     (smaller.runCode
-                      (rewriteCurrent declarations summaries definition) store
+                      (rewriteCurrentAt declarations summaries function
+                        definition) store
                       arguments.reverse
-                      (rewriteCurrent declarations summaries definition).body).trans
+                      (rewriteCurrentAt declarations summaries function
+                        definition).body).trans
                         hbody
-                  simpa only [rewriteCtx, rewriteCurrent, bind,
+                  simpa only [rewriteCtx, rewriteCurrentAt, bind,
                     Except.bind] using
                     congrArg
                       (fun output =>
                         output >>= checkResultWorld definition.result)
                       hcombined
-                · simp [rewriteCurrent, harity]
+                · simp [rewriteCurrentAt, harity]
       · intro store function arguments
         cases function with
         | lit literal => simp [IxIR1.applyGo]
@@ -497,7 +495,8 @@ private theorem find?_rewriteEntries
         (entries.find? (fun entry => entry.1 == address)).map
           (fun entry =>
             (entry.1,
-              rewriteDeclaration declarations summaries entry.2)) := by
+              rewriteDeclarationAt declarations summaries entry.1
+                entry.2)) := by
   intro entries
   induction entries with
   | nil => rfl
@@ -517,7 +516,7 @@ theorem envOfList_rewriteEntries
     Env.ofList (rewriteEntries declarations summaries entries) =
       fun address =>
         (Env.ofList entries address).map
-          (rewriteDeclaration declarations summaries) := by
+          (rewriteDeclarationAt declarations summaries address) := by
   funext address
   unfold Env.ofList
   rw [find?_rewriteEntries]
@@ -525,16 +524,20 @@ theorem envOfList_rewriteEntries
   | none => rfl
   | some entry =>
       rcases entry with ⟨entryAddress, declaration⟩
+      have hsame := List.find?_some hentry
+      have haddress : entryAddress = address := beq_iff_eq.mp hsame
+      subst entryAddress
       rfl
 
 /-! ## Content-addressed program rebuild -/
 
-/-- Collect all pass-attributed counters from one stored declaration with one
-recursive syntax traversal. -/
+/-- Collect all pass-attributed counters from one stored declaration with its
+owner-sensitive fact traversal. -/
 def declarationChanges (declarations : DeclEnv)
-    (summaries : SummaryEnv) : Decl → Changes
+    (summaries : SummaryEnv) (owner : Compilatrix.Ixon.Address) :
+    Decl → Changes
   | .fn function =>
-      (runRecursive declarations summaries function.body).changes
+      (runFunction declarations summaries owner function).changes
   | .extern _ => {}
 
 /-- Sum declaration-body changes in original row order. -/
@@ -542,7 +545,8 @@ def declarationsChanges (declarations : DeclEnv)
     (summaries : SummaryEnv)
     (entries : List (Compilatrix.Ixon.Address × Decl)) : Changes :=
   entries.foldl (fun total entry =>
-    total.add (declarationChanges declarations summaries entry.2)) {}
+    total.add
+      (declarationChanges declarations summaries entry.1 entry.2)) {}
 
 /-- Observable result of simplifying every function body and the main, then
 rebuilding the complete content-addressed declaration graph. -/
