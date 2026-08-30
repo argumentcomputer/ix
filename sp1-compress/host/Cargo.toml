@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-aiur = { path = "../../crates/aiur", features = ["parallel"] }
+ix-terminal = { path = "../../crates/terminal" }
 # Keep this identical to the root workspace and the guest.
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2892243e674f9a0b3aca9004a8d00c79a23beec1", features = ["parallel"] }
 blake3 = "1"
