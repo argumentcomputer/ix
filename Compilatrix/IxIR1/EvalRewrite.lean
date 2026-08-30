@@ -65,6 +65,32 @@ structure AbstractEnvironment (before after : Ctx) : Prop where
           target.result = source.result ∧
           FunctionBodyRefines before source target
 
+/-- Strong body obligation for rewrites which preserve the complete evaluator
+result, including errors, stores, counters, and allocation identities. -/
+def FunctionBodyEq (ctx : Ctx) (source target : FnDef) : Prop :=
+  ∀ {fuel : Nat} {store : Store} {environment : List RVal},
+    environment.length = source.arity →
+      runCode ctx fuel target store environment target.body =
+        runCode ctx fuel source store environment source.body
+
+/-- Exact declaration-environment replacement.  Source misses remain misses;
+externs are unchanged; and every source function maps to a calling-convention
+compatible target whose body is exactly equivalent in the source context. -/
+structure ExactEnvironment (before after : Ctx) : Prop where
+  oracle_eq : after.oracle = before.oracle
+  missing : ∀ {address : Address}, before.decls address = none →
+    after.decls address = none
+  extern : ∀ {address : Address} {arity : Nat},
+    before.decls address = some (.extern arity) →
+      after.decls address = some (.extern arity)
+  function : ∀ {address : Address} {source : FnDef},
+    before.decls address = some (.fn source) →
+      ∃ target : FnDef,
+        after.decls address = some (.fn target) ∧
+          target.arity = source.arity ∧
+          target.result = source.result ∧
+          FunctionBodyEq before source target
+
 namespace AbstractEnvironment
 
 theorem declaration {before after : Ctx}
@@ -1297,5 +1323,426 @@ theorem applyGo_abstractEnvironment
         RunHistoryIso heap sourceOut targetOut :=
   applyGo_crossOfSame (evalRewriteAt abstract fuel) heap hfunction harguments
     hrun
+
+/-! ## Exact declaration-environment replacement -/
+
+private theorem runCode_case_exactEnvironment_eq
+    {before after : Ctx} {fuel : Nat}
+    (ih : ∀ (current : FnDef) (store : Store)
+      (environment : List RVal) (input : Code),
+      runCode after fuel current store environment input =
+        runCode before fuel current store environment input)
+    (current : FnDef) (store : Store) (environment : List RVal)
+    (scrutinee : Atom) (peelNat : Bool) (alternatives : Array Alt) :
+    runCode after (fuel + 1) current store environment
+        (.case scrutinee peelNat alternatives) =
+      runCode before (fuel + 1) current store environment
+        (.case scrutinee peelNat alternatives) := by
+  simp only [runCode]
+  cases hscrutinee : resolveAtom environment scrutinee with
+  | error error => simp [bind, Except.bind]
+  | ok value =>
+      simp only [bind, Except.bind]
+      cases value with
+      | erased => simp
+      | lit literal =>
+          cases literal with
+          | str value => simp
+          | nat value =>
+              simp only
+              cases peelNat with
+              | false => simp
+              | true =>
+                  simp only
+                  cases value with
+                  | zero =>
+                      simp only
+                      cases hfind : alternatives.find?
+                          (fun alternative => alternative.cidx == 0) with
+                      | none => simp
+                      | some alternative =>
+                          cases alternative with
+                          | mk cidx fields body =>
+                              cases fields with
+                              | zero =>
+                                  simpa using
+                                    ih current store environment body
+                              | succ fields => simp
+                  | succ value =>
+                      simp only
+                      cases hfind : alternatives.find?
+                          (fun alternative => alternative.cidx == 1) with
+                      | none => simp
+                      | some alternative =>
+                          cases alternative with
+                          | mk cidx fields body =>
+                              cases fields with
+                              | zero => simp
+                              | succ fields =>
+                                  cases fields with
+                                  | zero =>
+                                      simpa using ih current store
+                                        (.lit (.nat value) :: environment)
+                                        body
+                                  | succ fields => simp
+      | loc location =>
+          simp only
+          cases hget : store.get? location with
+          | none => simp
+          | some box =>
+              simp only
+              cases hnode : box.node with
+              | papN function arity arguments => simp
+              | ctorN identity fields =>
+                  simp only
+                  cases hfind : alternatives.find?
+                      (fun alternative =>
+                        alternative.cidx == identity.cidx) with
+                  | none => simp
+                  | some alternative =>
+                      cases alternative with
+                      | mk cidx fieldCount body =>
+                          by_cases hfields : fields.size = fieldCount
+                          · simpa [hfields] using
+                              ih current store
+                                (fields.foldl
+                                  (fun result field => field :: result)
+                                  environment) body
+                          · simp [hfields]
+
+private structure ExactRewriteAt (before after : Ctx) (fuel : Nat) : Prop where
+  runCode : ∀ (current : FnDef) (store : Store)
+      (environment : List RVal) (input : Code),
+    runCode after fuel current store environment input =
+      runCode before fuel current store environment input
+  runOp : ∀ (current : FnDef) (store : Store)
+      (environment : List RVal) (operation : Op),
+    runOp after fuel current store environment operation =
+      runOp before fuel current store environment operation
+  invoke : ∀ (function : Address) (arguments : List RVal) (store : Store),
+    IxIR1.invoke after fuel function arguments store =
+      IxIR1.invoke before fuel function arguments store
+  applyGo : ∀ (store : Store) (function : RVal) (arguments : List RVal),
+    IxIR1.applyGo after fuel store function arguments =
+      IxIR1.applyGo before fuel store function arguments
+  dropVal : ∀ (store : Store) (value : RVal),
+    IxIR1.dropVal after fuel store value =
+      IxIR1.dropVal before fuel store value
+  dropMany : ∀ (store : Store) (values : List RVal),
+    IxIR1.dropMany after fuel store values =
+      IxIR1.dropMany before fuel store values
+  dropUVal : ∀ (store : Store) (value : RVal),
+    IxIR1.dropUVal after fuel store value =
+      IxIR1.dropUVal before fuel store value
+  dropManyU : ∀ (store : Store) (values : List RVal),
+    IxIR1.dropManyU after fuel store values =
+      IxIR1.dropManyU before fuel store values
+
+private theorem exactRewriteAt {before after : Ctx}
+    (exact : ExactEnvironment before after) :
+    ∀ fuel, ExactRewriteAt before after fuel := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      constructor <;> intros <;>
+        simp [runCode, runOp, IxIR1.invoke, IxIR1.applyGo,
+          IxIR1.dropVal, IxIR1.dropMany, IxIR1.dropUVal,
+          IxIR1.dropManyU]
+  | succ fuel smaller =>
+      refine {
+        runCode := ?_
+        runOp := ?_
+        invoke := ?_
+        applyGo := ?_
+        dropVal := ?_
+        dropMany := ?_
+        dropUVal := ?_
+        dropManyU := ?_ }
+      · intro current store environment input
+        cases input with
+        | ret atom => simp [runCode]
+        | letOp operation rest =>
+            simp only [runCode]
+            rw [smaller.runOp current store environment operation]
+            cases hoperation : runOp before fuel current store environment
+                operation with
+            | error error => rfl
+            | ok output =>
+                rcases output with ⟨next, value⟩
+                exact smaller.runCode current next (value :: environment) rest
+        | case scrutinee peelNat alternatives =>
+            exact runCode_case_exactEnvironment_eq smaller.runCode current
+              store environment scrutinee peelNat alternatives
+      · intro current store environment operation
+        cases operation with
+        | pure atom => simp [runOp]
+        | alloc world identity arguments => simp [runOp]
+        | reuse target identity arguments => simp [runOp]
+        | free target => simp [runOp]
+        | dup target => simp [runOp]
+        | drop target =>
+            simp only [runOp]
+            cases htarget : resolveAtom environment target with
+            | error error => simp [bind, Except.bind]
+            | ok value =>
+                simp only [bind, Except.bind]
+                cases value with
+                | lit literal => rfl
+                | erased => rfl
+                | loc location =>
+                    change (do
+                        let next ← IxIR1.dropVal after fuel store
+                          (.loc location)
+                        .ok (next, RVal.erased)) =
+                      (do
+                        let next ← IxIR1.dropVal before fuel store
+                          (.loc location)
+                        .ok (next, RVal.erased))
+                    rw [smaller.dropVal store (.loc location)]
+        | dropU target =>
+            simp only [runOp]
+            cases htarget : resolveAtom environment target with
+            | error error => simp [bind, Except.bind]
+            | ok value =>
+                simp only [bind, Except.bind]
+                cases value with
+                | lit literal => rfl
+                | erased => rfl
+                | loc location =>
+                    change (do
+                        let next ← IxIR1.dropUVal after fuel store
+                          (.loc location)
+                        .ok (next, RVal.erased)) =
+                      (do
+                        let next ← IxIR1.dropUVal before fuel store
+                          (.loc location)
+                        .ok (next, RVal.erased))
+                    rw [smaller.dropUVal store (.loc location)]
+        | fetch target field => simp [runOp]
+        | call function atoms =>
+            simp only [runOp]
+            cases harguments : resolveAtoms environment atoms with
+            | error error => rfl
+            | ok arguments => exact smaller.invoke function arguments store
+        | callSelf atoms =>
+            simp only [runOp]
+            cases harguments : resolveAtoms environment atoms with
+            | error error => simp [bind, Except.bind]
+            | ok arguments =>
+                simp only [bind, Except.bind]
+                by_cases harity : arguments.length = current.arity
+                · simp only [harity]
+                  rw [smaller.runCode current store arguments.reverse
+                    current.body]
+                · simp [harity]
+        | papp function atoms =>
+            simp only [runOp]
+            cases harguments : resolveAtoms environment atoms with
+            | error error => simp [bind, Except.bind]
+            | ok arguments =>
+                simp only [bind, Except.bind]
+                cases hsource : before.decls function with
+                | none =>
+                    have htarget := exact.missing hsource
+                    simp [htarget]
+                | some declaration =>
+                    cases declaration with
+                    | extern arity =>
+                        have htarget := exact.extern hsource
+                        simp [htarget]
+                    | fn source =>
+                        obtain ⟨target, htarget, harity, _, _⟩ :=
+                          exact.function hsource
+                        rw [htarget]
+                        simp only [declArity]
+                        simp [harity]
+                        rfl
+        | apply function atoms =>
+            simp only [runOp]
+            cases hfunction : resolveAtom environment function with
+            | error error => rfl
+            | ok value =>
+                cases harguments : resolveAtoms environment atoms with
+                | error error => rfl
+                | ok arguments => exact smaller.applyGo store value arguments
+        | extern function atoms =>
+            simp [runOp, callScalarOracle, exact.oracle_eq]
+      · intro function arguments store
+        simp only [IxIR1.invoke]
+        cases hsource : before.decls function with
+        | none =>
+            have htarget := exact.missing hsource
+            simp [htarget]
+        | some declaration =>
+            cases declaration with
+            | extern arity =>
+                have htarget := exact.extern hsource
+                simp [htarget, callScalarOracle, exact.oracle_eq]
+            | fn source =>
+                obtain ⟨target, htarget, harity, hresult, hbody⟩ :=
+                  exact.function hsource
+                by_cases hsourceArity : arguments.length = source.arity
+                · have htargetArity : arguments.length = target.arity := by
+                    rw [harity]
+                    exact hsourceArity
+                  have hsourceArityBool :
+                      (arguments.length != source.arity) = false := by
+                    simp [hsourceArity]
+                  have htargetArityBool :
+                      (arguments.length != target.arity) = false := by
+                    simp [htargetArity]
+                  have hcombined :
+                      runCode after fuel target store arguments.reverse
+                          target.body =
+                        runCode before fuel source store arguments.reverse
+                          source.body :=
+                    (smaller.runCode target store arguments.reverse
+                      target.body).trans
+                        (hbody (by simpa using hsourceArity))
+                  have hchecked := congrArg
+                    (fun output => output >>= checkResultWorld source.result)
+                    hcombined
+                  simpa only [hsource, htarget, hsourceArityBool,
+                    htargetArityBool, Bool.false_eq_true, if_false, hresult]
+                    using hchecked
+                · have htargetArity :
+                      arguments.length ≠ target.arity := by
+                    rwa [harity]
+                  simp [htarget, hsourceArity, htargetArity]
+      · intro store function arguments
+        cases function with
+        | lit literal => simp [IxIR1.applyGo]
+        | erased =>
+            simp only [IxIR1.applyGo]
+            rw [smaller.dropMany store arguments]
+        | loc location =>
+            simp only [IxIR1.applyGo]
+            cases hbox : store.get? location with
+            | none => simp
+            | some box =>
+                simp only
+                cases hnode : box.node with
+                | ctorN identity fields => simp
+                | papN called arity captured =>
+                    simp only
+                    cases hdup : dupVals store captured.toList with
+                    | error error => simp [bind, Except.bind]
+                    | ok duplicated =>
+                        simp only [bind, Except.bind]
+                        rw [smaller.dropVal duplicated (.loc location)]
+                        cases hdrop : IxIR1.dropVal before fuel duplicated
+                            (.loc location) with
+                        | error error => rfl
+                        | ok dropped =>
+                            let total := captured.toList ++ arguments
+                            change (if total.length < arity then
+                                let (next, fresh) := dropped.allocNode .shared
+                                  (.papN called arity total.toArray)
+                                .ok (next, .loc fresh)
+                              else if total.length == arity then
+                                IxIR1.invoke after fuel called total dropped
+                              else do
+                                let (next, value) ← IxIR1.invoke after fuel
+                                  called (total.take arity) dropped
+                                IxIR1.applyGo after fuel next value
+                                  (total.drop arity)) =
+                              (if total.length < arity then
+                                let (next, fresh) := dropped.allocNode .shared
+                                  (.papN called arity total.toArray)
+                                .ok (next, .loc fresh)
+                              else if total.length == arity then
+                                IxIR1.invoke before fuel called total dropped
+                              else do
+                                let (next, value) ← IxIR1.invoke before fuel
+                                  called (total.take arity) dropped
+                                IxIR1.applyGo before fuel next value
+                                  (total.drop arity))
+                            by_cases hless : total.length < arity
+                            · simp [hless]
+                            · simp only [hless]
+                              by_cases hequal : total.length == arity
+                              · simp only [hequal]
+                                exact smaller.invoke called total dropped
+                              · simp only [hequal]
+                                rw [smaller.invoke called (total.take arity)
+                                  dropped]
+                                cases hinvoke : IxIR1.invoke before fuel called
+                                    (total.take arity) dropped with
+                                | error error => rfl
+                                | ok output =>
+                                    rcases output with ⟨next, value⟩
+                                    exact smaller.applyGo next value
+                                      (total.drop arity)
+      · intro store value
+        cases value with
+        | lit literal => simp [IxIR1.dropVal]
+        | erased => simp [IxIR1.dropVal]
+        | loc location =>
+            simp only [IxIR1.dropVal]
+            cases hbox : store.get? location with
+            | none => simp
+            | some box =>
+                simp only
+                cases hworld : box.world with
+                | unique => simp
+                | shared =>
+                    simp only
+                    by_cases hone : box.rc == 1
+                    · simp only [hone, ↓reduceIte]
+                      cases hnode : box.node with
+                      | ctorN identity fields =>
+                          simpa [hnode] using smaller.dropMany
+                            (store.rcTick.kill location) fields.toList
+                      | papN function arity arguments =>
+                          simpa [hnode] using smaller.dropMany
+                            (store.rcTick.kill location) arguments.toList
+                    · simp [hone]
+      · intro store values
+        cases values with
+        | nil => simp [IxIR1.dropMany]
+        | cons value rest =>
+            simp only [IxIR1.dropMany]
+            rw [smaller.dropVal store value]
+            cases hdrop : IxIR1.dropVal before fuel store value with
+            | error error => rfl
+            | ok next => exact smaller.dropMany next rest
+      · intro store value
+        cases value with
+        | lit literal => simp [IxIR1.dropUVal]
+        | erased => simp [IxIR1.dropUVal]
+        | loc location =>
+            simp only [IxIR1.dropUVal]
+            cases hbox : store.get? location with
+            | none => simp
+            | some box =>
+                simp only
+                cases hworld : box.world with
+                | shared => simp
+                | unique =>
+                    simp only
+                    cases hnode : box.node with
+                    | ctorN identity fields =>
+                        simpa [hnode] using smaller.dropManyU
+                          (store.kill location) fields.toList
+                    | papN function arity arguments => simp
+      · intro store values
+        cases values with
+        | nil => simp [IxIR1.dropManyU]
+        | cons value rest =>
+            simp only [IxIR1.dropManyU]
+            rw [smaller.dropUVal store value]
+            cases hdrop : IxIR1.dropUVal before fuel store value with
+            | error error => rfl
+            | ok next => exact smaller.dropManyU next rest
+
+/-- Exact declaration replacement preserves the complete evaluator result for
+arbitrary surrounding code and dynamic current frames. -/
+theorem runCode_exactEnvironment_eq
+    {before after : Ctx} (exact : ExactEnvironment before after)
+    {fuel : Nat} {current : FnDef} {store : Store}
+    {environment : List RVal} {input : Code} :
+    runCode after fuel current store environment input =
+      runCode before fuel current store environment input :=
+  (exactRewriteAt exact fuel).runCode current store environment input
 
 end Compilatrix.IxIR1.Sim

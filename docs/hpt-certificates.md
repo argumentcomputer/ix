@@ -229,11 +229,12 @@ owner-sensitive traversal to every stored function while preserving extern
 declarations, function arities, and result-world contracts. The declaration
 address is threaded through both logical environment lookup and concrete list
 rebuilding. `HPTCasePruneProgram.lean` proves this logical old-keyed program
-equivalent by one common fuel induction over `runCode`, `runOp`, direct
-invocation, PAP application, and all recursive drop entries. That proof covers
-direct calls into rewritten bodies, dynamic `callSelf`,
-under/exact/over-application, successful stores and values, every error, and
-instruction counters.
+an instance of `EvalRewrite.ExactEnvironment`: misses and externs are retained,
+calling conventions are stable, and each owner-sensitive rewritten body is
+exactly equivalent in the source context. The generic fuel induction then
+covers direct calls into rewritten bodies, dynamic `callSelf`,
+under/exact/over-application, PAP application, recursive drop entries,
+successful stores and values, every error, and instruction counters.
 
 `HPTPAPFuse.lean` adds the first O1 consumer. Its executable checker recognizes
 an adjacent PAP allocation and application, validates the declaration arity,
@@ -254,10 +255,12 @@ arbitrary fuel. The scalar-capture restriction is the current ownership
 boundary: IxIR₁ declarations retain result ownership but not parameter modes,
 so HPT cannot certify an arbitrary heap capture as shared.
 
-`EvalRewrite.lean` packages an abstract declaration-environment relation whose
-function clause preserves arity, result ownership, and successful body runs
-modulo heap allocation history. Its common evaluator induction covers direct
-calls, dynamic `callSelf`, PAP application, and reclamation entries.
+`EvalRewrite.lean` packages two declaration-environment relations over the same
+owner-sensitive calling boundary. `ExactEnvironment` preserves complete
+evaluator results and is used by case pruning; `AbstractEnvironment` preserves
+successful body runs modulo heap allocation history and is used by PAP fusion.
+Their common evaluator arguments cover direct calls, dynamic `callSelf`, PAP
+application, and reclamation entries.
 `HPTPAPFuseProgram.lean` instantiates that relation for the composed case/PAP
 rewrite, proves top-level main refinement under a fail-closed synthetic-owner
 condition, and transports the result through one exact content-address

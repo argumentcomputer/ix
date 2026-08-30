@@ -819,6 +819,9 @@ heap-history evaluator congruence and its executable local decision theorem. -/
 /-- info: 'Compilatrix.IxIR1.Sim.runCode_abstractEnvironment' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.Sim.runCode_abstractEnvironment
 
+/-- info: 'Compilatrix.IxIR1.Sim.runCode_exactEnvironment_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Sim.runCode_exactEnvironment_eq
+
 /-- info: 'Compilatrix.IxIR1.HPT.OptimizeProgram.runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
