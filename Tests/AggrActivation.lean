@@ -194,7 +194,7 @@ private def prepareChild (ixvmSystem selfSystem : Aiur.AiurSystem)
   let (system, idx, input) := match kind with
     | .ixvm => (ixvmSystem, indices.verify, Aggr.digestGs claimBytes)
     | .aggr => (selfSystem, indices.aggr, Aggr.pubInput allowed claimBytes)
-  let (outer, proof, _) := system.prove idx input default
+  let (outer, proof, _) ← system.prove idx input default
   let proofAdviceBytes ← system.proofToAdviceBytes outer proof
   pure {
     proofAdviceBytes

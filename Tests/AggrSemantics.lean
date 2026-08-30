@@ -155,10 +155,14 @@ def semanticSuite : IO UInt32 := do
     allowed fakeAggrIdx right.claim
   let flatOuter := Ix.Cli.AggregateCmd.aggregateOuterClaim
     allowed fakeAggrIdx flatOutput.claim
-  let (_, leftProof, _) := selfSystem.prove fakeAggrIdx
-    (Aggr.pubInput allowed leftBytes) default
-  let (_, rightProof, _) := selfSystem.prove fakeAggrIdx
-    (Aggr.pubInput allowed rightBytes) default
+  let (_, leftProof, _) ← match selfSystem.prove fakeAggrIdx
+      (Aggr.pubInput allowed leftBytes) default with
+    | .error e => IO.eprintln s!"left aggregate prove failed: {e}"; return 1
+    | .ok result => pure result
+  let (_, rightProof, _) ← match selfSystem.prove fakeAggrIdx
+      (Aggr.pubInput allowed rightBytes) default with
+    | .error e => IO.eprintln s!"right aggregate prove failed: {e}"; return 1
+    | .ok result => pure result
   let outerClaimBindsValue := leftOuter != rightOuter &&
     flatOuter == Aiur.buildClaim fakeAggrIdx (Aggr.pubInput allowed flatBytes) #[]
 
@@ -471,8 +475,10 @@ def semanticSuite : IO UInt32 := do
         | .ok () => pure ()
         | .error e => return .error e
     let claimBytes := Ix.Claim.ser claim
-    let (outer, proof, _) := scheduledSystem.prove fakeAggrIdx
-      (Aggr.pubInput scheduledAllowed claimBytes) default
+    let (outer, proof, _) ← match scheduledSystem.prove fakeAggrIdx
+        (Aggr.pubInput scheduledAllowed claimBytes) default with
+      | .error e => return .error e
+      | .ok result => pure result
     if outer != scheduledOuter claim then
       return .error s!"scheduled slot {slotIdx} outer claim mismatch"
     pure (.ok proof.toBytes)

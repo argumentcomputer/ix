@@ -241,13 +241,13 @@ def smokeSuite : IO UInt32 := do
   -- ── child proofs ────────────────────────────────────────────────────────
   -- Kind 0 ("IxVM"): claim = [0, fake_verify_claim, digest(CheckEnv bytes)].
   let mkIxvmChild (claimBytes : ByteArray) : Except String ChildSlot := do
-    let (claim, proof, _) :=
+    let (claim, proof, _) ←
       ixvmSystem.prove fakeVerifyIdx (Aggr.digestGs claimBytes) default
     let proofAdviceBytes ← ixvmSystem.proofToAdviceBytes claim proof
     pure ⟨proofAdviceBytes, MultiStark.serializeClaims #[claim]⟩
   -- Kind 1 ("self"): claim = [0, fake_aggr, digest(allowed), digest(CheckEnv)].
   let mkSelfChild (blob claimBytes : ByteArray) : Except String ChildSlot := do
-    let (claim, proof, _) :=
+    let (claim, proof, _) ←
       aggrSystem.prove fakeAggrIdx (Aggr.pubInput blob claimBytes) default
     let proofAdviceBytes ← aggrSystem.proofToAdviceBytes claim proof
     pure ⟨proofAdviceBytes, MultiStark.serializeClaims #[claim]⟩

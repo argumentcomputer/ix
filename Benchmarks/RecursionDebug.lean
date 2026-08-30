@@ -92,8 +92,9 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
   let (claim, proof) ←
     if skipDeps then
       let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-      let (claim, proof, _) := aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
-      pure (claim, proof)
+      match aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer with
+      | .error e => IO.eprintln s!"proveIxVM failed: {e}"; return none
+      | .ok (claim, proof, _) => pure (claim, proof)
     else do
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe: {e}"; return none

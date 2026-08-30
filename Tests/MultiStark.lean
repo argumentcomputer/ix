@@ -159,7 +159,9 @@ def endToEndSuite : IO UInt32 := do
 
   -- ── prove factorial(5) = 120 (`G` is a reserved DSL token, spell it qualified)
   let input := #[Aiur.G.ofNat 5]
-  let (claim, proof, _) := facSystem.prove facIdx input default
+  let (claim, proof, _) ← match facSystem.prove facIdx input default with
+    | .ok result => pure result
+    | .error e => IO.eprintln s!"factorial prove failed: {e}"; return 1
   let expectedClaim := buildClaim facIdx input #[Aiur.G.ofNat 120]
   -- The in-circuit verifier consumes the per-query advice transport, not
   -- the pruned-multiproof wire format `Proof.toBytes` carries.
@@ -412,10 +414,16 @@ def joinSmokeSuite : IO UInt32 := do
     let innerClaimsBytes := MultiStark.serializeClaims #[innerClaim]
     let fakeIxvmVk : ByteArray := ⟨#[0x49, 0x58, 0x56, 0x4d]⟩
     let liftInput := MultiStark.verifierPubInput fakeIxvmVk innerClaimsBytes
-    let (outerClaim, proof, _) := childSystem.prove liftIdx liftInput default
-    (fakeIxvmVk, innerClaimsBytes, outerClaim, proof)
-  let (fakeIxvmVk, leftInnerClaims, leftOuter, leftProof) := mkLift leftClaimBytes
-  let (_, rightInnerClaims, rightOuter, rightProof) := mkLift rightClaimBytes
+    (childSystem.prove liftIdx liftInput default).map fun (outerClaim, proof, _) =>
+      (fakeIxvmVk, innerClaimsBytes, outerClaim, proof)
+  let (fakeIxvmVk, leftInnerClaims, leftOuter, leftProof) ←
+    match mkLift leftClaimBytes with
+    | .error e => IO.eprintln s!"left lift prove failed: {e}"; return 1
+    | .ok result => pure result
+  let (_, rightInnerClaims, rightOuter, rightProof) ←
+    match mkLift rightClaimBytes with
+    | .error e => IO.eprintln s!"right lift prove failed: {e}"; return 1
+    | .ok result => pure result
   let leftProofAdvice ← match childSystem.proofToAdviceBytes leftOuter leftProof with
     | .error e => IO.eprintln s!"left proof advice encoding failed: {e}"; return 1
     | .ok bytes => pure bytes
@@ -679,8 +687,10 @@ def joinSmokeSuite : IO UInt32 := do
   -- same allowed digest transitively, while its output-claim preimage replaces
   -- a lift's two nested preimages.
   let joinChildInput := MultiStark.joinPubInput allowed leftClaimBytes
-  let (joinChildOuter, joinChildProof, _) :=
-    childSystem.prove childJoinIdx joinChildInput default
+  let (joinChildOuter, joinChildProof, _) ←
+    match childSystem.prove childJoinIdx joinChildInput default with
+    | .error e => IO.eprintln s!"join child prove failed: {e}"; return 1
+    | .ok result => pure result
   let joinChildOuterBytes := MultiStark.serializeClaims #[joinChildOuter]
   let joinChildLayout :=
     joinChildOuter.extract 2 10 == MultiStark.digestGs allowed &&
@@ -698,8 +708,10 @@ def joinSmokeSuite : IO UInt32 := do
   let wrongAllowed := allowed.set! 0
     (UInt8.ofNat ((allowed.data[0]!.toNat + 1) % 256))
   let wrongJoinChildInput := MultiStark.joinPubInput wrongAllowed leftClaimBytes
-  let (wrongJoinOuter, wrongJoinProof, _) :=
-    childSystem.prove childJoinIdx wrongJoinChildInput default
+  let (wrongJoinOuter, wrongJoinProof, _) ←
+    match childSystem.prove childJoinIdx wrongJoinChildInput default with
+    | .error e => IO.eprintln s!"wrong join child prove failed: {e}"; return 1
+    | .ok result => pure result
   let wrongJoinOuterBytes := MultiStark.serializeClaims #[wrongJoinOuter]
   let wrongJoinProofAdvice ← match childSystem.proofToAdviceBytes
       wrongJoinOuter wrongJoinProof with
@@ -714,8 +726,10 @@ def joinSmokeSuite : IO UInt32 := do
   -- A structural child exposes the same allowed/output public digests as a
   -- flat child, distinguished only by its pinned function index.
   let structuralChildInput := MultiStark.joinPubInput allowed structuralClaimBytes
-  let (structuralChildOuter, structuralChildProof, _) :=
-    childSystem.prove childStructuralJoinIdx structuralChildInput default
+  let (structuralChildOuter, structuralChildProof, _) ←
+    match childSystem.prove childStructuralJoinIdx structuralChildInput default with
+    | .error e => IO.eprintln s!"structural child prove failed: {e}"; return 1
+    | .ok result => pure result
   let structuralChildOuterBytes :=
     MultiStark.serializeClaims #[structuralChildOuter]
   let structuralChildLayout :=
@@ -817,7 +831,9 @@ def joinSmokeSuite : IO UInt32 := do
       let claimsBytes := if slotIdx == 0 then leftInnerClaims else rightInnerClaims
       let expectedOuter := if slotIdx == 0 then leftOuter else rightOuter
       let liftInput := MultiStark.verifierPubInput fakeIxvmVk claimsBytes
-      let (outer, proof, _) := scheduledProofSystem.prove liftIdx liftInput default
+      let (outer, proof, _) ← match scheduledProofSystem.prove liftIdx liftInput default with
+        | .error e => return .error e
+        | .ok result => pure result
       if outer != expectedOuter then return .error "scheduled lift claim mismatch"
       pure (.ok proof.toBytes)
     | 2 =>
@@ -835,7 +851,10 @@ def joinSmokeSuite : IO UInt32 := do
           scheduledProofSystem.verify rightOuter rightProof with
       | .ok (), .ok () => pure ()
       | .error e, _ | _, .error e => return .error e
-      let (outer, proof, _) := scheduledProofSystem.prove childJoinIdx pubInput default
+      let (outer, proof, _) ←
+        match scheduledProofSystem.prove childJoinIdx pubInput default with
+        | .error e => return .error e
+        | .ok result => pure result
       if outer != Aiur.buildClaim childJoinIdx pubInput #[] then
         return .error "scheduled join claim mismatch"
       pure (.ok proof.toBytes)

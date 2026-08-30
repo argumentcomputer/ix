@@ -653,13 +653,13 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let (proveRes, proveSec) ← timed fun _ =>
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          let (claim, proof, ioBuf) :=
+          let proveRes :=
             if useInterp then
               aiurSystem.prove funIdx witness.input witness.inputIOBuffer
             else
               aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
-          (.ok (claim, proof, ioBuf, none) : Except String
-            (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer × Option ByteArray))
+          proveRes.map fun (claim, proof, ioBuf) =>
+            (claim, proof, ioBuf, (none : Option ByteArray))
         else if join then
           match aiurSystem.shardProveWithEnv funIdx envHandle
               (singletonOwnedBlob addr) with
@@ -757,9 +757,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             IO.println s!"  [{i + 1}/{ordered.size}] proving the verifier over {r.name} …"
             (← IO.getStdout).flush
             TracingTexray.resetPeakTreeRss
-            let ((rvClaim, rvProof), rvProveSec) ← timed fun _ =>
+            let (rvProveRes, rvProveSec) ← timed fun _ =>
               vSystem.proveMultiStark vIdx pubInput adviceBytes vkBytes
                 innerClaimsBytes useInterp
+            let (rvClaim, rvProof) ← match rvProveRes with
+              | .ok result => pure result
+              | .error e =>
+                IO.eprintln s!"  outer prove {r.name} failed: {e}"
+                continue
             let rvPeak ← TracingTexray.peakTreeRssBytes
             let rvProofBytes := Aiur.Proof.toBytes rvProof
             let (rvVerifyRes, rvVerifySec) ← timed fun _ =>

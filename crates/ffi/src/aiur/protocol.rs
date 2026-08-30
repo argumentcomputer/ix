@@ -264,15 +264,17 @@ extern "C" fn rs_aiur_system_prove(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
-) -> LeanAiurProveResult<LeanOwned> {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let args = args.map(|x| lean_unbox_g(&x));
-  let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind("AiurSystem.prove", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let args = args.map(|x| lean_unbox_g(&x));
+    let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
-  let (claim, proof) =
-    aiur_system_obj.get().prove(fun_idx, &args, &mut io_buffer);
+    let (claim, proof) =
+      aiur_system_obj.get().prove(fun_idx, &args, &mut io_buffer);
 
-  build_prove_result(&claim, proof, &io_buffer)
+    build_prove_result(&claim, proof, &io_buffer).into()
+  })
 }
 
 // =============================================================================
@@ -893,44 +895,47 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let addr = match decode_addr(&addr_bytes) {
-    Ok(a) => a,
-    Err(e) => return LeanExcept::error_string(&e),
-  };
-  let env = &env_handle.get().env;
+  ffi_catch_unwind_except("AiurSystem.proveAddrWithEnv", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let addr = match decode_addr(&addr_bytes) {
+      Ok(a) => a,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let env = &env_handle.get().env;
 
-  let (claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
-    {
-      Ok(t) => t,
-      Err(e) => {
-        return LeanExcept::error_string(&format!("witness build: {e}"));
-      },
+    let (claim, input, mut io_buffer) =
+      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
+        env, &addr,
+      ) {
+        Ok(t) => t,
+        Err(e) => {
+          return LeanExcept::error_string(&format!("witness build: {e}"));
+        },
+      };
+
+    // `use_bytecode` selects the generic Aiur bytecode interpreter over the
+    // codegen'd IxVM kernel (same toggle as
+    // `rs_aiur_toplevel_check_addr_with_env`).
+    let (_aiur_claim_arr, proof) = if use_bytecode {
+      aiur_system_obj.get().prove_ixvm(
+        fun_idx,
+        &input,
+        &mut io_buffer,
+        |toplevel, fun_idx, input, io_buffer| {
+          toplevel.execute(fun_idx, input, io_buffer)
+        },
+      )
+    } else {
+      aiur_system_obj.get().prove_ixvm(
+        fun_idx,
+        &input,
+        &mut io_buffer,
+        ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+      )
     };
 
-  // `use_bytecode` selects the generic Aiur bytecode interpreter over the
-  // codegen'd IxVM kernel (same toggle as
-  // `rs_aiur_toplevel_check_addr_with_env`).
-  let (_aiur_claim_arr, proof) = if use_bytecode {
-    aiur_system_obj.get().prove_ixvm(
-      fun_idx,
-      &input,
-      &mut io_buffer,
-      |toplevel, fun_idx, input, io_buffer| {
-        toplevel.execute(fun_idx, input, io_buffer)
-      },
-    )
-  } else {
-    aiur_system_obj.get().prove_ixvm(
-      fun_idx,
-      &input,
-      &mut io_buffer,
-      ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
-    )
-  };
-
-  LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
+    LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
+  })
 }
 
 /// `AiurSystem.shardProveWithEnv`: per-shard prove against a
@@ -946,31 +951,33 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let owned = match decode_owned_blob(&owned_blob) {
-    Ok(v) => v,
-    Err(e) => return LeanExcept::error_string(&e),
-  };
-  let env = &env_handle.get().env;
-
-  let (claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned,
-    ) {
-      Ok(t) => t,
-      Err(e) => {
-        return LeanExcept::error_string(&format!("witness build: {e}"));
-      },
+  ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let owned = match decode_owned_blob(&owned_blob) {
+      Ok(v) => v,
+      Err(e) => return LeanExcept::error_string(&e),
     };
+    let env = &env_handle.get().env;
 
-  let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
-    fun_idx,
-    &input,
-    &mut io_buffer,
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
-  );
+    let (claim, input, mut io_buffer) =
+      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+        env, &owned,
+      ) {
+        Ok(t) => t,
+        Err(e) => {
+          return LeanExcept::error_string(&format!("witness build: {e}"));
+        },
+      };
 
-  LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
+    let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
+      fun_idx,
+      &input,
+      &mut io_buffer,
+      ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+    );
+
+    LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
+  })
 }
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
@@ -985,19 +992,21 @@ extern "C" fn rs_aiur_system_prove_ixvm(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
-) -> LeanAiurProveResult<LeanOwned> {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let args = args.map(|x| lean_unbox_g(&x));
-  let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind("AiurSystem.proveIxVM", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let args = args.map(|x| lean_unbox_g(&x));
+    let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
-  let (claim, proof) = aiur_system_obj.get().prove_ixvm(
-    fun_idx,
-    &args,
-    &mut io_buffer,
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
-  );
+    let (claim, proof) = aiur_system_obj.get().prove_ixvm(
+      fun_idx,
+      &args,
+      &mut io_buffer,
+      ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+    );
 
-  build_prove_result(&claim, proof, &io_buffer)
+    build_prove_result(&claim, proof, &io_buffer).into()
+  })
 }
 
 /// `Bytecode.Toplevel.executeMultiStark`: run the MultiStark recursive
@@ -1165,32 +1174,34 @@ extern "C" fn rs_aiur_multi_stark_prove(
   vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
   claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
-) -> LeanOwned {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let mut io_buffer = ixvm_codegen::aiur_multi_stark_runner::verifier_io_buffer(
-    proof_bytes.as_bytes(),
-    vk_bytes.as_bytes(),
-    claims_bytes.as_bytes(),
-  );
-  let args = pub_input.map(|x| lean_unbox_g(&x));
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind("AiurSystem.proveMultiStark", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let mut io_buffer =
+      ixvm_codegen::aiur_multi_stark_runner::verifier_io_buffer(
+        proof_bytes.as_bytes(),
+        vk_bytes.as_bytes(),
+        claims_bytes.as_bytes(),
+      );
+    let args = pub_input.map(|x| lean_unbox_g(&x));
 
-  let system = aiur_system_obj.get();
-  let (claim, proof) = if use_bytecode {
-    system.prove(fun_idx, &args, &mut io_buffer)
-  } else {
-    system.prove_ixvm(
-      fun_idx,
-      &args,
-      &mut io_buffer,
-      ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark,
-    )
-  };
+    let system = aiur_system_obj.get();
+    let (claim, proof) = if use_bytecode {
+      system.prove(fun_idx, &args, &mut io_buffer)
+    } else {
+      system.prove_ixvm(
+        fun_idx,
+        &args,
+        &mut io_buffer,
+        ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark,
+      )
+    };
 
-  let lean_proof: LeanOwned =
-    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
-  // Array G × Proof
-  let result = LeanProd::new(build_g_array(&claim), lean_proof);
-  result.into()
+    let lean_proof: LeanOwned =
+      LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+    // Array G × Proof
+    LeanProd::new(build_g_array(&claim), lean_proof).into()
+  })
 }
 
 /// `AiurSystem.proveMultiStarkJoin`: prove one valid join-entrypoint execution
@@ -1418,6 +1429,42 @@ extern "C" fn rs_aiur_ix_aggr_prove(
 // =============================================================================
 // Helpers
 // =============================================================================
+
+/// Prevent Rust panics (including CUDA runtime failures) from unwinding across
+/// the Lean C ABI. Lean receives the failure as an ordinary `Except.error`.
+fn ffi_catch_unwind(
+  context: &str,
+  f: impl FnOnce() -> LeanOwned,
+) -> LeanExcept<LeanOwned> {
+  match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+    Ok(value) => LeanExcept::ok(value),
+    Err(payload) => {
+      let message = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown Rust panic");
+      LeanExcept::error_string(&format!("{context}: {message}"))
+    },
+  }
+}
+
+fn ffi_catch_unwind_except(
+  context: &str,
+  f: impl FnOnce() -> LeanExcept<LeanOwned>,
+) -> LeanExcept<LeanOwned> {
+  match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+    Ok(result) => result,
+    Err(payload) => {
+      let message = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown Rust panic");
+      LeanExcept::error_string(&format!("{context}: {message}"))
+    },
+  }
+}
 
 /// Build a Lean `Array G` from a slice of field elements.
 fn build_g_array(values: &[G]) -> LeanArray<LeanOwned> {

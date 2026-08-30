@@ -88,9 +88,11 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
         return 1
       | .ok (_claimBytes, proof, _outIO) => pure proof
     | .leanW witness, _ =>
-      let (_aiurClaim, proof, _outIO) :=
-        aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
-      pure proof
+      match aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer with
+      | .error e =>
+        IO.eprintln s!"{label}: proveIxVM error: {e}"
+        return 1
+      | .ok (_aiurClaim, proof, _outIO) => pure proof
     | _, none =>
       IO.eprintln s!"{label}: internal: addr/shard target with no envHandle"
       return 1
