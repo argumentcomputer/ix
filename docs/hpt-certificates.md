@@ -11,9 +11,11 @@ complete stored function body, prunes impossible alternatives, and collapses
 the checked detailed-unary singleton case to one checked fetch even when the
 producer and case are not syntactically adjacent. Its whole-program path then
 performs a content-addressed graph rebuild; its proofs cover dynamic self calls
-and exact transport of the complete evaluator result. This is a semantically
-justified analysis and optimization boundary, not yet the full heap-points-to
-optimization pass.
+and exact transport of the complete evaluator result. Conservative scalar
+fetch forwarding and PAP/application fusion now compose with that consumer
+through the same owner-sensitive traversal and one content-address rebuild.
+This is a semantically justified analysis and optimization boundary, not yet
+the full heap-points-to optimization pass.
 
 The executable domain and checker are in `Compilatrix/IxIR1/HPT.lean`; their
 concrete interpretation and evaluator proof are in
@@ -26,9 +28,12 @@ untrusted cache scheduling, `HPTCacheIO.lean` is the bounded one-file adapter,
 `HPTCasePrune.lean` implements the checked local, compatibility-recursive, and
 owner-sensitive fact-propagating rewrites. `HPTCasePruneProgram.lean` closes
 the declaration-environment recursion, content-address rebuild, and exact
-whole-program evaluator transport. `Optimizer.lean` wraps that consumer in the
-versioned, deterministic, fail-soft O0 policy and reporting boundary described
-in the [optimizer harness](optimizer-harness.md).
+whole-program evaluator transport. `HPTFetchForward.lean` implements exact
+scalar projection forwarding, while `HPTPAPFuse.lean` implements local
+PAP/application fusion. `HPTPAPFuseProgram.lean` composes all three consumers.
+`Optimizer.lean` wraps that bundle in the versioned, deterministic, fail-soft
+policy and reporting boundary described in the
+[optimizer harness](optimizer-harness.md).
 
 ## Accepted claim
 
@@ -236,6 +241,23 @@ covers direct calls into rewritten bodies, dynamic `callSelf`,
 under/exact/over-application, PAP application, recursive drop entries,
 successful stores and values, every error, and instruction counters.
 
+`HPTFetchForward.lean` adds an exact owner-sensitive consumer for the local
+shape `let node := alloc/reuse ctor fields; let field := fetch node i; rest`.
+When the selected source atom is HPT-proven scalar, it replaces the fetch with
+`pure` of that atom lifted across the retained node binder. Both original
+binders and the constructor operation remain, so `runCode_forwardHead?_eq`
+proves equality of the complete evaluator result, including fuel behavior,
+store layout, allocation identities, and counters. The scalar gate is the
+syntax-ownership boundary: forwarding a heap-valued field source could
+duplicate an owner after installing it in the constructor. Missing facts,
+heap-capable sources, and out-of-range fields remain unchanged.
+
+`runCode_runWithFacts_eq_ownerCompatible` lifts the local equality through the
+same recursive HPT transfer used by case pruning. It accepts either a real
+stored-function owner or the top-level convention that the synthetic owner has
+no summary. This supports fresh allocations and successful in-place reuse with
+one theorem, while failing closed around ambiguous `main` owners.
+
 `HPTPAPFuse.lean` adds the first O1 consumer. Its executable checker recognizes
 an adjacent PAP allocation and application, validates the declaration arity,
 proves all captures scalar from the current HPT environment, lowers supplied
@@ -261,12 +283,13 @@ evaluator results and is used by case pruning; `AbstractEnvironment` preserves
 successful body runs modulo heap allocation history and is used by PAP fusion.
 Their common evaluator arguments cover direct calls, dynamic `callSelf`, PAP
 application, and reclamation entries.
-`HPTPAPFuseProgram.lean` instantiates that relation for the composed case/PAP
-rewrite, proves top-level main refinement under a fail-closed synthetic-owner
-condition, and transports the result through one exact content-address
-rebuild. A successful HPT check plus successful rebuild therefore authorizes
-`runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle`; PAP fusion version 1
-is enabled in `defaultPolicy`.
+`HPTPAPFuseProgram.lean` instantiates those relations for the composed
+case/fetch/PAP rewrite, proves top-level main refinement under a fail-closed
+synthetic-owner condition, and transports the result through one exact
+content-address rebuild. A successful HPT check plus successful rebuild
+therefore authorizes
+`runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle`; fetch forwarding
+version 1 and PAP fusion version 1 are enabled in `defaultPolicy`.
 
 Changed function bytes cannot retain their old content addresses.
 `ReaddressAll.rebuild` therefore alpha-renames function producers into a
@@ -279,9 +302,9 @@ in the emitted environment, and requires every emitted declaration to have a
 source producer. `runMain_exact_of_rebuild_eq_ok` then transports from the
 exact old-keyed declaration environment, without installing final-key aliases.
 
-`CasePrune.rebuildProgram` joins that rebuild to the logical HPT theorem and
-reports removals, collapses, and materialized fetches across the main and all
-declarations. The pipeline exposes
+The composed optimizer joins that rebuild to the logical HPT theorems and
+reports removals, collapses, materialized fetches, forwarded fetches, and PAP
+fusion classes across the main and all declarations. The pipeline exposes
 `checkAndPruneProgram[With]`, `pruneProgramWithProducedHPT`, and
 `pruneProgramWithCachedHPT`; `installPrunedProgram` installs the result while
 composing the artifact's original `targetAddressMap` through the rebuild map.

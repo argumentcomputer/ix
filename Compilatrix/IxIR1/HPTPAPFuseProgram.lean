@@ -1,17 +1,18 @@
 import Compilatrix.IxIR1.HPTCasePruneProgram
-import Compilatrix.IxIR1.HPTPAPFuse
+import Compilatrix.IxIR1.HPTFetchForward
 
 /-!
 # One-rebuild composition of checked HPT consumers
 
-Case simplification and local PAP fusion both consume the same old-keyed HPT
-certificate.  Readdressing between them would invalidate those keys.  This
-module therefore composes their logical declaration/main rewrites first and
-performs one complete content-address rebuild.
+Case simplification, scalar fetch forwarding, and local PAP fusion all consume
+the same old-keyed HPT certificate.  Readdressing between them would invalidate
+those keys.  This module therefore composes their logical declaration/main
+rewrites first and performs one complete content-address rebuild.
 
 Case simplification runs first.  Its unary collapse retains binder depth by
-materializing a fetch, so PAP fusion can analyze the resulting code with the
-same owner, arity, and entry fact environment.
+materializing a fetch.  Fetch forwarding then replaces only certified scalar
+allocation/reuse projections, and PAP fusion analyzes the resulting code with
+the same owner, arity, and entry fact environment.
 -/
 
 namespace Compilatrix.IxIR1.HPT.OptimizeProgram
@@ -21,15 +22,18 @@ open Compilatrix.IxIR1.Sim
 
 structure Passes where
   casePrune : Bool := true
+  fetchForward : Bool := true
   papFuse : Bool := true
   deriving BEq, Repr
 
 structure Changes where
   casePrune : CasePrune.Changes := {}
+  fetchForward : FetchForward.Changes := {}
   papFuse : PAPFuse.Changes := {}
 
 def Changes.add (left right : Changes) : Changes :=
   { casePrune := left.casePrune.add right.casePrune
+    fetchForward := left.fetchForward.add right.fetchForward
     papFuse := left.papFuse.add right.papFuse }
 
 structure CodeOutcome where
@@ -45,15 +49,22 @@ def rewriteCode (passes : Passes) (declarations : DeclEnv)
     else
       { code := input, removedAlternatives := 0, collapsedCases := 0,
         materializedFetches := 0 }
-  let fused : PAPFuse.Outcome :=
-    if passes.papFuse then
-      PAPFuse.runWithFacts declarations summaries owner current facts
+  let forwarded : FetchForward.Outcome :=
+    if passes.fetchForward then
+      FetchForward.runWithFacts declarations summaries owner current facts
         pruned.code
     else
       { code := pruned.code, changes := {} }
+  let fused : PAPFuse.Outcome :=
+    if passes.papFuse then
+      PAPFuse.runWithFacts declarations summaries owner current facts
+        forwarded.code
+    else
+      { code := forwarded.code, changes := {} }
   { code := fused.code
     changes :=
       { casePrune := pruned.changes
+        fetchForward := forwarded.changes
         papFuse := fused.changes } }
 
 def rewriteDeclaration (passes : Passes)
@@ -84,8 +95,9 @@ def rewriteCtx (passes : Passes) (declarations : DeclEnv)
       declArity declaration := by
   cases declaration <;> rfl
 
-/-- Both checked consumers compose under the original owner/current analysis
-frame.  Case pruning is exact; PAP fusion may change allocation history. -/
+/-- All checked consumers compose under the original owner/current analysis
+frame.  Case pruning and fetch forwarding are exact; PAP fusion may change
+allocation history. -/
 theorem rewriteCode_staticBodyRefines
     {passes : Passes} {declarations : DeclEnv} {summaries : SummaryEnv}
     (hpost : LocalPostFixpoint declarations summaries)
@@ -116,18 +128,35 @@ theorem rewriteCode_staticBodyRefines
         have heq := CasePrune.runCode_runWithFacts_eq hpost hctx hcurrent htop
           (input := current.body) (fuel := fuel)
         simpa [pruned, hcase] using heq.trans hrun
+  let forwarded : FetchForward.Outcome :=
+    if passes.fetchForward then
+      FetchForward.runWithFacts declarations summaries owner current facts
+        pruned.code
+    else
+      { code := pruned.code, changes := {} }
+  have hforwarded :
+      runCode ctx fuel current store environment forwarded.code =
+        .ok sourceOut := by
+    cases hfetch : passes.fetchForward with
+    | false => simpa [forwarded, hfetch] using hpruned
+    | true =>
+        have heq := FetchForward.runCode_runWithFacts_eq hpost hctx hcurrent
+          htop (input := pruned.code) (fuel := fuel)
+        simpa [forwarded, hfetch] using heq.trans hpruned
   cases hpap : passes.papFuse with
   | false =>
       obtain ⟨targetOut, htargetRun, hiso⟩ :=
-        runCode_historyIso base henvironment hpruned
+        runCode_historyIso base henvironment hforwarded
       exact ⟨targetOut, by
-        simpa [rewriteCode, facts, pruned, hpap] using htargetRun, hiso⟩
+        simpa [rewriteCode, facts, pruned, forwarded, hpap] using htargetRun,
+          hiso⟩
   | true =>
       obtain ⟨targetOut, htargetRun, hiso⟩ :=
         PAPFuse.runCode_runWithFacts_refines hpost hctx hcurrent base
-          henvironment htop hpruned
+          henvironment htop hforwarded
       exact ⟨targetOut, by
-        simpa [rewriteCode, facts, pruned, hpap] using htargetRun, hiso⟩
+        simpa [rewriteCode, facts, pruned, forwarded, hpap] using htargetRun,
+          hiso⟩
 
 /-- Closing the rewritten current-frame fixed point turns the composed local
 rewrite into the function obligation required by `AbstractEnvironment`. -/
@@ -255,9 +284,10 @@ theorem envOfList_rewriteEntries
       rfl
 
 /-- Main code has no stored declaration owner.  Case pruning retains its
-fixed-environment compatibility traversal.  PAP fusion uses the all-zero
-address only as the fail-soft `callSelf` analysis owner; ordinary direct
-calls, PAPs, and applies are unaffected by that placeholder. -/
+fixed-environment compatibility traversal.  Fetch forwarding and PAP fusion
+use the all-zero address only as the fail-soft `callSelf` analysis owner;
+ordinary heap operations, direct calls, PAPs, and applies are unaffected by
+that placeholder. -/
 def rewriteMain (passes : Passes) (declarations : DeclEnv)
     (summaries : SummaryEnv) (main : Code) : CodeOutcome :=
   let pruned : CasePrune.Outcome :=
@@ -269,14 +299,22 @@ def rewriteMain (passes : Passes) (declarations : DeclEnv)
         collapsedCases := 0
         materializedFetches := 0 }
   let current : FnDef := ⟨0, .shared, pruned.code⟩
-  let fused : PAPFuse.Outcome :=
-    if passes.papFuse && (summaries default).isNone then
-      PAPFuse.runWithFacts declarations summaries default current [] pruned.code
+  let forwarded : FetchForward.Outcome :=
+    if passes.fetchForward && (summaries default).isNone then
+      FetchForward.runWithFacts declarations summaries default current []
+        pruned.code
     else
       { code := pruned.code, changes := {} }
+  let fused : PAPFuse.Outcome :=
+    if passes.papFuse && (summaries default).isNone then
+      PAPFuse.runWithFacts declarations summaries default current []
+        forwarded.code
+    else
+      { code := forwarded.code, changes := {} }
   { code := fused.code
     changes :=
       { casePrune := pruned.changes
+        fetchForward := forwarded.changes
         papFuse := fused.changes } }
 
 /-- The canonical entry history for a fresh top-level execution. -/
@@ -285,10 +323,10 @@ def emptyHistoryIso : HeapHistoryIso ({} : Store) {} :=
     intro location box hbox
     simp [Store.get?] at hbox)
 
-/-- After recursive case pruning, the guarded PAP phase is a static rewrite
-of the zero-arity main frame.  If the sentinel owner has a summary, the phase
-is skipped; otherwise successful self analysis is impossible and the general
-owner-compatible PAP theorem applies. -/
+/-- After recursive case pruning, the guarded owner-sensitive phases are
+static rewrites of the zero-arity main frame.  If the sentinel owner has a
+summary, both phases are skipped; otherwise successful self analysis is
+impossible and their general owner-compatible theorems apply. -/
 theorem rewriteMain_staticBodyRefines
     {passes : Passes} {declarations : DeclEnv} {summaries : SummaryEnv}
     (hpost : LocalPostFixpoint declarations summaries)
@@ -306,32 +344,63 @@ theorem rewriteMain_staticBodyRefines
     StaticFunctionBodyRefines ctx source
       { source with body :=
           (rewriteMain passes declarations summaries main).code } := by
-  dsimp only
+  let pruned : CasePrune.Outcome :=
+    if passes.casePrune then
+      CasePrune.runRecursive declarations summaries main
+    else
+      { code := main
+        removedAlternatives := 0
+        collapsedCases := 0
+        materializedFetches := 0 }
+  let source : FnDef := ⟨0, .shared, pruned.code⟩
+  change StaticFunctionBodyRefines ctx source
+    { source with body :=
+        (rewriteMain passes declarations summaries main).code }
   intro fuel store environment sourceOut base hlength henvironment hrun
   have hempty : environment = [] := by
     cases environment with
     | nil => rfl
     | cons value rest => simp at hlength
   subst environment
-  cases hpap : passes.papFuse with
-  | false =>
+  cases hsummary : summaries default with
+  | some summary =>
       obtain ⟨targetOut, htargetRun, hiso⟩ :=
         runCode_historyIso base henvironment hrun
       exact ⟨targetOut, by
-        simpa [rewriteMain, hpap] using htargetRun, hiso⟩
-  | true =>
-      cases hsummary : summaries default with
-      | some summary =>
+        simpa [rewriteMain, source, pruned, hsummary] using htargetRun, hiso⟩
+  | none =>
+      let forwarded : FetchForward.Outcome :=
+        if passes.fetchForward then
+          FetchForward.runWithFacts declarations summaries default source []
+            pruned.code
+        else
+          { code := pruned.code, changes := {} }
+      have hforwarded :
+          runCode ctx fuel source store [] forwarded.code = .ok sourceOut := by
+        cases hfetch : passes.fetchForward with
+        | false => simpa [forwarded, hfetch] using hrun
+        | true =>
+            have heq :=
+              FetchForward.runCode_runWithFacts_eq_ownerCompatible hpost hctx
+                (.inr hsummary) EnvironmentHolds.nil
+                (current := source) (store := store)
+                (input := pruned.code) (fuel := fuel)
+            simpa [forwarded, hfetch] using heq.trans hrun
+      cases hpap : passes.papFuse with
+      | false =>
           obtain ⟨targetOut, htargetRun, hiso⟩ :=
-            runCode_historyIso base henvironment hrun
+            runCode_historyIso base henvironment hforwarded
           exact ⟨targetOut, by
-            simpa [rewriteMain, hpap, hsummary] using htargetRun, hiso⟩
-      | none =>
+            simpa [rewriteMain, source, pruned, forwarded, hpap, hsummary]
+              using htargetRun, hiso⟩
+      | true =>
           obtain ⟨targetOut, htargetRun, hiso⟩ :=
             PAPFuse.runCode_runWithFacts_refines_ownerCompatible hpost hctx
-              (.inr hsummary) base henvironment EnvironmentHolds.nil hrun
+              (.inr hsummary) base henvironment EnvironmentHolds.nil
+              hforwarded
           exact ⟨targetOut, by
-            simpa [rewriteMain, hpap, hsummary] using htargetRun, hiso⟩
+            simpa [rewriteMain, source, pruned, forwarded, hpap, hsummary]
+              using htargetRun, hiso⟩
 
 /-- Rewriting top-level main preserves every successful fresh execution,
 including dynamic re-entry through `callSelf`. -/

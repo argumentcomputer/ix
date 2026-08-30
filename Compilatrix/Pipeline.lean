@@ -652,7 +652,7 @@ def generatedAddressMap (artifact : Artifact) : IxIR1.Readdress.Renaming :=
 
 /-! ## Versioned optimizer harness -/
 
-/-- Run the O0 harness with a directly produced checked HPT artifact.  A
+/-- Run the optimizer harness with a directly produced checked HPT artifact.  A
 disabled pass, unsupported policy, exhausted optimizer budget, or rejected
 rebuild returns this artifact unchanged and records the fail-soft decision. -/
 def optimizeWithProducedHPT (artifact : Artifact)
@@ -1280,9 +1280,10 @@ private def targetAgrees : Bool :=
         | .error _ => false
     | _ => false
 
-/-- O0 observations run on the actual compiler output, not only a hand-written
-IxIR₁ graph.  Independent runs must agree byte-for-byte on their reports and
-output roots; disabling the pass must select the exact input graph. -/
+/-- Optimizer observations run on actual compiler output, not only a
+hand-written IxIR₁ graph.  Independent runs must agree byte-for-byte on their
+reports and output roots; disabling the pass must select the exact input
+graph. -/
 private def optimizerHarnessOnCompiled : Bool :=
   match compiled with
   | .error _ => false
@@ -1298,6 +1299,7 @@ private def optimizerHarnessOnCompiled : Bool :=
               production
           let disabledPolicy : IxIR1.Optimizer.Policy :=
             { casePrune := { enabled := false }
+              fetchForward := { enabled := false }
               papFuse := { enabled := false } }
           let (disabledArtifact, disabledReport) :=
             artifact.optimizeWithProducedHPT disabledPolicy production

@@ -58,9 +58,11 @@ status ledger here:
   recursive constructor-field facts, and the first semantics-preserving
   whole-program fact consumer: owner-sensitive propagation through stored
   function bodies, impossible-alternative pruning, and checked detailed-unary
-  exact-case collapse. It runs behind a versioned fail-soft optimizer policy
-  with canonical before/after reports, pass-attributed counters, and
-  deterministic fixed-point regressions.
+  exact-case collapse. The same one-rebuild boundary now includes exact scalar
+  fetch forwarding after allocation/reuse and checked PAP/application fusion.
+  It runs behind a versioned fail-soft optimizer policy with canonical
+  before/after reports, pass-attributed counters, and deterministic fixed-point
+  regressions.
   See [HPT certificates](hpt-certificates.md) and the
   [optimizer harness](optimizer-harness.md).
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
@@ -126,7 +128,7 @@ This is the current milestone.
 | --- | --- | --- |
 | Whole-pass value/ownership/progress simulation | active | Every validator-accepted current-fragment main has a composed IxIR₀→IxIR₁ forward simulation, no reachable memory error, and the existing reclamation/cost results without fixture-specific assumptions. |
 | Proof-structure consolidation | active | Shared recursive judgments have one foundational traversal each; public theorems depend on those cores without duplicating the induction. Stop recording individual consolidation cuts in this roadmap. |
-| HPT consumer tranche O1 | active | PAP/apply fusion has checked under/exact/over decisions, arbitrary-fuel heap-history refinement, a whole declaration/main and one-rebuild theorem, default versioned policy/reporting, and a fixed-point graph regression. Land conservative fetch forwarding, shape-specialized destruction, and rooted reachability on the same boundary. |
+| HPT consumer tranche O1 | active | PAP/apply fusion and conservative scalar fetch forwarding have local checks, arbitrary-fuel proofs, whole declaration/main composition, default versioned policy/reporting, one content-address rebuild, and fixed-point graph regressions. Land shape-specialized destruction and rooted reachability on the same boundary. |
 | IxIR₁ extern ownership ABI | next | Heap-valued extern arguments/results have explicit consume/borrow/retain contracts or remain rejected by the validated fragment. |
 | Address reproducibility | next | Two independent full compilations of the same validated root produce the same addressed IxIR₀/IxIR₁ graph and certificate identities. |
 | HPT/cache scaling | deferred | Wake when bounded Std/corpus work demonstrates that directory enumeration, sharding, garbage collection, or cross-store scheduling is the bottleneck. |
@@ -250,10 +252,9 @@ this repository's completion claims.
 1. **Close the M2b semantic spine.** Finish the shared LowerSim/LowerProgress
    traversal consolidation and expose one whole-pass theorem for the current
    validated fragment.
-2. **Lift and extend the O1 HPT consumers.** Lift local PAP/apply refinement
-   through the recursive declaration-context rewrite, then add conservative
-   fetch forwarding, known-shape destruction, and rooted reachability on the
-   owner-sensitive fact traversal.
+2. **Extend the O1 HPT consumers.** Add known-shape destruction and rooted
+   reachability on the owner-sensitive fact traversal, preserving the shared
+   one-rebuild proof and pass-attributed fixed-point reporting boundary.
 3. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement.

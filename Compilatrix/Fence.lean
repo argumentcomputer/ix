@@ -30,6 +30,7 @@ import Compilatrix.IxIR1.HPTCache
 import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.HPTCasePruneProgram
 import Compilatrix.IxIR1.HPTPAPFuse
+import Compilatrix.IxIR1.HPTFetchForward
 import Compilatrix.IxIR1.HPTPAPFuseProgram
 import Compilatrix.SimInstance
 import Compilatrix.UsageSound
@@ -806,6 +807,17 @@ transformation-specific assumption. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.CasePrune.runMain_rebuild_rewriteProgram
+
+/-! Scalar fetch forwarding is exact both at one accepted constructor/fetch
+pair and through its owner-sensitive recursive traversal. -/
+
+/-- info: 'Compilatrix.IxIR1.HPT.FetchForward.runCode_forwardHead?_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.FetchForward.runCode_forwardHead?_eq
+
+/-- info: 'Compilatrix.IxIR1.HPT.FetchForward.runCode_runWithFacts_eq_ownerCompatible' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.FetchForward.runCode_runWithFacts_eq_ownerCompatible
 
 /-! The first allocation-shrinking consumer is pure through both the generic
 heap-history evaluator congruence and its executable local decision theorem. -/

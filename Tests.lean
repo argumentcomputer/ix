@@ -2331,10 +2331,10 @@ def declarationGraphCasePruneOk : Bool :=
                     (IxIR1.runMain newCtx outcome.result.main 64)
             | _ => false
 
-/-- The O0 harness observes a non-degenerate whole-program rewrite, composes
-the rebuilt addresses into the pipeline artifact, reproduces the same report
-on an independent run, skips deterministically under explicit controls, and
-reaches a structural fixed point after recomputing HPT on the new root. -/
+/-- The optimizer harness observes a non-degenerate whole-program rewrite,
+composes the rebuilt addresses into the pipeline artifact, reproduces the same
+report on an independent run, skips deterministically under explicit controls,
+and reaches a structural fixed point after recomputing HPT on the new root. -/
 def optimizerHarnessOk : Bool :=
   match IxIR1.ReaddressAll.run [constructorBlock]
       graphRawDeclarations graphRawMain with
@@ -2352,6 +2352,7 @@ def optimizerHarnessOk : Bool :=
               IxIR1.Optimizer.defaultPolicy production
           let disabledPolicy : IxIR1.Optimizer.Policy :=
             { casePrune := { enabled := false }
+              fetchForward := { enabled := false }
               papFuse := { enabled := false } }
           let disabled := IxIR1.Optimizer.runWithProducedHPT disabledPolicy
             artifact.targetArtifacts artifact.main production
@@ -2371,6 +2372,7 @@ def optimizerHarnessOk : Bool :=
               firstReport.removedAlternatives == 1 &&
               firstReport.collapsedCases == 1 &&
               firstReport.materializedFetches == 1 &&
+              firstReport.forwardedFetches == 0 &&
               firstReport.inputRoot != firstReport.outputRoot &&
               firstReport.outputRoot == firstRoot &&
               firstReport.before.counts.alternatives ==
@@ -2409,6 +2411,7 @@ def optimizerHarnessOk : Bool :=
                   secondReport.removedAlternatives == 0 &&
                   secondReport.collapsedCases == 0 &&
                   secondReport.materializedFetches == 0 &&
+                  secondReport.forwardedFetches == 0 &&
                   secondReport.inputRoot == firstReport.outputRoot &&
                   secondReport.outputRoot == firstReport.outputRoot &&
                   secondReport.before == secondReport.after &&
@@ -2506,6 +2509,7 @@ def papFusionHarnessOk : Bool :=
             report.removedAlternatives == 0 &&
             report.collapsedCases == 0 &&
             report.materializedFetches == 0 &&
+            report.forwardedFetches == 0 &&
             report.fusedPaps == 3 &&
             report.underSaturatedPaps == 1 &&
             report.exactlySaturatedPaps == 1 &&
@@ -2527,6 +2531,7 @@ def papFusionHarnessOk : Bool :=
                 let (fixed, fixedReport) :=
                   optimized.optimizeWithProducedHPT policy secondProduction
                 fixedReport.disposition == .unchanged &&
+                  fixedReport.forwardedFetches == 0 &&
                   fixedReport.fusedPaps == 0 &&
                   fixedReport.underSaturatedPaps == 0 &&
                   fixedReport.exactlySaturatedPaps == 0 &&
@@ -2535,6 +2540,107 @@ def papFusionHarnessOk : Bool :=
                   fixedReport.outputRoot == report.outputRoot &&
                   IxIR1.Optimizer.graphRoot fixed.targetArtifacts fixed.main ==
                     report.outputRoot
+
+/-! Scalar constructor-fetch forwarding fixture. -/
+
+def fetchForwardConstructorBlock : Address := Address.replicate 0xe3
+
+def fetchForwardCtor : IxIR1.CtorId :=
+  ⟨fetchForwardConstructorBlock, 0, 0⟩
+
+/-- One projection follows an in-place reuse and one follows a fresh
+allocation.  The second constructor stores the first projected scalar, which
+also exercises de Bruijn lifting across the retained allocation binder. -/
+def fetchForwardRawMain : IxIR1.Code :=
+  .letOp (.alloc .unique fetchForwardCtor #[.lit (.nat 7)])
+    (.letOp (.reuse (.var 0) fetchForwardCtor #[.lit (.nat 41)])
+      (.letOp (.fetch (.var 0) 0)
+        (.letOp (.alloc .unique fetchForwardCtor #[.var 0])
+          (.letOp (.fetch (.var 0) 0)
+            (.letOp (.free (.var 1))
+              (.letOp (.free (.var 4))
+                (.ret (.var 2))))))))
+
+private def hasFetchForwardShape : IxIR1.Code → Bool
+  | .letOp (.alloc .unique _ #[.lit (.nat 7)])
+      (.letOp (.reuse (.var 0) _ #[.lit (.nat 41)])
+        (.letOp (.pure (.lit (.nat 41)))
+          (.letOp (.alloc .unique _ #[.var 0])
+            (.letOp (.pure (.var 1)) _)))) => true
+  | _ => false
+
+private def isFetchForwardResult :
+    Except IxIR1.Err (IxIR1.Store × IxIR1.RVal) → Bool
+  | .ok (store, .lit (.nat 41)) =>
+      store.live == 0 && store.allocs == 2 && store.reuses == 1 &&
+        store.frees == 2
+  | _ => false
+
+/-- The whole-program harness forwards certified scalar fields after both
+allocation kinds, rejects heap and out-of-range sources, preserves exact
+execution counters/results, and reaches a fixed point after HPT recomputation. -/
+def fetchForwardHarnessOk : Bool :=
+  match IxIR1.ReaddressAll.run [fetchForwardConstructorBlock] []
+      fetchForwardRawMain with
+  | .error _ => false
+  | .ok program =>
+      let artifact := artifactWithMain program program.main
+      match artifact.produceHPT with
+      | .error _ => false
+      | .ok production =>
+          let policy := IxIR1.Optimizer.defaultPolicy
+          let (optimized, report) :=
+            artifact.optimizeWithProducedHPT policy production
+          let oldCtx : IxIR1.Ctx := { decls := artifact.targetDeclEnv }
+          let newCtx : IxIR1.Ctx := { decls := optimized.targetDeclEnv }
+          let rewritten := IxIR1.HPT.OptimizeProgram.rewriteMain {}
+            artifact.targetDeclEnv production.certificate.summaryEnv
+            artifact.main
+          let fetchRest : IxIR1.Code :=
+            .letOp (.fetch (.var 0) 0) (.ret (.var 0))
+          let rejectsHeapSource :=
+            (IxIR1.HPT.FetchForward.forwardHead? [IxIR1.HPT.Fact.top]
+              (.alloc .unique fetchForwardCtor #[.var 0]) fetchRest).isNone
+          let rejectsMissingField :=
+            (IxIR1.HPT.FetchForward.forwardHead? []
+              (.alloc .unique fetchForwardCtor #[.lit (.nat 1)])
+              (.letOp (.fetch (.var 0) 1) (.ret (.var 0)))).isNone
+          let acceptsReuse :=
+            match IxIR1.HPT.FetchForward.forwardHead? []
+                (.reuse .erased fetchForwardCtor #[.lit (.nat 41)])
+                fetchRest with
+            | some forwarding =>
+                forwarding.kind == .reuse &&
+                  forwarding.source == .lit (.nat 41)
+            | none => false
+          report.disposition == .changed &&
+            report.removedAlternatives == 0 &&
+            report.collapsedCases == 0 &&
+            report.materializedFetches == 0 &&
+            report.forwardedFetches == 2 &&
+            report.fusedPaps == 0 &&
+            report.before.counts.fetches == 2 &&
+            report.after.counts.fetches == 0 &&
+            report.before.counts.allocations == 2 &&
+            report.after.counts.allocations == 2 &&
+            report.before.counts.reuses == 1 &&
+            report.after.counts.reuses == 1 &&
+            rewritten.changes.fetchForward.afterAllocations == 1 &&
+            rewritten.changes.fetchForward.afterReuses == 1 &&
+            hasFetchForwardShape optimized.main &&
+            rejectsHeapSource && rejectsMissingField && acceptsReuse &&
+            isFetchForwardResult (IxIR1.runMain oldCtx artifact.main 64) &&
+            isFetchForwardResult (IxIR1.runMain newCtx optimized.main 64) &&
+            match optimized.produceHPT with
+            | .error _ => false
+            | .ok secondProduction =>
+                let (fixed, fixedReport) :=
+                  optimized.optimizeWithProducedHPT policy secondProduction
+                fixedReport.disposition == .unchanged &&
+                  fixedReport.forwardedFetches == 0 &&
+                  fixedReport.inputRoot == report.outputRoot &&
+                  fixedReport.outputRoot == report.outputRoot &&
+                  fixed.main.bytes == optimized.main.bytes
 
 def underclaimed (result : IxIR1.ReaddressAll.Result) :
     IxIR1.HPT.Certificate :=
@@ -4318,6 +4424,9 @@ def main : IO UInt32 := do
         ok := false
       if !HPTFixtures.papFusionHarnessOk then
         IO.eprintln "FAIL: checked PAP/apply fusion drifted across saturation classes, rejection gates, reporting, execution, or idempotence"
+        ok := false
+      if !HPTFixtures.fetchForwardHarnessOk then
+        IO.eprintln "FAIL: checked scalar fetch forwarding drifted across allocation/reuse, rejection gates, reporting, exact execution, or idempotence"
         ok := false
       if !HPTFixtures.cacheConeOk program precise widened then
         IO.eprintln "FAIL: HPT cache invalidation escaped or missed the dependency cone"
