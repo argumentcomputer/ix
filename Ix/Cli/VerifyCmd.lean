@@ -149,7 +149,7 @@ def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
 
 /-- Build the two deterministic systems whose identities are committed by an
 aggregate root: the IxVM vk and the single-entrypoint recursion vk. -/
-private def buildAggregateBackend
+def buildAggregateBackend
     (recursionParameters : MultiStark.RecursionParameters) :
     IO (Except String AggregateBackend) := do
   let ixvmCompiled ← match IxVM.ixVM with

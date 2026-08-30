@@ -13,12 +13,13 @@ num-bigint = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 tracing = { workspace = true }
-tracing-texray = { workspace = true }
+tracing-texray = { workspace = true, optional = true }
 
 [features]
-default = []
+default = ["texray"]
 parallel = ["multi-stark/parallel"]
 cuda = ["multi-stark/cuda"]
+texray = ["dep:tracing-texray"]
 
 [lints]
 workspace = true

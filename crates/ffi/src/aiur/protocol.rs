@@ -1677,3 +1677,65 @@ fn decode_io_buffer_map(
   }
   map
 }
+
+// =============================================================================
+// SP1 aggregate-root terminal (feature `sp1`)
+// =============================================================================
+
+/// `Aiur.sp1CompressAggregateRoot` verifies one `ix_aggr` root inside SP1 and
+/// optionally runs the stock SP1 recursion tail through Groth16/Plonk.
+/// Default builds retain this symbol as a checked feature-disabled stub.
+#[unsafe(no_mangle)]
+extern "C" fn rs_sp1_compress_aggregate_root(
+  vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+  onchain_output: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "sp1")]
+  {
+    let fri = decode_fri_parameters(&fri_parameters);
+    let mode = match mode.as_str().parse::<sp1_compress_host::Mode>() {
+      Ok(mode) => mode,
+      Err(error) => return LeanExcept::error_string(&error),
+    };
+    let output = match output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    let onchain_output = match onchain_output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    match sp1_compress_host::run_sp1_blocking(
+      vk_bytes.as_bytes().to_vec(),
+      claim_bytes.as_bytes().to_vec(),
+      proof_bytes.as_bytes().to_vec(),
+      &fri,
+      mode,
+      output.as_deref(),
+      onchain_output.as_deref(),
+    ) {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+    }
+  }
+  #[cfg(not(feature = "sp1"))]
+  {
+    let _ = (
+      &vk_bytes,
+      &claim_bytes,
+      &proof_bytes,
+      &fri_parameters,
+      &mode,
+      &output,
+      &onchain_output,
+    );
+    LeanExcept::error_string(
+      "ix was built without SP1 compression; rebuild with IX_SP1=1",
+    )
+  }
+}

@@ -5,6 +5,7 @@ public import Ix.Aggr
 public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.Cli.AggregateCmd
+public import Ix.Cli.CompressRootCmd
 public import Tests.MultiStark
 
 /-!
@@ -531,6 +532,24 @@ def smokeSuite : IO UInt32 := do
       shapeWeightsBounded,
     test "driver specs use uniform aggregate claims and cache version 2"
       uniformDriverClaims,
+    test "final compression accepts a closed CheckEnv root"
+      ((Ix.Cli.CompressRootCmd.validateBundledClaim
+        (.checkEnv a none) "groth16" false).isOk),
+    test "final compression rejects a root retaining assumptions"
+      (!(Ix.Cli.CompressRootCmd.validateBundledClaim
+        (.checkEnv a (some b)) "groth16" false).isOk),
+    test "execute profiling requires an explicit open-root opt-in"
+      (!(Ix.Cli.CompressRootCmd.validateBundledClaim
+        (.checkEnv a (some b)) "execute" false).isOk),
+    test "execute profiling may opt into an open root"
+      ((Ix.Cli.CompressRootCmd.validateBundledClaim
+        (.checkEnv a (some b)) "execute" true).isOk),
+    test "open-root opt-in cannot be used by a proof-producing mode"
+      (!(Ix.Cli.CompressRootCmd.validateBundledClaim
+        (.checkEnv a none) "groth16" true).isOk),
+    test "final compression rejects non-CheckEnv claims"
+      (!(Ix.Cli.CompressRootCmd.validateBundledClaim
+        (.check a none) "execute" false).isOk),
     expectOk "wrap of an IxVM child accepts" wrapIxvm,
     expectOk "wrap of a self child accepts" wrapSelf,
     expectOk "pair (IxVM, IxVM) accepts" pairII,

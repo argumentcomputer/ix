@@ -67,7 +67,7 @@ use multi_stark::{
   lookup::Lookup,
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   system::{Circuit, System},
-  types::{Commitment, CommitmentParameters, FriParameters, Val},
+  types::{Commitment, CommitmentParameters, FriParameters, PcsError, Val},
 };
 
 use crate::synthesis::{AiurConfig, AiurSystem};
@@ -489,6 +489,51 @@ pub(crate) fn from_bytes(
     preprocessed_indices,
   };
   Ok((system, commitment_parameters, fri_parameters))
+}
+
+/// A verifier-only Aiur key decoded from [`aiur_system_to_bytes`].
+///
+/// This is the narrow surface used by zkVM guests: unlike [`AiurSystem`], it
+/// carries neither bytecode nor a prover key, but it can verify a serialized
+/// proof under the exact commitment and FRI parameters embedded in the key.
+pub struct AiurVerifyingKey {
+  system: System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  fri_parameters: FriParameters,
+}
+
+impl AiurVerifyingKey {
+  /// Decode a verifying key and require full input consumption.
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    from_bytes(bytes).map(|(system, commitment_parameters, fri_parameters)| {
+      Self { system, commitment_parameters, fri_parameters }
+    })
+  }
+
+  /// Re-encode to the canonical Aiur verifying-key wire format.
+  pub fn to_bytes(&self) -> Vec<u8> {
+    to_bytes(&self.system, self.commitment_parameters, self.fri_parameters)
+  }
+
+  pub const fn commitment_parameters(&self) -> CommitmentParameters {
+    self.commitment_parameters
+  }
+
+  pub const fn fri_parameters(&self) -> FriParameters {
+    self.fri_parameters
+  }
+
+  pub fn num_circuits(&self) -> usize {
+    self.system.circuits.len()
+  }
+
+  pub fn verify(
+    &self,
+    claim: &[Val],
+    proof: &crate::synthesis::AiurProof,
+  ) -> Result<(), multi_stark::verifier::VerificationError<PcsError>> {
+    self.system.verify(claim, proof)
+  }
 }
 
 #[cfg(test)]

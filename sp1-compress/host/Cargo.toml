@@ -1,0 +1,25 @@
+[package]
+name = "sp1-compress-host"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aiur = { path = "../../crates/aiur", features = ["parallel"] }
+# Keep this identical to the root workspace and the guest.
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2892243e674f9a0b3aca9004a8d00c79a23beec1", features = ["parallel"] }
+blake3 = "1"
+# Same fork as the existing SP1 kernel backend. `experimental` enables the
+# explicit WITHOUT_VK_VERIFICATION escape hatch needed until the fork's
+# Blake3 recursion shapes are included in its distributed vk map.
+sp1-sdk = { git = "https://github.com/argumentcomputer/sp1", rev = "261741a90e6e5e637a4dae7c00a501d63b90349c", features = ["profiling", "experimental"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+anyhow = "1"
+bincode = "1.3"
+hex = "0.4"
+
+[build-dependencies]
+sp1-build = { git = "https://github.com/argumentcomputer/sp1", rev = "261741a90e6e5e637a4dae7c00a501d63b90349c" }
+
+[features]
+default = []
+cuda = ["sp1-sdk/cuda"]
