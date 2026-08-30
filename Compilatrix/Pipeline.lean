@@ -4,7 +4,7 @@ import Compilatrix.EraseAddressed
 import Compilatrix.EraseValidator
 import Compilatrix.IxIR1.LowerFullyAddressed
 import Compilatrix.IxIR1.HPTCacheDirIO
-import Compilatrix.IxIR1.HPTCasePruneProgram
+import Compilatrix.IxIR1.Optimizer
 
 /-!
 # Checked source-to-IxIR₁ pipeline
@@ -650,6 +650,33 @@ def generatedAddressMap (artifact : Artifact) : IxIR1.Readdress.Renaming :=
   let sourceKeys := artifact.erasedDecls.map Prod.fst
   artifact.targetAddressMap.filter fun entry => !sourceKeys.contains entry.1
 
+/-! ## Versioned optimizer harness -/
+
+/-- Run the O0 harness with a directly produced checked HPT artifact.  A
+disabled pass, unsupported policy, exhausted optimizer budget, or rejected
+rebuild returns this artifact unchanged and records the fail-soft decision. -/
+def optimizeWithProducedHPT (artifact : Artifact)
+    (policy : IxIR1.Optimizer.Policy)
+    {limits : IxIR1.HPT.Limits}
+    (production : IxIR1.HPT.Production limits artifact.targetArtifacts) :
+    Artifact × IxIR1.Optimizer.Report :=
+  let outcome := IxIR1.Optimizer.runWithProducedHPT policy
+    artifact.targetArtifacts artifact.main production
+  let optimized := outcome.rebuilt.map artifact.withRebuiltTarget |>.getD artifact
+  (optimized, outcome.report)
+
+/-- Cached checked summaries drive the same policy and report boundary. -/
+def optimizeWithCachedHPT (artifact : Artifact)
+    (policy : IxIR1.Optimizer.Policy)
+    {limits : IxIR1.HPT.Cache.Limits}
+    (production :
+      IxIR1.HPT.Cache.Production limits artifact.targetArtifacts) :
+    Artifact × IxIR1.Optimizer.Report :=
+  let outcome := IxIR1.Optimizer.runWithCachedHPT policy
+    artifact.targetArtifacts artifact.main production
+  let optimized := outcome.rebuilt.map artifact.withRebuiltTarget |>.getD artifact
+  (optimized, outcome.report)
+
 end Artifact
 
 /-- Turn an enumerable closed world into the proof-friendly resolver
@@ -1253,6 +1280,50 @@ private def targetAgrees : Bool :=
         | .error _ => false
     | _ => false
 
+/-- O0 observations run on the actual compiler output, not only a hand-written
+IxIR₁ graph.  Independent runs must agree byte-for-byte on their reports and
+output roots; disabling the pass must select the exact input graph. -/
+private def optimizerHarnessOnCompiled : Bool :=
+  match compiled with
+  | .error _ => false
+  | .ok artifact =>
+      match artifact.produceHPT with
+      | .error _ => false
+      | .ok production =>
+          let (firstArtifact, firstReport) :=
+            artifact.optimizeWithProducedHPT IxIR1.Optimizer.defaultPolicy
+              production
+          let (repeatArtifact, repeatReport) :=
+            artifact.optimizeWithProducedHPT IxIR1.Optimizer.defaultPolicy
+              production
+          let disabledPolicy : IxIR1.Optimizer.Policy :=
+            { casePrune := { enabled := false } }
+          let (disabledArtifact, disabledReport) :=
+            artifact.optimizeWithProducedHPT disabledPolicy production
+          let inputRoot := IxIR1.Optimizer.graphRoot artifact.targetArtifacts
+            artifact.main
+          let firstRoot := IxIR1.Optimizer.graphRoot
+            firstArtifact.targetArtifacts firstArtifact.main
+          let repeatRoot := IxIR1.Optimizer.graphRoot
+            repeatArtifact.targetArtifacts repeatArtifact.main
+          firstReport.before.functions > 0 &&
+            firstReport.before.counts.instructions > 0 &&
+            firstReport.before.codeBytes > 0 &&
+            firstReport.certificateBytes > 0 &&
+            firstReport.inputRoot == inputRoot &&
+            firstReport.outputRoot == firstRoot &&
+            firstReport.after == IxIR1.Optimizer.observe
+              firstArtifact.targetArtifacts firstArtifact.main &&
+            firstRoot == repeatRoot &&
+            firstReport.bytes == repeatReport.bytes &&
+            firstReport.address == repeatReport.address &&
+            disabledReport.disposition ==
+              .skipped IxIR1.Optimizer.SkipReason.disabled &&
+            disabledReport.inputRoot == inputRoot &&
+            disabledReport.outputRoot == inputRoot &&
+            IxIR1.Optimizer.graphRoot disabledArtifact.targetArtifacts
+              disabledArtifact.main == inputRoot
+
 /-- A double use of the affine parameter is stopped at the first
 pipeline gate, before erasure or lowering can observe the program. -/
 private def badDropFirst : Constant :=
@@ -1347,6 +1418,8 @@ def nativeIntegrationChecks : List (String × Bool) :=
   [("addressed recursor crosses erasure and lowering",
       recursorCrossesBothPasses),
    ("addressed pipeline runtime and cost", targetAgrees),
+   ("compiler-produced optimizer report is deterministic and disable-safe",
+      optimizerHarnessOnCompiled),
    ("usage rejection precedes addressed erasure", rejectsBadUsage),
    ("validated and direct addressed pipelines agree", validatedAgrees),
    ("unvalidated addressed pipeline accepts configured fragment",

@@ -273,6 +273,6 @@ def mismatchRejections : List (String × Option String) :=
 #guard mismatchRejections ==
   [ ("dereliction", some "dereliction: shared value at unique demand")
   , ("freeze", some
-      "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)") ]
+      "freeze not in v0: unique value at non-unique sink (see docs/lowering-restrictions.md)") ]
 
 end Compilatrix.IxIR1.ThesisBench

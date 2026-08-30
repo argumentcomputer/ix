@@ -2238,6 +2238,81 @@ def declarationGraphCasePruneOk : Bool :=
                     (IxIR1.runMain newCtx outcome.result.main 64)
             | _ => false
 
+/-- The O0 harness observes a non-degenerate whole-program rewrite, composes
+the rebuilt addresses into the pipeline artifact, reproduces the same report
+on an independent run, skips deterministically under explicit controls, and
+reaches a structural fixed point after recomputing HPT on the new root. -/
+def optimizerHarnessOk : Bool :=
+  match IxIR1.ReaddressAll.run [constructorBlock]
+      graphRawDeclarations graphRawMain with
+  | .error _ => false
+  | .ok program =>
+      let artifact := artifactWithMain program program.main
+      match artifact.produceHPT with
+      | .error _ => false
+      | .ok production =>
+          let (firstArtifact, firstReport) :=
+            artifact.optimizeWithProducedHPT
+              IxIR1.Optimizer.defaultPolicy production
+          let (repeatArtifact, repeatReport) :=
+            artifact.optimizeWithProducedHPT
+              IxIR1.Optimizer.defaultPolicy production
+          let disabledPolicy : IxIR1.Optimizer.Policy :=
+            { casePrune := { enabled := false } }
+          let disabled := IxIR1.Optimizer.runWithProducedHPT disabledPolicy
+            artifact.targetArtifacts artifact.main production
+          let budgetPolicy : IxIR1.Optimizer.Policy :=
+            { casePrune :=
+                { budget := { maxInputInstructions := 0 } } }
+          let budgeted := IxIR1.Optimizer.runWithProducedHPT budgetPolicy
+            artifact.targetArtifacts artifact.main production
+          let newCaller := IxIR1.Readdress.Renaming.apply
+            firstArtifact.targetAddressMap graphRawCaller
+          let firstRoot := IxIR1.Optimizer.graphRoot
+            firstArtifact.targetArtifacts firstArtifact.main
+          let repeatRoot := IxIR1.Optimizer.graphRoot
+            repeatArtifact.targetArtifacts repeatArtifact.main
+          let firstChecks :=
+            firstReport.disposition == .changed &&
+              firstReport.removedAlternatives == 1 &&
+              firstReport.inputRoot != firstReport.outputRoot &&
+              firstReport.outputRoot == firstRoot &&
+              firstReport.before.counts.alternatives ==
+                firstReport.after.counts.alternatives + 1 &&
+              firstReport.after.codeBytes < firstReport.before.codeBytes &&
+              firstReport.after == IxIR1.Optimizer.observe
+                firstArtifact.targetArtifacts firstArtifact.main &&
+              firstRoot == repeatRoot &&
+              firstReport.bytes == repeatReport.bytes &&
+              firstReport.address == repeatReport.address &&
+              rootCallTarget firstArtifact.main == some newCaller &&
+              (match firstArtifact.targetDeclEnv newCaller with
+               | some (.fn function) =>
+                   rootCallCaseIndices function.body == some [0]
+               | _ => false) &&
+              disabled.rebuilt.isNone &&
+              disabled.report.disposition ==
+                .skipped IxIR1.Optimizer.SkipReason.disabled &&
+              disabled.report.inputRoot == disabled.report.outputRoot &&
+              budgeted.rebuilt.isNone &&
+              budgeted.report.disposition ==
+                .skipped (.instructionBudget
+                  firstReport.before.counts.instructions 0)
+          firstChecks &&
+            match firstArtifact.produceHPT with
+            | .error _ => false
+            | .ok secondProduction =>
+                let (secondArtifact, secondReport) :=
+                  firstArtifact.optimizeWithProducedHPT
+                    IxIR1.Optimizer.defaultPolicy secondProduction
+                secondReport.disposition == .unchanged &&
+                  secondReport.removedAlternatives == 0 &&
+                  secondReport.inputRoot == firstReport.outputRoot &&
+                  secondReport.outputRoot == firstReport.outputRoot &&
+                  secondReport.before == secondReport.after &&
+                  IxIR1.Optimizer.graphRoot secondArtifact.targetArtifacts
+                    secondArtifact.main == firstReport.outputRoot
+
 def underclaimed (result : IxIR1.ReaddressAll.Result) :
     IxIR1.HPT.Certificate :=
   certificate result .bottom .scalar
@@ -4014,6 +4089,9 @@ def main : IO UInt32 := do
         ok := false
       if !HPTFixtures.declarationGraphCasePruneOk then
         IO.eprintln "FAIL: checked HPT declaration-graph pruning failed to readdress a changed body, rewrite its main edge, or preserve execution"
+        ok := false
+      if !HPTFixtures.optimizerHarnessOk then
+        IO.eprintln "FAIL: optimizer policy, observations, deterministic report, fail-soft controls, address transport, or idempotence drifted"
         ok := false
       if !HPTFixtures.cacheConeOk program precise widened then
         IO.eprintln "FAIL: HPT cache invalidation escaped or missed the dependency cone"

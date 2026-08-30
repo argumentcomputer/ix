@@ -57,6 +57,7 @@ import Compilatrix.IxIR1.HPTCacheIO
 import Compilatrix.IxIR1.HPTCacheDirIO
 import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.HPTCasePruneProgram
+import Compilatrix.IxIR1.Optimizer
 import Compilatrix.IxIR1.Mono
 import Compilatrix.IxIR1.Progress
 import Compilatrix.IxIR1.Reclamation

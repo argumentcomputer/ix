@@ -68,7 +68,11 @@ records and durably repairs them per key, and a first
 checked consumer that prunes impossible
 constructor alternatives from immediate call-result cases at one root,
 recursively throughout a supplied code fragment, or across every stored body
-and the main followed by an exact content-addressed graph rebuild. Its
+and the main followed by an exact content-addressed graph rebuild; and a
+versioned fail-soft optimizer harness with deterministic budgets, static
+control/heap/call and byte counters, canonical input/output/certificate roots,
+per-pass enable/disable, and content-addressed before/after reports
+([optimizer harness](docs/optimizer-harness.md)). Its
 evaluator-preservation theorems cover dynamic self calls and complete-result
 address transport, with dependency-cone plus
 alias/reuse/corruption regression fixtures
@@ -92,7 +96,7 @@ memory-ownership simulation for that lowering
 Per-deliverable status — fragments, frontiers, exclusions, and evidence —
 lives in the tracked [roadmap](docs/roadmap.md), the single source of truth
 for completion claims; this README deliberately carries no second status
-table. Local `plans/` files are design notebooks and decision records. The
+table. Local `plans/` files are forward-looking design notes. The
 proof decomposition is recorded in the
 [simulation strategy](docs/simulation-strategy.md), the sharing identity
 boundary in [canonical sharing](docs/canonical-sharing.md), and every
@@ -100,9 +104,9 @@ opaque dependency (BLAKE3 and the narrow durable-sync syscall shim today;
 eventually the store and others) in the tracked
 [trusted-extern ledger](docs/trusted-extern-ledger.md), which separates
 target extern assumptions from the Lean/GMP/Nix Gen-0 seed and records
-observable retirement criteria. Vendoring a
-[lean4lean](https://github.com/digama0/lean4lean)-derived theory remains
-the kernel-specification bridge.
+observable retirement criteria. The public
+[lean4ix](https://github.com/argumentcomputer/lean4ix) theory is the planned
+kernel-specification bridge.
 
 ## Building
 

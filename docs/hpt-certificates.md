@@ -27,7 +27,9 @@ untrusted cache scheduling, `HPTCacheIO.lean` is the bounded one-file adapter,
 `HPTCasePrune.lean` implements the checked local and recursive consuming
 rewrite. `HPTCasePruneProgram.lean` closes the declaration-environment
 recursion, content-address rebuild, and exact whole-program evaluator
-transport.
+transport. `Optimizer.lean` wraps that consumer in the versioned,
+deterministic, fail-soft O0 policy and reporting boundary described in the
+[optimizer harness](optimizer-harness.md).
 
 ## Accepted claim
 

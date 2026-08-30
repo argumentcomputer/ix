@@ -533,6 +533,29 @@ inductive Applies (ctx : Ctx) :
       Applies ctx function (argument :: arguments) result
         (stepCost + restCost)
 
+/-- Dependent state-threaded traversal of a dynamically costed application
+spine. Clients receive the exact head application profile, the original
+profiled tail derivation, and the recursively produced result while the
+initial value, remaining arguments, final value, and additive profile stay
+synchronized. -/
+theorem Applies.traverse
+    {ctx : Ctx}
+    {Result : Value → List Value → Value → Profile → Prop}
+    (hnil : ∀ value, Result value [] value 0)
+    (hcons : ∀ {fuel : Nat} {function argument middle result : Value}
+        {arguments : List Value} {stepCost restCost : Profile},
+      Apply ctx fuel function argument middle stepCost →
+      Applies ctx middle arguments result restCost →
+      Result middle arguments result restCost →
+      Result function (argument :: arguments) result
+        (stepCost + restCost))
+    {function result : Value} {arguments : List Value} {cost : Profile}
+    (happly : Applies ctx function arguments result cost) :
+    Result function arguments result cost := by
+  induction happly with
+  | nil => exact hnil _
+  | cons hstep htail ih => exact hcons hstep htail ih
+
 /-- Application-spine concatenation is profile addition. -/
 theorem Applies.append {ctx : Ctx}
     {function middle result : Value} {left right : List Value}
@@ -540,11 +563,23 @@ theorem Applies.append {ctx : Ctx}
     (hleft : Applies ctx function left middle leftCost)
     (hright : Applies ctx middle right result rightCost) :
     Applies ctx function (left ++ right) result (leftCost + rightCost) := by
-  induction hleft with
-  | nil => simpa [Profile.zero_add] using hright
-  | cons hstep _ ih =>
+  exact (Applies.traverse
+    (Result := fun currentFunction currentArguments currentMiddle currentCost =>
+      ∀ {currentResult : Value} {rightArguments : List Value}
+          {rightCost : Profile},
+        Applies ctx currentMiddle rightArguments currentResult rightCost →
+        Applies ctx currentFunction (currentArguments ++ rightArguments)
+          currentResult (currentCost + rightCost))
+    (hnil := by
+      intro value currentResult rightArguments currentCost hright
+      simpa [Profile.zero_add] using hright)
+    (hcons := by
+      intro fuel currentFunction argument currentMiddle currentResult
+        currentArguments stepCost restCost hstep htail ih finalResult
+        rightArguments rightCost hright
       simpa only [List.cons_append, Profile.add_assoc] using
-        Applies.cons hstep (ih hright)
+        Applies.cons hstep (ih hright))
+    hleft) hright
 
 /-- One final application contributes exactly its own profile. -/
 theorem Applies.snoc {ctx : Ctx}

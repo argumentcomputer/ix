@@ -25,7 +25,7 @@ boundary: a shared variable at unique demand is dereliction; a unique
 variable at shared demand would need a deep freeze. The v0 contract
 rejects both directions in `UsageCheck` and retains these lowering
 checks as backstops; the planned freeze lift and its wake conditions
-are recorded in `plans/freeze-contract-2026-08-19.md`.
+are recorded in `docs/lowering-restrictions.md`.
 
 Function values (paps) and their captures are deliberately shared in
 this slice. Since `apply` consequently supplies shared arguments, only
@@ -111,7 +111,7 @@ def papSafe (e : IxIR0.Expr) : Bool :=
 /-- Stable diagnostic for the v0 no-freeze policy.  Kept public so the
 executable restriction corpus cannot drift from the lowerer. -/
 def freezeNeededMsg : String :=
-  "freeze not in v0: unique value at non-unique sink (see plans/freeze-contract-2026-08-19.md)"
+  "freeze not in v0: unique value at non-unique sink (see docs/lowering-restrictions.md)"
 
 /-- Stable diagnostic for first-class functions whose telescope is not
 all-`many`. -/

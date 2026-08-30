@@ -3958,6 +3958,34 @@ inductive SourceArgsProfile (sourceCtx : IxIR0.Ctx)
       SourceArgsProfile sourceCtx sourceEnv (expr :: expressions)
         (sourceValue :: sourceValues) (headProfile + tailProfile)
 
+/-- Dependent lockstep traversal of a profiled source argument vector.
+Clients receive the exact head evaluation profile, the original profiled
+tail derivation, and the recursively produced result while expressions,
+values, and their additive profile stay synchronized. -/
+theorem SourceArgsProfile.traverse
+    {sourceCtx : IxIR0.Ctx} {sourceEnv : List IxIR0.Value}
+    {Result : List IxIR0.Expr → List IxIR0.Value → SourceProfile → Prop}
+    (hnil : Result [] [] 0)
+    (hcons : ∀ {expr : IxIR0.Expr} {sourceValue : IxIR0.Value}
+        {expressions : List IxIR0.Expr}
+        {sourceValues : List IxIR0.Value} {fuel : Nat}
+        {headProfile tailProfile : SourceProfile},
+      IxIR0.DynamicCost.Eval sourceCtx fuel sourceEnv expr sourceValue
+          headProfile →
+      SourceArgsProfile sourceCtx sourceEnv expressions sourceValues
+          tailProfile →
+      Result expressions sourceValues tailProfile →
+      Result (expr :: expressions) (sourceValue :: sourceValues)
+        (headProfile + tailProfile))
+    {expressions : List IxIR0.Expr} {sourceValues : List IxIR0.Value}
+    {profile : SourceProfile}
+    (hargs : SourceArgsProfile sourceCtx sourceEnv expressions sourceValues
+      profile) :
+    Result expressions sourceValues profile := by
+  induction hargs with
+  | nil => exact hnil
+  | cons hhead htail ih => exact hcons hhead htail ih
+
 theorem SourceArgsProfile.toSourceArgsEval
     {sourceCtx : IxIR0.Ctx} {sourceEnv : List IxIR0.Value}
     {expressions : List IxIR0.Expr} {sourceValues : List IxIR0.Value}
@@ -3965,9 +3993,15 @@ theorem SourceArgsProfile.toSourceArgsEval
     (hargs : SourceArgsProfile sourceCtx sourceEnv expressions sourceValues
       profile) :
     SourceArgsEval sourceCtx sourceEnv expressions sourceValues := by
-  induction hargs with
-  | nil => exact .nil
-  | cons hhead _ ih => exact .cons hhead.run ih
+  exact SourceArgsProfile.traverse
+    (Result := fun currentExpressions currentValues _ =>
+      SourceArgsEval sourceCtx sourceEnv currentExpressions currentValues)
+    (hnil := .nil)
+    (hcons := by
+      intro expr sourceValue currentExpressions currentValues fuel
+        headProfile tailProfile hhead htail ih
+      exact .cons hhead.run ih)
+    hargs
 
 @[simp] theorem SourceArgsProfile.lengths
     {sourceCtx : IxIR0.Ctx} {sourceEnv : List IxIR0.Value}
@@ -3975,8 +4009,16 @@ theorem SourceArgsProfile.toSourceArgsEval
     {profile : SourceProfile}
     (hargs : SourceArgsProfile sourceCtx sourceEnv expressions sourceValues
       profile) :
-    expressions.length = sourceValues.length :=
-  hargs.toSourceArgsEval.lengths
+    expressions.length = sourceValues.length := by
+  exact SourceArgsProfile.traverse
+    (Result := fun currentExpressions currentValues _ =>
+      currentExpressions.length = currentValues.length)
+    (hnil := rfl)
+    (hcons := by
+      intro expr sourceValue currentExpressions currentValues fuel
+        headProfile tailProfile hhead htail ih
+      simp [ih])
+    hargs
 
 /-- Split a costed argument vector at the compiler's `take`/`drop`
 boundary, retaining exact profiles for both pieces. -/
@@ -3992,28 +4034,46 @@ theorem SourceArgsProfile.splitAt
       SourceArgsProfile sourceCtx sourceEnv (expressions.drop count)
         (sourceValues.drop count) tailProfile ∧
       prefixProfile + tailProfile = profile := by
-  induction count generalizing expressions sourceValues profile with
-  | zero =>
-      exact ⟨0, profile, .nil, hargs,
-        IxIR0.DynamicCost.Profile.zero_add profile⟩
-  | succ count ih =>
-      cases hargs with
-      | nil =>
-          exact ⟨0, 0, .nil, .nil,
-            IxIR0.DynamicCost.Profile.zero_add 0⟩
-      | @cons expr sourceValue expressions sourceValues sourceFuel
-          headProfile tailProfile hhead htail =>
+  exact (SourceArgsProfile.traverse
+    (Result := fun currentExpressions currentValues currentProfile =>
+      ∀ currentCount,
+        ∃ prefixProfile tailProfile,
+          SourceArgsProfile sourceCtx sourceEnv
+              (currentExpressions.take currentCount)
+              (currentValues.take currentCount) prefixProfile ∧
+            SourceArgsProfile sourceCtx sourceEnv
+              (currentExpressions.drop currentCount)
+              (currentValues.drop currentCount) tailProfile ∧
+            prefixProfile + tailProfile = currentProfile)
+    (hnil := by
+      intro currentCount
+      simpa using
+        (show ∃ prefixProfile tailProfile,
+            SourceArgsProfile sourceCtx sourceEnv [] [] prefixProfile ∧
+            SourceArgsProfile sourceCtx sourceEnv [] [] tailProfile ∧
+            prefixProfile + tailProfile = 0 from
+          ⟨0, 0, .nil, .nil,
+            IxIR0.DynamicCost.Profile.zero_add 0⟩))
+    (hcons := by
+      intro expr sourceValue currentExpressions currentValues fuel
+        headProfile tailProfile hhead htail ih currentCount
+      cases currentCount with
+      | zero =>
+          exact ⟨0, headProfile + tailProfile, .nil, .cons hhead htail,
+            IxIR0.DynamicCost.Profile.zero_add _⟩
+      | succ currentCount =>
           obtain ⟨prefixProfile, suffixProfile, hprefix, hsuffix,
-              hprofile⟩ := ih htail
+              hprofile⟩ := ih currentCount
           refine ⟨headProfile + prefixProfile, suffixProfile, ?_, ?_, ?_⟩
-          · simpa using SourceArgsProfile.cons hhead hprefix
-          · simpa using hsuffix
+          · exact .cons hhead hprefix
+          · exact hsuffix
           · calc
               (headProfile + prefixProfile) + suffixProfile =
                   headProfile + (prefixProfile + suffixProfile) :=
                 IxIR0.DynamicCost.Profile.add_assoc _ _ _
               _ = headProfile + tailProfile :=
-                congrArg (headProfile + ·) hprofile
+                congrArg (headProfile + ·) hprofile)
+    hargs) count
 
 /-- Cost-carrying n-ary source application.  Each step includes the source
 `.app` evaluation event in addition to the entered `DynamicCost.Apply`
@@ -4035,15 +4095,51 @@ inductive SourceAppliesProfile (sourceCtx : IxIR0.Ctx) :
         (sourceArgument :: sourceArguments) sourceResult
         ((stepProfile + IxIR0.DynamicCost.tick .evalApp) + tailProfile)
 
+/-- Dependent state-threaded traversal of a profiled source application
+spine. Clients receive the exact head application profile, the original
+profiled tail derivation, and the recursively produced result while the
+initial value, remaining arguments, final value, and additive profile stay
+synchronized. -/
+theorem SourceAppliesProfile.traverse
+    {sourceCtx : IxIR0.Ctx}
+    {Result : IxIR0.Value → List IxIR0.Value → IxIR0.Value →
+      SourceProfile → Prop}
+    (hnil : ∀ sourceValue, Result sourceValue [] sourceValue 0)
+    (hcons : ∀ {sourceFunction sourceArgument sourceMiddle sourceResult :
+          IxIR0.Value}
+        {sourceArguments : List IxIR0.Value} {fuel : Nat}
+        {stepProfile tailProfile : SourceProfile},
+      IxIR0.DynamicCost.Apply sourceCtx fuel sourceFunction sourceArgument
+          sourceMiddle stepProfile →
+      SourceAppliesProfile sourceCtx sourceMiddle sourceArguments
+          sourceResult tailProfile →
+      Result sourceMiddle sourceArguments sourceResult tailProfile →
+      Result sourceFunction (sourceArgument :: sourceArguments) sourceResult
+        ((stepProfile + IxIR0.DynamicCost.tick .evalApp) + tailProfile))
+    {sourceFunction sourceResult : IxIR0.Value}
+    {sourceArguments : List IxIR0.Value} {profile : SourceProfile}
+    (happly : SourceAppliesProfile sourceCtx sourceFunction sourceArguments
+      sourceResult profile) :
+    Result sourceFunction sourceArguments sourceResult profile := by
+  induction happly with
+  | nil => exact hnil _
+  | cons hstep htail ih => exact hcons hstep htail ih
+
 theorem SourceAppliesProfile.toSourceApplies
     {sourceCtx : IxIR0.Ctx} {sourceFunction sourceResult : IxIR0.Value}
     {sourceArguments : List IxIR0.Value} {profile : SourceProfile}
     (happly : SourceAppliesProfile sourceCtx sourceFunction sourceArguments
       sourceResult profile) :
     SourceApplies sourceCtx sourceFunction sourceArguments sourceResult := by
-  induction happly with
-  | nil => exact .nil
-  | cons hstep _ ih => exact .cons hstep.run ih
+  exact SourceAppliesProfile.traverse
+    (Result := fun currentFunction currentArguments currentResult _ =>
+      SourceApplies sourceCtx currentFunction currentArguments currentResult)
+    (hnil := fun _ => .nil)
+    (hcons := by
+      intro currentFunction argument currentMiddle currentResult
+        currentArguments fuel stepProfile tailProfile hstep htail ih
+      exact .cons hstep.run ih)
+    happly
 
 /-- Costed counterpart of stripping a saturated leading-lambda telescope.
 The final body trace is funded by the initial expression trace together with
@@ -4522,25 +4618,47 @@ theorem SourceAppliesProfile.splitAt
       SourceAppliesProfile sourceCtx sourceMiddle
         (sourceArguments.drop count) sourceResult tailProfile ∧
       prefixProfile + tailProfile = profile := by
-  induction count generalizing sourceFunction sourceArguments sourceResult
-      profile with
-  | zero =>
-      exact ⟨sourceFunction, 0, profile, .nil, happly,
-        IxIR0.DynamicCost.Profile.zero_add profile⟩
-  | succ count ih =>
-      cases happly with
-      | nil =>
-          exact ⟨sourceFunction, 0, 0, .nil, .nil,
-            IxIR0.DynamicCost.Profile.zero_add 0⟩
-      | @cons sourceFunction sourceArgument sourceNext sourceResult
-          sourceArguments sourceFuel stepProfile tailProfile hstep htail =>
+  exact (SourceAppliesProfile.traverse
+    (Result := fun currentFunction currentArguments currentResult
+        currentProfile =>
+      ∀ currentCount,
+        ∃ sourceMiddle prefixProfile tailProfile,
+          SourceAppliesProfile sourceCtx currentFunction
+              (currentArguments.take currentCount) sourceMiddle
+              prefixProfile ∧
+            SourceAppliesProfile sourceCtx sourceMiddle
+              (currentArguments.drop currentCount) currentResult
+              tailProfile ∧
+            prefixProfile + tailProfile = currentProfile)
+    (hnil := by
+      intro sourceValue currentCount
+      simpa using
+        (show ∃ sourceMiddle prefixProfile tailProfile,
+            SourceAppliesProfile sourceCtx sourceValue [] sourceMiddle
+                prefixProfile ∧
+              SourceAppliesProfile sourceCtx sourceMiddle [] sourceValue
+                tailProfile ∧
+              prefixProfile + tailProfile = 0 from
+          ⟨sourceValue, 0, 0, .nil, .nil,
+            IxIR0.DynamicCost.Profile.zero_add 0⟩))
+    (hcons := by
+      intro currentFunction argument currentMiddle currentResult
+        currentArguments fuel stepProfile tailProfile hstep htail ih
+        currentCount
+      cases currentCount with
+      | zero =>
+          exact ⟨currentFunction, 0,
+            (stepProfile + IxIR0.DynamicCost.tick .evalApp) + tailProfile,
+            .nil, .cons hstep htail,
+            IxIR0.DynamicCost.Profile.zero_add _⟩
+      | succ currentCount =>
           obtain ⟨sourceMiddle, prefixProfile, suffixProfile, hprefix,
-              hsuffix, hprofile⟩ := ih htail
+              hsuffix, hprofile⟩ := ih currentCount
           refine ⟨sourceMiddle,
             (stepProfile + IxIR0.DynamicCost.tick .evalApp) + prefixProfile,
             suffixProfile, ?_, ?_, ?_⟩
-          · simpa using SourceAppliesProfile.cons hstep hprefix
-          · simpa using hsuffix
+          · exact .cons hstep hprefix
+          · exact hsuffix
           · calc
               ((stepProfile + IxIR0.DynamicCost.tick .evalApp) +
                   prefixProfile) + suffixProfile =
@@ -4551,7 +4669,8 @@ theorem SourceAppliesProfile.splitAt
                   tailProfile :=
                 congrArg
                   ((stepProfile + IxIR0.DynamicCost.tick .evalApp) + ·)
-                  hprofile
+                  hprofile)
+    happly) count
 
 /-- The exact source reference fragment available at a static function-entry
 boundary.  Keeping the profile, rather than only `SourceRefValue`, is
@@ -6968,6 +7087,33 @@ inductive SourceSpineProfile (sourceCtx : IxIR0.Ctx)
       SourceSpineProfile sourceCtx sourceEnv head arguments sourceResult
         profile
 
+/-- Dependent eliminator for the canonical source-spine profile split.
+Clients receive the exact head value, argument values, three component
+profiles, and all constructor evidence while this theorem remains the sole
+destruction site for the indexed wrapper. -/
+theorem SourceSpineProfile.eliminate
+    {sourceCtx : IxIR0.Ctx} {sourceEnv : List IxIR0.Value}
+    {head : IxIR0.Expr} {arguments : List IxIR0.Expr}
+    {sourceResult : IxIR0.Value} {profile : SourceProfile}
+    {Result : Prop}
+    (hspine : SourceSpineProfile sourceCtx sourceEnv head arguments
+      sourceResult profile)
+    (hintro : ∀ {headValue : IxIR0.Value}
+        {argumentValues : List IxIR0.Value}
+        {headProfile argumentProfile applyProfile : SourceProfile},
+      (∃ fuel, IxIR0.DynamicCost.Eval sourceCtx fuel sourceEnv head
+        headValue headProfile) →
+      SourceArgsProfile sourceCtx sourceEnv arguments argumentValues
+        argumentProfile →
+      SourceAppliesProfile sourceCtx headValue argumentValues sourceResult
+        applyProfile →
+      headProfile + argumentProfile + applyProfile = profile →
+      Result) :
+    Result := by
+  cases hspine with
+  | intro hhead harguments happlies hprofile =>
+      exact hintro hhead harguments happlies hprofile
+
 theorem SourceSpineProfile.toSourceSpineEval
     {sourceCtx : IxIR0.Ctx} {sourceEnv : List IxIR0.Value}
     {head : IxIR0.Expr} {arguments : List IxIR0.Expr}
@@ -6975,11 +7121,11 @@ theorem SourceSpineProfile.toSourceSpineEval
     (hspine : SourceSpineProfile sourceCtx sourceEnv head arguments
       sourceResult profile) :
     SourceSpineEval sourceCtx sourceEnv head arguments sourceResult := by
-  cases hspine with
-  | intro hhead harguments happlies _ =>
-      obtain ⟨fuel, hcost⟩ := hhead
-      exact .intro ⟨fuel, hcost.run⟩
-        harguments.toSourceArgsEval happlies.toSourceApplies
+  apply hspine.eliminate
+  · intro _ _ _ _ _ hhead harguments happlies _
+    obtain ⟨fuel, hcost⟩ := hhead
+    exact .intro ⟨fuel, hcost.run⟩
+      harguments.toSourceArgsEval happlies.toSourceApplies
 
 /-- Expose the exact canonical profile split of a reference-headed spine.
 Every source reference evaluation contributes one evaluation event, so the
@@ -6999,14 +7145,14 @@ theorem SourceSpineProfile.refData
         sourceResult applyProfile ∧
       headProfile + argumentProfile + applyProfile = profile ∧
       0 < headProfile.evals := by
-  cases hspine with
-  | @intro sourceFunction sourceArguments headProfile argumentProfile
-      applyProfile hhead harguments happlies hprofile =>
+  apply hspine.eliminate
+  · intro sourceFunction sourceArguments headProfile argumentProfile
+      applyProfile hhead harguments happlies hprofile
     obtain ⟨fuel, hhead⟩ := hhead
     refine ⟨sourceFunction, sourceArguments, headProfile, argumentProfile,
       applyProfile, ⟨fuel, sourceEval_ref_closed hhead.run⟩, harguments,
       happlies, hprofile, ?_⟩
-    cases hhead <;> simp [IxIR0.DynamicCost.tick]
+    exact hhead.evals_pos
 
 /-- Expose the exact reference evaluation as well as its closed semantic
 value.  Direct calls need the former to distinguish a nullary function body,
@@ -7028,14 +7174,14 @@ theorem SourceSpineProfile.refProfileData
         sourceResult applyProfile ∧
       headProfile + argumentProfile + applyProfile = profile ∧
       0 < headProfile.evals := by
-  cases hspine with
-  | @intro sourceFunction sourceArguments headProfile argumentProfile
-      applyProfile hhead harguments happlies hprofile =>
+  apply hspine.eliminate
+  · intro sourceFunction sourceArguments headProfile argumentProfile
+      applyProfile hhead harguments happlies hprofile
     obtain ⟨fuel, hhead⟩ := hhead
     refine ⟨sourceFunction, sourceArguments, headProfile, argumentProfile,
       applyProfile, ⟨fuel, sourceEval_ref_closed hhead.run⟩,
       ⟨fuel, sourceEnv, hhead⟩, harguments, happlies, hprofile, ?_⟩
-    cases hhead <;> simp [IxIR0.DynamicCost.tick]
+    exact hhead.evals_pos
 
 /-- Any costed head evaluation is the corresponding empty flattened spine. -/
 theorem SourceSpineProfile.of_eval_nil
@@ -7058,15 +7204,15 @@ theorem SourceSpineProfile.flattenApp
       (.app function argument) arguments sourceResult profile) :
     SourceSpineProfile sourceCtx sourceEnv function
       (argument :: arguments) sourceResult profile := by
-  cases hspine with
-  | intro hhead harguments happlies hprofile =>
-      obtain ⟨sourceFuel, hhead⟩ := hhead
-      cases hhead with
-      | app hfunction hargument happly =>
-          refine .intro ⟨_, hfunction⟩ (.cons hargument harguments)
-            (.cons happly happlies) ?_
-          rw [← hprofile]
-          ext <;> simp [IxIR0.DynamicCost.tick] <;> omega
+  apply hspine.eliminate
+  · intro _ _ _ _ _ hhead harguments happlies hprofile
+    obtain ⟨sourceFuel, hhead⟩ := hhead
+    cases hhead with
+    | app hfunction hargument happly =>
+        refine .intro ⟨_, hfunction⟩ (.cons hargument harguments)
+          (.cons happly happlies) ?_
+        rw [← hprofile]
+        ext <;> simp [IxIR0.DynamicCost.tick] <;> omega
 
 /-- One costed source application is the singleton flattened spine consumed
 by the compiler's expression-level `.app` branch. -/
@@ -8346,9 +8492,9 @@ private theorem lowerSpine_apply_run_profile_core
         function args).run middleState =
           .ok (output, emit, av) finalState) :
     Result sourceResult profile := by
-  cases hsource with
-  | @intro sourceFunction sourceArgs headProfile argsProfile applyProfile
-      hhead hsourceArgs hsourceApply hprofile =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceArgs headProfile argsProfile applyProfile
+      hhead hsourceArgs hsourceApply hprofile
     obtain ⟨sourceFuel, hhead⟩ := hhead
     obtain ⟨functionOutput, emitFunction, function, middleState,
         hfunctionRun, hrestRun⟩ := hinvert
@@ -10412,9 +10558,9 @@ theorem lowerSpine_recSelf_run_profile_sound
       state = .ok (output, emit, av) finalState) :
     LowerResultProfileSound funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av profile := by
-  cases hsource with
-  | @intro sourceFunction sourceValues headProfile argsProfile applyProfile
-      hhead hsourceArgs hsourceApply hprofile =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceValues headProfile argsProfile applyProfile
+      hhead hsourceArgs hsourceApply hprofile
     obtain ⟨sourceFuel, hhead⟩ := hhead
     have hsourceHead : sourceEnv[index]? = some sourceFunction :=
       sourceEval_var_inv hhead.run
@@ -11102,9 +11248,9 @@ theorem lowerSpine_recSelf_run_profile_sound_below
       state = .ok (output, emit, av) finalState) :
     LowerResultProfileSoundBelow funRel recSelfRel ctx cur limit input output
       sourceEnv sourceEnv sourceResult world emit av profile := by
-  cases hsource with
-  | @intro sourceFunction sourceValues headProfile argsProfile applyProfile
-      hhead hsourceArgs hsourceApply hprofile =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceValues headProfile argsProfile applyProfile
+      hhead hsourceArgs hsourceApply hprofile
     obtain ⟨sourceFuel, hhead⟩ := hhead
     have hsourceHead : sourceEnv[index]? = some sourceFunction :=
       sourceEval_var_inv hhead.run
@@ -13953,9 +14099,9 @@ private theorem lowerSpine_erased_run_profile_core
     (hrun : (lowerSpine src (fuel + 2) input world .erased args).run
       state = .ok (output, emit, av) finalState) :
     Result sourceResult profile := by
-  cases hsource with
-  | @intro headValue argumentValues headProfile argumentProfile
-      applyProfile hhead harguments happlies hprofile =>
+  apply hsource.eliminate
+  · intro headValue argumentValues headProfile argumentProfile applyProfile
+      hhead harguments happlies hprofile
     obtain ⟨_, hhead⟩ := hhead
     cases hhead
     have hresult : sourceResult = .erased :=
@@ -19185,9 +19331,9 @@ theorem lowerSpine_recSelf_run_profile_sound_within
       input) :
     LowerResultProfileSound funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av profile := by
-  cases hsource with
-  | @intro sourceFunction sourceValues headProfile argsProfile applyProfile
-      hhead hsourceArgs hsourceApply hprofile =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceValues headProfile argsProfile applyProfile
+      hhead hsourceArgs hsourceApply hprofile
     obtain ⟨sourceFuel, hhead⟩ := hhead
     have hsourceHead : sourceEnv[index]? = some sourceFunction :=
       sourceEval_var_inv hhead.run
@@ -20493,9 +20639,9 @@ theorem lowerSpine_recSelf_run_profile_sound_within_below
       input) :
     LowerResultProfileSoundBelow funRel recSelfRel ctx cur limit input output
       sourceEnv sourceEnv sourceResult world emit av profile := by
-  cases hsource with
-  | @intro sourceFunction sourceValues headProfile argsProfile applyProfile
-      hhead hsourceArgs hsourceApply hprofile =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceValues headProfile argsProfile applyProfile
+      hhead hsourceArgs hsourceApply hprofile
     obtain ⟨sourceFuel, hhead⟩ := hhead
     have hsourceHead : sourceEnv[index]? = some sourceFunction :=
       sourceEval_var_inv hhead.run

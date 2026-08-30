@@ -280,7 +280,7 @@
       "current_role": "The upstream Lean compiler, elaborator, kernel, interpreter, code generator, and runtime build Compilatr.ix, check proof terms, execute elaboration-time guards, and host the compiled test executable.",
       "assumption": "The pinned seed accepts and executes the checked sources according to Lean 4 semantics and its runtime ABI. Kernel checking narrows ordinary proof trust, but a compromised compiler/runtime can still falsify executable guards or binaries and is the bootstrap seed addressed by diverse double compilation.",
       "trust_basis": "lean-toolchain pins leanprover/lean4:v4.33.0; lean4-nix and nixpkgs resolution are locked by flake.lock.",
-      "retirement": "Gen 1 self-hosting plus address-exact diverse double compilation; production proof checking then moves to the independently specified/verified ix4lean-derived checker."
+      "retirement": "Gen 1 self-hosting plus address-exact diverse double compilation; production proof checking then moves to the independently specified public lean4ix/ix verified checker."
     },
     {
       "id": "gmp-seed",

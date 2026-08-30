@@ -12,8 +12,8 @@ erasure simulation Ixon → IxIR₀.
 Shape: an untyped, pure, **curried** λ-calculus (environment
 semantics, no store — the heap appears at IxIR₁) with literals and
 content-addressed globals: definitions, constructors, recursors, and
-trusted externs. Gate decisions from `plans/pre-implementation.md`
-§A/§B/§C encoded here:
+trusted externs. The active IR boundaries are recorded in `plans/backend.md`;
+the key choices encoded here are:
 
 - **Functional big-step + fuel** (CakeML-style): executable and
   proof-ergonomic; relational wrappers are derived, and termination

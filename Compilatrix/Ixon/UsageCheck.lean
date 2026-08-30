@@ -58,7 +58,7 @@ non-interference through their common erased observation.
   inductives arrive later.
 - **Branch-blind counting**: recursor minors are ordinary arguments,
   so a variable used in two minors counts `many` even though one
-  branch runs. Conservative; the typed checker (ix4lean extension)
+  branch runs. Conservative; the typed checker (lean4ix extension)
   will max over minors.
 - **Higher-order hole**: positions with unresolvable telescopes
   (variable-headed applications, arguments beyond a known telescope)
@@ -195,7 +195,7 @@ inductive UsageErr where
 def UsageErr.message : UsageErr → String
   | .freezeNeeded =>
       "freeze not in v0: unique value at non-unique sink " ++
-      "(see plans/freeze-contract-2026-08-19.md)"
+      "(see docs/lowering-restrictions.md)"
   | e => reprStr e
 
 /-! ## Telescopes from mode-annotated types -/
@@ -1141,7 +1141,7 @@ private def failsWith (c : Constant) (p : UsageErr → Bool) : Bool :=
 
 #guard UsageErr.freezeNeeded.message ==
   "freeze not in v0: unique value at non-unique sink " ++
-  "(see plans/freeze-contract-2026-08-19.md)"
+  "(see docs/lowering-restrictions.md)"
 
 -- ... whereas returning fresh's result keeps the promise.
 #guard ok? (defnConst (.all .many .unique X X)

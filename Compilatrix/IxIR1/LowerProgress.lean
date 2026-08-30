@@ -2743,6 +2743,25 @@ inductive ProjectionSafeSpine (sourceCtx : IxIR0.Ctx)
       SourceApplies sourceCtx headValue argumentValues result →
       ProjectionSafeSpine sourceCtx sourceEnv head arguments result
 
+/-- Dependent eliminator for projection-safe source-spine semantics. The
+wrapper's hidden head and argument values are exposed in one constructor-local
+place while clients retain the indexed safety and application evidence. -/
+theorem ProjectionSafeSpine.eliminate
+    {sourceCtx : IxIR0.Ctx} {sourceEnv : List IxIR0.Value}
+    {head : IxIR0.Expr} {arguments : List IxIR0.Expr}
+    {result : IxIR0.Value} {Result : Prop}
+    (hspine : ProjectionSafeSpine sourceCtx sourceEnv head arguments result)
+    (hintro : ∀ {headValue : IxIR0.Value}
+        {argumentValues : List IxIR0.Value},
+      ProjectionSafeEval sourceCtx sourceEnv head headValue →
+      ProjectionSafeArgs sourceCtx sourceEnv arguments argumentValues →
+      SourceApplies sourceCtx headValue argumentValues result →
+      Result) :
+    Result := by
+  cases hspine with
+  | intro hhead harguments happlies =>
+      exact hintro hhead harguments happlies
+
 /-- Forget projection evidence and retain the existing source-spine
 evaluation relation. -/
 theorem ProjectionSafeSpine.spineEval {sourceCtx : IxIR0.Ctx}
@@ -2750,8 +2769,8 @@ theorem ProjectionSafeSpine.spineEval {sourceCtx : IxIR0.Ctx}
     {arguments : List IxIR0.Expr} {result : IxIR0.Value}
     (hspine : ProjectionSafeSpine sourceCtx sourceEnv head arguments result) :
     SourceSpineEval sourceCtx sourceEnv head arguments result := by
-  cases hspine with
-  | intro hhead hargs happlies =>
+  apply hspine.eliminate
+  · intro _ _ hhead hargs happlies
     exact .intro hhead.eval hargs.evals happlies
 
 /-- A projection-safe head evaluation is the empty-argument safe spine. -/
@@ -2783,8 +2802,8 @@ theorem ProjectionSafeSpine.flattenApp {sourceCtx : IxIR0.Ctx}
       (.app function argument) arguments result) :
     ProjectionSafeSpine sourceCtx sourceEnv function
       (argument :: arguments) result := by
-  cases hspine with
-  | intro hhead harguments happlies =>
+  apply hspine.eliminate
+  · intro _ _ hhead harguments happlies
     cases hhead with
     | app hfunction hargument happly =>
       exact .intro hfunction (.cons hargument harguments)
@@ -2801,8 +2820,8 @@ theorem ProjectionSafeSpine.refData {sourceCtx : IxIR0.Ctx}
       SourceRefValue sourceCtx address sourceFunction ∧
       ProjectionSafeArgs sourceCtx sourceEnv arguments sourceArguments ∧
       SourceApplies sourceCtx sourceFunction sourceArguments result := by
-  cases hspine with
-  | @intro headValue argumentValues hhead harguments happlies =>
+  apply hspine.eliminate
+  · intro headValue argumentValues hhead harguments happlies
     obtain ⟨fuel, hheadRun⟩ := hhead.eval
     exact ⟨headValue, argumentValues,
       ⟨fuel, sourceEval_ref_closed hheadRun⟩, harguments, happlies⟩
@@ -12216,8 +12235,8 @@ theorem lowerSpine_erased_run_value_progress_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro headValue argumentValues hhead harguments happlies =>
+  apply hsource.eliminate
+  · intro headValue argumentValues hhead harguments happlies
     obtain ⟨_, hhead⟩ := hhead
     have herasedEval : IxIR0.eval sourceCtx 1 sourceEnv .erased =
         .ok .erased := by
@@ -12262,8 +12281,8 @@ theorem lowerSpine_recSelf_run_value_progress_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceValues hhead hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceValues hhead hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hhead
     have hsourceHead : sourceEnv[index]? = some sourceFunction :=
       sourceEval_var_inv hhead
@@ -12320,8 +12339,8 @@ theorem lowerSpine_dynamic_run_value_progress_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hhead
     obtain ⟨functionOutput, emitFunction, function, middleState,
         hfunctionRun, hrestRun⟩ :=
@@ -12373,8 +12392,8 @@ theorem lowerSpine_var_dynamic_run_value_progress_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hhead
     obtain ⟨functionOutput, emitFunction, function, middleState,
         hfunctionRun, hrestRun⟩ :=
@@ -12508,8 +12527,8 @@ theorem lowerSpine_erased_run_value_progress_safely_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro headValue argumentValues hhead harguments happlies =>
+  apply hsource.eliminate
+  · intro headValue argumentValues hhead harguments happlies
     obtain ⟨_, hhead⟩ := hhead.eval
     have herasedEval : IxIR0.eval sourceCtx 1 sourceEnv .erased =
         .ok .erased := by
@@ -12554,8 +12573,8 @@ theorem lowerSpine_recSelf_run_value_progress_safely_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceValues hhead hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceValues hhead hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hhead.eval
     have hsourceHead : sourceEnv[index]? = some sourceFunction :=
       sourceEval_var_inv hhead
@@ -12612,8 +12631,8 @@ theorem lowerSpine_dynamic_run_value_progress_safely_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceArgs hheadSafe hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceArgs hheadSafe hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hheadSafe.eval
     obtain ⟨functionOutput, emitFunction, function, middleState,
         hfunctionRun, hrestRun⟩ :=
@@ -12665,8 +12684,8 @@ theorem lowerSpine_var_dynamic_run_value_progress_safely_within
       input) :
     LowerResultValueProgress funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceArgs hheadSafe hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceArgs hheadSafe hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hheadSafe.eval
     obtain ⟨functionOutput, emitFunction, function, middleState,
         hfunctionRun, hrestRun⟩ :=
@@ -13257,8 +13276,8 @@ theorem lowerSpine_erased_run_value_settlement_within
       input) :
     LowerResultValueSettlement funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro headValue argumentValues hhead harguments happlies =>
+  apply hsource.eliminate
+  · intro headValue argumentValues hhead harguments happlies
     obtain ⟨_, hhead⟩ := hhead
     have herasedEval : IxIR0.eval sourceCtx 1 sourceEnv .erased =
         .ok .erased := by
@@ -13303,8 +13322,8 @@ theorem lowerSpine_recSelf_run_value_settlement_within
       input) :
     LowerResultValueSettlement funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceValues hhead hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceValues hhead hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hhead
     have hsourceHead : sourceEnv[index]? = some sourceFunction :=
       sourceEval_var_inv hhead
@@ -13361,8 +13380,8 @@ theorem lowerSpine_dynamic_run_value_settlement_within
       input) :
     LowerResultValueSettlement funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hhead
     obtain ⟨functionOutput, emitFunction, function, middleState,
         hfunctionRun, hrestRun⟩ :=
@@ -13414,8 +13433,8 @@ theorem lowerSpine_var_dynamic_run_value_settlement_within
       input) :
     LowerResultValueSettlement funRel recSelfRel ctx cur input output
       sourceEnv sourceEnv sourceResult world emit av := by
-  cases hsource with
-  | @intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply =>
+  apply hsource.eliminate
+  · intro sourceFunction sourceArgs hhead hsourceArgs hsourceApply
     obtain ⟨sourceFuel, hhead⟩ := hhead
     obtain ⟨functionOutput, emitFunction, function, middleState,
         hfunctionRun, hrestRun⟩ :=

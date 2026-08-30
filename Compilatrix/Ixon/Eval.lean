@@ -8,7 +8,7 @@ twin of `Compilatrix/IxIR0/Eval.lean`, in the same house style
 (functional big-step, uniform fuel decrement across the mutual
 functions, `∃ fuel` termination statements). This is the runtime
 anchor for Ixon terms — NOT a defeq/whnf engine (that is Ix.Tc's and
-ix4lean's job).
+lean4ix's job).
 
 Semantics choices:
 
