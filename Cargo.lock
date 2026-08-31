@@ -919,6 +919,7 @@ dependencies = [
  "flock-prover",
  "ix-terminal",
  "multi-stark 0.1.0 (git+https://github.com/argumentcomputer/multi-stark.git?rev=2892243e674f9a0b3aca9004a8d00c79a23beec1)",
+ "rayon",
  "serde",
 ]
 
