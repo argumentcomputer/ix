@@ -15,6 +15,7 @@ blake3 = "1.8.4"
 flock-prover = { git = "https://github.com/succinctlabs/flock", rev = "b310f35f35f68095537150a1c8c0a43caca9a29e" }
 ix-terminal = { path = "../crates/terminal" }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2892243e674f9a0b3aca9004a8d00c79a23beec1" }
+rayon = "1"
 serde = { version = "1", features = ["derive"] }
 
 [workspace.lints.rust]

@@ -11,10 +11,12 @@ use flock_prover::{
   field::F128,
   r1cs::BlockR1cs,
   schedule::{IoWord, TableType},
+  union::SlotWitnessDest,
 };
 
 use crate::boolean::{
-  BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness, write_f128,
+  BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness_into,
+  write_f128,
 };
 
 const K_LOG: usize = 12;
@@ -41,14 +43,13 @@ impl GateType for ByteWindowGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_byte_window_r1cs(self.nu)).with_io_schema(
-      vec![
+    crate::boolean::table_from_block_r1cs(build_byte_window_r1cs(self.nu))
+      .with_io_schema(vec![
         IoWord::input(0),
         IoWord::input(1),
         IoWord::input(2),
         IoWord::output(3),
-      ],
-    )
+      ])
   }
 
   fn eval(
@@ -81,15 +82,22 @@ pub(crate) fn build_byte_window_r1cs(nu: usize) -> BlockR1cs {
   byte_window_plan().block_r1cs(nu)
 }
 
-pub(crate) fn generate_byte_window_witness(
+pub(crate) fn generate_byte_window_witness_into(
   rows: &[ByteWindowRow],
   nu: usize,
-) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
-  generate_boolean_witness(byte_window_plan(), rows, nu, |row, bits| {
-    write_f128(bits, FIRST_BASE, row.first);
-    write_f128(bits, SECOND_BASE, row.second);
-    write_f128(bits, SELECTOR_BASE, row.selector);
-  })
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  generate_boolean_witness_into(
+    byte_window_plan(),
+    rows,
+    nu,
+    dst,
+    |row, bits| {
+      write_f128(bits, FIRST_BASE, row.first);
+      write_f128(bits, SECOND_BASE, row.second);
+      write_f128(bits, SELECTOR_BASE, row.selector);
+    },
+  )
 }
 
 fn byte_window_plan() -> &'static BooleanR1csPlan {

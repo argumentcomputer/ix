@@ -12,16 +12,20 @@
 //! before one ripple pass; this is substantially smaller than adding 64
 //! shifted partial-product rows sequentially.
 
+use std::sync::OnceLock;
+
 use flock_prover::{
   circuit::builder::{GateType, SlotWitness},
   field::F128,
   r1cs::BlockR1cs,
   schedule::{IoWord, TableType},
+  union::SlotWitnessDest,
 };
 
 use crate::{
   boolean::{
-    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness, write_f128,
+    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
+    generate_boolean_witness_into, write_f128,
   },
   goldilocks::GOLDILOCKS_MODULUS,
 };
@@ -62,7 +66,7 @@ impl GateType for GoldilocksMulPairGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_goldilocks_mul_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(build_goldilocks_mul_r1cs(self.nu))
       .with_io_schema(vec![
         IoWord::input(0),
         IoWord::input(1),
@@ -104,17 +108,33 @@ struct GoldilocksMulPlan {
 }
 
 pub(crate) fn build_goldilocks_mul_r1cs(nu: usize) -> BlockR1cs {
-  build_goldilocks_mul_plan().boolean.block_r1cs(nu)
+  goldilocks_mul_plan().boolean.block_r1cs(nu)
 }
 
 pub(crate) fn generate_goldilocks_mul_witness(
   rows: &[GoldilocksMulPairRow],
   nu: usize,
 ) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
-  let plan = build_goldilocks_mul_plan();
+  let plan = goldilocks_mul_plan();
   generate_boolean_witness(&plan.boolean, rows, nu, |row, bits| {
-    fill_goldilocks_mul_row(&plan, *row, bits)
+    fill_goldilocks_mul_row(plan, *row, bits)
   })
+}
+
+pub(crate) fn generate_goldilocks_mul_witness_into(
+  rows: &[GoldilocksMulPairRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  let plan = goldilocks_mul_plan();
+  generate_boolean_witness_into(&plan.boolean, rows, nu, dst, |row, bits| {
+    fill_goldilocks_mul_row(plan, *row, bits)
+  })
+}
+
+fn goldilocks_mul_plan() -> &'static GoldilocksMulPlan {
+  static PLAN: OnceLock<GoldilocksMulPlan> = OnceLock::new();
+  PLAN.get_or_init(build_goldilocks_mul_plan)
 }
 
 fn build_goldilocks_mul_plan() -> GoldilocksMulPlan {

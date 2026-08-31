@@ -39,7 +39,7 @@ use flock_prover::{
     fs_chain::{CvSource, FsChain, FsChainTrace},
   },
   schedule::{IoWord, TableType},
-  union::UnionInstance,
+  union::{SlotWitnessDest, UnionInstance},
   verifier,
 };
 use ix_terminal::{ValidatedStage2RootV1, fri_parameter_words};
@@ -50,7 +50,8 @@ use crate::{
   FlockConfigV1, STAGE2_TRANSCRIPT_CONFORMANCE_TRANSCRIPT_DOMAIN,
   binding::{Blake3Gate, IV, pack_bytes, pack_params, pack8, pcs_params},
   boolean::{
-    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness, write_f128,
+    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
+    generate_boolean_witness_into, write_f128,
   },
   goldilocks::{
     CanonicalGoldilocksPairGate, GOLDILOCKS_MODULUS, build_canonical_pair_r1cs,
@@ -563,7 +564,7 @@ impl GateType for HashSampleGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_hash_sample_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(build_hash_sample_r1cs(self.nu))
       .with_io_schema(vec![IoWord::input(0), IoWord::output(1)])
   }
 
@@ -589,6 +590,7 @@ pub(crate) fn build_hash_sample_r1cs(
   hash_sample_plan().block_r1cs(nu)
 }
 
+#[cfg(test)]
 pub(crate) fn generate_hash_sample_witness(
   rows: &[HashSampleRow],
   nu: usize,
@@ -596,6 +598,22 @@ pub(crate) fn generate_hash_sample_witness(
   generate_boolean_witness(hash_sample_plan(), rows, nu, |row, bits| {
     write_f128(bits, SAMPLE_INPUT_BASE, row.0);
   })
+}
+
+pub(crate) fn generate_hash_sample_witness_into(
+  rows: &[HashSampleRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  generate_boolean_witness_into(
+    hash_sample_plan(),
+    rows,
+    nu,
+    dst,
+    |row, bits| {
+      write_f128(bits, SAMPLE_INPUT_BASE, row.0);
+    },
+  )
 }
 
 fn hash_sample_plan() -> &'static BooleanR1csPlan {
@@ -645,7 +663,7 @@ impl GateType for GoldilocksSampleGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_goldilocks_sample_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(build_goldilocks_sample_r1cs(self.nu))
       .with_io_schema(vec![
         IoWord::input(0),
         IoWord::input(1),
@@ -716,6 +734,25 @@ pub(crate) fn generate_goldilocks_sample_witness(
     write_f128(bits, FIELD_SAMPLE_REFILL_HIGH_BASE, row.0[2]);
     write_f128(bits, FIELD_SAMPLE_REFILL_LOW_BASE, row.0[3]);
   })
+}
+
+pub(crate) fn generate_goldilocks_sample_witness_into(
+  rows: &[GoldilocksSampleRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  generate_boolean_witness_into(
+    goldilocks_sample_plan(),
+    rows,
+    nu,
+    dst,
+    |row, bits| {
+      write_f128(bits, FIELD_SAMPLE_HIGH_BASE, row.0[0]);
+      write_f128(bits, FIELD_SAMPLE_LOW_BASE, row.0[1]);
+      write_f128(bits, FIELD_SAMPLE_REFILL_HIGH_BASE, row.0[2]);
+      write_f128(bits, FIELD_SAMPLE_REFILL_LOW_BASE, row.0[3]);
+    },
+  )
 }
 
 fn goldilocks_sample_plan() -> &'static BooleanR1csPlan {
@@ -1020,9 +1057,12 @@ impl GateType for U64SplitGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_u64_split_r1cs(self.nu)).with_io_schema(
-      vec![IoWord::input(0), IoWord::output(1), IoWord::output(2)],
-    )
+    crate::boolean::table_from_block_r1cs(build_u64_split_r1cs(self.nu))
+      .with_io_schema(vec![
+        IoWord::input(0),
+        IoWord::output(1),
+        IoWord::output(2),
+      ])
   }
 
   fn eval(
@@ -1047,11 +1087,12 @@ pub(crate) fn build_u64_split_r1cs(nu: usize) -> flock_prover::r1cs::BlockR1cs {
   u64_split_plan().block_r1cs(nu)
 }
 
-pub(crate) fn generate_u64_split_witness(
+pub(crate) fn generate_u64_split_witness_into(
   rows: &[U64SplitRow],
   nu: usize,
-) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
-  generate_boolean_witness(u64_split_plan(), rows, nu, |row, bits| {
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  generate_boolean_witness_into(u64_split_plan(), rows, nu, dst, |row, bits| {
     write_f128(bits, U64_SPLIT_INPUT_BASE, row.0);
   })
 }

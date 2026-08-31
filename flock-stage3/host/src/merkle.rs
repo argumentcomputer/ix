@@ -20,7 +20,7 @@ use flock_prover::{
   r1cs::BlockR1cs,
   r1cs_hashes::blake3 as flock_blake3,
   schedule::{IoWord, TableType},
-  union::UnionInstance,
+  union::{SlotWitnessDest, UnionInstance},
   verifier,
 };
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,8 @@ use crate::{
     pack8, pcs_params,
   },
   boolean::{
-    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness, write_f128,
+    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
+    generate_boolean_witness_into, write_f128,
   },
 };
 
@@ -353,7 +354,7 @@ impl GateType for DigestOrderGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_digest_order_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(build_digest_order_r1cs(self.nu))
       .with_io_schema(vec![
         IoWord::input(0),
         IoWord::input(1),
@@ -404,6 +405,21 @@ pub(crate) fn generate_digest_order_witness(
 ) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
   let plan = build_digest_order_plan();
   generate_boolean_witness(&plan, rows, nu, |row, bits| {
+    bits[BIT_BASE] = row.direction;
+    write_f128(bits, CURRENT_BASE, row.current[0]);
+    write_f128(bits, CURRENT_BASE + 128, row.current[1]);
+    write_f128(bits, SIBLING_BASE, row.sibling[0]);
+    write_f128(bits, SIBLING_BASE + 128, row.sibling[1]);
+  })
+}
+
+pub(crate) fn generate_digest_order_witness_into(
+  rows: &[DigestOrderRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  let plan = build_digest_order_plan();
+  generate_boolean_witness_into(&plan, rows, nu, dst, |row, bits| {
     bits[BIT_BASE] = row.direction;
     write_f128(bits, CURRENT_BASE, row.current[0]);
     write_f128(bits, CURRENT_BASE + 128, row.current[1]);

@@ -12,6 +12,7 @@ blake3 = { workspace = true }
 flock-prover = { workspace = true }
 ix-terminal = { workspace = true }
 multi-stark = { workspace = true }
+rayon = { workspace = true }
 serde = { workspace = true }
 
 [lints]

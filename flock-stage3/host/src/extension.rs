@@ -11,11 +11,13 @@ use flock_prover::{
   field::F128,
   r1cs::BlockR1cs,
   schedule::{IoWord, TableType},
+  union::SlotWitnessDest,
 };
 
 use crate::{
   boolean::{
-    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness, write_f128,
+    BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
+    generate_boolean_witness_into, write_f128,
   },
   goldilocks::{CanonicalGoldilocksPairGate, GoldilocksAddPairGate},
   multiplication::{GoldilocksMulPairGate, goldilocks_mul},
@@ -50,16 +52,15 @@ impl GateType for GoldilocksLaneRepackGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_lane_repack_r1cs(self.nu)).with_io_schema(
-      vec![
+    crate::boolean::table_from_block_r1cs(build_lane_repack_r1cs(self.nu))
+      .with_io_schema(vec![
         IoWord::input(0),
         IoWord::input(1),
         IoWord::output(2),
         IoWord::output(3),
         IoWord::output(4),
         IoWord::output(5),
-      ],
-    )
+      ])
   }
 
   fn eval(
@@ -94,6 +95,18 @@ pub(crate) fn generate_lane_repack_witness(
 ) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
   let plan = build_lane_repack_plan();
   generate_boolean_witness(&plan, rows, nu, |row, bits| {
+    write_f128(bits, FIRST_BASE, row.first);
+    write_f128(bits, SECOND_BASE, row.second);
+  })
+}
+
+pub(crate) fn generate_lane_repack_witness_into(
+  rows: &[GoldilocksLaneRepackRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  let plan = build_lane_repack_plan();
+  generate_boolean_witness_into(&plan, rows, nu, dst, |row, bits| {
     write_f128(bits, FIRST_BASE, row.first);
     write_f128(bits, SECOND_BASE, row.second);
   })

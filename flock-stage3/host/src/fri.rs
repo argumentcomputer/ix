@@ -22,10 +22,11 @@ use flock_prover::{
   challenger::FsChallenger,
   circuit::builder::{CircuitShape, ShapeBuilder, SlotId, Wire},
   field::F128,
-  lincheck::LincheckCircuit,
+  lincheck::{CscCircuit, LincheckCircuit},
   pcs::Commitment,
   proof::R1csProofCircuitMerged,
   prover::{self, UnionSlotProverInput},
+  r1cs::BlockR1cs,
   r1cs_hashes::blake3 as flock_blake3,
   union::UnionInstance,
   verifier,
@@ -37,8 +38,12 @@ use multi_stark::{
   p3_field::{BasedVectorSpace, PrimeCharacteristicRing, PrimeField64},
   types::{ExtVal, FriParameters, Val},
 };
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::{
+  collections::BTreeMap,
+  sync::{Arc, Mutex, OnceLock},
+};
 
 use crate::{
   FRI_FOLD_CONFORMANCE_TRANSCRIPT_DOMAIN,
@@ -55,23 +60,25 @@ use crate::{
     pack8, pcs_params,
   },
   equality::{
-    F128EqualityGate, build_f128_equality_r1cs, generate_f128_equality_witness,
+    F128EqualityGate, build_f128_equality_r1cs,
+    generate_f128_equality_witness_into,
   },
   extension::{
     GoldilocksCircuitSlots, GoldilocksLaneRepackGate, build_lane_repack_r1cs,
-    generate_lane_repack_witness,
+    generate_lane_repack_witness_into,
   },
   goldilocks::{
     CanonicalGoldilocksPairGate, GOLDILOCKS_MODULUS, GoldilocksAddPairGate,
     build_canonical_pair_r1cs, build_goldilocks_add_r1cs,
-    generate_canonical_pair_witness, generate_goldilocks_add_witness,
+    generate_canonical_pair_witness_into, generate_goldilocks_add_witness_into,
   },
   merkle::{
-    DigestOrderGate, build_digest_order_r1cs, generate_digest_order_witness,
+    DigestOrderGate, build_digest_order_r1cs,
+    generate_digest_order_witness_into,
   },
   multiplication::{
     GoldilocksMulPairGate, build_goldilocks_mul_r1cs,
-    generate_goldilocks_mul_witness, goldilocks_mul,
+    generate_goldilocks_mul_witness_into, goldilocks_mul,
   },
   transcript::{
     FriTranscriptCircuitSlots, GoldilocksSampleGate, HashSampleGate,
@@ -81,12 +88,12 @@ use crate::{
     build_goldilocks_sample_r1cs, build_hash_sample_r1cs, build_u64_split_r1cs,
     constrain_hash, constrain_stage2_fri_transcript,
     constrain_stage2_transcript, fri_transcript_blake3_rows,
-    fri_transcript_split_rows, generate_goldilocks_sample_witness,
-    generate_hash_sample_witness, generate_u64_split_witness, hash_trace,
-    transcript_challenge_words, transcript_nu,
+    fri_transcript_split_rows, generate_goldilocks_sample_witness_into,
+    generate_hash_sample_witness_into, generate_u64_split_witness_into,
+    hash_trace, transcript_challenge_words, transcript_nu,
   },
   window::{
-    ByteWindowGate, build_byte_window_r1cs, generate_byte_window_witness,
+    ByteWindowGate, build_byte_window_r1cs, generate_byte_window_witness_into,
   },
 };
 
@@ -1639,7 +1646,23 @@ fn prove_stage2_air_pcs_fri_with_domain(
   witness: &Stage2AirPcsFriWitnessV1,
   transcript_domain: &[u8],
 ) -> Result<Stage2AirPcsFriArtifactV1> {
-  let relation = build_stage2_air_pcs_fri_relation(witness)?;
+  let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
+  let total_started = std::time::Instant::now();
+  let phase_started = std::time::Instant::now();
+  let (relation, _) = rayon::join(
+    || cached_stage2_air_pcs_fri_relation(witness),
+    || {
+      stage3_linchecks();
+    },
+  );
+  let relation = relation?;
+  if trace {
+    eprintln!(
+      "  [stage3] relation build: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  let phase_started = std::time::Instant::now();
   let proof_bundle_bytes = prove_fri_circuit(
     &relation.shape,
     relation.slots,
@@ -1651,19 +1674,42 @@ fn prove_stage2_air_pcs_fri_with_domain(
     &relation.public,
     transcript_domain,
   )?;
-  Stage2AirPcsFriArtifactV1::from_parts(
+  if trace {
+    eprintln!(
+      "  [stage3] circuit evaluate + prove: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  let artifact = Stage2AirPcsFriArtifactV1::from_parts(
     witness.clone(),
     relation.shape.circuit.digest(),
     proof_bundle_bytes,
-  )
+  )?;
+  if trace {
+    eprintln!(
+      "  [stage3] relation-to-artifact total: {:.2} ms",
+      total_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  Ok(artifact)
 }
 
 fn build_stage2_air_pcs_fri_relation(
   witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<TranscriptBoundFriCommitPhaseRelation> {
+  let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
+  let total_started = std::time::Instant::now();
   let pcs_fri = &witness.pcs_fri;
+  let phase_started = std::time::Instant::now();
   let prefix_challenges = pcs_fri.prefix.challenges()?;
   let fri_challenges = pcs_fri.fri_transcript.challenges(&pcs_fri.prefix)?;
+  if trace {
+    eprintln!(
+      "    [stage3-relation] replay transcript: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  let phase_started = std::time::Instant::now();
   let (fri_computations, pcs_computations) =
     validate_all_transcript_bound_pcs_fri_queries(
       &pcs_fri.prefix,
@@ -1673,6 +1719,13 @@ fn build_stage2_air_pcs_fri_relation(
       &pcs_fri.pcs_instance,
       &pcs_fri.queries,
     )?;
+  if trace {
+    eprintln!(
+      "    [stage3-relation] native PCS/FRI validation: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  let phase_started = std::time::Instant::now();
   let relation =
     TranscriptBoundFriCommitPhaseRelation::build_all_with_pcs_and_air(
       &pcs_fri.prefix,
@@ -1684,19 +1737,67 @@ fn build_stage2_air_pcs_fri_relation(
       &fri_computations,
       &pcs_computations,
     )?;
+  if trace {
+    eprintln!(
+      "    [stage3-relation] build circuit shape: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+    eprintln!(
+      "    [stage3-relation] total: {:.2} ms",
+      total_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  Ok(relation)
+}
+
+/// Retain only the most recently used complete relation. The circuit shape is
+/// immutable and value-independent once built, while the input/public vectors
+/// in this relation are specific to one witness. Comparing the full witness
+/// (rather than a digest) makes an exact hit safe for preflight, proving, and
+/// post-hoc verification without introducing a cache-collision assumption.
+fn cached_stage2_air_pcs_fri_relation(
+  witness: &Stage2AirPcsFriWitnessV1,
+) -> Result<Arc<TranscriptBoundFriCommitPhaseRelation>> {
+  type Entry =
+    (Stage2AirPcsFriWitnessV1, Arc<TranscriptBoundFriCommitPhaseRelation>);
+  static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
+
+  let cache = CACHE.get_or_init(|| Mutex::new(None));
+  let mut cached =
+    cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+  if let Some((cached_witness, relation)) = cached.as_ref()
+    && cached_witness == witness
+  {
+    if std::env::var_os("IX_FLOCK_TIMING").is_some() {
+      eprintln!("    [stage3-relation] exact-witness cache: hit");
+    }
+    return Ok(Arc::clone(relation));
+  }
+
+  if std::env::var_os("IX_FLOCK_TIMING").is_some() {
+    eprintln!("    [stage3-relation] exact-witness cache: miss");
+  }
+  let relation = Arc::new(build_stage2_air_pcs_fri_relation(witness)?);
+  *cached = Some((witness.clone(), Arc::clone(&relation)));
   Ok(relation)
 }
 
 pub(crate) fn stage2_air_pcs_fri_circuit_digest(
   witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<[u8; 32]> {
-  Ok(build_stage2_air_pcs_fri_relation(witness)?.shape.circuit.digest())
+  Ok(cached_stage2_air_pcs_fri_relation(witness)?.shape.circuit.digest())
 }
 
 pub(crate) fn preflight_stage2_air_pcs_fri(
   stage2_witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<Stage3RelationCensusV1> {
-  let relation = build_stage2_air_pcs_fri_relation(stage2_witness)?;
+  let (relation, _) = rayon::join(
+    || cached_stage2_air_pcs_fri_relation(stage2_witness),
+    || {
+      stage3_linchecks();
+    },
+  );
+  let relation = relation?;
   let evaluated = relation.shape.run(&relation.inputs, &[]);
   if evaluated.public != relation.public {
     bail!("Flock Stage 3 preflight disagrees with native verifier semantics");
@@ -1793,7 +1894,13 @@ fn verify_stage2_air_pcs_fri_with_domain(
   transcript_domain: &[u8],
 ) -> Result<()> {
   let witness = &artifact.witness;
-  let relation = build_stage2_air_pcs_fri_relation(witness)?;
+  let (relation, _) = rayon::join(
+    || cached_stage2_air_pcs_fri_relation(witness),
+    || {
+      stage3_linchecks();
+    },
+  );
+  let relation = relation?;
   if artifact.circuit_digest != relation.shape.circuit.digest() {
     bail!("Stage 2 AIR/PCS/FRI circuit digest mismatch");
   }
@@ -2834,6 +2941,9 @@ impl TranscriptBoundFriCommitPhaseRelation {
     pcs_instance: Option<&Stage2PcsInstanceV1>,
     air: Option<&Stage2AirProgramV1>,
   ) -> Result<Self> {
+    let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
+    let total_started = std::time::Instant::now();
+    let phase_started = std::time::Instant::now();
     if selected.is_empty() {
       bail!("transcript-bound FRI relation has no selected queries");
     }
@@ -2854,6 +2964,13 @@ impl TranscriptBoundFriCommitPhaseRelation {
     if air.is_some() && pcs_instance.is_none() {
       bail!("AIR evaluation requires the transcript-bound PCS instance");
     }
+    if trace {
+      eprintln!(
+        "      [stage3-shape] validate structure: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
+    let phase_started = std::time::Instant::now();
     let nu = transcript_bound_fri_nu(
       prefix,
       fri_transcript,
@@ -2880,10 +2997,17 @@ impl TranscriptBoundFriCommitPhaseRelation {
       equality,
       field_sample: Some(field_sample_slot),
     };
+    if trace {
+      eprintln!(
+        "      [stage3-shape] size + declare slots: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
 
     // GoldilocksCircuitSlots declares its canonical-zero fixed input first.
     let mut inputs = vec![F128::ZERO];
     let mut public = vec![F128::ZERO];
+    let phase_started = std::time::Instant::now();
     let prefix_region = constrain_stage2_transcript(
       &mut builder,
       TranscriptCircuitSlots {
@@ -2900,7 +3024,14 @@ impl TranscriptBoundFriCommitPhaseRelation {
       builder.publish(challenge);
     }
     public.extend(transcript_challenge_words(prefix.challenges()?));
+    if trace {
+      eprintln!(
+        "      [stage3-shape] prefix transcript: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
 
+    let phase_started = std::time::Instant::now();
     let fri_region = constrain_stage2_fri_transcript(
       &mut builder,
       FriTranscriptCircuitSlots {
@@ -2932,7 +3063,14 @@ impl TranscriptBoundFriCommitPhaseRelation {
           .map(|bit| F128::new((index >> bit) & 1, 0)),
       );
     }
+    if trace {
+      eprintln!(
+        "      [stage3-shape] FRI transcript: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
 
+    let phase_started = std::time::Instant::now();
     let data_zero =
       record_fixed(&mut builder, &mut inputs, &mut public, F128::ZERO);
     let equality_zero =
@@ -2967,6 +3105,13 @@ impl TranscriptBoundFriCommitPhaseRelation {
       node_params,
       one,
     };
+    if trace {
+      eprintln!(
+        "      [stage3-shape] fixed wires: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
+    let phase_started = std::time::Instant::now();
     if let Some(air) = air {
       constrain_stage2_air(
         &mut builder,
@@ -2986,7 +3131,16 @@ impl TranscriptBoundFriCommitPhaseRelation {
         air,
       )?;
     }
+    if trace {
+      eprintln!(
+        "      [stage3-shape] AIR constraints: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
+    let mut pcs_elapsed = std::time::Duration::ZERO;
+    let mut fri_elapsed = std::time::Duration::ZERO;
     for item in selected {
+      let phase_started = std::time::Instant::now();
       let reduced_openings = if let Some(instance) = pcs_instance {
         Some(constrain_stage2_pcs_query(
           &mut builder,
@@ -3005,6 +3159,8 @@ impl TranscriptBoundFriCommitPhaseRelation {
       } else {
         None
       };
+      pcs_elapsed += phase_started.elapsed();
+      let phase_started = std::time::Instant::now();
       constrain_transcript_bound_fri_query(
         &mut builder,
         &arithmetic,
@@ -3017,11 +3173,33 @@ impl TranscriptBoundFriCommitPhaseRelation {
         item.computation,
         reduced_openings.as_ref(),
       );
+      fri_elapsed += phase_started.elapsed();
+    }
+    if trace {
+      eprintln!(
+        "      [stage3-shape] PCS query constraints: {:.2} ms",
+        pcs_elapsed.as_secs_f64() * 1e3,
+      );
+      eprintln!(
+        "      [stage3-shape] FRI query constraints: {:.2} ms",
+        fri_elapsed.as_secs_f64() * 1e3,
+      );
     }
 
+    let phase_started = std::time::Instant::now();
     let shape = builder.finish().map_err(|error| {
       anyhow::anyhow!("build transcript-bound FRI circuit: {error:?}")
     })?;
+    if trace {
+      eprintln!(
+        "      [stage3-shape] finish builder: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+      eprintln!(
+        "      [stage3-shape] total: {:.2} ms",
+        total_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
     Ok(Self {
       shape,
       slots,
@@ -3744,6 +3922,76 @@ fn constrain_authenticated_fold(
   current
 }
 
+struct Stage3Linchecks {
+  blake3: CscCircuit,
+  order: CscCircuit,
+  add: CscCircuit,
+  mul: CscCircuit,
+  repack: CscCircuit,
+  canonical: CscCircuit,
+  equality: CscCircuit,
+  sample: CscCircuit,
+  field_sample: CscCircuit,
+  split: CscCircuit,
+  window: CscCircuit,
+}
+
+/// CSC transposes depend only on each table's inner Boolean matrices, not on
+/// the shared outer-row logarithm. Build them once for the process and reuse
+/// them across proving, verification, and every Stage 3 relation size.
+fn stage3_linchecks() -> &'static Stage3Linchecks {
+  static CACHE: OnceLock<Stage3Linchecks> = OnceLock::new();
+  CACHE.get_or_init(|| {
+    let builders: [fn(usize) -> BlockR1cs; 11] = [
+      flock_blake3::build_block_r1cs,
+      build_digest_order_r1cs,
+      build_goldilocks_add_r1cs,
+      build_goldilocks_mul_r1cs,
+      build_lane_repack_r1cs,
+      build_canonical_pair_r1cs,
+      build_f128_equality_r1cs,
+      build_hash_sample_r1cs,
+      build_goldilocks_sample_r1cs,
+      build_u64_split_r1cs,
+      build_byte_window_r1cs,
+    ];
+    let circuits: Vec<_> = builders
+      .into_par_iter()
+      .map(|build| {
+        let r1cs = build(NU);
+        CscCircuit::from_matrices(&r1cs.a_0, &r1cs.b_0)
+          .with_const_pin(r1cs.const_pin)
+      })
+      .collect();
+    let [
+      blake3,
+      order,
+      add,
+      mul,
+      repack,
+      canonical,
+      equality,
+      sample,
+      field_sample,
+      split,
+      window,
+    ] = circuits.try_into().ok().expect("eleven Stage 3 lincheck circuits");
+    Stage3Linchecks {
+      blake3,
+      order,
+      add,
+      mul,
+      repack,
+      canonical,
+      equality,
+      sample,
+      field_sample,
+      split,
+      window,
+    }
+  })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn prove_fri_circuit(
   shape: &CircuitShape,
@@ -3756,9 +4004,18 @@ fn prove_fri_circuit(
   expected_public: &[F128],
   transcript_domain: &[u8],
 ) -> Result<Vec<u8>> {
+  let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
+  let total_started = std::time::Instant::now();
+  let phase_started = std::time::Instant::now();
   let witness = shape.run(inputs, &[]);
   if witness.public != expected_public {
     bail!("Flock authenticated-FRI circuit disagrees with native semantics");
+  }
+  if trace {
+    eprintln!(
+      "    [stage3-circuit] evaluate rows: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
   }
   let blake3_rows = witness.rows::<Blake3Gate>(slots.blake3);
   let order_rows = witness.rows::<DigestOrderGate>(slots.order);
@@ -3776,76 +4033,82 @@ fn prove_fri_circuit(
   let window_rows =
     window_slot.map(|slot| witness.rows::<ByteWindowGate>(slot));
 
-  let blake3_r1cs = flock_blake3::build_block_r1cs(nu);
-  let blake3_lincheck = blake3_r1cs.csc_lincheck_circuit();
-  let order_r1cs = build_digest_order_r1cs(nu);
-  let order_lincheck = order_r1cs.csc_lincheck_circuit();
-  let add_r1cs = build_goldilocks_add_r1cs(nu);
-  let add_lincheck = add_r1cs.csc_lincheck_circuit();
-  let mul_r1cs = build_goldilocks_mul_r1cs(nu);
-  let mul_lincheck = mul_r1cs.csc_lincheck_circuit();
-  let repack_r1cs = build_lane_repack_r1cs(nu);
-  let repack_lincheck = repack_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(nu);
-  let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
-  let equality_r1cs = build_f128_equality_r1cs(nu);
-  let equality_lincheck = equality_r1cs.csc_lincheck_circuit();
-  let sample_r1cs = build_hash_sample_r1cs(nu);
-  let sample_lincheck = sample_r1cs.csc_lincheck_circuit();
-  let field_sample_r1cs = build_goldilocks_sample_r1cs(nu);
-  let field_sample_lincheck = field_sample_r1cs.csc_lincheck_circuit();
-  let split_r1cs = build_u64_split_r1cs(nu);
-  let split_lincheck = split_r1cs.csc_lincheck_circuit();
-  let window_r1cs = build_byte_window_r1cs(nu);
-  let window_lincheck = window_r1cs.csc_lincheck_circuit();
+  let phase_started = std::time::Instant::now();
+  let linchecks = stage3_linchecks();
+  let blake3_lincheck = &linchecks.blake3;
+  let order_lincheck = &linchecks.order;
+  let add_lincheck = &linchecks.add;
+  let mul_lincheck = &linchecks.mul;
+  let repack_lincheck = &linchecks.repack;
+  let canonical_lincheck = &linchecks.canonical;
+  let equality_lincheck = &linchecks.equality;
+  let sample_lincheck = &linchecks.sample;
+  let field_sample_lincheck = &linchecks.field_sample;
+  let split_lincheck = &linchecks.split;
+  let window_lincheck = &linchecks.window;
+  if trace {
+    eprintln!(
+      "    [stage3-circuit] compile R1CS/lincheck: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
 
+  let phase_started = std::time::Instant::now();
   let mut slot_inputs = vec![
     (
       shape.registry_slot(slots.blake3),
-      UnionSlotProverInput::new(
-        flock_blake3::generate_witness_batch_major_partial(blake3_rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| {
+          flock_blake3::generate_witness_batch_major_partial_into(
+            blake3_rows,
+            nu,
+            dst,
+          )
+        },
         blake3_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.order),
-      UnionSlotProverInput::new(
-        generate_digest_order_witness(order_rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_digest_order_witness_into(order_rows, nu, dst),
         order_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.add),
-      UnionSlotProverInput::new(
-        generate_goldilocks_add_witness(add_rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_goldilocks_add_witness_into(add_rows, nu, dst),
         add_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.mul),
-      UnionSlotProverInput::new(
-        generate_goldilocks_mul_witness(mul_rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_goldilocks_mul_witness_into(mul_rows, nu, dst),
         mul_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.repack),
-      UnionSlotProverInput::new(
-        generate_lane_repack_witness(repack_rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_lane_repack_witness_into(repack_rows, nu, dst),
         repack_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.canonical),
-      UnionSlotProverInput::new(
-        generate_canonical_pair_witness(canonical_rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| {
+          generate_canonical_pair_witness_into(canonical_rows, nu, dst)
+        },
         canonical_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.equality),
-      UnionSlotProverInput::new(
-        generate_f128_equality_witness(equality_rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_f128_equality_witness_into(equality_rows, nu, dst),
         equality_lincheck,
       ),
     ),
@@ -3853,8 +4116,8 @@ fn prove_fri_circuit(
   if let (Some(slot), Some(rows)) = (sample_slot, sample_rows) {
     slot_inputs.push((
       shape.registry_slot(slot),
-      UnionSlotProverInput::new(
-        generate_hash_sample_witness(rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_hash_sample_witness_into(rows, nu, dst),
         sample_lincheck,
       ),
     ));
@@ -3862,8 +4125,8 @@ fn prove_fri_circuit(
   if let (Some(slot), Some(rows)) = (slots.field_sample, field_sample_rows) {
     slot_inputs.push((
       shape.registry_slot(slot),
-      UnionSlotProverInput::new(
-        generate_goldilocks_sample_witness(rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_goldilocks_sample_witness_into(rows, nu, dst),
         field_sample_lincheck,
       ),
     ));
@@ -3871,8 +4134,8 @@ fn prove_fri_circuit(
   if let (Some(slot), Some(rows)) = (split_slot, split_rows) {
     slot_inputs.push((
       shape.registry_slot(slot),
-      UnionSlotProverInput::new(
-        generate_u64_split_witness(rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_u64_split_witness_into(rows, nu, dst),
         split_lincheck,
       ),
     ));
@@ -3880,8 +4143,8 @@ fn prove_fri_circuit(
   if let (Some(slot), Some(rows)) = (window_slot, window_rows) {
     slot_inputs.push((
       shape.registry_slot(slot),
-      UnionSlotProverInput::new(
-        generate_byte_window_witness(rows, nu),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_byte_window_witness_into(rows, nu, dst),
         window_lincheck,
       ),
     ));
@@ -3891,6 +4154,13 @@ fn prove_fri_circuit(
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
   let params = pcs_params(&union);
   let mut challenger = FsChallenger::with_chained_blake3(transcript_domain);
+  if trace {
+    eprintln!(
+      "    [stage3-circuit] assemble prover inputs: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  let phase_started = std::time::Instant::now();
   let (proof, commitment, _) = prover::prove_fast_ligerito_union_circuit(
     &union,
     &shape.circuit,
@@ -3900,10 +4170,27 @@ fn prove_fri_circuit(
     Vec::new(),
     &mut challenger,
   );
+  if trace {
+    eprintln!(
+      "    [stage3-circuit] Flock prove: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  let phase_started = std::time::Instant::now();
   let proof_bundle_bytes =
     encode_bundle(&FriFoldProofBundle { commitment, proof })?;
   if proof_bundle_bytes.len() > MAX_BUNDLE_BYTES {
     bail!("Flock authenticated-FRI proof exceeds {MAX_BUNDLE_BYTES} bytes");
+  }
+  if trace {
+    eprintln!(
+      "    [stage3-circuit] encode proof: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+    eprintln!(
+      "    [stage3-circuit] total: {:.2} ms",
+      total_started.elapsed().as_secs_f64() * 1e3,
+    );
   }
   Ok(proof_bundle_bytes)
 }
@@ -3915,35 +4202,25 @@ fn verify_fri_circuit(
   sample_slot: Option<SlotId>,
   split_slot: Option<SlotId>,
   window_slot: Option<SlotId>,
-  nu: usize,
+  _nu: usize,
   public: &[F128],
   proof_bundle_bytes: &[u8],
   transcript_domain: &[u8],
 ) -> Result<()> {
   let bundle = decode_bundle(proof_bundle_bytes)
     .context("decode Flock authenticated-FRI conformance proof bundle")?;
-  let blake3_r1cs = flock_blake3::build_block_r1cs(nu);
-  let blake3_lincheck = blake3_r1cs.csc_lincheck_circuit();
-  let order_r1cs = build_digest_order_r1cs(nu);
-  let order_lincheck = order_r1cs.csc_lincheck_circuit();
-  let add_r1cs = build_goldilocks_add_r1cs(nu);
-  let add_lincheck = add_r1cs.csc_lincheck_circuit();
-  let mul_r1cs = build_goldilocks_mul_r1cs(nu);
-  let mul_lincheck = mul_r1cs.csc_lincheck_circuit();
-  let repack_r1cs = build_lane_repack_r1cs(nu);
-  let repack_lincheck = repack_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(nu);
-  let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
-  let equality_r1cs = build_f128_equality_r1cs(nu);
-  let equality_lincheck = equality_r1cs.csc_lincheck_circuit();
-  let sample_r1cs = build_hash_sample_r1cs(nu);
-  let sample_lincheck = sample_r1cs.csc_lincheck_circuit();
-  let field_sample_r1cs = build_goldilocks_sample_r1cs(nu);
-  let field_sample_lincheck = field_sample_r1cs.csc_lincheck_circuit();
-  let split_r1cs = build_u64_split_r1cs(nu);
-  let split_lincheck = split_r1cs.csc_lincheck_circuit();
-  let window_r1cs = build_byte_window_r1cs(nu);
-  let window_lincheck = window_r1cs.csc_lincheck_circuit();
+  let lincheck_cache = stage3_linchecks();
+  let blake3_lincheck = &lincheck_cache.blake3;
+  let order_lincheck = &lincheck_cache.order;
+  let add_lincheck = &lincheck_cache.add;
+  let mul_lincheck = &lincheck_cache.mul;
+  let repack_lincheck = &lincheck_cache.repack;
+  let canonical_lincheck = &lincheck_cache.canonical;
+  let equality_lincheck = &lincheck_cache.equality;
+  let sample_lincheck = &lincheck_cache.sample;
+  let field_sample_lincheck = &lincheck_cache.field_sample;
+  let split_lincheck = &lincheck_cache.split;
+  let window_lincheck = &lincheck_cache.window;
 
   let mut linchecks: Vec<(usize, &dyn LincheckCircuit)> = vec![
     (shape.registry_slot(slots.blake3), blake3_lincheck),
@@ -6438,11 +6715,29 @@ mod tests {
 
     let backend = crate::FlockStage3Backend;
 
+    let preflight_started = std::time::Instant::now();
+    let preflight = backend
+      .preflight_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
+      .expect("preflight complete Stage 3 relation");
+    let preflight_elapsed = preflight_started.elapsed();
+
     let prove_started = std::time::Instant::now();
     let artifact = backend
       .prove_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
       .expect("prove complete Stage 3 relation");
     let prove_elapsed = prove_started.elapsed();
+    assert_eq!(
+      artifact.statement().stage2_root_digest(),
+      &preflight.stage2_root_digest,
+    );
+    assert_eq!(
+      artifact.statement().relation_digest(),
+      &preflight.relation_digest,
+    );
+    assert_eq!(
+      artifact.statement().digest(),
+      preflight.stage3_statement_digest
+    );
 
     let encode_started = std::time::Instant::now();
     let encoded = artifact.to_bytes();
@@ -6487,7 +6782,8 @@ mod tests {
       concat!(
         "Flock complete Stage 3 timings (seconds):\n",
         "  fixture setup:                    {:>10.3}\n",
-        "  prove:                            {:>10.3}\n",
+        "  relation preflight/setup:         {:>10.3}\n",
+        "  proof generation:                 {:>10.3}\n",
         "  artifact encode:                  {:>10.3}\n",
         "  artifact decode:                  {:>10.3}\n",
         "  valid cryptographic verification: {:>10.3}\n",
@@ -6498,6 +6794,7 @@ mod tests {
         "  total:                             {:>10.3}",
       ),
       fixture_elapsed.as_secs_f64(),
+      preflight_elapsed.as_secs_f64(),
       prove_elapsed.as_secs_f64(),
       encode_elapsed.as_secs_f64(),
       decode_elapsed.as_secs_f64(),

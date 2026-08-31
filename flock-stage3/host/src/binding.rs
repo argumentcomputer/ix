@@ -387,7 +387,7 @@ impl GateType for Blake3Gate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&blake3::build_block_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(blake3::build_block_r1cs(self.nu))
       .with_io_schema(blake3::io_schema())
   }
 
