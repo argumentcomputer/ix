@@ -1,4 +1,5 @@
 import Ix.Compile.Verify.IxonValue
+import Ix.Compile.Verify.Codec
 import Std.Data.HashMap.Lemmas
 
 /-!
@@ -213,16 +214,25 @@ def ConstantInfo.wireWF : ConstantInfo → Prop
   | .recr recursor => recursor.wireWF
   | .axio axiomInfo => axiomInfo.wireWF
   | .quot quotient => quotient.wireWF
-  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => True
+  | .cPrj projection => projection.block.hash.size = 32
+  | .rPrj projection => projection.block.hash.size = 32
+  | .iPrj projection => projection.block.hash.size = 32
+  | .dPrj projection => projection.block.hash.size = 32
   | .muts members =>
     members.size < UInt64.size ∧ ∀ member ∈ members, member.wireWF
 
+/-- Complete production-codec domain for a constant: every serialized count is
+representable, every expression and universe payload has a lossless telescope
+count, and every address payload contains the 32 bytes consumed by the reader. -/
 def Constant.wireWF (constant : Constant) : Prop :=
   constant.info.wireWF ∧
   constant.sharing.size < UInt64.size ∧
   (∀ expr ∈ constant.sharing, expr.wireWF) ∧
   constant.refs.size < UInt64.size ∧
-  constant.univs.size < UInt64.size
+  (∀ ref ∈ constant.refs, ref.hash.size = 32) ∧
+  constant.univs.size < UInt64.size ∧
+  (∀ univ ∈ constant.univs,
+    Ix.Compile.Verify.Codec.Ixon.Univ.WireWF univ)
 
 end Ixon
 

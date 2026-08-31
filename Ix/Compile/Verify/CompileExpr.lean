@@ -4112,6 +4112,34 @@ theorem compileExpr_run_ordinary_refines
   rw [hfree]
   exact hrun
 
+/-- Complete production ordinary-expression refinement also establishes that
+the emitted expression lies in the serializer's explicit wire domain. -/
+theorem compileExpr_run_ordinary_wireWF
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
+    (hfree : compileEnv.surgeryFree = true)
+    (hclosed : LevelSupportClosed levelSupport)
+    (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
+    (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
+    {state : Ix.CompileM.BlockState} {source : Ix.Expr}
+    {target : Ixon.Expr}
+    (hsource : SupportedOrdinaryExpr levelSupport source)
+    (hbound : ExprWireBound source)
+    (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
+    (href : compileExprRef
+      (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
+    ∃ root state',
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileExpr source) =
+        .ok ((target, root), state') ∧
+      FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
+      target.wireWF := by
+  obtain ⟨root, state', hrun, hstate'⟩ :=
+    compileExpr_run_ordinary_refines compileEnv blockEnv snapshot hfree hclosed
+      hlevelFaithful hexprFaithful hsource hstate href
+  exact ⟨root, state', hrun, hstate', compileExprRef_wireWF hbound href⟩
+
 /-- Complete ordinary compilation preserves the independent Lean4Lean value
 assigned to the source expression. -/
 theorem compileExpr_run_ordinary_value

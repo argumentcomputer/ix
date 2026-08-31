@@ -3,8 +3,8 @@ import Ix.Compile.Verify.Codec
 /-!
 # Proof-visible v2 expression codec
 
-This first expression slice proves the production writer/reader inverse for
-all constructors with empty universe-instantiation vectors and canonical
+This expression slice proves the production writer/reader inverse for all
+constructors with wire-sized universe-instantiation vectors and canonical
 singleton application/lambda/forall spines. Numeric fields use the complete
 `Tag0`/`Tag4` laws, so they are not artificially restricted to one-byte tags.
 -/
@@ -27,11 +27,16 @@ def notAll : Ixon.Expr → Prop
   | .all .. => False
   | _ => True
 
-/-- First expression-codec domain: all constructors, empty universe-index
+/-- The array length must survive the production `Nat → UInt64 → Nat`
+    wire-count conversion. -/
+def IndexVectorWF (idxs : Array UInt64) : Prop :=
+  idxs.size < UInt64.size
+
+/-- Expression-codec domain: all constructors, wire-sized universe-index
     vectors, and singleton canonical app/binder spines. -/
 def SingleWireWF : Ixon.Expr → Prop
   | .sort _ | .var _ | .str _ | .nat _ | .share _ => True
-  | .ref _ univs | .recur _ univs => univs = #[]
+  | .ref _ univs | .recur _ univs => IndexVectorWF univs
   | .prj _ _ val => SingleWireWF val
   | .app fn arg => SingleWireWF fn ∧ SingleWireWF arg ∧ notApp fn
   | .lam _ ty body => SingleWireWF ty ∧ SingleWireWF body ∧ notLam body
@@ -51,13 +56,20 @@ theorem collectAllBinders_eq_of_notAll (e : Ixon.Expr) (h : notAll e) :
     e.collectAllBinders = ([], e) := by
   cases e <;> simp_all [notAll, Ixon.Expr.collectAllBinders]
 
+/-- Concatenated `Tag0` encodings in list order. -/
+def tag0ListBytes : List UInt64 → ByteArray
+  | [] => ByteArray.empty
+  | idx :: idxs => tag0Bytes idx ++ tag0ListBytes idxs
+
 def wireEncode : Ixon.Expr → ByteArray
   | .sort idx => tag4Bytes Ixon.Expr.FLAG_SORT idx
   | .var idx => tag4Bytes Ixon.Expr.FLAG_VAR idx
-  | .ref refIdx _ =>
-      tag4Bytes Ixon.Expr.FLAG_REF 0 ++ tag0Bytes refIdx
-  | .recur recIdx _ =>
-      tag4Bytes Ixon.Expr.FLAG_REC 0 ++ tag0Bytes recIdx
+  | .ref refIdx univs =>
+      tag4Bytes Ixon.Expr.FLAG_REF univs.size.toUInt64 ++ tag0Bytes refIdx ++
+        tag0ListBytes univs.toList
+  | .recur recIdx univs =>
+      tag4Bytes Ixon.Expr.FLAG_REC univs.size.toUInt64 ++ tag0Bytes recIdx ++
+        tag0ListBytes univs.toList
   | .prj typeRefIdx fieldIdx val =>
       tag4Bytes Ixon.Expr.FLAG_PRJ fieldIdx ++ tag0Bytes typeRefIdx ++
         wireEncode val
@@ -91,11 +103,11 @@ theorem wireEncode_size_pos (e : Ixon.Expr) : 0 < (wireEncode e).size := by
   | sort idx => simpa [wireEncode] using tag4Bytes_size_pos Ixon.Expr.FLAG_SORT idx
   | var idx => simpa [wireEncode] using tag4Bytes_size_pos Ixon.Expr.FLAG_VAR idx
   | ref idx univs =>
-    have h := tag4Bytes_size_pos Ixon.Expr.FLAG_REF 0
+    have h := tag4Bytes_size_pos Ixon.Expr.FLAG_REF univs.size.toUInt64
     simp only [wireEncode, ByteArray.size_append]
     omega
   | recur idx univs =>
-    have h := tag4Bytes_size_pos Ixon.Expr.FLAG_REC 0
+    have h := tag4Bytes_size_pos Ixon.Expr.FLAG_REC univs.size.toUInt64
     simp only [wireEncode, ByteArray.size_append]
     omega
   | prj typeIdx fieldIdx val =>
@@ -130,6 +142,59 @@ theorem forallMode_fields (uses : Ixon.Uses) (owned : Ixon.Owned) :
       Ixon.Owned.ofBits? ((mode >>> 2) &&& 0x01) = some owned := by
   cases uses <;> cases owned <;> decide
 
+theorem indexVectorWF_count (idxs : Array UInt64) (h : IndexVectorWF idxs) :
+    idxs.size.toUInt64.toNat = idxs.size := by
+  unfold IndexVectorWF at h
+  change (UInt64.ofNat idxs.size).toNat = idxs.size
+  exact UInt64.toNat_ofNat_of_lt h
+
+def putTag0List (idxs : List UInt64) : Ixon.PutM Unit :=
+  idxs.foldlM (fun _ idx => Ixon.putTag0 ⟨idx⟩) ()
+
+theorem putTag0List_writes (idxs : List UInt64) :
+    Writes (putTag0List idxs) (tag0ListBytes idxs) := by
+  induction idxs with
+  | nil =>
+    intro before
+    simp only [putTag0List, List.foldlM_nil, tag0ListBytes,
+      ByteArray.append_empty]
+    rfl
+  | cons idx idxs ih =>
+    simpa only [putTag0List, List.foldlM_cons, tag0ListBytes] using
+      (putTag0_writes idx).bind ih
+
+theorem arrayPutTag0_eq_putTag0List (idxs : Array UInt64) :
+    (do for idx in idxs do Ixon.putTag0 ⟨idx⟩) =
+      putTag0List idxs.toList := by
+  rw [← Array.forIn_toList]
+  simp [putTag0List]
+
+theorem arrayPutTag0_writes (idxs : Array UInt64) :
+    Writes (do for idx in idxs do Ixon.putTag0 ⟨idx⟩)
+      (tag0ListBytes idxs.toList) := by
+  rw [arrayPutTag0_eq_putTag0List]
+  exact putTag0List_writes idxs.toList
+
+theorem getTag0Sizes_reads (idxs : List UInt64) :
+    Reads (Ixon.getTag0Sizes idxs.length) (tag0ListBytes idxs) idxs := by
+  induction idxs with
+  | nil =>
+    simpa [Ixon.getTag0Sizes, tag0ListBytes] using
+      (Reads.pure ([] : List UInt64))
+  | cons idx idxs ih =>
+    have hhead := getTag0_reads idx
+    have hreturn := Reads.pure (idx :: idxs)
+    have htail := Reads.bind
+      (next := fun tail : List UInt64 =>
+        (pure (idx :: tail) : Ixon.GetM (List UInt64)))
+      ih hreturn
+    have hall := Reads.bind
+      (next := fun decoded : Ixon.Tag0 => do
+        let tail ← Ixon.getTag0Sizes idxs.length
+        return decoded.size :: tail)
+      hhead htail
+    simpa [Ixon.getTag0Sizes, tag0ListBytes] using hall
+
 end Ix.Compile.Verify.Codec.Ixon.Expr
 
 namespace Ix.Compile.Verify.Codec.Ixon.Expr
@@ -144,15 +209,15 @@ theorem putExpr_writes_single (e : Ixon.Expr) (h : SingleWireWF e) :
     simpa [Ixon.putExpr, wireEncode] using
       putTag4_writes Ixon.Expr.FLAG_VAR idx
   | ref refIdx univs =>
-    simp only [SingleWireWF] at h
-    subst univs
-    simpa [Ixon.putExpr, wireEncode] using
-      (putTag4_writes Ixon.Expr.FLAG_REF 0).bind (putTag0_writes refIdx)
+    have hwrite :=
+      (putTag4_writes Ixon.Expr.FLAG_REF univs.size.toUInt64).bind
+        ((putTag0_writes refIdx).bind (arrayPutTag0_writes univs))
+    simpa [Ixon.putExpr, wireEncode, ByteArray.append_assoc] using hwrite
   | recur recIdx univs =>
-    simp only [SingleWireWF] at h
-    subst univs
-    simpa [Ixon.putExpr, wireEncode] using
-      (putTag4_writes Ixon.Expr.FLAG_REC 0).bind (putTag0_writes recIdx)
+    have hwrite :=
+      (putTag4_writes Ixon.Expr.FLAG_REC univs.size.toUInt64).bind
+        ((putTag0_writes recIdx).bind (arrayPutTag0_writes univs))
+    simpa [Ixon.putExpr, wireEncode, ByteArray.append_assoc] using hwrite
   | prj typeRefIdx fieldIdx val ih =>
     have hwrite := (putTag4_writes Ixon.Expr.FLAG_PRJ fieldIdx).bind
       ((putTag0_writes typeRefIdx).bind (ih h))
@@ -244,47 +309,73 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
       simpa [Ixon.getExprFuel, wireEncode] using hall
   | ref refIdx univs =>
     intro h fuel hfuel
-    simp only [SingleWireWF] at h
-    subst univs
     cases fuel with
-    | zero => have hpos := wireEncode_size_pos (.ref refIdx #[]); omega
+    | zero => have hpos := wireEncode_size_pos (.ref refIdx univs); omega
     | succ fuel =>
-      have htag := getTag4_reads Ixon.Expr.FLAG_REF 0 (by decide)
+      have hcount := indexVectorWF_count univs h
+      have htag := getTag4_reads Ixon.Expr.FLAG_REF univs.size.toUInt64
+        (by decide)
       have hidx := getTag0_reads refIdx
-      have hreturn := Reads.pure (Ixon.Expr.ref refIdx #[])
+      have hunivs := getTag0Sizes_reads univs.toList
+      have hreturn : Reads
+          (pure (Ixon.Expr.ref refIdx univs.toList.toArray) :
+            Ixon.GetM Ixon.Expr)
+          ByteArray.empty (.ref refIdx univs) := by
+        simpa using Reads.pure (Ixon.Expr.ref refIdx univs)
+      have hafterUnivs := Reads.bind
+        (next := fun decoded : List UInt64 =>
+          (pure (Ixon.Expr.ref refIdx decoded.toArray) :
+            Ixon.GetM Ixon.Expr))
+        hunivs hreturn
       have htail := Reads.bind
         (next := fun decoded : Ixon.Tag0 =>
-          (pure (Ixon.Expr.ref decoded.size #[]) : Ixon.GetM Ixon.Expr))
-        hidx hreturn
+          (do
+            let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
+            return Ixon.Expr.ref decoded.size decodedUnivs.toArray))
+        hidx hafterUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
-            ⟨Ixon.Expr.FLAG_REF, 0⟩)
-          (tag0Bytes refIdx) (.ref refIdx #[]) := by
+            ⟨Ixon.Expr.FLAG_REF, univs.size.toUInt64⟩)
+          (tag0Bytes refIdx ++ tag0ListBytes univs.toList)
+          (.ref refIdx univs) := by
         simpa [Ixon.getExprFromTag, Ixon.Expr.FLAG_REF,
-          Ixon.getTag0Sizes] using htail
+          hcount, ByteArray.append_assoc] using htail
       have hall := Reads.bind
         (next := Ixon.getExprFromTag (Ixon.getExprFuel fuel)) htag hparsed
       simpa [Ixon.getExprFuel, wireEncode, ByteArray.append_assoc] using hall
   | recur recIdx univs =>
     intro h fuel hfuel
-    simp only [SingleWireWF] at h
-    subst univs
     cases fuel with
-    | zero => have hpos := wireEncode_size_pos (.recur recIdx #[]); omega
+    | zero => have hpos := wireEncode_size_pos (.recur recIdx univs); omega
     | succ fuel =>
-      have htag := getTag4_reads Ixon.Expr.FLAG_REC 0 (by decide)
+      have hcount := indexVectorWF_count univs h
+      have htag := getTag4_reads Ixon.Expr.FLAG_REC univs.size.toUInt64
+        (by decide)
       have hidx := getTag0_reads recIdx
-      have hreturn := Reads.pure (Ixon.Expr.recur recIdx #[])
+      have hunivs := getTag0Sizes_reads univs.toList
+      have hreturn : Reads
+          (pure (Ixon.Expr.recur recIdx univs.toList.toArray) :
+            Ixon.GetM Ixon.Expr)
+          ByteArray.empty (.recur recIdx univs) := by
+        simpa using Reads.pure (Ixon.Expr.recur recIdx univs)
+      have hafterUnivs := Reads.bind
+        (next := fun decoded : List UInt64 =>
+          (pure (Ixon.Expr.recur recIdx decoded.toArray) :
+            Ixon.GetM Ixon.Expr))
+        hunivs hreturn
       have htail := Reads.bind
         (next := fun decoded : Ixon.Tag0 =>
-          (pure (Ixon.Expr.recur decoded.size #[]) : Ixon.GetM Ixon.Expr))
-        hidx hreturn
+          (do
+            let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
+            return Ixon.Expr.recur decoded.size decodedUnivs.toArray))
+        hidx hafterUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
-            ⟨Ixon.Expr.FLAG_REC, 0⟩)
-          (tag0Bytes recIdx) (.recur recIdx #[]) := by
+            ⟨Ixon.Expr.FLAG_REC, univs.size.toUInt64⟩)
+          (tag0Bytes recIdx ++ tag0ListBytes univs.toList)
+          (.recur recIdx univs) := by
         simpa [Ixon.getExprFromTag, Ixon.Expr.FLAG_REC,
-          Ixon.getTag0Sizes] using htail
+          hcount, ByteArray.append_assoc] using htail
       have hall := Reads.bind
         (next := Ixon.getExprFromTag (Ixon.getExprFuel fuel)) htag hparsed
       simpa [Ixon.getExprFuel, wireEncode, ByteArray.append_assoc] using hall
@@ -671,11 +762,11 @@ theorem idAType_singleWireWF (aRef : UInt64) :
     ExprSingleWireWF
       (.all .many .shared (.ref aRef #[]) (.ref aRef #[])) := by
   simp [ExprSingleWireWF, Codec.Ixon.Expr.SingleWireWF,
-    Codec.Ixon.Expr.notAll]
+    Codec.Ixon.Expr.IndexVectorWF, Codec.Ixon.Expr.notAll]
 
 theorem idAValue_singleWireWF (aRef : UInt64) :
     ExprSingleWireWF (.lam .many (.ref aRef #[]) (.var 0)) := by
   simp [ExprSingleWireWF, Codec.Ixon.Expr.SingleWireWF,
-    Codec.Ixon.Expr.notLam]
+    Codec.Ixon.Expr.IndexVectorWF, Codec.Ixon.Expr.notLam]
 
 end Ix.Compile.Verify

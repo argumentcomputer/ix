@@ -185,6 +185,18 @@ theorem MetaStateFrame.compileName (state : Ix.CompileM.BlockState)
         ⟨rfl, rfl, rfl, rfl, rfl⟩
       simpa [next] using hprefix.trans (ih next)
 
+/-- Compiling an ordered array of names preserves the same metadata-only
+frame. -/
+theorem MetaStateFrame.compileNames (state : Ix.CompileM.BlockState)
+    (names : Array Ix.Name) :
+    MetaStateFrame state (state.compileNames names) := by
+  unfold Ix.CompileM.BlockState.compileNames
+  apply Array.foldl_induction
+    (motive := fun _ current => MetaStateFrame state current)
+  · exact MetaStateFrame.refl state
+  · intro i current hcurrent
+    exact hcurrent.trans (MetaStateFrame.compileName current names[i])
+
 private theorem run_bind (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
     (action : Ix.CompileM.CompileM α) (next : α → Ix.CompileM.CompileM β) :

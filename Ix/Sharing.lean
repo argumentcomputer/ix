@@ -178,10 +178,35 @@ structure AnalyzeState where
 /-- Analysis monad. -/
 abbrev AnalyzeM := StateM AnalyzeState
 
+/-- Record a node after its children have been analyzed. -/
+def recordAnalyzedNode (e : Ixon.Expr) (childHashes : Array Address) : AnalyzeM Address := do
+  let hash := computeNodeHash e childHashes
+  let ptr := exprPtr e
+
+  -- Add the node to the identity cache.
+  let st ← get
+  set { st with ptrToHash := st.ptrToHash.insert ptr hash }
+
+  -- Keep the first representative for each content hash.
+  let st ← get
+  if !st.infoMap.contains hash then
+    let baseSize := computeBaseSize e
+    set { st with
+      infoMap := st.infoMap.insert hash {
+        baseSize
+        usageCount := 0
+        expr := e
+        children := childHashes
+      }
+      topoOrder := st.topoOrder.push hash
+    }
+
+  return hash
+
 /-- Hash an expression and its children recursively, returning the content hash.
     Phase 1 of the efficient algorithm: builds DAG structure without computing usage counts.
     Uses computeNodeHash as the single source of truth for hash computation. -/
-partial def hashAndAnalyze (e : Ixon.Expr) : AnalyzeM Address := do
+def hashAndAnalyze (e : Ixon.Expr) : AnalyzeM Address := do
   -- Check if we've already processed this exact pointer
   let st ← get
   let ptr := exprPtr e
@@ -209,29 +234,8 @@ partial def hashAndAnalyze (e : Ixon.Expr) : AnalyzeM Address := do
       let valHash ← hashAndAnalyze val
       let bodyHash ← hashAndAnalyze body
       pure #[tyHash, valHash, bodyHash]
-
-  -- Compute the content hash using the single source of truth
-  let hash := computeNodeHash e childHashes
-
-  -- Update state: add to pointer cache
-  let st ← get
-  set { st with ptrToHash := st.ptrToHash.insert ptr hash }
-
-  -- Add to info map if not already present (same content hash from different pointer)
-  let st ← get
-  if !st.infoMap.contains hash then
-    let baseSize := computeBaseSize e
-    set { st with
-      infoMap := st.infoMap.insert hash {
-        baseSize
-        usageCount := 0  -- Will be computed in phase 2
-        expr := e
-        children := childHashes
-      }
-      topoOrder := st.topoOrder.push hash
-    }
-
-  return hash
+  recordAnalyzedNode e childHashes
+termination_by e
 
 /-- Result of sharing analysis. -/
 structure AnalyzeResult where
@@ -242,36 +246,55 @@ structure AnalyzeResult where
   /-- Topological order (leaves first) - built during traversal -/
   topoOrder : Array Address
 
+/-- Analyze each root from left to right, threading the analysis state. -/
+def analyzeExprs (exprs : Array Ixon.Expr) (state : AnalyzeState := {}) : AnalyzeState :=
+  exprs.foldl (init := state) fun state expr =>
+    (hashAndAnalyze expr).run state |>.2
+
+/-- Add a usage contribution to a previously analyzed subterm. -/
+def addUsage (infoMap : Std.HashMap Address SubtermInfo)
+    (hash : Address) (count : Nat) : Std.HashMap Address SubtermInfo :=
+  match infoMap.get? hash with
+  | some info =>
+    infoMap.insert hash { info with usageCount := info.usageCount + count }
+  | none => infoMap
+
+/-- Count one use for every analyzed block root. -/
+def countRootUsages (exprs : Array Ixon.Expr)
+    (ptrToHash : Std.HashMap USize Address)
+    (infoMap : Std.HashMap Address SubtermInfo) : Std.HashMap Address SubtermInfo :=
+  exprs.foldl (init := infoMap) fun infoMap expr =>
+    match ptrToHash.get? (exprPtr expr) with
+    | some hash => addUsage infoMap hash 1
+    | none => infoMap
+
+/-- Propagate one subterm's usage count to each of its children. -/
+def propagateUsage (infoMap : Std.HashMap Address SubtermInfo)
+    (hash : Address) : Std.HashMap Address SubtermInfo :=
+  match infoMap.get? hash with
+  | some info =>
+    info.children.foldl (init := infoMap) fun infoMap childHash =>
+      addUsage infoMap childHash info.usageCount
+  | none => infoMap
+
+/-- Propagate usages from roots to leaves in reverse topological order. -/
+def propagateUsageCounts (topoOrder : Array Address)
+    (infoMap : Std.HashMap Address SubtermInfo) : Std.HashMap Address SubtermInfo :=
+  topoOrder.reverse.foldl (init := infoMap) propagateUsage
+
 /-- Analyze expressions for sharing opportunities within a block.
     Uses a two-phase O(n) algorithm:
     1. Build DAG structure via post-order traversal with Merkle-tree hashing
     2. Propagate usage counts structurally from roots to leaves
     Returns AnalyzeResult with infoMap, ptrToHash, and topoOrder. -/
-def analyzeBlock (exprs : Array Ixon.Expr) : AnalyzeResult := Id.run do
+def analyzeBlock (exprs : Array Ixon.Expr) : AnalyzeResult :=
   -- Phase 1: Build DAG structure
-  let mut st : AnalyzeState := {}
-  for e in exprs do
-    (_, st) := hashAndAnalyze e |>.run st
+  let st := analyzeExprs exprs
 
   -- Phase 2: Propagate usage counts structurally from roots to leaves
   -- This is O(n) total - no subtree walks needed
-
-  -- Count root contributions
-  let mut infoMap := st.infoMap
-  for e in exprs do
-    let ptr := exprPtr e
-    if let some hash := st.ptrToHash.get? ptr then
-      if let some info := infoMap.get? hash then
-        infoMap := infoMap.insert hash { info with usageCount := info.usageCount + 1 }
-
-  -- Propagate counts from roots to leaves (reverse topological order)
-  for hash in st.topoOrder.reverse do
-    if let some info := infoMap.get? hash then
-      let count := info.usageCount
-      for childHash in info.children do
-        if let some childInfo := infoMap.get? childHash then
-          infoMap := infoMap.insert childHash { childInfo with usageCount := childInfo.usageCount + count }
-
+  let infoMap := countRootUsages exprs st.ptrToHash st.infoMap
+  let infoMap := propagateUsageCounts st.topoOrder infoMap
   { infoMap, ptrToHash := st.ptrToHash, topoOrder := st.topoOrder }
 
 /-- Visit state for topological sort. -/
@@ -387,68 +410,64 @@ def decideSharing (infoMap : Std.HashMap Address SubtermInfo)
 
   shared
 
-/-- Rewrite an expression tree to use Share(idx) references.
-    Uses pointer-based caching like Rust: cache rewritten expressions by pointer,
-    and only check hashToIdx if pointer is in ptrToHash (no hash recomputation). -/
-partial def rewriteWithSharing (e : Ixon.Expr) (hashToIdx : Std.HashMap Address Nat)
-    (ptrToHash : Std.HashMap USize Address)
-    (cache : Std.HashMap USize Ixon.Expr) : Ixon.Expr × Std.HashMap USize Ixon.Expr :=
-  let ptr := exprPtr e
-  -- Check cache first
-  match cache.get? ptr with
-  | some cached => (cached, cache)
+/-- Rewrite an expression tree to use `Share(idx)` references. Sharing
+decisions still use the pointer-to-hash table produced by analysis, but the
+rewrite itself is structurally recursive and proof-visible. Reconstructing
+unchanged nodes affects allocation only; serialized output is unchanged. -/
+def rewriteWithSharing (e : Ixon.Expr)
+    (hashToIdx : Std.HashMap Address Nat)
+    (ptrToHash : Std.HashMap USize Address) : Ixon.Expr :=
+  match (ptrToHash.get? (exprPtr e)).bind (hashToIdx.get? ·) with
+  | some idx => .share idx.toUInt64
   | none =>
-    -- Check if this expression should become a Share reference
-    -- Only if pointer is in ptrToHash (was seen during analysis)
-    match ptrToHash.get? ptr with
-    | some hash =>
-      match hashToIdx.get? hash with
-      | some idx =>
-        let result := Ixon.Expr.share idx.toUInt64
-        (result, cache.insert ptr result)
-      | none => rewriteChildren e hashToIdx ptrToHash cache ptr
-    | none => rewriteChildren e hashToIdx ptrToHash cache ptr
-where
-  rewriteChildren (e : Ixon.Expr) (hashToIdx : Std.HashMap Address Nat)
-      (ptrToHash : Std.HashMap USize Address)
-      (cache : Std.HashMap USize Ixon.Expr) (ptr : USize)
-      : Ixon.Expr × Std.HashMap USize Ixon.Expr :=
-    -- Rewrite children, but reuse original if nothing changed (like Rust's Arc::ptr_eq optimization)
-    let (result, cache') := match e with
-      | .sort _ | .var _ | .ref _ _ | .recur _ _ | .str _ | .nat _ | .share _ =>
-        (e, cache)
-      | .prj typeRefIdx fieldIdx val =>
-        let (val', cache') := rewriteWithSharing val hashToIdx ptrToHash cache
-        -- Reuse original if child unchanged
-        let result := if exprPtr val == exprPtr val' then e else .prj typeRefIdx fieldIdx val'
-        (result, cache')
-      | .app fun_ arg =>
-        let (fun', cache') := rewriteWithSharing fun_ hashToIdx ptrToHash cache
-        let (arg', cache'') := rewriteWithSharing arg hashToIdx ptrToHash cache'
-        -- Reuse original if both children unchanged
-        let result := if exprPtr fun_ == exprPtr fun' && exprPtr arg == exprPtr arg'
-                      then e else .app fun' arg'
-        (result, cache'')
-      | .lam uses ty body =>
-        let (ty', cache') := rewriteWithSharing ty hashToIdx ptrToHash cache
-        let (body', cache'') := rewriteWithSharing body hashToIdx ptrToHash cache'
-        let result := if exprPtr ty == exprPtr ty' && exprPtr body == exprPtr body'
-                      then e else .lam uses ty' body'
-        (result, cache'')
-      | .all uses owned ty body =>
-        let (ty', cache') := rewriteWithSharing ty hashToIdx ptrToHash cache
-        let (body', cache'') := rewriteWithSharing body hashToIdx ptrToHash cache'
-        let result := if exprPtr ty == exprPtr ty' && exprPtr body == exprPtr body'
-                      then e else .all uses owned ty' body'
-        (result, cache'')
-      | .letE nonDep ty val body =>
-        let (ty', cache') := rewriteWithSharing ty hashToIdx ptrToHash cache
-        let (val', cache'') := rewriteWithSharing val hashToIdx ptrToHash cache'
-        let (body', cache''') := rewriteWithSharing body hashToIdx ptrToHash cache''
-        let result := if exprPtr ty == exprPtr ty' && exprPtr val == exprPtr val' && exprPtr body == exprPtr body'
-                      then e else .letE nonDep ty' val' body'
-        (result, cache''')
-    (result, cache'.insert ptr result)
+    match e with
+    | .sort _ | .var _ | .ref _ _ | .recur _ _ | .str _ | .nat _ | .share _ => e
+    | .prj typeRefIdx fieldIdx value =>
+      .prj typeRefIdx fieldIdx
+        (rewriteWithSharing value hashToIdx ptrToHash)
+    | .app fn arg =>
+      .app (rewriteWithSharing fn hashToIdx ptrToHash)
+        (rewriteWithSharing arg hashToIdx ptrToHash)
+    | .lam uses ty body =>
+      .lam uses (rewriteWithSharing ty hashToIdx ptrToHash)
+        (rewriteWithSharing body hashToIdx ptrToHash)
+    | .all uses owned ty body =>
+      .all uses owned (rewriteWithSharing ty hashToIdx ptrToHash)
+        (rewriteWithSharing body hashToIdx ptrToHash)
+    | .letE nonDep ty value body =>
+      .letE nonDep (rewriteWithSharing ty hashToIdx ptrToHash)
+        (rewriteWithSharing value hashToIdx ptrToHash)
+        (rewriteWithSharing body hashToIdx ptrToHash)
+termination_by e
+
+/-- State threaded while sharing-vector entries are built. -/
+structure SharingBuildState where
+  sharingVec : Array Ixon.Expr := #[]
+  hashToIdx : Std.HashMap Address Nat := {}
+
+/-- Add one available representative to the sharing vector. -/
+def addSharingEntry (infoMap : Std.HashMap Address SubtermInfo)
+    (ptrToHash : Std.HashMap USize Address) (state : SharingBuildState)
+    (hash : Address) : SharingBuildState :=
+  match infoMap.get? hash with
+  | some info =>
+    let rewritten := rewriteWithSharing info.expr state.hashToIdx ptrToHash
+    let idx := state.sharingVec.size
+    { sharingVec := state.sharingVec.push rewritten
+      hashToIdx := state.hashToIdx.insert hash idx }
+  | none => state
+
+/-- Build selected sharing entries from left to right. -/
+def buildSharingEntries (hashes : Array Address)
+    (infoMap : Std.HashMap Address SubtermInfo)
+    (ptrToHash : Std.HashMap USize Address) : SharingBuildState :=
+  hashes.foldl (init := {}) (addSharingEntry infoMap ptrToHash)
+
+/-- Rewrite block roots using every sharing entry built so far. -/
+def rewriteExprs (exprs : Array Ixon.Expr)
+    (hashToIdx : Std.HashMap Address Nat)
+    (ptrToHash : Std.HashMap USize Address) : Array Ixon.Expr :=
+  exprs.map fun expr => rewriteWithSharing expr hashToIdx ptrToHash
 
 /-- Rewrite expressions to use Share(idx) references for shared subterms.
 
@@ -456,7 +475,7 @@ where
     The sharing vector is sorted in topological order (leaves first). -/
 def buildSharingVec (exprs : Array Ixon.Expr) (sharedHashes : Array Address)
     (infoMap : Std.HashMap Address SubtermInfo)
-    (ptrToHash : Std.HashMap USize Address) : Array Ixon.Expr × Array Ixon.Expr := Id.run do
+    (ptrToHash : Std.HashMap USize Address) : Array Ixon.Expr × Array Ixon.Expr :=
 
   -- CRITICAL: Re-sort shared_hashes in topological order (leaves first).
   -- Use topologicalSort instead of filtering topoOrder from traversal.
@@ -466,50 +485,56 @@ def buildSharingVec (exprs : Array Ixon.Expr) (sharedHashes : Array Address)
   let sharedInTopoOrder : Array Address := topoOrder.filter fun h => sharedSet.contains h
 
   -- Build sharing vector incrementally to avoid forward references
-  let mut sharingVec : Array Ixon.Expr := #[]
-  let mut hashToIdx : Std.HashMap Address Nat := {}
-
-  for h in sharedInTopoOrder do
-    if let some info := infoMap.get? h then
-      -- Clear cache each iteration - hashToIdx changed, so cached rewrites are invalid
-      let rewriteCache : Std.HashMap USize Ixon.Expr := {}
-      let (rewritten, _) := rewriteWithSharing info.expr hashToIdx ptrToHash rewriteCache
-
-      let idx := sharingVec.size
-      sharingVec := sharingVec.push rewritten
-      hashToIdx := hashToIdx.insert h idx
+  let state := buildSharingEntries sharedInTopoOrder infoMap ptrToHash
 
   -- Rewrite the root expressions (can use all Share indices)
-  -- Fresh cache for root expressions since hashToIdx is now complete
-  let mut rewriteCache : Std.HashMap USize Ixon.Expr := {}
-  let mut rewrittenExprs : Array Ixon.Expr := #[]
-  for e in exprs do
-    let (rewritten, cache') := rewriteWithSharing e hashToIdx ptrToHash rewriteCache
-    rewriteCache := cache'
-    rewrittenExprs := rewrittenExprs.push rewritten
+  let rewrittenExprs := rewriteExprs exprs state.hashToIdx ptrToHash
 
-  (rewrittenExprs, sharingVec)
+  (rewrittenExprs, state.sharingVec)
+
+/-- Select the empty or nonempty sharing result after analysis and
+profitability decisions have completed. -/
+def finishSharing (exprs : Array Ixon.Expr) (result : AnalyzeResult)
+    (sharedHashes : Array Address) : Array Ixon.Expr × Array Ixon.Expr :=
+  if sharedHashes.isEmpty then
+    (exprs, #[])
+  else
+    let built :=
+      buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
+    if built.2.size < UInt64.size then built else (exprs, #[])
+
+/-- Emit sharing diagnostics before returning an already computed plan. -/
+def finishSharingWithTrace (exprs : Array Ixon.Expr) (result : AnalyzeResult)
+    (sharedHashes : Array Address) : Array Ixon.Expr × Array Ixon.Expr := Id.run do
+  dbg_trace s!"[Sharing] analyzed {exprs.size} exprs, found {result.infoMap.size} unique subterms, {sharedHashes.size} to share"
+  dbg_trace s!"[Sharing] ptrToHash has {result.ptrToHash.size} entries"
+  -- Debug: show usage counts for all subterms with usage >= 2
+  let effectiveSizes := computeEffectiveSizes result.infoMap result.topoOrder
+  for (hash, info) in result.infoMap do
+    if info.usageCount >= 2 then
+      let size := effectiveSizes.getD hash 0
+      let potential : _root_.Int :=
+        (info.usageCount - 1 : _root_.Int) * size - info.usageCount
+      dbg_trace s!"  usage={info.usageCount} size={size} potential={potential} expr={repr info.expr}"
+  return finishSharing exprs result sharedHashes
+
+/-- Analyze, select, and construct sharing without diagnostic output. -/
+def applySharingCore (exprs : Array Ixon.Expr) :
+    Array Ixon.Expr × Array Ixon.Expr :=
+  let result := analyzeBlock exprs
+  let sharedHashes := decideSharing result.infoMap result.topoOrder
+  finishSharing exprs result sharedHashes
 
 /-- Apply sharing analysis to a set of expressions.
     Returns (rewritten_exprs, sharing_vector). -/
-def applySharing (exprs : Array Ixon.Expr) (dbg : Bool := false)
-    : Array Ixon.Expr × Array Ixon.Expr := Id.run do
-  let result := analyzeBlock exprs
-  let sharedHashes := decideSharing result.infoMap result.topoOrder
+def applySharing (exprs : Array Ixon.Expr) (dbg : Bool := false) :
+    Array Ixon.Expr × Array Ixon.Expr :=
   if dbg then
-    dbg_trace s!"[Sharing] analyzed {exprs.size} exprs, found {result.infoMap.size} unique subterms, {sharedHashes.size} to share"
-    dbg_trace s!"[Sharing] ptrToHash has {result.ptrToHash.size} entries"
-    -- Debug: show usage counts for all subterms with usage >= 2
-    let effectiveSizes := computeEffectiveSizes result.infoMap result.topoOrder
-    for (hash, info) in result.infoMap do
-      if info.usageCount >= 2 then
-        let size := effectiveSizes.getD hash 0
-        let potential : _root_.Int := (info.usageCount - 1 : _root_.Int) * size - info.usageCount
-        dbg_trace s!"  usage={info.usageCount} size={size} potential={potential} expr={repr info.expr}"
-  if sharedHashes.isEmpty then
-    return (exprs, #[])
+    let result := analyzeBlock exprs
+    let sharedHashes := decideSharing result.infoMap result.topoOrder
+    finishSharingWithTrace exprs result sharedHashes
   else
-    return buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
+    applySharingCore exprs
 
 end Ix.Sharing
 
