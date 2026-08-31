@@ -403,8 +403,9 @@ def rebuildSemanticAudit (result : Result)
     raw.all (fun entry =>
       match original entry.1, emitted (rename entry.1) with
       | some before, some after =>
-          Readdress.Decl.structurallyEq after
-            (Readdress.Decl.mapAddresses rename before)
+          Readdress.Decl.structurallyEq before entry.2 &&
+            Readdress.Decl.structurallyEq after
+              (Readdress.Decl.mapAddresses rename before)
       | _, _ => false) &&
     result.addressMap.all (fun entry =>
       match original entry.2 with

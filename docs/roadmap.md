@@ -157,11 +157,12 @@ declaration list, so this attachment need not admit synthetic final-key
 aliases merely to prove declaration coverage. The concrete whole-pass trace
 now derives source declaration layout and owner-sensitive PAP safety, and
 partitions every raw function as either a selected source callable or a final
-generated declaration. The remaining attachment work is to discharge row
-selection from the addressed-erasure certificate, prove semantic provenance
-for every generated function, and project the resulting contracts through
-each validated compilation record to its memory-safety, reclamation, and cost
-corollaries.
+generated declaration. Addressed erasure and exact target addressing now
+certify row selection too, so each validated compilation record exposes
+source layout, PAP safety, and raw function coverage without caller premises.
+The remaining attachment work is to prove semantic provenance for every
+generated function, seal the resulting compiler contracts, and project them
+to the memory-safety, reclamation, and cost corollaries.
 
 M2b exits when that ownership premise is discharged for every accepted main
 and the first useful certified whole-program optimization bundle is attached

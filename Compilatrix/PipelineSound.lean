@@ -39,8 +39,8 @@ def addressedSourceCtx
     (IxIR0.Readdress.Oracle.readdress
       compilation.erasure.result.addressMap (fun _ _ => none))
 
-/-- Raw-keyed target context immediately before the complete IxIR₁ address
-pass. -/
+/-- Alias-completed target context retained by the generic readdressing
+compatibility endpoint. -/
 def targetCtx
     {constants : List (Address × Constant)} {mainAddress : Address}
     {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
@@ -48,6 +48,18 @@ def targetCtx
       mainWorld eraseFuel lowerFuel)
     (targetOracle : Address → List RVal → Option RVal) : IxIR1.Ctx :=
   compilation.lowering.result.preAddressCtx compilation.lowering.raw
+    targetOracle
+
+/-- Exact raw target context immediately before complete IxIR₁ addressing.
+Its oracle is pulled back through the certified total rebuild renaming, but
+its declarations are literally the lowerer's returned list environment. -/
+def exactTargetCtx
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal) : IxIR1.Ctx :=
+  compilation.lowering.result.rebuildSourceCtx compilation.lowering.raw
     targetOracle
 
 /-- Function relation reconstructed from the exact final lowering state. -/
@@ -59,6 +71,113 @@ def functionRel
   CompilerFunctionRel compilation.addressedSourceCtx
     (IxIR0.Env.ofList compilation.erasure.result.declarations)
     compilation.lowering.finalState
+
+/-- Addressed erasure selects every callable declaration row in the exact
+list environment consumed by lowering. -/
+theorem sourceCallableRowsSelected
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel) :
+    SourceCallableRowsSelected compilation.erasure.result.declarations := by
+  intro address source worlds result hmember _
+  have haudit := EraseAddressed.semanticAudit_of_run_eq_ok
+    compilation.erasure.runEq
+  have haddressed := compilation.erasure.result.addressed_audit haudit
+  exact IxIR0.Readdress.Result.declaration_lookup_of_mem_of_semanticAudit
+    haddressed hmember
+
+/-- Initial complete target addressing certifies that every raw lowering row
+is selected by the exact pre-address context. -/
+theorem exactTargetCtx_decls_of_mem
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal)
+    {address : Address} {declaration : Decl}
+    (hmember : (address, declaration) ∈ compilation.lowering.raw) :
+    (compilation.exactTargetCtx targetOracle).decls address =
+      some declaration := by
+  have hrun :=
+    readdressAll_run_of_lowerAllIndexedFullyAddressed_eq_ok
+      compilation.lowering.lowerRun compilation.lowering.addressedRun
+  have haudit := ReaddressAll.rebuildSemanticAudit_of_run_eq_ok hrun
+  exact ReaddressAll.Result.raw_lookup_of_mem_of_rebuildSemanticAudit
+    haudit hmember
+
+/-- The validated trace determines every source callable/extern layout in the
+exact raw target context. -/
+theorem sourceDeclLayout
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal) :
+    SourceDeclLayout
+      (IxIR0.Env.ofList compilation.erasure.result.declarations)
+      (compilation.exactTargetCtx targetOracle) := by
+  have hlower :
+      (lowerAllAction compilation.erasure.result.declarations
+        compilation.erasure.result.main mainWorld lowerFuel).run {} =
+          .ok (compilation.lowering.raw, compilation.lowering.mainCode)
+            compilation.lowering.finalState := by
+    simpa only [lowerAllIndexedAction_eq_lowerAllAction] using
+      compilation.lowering.lowerRun
+  exact lowerAllAction_sourceDeclLayout
+    (ctx := compilation.exactTargetCtx targetOracle) hlower
+    (fun hmember =>
+      compilation.exactTargetCtx_decls_of_mem targetOracle hmember)
+
+/-- The validated trace discharges the owner-sensitive source PAP premise in
+the exact raw target context. -/
+theorem sourcePapSafe
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal) :
+    SourcePapSafe
+      (IxIR0.Env.ofList compilation.erasure.result.declarations)
+      (compilation.exactTargetCtx targetOracle) := by
+  have hlower :
+      (lowerAllAction compilation.erasure.result.declarations
+        compilation.erasure.result.main mainWorld lowerFuel).run {} =
+          .ok (compilation.lowering.raw, compilation.lowering.mainCode)
+            compilation.lowering.finalState := by
+    simpa only [lowerAllIndexedAction_eq_lowerAllAction] using
+      compilation.lowering.lowerRun
+  intro address source worlds result d hsrc hsignature hdecl hsafe
+  exact lowerAllAction_sourcePapSafe
+    (ctx := compilation.exactTargetCtx targetOracle)
+    (address := address) (source := source) (worlds := worlds)
+    (result := result) (d := d) hlower
+    (fun hmember =>
+      compilation.exactTargetCtx_decls_of_mem targetOracle hmember)
+    hsrc hsignature hdecl hsafe
+
+/-- Every raw function declaration in a validated trace is covered by either
+its selected source callable or the final generated-declaration state. -/
+theorem fnDeclCovered
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal) :
+    FnDeclCovered
+      (IxIR0.Env.ofList compilation.erasure.result.declarations)
+      (compilation.exactTargetCtx targetOracle)
+      compilation.lowering.finalState := by
+  have hlower :
+      (lowerAllAction compilation.erasure.result.declarations
+        compilation.erasure.result.main mainWorld lowerFuel).run {} =
+          .ok (compilation.lowering.raw, compilation.lowering.mainCode)
+            compilation.lowering.finalState := by
+    simpa only [lowerAllIndexedAction_eq_lowerAllAction] using
+      compilation.lowering.lowerRun
+  apply lowerAllAction_fnDeclCovered hlower
+    compilation.sourceCallableRowsSelected
+  rfl
 
 /-- The concise semantic endpoint for one successful
 `compileValidatedWithTrace` result.  All executable equalities and the

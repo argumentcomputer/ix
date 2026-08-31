@@ -99,10 +99,11 @@ theorem renames_rebuildSourceCtx {result : Result}
             (Readdress.Renaming.apply result.addressMap address) with
         | none => simp [hemitted] at hrow
         | some emitted =>
+            simp only [hemitted, Bool.and_eq_true] at hrow
             have hequal : emitted = Readdress.Decl.mapAddresses
                 (result.rebuildRename raw) declaration :=
               (Readdress.Decl.structurallyEq_eq_true_iff _ _).mp (by
-                simpa [horiginal, hemitted] using hrow)
+                simpa [horiginal, hemitted] using hrow.2)
             simp [Result.rebuildRename, horiginal, hemitted, hequal]
     | none =>
         cases hreverse : result.addressMap.find?
@@ -140,6 +141,30 @@ theorem renames_rebuildSourceCtx {result : Result}
                 exact (hmissing hmaps).elim
   · intro address arguments
     rfl
+
+/-- Every literal raw row is selected by the exact source environment carried
+by the rebuild audit.  Ordinary initial addressing and rebuilding both expose
+this fact through their successful-run certificates. -/
+theorem raw_lookup_of_mem_of_rebuildSemanticAudit {result : Result}
+    {raw : List (Address × Decl)} {main : Code}
+    (haudit : result.rebuildSemanticAudit raw main = true)
+    {address : Address} {declaration : Decl}
+    (hmember : (address, declaration) ∈ raw) :
+    Env.ofList raw address = some declaration := by
+  simp only [Result.rebuildSemanticAudit, Bool.and_eq_true] at haudit
+  have hrow := (List.all_eq_true.mp haudit.1.1.2)
+    (address, declaration) hmember
+  cases hlookup : Env.ofList raw address with
+  | none => simp [hlookup] at hrow
+  | some selected =>
+      cases hemitted : Env.ofList result.declarations
+          (result.rebuildRename raw address) with
+      | none => simp [hlookup, hemitted] at hrow
+      | some emitted =>
+          simp only [hlookup, hemitted, Bool.and_eq_true] at hrow
+          have hselected : selected = declaration :=
+            (Readdress.Decl.structurallyEq_eq_true_iff _ _).mp hrow.1
+          simpa [hlookup, hselected]
 
 theorem main_eq_rebuildMapAddresses {result : Result}
     {raw : List (Address × Decl)} {main : Code}

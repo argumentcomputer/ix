@@ -555,6 +555,12 @@ materialization intentionally crosses the same native BLAKE3 boundary. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.rebuildSemanticAudit_of_run_eq_ok
 
+/-- info: 'Compilatrix.IxIR1.ReaddressAll.Result.raw_lookup_of_mem_of_rebuildSemanticAudit' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.Result.raw_lookup_of_mem_of_rebuildSemanticAudit
+
 /-! Checked HPT summaries expose both the untrusted candidate's post-fixpoint
 condition and the exact cache/content-address audit. Materialization uses the
 same ledgered BLAKE3 boundary as the program artifacts. -/
@@ -894,6 +900,12 @@ heap-history evaluator congruence and its executable local decision theorem. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR0.Readdress.semanticAudit_of_run_eq_ok
 
+/-- info: 'Compilatrix.IxIR0.Readdress.Result.declaration_lookup_of_mem_of_semanticAudit' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR0.Readdress.Result.declaration_lookup_of_mem_of_semanticAudit
+
 /-- info: 'Compilatrix.IxIR0.Readdress.isolates_of_run_eq_ok' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
@@ -1136,6 +1148,30 @@ semantic endpoint. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulation
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.sourceCallableRowsSelected' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.sourceCallableRowsSelected
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.sourceDeclLayout' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.sourceDeclLayout
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.sourcePapSafe' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.sourcePapSafe
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.fnDeclCovered' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.fnDeclCovered
 
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerTraceProgressContracts' depends on axioms: [propext,
  Classical.choice,

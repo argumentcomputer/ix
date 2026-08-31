@@ -162,6 +162,15 @@ def imageAudit (result : Result) (groups : List Group)
           MutualBlock.Concrete.Decl.mapAddresses rename entry.2)) &&
     result.main == MutualBlock.Concrete.Expr.mapAddresses rename rawMain
 
+/-- Every emitted declaration row is the row selected by the transparent
+first-binding-wins environment.  This makes producer-key collision freedom
+available to proof clients without re-running the private collision check. -/
+def declarationRowsSelected (result : Result) : Bool :=
+  result.declarations.all fun entry =>
+    match Env.ofList result.declarations entry.1 with
+    | some declaration => declaration == entry.2
+    | none => false
+
 /-- Global block, namespace, and fixed-point checks. -/
 def safetyAudit (result : Result) (reserved : List Address)
     (groups : List Group) (rawMain : Expr) : Bool :=
@@ -170,7 +179,8 @@ def safetyAudit (result : Result) (reserved : List Address)
     result.noTransientKeys && result.noTransientReferences &&
     result.declarations.all (fun entry =>
       MutualBlock.Concrete.Decl.mapAddresses rename entry.2 == entry.2) &&
-    result.oracleIdentityAudit reserved groups rawMain
+    result.oracleIdentityAudit reserved groups rawMain &&
+    result.declarationRowsSelected
 
 /-- Exact forward environment lookup check. -/
 def lookupAudit (result : Result) (groups : List Group) : Bool :=
@@ -211,7 +221,29 @@ theorem oracleIdentityAudit_of_semanticAudit {result : Result}
   have hsafety : result.safetyAudit reserved groups main = true :=
     haudit.1.1.2
   simp only [safetyAudit, Bool.and_eq_true] at hsafety
-  exact hsafety.2
+  exact hsafety.1.2
+
+/-- Pointwise producer-key selection exposed by the whole-program audit. -/
+theorem declaration_lookup_of_mem_of_semanticAudit {result : Result}
+    {reserved : List Address} {groups : List Group} {main : Expr}
+    (haudit : result.semanticAudit reserved groups main = true)
+    {address : Address} {declaration : Decl}
+    (hmember : (address, declaration) ∈ result.declarations) :
+    Env.ofList result.declarations address = some declaration := by
+  simp only [semanticAudit, Bool.and_eq_true] at haudit
+  have hsafety : result.safetyAudit reserved groups main = true :=
+    haudit.1.1.2
+  simp only [safetyAudit, Bool.and_eq_true] at hsafety
+  have hrows : result.declarationRowsSelected = true := hsafety.2
+  simp only [declarationRowsSelected] at hrows
+  have hrow := (List.all_eq_true.mp hrows)
+    (address, declaration) hmember
+  cases hlookup : Env.ofList result.declarations address with
+  | none => simp [hlookup] at hrow
+  | some selected =>
+      have hselected : selected = declaration :=
+        (beq_iff_eq).mp (by simpa [hlookup] using hrow)
+      simpa [hlookup, hselected]
 
 /-- Pointwise form consumed by concrete key-sensitive oracle proofs. -/
 theorem addressMap_isolates_of_semanticAudit {result : Result}

@@ -156,7 +156,10 @@ main expression. It rejects duplicate raw keys, stable/transient/reserved
 overlap, cross-block temporary edges, and capture of global external
 references. Its audit records the exact declaration/main image, namespace
 safety, forward environment lookup, and the fixed-point property of every
-emitted lookup. A separate bidirectional isolation clause proves that every
+emitted lookup. It also checks that every emitted declaration occurrence is
+the row selected by the transparent list environment, exposing producer-key
+collision freedom directly to validated-pipeline proofs. A separate
+bidirectional isolation clause proves that every
 reserved identity, stable declaration key, and external reference from either
 a declaration or the main expression occurs on neither the producer nor image
 side of the member map. This is stronger than fixed-point stability and
@@ -310,10 +313,13 @@ through saturated known calls. The initial SCC pass now checks the same
 `rebuildSemanticAudit` used by later rewrites and exposes
 `runMain_exact_of_run_eq_ok`; its semantic source context is therefore the
 literal raw lowering environment, with no aliases at newly emitted content
-keys. The remaining production obligation is to derive the landed
-owner-sensitive premise, exact raw declaration coverage, and generated-body
-provenance from the validated compilation's retained witnesses, rather than
-to assume a blanket all-shared environment.
+keys. That exact audit now additionally checks that each raw occurrence is the
+row selected by this environment. Together with the IxIR₀ emitted-row audit,
+`ValidatedCompilation` consequently derives the landed owner-sensitive PAP
+premise and exact raw declaration coverage from its retained witnesses. The
+remaining production obligation is generated-body semantic provenance and
+the joint compiler-contract seal, rather than a blanket all-shared
+environment.
 
 The production semantic endpoint uses `AddressedValueGraph`: the final heap is
 the address image of a raw heap carrying the existing `ValueGraph`. This is
