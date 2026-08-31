@@ -1173,6 +1173,12 @@ semantic endpoint. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.fnDeclCovered
 
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.exactCompilerContracts' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.exactCompilerContracts
+
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerTraceProgressContracts' depends on axioms: [propext,
  Classical.choice,
  Quot.sound] -/
@@ -1223,6 +1229,24 @@ contract seal inside the ordinary proof axiom envelope. -/
 
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_fnDeclCovered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_fnDeclCovered
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_extraProvenance_empty' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_extraProvenance_empty
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.GeneratedDeclProvenance.fnPreservesAt' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.GeneratedDeclProvenance.fnPreservesAt
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_sourceFnPreservesAt' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_sourceFnPreservesAt
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerContracts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerContracts
 
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerDecl_defn_papSafe_of_run' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerDecl_defn_papSafe_of_run

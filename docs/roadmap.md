@@ -160,9 +160,18 @@ partitions every raw function as either a selected source callable or a final
 generated declaration. Addressed erasure and exact target addressing now
 certify row selection too, so each validated compilation record exposes
 source layout, PAP safety, and raw function coverage without caller premises.
-The remaining attachment work is to prove semantic provenance for every
-generated function, seal the resulting compiler contracts, and project them
-to the memory-safety, reclamation, and cost corollaries.
+Whole-program lowering now also carries exact operational provenance for every
+generated constructor wrapper and lifted function through the full lowering
+cluster. That provenance replays each generated body against the mutually
+smaller source/application contracts, while same-address source declarations
+are recovered from their concrete `lowerDecl` traces. One evaluator-fuel
+induction therefore seals every source, generated, and dynamic-application
+ownership contract, and each validated record exposes the resulting
+`exactCompilerContracts` theorem for its literal raw target context. The
+remaining attachment work is to route the semantic endpoint through the
+certified exact-source target-address transport, eliminating its alias-context
+ownership premise, and then project the closed result to memory safety,
+reclamation, and cost.
 
 M2b exits when that ownership premise is discharged for every accepted main
 and the first useful certified whole-program optimization bundle is attached
@@ -280,10 +289,10 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Finish the M2b mixed-mode pipeline attachment.** Derive the landed
-   owner-sensitive PAP and declaration-coverage premises from every validated
-   compilation record, then attach the memory-safety and existing
-   reclamation/cost corollaries to the pipeline semantic endpoint.
+1. **Finish the M2b exact-source pipeline attachment.** Route the validated
+   semantic endpoint through the certified alias-free target-address
+   transport, consume its derived `exactCompilerContracts`, then attach the
+   memory-safety and existing reclamation/cost corollaries.
 2. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement. Include the fuel-neutral

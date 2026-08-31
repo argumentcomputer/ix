@@ -11774,6 +11774,365 @@ theorem CompilerLiftedFunctionRel.monoState {src : IxIR0.Env}
   intro generatedAddress entryCount expr hlift
   exact hlift.monoState hextends
 
+/-! ### Generated-declaration provenance -/
+
+/-- Operational origin of one declaration accumulated by the lowerer.  Eta
+wrappers are identified by their exact declaration shape.  Lifted functions
+retain the successful canonical body-lowering run that produced their code;
+the positive-arity witness records that this run came from an actual `.lam`
+branch rather than an arbitrary direct call to the internal `lowerLam`
+helper. -/
+def GeneratedDeclProvenance (src : IxIR0.Env) (state : LowSt)
+    (item : Ixon.Address × Decl) : Prop :=
+  (∃ address source tag arity,
+      item = (address, ctorWrapperDecl source tag arity)) ∨
+    ∃ address entryCount expr fuel initial generated code,
+      item = (address, .fn
+        ⟨(liftCaptureIndices entryCount expr).length + lamArity expr,
+          .shared, true, code⟩) ∧
+      0 < lamArity expr ∧
+      papSafe expr = true ∧
+      (lowerFnBody src fuel (liftedBodyVEnv entryCount expr)
+          (liftedBodyDrops entryCount expr) .shared
+          (stripLams expr)).run initial = .ok code generated ∧
+      ExtraExtends generated state ∧
+      (address, .fn
+        ⟨(liftCaptureIndices entryCount expr).length + lamArity expr,
+          .shared, true, code⟩) ∈ state.extra
+
+/-- Generated-declaration provenance survives every later lowering-state
+extension. -/
+theorem GeneratedDeclProvenance.monoState
+    {src : IxIR0.Env} {initial final : LowSt}
+    (hextends : ExtraExtends initial final)
+    {item : Ixon.Address × Decl}
+    (hprovenance : GeneratedDeclProvenance src initial item) :
+    GeneratedDeclProvenance src final item := by
+  cases hprovenance with
+  | inl hwrapper => exact Or.inl hwrapper
+  | inr hlifted =>
+    obtain ⟨address, entryCount, expr, fuel, bodyInitial, generated, code,
+      hitem, hpositive, hsafe, hrun, hgenerated, hmember⟩ := hlifted
+    exact Or.inr ⟨address, entryCount, expr, fuel, bodyInitial, generated,
+      code, hitem, hpositive, hsafe, hrun, hgenerated.trans hextends,
+      hextends.extra_mem hmember⟩
+
+/-- A lowering-state extension whose newly reachable declarations all carry
+compiler provenance.  Membership is phrased as an old-row/new-origin
+partition so it composes without choosing a particular prefix witness from
+`ExtraExtends`. -/
+structure ExtraProvenanceExtends (src : IxIR0.Env)
+    (initial final : LowSt) : Prop where
+  toExtraExtends : ExtraExtends initial final
+  provenance : ∀ {item}, item ∈ final.extra →
+    item ∈ initial.extra ∨ GeneratedDeclProvenance src final item
+
+theorem ExtraProvenanceExtends.refl (src : IxIR0.Env) (state : LowSt) :
+    ExtraProvenanceExtends src state state := by
+  refine ⟨ExtraExtends.refl state, ?_⟩
+  intro item hmember
+  exact Or.inl hmember
+
+theorem ExtraProvenanceExtends.trans
+    {src : IxIR0.Env} {first middle final : LowSt}
+    (hfirst : ExtraProvenanceExtends src first middle)
+    (hsecond : ExtraProvenanceExtends src middle final) :
+    ExtraProvenanceExtends src first final := by
+  refine ⟨hfirst.toExtraExtends.trans hsecond.toExtraExtends, ?_⟩
+  intro item hmember
+  cases hsecond.provenance hmember with
+  | inr hfinal => exact Or.inr hfinal
+  | inl hmiddle =>
+    cases hfirst.provenance hmiddle with
+    | inl hfirst => exact Or.inl hfirst
+    | inr hprovenance =>
+      exact Or.inr (hprovenance.monoState hsecond.toExtraExtends)
+
+/-- From an empty input state, the old-row side of the provenance partition
+is impossible. -/
+theorem ExtraProvenanceExtends.provenance_of_empty
+    {src : IxIR0.Env} {final : LowSt}
+    (hextends : ExtraProvenanceExtends src ({} : LowSt) final)
+    {item : Ixon.Address × Decl} (hmember : item ∈ final.extra) :
+    GeneratedDeclProvenance src final item := by
+  cases hextends.provenance hmember with
+  | inl hold => simp at hold
+  | inr hprovenance => exact hprovenance
+
+/-- Monad action law corresponding to `ExtraProvenanceExtends`. -/
+def ExtraProvenanceMonotone {α : Type} (src : IxIR0.Env)
+    (action : LowerM α) : Prop :=
+  ∀ {initial final result}, action.run initial = .ok result final →
+    ExtraProvenanceExtends src initial final
+
+theorem ExtraProvenanceMonotone.pure {α : Type} (src : IxIR0.Env)
+    (value : α) :
+    ExtraProvenanceMonotone src (pure value : LowerM α) := by
+  intro initial final result hrun
+  have hpure : value = result ∧ initial = final := by
+    simpa using hrun
+  obtain ⟨_, hstate⟩ := hpure
+  subst final
+  exact ExtraProvenanceExtends.refl src initial
+
+theorem ExtraProvenanceMonotone.throw {α : Type} (src : IxIR0.Env)
+    (message : String) :
+    ExtraProvenanceMonotone src (throw message : LowerM α) := by
+  intro initial final result hrun
+  exact (estateThrowRun_not_ok hrun).elim
+
+theorem ExtraProvenanceMonotone.throwBind {α β : Type}
+    (src : IxIR0.Env) (message : String) (next : α → LowerM β) :
+    ExtraProvenanceMonotone src
+      ((EStateM.throw message : LowerM α) >>= next) := by
+  intro initial final result hrun
+  change EStateM.Result.error message initial = .ok result final at hrun
+  contradiction
+
+theorem ExtraProvenanceMonotone.get (src : IxIR0.Env) :
+    ExtraProvenanceMonotone src (get : LowerM LowSt) := by
+  intro initial final result hrun
+  change EStateM.Result.ok initial initial = .ok result final at hrun
+  injection hrun with _ hstate
+  subst final
+  exact ExtraProvenanceExtends.refl src initial
+
+theorem ExtraProvenanceMonotone.bind {α β : Type} {src : IxIR0.Env}
+    {action : LowerM α} {next : α → LowerM β}
+    (haction : ExtraProvenanceMonotone src action)
+    (hnext : ∀ value, ExtraProvenanceMonotone src (next value)) :
+    ExtraProvenanceMonotone src (action >>= next) := by
+  intro initial final result hrun
+  obtain ⟨value, middle, hfirst, hsecond⟩ :=
+    estateBindRun_ok_inv hrun
+  exact (haction hfirst).trans (hnext value hsecond)
+
+theorem ExtraProvenanceMonotone.map {α β : Type} {src : IxIR0.Env}
+    {action : LowerM α} (haction : ExtraProvenanceMonotone src action)
+    (f : α → β) : ExtraProvenanceMonotone src (f <$> action) := by
+  have hbind : ExtraProvenanceMonotone src
+      (action >>= fun value => (Pure.pure (f value) : LowerM β)) :=
+    ExtraProvenanceMonotone.bind haction
+      (fun value => ExtraProvenanceMonotone.pure src (f value))
+  intro initial final result hrun
+  apply hbind
+  simpa only [bind_pure_comp] using hrun
+
+theorem ExtraProvenanceMonotone.listMapM {α β : Type}
+    (src : IxIR0.Env) (f : α → LowerM β)
+    (hf : ∀ value, ExtraProvenanceMonotone src (f value)) :
+    ∀ values : List α, ExtraProvenanceMonotone src (values.mapM f)
+  | [] => by
+      simpa using (ExtraProvenanceMonotone.pure src ([] : List β))
+  | value :: rest => by
+      rw [List.mapM_cons]
+      apply ExtraProvenanceMonotone.bind (hf value)
+      intro head
+      apply ExtraProvenanceMonotone.bind
+        (ExtraProvenanceMonotone.listMapM src f hf rest)
+      intro tail
+      exact ExtraProvenanceMonotone.pure src (head :: tail)
+
+theorem ExtraProvenanceMonotone.listFilterMapM {α β : Type}
+    (src : IxIR0.Env) (f : α → LowerM (Option β))
+    (hf : ∀ value, ExtraProvenanceMonotone src (f value)) :
+    ∀ values : List α, ExtraProvenanceMonotone src (values.filterMapM f)
+  | [] => by
+      simpa using (ExtraProvenanceMonotone.pure src ([] : List β))
+  | value :: rest => by
+      rw [List.filterMapM_cons]
+      apply ExtraProvenanceMonotone.bind (hf value)
+      intro head
+      cases head with
+      | none =>
+        exact ExtraProvenanceMonotone.listFilterMapM src f hf rest
+      | some head =>
+        apply ExtraProvenanceMonotone.bind
+          (ExtraProvenanceMonotone.listFilterMapM src f hf rest)
+        intro tail
+        exact ExtraProvenanceMonotone.pure src (head :: tail)
+
+theorem freshAddr_extraProvenance (src : IxIR0.Env) :
+    ExtraProvenanceMonotone src freshAddr := by
+  intro initial final address hrun
+  refine ⟨freshAddr_extraExtends hrun, ?_⟩
+  intro item hmember
+  change EStateM.Result.ok (synthAddr initial.fresh)
+      { initial with fresh := initial.fresh + 1 } =
+    .ok address final at hrun
+  have hstate : { initial with fresh := initial.fresh + 1 } = final :=
+    congrArg
+      (fun result : EStateM.Result String LowSt Ixon.Address =>
+        match result with
+        | .ok _ state | .error _ state => state)
+      hrun
+  subst final
+  exact Or.inl hmember
+
+/-- Wrapper lookup either adds one declaration with explicit wrapper
+provenance or leaves the compiler state unchanged on a cache hit. -/
+theorem wrapperFor_extraProvenance (src : IxIR0.Env)
+    (source : Ixon.Address) (tag arity : Nat) :
+    ExtraProvenanceMonotone src (wrapperFor source tag arity) := by
+  intro initial final wrapper hrun
+  refine ⟨wrapperFor_extraExtends hrun, ?_⟩
+  intro item hmember
+  cases hcached : initial.wrappers.find?
+      (·.matches source tag arity) with
+  | none =>
+    have hstate :
+        { initial with
+            fresh := initial.fresh + 1
+            wrappers :=
+              ⟨source, tag, arity, synthAddr initial.fresh⟩ ::
+                initial.wrappers
+            extra :=
+              (synthAddr initial.fresh,
+                ctorWrapperDecl source tag arity) ::
+                initial.extra } = final := by
+      dsimp [wrapperFor] at hrun
+      rw [hcached] at hrun
+      exact congrArg
+        (fun result : EStateM.Result String LowSt Ixon.Address =>
+          match result with
+          | .ok _ state | .error _ state => state)
+        hrun
+    subst final
+    simp only [List.mem_cons] at hmember
+    cases hmember with
+    | inl hnew =>
+      exact Or.inr (Or.inl
+        ⟨synthAddr initial.fresh, source, tag, arity, hnew⟩)
+    | inr hold => exact Or.inl hold
+  | some memo =>
+    dsimp [wrapperFor] at hrun
+    rw [hcached] at hrun
+    dsimp at hrun
+    injection hrun with _ hstate
+    subst final
+    exact Or.inl hmember
+
+/-- Entry cleanup uses only pure compiler-state actions. -/
+theorem releaseSlots_extraProvenance (src : IxIR0.Env) (input : VEnv) :
+    ∀ drops : List SlotDrop,
+      ExtraProvenanceMonotone src (releaseSlots input drops) := by
+  exact releaseSlots_action_core
+    (ActionProperty := fun {α : Type} (action : LowerM α) =>
+      ExtraProvenanceMonotone src action)
+    (hpure := fun value => ExtraProvenanceMonotone.pure src value)
+    (hbind := fun haction hnext =>
+      ExtraProvenanceMonotone.bind haction hnext)
+    (hthrowBind := fun message next =>
+      ExtraProvenanceMonotone.throwBind src message next)
+    input
+
+/-- Result-world checks inspect no compiler state. -/
+theorem requireResultWorld_extraProvenance (src : IxIR0.Env)
+    (actual demand : Owned) :
+    ExtraProvenanceMonotone src (requireResultWorld actual demand) := by
+  cases actual <;> cases demand <;>
+    simp [requireResultWorld] <;>
+    first
+    | exact ExtraProvenanceMonotone.pure src _
+    | exact ExtraProvenanceMonotone.throw src _
+
+/-- Provenance-preserving expression actions at one compiler-fuel index. -/
+def LowerEExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input world expr,
+    ExtraProvenanceMonotone src (lowerE src fuel input world expr)
+
+def LowerBorrowExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input expr,
+    ExtraProvenanceMonotone src (lowerBorrow src fuel input expr)
+
+def LowerSpineExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input world head args,
+    ExtraProvenanceMonotone src
+      (lowerSpine src fuel input world head args)
+
+def KnownCallExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input build count argWorlds resultWorld args,
+    ExtraProvenanceMonotone src
+      (knownCall src fuel input build count argWorlds resultWorld args)
+
+def LowerArgsExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input args,
+    ExtraProvenanceMonotone src (lowerArgs src fuel input args)
+
+def ApplyRestExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input resultWorld pre function args,
+    ExtraProvenanceMonotone src
+      (applyRest src fuel input resultWorld pre function args)
+
+/-- `lowerLam` is internal; only positive-arity calls made by the `.lam`
+expression branch are admitted to the generated-declaration invariant. -/
+def LowerLamExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input expr, 0 < lamArity expr →
+    ExtraProvenanceMonotone src (lowerLam src fuel input expr)
+
+def LowerFnBodyExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop :=
+  ∀ input drops world body,
+    ExtraProvenanceMonotone src
+      (lowerFnBody src fuel input drops world body)
+
+structure LowerExtraProvenance (src : IxIR0.Env) (fuel : Nat) : Prop where
+  expr : LowerEExtraProvenance src fuel
+  borrow : LowerBorrowExtraProvenance src fuel
+  spine : LowerSpineExtraProvenance src fuel
+  knownCall : KnownCallExtraProvenance src fuel
+  args : LowerArgsExtraProvenance src fuel
+  applyRest : ApplyRestExtraProvenance src fuel
+  lam : LowerLamExtraProvenance src fuel
+  fnBody : LowerFnBodyExtraProvenance src fuel
+
+theorem lowerFnBodyExtraProvenance_zero (src : IxIR0.Env) :
+    LowerFnBodyExtraProvenance src 0 := by
+  intro input drops world body
+  simp only [lowerFnBody]
+  exact ExtraProvenanceMonotone.throw src _
+
+theorem lowerFnBodyExtraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel) :
+    LowerFnBodyExtraProvenance src (fuel + 1) := by
+  intro input drops world body
+  simp only [lowerFnBody]
+  apply ExtraProvenanceMonotone.bind
+    (releaseSlots_extraProvenance src input drops)
+  intro releaseResult
+  rcases releaseResult with ⟨middle, releaseEmit⟩
+  apply ExtraProvenanceMonotone.bind (hexpr middle world body)
+  intro bodyResult
+  rcases bodyResult with ⟨output, bodyEmit, value⟩
+  exact ExtraProvenanceMonotone.pure src
+    (releaseEmit (bodyEmit (.ret (value.toAtom output))))
+
+theorem lowerExtraProvenance_zero (src : IxIR0.Env) :
+    LowerExtraProvenance src 0 := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro input world expr
+    simp only [lowerE]
+    exact ExtraProvenanceMonotone.throw src _
+  · intro input expr
+    simp only [lowerBorrow]
+    exact ExtraProvenanceMonotone.throw src _
+  · intro input world head args
+    simp only [lowerSpine]
+    exact ExtraProvenanceMonotone.throw src _
+  · intro input build count argWorlds resultWorld args
+    simp only [knownCall]
+    exact ExtraProvenanceMonotone.throw src _
+  · intro input args
+    simp only [lowerArgs]
+    exact ExtraProvenanceMonotone.throw src _
+  · intro input resultWorld pre function args
+    simp only [applyRest]
+    exact ExtraProvenanceMonotone.throw src _
+  · intro input expr _
+    simp only [lowerLam]
+    exact ExtraProvenanceMonotone.throw src _
+  · exact lowerFnBodyExtraProvenance_zero src
+
 /-- Capture bookkeeping never changes `LowSt`; it only rewrites the logical
 `VEnv` and emitter returned as the action's value. -/
 theorem lowerCapture_extraMonotone (e : IxIR0.Expr) (input : VEnv)
@@ -11891,6 +12250,91 @@ theorem lowerLam_extraMonotone_succ
           (captureValues.map (·.toAtom captureOutput)).toArray),
         AVal.slotA captureOutput.depth))
 
+/-- Capture bookkeeping preserves generated provenance because it leaves the
+lowering state unchanged on every successful branch. -/
+theorem lowerCapture_extraProvenance (src : IxIR0.Env)
+    (e : IxIR0.Expr) (input : VEnv) (index : Nat) :
+    ExtraProvenanceMonotone src (lowerCapture e input index) := by
+  intro state finalState result hrun
+  cases hentry : input.entries[index]? with
+  | none =>
+    exact (estateThrowRun_not_ok (by
+      simpa [lowerCapture, hentry] using hrun)).elim
+  | some entry =>
+    cases entry with
+    | recSelf arity =>
+      exact (estateThrowRun_not_ok (by
+        simpa [lowerCapture, hentry] using hrun)).elim
+    | slot abs remaining uses held =>
+      cases held with
+      | false =>
+        exact (estateThrowRun_not_ok (by
+          simpa [lowerCapture, hentry] using hrun)).elim
+      | true =>
+        by_cases hunique : worldOfUses uses = .unique
+        · have huuEq : (Owned.unique == Owned.unique) = true := by decide
+          exact (estateThrowRun_not_ok (by
+            simpa [lowerCapture, hentry, hunique, huuEq] using hrun)).elim
+        · have huniqueEq :
+              (worldOfUses uses == Owned.unique) = false := by
+            cases uses <;> simp_all [worldOfUses] <;> decide
+          by_cases hmore : remaining > countUses index e
+          · have hpure : state = finalState := by
+              have hresult :
+                  (input.setEntry index
+                      (.slot abs (remaining - countUses index e) uses true)).bump =
+                      result.1 ∧
+                    state = finalState := by
+                have hfull :
+                    ((input.setEntry index
+                        (.slot abs (remaining - countUses index e) uses true)).bump,
+                      emitOp (.dup (.var
+                        ((input.setEntry index
+                          (.slot abs (remaining - countUses index e) uses true)).rel abs))),
+                      AVal.slotA
+                        (input.setEntry index
+                          (.slot abs (remaining - countUses index e) uses true)).depth) =
+                        result ∧ state = finalState := by
+                  simpa [lowerCapture, hentry, huniqueEq, hmore] using hrun
+                exact ⟨congrArg (fun value : VEnv × Emit × AVal => value.1)
+                  hfull.1, hfull.2⟩
+              exact hresult.2
+            subst finalState
+            exact ExtraProvenanceExtends.refl src state
+          · by_cases hequal : remaining = countUses index e
+            · have hpure : state = finalState := by
+                have hfull :
+                    (input.setEntry index (.slot abs 0 uses false),
+                      (_root_.id : Emit), AVal.slotA abs) = result ∧
+                      state = finalState := by
+                  simpa [lowerCapture, hentry, huniqueEq, hmore, hequal]
+                    using hrun
+                exact hfull.2
+              subst finalState
+              exact ExtraProvenanceExtends.refl src state
+            · exact (estateThrowRun_not_ok (by
+                simpa [lowerCapture, hentry, huniqueEq, hmore, hequal]
+                  using hrun)).elim
+
+theorem lowerCaptures_extraProvenance (src : IxIR0.Env)
+    (e : IxIR0.Expr) :
+    ∀ (input : VEnv) (caps : List Nat),
+      ExtraProvenanceMonotone src (lowerCaptures e input caps) := by
+  exact lowerCaptures_action_core
+    (e := e)
+    (ActionProperty := fun {α : Type} (action : LowerM α) =>
+      ExtraProvenanceMonotone src action)
+    (hpure := fun value => ExtraProvenanceMonotone.pure src value)
+    (hbind := fun haction hnext =>
+      ExtraProvenanceMonotone.bind haction hnext)
+    (hcapture := lowerCapture_extraProvenance src e)
+
+theorem lowerLam_extraProvenance_zero (src : IxIR0.Env)
+    (input : VEnv) (e : IxIR0.Expr) :
+    ExtraProvenanceMonotone src (lowerLam src 0 input e) := by
+  simp only [lowerLam]
+  exact ExtraProvenanceMonotone.throw src _
+
 theorem lowerArgsExtraMonotone_succ
     {src : IxIR0.Env} {fuel : Nat}
     (hexpr : LowerEExtraMonotone src fuel)
@@ -12004,6 +12448,119 @@ theorem knownCallExtraMonotone_succ
         (build (values.map (·.toAtom output)).toArray))
       (.slotA output.depth) (args.drop count)
 
+theorem lowerArgsExtraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel)
+    (hargs : LowerArgsExtraProvenance src fuel) :
+    LowerArgsExtraProvenance src (fuel + 1) := by
+  intro input args
+  cases args with
+  | nil =>
+    simp only [lowerArgs]
+    exact ExtraProvenanceMonotone.pure src _
+  | cons head rest =>
+    rcases head with ⟨expr, world⟩
+    simp only [lowerArgs]
+    apply ExtraProvenanceMonotone.bind (hexpr input world expr)
+    intro headResult
+    rcases headResult with ⟨middle, headEmit, value⟩
+    apply ExtraProvenanceMonotone.bind (hargs middle rest)
+    intro tailResult
+    rcases tailResult with ⟨output, tailEmit, values⟩
+    exact ExtraProvenanceMonotone.pure src
+      (output, headEmit ∘ tailEmit, value :: values)
+
+theorem applyRestExtraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hargs : LowerArgsExtraProvenance src fuel) :
+    ApplyRestExtraProvenance src (fuel + 1) := by
+  intro input resultWorld pre function args
+  cases function with
+  | slotA abs =>
+    simp only [applyRest]
+    apply ExtraProvenanceMonotone.bind
+      (requireResultWorld_extraProvenance src .shared resultWorld)
+    intro unitValue
+    cases unitValue
+    apply ExtraProvenanceMonotone.bind
+      (hargs input (args.map (fun arg => (arg, Owned.shared))))
+    intro argsResult
+    rcases argsResult with ⟨output, argsEmit, values⟩
+    exact ExtraProvenanceMonotone.pure src
+      (output.bump,
+        pre ∘ argsEmit ∘ emitOp (.apply
+          ((AVal.slotA abs).toAtom output)
+          (values.map (·.toAtom output)).toArray),
+        AVal.slotA output.depth)
+  | constA atom =>
+    cases atom with
+    | erased =>
+      simp only [applyRest]
+      apply ExtraProvenanceMonotone.bind
+        (hargs input (args.map (fun arg => (arg, Owned.shared))))
+      intro argsResult
+      rcases argsResult with ⟨output, argsEmit, values⟩
+      exact ExtraProvenanceMonotone.pure src
+        ((releaseAll output values).1,
+          pre ∘ argsEmit ∘ (releaseAll output values).2,
+          AVal.constA .erased)
+    | var relative =>
+      simp only [applyRest]
+      apply ExtraProvenanceMonotone.bind
+        (requireResultWorld_extraProvenance src .shared resultWorld)
+      intro unitValue
+      cases unitValue
+      apply ExtraProvenanceMonotone.bind
+        (hargs input (args.map (fun arg => (arg, Owned.shared))))
+      intro argsResult
+      rcases argsResult with ⟨output, argsEmit, values⟩
+      exact ExtraProvenanceMonotone.pure src
+        (output.bump,
+          pre ∘ argsEmit ∘ emitOp (.apply
+            ((AVal.constA (.var relative)).toAtom output)
+            (values.map (·.toAtom output)).toArray),
+          AVal.slotA output.depth)
+    | lit literal =>
+      simp only [applyRest]
+      apply ExtraProvenanceMonotone.bind
+        (requireResultWorld_extraProvenance src .shared resultWorld)
+      intro unitValue
+      cases unitValue
+      apply ExtraProvenanceMonotone.bind
+        (hargs input (args.map (fun arg => (arg, Owned.shared))))
+      intro argsResult
+      rcases argsResult with ⟨output, argsEmit, values⟩
+      exact ExtraProvenanceMonotone.pure src
+        (output.bump,
+          pre ∘ argsEmit ∘ emitOp (.apply
+            ((AVal.constA (.lit literal)).toAtom output)
+            (values.map (·.toAtom output)).toArray),
+          AVal.slotA output.depth)
+
+theorem knownCallExtraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hargs : LowerArgsExtraProvenance src fuel)
+    (hrest : ApplyRestExtraProvenance src fuel) :
+    KnownCallExtraProvenance src (fuel + 1) := by
+  intro input build count argWorlds resultWorld args
+  simp only [knownCall]
+  apply ExtraProvenanceMonotone.bind
+    (hargs input ((args.take count).zip (padWorlds argWorlds count)))
+  intro argsResult
+  rcases argsResult with ⟨output, argsEmit, values⟩
+  by_cases hterminal : args.length ≤ count
+  · simp only [if_pos hterminal]
+    exact ExtraProvenanceMonotone.pure src
+      (output.bump,
+        argsEmit ∘ emitOp
+          (build (values.map (·.toAtom output)).toArray),
+        AVal.slotA output.depth)
+  · simp only [if_neg hterminal]
+    exact hrest output.bump resultWorld
+      (argsEmit ∘ emitOp
+        (build (values.map (·.toAtom output)).toArray))
+      (.slotA output.depth) (args.drop count)
+
 /-- Variable borrowing never touches the generated-declaration state. The
 case split mirrors the executable rejection/move/borrow branches. -/
 theorem lowerBorrow_var_extraMonotone
@@ -12037,6 +12594,38 @@ theorem lowerBorrow_var_extraMonotone
             cases remaining with
             | zero => exact ExtraMonotone.pure _
             | succ remaining => exact ExtraMonotone.pure _
+
+theorem lowerBorrow_var_extraProvenance
+    (src : IxIR0.Env) (fuel : Nat) (input : VEnv) (index : Nat) :
+    ExtraProvenanceMonotone src
+      (lowerBorrow src (fuel + 1) input (.var index)) := by
+  simp only [lowerBorrow]
+  cases hentry : input.entries[index]? with
+  | none => exact ExtraProvenanceMonotone.throw src _
+  | some entry =>
+    cases entry with
+    | recSelf arity => exact ExtraProvenanceMonotone.throw src _
+    | slot abs remaining uses held =>
+      cases held with
+      | false => exact ExtraProvenanceMonotone.throw src _
+      | true =>
+        cases uses with
+        | linear => exact ExtraProvenanceMonotone.throw src _
+        | affine => exact ExtraProvenanceMonotone.throw src _
+        | erased =>
+          cases remaining with
+          | zero => exact ExtraProvenanceMonotone.throw src _
+          | succ remaining =>
+            cases remaining with
+            | zero => exact ExtraProvenanceMonotone.pure src _
+            | succ remaining => exact ExtraProvenanceMonotone.pure src _
+        | many =>
+          cases remaining with
+          | zero => exact ExtraProvenanceMonotone.throw src _
+          | succ remaining =>
+            cases remaining with
+            | zero => exact ExtraProvenanceMonotone.pure src _
+            | succ remaining => exact ExtraProvenanceMonotone.pure src _
 
 /-- Variable consumption is state-only trivial even though its ownership
 branching distinguishes demand, binder mode, and remaining-use count. -/
@@ -12072,6 +12661,40 @@ theorem lowerE_var_extraMonotone
               first
               | exact ExtraMonotone.pure _
               | exact ExtraMonotone.throw _
+
+theorem lowerE_var_extraProvenance
+    (src : IxIR0.Env) (fuel : Nat) (input : VEnv)
+    (world : Owned) (index : Nat) :
+    ExtraProvenanceMonotone src
+      (lowerE src (fuel + 1) input world (.var index)) := by
+  simp only [lowerE]
+  cases hentry : input.entries[index]? with
+  | none => exact ExtraProvenanceMonotone.throw src _
+  | some entry =>
+    cases entry with
+    | recSelf arity => exact ExtraProvenanceMonotone.throw src _
+    | slot abs remaining uses held =>
+      cases held with
+      | false => exact ExtraProvenanceMonotone.throw src _
+      | true =>
+        cases remaining with
+        | zero =>
+          cases uses <;> cases world <;>
+            first
+            | exact ExtraProvenanceMonotone.pure src _
+            | exact ExtraProvenanceMonotone.throw src _
+        | succ remaining =>
+          cases remaining with
+          | zero =>
+            cases uses <;> cases world <;>
+              first
+              | exact ExtraProvenanceMonotone.pure src _
+              | exact ExtraProvenanceMonotone.throw src _
+          | succ remaining =>
+            cases uses <;> cases world <;>
+              first
+              | exact ExtraProvenanceMonotone.pure src _
+              | exact ExtraProvenanceMonotone.throw src _
 
 theorem lowerE_ref_extraMonotone
     (src : IxIR0.Env) (fuel : Nat) (input : VEnv)
@@ -12124,6 +12747,58 @@ theorem lowerE_ref_extraMonotone
           | exact ExtraMonotone.pure _
           | exact ExtraMonotone.throw _
 
+theorem lowerE_ref_extraProvenance
+    (src : IxIR0.Env) (fuel : Nat) (input : VEnv)
+    (world : Owned) (address : Ixon.Address) :
+    ExtraProvenanceMonotone src
+      (lowerE src (fuel + 1) input world (.ref address)) := by
+  simp only [lowerE]
+  cases hsource : src address with
+  | none =>
+    simp only
+    exact ExtraProvenanceMonotone.throw src _
+  | some decl =>
+    cases decl with
+    | defn result body =>
+      simp only
+      cases harity : lamArity body with
+      | zero =>
+        apply ExtraProvenanceMonotone.bind
+          (requireResultWorld_extraProvenance src result world)
+        intro unitValue
+        cases unitValue
+        exact ExtraProvenanceMonotone.pure src _
+      | succ arity =>
+        cases result <;> cases world <;> cases hp : papSafe body <;>
+          first
+          | exact ExtraProvenanceMonotone.pure src _
+          | exact ExtraProvenanceMonotone.throw src _
+    | ctor tag arity =>
+      simp only
+      cases arity with
+      | zero => exact ExtraProvenanceMonotone.pure src _
+      | succ arity =>
+        cases world with
+        | unique => exact ExtraProvenanceMonotone.throw src _
+        | shared =>
+          apply ExtraProvenanceMonotone.bind
+            (wrapperFor_extraProvenance src address tag (arity + 1))
+          intro wrapper
+          exact ExtraProvenanceMonotone.pure src _
+    | recursor numArgs natLit rules =>
+      simp only
+      cases world <;> first
+        | exact ExtraProvenanceMonotone.pure src _
+        | exact ExtraProvenanceMonotone.throw src _
+    | extern arity =>
+      simp only
+      cases arity with
+      | zero => exact ExtraProvenanceMonotone.pure src _
+      | succ arity =>
+        cases world <;> first
+          | exact ExtraProvenanceMonotone.pure src _
+          | exact ExtraProvenanceMonotone.throw src _
+
 theorem lowerE_lam_extraMonotone
     {src : IxIR0.Env} {fuel : Nat}
     (hlam : LowerLamExtraMonotone src fuel)
@@ -12139,6 +12814,23 @@ theorem lowerE_lam_extraMonotone
     have hsuEq : (Owned.shared == Owned.unique) = false := by decide
     intro initial final result hrun
     apply hlam input (.lam uses body)
+    simpa only [lowerE, hsuEq, Bool.false_eq_true, if_false] using hrun
+
+theorem lowerE_lam_extraProvenance
+    {src : IxIR0.Env} {fuel : Nat}
+    (hlam : LowerLamExtraProvenance src fuel)
+    (input : VEnv) (world : Owned) (uses : Uses)
+    (body : IxIR0.Expr) :
+    ExtraProvenanceMonotone src
+      (lowerE src (fuel + 1) input world (.lam uses body)) := by
+  cases world with
+  | unique =>
+    simp only [lowerE]
+    exact ExtraProvenanceMonotone.throw src _
+  | shared =>
+    have hsuEq : (Owned.shared == Owned.unique) = false := by decide
+    intro initial final result hrun
+    apply hlam input (.lam uses body) (by simp [lamArity])
     simpa only [lowerE, hsuEq, Bool.false_eq_true, if_false] using hrun
 
 theorem lowerE_proj_extraMonotone
@@ -12160,6 +12852,28 @@ theorem lowerE_proj_extraMonotone
     cases value with
     | slotA abs => cases release <;> exact ExtraMonotone.pure _
     | constA atom => cases atom <;> exact ExtraMonotone.pure _
+
+theorem lowerE_proj_extraProvenance
+    {src : IxIR0.Env} {fuel : Nat}
+    (hborrow : LowerBorrowExtraProvenance src fuel)
+    (input : VEnv) (world : Owned) (index : Nat)
+    (source : IxIR0.Expr) :
+    ExtraProvenanceMonotone src
+      (lowerE src (fuel + 1) input world (.proj index source)) := by
+  cases world with
+  | unique =>
+    simp only [lowerE]
+    exact ExtraProvenanceMonotone.throw src _
+  | shared =>
+    simp only [lowerE]
+    apply ExtraProvenanceMonotone.bind (hborrow input source)
+    intro borrowResult
+    rcases borrowResult with ⟨output, emit, value, release⟩
+    cases value with
+    | slotA abs =>
+      cases release <;> exact ExtraProvenanceMonotone.pure src _
+    | constA atom =>
+      cases atom <;> exact ExtraProvenanceMonotone.pure src _
 
 theorem lowerE_let_extraMonotone
     {src : IxIR0.Env} {fuel : Nat}
@@ -12218,6 +12932,65 @@ theorem lowerE_let_extraMonotone
         (output.pop,
           valueEmit ∘ emitOp (.pure atom) ∘ bodyEmit, result)
 
+theorem lowerE_let_extraProvenance
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel)
+    (input : VEnv) (world : Owned) (uses : Uses)
+    (value body : IxIR0.Expr) :
+    ExtraProvenanceMonotone src
+      (lowerE src (fuel + 1) input world (.letE uses value body)) := by
+  simp only [lowerE]
+  apply ExtraProvenanceMonotone.bind (hexpr input (worldOfUses uses) value)
+  intro valueResult
+  rcases valueResult with ⟨middle, valueEmit, boundValue⟩
+  cases boundValue with
+  | slotA abs =>
+    by_cases hzero : countUses 0 body = 0
+    · simp only [hzero, beq_self_eq_true, if_true]
+      cases uses with
+      | erased => exact ExtraProvenanceMonotone.throwBind src _ _
+      | linear => exact ExtraProvenanceMonotone.throwBind src _ _
+      | affine =>
+        apply ExtraProvenanceMonotone.bind
+          (ExtraProvenanceMonotone.pure src _)
+        intro releaseEmit
+        apply ExtraProvenanceMonotone.bind (hexpr _ world body)
+        intro bodyResult
+        rcases bodyResult with ⟨output, bodyEmit, result⟩
+        exact ExtraProvenanceMonotone.pure src
+          (output.pop, valueEmit ∘ releaseEmit ∘ bodyEmit, result)
+      | many =>
+        apply ExtraProvenanceMonotone.bind
+          (ExtraProvenanceMonotone.pure src _)
+        intro releaseEmit
+        apply ExtraProvenanceMonotone.bind (hexpr _ world body)
+        intro bodyResult
+        rcases bodyResult with ⟨output, bodyEmit, result⟩
+        exact ExtraProvenanceMonotone.pure src
+          (output.pop, valueEmit ∘ releaseEmit ∘ bodyEmit, result)
+    · simp [hzero]
+      apply ExtraProvenanceMonotone.bind (hexpr _ world body)
+      intro bodyResult
+      rcases bodyResult with ⟨output, bodyEmit, result⟩
+      exact ExtraProvenanceMonotone.pure src
+        (output.pop, valueEmit ∘ bodyEmit, result)
+  | constA atom =>
+    by_cases hzero : countUses 0 body = 0
+    · simp only [hzero, beq_self_eq_true, if_true]
+      apply ExtraProvenanceMonotone.bind (hexpr _ world body)
+      intro bodyResult
+      rcases bodyResult with ⟨output, bodyEmit, result⟩
+      exact ExtraProvenanceMonotone.pure src
+        (output.pop,
+          valueEmit ∘ emitOp (.pure atom) ∘ bodyEmit, result)
+    · simp [hzero]
+      apply ExtraProvenanceMonotone.bind (hexpr _ world body)
+      intro bodyResult
+      rcases bodyResult with ⟨output, bodyEmit, result⟩
+      exact ExtraProvenanceMonotone.pure src
+        (output.pop,
+          valueEmit ∘ emitOp (.pure atom) ∘ bodyEmit, result)
+
 theorem lowerEExtraMonotone_succ
     {src : IxIR0.Env} {fuel : Nat}
     (hexpr : LowerEExtraMonotone src fuel)
@@ -12245,6 +13018,35 @@ theorem lowerEExtraMonotone_succ
     simp only [lowerE]
     exact hspine input world function [argument]
   | proj index source => exact (lowerE_proj_extraMonotone
+      hborrow input world index source)
+
+theorem lowerEExtraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel)
+    (hspine : LowerSpineExtraProvenance src fuel)
+    (hborrow : LowerBorrowExtraProvenance src fuel)
+    (hlam : LowerLamExtraProvenance src fuel) :
+    LowerEExtraProvenance src (fuel + 1) := by
+  intro input world expr
+  cases expr with
+  | var index => exact (lowerE_var_extraProvenance
+      src fuel input world index)
+  | ref address => exact (lowerE_ref_extraProvenance
+      src fuel input world address)
+  | lit literal =>
+    simp only [lowerE]
+    exact ExtraProvenanceMonotone.pure src _
+  | erased =>
+    simp only [lowerE]
+    exact ExtraProvenanceMonotone.pure src _
+  | lam uses body => exact (lowerE_lam_extraProvenance
+      hlam input world uses body)
+  | letE uses value body => exact (lowerE_let_extraProvenance
+      hexpr input world uses value body)
+  | app function argument =>
+    simp only [lowerE]
+    exact hspine input world function [argument]
+  | proj index source => exact (lowerE_proj_extraProvenance
       hborrow input world index source)
 
 theorem lowerSpine_dynamic_extraMonotone
@@ -12410,6 +13212,171 @@ theorem lowerSpineExtraMonotone_succ
   | lit literal =>
     simp only [lowerSpine]
     exact lowerSpine_dynamic_extraMonotone
+      hexpr hrest input world (.lit literal) args
+
+theorem lowerSpine_dynamic_extraProvenance
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel)
+    (hrest : ApplyRestExtraProvenance src fuel)
+    (input : VEnv) (world : Owned) (head : IxIR0.Expr)
+    (args : List IxIR0.Expr) :
+    ExtraProvenanceMonotone src (do
+      let (output, emit, function) ← lowerE src fuel input .shared head
+      applyRest src fuel output world emit function args) := by
+  apply ExtraProvenanceMonotone.bind (hexpr input .shared head)
+  intro headResult
+  rcases headResult with ⟨output, emit, function⟩
+  exact hrest output world emit function args
+
+theorem lowerSpine_var_extraProvenance
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel)
+    (hknown : KnownCallExtraProvenance src fuel)
+    (hrest : ApplyRestExtraProvenance src fuel)
+    (input : VEnv) (world : Owned) (index : Nat)
+    (args : List IxIR0.Expr) :
+    ExtraProvenanceMonotone src
+      (lowerSpine src (fuel + 1) input world (.var index) args) := by
+  simp only [lowerSpine]
+  cases hentry : input.entries[index]? with
+  | none =>
+    simp only
+    exact lowerSpine_dynamic_extraProvenance
+      hexpr hrest input world (.var index) args
+  | some entry =>
+    cases entry with
+    | slot abs remaining uses held =>
+      simp only
+      exact lowerSpine_dynamic_extraProvenance
+        hexpr hrest input world (.var index) args
+    | recSelf arity =>
+      simp only
+      by_cases hunder : args.length < arity
+      · simp only [if_pos hunder]
+        exact ExtraProvenanceMonotone.throw src _
+      · simp only [if_neg hunder]
+        apply ExtraProvenanceMonotone.bind
+          (requireResultWorld_extraProvenance src .shared world)
+        intro unitValue
+        cases unitValue
+        exact hknown input (.callSelf ·) arity
+          (List.replicate arity .shared) world args
+
+theorem lowerSpine_ref_extraProvenance
+    {src : IxIR0.Env} {fuel : Nat}
+    (hknown : KnownCallExtraProvenance src fuel)
+    (input : VEnv) (world : Owned) (address : Ixon.Address)
+    (args : List IxIR0.Expr) :
+    ExtraProvenanceMonotone src
+      (lowerSpine src (fuel + 1) input world (.ref address) args) := by
+  simp only [lowerSpine]
+  cases hsource : src address with
+  | none =>
+    simp only
+    exact ExtraProvenanceMonotone.throw src _
+  | some decl =>
+    cases decl with
+    | defn result body =>
+      simp only
+      by_cases hunder : args.length < lamArity body
+      · simp only [if_pos hunder]
+        cases world with
+        | unique => exact ExtraProvenanceMonotone.throw src _
+        | shared =>
+          cases result with
+          | unique => exact ExtraProvenanceMonotone.throw src _
+          | shared =>
+            cases hp : papSafe body with
+            | false => exact ExtraProvenanceMonotone.throw src _
+            | true =>
+              exact hknown input (.papp address ·) args.length
+                (List.replicate args.length .shared) .shared args
+      · simp only [if_neg hunder]
+        apply ExtraProvenanceMonotone.bind
+          (requireResultWorld_extraProvenance src result
+            (if args.length == lamArity body then world else .shared))
+        intro unitValue
+        cases unitValue
+        exact hknown input (.call address ·) (lamArity body)
+          ((lamUses body).map worldOfUses) world args
+    | ctor tag arity =>
+      simp only
+      by_cases hunder : args.length < arity
+      · simp only [if_pos hunder]
+        cases world with
+        | unique => exact ExtraProvenanceMonotone.throw src _
+        | shared =>
+          apply ExtraProvenanceMonotone.bind
+            (wrapperFor_extraProvenance src address tag arity)
+          intro wrapper
+          exact hknown input (.papp wrapper ·) args.length
+            (List.replicate args.length .shared) .shared args
+      · simp only [if_neg hunder]
+        exact hknown input (.alloc world (ctorIdOf address tag) ·) arity
+          (List.replicate arity world) world args
+    | recursor numArgs natLit rules =>
+      simp only
+      by_cases hunder : args.length < numArgs + 1
+      · simp only [if_pos hunder]
+        cases world with
+        | unique => exact ExtraProvenanceMonotone.throw src _
+        | shared =>
+          exact hknown input (.papp address ·) args.length
+            (List.replicate args.length .shared) .shared args
+      · simp only [if_neg hunder]
+        apply ExtraProvenanceMonotone.bind
+          (requireResultWorld_extraProvenance src .shared world)
+        intro unitValue
+        cases unitValue
+        exact hknown input (.call address ·) (numArgs + 1)
+          (List.replicate (numArgs + 1) .shared) world args
+    | extern arity =>
+      simp only
+      by_cases hunder : args.length < arity
+      · simp only [if_pos hunder]
+        cases world with
+        | unique => exact ExtraProvenanceMonotone.throw src _
+        | shared =>
+          exact hknown input (.papp address ·) args.length
+            (List.replicate args.length .shared) .shared args
+      · simp only [if_neg hunder]
+        exact hknown input (.extern address ·) arity
+          (List.replicate arity .shared) world args
+
+theorem lowerSpineExtraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel)
+    (hspine : LowerSpineExtraProvenance src fuel)
+    (hknown : KnownCallExtraProvenance src fuel)
+    (hrest : ApplyRestExtraProvenance src fuel) :
+    LowerSpineExtraProvenance src (fuel + 1) := by
+  intro input world head args
+  cases head with
+  | app function argument =>
+    simp only [lowerSpine]
+    exact hspine input world function (argument :: args)
+  | erased =>
+    simp only [lowerSpine]
+    exact hrest input world (_root_.id : Emit) (.constA .erased) args
+  | var index => exact (lowerSpine_var_extraProvenance
+      hexpr hknown hrest input world index args)
+  | ref address => exact (lowerSpine_ref_extraProvenance
+      hknown input world address args)
+  | lam uses body =>
+    simp only [lowerSpine]
+    exact lowerSpine_dynamic_extraProvenance
+      hexpr hrest input world (.lam uses body) args
+  | letE uses value body =>
+    simp only [lowerSpine]
+    exact lowerSpine_dynamic_extraProvenance
+      hexpr hrest input world (.letE uses value body) args
+  | proj index source =>
+    simp only [lowerSpine]
+    exact lowerSpine_dynamic_extraProvenance
+      hexpr hrest input world (.proj index source) args
+  | lit literal =>
+    simp only [lowerSpine]
+    exact lowerSpine_dynamic_extraProvenance
       hexpr hrest input world (.lit literal) args
 
 /-- Result-polymorphic operational classification of one successful lambda
@@ -12833,6 +13800,56 @@ theorem lowerLam_run_core
       simpa [caps] using
         (hsuccess (by simp) hp (by simpa [caps] using hcaptureRun)
           hfreshRun hcanonicalBody)
+
+/-- A successful positive-arity lambda run preserves nested provenance from
+its body and records the exact body-lowering witness for its own prepend. -/
+theorem lowerLam_extraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hfn : LowerFnBodyExtraProvenance src fuel)
+    (input : VEnv) (e : IxIR0.Expr) (hpositive : 0 < lamArity e) :
+    ExtraProvenanceMonotone src (lowerLam src (fuel + 1) input e) := by
+  intro state finalState result hrun
+  rcases result with ⟨output, emit, value⟩
+  apply lowerLam_run_core
+    (Result := fun finalState _ _ _ =>
+      ExtraProvenanceExtends src state finalState)
+    (hrun := hrun)
+  intro bodyFuel captureOutput captureEmit captureValues captureState
+    fnAddr addressState code bodyState hfuel hsafe hcaptureRun hfreshRun
+    hbodyRun
+  have hbodyFuel : bodyFuel = fuel := by omega
+  subst bodyFuel
+  have hcaptures := lowerCaptures_extraProvenance src e input
+    (liftCaptureIndices input.entries.length e) hcaptureRun
+  have hfresh := freshAddr_extraProvenance src hfreshRun
+  have hbody := hfn
+    (liftedBodyVEnv input.entries.length e)
+    (liftedBodyDrops input.entries.length e) .shared (stripLams e) hbodyRun
+  let d : FnDef :=
+    ⟨(liftCaptureIndices input.entries.length e).length + lamArity e,
+      .shared, true, code⟩
+  let pushed : LowSt :=
+    { bodyState with extra := (fnAddr, .fn d) :: bodyState.extra }
+  have hextends : ExtraExtends bodyState pushed := by
+    refine ⟨[(fnAddr, .fn d)], [], ?_, ?_, ?_⟩
+    · simp [pushed]
+    · simp [pushed]
+    · simp
+  have hpushed : ExtraProvenanceExtends src bodyState pushed := by
+    refine ⟨hextends, ?_⟩
+    intro item hmember
+    change item ∈ (fnAddr, .fn d) :: bodyState.extra at hmember
+    rw [List.mem_cons] at hmember
+    cases hmember with
+    | inr hold => exact Or.inl hold
+    | inl hnew =>
+      subst item
+      exact Or.inr (Or.inr
+        ⟨fnAddr, input.entries.length, e, fuel, addressState,
+          bodyState, code, rfl, hpositive, hsafe, hbodyRun, hextends,
+          by simp [pushed, d]⟩)
+  simpa [pushed, d] using
+    ((hcaptures.trans hfresh).trans hbody).trans hpushed
 
 /-- Judgment-polymorphic semantic assembly for successful local-lambda
 lowering. Canonical capture identity, lifted-code provenance, selected source
@@ -25128,6 +26145,46 @@ theorem lowerBorrowExtraMonotone_succ
     exact lowerBorrow_dynamic_extraMonotone hexpr (.lit literal)
   | erased => exact lowerBorrow_dynamic_extraMonotone hexpr .erased
 
+theorem lowerBorrow_dynamic_extraProvenance
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel)
+    {input : VEnv} {expr : IxIR0.Expr}
+    (hshape : DynamicBorrowHead expr) :
+    ExtraProvenanceMonotone src
+      (lowerBorrow src (fuel + 1) input expr) := by
+  cases hshape <;> simp only [lowerBorrow]
+  all_goals
+    apply ExtraProvenanceMonotone.bind (hexpr input .shared _)
+    intro exprResult
+    rcases exprResult with ⟨output, emit, value⟩
+    exact ExtraProvenanceMonotone.pure src
+      (output, emit, value,
+        match value with | .slotA _ => true | .constA _ => false)
+
+theorem lowerBorrowExtraProvenance_succ
+    {src : IxIR0.Env} {fuel : Nat}
+    (hexpr : LowerEExtraProvenance src fuel) :
+    LowerBorrowExtraProvenance src (fuel + 1) := by
+  intro input expr
+  cases expr with
+  | var index => exact (lowerBorrow_var_extraProvenance
+      src fuel input index)
+  | ref address =>
+    exact lowerBorrow_dynamic_extraProvenance hexpr (.ref address)
+  | app function argument =>
+    exact lowerBorrow_dynamic_extraProvenance hexpr
+      (.app function argument)
+  | lam uses body =>
+    exact lowerBorrow_dynamic_extraProvenance hexpr (.lam uses body)
+  | letE uses value body =>
+    exact lowerBorrow_dynamic_extraProvenance hexpr
+      (.letE uses value body)
+  | proj index value =>
+    exact lowerBorrow_dynamic_extraProvenance hexpr (.proj index value)
+  | lit literal =>
+    exact lowerBorrow_dynamic_extraProvenance hexpr (.lit literal)
+  | erased => exact lowerBorrow_dynamic_extraProvenance hexpr .erased
+
 /-- One fuel step for the entire state-only lowering cluster. Every recursive
 compiler call is at predecessor fuel; the only generated declarations come
 from the wrapper and lambda rules already isolated above. -/
@@ -25146,12 +26203,37 @@ theorem lowerExtraMonotone_succ {src : IxIR0.Env} {fuel : Nat}
     lowerLam_extraMonotone_succ hprev.fnBody input expr
   fnBody := lowerFnBodyExtraMonotone_succ hprev.expr
 
+/-- One compiler-fuel step preserves exact provenance for both primitive
+generated-declaration sites and every recursively threaded subaction. -/
+theorem lowerExtraProvenance_succ {src : IxIR0.Env} {fuel : Nat}
+    (hprev : LowerExtraProvenance src fuel) :
+    LowerExtraProvenance src (fuel + 1) where
+  expr := lowerEExtraProvenance_succ
+    hprev.expr hprev.spine hprev.borrow hprev.lam
+  borrow := lowerBorrowExtraProvenance_succ hprev.expr
+  spine := lowerSpineExtraProvenance_succ
+    hprev.expr hprev.spine hprev.knownCall hprev.applyRest
+  knownCall := knownCallExtraProvenance_succ
+    hprev.args hprev.applyRest
+  args := lowerArgsExtraProvenance_succ hprev.expr hprev.args
+  applyRest := applyRestExtraProvenance_succ hprev.args
+  lam := fun input expr hpositive =>
+    lowerLam_extraProvenance_succ hprev.fnBody input expr hpositive
+  fnBody := lowerFnBodyExtraProvenance_succ hprev.expr
+
 /-- All successful lowering-cluster actions prepend (and never discard)
 generated declarations. -/
 theorem lowerExtraMonotone (src : IxIR0.Env) :
     ∀ fuel, LowerExtraMonotone src fuel
   | 0 => lowerExtraMonotone_zero src
   | fuel + 1 => lowerExtraMonotone_succ (lowerExtraMonotone src fuel)
+
+/-- Complete compiler-fuel induction for generated-declaration provenance. -/
+theorem lowerExtraProvenance (src : IxIR0.Env) :
+    ∀ fuel, LowerExtraProvenance src fuel
+  | 0 => lowerExtraProvenance_zero src
+  | fuel + 1 =>
+    lowerExtraProvenance_succ (lowerExtraProvenance src fuel)
 
 theorem lowerE_extraExtends
     {src : IxIR0.Env} {fuel : Nat} {input : VEnv} {world : Owned}
@@ -25309,6 +26391,106 @@ theorem lowerAllAction_extraMonotone
   apply ExtraMonotone.bind ExtraMonotone.get
   intro state
   exact ExtraMonotone.pure (base ++ state.extra, mainCode)
+
+theorem lowerRecursorRule_extraProvenance
+    (src : IxIR0.Env) (fuel numArgs : Nat)
+    (ruleTag : IxIR0.RecRule × Nat) :
+    ExtraProvenanceMonotone src
+      (lowerRecursorRule src fuel numArgs ruleTag) := by
+  rcases ruleTag with ⟨rule, tag⟩
+  simp only [lowerRecursorRule]
+  apply ExtraProvenanceMonotone.bind
+    (releaseSlots_extraProvenance src _ _)
+  intro releaseResult
+  rcases releaseResult with ⟨input, releaseEmit⟩
+  apply ExtraProvenanceMonotone.bind
+    ((lowerExtraProvenance src fuel).expr input .shared rule.rhs)
+  intro bodyResult
+  rcases bodyResult with ⟨output, bodyEmit, value⟩
+  exact ExtraProvenanceMonotone.pure src _
+
+theorem lowerRecursor_extraProvenance
+    (src : IxIR0.Env) (fuel numArgs : Nat)
+    (natLit : Bool) (rules : Array IxIR0.RecRule) :
+    ExtraProvenanceMonotone src
+      (lowerRecursor src fuel numArgs natLit rules) := by
+  simp only [lowerRecursor]
+  apply ExtraProvenanceMonotone.bind
+    (ExtraProvenanceMonotone.listMapM src
+      (lowerRecursorRule src fuel numArgs)
+      (lowerRecursorRule_extraProvenance src fuel numArgs)
+      rules.toList.zipIdx)
+  intro alts
+  exact ExtraProvenanceMonotone.pure src
+    (⟨numArgs + 1, .shared, true,
+      .case (.var 0) natLit alts.toArray⟩ : FnDef)
+
+theorem lowerDecl_extraProvenance (src : IxIR0.Env) (fuel : Nat) :
+    ∀ item, ExtraProvenanceMonotone src (lowerDecl src fuel item)
+  | (address, .defn result body) => by
+      simp only [lowerDecl]
+      apply ExtraProvenanceMonotone.bind
+        ((lowerExtraProvenance src fuel).fnBody _ _ result _)
+      intro code
+      exact ExtraProvenanceMonotone.pure src
+        (some (address, Decl.fn ⟨lamArity body, result,
+          result == .shared && papSafe body, code⟩))
+  | (_, .ctor tag arity) => by
+      simp only [lowerDecl]
+      exact ExtraProvenanceMonotone.pure src
+        (none : Option (Ixon.Address × Decl))
+  | (address, .recursor numArgs natLit rules) => by
+      simp only [lowerDecl]
+      apply ExtraProvenanceMonotone.bind
+        (lowerRecursor_extraProvenance src fuel numArgs natLit rules)
+      intro d
+      exact ExtraProvenanceMonotone.pure src
+        (some (address, Decl.fn d))
+  | (address, .extern arity) => by
+      simp only [lowerDecl]
+      exact ExtraProvenanceMonotone.pure src
+        (some (address, Decl.extern arity))
+
+theorem lowerDecls_extraProvenance (src : IxIR0.Env) (fuel : Nat)
+    (decls : List (Ixon.Address × IxIR0.Decl)) :
+    ExtraProvenanceMonotone src
+      (decls.filterMapM (lowerDecl src fuel)) :=
+  ExtraProvenanceMonotone.listFilterMapM src (lowerDecl src fuel)
+    (lowerDecl_extraProvenance src fuel) decls
+
+/-- Whole-program lowering from any state preserves exact origin witnesses
+for every generated declaration added by declarations or the main body. -/
+theorem lowerAllAction_extraProvenance
+    (decls : List (Ixon.Address × IxIR0.Decl)) (main : IxIR0.Expr)
+    (mainWorld : Owned) (fuel : Nat) :
+    ExtraProvenanceMonotone (IxIR0.Env.ofList decls)
+      (lowerAllAction decls main mainWorld fuel) := by
+  let src := IxIR0.Env.ofList decls
+  simp only [lowerAllAction]
+  apply ExtraProvenanceMonotone.bind
+    (lowerDecls_extraProvenance src fuel decls)
+  intro base
+  apply ExtraProvenanceMonotone.bind
+    ((lowerExtraProvenance src fuel).fnBody
+      ⟨[], 0⟩ [] mainWorld main)
+  intro mainCode
+  apply ExtraProvenanceMonotone.bind
+    (ExtraProvenanceMonotone.get src)
+  intro state
+  exact ExtraProvenanceMonotone.pure src
+    (base ++ state.extra, mainCode)
+
+/-- Closed whole-pass provenance: no generated row can come from an
+arbitrary pre-existing compiler state. -/
+theorem lowerAllAction_extraProvenance_empty
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {fuel : Nat}
+    {result : List (Ixon.Address × Decl) × Code} {finalState : LowSt}
+    (hrun : (lowerAllAction decls main mainWorld fuel).run {} =
+      .ok result finalState) :
+    ExtraProvenanceExtends (IxIR0.Env.ofList decls)
+      ({} : LowSt) finalState :=
+  lowerAllAction_extraProvenance decls main mainWorld fuel hrun
 
 /-- Every final generated declaration exposed by a successful whole-program
 action occurs verbatim in the returned target declaration list. -/

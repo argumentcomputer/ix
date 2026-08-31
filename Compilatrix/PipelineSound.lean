@@ -179,6 +179,34 @@ theorem fnDeclCovered
     compilation.sourceCallableRowsSelected
   rfl
 
+/-- The validated compiler trace constructs, rather than assumes, every
+ownership contract of its exact raw target context. The second conjunct keeps
+the generated-function contracts available for downstream reclamation and
+cost corollaries. -/
+theorem exactCompilerContracts
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal) :
+    CompilerContracts
+        (IxIR0.Env.ofList compilation.erasure.result.declarations)
+        (compilation.exactTargetCtx targetOracle) ∧
+      ExtraFnContracts (compilation.exactTargetCtx targetOracle)
+        compilation.lowering.finalState := by
+  have hlower :
+      (lowerAllAction compilation.erasure.result.declarations
+        compilation.erasure.result.main mainWorld lowerFuel).run {} =
+          .ok (compilation.lowering.raw, compilation.lowering.mainCode)
+            compilation.lowering.finalState := by
+    simpa only [lowerAllIndexedAction_eq_lowerAllAction] using
+      compilation.lowering.lowerRun
+  apply lowerAllAction_compilerContracts hlower
+    (fun hmember =>
+      compilation.exactTargetCtx_decls_of_mem targetOracle hmember)
+    compilation.sourceCallableRowsSelected
+  rfl
+
 /-- The concise semantic endpoint for one successful
 `compileValidatedWithTrace` result.  All executable equalities and the
 runtime-derived mutual-member scope are supplied by `compilation`; the

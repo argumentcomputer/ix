@@ -8002,4 +8002,244 @@ theorem ctorWrapper_ownershipContract (ctx : Ctx)
         (descendingVars arity).toArray) (.ret (.var 0))⟩, rfl, rfl, ?_⟩
   exact ctorWrapper_fnOwnershipContract ctx source tag arity
 
+/-! ### Ownership from generated-declaration provenance -/
+
+/-- Every operationally provenanced generated function satisfies its exact
+all-shared ownership transformer at the current evaluator index. -/
+theorem GeneratedDeclProvenance.fnPreservesAt
+    {ctx : Ctx} {limit : Nat} {src : IxIR0.Env}
+    (happly : ApplyOwnershipContractBelow ctx limit)
+    (hdecls : SourceDeclContractsBelow src ctx limit)
+    {state : LowSt} (hrepresented : ExtraRepresented ctx state)
+    {address : Ixon.Address} {d : FnDef}
+    (hprovenance : GeneratedDeclProvenance src state (address, .fn d)) :
+    d.result = .shared ∧
+      FnOwnershipPreservesAt ctx d
+        (List.replicate d.arity .shared) limit := by
+  cases hprovenance with
+  | inl hwrapper =>
+    obtain ⟨wrapperAddress, source, tag, arity, hitem⟩ := hwrapper
+    have haddress : address = wrapperAddress := congrArg Prod.fst hitem
+    have hdecl : (Decl.fn d) = ctorWrapperDecl source tag arity :=
+      congrArg Prod.snd hitem
+    subst address
+    simp only [ctorWrapperDecl] at hdecl
+    have hd : d =
+        ⟨arity, .shared, true,
+          .letOp (.alloc .shared (ctorIdOf source tag)
+            (descendingVars arity).toArray) (.ret (.var 0))⟩ :=
+      Decl.fn.inj hdecl
+    subst d
+    exact ⟨rfl,
+      (ctorWrapper_fnOwnershipContract ctx source tag arity).preserves⟩
+  | inr hlifted =>
+    obtain ⟨generatedAddress, entryCount, expr, bodyFuel, bodyInitial,
+      generated, code, hitem, hpositive, hsafe, hbodyRun, hgenerated,
+      hmember⟩ := hlifted
+    have haddress : address = generatedAddress := congrArg Prod.fst hitem
+    have hdecl : Decl.fn d = .fn
+        ⟨(liftCaptureIndices entryCount expr).length + lamArity expr,
+          .shared, true, code⟩ := congrArg Prod.snd hitem
+    subst address
+    have hd : d =
+        ⟨(liftCaptureIndices entryCount expr).length + lamArity expr,
+          .shared, true, code⟩ := Decl.fn.inj hdecl
+    subst d
+    have hbodyRepresented : ExtraRepresented ctx generated :=
+      hrepresented.of_extends hgenerated
+    have hmodes := papSafe_lamUses_eq_replicate hsafe
+    have hadmissible : ParameterDropsAdmissible (lamUses expr)
+        (fun index => countUses index (stripLams expr)) := by
+      rw [hmodes]
+      exact parameterDropsAdmissible_replicate_many _ _
+    have hselected : ∀ index, index < entryCount →
+        decide (0 < countUses index expr) =
+          (countUses ((lamUses expr).length + index)
+            (stripLams expr) != 0) := by
+      intro index _
+      rw [lamUses_length]
+      rw [← countUses_eq_stripLams_shift expr index]
+      cases countUses index expr <;> rfl
+    have hshared : (lamUses expr).map worldOfUses =
+        List.replicate (lamUses expr).length .shared := by
+      rw [hmodes]
+      simp [worldOfUses]
+    cases bodyFuel with
+    | zero =>
+      exact (trackedThrowRun_not_ok
+        (by simpa [lowerFnBody] using hbodyRun)).elim
+    | succ innerFuel =>
+      have hbodyRun' :
+          (lowerFnBody src (innerFuel + 1)
+            (let captures := (List.range entryCount).filter
+                (fun index => countUses index expr > 0)
+             ⟨parameterEntries captures.length (lamUses expr)
+                  (fun index => countUses index (stripLams expr)) ++
+                selectedEntriesFrom
+                  (fun index => countUses index expr > 0)
+                  (fun index => countUses ((lamUses expr).length + index)
+                    (stripLams expr))
+                  (List.range entryCount) 0,
+              captures.length + (lamUses expr).length⟩)
+            (let captures := (List.range entryCount).filter
+                (fun index => countUses index expr > 0)
+             parameterDrops captures.length (lamUses expr)
+                (fun index => countUses index (stripLams expr)))
+            .shared (stripLams expr)).run bodyInitial =
+              .ok code generated := by
+        simpa [liftedBodyVEnv, liftedBodyDrops, liftCaptureIndices,
+          lamUses_length] using hbodyRun
+      have hpreserves : FnOwnershipPreservesAt ctx
+          ⟨(liftCaptureIndices entryCount expr).length +
+              (lamUses expr).length,
+            .shared, true, code⟩
+          (List.replicate
+            ((liftCaptureIndices entryCount expr).length +
+              (lamUses expr).length) .shared) limit := by
+        exact lowerFnBody_liftedEntries_preservesAt
+          (fuel := innerFuel) (state := bodyInitial)
+          (finalState := generated) (code := code)
+          happly hdecls entryCount (lamUses expr) (stripLams expr)
+          (fun index => countUses index expr > 0)
+          hadmissible hselected (by simpa [lamUses_length] using hpositive)
+          hshared hbodyRun' hbodyRepresented
+      refine ⟨rfl, ?_⟩
+      rw [lamUses_length] at hpreserves
+      exact hpreserves
+
+/-- A provenanced extension from the empty compiler state supplies the
+generated-function half of one contractive compiler step. -/
+theorem ExtraProvenanceExtends.extraFnPreservesAt_of_empty
+    {ctx : Ctx} {limit : Nat} {src : IxIR0.Env} {state : LowSt}
+    (hprovenance : ExtraProvenanceExtends src ({} : LowSt) state)
+    (hrepresented : ExtraRepresented ctx state)
+    (happly : ApplyOwnershipContractBelow ctx limit)
+    (hdecls : SourceDeclContractsBelow src ctx limit) :
+    ExtraFnPreservesAt ctx state limit := by
+  intro address d hmember
+  exact (hprovenance.provenance_of_empty hmember).fnPreservesAt
+    happly hdecls hrepresented
+
+/-- Generated result worlds are fixed by provenance alone, independently of
+the semantic evaluator index. -/
+theorem ExtraProvenanceExtends.extraFnResultsShared_of_empty
+    {src : IxIR0.Env} {state : LowSt}
+    (hprovenance : ExtraProvenanceExtends src ({} : LowSt) state) :
+    ExtraFnResultsShared state := by
+  intro address d hmember
+  have horigin := hprovenance.provenance_of_empty hmember
+  cases horigin with
+  | inl hwrapper =>
+    obtain ⟨wrapperAddress, source, tag, arity, hitem⟩ := hwrapper
+    have hdecl : Decl.fn d = ctorWrapperDecl source tag arity :=
+      congrArg Prod.snd hitem
+    simp only [ctorWrapperDecl] at hdecl
+    exact congrArg FnDef.result (Decl.fn.inj hdecl)
+  | inr hlifted =>
+    obtain ⟨generatedAddress, entryCount, expr, bodyFuel, bodyInitial,
+      generated, code, hitem, _⟩ := hlifted
+    have hdecl : Decl.fn d = .fn
+        ⟨(liftCaptureIndices entryCount expr).length + lamArity expr,
+          .shared, true, code⟩ := congrArg Prod.snd hitem
+    exact congrArg FnDef.result (Decl.fn.inj hdecl)
+
+/-- At one evaluator index, every source-backed function emitted by an
+actual whole-program lowering run satisfies its ownership transformer from
+the three strictly-smaller contract environments. -/
+theorem lowerAllAction_sourceFnPreservesAt
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel limit : Nat}
+    {finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run {} =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (happly : ApplyOwnershipContractBelow ctx limit)
+    (hdecls : SourceDeclContractsBelow
+      (IxIR0.Env.ofList decls) ctx limit) :
+    SourceFnPreservesAt (IxIR0.Env.ofList decls) ctx limit := by
+  intro address source worlds result d hsrc hsignature hdecl
+  obtain ⟨itemInitial, itemFinal, hrun, hextends⟩ :=
+    lowerAllAction_callable_decl_trace hlower htarget
+      hsrc hsignature hdecl
+  have hitemRepresented : ExtraRepresented ctx itemFinal :=
+    hrepresented.of_extends hextends
+  cases source with
+  | defn sourceResult body =>
+      simp only [sourceCallableSignature, Option.some.injEq,
+        Prod.mk.injEq] at hsignature
+      obtain ⟨rfl, rfl⟩ := hsignature
+      cases compilerFuel with
+      | zero =>
+          simp only [lowerDecl] at hrun
+          obtain ⟨code, bodyState, hbodyRun, _⟩ :=
+            trackedBindRun_ok_inv hrun
+          exact (trackedThrowRun_not_ok (by
+            simpa [lowerFnBody] using hbodyRun)).elim
+      | succ bodyFuel =>
+          intro store store' args value rest hlength hown hcodeRun
+          exact lowerDecl_defn_preservesAt
+            (fuel := bodyFuel) happly hdecls
+            (lowerDecl_defn_parameterDropsAdmissible hrun)
+            (by simpa [Nat.succ_eq_add_one] using hrun)
+            hitemRepresented hlength hown hcodeRun
+  | ctor tag arity =>
+      simp [sourceCallableSignature] at hsignature
+  | recursor numArgs natLit rules =>
+      simp only [sourceCallableSignature, Option.some.injEq,
+        Prod.mk.injEq] at hsignature
+      obtain ⟨rfl, rfl⟩ := hsignature
+      obtain ⟨self, hselfDecl, _, hself⟩ :=
+        hdecls.recursorCurrentSelf hsrc
+      have hsame : self = d := by
+        have heq : some (Decl.fn self) = some (Decl.fn d) :=
+          hselfDecl.symm.trans hdecl
+        exact Decl.fn.inj (Option.some.inj heq)
+      subst self
+      intro store store' args value rest hlength hown hcodeRun
+      exact lowerDecl_recursor_preservesAt
+        happly hdecls hself hrun hitemRepresented
+        hlength hown hcodeRun
+  | extern arity =>
+      simp [sourceCallableSignature] at hsignature
+
+/-- A successful whole-program lowering from the empty compiler state seals
+all ownership contracts of its exact raw target context. Source declarations,
+lifted functions, constructor wrappers, and dynamic PAP entry are closed by
+one evaluator-fuel induction; no generated-function contract is assumed. -/
+theorem lowerAllAction_compilerContracts
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat} {finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run {} =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hselected : SourceCallableRowsSelected decls)
+    (hctx : ctx.decls = Env.ofList targetDecls) :
+    CompilerContracts (IxIR0.Env.ofList decls) ctx ∧
+      ExtraFnContracts ctx finalState := by
+  have hprovenance := lowerAllAction_extraProvenance_empty hlower
+  have hrepresented : ExtraRepresented ctx finalState :=
+    lowerAllAction_extraRepresented hlower fun hmember =>
+      htarget (lowerAllAction_extra_mem_result hlower hmember)
+  apply compilerContracts_of_source_extra_below_step
+    (lowerAllAction_sourceDeclLayout hlower htarget)
+    (lowerAllAction_sourcePapSafe hlower htarget)
+    hprovenance.extraFnResultsShared_of_empty
+    (lowerAllAction_fnDeclCovered hlower hselected hctx)
+  intro limit hdecls _ happly
+  exact ⟨lowerAllAction_sourceFnPreservesAt
+      hlower htarget hrepresented happly hdecls,
+    hprovenance.extraFnPreservesAt_of_empty
+      hrepresented happly hdecls⟩
+
 end Compilatrix.IxIR1.LowerSim
