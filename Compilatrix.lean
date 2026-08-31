@@ -88,6 +88,9 @@ import Compilatrix.IxIR1.LowerMutualAddressedProgress
 import Compilatrix.IxIR2.Basic
 import Compilatrix.IxIR2.Validate
 import Compilatrix.IxIR2.ValidateExamples
+import Compilatrix.IxIR2.Eval
+import Compilatrix.IxIR2.EvalCounter
+import Compilatrix.IxIR2.EvalExamples
 import Compilatrix.Pipeline
 import Compilatrix.PipelineSound
 import Compilatrix.Fence

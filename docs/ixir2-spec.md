@@ -9,14 +9,18 @@ pass ideas remain in the local plans; an implementation that disagrees with
 this document must change the specification deliberately rather than silently
 choosing a different contract.
 
-The in-memory syntax and bounded executable validator are implemented in
-[`IxIR2/Basic.lean`](../Compilatrix/IxIR2/Basic.lean) and
-[`IxIR2/Validate.lean`](../Compilatrix/IxIR2/Validate.lean), with executable
-acceptance and rejection witnesses in
-[`IxIR2/ValidateExamples.lean`](../Compilatrix/IxIR2/ValidateExamples.lean).
-The logical/physical evaluators, codec, lowering, and simulations remain later
-tranches below; their absence does not weaken the validator's fail-closed
-result.
+The in-memory syntax, bounded executable validator, and logical/physical
+small-step machine are implemented in
+[`IxIR2/Basic.lean`](../Compilatrix/IxIR2/Basic.lean),
+[`IxIR2/Validate.lean`](../Compilatrix/IxIR2/Validate.lean), and
+[`IxIR2/Eval.lean`](../Compilatrix/IxIR2/Eval.lean). Executable acceptance,
+rejection, hot/cold reset, reuse/discard, PAP, and budget witnesses live in
+[`IxIR2/ValidateExamples.lean`](../Compilatrix/IxIR2/ValidateExamples.lean) and
+[`IxIR2/EvalExamples.lean`](../Compilatrix/IxIR2/EvalExamples.lean).
+[`IxIR2/EvalCounter.lean`](../Compilatrix/IxIR2/EvalCounter.lean) supplies the
+credit-local heap relation and proved local counter algebra. The codec,
+IxIR₁ lowering, whole-step simulations, and their pipeline composition remain
+later tranches below.
 
 The freeze covers the in-memory Lean model and proof interfaces. Numeric wire
 tags and a persistent codec are not frozen yet. No artifact may advertise a
@@ -452,6 +456,13 @@ Logical and physical executions agree on attempts and hot/cold decisions.
 Compatibility rejections and unchanged fallbacks belong to the optimizer
 report, not successful runtime counters.
 
+The current implementation establishes this interface and the local counter
+updates for take, hot/cold reset, reuse, discard, and fresh allocation, plus
+the terminal free equation. Executable non-degenerate runs pin the resulting
+intermediate and terminal laws. The whole-machine logical/physical step
+refinement remains to be composed with structured lowering; this tranche does
+not claim that theorem from the local algebra alone.
+
 ## IxIR₁→IxIR₂ lowering
 
 Baseline lowering is syntax-directed and does not require an optimization
@@ -598,6 +609,8 @@ milestone by themselves.
 5. Add direct-recursion recognition, liveness-driven take/reset insertion,
    borrow inference, and RC normalization as separately switchable checked
    passes.
+
+Items 1 and 2 are implemented. Item 3 is the active compiler milestone.
 
 Static unique reuse precedes dynamic reset quality work, but the v0 syntax and
 semantics include both lanes now so the ownership and layout contracts cannot

@@ -38,6 +38,7 @@ import Compilatrix.SimInstance
 import Compilatrix.UsageSound
 import Compilatrix.Ixon.Address
 import Compilatrix.Ixon.Const
+import Compilatrix.IxIR2.EvalCounter
 import Compilatrix.Pipeline
 import Compilatrix.PipelineSound
 
@@ -1544,3 +1545,17 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR1.MutualBlock.Block.preimage_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.MutualBlock.Block.preimage_injective
+
+/-! ## IxIR₂ credit-counter algebra -/
+
+/-- info: 'Compilatrix.IxIR2.Eval.CounterLaw.afterHotReset' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.CounterLaw.afterHotReset
+
+/-- info: 'Compilatrix.IxIR2.Eval.CounterLaw.afterReuse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.CounterLaw.afterReuse
+
+/-- info: 'Compilatrix.IxIR2.Eval.CounterLaw.afterDiscard' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.CounterLaw.afterDiscard
+
+/-- info: 'Compilatrix.IxIR2.Eval.CounterLaw.terminalFrees' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.CounterLaw.terminalFrees

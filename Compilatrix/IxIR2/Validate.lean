@@ -1021,7 +1021,9 @@ def validateWith (limits : Limits) (context : Context) (program : Program) :
   checkLimit programSite .blocks (structuralBlockCount program) limits.maxBlocks
   let declarationWork := program.declarations.length * 2
   checkLimit programSite .flowWork declarationWork limits.maxFlowWork
-  match duplicateAddress? program.declarations with
+  if !program.main.signature.params.isEmpty then
+    failAt programSite .signature "the distinguished main function must be nullary"
+  else match duplicateAddress? program.declarations with
   | some address => .error (.duplicateDeclaration address)
   | none =>
       let declarations := declarationIndex program.declarations

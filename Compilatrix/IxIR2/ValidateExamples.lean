@@ -14,6 +14,7 @@ open Compilatrix.IxIR2
 
 private def blockAddress : Address := Address.replicate 0x21
 private def functionAddress : Address := Address.replicate 0x31
+private def harnessAddress : Address := Address.replicate 0x32
 private def externAddress : Address := Address.replicate 0x41
 private def uniqueLayout : LayoutId := Address.replicate 0x51
 private def sharedLayout : LayoutId := Address.replicate 0x52
@@ -49,13 +50,30 @@ private def unarySignature (world : Owned) : Signature :=
 private def nullarySignature (result : Owned := .shared) : Signature :=
   { params := #[], result, papSafe := false }
 
+/-- Keep the inner ownership fixtures unary and auditably small while checking
+them as genuine nullary-main programs. -/
+private def closeFixture (program : Program) : Program :=
+  match program.main.signature.params with
+  | #[{ world, passing := .owned }] =>
+      { declarations := (harnessAddress, .fn program.main) :: program.declarations
+        main :=
+          { signature := nullarySignature program.main.signature.result
+            blocks := #[
+              { valueParams := #[]
+                creditParams := #[]
+                instructions := #[
+                  .alloc world nodeCtor #[.lit (.nat 0)],
+                  .call harnessAddress #[.reg 0]]
+                terminator := .ret (.reg 1) }] } }
+  | _ => program
+
 private def accepts (program : Program) : Bool :=
-  match validate context program with
+  match validate context (closeFixture program) with
   | .ok _ => true
   | .error _ => false
 
 private def rejectsAs (violation : Violation) (program : Program) : Bool :=
-  match validate context program with
+  match validate context (closeFixture program) with
   | .error (.invalid _ actual _) => actual == violation
   | _ => false
 
@@ -77,6 +95,10 @@ private def simpleJump : Program :=
             terminator := .ret (.reg 0) }] } }
 
 #guard accepts simpleJump
+
+#guard match validate context simpleJump with
+  | .error (.invalid _ .signature _) => true
+  | _ => false
 
 /-! Required credit: destructive take, exact-layout reuse, return. -/
 
@@ -253,7 +275,10 @@ private def directBorrowedCall : Program :=
 private def scalarLeafContext : Context :=
   { schemas
     scalarLeaves :=
-      [{ owner := .main, block := 0, value := 0, cid := nodeCtor }] }
+      [{ owner := .declaration harnessAddress
+         block := 0
+         value := 0
+         cid := nodeCtor }] }
 
 private def scalarLeafFree : Program :=
   { declarations := []
@@ -265,7 +290,7 @@ private def scalarLeafFree : Program :=
             instructions := #[.freeUnique (.reg 0) nodeCtor]
             terminator := .ret (.lit (.nat 0)) }] } }
 
-#guard match validate scalarLeafContext scalarLeafFree with
+#guard match validate scalarLeafContext (closeFixture scalarLeafFree) with
   | .ok _ => true
   | .error _ => false
 
@@ -477,8 +502,9 @@ private def forbiddenExtern : Program :=
 
 #guard rejectsAs .externBoundary forbiddenExtern
 
-#guard match validateWith { defaultLimits with maxBlocks := 1 } context simpleJump with
-  | .error (.limit _ .blocks 2 1) => true
+#guard match validateWith { defaultLimits with maxBlocks := 1 } context
+    (closeFixture simpleJump) with
+  | .error (.limit _ .blocks 3 1) => true
   | _ => false
 
 end Compilatrix.IxIR2.Validate.Examples

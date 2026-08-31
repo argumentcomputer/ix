@@ -100,15 +100,20 @@ status ledger here:
   fixtures pin duplication, leaks, use-after-consume, lender lifetime, layout
   and optionality mismatches, malformed control flow, dynamic borrowed entry,
   externs, and resource exhaustion.
+- IxIR₂ logical and physical small-step execution with independent control and
+  heap-traversal budgets, executable calls/PAPs/CFG transfer, explicit physical
+  reservations, hot/cold reset, reuse and discard observations, a credit-local
+  heap-relation interface, proved local counter algebra, and non-degenerate
+  intermediate and terminal executable witnesses.
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
   bounded production-Std contact.
   See [counter evidence](thesis-counter-evidence.md),
   [well-moded generation](well-moded-generator.md), and
   [corpus contact](corpus-contact.md).
 
-The current compiler-output boundary is IxIR₁. IxIR₂ syntax and validation are
-implemented, but no compiler path yet emits IxIR₂, paired reuse, native
-instructions, or a self-hosted binary.
+The current compiler-output boundary is IxIR₁. IxIR₂ syntax, validation, and
+logical/physical execution are implemented, but no compiler path yet emits
+IxIR₂, paired reuse, native instructions, or a self-hosted binary.
 
 ## Known boundaries carried forward
 
@@ -229,8 +234,8 @@ validation obligations, and simulation interface are frozen in the
 | Deliverable | State | Exit condition |
 | --- | --- | --- |
 | IxIR₂ syntax and validation | delivered | The frozen v0 in-memory syntax, world-keyed schemas, bounded ownership/borrow/credit validator, stable rejection classes, proof-facing acceptance predicate, and positive/negative executable fixtures land together. |
-| IxIR₂ logical/physical semantics | active | Executable semantics separate control from heap-traversal budgets, model logical frees versus physical reservations/reuse, and validate the intermediate and terminal counter equations on non-degenerate credit paths. |
-| IxIR₂ CFG and join points | next | Lower structured IxIR₁ to validated blocks with explicit parameters, combined constructor/Nat dispatch, tail calls, and a compositional simulation theorem. |
+| IxIR₂ logical/physical semantics | delivered | Executable semantics separate control from heap-traversal budgets, model logical frees versus physical reservations/reuse, cover calls/PAPs and CFG transfer, expose a credit-local heap relation, prove the local counter algebra, and validate intermediate and terminal equations on non-degenerate credit paths. Whole-machine refinement composes in the lowering tranche. |
+| IxIR₂ CFG and join points | active | Lower structured IxIR₁ to validated blocks with explicit parameters, combined constructor/Nat dispatch, tail calls, and a compositional simulation theorem. |
 | Direct-recursion recovery | next | Recognized recursor images validate to direct loops; unrecognized terms retain the literal correct fallback. |
 | Static unique reuse | next | Fuel-neutral consuming unique destructure specializes recursive known shapes, produces affine reuse credits, and compiler-emitted list reversal reaches the FIP counter target. |
 | Dynamic shared reset/reuse | next | A checked RC-zero branch specializes known shared shapes; ordinary all-shared code reuses RC=1 nodes on the hot path and allocates correctly on the cold path. |
@@ -334,17 +339,14 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Implement IxIR₂ logical and physical semantics.** Separate control and
-   heap-traversal budgets, make present/absent credits executable, and pin the
-   intermediate and terminal allocation/free/reuse equations.
-2. **Lower structured IxIR₁ to validated IxIR₂.** Emit explicit block
+1. **Lower structured IxIR₁ to validated IxIR₂.** Emit explicit block
    parameters, combined constructor/Nat dispatch, and tail transfers, then
    prove the block-compositional control simulation.
-3. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
+2. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
    separate; prove fragment containment through the typed instruction AST.
-4. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
+3. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
    the gate from hand-written reuse semantics to an optimizing compiler.
-5. **Prove address reproducibility.** Run two independent full compilations of
+4. **Prove address reproducibility.** Run two independent full compilations of
    one validated root and compare the addressed IxIR₀/IxIR₁ graphs and
    certificate identities.
 
