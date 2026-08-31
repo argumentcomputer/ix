@@ -906,6 +906,29 @@ heap-history evaluator congruence and its executable local decision theorem. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.OptimizeProgram.runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle
 
+/-! Fail-soft optimizer reclamation uses one forwarded execution, evaluator
+determinism, allocation-history release transport, and the exact final rebuild.
+The produced and cached wrappers expose the same native digest boundary as the
+checked HPT and rebuild inputs. -/
+
+/-- info: 'Compilatrix.IxIR1.Optimizer.Outcome.reclamation_of_witness' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Optimizer.Outcome.reclamation_of_witness
+
+/-- info: 'Compilatrix.IxIR1.Optimizer.reclamation_of_runWithProducedHPT_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Optimizer.reclamation_of_runWithProducedHPT_eq
+
+/-- info: 'Compilatrix.IxIR1.Optimizer.reclamation_of_runWithCachedHPT_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Optimizer.reclamation_of_runWithCachedHPT_eq
+
 /-- info: 'Compilatrix.Pipeline.Artifact.runMain_pruneProgram_of_checkAndPruneProgramWith_eq_ok' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
@@ -1195,13 +1218,45 @@ traces and whole-pass provenance, rather than from `CompilerProgressContracts`.
 
 /-! The validated pipeline retains the exact member scope, erasure certificate,
 member coverage, and both address-pass equations consumed by the production
-semantic endpoint. -/
+semantic endpoint.  Its O1 projection pins semantic preservation, progress,
+memory-error exclusion, reclamation, and the evaluator-universal allocation/
+free law directly on the artifact selected by the fail-soft optimizer. -/
 
 /-- info: 'Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulation' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulation
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulationOfProducedOptimizedArtifact' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulationOfProducedOptimizedArtifact
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.targetProgressAfterProducedOptimization' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.targetProgressAfterProducedOptimization
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.memoryErrorUnreachableAfterProducedOptimization' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.memoryErrorUnreachableAfterProducedOptimization
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.reclamationAfterProducedOptimization' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.reclamationAfterProducedOptimization
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.allocationFreeCostInvariantAfterProducedOptimization' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.allocationFreeCostInvariantAfterProducedOptimization
 
 /-- info: 'Compilatrix.Pipeline.ValidatedCompilation.sourceCallableRowsSelected' depends on axioms: [propext,
  Classical.choice,

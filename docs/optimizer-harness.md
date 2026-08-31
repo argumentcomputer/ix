@@ -1,7 +1,7 @@
 # IxIR₁ optimizer harness
 
-Status: checked scalar and exact-leaf destruction joined the default O1 bundle
-on 2026-08-30. The checked HPT consumers propagate facts through complete
+Status: the default O1 bundle was attached to the validated compilation
+semantics on 2026-08-31. The checked HPT consumers propagate facts through complete
 stored function bodies, prune impossible alternatives, collapse a certified
 detailed unary case to one checked `fetch`, forward certified scalar fields
 after allocation or successful reuse, specialize certified destructor sites,
@@ -9,9 +9,11 @@ and fuse adjacent PAP/application pairs. Rooted reachability then filters the
 rewritten old-keyed graph before all five consumers share one content-address
 rebuild.
 
-The implementation is `Compilatrix/IxIR1/Optimizer.lean`, with compiler-facing
-entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
-`optimizeWithCachedHPT`.
+The harness implementation is `Compilatrix/IxIR1/Optimizer.lean`; release
+transport is in `Compilatrix/IxIR1/OptimizerReclamation.lean`; and the
+validated artifact projection is in `Compilatrix/PipelineSound.lean`.
+Compiler-facing entry points remain
+`Pipeline.Artifact.optimizeWithProducedHPT` and `optimizeWithCachedHPT`.
 
 ## Policy and fallback
 
@@ -63,6 +65,32 @@ disabled pass, exhausted optimizer budget, or rejected content-address rebuild
 returns the original graph and records a typed skip reason. These conditions
 cannot reject an otherwise accepted compiler artifact. HPT production and
 checking retain their own separately versioned structural limits.
+
+## Validated semantic attachment
+
+`Optimizer.Outcome.RunRefines` exposes the selected execution relation for
+both the literal skip branch and a successful content-address rebuild.
+Direct-production and persistent-cache wrappers turn one successful source
+run into a selected target run. They also preserve full-result reclamation:
+evaluator determinism identifies every successful selected run with the
+forwarded witness, heap-history isomorphism transports shared or unique deep
+release, and the checked rebuild transports the released heap through its
+final address map.
+
+`ValidatedCompilation` instantiates that authority for the artifact returned
+by `optimizeWithProducedHPT`. Its public endpoints state forward simulation,
+target progress, all-fuel memory-error exclusion, and reclamation directly on
+the selected artifact's declaration environment and main, not merely on an
+internal optimizer outcome. The persistent-cache path has the same generic
+successful-run and reclamation theorems and does not duplicate the pipeline
+projection.
+
+The selected artifact also exposes `frees ≤ allocs`, the evaluator's general
+fresh-store balance. Heap-history refinement intentionally omits counters, and
+successful PAP fusion or destruction may change allocations or frees, so the
+pre-optimization no-reuse and ownership-amortized four-counter contracts are
+not claimed through this interface without a separate syntactic or cost
+preservation proof.
 
 ## Observations
 

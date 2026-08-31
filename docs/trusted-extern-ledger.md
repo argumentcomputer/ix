@@ -179,6 +179,15 @@ retain the complete declaration set around reachable dynamic apply. A separate
 usage-checked Ixon compilation fixture removes five of six emitted stored
 functions while preserving its exact shared constructor result.
 
+The fail-soft O1 outcome now composes with the validated compilation semantic
+spine. Its produced and cached successful-run/reclamation wrappers, and the
+produced artifact's forward simulation, progress, memory-error exclusion,
+reclamation, and allocation/free endpoints, are pinned in
+`Compilatrix/Fence.lean`. Each cone exposes the ordinary logical axioms plus
+the same native BLAKE3 exception already required by checked HPT production
+and the final content-address rebuild; the attachment introduces no new
+trusted primitive.
+
 ## Active native interface: durable filesystem synchronization
 
 | Field | Ledger value |

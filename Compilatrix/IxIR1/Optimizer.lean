@@ -243,6 +243,33 @@ structure Policy where
 
 def defaultPolicy : Policy := {}
 
+namespace Policy
+
+/-- Executable optimizer policy projected into the proof-facing composed
+pass selection.  Keeping this projection public ensures the harness and its
+semantic theorem refer to literally the same pass bundle. -/
+def passes (policy : Policy) : HPT.OptimizeProgram.Passes :=
+  { casePrune := policy.casePrune.enabled
+    fetchForward := policy.fetchForward.enabled
+    destroy := policy.destruction.enabled
+    papFuse := policy.papFuse.enabled
+    reachability := policy.reachability.enabled
+    roots := policy.reachability.roots }
+
+/-- Exact old-keyed declaration rows consumed by the optimizer's single
+content-address rebuild. -/
+def rebuildEntries (policy : Policy)
+    (program : List ReaddressAll.Artifact) (summaries : HPT.SummaryEnv)
+    (main : Code) : List (Address × Decl) :=
+  (HPT.OptimizeProgram.selectReachable policy.passes
+    (HPT.OptimizeProgram.rewriteEntries policy.passes
+      (HPT.programDeclEnv program) summaries
+      (HPT.declarationEntries program))
+    (HPT.OptimizeProgram.rewriteMain policy.passes
+      (HPT.programDeclEnv program) summaries main).code).entries
+
+end Policy
+
 inductive SkipReason where
   | unsupportedHarnessVersion (actual expected : Nat)
   | unsupportedPassVersion (actual expected : Nat)
@@ -394,6 +421,75 @@ def artifacts (outcome : Outcome)
 def main (outcome : Outcome) (input : Code) : Code :=
   outcome.rebuilt.map (fun result => result.main) |>.getD input
 
+/-- Oracle seen by the selected input program.  A rebuilt outcome pulls the
+final oracle back through the optimizer's exact rebuild renaming; a skipped
+outcome uses it literally. -/
+def sourceOracle (outcome : Outcome) (policy : Policy)
+    (program : List ReaddressAll.Artifact) (summaries : HPT.SummaryEnv)
+    (main : Code) (oracle : Address → List RVal → Option RVal) :
+    Address → List RVal → Option RVal :=
+  match outcome.rebuilt with
+  | none => oracle
+  | some result => fun address arguments =>
+      oracle (result.rebuildRename
+        (policy.rebuildEntries program summaries main) address) arguments
+
+/-- Old addressed program context from which the selected optimizer result is
+proved. -/
+def sourceCtx (outcome : Outcome) (policy : Policy)
+    (program : List ReaddressAll.Artifact) (summaries : HPT.SummaryEnv)
+    (main : Code) (oracle : Address → List RVal → Option RVal) : Ctx :=
+  { decls := HPT.programDeclEnv program
+    oracle := outcome.sourceOracle policy program summaries main oracle }
+
+/-- Runtime context of the fail-soft selected graph. -/
+def targetCtx (outcome : Outcome) (program : List ReaddressAll.Artifact)
+    (oracle : Address → List RVal → Option RVal) : Ctx :=
+  match outcome.rebuilt with
+  | none => { decls := HPT.programDeclEnv program, oracle }
+  | some result => result.addressedCtx oracle
+
+/-- Result relation for the fail-soft harness.  Skipping is literal equality.
+A successful optimization first relates logical executions modulo allocation
+history, then maps declaration identities stored in the optimized heap through
+the single certified rebuild. -/
+def RunRefines (outcome : Outcome) (policy : Policy)
+    (program : List ReaddressAll.Artifact) (summaries : HPT.SummaryEnv)
+    (main : Code) (sourceOut targetOut : Store × RVal) : Prop :=
+  match outcome.rebuilt with
+  | none => targetOut = sourceOut
+  | some result =>
+      ∃ logicalOut,
+        targetOut =
+          (Readdress.Store.mapAddresses
+            (result.rebuildRename
+              (policy.rebuildEntries program summaries main)) logicalOut.1,
+            logicalOut.2) ∧
+          Sim.RunHistoryIso HPT.OptimizeProgram.emptyHistoryIso
+            sourceOut logicalOut
+
+/-- The proof-facing selected context uses exactly the declaration environment
+committed to by `Outcome.artifacts`. -/
+theorem targetCtx_decls (outcome : Outcome)
+    (program : List ReaddressAll.Artifact)
+    (oracle : Address → List RVal → Option RVal) :
+    (outcome.targetCtx program oracle).decls =
+      HPT.programDeclEnv (outcome.artifacts program) := by
+  cases hrebuilt : outcome.rebuilt with
+  | none => simp [targetCtx, artifacts, hrebuilt]
+  | some result =>
+      have henv := HPT.OptimizeProgram.envOfList_declarationEntries
+        result.artifacts
+      change
+        Env.ofList
+            (result.artifacts.flatMap ReaddressAll.Artifact.declarations) =
+          HPT.programDeclEnv result.artifacts at henv
+      simpa only [targetCtx, artifacts, hrebuilt, Option.map_some,
+        Option.getD_some, ReaddressAll.Result.addressedCtx,
+        ReaddressAll.Result.asReaddressResult,
+        Readdress.Result.addressedCtx, Readdress.Result.declarations,
+        List.append_nil, ReaddressAll.Result.declarations] using henv
+
 end Outcome
 
 private def skipReason? (policy : Policy) (before : Observation)
@@ -469,14 +565,7 @@ private def runChecked (policy : Policy)
   | some reason =>
       skippedOutcome policy reason inputRoot checkedRoot checkedBytes before
   | none =>
-      let passes : HPT.OptimizeProgram.Passes :=
-        { casePrune := policy.casePrune.enabled
-          fetchForward := policy.fetchForward.enabled
-          destroy := policy.destruction.enabled
-          papFuse := policy.papFuse.enabled
-          reachability := policy.reachability.enabled
-          roots := policy.reachability.roots }
-      match HPT.OptimizeProgram.rebuildProgram passes [] program summaries
+      match HPT.OptimizeProgram.rebuildProgram policy.passes [] program summaries
           main with
       | .error message =>
           skippedOutcome policy .rebuildRejected inputRoot checkedRoot
@@ -520,6 +609,32 @@ private def runChecked (policy : Policy)
                 overSaturatedPaps := papChanges.overSaturated
                 removedDeclarations := pruned.changes.removedDeclarations } }
 
+/-- A selected rebuilt result can only come from the successful branch of the
+same composed pass invocation used by the harness. -/
+private theorem runChecked_rebuilt_eq_some
+    {policy : Policy} {program : List ReaddressAll.Artifact} {main : Code}
+    {summaries : HPT.SummaryEnv} {analysis : HPT.Result}
+    {result : ReaddressAll.Result}
+    (hselected :
+      (runChecked policy program main summaries analysis).rebuilt =
+        some result) :
+    ∃ optimized,
+      HPT.OptimizeProgram.rebuildProgram policy.passes [] program summaries
+          main = .ok optimized ∧
+        optimized.result = result := by
+  cases hskip : skipReason? policy (observe program main)
+      (certificateBytes analysis) with
+  | some reason =>
+      simp [runChecked, hskip, skippedOutcome] at hselected
+  | none =>
+      cases hrebuild : HPT.OptimizeProgram.rebuildProgram policy.passes []
+          program summaries main with
+      | error message =>
+          simp [runChecked, hskip, hrebuild, skippedOutcome] at hselected
+      | ok optimized =>
+          refine ⟨optimized, rfl, ?_⟩
+          simpa [runChecked, hskip, hrebuild] using hselected
+
 /-- Run the versioned harness from an in-process HPT production that already
 crossed the ordinary checker. -/
 def runWithProducedHPT (policy : Policy)
@@ -537,5 +652,147 @@ def runWithCachedHPT (policy : Policy)
     (production : HPT.Cache.Production limits program) : Outcome :=
   runChecked policy program main production.certificate.summaryEnv
     production.result
+
+/-- Proof-facing inversion of the produced-HPT harness's rebuilt branch. -/
+theorem rebuilt_eq_some_of_runWithProducedHPT
+    {policy : Policy} {program : List ReaddressAll.Artifact} {main : Code}
+    {limits : HPT.Limits} {production : HPT.Production limits program}
+    {result : ReaddressAll.Result}
+    (hselected :
+      (runWithProducedHPT policy program main production).rebuilt =
+        some result) :
+    ∃ optimized,
+      HPT.OptimizeProgram.rebuildProgram policy.passes [] program
+          production.certificate.summaryEnv main = .ok optimized ∧
+        optimized.result = result := by
+  exact runChecked_rebuilt_eq_some hselected
+
+/-- Proof-facing inversion of the cached-HPT harness's rebuilt branch. -/
+theorem rebuilt_eq_some_of_runWithCachedHPT
+    {policy : Policy} {program : List ReaddressAll.Artifact} {main : Code}
+    {limits : HPT.Cache.Limits}
+    {production : HPT.Cache.Production limits program}
+    {result : ReaddressAll.Result}
+    (hselected :
+      (runWithCachedHPT policy program main production).rebuilt =
+        some result) :
+    ∃ optimized,
+      HPT.OptimizeProgram.rebuildProgram policy.passes [] program
+          production.certificate.summaryEnv main = .ok optimized ∧
+        optimized.result = result := by
+  exact runChecked_rebuilt_eq_some hselected
+
+/-- Every directly produced fail-soft optimizer selection preserves a
+successful execution at the same fuel under its explicit oracle pullback. -/
+theorem runMain_of_runWithProducedHPT_eq
+    {policy : Policy} {program : List ReaddressAll.Artifact} {main : Code}
+    {limits : HPT.Limits} {production : HPT.Production limits program}
+    {outcome : Outcome}
+    (houtcome : runWithProducedHPT policy program main production = outcome)
+    (oracle : Address → List RVal → Option RVal) (fuel : Nat)
+    {sourceOut : Store × RVal}
+    (hrun : runMain
+      (outcome.sourceCtx policy program production.certificate.summaryEnv
+        main oracle) main fuel = .ok sourceOut) :
+    ∃ targetOut,
+      runMain (outcome.targetCtx program oracle) (outcome.main main) fuel =
+          .ok targetOut ∧
+        outcome.RunRefines policy program production.certificate.summaryEnv
+          main sourceOut targetOut := by
+  cases hrebuilt : outcome.rebuilt with
+  | none =>
+      refine ⟨sourceOut, ?_, ?_⟩
+      · simpa [Outcome.sourceCtx, Outcome.sourceOracle,
+          Outcome.targetCtx, Outcome.main, hrebuilt] using hrun
+      · simp [Outcome.RunRefines, hrebuilt]
+  | some result =>
+      have hselected :
+          (runWithProducedHPT policy program main production).rebuilt =
+            some result := by
+        rw [houtcome, hrebuilt]
+      obtain ⟨optimized, hrebuild, hresult⟩ :=
+        rebuilt_eq_some_of_runWithProducedHPT hselected
+      subst result
+      have hsource :
+          runMain
+            (HPT.OptimizeProgram.rebuildOriginalCtx optimized.result
+              (policy.rebuildEntries program
+                production.certificate.summaryEnv main)
+              (HPT.programDeclEnv program) oracle)
+            main fuel = .ok sourceOut := by
+        simpa [Outcome.sourceCtx, Outcome.sourceOracle, hrebuilt,
+          HPT.OptimizeProgram.rebuildOriginalCtx,
+          ReaddressAll.Result.rebuildSourceCtx] using hrun
+      obtain ⟨logicalOut, htarget, hhistory⟩ :=
+        HPT.OptimizeProgram.runMain_rebuildProgram_of_runWith_eq_ok
+          production.checked hrebuild oracle fuel hsource
+      let targetOut : Store × RVal :=
+        (Readdress.Store.mapAddresses
+          (optimized.result.rebuildRename
+            (policy.rebuildEntries program
+              production.certificate.summaryEnv main)) logicalOut.1,
+          logicalOut.2)
+      refine ⟨targetOut, ?_, ?_⟩
+      · simpa [targetOut, Outcome.targetCtx, Outcome.main, hrebuilt,
+          Policy.rebuildEntries] using htarget
+      · simp only [Outcome.RunRefines, hrebuilt]
+        exact ⟨logicalOut, rfl, hhistory⟩
+
+/-- Cached checked summaries expose the identical fail-soft successful-run
+contract. -/
+theorem runMain_of_runWithCachedHPT_eq
+    {policy : Policy} {program : List ReaddressAll.Artifact} {main : Code}
+    {limits : HPT.Cache.Limits}
+    {production : HPT.Cache.Production limits program}
+    {outcome : Outcome}
+    (houtcome : runWithCachedHPT policy program main production = outcome)
+    (oracle : Address → List RVal → Option RVal) (fuel : Nat)
+    {sourceOut : Store × RVal}
+    (hrun : runMain
+      (outcome.sourceCtx policy program production.certificate.summaryEnv
+        main oracle) main fuel = .ok sourceOut) :
+    ∃ targetOut,
+      runMain (outcome.targetCtx program oracle) (outcome.main main) fuel =
+          .ok targetOut ∧
+        outcome.RunRefines policy program production.certificate.summaryEnv
+          main sourceOut targetOut := by
+  cases hrebuilt : outcome.rebuilt with
+  | none =>
+      refine ⟨sourceOut, ?_, ?_⟩
+      · simpa [Outcome.sourceCtx, Outcome.sourceOracle,
+          Outcome.targetCtx, Outcome.main, hrebuilt] using hrun
+      · simp [Outcome.RunRefines, hrebuilt]
+  | some result =>
+      have hselected :
+          (runWithCachedHPT policy program main production).rebuilt =
+            some result := by
+        rw [houtcome, hrebuilt]
+      obtain ⟨optimized, hrebuild, hresult⟩ :=
+        rebuilt_eq_some_of_runWithCachedHPT hselected
+      subst result
+      have hsource :
+          runMain
+            (HPT.OptimizeProgram.rebuildOriginalCtx optimized.result
+              (policy.rebuildEntries program
+                production.certificate.summaryEnv main)
+              (HPT.programDeclEnv program) oracle)
+            main fuel = .ok sourceOut := by
+        simpa [Outcome.sourceCtx, Outcome.sourceOracle, hrebuilt,
+          HPT.OptimizeProgram.rebuildOriginalCtx,
+          ReaddressAll.Result.rebuildSourceCtx] using hrun
+      obtain ⟨logicalOut, htarget, hhistory⟩ :=
+        HPT.OptimizeProgram.runMain_rebuildProgram_of_runWith_eq_ok
+          production.checked hrebuild oracle fuel hsource
+      let targetOut : Store × RVal :=
+        (Readdress.Store.mapAddresses
+          (optimized.result.rebuildRename
+            (policy.rebuildEntries program
+              production.certificate.summaryEnv main)) logicalOut.1,
+          logicalOut.2)
+      refine ⟨targetOut, ?_, ?_⟩
+      · simpa [targetOut, Outcome.targetCtx, Outcome.main, hrebuilt,
+          Policy.rebuildEntries] using htarget
+      · simp only [Outcome.RunRefines, hrebuilt]
+        exact ⟨logicalOut, rfl, hhistory⟩
 
 end Compilatrix.IxIR1.Optimizer

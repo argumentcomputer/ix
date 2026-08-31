@@ -69,7 +69,11 @@ status ledger here:
   and checked rooted declaration reachability with exported roots and a
   conservative dynamic-apply fallback. It runs behind a versioned fail-soft
   optimizer policy with canonical before/after reports, pass-attributed
-  counters, and deterministic fixed-point regressions.
+  counters, and deterministic fixed-point regressions. The directly produced
+  selected artifact is now attached to the validated semantic interface with
+  artifact-facing forward simulation, target progress, all-fuel memory-error
+  exclusion, full-result reclamation, and the evaluator-universal
+  allocation/free law.
   Executable exact-fuel counterexamples close the IxIR₁ destruction boundary:
   recursive inline expansion steals continuation fuel, helper expansion adds
   call-entry fuel, and shared specialization lacks an explicit RC-zero branch.
@@ -177,9 +181,18 @@ unconditional full-result reclamation, the current no-reuse/allocation-free
 counter law, and the ownership-amortized four-counter budget whenever the
 ordinary source execution has a call-aware profile.
 
-M2b exits when the active proof-structure consolidation completes and the
-delivered O1 whole-program optimization bundle is attached to this validated
-semantic interface. The detailed optimizer design is in
+The directly produced O1 selection now composes that spine through the
+optimizer's allocation-history refinement and exact final rebuild. The
+artifact returned by `optimizeWithProducedHPT` therefore exposes forward
+simulation, target progress, all-fuel memory-error exclusion, and full-result
+reclamation on its own declaration environment and main. Its applicable
+counter contract is the evaluator-universal `frees ≤ allocs` law. The
+pre-optimization `reuses = 0` and ownership-amortized four-counter contracts
+are not transported through an optimizer relation that intentionally forgets
+counters and admits allocation-changing PAP/destruction rewrites.
+
+M2b exits when the active proof-structure consolidation completes. The
+detailed optimizer design is in
 `plans/whole-program-optimization.md`.
 
 ## M2c — optimized native wedge
@@ -293,14 +306,13 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Attach O1 to the validated semantic interface.** Compose the fail-soft
-   checked optimizer/rebuild history refinement with
-   `ValidatedCompilation.semanticForwardSimulation`, then lift target
-   progress, memory safety, reclamation, and the applicable cost contracts to
-   the selected optimized artifact.
-2. **Finish proof-structure consolidation.** Give each remaining shared
+1. **Finish proof-structure consolidation.** Give each remaining shared
    recursive judgment one foundational traversal and route its public theorem
    family through that core without duplicating the induction.
+2. **Close the IxIR₁ extern ownership ABI.** Give heap-valued extern
+   arguments and results explicit consume/borrow/retain contracts, or keep
+   them rejected by the validated fragment with that boundary mechanically
+   visible.
 3. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement. Include the fuel-neutral

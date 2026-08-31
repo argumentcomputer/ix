@@ -175,6 +175,35 @@ def symm {left right : Store} (iso : HeapHistoryIso left right) :
     · obtain ⟨leftBox, rightBox, hl, hr, hbox⟩ := hlive
       exact .inr ⟨rightBox, leftBox, hr, hl, hbox.symm⟩
 
+/-- A heap-history isomorphism cannot introduce a live node on the right when
+the left heap has none.  Dead historical slots may differ, so this is stated
+through the public live-node observation rather than array equality. -/
+theorem right_live_eq_zero {left right : Store}
+    (iso : HeapHistoryIso left right) (hleft : left.live = 0) :
+    right.live = 0 := by
+  apply (Reclamation.Store.live_eq_zero_iff_no_live_slot right).2
+  intro rightBox hrightMember
+  obtain ⟨rightLoc, hrightSlot⟩ :=
+    (Array.mem_iff_getElem?).mp hrightMember
+  have hright : right.get? rightLoc = some rightBox := by
+    rw [Store.get?, hrightSlot]
+    rfl
+  obtain ⟨leftLoc, hrel⟩ := iso.right_total hright
+  rcases iso.related hrel with hdead | hlive
+  · exact Option.some_ne_none rightBox (hright.symm.trans hdead.2)
+  · obtain ⟨leftBox, foundRight, hleftGet, hrightGet, _⟩ := hlive
+    have hleftMember : some leftBox ∈ left.nodes := by
+      apply (Array.mem_iff_getElem?).2
+      exact ⟨leftLoc, nodes_get?_of_get? hleftGet⟩
+    exact (Reclamation.Store.live_eq_zero_iff_no_live_slot left).1 hleft
+      leftBox hleftMember
+
+/-- Symmetric empty-live transport. -/
+theorem left_live_eq_zero {left right : Store}
+    (iso : HeapHistoryIso left right) (hright : right.live = 0) :
+    left.live = 0 :=
+  iso.symm.right_live_eq_zero hright
+
 /-- Composition of allocation histories.  A dead/dead row composes only with
 another dead/dead row; a live middle location forces both sides to expose the
 same middle box, so node isomorphisms compose. -/
@@ -734,6 +763,18 @@ def StoreHistoryIso {left right : Store}
     (before : HeapHistoryIso left right)
     (leftOut rightOut : Store) : Prop :=
   ∃ heap : HeapHistoryIso leftOut rightOut, before.Extends heap
+
+namespace StoreHistoryIso
+
+/-- Store-only history refinement preserves the absence of live nodes. -/
+theorem right_live_eq_zero {left right leftOut rightOut : Store}
+    {before : HeapHistoryIso left right}
+    (hstores : StoreHistoryIso before leftOut rightOut)
+    (hleft : leftOut.live = 0) : rightOut.live = 0 := by
+  obtain ⟨after, _⟩ := hstores
+  exact after.right_live_eq_zero hleft
+
+end StoreHistoryIso
 
 namespace RunHistoryIso
 
@@ -2483,5 +2524,18 @@ theorem dropVal_historyIso {ctx : Ctx} {fuel : Nat}
       IxIR1.dropVal ctx fuel right rightValue = .ok rightOut ∧
         StoreHistoryIso heap leftOut rightOut :=
   (dropHistoryIsoAt fuel).dropVal ctx left right heap leftValue rightValue
+    hvalue leftOut hrun
+
+/-- Unique deep destruction commutes with allocation-history isomorphism. -/
+theorem dropUVal_historyIso {ctx : Ctx} {fuel : Nat}
+    {left right : Store} (heap : HeapHistoryIso left right)
+    {leftValue rightValue : RVal}
+    (hvalue : RValIso heap.locRel leftValue rightValue)
+    {leftOut : Store}
+    (hrun : IxIR1.dropUVal ctx fuel left leftValue = .ok leftOut) :
+    ∃ rightOut,
+      IxIR1.dropUVal ctx fuel right rightValue = .ok rightOut ∧
+        StoreHistoryIso heap leftOut rightOut :=
+  (dropHistoryIsoAt fuel).dropUVal ctx left right heap leftValue rightValue
     hvalue leftOut hrun
 end Compilatrix.IxIR1.Sim

@@ -205,6 +205,19 @@ private def liveCountList {alpha : Type} : List (Option alpha) → Nat
   | none :: rest => liveCountList rest
   | some _ :: rest => liveCountList rest + 1
 
+private theorem liveCountList_eq_zero_iff_no_some {alpha : Type} :
+    ∀ values : List (Option alpha),
+      liveCountList values = 0 ↔ ∀ value, some value ∉ values
+  | [] => by simp [liveCountList]
+  | none :: rest => by
+      simp [liveCountList, liveCountList_eq_zero_iff_no_some rest]
+  | some head :: rest => by
+      constructor
+      · intro hzero
+        simp [liveCountList] at hzero
+      · intro hnone
+        exact False.elim (hnone head (by simp))
+
 private theorem foldl_live_eq {alpha : Type}
     (values : List (Option alpha)) (acc : Nat) :
     values.foldl (fun n value => if value.isSome then n + 1 else n) acc =
@@ -218,6 +231,14 @@ private theorem Store.live_eq_liveCountList (store : Store) :
     store.live = liveCountList store.nodes.toList := by
   rw [Store.live, ← Array.foldl_toList]
   simpa using foldl_live_eq store.nodes.toList 0
+
+/-- A store has no live nodes exactly when its slot array contains no live
+box.  This representation bridge is useful when a heap is related by a
+location bijection rather than by literal array equality. -/
+theorem Store.live_eq_zero_iff_no_live_slot (store : Store) :
+    store.live = 0 ↔ ∀ box, some box ∉ store.nodes := by
+  rw [Store.live_eq_liveCountList]
+  simpa using liveCountList_eq_zero_iff_no_some store.nodes.toList
 
 private theorem liveCountList_set_none {alpha : Type} :
     ∀ {values : List (Option alpha)} {index : Nat} {value : alpha},
