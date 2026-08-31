@@ -1,3 +1,4 @@
+import Compilatrix.Fuel
 import Compilatrix.IxIR0.Eval
 
 /-!
@@ -152,16 +153,14 @@ private theorem monoAt : ∀ fuel, MonoAt fuel := by
 theorem eval_mono {ctx : Ctx} {fuel fuel' : Nat} {ρ : List Value} {e : Expr}
     {v : Value} (hle : fuel ≤ fuel') (h : eval ctx fuel ρ e = .ok v) :
     eval ctx fuel' ρ e = .ok v := by
-  induction hle with
-  | refl => exact h
-  | step _ ih => exact (monoAt _).1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).1 _ _ _ _ hrun) hle h
 
 /-- Success is stable under raising fuel (`apply`). -/
 theorem apply_mono {ctx : Ctx} {fuel fuel' : Nat} {f a v : Value}
     (hle : fuel ≤ fuel') (h : apply ctx fuel f a = .ok v) :
     apply ctx fuel' f a = .ok v := by
-  induction hle with
-  | refl => exact h
-  | step _ ih => exact (monoAt _).2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).2.1 _ _ _ _ hrun) hle h
 
 end Compilatrix.IxIR0

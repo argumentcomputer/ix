@@ -79,6 +79,10 @@ status ledger here:
   call-entry fuel, and shared specialization lacks an explicit RC-zero branch.
   Recursive/shared known-shape destruction is therefore staged with the
   fuel-neutral consuming-destructure/reset path in IxIR₂.
+  Shared evaluator proof families now expose one foundational traversal per
+  recursive judgment: owner-sensitive deep-release safety and termination are
+  paired behind common cores, and arbitrary fuel increases use one generic
+  successor-stability lift across Ixon, IxIR₀, and IxIR₁.
   See [HPT certificates](hpt-certificates.md) and the
   [optimizer harness](optimizer-harness.md).
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
@@ -138,12 +142,12 @@ Roadmap hygiene:
 
 ## M2b — close the verified IxIR₁ middle end
 
-This is the current milestone.
+This milestone is complete.
 
 | Deliverable | State | Exit condition |
 | --- | --- | --- |
 | Whole-pass value/ownership/progress simulation | delivered | Every validator-accepted current-fragment main has a composed IxIR₀→IxIR₁ forward simulation, no reachable memory error, and the existing reclamation/cost results without fixture-specific assumptions. |
-| Proof-structure consolidation | active | Shared recursive judgments have one foundational traversal each; public theorems depend on those cores without duplicating the induction. Stop recording individual consolidation cuts in this roadmap. |
+| Proof-structure consolidation | delivered | Shared recursive judgments have one foundational traversal each; public theorems depend on those cores without duplicating the induction. Stop recording individual consolidation cuts in this roadmap. |
 | HPT consumer tranche O1 | delivered | Checked case pruning/collapse, scalar fetch forwarding, scalar and exact-all-scalar unique-leaf destruction, PAP/application fusion, and rooted reachability compose through one owner-sensitive traversal and one rebuild, with arbitrary-fuel proofs, fail-soft policy/reporting, and fixed-point regressions. Recursive/shared destruction is assigned to the IxIR₂ consuming-destructure rows below because ordinary IxIR₁ expansion cannot preserve the same-fuel contract. |
 | IxIR₁ extern ownership ABI | next | Heap-valued extern arguments/results have explicit consume/borrow/retain contracts or remain rejected by the validated fragment. |
 | Address reproducibility | next | Two independent full compilations of the same validated root produce the same addressed IxIR₀/IxIR₁ graph and certificate identities. |
@@ -191,14 +195,13 @@ pre-optimization `reuses = 0` and ownership-amortized four-counter contracts
 are not transported through an optimizer relation that intentionally forgets
 counters and admits allocation-changing PAP/destruction rewrites.
 
-M2b exits when the active proof-structure consolidation completes. The
-detailed optimizer design is in
+M2b is complete. The detailed optimizer design is in
 `plans/whole-program-optimization.md`.
 
 ## M2c — optimized native wedge
 
-M2c begins after the M2b semantic interface is stable. Design work that does
-not perturb that interface may start earlier.
+This is the current milestone. Its semantic interface is the stable M2b
+boundary above.
 
 | Deliverable | State | Exit condition |
 | --- | --- | --- |
@@ -306,22 +309,22 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Finish proof-structure consolidation.** Give each remaining shared
-   recursive judgment one foundational traversal and route its public theorem
-   family through that core without duplicating the induction.
-2. **Close the IxIR₁ extern ownership ABI.** Give heap-valued extern
+1. **Close the IxIR₁ extern ownership ABI.** Give heap-valued extern
    arguments and results explicit consume/borrow/retain contracts, or keep
    them rejected by the validated fragment with that boundary mechanically
    visible.
-3. **Specify IxIR₂ before implementing it.** Freeze block parameters,
+2. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement. Include the fuel-neutral
    recursive unique destructor and shared RC-zero branch required beyond the
    delivered IxIR₁ leaf specialization.
-4. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
+3. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
    separate; prove fragment containment through the typed instruction AST.
-5. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
+4. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
    the gate from hand-written reuse semantics to an optimizing compiler.
+5. **Prove address reproducibility.** Run two independent full compilations of
+   one validated root and compare the addressed IxIR₀/IxIR₁ graphs and
+   certificate identities.
 
 Do not retain completed items in this list. Move durable evidence to the
 relevant focused document and replace the queue entry with its successor.

@@ -1,3 +1,4 @@
+import Compilatrix.Fuel
 import Compilatrix.Ixon.Const
 
 /-!
@@ -1295,48 +1296,42 @@ theorem eval_mono {ctx : EvalCtx} {fuel fuel' : Nat} {F : Frame}
     {env : List Value} {e : Expr} {v : Value} (hle : fuel ≤ fuel')
     (h : eval ctx fuel F env e = .ok v) :
     eval ctx fuel' F env e = .ok v := by
-  induction hle with
-  | refl => exact h
-  | step _ ih => exact (monoAt _).1 _ _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).1 _ _ _ _ _ hrun) hle h
 
 theorem evalRef_mono {ctx : EvalCtx} {fuel fuel' : Nat} {a : Address}
     {uinst : List Nat} {v : Value} (hle : fuel ≤ fuel')
     (h : evalRef ctx fuel a uinst = .ok v) :
     evalRef ctx fuel' a uinst = .ok v := by
-  induction hle with
-  | refl => exact h
-  | step _ ih => exact (monoAt _).2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).2.1 _ _ _ _ hrun) hle h
 
 theorem apply_mono {ctx : EvalCtx} {fuel fuel' : Nat} {f a v : Value}
     (hle : fuel ≤ fuel') (h : apply ctx fuel f a = .ok v) :
     apply ctx fuel' f a = .ok v := by
-  induction hle with
-  | refl => exact h
-  | step _ ih => exact (monoAt _).2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).2.2.1 _ _ _ _ hrun) hle h
 
 theorem applyMany_mono {ctx : EvalCtx} {fuel fuel' : Nat} {f : Value}
     {args : List Value} {v : Value} (hle : fuel ≤ fuel')
     (h : applyMany ctx fuel f args = .ok v) :
     applyMany ctx fuel' f args = .ok v := by
-  induction hle with
-  | refl => exact h
-  | step _ ih => exact (monoAt _).2.2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).2.2.2.1 _ _ _ _ hrun) hle h
 
 theorem saturate_mono {ctx : EvalCtx} {fuel fuel' : Nat} {h : Head}
     {args : List Value} {v : Value} (hle : fuel ≤ fuel')
     (hs : saturate ctx fuel h args = .ok v) :
     saturate ctx fuel' h args = .ok v := by
-  induction hle with
-  | refl => exact hs
-  | step _ ih => exact (monoAt _).2.2.2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).2.2.2.2.1 _ _ _ _ hrun) hle hs
 
 theorem fire_mono {ctx : EvalCtx} {fuel fuel' : Nat} {h : Head}
     {args : List Value} {v : Value} (hle : fuel ≤ fuel')
     (hs : fire ctx fuel h args = .ok v) :
     fire ctx fuel' h args = .ok v := by
-  induction hle with
-  | refl => exact hs
-  | step _ ih => exact (monoAt _).2.2.2.2.2 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current hrun => (monoAt current).2.2.2.2.2 _ _ _ _ hrun) hle hs
 
 /-! ## Entry points -/
 

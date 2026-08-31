@@ -125,20 +125,44 @@ private def DropSafeAt (ctx : Ctx) (fuel : Nat) : Prop :=
         ∃ store', dropMany ctx fuel store values = .ok store' ∧
           RootOwnership store' rest)
 
-private theorem dropSafeAt (ctx : Ctx) : ∀ fuel, DropSafeAt ctx fuel := by
+private def DropUSafeAt (ctx : Ctx) (fuel : Nat) : Prop :=
+  (∀ store value rest,
+    RootOwnership store (⟨.unique, value⟩ :: rest) →
+      dropUVal ctx fuel store value = .error .fuel ∨
+        ∃ store', dropUVal ctx fuel store value = .ok store' ∧
+          RootOwnership store' rest) ∧
+  (∀ store values rest,
+    RootOwnership store (rootsFor .unique values ++ rest) →
+      dropManyU ctx fuel store values = .error .fuel ∨
+        ∃ store', dropManyU ctx fuel store values = .ok store' ∧
+          RootOwnership store' rest)
+
+private def DropSafetyAt (ctx : Ctx) (fuel : Nat) : Prop :=
+  DropSafeAt ctx fuel ∧ DropUSafeAt ctx fuel
+
+/-- Shared and unique deep-release safety follow one evaluator-fuel
+traversal.  The owner-sensitive single-root cases remain separate, while the
+zero-fuel and sequential-release recursion are established together. -/
+private theorem dropSafetyAt (ctx : Ctx) : ∀ fuel, DropSafetyAt ctx fuel := by
   intro fuel
   induction fuel with
   | zero =>
-    refine ⟨?_, ?_⟩
+    refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩⟩
     · intro store value rest hown
       left
       simp [dropVal]
     · intro store values rest hown
       left
       simp [dropMany]
+    · intro store value rest hown
+      left
+      simp [dropUVal]
+    · intro store values rest hown
+      left
+      simp [dropManyU]
   | succ fuel ih =>
-    obtain ⟨ihVal, ihMany⟩ := ih
-    refine ⟨?_, ?_⟩
+    obtain ⟨⟨ihVal, ihMany⟩, ⟨ihUVal, ihManyU⟩⟩ := ih
+    refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩⟩
     · intro store value rest hown
       cases value with
       | lit literal =>
@@ -207,33 +231,6 @@ private theorem dropSafeAt (ctx : Ctx) : ∀ fuel, DropSafeAt ctx fuel := by
             dsimp only
             rw [hfirst, bindOk]
             exact hrest
-
-private def DropUSafeAt (ctx : Ctx) (fuel : Nat) : Prop :=
-  (∀ store value rest,
-    RootOwnership store (⟨.unique, value⟩ :: rest) →
-      dropUVal ctx fuel store value = .error .fuel ∨
-        ∃ store', dropUVal ctx fuel store value = .ok store' ∧
-          RootOwnership store' rest) ∧
-  (∀ store values rest,
-    RootOwnership store (rootsFor .unique values ++ rest) →
-      dropManyU ctx fuel store values = .error .fuel ∨
-        ∃ store', dropManyU ctx fuel store values = .ok store' ∧
-          RootOwnership store' rest)
-
-private theorem dropUSafeAt (ctx : Ctx) : ∀ fuel, DropUSafeAt ctx fuel := by
-  intro fuel
-  induction fuel with
-  | zero =>
-    refine ⟨?_, ?_⟩
-    · intro store value rest hown
-      left
-      simp [dropUVal]
-    · intro store values rest hown
-      left
-      simp [dropManyU]
-  | succ fuel ih =>
-    obtain ⟨ihVal, ihMany⟩ := ih
-    refine ⟨?_, ?_⟩
     · intro store value rest hown
       cases value with
       | lit literal =>
@@ -258,7 +255,7 @@ private theorem dropUSafeAt (ctx : Ctx) : ∀ fuel, DropUSafeAt ctx fuel := by
                 (rootsFor .unique fields.toList ++ rest) :=
               hown.killUniqueOne hget
             simpa [dropUVal, hget] using
-              ihMany (store.kill loc) fields.toList rest hchildren
+              ihManyU (store.kill loc) fields.toList rest hchildren
           | papN address arity args =>
             have hshared : (Owned.unique : Owned) = .shared :=
               hown.pap_shared hget rfl
@@ -274,13 +271,13 @@ private theorem dropUSafeAt (ctx : Ctx) : ∀ fuel, DropUSafeAt ctx fuel := by
             (⟨.unique, value⟩ ::
               (rootsFor .unique values ++ rest)) := by
           simpa [rootsFor] using hown
-        rcases ihVal store value _ hfirstOwn with
+        rcases ihUVal store value _ hfirstOwn with
           hfirstFuel | ⟨middle, hfirst, hmiddle⟩
         · left
           rw [dropManyU.eq_def]
           dsimp only
           rw [hfirstFuel, bindErr]
-        · rcases ihMany middle values rest hmiddle with
+        · rcases ihManyU middle values rest hmiddle with
             hrestFuel | ⟨store', hrest, hfinal⟩
           · left
             rw [dropManyU.eq_def]
@@ -302,7 +299,7 @@ theorem dropVal_safe {ctx : Ctx} {fuel : Nat} {store : Store}
     dropVal ctx fuel store value = .error .fuel ∨
       ∃ store', dropVal ctx fuel store value = .ok store' ∧
         RootOwnership store' rest :=
-  (dropSafeAt ctx fuel).1 store value rest hown
+  (dropSafetyAt ctx fuel).1.1 store value rest hown
 
 /-- Sequential shared release has the same fuel-or-success progress
 property. -/
@@ -312,7 +309,7 @@ theorem dropMany_safe {ctx : Ctx} {fuel : Nat} {store : Store}
     dropMany ctx fuel store values = .error .fuel ∨
       ∃ store', dropMany ctx fuel store values = .ok store' ∧
         RootOwnership store' rest :=
-  (dropSafeAt ctx fuel).2 store values rest hown
+  (dropSafetyAt ctx fuel).1.2 store values rest hown
 
 /-- A well-owned unique root can only succeed or exhaust fuel during deep
 free, and success consumes exactly that root. -/
@@ -322,7 +319,7 @@ theorem dropUVal_safe {ctx : Ctx} {fuel : Nat} {store : Store}
     dropUVal ctx fuel store value = .error .fuel ∨
       ∃ store', dropUVal ctx fuel store value = .ok store' ∧
         RootOwnership store' rest :=
-  (dropUSafeAt ctx fuel).1 store value rest hown
+  (dropSafetyAt ctx fuel).2.1 store value rest hown
 
 /-- Sequential unique deep free has the same fuel-or-success progress
 property. -/
@@ -332,7 +329,7 @@ theorem dropManyU_safe {ctx : Ctx} {fuel : Nat} {store : Store}
     dropManyU ctx fuel store values = .error .fuel ∨
       ∃ store', dropManyU ctx fuel store values = .ok store' ∧
         RootOwnership store' rest :=
-  (dropUSafeAt ctx fuel).2 store values rest hown
+  (dropSafetyAt ctx fuel).2.2 store values rest hown
 
 /-! ## Deep-release termination -/
 
@@ -352,9 +349,37 @@ private def DropManyProgressAt (ctx : Ctx) (store : Store) : Prop :=
       RootOwnership store' rest ∧
       store'.liveSlots ≤ store.liveSlots
 
+/-- Unique single-root termination half of the combined deep-release
+judgment. -/
+private def DropUValProgressAt (ctx : Ctx) (store : Store) : Prop :=
+  ∀ value rest,
+    RootOwnership store (⟨.unique, value⟩ :: rest) →
+    ∃ fuel store',
+      dropUVal ctx fuel store value = .ok store' ∧
+      RootOwnership store' rest ∧
+      store'.liveSlots ≤ store.liveSlots
+
+/-- Unique sequential termination half of the combined deep-release
+judgment. -/
+private def DropManyUProgressAt (ctx : Ctx) (store : Store) : Prop :=
+  ∀ values rest,
+    RootOwnership store (rootsFor .unique values ++ rest) →
+    ∃ fuel store',
+      dropManyU ctx fuel store values = .ok store' ∧
+      RootOwnership store' rest ∧
+      store'.liveSlots ≤ store.liveSlots
+
+private def DropProgressAt (ctx : Ctx) (store : Store) : Prop :=
+  (DropValProgressAt ctx store ∧ DropManyProgressAt ctx store) ∧
+    (DropUValProgressAt ctx store ∧ DropManyUProgressAt ctx store)
+
+/-- Shared and unique deep-release termination use one strong induction on
+the number of live heap slots.  Each owner keeps its local destruction rule;
+recursive child release and sequential fuel synchronization share the same
+well-founded traversal. -/
 private theorem dropProgressAt (ctx : Ctx) : ∀ live store,
     store.liveSlots = live →
-    DropValProgressAt ctx store ∧ DropManyProgressAt ctx store := by
+    DropProgressAt ctx store := by
   intro live
   induction live using Nat.strongRecOn with
   | ind live ih =>
@@ -398,14 +423,14 @@ private theorem dropProgressAt (ctx : Ctx) : ∀ live store,
             cases node with
             | ctorN cid fields =>
               obtain ⟨fuel, store', hrun, hown', hslots⟩ :=
-                hsmall.2 fields.toList rest (by
+                hsmall.1.2 fields.toList rest (by
                   simpa [nodeChildren] using hkilledOwn)
               refine ⟨fuel + 1, store', ?_, hown', ?_⟩
               · simpa [dropVal, hget] using hrun
               · exact Nat.le_trans hslots (by omega)
             | papN address arity args =>
               obtain ⟨fuel, store', hrun, hown', hslots⟩ :=
-                hsmall.2 args.toList rest (by
+                hsmall.1.2 args.toList rest (by
                   simpa [nodeChildren] using hkilledOwn)
               refine ⟨fuel + 1, store', ?_, hown', ?_⟩
               · simpa [dropVal, hget] using hrun
@@ -423,7 +448,7 @@ private theorem dropProgressAt (ctx : Ctx) : ∀ live store,
       intro store hle
       rcases Nat.eq_or_lt_of_le hle with heq | hlt
       · exact hval store heq
-      · exact (ih store.liveSlots hlt store rfl).1
+      · exact (ih store.liveSlots hlt store rfl).1.1
     have hmanyLe : ∀ values store rest,
         store.liveSlots ≤ live →
         RootOwnership store (rootsFor .shared values ++ rest) →
@@ -458,54 +483,12 @@ private theorem dropProgressAt (ctx : Ctx) : ∀ live store,
         dsimp only
         rw [hfirst', bindOk]
         exact hrest'
-    intro store hlive
-    exact ⟨hval store hlive, fun values rest hown =>
-      hmanyLe values store rest (by omega) hown⟩
-
-/-- Every well-owned shared root has some successful deep-release fuel. -/
-theorem dropVal_progress {ctx : Ctx} {store : Store} {value : RVal}
-    {rest : List Root}
-    (hown : RootOwnership store (⟨.shared, value⟩ :: rest)) :
-    ∃ fuel store', dropVal ctx fuel store value = .ok store' ∧
-      RootOwnership store' rest := by
-  obtain ⟨fuel, store', hrun, hown', _⟩ :=
-    (dropProgressAt ctx store.liveSlots store rfl).1 value rest hown
-  exact ⟨fuel, store', hrun, hown'⟩
-
-/-- Every well-owned vector of shared roots has some successful sequential
-release fuel. -/
-theorem dropMany_progress {ctx : Ctx} {store : Store}
-    {values : List RVal} {rest : List Root}
-    (hown : RootOwnership store (rootsFor .shared values ++ rest)) :
-    ∃ fuel store', dropMany ctx fuel store values = .ok store' ∧
-      RootOwnership store' rest := by
-  obtain ⟨fuel, store', hrun, hown', _⟩ :=
-    (dropProgressAt ctx store.liveSlots store rfl).2 values rest hown
-  exact ⟨fuel, store', hrun, hown'⟩
-
-private def DropUValProgressAt (ctx : Ctx) (store : Store) : Prop :=
-  ∀ value rest,
-    RootOwnership store (⟨.unique, value⟩ :: rest) →
-    ∃ fuel store',
-      dropUVal ctx fuel store value = .ok store' ∧
-      RootOwnership store' rest ∧
-      store'.liveSlots ≤ store.liveSlots
-
-private def DropManyUProgressAt (ctx : Ctx) (store : Store) : Prop :=
-  ∀ values rest,
-    RootOwnership store (rootsFor .unique values ++ rest) →
-    ∃ fuel store',
-      dropManyU ctx fuel store values = .ok store' ∧
-      RootOwnership store' rest ∧
-      store'.liveSlots ≤ store.liveSlots
-
-private theorem dropUProgressAt (ctx : Ctx) : ∀ live store,
-    store.liveSlots = live →
-    DropUValProgressAt ctx store ∧ DropManyUProgressAt ctx store := by
-  intro live
-  induction live using Nat.strongRecOn with
-  | ind live ih =>
-    have hval : ∀ store, store.liveSlots = live →
+    have hshared : ∀ store, store.liveSlots = live →
+        DropValProgressAt ctx store ∧ DropManyProgressAt ctx store := by
+      intro store hlive
+      exact ⟨hval store hlive, fun values rest hown =>
+        hmanyLe values store rest (by omega) hown⟩
+    have huval : ∀ store, store.liveSlots = live →
         DropUValProgressAt ctx store := by
       intro store hlive value rest hown
       cases value with
@@ -540,7 +523,7 @@ private theorem dropUProgressAt (ctx : Ctx) : ∀ live store,
             have hkilledLt : killed.liveSlots < live := by omega
             have hsmall := ih killed.liveSlots hkilledLt killed rfl
             obtain ⟨fuel, store', hrun, hown', hslots⟩ :=
-              hsmall.2 fields.toList rest hkilledOwn
+              hsmall.2.2 fields.toList rest hkilledOwn
             refine ⟨fuel + 1, store', ?_, hown', ?_⟩
             · simpa [dropUVal, hget] using hrun
             · exact Nat.le_trans hslots (by omega)
@@ -548,13 +531,13 @@ private theorem dropUProgressAt (ctx : Ctx) : ∀ live store,
             have hshared : (Owned.unique : Owned) = .shared :=
               hown.pap_shared hget rfl
             contradiction
-    have hvalLe : ∀ store, store.liveSlots ≤ live →
+    have huvalLe : ∀ store, store.liveSlots ≤ live →
         DropUValProgressAt ctx store := by
       intro store hle
       rcases Nat.eq_or_lt_of_le hle with heq | hlt
-      · exact hval store heq
-      · exact (ih store.liveSlots hlt store rfl).1
-    have hmanyLe : ∀ values store rest,
+      · exact huval store heq
+      · exact (ih store.liveSlots hlt store rfl).2.1
+    have hmanyULe : ∀ values store rest,
         store.liveSlots ≤ live →
         RootOwnership store (rootsFor .unique values ++ rest) →
         ∃ fuel store',
@@ -574,7 +557,7 @@ private theorem dropUProgressAt (ctx : Ctx) : ∀ live store,
               (rootsFor .unique values ++ rest)) := by
           simpa [rootsFor] using hown
         obtain ⟨firstFuel, middle, hfirst, hmiddle, hmiddleSlots⟩ :=
-          hvalLe store hle value _ hfirstOwn
+          huvalLe store hle value _ hfirstOwn
         obtain ⟨restFuel, store', hrest, hfinal, hfinalSlots⟩ :=
           ihValues middle rest (Nat.le_trans hmiddleSlots hle) hmiddle
         let common := max firstFuel restFuel
@@ -589,8 +572,30 @@ private theorem dropUProgressAt (ctx : Ctx) : ∀ live store,
         rw [hfirst', bindOk]
         exact hrest'
     intro store hlive
-    exact ⟨hval store hlive, fun values rest hown =>
-      hmanyLe values store rest (by omega) hown⟩
+    exact ⟨hshared store hlive,
+      ⟨huval store hlive, fun values rest hown =>
+        hmanyULe values store rest (by omega) hown⟩⟩
+
+/-- Every well-owned shared root has some successful deep-release fuel. -/
+theorem dropVal_progress {ctx : Ctx} {store : Store} {value : RVal}
+    {rest : List Root}
+    (hown : RootOwnership store (⟨.shared, value⟩ :: rest)) :
+    ∃ fuel store', dropVal ctx fuel store value = .ok store' ∧
+      RootOwnership store' rest := by
+  obtain ⟨fuel, store', hrun, hown', _⟩ :=
+    (dropProgressAt ctx store.liveSlots store rfl).1.1 value rest hown
+  exact ⟨fuel, store', hrun, hown'⟩
+
+/-- Every well-owned vector of shared roots has some successful sequential
+release fuel. -/
+theorem dropMany_progress {ctx : Ctx} {store : Store}
+    {values : List RVal} {rest : List Root}
+    (hown : RootOwnership store (rootsFor .shared values ++ rest)) :
+    ∃ fuel store', dropMany ctx fuel store values = .ok store' ∧
+      RootOwnership store' rest := by
+  obtain ⟨fuel, store', hrun, hown', _⟩ :=
+    (dropProgressAt ctx store.liveSlots store rfl).1.2 values rest hown
+  exact ⟨fuel, store', hrun, hown'⟩
 
 /-- Every well-owned unique root has some successful deep-free fuel. -/
 theorem dropUVal_progress {ctx : Ctx} {store : Store} {value : RVal}
@@ -599,7 +604,7 @@ theorem dropUVal_progress {ctx : Ctx} {store : Store} {value : RVal}
     ∃ fuel store', dropUVal ctx fuel store value = .ok store' ∧
       RootOwnership store' rest := by
   obtain ⟨fuel, store', hrun, hown', _⟩ :=
-    (dropUProgressAt ctx store.liveSlots store rfl).1 value rest hown
+    (dropProgressAt ctx store.liveSlots store rfl).2.1 value rest hown
   exact ⟨fuel, store', hrun, hown'⟩
 
 /-- Every well-owned vector of unique roots has some successful sequential
@@ -610,7 +615,7 @@ theorem dropManyU_progress {ctx : Ctx} {store : Store}
     ∃ fuel store', dropManyU ctx fuel store values = .ok store' ∧
       RootOwnership store' rest := by
   obtain ⟨fuel, store', hrun, hown', _⟩ :=
-    (dropUProgressAt ctx store.liveSlots store rfl).2 values rest hown
+    (dropProgressAt ctx store.liveSlots store rfl).2.2 values rest hown
   exact ⟨fuel, store', hrun, hown'⟩
 
 /-! ## Callable progress contracts -/

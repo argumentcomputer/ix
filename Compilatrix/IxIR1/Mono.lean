@@ -1,3 +1,4 @@
+import Compilatrix.Fuel
 import Compilatrix.IxIR1.Eval
 
 /-!
@@ -962,9 +963,8 @@ theorem runCode_mono {ctx : Ctx} {fuel larger : Nat} {cur : FnDef}
     {out : Store × RVal} (hle : fuel ≤ larger)
     (hrun : runCode ctx fuel cur store env code = .ok out) :
     runCode ctx larger cur store env code = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).1 _ _ _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).1 _ _ _ _ _ _ h) hle hrun
 
 /-- Every reached non-fuel code error persists when fuel is raised. -/
 theorem runCode_error_mono {ctx : Ctx} {fuel larger : Nat} {cur : FnDef}
@@ -972,9 +972,9 @@ theorem runCode_error_mono {ctx : Ctx} {fuel larger : Nat} {cur : FnDef}
     (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : runCode ctx fuel cur store env code = .error error) :
     runCode ctx larger cur store env code = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (errorMonoAt _ error hne).1 _ _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (errorMonoAt current error hne).1 _ _ _ _ _ h)
+    hle hrun
 
 /-- A dynamic memory error in code execution persists when fuel is raised.
 Fuel may reveal more execution, but it cannot repair an already-reached
@@ -992,9 +992,8 @@ theorem runOp_mono {ctx : Ctx} {fuel larger : Nat} {cur : FnDef}
     {out : Store × RVal} (hle : fuel ≤ larger)
     (hrun : runOp ctx fuel cur store env op = .ok out) :
     runOp ctx larger cur store env op = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).2.1 _ _ _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).2.1 _ _ _ _ _ _ h) hle hrun
 
 /-- Every reached non-fuel primitive-operation error persists when fuel is
 raised. -/
@@ -1003,9 +1002,9 @@ theorem runOp_error_mono {ctx : Ctx} {fuel larger : Nat} {cur : FnDef}
     (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : runOp ctx fuel cur store env op = .error error) :
     runOp ctx larger cur store env op = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (errorMonoAt _ error hne).2.1 _ _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (errorMonoAt current error hne).2.1 _ _ _ _ _ h)
+    hle hrun
 
 theorem runOp_mem_mono {ctx : Ctx} {fuel larger : Nat} {cur : FnDef}
     {store : Store} {env : List RVal} {op : Op} {message : String}
@@ -1021,18 +1020,17 @@ theorem invoke_mono {ctx : Ctx} {fuel larger : Nat}
     (hle : fuel ≤ larger)
     (hrun : invoke ctx fuel address args store = .ok out) :
     invoke ctx larger address args store = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).2.2.1 _ _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).2.2.1 _ _ _ _ _ h) hle hrun
 
 theorem invoke_error_mono {ctx : Ctx} {fuel larger : Nat}
     {address : Ixon.Address} {args : List RVal} {store : Store}
     {error : Err} (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : invoke ctx fuel address args store = .error error) :
     invoke ctx larger address args store = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (errorMonoAt _ error hne).2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (errorMonoAt current error hne).2.2.1 _ _ _ _ h)
+    hle hrun
 
 /-- Successful higher-order application is stable under raising fuel. -/
 theorem applyGo_mono {ctx : Ctx} {fuel larger : Nat} {store : Store}
@@ -1040,93 +1038,88 @@ theorem applyGo_mono {ctx : Ctx} {fuel larger : Nat} {store : Store}
     (hle : fuel ≤ larger)
     (hrun : applyGo ctx fuel store function args = .ok out) :
     applyGo ctx larger store function args = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).2.2.2.1 _ _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).2.2.2.1 _ _ _ _ _ h) hle hrun
 
 theorem applyGo_error_mono {ctx : Ctx} {fuel larger : Nat} {store : Store}
     {function : RVal} {args : List RVal} {error : Err}
     (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : applyGo ctx fuel store function args = .error error) :
     applyGo ctx larger store function args = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih =>
-    exact (errorMonoAt _ error hne).2.2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h =>
+      (errorMonoAt current error hne).2.2.2.1 _ _ _ _ h)
+    hle hrun
 
 /-- Successful shared deep drop is stable under raising fuel. -/
 theorem dropVal_mono {ctx : Ctx} {fuel larger : Nat} {store : Store}
     {value : RVal} {out : Store} (hle : fuel ≤ larger)
     (hrun : dropVal ctx fuel store value = .ok out) :
     dropVal ctx larger store value = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).2.2.2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).2.2.2.2.1 _ _ _ _ h) hle hrun
 
 theorem dropVal_error_mono {ctx : Ctx} {fuel larger : Nat}
     {store : Store} {value : RVal} {error : Err}
     (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : dropVal ctx fuel store value = .error error) :
     dropVal ctx larger store value = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih =>
-    exact (errorMonoAt _ error hne).2.2.2.2.1 _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h =>
+      (errorMonoAt current error hne).2.2.2.2.1 _ _ _ h)
+    hle hrun
 
 theorem dropMany_mono {ctx : Ctx} {fuel larger : Nat} {store : Store}
     {values : List RVal} {out : Store} (hle : fuel ≤ larger)
     (hrun : dropMany ctx fuel store values = .ok out) :
     dropMany ctx larger store values = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).2.2.2.2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).2.2.2.2.2.1 _ _ _ _ h) hle hrun
 
 theorem dropMany_error_mono {ctx : Ctx} {fuel larger : Nat}
     {store : Store} {values : List RVal} {error : Err}
     (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : dropMany ctx fuel store values = .error error) :
     dropMany ctx larger store values = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih =>
-    exact (errorMonoAt _ error hne).2.2.2.2.2.1 _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h =>
+      (errorMonoAt current error hne).2.2.2.2.2.1 _ _ _ h)
+    hle hrun
 
 /-- Successful unique deep free is stable under raising fuel. -/
 theorem dropUVal_mono {ctx : Ctx} {fuel larger : Nat} {store : Store}
     {value : RVal} {out : Store} (hle : fuel ≤ larger)
     (hrun : dropUVal ctx fuel store value = .ok out) :
     dropUVal ctx larger store value = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).2.2.2.2.2.2.1 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).2.2.2.2.2.2.1 _ _ _ _ h) hle hrun
 
 theorem dropUVal_error_mono {ctx : Ctx} {fuel larger : Nat}
     {store : Store} {value : RVal} {error : Err}
     (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : dropUVal ctx fuel store value = .error error) :
     dropUVal ctx larger store value = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih =>
-    exact (errorMonoAt _ error hne).2.2.2.2.2.2.1 _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h =>
+      (errorMonoAt current error hne).2.2.2.2.2.2.1 _ _ _ h)
+    hle hrun
 
 theorem dropManyU_mono {ctx : Ctx} {fuel larger : Nat} {store : Store}
     {values : List RVal} {out : Store} (hle : fuel ≤ larger)
     (hrun : dropManyU ctx fuel store values = .ok out) :
     dropManyU ctx larger store values = .ok out := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih => exact (monoAt _).2.2.2.2.2.2.2 _ _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h => (monoAt current).2.2.2.2.2.2.2 _ _ _ _ h) hle hrun
 
 theorem dropManyU_error_mono {ctx : Ctx} {fuel larger : Nat}
     {store : Store} {values : List RVal} {error : Err}
     (hle : fuel ≤ larger) (hne : error ≠ .fuel)
     (hrun : dropManyU ctx fuel store values = .error error) :
     dropManyU ctx larger store values = .error error := by
-  induction hle with
-  | refl => exact hrun
-  | step _ ih =>
-    exact (errorMonoAt _ error hne).2.2.2.2.2.2.2 _ _ _ ih
+  exact fuel_mono_of_succ
+    (fun current h =>
+      (errorMonoAt current error hne).2.2.2.2.2.2.2 _ _ _ h)
+    hle hrun
 
 /-- Top-level specialization of `runCode_mono`. -/
 theorem runMain_mono {ctx : Ctx} {code : Code} {fuel larger : Nat}

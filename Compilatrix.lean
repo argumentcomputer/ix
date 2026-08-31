@@ -1,3 +1,4 @@
+import Compilatrix.Fuel
 import Compilatrix.Ixon.Serialize
 import Compilatrix.Ixon.Uses
 import Compilatrix.Ixon.Address
