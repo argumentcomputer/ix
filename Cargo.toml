@@ -11,10 +11,10 @@ members = [
   "crates/kernel",
   "crates/terminal",
 ]
-# `zisk/`, `sp1/`, and `flock-stage3/` are isolated Cargo workspaces with
+# `zisk/`, `sp1/`, `flock-stage3/`, and `flock-stage4/` are isolated Cargo workspaces with
 # heavyweight or specialized toolchains; keep normal host workspace operations
 # from picking them up.
-exclude = ["zisk", "sp1", "flock-stage3", "multi-stark"]
+exclude = ["zisk", "sp1", "flock-stage3", "flock-stage4", "multi-stark"]
 resolver = "2"
 
 [profile.dev]

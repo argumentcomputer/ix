@@ -11,9 +11,14 @@ bincode = { workspace = true }
 blake3 = { workspace = true }
 flock-prover = { workspace = true }
 ix-terminal = { workspace = true }
+ix-stage4-trace = { workspace = true }
 multi-stark = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+ix-fflonk = { workspace = true }
+ix-terminal-circuit = { workspace = true }

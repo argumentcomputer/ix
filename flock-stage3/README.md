@@ -190,11 +190,29 @@ Before freezing a production deployment, Stage 3 still needs:
 - full proof vectors for production-sized Aiur roots at 100 queries and 20-bit
   query grinding;
 - an independent review of the local Boolean R1CS tables and pinned Flock
-  soundness profile; and
-- a canonical export of the fixed Flock verifier inputs for Stage 4 witness
-  generation.
+  soundness profile.
 
-The next implementation boundary is Stage 4: compile verification of this
-fixed relation into the universal-setup FFLONK development backend, measure its
-constraint/gas costs, and retain the option to switch the same statement to a
-circuit-specific Groth16 endpoint once the relation is stable.
+Stage 3 now canonically exports the fixed Flock verifier inputs, constrained
+Boolean verifier algebra, complete Product-GKR wiring replay, 64
+packed-direct gather claims, and registry-keyed matrix-accumulator witness for
+Stage 4. Stage 4 now also folds the three deferred Product-GKR claims to one
+public circuit-structure root and directly discharges that root against the
+digest-keyed circuit table. Its merged-PCS frontend now checks both Boolean
+ring switches, binds all 64 gathers into the 66-way batch, and replays the 20
+dense sumcheck rounds. The multipoint-twisted assist now checks both family-H
+recombinations, its product and anchor sumchecks, and exports three constrained
+jagged-layout claims. A native aggregate fold reduces those claims to one
+public root, which is discharged against the digest-keyed layout table. The
+inner Ligerito replay now authenticates all 406 production queries through the
+capped BLAKE3 trees, checks its extension sumchecks and OOD claims, and closes
+the final 64-word residual inner product. The universal KZG foundation and the
+complete native FFLONK backend have also landed, including deterministic
+three-wire lowering, preprocessing, nonzero-blinded proof generation, and
+verification. The production projection can now emit its exact PLONK
+gate/domain/SRS census during the same matrix-free pass, stream canonical
+192-byte lowered gate records, and report checked external-storage capacity.
+The EIP-2537 curve path is fixed as one six-term G1 MSM plus one two-pair check,
+with a 156,900-gas precompile floor. The next boundary is the complete
+measurement, external FFT/permutation/MSM execution, and a deployable EVM
+scalar verifier with measured whole-call gas. The same statement can still
+move to a circuit-specific Groth16 endpoint once the relation is stable.

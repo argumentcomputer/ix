@@ -16,6 +16,7 @@ mod limits;
 mod merkle;
 mod multiplication;
 mod relation;
+mod stage4;
 mod transcript;
 mod typed_witness;
 mod window;
@@ -90,8 +91,16 @@ pub use fri::{
   verify_transcript_bound_pcs_reduction_conformance,
 };
 use fri::{
-  preflight_stage2_air_pcs_fri, prove_stage2_air_pcs_fri_production,
-  stage2_air_pcs_fri_circuit_digest, verify_stage2_air_pcs_fri_production,
+  export_stage4_flock_verifier_witness, preflight_stage2_air_pcs_fri,
+  prove_stage2_air_pcs_fri_production, stage2_air_pcs_fri_circuit_digest,
+  verify_stage2_air_pcs_fri_production,
+};
+pub use ix_stage4_trace::{
+  ChainedBlake3CensusV1, ChainedBlake3ChainV1, ChainedBlake3ChallengeSourceV1,
+  ChainedBlake3ChildV1, ChainedBlake3PowConstraintV1,
+  ChainedBlake3TranscriptV1, ChainingValueSourceV1, CompressionLinkV1,
+  CompressionOutputWordV1, CompressionRowV1, StreamWordSourceV1,
+  TraceValidationError,
 };
 pub use limits::Stage3ResourceLimitsV1;
 pub use merkle::{
@@ -102,6 +111,17 @@ pub use relation::{
   STAGE3_RELATION_MANIFEST_DOMAIN, STAGE3_VERIFIER_PHASES_V1,
   Stage3LoweringStatusV1, Stage3RelationBoundsV1, Stage3RelationManifestV1,
   Stage3VerifierPhaseV1,
+};
+pub use stage4::{
+  STAGE4_FLOCK_VERIFIER_WITNESS_DOMAIN,
+  STAGE4_MATRIX_ACCUMULATOR_TRANSCRIPT_DOMAIN,
+  Stage4F128CircuitStructureRootClaimV1, Stage4F128JaggedRootClaimV1,
+  Stage4F128RootMatrixClaimV1, Stage4FlockInnerLigeritoWitnessV1,
+  Stage4FlockMatrixAccumulatorCensusV1, Stage4FlockMatrixAccumulatorWitnessV1,
+  Stage4FlockMergedPcsFrontendWitnessV1,
+  Stage4FlockMultipointTwistedAssistWitnessV1, Stage4FlockTranscriptWitnessV1,
+  Stage4FlockVerifierCensusV1, Stage4FlockVerifierWitnessV1,
+  Stage4FlockWiringWitnessV1, Stage4TranscriptOpV1,
 };
 pub use transcript::{
   STAGE2_TRANSCRIPT_CONFORMANCE_ARTIFACT_MAGIC,
@@ -393,6 +413,30 @@ impl FlockStage3Backend {
     artifact: &Stage3ArtifactV1,
     expected: &Stage3StatementV1,
   ) -> Result<()> {
+    let flock_artifact = self.reconstruct_flock_artifact(artifact, expected)?;
+    verify_stage2_air_pcs_fri_production(&flock_artifact)
+  }
+
+  /// Verify and export the serializer-independent inputs consumed by the
+  /// fixed Stage 4 Flock verifier circuit.
+  ///
+  /// The export is produced by running the real pinned Flock verifier under a
+  /// transparent recording challenger. A rejected proof never yields a
+  /// partial transcript witness.
+  pub fn prepare_stage4_verifier_witness(
+    self,
+    artifact: &Stage3ArtifactV1,
+    expected: &Stage3StatementV1,
+  ) -> Result<Stage4FlockVerifierWitnessV1> {
+    let flock_artifact = self.reconstruct_flock_artifact(artifact, expected)?;
+    export_stage4_flock_verifier_witness(&flock_artifact, expected)
+  }
+
+  fn reconstruct_flock_artifact(
+    self,
+    artifact: &Stage3ArtifactV1,
+    expected: &Stage3StatementV1,
+  ) -> Result<Stage2AirPcsFriArtifactV1> {
     artifact.ensure_statement(expected)?;
     let payload = Stage3ProductionPayloadV1::decode(artifact.proof_bytes())?;
     let key = AiurVerifyingKey::from_bytes(payload.vk_bytes())
@@ -415,12 +459,11 @@ impl FlockStage3Backend {
     if manifest.relation_digest()? != *expected.relation_digest() {
       bail!("Stage 3 relation manifest does not match the expected relation");
     }
-    let flock_artifact = Stage2AirPcsFriArtifactV1::from_parts(
+    Stage2AirPcsFriArtifactV1::from_parts(
       witness,
       payload.circuit_digest(),
       payload.flock_proof_bundle_bytes().to_vec(),
-    )?;
-    verify_stage2_air_pcs_fri_production(&flock_artifact)
+    )
   }
 
   /// Verify an artifact against the exact canonical aggregate-root transport

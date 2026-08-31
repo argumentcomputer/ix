@@ -260,7 +260,7 @@ pub(crate) fn constrain_stage2_air(
   prefix: &Stage2TranscriptReplayV1,
   pcs: &Stage2PcsInstanceV1,
   program: &Stage2AirProgramV1,
-) -> Result<()> {
+) -> Result<[usize; 2]> {
   let challenges = prefix.challenges()?;
   let lookup = prefix_region.challenges.lookup;
   let fingerprint = prefix_region.challenges.fingerprint;
@@ -327,7 +327,7 @@ pub(crate) fn constrain_stage2_air(
       wire
     })
     .collect();
-  constrain_stage2_statement(
+  let stage2_digest_public_values = constrain_stage2_statement(
     builder,
     arithmetic,
     blake3,
@@ -541,7 +541,7 @@ pub(crate) fn constrain_stage2_air(
     assert_f128_equal(builder, equality, equality_zero, ood, quotient);
     accumulator = next_accumulator;
   }
-  Ok(())
+  Ok(stage2_digest_public_values)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -555,7 +555,7 @@ fn constrain_stage2_statement(
   public: &mut Vec<F128>,
   claims: &[Wire],
   program: &Stage2AirProgramV1,
-) -> Result<()> {
+) -> Result<[usize; 2]> {
   if claims.len() != 18 {
     bail!("Stage 2 statement binding requires 18 claim words");
   }
@@ -595,11 +595,12 @@ fn constrain_stage2_statement(
   )?;
   builder.publish(root[0]);
   builder.publish(root[1]);
+  let public_indices = [public.len(), public.len() + 1];
   public.extend_from_slice(&[
     pack_bytes(&program.statement_digest[..16]),
     pack_bytes(&program.statement_digest[16..]),
   ]);
-  Ok(())
+  Ok(public_indices)
 }
 
 struct BoundAirOpenings {

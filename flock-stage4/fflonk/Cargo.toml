@@ -1,0 +1,19 @@
+[package]
+name = "ix-fflonk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ark-bls12-381.workspace = true
+ark-ec.workspace = true
+ark-ff.workspace = true
+ark-poly.workspace = true
+ark-serialize.workspace = true
+blake3.workspace = true
+ix-terminal-circuit.workspace = true
+tiny-keccak.workspace = true
+
+[lints]
+workspace = true
