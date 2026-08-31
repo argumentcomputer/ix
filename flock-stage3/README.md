@@ -61,15 +61,25 @@ an inactive leading circuit, active circuits at heights 8 and 4, an active
 preprocessed matrix, an 18-word claim lookup, nontrivial first-row/transition
 constraints, and two FRI queries.
 
-On the debug profile, the complete production round trip produced:
+On the debug profile, the instrumented complete production round trip produced:
 
 - Stage 3 artifact: **326,019 bytes**;
-- encoded production payload: **325,893 bytes**; and
-- prove + decode + valid verify + negative checks: **529.55 seconds**.
+- encoded production payload: **325,893 bytes**;
+- fixture setup: **0.010 seconds**;
+- complete `prove_stage2` path: **491.624 seconds**;
+- artifact encode and decode: **less than 0.001 seconds each**;
+- valid cryptographic verification: **16.245 seconds**;
+- rejection of a wrong relation statement: **0.000011 seconds**;
+- rejection of a corrupted proof: **16.437 seconds**; and
+- complete round trip: **524.315 seconds**.
 
-The negative checks reject a different relation digest and a corrupted proof.
-This size is expected: Stage 3 is the off-chain proof whose small fixed
-verifier is compressed by Stage 4. It is not the sub-kilobyte Ethereum proof.
+The complete prove-path timing includes native validation, witness lowering,
+relation construction, Flock proving, and artifact packaging. Proving accounts
+for 93.8% of the round trip. The negative-check time is almost entirely a
+second full cryptographic verifier run against the corrupted proof; the wrong
+relation digest fails before cryptography in 11 microseconds. This size is
+expected: Stage 3 is the off-chain proof whose small fixed verifier is
+compressed by Stage 4. It is not the sub-kilobyte Ethereum proof.
 
 Run the exact regression with:
 
