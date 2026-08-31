@@ -28,9 +28,10 @@ certify. `compileValidated` closes that seam with the sharing-aware validator,
 failing closed on the first rejected declaration. Its proof-facing sibling,
 `compileValidatedWithTrace`, retains the exact member scope, erasure
 certificate, simultaneous-member coverage, and lowering/addressing equations
-consumed by `PipelineSound`. The resulting semantic endpoint keeps the
-remaining source-oracle, mixed-mode ownership, target-layout, and extern ABI
-obligations explicit.
+consumed by `PipelineSound`. It also rejects externs on the exact addressed
+IxIR₀ input and emitted IxIR₁ graph, retaining both checks as proof fields.
+The resulting semantic endpoint keeps only genuine source execution and
+oracle-correspondence obligations explicit.
 -/
 
 namespace Compilatrix.Pipeline
@@ -75,6 +76,124 @@ structure Config where
   blobs : Address → Option Ixon.Eval.Blob := fun _ => none
   natBlock : Option Address := none
   limits : Limits := {}
+
+/-- Locate the first extern declaration at the validator-to-lowerer boundary.
+The certified pipeline stays closed to externs until a heap ownership ABI is
+chosen; the unvalidated engineering pipeline retains the evaluator's
+scalar-only extern support. -/
+def firstValidatedExtern? : List (Address × IxIR0.Decl) → Option Address
+  | [] => none
+  | (address, .extern _) :: _ => some address
+  | _ :: declarations => firstValidatedExtern? declarations
+
+/-- Executable proof-facing statement of the validated extern policy. -/
+def ValidatedExternsRejected
+    (declarations : List (Address × IxIR0.Decl)) : Prop :=
+  firstValidatedExtern? declarations = none
+
+/-- Target-side twin of `firstValidatedExtern?`, run over the exact emitted
+artifact graph rather than inferred from lowering behavior. -/
+def firstValidatedTargetExtern? :
+    List (Address × IxIR1.Decl) → Option Address
+  | [] => none
+  | (address, .extern _) :: _ => some address
+  | _ :: declarations => firstValidatedTargetExtern? declarations
+
+/-- The emitted certified IxIR₁ graph is closed to extern declarations. -/
+def ValidatedTargetExternsRejected
+    (declarations : List (Address × IxIR1.Decl)) : Prop :=
+  firstValidatedTargetExtern? declarations = none
+
+namespace ValidatedExternsRejected
+
+/-- A closed validated extern boundary excludes every extern row from the
+exact declaration list. -/
+theorem not_mem {declarations : List (Address × IxIR0.Decl)}
+    (hboundary : ValidatedExternsRejected declarations)
+    {address : Address} {arity : Nat} :
+    (address, .extern arity) ∉ declarations := by
+  intro hmember
+  induction declarations with
+  | nil => simp at hmember
+  | cons head tail ih =>
+      rcases head with ⟨headAddress, headDeclaration⟩
+      cases headDeclaration <;>
+        simp_all [ValidatedExternsRejected, firstValidatedExtern?]
+
+private theorem envOfList_some_mem
+    {declarations : List (Address × IxIR0.Decl)} {address : Address}
+    {declaration : IxIR0.Decl}
+    (hlookup : IxIR0.Env.ofList declarations address = some declaration) :
+    (address, declaration) ∈ declarations := by
+  unfold IxIR0.Env.ofList at hlookup
+  obtain ⟨entry, hfind, hvalue⟩ := Option.map_eq_some_iff.mp hlookup
+  rcases entry with ⟨entryAddress, entryDeclaration⟩
+  have hbeq : entryAddress == address :=
+    List.find?_some
+      (p := fun entry : Address × IxIR0.Decl => entry.1 == address) hfind
+  have haddress : entryAddress = address := Address.eq_of_beq hbeq
+  have hdeclaration : entryDeclaration = declaration := by
+    simpa using hvalue
+  subst entryAddress
+  subst entryDeclaration
+  exact List.mem_of_find?_eq_some hfind
+
+/-- The proof-facing list certificate rules out extern lookup through the
+actual first-binding-wins IxIR₀ environment used by validation. -/
+theorem env_ne_extern {declarations : List (Address × IxIR0.Decl)}
+    (hboundary : ValidatedExternsRejected declarations)
+    {address : Address} {arity : Nat} :
+    IxIR0.Env.ofList declarations address ≠ some (.extern arity) := by
+  intro hlookup
+  exact hboundary.not_mem (envOfList_some_mem hlookup)
+
+end ValidatedExternsRejected
+
+namespace ValidatedTargetExternsRejected
+
+/-- The target certificate excludes every extern row from the exact emitted
+artifact list. -/
+theorem not_mem {declarations : List (Address × IxIR1.Decl)}
+    (hboundary : ValidatedTargetExternsRejected declarations)
+    {address : Address} {arity : Nat} :
+    (address, .extern arity) ∉ declarations := by
+  intro hmember
+  induction declarations with
+  | nil => simp at hmember
+  | cons head tail ih =>
+      rcases head with ⟨headAddress, headDeclaration⟩
+      cases headDeclaration <;>
+        simp_all [ValidatedTargetExternsRejected,
+          firstValidatedTargetExtern?]
+
+private theorem lookupBuild_some_mem {α : Type}
+    {declarations : List (Address × α)} {address : Address} {value : α}
+    (hlookup : AddressEnv.lookup (AddressEnv.build declarations) address =
+      some value) :
+    (address, value) ∈ declarations := by
+  rw [AddressEnv.lookup_build_apply] at hlookup
+  obtain ⟨entry, hfind, hvalue⟩ := Option.map_eq_some_iff.mp hlookup
+  rcases entry with ⟨entryAddress, entryValue⟩
+  have hbeq : entryAddress == address :=
+    List.find?_some
+      (p := fun entry : Address × α => entry.1 == address) hfind
+  have haddress : entryAddress = address := Address.eq_of_beq hbeq
+  have hentryValue : entryValue = value := by simpa using hvalue
+  subst entryAddress
+  subst entryValue
+  exact List.mem_of_find?_eq_some hfind
+
+/-- The target list certificate also rules out extern lookup through the
+indexed first-binding-wins environment used by artifact consumers. -/
+theorem env_ne_extern {declarations : List (Address × IxIR1.Decl)}
+    (hboundary : ValidatedTargetExternsRejected declarations)
+    {address : Address} {arity : Nat} :
+    AddressEnv.lookup (AddressEnv.build declarations) address ≠
+      some (.extern arity) := by
+  intro hlookup
+  exact hboundary.not_mem (lookupBuild_some_mem hlookup)
+
+end ValidatedTargetExternsRejected
 
 /-- The executable compiler boundaries, retained together so validators and
 artifact consumers can inspect both the theorem-facing legacy erasure and the
@@ -887,8 +1006,17 @@ structure ValidatedCompilation
     (validatedEvalCtx constants config).inlineSharing
     { env := IxIR0.Env.ofList erasure.result.raw } memberScope.plan
   strict : (validatedEvalCtx constants config).Strict
+  /-- The exact addressed IxIR₀ graph admitted to lowering contains no extern
+  declaration. This is the conservative certified ownership ABI: reopening
+  the boundary requires replacing this field with an explicit policy. -/
+  externsRejected : ValidatedExternsRejected erasure.result.declarations
   lowering : IxIR1.Lower.FullyAddressedTrace
     erasure.result.declarations erasure.result.main mainWorld lowerFuel
+  /-- Defense in depth over the actual emitted graph: lowering and content
+  addressing did not introduce an extern behind the source-side gate. -/
+  targetExternsRejected : ValidatedTargetExternsRejected
+    (lowering.result.artifacts.flatMap
+      IxIR1.ReaddressAll.Artifact.declarations)
 
 namespace ValidatedCompilation
 
@@ -904,6 +1032,46 @@ def artifact {constants : List (Address × Constant)} {mainAddress : Address}
     targetArtifacts := compilation.lowering.result.artifacts
     main := compilation.lowering.result.main
     targetAddressMap := compilation.lowering.result.addressMap }
+
+/-- No extern can be resolved from the exact addressed IxIR₀ input admitted
+to certified lowering. -/
+theorem addressedSourceEnv_ne_extern
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    {address : Address} {arity : Nat} :
+    IxIR0.Env.ofList compilation.erasure.result.declarations address ≠
+      some (.extern arity) :=
+  compilation.externsRejected.env_ne_extern
+
+/-- The exact IxIR₁ declaration list returned to artifact consumers contains
+no extern declaration. -/
+theorem targetExtern_not_mem
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    {address : Address} {arity : Nat} :
+    (address, .extern arity) ∉ compilation.artifact.targetDecls := by
+  simpa [artifact, Artifact.targetDecls] using
+    compilation.targetExternsRejected.not_mem (address := address)
+      (arity := arity)
+
+/-- Artifact consumers cannot resolve an extern through the exact indexed
+IxIR₁ declaration environment returned by validated compilation. -/
+theorem targetDeclEnv_ne_extern
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    {address : Address} {arity : Nat} :
+    compilation.artifact.targetDeclEnv address ≠ some (.extern arity) := by
+  change AddressEnv.lookup
+      (AddressEnv.build (compilation.lowering.result.artifacts.flatMap
+        IxIR1.ReaddressAll.Artifact.declarations)) address ≠
+    some (.extern arity)
+  exact compilation.targetExternsRejected.env_ne_extern
 
 end ValidatedCompilation
 
@@ -983,6 +1151,13 @@ private def compileValidatedCore [Sim.MemberScope]
     | .error (.erase error) => throw (.erase error)
     | .error (.readdress message) => throw (.readdress message)
   let erased := erasure.result
+  let externsRejected : PLift
+      (ValidatedExternsRejected erased.declarations) ←
+    match hboundary : firstValidatedExtern? erased.declarations with
+    | none => pure ⟨hboundary⟩
+    | some address =>
+      throw (.validate address
+        "validated extern ownership ABI rejects this declaration")
   let rawErasedDecls := erased.raw
   let erasedIndex := IxIR0.Env.Index.ofList rawErasedDecls
   let ictx : IxIR0.Ctx := { env := erasedIndex.toEnv }
@@ -1030,6 +1205,17 @@ private def compileValidatedCore [Sim.MemberScope]
             erased.declarations erased.main mainWorld lowerFuel with
         | .ok trace => pure trace
         | .error message => throw (.lower message)
+      let targetExternsRejected : PLift
+          (ValidatedTargetExternsRejected
+            (lowering.result.artifacts.flatMap
+              IxIR1.ReaddressAll.Artifact.declarations)) ←
+        match hboundary : firstValidatedTargetExtern?
+            (lowering.result.artifacts.flatMap
+              IxIR1.ReaddressAll.Artifact.declarations) with
+        | none => pure ⟨hboundary⟩
+        | some address =>
+          throw (.validate address
+            "certified lowering emitted an extern outside its ownership ABI")
       let retainedEntry : @EraseValidator.CertifiedSharedExpr
           (validatedEvalCtx constants config)
           { env := IxIR0.Env.ofList erasure.result.raw }
@@ -1061,7 +1247,9 @@ private def compileValidatedCore [Sim.MemberScope]
             { neutralElims := by simpa using hstrictInline.neutralElims
               stringLiterals := by
                 simpa using hstrictInline.stringLiterals }
-          lowering }
+          externsRejected := externsRejected.down
+          lowering
+          targetExternsRejected := targetExternsRejected.down }
     else
       throw (.validate mainAddress
         "certified main differs from the compiled main reference")
@@ -1613,10 +1801,8 @@ private def validatedAgrees : Bool :=
   | _, _ => false
 
 /-- An axiom is UsageCheck-clean and erases to an extern, so the
-unvalidated pipeline accepts it. The validator only certifies an axiom
-when its source address has an explicit external arity configuration;
-`Pipeline.Config` deliberately supplies none, so the gated pipeline
-must fail closed with the validator's own diagnostic. -/
+unvalidated pipeline accepts it. The certified pipeline rejects the exact
+addressed extern graph before lowering and retains that check as a proof field. -/
 private def aGhostAxiom := address 0x7c
 
 private def cGhostAxiom : Constant :=
@@ -1635,7 +1821,7 @@ private def rejectsOutOfFragment : Bool :=
   match compileValidated outOfFragment aMain { blobs } with
   | .error (.validate rejected message) =>
     rejected == aGhostAxiom &&
-      message == "extern address is not configured"
+      message == "validated extern ownership ABI rejects this declaration"
   | _ => false
 
 /-- Native integration fixtures are evaluated by the compiled test executable:

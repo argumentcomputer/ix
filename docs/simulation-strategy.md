@@ -467,10 +467,14 @@ contracts. Rewrite and readdress simulations preserve this policy, and the
 mixed-mode model establishes that the resulting `SourcePapSafe` premise is
 strictly weaker than a globally all-shared source environment.
 
-The v1 extern decision is fixed before the compiler induction: arguments and
-results are scalar-only, enforced on both direct and declaration-mediated
-oracle calls. Consequently no heap owner crosses the extern boundary. A
-heap-valued production extern ABI remains a separate roadmap decision.
+The IxIR₁ runtime and unvalidated engineering pipeline retain a scalar-only
+extern boundary: direct and declaration-mediated oracle calls reject heap
+arguments and heap results, so no heap owner crosses that boundary. The
+certified pipeline is stricter. It rejects extern rows on both the exact
+addressed IxIR₀ input and the emitted IxIR₁ artifact graph, retains those
+checks in `ValidatedCompilation`, and derives the semantic and termination
+extern contracts vacuously. Reopening validated externs for heap values
+requires an explicit consume/borrow/retain ABI.
 
 Location renaming is load-bearing for `reuse_sound`: target `reuse` keeps one
 location, whereas the specification “free old node, allocate new node” may

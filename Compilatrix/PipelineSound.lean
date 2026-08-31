@@ -11,9 +11,10 @@ import Compilatrix.IxIR1.OptimizerReclamation
 certificate, simultaneous-member coverage, addressed-erasure equation, and
 stateful fully-addressed lowering equations.  This file projects those
 witnesses into the production forward-simulation theorem.  Source sharing and
-oracle correspondence remain semantic premises, and extern behavior retains
-its explicit ABI contract. Target layout, generated representation, and every
-compiler-owned ownership contract are reconstructed from the retained traces.
+oracle correspondence remain semantic premises. The certified pipeline's
+closed extern boundary discharges scalar-oracle value and progress contracts
+vacuously. Target layout, generated representation, and every compiler-owned
+ownership contract are reconstructed from the retained traces.
 -/
 
 namespace Compilatrix.Pipeline
@@ -110,6 +111,53 @@ def functionRel
   CompilerFunctionRel compilation.addressedSourceCtx
     (IxIR0.Env.ofList compilation.erasure.result.declarations)
     compilation.lowering.finalState
+
+/-- The exact addressed source context exposed to lowering cannot resolve an
+extern.  This is the context-level form of the executable validated ABI
+certificate retained by `compileValidatedWithTrace`. -/
+theorem addressedSourceCtx_ne_extern
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    {address : Address} {arity : Nat} :
+    compilation.addressedSourceCtx.env address ≠ some (.extern arity) := by
+  simpa [addressedSourceCtx, EraseAddressed.Result.declarations,
+    IxIR0.Readdress.Result.addressedCtx] using
+    (compilation.addressedSourceEnv_ne_extern
+      (address := address) (arity := arity))
+
+/-- Validated compilation manufactures the scalar extern value contract:
+its certified source context has no extern application to discharge. -/
+theorem externValueContract
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal) :
+    ExternValueContract compilation.functionRel
+      compilation.addressedSourceCtx
+      (compilation.exactTargetCtx targetOracle) := by
+  constructor
+  intro store address arity sourceFunction sourceResult sourceArgs args result
+    hlookup
+  exact False.elim (compilation.addressedSourceCtx_ne_extern hlookup)
+
+/-- Validated compilation likewise manufactures extern progress: no admitted
+source trace can start at an extern declaration. -/
+theorem externTraceProgressContract
+    {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel)
+    (targetOracle : Address → List RVal → Option RVal) :
+    ExternTraceProgressContract compilation.functionRel
+      compilation.addressedSourceCtx
+      (compilation.exactTargetCtx targetOracle) := by
+  constructor
+  intro sourceLimit store address arity sourceFunction sourceResult sourceArgs
+    args hlookup
+  exact False.elim (compilation.addressedSourceCtx_ne_extern hlookup)
 
 /-- Exact fail-soft optimizer outcome selected for this validated artifact and
 its directly produced checked HPT certificate. -/
@@ -433,10 +481,10 @@ theorem exactCompilerContracts
 
 /-- The concise semantic endpoint for one successful
 `compileValidatedWithTrace` result. All executable equalities, target layout,
-ownership contracts, and the runtime-derived mutual-member scope are supplied
-by `compilation`; the remaining premises are genuine source/oracle and backend
-ABI obligations. The final heap relation uses the certified alias-free rebuild
-map consumed by the exact raw target context. -/
+ownership contracts, the closed extern boundary, and the runtime-derived
+mutual-member scope are supplied by `compilation`; the remaining premises are
+genuine source/oracle obligations. The final heap relation uses the certified
+alias-free rebuild map consumed by the exact raw target context. -/
 theorem semanticForwardSimulation
     {constants : List (Address × Constant)} {mainAddress : Address}
     {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
@@ -449,13 +497,7 @@ theorem semanticForwardSimulation
     (hsource : Ixon.Eval.eval (validatedEvalCtx constants config) sourceFuel
       (validatedMainFrame mainAddress) [] validatedMainSource =
         .ok sourceValue)
-    (targetOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx targetOracle))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx targetOracle)) :
+    (targetOracle : Address → List RVal → Option RVal) :
     MutualAddressedSemanticForwardSimulation
       (compilation.erasure.result.addressed.preAddressCtx
         compilation.erasure.result.groups)
@@ -506,15 +548,15 @@ theorem semanticForwardSimulation
         compilation.exactTargetCtx_decls_of_mem targetOracle hmember)
       (compilation.exactExtraRepresented targetOracle)
       (compilation.exactCompilerContracts targetOracle).1
-      hexternValue hexternProgress
+      (compilation.externValueContract targetOracle)
+      (compilation.externTraceProgressContract targetOracle)
   intro legacyFuel legacyValue hlegacy
   apply hsimulation
   simpa only [compilation.entryTarget] using hlegacy
 
 /-- The validated semantic spine composed with a directly produced checked
 O1 optimizer run.  The optimized oracle is pulled back automatically for the
-pre-optimization execution; all compiler-side extern obligations are stated
-against that exact pullback.  Fail-soft skips therefore select the original
+pre-optimization execution. Fail-soft skips therefore select the original
 simulation literally, while successful rebuilds add allocation-history and
 optimizer-address witnesses. -/
 theorem semanticForwardSimulationAfterProducedOptimization
@@ -531,17 +573,7 @@ theorem semanticForwardSimulationAfterProducedOptimization
         .ok sourceValue)
     (policy : Optimizer.Policy) {limits : HPT.Limits}
     (production : HPT.Production limits compilation.artifact.targetArtifacts)
-    (optimizerOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle)))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle))) :
+    (optimizerOracle : Address → List RVal → Option RVal) :
     OptimizedMutualAddressedSemanticForwardSimulation
       (compilation.erasure.result.addressed.preAddressCtx
         compilation.erasure.result.groups)
@@ -566,7 +598,7 @@ theorem semanticForwardSimulationAfterProducedOptimization
       compilation.functionRel := by
     exact compilation.semanticForwardSimulation
       (sourceFuel := sourceFuel) (sourceValue := sourceValue)
-      horacles hctx hsource sourceOracle hexternValue hexternProgress
+      horacles hctx hsource sourceOracle
   intro legacyFuel legacyValue hlegacy
   obtain ⟨compilerFuel, compilerStore, compilerValue, hcompilerRun,
       hcompilerGraph⟩ := hcompiler hlegacy
@@ -615,17 +647,7 @@ theorem semanticForwardSimulationOfProducedOptimizedArtifact
         .ok sourceValue)
     (policy : Optimizer.Policy) {limits : HPT.Limits}
     (production : HPT.Production limits compilation.artifact.targetArtifacts)
-    (optimizerOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle)))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle))) :
+    (optimizerOracle : Address → List RVal → Option RVal) :
     ∀ {legacyFuel legacyValue},
       IxIR0.eval
           (compilation.erasure.result.addressed.preAddressCtx
@@ -658,8 +680,7 @@ theorem semanticForwardSimulationOfProducedOptimizedArtifact
       (compilation.lowering.result.rebuildRename compilation.lowering.raw)
       compilation.functionRel :=
     compilation.semanticForwardSimulationAfterProducedOptimization
-      horacles hctx hsource policy production optimizerOracle hexternValue
-      hexternProgress
+      horacles hctx hsource policy production optimizerOracle
   intro legacyFuel legacyValue hlegacy
   obtain ⟨targetFuel, targetStore, targetValue, htarget, hgraph⟩ :=
     hsimulation hlegacy
@@ -669,8 +690,8 @@ theorem semanticForwardSimulationOfProducedOptimizedArtifact
   rw [compilation.producedOptimizedArtifact_main policy production]
   exact htarget
 
-/-- The validated source execution and backend ABI contracts produce an
-actual successful execution of the final content-addressed target. -/
+/-- The validated source execution produces an actual successful execution
+of the final content-addressed target. -/
 theorem targetProgress
     {constants : List (Address × Constant)} {mainAddress : Address}
     {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
@@ -683,13 +704,7 @@ theorem targetProgress
     (hsource : Ixon.Eval.eval (validatedEvalCtx constants config) sourceFuel
       (validatedMainFrame mainAddress) [] validatedMainSource =
         .ok sourceValue)
-    (targetOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx targetOracle))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx targetOracle)) :
+    (targetOracle : Address → List RVal → Option RVal) :
     ∃ targetFuel store value,
       runMain (compilation.lowering.result.addressedCtx targetOracle)
         compilation.lowering.result.main targetFuel = .ok (store, value) := by
@@ -725,7 +740,8 @@ theorem targetProgress
         compilation.exactTargetCtx_decls_of_mem targetOracle hmember)
       (compilation.exactExtraRepresented targetOracle)
       (compilation.exactCompilerContracts targetOracle).1
-      hexternValue hexternProgress
+      (compilation.externValueContract targetOracle)
+      (compilation.externTraceProgressContract targetOracle)
 
 /-- The artifact selected by the directly produced fail-soft optimizer has a
 successful execution.  This is stated on the artifact's own declaration
@@ -745,17 +761,7 @@ theorem targetProgressAfterProducedOptimization
         .ok sourceValue)
     (policy : Optimizer.Policy) {limits : HPT.Limits}
     (production : HPT.Production limits compilation.artifact.targetArtifacts)
-    (optimizerOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle)))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle))) :
+    (optimizerOracle : Address → List RVal → Option RVal) :
     ∃ targetFuel store value,
       runMain
           ({ decls :=
@@ -768,7 +774,6 @@ theorem targetProgressAfterProducedOptimization
     production optimizerOracle
   obtain ⟨compilerFuel, compilerStore, compilerValue, hcompilerRun⟩ :=
     compilation.targetProgress horacles hctx hsource sourceOracle
-      hexternValue hexternProgress
   have hsourceCtx :
       compilation.lowering.result.addressedCtx sourceOracle =
         outcome.sourceCtx policy compilation.artifact.targetArtifacts
@@ -813,19 +818,12 @@ theorem memoryErrorUnreachable
     (hsource : Ixon.Eval.eval (validatedEvalCtx constants config) sourceFuel
       (validatedMainFrame mainAddress) [] validatedMainSource =
         .ok sourceValue)
-    (targetOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx targetOracle))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx targetOracle)) :
+    (targetOracle : Address → List RVal → Option RVal) :
     MemoryErrorUnreachable
       (compilation.lowering.result.addressedCtx targetOracle)
       compilation.lowering.result.main := by
   apply memoryErrorUnreachable_of_progress
   exact compilation.targetProgress horacles hctx hsource targetOracle
-    hexternValue hexternProgress
 
 /-- No execution fuel can expose a dynamic memory error in the artifact
 selected by the directly produced fail-soft optimizer. -/
@@ -843,17 +841,7 @@ theorem memoryErrorUnreachableAfterProducedOptimization
         .ok sourceValue)
     (policy : Optimizer.Policy) {limits : HPT.Limits}
     (production : HPT.Production limits compilation.artifact.targetArtifacts)
-    (optimizerOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle)))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle))) :
+    (optimizerOracle : Address → List RVal → Option RVal) :
     MemoryErrorUnreachable
       ({ decls :=
           (compilation.producedOptimizedArtifact policy production).targetDeclEnv
@@ -861,8 +849,7 @@ theorem memoryErrorUnreachableAfterProducedOptimization
       (compilation.producedOptimizedArtifact policy production).main := by
   apply memoryErrorUnreachable_of_progress
   exact compilation.targetProgressAfterProducedOptimization
-    horacles hctx hsource policy production optimizerOracle hexternValue
-    hexternProgress
+    horacles hctx hsource policy production optimizerOracle
 
 /-- Every successful execution of the validated fully addressed artifact can
 release its result and reclaim the entire fresh heap. No target-context or
@@ -910,17 +897,7 @@ theorem reclamationAfterProducedOptimization
         .ok sourceValue)
     (policy : Optimizer.Policy) {limits : HPT.Limits}
     (production : HPT.Production limits compilation.artifact.targetArtifacts)
-    (optimizerOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle)))
-    (hexternProgress : ExternTraceProgressContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx
-        (compilation.producedOptimizationSourceOracle policy production
-          optimizerOracle))) :
+    (optimizerOracle : Address → List RVal → Option RVal) :
     Reclamation
       ({ decls :=
           (compilation.producedOptimizedArtifact policy production).targetDeclEnv
@@ -932,7 +909,6 @@ theorem reclamationAfterProducedOptimization
     production optimizerOracle
   obtain ⟨compilerFuel, compilerStore, compilerValue, hcompilerRun⟩ :=
     compilation.targetProgress horacles hctx hsource sourceOracle
-      hexternValue hexternProgress
   have hsourceCtx :
       compilation.lowering.result.addressedCtx sourceOracle =
         outcome.sourceCtx policy compilation.artifact.targetArtifacts
@@ -1053,9 +1029,6 @@ theorem ownershipAmortizedCostRefinement
     (compilation : ValidatedCompilation constants mainAddress config
       mainWorld eraseFuel lowerFuel)
     (targetOracle : Address → List RVal → Option RVal)
-    (hexternValue : ExternValueContract compilation.functionRel
-      compilation.addressedSourceCtx
-      (compilation.exactTargetCtx targetOracle))
     (hprofile : ∀ {sourceFuel sourceValue},
       IxIR0.eval compilation.addressedSourceCtx sourceFuel []
         compilation.erasure.result.main = .ok sourceValue →
@@ -1074,7 +1047,8 @@ theorem ownershipAmortizedCostRefinement
     (fun hmember =>
       compilation.exactTargetCtx_decls_of_mem targetOracle hmember)
     (compilation.exactExtraRepresented targetOracle)
-    (compilation.exactCompilerContracts targetOracle).1 hexternValue hprofile
+    (compilation.exactCompilerContracts targetOracle).1
+    (compilation.externValueContract targetOracle) hprofile
 
 end ValidatedCompilation
 

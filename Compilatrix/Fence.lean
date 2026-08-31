@@ -1222,6 +1222,24 @@ semantic endpoint.  Its O1 projection pins semantic preservation, progress,
 memory-error exclusion, reclamation, and the evaluator-universal allocation/
 free law directly on the artifact selected by the fail-soft optimizer. -/
 
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.targetDeclEnv_ne_extern' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.targetDeclEnv_ne_extern
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.externValueContract' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.externValueContract
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.externTraceProgressContract' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.externTraceProgressContract
+
 /-- info: 'Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulation' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,

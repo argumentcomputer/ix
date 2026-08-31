@@ -50,7 +50,9 @@ status ledger here:
   [catalog ingress](catalog-ingress.md).
 - A validated, content-addressed erasure path to IxIR₀ with a theorem-backed
   fragment covering ordinary definitions, recursors, mutual blocks,
-  projections, quotients, configured opaque definitions, and externs.
+  projections, quotients, and configured opaque definitions. Erasure and the
+  unvalidated engineering path retain scalar-only extern support; the
+  certified compiler boundary rejects extern declarations explicitly.
 - Mode-directed lowering to the explicit-store IxIR₁, with executable
   ownership checks, leak-freedom fixtures, cost counters, mutual-block
   addressing, and a proof-facing validated compilation record that retains
@@ -83,6 +85,10 @@ status ledger here:
   recursive judgment: owner-sensitive deep-release safety and termination are
   paired behind common cores, and arbitrary fuel increases use one generic
   successor-stability lift across Ixon, IxIR₀, and IxIR₁.
+  The certified extern boundary is closed mechanically on both the addressed
+  IxIR₀ input and emitted IxIR₁ artifact environment; its semantic, progress,
+  safety, reclamation, and cost endpoints carry no caller-supplied extern
+  contract.
   See [HPT certificates](hpt-certificates.md) and the
   [optimizer harness](optimizer-harness.md).
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
@@ -104,8 +110,10 @@ These are active scope constraints, not hidden qualifications:
 - Erasure adequacy is not yet connected to lean4ix's kernel theory.
 - The current validated fragment remains narrower than all of Lean/Ixon;
   unsupported features fail closed at validation.
-- IxIR₁ externs are scalar-only at the trusted boundary; heap-argument
-  ownership needs an explicit ABI contract.
+- IxIR₁ runtime and unvalidated compilation support only scalar extern
+  arguments/results. Validator-gated compilation rejects all extern
+  declarations on its exact source and target graphs; reopening that boundary
+  requires an explicit consume/borrow/retain ABI.
 - The lowerer emits conservative RC operations and no reuse. Borrow inference,
   RC coalescing, and reset/reuse belong to the optimized IxIR₂ path.
 - HPT parameters currently begin at `top`; summaries are context-independent.
@@ -149,7 +157,7 @@ This milestone is complete.
 | Whole-pass value/ownership/progress simulation | delivered | Every validator-accepted current-fragment main has a composed IxIR₀→IxIR₁ forward simulation, no reachable memory error, and the existing reclamation/cost results without fixture-specific assumptions. |
 | Proof-structure consolidation | delivered | Shared recursive judgments have one foundational traversal each; public theorems depend on those cores without duplicating the induction. Stop recording individual consolidation cuts in this roadmap. |
 | HPT consumer tranche O1 | delivered | Checked case pruning/collapse, scalar fetch forwarding, scalar and exact-all-scalar unique-leaf destruction, PAP/application fusion, and rooted reachability compose through one owner-sensitive traversal and one rebuild, with arbitrary-fuel proofs, fail-soft policy/reporting, and fixed-point regressions. Recursive/shared destruction is assigned to the IxIR₂ consuming-destructure rows below because ordinary IxIR₁ expansion cannot preserve the same-fuel contract. |
-| IxIR₁ extern ownership ABI | next | Heap-valued extern arguments/results have explicit consume/borrow/retain contracts or remain rejected by the validated fragment. |
+| IxIR₁ extern ownership ABI | delivered | The validator-gated pipeline rejects externs on the exact addressed IxIR₀ input and emitted IxIR₁ graph, retains lookup-level certificates for both, and synthesizes the now-vacuous semantic/progress contracts internally. Runtime and unvalidated compilation remain scalar-only. |
 | Address reproducibility | next | Two independent full compilations of the same validated root produce the same addressed IxIR₀/IxIR₁ graph and certificate identities. |
 | HPT/cache scaling | deferred | Wake when bounded Std/corpus work demonstrates that directory enumeration, sharding, garbage collection, or cross-store scheduling is the bottleneck. |
 
@@ -183,7 +191,10 @@ ownership premises. The same interface exposes certified target progress and
 all-fuel memory-error exclusion for each successful validated source main,
 unconditional full-result reclamation, the current no-reuse/allocation-free
 counter law, and the ownership-amortized four-counter budget whenever the
-ordinary source execution has a call-aware profile.
+ordinary source execution has a call-aware profile. The retained source and
+target extern scans prove that neither evaluator environment resolves an
+extern, so these endpoints no longer ask callers for extern value or progress
+contracts.
 
 The directly produced O1 selection now composes that spine through the
 optimizer's allocation-history refinement and exact final rebuild. The
@@ -309,22 +320,21 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Close the IxIR₁ extern ownership ABI.** Give heap-valued extern
-   arguments and results explicit consume/borrow/retain contracts, or keep
-   them rejected by the validated fragment with that boundary mechanically
-   visible.
-2. **Specify IxIR₂ before implementing it.** Freeze block parameters,
+1. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement. Include the fuel-neutral
    recursive unique destructor and shared RC-zero branch required beyond the
    delivered IxIR₁ leaf specialization.
-3. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
+2. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
    separate; prove fragment containment through the typed instruction AST.
-4. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
+3. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
    the gate from hand-written reuse semantics to an optimizing compiler.
-5. **Prove address reproducibility.** Run two independent full compilations of
+4. **Prove address reproducibility.** Run two independent full compilations of
    one validated root and compare the addressed IxIR₀/IxIR₁ graphs and
    certificate identities.
+5. **Recover direct recursion in IxIR₂.** Recognize validated recursor images
+   as direct loops while preserving the literal structured fallback for every
+   unrecognized term.
 
 Do not retain completed items in this list. Move durable evidence to the
 relevant focused document and replace the queue entry with its successor.
