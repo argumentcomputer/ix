@@ -12,10 +12,12 @@ use flock_prover::{
   lincheck::pack_z_lincheck,
   r1cs::{BlockR1cs, SparseBinaryMatrix, WitnessLayout},
   schedule::{IoWord, TableType},
+  union::SlotWitnessDest,
 };
 
 use crate::boolean::{
-  BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
+  BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_rows_into,
+  generate_boolean_witness, generate_boolean_witness_into,
   write_f128 as write_boolean_f128,
 };
 
@@ -57,7 +59,7 @@ impl GateType for CanonicalGoldilocksPairGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_canonical_pair_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(build_canonical_pair_r1cs(self.nu))
       .with_io_schema(vec![IoWord::input(0), IoWord::output(1)])
   }
 
@@ -151,6 +153,24 @@ pub(crate) fn generate_canonical_pair_witness(
   )
 }
 
+pub(crate) fn generate_canonical_pair_witness_into(
+  rows: &[CanonicalGoldilocksPairRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  let r1cs = build_canonical_pair_r1cs(nu);
+  generate_boolean_rows_into(
+    r1cs.k_log,
+    r1cs.useful_bits,
+    &r1cs.a_0.rows,
+    &r1cs.b_0.rows,
+    rows,
+    nu,
+    dst,
+    |row, bits| fill_logical_row(bits, row.0),
+  )
+}
+
 /// One row of two lane-wise Goldilocks additions packed into `F128` words.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct GoldilocksAddPairRow {
@@ -174,7 +194,7 @@ impl GateType for GoldilocksAddPairGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_goldilocks_add_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(build_goldilocks_add_r1cs(self.nu))
       .with_io_schema(vec![
         IoWord::input(0),
         IoWord::input(1),
@@ -214,17 +234,33 @@ struct GoldilocksAddPlan {
 }
 
 pub(crate) fn build_goldilocks_add_r1cs(nu: usize) -> BlockR1cs {
-  build_goldilocks_add_plan().boolean.block_r1cs(nu)
+  goldilocks_add_plan().boolean.block_r1cs(nu)
 }
 
 pub(crate) fn generate_goldilocks_add_witness(
   rows: &[GoldilocksAddPairRow],
   nu: usize,
 ) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
-  let plan = build_goldilocks_add_plan();
+  let plan = goldilocks_add_plan();
   generate_boolean_witness(&plan.boolean, rows, nu, |row, bits| {
-    fill_goldilocks_add_row(&plan, *row, bits)
+    fill_goldilocks_add_row(plan, *row, bits)
   })
+}
+
+pub(crate) fn generate_goldilocks_add_witness_into(
+  rows: &[GoldilocksAddPairRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  let plan = goldilocks_add_plan();
+  generate_boolean_witness_into(&plan.boolean, rows, nu, dst, |row, bits| {
+    fill_goldilocks_add_row(plan, *row, bits)
+  })
+}
+
+fn goldilocks_add_plan() -> &'static GoldilocksAddPlan {
+  static PLAN: OnceLock<GoldilocksAddPlan> = OnceLock::new();
+  PLAN.get_or_init(build_goldilocks_add_plan)
 }
 
 fn build_goldilocks_add_plan() -> GoldilocksAddPlan {

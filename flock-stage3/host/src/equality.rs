@@ -10,10 +10,12 @@ use flock_prover::{
   field::F128,
   r1cs::BlockR1cs,
   schedule::{IoWord, TableType},
+  union::SlotWitnessDest,
 };
 
 use crate::boolean::{
-  BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness, write_f128,
+  BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness_into,
+  write_f128,
 };
 
 const K_LOG: usize = 9;
@@ -38,7 +40,7 @@ impl GateType for F128EqualityGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    TableType::from_block_r1cs(&build_f128_equality_r1cs(self.nu))
+    crate::boolean::table_from_block_r1cs(build_f128_equality_r1cs(self.nu))
       .with_io_schema(vec![
         IoWord::input(0),
         IoWord::input(1),
@@ -67,12 +69,13 @@ pub(crate) fn build_f128_equality_r1cs(nu: usize) -> BlockR1cs {
   build_plan().block_r1cs(nu)
 }
 
-pub(crate) fn generate_f128_equality_witness(
+pub(crate) fn generate_f128_equality_witness_into(
   rows: &[F128EqualityRow],
   nu: usize,
-) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
   let plan = build_plan();
-  generate_boolean_witness(&plan, rows, nu, |row, bits| {
+  generate_boolean_witness_into(&plan, rows, nu, dst, |row, bits| {
     write_f128(bits, LEFT_BASE, row.left);
     write_f128(bits, RIGHT_BASE, row.right);
   })
