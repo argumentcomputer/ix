@@ -549,6 +549,12 @@ materialization intentionally crosses the same native BLAKE3 boundary. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.reserved_of_run_eq_ok
 
+/-- info: 'Compilatrix.IxIR1.ReaddressAll.rebuildSemanticAudit_of_run_eq_ok' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.rebuildSemanticAudit_of_run_eq_ok
+
 /-! Checked HPT summaries expose both the untrusted candidate's post-fixpoint
 condition and the exact cache/content-address audit. Materialization uses the
 same ledgered BLAKE3 boundary as the program artifacts. -/
@@ -804,6 +810,12 @@ transformation-specific assumption. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.runMain_exact_of_rebuild_eq_ok
+
+/-- info: 'Compilatrix.IxIR1.ReaddressAll.runMain_exact_of_run_eq_ok' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.runMain_exact_of_run_eq_ok
 
 /-- info: 'Compilatrix.IxIR1.HPT.CasePrune.runMain_rebuild_rewriteProgram' depends on axioms: [propext,
  Classical.choice,

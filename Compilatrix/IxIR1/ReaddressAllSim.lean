@@ -183,6 +183,37 @@ theorem runMain_success_of_run_eq_ok
   rw [runMain_of_run_eq_ok hrun oracle fuel, hsource]
   rfl
 
+/-- Exact-source transport for the ordinary SCC pass.  Successful initial
+content addressing now certifies the same alias-free source view as rebuilds. -/
+theorem runMain_exact_of_run_eq_ok
+    {reserved : List Address} {raw : List (Address × Decl)} {main : Code}
+    {result : Result}
+    (hrun : run reserved raw main = .ok result)
+    (oracle : Address → List RVal → Option RVal := fun _ _ => none)
+    (fuel : Nat := 100000) :
+    runMain (result.addressedCtx oracle) result.main fuel =
+      Readdress.mapRunResult (result.rebuildRename raw)
+        (runMain (result.rebuildSourceCtx raw oracle) main fuel) := by
+  have haudit := rebuildSemanticAudit_of_run_eq_ok hrun
+  rw [result.main_eq_rebuildMapAddresses haudit]
+  exact Readdress.runMain_mapAddresses
+    (result.renames_rebuildSourceCtx haudit oracle) main fuel
+
+/-- Successful-run specialization of ordinary exact-source transport. -/
+theorem runMain_exact_success_of_run_eq_ok
+    {reserved : List Address} {raw : List (Address × Decl)} {main : Code}
+    {result : Result}
+    (hrun : run reserved raw main = .ok result)
+    (oracle : Address → List RVal → Option RVal)
+    {fuel : Nat} {store : Store} {value : RVal}
+    (hsource : runMain (result.rebuildSourceCtx raw oracle) main fuel =
+      .ok (store, value)) :
+    runMain (result.addressedCtx oracle) result.main fuel =
+      .ok (Readdress.Store.mapAddresses
+        (result.rebuildRename raw) store, value) := by
+  rw [runMain_exact_of_run_eq_ok hrun oracle fuel, hsource]
+  rfl
+
 /-- The already-addressed rebuild adapter has the same complete evaluator
 transport as the initial SCC pass.  Its source context contains the original
 rows plus the stable aliases required by total address equivariance. -/

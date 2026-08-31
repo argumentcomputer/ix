@@ -306,10 +306,14 @@ to globally all-shared. `FnDef.papSafe` now follows declarations through
 ordinary and mutual content addressing, and the compiler-contract seal asks
 for homogeneous shared ownership only for declarations whose bit admits
 dynamic PAP entry. Accepted affine and unique declarations remain available
-through saturated known calls. The remaining production obligation is to
-derive this landed owner-sensitive premise and declaration coverage from the
-validated compilation's retained witnesses, rather than to assume a blanket
-all-shared environment.
+through saturated known calls. The initial SCC pass now checks the same
+`rebuildSemanticAudit` used by later rewrites and exposes
+`runMain_exact_of_run_eq_ok`; its semantic source context is therefore the
+literal raw lowering environment, with no aliases at newly emitted content
+keys. The remaining production obligation is to derive the landed
+owner-sensitive premise, exact raw declaration coverage, and generated-body
+provenance from the validated compilation's retained witnesses, rather than
+to assume a blanket all-shared environment.
 
 The production semantic endpoint uses `AddressedValueGraph`: the final heap is
 the address image of a raw heap carrying the existing `ValueGraph`. This is
@@ -391,8 +395,10 @@ extern ABI identities:
    points exercise cold creation, warm hits, corruption isolation/rejection,
    orphan staging, complete replacement, and local repair
    (`docs/hpt-certificates.md`).
-5. Rebuilding an already-addressed IxIR₁ graph is now an exact production
-   boundary. `ReaddressAll.rebuild` alpha-renames function producers into a
+5. Initial addressing and rebuilding an already-addressed IxIR₁ graph are
+   exact production boundaries. Ordinary `ReaddressAll.run` now rejects a
+   result unless `rebuildSemanticAudit` proves transport from the literal raw
+   declaration list. `ReaddressAll.rebuild` alpha-renames function producers into a
    domain-separated temporary namespace, reruns the ordinary SCC-aware pass,
    and composes the caller's old keys to final keys. The ordinary semantic
    audit is joined by `rebuildSemanticAudit`, which checks the main and every

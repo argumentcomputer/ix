@@ -519,7 +519,8 @@ def builtOk (result : ReaddressAll.Result) : Bool :=
         result.addressMap.length == raw.length &&
         result.declarations.length == raw.length &&
         result.contentAddressed && result.noTransientKeys &&
-        result.noTransientReferences && result.semanticAudit raw mainCode
+        result.noTransientReferences && result.semanticAudit raw mainCode &&
+        result.rebuildSemanticAudit raw mainCode
   | _, _, _, _, _, _, _, _ => false
 
 def newRoot : Address := Address.replicate 0xe0

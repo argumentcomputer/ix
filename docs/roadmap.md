@@ -151,8 +151,11 @@ equations are carried by the compilation result. The owner-sensitive
 `CompilerContracts` layer has landed: declaration rewriting preserves
 `papSafe`, the mutual seal requires all-shared ownership only for dynamically
 enterable declarations, and a mixed unique/direct-call model proves that this
-is strictly weaker than the former global premise. The first row remains
-active until those contracts and coverage are derived from every validated
+is strictly weaker than the former global premise. Initial SCC content
+addressing now also certifies exact-source transport from the literal raw
+declaration list, so this attachment need not admit synthetic final-key
+aliases merely to prove declaration coverage. The first row remains active
+until those contracts and coverage are derived from every validated
 compilation record and attached to its memory-safety, reclamation, and cost
 corollaries.
 

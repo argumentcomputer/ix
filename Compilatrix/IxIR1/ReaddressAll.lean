@@ -445,7 +445,8 @@ end Result
 abbrev CertifiedResult (reserved : List Address)
     (raw : List (Address × Decl)) (rawMain : Code) :=
   { result : Result //
-    result.semanticAudit raw rawMain = true ∧ result.reserved = reserved }
+    result.semanticAudit raw rawMain = true ∧ result.reserved = reserved ∧
+      result.rebuildSemanticAudit raw rawMain = true }
 
 /-- A rebuilt graph additionally certifies transport from the exact old-keyed
 source environment, rather than only from the generic alias-bearing one. -/
@@ -618,7 +619,10 @@ private def certify (reserved : List Address)
     (result : Result) : Except String (CertifiedResult reserved raw rawMain) :=
   if haudit : result.semanticAudit raw rawMain then
     if hreserved : result.reserved = reserved then
-      .ok ⟨result, haudit, hreserved⟩
+      if hexact : result.rebuildSemanticAudit raw rawMain then
+        .ok ⟨result, haudit, hreserved, hexact⟩
+      else
+        .error "internal: whole-program IxIR1 readdressing failed exact-source semantic audit"
     else
       .error "internal: whole-program IxIR1 readdressing retained the wrong reserved identities"
   else
@@ -810,7 +814,25 @@ theorem reserved_of_run_eq_ok
       rw [hcertified] at hrun
       have hvalue : certified.1 = result := by injection hrun
       subst result
-      exact certified.2.2
+      exact certified.2.2.1
+
+/-- Every successful ordinary SCC pass supports transport from the exact raw
+declaration environment, without installing aliases at newly emitted content
+keys. -/
+theorem rebuildSemanticAudit_of_run_eq_ok
+    {reserved : List Address} {raw : List (Address × Decl)} {main : Code}
+    {result : Result} (hrun : run reserved raw main = .ok result) :
+    result.rebuildSemanticAudit raw main = true := by
+  unfold run at hrun
+  cases hcertified : runCertified reserved raw main with
+  | error message =>
+      rw [hcertified] at hrun
+      contradiction
+  | ok certified =>
+      rw [hcertified] at hrun
+      have hvalue : certified.1 = result := by injection hrun
+      subst result
+      exact certified.2.2.2
 
 theorem protectsReserved_of_run_eq_ok
     {reserved : List Address} {raw : List (Address × Decl)} {main : Code}
