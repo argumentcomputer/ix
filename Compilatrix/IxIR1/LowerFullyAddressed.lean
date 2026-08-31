@@ -50,6 +50,45 @@ def lowerAllIndexedFullyAddressed
   finishFullAddressing (constructorIdentities decls)
     ((lowerAllIndexedAction decls main mainWorld fuel).run {})
 
+/-- Proof-facing execution record for the production lowering boundary.
+`lowerAllIndexedFullyAddressed` deliberately returns only the emitted graph;
+this companion retains the exact raw declarations, main code, and final
+compiler state consumed by the semantic theorems without running the lowerer
+twice.  Proof fields are erased by code generation. -/
+structure FullyAddressedTrace
+    (decls : List (Address × IxIR0.Decl)) (main : IxIR0.Expr)
+    (mainWorld : Owned) (fuel : Nat) where
+  raw : List (Address × Decl)
+  mainCode : Code
+  finalState : LowSt
+  result : ReaddressAll.Result
+  lowerRun :
+    (lowerAllIndexedAction decls main mainWorld fuel).run {} =
+      .ok (raw, mainCode) finalState
+  addressedRun :
+    lowerAllIndexedFullyAddressed decls main mainWorld fuel = .ok result
+
+/-- Execute indexed lowering and full SCC addressing once while preserving
+the stateful run equation needed by whole-pass proofs. -/
+def lowerAllIndexedFullyAddressedWithTrace
+    (decls : List (Address × IxIR0.Decl))
+    (main : IxIR0.Expr) (mainWorld : Owned := .shared)
+    (fuel : Nat := 10000) :
+    Except String (FullyAddressedTrace decls main mainWorld fuel) :=
+  match hlower : (lowerAllIndexedAction decls main mainWorld fuel).run {} with
+  | .error message _ => .error message
+  | .ok (raw, mainCode) finalState =>
+    match haddressed : ReaddressAll.run (constructorIdentities decls)
+        raw mainCode with
+    | .error message => .error message
+    | .ok result =>
+      .ok
+        { raw, mainCode, finalState, result
+          lowerRun := hlower
+          addressedRun := by
+            simp only [lowerAllIndexedFullyAddressed,
+              finishFullAddressing, hlower, haddressed] }
+
 theorem lowerAllIndexedFullyAddressed_eq_lowerAllFullyAddressed
     (decls : List (Address × IxIR0.Decl)) (main : IxIR0.Expr)
     (mainWorld : Owned) (fuel : Nat) :

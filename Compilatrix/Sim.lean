@@ -5299,7 +5299,8 @@ simulation theorem applies unchanged. -/
 /-- A source value relates to an IxIR₀ value after every captured sharing
 table and expression root in the source value has been fully inlined. -/
 abbrev InlinedValRel (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
-    (value : Ixon.Eval.Value) (target : IxIR0.Value) : Prop :=
+    (value : Ixon.Eval.Value) (target : IxIR0.Value)
+    [scope : MemberScope] : Prop :=
   ValRel ectx.inlineSharing ictx value.inlineSharing target
 
 /-- General sharing composition.  Successful evaluation under a well-formed

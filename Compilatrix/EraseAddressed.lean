@@ -105,6 +105,24 @@ def run (ctx : Erase.EraseCtx)
     (fuel : Nat := Erase.defaultFuel) : Except Error Result := do
   return (← runCertified ctx consts main fuel).1
 
+/-- Proof-facing execution record for addressed erasure.  The ordinary API
+returns the same `Result`; this companion retains the exact successful run
+equation needed to compose the validator and lowering simulations. -/
+structure RunTrace (ctx : Erase.EraseCtx)
+    (consts : List (Address × Constant)) (main : IxIR0.Expr)
+    (fuel : Nat) where
+  result : Result
+  runEq : run ctx consts main fuel = .ok result
+
+/-- Execute addressed erasure once and retain its successful equation. -/
+def runWithTrace (ctx : Erase.EraseCtx)
+    (consts : List (Address × Constant)) (main : IxIR0.Expr)
+    (fuel : Nat := Erase.defaultFuel) :
+    Except Error (RunTrace ctx consts main fuel) :=
+  match hrun : run ctx consts main fuel with
+  | .error error => .error error
+  | .ok result => .ok { result, runEq := hrun }
+
 /-- Successful addressed erasure retains the exact-output/address-image
 audit. -/
 theorem semanticAudit_of_run_eq_ok

@@ -53,7 +53,9 @@ status ledger here:
   projections, quotients, configured opaque definitions, and externs.
 - Mode-directed lowering to the explicit-store IxIR₁, with executable
   ownership checks, leak-freedom fixtures, cost counters, mutual-block
-  addressing, and the current formal simulation spine.
+  addressing, and a proof-facing validated compilation record that retains
+  the scoped erasure and both address-pass witnesses used by the current
+  formal simulation spine.
 - A bounded HPT post-fixpoint checker, durable content-addressed summaries,
   recursive constructor-field facts, and the first semantics-preserving
   whole-program fact consumer: owner-sensitive propagation through stored
@@ -140,9 +142,17 @@ This is the current milestone.
 | Address reproducibility | next | Two independent full compilations of the same validated root produce the same addressed IxIR₀/IxIR₁ graph and certificate identities. |
 | HPT/cache scaling | deferred | Wake when bounded Std/corpus work demonstrates that directory enumeration, sharding, garbage collection, or cross-store scheduling is the bottleneck. |
 
-M2b exits when the current validated fragment has one concise whole-pass
-semantic theorem and the first useful certified whole-program optimization
-bundle. The detailed optimizer design is in
+`ValidatedCompilation.semanticForwardSimulation` is now the concise semantic
+spine: validator-derived member scope and coverage plus both address-pass
+equations are carried by the compilation result. The first row remains active
+because `CompilerContracts` is not yet derived for mixed-mode validated
+programs. Closing it requires a PAP-safe, owner-sensitive reachable-store
+invariant; a global all-shared assumption would reject accepted affine and
+unique declarations.
+
+M2b exits when that ownership premise is discharged for every accepted main
+and the first useful certified whole-program optimization bundle is attached
+to the same interface. The detailed optimizer design is in
 `plans/whole-program-optimization.md`.
 
 ## M2c — optimized native wedge
@@ -256,9 +266,10 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Close the M2b semantic spine.** Finish the shared LowerSim/LowerProgress
-   traversal consolidation and expose one whole-pass theorem for the current
-   validated fragment.
+1. **Discharge the M2b mixed-mode ownership boundary.** Prove the PAP-safe,
+   owner-sensitive reachable-store/compiler contracts for validated affine
+   and unique declarations, then attach the memory-safety and existing
+   reclamation/cost corollaries to the pipeline semantic endpoint.
 2. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement. Include the fuel-neutral

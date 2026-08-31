@@ -1387,7 +1387,7 @@ proof for the fully inlined expression, both tied to the exact same target. -/
 structure CertifiedSharedExpr (ectx : Ixon.Eval.EvalCtx)
     (ictx : IxIR0.Ctx) (sc : Option (Address × Nat))
     (T : Erase.ETables) (sa : Option Address) (mask : List Bool)
-    (eraseFuel : Nat) (source : Ixon.Expr) where
+    (eraseFuel : Nat) (source : Ixon.Expr) [scope : MemberScope] where
   target : IxIR0.Expr
   erased : Erase.eraseExpr (eraseCtxOf ectx) eraseFuel T mask source =
     .ok target
@@ -1399,7 +1399,8 @@ structure CertifiedSharedExpr (ectx : Ixon.Eval.EvalCtx)
 the fully inlined expression and resolver.  This is the executable bridge to
 `Sim.erasure_sim_inlineSharing`; malformed sharing still fails either erasure
 or relation validation. -/
-def certifySharedExpr (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
+def certifySharedExpr [scope : MemberScope]
+    (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
     (cover : CoverOracle ectx.inlineSharing ictx)
     (sc : Option (Address × Nat)) (T : Erase.ETables)
     (sa : Option Address) (mask : List Bool) (source : Ixon.Expr)
@@ -1419,7 +1420,8 @@ def certifySharedExpr (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
 /-- Closed-frame specialization of `certifySharedExpr`.  Its result indexes
 the relation by exactly the normalized frame consumed by the semantic
 composition theorem. -/
-def certifySharedClosedExpr (ectx : Ixon.Eval.EvalCtx)
+def certifySharedClosedExpr [scope : MemberScope]
+    (ectx : Ixon.Eval.EvalCtx)
     (ictx : IxIR0.Ctx) (cover : CoverOracle ectx.inlineSharing ictx)
     (F : Ixon.Eval.Frame) (source : Ixon.Expr)
     (eraseFuel : Nat := Erase.defaultFuel)

@@ -24,7 +24,8 @@ open Compilatrix.IxIR1.Lower
 while exposing the structurally renamed IxIR₀ value used by production. -/
 def MutualAddressedInlinedValRel (ectx : Ixon.Eval.EvalCtx)
     (rawCtx : IxIR0.Ctx) (rename : Address → Address)
-    (sourceValue : Ixon.Eval.Value) (addressedValue : IxIR0.Value) : Prop :=
+    (sourceValue : Ixon.Eval.Value) (addressedValue : IxIR0.Value)
+    [scope : Compilatrix.Sim.MemberScope] : Prop :=
   ∃ rawValue,
     Compilatrix.Sim.InlinedValRel ectx rawCtx sourceValue rawValue ∧
       addressedValue = IxIR0.Readdress.Value.mapAddresses rename rawValue
@@ -74,6 +75,56 @@ theorem of_certifiedSharedClosed_addressed
   obtain ⟨targetFuel, rawValue, htrace, hrel⟩ :=
     CallAwareProjectionSafe.of_certifiedSharedClosed cert hstrict horacles hctx
       hframe hbelow hsource
+  let rename := IxIR0.MutualBlock.Renaming.apply erased.addressMap
+  refine ⟨targetFuel, IxIR0.Readdress.Value.mapAddresses rename rawValue,
+    ?_, rawValue, hrel, rfl⟩
+  exact EraseAddressed.run_projectionSafeMain_of_run_eq_ok herase
+    beforeOracle afterOracle hrenameOracle htrace
+
+/-- Member-scoped certificate transport through production IxIR₀
+readdressing.  This is the cyclic/indexed counterpart of the empty-scope
+compatibility theorem above. -/
+theorem of_certifiedSharedClosed_addressed_with_members
+    [scope : Compilatrix.Sim.MemberScope]
+    {ectx : Ixon.Eval.EvalCtx} {frame : Ixon.Eval.Frame}
+    {source : Ixon.Expr} {sourceFuel certFuel : Nat}
+    {sourceValue : Ixon.Eval.Value} {eraseCtx : Erase.EraseCtx}
+    {constants : List (Address × Constant)} {programEraseFuel : Nat}
+    {erased : EraseAddressed.Result}
+    (beforeOracle afterOracle : IxIR0.Oracle)
+    (hmembers : Compilatrix.Sim.MemberCoverage ectx.inlineSharing
+      (erased.rawCtx beforeOracle) scope.plan)
+    (cert : Compilatrix.EraseValidator.CertifiedSharedExpr ectx
+      (erased.rawCtx beforeOracle) none
+      (Compilatrix.EraseValidator.tablesOfFrame frame)
+      frame.selfAddr [] certFuel source)
+    (herase : EraseAddressed.run eraseCtx constants cert.target
+      programEraseFuel = .ok erased)
+    (hrenameOracle : ∀ address arguments,
+      afterOracle
+          (IxIR0.MutualBlock.Renaming.apply erased.addressMap address)
+          (IxIR0.Readdress.ValueList.mapAddresses
+            (IxIR0.MutualBlock.Renaming.apply erased.addressMap) arguments) =
+        (beforeOracle address arguments).map
+          (IxIR0.Readdress.Value.mapAddresses
+            (IxIR0.MutualBlock.Renaming.apply erased.addressMap)))
+    (horacles : Compilatrix.Sim.OracleRel ectx.inlineSharing
+      (erased.rawCtx beforeOracle))
+    (hctx : ectx.SharingWF) (hframe : frame.SharingWF)
+    (hbelow : Ixon.Sharing.sharesBelow frame.sharing.size source = true)
+    (hsource : Ixon.Eval.eval ectx sourceFuel frame [] source =
+      .ok sourceValue) :
+    ∃ targetFuel targetValue,
+      IxIR0.ProjectionSafe.Eval
+          (erased.addressed.addressedCtx afterOracle) targetFuel []
+          erased.main targetValue ∧
+        MutualAddressedInlinedValRel ectx
+          (erased.rawCtx beforeOracle)
+          (IxIR0.MutualBlock.Renaming.apply erased.addressMap)
+          sourceValue targetValue := by
+  obtain ⟨targetFuel, rawValue, htrace, hrel⟩ :=
+    CallAwareProjectionSafe.of_certifiedSharedClosed_with_members hmembers cert
+      horacles hctx hframe hbelow hsource
   let rename := IxIR0.MutualBlock.Renaming.apply erased.addressMap
   refine ⟨targetFuel, IxIR0.Readdress.Value.mapAddresses rename rawValue,
     ?_, rawValue, hrel, rfl⟩
@@ -143,6 +194,79 @@ theorem lowerAllIndexedAction_main_progress_of_addressed_certificate_sealed
   obtain ⟨traceFuel, _, htrace, _⟩ :=
     CallAwareProjectionSafe.of_certifiedSharedClosed_addressed
       beforeOracle afterOracle cert hstrict herase hrenameOracle horacles hctx
+      hframe hbelow hsource
+  have hlower' :
+      (lowerAllAction erased.declarations erased.main mainWorld
+        compilerFuel).run {} = .ok (raw, mainCode) finalState := by
+    simpa only [lowerAllIndexedAction_eq_lowerAllAction] using hlower
+  have henv : (erased.addressed.addressedCtx afterOracle).env =
+      IxIR0.Env.ofList erased.declarations := rfl
+  exact lowerAllAction_main_progress_of_trace_sealed henv hlower' htarget
+    hrepresented hcontracts hexternValue hexternProgress htrace
+
+/-- Member-scoped form of raw addressed target progress.  Simultaneous member
+coverage replaces the empty-scope strictness route while all lowering and
+extern contracts remain identical. -/
+theorem
+    lowerAllIndexedAction_main_progress_of_addressed_certificate_with_members_sealed
+    [scope : Compilatrix.Sim.MemberScope]
+    {ectx : Ixon.Eval.EvalCtx} {frame : Ixon.Eval.Frame}
+    {source : Ixon.Expr} {sourceFuel certFuel : Nat}
+    {sourceValue : Ixon.Eval.Value} {eraseCtx : Erase.EraseCtx}
+    {constants : List (Address × Constant)} {programEraseFuel : Nat}
+    {erased : EraseAddressed.Result}
+    (beforeOracle afterOracle : IxIR0.Oracle)
+    (hmembers : Compilatrix.Sim.MemberCoverage ectx.inlineSharing
+      (erased.rawCtx beforeOracle) scope.plan)
+    (cert : Compilatrix.EraseValidator.CertifiedSharedExpr ectx
+      (erased.rawCtx beforeOracle) none
+      (Compilatrix.EraseValidator.tablesOfFrame frame)
+      frame.selfAddr [] certFuel source)
+    (herase : EraseAddressed.run eraseCtx constants cert.target
+      programEraseFuel = .ok erased)
+    (hrenameOracle : ∀ address arguments,
+      afterOracle
+          (IxIR0.MutualBlock.Renaming.apply erased.addressMap address)
+          (IxIR0.Readdress.ValueList.mapAddresses
+            (IxIR0.MutualBlock.Renaming.apply erased.addressMap) arguments) =
+        (beforeOracle address arguments).map
+          (IxIR0.Readdress.Value.mapAddresses
+            (IxIR0.MutualBlock.Renaming.apply erased.addressMap)))
+    (horacles : Compilatrix.Sim.OracleRel ectx.inlineSharing
+      (erased.rawCtx beforeOracle))
+    (hctx : ectx.SharingWF) (hframe : frame.SharingWF)
+    (hbelow : Ixon.Sharing.sharesBelow frame.sharing.size source = true)
+    (hsource : Ixon.Eval.eval ectx sourceFuel frame [] source =
+      .ok sourceValue)
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {raw : List (Address × Decl)} {mainCode : Code}
+    {finalState : LowSt} {targetCtx : Ctx}
+    (hlower :
+      (lowerAllIndexedAction erased.declarations erased.main mainWorld
+        compilerFuel).run {} = .ok (raw, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ raw →
+      targetCtx.decls targetAddress = some targetDecl)
+    (hrepresented : ExtraRepresented targetCtx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList erased.declarations)
+      targetCtx)
+    (hexternValue : ExternValueContract
+      (CompilerFunctionRel
+        (erased.addressed.addressedCtx afterOracle)
+        (IxIR0.Env.ofList erased.declarations) finalState)
+      (erased.addressed.addressedCtx afterOracle)
+      targetCtx)
+    (hexternProgress : ExternTraceProgressContract
+      (CompilerFunctionRel
+        (erased.addressed.addressedCtx afterOracle)
+        (IxIR0.Env.ofList erased.declarations) finalState)
+      (erased.addressed.addressedCtx afterOracle)
+      targetCtx) :
+    ∃ targetFuel store value,
+      runMain targetCtx mainCode targetFuel = .ok (store, value) := by
+  obtain ⟨traceFuel, _, htrace, _⟩ :=
+    CallAwareProjectionSafe.of_certifiedSharedClosed_addressed_with_members
+      beforeOracle afterOracle hmembers cert herase hrenameOracle horacles hctx
       hframe hbelow hsource
   have hlower' :
       (lowerAllAction erased.declarations erased.main mainWorld
@@ -498,6 +622,113 @@ theorem
       beforeOracle
       (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle)
       cert hstrict herase
+      (IxIR0.Readdress.Oracle.readdress_compatible hreaddressable)
+      horacles hctx hframe hbelow hsource hlower htarget hrepresented
+      hcontracts hexternValue hexternProgress
+  have hrawSimulation : SemanticForwardSimulation
+      (erased.addressed.addressedCtx
+        (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle))
+      (lowered.preAddressCtx raw targetOracle) erased.main mainCode
+      (CompilerFunctionRel
+        (erased.addressed.addressedCtx
+          (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle))
+        (IxIR0.Env.ofList erased.declarations) finalState) := by
+    apply lowerAllAction_semanticForwardSimulation_of_targetProgress_sealed
+      henv hlower' htarget hrepresented hcontracts hexternValue
+    intro _ _ _
+    exact hfixedProgress
+  intro legacyFuel legacyValue hlegacy
+  exact lowerAllIndexedFullyAddressed_after_addressedErasure herase
+    beforeOracle
+    (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle)
+    (IxIR0.Readdress.Oracle.readdress_compatible hreaddressable)
+    hlower haddressed targetOracle hrawSimulation hlegacy
+
+/-- Member-scoped production simulation used by validator-gated compilation.
+The executable erasure certificate, simultaneous member coverage, and both
+address-pass traces are exact; the ordinary compiler/extern contracts remain
+the explicit semantic boundary. -/
+theorem
+    lowerAllIndexedFullyAddressed_semanticForwardSimulation_of_certificate_with_members_sealed
+    [scope : Compilatrix.Sim.MemberScope]
+    {ectx : Ixon.Eval.EvalCtx} {frame : Ixon.Eval.Frame}
+    {source : Ixon.Expr} {sourceFuel certFuel : Nat}
+    {sourceValue : Ixon.Eval.Value} {eraseCtx : Erase.EraseCtx}
+    {constants : List (Address × Constant)} {programEraseFuel : Nat}
+    {erased : EraseAddressed.Result}
+    (beforeOracle : IxIR0.Oracle)
+    (hmembers : Compilatrix.Sim.MemberCoverage ectx.inlineSharing
+      (erased.rawCtx beforeOracle) scope.plan)
+    (cert : Compilatrix.EraseValidator.CertifiedSharedExpr ectx
+      (erased.rawCtx beforeOracle) none
+      (Compilatrix.EraseValidator.tablesOfFrame frame)
+      frame.selfAddr [] certFuel source)
+    (herase : EraseAddressed.run eraseCtx constants cert.target
+      programEraseFuel = .ok erased)
+    (hreaddressable : IxIR0.Readdress.Oracle.Readdressable
+      erased.addressMap beforeOracle)
+    (horacles : Compilatrix.Sim.OracleRel ectx.inlineSharing
+      (erased.rawCtx beforeOracle))
+    (hctx : ectx.SharingWF) (hframe : frame.SharingWF)
+    (hbelow : Ixon.Sharing.sharesBelow frame.sharing.size source = true)
+    (hsource : Ixon.Eval.eval ectx sourceFuel frame [] source =
+      .ok sourceValue)
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {raw : List (Address × Decl)} {mainCode : Code}
+    {finalState : LowSt} {lowered : IxIR1.ReaddressAll.Result}
+    (hlower :
+      (lowerAllIndexedAction erased.declarations erased.main mainWorld
+        compilerFuel).run {} = .ok (raw, mainCode) finalState)
+    (haddressed :
+      lowerAllIndexedFullyAddressed erased.declarations erased.main mainWorld
+        compilerFuel = .ok lowered)
+    (targetOracle : Address → List RVal → Option RVal)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ raw →
+      (lowered.preAddressCtx raw targetOracle).decls targetAddress =
+        some targetDecl)
+    (hrepresented : ExtraRepresented
+      (lowered.preAddressCtx raw targetOracle) finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList erased.declarations)
+      (lowered.preAddressCtx raw targetOracle))
+    (hexternValue : ExternValueContract
+      (CompilerFunctionRel
+        (erased.addressed.addressedCtx
+          (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle))
+        (IxIR0.Env.ofList erased.declarations) finalState)
+      (erased.addressed.addressedCtx
+        (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle))
+      (lowered.preAddressCtx raw targetOracle))
+    (hexternProgress : ExternTraceProgressContract
+      (CompilerFunctionRel
+        (erased.addressed.addressedCtx
+          (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle))
+        (IxIR0.Env.ofList erased.declarations) finalState)
+      (erased.addressed.addressedCtx
+        (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle))
+      (lowered.preAddressCtx raw targetOracle)) :
+    MutualAddressedSemanticForwardSimulation
+      (erased.addressed.preAddressCtx erased.groups beforeOracle)
+      (lowered.addressedCtx targetOracle) cert.target lowered.main
+      (IxIR0.MutualBlock.Renaming.apply erased.addressMap)
+      (IxIR1.Readdress.Renaming.apply lowered.addressMap)
+      (CompilerFunctionRel
+        (erased.addressed.addressedCtx
+          (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle))
+        (IxIR0.Env.ofList erased.declarations) finalState) := by
+  have hlower' :
+      (lowerAllAction erased.declarations erased.main mainWorld
+        compilerFuel).run {} = .ok (raw, mainCode) finalState := by
+    simpa only [lowerAllIndexedAction_eq_lowerAllAction] using hlower
+  have henv : (erased.addressed.addressedCtx
+      (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle)).env =
+      IxIR0.Env.ofList erased.declarations := rfl
+  have hfixedProgress :=
+    lowerAllIndexedAction_main_progress_of_addressed_certificate_with_members_sealed
+      (targetCtx := lowered.preAddressCtx raw targetOracle)
+      beforeOracle
+      (IxIR0.Readdress.Oracle.readdress erased.addressMap beforeOracle)
+      hmembers cert herase
       (IxIR0.Readdress.Oracle.readdress_compatible hreaddressable)
       horacles hctx hframe hbelow hsource hlower htarget hrepresented
       hcontracts hexternValue hexternProgress

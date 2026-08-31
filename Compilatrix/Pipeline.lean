@@ -22,17 +22,15 @@ gatekeepers:
    ordinary declaration hashes or cycle-safe mutual-block identities.  Opaque
    extern keys and constructor identities remain stable.
 
-`compile` is that engineering gate, not yet the end-to-end theorem:
-UsageCheck's recorded higher-order limitations remain, erasure is
-unvalidated (it deliberately accepts out-of-fragment programs the
-proof-producing validator cannot yet certify), and IxIR₀ → IxIR₁ is
-differentially tested rather than proved. `compileValidated` closes
-the middle seam: it runs the same composition but certifies the exact
-erased output against the simulation relation
-(`EraseValidator.certifyProgram` / `certifySharedProgram`), failing
-closed on the first declaration the validator rejects. Keeping the
-composition in one API makes those obligations explicit and prevents
-callers from accidentally skipping the usage check.
+`compile` is the unvalidated engineering gate: it deliberately accepts
+out-of-fragment programs that the proof-producing validator cannot yet
+certify. `compileValidated` closes that seam with the sharing-aware validator,
+failing closed on the first rejected declaration. Its proof-facing sibling,
+`compileValidatedWithTrace`, retains the exact member scope, erasure
+certificate, simultaneous-member coverage, and lowering/addressing equations
+consumed by `PipelineSound`. The resulting semantic endpoint keeps the
+remaining source-oracle, mixed-mode ownership, target-layout, and extern ABI
+obligations explicit.
 -/
 
 namespace Compilatrix.Pipeline
@@ -821,9 +819,8 @@ def compile (constants : List (Address × Constant))
 `compileValidated` closes that seam: after the usage gate and the
 (strict) eraser it requires a `Covered` certificate for **every**
 non-block constant against the exact erased environment, obtained
-through the sanctioned program entry points
-(`EraseValidator.certifyProgram`, or `certifySharedProgram` when any
-constant carries a sharing table). Mutual blocks themselves have no
+uniformly through `EraseValidator.certifySharedProgram`. With empty sharing
+tables this route reduces to ordinary erasure. Mutual blocks themselves have no
 block-level judgment — their members are certified through the
 projection constants (`iPrj`/`cPrj`/`rPrj`/`dPrj`); an erased direct
 member reference without a certified projection fails closed at the
@@ -849,6 +846,66 @@ private def programMemberPlan
     match entry.2.info with
     | .muts members => memberPlanForBlock entry.1 0 members.toList
     | _ => []
+
+/-- The source evaluator context used by the validated pipeline.  Exposing
+this exact closure lets semantic clients state source evaluation and sharing
+well-formedness against the same resolver that validation used. -/
+def validatedEvalCtx (constants : List (Address × Constant))
+    (config : Config) : Ixon.Eval.EvalCtx :=
+  let resolverIndex := ResolverIndex.ofList constants
+  { resolve := resolverIndex.resolve
+    blobs := config.blobs
+    natBlock := config.natBlock }
+
+/-- Closed source frame whose sole reference is the selected program main. -/
+def validatedMainFrame (mainAddress : Address) : Ixon.Eval.Frame :=
+  { refs := #[mainAddress] }
+
+/-- Canonical closed Ixon entry expression for `compileValidated`. -/
+def validatedMainSource : Ixon.Expr := .ref 0 #[]
+
+/-- Proof-facing result of validator-gated compilation.  It retains the exact
+closed-expression erasure certificate and both successful execution traces
+consumed by the fully addressed semantic theorem.  The production artifact is
+the `artifact` projection below; proof fields erase at runtime. -/
+structure ValidatedCompilation
+    (constants : List (Address × Constant)) (mainAddress : Address)
+    (config : Config) (mainWorld : Owned)
+    (eraseFuel lowerFuel : Nat) where
+  memberScope : Sim.MemberScope
+  erasure : EraseAddressed.RunTrace
+    (EraseValidator.eraseCtxOf (validatedEvalCtx constants config))
+    constants (.ref mainAddress) eraseFuel
+  entry : @EraseValidator.CertifiedSharedExpr
+    (validatedEvalCtx constants config)
+    { env := IxIR0.Env.ofList erasure.result.raw }
+    none (EraseValidator.tablesOfFrame (validatedMainFrame mainAddress))
+    (validatedMainFrame mainAddress).selfAddr [] eraseFuel
+    validatedMainSource memberScope
+  entryTarget : entry.target = (.ref mainAddress : IxIR0.Expr)
+  members : Sim.MemberCoverage
+    (validatedEvalCtx constants config).inlineSharing
+    { env := IxIR0.Env.ofList erasure.result.raw } memberScope.plan
+  strict : (validatedEvalCtx constants config).Strict
+  lowering : IxIR1.Lower.FullyAddressedTrace
+    erasure.result.declarations erasure.result.main mainWorld lowerFuel
+
+namespace ValidatedCompilation
+
+/-- Ordinary production artifact projected from the proof-facing traces. -/
+def artifact {constants : List (Address × Constant)} {mainAddress : Address}
+    {config : Config} {mainWorld : Owned} {eraseFuel lowerFuel : Nat}
+    (compilation : ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel) : Artifact :=
+  { rawErasedDecls := compilation.erasure.result.raw
+    erasedDecls := compilation.erasure.result.declarations
+    erasedBlocks := compilation.erasure.result.addressed.blocks
+    erasedAddressMap := compilation.erasure.result.addressMap
+    targetArtifacts := compilation.lowering.result.artifacts
+    main := compilation.lowering.result.main
+    targetAddressMap := compilation.lowering.result.addressMap }
+
+end ValidatedCompilation
 
 /-- One fixpoint round of coverage validation: attempt every pending
 address against the current database, extending it in place. Returns
@@ -896,37 +953,36 @@ private def coveragePlan [Sim.MemberScope]
 
 /-- Check, erase, **validate the exact erased output**, and lower.
 
-The composition of `compile` with the proof-producing erasure
-validator: after `checkProgram` and the strict eraser, every non-block
-constant must earn a `Covered` certificate against the erased
-environment, the whole program is re-certified through
-`EraseValidator.certifyProgram`/`certifySharedProgram` (whose result
-records the erasure equation for exactly this constant list), and only
-then are the erased declarations lowered. The first declaration the
-validator rejects is reported as `Error.validate` with the validator's
-own diagnostic; `mainAddress` itself must be a certifiable declaration.
-Out-of-fragment programs belong to `compile`. -/
+The composition of `compile` with the proof-producing erasure validator:
+after `checkProgram` and the strict eraser, every non-block constant must earn
+a `Covered` certificate against the erased environment. The whole program is
+then re-certified through the sharing-aware entry point, whose result records
+the erasure equation and simultaneous-member coverage for this exact constant
+list. The closed main is certified in the same runtime-derived member scope,
+and both lowering address passes retain their successful equations. The first
+declaration the validator rejects is reported as `Error.validate` with the
+validator's own diagnostic; `mainAddress` itself must be a certifiable
+declaration. Out-of-fragment programs belong to `compile`. -/
 private def compileValidatedCore [Sim.MemberScope]
     (constants : List (Address × Constant))
     (mainAddress : Address) (config : Config)
     (mainWorld : Owned) (checkFuel eraseFuel validateFuel lowerFuel : Nat) :
-    Except Error Artifact := do
+    Except Error (ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel) := do
   let _ ← preflightValidated config.limits constants checkFuel eraseFuel
     validateFuel lowerFuel
   checkProgramCore constants checkFuel
-  let resolverIndex := ResolverIndex.ofList constants
-  let resolve := resolverIndex.resolve
-  let ectx : Ixon.Eval.EvalCtx :=
-    { resolve, blobs := config.blobs, natBlock := config.natBlock }
+  let ectx := validatedEvalCtx constants config
   -- the artifact of record: the strict pipeline eraser (split
   -- constructor spines already fail closed here)
-  let eraseCtx : Erase.EraseCtx :=
-    { resolve, blobs := config.blobs, natBlock := config.natBlock }
-  let erased ←
-    match EraseAddressed.run eraseCtx constants (.ref mainAddress) eraseFuel with
-    | .ok result => pure result
+  let eraseCtx := EraseValidator.eraseCtxOf ectx
+  let erasure ←
+    match EraseAddressed.runWithTrace eraseCtx constants (.ref mainAddress)
+        eraseFuel with
+    | .ok trace => pure trace
     | .error (.erase error) => throw (.erase error)
     | .error (.readdress message) => throw (.readdress message)
+  let erased := erasure.result
   let rawErasedDecls := erased.raw
   let erasedIndex := IxIR0.Env.Index.ofList rawErasedDecls
   let ictx : IxIR0.Ctx := { env := erasedIndex.toEnv }
@@ -938,59 +994,109 @@ private def compileValidatedCore [Sim.MemberScope]
   unless candidates.contains mainAddress do
     throw (.validate mainAddress "main address is not a certifiable declaration")
   let rounds := candidates.length + 1
-  let certifiedTarget ←
-    if constants.any (fun entry => entry.2.sharing.size > 0) then
-      -- sharing-aware: coverage facts live on the inlined resolver
-      match coveragePlan ectx.inlineSharing ictx validateFuel rounds [] []
-          candidates with
-      | .error (address, message) => throw (.validate address message)
-      | .ok order =>
-        match EraseValidator.certifySharedProgram ectx constants order
-            eraseFuel validateFuel with
-        | .error (.erase error) => throw (.erase error)
-        | .error (.relation message) => throw (.validate mainAddress message)
-        | .ok cert => pure cert.target
-    else
-      match coveragePlan ectx ictx validateFuel rounds [] [] candidates with
-      | .error (address, message) => throw (.validate address message)
-      | .ok order =>
-        match EraseValidator.certifyProgram ectx constants order
-            eraseFuel validateFuel with
-        | .error (.erase error) => throw (.erase error)
-        | .error (.relation message) => throw (.validate mainAddress message)
-        | .ok cert => pure cert.target
+  -- The sharing-aware validator is a strict generalization of the plain
+  -- route: with empty sharing tables its inliner is the identity, while one
+  -- uniform certificate type lets the closed main cross the semantic API.
+  let order ←
+    match coveragePlan ectx.inlineSharing ictx validateFuel rounds [] []
+        candidates with
+    | .error (address, message) => throw (.validate address message)
+    | .ok order => pure order
+  let program ←
+    match EraseValidator.certifySharedProgram ectx constants order
+        eraseFuel validateFuel with
+    | .error (.erase error) => throw (.erase error)
+    | .error (.relation message) => throw (.validate mainAddress message)
+    | .ok cert => pure cert
   -- the certificate re-runs the (validator-configured) eraser; its
   -- recorded target must be exactly what this pipeline lowers
-  unless certifiedTarget == rawErasedDecls do
+  if hprogramTarget : program.target == rawErasedDecls then
+    have hprogramTargetEq : program.target = rawErasedDecls :=
+      beq_iff_eq.mp hprogramTarget
+    let coverage : EraseValidator.CoverageDB ectx.inlineSharing ictx := by
+      simpa [ictx, erasedIndex] using hprogramTargetEq ▸ program.coverage
+    let entry ←
+      match EraseValidator.certifySharedClosedExpr ectx ictx coverage.oracle
+          (validatedMainFrame mainAddress) validatedMainSource eraseFuel
+          validateFuel with
+      | .error (.erase error) => throw (.erase error)
+      | .error (.relation message) => throw (.validate mainAddress message)
+      | .ok cert => pure cert
+    if hentryTarget : entry.target == (.ref mainAddress : IxIR0.Expr) then
+      have hentryTargetEq : entry.target =
+          (.ref mainAddress : IxIR0.Expr) := beq_iff_eq.mp hentryTarget
+      let lowering ←
+        match IxIR1.Lower.lowerAllIndexedFullyAddressedWithTrace
+            erased.declarations erased.main mainWorld lowerFuel with
+        | .ok trace => pure trace
+        | .error message => throw (.lower message)
+      let retainedEntry : @EraseValidator.CertifiedSharedExpr
+          (validatedEvalCtx constants config)
+          { env := IxIR0.Env.ofList erasure.result.raw }
+          none (EraseValidator.tablesOfFrame
+            (validatedMainFrame mainAddress))
+          (validatedMainFrame mainAddress).selfAddr [] eraseFuel
+          validatedMainSource (inferInstance : Sim.MemberScope) := by
+        simpa [ictx, erasedIndex] using entry
+      have retainedEntryTarget : retainedEntry.target =
+          (.ref mainAddress : IxIR0.Expr) := by
+        have hsame : retainedEntry.target = entry.target :=
+          Except.ok.inj (retainedEntry.erased.symm.trans entry.erased)
+        exact hsame.trans hentryTargetEq
+      have hstrictInline := program.members.strict
+      let retainedMembers : Sim.MemberCoverage
+          (validatedEvalCtx constants config).inlineSharing
+          { env := IxIR0.Env.ofList erasure.result.raw }
+          (inferInstance : Sim.MemberScope).plan := by
+        have hmembers := program.members
+        rw [hprogramTargetEq] at hmembers
+        simpa [rawErasedDecls] using hmembers
+      pure
+        { memberScope := inferInstance
+          erasure
+          entry := retainedEntry
+          entryTarget := retainedEntryTarget
+          members := retainedMembers
+          strict :=
+            { neutralElims := by simpa using hstrictInline.neutralElims
+              stringLiterals := by
+                simpa using hstrictInline.stringLiterals }
+          lowering }
+    else
+      throw (.validate mainAddress
+        "certified main differs from the compiled main reference")
+  else
     throw (.validate mainAddress
       "certified erasure differs from the compiled erasure")
-  match IxIR1.Lower.lowerAllIndexedFullyAddressed
-      erased.declarations erased.main
-      mainWorld lowerFuel with
-  | .ok addressed =>
-    pure
-      { rawErasedDecls
-        erasedDecls := erased.declarations
-        erasedBlocks := erased.addressed.blocks
-        erasedAddressMap := erased.addressMap
-        targetArtifacts := addressed.artifacts
-        main := addressed.main
-        targetAddressMap := addressed.addressMap }
-  | .error message => throw (.lower message)
 
 /-- Validator-gated production compiler with a simultaneous-member scope
-derived from the exact runtime program. -/
+derived from the exact runtime program and all proof-facing pass equations
+retained. -/
+def compileValidatedWithTrace (constants : List (Address × Constant))
+    (mainAddress : Address) (config : Config := {})
+    (mainWorld : Owned := .shared)
+    (checkFuel : Nat := Ixon.UsageCheck.defaultFuel)
+    (eraseFuel : Nat := Erase.defaultFuel)
+    (validateFuel : Nat := Erase.defaultFuel)
+    (lowerFuel : Nat := 10000) : Except Error
+      (ValidatedCompilation constants mainAddress config mainWorld eraseFuel
+        lowerFuel) :=
+  letI _memberScope : Sim.MemberScope :=
+    { plan := programMemberPlan constants }
+  compileValidatedCore constants mainAddress config mainWorld checkFuel
+    eraseFuel validateFuel lowerFuel
+
+/-- Validator-gated production compiler with its proof-facing execution
+record erased from the returned artifact API. -/
 def compileValidated (constants : List (Address × Constant))
     (mainAddress : Address) (config : Config := {})
     (mainWorld : Owned := .shared)
     (checkFuel : Nat := Ixon.UsageCheck.defaultFuel)
     (eraseFuel : Nat := Erase.defaultFuel)
     (validateFuel : Nat := Erase.defaultFuel)
-    (lowerFuel : Nat := 10000) : Except Error Artifact :=
-  letI _memberScope : Sim.MemberScope :=
-    { plan := programMemberPlan constants }
-  compileValidatedCore constants mainAddress config mainWorld checkFuel
-    eraseFuel validateFuel lowerFuel
+    (lowerFuel : Nat := 10000) : Except Error Artifact := do
+  return (← compileValidatedWithTrace constants mainAddress config mainWorld
+    checkFuel eraseFuel validateFuel lowerFuel).artifact
 
 /-! ## End-to-end integration fixture
 

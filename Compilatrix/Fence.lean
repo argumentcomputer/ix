@@ -39,6 +39,7 @@ import Compilatrix.UsageSound
 import Compilatrix.Ixon.Address
 import Compilatrix.Ixon.Const
 import Compilatrix.Pipeline
+import Compilatrix.PipelineSound
 
 /-!
 # Sorry/axiom fence (roadmap M0)
@@ -1051,6 +1052,16 @@ traces and whole-pass provenance, rather than from `CompilerProgressContracts`.
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_certifiedSharedClosed
 
+/-- info: 'Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_erasure_inlineSharing_with_members' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_erasure_inlineSharing_with_members
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_certifiedSharedClosed_with_members' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_certifiedSharedClosed_with_members
+
 /-- info: 'Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_erasure_with_members' depends on axioms: [propext,
  Classical.choice,
  Quot.sound] -/
@@ -1061,6 +1072,12 @@ traces and whole-pass provenance, rather than from `CompilerProgressContracts`.
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_certifiedSharedClosed_addressed
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_certifiedSharedClosed_addressed_with_members' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.CallAwareProjectionSafe.of_certifiedSharedClosed_addressed_with_members
 
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedAddressed_main_progress_of_certificate_sealed' depends on axioms: [propext,
  Classical.choice,
@@ -1085,6 +1102,28 @@ traces and whole-pass provenance, rather than from `CompilerProgressContracts`.
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_of_certificate_sealed
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedAction_main_progress_of_addressed_certificate_with_members_sealed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedAction_main_progress_of_addressed_certificate_with_members_sealed
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_of_certificate_with_members_sealed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_of_certificate_with_members_sealed
+
+/-! The validated pipeline retains the exact member scope, erasure certificate,
+member coverage, and both address-pass equations consumed by the production
+semantic endpoint. -/
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.semanticForwardSimulation
 
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerTraceProgressContracts' depends on axioms: [propext,
  Classical.choice,

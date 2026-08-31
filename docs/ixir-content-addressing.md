@@ -279,13 +279,23 @@ needing the IxIR₀ member-key adapter law.
 
 `LowerMutualAddressedSim.lean` keeps the IxIR₀ and IxIR₁ maps typed and
 separate and composes them. `LowerMutualAddressedProgress.lean` closes the
-validator path: an exact `CertifiedSharedExpr` supplies the addressed
-call-aware trace, sealed lowering contracts supply the raw target run, and the
-complete IxIR₁ map transports it to the final artifact. Its fully addressed
-endpoint packages exact target progress and semantic forward simulation. The
-only oracle hypotheses are the existing source/legacy correspondence and
-`Oracle.Readdressable` for the IxIR₀ adapter; the addressed oracle and its
-structural compatibility equation are constructed internally.
+validator path: an exact member-scoped `CertifiedSharedExpr` plus simultaneous
+member coverage supplies the addressed call-aware trace, sealed lowering
+contracts supply the raw target run, and the complete IxIR₁ map transports
+it to the final artifact. `Pipeline.compileValidatedWithTrace` retains that
+runtime-derived scope, the main certificate, member coverage, the exact
+erasure result, and both lowering/address-pass equations.
+`Pipeline.ValidatedCompilation.semanticForwardSimulation` projects those
+witnesses into one fully addressed semantic endpoint. The IxIR₀ adapter
+oracle is constructed internally from `Oracle.Readdressable`; source/legacy
+oracle correspondence, target layout, compiler ownership, and extern behavior
+remain explicit semantic or ABI premises.
+
+The member-aware route intentionally does not strengthen a validated program
+to globally all-shared. Accepted affine and unique declarations may be safe
+when reached only through saturated known calls, so discharging the remaining
+`CompilerContracts` premise requires a PAP-safe, owner-sensitive reachable-
+store argument rather than a blanket ownership assumption.
 
 The production semantic endpoint uses `AddressedValueGraph`: the final heap is
 the address image of a raw heap carrying the existing `ValueGraph`. This is

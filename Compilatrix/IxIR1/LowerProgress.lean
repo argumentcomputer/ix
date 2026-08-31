@@ -3938,6 +3938,43 @@ theorem of_erasure_inlineSharing
   Compilatrix.Sim.erasure_sim_projectionSafe_inlineSharing
     hstrict horacles hctx hframe henvWF hbelow hsource herases henv
 
+/-- Sharing-aware call-aware erasure under a simultaneous member certificate.
+Unlike the empty-scope compatibility theorem above, cyclic definition and
+recursor calls are discharged by `hmembers`. -/
+theorem of_erasure_inlineSharing_with_members
+    [scope : Compilatrix.Sim.MemberScope]
+    {sourceFuel : Nat} {ectx : Ixon.Eval.EvalCtx}
+    {frame : Ixon.Eval.Frame} {sourceEnv : List Ixon.Eval.Value}
+    {source : Ixon.Expr} {sourceValue : Ixon.Eval.Value}
+    {self : Option (Ixon.Address × Nat)} {mask : List Bool}
+    {targetEnv : List IxIR0.Value} {target : IxIR0.Expr}
+    {targetCtx : IxIR0.Ctx}
+    (hmembers : Compilatrix.Sim.MemberCoverage ectx.inlineSharing targetCtx
+      scope.plan)
+    (horacles : Compilatrix.Sim.OracleRel ectx.inlineSharing targetCtx)
+    (hctx : ectx.SharingWF) (hframe : frame.SharingWF)
+    (henvWF : Ixon.Eval.ValuesSharingWF sourceEnv)
+    (hbelow : Ixon.Sharing.sharesBelow frame.sharing.size source = true)
+    (hsource : Ixon.Eval.eval ectx sourceFuel frame sourceEnv source =
+      .ok sourceValue)
+    (herases : Compilatrix.Sim.PErase ectx.inlineSharing targetCtx self
+      frame.inlineSharing.refs frame.inlineSharing.selfMuts
+      frame.inlineSharing.selfAddr mask
+      (Ixon.Sharing.inlineExpr frame.sharing source) target)
+    (henv : Compilatrix.Sim.EnvRel ectx.inlineSharing targetCtx self
+      frame.inlineSharing.refs frame.inlineSharing.selfMuts
+      frame.inlineSharing.selfAddr mask
+      (Ixon.Eval.valuesInlineSharing sourceEnv) targetEnv) :
+    ∃ targetFuel targetValue,
+      IxIR0.ProjectionSafe.Eval targetCtx targetFuel targetEnv target
+        targetValue ∧
+      Compilatrix.Sim.InlinedValRel ectx targetCtx sourceValue targetValue := by
+  have hinlined := Ixon.Eval.eval_inlineSharing hctx hframe henvWF hbelow
+    hsource
+  simpa only [Compilatrix.Sim.InlinedValRel] using
+    (CallAwareProjectionSafe.of_erasure_with_members hmembers horacles
+      hinlined.1 herases henv)
+
 /-- The executable validator's exact erased target carries the full trace,
 including every dynamically entered closure and recursor-rule body. -/
 theorem of_certifiedSharedClosed
@@ -3962,6 +3999,39 @@ theorem of_certifiedSharedClosed
   have hrelated := cert.related
   rw [Compilatrix.EraseValidator.inlineTables_tablesOfFrame] at hrelated
   exact hrelated
+
+/-- Member-scoped analogue of `of_certifiedSharedClosed`.  The certificate
+and simultaneous member proof share the same scope, so recursive projection
+heads retain the full call-aware trace needed by lowering progress. -/
+theorem of_certifiedSharedClosed_with_members
+    [scope : Compilatrix.Sim.MemberScope]
+    {sourceFuel eraseFuel : Nat} {ectx : Ixon.Eval.EvalCtx}
+    {frame : Ixon.Eval.Frame} {source : Ixon.Expr}
+    {sourceValue : Ixon.Eval.Value} {targetCtx : IxIR0.Ctx}
+    (hmembers : Compilatrix.Sim.MemberCoverage ectx.inlineSharing targetCtx
+      scope.plan)
+    (cert : Compilatrix.EraseValidator.CertifiedSharedExpr ectx targetCtx
+      none (Compilatrix.EraseValidator.tablesOfFrame frame)
+      frame.selfAddr [] eraseFuel source)
+    (horacles : Compilatrix.Sim.OracleRel ectx.inlineSharing targetCtx)
+    (hctx : ectx.SharingWF) (hframe : frame.SharingWF)
+    (hbelow : Ixon.Sharing.sharesBelow frame.sharing.size source = true)
+    (hsource : Ixon.Eval.eval ectx sourceFuel frame [] source =
+      .ok sourceValue) :
+    ∃ targetFuel targetValue,
+      IxIR0.ProjectionSafe.Eval targetCtx targetFuel [] cert.target
+        targetValue ∧
+      Compilatrix.Sim.InlinedValRel ectx targetCtx sourceValue targetValue := by
+  apply CallAwareProjectionSafe.of_erasure_inlineSharing_with_members
+    hmembers horacles hctx hframe .nil hbelow hsource
+  · have hrelated := cert.related
+    rw [Compilatrix.EraseValidator.inlineTables_tablesOfFrame] at hrelated
+    exact hrelated
+  · simpa [Ixon.Eval.valuesInlineSharing] using
+      (Compilatrix.Sim.EnvRel.nil (ectx := ectx.inlineSharing)
+        (ictx := targetCtx) (refs := frame.inlineSharing.refs)
+        (muts := frame.inlineSharing.selfMuts)
+        (sa := frame.inlineSharing.selfAddr))
 
 end CallAwareProjectionSafe
 
