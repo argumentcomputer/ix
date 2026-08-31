@@ -7446,6 +7446,40 @@ theorem sourceEnv_ofList_lookup_mem
   subst itemSource
   exact List.mem_of_find?_eq_some hfind
 
+/-- The IxIR₁ list environment likewise returns an actual declaration
+occurrence.  This reverse lookup is the bridge from an exact raw target
+context to the whole-pass declaration list. -/
+theorem targetEnv_ofList_lookup_mem
+    {decls : List (Ixon.Address × Decl)}
+    {address : Ixon.Address} {declaration : Decl}
+    (hlookup : Env.ofList decls address = some declaration) :
+    (address, declaration) ∈ decls := by
+  unfold Env.ofList at hlookup
+  obtain ⟨item, hfind, hvalue⟩ :=
+    Option.map_eq_some_iff.mp hlookup
+  rcases item with ⟨itemAddress, itemDeclaration⟩
+  have hbeq : itemAddress == address :=
+    List.find?_some
+      (p := fun item : Ixon.Address × Decl =>
+        item.1 == address) hfind
+  have haddress : itemAddress = address :=
+    Ixon.Address.eq_of_beq hbeq
+  have hdeclaration : itemDeclaration = declaration := by
+    simpa using hvalue
+  subst itemAddress
+  subst itemDeclaration
+  exact List.mem_of_find?_eq_some hfind
+
+/-- Every callable source row traversed by the whole pass is the row selected
+by its list environment.  Validated addressed erasure supplies this premise
+from its collision-free producer namespace. -/
+def SourceCallableRowsSelected
+    (decls : List (Ixon.Address × IxIR0.Decl)) : Prop :=
+  ∀ {address source worlds result},
+    (address, source) ∈ decls →
+    sourceCallableSignature source = some (worlds, result) →
+    IxIR0.Env.ofList decls address = some source
+
 /-- Recover the exact same-address callable declaration run selected by the
 final target context.  This is the semantic counterpart of the concrete
 fixture's `addLowerDecl_run`, generalized to any successful whole pass. -/
@@ -7483,6 +7517,44 @@ theorem lowerAllAction_callable_decl_trace
   subst generated
   rw [hgenerated] at hrun
   exact ⟨itemInitial, itemFinal, hrun, hextends⟩
+
+/-- A successful whole pass determines the complete same-address layout of
+every callable source declaration represented by its returned raw target
+list. -/
+theorem lowerAllAction_sourceDeclLayout
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl) :
+    SourceDeclLayout (IxIR0.Env.ofList decls) ctx := by
+  constructor
+  · intro address source worlds result hsrc hsignature
+    obtain ⟨itemInitial, itemFinal, output, hrun, _, houtput⟩ :=
+      lowerAllAction_decl_trace hlower
+        (sourceEnv_ofList_lookup_mem hsrc)
+    obtain ⟨d, hemitted, harity, hresult⟩ :=
+      lowerDecl_output_fn_layout_of_callable hsignature hrun
+    exact ⟨d, htarget (houtput _ hemitted), harity, hresult⟩
+  · intro address arity hsrc
+    obtain ⟨itemInitial, itemFinal, output, hrun, _, houtput⟩ :=
+      lowerAllAction_decl_trace hlower
+        (sourceEnv_ofList_lookup_mem hsrc)
+    have hemitted : output = some (address, .extern arity) := by
+      symm
+      simpa [lowerDecl] using congrArg
+        (fun result : EStateM.Result String LowSt
+            (Option (Ixon.Address × Decl)) =>
+          match result with
+          | .ok value _ => value
+          | .error _ _ => none) hrun
+    exact htarget (houtput _ hemitted)
 
 /-- A successful ordinary-definition lowering run exposes the PAP-safety bit
 computed from the source result world and body. -/
@@ -7537,6 +7609,153 @@ theorem lowerDecl_recursor_papSafe_of_run
         rulesState = recursorState := by
     simpa using hafterRules
   rw [← hshape.1]
+
+/-- If the emitted function admits dynamic PAP entry, its source signature is
+homogeneously shared.  Definitions recover both facts from the committed
+`papSafe` bit; recursors have that signature by construction. -/
+theorem lowerDecl_callable_signature_of_papSafe_run
+    {src : IxIR0.Env} {fuel : Nat} {address : Ixon.Address}
+    {source : IxIR0.Decl} {worlds : List Owned} {result : Owned}
+    {initial final : LowSt} {d : FnDef}
+    (hsignature : sourceCallableSignature source = some (worlds, result))
+    (hrun : (lowerDecl src fuel (address, source)).run initial =
+      .ok (some (address, .fn d)) final)
+    (hsafe : d.papSafe = true) :
+    result = .shared ∧
+      worlds = List.replicate worlds.length .shared := by
+  cases source with
+  | defn sourceResult body =>
+      simp only [sourceCallableSignature, Option.some.injEq,
+        Prod.mk.injEq] at hsignature
+      obtain ⟨rfl, rfl⟩ := hsignature
+      simp only [lowerDecl] at hrun
+      obtain ⟨code, bodyState, _, hpureRun⟩ :=
+        trackedBindRun_ok_inv hrun
+      have hpure :
+          some (address, Decl.fn
+            ⟨lamArity body, sourceResult,
+              sourceResult == .shared && papSafe body, code⟩) =
+              some (address, .fn d) ∧ bodyState = final := by
+        simpa using hpureRun
+      have hd : d =
+          ⟨lamArity body, sourceResult,
+            sourceResult == .shared && papSafe body, code⟩ := by
+        have hp := Option.some.inj hpure.1
+        exact Decl.fn.inj (Prod.mk.inj hp).2.symm
+      subst d
+      change (sourceResult == .shared && papSafe body) = true at hsafe
+      simp only [Bool.and_eq_true] at hsafe
+      obtain ⟨hresultBeq, hbody⟩ := hsafe
+      have hresult : sourceResult = .shared := by
+        cases sourceResult <;> simp_all
+      have hmodes := papSafe_lamUses_eq_replicate hbody
+      refine ⟨hresult, ?_⟩
+      rw [hmodes]
+      simp [worldOfUses]
+  | ctor tag arity => simp [sourceCallableSignature] at hsignature
+  | recursor numArgs natLit rules =>
+      simp only [sourceCallableSignature, Option.some.injEq,
+        Prod.mk.injEq] at hsignature
+      obtain ⟨rfl, rfl⟩ := hsignature
+      refine ⟨rfl, ?_⟩
+      simp
+  | extern arity => simp [sourceCallableSignature] at hsignature
+
+/-- Owner-sensitive PAP safety is a theorem of the concrete whole-pass
+declaration trace, not an all-shared source-environment assumption. -/
+theorem lowerAllAction_sourcePapSafe
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl) :
+    SourcePapSafe (IxIR0.Env.ofList decls) ctx := by
+  intro address source worlds result d hsrc hsignature hdecl hsafe
+  obtain ⟨itemInitial, itemFinal, hrun, _⟩ :=
+    lowerAllAction_callable_decl_trace hlower htarget hsrc hsignature hdecl
+  exact lowerDecl_callable_signature_of_papSafe_run
+    hsignature hrun hsafe
+
+/-- Every raw function returned by the whole pass came either from a selected
+same-address callable source row or from the final generated-declaration
+accumulator.  This is the exact declaration partition consumed by
+`FnDeclCovered`. -/
+theorem lowerAllAction_fn_mem_source_or_extra
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (hselected : SourceCallableRowsSelected decls)
+    {address : Ixon.Address} {d : FnDef}
+    (hmember : (address, .fn d) ∈ targetDecls) :
+    (∃ source worlds result,
+      IxIR0.Env.ofList decls address = some source ∧
+      sourceCallableSignature source = some (worlds, result)) ∨
+    (address, .fn d) ∈ finalState.extra := by
+  let src := IxIR0.Env.ofList decls
+  simp only [lowerAllAction] at hlower
+  obtain ⟨base, baseState, hbase, hafterBase⟩ :=
+    trackedBindRun_ok_inv hlower
+  obtain ⟨compiledMain, mainState, hmain, hafterMain⟩ :=
+    trackedBindRun_ok_inv hafterBase
+  obtain ⟨observed, getState, hget, hpure⟩ :=
+    trackedBindRun_ok_inv hafterMain
+  have hget' : mainState = observed ∧ mainState = getState := by
+    simpa using hget
+  obtain ⟨hobserved, hgetState⟩ := hget'
+  subst observed
+  subst getState
+  have hpure' :
+      (base ++ mainState.extra, compiledMain) =
+          (targetDecls, mainCode) ∧ mainState = finalState := by
+    simpa using hpure
+  obtain ⟨hresult, hstate⟩ := hpure'
+  subst finalState
+  have hdecls : base ++ mainState.extra = targetDecls :=
+    congrArg Prod.fst hresult
+  rw [← hdecls, List.mem_append] at hmember
+  cases hmember with
+  | inl hbaseMember =>
+      obtain ⟨item, itemInitial, itemFinal, hitem, hitemRun⟩ :=
+        listFilterMapM_result_trace (lowerDecl src compilerFuel)
+          decls hbase hbaseMember
+      rcases item with ⟨sourceAddress, source⟩
+      obtain ⟨haddress, worlds, result, hsignature⟩ :=
+        lowerDecl_fn_output_input_callable hitemRun
+      subst sourceAddress
+      exact Or.inl ⟨source, worlds, result,
+        hselected hitem hsignature, hsignature⟩
+  | inr hextra => exact Or.inr hextra
+
+/-- With an exact raw target context, the whole-pass source/generated
+partition closes declaration coverage without admitting synthetic aliases. -/
+theorem lowerAllAction_fnDeclCovered
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (hselected : SourceCallableRowsSelected decls)
+    (hctx : ctx.decls = Env.ofList targetDecls) :
+    FnDeclCovered (IxIR0.Env.ofList decls) ctx finalState := by
+  intro address d hdecl
+  have hlookup : Env.ofList targetDecls address = some (.fn d) := by
+    rw [← hctx]
+    exact hdecl
+  exact lowerAllAction_fn_mem_source_or_extra hlower hselected
+    (targetEnv_ofList_lookup_mem hlookup)
 
 /-- Every PAP admitted by the whole-pass compiler relation resolves to a
 declaration whose content-addressed metadata permits dynamic PAP entry.  The

@@ -154,9 +154,13 @@ enterable declarations, and a mixed unique/direct-call model proves that this
 is strictly weaker than the former global premise. Initial SCC content
 addressing now also certifies exact-source transport from the literal raw
 declaration list, so this attachment need not admit synthetic final-key
-aliases merely to prove declaration coverage. The first row remains active
-until those contracts and coverage are derived from every validated
-compilation record and attached to its memory-safety, reclamation, and cost
+aliases merely to prove declaration coverage. The concrete whole-pass trace
+now derives source declaration layout and owner-sensitive PAP safety, and
+partitions every raw function as either a selected source callable or a final
+generated declaration. The remaining attachment work is to discharge row
+selection from the addressed-erasure certificate, prove semantic provenance
+for every generated function, and project the resulting contracts through
+each validated compilation record to its memory-safety, reclamation, and cost
 corollaries.
 
 M2b exits when that ownership premise is discharged for every accepted main

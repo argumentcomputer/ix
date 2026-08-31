@@ -1179,6 +1179,15 @@ calls retain heterogeneous ownership boundaries. These pins keep the computed
 metadata, whole-pass provenance, strictly-weaker mixed-mode premise, and joint
 contract seal inside the ordinary proof axiom envelope. -/
 
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_sourceDeclLayout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_sourceDeclLayout
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_sourcePapSafe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_sourcePapSafe
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_fnDeclCovered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_fnDeclCovered
+
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerDecl_defn_papSafe_of_run' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerDecl_defn_papSafe_of_run
 
