@@ -39,6 +39,10 @@ tracing-texray = { workspace = true }
 # stub; enabling this dependency builds the aggregate-verifier guest ELF.
 sp1-compress-host = { path = "../../sp1-compress/host", optional = true }
 
+# Optional no-RISC-V Flock Stage 3 connector. Like SP1, this stays out of the
+# normal host build because the pinned prover stack is intentionally isolated.
+flock-stage3-host = { path = "../../flock-stage3/host", optional = true }
+
 # Iroh dependencies
 bytes = { version = "1.10.1", optional = true }
 tokio = { version = "1.44.1", optional = true }
@@ -57,6 +61,7 @@ test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 sp1 = ["dep:sp1-compress-host"]
 sp1-cuda = ["sp1", "sp1-compress-host/cuda"]
+flock = ["dep:flock-stage3-host"]
 
 [lints]
 workspace = true

@@ -296,6 +296,15 @@ descriptive error while remaining linkable. -/
 opaque sp1CompressAggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
   @& FriParameters → @& String → @& String → @& String → Except String Unit
 
+/-- Compile/evaluate (`preflight`) or prove (`prove`) the complete no-RISC-V
+Flock Stage 3 relation for one Aiur aggregate root. `prove` requires an output
+path and atomically installs the verified `Stage3ArtifactV1`. Without the Cargo
+`flock` feature this binding returns a descriptive error while remaining
+linkable. -/
+@[extern "rs_flock_stage3_aggregate_root"]
+opaque flockStage3AggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
+  @& FriParameters → @& String → @& String → Except String Unit
+
 end Aiur
 
 end

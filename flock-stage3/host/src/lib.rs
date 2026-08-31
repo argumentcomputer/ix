@@ -21,8 +21,12 @@ mod window;
 
 use aiur::vk_codec::AiurVerifyingKey;
 use anyhow::{Result, bail};
-use ix_terminal::{ValidatedStage2RootV1, validate_and_expand_root_inputs};
+use ix_terminal::{
+  Stage2AdviceProfileV1, ValidatedStage2RootV1,
+  validate_and_expand_root_inputs, validate_root_inputs,
+};
 use multi_stark::types::FriParameters;
+use std::fmt;
 
 pub use air::{Stage2ActiveAirCircuitV1, Stage2AirProgramV1};
 pub use arithmetic::{
@@ -68,11 +72,11 @@ pub use fri::{
   Stage2AirPcsFriArtifactV1, Stage2AirPcsFriWitnessV1, Stage2PcsBatchOpeningV1,
   Stage2PcsBatchV1, Stage2PcsFriWitnessV1, Stage2PcsInstanceV1,
   Stage2PcsMatrixV1, Stage2PcsOpeningPointV1, Stage2PcsQueryV1,
-  TranscriptBoundFriCommitPhaseArtifactV1, TranscriptBoundFriQueriesArtifactV1,
-  TranscriptBoundPcsFriQueriesArtifactV1, TranscriptBoundPcsFriQueryV1,
-  TranscriptBoundPcsReductionArtifactV1, prove_fri_commit_phase_conformance,
-  prove_fri_fold_conformance, prove_pcs_reduction_conformance,
-  prove_stage2_air_pcs_fri_conformance,
+  Stage3RelationCensusV1, TranscriptBoundFriCommitPhaseArtifactV1,
+  TranscriptBoundFriQueriesArtifactV1, TranscriptBoundPcsFriQueriesArtifactV1,
+  TranscriptBoundPcsFriQueryV1, TranscriptBoundPcsReductionArtifactV1,
+  prove_fri_commit_phase_conformance, prove_fri_fold_conformance,
+  prove_pcs_reduction_conformance, prove_stage2_air_pcs_fri_conformance,
   prove_transcript_bound_fri_commit_phase_conformance,
   prove_transcript_bound_fri_queries_conformance,
   prove_transcript_bound_pcs_fri_queries_conformance,
@@ -86,7 +90,8 @@ pub use fri::{
   verify_transcript_bound_pcs_reduction_conformance,
 };
 use fri::{
-  prove_stage2_air_pcs_fri_production, verify_stage2_air_pcs_fri_production,
+  preflight_stage2_air_pcs_fri, prove_stage2_air_pcs_fri_production,
+  verify_stage2_air_pcs_fri_production,
 };
 pub use merkle::{
   MERKLE_CONFORMANCE_ARTIFACT_MAGIC, MerkleConformanceArtifactV1, MerklePathV1,
@@ -112,6 +117,85 @@ pub use typed_witness::{
   Stage3TypedProofWitnessV1, Stage3TypedQueryProofV1,
 };
 
+/// Result of compiling and evaluating the complete Stage 3 relation without
+/// invoking the Flock prover. This is the mandatory cost/compatibility gate
+/// before attempting a production-sized aggregate root.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stage3PreflightReportV1 {
+  pub stage2_root_digest: [u8; 32],
+  pub relation_digest: [u8; 32],
+  pub stage3_statement_digest: [u8; 32],
+  pub verifying_key_bytes: u64,
+  pub claim_bytes: u64,
+  pub compact_proof_bytes: u64,
+  pub advice: Stage2AdviceProfileV1,
+  pub relation: Stage3RelationCensusV1,
+}
+
+impl fmt::Display for Stage3PreflightReportV1 {
+  fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let hex = |digest| blake3::Hash::from_bytes(digest).to_hex();
+    writeln!(formatter, "Flock Stage 3 preflight accepted the aggregate root")?;
+    writeln!(formatter, "  Stage 2 root: {}", hex(self.stage2_root_digest))?;
+    writeln!(formatter, "  relation:     {}", hex(self.relation_digest))?;
+    writeln!(
+      formatter,
+      "  Stage 3 stmt: {}",
+      hex(self.stage3_statement_digest)
+    )?;
+    writeln!(
+      formatter,
+      "  transport: vk={} B, claim={} B, compact proof={} B, advice={} B",
+      self.verifying_key_bytes,
+      self.claim_bytes,
+      self.compact_proof_bytes,
+      self.advice.advice_bytes,
+    )?;
+    writeln!(
+      formatter,
+      "  Stage 2 shape: circuits={}/{} active, queries={}, FRI rounds={}, input rounds/query={}",
+      self.advice.active_circuits,
+      self.advice.total_circuits,
+      self.advice.queries,
+      self.advice.fri_rounds,
+      self.advice.input_rounds_per_query,
+    )?;
+    writeln!(
+      formatter,
+      "  openings: input siblings={}, FRI siblings={}, base values={}, FRI extension siblings={}, other extensions={}",
+      self.advice.input_merkle_siblings,
+      self.advice.fri_merkle_siblings,
+      self.advice.opened_base_values,
+      self.advice.fri_sibling_extension_values,
+      self.advice.other_extension_values,
+    )?;
+    writeln!(
+      formatter,
+      "  Flock relation: nu={}, capacity/table={}, inputs={}, public={}, rows={}",
+      self.relation.nu,
+      self.relation.table_capacity,
+      self.relation.relation_inputs,
+      self.relation.public_values,
+      self.relation.total_rows(),
+    )?;
+    write!(
+      formatter,
+      "  gate rows: blake3={}, order={}, add={}, mul={}, repack={}, canonical={}, equality={}, hash-sample={}, field-sample={}, split={}, window={}",
+      self.relation.blake3_rows,
+      self.relation.digest_order_rows,
+      self.relation.goldilocks_add_rows,
+      self.relation.goldilocks_mul_rows,
+      self.relation.lane_repack_rows,
+      self.relation.canonical_goldilocks_rows,
+      self.relation.equality_rows,
+      self.relation.hash_sample_rows,
+      self.relation.field_sample_rows,
+      self.relation.u64_split_rows,
+      self.relation.byte_window_rows,
+    )
+  }
+}
+
 /// Host facade for the production Stage 3 relation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FlockStage3Backend;
@@ -127,7 +211,48 @@ impl FlockStage3Backend {
     proof_bytes: &[u8],
     fri: &FriParameters,
   ) -> Result<ValidatedStage2RootV1> {
+    // Fail before relation construction on an invalid compact root. The
+    // Flock relation repeats verification; this native pass is only the
+    // inexpensive guard needed before allocating a production-scale circuit.
+    validate_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
     validate_and_expand_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)
+  }
+
+  /// Validate a compact aggregate root, compile the complete specialised
+  /// relation, and evaluate every gate without running the Flock prover.
+  pub fn preflight_stage2(
+    self,
+    vk_bytes: &[u8],
+    claim_bytes: &[u8],
+    proof_bytes: &[u8],
+    fri: &FriParameters,
+  ) -> Result<Stage3PreflightReportV1> {
+    Stage3LoweringStatusV1::current().ensure_complete()?;
+    let prepared =
+      self.prepare_witness(vk_bytes, claim_bytes, proof_bytes, fri)?;
+    let witness = Stage2AirPcsFriWitnessV1::from_prepared(&prepared, fri)?;
+    let relation = preflight_stage2_air_pcs_fri(&witness)?;
+    let manifest = Stage3RelationManifestV1::for_prepared_and_program_digest(
+      &prepared,
+      relation.circuit_digest,
+    )?;
+    let statement = self.prepare_statement(&prepared, &manifest)?;
+    Ok(Stage3PreflightReportV1 {
+      stage2_root_digest: prepared.statement().digest(),
+      relation_digest: manifest.relation_digest()?,
+      stage3_statement_digest: statement.digest(),
+      verifying_key_bytes: u64::try_from(vk_bytes.len()).map_err(|error| {
+        anyhow::anyhow!("verifying-key length exceeds u64: {error}")
+      })?,
+      claim_bytes: u64::try_from(claim_bytes.len()).map_err(|error| {
+        anyhow::anyhow!("claim length exceeds u64: {error}")
+      })?,
+      compact_proof_bytes: u64::try_from(proof_bytes.len()).map_err(
+        |error| anyhow::anyhow!("compact-proof length exceeds u64: {error}"),
+      )?,
+      advice: prepared.advice_profile().clone(),
+      relation,
+    })
   }
 
   /// Compile and content-address the complete relation for a prepared root.

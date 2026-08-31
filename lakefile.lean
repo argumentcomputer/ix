@@ -62,6 +62,9 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   -- runtime-selectable CUDA prover. Both require the SP1/Succinct toolchain.
   let ixSp1 ← IO.getEnv "IX_SP1"
   let ixSp1Cuda ← IO.getEnv "IX_SP1_CUDA"
+  -- IX_FLOCK=1 builds `ix flock-root` against the isolated, pinned Flock
+  -- Stage 3 workspace. Default builds retain a descriptive FFI stub.
+  let ixFlock ← IO.getEnv "IX_FLOCK"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
@@ -71,6 +74,7 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   if ixSp1 == some "1" || ixSp1Cuda == some "1" then
     features := features.push "sp1"
   if ixSp1Cuda == some "1" then features := features.push "sp1-cuda"
+  if ixFlock == some "1" then features := features.push "flock"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
@@ -82,8 +86,15 @@ arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
 archive from a previous invocation. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
-  let sources ← inputDir (pkg.dir / "crates") true fun path =>
+  let coreSources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.fileName == "Cargo.toml"
+  -- `flock-stage3-host` is an optional path dependency outside `crates/`.
+  -- Trace it even in default builds so toggling IX_FLOCK or editing the
+  -- connector can never reuse a stale static archive.
+  let flockSources ← inputDir (pkg.dir / "flock-stage3") true fun path =>
+    path.extension == some "rs" || path.fileName == "Cargo.toml" ||
+      path.fileName == "Cargo.lock"
+  let sources := coreSources.zipWith (fun core flock => core ++ flock) flockSources
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")
