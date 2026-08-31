@@ -193,5 +193,8 @@ which IxIR₁ does not expose as code.
 Recursive unique destruction and the known-shape shared zero branch therefore
 resume with the fuel-neutral consuming-destructure/reset operation in the
 IxIR₂ final-RC path (or an equivalently primitive operation with the same
-semantic contract). Exact-case collapse beyond the checked unary form remains
-the next extension that fits the current IxIR₁ contract.
+semantic contract). That contract is now frozen in the
+[IxIR₂ v0 specification](ixir2-spec.md): consuming/reset is one CFG transition,
+credits are affine and exact-layout, and the shared decision is an explicit
+optional-credit branch. Exact-case collapse beyond the checked unary form
+remains the next extension that fits the current IxIR₁ contract.

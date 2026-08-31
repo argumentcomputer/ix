@@ -481,7 +481,10 @@ location, whereas the specification “free old node, allocate new node” may
 choose a different number. The proof updates the graph bijection while
 preserving exact ownership and rooted observations. The landed fixture forces
 the two result locations to be numerically different and separately records
-the intentionally excluded allocation/free/reuse counter differences.
+the intentionally excluded allocation/free/reuse counter differences. IxIR₂
+generalizes this exact split into logical free-plus-allocation and physical
+credit-reuse semantics with terminal counter equations; see the
+[IxIR₂ v0 specification](ixir2-spec.md).
 
 Correctness is split into independently checkable theorems:
 

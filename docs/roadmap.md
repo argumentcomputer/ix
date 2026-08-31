@@ -212,11 +212,13 @@ M2b is complete. The detailed optimizer design is in
 ## M2c — optimized native wedge
 
 This is the current milestone. Its semantic interface is the stable M2b
-boundary above.
+boundary above. The normative syntax, ownership-flow, credit semantics,
+validation obligations, and simulation interface are frozen in the
+[IxIR₂ v0 specification](ixir2-spec.md).
 
 | Deliverable | State | Exit condition |
 | --- | --- | --- |
-| IxIR₂ CFG and join points | next | Structured IxIR₁ lowers to validated blocks with explicit parameters, tail calls, and a compositional simulation theorem. |
+| IxIR₂ CFG and join points | next | Implement the frozen v0 syntax and validator; then lower structured IxIR₁ to validated blocks with explicit parameters, tail calls, and a compositional simulation theorem. |
 | Direct-recursion recovery | next | Recognized recursor images validate to direct loops; unrecognized terms retain the literal correct fallback. |
 | Static unique reuse | next | Fuel-neutral consuming unique destructure specializes recursive known shapes, produces affine reuse credits, and compiler-emitted list reversal reaches the FIP counter target. |
 | Dynamic shared reset/reuse | next | A checked RC-zero branch specializes known shared shapes; ordinary all-shared code reuses RC=1 nodes on the hot path and allocates correctly on the cold path. |
@@ -320,11 +322,10 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Specify IxIR₂ before implementing it.** Freeze block parameters,
-   terminators, ownership flow, consuming unique destructure, and affine reuse
-   credits together with the simulation statement. Include the fuel-neutral
-   recursive unique destructor and shared RC-zero branch required beyond the
-   delivered IxIR₁ leaf specialization.
+1. **Implement the IxIR₂ v0 syntax and validator.** Follow the frozen
+   [specification](ixir2-spec.md): block-local SSA, explicit block parameters,
+   path-sensitive ownership/borrows, exact-layout affine credits, bounded
+   checking, and positive/negative validator fixtures land together.
 2. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
    separate; prove fragment containment through the typed instruction AST.
 3. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is

@@ -48,5 +48,6 @@ columns therefore intentionally pin `reuses = 0`.
 
 The next computational-unique benchmark remains list reversal through a case.
 It activates with the unique-destructuring lift; reuse measurements activate
-with the IxIR₂ pairing pass. This document does not extrapolate the 83⅓% micro
-result to general programs or wall-clock speed.
+with the exact-layout credit path frozen in the
+[IxIR₂ v0 specification](ixir2-spec.md). This document does not extrapolate
+the 83⅓% micro result to general programs or wall-clock speed.
