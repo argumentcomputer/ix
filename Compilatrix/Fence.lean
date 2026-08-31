@@ -208,6 +208,12 @@ BLAKE3 audit axiom. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.NoReuse.lowerAllIndexedFullyAddressed_reclamation_of_raw
 
+/-- info: 'Compilatrix.IxIR1.NoReuse.lowerAllIndexedFullyAddressed_reclamation_of_exact_raw' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.NoReuse.lowerAllIndexedFullyAddressed_reclamation_of_exact_raw
+
 /-! ## IxIR₁ cost refinement (`Compilatrix/IxIR1/LowerSim.lean`,
 `Compilatrix/IxIR1/NoReuse.lean`, and
 `Compilatrix/IxIR1/NoReuseAddressed.lean`, and
@@ -266,6 +272,12 @@ public four-counter tariff. -/
 
 /-- info: 'Compilatrix.IxIR1.NoReuse.runCostInvariant_mapAddresses' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.NoReuse.runCostInvariant_mapAddresses
+
+/-- info: 'Compilatrix.IxIR1.NoReuse.lowerAllIndexedFullyAddressed_runCostInvariant_of_exact_raw' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.NoReuse.lowerAllIndexedFullyAddressed_runCostInvariant_of_exact_raw
 
 /-- info: 'Compilatrix.IxIR1.NoReuse.lowerAllIndexedFullyAddressed_reuseCostRefinement' depends on axioms: [propext,
  Classical.choice,
@@ -443,6 +455,12 @@ public four-counter tariff. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.CostTrace.lowerAllIndexedFullyAddressed_profileCostRefinement_sealed
+
+/-- info: 'Compilatrix.IxIR1.CostTrace.lowerAllIndexedFullyAddressed_profileCostRefinement_exact_sealed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.CostTrace.lowerAllIndexedFullyAddressed_profileCostRefinement_exact_sealed
 
 /-! ## Whole-pass lowering instance (`Compilatrix/SimInstance.lean`)
 
@@ -1001,6 +1019,18 @@ and now permits source-function rekeying while auditing constructor stability. -
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_runMain
 
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_runMain_exact' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_runMain_exact
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_runMain_exact_success' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_runMain_exact_success
+
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_apply_constructorIdentity' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
@@ -1012,6 +1042,12 @@ and now permits source-function rekeying while auditing constructor stability. -
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_exact' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_exact
 
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_memoryErrorUnreachable' depends on axioms: [propext,
  Classical.choice,
@@ -1042,6 +1078,12 @@ and now permits source-function rekeying while auditing constructor stability. -
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_after_addressedErasure
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_exact_after_addressedErasure' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_exact_after_addressedErasure
 
 /-! ## Erasure-safe whole-pass progress
 (`Compilatrix/IxIR1/LowerProgress.lean`)
@@ -1139,6 +1181,18 @@ traces and whole-pass provenance, rather than from `CompilerProgressContracts`.
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_of_certificate_with_members_sealed
 
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_main_progress_of_addressed_certificate_with_members_exact_sealed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_main_progress_of_addressed_certificate_with_members_exact_sealed
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_of_certificate_with_members_exact_sealed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllIndexedFullyAddressed_semanticForwardSimulation_of_certificate_with_members_exact_sealed
+
 /-! The validated pipeline retains the exact member scope, erasure certificate,
 member coverage, and both address-pass equations consumed by the production
 semantic endpoint. -/
@@ -1173,11 +1227,47 @@ semantic endpoint. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.fnDeclCovered
 
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.exactExtraRepresented' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.exactExtraRepresented
+
 /-- info: 'Compilatrix.Pipeline.ValidatedCompilation.exactCompilerContracts' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.exactCompilerContracts
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.targetProgress' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.targetProgress
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.memoryErrorUnreachable' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.memoryErrorUnreachable
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.reclamation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.reclamation
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.costRefinement' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.costRefinement
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.ownershipAmortizedCostRefinement' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.ownershipAmortizedCostRefinement
 
 /-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerTraceProgressContracts' depends on axioms: [propext,
  Classical.choice,

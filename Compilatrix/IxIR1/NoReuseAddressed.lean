@@ -162,6 +162,34 @@ theorem lowerAllIndexedFullyAddressed_reclamation_of_raw
     (result.renames_preAddressCtx haudit oracle)
   exact hraw
 
+/-- Alias-free indexed-production reclamation transport. The raw theorem is
+stated against the literal declaration-list context and crosses the final SCC
+pass through its certified rebuild renaming. -/
+theorem lowerAllIndexedFullyAddressed_reclamation_of_exact_raw
+    {declarations : List (Ixon.Address × IxIR0.Decl)}
+    {main : IxIR0.Expr} {mainWorld : Ixon.Owned} {compilerFuel : Nat}
+    {raw : List (Ixon.Address × Decl)} {mainCode : Code}
+    {finalState : Lower.LowSt} {result : ReaddressAll.Result}
+    (hlower :
+      (Lower.lowerAllIndexedAction declarations main mainWorld
+        compilerFuel).run {} = .ok (raw, mainCode) finalState)
+    (haddressed :
+      Lower.lowerAllIndexedFullyAddressed declarations main mainWorld
+        compilerFuel = .ok result)
+    (oracle : Ixon.Address → List RVal → Option RVal)
+    (hraw : LowerSim.Reclamation
+      (result.rebuildSourceCtx raw oracle) mainCode mainWorld) :
+    LowerSim.Reclamation (result.addressedCtx oracle) result.main
+      mainWorld := by
+  have hrun :=
+    Lower.readdressAll_run_of_lowerAllIndexedFullyAddressed_eq_ok
+      hlower haddressed
+  have haudit := ReaddressAll.rebuildSemanticAudit_of_run_eq_ok hrun
+  rw [result.main_eq_rebuildMapAddresses haudit]
+  apply reclamation_mapAddresses
+    (result.renames_rebuildSourceCtx haudit oracle)
+  exact hraw
+
 /-- The indexed SCC-aware production boundary preserves every target-only
 counter invariant already established for its certified raw execution
 context. -/
@@ -190,6 +218,35 @@ theorem lowerAllIndexedFullyAddressed_runCostInvariant_of_raw
   intro targetFuel targetStore targetValue htarget
   exact runCostInvariant_mapAddresses
     (spec := spec) (result.renames_preAddressCtx haudit oracle)
+    hraw htarget
+
+/-- Alias-free transport of target-only counter invariants through complete
+SCC addressing. -/
+theorem lowerAllIndexedFullyAddressed_runCostInvariant_of_exact_raw
+    {declarations : List (Ixon.Address × IxIR0.Decl)}
+    {main : IxIR0.Expr} {mainWorld : Ixon.Owned} {compilerFuel : Nat}
+    {raw : List (Ixon.Address × Decl)} {mainCode : Code}
+    {finalState : Lower.LowSt} {result : ReaddressAll.Result}
+    {spec : LowerSim.CostObservation → Prop}
+    (hlower :
+      (Lower.lowerAllIndexedAction declarations main mainWorld
+        compilerFuel).run {} = .ok (raw, mainCode) finalState)
+    (haddressed :
+      Lower.lowerAllIndexedFullyAddressed declarations main mainWorld
+        compilerFuel = .ok result)
+    (oracle : Ixon.Address → List RVal → Option RVal)
+    (hraw : LowerSim.RunCostInvariant
+      (result.rebuildSourceCtx raw oracle) mainCode spec) :
+    LowerSim.RunCostInvariant (result.addressedCtx oracle) result.main
+      spec := by
+  have hrun :=
+    Lower.readdressAll_run_of_lowerAllIndexedFullyAddressed_eq_ok
+      hlower haddressed
+  have haudit := ReaddressAll.rebuildSemanticAudit_of_run_eq_ok hrun
+  rw [result.main_eq_rebuildMapAddresses haudit]
+  intro targetFuel targetStore targetValue htarget
+  exact runCostInvariant_mapAddresses
+    (spec := spec) (result.renames_rebuildSourceCtx haudit oracle)
     hraw htarget
 
 /-- The actual indexed, fully-addressed compiler output satisfies the first

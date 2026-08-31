@@ -26175,6 +26175,78 @@ theorem lowerAllIndexedFullyAddressed_profileCostRefinement_sealed
     rw [costObservation_mapAddresses]
     exact hcertificate.withinBudget hraw
 
+/-- Alias-free production profile refinement. The lowering contracts and
+source profile are established in the literal raw declaration context, then
+the certified total rebuild renaming preserves the four target counters. -/
+theorem lowerAllIndexedFullyAddressed_profileCostRefinement_exact_sealed
+    {sourceCtx : IxIR0.Ctx} {funRel : Sim.FunctionRel}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Ixon.Owned} {compilerFuel : Nat}
+    {raw : List (Ixon.Address × Decl)} {mainCode : Code}
+    {finalState : LowSt} {result : ReaddressAll.Result}
+    (henv : sourceCtx.env = IxIR0.Env.ofList decls)
+    (hlower :
+      (lowerAllIndexedAction decls main mainWorld compilerFuel).run {} =
+        .ok (raw, mainCode) finalState)
+    (haddressed :
+      lowerAllIndexedFullyAddressed decls main mainWorld compilerFuel =
+        .ok result)
+    (oracle : Ixon.Address → List RVal → Option RVal)
+    (htargetDecls : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ raw →
+      (result.rebuildSourceCtx raw oracle).decls targetAddress =
+        some targetDecl)
+    (hrepresented : ExtraRepresented
+      (result.rebuildSourceCtx raw oracle) finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls)
+      (result.rebuildSourceCtx raw oracle))
+    (hextern : ExternValueContract
+      (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
+      sourceCtx (result.rebuildSourceCtx raw oracle))
+    (hprofile : ∀ {sourceFuel sourceValue},
+      IxIR0.eval sourceCtx sourceFuel [] main = .ok sourceValue →
+        ∃ profile, IxIR0.DynamicCost.Profiled sourceCtx main
+          sourceValue profile) :
+    ProfileCostRefinement sourceCtx (result.addressedCtx oracle) main
+      result.main funRel
+      (fun _ profile observation =>
+        WithinBudget ownershipAmortizedWeights profile observation) := by
+  have hlowerRaw :
+      (lowerAllAction decls main mainWorld compilerFuel).run {} =
+        .ok (raw, mainCode) finalState := by
+    simpa only [lowerAllIndexedAction_eq_lowerAllAction] using hlower
+  intro sourceFuel sourceValue targetFuel addressedStore targetValue
+    hsource htarget _hgraph
+  obtain ⟨profile, hprofiled⟩ := hprofile hsource
+  obtain ⟨profileFuel, hsourceProfile⟩ := hprofiled
+  have htransport := lowerAllIndexedFullyAddressed_runMain_exact
+    hlower haddressed oracle targetFuel
+  rw [htarget] at htransport
+  cases hraw : runMain (result.rebuildSourceCtx raw oracle) mainCode targetFuel
+      with
+  | error error =>
+    rw [hraw] at htransport
+    cases error <;> simp at htransport
+  | ok output =>
+    rcases output with ⟨rawStore, rawValue⟩
+    rw [hraw] at htransport
+    have hresult :
+        (addressedStore, targetValue) =
+          (Readdress.Store.mapAddresses (result.rebuildRename raw) rawStore,
+            rawValue) :=
+      Except.ok.inj htransport
+    have hstore := congrArg Prod.fst hresult
+    change addressedStore =
+      Readdress.Store.mapAddresses (result.rebuildRename raw) rawStore at hstore
+    have hcertificate :=
+      lowerAllAction_main_ownershipAmortizedCertificate_sealed
+        henv hlowerRaw htargetDecls hrepresented hcontracts hextern
+        hsourceProfile hraw
+    refine ⟨profile, ⟨profileFuel, hsourceProfile⟩, ?_⟩
+    rw [hstore]
+    rw [costObservation_mapAddresses]
+    exact hcertificate.withinBudget hraw
+
 /-- One exact profiled source trace and one exact target run establish a
 profile-sensitive refinement for every successful source and target fuel.
 Determinism transports both results; evaluator fuel never enters the budget.

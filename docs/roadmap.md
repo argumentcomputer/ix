@@ -138,7 +138,7 @@ This is the current milestone.
 
 | Deliverable | State | Exit condition |
 | --- | --- | --- |
-| Whole-pass value/ownership/progress simulation | active | Every validator-accepted current-fragment main has a composed IxIR₀→IxIR₁ forward simulation, no reachable memory error, and the existing reclamation/cost results without fixture-specific assumptions. |
+| Whole-pass value/ownership/progress simulation | delivered | Every validator-accepted current-fragment main has a composed IxIR₀→IxIR₁ forward simulation, no reachable memory error, and the existing reclamation/cost results without fixture-specific assumptions. |
 | Proof-structure consolidation | active | Shared recursive judgments have one foundational traversal each; public theorems depend on those cores without duplicating the induction. Stop recording individual consolidation cuts in this roadmap. |
 | HPT consumer tranche O1 | delivered | Checked case pruning/collapse, scalar fetch forwarding, scalar and exact-all-scalar unique-leaf destruction, PAP/application fusion, and rooted reachability compose through one owner-sensitive traversal and one rebuild, with arbitrary-fuel proofs, fail-soft policy/reporting, and fixed-point regressions. Recursive/shared destruction is assigned to the IxIR₂ consuming-destructure rows below because ordinary IxIR₁ expansion cannot preserve the same-fuel contract. |
 | IxIR₁ extern ownership ABI | next | Heap-valued extern arguments/results have explicit consume/borrow/retain contracts or remain rejected by the validated fragment. |
@@ -168,14 +168,18 @@ are recovered from their concrete `lowerDecl` traces. One evaluator-fuel
 induction therefore seals every source, generated, and dynamic-application
 ownership contract, and each validated record exposes the resulting
 `exactCompilerContracts` theorem for its literal raw target context. The
-remaining attachment work is to route the semantic endpoint through the
-certified exact-source target-address transport, eliminating its alias-context
-ownership premise, and then project the closed result to memory safety,
-reclamation, and cost.
+semantic endpoint now consumes that theorem through the certified exact-source
+target-address transport and records the rebuild renaming relating raw and
+emitted heaps; callers no longer supply target declaration, representation, or
+ownership premises. The same interface exposes certified target progress and
+all-fuel memory-error exclusion for each successful validated source main,
+unconditional full-result reclamation, the current no-reuse/allocation-free
+counter law, and the ownership-amortized four-counter budget whenever the
+ordinary source execution has a call-aware profile.
 
-M2b exits when that ownership premise is discharged for every accepted main
-and the first useful certified whole-program optimization bundle is attached
-to the same interface. The detailed optimizer design is in
+M2b exits when the active proof-structure consolidation completes and the
+delivered O1 whole-program optimization bundle is attached to this validated
+semantic interface. The detailed optimizer design is in
 `plans/whole-program-optimization.md`.
 
 ## M2c — optimized native wedge
@@ -289,18 +293,22 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Finish the M2b exact-source pipeline attachment.** Route the validated
-   semantic endpoint through the certified alias-free target-address
-   transport, consume its derived `exactCompilerContracts`, then attach the
-   memory-safety and existing reclamation/cost corollaries.
-2. **Specify IxIR₂ before implementing it.** Freeze block parameters,
+1. **Attach O1 to the validated semantic interface.** Compose the fail-soft
+   checked optimizer/rebuild history refinement with
+   `ValidatedCompilation.semanticForwardSimulation`, then lift target
+   progress, memory safety, reclamation, and the applicable cost contracts to
+   the selected optimized artifact.
+2. **Finish proof-structure consolidation.** Give each remaining shared
+   recursive judgment one foundational traversal and route its public theorem
+   family through that core without duplicating the induction.
+3. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
    credits together with the simulation statement. Include the fuel-neutral
    recursive unique destructor and shared RC-zero branch required beyond the
    delivered IxIR₁ leaf specialization.
-3. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
+4. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
    separate; prove fragment containment through the typed instruction AST.
-4. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
+5. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
    the gate from hand-written reuse semantics to an optimizing compiler.
 
 Do not retain completed items in this list. Move durable evidence to the

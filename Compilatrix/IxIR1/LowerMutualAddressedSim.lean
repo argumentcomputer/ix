@@ -216,4 +216,56 @@ theorem lowerAllIndexedFullyAddressed_after_addressedErasure
     (targetMain := lowered.main) (funRel := funRel)
     herase beforeOracle afterOracle horacle hsim hsource
 
+/-- Alias-free production composition. The raw IxIR₁ simulation runs in
+the literal lowering environment, and the final heap is related through the
+certified exact-source `rebuildRename` rather than an alias-bearing adapter. -/
+theorem lowerAllIndexedFullyAddressed_exact_after_addressedErasure
+    {eraseCtx : Erase.EraseCtx}
+    {constants : List (Address × Constant)} {legacyMain : IxIR0.Expr}
+    {eraseFuel : Nat} {erased : EraseAddressed.Result}
+    (herase : EraseAddressed.run eraseCtx constants legacyMain eraseFuel =
+      .ok erased)
+    (beforeOracle afterOracle : IxIR0.Oracle)
+    (horacle : ∀ address arguments,
+      afterOracle
+          (IxIR0.MutualBlock.Renaming.apply erased.addressMap address)
+          (IxIR0.Readdress.ValueList.mapAddresses
+            (IxIR0.MutualBlock.Renaming.apply erased.addressMap) arguments) =
+        (beforeOracle address arguments).map
+          (IxIR0.Readdress.Value.mapAddresses
+            (IxIR0.MutualBlock.Renaming.apply erased.addressMap)))
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {raw : List (Address × Decl)} {mainCode : Code}
+    {finalState : LowSt} {lowered : ReaddressAll.Result}
+    (hlower :
+      (lowerAllIndexedAction erased.declarations erased.main mainWorld
+        compilerFuel).run {} = .ok (raw, mainCode) finalState)
+    (haddressed :
+      lowerAllIndexedFullyAddressed erased.declarations erased.main mainWorld
+        compilerFuel = .ok lowered)
+    (targetOracle : Address → List RVal → Option RVal)
+    {funRel : Sim.FunctionRel}
+    (hlowering : SemanticForwardSimulation
+      (erased.addressed.addressedCtx afterOracle)
+      (lowered.rebuildSourceCtx raw targetOracle)
+      erased.main mainCode funRel) :
+    MutualAddressedSemanticForwardSimulation
+      (erased.addressed.preAddressCtx erased.groups beforeOracle)
+      (lowered.addressedCtx targetOracle)
+      legacyMain lowered.main
+      (IxIR0.MutualBlock.Renaming.apply erased.addressMap)
+      (lowered.rebuildRename raw) funRel := by
+  have hsim : AddressedSemanticForwardSimulation
+      (erased.addressed.addressedCtx afterOracle)
+      (lowered.addressedCtx targetOracle) erased.main lowered.main
+      (lowered.rebuildRename raw) funRel :=
+    lowerAllIndexedFullyAddressed_semanticForwardSimulation_exact
+      hlower haddressed targetOracle hlowering
+  intro sourceFuel sourceValue hsource
+  exact AddressedSemanticForwardSimulation.precomposeAddressedErasure
+    (targetRename := lowered.rebuildRename raw)
+    (targetCtx := lowered.addressedCtx targetOracle)
+    (targetMain := lowered.main) (funRel := funRel)
+    herase beforeOracle afterOracle horacle hsim hsource
+
 end Compilatrix.IxIR1.LowerSim

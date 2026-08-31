@@ -61,6 +61,29 @@ theorem lowerAllIndexedFullyAddressed_runMain
     (readdressAll_run_of_lowerAllIndexedFullyAddressed_eq_ok
       hlower haddressed) oracle runFuel
 
+/-- Alias-free evaluator-result transport for the indexed production
+lowerer. The raw source context is literally `Env.ofList raw`; the certified
+rebuild renaming supplies the total address action needed by the final graph. -/
+theorem lowerAllIndexedFullyAddressed_runMain_exact
+    {decls : List (Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {raw : List (Address × Decl)} {mainCode : Code}
+    {finalState : LowSt} {result : ReaddressAll.Result}
+    (hlower :
+      (lowerAllIndexedAction decls main mainWorld compilerFuel).run {} =
+        .ok (raw, mainCode) finalState)
+    (haddressed :
+      lowerAllIndexedFullyAddressed decls main mainWorld compilerFuel =
+        .ok result)
+    (oracle : Address → List RVal → Option RVal)
+    (runFuel : Nat) :
+    runMain (result.addressedCtx oracle) result.main runFuel =
+      Readdress.mapRunResult (result.rebuildRename raw)
+        (runMain (result.rebuildSourceCtx raw oracle) mainCode runFuel) := by
+  exact ReaddressAll.runMain_exact_of_run_eq_ok
+    (readdressAll_run_of_lowerAllIndexedFullyAddressed_eq_ok
+      hlower haddressed) oracle runFuel
+
 /-- Successful raw execution gives the exact fully addressed heap image and
 the same scalar/location result. -/
 theorem lowerAllIndexedFullyAddressed_runMain_success
@@ -83,6 +106,31 @@ theorem lowerAllIndexedFullyAddressed_runMain_success
       .ok (Readdress.Store.mapAddresses
         (Readdress.Renaming.apply result.addressMap) store, value) := by
   rw [lowerAllIndexedFullyAddressed_runMain
+    hlower haddressed oracle runFuel, hsource]
+  rfl
+
+/-- Successful execution in the exact raw context gives the corresponding
+fully addressed heap under the certified rebuild renaming. -/
+theorem lowerAllIndexedFullyAddressed_runMain_exact_success
+    {decls : List (Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel runFuel : Nat}
+    {raw : List (Address × Decl)} {mainCode : Code}
+    {finalState : LowSt} {result : ReaddressAll.Result}
+    {store : Store} {value : RVal}
+    (hlower :
+      (lowerAllIndexedAction decls main mainWorld compilerFuel).run {} =
+        .ok (raw, mainCode) finalState)
+    (haddressed :
+      lowerAllIndexedFullyAddressed decls main mainWorld compilerFuel =
+        .ok result)
+    (oracle : Address → List RVal → Option RVal)
+    (hsource :
+      runMain (result.rebuildSourceCtx raw oracle) mainCode runFuel =
+        .ok (store, value)) :
+    runMain (result.addressedCtx oracle) result.main runFuel =
+      .ok (Readdress.Store.mapAddresses
+        (result.rebuildRename raw) store, value) := by
+  rw [lowerAllIndexedFullyAddressed_runMain_exact
     hlower haddressed oracle runFuel, hsource]
   rfl
 
@@ -139,6 +187,37 @@ theorem lowerAllIndexedFullyAddressed_semanticForwardSimulation
       (Readdress.Renaming.apply result.addressMap) rawStore,
     targetValue, ?_, rawStore, rfl, hgraph⟩
   exact lowerAllIndexedFullyAddressed_runMain_success
+    hlower haddressed oracle htarget
+
+/-- Exact-source form of complete readdressing. Unlike the generic transport,
+this theorem needs no alias-completed raw context and records the certified
+`rebuildRename` heap image in the addressed value graph. -/
+theorem lowerAllIndexedFullyAddressed_semanticForwardSimulation_exact
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {raw : List (Address × Decl)} {mainCode : Code}
+    {finalState : LowSt} {result : ReaddressAll.Result}
+    {funRel : Sim.FunctionRel}
+    (hlower :
+      (lowerAllIndexedAction decls main mainWorld compilerFuel).run {} =
+        .ok (raw, mainCode) finalState)
+    (haddressed :
+      lowerAllIndexedFullyAddressed decls main mainWorld compilerFuel =
+        .ok result)
+    (oracle : Address → List RVal → Option RVal)
+    (hraw : SemanticForwardSimulation sourceCtx
+      (result.rebuildSourceCtx raw oracle) main mainCode funRel) :
+    AddressedSemanticForwardSimulation sourceCtx
+      (result.addressedCtx oracle) main result.main
+      (result.rebuildRename raw) funRel := by
+  intro sourceFuel sourceValue hsource
+  obtain ⟨targetFuel, rawStore, targetValue, htarget, hgraph⟩ :=
+    hraw hsource
+  refine ⟨targetFuel,
+    Readdress.Store.mapAddresses (result.rebuildRename raw) rawStore,
+    targetValue, ?_, rawStore, rfl, hgraph⟩
+  exact lowerAllIndexedFullyAddressed_runMain_exact_success
     hlower haddressed oracle htarget
 
 /-- Complete readdressing cannot introduce a memory-discipline error. -/
