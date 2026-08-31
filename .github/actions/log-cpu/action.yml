@@ -30,6 +30,34 @@ inputs:
 runs:
   using: composite
   steps:
+    # A PR benchmark runs trusted workflow YAML from the default branch but
+    # loads this action from the PR checkout. Bridge that one-revision gap: the
+    # default-branch workflow invokes this label immediately before rebuilding
+    # a fresh base. Once bench-pr.yml's explicit setup step lands, the toolchain
+    # is already installed and this exits immediately.
+    - name: Bootstrap base Rust toolchain for trusted PR workflow
+      if: inputs.label == 'Base benchmark binary build CPU'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        toolchain_file=base/rust-toolchain.toml
+        [ -f "$toolchain_file" ] || { echo "::error::$toolchain_file is missing"; exit 1; }
+        channel=$(awk -F '"' '/^[[:space:]]*channel[[:space:]]*=/ { print $2; exit }' "$toolchain_file")
+        profile=$(awk -F '"' '/^[[:space:]]*profile[[:space:]]*=/ { print $2; exit }' "$toolchain_file")
+        if [[ ! "$channel" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+          echo "::error::$toolchain_file has an invalid Rust channel"
+          exit 1
+        fi
+        case "${profile:-default}" in
+          minimal|default|complete) ;;
+          *) echo "::error::$toolchain_file has an invalid Rust profile"; exit 1 ;;
+        esac
+
+        rustup run "$channel" rustc --version >/dev/null 2>&1 && exit 0
+        echo "Installing Rust $channel (${profile:-default} profile) for the fresh base build"
+        rustup toolchain install "$channel" --profile "${profile:-default}" --no-self-update
+
     - shell: bash
       env:
         CPU_LABEL: ${{ inputs.label }}

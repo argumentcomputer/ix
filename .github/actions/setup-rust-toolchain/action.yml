@@ -4,6 +4,9 @@ description: >-
   artifacts.
 
 inputs:
+  toolchain:
+    description: Rust toolchain to install; defaults to the repository toolchain file
+    required: false
   cache-workspaces:
     description: Cargo workspaces to cache
     required: false
@@ -29,6 +32,7 @@ runs:
 
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
+        toolchain: ${{ inputs.toolchain }}
         rustflags: ${{ inputs.native-codegen == 'true' && '-Ctarget-cpu=native -Dwarnings' || '-Dwarnings' }}
         # `target/` may contain host-executed native code. Every caller runs
         # within the Warp x64 compatibility domain.

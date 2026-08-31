@@ -733,6 +733,25 @@ jobs:
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
           echo "base .ixe: $([ "$ixe" = true ] && echo restored from cache || echo compiling in the base run)"
           echo "base binaries: $([ "$cached" = true ] && echo restored from cache || echo building from source)"
+      # A fresh comparison deliberately bypasses the base binary cache. Install
+      # the Rust version declared by that checkout before Lake invokes Cargo;
+      # provisioning the PR's Lean toolchain above does not install base Rust.
+      - name: Resolve base Rust toolchain
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        id: base-rust
+        run: |
+          channel="$(awk -F '"' '/^[[:space:]]*channel[[:space:]]*=/ { print $2; exit }' base/rust-toolchain.toml)"
+          if [ -z "$channel" ]; then
+            echo "::error::base/rust-toolchain.toml does not declare a channel"
+            exit 1
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - name: Set up base Rust toolchain
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        uses: ./.github/actions/setup-rust-toolchain
+        with:
+          toolchain: ${{ steps.base-rust.outputs.channel }}
+          cache-workspaces: base
       - name: Log cached base binary build CPU
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached == 'true'
         uses: ./.github/actions/log-cpu
