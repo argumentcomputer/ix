@@ -12,7 +12,8 @@ use flock_prover::{
   field::F128,
 };
 use ix_terminal::{
-  STAGE2_ROOT_STATEMENT_BYTES, ValidatedStage2RootV1, fri_parameter_words,
+  STAGE2_ROOT_STATEMENT_BYTES, ValidatedP3ProofV1, ValidatedStage2RootV1,
+  fri_parameter_words,
 };
 use multi_stark::{
   expr::{RowOffset, Source},
@@ -57,7 +58,8 @@ pub struct Stage2AirProgramV1 {
   pub active_circuits: Vec<Stage2ActiveAirCircuitV1>,
   pub claim_bindings: Vec<Stage2TranscriptByteBindingV1>,
   pub width_binding: WidthBinding,
-  pub statement_prefix: [u8; STAGE2_STATEMENT_PREFIX_BYTES],
+  pub statement_prefix: Vec<u8>,
+  pub statement_bytes: usize,
   pub statement_digest: [u8; 32],
 }
 
@@ -76,6 +78,72 @@ impl Stage2AirProgramV1 {
     fri: &FriParameters,
     pcs: &Stage2PcsInstanceV1,
     typed: &Stage3TypedProofWitnessV1,
+  ) -> Result<Self> {
+    let statement_bytes = prepared.statement().to_bytes();
+    if statement_bytes.len() != STAGE2_ROOT_STATEMENT_BYTES {
+      bail!("Stage 2 statement has the wrong length");
+    }
+    let statement_prefix =
+      statement_bytes[..STAGE2_STATEMENT_PREFIX_BYTES].to_vec();
+    Self::from_p3_and_typed_with_statement(
+      prepared.p3_proof(),
+      fri,
+      pcs,
+      typed,
+      statement_prefix,
+      statement_bytes.len(),
+      prepared.statement().digest(),
+    )
+  }
+
+  /// Compile the AIR program for any validated Aiur/P3 proof and bind its
+  /// stage-neutral statement digest as the relation public output.
+  pub fn from_p3(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+    pcs: &Stage2PcsInstanceV1,
+  ) -> Result<Self> {
+    let typed = Stage3TypedProofWitnessV1::from_p3(prepared, fri)?;
+    Self::from_p3_and_typed(prepared, fri, pcs, &typed)
+  }
+
+  pub fn from_p3_and_typed(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+    pcs: &Stage2PcsInstanceV1,
+    typed: &Stage3TypedProofWitnessV1,
+  ) -> Result<Self> {
+    let statement_bytes = prepared.statement().to_bytes();
+    let claim_bytes =
+      prepared
+        .statement()
+        .claim_words()
+        .len()
+        .checked_mul(8)
+        .ok_or_else(|| anyhow::anyhow!("P3 statement claim length overflow"))?;
+    let prefix_bytes = statement_bytes
+      .len()
+      .checked_sub(claim_bytes)
+      .ok_or_else(|| anyhow::anyhow!("P3 statement prefix underflow"))?;
+    Self::from_p3_and_typed_with_statement(
+      prepared,
+      fri,
+      pcs,
+      typed,
+      statement_bytes[..prefix_bytes].to_vec(),
+      statement_bytes.len(),
+      prepared.statement().digest(),
+    )
+  }
+
+  fn from_p3_and_typed_with_statement(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+    pcs: &Stage2PcsInstanceV1,
+    typed: &Stage3TypedProofWitnessV1,
+    statement_prefix: Vec<u8>,
+    statement_bytes: usize,
+    statement_digest: [u8; 32],
   ) -> Result<Self> {
     typed.ensure_profile(prepared.advice_profile())?;
     let key = AiurVerifyingKey::from_bytes(prepared.verifying_key_bytes())
@@ -127,9 +195,9 @@ impl Stage2AirProgramV1 {
       .checked_add(typed.log_degrees.len() * 8)
       .ok_or_else(|| anyhow::anyhow!("AIR claim offset overflow"))?;
 
-    let claim_words = prepared.statement().outer_claim_words().to_vec();
+    let claim_words = prepared.statement().claim_words().to_vec();
     if prepared.claims_bytes().len() != 16 + claim_words.len() * 8 {
-      bail!("Stage 2 recursive claim transport has the wrong length");
+      bail!("P3 claim transport has the wrong length");
     }
     let claim_bindings = (0..claim_words.len())
       .map(|word| {
@@ -184,13 +252,15 @@ impl Stage2AirProgramV1 {
       bail!("AIR multiplicity height bound exceeds Goldilocks");
     }
 
-    let statement_bytes = prepared.statement().to_bytes();
-    if statement_bytes.len() != STAGE2_ROOT_STATEMENT_BYTES {
-      bail!("Stage 2 statement has the wrong length");
+    if !statement_prefix.len().is_multiple_of(16) {
+      bail!("P3 statement prefix is not aligned to 16-byte F128 words");
     }
-    let mut statement_prefix = [0u8; STAGE2_STATEMENT_PREFIX_BYTES];
-    statement_prefix
-      .copy_from_slice(&statement_bytes[..STAGE2_STATEMENT_PREFIX_BYTES]);
+    if !claim_words.len().is_multiple_of(2) {
+      bail!("P3 statement claim count is not aligned to F128 words");
+    }
+    if statement_prefix.len() + claim_words.len() * 8 != statement_bytes {
+      bail!("P3 statement prefix and claim lengths are inconsistent");
+    }
 
     Ok(Self {
       active: typed.active.clone(),
@@ -199,7 +269,8 @@ impl Stage2AirProgramV1 {
       claim_bindings,
       width_binding: key.width_binding(),
       statement_prefix,
-      statement_digest: prepared.statement().digest(),
+      statement_bytes,
+      statement_digest,
     })
   }
 
@@ -577,8 +648,16 @@ fn constrain_stage2_statement(
   claims: &[Wire],
   program: &Stage2AirProgramV1,
 ) -> Result<()> {
-  if claims.len() != 18 {
-    bail!("Stage 2 statement binding requires 18 claim words");
+  if claims.len() != program.claim_bindings.len()
+    || !claims.len().is_multiple_of(2)
+  {
+    bail!("P3 statement binding has an invalid claim-word count");
+  }
+  if !program.statement_prefix.len().is_multiple_of(16)
+    || program.statement_prefix.len() + claims.len() * 8
+      != program.statement_bytes
+  {
+    bail!("P3 statement binding has inconsistent byte geometry");
   }
   let mut message = program
     .statement_prefix
@@ -592,7 +671,7 @@ fn constrain_stage2_statement(
     let packed = builder.gate(arithmetic.repack, &[pair[0], high_lanes[0]])[3];
     message.push(packed);
   }
-  let trace = hash_trace(STAGE2_ROOT_STATEMENT_BYTES);
+  let trace = hash_trace(program.statement_bytes);
   let parameters = trace
     .rows
     .iter()

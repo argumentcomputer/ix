@@ -181,12 +181,13 @@ pub(crate) struct GoldilocksAddPairRow {
 /// Two independent canonical Goldilocks additions, one per u64 lane.
 ///
 /// The gate exposes the result plus two zero-valued equation-residual words.
-/// Callers connect both residuals to a fixed zero wire and pass every input
-/// and result through [`CanonicalGoldilocksPairGate`]. Keeping canonicality a
-/// shared table avoids duplicating its constraints in every arithmetic table.
+/// Callers connect both residuals to zero. New relations may fold result
+/// canonicality into otherwise-unused bits of the second residual; legacy
+/// relations retain the historical separate canonicality table.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GoldilocksAddPairGate {
   pub(crate) nu: usize,
+  pub(crate) enforce_output_canonicality: bool,
 }
 
 impl GateType for GoldilocksAddPairGate {
@@ -194,14 +195,18 @@ impl GateType for GoldilocksAddPairGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    crate::boolean::table_from_block_r1cs(build_goldilocks_add_r1cs(self.nu))
-      .with_io_schema(vec![
-        IoWord::input(0),
-        IoWord::input(1),
-        IoWord::output(2),
-        IoWord::output(3),
-        IoWord::output(4),
-      ])
+    let r1cs = if self.enforce_output_canonicality {
+      build_goldilocks_add_canonical_r1cs(self.nu)
+    } else {
+      build_goldilocks_add_r1cs(self.nu)
+    };
+    crate::boolean::table_from_block_r1cs(r1cs).with_io_schema(vec![
+      IoWord::input(0),
+      IoWord::input(1),
+      IoWord::output(2),
+      IoWord::output(3),
+      IoWord::output(4),
+    ])
   }
 
   fn eval(
@@ -237,6 +242,10 @@ pub(crate) fn build_goldilocks_add_r1cs(nu: usize) -> BlockR1cs {
   goldilocks_add_plan().boolean.block_r1cs(nu)
 }
 
+pub(crate) fn build_goldilocks_add_canonical_r1cs(nu: usize) -> BlockR1cs {
+  goldilocks_add_canonical_plan().boolean.block_r1cs(nu)
+}
+
 pub(crate) fn generate_goldilocks_add_witness(
   rows: &[GoldilocksAddPairRow],
   nu: usize,
@@ -258,12 +267,30 @@ pub(crate) fn generate_goldilocks_add_witness_into(
   })
 }
 
-fn goldilocks_add_plan() -> &'static GoldilocksAddPlan {
-  static PLAN: OnceLock<GoldilocksAddPlan> = OnceLock::new();
-  PLAN.get_or_init(build_goldilocks_add_plan)
+pub(crate) fn generate_goldilocks_add_canonical_witness_into(
+  rows: &[GoldilocksAddPairRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  let plan = goldilocks_add_canonical_plan();
+  generate_boolean_witness_into(&plan.boolean, rows, nu, dst, |row, bits| {
+    fill_goldilocks_add_row(plan, *row, bits)
+  })
 }
 
-fn build_goldilocks_add_plan() -> GoldilocksAddPlan {
+fn goldilocks_add_plan() -> &'static GoldilocksAddPlan {
+  static PLAN: OnceLock<GoldilocksAddPlan> = OnceLock::new();
+  PLAN.get_or_init(|| build_goldilocks_add_plan(false))
+}
+
+fn goldilocks_add_canonical_plan() -> &'static GoldilocksAddPlan {
+  static PLAN: OnceLock<GoldilocksAddPlan> = OnceLock::new();
+  PLAN.get_or_init(|| build_goldilocks_add_plan(true))
+}
+
+fn build_goldilocks_add_plan(
+  enforce_output_canonicality: bool,
+) -> GoldilocksAddPlan {
   let mut builder = BooleanR1csBuilder::new(ADD_K_LOG, ADD_RESERVED_COLUMNS);
   for column in ADD_LEFT_BASE..ADD_RESULT_BASE + 128 {
     builder.free_boolean_at(column);
@@ -303,7 +330,38 @@ fn build_goldilocks_add_plan() -> GoldilocksAddPlan {
     );
   }
 
+  if enforce_output_canonicality {
+    write_canonicality_residuals(
+      &mut builder,
+      ADD_RESULT_BASE,
+      [ADD_TOP_VIOLATION_BASE + 2, ADD_TOP_VIOLATION_BASE + 34],
+    );
+  }
+
   GoldilocksAddPlan { boolean: builder.finish(), quotient_bits }
+}
+
+/// Write 32 violation bits per packed Goldilocks lane. They are all zero iff
+/// the corresponding 64-bit result is below the Goldilocks modulus.
+pub(crate) fn write_canonicality_residuals(
+  builder: &mut BooleanR1csBuilder,
+  input_base: usize,
+  violation_bases: [usize; 2],
+) {
+  for (lane, &violation_base) in violation_bases.iter().enumerate() {
+    let limb_base = input_base + lane * 64;
+    let mut high_all_ones = limb_base + 32;
+    for bit in 33..64 {
+      high_all_ones = builder.and(high_all_ones, limb_base + bit);
+    }
+    for low_bit in 0..32 {
+      builder.write_product_of_parities(
+        violation_base + low_bit,
+        &[high_all_ones],
+        &[limb_base + low_bit],
+      );
+    }
+  }
 }
 
 fn ripple_add(
@@ -484,7 +542,7 @@ mod tests {
     let candidate = builder.input();
     let zero = builder.fixed_public_input(F128::ZERO);
     let violation = builder.gate(slot, &[candidate])[0];
-    builder.connect(violation, zero);
+    builder.connect(zero, violation);
     let shape = builder.finish().unwrap();
 
     shape.run(&[F128::new(GOLDILOCKS_MODULUS - 1, 0), F128::ZERO], &[]);
@@ -550,7 +608,7 @@ mod tests {
 
   #[test]
   fn modular_add_r1cs_rejects_wrong_result_and_quotient() {
-    let plan = build_goldilocks_add_plan();
+    let plan = build_goldilocks_add_plan(false);
     let r1cs = plan.boolean.block_r1cs(3);
     let cases = [
       GoldilocksAddPairRow {
@@ -582,16 +640,49 @@ mod tests {
   }
 
   #[test]
+  fn inline_add_canonicality_rejects_the_noncanonical_quotient_branch() {
+    let row = GoldilocksAddPairRow {
+      left: F128::new(GOLDILOCKS_MODULUS - 1, 0),
+      right: F128::new(1, 0),
+    };
+    for enforce in [false, true] {
+      let plan = build_goldilocks_add_plan(enforce);
+      let r1cs = plan.boolean.block_r1cs(3);
+      let mut logical = vec![false; plan.boolean.k()];
+      plan.boolean.fill_row(&mut logical, |bits| {
+        fill_goldilocks_add_row(&plan, row, bits);
+        // p = p + 0*p is the alternate, noncanonical representation of the
+        // native result 0. The equation alone accepts this quotient branch.
+        write_boolean_f128(
+          bits,
+          ADD_RESULT_BASE,
+          F128::new(GOLDILOCKS_MODULUS, 0),
+        );
+        bits[plan.quotient_bits[0]] = false;
+      });
+      let mut witness = vec![false; r1cs.n()];
+      witness[..plan.boolean.k()].copy_from_slice(&logical);
+      assert!(r1cs.satisfies(&witness));
+
+      let canonical_residual = ADD_TOP_VIOLATION_BASE + 2;
+      assert_eq!(witness[canonical_residual], enforce);
+      witness[canonical_residual] = false;
+      assert_eq!(r1cs.satisfies(&witness), !enforce);
+    }
+  }
+
+  #[test]
   fn modular_add_gate_pins_equation_residuals() {
     let nu = 3;
     let mut builder = ShapeBuilder::new(nu);
-    let slot = builder.slot(GoldilocksAddPairGate { nu });
+    let slot = builder
+      .slot(GoldilocksAddPairGate { nu, enforce_output_canonicality: false });
     let left = builder.input();
     let right = builder.input();
     let zero = builder.fixed_public_input(F128::ZERO);
     let outputs = builder.gate(slot, &[left, right]);
-    builder.connect(outputs[1], zero);
-    builder.connect(outputs[2], zero);
+    builder.connect(zero, outputs[1]);
+    builder.connect(zero, outputs[2]);
     builder.publish(outputs[0]);
     let shape = builder.finish().unwrap();
 

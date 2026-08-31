@@ -13,6 +13,15 @@ use multi_stark::{
   types::FriParameters,
 };
 
+mod flock_stage2;
+
+pub use flock_stage2::{
+  FLOCK_AGGREGATE_CLAIM_BYTES, FLOCK_AGGREGATE_CLAIM_DOMAIN,
+  FLOCK_STAGE2_ROOT_ARTIFACT_MAGIC, FLOCK_STAGE2_ROOT_STATEMENT_BYTES,
+  FLOCK_STAGE2_ROOT_STATEMENT_DOMAIN, FlockAggregateClaimV1,
+  FlockStage2RootArtifactV1, FlockStage2RootStatementV1,
+};
+
 /// Domain of the canonical Stage 2 aggregate-root statement.
 ///
 /// This value is already used by the SP1 compressor and must not change
@@ -20,15 +29,249 @@ use multi_stark::{
 pub const STAGE2_ROOT_DOMAIN: &[u8; 8] = b"IXROOT01";
 /// Backwards-compatible name used by the SP1 public-values API.
 pub const PUBLIC_VALUES_DOMAIN: &[u8; 8] = STAGE2_ROOT_DOMAIN;
+pub const IXVM_CLAIM_ELEMENTS: usize = 10;
 pub const OUTER_CLAIM_ELEMENTS: usize = 18;
 pub const FRI_PARAMETER_ELEMENTS: usize = 5;
 pub const FRI_PARAMETERS_BYTES: usize = FRI_PARAMETER_ELEMENTS * 8;
+pub const IXVM_CLAIM_BYTES: usize = IXVM_CLAIM_ELEMENTS * 8;
 pub const OUTER_CLAIM_BYTES: usize = OUTER_CLAIM_ELEMENTS * 8;
 pub const STAGE2_CLAIMS_BYTES: usize = 8 + 8 + OUTER_CLAIM_BYTES;
 pub const STAGE2_ROOT_STATEMENT_BYTES: usize =
   STAGE2_ROOT_DOMAIN.len() + 32 + FRI_PARAMETERS_BYTES + OUTER_CLAIM_BYTES;
 
 const ADVICE_PROFILE_DOMAIN: &[u8; 8] = b"IXADVP01";
+const P3_PROOF_STATEMENT_DOMAIN: &[u8; 8] = b"IXP3ST01";
+const P3_PROOF_STATEMENT_PREFIX_BYTES: usize =
+  P3_PROOF_STATEMENT_DOMAIN.len() + 32 + FRI_PARAMETERS_BYTES + 8 + 8;
+const P3_CLAIM_LAYOUT_IXVM_V1: u64 = 1;
+const P3_CLAIM_LAYOUT_AGGREGATE_V1: u64 = 2;
+
+/// Exact public-claim layouts accepted by the shared Aiur/P3 proof adapter.
+///
+/// Stage 1 proofs use the ten-word `IxVM.verify_claim` layout and pin its
+/// function index explicitly. Existing P3 aggregate roots use the uniform
+/// eighteen-word `ix_aggr` layout; their function index remains part of the
+/// proof statement and recursion verifying key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum P3ClaimLayoutV1 {
+  Ixvm { verify_claim_index: u64 },
+  Aggregate,
+}
+
+impl P3ClaimLayoutV1 {
+  pub const fn elements(self) -> usize {
+    match self {
+      Self::Ixvm { .. } => IXVM_CLAIM_ELEMENTS,
+      Self::Aggregate => OUTER_CLAIM_ELEMENTS,
+    }
+  }
+
+  const fn id(self) -> u64 {
+    match self {
+      Self::Ixvm { .. } => P3_CLAIM_LAYOUT_IXVM_V1,
+      Self::Aggregate => P3_CLAIM_LAYOUT_AGGREGATE_V1,
+    }
+  }
+
+  /// Stable two-word descriptor used by relation manifests and catalogs.
+  ///
+  /// The second word pins the compiler-assigned `verify_claim` entrypoint for
+  /// IxVM leaves and is zero for the historical aggregate layout.
+  pub const fn descriptor_words(self) -> [u64; 2] {
+    match self {
+      Self::Ixvm { verify_claim_index } => {
+        [P3_CLAIM_LAYOUT_IXVM_V1, verify_claim_index]
+      },
+      Self::Aggregate => [P3_CLAIM_LAYOUT_AGGREGATE_V1, 0],
+    }
+  }
+
+  /// Decode the canonical relation-manifest descriptor.
+  pub fn from_descriptor_words(words: [u64; 2]) -> Result<Self> {
+    match words {
+      [P3_CLAIM_LAYOUT_IXVM_V1, verify_claim_index] => {
+        Ok(Self::Ixvm { verify_claim_index })
+      },
+      [P3_CLAIM_LAYOUT_AGGREGATE_V1, 0] => Ok(Self::Aggregate),
+      [P3_CLAIM_LAYOUT_AGGREGATE_V1, parameter] => bail!(
+        "aggregate P3 claim-layout parameter must be zero; got {parameter}"
+      ),
+      [id, _] => bail!("unknown P3 claim layout {id}"),
+    }
+  }
+
+  fn validate_words(self, words: &[u64]) -> Result<()> {
+    if words.len() != self.elements() {
+      bail!(
+        "P3 claim has {} words; layout requires {}",
+        words.len(),
+        self.elements()
+      );
+    }
+    if let Self::Ixvm { verify_claim_index } = self {
+      if words.first() != Some(&0) {
+        bail!("IxVM claim must start with the zero claim tag");
+      }
+      if words.get(1) != Some(&verify_claim_index) {
+        bail!(
+          "IxVM claim entrypoint is {}; expected {verify_claim_index}",
+          words.get(1).copied().unwrap_or_default()
+        );
+      }
+    }
+    Ok(())
+  }
+}
+
+/// Canonical, stage-neutral identity of one Aiur/P3 proof statement.
+///
+/// This is an internal boundary for Flock leaf lowering and cache identity.
+/// It does not replace the historical `IXROOT01` terminal statement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct P3ProofStatementV1 {
+  verifying_key_digest: [u8; 32],
+  fri_parameters: [u64; FRI_PARAMETER_ELEMENTS],
+  claim_layout: P3ClaimLayoutV1,
+  claim_words: Vec<u64>,
+}
+
+impl P3ProofStatementV1 {
+  pub fn new(
+    vk_bytes: &[u8],
+    claim_bytes: &[u8],
+    fri: &FriParameters,
+    claim_layout: P3ClaimLayoutV1,
+  ) -> Result<Self> {
+    let claim_words = decode_p3_claim_words(claim_bytes, claim_layout)?;
+    Ok(Self {
+      verifying_key_digest: *blake3::hash(vk_bytes).as_bytes(),
+      fri_parameters: fri_parameter_words(fri),
+      claim_layout,
+      claim_words,
+    })
+  }
+
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+    if bytes.len() != P3_PROOF_STATEMENT_PREFIX_BYTES + IXVM_CLAIM_BYTES
+      && bytes.len() != P3_PROOF_STATEMENT_PREFIX_BYTES + OUTER_CLAIM_BYTES
+    {
+      bail!("invalid P3 proof statement length {}", bytes.len());
+    }
+    if &bytes[..P3_PROOF_STATEMENT_DOMAIN.len()] != P3_PROOF_STATEMENT_DOMAIN {
+      bail!("invalid P3 proof statement domain");
+    }
+
+    let mut verifying_key_digest = [0u8; 32];
+    verifying_key_digest.copy_from_slice(&bytes[8..40]);
+    let mut fri_parameters = [0u64; FRI_PARAMETER_ELEMENTS];
+    for (word, chunk) in
+      fri_parameters.iter_mut().zip(bytes[40..80].as_chunks::<8>().0)
+    {
+      *word = u64::from_le_bytes(*chunk);
+    }
+
+    let layout_id =
+      u64::from_le_bytes(bytes[80..88].try_into().expect("8 bytes"));
+    let claim_count =
+      u64::from_le_bytes(bytes[88..96].try_into().expect("8 bytes"));
+    let claim_bytes = &bytes[P3_PROOF_STATEMENT_PREFIX_BYTES..];
+    let claim_layout = match layout_id {
+      P3_CLAIM_LAYOUT_IXVM_V1 => {
+        if claim_bytes.len() != IXVM_CLAIM_BYTES {
+          bail!("IxVM P3 statement has the wrong claim length");
+        }
+        let verify_claim_index =
+          u64::from_le_bytes(claim_bytes[8..16].try_into().expect("8 bytes"));
+        P3ClaimLayoutV1::Ixvm { verify_claim_index }
+      },
+      P3_CLAIM_LAYOUT_AGGREGATE_V1 => {
+        if claim_bytes.len() != OUTER_CLAIM_BYTES {
+          bail!("aggregate P3 statement has the wrong claim length");
+        }
+        P3ClaimLayoutV1::Aggregate
+      },
+      id => bail!("unknown P3 claim layout {id}"),
+    };
+    if claim_count
+      != u64::try_from(claim_layout.elements()).expect("claim count fits u64")
+    {
+      bail!(
+        "P3 statement declares {claim_count} claim words; layout requires {}",
+        claim_layout.elements()
+      );
+    }
+    let claim_words = decode_p3_claim_words(claim_bytes, claim_layout)?;
+    Ok(Self { verifying_key_digest, fri_parameters, claim_layout, claim_words })
+  }
+
+  pub fn to_bytes(&self) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(
+      P3_PROOF_STATEMENT_DOMAIN.len()
+        + 32
+        + FRI_PARAMETERS_BYTES
+        + 8
+        + 8
+        + self.claim_words.len() * 8,
+    );
+    bytes.extend_from_slice(P3_PROOF_STATEMENT_DOMAIN);
+    bytes.extend_from_slice(&self.verifying_key_digest);
+    for word in self.fri_parameters {
+      bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes.extend_from_slice(&self.claim_layout.id().to_le_bytes());
+    bytes.extend_from_slice(
+      &u64::try_from(self.claim_words.len())
+        .expect("claim length fits u64")
+        .to_le_bytes(),
+    );
+    for word in &self.claim_words {
+      bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
+  }
+
+  pub fn digest(&self) -> [u8; 32] {
+    *blake3::hash(&self.to_bytes()).as_bytes()
+  }
+
+  pub fn verifying_key_digest(&self) -> &[u8; 32] {
+    &self.verifying_key_digest
+  }
+
+  pub fn fri_parameter_words(&self) -> &[u64; FRI_PARAMETER_ELEMENTS] {
+    &self.fri_parameters
+  }
+
+  pub const fn claim_layout(&self) -> P3ClaimLayoutV1 {
+    self.claim_layout
+  }
+
+  pub fn claim_words(&self) -> &[u64] {
+    &self.claim_words
+  }
+
+  /// Recover the 32-byte BLAKE3 digest carried by a ten-word IxVM claim.
+  ///
+  /// IxVM packs each consecutive four digest bytes into one Goldilocks word.
+  /// Requiring every limb to fit in `u32` makes this conversion injective and
+  /// prevents a relation from assigning a second byte representation to the
+  /// same field element.
+  pub fn ixvm_output_claim_digest(&self) -> Result<[u8; 32]> {
+    if !matches!(self.claim_layout, P3ClaimLayoutV1::Ixvm { .. }) {
+      bail!("P3 statement does not use the IxVM claim layout");
+    }
+    let mut digest = [0u8; 32];
+    for (index, &word) in self.claim_words[2..].iter().enumerate() {
+      let limb = u32::try_from(word).map_err(|_range_error| {
+        anyhow::anyhow!(
+          "IxVM output digest limb {index} exceeds the packed-u32 range"
+        )
+      })?;
+      digest[index * 4..index * 4 + 4].copy_from_slice(&limb.to_le_bytes());
+    }
+    Ok(digest)
+  }
+}
 
 /// Versioned, canonical public statement asserted by a closed Stage 2 root.
 ///
@@ -96,21 +339,22 @@ impl Stage2AdviceProfileV1 {
   }
 }
 
-/// A compact proof that has been verified and expanded to the exact advice
-/// layout used by `Ix.MultiStark`. The verifying key is retained for compiling
-/// a specialised typed verifier witness; the claims remain the private words
-/// bound by the Stage 2 statement inside that relation.
+/// Stage-neutral name for the same canonical Aiur/P3 advice census.
+pub type P3AdviceProfileV1 = Stage2AdviceProfileV1;
+
+/// A canonical Aiur/P3 proof that has been verified natively and expanded to
+/// the exact per-query advice consumed by the in-Flock verifier.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ValidatedStage2RootV1 {
-  statement: Stage2RootStatementV1,
+pub struct ValidatedP3ProofV1 {
+  statement: P3ProofStatementV1,
   verifying_key_bytes: Vec<u8>,
   claims_bytes: Vec<u8>,
   advice_bytes: Vec<u8>,
-  advice_profile: Stage2AdviceProfileV1,
+  advice_profile: P3AdviceProfileV1,
 }
 
-impl ValidatedStage2RootV1 {
-  pub fn statement(&self) -> &Stage2RootStatementV1 {
+impl ValidatedP3ProofV1 {
+  pub fn statement(&self) -> &P3ProofStatementV1 {
     &self.statement
   }
 
@@ -126,8 +370,44 @@ impl ValidatedStage2RootV1 {
     &self.advice_bytes
   }
 
-  pub fn advice_profile(&self) -> &Stage2AdviceProfileV1 {
+  pub fn advice_profile(&self) -> &P3AdviceProfileV1 {
     &self.advice_profile
+  }
+}
+
+/// A compact proof that has been verified and expanded to the exact advice
+/// layout used by `Ix.MultiStark`. The verifying key is retained for compiling
+/// a specialised typed verifier witness; the claims remain the private words
+/// bound by the Stage 2 statement inside that relation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedStage2RootV1 {
+  statement: Stage2RootStatementV1,
+  p3_proof: ValidatedP3ProofV1,
+}
+
+impl ValidatedStage2RootV1 {
+  pub fn statement(&self) -> &Stage2RootStatementV1 {
+    &self.statement
+  }
+
+  pub fn verifying_key_bytes(&self) -> &[u8] {
+    self.p3_proof.verifying_key_bytes()
+  }
+
+  pub fn claims_bytes(&self) -> &[u8] {
+    self.p3_proof.claims_bytes()
+  }
+
+  pub fn advice_bytes(&self) -> &[u8] {
+    self.p3_proof.advice_bytes()
+  }
+
+  pub fn advice_profile(&self) -> &Stage2AdviceProfileV1 {
+    self.p3_proof.advice_profile()
+  }
+
+  pub fn p3_proof(&self) -> &ValidatedP3ProofV1 {
+    &self.p3_proof
   }
 }
 
@@ -227,65 +507,92 @@ pub fn fri_parameters_to_bytes(fri: &FriParameters) -> Vec<u8> {
     .collect()
 }
 
+/// Decode one exact P3 public claim and reject non-canonical Goldilocks
+/// representatives, wrong claim tags, and wrong IxVM entrypoints.
+pub fn decode_p3_claim_words(
+  claim_bytes: &[u8],
+  claim_layout: P3ClaimLayoutV1,
+) -> Result<Vec<u64>> {
+  let expected_bytes = claim_layout.elements() * 8;
+  if claim_bytes.len() != expected_bytes {
+    bail!(
+      "P3 claim is {} bytes; expected {expected_bytes} ({} Goldilocks words)",
+      claim_bytes.len(),
+      claim_layout.elements()
+    );
+  }
+
+  let mut words = Vec::with_capacity(claim_layout.elements());
+  for (index, chunk) in claim_bytes.as_chunks::<8>().0.iter().enumerate() {
+    let word = u64::from_le_bytes(*chunk);
+    let value = G::from_u64(word);
+    if value.as_canonical_u64() != word {
+      bail!("P3 claim word {index} is not canonical Goldilocks");
+    }
+    words.push(word);
+  }
+  claim_layout.validate_words(&words)?;
+  Ok(words)
+}
+
 /// Decode the exact 18-word outer claim and reject non-canonical Goldilocks
 /// representatives.
 pub fn decode_claim_words(
   claim_bytes: &[u8],
 ) -> Result<[u64; OUTER_CLAIM_ELEMENTS]> {
-  if claim_bytes.len() != OUTER_CLAIM_BYTES {
-    bail!(
-      "ix_aggr outer claim is {} bytes; expected {OUTER_CLAIM_BYTES} (18 Goldilocks words)",
-      claim_bytes.len()
-    );
-  }
-
-  let mut words = [0u64; OUTER_CLAIM_ELEMENTS];
-  for (index, (word_out, chunk)) in
-    words.iter_mut().zip(claim_bytes.as_chunks::<8>().0).enumerate()
-  {
-    let word = u64::from_le_bytes(*chunk);
-    let value = G::from_u64(word);
-    if value.as_canonical_u64() != word {
-      bail!("outer claim word {index} is not canonical Goldilocks");
-    }
-    *word_out = word;
-  }
-  Ok(words)
+  decode_p3_claim_words(claim_bytes, P3ClaimLayoutV1::Aggregate)?
+    .try_into()
+    .map_err(|_length_error| {
+      anyhow::anyhow!("aggregate P3 claim has the wrong length")
+    })
 }
 
-/// Canonical `&[&[Goldilocks]]` encoding consumed by the existing recursive
-/// verifier: one claim, its 18-word length, then its little-endian words.
-pub fn stage2_claims_bytes(claim_bytes: &[u8]) -> Result<Vec<u8>> {
-  let words = decode_claim_words(claim_bytes)?;
-  let mut bytes = Vec::with_capacity(STAGE2_CLAIMS_BYTES);
+/// Canonical claim-list encoding consumed by the Aiur/P3 verifier transcript:
+/// one claim, its word length, then its little-endian words.
+pub fn p3_claims_bytes(
+  claim_bytes: &[u8],
+  claim_layout: P3ClaimLayoutV1,
+) -> Result<Vec<u8>> {
+  let words = decode_p3_claim_words(claim_bytes, claim_layout)?;
+  let mut bytes = Vec::with_capacity(16 + words.len() * 8);
   bytes.extend_from_slice(&1u64.to_le_bytes());
-  bytes.extend_from_slice(&(OUTER_CLAIM_ELEMENTS as u64).to_le_bytes());
+  bytes.extend_from_slice(
+    &u64::try_from(words.len()).expect("claim length fits u64").to_le_bytes(),
+  );
   for word in words {
     bytes.extend_from_slice(&word.to_le_bytes());
   }
   Ok(bytes)
 }
 
+/// Canonical `&[&[Goldilocks]]` encoding consumed by the existing recursive
+/// verifier: one claim, its 18-word length, then its little-endian words.
+pub fn stage2_claims_bytes(claim_bytes: &[u8]) -> Result<Vec<u8>> {
+  p3_claims_bytes(claim_bytes, P3ClaimLayoutV1::Aggregate)
+}
+
 fn fri_matches(actual: &FriParameters, expected: &FriParameters) -> bool {
   fri_parameter_words(actual) == fri_parameter_words(expected)
 }
 
-struct DecodedRootInputs {
-  statement: Stage2RootStatementV1,
+struct DecodedP3Inputs {
+  statement: P3ProofStatementV1,
   claim: Vec<G>,
   verifying_key: AiurVerifyingKey,
   proof: AiurProof,
 }
 
-fn decode_root_inputs(
+fn decode_p3_inputs(
   vk_bytes: &[u8],
   claim_bytes: &[u8],
   proof_bytes: &[u8],
   fri: &FriParameters,
-) -> Result<DecodedRootInputs> {
-  let statement = Stage2RootStatementV1::new(vk_bytes, claim_bytes, fri)?;
+  claim_layout: P3ClaimLayoutV1,
+) -> Result<DecodedP3Inputs> {
+  let statement =
+    P3ProofStatementV1::new(vk_bytes, claim_bytes, fri, claim_layout)?;
   let claim: Vec<G> =
-    statement.outer_claim.iter().copied().map(G::from_u64).collect();
+    statement.claim_words.iter().copied().map(G::from_u64).collect();
   let verifying_key = AiurVerifyingKey::from_bytes(vk_bytes)
     .map_err(|error| anyhow::anyhow!("invalid Aiur verifying key: {error}"))?;
   if verifying_key.to_bytes() != vk_bytes {
@@ -302,7 +609,59 @@ fn decode_root_inputs(
   if canonical_proof != proof_bytes {
     bail!("Aiur proof is non-canonical or contains trailing bytes");
   }
-  Ok(DecodedRootInputs { statement, claim, verifying_key, proof })
+  Ok(DecodedP3Inputs { statement, claim, verifying_key, proof })
+}
+
+fn verify_decoded_p3(decoded: &DecodedP3Inputs) -> Result<()> {
+  decoded.verifying_key.verify(&decoded.claim, &decoded.proof).map_err(
+    |error| anyhow::anyhow!("Aiur/P3 proof does not verify: {error:?}"),
+  )
+}
+
+/// Validate any supported canonical Aiur/P3 proof natively.
+///
+/// A Flock relation must repeat every verification check; this pass rejects
+/// malformed or invalid work before allocating a large relation.
+pub fn validate_p3_inputs(
+  vk_bytes: &[u8],
+  claim_bytes: &[u8],
+  proof_bytes: &[u8],
+  fri: &FriParameters,
+  claim_layout: P3ClaimLayoutV1,
+) -> Result<P3ProofStatementV1> {
+  let decoded =
+    decode_p3_inputs(vk_bytes, claim_bytes, proof_bytes, fri, claim_layout)?;
+  verify_decoded_p3(&decoded)?;
+  Ok(decoded.statement)
+}
+
+/// Validate a canonical Aiur/P3 proof and expand its pruned Merkle multiproofs
+/// into the typed-verifier advice layout consumed by the Flock lowering.
+pub fn validate_and_expand_p3_inputs(
+  vk_bytes: &[u8],
+  claim_bytes: &[u8],
+  proof_bytes: &[u8],
+  fri: &FriParameters,
+  claim_layout: P3ClaimLayoutV1,
+) -> Result<ValidatedP3ProofV1> {
+  let decoded =
+    decode_p3_inputs(vk_bytes, claim_bytes, proof_bytes, fri, claim_layout)?;
+  verify_decoded_p3(&decoded)?;
+  let advice_bytes = decoded
+    .verifying_key
+    .proof_to_advice_bytes(&decoded.claim, &decoded.proof)
+    .map_err(|error| {
+      anyhow::anyhow!("expand verified Aiur/P3 proof: {error}")
+    })?;
+  let advice_profile =
+    P3AdviceProfileV1::from_advice_bytes(&advice_bytes, fri)?;
+  Ok(ValidatedP3ProofV1 {
+    statement: decoded.statement,
+    verifying_key_bytes: vk_bytes.to_vec(),
+    claims_bytes: p3_claims_bytes(claim_bytes, claim_layout)?,
+    advice_bytes,
+    advice_profile,
+  })
 }
 
 /// Validate a persisted aggregate root natively and return the exact public
@@ -314,11 +673,14 @@ pub fn validate_root_inputs(
   proof_bytes: &[u8],
   fri: &FriParameters,
 ) -> Result<Stage2RootStatementV1> {
-  let decoded = decode_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
-  decoded.verifying_key.verify(&decoded.claim, &decoded.proof).map_err(
-    |error| anyhow::anyhow!("aggregate root does not verify: {error:?}"),
+  validate_p3_inputs(
+    vk_bytes,
+    claim_bytes,
+    proof_bytes,
+    fri,
+    P3ClaimLayoutV1::Aggregate,
   )?;
-  Ok(decoded.statement)
+  Stage2RootStatementV1::new(vk_bytes, claim_bytes, fri)
 }
 
 /// Verify a compact Stage 2 root and expand its pruned Merkle multiproofs into
@@ -331,19 +693,16 @@ pub fn validate_and_expand_root_inputs(
   proof_bytes: &[u8],
   fri: &FriParameters,
 ) -> Result<ValidatedStage2RootV1> {
-  let decoded = decode_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
-  let advice_bytes = decoded
-    .verifying_key
-    .proof_to_advice_bytes(&decoded.claim, &decoded.proof)
-    .map_err(|error| anyhow::anyhow!("expand verified Aiur proof: {error}"))?;
-  let advice_profile =
-    Stage2AdviceProfileV1::from_advice_bytes(&advice_bytes, fri)?;
+  let p3_proof = validate_and_expand_p3_inputs(
+    vk_bytes,
+    claim_bytes,
+    proof_bytes,
+    fri,
+    P3ClaimLayoutV1::Aggregate,
+  )?;
   Ok(ValidatedStage2RootV1 {
-    statement: decoded.statement,
-    verifying_key_bytes: vk_bytes.to_vec(),
-    claims_bytes: stage2_claims_bytes(claim_bytes)?,
-    advice_bytes,
-    advice_profile,
+    statement: Stage2RootStatementV1::new(vk_bytes, claim_bytes, fri)?,
+    p3_proof,
   })
 }
 
@@ -351,7 +710,7 @@ fn profile_advice(
   bytes: &[u8],
   fri: &FriParameters,
 ) -> Result<Stage2AdviceProfileV1> {
-  let proof = decode_stage2_advice(bytes, fri)?;
+  let proof = decode_p3_advice(bytes, fri)?;
 
   let input_rounds_per_query = proof
     .opening_proof
@@ -443,11 +802,10 @@ fn profile_advice(
   })
 }
 
-/// Decode the canonical per-query Stage 2 proof transport into semantic proof
-/// fields. The persisted bincode representation ends here: Flock backends
-/// should lower this typed value, not reproduce byte parsing in their
-/// relation.
-pub fn decode_stage2_advice(
+/// Decode canonical per-query Aiur/P3 proof advice into semantic proof fields.
+/// The persisted bincode representation ends here: Flock backends lower this
+/// typed value rather than reproducing byte parsing in their relations.
+pub fn decode_p3_advice(
   bytes: &[u8],
   fri: &FriParameters,
 ) -> Result<AdviceProof> {
@@ -480,6 +838,14 @@ pub fn decode_stage2_advice(
     bail!("Stage 2 advice has non-uniform per-query round counts");
   }
   Ok(proof)
+}
+
+/// Backwards-compatible name for the existing Stage 2 terminal adapter.
+pub fn decode_stage2_advice(
+  bytes: &[u8],
+  fri: &FriParameters,
+) -> Result<AdviceProof> {
+  decode_p3_advice(bytes, fri)
 }
 
 fn count_opened_values<T>(values: &[Vec<Vec<T>>]) -> usize {
@@ -522,6 +888,119 @@ mod tests {
 
   fn canonical_claim() -> Vec<u8> {
     (0..OUTER_CLAIM_ELEMENTS as u64).flat_map(u64::to_le_bytes).collect()
+  }
+
+  fn ixvm_claim(verify_claim_index: u64) -> Vec<u8> {
+    let mut words = [0u64; IXVM_CLAIM_ELEMENTS];
+    words[1] = verify_claim_index;
+    for (index, word) in words.iter_mut().enumerate().skip(2) {
+      *word = 100 + index as u64;
+    }
+    words.into_iter().flat_map(u64::to_le_bytes).collect()
+  }
+
+  #[test]
+  fn stage_neutral_p3_statement_supports_ixvm_claims() {
+    let claim = ixvm_claim(37);
+    let statement = P3ProofStatementV1::new(
+      b"ixvm vk",
+      &claim,
+      &test_fri(),
+      P3ClaimLayoutV1::Ixvm { verify_claim_index: 37 },
+    )
+    .expect("IxVM P3 statement");
+    assert_eq!(
+      statement.claim_layout(),
+      P3ClaimLayoutV1::Ixvm { verify_claim_index: 37 }
+    );
+    assert_eq!(statement.claim_words().len(), IXVM_CLAIM_ELEMENTS);
+    assert_eq!(
+      statement.claim_layout().descriptor_words(),
+      [P3_CLAIM_LAYOUT_IXVM_V1, 37]
+    );
+    assert_eq!(
+      P3ClaimLayoutV1::from_descriptor_words([P3_CLAIM_LAYOUT_IXVM_V1, 37])
+        .unwrap(),
+      statement.claim_layout()
+    );
+    let digest = statement.ixvm_output_claim_digest().unwrap();
+    for (index, chunk) in digest.as_chunks::<4>().0.iter().enumerate() {
+      assert_eq!(
+        u32::from_le_bytes(*chunk),
+        u32::try_from(102 + index).unwrap()
+      );
+    }
+    let bytes = statement.to_bytes();
+    assert_eq!(
+      bytes.len(),
+      P3_PROOF_STATEMENT_DOMAIN.len()
+        + 32
+        + FRI_PARAMETERS_BYTES
+        + 8
+        + 8
+        + IXVM_CLAIM_BYTES
+    );
+    assert_eq!(P3ProofStatementV1::from_bytes(&bytes).unwrap(), statement);
+
+    assert!(
+      P3ProofStatementV1::new(
+        b"ixvm vk",
+        &claim,
+        &test_fri(),
+        P3ClaimLayoutV1::Ixvm { verify_claim_index: 38 },
+      )
+      .is_err()
+    );
+
+    let claims =
+      p3_claims_bytes(&claim, P3ClaimLayoutV1::Ixvm { verify_claim_index: 37 })
+        .unwrap();
+    assert_eq!(claims.len(), 16 + IXVM_CLAIM_BYTES);
+    assert_eq!(&claims[..8], &1u64.to_le_bytes());
+    assert_eq!(&claims[8..16], &(IXVM_CLAIM_ELEMENTS as u64).to_le_bytes());
+    assert_eq!(&claims[16..], claim);
+  }
+
+  #[test]
+  fn stage_neutral_statement_rejects_layout_confusion() {
+    let statement = P3ProofStatementV1::new(
+      b"ixvm vk",
+      &ixvm_claim(37),
+      &test_fri(),
+      P3ClaimLayoutV1::Ixvm { verify_claim_index: 37 },
+    )
+    .unwrap();
+    let mut bytes = statement.to_bytes();
+    bytes[80..88].copy_from_slice(&P3_CLAIM_LAYOUT_AGGREGATE_V1.to_le_bytes());
+    assert!(P3ProofStatementV1::from_bytes(&bytes).is_err());
+
+    let mut claim = ixvm_claim(37);
+    claim[..8].copy_from_slice(&1u64.to_le_bytes());
+    assert!(
+      decode_p3_claim_words(
+        &claim,
+        P3ClaimLayoutV1::Ixvm { verify_claim_index: 37 }
+      )
+      .is_err()
+    );
+    assert!(
+      P3ClaimLayoutV1::from_descriptor_words(
+        [P3_CLAIM_LAYOUT_AGGREGATE_V1, 1,]
+      )
+      .is_err()
+    );
+
+    let mut wide_digest = ixvm_claim(37);
+    wide_digest[16..24]
+      .copy_from_slice(&(u64::from(u32::MAX) + 1).to_le_bytes());
+    let wide_statement = P3ProofStatementV1::new(
+      b"ixvm vk",
+      &wide_digest,
+      &test_fri(),
+      P3ClaimLayoutV1::Ixvm { verify_claim_index: 37 },
+    )
+    .unwrap();
+    assert!(wide_statement.ixvm_output_claim_digest().is_err());
   }
 
   #[test]

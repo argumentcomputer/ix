@@ -42,7 +42,9 @@ use flock_prover::{
   union::{SlotWitnessDest, UnionInstance},
   verifier,
 };
-use ix_terminal::{ValidatedStage2RootV1, fri_parameter_words};
+use ix_terminal::{
+  ValidatedP3ProofV1, ValidatedStage2RootV1, fri_parameter_words,
+};
 use multi_stark::types::FriParameters;
 use serde::{Deserialize, Serialize};
 
@@ -206,8 +208,7 @@ impl Stage2TranscriptReplayV1 {
     prepared: &ValidatedStage2RootV1,
     fri: &FriParameters,
   ) -> Result<Self> {
-    let typed = Stage3TypedProofWitnessV1::from_prepared(prepared, fri)?;
-    Self::from_prepared_and_typed(prepared, fri, &typed)
+    Self::from_p3(prepared.p3_proof(), fri)
   }
 
   pub fn from_prepared_and_typed(
@@ -215,8 +216,25 @@ impl Stage2TranscriptReplayV1 {
     fri: &FriParameters,
     typed: &Stage3TypedProofWitnessV1,
   ) -> Result<Self> {
+    Self::from_p3_and_typed(prepared.p3_proof(), fri, typed)
+  }
+
+  /// Build the exact transcript prefix for any validated Aiur/P3 proof.
+  pub fn from_p3(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+  ) -> Result<Self> {
+    let typed = Stage3TypedProofWitnessV1::from_p3(prepared, fri)?;
+    Self::from_p3_and_typed(prepared, fri, &typed)
+  }
+
+  pub fn from_p3_and_typed(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+    typed: &Stage3TypedProofWitnessV1,
+  ) -> Result<Self> {
     if prepared.statement().fri_parameter_words() != &fri_parameter_words(fri) {
-      bail!("Stage 2 transcript uses different FRI parameters");
+      bail!("P3 transcript uses different FRI parameters");
     }
     typed.ensure_profile(prepared.advice_profile())?;
     let key = AiurVerifyingKey::from_bytes(prepared.verifying_key_bytes())
@@ -309,8 +327,7 @@ impl Stage2FriTranscriptReplayV1 {
     prepared: &ValidatedStage2RootV1,
     fri: &FriParameters,
   ) -> Result<Self> {
-    let typed = Stage3TypedProofWitnessV1::from_prepared(prepared, fri)?;
-    Self::from_prepared_and_typed(prepared, fri, &typed)
+    Self::from_p3(prepared.p3_proof(), fri)
   }
 
   pub fn from_prepared_and_typed(
@@ -318,8 +335,25 @@ impl Stage2FriTranscriptReplayV1 {
     fri: &FriParameters,
     typed: &Stage3TypedProofWitnessV1,
   ) -> Result<Self> {
+    Self::from_p3_and_typed(prepared.p3_proof(), fri, typed)
+  }
+
+  /// Build the post-opening FRI transcript for any validated Aiur/P3 proof.
+  pub fn from_p3(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+  ) -> Result<Self> {
+    let typed = Stage3TypedProofWitnessV1::from_p3(prepared, fri)?;
+    Self::from_p3_and_typed(prepared, fri, &typed)
+  }
+
+  pub fn from_p3_and_typed(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+    typed: &Stage3TypedProofWitnessV1,
+  ) -> Result<Self> {
     if prepared.statement().fri_parameter_words() != &fri_parameter_words(fri) {
-      bail!("Stage 2 FRI transcript uses different FRI parameters");
+      bail!("P3 FRI transcript uses different FRI parameters");
     }
     typed.ensure_profile(prepared.advice_profile())?;
     let key = AiurVerifyingKey::from_bytes(prepared.verifying_key_bytes())
@@ -1665,7 +1699,7 @@ fn constrain_low_zero_bits(
   bits: u8,
 ) {
   for bit in split_low_bits(builder, split_slot, value, bits) {
-    builder.connect(bit, zero);
+    builder.connect(zero, bit);
   }
 }
 
@@ -1715,9 +1749,9 @@ fn constrain_field_sample(
   } else {
     (sampled[0], sampled[1], [sampled[5], sampled[6]])
   };
-  builder.connect(failure, zero);
+  builder.connect(zero, failure);
   let violation = builder.gate(canonical, &[challenge])[0];
-  builder.connect(violation, zero);
+  builder.connect(zero, violation);
   Ok(ConstrainedFieldSample { value: challenge, raw_first: sampled[2], state })
 }
 

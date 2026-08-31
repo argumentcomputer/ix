@@ -340,7 +340,7 @@ impl StatementHashRelation {
     for word in FIRST_CLAIM_WORD..FIRST_CLAIM_WORD + CLAIM_WORDS {
       let message = messages[word / 4][word % 4];
       let violation = builder.gate(canonical_goldilocks_slot, &[message])[0];
-      builder.connect(violation, canonical_zero);
+      builder.connect(canonical_zero, violation);
     }
 
     let mut cv = initial_cv;

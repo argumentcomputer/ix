@@ -6,8 +6,8 @@
 
 use anyhow::{Result, bail};
 use ix_terminal::{
-  Stage2AdviceProfileV1, ValidatedStage2RootV1, decode_stage2_advice,
-  fri_parameter_words,
+  Stage2AdviceProfileV1, ValidatedP3ProofV1, ValidatedStage2RootV1,
+  decode_p3_advice, fri_parameter_words,
 };
 use multi_stark::{
   advice::AdviceProof,
@@ -91,7 +91,20 @@ impl Stage3TypedProofWitnessV1 {
   /// Decode the strict advice transport and immediately erase its serializer
   /// representation in favor of semantic primitive values.
   pub fn from_advice_bytes(bytes: &[u8], fri: &FriParameters) -> Result<Self> {
-    Ok(Self::from_advice(decode_stage2_advice(bytes, fri)?))
+    Ok(Self::from_advice(decode_p3_advice(bytes, fri)?))
+  }
+
+  /// Prepare the typed proof attached to any already validated Aiur/P3 proof.
+  pub fn from_p3(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+  ) -> Result<Self> {
+    if prepared.statement().fri_parameter_words() != &fri_parameter_words(fri) {
+      bail!("typed P3 witness uses different FRI parameters");
+    }
+    let witness = Self::from_advice_bytes(prepared.advice_bytes(), fri)?;
+    witness.ensure_profile(prepared.advice_profile())?;
+    Ok(witness)
   }
 
   /// Prepare the typed proof attached to an already validated Stage 2 root.
@@ -99,12 +112,7 @@ impl Stage3TypedProofWitnessV1 {
     prepared: &ValidatedStage2RootV1,
     fri: &FriParameters,
   ) -> Result<Self> {
-    if prepared.statement().fri_parameter_words() != &fri_parameter_words(fri) {
-      bail!("typed Stage 3 witness uses different FRI parameters");
-    }
-    let witness = Self::from_advice_bytes(prepared.advice_bytes(), fri)?;
-    witness.ensure_profile(prepared.advice_profile())?;
-    Ok(witness)
+    Self::from_p3(prepared.p3_proof(), fri)
   }
 
   /// Digest of the exact nested vector/option layout, excluding witness

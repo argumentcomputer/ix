@@ -6,6 +6,8 @@
 //! multiplication relations rather than introducing another large monolithic
 //! arithmetic table.
 
+use std::cell::RefCell;
+
 use flock_prover::{
   circuit::builder::{GateType, ShapeBuilder, SlotId, SlotWitness, Wire},
   field::F128,
@@ -19,6 +21,7 @@ use crate::{
     BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
     generate_boolean_witness_into, write_f128,
   },
+  equality::{F128_ZERO_BATCH_WIDTH, F128ZeroGate},
   goldilocks::{CanonicalGoldilocksPairGate, GoldilocksAddPairGate},
   multiplication::{GoldilocksMulPairGate, goldilocks_mul},
 };
@@ -151,23 +154,107 @@ fn build_lane_repack_plan() -> BooleanR1csPlan {
   builder.finish()
 }
 
-/// The four table slots and fixed zero wire needed by Goldilocks arithmetic.
+/// The four table slots and fixed zero wires needed by Goldilocks arithmetic.
 pub(crate) struct GoldilocksCircuitSlots {
   pub(crate) add: SlotId,
   pub(crate) mul: SlotId,
   pub(crate) canonical: SlotId,
   pub(crate) repack: SlotId,
-  zero: Wire,
+  pub(crate) zero_constraint: Option<SlotId>,
+  pub(crate) inline_output_canonicality: bool,
+  data_zero: Wire,
+  pending_zero_constraints: RefCell<Vec<Wire>>,
 }
 
 impl GoldilocksCircuitSlots {
+  /// Historical construction retained for compatibility with existing Stage
+  /// 3 conformance and artifact digests.
   pub(crate) fn declare(builder: &mut ShapeBuilder, nu: usize) -> Self {
-    let add = builder.slot(GoldilocksAddPairGate { nu });
-    let mul = builder.slot(GoldilocksMulPairGate { nu });
+    let add = builder
+      .slot(GoldilocksAddPairGate { nu, enforce_output_canonicality: false });
+    let mul = builder
+      .slot(GoldilocksMulPairGate { nu, enforce_output_canonicality: false });
     let canonical = builder.slot(CanonicalGoldilocksPairGate { nu });
     let repack = builder.slot(GoldilocksLaneRepackGate { nu });
-    let zero = builder.fixed_public_input(F128::ZERO);
-    Self { add, mul, canonical, repack, zero }
+    let data_zero = builder.fixed_public_input(F128::ZERO);
+    Self {
+      add,
+      mul,
+      canonical,
+      repack,
+      zero_constraint: None,
+      inline_output_canonicality: false,
+      data_zero,
+      pending_zero_constraints: RefCell::new(Vec::new()),
+    }
+  }
+
+  /// Sound, linear-time construction for new relations.
+  ///
+  /// A zero used as gate input cannot also absorb every arithmetic residual:
+  /// one giant class makes Flock's dataflow pass quadratic. New Stage 2
+  /// relations route every residual through a directed zero-constraint gate.
+  pub(crate) fn declare_with_zero_constraint(
+    builder: &mut ShapeBuilder,
+    nu: usize,
+  ) -> Self {
+    let add = builder
+      .slot(GoldilocksAddPairGate { nu, enforce_output_canonicality: true });
+    let mul = builder
+      .slot(GoldilocksMulPairGate { nu, enforce_output_canonicality: true });
+    let canonical = builder.slot(CanonicalGoldilocksPairGate { nu });
+    let repack = builder.slot(GoldilocksLaneRepackGate { nu });
+    let zero_constraint = builder.slot(F128ZeroGate { nu });
+    let data_zero = builder.fixed_public_input(F128::ZERO);
+    Self {
+      add,
+      mul,
+      canonical,
+      repack,
+      zero_constraint: Some(zero_constraint),
+      inline_output_canonicality: true,
+      data_zero,
+      pending_zero_constraints: RefCell::new(Vec::with_capacity(
+        F128_ZERO_BATCH_WIDTH,
+      )),
+    }
+  }
+
+  pub(crate) const fn fixed_zero_inputs(&self) -> usize {
+    1
+  }
+
+  fn assert_zero(&self, builder: &mut ShapeBuilder, residual: Wire) {
+    if let Some(slot) = self.zero_constraint {
+      let batch = {
+        let mut pending = self.pending_zero_constraints.borrow_mut();
+        pending.push(residual);
+        (pending.len() == F128_ZERO_BATCH_WIDTH)
+          .then(|| std::mem::take(&mut *pending))
+      };
+      if let Some(batch) = batch {
+        let outputs = builder.gate(slot, &batch);
+        debug_assert!(outputs.is_empty());
+      }
+    } else {
+      builder.connect(residual, self.data_zero);
+    }
+  }
+
+  /// Emit the final partial directed-zero batch, padding with the fixed data
+  /// zero. Must be called once after all arithmetic constraints are emitted.
+  pub(crate) fn flush_zero_constraints(&self, builder: &mut ShapeBuilder) {
+    let Some(slot) = self.zero_constraint else {
+      return;
+    };
+    let mut pending = self.pending_zero_constraints.borrow_mut();
+    if pending.is_empty() {
+      return;
+    }
+    pending.resize(F128_ZERO_BATCH_WIDTH, self.data_zero);
+    let outputs = builder.gate(slot, &pending);
+    debug_assert!(outputs.is_empty());
+    pending.clear();
   }
 
   pub(crate) fn assert_canonical(
@@ -176,7 +263,7 @@ impl GoldilocksCircuitSlots {
     value: Wire,
   ) {
     let violation = builder.gate(self.canonical, &[value])[0];
-    builder.connect(violation, self.zero);
+    self.assert_zero(builder, violation);
   }
 
   pub(crate) fn add(
@@ -187,9 +274,11 @@ impl GoldilocksCircuitSlots {
   ) -> Wire {
     let outputs = builder.gate(self.add, &[left, right]);
     for &residual in &outputs[1..] {
-      builder.connect(residual, self.zero);
+      self.assert_zero(builder, residual);
     }
-    self.assert_canonical(builder, outputs[0]);
+    if !self.inline_output_canonicality {
+      self.assert_canonical(builder, outputs[0]);
+    }
     outputs[0]
   }
 
@@ -201,9 +290,11 @@ impl GoldilocksCircuitSlots {
   ) -> Wire {
     let outputs = builder.gate(self.mul, &[left, right]);
     for &residual in &outputs[1..] {
-      builder.connect(residual, self.zero);
+      self.assert_zero(builder, residual);
     }
-    self.assert_canonical(builder, outputs[0]);
+    if !self.inline_output_canonicality {
+      self.assert_canonical(builder, outputs[0]);
+    }
     outputs[0]
   }
 
@@ -217,11 +308,12 @@ impl GoldilocksCircuitSlots {
     self.assert_canonical(builder, left);
     self.assert_canonical(builder, right);
 
-    let left_lanes = builder.gate(self.repack, &[left, self.zero]);
+    let left_lanes = builder.gate(self.repack, &[left, self.data_zero]);
     let products_low = self.mul(builder, left_lanes[0], right);
     let products_high = self.mul(builder, left_lanes[1], right);
 
-    let high_repacked = builder.gate(self.repack, &[products_high, self.zero]);
+    let high_repacked =
+      builder.gate(self.repack, &[products_high, self.data_zero]);
     let reversed_high = high_repacked[2];
     let twice = self.add(builder, reversed_high, reversed_high);
     let four_times = self.add(builder, twice, twice);
@@ -237,7 +329,7 @@ impl GoldilocksCircuitSlots {
     builder: &mut ShapeBuilder,
     value: Wire,
   ) -> Wire {
-    builder.gate(self.repack, &[value, self.zero])[3]
+    builder.gate(self.repack, &[value, self.data_zero])[3]
   }
 
   /// Split `[c0, c1]` into the two base-coordinate embeddings `[c0, 0]`
@@ -247,10 +339,10 @@ impl GoldilocksCircuitSlots {
     builder: &mut ShapeBuilder,
     value: Wire,
   ) -> [Wire; 2] {
-    let lanes = builder.gate(self.repack, &[value, self.zero]);
+    let lanes = builder.gate(self.repack, &[value, self.data_zero]);
     let low = lanes[3];
     let high_first = lanes[2];
-    let high = builder.gate(self.repack, &[high_first, self.zero])[3];
+    let high = builder.gate(self.repack, &[high_first, self.data_zero])[3];
     [low, high]
   }
 }

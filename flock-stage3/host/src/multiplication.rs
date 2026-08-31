@@ -27,7 +27,7 @@ use crate::{
     BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
     generate_boolean_witness_into, write_f128,
   },
-  goldilocks::GOLDILOCKS_MODULUS,
+  goldilocks::{GOLDILOCKS_MODULUS, write_canonicality_residuals},
 };
 
 const MUL_K_LOG: usize = 16;
@@ -59,6 +59,7 @@ pub(crate) struct GoldilocksMulPairRow {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GoldilocksMulPairGate {
   pub(crate) nu: usize,
+  pub(crate) enforce_output_canonicality: bool,
 }
 
 impl GateType for GoldilocksMulPairGate {
@@ -66,15 +67,19 @@ impl GateType for GoldilocksMulPairGate {
   type Hint = ();
 
   fn table(&self) -> TableType {
-    crate::boolean::table_from_block_r1cs(build_goldilocks_mul_r1cs(self.nu))
-      .with_io_schema(vec![
-        IoWord::input(0),
-        IoWord::input(1),
-        IoWord::output(2),
-        IoWord::output(3),
-        IoWord::output(4),
-        IoWord::output(5),
-      ])
+    let r1cs = if self.enforce_output_canonicality {
+      build_goldilocks_mul_canonical_r1cs(self.nu)
+    } else {
+      build_goldilocks_mul_r1cs(self.nu)
+    };
+    crate::boolean::table_from_block_r1cs(r1cs).with_io_schema(vec![
+      IoWord::input(0),
+      IoWord::input(1),
+      IoWord::output(2),
+      IoWord::output(3),
+      IoWord::output(4),
+      IoWord::output(5),
+    ])
   }
 
   fn eval(
@@ -111,6 +116,10 @@ pub(crate) fn build_goldilocks_mul_r1cs(nu: usize) -> BlockR1cs {
   goldilocks_mul_plan().boolean.block_r1cs(nu)
 }
 
+pub(crate) fn build_goldilocks_mul_canonical_r1cs(nu: usize) -> BlockR1cs {
+  goldilocks_mul_canonical_plan().boolean.block_r1cs(nu)
+}
+
 pub(crate) fn generate_goldilocks_mul_witness(
   rows: &[GoldilocksMulPairRow],
   nu: usize,
@@ -132,12 +141,30 @@ pub(crate) fn generate_goldilocks_mul_witness_into(
   })
 }
 
-fn goldilocks_mul_plan() -> &'static GoldilocksMulPlan {
-  static PLAN: OnceLock<GoldilocksMulPlan> = OnceLock::new();
-  PLAN.get_or_init(build_goldilocks_mul_plan)
+pub(crate) fn generate_goldilocks_mul_canonical_witness_into(
+  rows: &[GoldilocksMulPairRow],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+) -> Vec<u8> {
+  let plan = goldilocks_mul_canonical_plan();
+  generate_boolean_witness_into(&plan.boolean, rows, nu, dst, |row, bits| {
+    fill_goldilocks_mul_row(plan, *row, bits)
+  })
 }
 
-fn build_goldilocks_mul_plan() -> GoldilocksMulPlan {
+fn goldilocks_mul_plan() -> &'static GoldilocksMulPlan {
+  static PLAN: OnceLock<GoldilocksMulPlan> = OnceLock::new();
+  PLAN.get_or_init(|| build_goldilocks_mul_plan(false))
+}
+
+fn goldilocks_mul_canonical_plan() -> &'static GoldilocksMulPlan {
+  static PLAN: OnceLock<GoldilocksMulPlan> = OnceLock::new();
+  PLAN.get_or_init(|| build_goldilocks_mul_plan(true))
+}
+
+fn build_goldilocks_mul_plan(
+  enforce_output_canonicality: bool,
+) -> GoldilocksMulPlan {
   let mut builder = BooleanR1csBuilder::new(MUL_K_LOG, RESERVED_COLUMNS);
   for column in LEFT_BASE..RESULT_BASE + 128 {
     builder.free_boolean_at(column);
@@ -194,6 +221,14 @@ fn build_goldilocks_mul_plan() -> GoldilocksMulPlan {
         builder.write_xor(residual, &terms, one);
       }
     }
+  }
+
+  if enforce_output_canonicality {
+    write_canonicality_residuals(
+      &mut builder,
+      RESULT_BASE,
+      [TOP_RESIDUAL_BASE + 2, TOP_RESIDUAL_BASE + 66],
+    );
   }
 
   GoldilocksMulPlan { boolean: builder.finish(), quotient_bits }
@@ -351,7 +386,7 @@ mod tests {
 
   #[test]
   fn modular_mul_r1cs_rejects_wrong_result_and_quotient() {
-    let plan = build_goldilocks_mul_plan();
+    let plan = build_goldilocks_mul_plan(false);
     eprintln!(
       "Goldilocks multiplication table uses {} Boolean columns",
       plan.boolean.useful_bits()
@@ -387,17 +422,49 @@ mod tests {
   }
 
   #[test]
+  fn inline_mul_canonicality_rejects_the_noncanonical_quotient_branch() {
+    let row = GoldilocksMulPairRow {
+      left: F128::new(GOLDILOCKS_MODULUS - 1, 0),
+      right: F128::new(GOLDILOCKS_MODULUS - 1, 0),
+    };
+    for enforce in [false, true] {
+      let plan = build_goldilocks_mul_plan(enforce);
+      let r1cs = plan.boolean.block_r1cs(3);
+      let mut logical = vec![false; plan.boolean.k()];
+      plan.boolean.fill_row(&mut logical, |bits| {
+        fill_goldilocks_mul_row(&plan, row, bits);
+        // (p-1)^2 = (p+1) + (p-3)*p. The equation accepts this branch,
+        // while the folded canonicality residual rejects p+1.
+        write_f128(bits, RESULT_BASE, F128::new(GOLDILOCKS_MODULUS + 1, 0));
+        let quotient = GOLDILOCKS_MODULUS - 3;
+        for (bit, &column) in plan.quotient_bits[0].iter().enumerate() {
+          bits[column] = (quotient >> bit) & 1 == 1;
+        }
+      });
+      let mut witness = vec![false; r1cs.n()];
+      witness[..plan.boolean.k()].copy_from_slice(&logical);
+      assert!(r1cs.satisfies(&witness));
+
+      let canonical_residual = TOP_RESIDUAL_BASE + 3;
+      assert_eq!(witness[canonical_residual], enforce);
+      witness[canonical_residual] = false;
+      assert_eq!(r1cs.satisfies(&witness), !enforce);
+    }
+  }
+
+  #[test]
   fn multiplication_gate_pins_equation_residuals() {
     let nu = 3;
     let mut builder = ShapeBuilder::new(nu);
-    let slot = builder.slot(GoldilocksMulPairGate { nu });
+    let slot = builder
+      .slot(GoldilocksMulPairGate { nu, enforce_output_canonicality: false });
     let left = builder.input();
     let right = builder.input();
     let zero = builder.fixed_public_input(F128::ZERO);
     let outputs = builder.gate(slot, &[left, right]);
-    builder.connect(outputs[1], zero);
-    builder.connect(outputs[2], zero);
-    builder.connect(outputs[3], zero);
+    builder.connect(zero, outputs[1]);
+    builder.connect(zero, outputs[2]);
+    builder.connect(zero, outputs[3]);
     let shape = builder.finish().unwrap();
     shape.run(
       &[
@@ -423,7 +490,7 @@ mod tests {
   fn modular_mul_batch_witness_zeroes_dummy_rows() {
     let rows =
       [GoldilocksMulPairRow { left: F128::new(3, 5), right: F128::new(7, 11) }];
-    let plan = build_goldilocks_mul_plan();
+    let plan = build_goldilocks_mul_plan(false);
     let (z, a, b, stripe) = generate_goldilocks_mul_witness(&rows, 3);
     let chunks = plan.boolean.k() / 128;
     assert_eq!(z.len(), chunks * 8);

@@ -1635,6 +1635,282 @@ extern "C" fn rs_sp1_compress_aggregate_root(
 // Flock aggregate-root Stage 3 (feature `flock`)
 // =============================================================================
 
+/// Profile, compile/evaluate, or prove the Flock P3-verifier leaf relation for
+/// one canonical raw IxVM proof. The proof mode is intentionally diagnostic
+/// until the Stage 2 internal-node artifact codec and uniform claim land.
+#[unsafe(no_mangle)]
+extern "C" fn rs_flock_stage2_ixvm_leaf(
+  vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  verify_claim_index: LeanNat<LeanBorrowed<'_>>,
+  query_count: LeanNat<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "flock")]
+  {
+    let result = (|| {
+      let fri = decode_fri_parameters(&fri_parameters);
+      let verify_claim_index =
+        u64::try_from(lean_unbox_nat_as_usize(verify_claim_index.inner()))
+          .map_err(|error| {
+            anyhow::anyhow!("verify_claim index exceeds u64: {error}")
+          })?;
+      let query_count = lean_unbox_nat_as_usize(query_count.inner());
+      let backend = flock_stage3_host::FlockStage2Backend;
+      match mode.as_str().to_ascii_lowercase().as_str() {
+        "profile" => {
+          let report = backend.profile_ixvm_leaf(
+            vk_bytes.as_bytes(),
+            claim_bytes.as_bytes(),
+            proof_bytes.as_bytes(),
+            &fri,
+            verify_claim_index,
+          )?;
+          println!("{report}");
+          Ok(())
+        },
+        "pcs-size" => {
+          let report = backend.size_ixvm_leaf_pcs_fri_prefix(
+            vk_bytes.as_bytes(),
+            claim_bytes.as_bytes(),
+            proof_bytes.as_bytes(),
+            &fri,
+            verify_claim_index,
+            query_count,
+          )?;
+          println!("{report}");
+          Ok(())
+        },
+        "size" => {
+          let report = backend.size_ixvm_leaf(
+            vk_bytes.as_bytes(),
+            claim_bytes.as_bytes(),
+            proof_bytes.as_bytes(),
+            &fri,
+            verify_claim_index,
+          )?;
+          println!("{report}");
+          Ok(())
+        },
+        "pcs" => {
+          let report = backend.profile_ixvm_leaf_pcs_fri_prefix(
+            vk_bytes.as_bytes(),
+            claim_bytes.as_bytes(),
+            proof_bytes.as_bytes(),
+            &fri,
+            verify_claim_index,
+            query_count,
+          )?;
+          println!("{report}");
+          Ok(())
+        },
+        "preflight" => {
+          let report = backend.preflight_ixvm_leaf(
+            vk_bytes.as_bytes(),
+            claim_bytes.as_bytes(),
+            proof_bytes.as_bytes(),
+            &fri,
+            verify_claim_index,
+          )?;
+          println!("{report}");
+          Ok(())
+        },
+        "prove" => {
+          let report = backend.preflight_ixvm_leaf(
+            vk_bytes.as_bytes(),
+            claim_bytes.as_bytes(),
+            proof_bytes.as_bytes(),
+            &fri,
+            verify_claim_index,
+          )?;
+          println!("{report}");
+          println!("starting Flock Stage 2 P3 leaf prover");
+          let artifact = backend.prove_ixvm_leaf(
+            vk_bytes.as_bytes(),
+            claim_bytes.as_bytes(),
+            proof_bytes.as_bytes(),
+            &fri,
+            verify_claim_index,
+          )?;
+          if artifact.statement().digest() != report.p3_statement_digest
+            || artifact.relation_manifest().relation_digest()
+              != report.relation_digest
+          {
+            return Err(anyhow::anyhow!(
+              "Flock leaf prover rebuilt an identity different from preflight"
+            ));
+          }
+          backend.verify_ixvm_leaf(
+            &artifact,
+            artifact.statement(),
+            &report.relation_digest,
+          )?;
+          println!(
+            "Flock Stage 2 P3 leaf proof verified; bundle={} bytes",
+            artifact.proof_bundle_bytes().len(),
+          );
+          Ok(())
+        },
+        other => Err(anyhow::anyhow!(
+          "unknown Flock Stage 2 leaf mode `{other}` (expected profile|pcs-size|size|pcs|preflight|prove)"
+        )),
+      }
+    })();
+    match result {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+    }
+  }
+  #[cfg(not(feature = "flock"))]
+  {
+    let _ = (
+      &vk_bytes,
+      &claim_bytes,
+      &proof_bytes,
+      &fri_parameters,
+      &verify_claim_index,
+      &query_count,
+      &mode,
+    );
+    LeanExcept::error_string(
+      "ix was built without Flock Stage 2; rebuild with IX_FLOCK=1",
+    )
+  }
+}
+
+/// Structured verifier-core lower-bound benchmark for one canonical IxVM P3
+/// proof. The JSON explicitly identifies the missing `CheckEnv` semantics and
+/// the exact-witness cache scope so callers cannot mistake it for the binding
+/// Stage 2 comparison.
+#[unsafe(no_mangle)]
+extern "C" fn rs_flock_stage2_ixvm_leaf_benchmark(
+  vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  verify_claim_index: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "flock")]
+  {
+    let result = (|| {
+      let fri = decode_fri_parameters(&fri_parameters);
+      let verify_claim_index =
+        u64::try_from(lean_unbox_nat_as_usize(verify_claim_index.inner()))
+          .map_err(|error| {
+            anyhow::anyhow!("verify_claim index exceeds u64: {error}")
+          })?;
+      let report = flock_stage3_host::FlockStage2Backend
+        .benchmark_ixvm_verifier_core(
+          vk_bytes.as_bytes(),
+          claim_bytes.as_bytes(),
+          proof_bytes.as_bytes(),
+          &fri,
+          verify_claim_index,
+        )?;
+      let digest_hex = |digest: [u8; 32]| {
+        blake3::Hash::from_bytes(digest).to_hex().to_string()
+      };
+      let preflight = &report.preflight;
+      let relation = &preflight.relation;
+      let advice = &preflight.advice;
+      let timings = &report.timings;
+      let json = serde_json::json!({
+        "schema_version": 1,
+        "status": "ok",
+        "backend": "flock-verifier-core",
+        "semantic_scope": "p3-verifier-only",
+        "cache_scope": "same-witness-lower-bound",
+        "identity": {
+          "p3_statement_digest": digest_hex(preflight.p3_statement_digest),
+          "output_claim_digest": digest_hex(preflight.output_claim_digest),
+          "relation_digest": digest_hex(preflight.relation_digest),
+          "circuit_digest": digest_hex(report.circuit_digest),
+          "config_digest": digest_hex(preflight.config_digest),
+        },
+        "transport": {
+          "verifying_key_bytes": preflight.verifying_key_bytes,
+          "claim_bytes": preflight.claim_bytes,
+          "compact_proof_bytes": preflight.compact_proof_bytes,
+          "advice_bytes": advice.advice_bytes,
+        },
+        "p3_shape": {
+          "total_circuits": advice.total_circuits,
+          "active_circuits": advice.active_circuits,
+          "queries": advice.queries,
+          "fri_rounds": advice.fri_rounds,
+          "input_rounds_per_query": advice.input_rounds_per_query,
+          "commitment_cap_digests": advice.commitment_cap_digests,
+          "input_merkle_siblings": advice.input_merkle_siblings,
+          "fri_merkle_siblings": advice.fri_merkle_siblings,
+          "opened_base_values": advice.opened_base_values,
+          "fri_sibling_extension_values": advice.fri_sibling_extension_values,
+          "other_extension_values": advice.other_extension_values,
+        },
+        "relation": {
+          "nu": relation.nu,
+          "table_capacity": relation.table_capacity,
+          "inputs": relation.relation_inputs,
+          "public_values": relation.public_values,
+          "total_rows": relation.total_rows(),
+          "rows": {
+            "blake3": relation.blake3_rows,
+            "digest_order": relation.digest_order_rows,
+            "goldilocks_add": relation.goldilocks_add_rows,
+            "goldilocks_mul": relation.goldilocks_mul_rows,
+            "lane_repack": relation.lane_repack_rows,
+            "canonical_goldilocks": relation.canonical_goldilocks_rows,
+            "equality": relation.equality_rows,
+            "zero_constraint": relation.zero_constraint_rows,
+            "hash_sample": relation.hash_sample_rows,
+            "field_sample": relation.field_sample_rows,
+            "u64_split": relation.u64_split_rows,
+            "byte_window": relation.byte_window_rows,
+          },
+        },
+        "timings_ns": {
+          "prepare": timings.prepare_ns,
+          "typed_witness": timings.typed_witness_ns,
+          "preflight": timings.preflight_ns,
+          "manifest": timings.manifest_ns,
+          "same_witness_prove": timings.same_witness_prove_ns,
+          "valid_verify": timings.valid_verify_ns,
+          "corrupt_reject": timings.corrupt_reject_ns,
+          "input_to_verified_output": timings.input_to_verified_output_ns,
+          "wall_with_negative_check": timings.wall_with_negative_check_ns,
+        },
+        "proof": {
+          "bundle_bytes": report.proof_bundle_bytes,
+          "bundle_digest": digest_hex(report.proof_bundle_digest),
+          "valid_verification": true,
+          "corrupted_rejected": true,
+        },
+      });
+      serde_json::to_vec_pretty(&json).map_err(|error| {
+        anyhow::anyhow!("encode Flock benchmark JSON: {error}")
+      })
+    })();
+    match result {
+      Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+    }
+  }
+  #[cfg(not(feature = "flock"))]
+  {
+    let _ = (
+      &vk_bytes,
+      &claim_bytes,
+      &proof_bytes,
+      &fri_parameters,
+      &verify_claim_index,
+    );
+    LeanExcept::error_string(
+      "ix was built without Flock Stage 2; rebuild with IX_FLOCK=1",
+    )
+  }
+}
+
 #[cfg(feature = "flock")]
 fn write_flock_artifact_atomic(
   path: &std::path::Path,

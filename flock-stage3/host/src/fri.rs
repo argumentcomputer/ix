@@ -23,7 +23,10 @@ use flock_prover::{
   circuit::builder::{CircuitShape, ShapeBuilder, SlotId, Wire},
   field::F128,
   lincheck::{CscCircuit, LincheckCircuit},
-  pcs::Commitment,
+  pcs::{
+    Commitment,
+    ligerito::{LigeritoProfile, embedded_initial_k_or_default},
+  },
   proof::R1csProofCircuitMerged,
   prover::{self, UnionSlotProverInput},
   r1cs::BlockR1cs,
@@ -32,7 +35,8 @@ use flock_prover::{
   verifier,
 };
 use ix_terminal::{
-  Stage2RootStatementV1, ValidatedStage2RootV1, fri_parameter_words,
+  Stage2RootStatementV1, ValidatedP3ProofV1, ValidatedStage2RootV1,
+  fri_parameter_words,
 };
 use multi_stark::{
   p3_field::{BasedVectorSpace, PrimeCharacteristicRing, PrimeField64},
@@ -60,8 +64,9 @@ use crate::{
     pack8, pcs_params,
   },
   equality::{
-    F128EqualityGate, build_f128_equality_r1cs,
-    generate_f128_equality_witness_into,
+    F128EqualityGate, F128ZeroGate, build_f128_equality_r1cs,
+    build_f128_zero_r1cs, generate_f128_equality_witness_into,
+    generate_f128_zero_witness_into,
   },
   extension::{
     GoldilocksCircuitSlots, GoldilocksLaneRepackGate, build_lane_repack_r1cs,
@@ -69,15 +74,18 @@ use crate::{
   },
   goldilocks::{
     CanonicalGoldilocksPairGate, GOLDILOCKS_MODULUS, GoldilocksAddPairGate,
-    build_canonical_pair_r1cs, build_goldilocks_add_r1cs,
-    generate_canonical_pair_witness_into, generate_goldilocks_add_witness_into,
+    build_canonical_pair_r1cs, build_goldilocks_add_canonical_r1cs,
+    build_goldilocks_add_r1cs, generate_canonical_pair_witness_into,
+    generate_goldilocks_add_canonical_witness_into,
+    generate_goldilocks_add_witness_into,
   },
   merkle::{
     DigestOrderGate, build_digest_order_r1cs,
     generate_digest_order_witness_into,
   },
   multiplication::{
-    GoldilocksMulPairGate, build_goldilocks_mul_r1cs,
+    GoldilocksMulPairGate, build_goldilocks_mul_canonical_r1cs,
+    build_goldilocks_mul_r1cs, generate_goldilocks_mul_canonical_witness_into,
     generate_goldilocks_mul_witness_into, goldilocks_mul,
   },
   transcript::{
@@ -300,12 +308,27 @@ impl Stage2PcsFriWitnessV1 {
     prepared: &ValidatedStage2RootV1,
     fri: &FriParameters,
   ) -> Result<Self> {
-    let typed = Stage3TypedProofWitnessV1::from_prepared(prepared, fri)?;
-    Self::from_prepared_and_typed(prepared, fri, &typed)
+    Self::from_p3(prepared.p3_proof(), fri)
   }
 
   pub fn from_prepared_and_typed(
     prepared: &ValidatedStage2RootV1,
+    fri: &FriParameters,
+    typed: &Stage3TypedProofWitnessV1,
+  ) -> Result<Self> {
+    Self::from_p3_and_typed(prepared.p3_proof(), fri, typed)
+  }
+
+  pub fn from_p3(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+  ) -> Result<Self> {
+    let typed = Stage3TypedProofWitnessV1::from_p3(prepared, fri)?;
+    Self::from_p3_and_typed(prepared, fri, &typed)
+  }
+
+  pub fn from_p3_and_typed(
+    prepared: &ValidatedP3ProofV1,
     fri: &FriParameters,
     typed: &Stage3TypedProofWitnessV1,
   ) -> Result<Self> {
@@ -337,6 +360,23 @@ impl Stage2AirPcsFriWitnessV1 {
     )?;
     Ok(Self { pcs_fri, air })
   }
+
+  /// Build the complete AIR/PCS/FRI witness for any validated Aiur/P3 proof.
+  pub fn from_p3(
+    prepared: &ValidatedP3ProofV1,
+    fri: &FriParameters,
+  ) -> Result<Self> {
+    let typed = Stage3TypedProofWitnessV1::from_p3(prepared, fri)?;
+    let pcs_fri =
+      Stage2PcsFriWitnessV1::from_p3_and_typed(prepared, fri, &typed)?;
+    let air = Stage2AirProgramV1::from_p3_and_typed(
+      prepared,
+      fri,
+      &pcs_fri.pcs_instance,
+      &typed,
+    )?;
+    Ok(Self { pcs_fri, air })
+  }
 }
 
 /// Exact circuit census produced by the no-prove Stage 3 preflight.
@@ -358,6 +398,7 @@ pub struct Stage3RelationCensusV1 {
   pub lane_repack_rows: u64,
   pub canonical_goldilocks_rows: u64,
   pub equality_rows: u64,
+  pub zero_constraint_rows: u64,
   pub hash_sample_rows: u64,
   pub field_sample_rows: u64,
   pub u64_split_rows: u64,
@@ -374,10 +415,436 @@ impl Stage3RelationCensusV1 {
       .saturating_add(self.lane_repack_rows)
       .saturating_add(self.canonical_goldilocks_rows)
       .saturating_add(self.equality_rows)
+      .saturating_add(self.zero_constraint_rows)
       .saturating_add(self.hash_sample_rows)
       .saturating_add(self.field_sample_rows)
       .saturating_add(self.u64_split_rows)
       .saturating_add(self.byte_window_rows)
+  }
+}
+
+/// Exact declared-row census captured before `ShapeBuilder::finish`.
+///
+/// This is the production sizing checkpoint: it emits every selected verifier
+/// gate once, but deliberately does not allocate Flock's padded cell space,
+/// evaluate the relation, or construct a circuit digest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stage2RelationSizingV1 {
+  pub estimated_nu: u64,
+  pub exact_nu: u64,
+  pub table_capacity: u64,
+  pub selected_queries: u64,
+  pub includes_air: bool,
+  pub relation_inputs: u64,
+  pub public_values: u64,
+  pub blake3_rows: u64,
+  pub digest_order_rows: u64,
+  pub goldilocks_add_rows: u64,
+  pub goldilocks_mul_rows: u64,
+  pub lane_repack_rows: u64,
+  pub canonical_goldilocks_rows: u64,
+  pub equality_rows: u64,
+  pub zero_constraint_rows: u64,
+  pub hash_sample_rows: u64,
+  pub field_sample_rows: u64,
+  pub u64_split_rows: u64,
+  pub byte_window_rows: u64,
+}
+
+/// Primary Flock allocations implied by an exact Stage 2 row census.
+///
+/// The virtual figures describe `Vec` address-space reservations. The
+/// commit-phase model counts the pages the current boolean witness generators
+/// explicitly write plus the compact stack, initial codeword, and initial
+/// Merkle tree that coexist at commit time. It deliberately does not claim to
+/// be a peak-RSS prediction: circuit/row storage, wiring GKR, PIOP/opening
+/// scratch, allocator metadata, and retained scratch-pool buffers are outside
+/// the model and require measurement on the target machine.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stage2RelationMemoryEstimateV1 {
+  pub nu: u64,
+  pub registry_m: u64,
+  pub registry_extent_bits: u64,
+  pub padded_address_bits: u64,
+  pub padded_witness_buffer_virtual_bytes: u64,
+  pub three_padded_witness_buffers_virtual_bytes: u64,
+  pub stripe_buffers_virtual_bytes: u64,
+  pub witness_and_stripe_virtual_bytes: u64,
+  pub live_witness_words_per_buffer: u64,
+  pub live_witness_bytes_per_buffer: u64,
+  pub stripe_live_write_bytes: u64,
+  pub dense_stack_words: u64,
+  pub dense_m: u64,
+  pub committed_stack_bytes: u64,
+  pub pcs_log_inv_rate: u64,
+  pub pcs_log_batch_size: u64,
+  pub pcs_total_lanes: u64,
+  pub pcs_committed_lanes: u64,
+  pub initial_codeword_bytes: u64,
+  pub initial_merkle_tree_bytes: u64,
+  pub accounted_commit_phase_bytes: u64,
+  pub accounted_commit_phase_with_25_percent_headroom_bytes: u64,
+  pub accounted_virtual_reservation_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stage2TableMemoryGeometry {
+  name: &'static str,
+  k_log: u32,
+  used_word_columns: u64,
+}
+
+// These are protocol geometry, not empirical tuning knobs. The invariant
+// test below rebuilds every table and pins both values so an R1CS layout
+// change cannot silently stale the memory model.
+const STAGE2_TABLE_MEMORY_GEOMETRY: [Stage2TableMemoryGeometry; 12] = [
+  Stage2TableMemoryGeometry {
+    name: "blake3",
+    k_log: 14,
+    used_word_columns: 92,
+  },
+  Stage2TableMemoryGeometry {
+    name: "digest-order",
+    k_log: 11,
+    used_word_columns: 12,
+  },
+  Stage2TableMemoryGeometry {
+    name: "goldilocks-add",
+    k_log: 11,
+    used_word_columns: 14,
+  },
+  Stage2TableMemoryGeometry {
+    name: "goldilocks-mul",
+    k_log: 16,
+    used_word_columns: 331,
+  },
+  Stage2TableMemoryGeometry {
+    name: "lane-repack",
+    k_log: 10,
+    used_word_columns: 6,
+  },
+  Stage2TableMemoryGeometry {
+    name: "canonical-goldilocks",
+    k_log: 9,
+    used_word_columns: 3,
+  },
+  Stage2TableMemoryGeometry {
+    name: "equality",
+    k_log: 9,
+    used_word_columns: 4,
+  },
+  Stage2TableMemoryGeometry {
+    name: "zero-constraint",
+    k_log: 9,
+    used_word_columns: 4,
+  },
+  Stage2TableMemoryGeometry {
+    name: "hash-sample",
+    k_log: 9,
+    used_word_columns: 2,
+  },
+  Stage2TableMemoryGeometry {
+    name: "field-sample",
+    k_log: 14,
+    used_word_columns: 43,
+  },
+  Stage2TableMemoryGeometry {
+    name: "u64-split",
+    k_log: 9,
+    used_word_columns: 4,
+  },
+  Stage2TableMemoryGeometry {
+    name: "byte-window",
+    k_log: 12,
+    used_word_columns: 21,
+  },
+];
+
+impl Stage2RelationSizingV1 {
+  pub fn total_rows(&self) -> u64 {
+    self
+      .blake3_rows
+      .saturating_add(self.digest_order_rows)
+      .saturating_add(self.goldilocks_add_rows)
+      .saturating_add(self.goldilocks_mul_rows)
+      .saturating_add(self.lane_repack_rows)
+      .saturating_add(self.canonical_goldilocks_rows)
+      .saturating_add(self.equality_rows)
+      .saturating_add(self.zero_constraint_rows)
+      .saturating_add(self.hash_sample_rows)
+      .saturating_add(self.field_sample_rows)
+      .saturating_add(self.u64_split_rows)
+      .saturating_add(self.byte_window_rows)
+  }
+
+  pub fn maximum_table_rows(&self) -> u64 {
+    [
+      self.blake3_rows,
+      self.digest_order_rows,
+      self.goldilocks_add_rows,
+      self.goldilocks_mul_rows,
+      self.lane_repack_rows,
+      self.canonical_goldilocks_rows,
+      self.equality_rows,
+      self.zero_constraint_rows,
+      self.hash_sample_rows,
+      self.field_sample_rows,
+      self.u64_split_rows,
+      self.byte_window_rows,
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(0)
+  }
+
+  /// Derive the current Fast128 prover's primary allocation geometry.
+  pub fn memory_estimate(&self) -> Result<Stage2RelationMemoryEstimateV1> {
+    const F128_BYTES: u128 = 16;
+    const HASH_BYTES: u128 = 32;
+    const MIN_DENSE_M: u32 = 22;
+    const LOG_PACKING: u32 = 7;
+
+    let pow2 = |exponent: u32, label: &str| -> Result<u128> {
+      1u128.checked_shl(exponent).ok_or_else(|| {
+        anyhow::anyhow!("{label} exponent {exponent} exceeds u128")
+      })
+    };
+    let next_power_of_two = |value: u128, label: &str| -> Result<u128> {
+      let value = value.max(1);
+      let exponent = u128::BITS - (value - 1).leading_zeros();
+      pow2(exponent, label)
+    };
+    let narrow = |value: u128, label: &str| -> Result<u64> {
+      u64::try_from(value)
+        .map_err(|error| anyhow::anyhow!("{label} exceeds u64: {error}"))
+    };
+    let add = |left: u128, right: u128, label: &str| -> Result<u128> {
+      left
+        .checked_add(right)
+        .ok_or_else(|| anyhow::anyhow!("{label} exceeds u128"))
+    };
+    let multiply = |left: u128, right: u128, label: &str| -> Result<u128> {
+      left
+        .checked_mul(right)
+        .ok_or_else(|| anyhow::anyhow!("{label} exceeds u128"))
+    };
+
+    let rows = [
+      self.blake3_rows,
+      self.digest_order_rows,
+      self.goldilocks_add_rows,
+      self.goldilocks_mul_rows,
+      self.lane_repack_rows,
+      self.canonical_goldilocks_rows,
+      self.equality_rows,
+      self.zero_constraint_rows,
+      self.hash_sample_rows,
+      self.field_sample_rows,
+      self.u64_split_rows,
+      self.byte_window_rows,
+    ];
+    if rows.iter().any(|&row_count| row_count > self.table_capacity) {
+      bail!("Stage 2 memory estimate received a row count above capacity");
+    }
+
+    let capacity = u128::from(self.table_capacity);
+    let mut width_sum_bits = 0u128;
+    let mut live_words = 0u128;
+    let mut stripe_live_write_bytes = 0u128;
+    for (geometry, row_count) in STAGE2_TABLE_MEMORY_GEOMETRY.iter().zip(rows) {
+      let width_bits = pow2(geometry.k_log, geometry.name)?;
+      width_sum_bits =
+        add(width_sum_bits, width_bits, "Stage 2 registry width sum")?;
+      live_words = add(
+        live_words,
+        multiply(
+          u128::from(row_count),
+          u128::from(geometry.used_word_columns),
+          "Stage 2 live witness words",
+        )?,
+        "Stage 2 live witness words",
+      )?;
+      // The partial driver transposes eight rows at a time and writes one
+      // complete k-bit stripe block for every nonempty group.
+      let row_groups = u128::from(row_count).div_ceil(8);
+      stripe_live_write_bytes = add(
+        stripe_live_write_bytes,
+        multiply(row_groups, width_bits, "Stage 2 live stripe bytes")?,
+        "Stage 2 live stripe bytes",
+      )?;
+    }
+
+    let registry_extent_bits =
+      multiply(capacity, width_sum_bits, "Stage 2 registry extent")?;
+    let padded_address_bits =
+      next_power_of_two(registry_extent_bits, "Stage 2 padded address")?;
+    let registry_m = padded_address_bits.trailing_zeros();
+    let padded_witness_buffer_virtual_bytes = padded_address_bits / 8;
+    let three_padded_witness_buffers_virtual_bytes = multiply(
+      padded_witness_buffer_virtual_bytes,
+      3,
+      "three Stage 2 witness buffers",
+    )?;
+    let stripe_buffers_virtual_bytes = registry_extent_bits / 8;
+    let witness_and_stripe_virtual_bytes = add(
+      three_padded_witness_buffers_virtual_bytes,
+      stripe_buffers_virtual_bytes,
+      "Stage 2 witness and stripe virtual reservation",
+    )?;
+
+    let live_witness_bytes_per_buffer =
+      multiply(live_words, F128_BYTES, "Stage 2 live witness bytes")?;
+    let padded_words = padded_address_bits / 128;
+    let dense_floor_words =
+      pow2(MIN_DENSE_M - LOG_PACKING, "Stage 2 dense-stack floor")?;
+    let committed_words =
+      next_power_of_two(live_words, "Stage 2 committed dense-stack words")?
+        .max(dense_floor_words)
+        .min(padded_words);
+    let dense_m = committed_words.trailing_zeros() + LOG_PACKING;
+    let profile = LigeritoProfile::Fast128;
+    let log_inv_rate = u32::try_from(profile.log_inv_rate())
+      .expect("Fast128 log inverse rate fits u32");
+    let log_batch_size = u32::try_from(embedded_initial_k_or_default(
+      usize::try_from(dense_m).expect("dense m fits usize"),
+      profile,
+    ))
+    .expect("Fast128 batch logarithm fits u32");
+    let total_lanes = pow2(log_batch_size, "Stage 2 PCS lane count")?;
+    let lane_words = committed_words / total_lanes;
+    let committed_lanes =
+      live_words.div_ceil(lane_words).max(1).min(total_lanes);
+    let committed_stack_bytes =
+      multiply(committed_words, F128_BYTES, "Stage 2 committed stack bytes")?;
+    let rate = pow2(log_inv_rate, "Stage 2 PCS inverse rate")?;
+    let initial_codeword_words = multiply(
+      multiply(lane_words, rate, "Stage 2 initial codeword positions")?,
+      committed_lanes,
+      "Stage 2 initial codeword words",
+    )?;
+    let initial_codeword_bytes = multiply(
+      initial_codeword_words,
+      F128_BYTES,
+      "Stage 2 initial codeword bytes",
+    )?;
+    let initial_merkle_leaves =
+      multiply(lane_words, rate, "Stage 2 initial Merkle leaves")?;
+    let initial_merkle_nodes =
+      multiply(initial_merkle_leaves, 2, "Stage 2 initial Merkle nodes")?
+        .checked_sub(1)
+        .expect("at least one initial Merkle leaf");
+    let initial_merkle_tree_bytes = multiply(
+      initial_merkle_nodes,
+      HASH_BYTES,
+      "Stage 2 initial Merkle tree bytes",
+    )?;
+
+    let three_live_witness_bytes = multiply(
+      live_witness_bytes_per_buffer,
+      3,
+      "three Stage 2 live witness buffers",
+    )?;
+    let accounted_commit_phase_bytes = [
+      three_live_witness_bytes,
+      stripe_live_write_bytes,
+      committed_stack_bytes,
+      initial_codeword_bytes,
+      initial_merkle_tree_bytes,
+    ]
+    .into_iter()
+    .try_fold(0u128, |total, value| {
+      add(total, value, "Stage 2 accounted commit-phase bytes")
+    })?;
+    let accounted_commit_phase_with_25_percent_headroom_bytes = multiply(
+      accounted_commit_phase_bytes,
+      5,
+      "Stage 2 25-percent-headroom bytes",
+    )?
+    .div_ceil(4);
+    let accounted_virtual_reservation_bytes = [
+      witness_and_stripe_virtual_bytes,
+      committed_stack_bytes,
+      initial_codeword_bytes,
+      initial_merkle_tree_bytes,
+    ]
+    .into_iter()
+    .try_fold(0u128, |total, value| {
+      add(total, value, "Stage 2 accounted virtual reservation")
+    })?;
+
+    Ok(Stage2RelationMemoryEstimateV1 {
+      nu: self.exact_nu,
+      registry_m: u64::from(registry_m),
+      registry_extent_bits: narrow(
+        registry_extent_bits,
+        "Stage 2 registry extent bits",
+      )?,
+      padded_address_bits: narrow(
+        padded_address_bits,
+        "Stage 2 padded address bits",
+      )?,
+      padded_witness_buffer_virtual_bytes: narrow(
+        padded_witness_buffer_virtual_bytes,
+        "Stage 2 padded witness-buffer virtual bytes",
+      )?,
+      three_padded_witness_buffers_virtual_bytes: narrow(
+        three_padded_witness_buffers_virtual_bytes,
+        "three Stage 2 padded witness-buffer virtual bytes",
+      )?,
+      stripe_buffers_virtual_bytes: narrow(
+        stripe_buffers_virtual_bytes,
+        "Stage 2 stripe-buffer virtual bytes",
+      )?,
+      witness_and_stripe_virtual_bytes: narrow(
+        witness_and_stripe_virtual_bytes,
+        "Stage 2 witness-and-stripe virtual bytes",
+      )?,
+      live_witness_words_per_buffer: narrow(
+        live_words,
+        "Stage 2 live witness words",
+      )?,
+      live_witness_bytes_per_buffer: narrow(
+        live_witness_bytes_per_buffer,
+        "Stage 2 live witness bytes",
+      )?,
+      stripe_live_write_bytes: narrow(
+        stripe_live_write_bytes,
+        "Stage 2 live stripe bytes",
+      )?,
+      dense_stack_words: narrow(live_words, "Stage 2 dense-stack words")?,
+      dense_m: u64::from(dense_m),
+      committed_stack_bytes: narrow(
+        committed_stack_bytes,
+        "Stage 2 committed-stack bytes",
+      )?,
+      pcs_log_inv_rate: u64::from(log_inv_rate),
+      pcs_log_batch_size: u64::from(log_batch_size),
+      pcs_total_lanes: narrow(total_lanes, "Stage 2 total PCS lanes")?,
+      pcs_committed_lanes: narrow(
+        committed_lanes,
+        "Stage 2 committed PCS lanes",
+      )?,
+      initial_codeword_bytes: narrow(
+        initial_codeword_bytes,
+        "Stage 2 initial codeword bytes",
+      )?,
+      initial_merkle_tree_bytes: narrow(
+        initial_merkle_tree_bytes,
+        "Stage 2 initial Merkle-tree bytes",
+      )?,
+      accounted_commit_phase_bytes: narrow(
+        accounted_commit_phase_bytes,
+        "Stage 2 accounted commit-phase bytes",
+      )?,
+      accounted_commit_phase_with_25_percent_headroom_bytes: narrow(
+        accounted_commit_phase_with_25_percent_headroom_bytes,
+        "Stage 2 accounted commit-phase bytes with headroom",
+      )?,
+      accounted_virtual_reservation_bytes: narrow(
+        accounted_virtual_reservation_bytes,
+        "Stage 2 accounted virtual-reservation bytes",
+      )?,
+    })
   }
 }
 
@@ -1633,24 +2100,48 @@ pub fn prove_stage2_air_pcs_fri_conformance(
   prove_stage2_air_pcs_fri_with_domain(
     witness,
     STAGE2_AIR_PCS_FRI_CONFORMANCE_TRANSCRIPT_DOMAIN,
+    Stage2RelationFlavor::LegacyStage3,
   )
 }
 
 pub(crate) fn prove_stage2_air_pcs_fri_production(
   witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<Stage2AirPcsFriArtifactV1> {
-  prove_stage2_air_pcs_fri_with_domain(witness, crate::STAGE3_TRANSCRIPT_DOMAIN)
+  prove_stage2_air_pcs_fri_with_domain(
+    witness,
+    crate::STAGE3_TRANSCRIPT_DOMAIN,
+    Stage2RelationFlavor::LegacyStage3,
+  )
+}
+
+pub(crate) fn prove_p3_verifier_leaf(
+  witness: &Stage2AirPcsFriWitnessV1,
+) -> Result<Stage2AirPcsFriArtifactV1> {
+  prove_stage2_air_pcs_fri_with_domain(
+    witness,
+    crate::FLOCK_STAGE2_P3_LEAF_TRANSCRIPT_DOMAIN,
+    Stage2RelationFlavor::FlockStage2Leaf,
+  )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stage2RelationFlavor {
+  /// Preserve the already-published Stage 3 circuit and proof transcript.
+  LegacyStage3,
+  /// Use directed arithmetic zero constraints for sound, linear setup.
+  FlockStage2Leaf,
 }
 
 fn prove_stage2_air_pcs_fri_with_domain(
   witness: &Stage2AirPcsFriWitnessV1,
   transcript_domain: &[u8],
+  flavor: Stage2RelationFlavor,
 ) -> Result<Stage2AirPcsFriArtifactV1> {
   let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
   let total_started = std::time::Instant::now();
   let phase_started = std::time::Instant::now();
   let (relation, _) = rayon::join(
-    || cached_stage2_air_pcs_fri_relation(witness),
+    || cached_stage2_air_pcs_fri_relation(witness, flavor),
     || {
       stage3_linchecks();
     },
@@ -1696,6 +2187,7 @@ fn prove_stage2_air_pcs_fri_with_domain(
 
 fn build_stage2_air_pcs_fri_relation(
   witness: &Stage2AirPcsFriWitnessV1,
+  flavor: Stage2RelationFlavor,
 ) -> Result<TranscriptBoundFriCommitPhaseRelation> {
   let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
   let total_started = std::time::Instant::now();
@@ -1726,17 +2218,32 @@ fn build_stage2_air_pcs_fri_relation(
     );
   }
   let phase_started = std::time::Instant::now();
-  let relation =
-    TranscriptBoundFriCommitPhaseRelation::build_all_with_pcs_and_air(
-      &pcs_fri.prefix,
-      &pcs_fri.fri_transcript,
-      &fri_challenges,
-      &pcs_fri.pcs_instance,
-      &witness.air,
-      &pcs_fri.queries,
-      &fri_computations,
-      &pcs_computations,
-    )?;
+  let relation = match flavor {
+    Stage2RelationFlavor::LegacyStage3 => {
+      TranscriptBoundFriCommitPhaseRelation::build_all_with_pcs_and_air(
+        &pcs_fri.prefix,
+        &pcs_fri.fri_transcript,
+        &fri_challenges,
+        &pcs_fri.pcs_instance,
+        &witness.air,
+        &pcs_fri.queries,
+        &fri_computations,
+        &pcs_computations,
+      )?
+    },
+    Stage2RelationFlavor::FlockStage2Leaf => {
+      TranscriptBoundFriCommitPhaseRelation::build_all_with_pcs_and_air_zero_constraint(
+        &pcs_fri.prefix,
+        &pcs_fri.fri_transcript,
+        &fri_challenges,
+        &pcs_fri.pcs_instance,
+        &witness.air,
+        &pcs_fri.queries,
+        &fri_computations,
+        &pcs_computations,
+      )?
+    },
+  };
   if trace {
     eprintln!(
       "    [stage3-relation] build circuit shape: {:.2} ms",
@@ -1757,15 +2264,20 @@ fn build_stage2_air_pcs_fri_relation(
 /// post-hoc verification without introducing a cache-collision assumption.
 fn cached_stage2_air_pcs_fri_relation(
   witness: &Stage2AirPcsFriWitnessV1,
+  flavor: Stage2RelationFlavor,
 ) -> Result<Arc<TranscriptBoundFriCommitPhaseRelation>> {
-  type Entry =
-    (Stage2AirPcsFriWitnessV1, Arc<TranscriptBoundFriCommitPhaseRelation>);
+  type Entry = (
+    Stage2RelationFlavor,
+    Stage2AirPcsFriWitnessV1,
+    Arc<TranscriptBoundFriCommitPhaseRelation>,
+  );
   static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
 
   let cache = CACHE.get_or_init(|| Mutex::new(None));
   let mut cached =
     cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-  if let Some((cached_witness, relation)) = cached.as_ref()
+  if let Some((cached_flavor, cached_witness, relation)) = cached.as_ref()
+    && *cached_flavor == flavor
     && cached_witness == witness
   {
     if std::env::var_os("IX_FLOCK_TIMING").is_some() {
@@ -1777,30 +2289,221 @@ fn cached_stage2_air_pcs_fri_relation(
   if std::env::var_os("IX_FLOCK_TIMING").is_some() {
     eprintln!("    [stage3-relation] exact-witness cache: miss");
   }
-  let relation = Arc::new(build_stage2_air_pcs_fri_relation(witness)?);
-  *cached = Some((witness.clone(), Arc::clone(&relation)));
+  let relation = Arc::new(build_stage2_air_pcs_fri_relation(witness, flavor)?);
+  *cached = Some((flavor, witness.clone(), Arc::clone(&relation)));
   Ok(relation)
 }
 
 pub(crate) fn stage2_air_pcs_fri_circuit_digest(
   witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<[u8; 32]> {
-  Ok(cached_stage2_air_pcs_fri_relation(witness)?.shape.circuit.digest())
+  Ok(
+    cached_stage2_air_pcs_fri_relation(
+      witness,
+      Stage2RelationFlavor::LegacyStage3,
+    )?
+    .shape
+    .circuit
+    .digest(),
+  )
+}
+
+pub(crate) fn p3_verifier_leaf_circuit_digest(
+  witness: &Stage2AirPcsFriWitnessV1,
+) -> Result<[u8; 32]> {
+  Ok(
+    cached_stage2_air_pcs_fri_relation(
+      witness,
+      Stage2RelationFlavor::FlockStage2Leaf,
+    )?
+    .shape
+    .circuit
+    .digest(),
+  )
 }
 
 pub(crate) fn preflight_stage2_air_pcs_fri(
   stage2_witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<Stage3RelationCensusV1> {
+  preflight_stage2_air_pcs_fri_with_flavor(
+    stage2_witness,
+    Stage2RelationFlavor::LegacyStage3,
+    "Flock Stage 3 preflight",
+  )
+}
+
+pub(crate) fn preflight_p3_verifier_leaf(
+  stage2_witness: &Stage2AirPcsFriWitnessV1,
+) -> Result<Stage3RelationCensusV1> {
+  preflight_stage2_air_pcs_fri_with_flavor(
+    stage2_witness,
+    Stage2RelationFlavor::FlockStage2Leaf,
+    "Flock Stage 2 leaf preflight",
+  )
+}
+
+fn preflight_stage2_air_pcs_fri_with_flavor(
+  stage2_witness: &Stage2AirPcsFriWitnessV1,
+  flavor: Stage2RelationFlavor,
+  context: &str,
+) -> Result<Stage3RelationCensusV1> {
   let (relation, _) = rayon::join(
-    || cached_stage2_air_pcs_fri_relation(stage2_witness),
+    || cached_stage2_air_pcs_fri_relation(stage2_witness, flavor),
     || {
       stage3_linchecks();
     },
   );
   let relation = relation?;
+  preflight_transcript_bound_relation(&relation, context)
+}
+
+/// Compile and evaluate a diagnostic prefix of the transcript-bound PCS/FRI
+/// queries without emitting the AIR relation.  The transcript still binds all
+/// sampled indices; only the first `query_count` authenticated openings are
+/// lowered.  This is deliberately not exposed to any proving API.
+pub(crate) fn preflight_stage2_pcs_fri_prefix(
+  witness: &Stage2PcsFriWitnessV1,
+  query_count: usize,
+) -> Result<Stage3RelationCensusV1> {
+  if query_count == 0 || query_count > witness.queries.len() {
+    bail!(
+      "PCS/FRI prefix query count {query_count} is outside 1..={}",
+      witness.queries.len()
+    );
+  }
+
+  let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
+  let total_started = std::time::Instant::now();
+  let phase_started = std::time::Instant::now();
+  let prefix_challenges = witness.prefix.challenges()?;
+  let fri_challenges = witness.fri_transcript.challenges(&witness.prefix)?;
+  let (fri_computations, pcs_computations) =
+    validate_all_transcript_bound_pcs_fri_queries(
+      &witness.prefix,
+      &witness.fri_transcript,
+      &fri_challenges,
+      prefix_challenges,
+      &witness.pcs_instance,
+      &witness.queries,
+    )?;
+  if trace {
+    eprintln!(
+      "    [stage2-pcs-profile] transcript + native validation: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+
+  let phase_started = std::time::Instant::now();
+  let (relation, _) = rayon::join(
+    || {
+      TranscriptBoundFriCommitPhaseRelation::build_prefix_with_pcs(
+        &witness.prefix,
+        &witness.fri_transcript,
+        &fri_challenges,
+        &witness.pcs_instance,
+        &witness.queries,
+        &fri_computations,
+        &pcs_computations,
+        query_count,
+      )
+    },
+    || {
+      stage3_linchecks();
+    },
+  );
+  let relation = relation?;
+  if trace {
+    eprintln!(
+      "    [stage2-pcs-profile] build {query_count}-query shape: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+
+  let phase_started = std::time::Instant::now();
+  let census = preflight_transcript_bound_relation(
+    &relation,
+    "Flock Stage 2 PCS/FRI prefix preflight",
+  )?;
+  if trace {
+    eprintln!(
+      "    [stage2-pcs-profile] evaluate relation: {:.2} ms",
+      phase_started.elapsed().as_secs_f64() * 1e3,
+    );
+    eprintln!(
+      "    [stage2-pcs-profile] total: {:.2} ms",
+      total_started.elapsed().as_secs_f64() * 1e3,
+    );
+  }
+  Ok(census)
+}
+
+pub(crate) fn size_stage2_pcs_fri_prefix(
+  witness: &Stage2PcsFriWitnessV1,
+  query_count: usize,
+) -> Result<Stage2RelationSizingV1> {
+  if query_count == 0 || query_count > witness.queries.len() {
+    bail!(
+      "PCS/FRI prefix query count {query_count} is outside 1..={}",
+      witness.queries.len()
+    );
+  }
+  let prefix_challenges = witness.prefix.challenges()?;
+  let fri_challenges = witness.fri_transcript.challenges(&witness.prefix)?;
+  let (fri_computations, pcs_computations) =
+    validate_all_transcript_bound_pcs_fri_queries(
+      &witness.prefix,
+      &witness.fri_transcript,
+      &fri_challenges,
+      prefix_challenges,
+      &witness.pcs_instance,
+      &witness.queries,
+    )?;
+  TranscriptBoundFriCommitPhaseRelation::size_prefix_with_pcs(
+    &witness.prefix,
+    &witness.fri_transcript,
+    &fri_challenges,
+    &witness.pcs_instance,
+    &witness.queries,
+    &fri_computations,
+    &pcs_computations,
+    query_count,
+  )
+}
+
+pub(crate) fn size_p3_verifier_leaf(
+  witness: &Stage2AirPcsFriWitnessV1,
+) -> Result<Stage2RelationSizingV1> {
+  let pcs_fri = &witness.pcs_fri;
+  let prefix_challenges = pcs_fri.prefix.challenges()?;
+  let fri_challenges = pcs_fri.fri_transcript.challenges(&pcs_fri.prefix)?;
+  let (fri_computations, pcs_computations) =
+    validate_all_transcript_bound_pcs_fri_queries(
+      &pcs_fri.prefix,
+      &pcs_fri.fri_transcript,
+      &fri_challenges,
+      prefix_challenges,
+      &pcs_fri.pcs_instance,
+      &pcs_fri.queries,
+    )?;
+  TranscriptBoundFriCommitPhaseRelation::size_all_with_pcs_and_air(
+    &pcs_fri.prefix,
+    &pcs_fri.fri_transcript,
+    &fri_challenges,
+    &pcs_fri.pcs_instance,
+    &witness.air,
+    &pcs_fri.queries,
+    &fri_computations,
+    &pcs_computations,
+  )
+}
+
+fn preflight_transcript_bound_relation(
+  relation: &TranscriptBoundFriCommitPhaseRelation,
+  context: &str,
+) -> Result<Stage3RelationCensusV1> {
   let evaluated = relation.shape.run(&relation.inputs, &[]);
   if evaluated.public != relation.public {
-    bail!("Flock Stage 3 preflight disagrees with native verifier semantics");
+    bail!("{context} disagrees with native verifier semantics");
   }
 
   let count = |value: usize, label: &str| {
@@ -1821,6 +2524,10 @@ pub(crate) fn preflight_stage2_air_pcs_fri(
   let byte_window_rows = relation
     .window_slot
     .map_or(0, |slot| evaluated.rows::<ByteWindowGate>(slot).len());
+  let zero_constraint_rows = relation
+    .slots
+    .zero_constraint
+    .map_or(0, |slot| evaluated.rows::<F128ZeroGate>(slot).len());
 
   Ok(Stage3RelationCensusV1 {
     circuit_digest: relation.shape.circuit.digest(),
@@ -1858,6 +2565,10 @@ pub(crate) fn preflight_stage2_air_pcs_fri(
       evaluated.rows::<F128EqualityGate>(relation.slots.equality).len(),
       "equality row count",
     )?,
+    zero_constraint_rows: count(
+      zero_constraint_rows,
+      "zero-constraint row count",
+    )?,
     hash_sample_rows: count(
       evaluated.rows::<HashSampleGate>(relation.sample_slot).len(),
       "hash-sample row count",
@@ -1877,6 +2588,7 @@ pub fn verify_stage2_air_pcs_fri_conformance(
   verify_stage2_air_pcs_fri_with_domain(
     artifact,
     STAGE2_AIR_PCS_FRI_CONFORMANCE_TRANSCRIPT_DOMAIN,
+    Stage2RelationFlavor::LegacyStage3,
   )
 }
 
@@ -1886,16 +2598,28 @@ pub(crate) fn verify_stage2_air_pcs_fri_production(
   verify_stage2_air_pcs_fri_with_domain(
     artifact,
     crate::STAGE3_TRANSCRIPT_DOMAIN,
+    Stage2RelationFlavor::LegacyStage3,
+  )
+}
+
+pub(crate) fn verify_p3_verifier_leaf(
+  artifact: &Stage2AirPcsFriArtifactV1,
+) -> Result<()> {
+  verify_stage2_air_pcs_fri_with_domain(
+    artifact,
+    crate::FLOCK_STAGE2_P3_LEAF_TRANSCRIPT_DOMAIN,
+    Stage2RelationFlavor::FlockStage2Leaf,
   )
 }
 
 fn verify_stage2_air_pcs_fri_with_domain(
   artifact: &Stage2AirPcsFriArtifactV1,
   transcript_domain: &[u8],
+  flavor: Stage2RelationFlavor,
 ) -> Result<()> {
   let witness = &artifact.witness;
   let (relation, _) = rayon::join(
-    || cached_stage2_air_pcs_fri_relation(witness),
+    || cached_stage2_air_pcs_fri_relation(witness, flavor),
     || {
       stage3_linchecks();
     },
@@ -2087,6 +2811,8 @@ struct FriTableSlots {
   repack: SlotId,
   canonical: SlotId,
   equality: SlotId,
+  zero_constraint: Option<SlotId>,
+  inline_output_canonicality: bool,
   field_sample: Option<SlotId>,
 }
 
@@ -2179,6 +2905,8 @@ impl FriFoldRelation {
       repack: self.repack_slot,
       canonical: self.canonical_slot,
       equality: self.equality_slot,
+      zero_constraint: None,
+      inline_output_canonicality: false,
       field_sample: None,
     }
   }
@@ -2215,6 +2943,8 @@ impl FriCommitPhaseRelation {
       repack: arithmetic.repack,
       canonical: arithmetic.canonical,
       equality,
+      zero_constraint: arithmetic.zero_constraint,
+      inline_output_canonicality: arithmetic.inline_output_canonicality,
       field_sample: None,
     };
     let data_zero = builder.fixed_public_input(F128::ZERO);
@@ -2303,7 +3033,7 @@ impl FriCommitPhaseRelation {
       };
     }
     let final_residual = builder.gate(equality, &[folded, final_polynomial])[0];
-    builder.connect(final_residual, equality_zero);
+    builder.connect(equality_zero, final_residual);
 
     let shape = builder.finish().map_err(|error| {
       anyhow::anyhow!("build Flock FRI commit-phase circuit: {error:?}")
@@ -2335,6 +3065,8 @@ impl PcsReductionRelation {
       repack: arithmetic.repack,
       canonical: arithmetic.canonical,
       equality,
+      zero_constraint: arithmetic.zero_constraint,
+      inline_output_canonicality: arithmetic.inline_output_canonicality,
       field_sample: None,
     };
     let data_zero = builder.fixed_public_input(F128::ZERO);
@@ -2405,7 +3137,7 @@ impl PcsReductionRelation {
       } else {
         let high = builder.gate(arithmetic.repack, &[lanes[1], data_zero])[3];
         let padding_residual = builder.gate(equality, &[high, data_zero])[0];
-        builder.connect(padding_residual, equality_zero);
+        builder.connect(equality_zero, padding_residual);
       }
     }
 
@@ -2418,7 +3150,7 @@ impl PcsReductionRelation {
     let denominator_check = arithmetic.add(&mut builder, denominator, x);
     let denominator_residual =
       builder.gate(equality, &[denominator_check, zeta])[0];
-    builder.connect(denominator_residual, equality_zero);
+    builder.connect(equality_zero, denominator_residual);
 
     let mut accumulator = initial_accumulator;
     let mut alpha_power = initial_alpha_power;
@@ -2429,17 +3161,17 @@ impl PcsReductionRelation {
         arithmetic.ext2_mul(&mut builder, denominator, *quotient);
       let reconstructed = arithmetic.add(&mut builder, quotient_product, *px);
       let quotient_residual = builder.gate(equality, &[reconstructed, *pz])[0];
-      builder.connect(quotient_residual, equality_zero);
+      builder.connect(equality_zero, quotient_residual);
       let term = arithmetic.ext2_mul(&mut builder, alpha_power, *quotient);
       accumulator = arithmetic.add(&mut builder, accumulator, term);
       alpha_power = arithmetic.ext2_mul(&mut builder, alpha_power, alpha);
     }
     let accumulator_residual =
       builder.gate(equality, &[accumulator, reduced_accumulator])[0];
-    builder.connect(accumulator_residual, equality_zero);
+    builder.connect(equality_zero, accumulator_residual);
     let alpha_power_residual =
       builder.gate(equality, &[alpha_power, next_alpha_power])[0];
-    builder.connect(alpha_power_residual, equality_zero);
+    builder.connect(equality_zero, alpha_power_residual);
 
     let mut current = constrain_hash(
       &mut builder,
@@ -2520,6 +3252,8 @@ impl TranscriptBoundPcsReductionRelation {
       repack: arithmetic.repack,
       canonical: arithmetic.canonical,
       equality,
+      zero_constraint: arithmetic.zero_constraint,
+      inline_output_canonicality: arithmetic.inline_output_canonicality,
       field_sample: Some(sample_slot),
     };
 
@@ -2700,7 +3434,7 @@ impl TranscriptBoundPcsReductionRelation {
       } else {
         let high = builder.gate(arithmetic.repack, &[lanes[1], data_zero])[3];
         let padding_residual = builder.gate(equality, &[high, data_zero])[0];
-        builder.connect(padding_residual, equality_zero);
+        builder.connect(equality_zero, padding_residual);
       }
     }
 
@@ -2713,7 +3447,7 @@ impl TranscriptBoundPcsReductionRelation {
     let denominator_check = arithmetic.add(&mut builder, denominator, x);
     let denominator_residual =
       builder.gate(equality, &[denominator_check, zeta])[0];
-    builder.connect(denominator_residual, equality_zero);
+    builder.connect(equality_zero, denominator_residual);
 
     let mut accumulator = initial_accumulator;
     let mut alpha_power = initial_alpha_power;
@@ -2724,17 +3458,17 @@ impl TranscriptBoundPcsReductionRelation {
         arithmetic.ext2_mul(&mut builder, denominator, *quotient);
       let reconstructed = arithmetic.add(&mut builder, quotient_product, *px);
       let quotient_residual = builder.gate(equality, &[reconstructed, *pz])[0];
-      builder.connect(quotient_residual, equality_zero);
+      builder.connect(equality_zero, quotient_residual);
       let term = arithmetic.ext2_mul(&mut builder, alpha_power, *quotient);
       accumulator = arithmetic.add(&mut builder, accumulator, term);
       alpha_power = arithmetic.ext2_mul(&mut builder, alpha_power, alpha);
     }
     let accumulator_residual =
       builder.gate(equality, &[accumulator, reduced_accumulator])[0];
-    builder.connect(accumulator_residual, equality_zero);
+    builder.connect(equality_zero, accumulator_residual);
     let alpha_power_residual =
       builder.gate(equality, &[alpha_power, next_alpha_power])[0];
-    builder.connect(alpha_power_residual, equality_zero);
+    builder.connect(equality_zero, alpha_power_residual);
 
     let mut current = constrain_hash(
       &mut builder,
@@ -2786,6 +3520,11 @@ struct TranscriptBoundFriCommitPhaseRelation {
   public: Vec<F128>,
 }
 
+enum TranscriptBoundFriBuild {
+  Relation(Box<TranscriptBoundFriCommitPhaseRelation>),
+  Sizing(Stage2RelationSizingV1),
+}
+
 #[derive(Clone, Copy)]
 struct SelectedFriQuery<'a> {
   query_number: usize,
@@ -2818,6 +3557,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       }],
       None,
       None,
+      false,
     )
   }
 
@@ -2850,6 +3590,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       &selected,
       None,
       None,
+      false,
     )
   }
 
@@ -2862,6 +3603,200 @@ impl TranscriptBoundFriCommitPhaseRelation {
     fri_computations: &[FriCommitPhaseComputation],
     pcs_computations: &[Stage2PcsQueryComputation],
   ) -> Result<Self> {
+    Self::build_with_pcs_policy(
+      prefix,
+      fri_transcript,
+      challenges,
+      pcs_instance,
+      queries,
+      fri_computations,
+      pcs_computations,
+      queries.len(),
+      false,
+    )
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn build_prefix_with_pcs(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    pcs_instance: &Stage2PcsInstanceV1,
+    queries: &[TranscriptBoundPcsFriQueryV1],
+    fri_computations: &[FriCommitPhaseComputation],
+    pcs_computations: &[Stage2PcsQueryComputation],
+    query_count: usize,
+  ) -> Result<Self> {
+    Self::build_with_pcs_policy(
+      prefix,
+      fri_transcript,
+      challenges,
+      pcs_instance,
+      queries,
+      fri_computations,
+      pcs_computations,
+      query_count,
+      true,
+    )
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn size_prefix_with_pcs(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    pcs_instance: &Stage2PcsInstanceV1,
+    queries: &[TranscriptBoundPcsFriQueryV1],
+    fri_computations: &[FriCommitPhaseComputation],
+    pcs_computations: &[Stage2PcsQueryComputation],
+    query_count: usize,
+  ) -> Result<Stage2RelationSizingV1> {
+    if queries.len() != fri_computations.len()
+      || queries.len() != pcs_computations.len()
+    {
+      bail!("PCS/FRI query and computation vector lengths disagree");
+    }
+    if query_count == 0 || query_count > queries.len() {
+      bail!(
+        "PCS/FRI prefix query count {query_count} is outside 1..={}",
+        queries.len()
+      );
+    }
+    let selected: Vec<_> = queries
+      .iter()
+      .zip(fri_computations)
+      .zip(pcs_computations)
+      .take(query_count)
+      .enumerate()
+      .map(|(query_number, ((query, computation), pcs_computation))| {
+        SelectedFriQuery {
+          query_number,
+          query: &query.fri,
+          computation,
+          pcs_query: Some(&query.pcs),
+          pcs_computation: Some(pcs_computation),
+        }
+      })
+      .collect();
+    Self::size_selected(
+      prefix,
+      fri_transcript,
+      challenges,
+      &selected,
+      Some(pcs_instance),
+      None,
+    )
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn build_with_pcs_policy(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    pcs_instance: &Stage2PcsInstanceV1,
+    queries: &[TranscriptBoundPcsFriQueryV1],
+    fri_computations: &[FriCommitPhaseComputation],
+    pcs_computations: &[Stage2PcsQueryComputation],
+    query_count: usize,
+    use_zero_constraint: bool,
+  ) -> Result<Self> {
+    if queries.len() != fri_computations.len()
+      || queries.len() != pcs_computations.len()
+    {
+      bail!("PCS/FRI query and computation vector lengths disagree");
+    }
+    if query_count == 0 || query_count > queries.len() {
+      bail!(
+        "PCS/FRI prefix query count {query_count} is outside 1..={}",
+        queries.len()
+      );
+    }
+    let selected: Vec<_> = queries
+      .iter()
+      .zip(fri_computations)
+      .zip(pcs_computations)
+      .take(query_count)
+      .enumerate()
+      .map(|(query_number, ((query, computation), pcs_computation))| {
+        SelectedFriQuery {
+          query_number,
+          query: &query.fri,
+          computation,
+          pcs_query: Some(&query.pcs),
+          pcs_computation: Some(pcs_computation),
+        }
+      })
+      .collect();
+    Self::build_selected(
+      prefix,
+      fri_transcript,
+      challenges,
+      &selected,
+      Some(pcs_instance),
+      None,
+      use_zero_constraint,
+    )
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn build_all_with_pcs_and_air(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    pcs_instance: &Stage2PcsInstanceV1,
+    air: &Stage2AirProgramV1,
+    queries: &[TranscriptBoundPcsFriQueryV1],
+    fri_computations: &[FriCommitPhaseComputation],
+    pcs_computations: &[Stage2PcsQueryComputation],
+  ) -> Result<Self> {
+    Self::build_all_with_pcs_and_air_policy(
+      prefix,
+      fri_transcript,
+      challenges,
+      pcs_instance,
+      air,
+      queries,
+      fri_computations,
+      pcs_computations,
+      false,
+    )
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn build_all_with_pcs_and_air_zero_constraint(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    pcs_instance: &Stage2PcsInstanceV1,
+    air: &Stage2AirProgramV1,
+    queries: &[TranscriptBoundPcsFriQueryV1],
+    fri_computations: &[FriCommitPhaseComputation],
+    pcs_computations: &[Stage2PcsQueryComputation],
+  ) -> Result<Self> {
+    Self::build_all_with_pcs_and_air_policy(
+      prefix,
+      fri_transcript,
+      challenges,
+      pcs_instance,
+      air,
+      queries,
+      fri_computations,
+      pcs_computations,
+      true,
+    )
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn size_all_with_pcs_and_air(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    pcs_instance: &Stage2PcsInstanceV1,
+    air: &Stage2AirProgramV1,
+    queries: &[TranscriptBoundPcsFriQueryV1],
+    fri_computations: &[FriCommitPhaseComputation],
+    pcs_computations: &[Stage2PcsQueryComputation],
+  ) -> Result<Stage2RelationSizingV1> {
     if queries.len() != fri_computations.len()
       || queries.len() != pcs_computations.len()
     {
@@ -2882,18 +3817,18 @@ impl TranscriptBoundFriCommitPhaseRelation {
         }
       })
       .collect();
-    Self::build_selected(
+    Self::size_selected(
       prefix,
       fri_transcript,
       challenges,
       &selected,
       Some(pcs_instance),
-      None,
+      Some(air),
     )
   }
 
   #[allow(clippy::too_many_arguments)]
-  fn build_all_with_pcs_and_air(
+  fn build_all_with_pcs_and_air_policy(
     prefix: &Stage2TranscriptReplayV1,
     fri_transcript: &Stage2FriTranscriptReplayV1,
     challenges: &Stage2FriTranscriptChallengesV1,
@@ -2902,6 +3837,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
     queries: &[TranscriptBoundPcsFriQueryV1],
     fri_computations: &[FriCommitPhaseComputation],
     pcs_computations: &[Stage2PcsQueryComputation],
+    use_zero_constraint: bool,
   ) -> Result<Self> {
     if queries.len() != fri_computations.len()
       || queries.len() != pcs_computations.len()
@@ -2930,6 +3866,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       &selected,
       Some(pcs_instance),
       Some(air),
+      use_zero_constraint,
     )
   }
 
@@ -2940,7 +3877,65 @@ impl TranscriptBoundFriCommitPhaseRelation {
     selected: &[SelectedFriQuery<'_>],
     pcs_instance: Option<&Stage2PcsInstanceV1>,
     air: Option<&Stage2AirProgramV1>,
+    use_zero_constraint: bool,
   ) -> Result<Self> {
+    match Self::build_selected_at_nu(
+      prefix,
+      fri_transcript,
+      challenges,
+      selected,
+      pcs_instance,
+      air,
+      use_zero_constraint,
+      None,
+      false,
+    )? {
+      TranscriptBoundFriBuild::Relation(relation) => Ok(*relation),
+      TranscriptBoundFriBuild::Sizing(_) => {
+        unreachable!("relation build returned a sizing report")
+      },
+    }
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn size_selected(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    selected: &[SelectedFriQuery<'_>],
+    pcs_instance: Option<&Stage2PcsInstanceV1>,
+    air: Option<&Stage2AirProgramV1>,
+  ) -> Result<Stage2RelationSizingV1> {
+    match Self::build_selected_at_nu(
+      prefix,
+      fri_transcript,
+      challenges,
+      selected,
+      pcs_instance,
+      air,
+      true,
+      None,
+      true,
+    )? {
+      TranscriptBoundFriBuild::Sizing(sizing) => Ok(sizing),
+      TranscriptBoundFriBuild::Relation(_) => {
+        unreachable!("sizing build returned a finished relation")
+      },
+    }
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn build_selected_at_nu(
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    selected: &[SelectedFriQuery<'_>],
+    pcs_instance: Option<&Stage2PcsInstanceV1>,
+    air: Option<&Stage2AirProgramV1>,
+    use_zero_constraint: bool,
+    exact_nu: Option<usize>,
+    sizing_only: bool,
+  ) -> Result<TranscriptBoundFriBuild> {
     let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
     let total_started = std::time::Instant::now();
     let phase_started = std::time::Instant::now();
@@ -2964,6 +3959,9 @@ impl TranscriptBoundFriCommitPhaseRelation {
     if air.is_some() && pcs_instance.is_none() {
       bail!("AIR evaluation requires the transcript-bound PCS instance");
     }
+    if sizing_only && !use_zero_constraint {
+      bail!("sizing-only relation requires directed zero constraints");
+    }
     if trace {
       eprintln!(
         "      [stage3-shape] validate structure: {:.2} ms",
@@ -2971,15 +3969,20 @@ impl TranscriptBoundFriCommitPhaseRelation {
       );
     }
     let phase_started = std::time::Instant::now();
-    let nu = transcript_bound_fri_nu(
+    let estimated_nu = transcript_bound_fri_nu(
       prefix,
       fri_transcript,
       selected,
       pcs_instance,
       air,
     )?;
+    let nu = exact_nu.unwrap_or(estimated_nu);
     let mut builder = ShapeBuilder::new(nu);
-    let arithmetic = GoldilocksCircuitSlots::declare(&mut builder, nu);
+    let arithmetic = if use_zero_constraint {
+      GoldilocksCircuitSlots::declare_with_zero_constraint(&mut builder, nu)
+    } else {
+      GoldilocksCircuitSlots::declare(&mut builder, nu)
+    };
     let blake3 = builder.slot(Blake3Gate { nu });
     let order = builder.slot(DigestOrderGate { nu });
     let equality = builder.slot(F128EqualityGate { nu });
@@ -2995,6 +3998,8 @@ impl TranscriptBoundFriCommitPhaseRelation {
       repack: arithmetic.repack,
       canonical: arithmetic.canonical,
       equality,
+      zero_constraint: arithmetic.zero_constraint,
+      inline_output_canonicality: arithmetic.inline_output_canonicality,
       field_sample: Some(field_sample_slot),
     };
     if trace {
@@ -3004,9 +4009,9 @@ impl TranscriptBoundFriCommitPhaseRelation {
       );
     }
 
-    // GoldilocksCircuitSlots declares its canonical-zero fixed input first.
-    let mut inputs = vec![F128::ZERO];
-    let mut public = vec![F128::ZERO];
+    // GoldilocksCircuitSlots declares its fixed zero inputs first.
+    let mut inputs = vec![F128::ZERO; arithmetic.fixed_zero_inputs()];
+    let mut public = inputs.clone();
     let phase_started = std::time::Instant::now();
     let prefix_region = constrain_stage2_transcript(
       &mut builder,
@@ -3139,7 +4144,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
     }
     let mut pcs_elapsed = std::time::Duration::ZERO;
     let mut fri_elapsed = std::time::Duration::ZERO;
-    for item in selected {
+    for (query_position, item) in selected.iter().enumerate() {
       let phase_started = std::time::Instant::now();
       let reduced_openings = if let Some(instance) = pcs_instance {
         Some(constrain_stage2_pcs_query(
@@ -3174,6 +4179,19 @@ impl TranscriptBoundFriCommitPhaseRelation {
         reduced_openings.as_ref(),
       );
       fri_elapsed += phase_started.elapsed();
+      if trace
+        && (query_position == 0
+          || (query_position + 1).is_multiple_of(10)
+          || query_position + 1 == selected.len())
+      {
+        eprintln!(
+          "      [stage3-shape] queries: {}/{}, PCS={:.2} ms, FRI={:.2} ms",
+          query_position + 1,
+          selected.len(),
+          pcs_elapsed.as_secs_f64() * 1e3,
+          fri_elapsed.as_secs_f64() * 1e3,
+        );
+      }
     }
     if trace {
       eprintln!(
@@ -3184,6 +4202,133 @@ impl TranscriptBoundFriCommitPhaseRelation {
         "      [stage3-shape] FRI query constraints: {:.2} ms",
         fri_elapsed.as_secs_f64() * 1e3,
       );
+    }
+
+    arithmetic.flush_zero_constraints(&mut builder);
+
+    if use_zero_constraint && exact_nu.is_none() {
+      let mut maximum_rows = [
+        builder.rows_in_slot(blake3),
+        builder.rows_in_slot(order),
+        builder.rows_in_slot(arithmetic.add),
+        builder.rows_in_slot(arithmetic.mul),
+        builder.rows_in_slot(arithmetic.repack),
+        builder.rows_in_slot(arithmetic.canonical),
+        builder.rows_in_slot(equality),
+        builder.rows_in_slot(sample_slot),
+        builder.rows_in_slot(field_sample_slot),
+        builder.rows_in_slot(split_slot),
+      ]
+      .into_iter()
+      .max()
+      .unwrap_or(0);
+      if let Some(slot) = arithmetic.zero_constraint {
+        maximum_rows = maximum_rows.max(builder.rows_in_slot(slot));
+      }
+      if let Some(slot) = window_slot {
+        maximum_rows = maximum_rows.max(builder.rows_in_slot(slot));
+      }
+      let measured_nu =
+        usize::try_from(maximum_rows.max(1).next_power_of_two().ilog2())
+          .expect("measured row logarithm fits usize")
+          .max(NU);
+      if measured_nu > nu {
+        bail!(
+          "measured Flock row logarithm {measured_nu} exceeds conservative estimate {nu}"
+        );
+      }
+      if trace {
+        eprintln!(
+          "      [stage3-shape] exact capacity: max rows={maximum_rows}, nu={nu}->{measured_nu}",
+        );
+      }
+      if sizing_only {
+        let count = |value: usize, label: &str| {
+          u64::try_from(value)
+            .map_err(|error| anyhow::anyhow!("{label} exceeds u64: {error}"))
+        };
+        let measured_nu_u64 = count(measured_nu, "measured row logarithm")?;
+        let shift = u32::try_from(measured_nu_u64).map_err(|error| {
+          anyhow::anyhow!("measured row logarithm exceeds u32: {error}")
+        })?;
+        let table_capacity = 1u64.checked_shl(shift).ok_or_else(|| {
+          anyhow::anyhow!(
+            "measured row logarithm {measured_nu_u64} exceeds the sizing report"
+          )
+        })?;
+        return Ok(TranscriptBoundFriBuild::Sizing(Stage2RelationSizingV1 {
+          estimated_nu: count(estimated_nu, "estimated row logarithm")?,
+          exact_nu: measured_nu_u64,
+          table_capacity,
+          selected_queries: count(selected.len(), "selected query count")?,
+          includes_air: air.is_some(),
+          relation_inputs: count(inputs.len(), "relation input count")?,
+          public_values: count(public.len(), "public-value count")?,
+          blake3_rows: count(builder.rows_in_slot(blake3), "BLAKE3 row count")?,
+          digest_order_rows: count(
+            builder.rows_in_slot(order),
+            "digest-order row count",
+          )?,
+          goldilocks_add_rows: count(
+            builder.rows_in_slot(arithmetic.add),
+            "Goldilocks-add row count",
+          )?,
+          goldilocks_mul_rows: count(
+            builder.rows_in_slot(arithmetic.mul),
+            "Goldilocks-mul row count",
+          )?,
+          lane_repack_rows: count(
+            builder.rows_in_slot(arithmetic.repack),
+            "lane-repack row count",
+          )?,
+          canonical_goldilocks_rows: count(
+            builder.rows_in_slot(arithmetic.canonical),
+            "canonical-Goldilocks row count",
+          )?,
+          equality_rows: count(
+            builder.rows_in_slot(equality),
+            "equality row count",
+          )?,
+          zero_constraint_rows: count(
+            arithmetic
+              .zero_constraint
+              .map_or(0, |slot| builder.rows_in_slot(slot)),
+            "zero-constraint row count",
+          )?,
+          hash_sample_rows: count(
+            builder.rows_in_slot(sample_slot),
+            "hash-sample row count",
+          )?,
+          field_sample_rows: count(
+            builder.rows_in_slot(field_sample_slot),
+            "field-sample row count",
+          )?,
+          u64_split_rows: count(
+            builder.rows_in_slot(split_slot),
+            "u64-split row count",
+          )?,
+          byte_window_rows: count(
+            window_slot.map_or(0, |slot| builder.rows_in_slot(slot)),
+            "byte-window row count",
+          )?,
+        }));
+      }
+      if measured_nu < nu {
+        drop(builder);
+        drop(inputs);
+        drop(public);
+        return Self::build_selected_at_nu(
+          prefix,
+          fri_transcript,
+          challenges,
+          selected,
+          pcs_instance,
+          air,
+          use_zero_constraint,
+          Some(measured_nu),
+          false,
+        );
+      }
     }
 
     let phase_started = std::time::Instant::now();
@@ -3200,7 +4345,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
         total_started.elapsed().as_secs_f64() * 1e3,
       );
     }
-    Ok(Self {
+    Ok(TranscriptBoundFriBuild::Relation(Box::new(Self {
       shape,
       slots,
       sample_slot,
@@ -3209,7 +4354,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       nu,
       inputs,
       public,
-    })
+    })))
   }
 }
 
@@ -3337,7 +4482,7 @@ fn constrain_transcript_bound_fri_query(
     for lane in 0..2 {
       let residual =
         builder.gate(fixed.equality, &[root[lane], cap_root[lane]])[0];
-      builder.connect(residual, fixed.equality_zero);
+      builder.connect(fixed.equality_zero, residual);
     }
     folded = if let Some(reduced_opening) = wires.reduced_opening {
       let beta_squared = arithmetic.ext2_mul(builder, wires.beta, wires.beta);
@@ -3349,7 +4494,7 @@ fn constrain_transcript_bound_fri_query(
   }
   let final_residual =
     builder.gate(fixed.equality, &[folded, fri_region.final_polynomial[0]])[0];
-  builder.connect(final_residual, fixed.equality_zero);
+  builder.connect(fixed.equality_zero, final_residual);
 }
 
 struct Stage2PcsRowWires {
@@ -3518,7 +4663,7 @@ fn constrain_stage2_pcs_query(
     for lane in 0..2 {
       let residual =
         builder.gate(fixed.equality, &[current[lane], expected[lane]])[0];
-      builder.connect(residual, fixed.equality_zero);
+      builder.connect(fixed.equality_zero, residual);
     }
     let _ = batch_computation.root;
   }
@@ -3715,7 +4860,7 @@ pub(crate) fn assert_f128_equal(
   right: Wire,
 ) {
   let residual = builder.gate(equality, &[left, right])[0];
-  builder.connect(residual, equality_zero);
+  builder.connect(equality_zero, residual);
 }
 
 fn transcript_bound_fri_nu(
@@ -3918,7 +5063,7 @@ fn constrain_authenticated_fold(
   let rhs_beta = arithmetic.ext2_mul(builder, beta, e0);
   let rhs = arithmetic.add(builder, rhs_sum, rhs_beta);
   let equality_residual = builder.gate(equality_slot, &[lhs, rhs])[0];
-  builder.connect(equality_residual, equality_zero);
+  builder.connect(equality_zero, equality_residual);
   current
 }
 
@@ -3926,10 +5071,13 @@ struct Stage3Linchecks {
   blake3: CscCircuit,
   order: CscCircuit,
   add: CscCircuit,
+  add_canonical: CscCircuit,
   mul: CscCircuit,
+  mul_canonical: CscCircuit,
   repack: CscCircuit,
   canonical: CscCircuit,
   equality: CscCircuit,
+  zero_constraint: CscCircuit,
   sample: CscCircuit,
   field_sample: CscCircuit,
   split: CscCircuit,
@@ -3942,14 +5090,17 @@ struct Stage3Linchecks {
 fn stage3_linchecks() -> &'static Stage3Linchecks {
   static CACHE: OnceLock<Stage3Linchecks> = OnceLock::new();
   CACHE.get_or_init(|| {
-    let builders: [fn(usize) -> BlockR1cs; 11] = [
+    let builders: [fn(usize) -> BlockR1cs; 14] = [
       flock_blake3::build_block_r1cs,
       build_digest_order_r1cs,
       build_goldilocks_add_r1cs,
+      build_goldilocks_add_canonical_r1cs,
       build_goldilocks_mul_r1cs,
+      build_goldilocks_mul_canonical_r1cs,
       build_lane_repack_r1cs,
       build_canonical_pair_r1cs,
       build_f128_equality_r1cs,
+      build_f128_zero_r1cs,
       build_hash_sample_r1cs,
       build_goldilocks_sample_r1cs,
       build_u64_split_r1cs,
@@ -3963,27 +5114,37 @@ fn stage3_linchecks() -> &'static Stage3Linchecks {
           .with_const_pin(r1cs.const_pin)
       })
       .collect();
+    let circuits: [CscCircuit; 14] = match circuits.try_into() {
+      Ok(circuits) => circuits,
+      Err(_) => unreachable!("fourteen Stage 3 lincheck circuits"),
+    };
     let [
       blake3,
       order,
       add,
+      add_canonical,
       mul,
+      mul_canonical,
       repack,
       canonical,
       equality,
+      zero_constraint,
       sample,
       field_sample,
       split,
       window,
-    ] = circuits.try_into().ok().expect("eleven Stage 3 lincheck circuits");
+    ] = circuits;
     Stage3Linchecks {
       blake3,
       order,
       add,
+      add_canonical,
       mul,
+      mul_canonical,
       repack,
       canonical,
       equality,
+      zero_constraint,
       sample,
       field_sample,
       split,
@@ -4025,6 +5186,8 @@ fn prove_fri_circuit(
   let canonical_rows =
     witness.rows::<CanonicalGoldilocksPairGate>(slots.canonical);
   let equality_rows = witness.rows::<F128EqualityGate>(slots.equality);
+  let zero_constraint_rows =
+    slots.zero_constraint.map(|slot| witness.rows::<F128ZeroGate>(slot));
   let sample_rows =
     sample_slot.map(|slot| witness.rows::<HashSampleGate>(slot));
   let field_sample_rows =
@@ -4037,11 +5200,20 @@ fn prove_fri_circuit(
   let linchecks = stage3_linchecks();
   let blake3_lincheck = &linchecks.blake3;
   let order_lincheck = &linchecks.order;
-  let add_lincheck = &linchecks.add;
-  let mul_lincheck = &linchecks.mul;
+  let add_lincheck = if slots.inline_output_canonicality {
+    &linchecks.add_canonical
+  } else {
+    &linchecks.add
+  };
+  let mul_lincheck = if slots.inline_output_canonicality {
+    &linchecks.mul_canonical
+  } else {
+    &linchecks.mul
+  };
   let repack_lincheck = &linchecks.repack;
   let canonical_lincheck = &linchecks.canonical;
   let equality_lincheck = &linchecks.equality;
+  let zero_constraint_lincheck = &linchecks.zero_constraint;
   let sample_lincheck = &linchecks.sample;
   let field_sample_lincheck = &linchecks.field_sample;
   let split_lincheck = &linchecks.split;
@@ -4054,6 +5226,32 @@ fn prove_fri_circuit(
   }
 
   let phase_started = std::time::Instant::now();
+  let add_input = if slots.inline_output_canonicality {
+    UnionSlotProverInput::in_place(
+      move |dst| {
+        generate_goldilocks_add_canonical_witness_into(add_rows, nu, dst)
+      },
+      add_lincheck,
+    )
+  } else {
+    UnionSlotProverInput::in_place(
+      move |dst| generate_goldilocks_add_witness_into(add_rows, nu, dst),
+      add_lincheck,
+    )
+  };
+  let mul_input = if slots.inline_output_canonicality {
+    UnionSlotProverInput::in_place(
+      move |dst| {
+        generate_goldilocks_mul_canonical_witness_into(mul_rows, nu, dst)
+      },
+      mul_lincheck,
+    )
+  } else {
+    UnionSlotProverInput::in_place(
+      move |dst| generate_goldilocks_mul_witness_into(mul_rows, nu, dst),
+      mul_lincheck,
+    )
+  };
   let mut slot_inputs = vec![
     (
       shape.registry_slot(slots.blake3),
@@ -4075,20 +5273,8 @@ fn prove_fri_circuit(
         order_lincheck,
       ),
     ),
-    (
-      shape.registry_slot(slots.add),
-      UnionSlotProverInput::in_place(
-        move |dst| generate_goldilocks_add_witness_into(add_rows, nu, dst),
-        add_lincheck,
-      ),
-    ),
-    (
-      shape.registry_slot(slots.mul),
-      UnionSlotProverInput::in_place(
-        move |dst| generate_goldilocks_mul_witness_into(mul_rows, nu, dst),
-        mul_lincheck,
-      ),
-    ),
+    (shape.registry_slot(slots.add), add_input),
+    (shape.registry_slot(slots.mul), mul_input),
     (
       shape.registry_slot(slots.repack),
       UnionSlotProverInput::in_place(
@@ -4119,6 +5305,17 @@ fn prove_fri_circuit(
       UnionSlotProverInput::in_place(
         move |dst| generate_hash_sample_witness_into(rows, nu, dst),
         sample_lincheck,
+      ),
+    ));
+  }
+  if let (Some(slot), Some(rows)) =
+    (slots.zero_constraint, zero_constraint_rows)
+  {
+    slot_inputs.push((
+      shape.registry_slot(slot),
+      UnionSlotProverInput::in_place(
+        move |dst| generate_f128_zero_witness_into(rows, nu, dst),
+        zero_constraint_lincheck,
       ),
     ));
   }
@@ -4212,11 +5409,20 @@ fn verify_fri_circuit(
   let lincheck_cache = stage3_linchecks();
   let blake3_lincheck = &lincheck_cache.blake3;
   let order_lincheck = &lincheck_cache.order;
-  let add_lincheck = &lincheck_cache.add;
-  let mul_lincheck = &lincheck_cache.mul;
+  let add_lincheck = if slots.inline_output_canonicality {
+    &lincheck_cache.add_canonical
+  } else {
+    &lincheck_cache.add
+  };
+  let mul_lincheck = if slots.inline_output_canonicality {
+    &lincheck_cache.mul_canonical
+  } else {
+    &lincheck_cache.mul
+  };
   let repack_lincheck = &lincheck_cache.repack;
   let canonical_lincheck = &lincheck_cache.canonical;
   let equality_lincheck = &lincheck_cache.equality;
+  let zero_constraint_lincheck = &lincheck_cache.zero_constraint;
   let sample_lincheck = &lincheck_cache.sample;
   let field_sample_lincheck = &lincheck_cache.field_sample;
   let split_lincheck = &lincheck_cache.split;
@@ -4233,6 +5439,9 @@ fn verify_fri_circuit(
   ];
   if let Some(slot) = sample_slot {
     linchecks.push((shape.registry_slot(slot), sample_lincheck));
+  }
+  if let Some(slot) = slots.zero_constraint {
+    linchecks.push((shape.registry_slot(slot), zero_constraint_lincheck));
   }
   if let Some(slot) = slots.field_sample {
     linchecks.push((shape.registry_slot(slot), field_sample_lincheck));
@@ -4525,7 +5734,7 @@ fn commit_phase_rounds_bytes(
 }
 
 fn build_stage2_pcs_fri_witness(
-  prepared: &ValidatedStage2RootV1,
+  prepared: &ValidatedP3ProofV1,
   fri: &FriParameters,
   typed: &Stage3TypedProofWitnessV1,
 ) -> Result<Stage2PcsFriWitnessV1> {
@@ -4543,9 +5752,9 @@ fn build_stage2_pcs_fri_witness(
   }
 
   let prefix =
-    Stage2TranscriptReplayV1::from_prepared_and_typed(prepared, fri, typed)?;
+    Stage2TranscriptReplayV1::from_p3_and_typed(prepared, fri, typed)?;
   let fri_transcript =
-    Stage2FriTranscriptReplayV1::from_prepared_and_typed(prepared, fri, typed)?;
+    Stage2FriTranscriptReplayV1::from_p3_and_typed(prepared, fri, typed)?;
   let metadata = key.pcs_circuit_metadata();
   if metadata.len() != typed.active.len() {
     bail!("Aiur PCS metadata and activation lengths disagree");
@@ -5700,7 +6909,10 @@ fn decode_bundle(bytes: &[u8]) -> Result<FriFoldProofBundle> {
 #[cfg(test)]
 mod tests {
   use aiur::vk_codec::aiur_config_system_to_bytes;
-  use ix_terminal::validate_and_expand_root_inputs;
+  use ix_terminal::{
+    P3ClaimLayoutV1, P3ProofStatementV1, ValidatedP3ProofV1,
+    validate_and_expand_p3_inputs, validate_and_expand_root_inputs,
+  };
   use multi_stark::{
     expr::Expr,
     lookup::{Lookup, WidthBinding},
@@ -5711,12 +6923,100 @@ mod tests {
 
   use super::*;
 
-  fn prepared_stage2_pcs_fixture()
-  -> (ValidatedStage2RootV1, FriParameters, Vec<u8>, Vec<u8>, Vec<u8>) {
-    const CLAIM_WORDS: usize = 18;
-    const CLAIM_CIRCUIT_WIDTH: usize = CLAIM_WORDS + 2;
+  #[test]
+  fn stage2_table_geometry_matches_memory_model() {
+    let tables = [
+      ("blake3", flock_blake3::build_block_r1cs(NU)),
+      ("digest-order", build_digest_order_r1cs(NU)),
+      ("goldilocks-add", build_goldilocks_add_r1cs(NU)),
+      ("goldilocks-mul", build_goldilocks_mul_r1cs(NU)),
+      ("lane-repack", build_lane_repack_r1cs(NU)),
+      ("canonical-goldilocks", build_canonical_pair_r1cs(NU)),
+      ("equality", build_f128_equality_r1cs(NU)),
+      ("zero-constraint", build_f128_zero_r1cs(NU)),
+      ("hash-sample", build_hash_sample_r1cs(NU)),
+      ("field-sample", build_goldilocks_sample_r1cs(NU)),
+      ("u64-split", build_u64_split_r1cs(NU)),
+      ("byte-window", build_byte_window_r1cs(NU)),
+    ];
+    for ((name, table), expected) in
+      tables.into_iter().zip(STAGE2_TABLE_MEMORY_GEOMETRY)
+    {
+      assert_eq!(name, expected.name);
+      assert_eq!(
+        table.k_log,
+        usize::try_from(expected.k_log).unwrap(),
+        "{name} k_log",
+      );
+      assert_eq!(
+        table.useful_bits.div_ceil(128),
+        usize::try_from(expected.used_word_columns).unwrap(),
+        "{name} used word columns",
+      );
+    }
+  }
+
+  #[test]
+  fn q100_stage2_memory_estimate_is_pinned() {
+    let sizing = Stage2RelationSizingV1 {
+      estimated_nu: 28,
+      exact_nu: 24,
+      table_capacity: 16_777_216,
+      selected_queries: 100,
+      includes_air: true,
+      relation_inputs: 2_566_088,
+      public_values: 2_567_682,
+      blake3_rows: 92_526,
+      digest_order_rows: 111_000,
+      goldilocks_add_rows: 16_353_512,
+      goldilocks_mul_rows: 5_782_144,
+      lane_repack_rows: 9_378_684,
+      canonical_goldilocks_rows: 8_106_184,
+      equality_rows: 953_242,
+      zero_constraint_rows: 14_539_905,
+      hash_sample_rows: 52,
+      field_sample_rows: 21,
+      u64_split_rows: 1_820,
+      byte_window_rows: 918_802,
+    };
+    assert_eq!(sizing.total_rows(), 56_237_892);
+    assert_eq!(
+      sizing.memory_estimate().expect("q100 memory estimate"),
+      Stage2RelationMemoryEstimateV1 {
+        nu: 24,
+        registry_m: 41,
+        registry_extent_bits: 1_846_835_937_280,
+        padded_address_bits: 2_199_023_255_552,
+        padded_witness_buffer_virtual_bytes: 274_877_906_944,
+        three_padded_witness_buffers_virtual_bytes: 824_633_720_832,
+        stripe_buffers_virtual_bytes: 230_854_492_160,
+        witness_and_stripe_virtual_bytes: 1_055_488_212_992,
+        live_witness_words_per_buffer: 2_314_549_597,
+        live_witness_bytes_per_buffer: 37_032_793_552,
+        stripe_live_write_bytes: 54_953_165_312,
+        dense_stack_words: 2_314_549_597,
+        dense_m: 39,
+        committed_stack_bytes: 68_719_476_736,
+        pcs_log_inv_rate: 1,
+        pcs_log_batch_size: 6,
+        pcs_total_lanes: 64,
+        pcs_committed_lanes: 35,
+        initial_codeword_bytes: 75_161_927_680,
+        initial_merkle_tree_bytes: 8_589_934_560,
+        accounted_commit_phase_bytes: 318_522_884_944,
+        accounted_commit_phase_with_25_percent_headroom_bytes: 398_153_606_180,
+        accounted_virtual_reservation_bytes: 1_207_959_551_968,
+      }
+    );
+  }
+
+  fn p3_proof_fixture(
+    claim_words: &[u64],
+  ) -> (FriParameters, Vec<u8>, Vec<u8>, Vec<u8>) {
     const TALL_HEIGHT: usize = 8;
     const SHORT_HEIGHT: usize = 4;
+
+    let claim_circuit_width = claim_words.len() + 2;
 
     let commitment = CommitmentParameters { log_blowup: 1, cap_height: 0 };
     let fri = FriParameters {
@@ -5726,12 +7026,11 @@ mod tests {
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     };
-    let claim: Vec<_> = (0..CLAIM_WORDS)
-      .map(|word| Val::from_u64(0x100 + u64::try_from(word).unwrap()))
-      .collect();
+    let claim: Vec<_> =
+      claim_words.iter().copied().map(Val::from_u64).collect();
     let claim_lookup = Lookup::pull(
       Expr::main(0),
-      (1..=CLAIM_WORDS)
+      (1..=claim_words.len())
         .map(|column| Expr::main(u32::try_from(column).unwrap()))
         .collect(),
     );
@@ -5739,7 +7038,7 @@ mod tests {
     let multiplicity_is_boolean =
       multiplicity.clone() * (multiplicity - Expr::constant(Val::ONE));
     let preprocessed_matches =
-      Expr::main(u32::try_from(CLAIM_CIRCUIT_WIDTH - 1).unwrap())
+      Expr::main(u32::try_from(claim_circuit_width - 1).unwrap())
         - Expr::preprocessed(0);
     let short_first =
       Expr::IsFirstRow * (Expr::main(0) - Expr::constant(Val::from_u64(7)));
@@ -5752,7 +7051,7 @@ mod tests {
       [
         CircuitInputs { main_width: 1, ..Default::default() },
         CircuitInputs {
-          main_width: CLAIM_CIRCUIT_WIDTH,
+          main_width: claim_circuit_width,
           preprocessed: Some(RowMajorMatrix::new(
             (0..TALL_HEIGHT)
               .map(|row| Val::from_u64(5 * u64::try_from(row).unwrap() + 3))
@@ -5771,14 +7070,14 @@ mod tests {
       ],
     );
 
-    let mut tall_values = vec![Val::ZERO; TALL_HEIGHT * CLAIM_CIRCUIT_WIDTH];
+    let mut tall_values = vec![Val::ZERO; TALL_HEIGHT * claim_circuit_width];
     tall_values[0] = Val::ONE;
-    tall_values[1..=CLAIM_WORDS].copy_from_slice(&claim);
+    tall_values[1..=claim_words.len()].copy_from_slice(&claim);
     for row in 0..TALL_HEIGHT {
-      tall_values[row * CLAIM_CIRCUIT_WIDTH + CLAIM_CIRCUIT_WIDTH - 1] =
+      tall_values[row * claim_circuit_width + claim_circuit_width - 1] =
         Val::from_u64(5 * u64::try_from(row).unwrap() + 3);
     }
-    let tall_trace = RowMajorMatrix::new(tall_values, CLAIM_CIRCUIT_WIDTH);
+    let tall_trace = RowMajorMatrix::new(tall_values, claim_circuit_width);
     let short_trace = RowMajorMatrix::new(
       (0..SHORT_HEIGHT * 3)
         .map(|word| Val::from_u64(3 * u64::try_from(word).unwrap() + 7))
@@ -5801,6 +7100,15 @@ mod tests {
       .flat_map(|word| word.as_canonical_u64().to_le_bytes())
       .collect();
     let proof_bytes = proof.to_bytes().expect("encode fixture proof");
+    (fri, vk_bytes, claim_bytes, proof_bytes)
+  }
+
+  fn prepared_stage2_pcs_fixture()
+  -> (ValidatedStage2RootV1, FriParameters, Vec<u8>, Vec<u8>, Vec<u8>) {
+    let claim_words: Vec<_> =
+      (0..18).map(|word| 0x100 + u64::try_from(word).unwrap()).collect();
+    let (fri, vk_bytes, claim_bytes, proof_bytes) =
+      p3_proof_fixture(&claim_words);
     let prepared = validate_and_expand_root_inputs(
       &vk_bytes,
       &claim_bytes,
@@ -5809,6 +7117,31 @@ mod tests {
     )
     .expect("validate and expand fixture proof");
     (prepared, fri, vk_bytes, claim_bytes, proof_bytes)
+  }
+
+  fn prepared_ixvm_pcs_fixture()
+  -> (ValidatedP3ProofV1, FriParameters, Vec<u8>, Vec<u8>, Vec<u8>, u64) {
+    let verify_claim_index = 37;
+    let mut claim_words = vec![0, verify_claim_index];
+    claim_words.extend((0..8u32).map(|word| {
+      u64::from(u32::from_le_bytes([
+        u8::try_from(word * 4).unwrap(),
+        u8::try_from(word * 4 + 1).unwrap(),
+        u8::try_from(word * 4 + 2).unwrap(),
+        u8::try_from(word * 4 + 3).unwrap(),
+      ]))
+    }));
+    let (fri, vk_bytes, claim_bytes, proof_bytes) =
+      p3_proof_fixture(&claim_words);
+    let prepared = validate_and_expand_p3_inputs(
+      &vk_bytes,
+      &claim_bytes,
+      &proof_bytes,
+      &fri,
+      P3ClaimLayoutV1::Ixvm { verify_claim_index },
+    )
+    .expect("validate and expand IxVM fixture proof");
+    (prepared, fri, vk_bytes, claim_bytes, proof_bytes, verify_claim_index)
   }
 
   fn fixture() -> FriFoldQueryV1 {
@@ -6701,6 +8034,257 @@ mod tests {
       )
       .is_err()
     );
+  }
+
+  #[test]
+  fn real_ixvm_claim_lowers_to_the_complete_stage2_leaf_relation() {
+    let (prepared, fri, vk_bytes, claim_bytes, proof_bytes, verify_index) =
+      prepared_ixvm_pcs_fixture();
+    let expected_digest: [u8; 32] =
+      std::array::from_fn(|index| u8::try_from(index).unwrap());
+    assert_eq!(
+      prepared.statement().claim_layout(),
+      P3ClaimLayoutV1::Ixvm { verify_claim_index: verify_index }
+    );
+    assert_eq!(
+      prepared.statement().ixvm_output_claim_digest().unwrap(),
+      expected_digest
+    );
+
+    let witness = Stage2AirPcsFriWitnessV1::from_p3(&prepared, &fri).unwrap();
+    let manifest =
+      crate::P3VerifierRelationManifestV1::for_prepared(&prepared, &fri)
+        .unwrap();
+    manifest.ensure_accommodates(&prepared, &fri).unwrap();
+    let manifest_bytes = manifest.to_bytes();
+    assert_eq!(
+      manifest_bytes.len(),
+      crate::P3_VERIFIER_RELATION_MANIFEST_BYTES
+    );
+    assert_eq!(
+      crate::P3VerifierRelationManifestV1::from_bytes(&manifest_bytes).unwrap(),
+      manifest
+    );
+    assert_eq!(
+      manifest.relation_program_digest(),
+      &p3_verifier_leaf_circuit_digest(&witness).unwrap()
+    );
+
+    let backend = crate::FlockStage2Backend;
+    let profile = backend
+      .profile_ixvm_leaf(
+        &vk_bytes,
+        &claim_bytes,
+        &proof_bytes,
+        &fri,
+        verify_index,
+      )
+      .unwrap();
+    assert_eq!(profile.p3_statement_digest, prepared.statement().digest());
+    assert_eq!(profile.output_claim_digest, expected_digest);
+    assert_eq!(profile.advice.queries, u64::try_from(fri.num_queries).unwrap());
+    assert!(profile.to_string().contains("P3 shape"));
+
+    let pcs_profile = backend
+      .profile_ixvm_leaf_pcs_fri_prefix(
+        &vk_bytes,
+        &claim_bytes,
+        &proof_bytes,
+        &fri,
+        verify_index,
+        1,
+      )
+      .unwrap();
+    assert_eq!(pcs_profile.selected_queries, 1);
+    assert_eq!(
+      pcs_profile.total_queries,
+      u64::try_from(fri.num_queries).unwrap()
+    );
+    assert!(pcs_profile.relation.blake3_rows > 0);
+    assert!(pcs_profile.to_string().contains("diagnostic PCS/FRI prefix"));
+    assert!(preflight_stage2_pcs_fri_prefix(&witness.pcs_fri, 0).is_err());
+    assert!(
+      preflight_stage2_pcs_fri_prefix(
+        &witness.pcs_fri,
+        witness.pcs_fri.queries.len() + 1,
+      )
+      .is_err()
+    );
+
+    let report = backend
+      .preflight_ixvm_leaf(
+        &vk_bytes,
+        &claim_bytes,
+        &proof_bytes,
+        &fri,
+        verify_index,
+      )
+      .unwrap();
+    assert_eq!(report.p3_statement_digest, prepared.statement().digest());
+    assert_eq!(report.output_claim_digest, expected_digest);
+    assert_eq!(report.relation_digest, manifest.relation_digest());
+    assert_eq!(report.config_digest, crate::FlockStage2ConfigV1.digest());
+    assert!(report.relation.blake3_rows > 0);
+    assert!(report.to_string().contains("accepted an IxVM P3 leaf"));
+
+    assert!(
+      crate::FlockStage2Backend
+        .prepare_ixvm_leaf(
+          &vk_bytes,
+          &claim_bytes,
+          &proof_bytes,
+          &fri,
+          verify_index + 1,
+        )
+        .is_err()
+    );
+    let mut wrong_vk = vk_bytes.clone();
+    let last = wrong_vk.len() - 1;
+    wrong_vk[last] ^= 1;
+    assert!(
+      crate::FlockStage2Backend
+        .prepare_ixvm_leaf(
+          &wrong_vk,
+          &claim_bytes,
+          &proof_bytes,
+          &fri,
+          verify_index,
+        )
+        .is_err()
+    );
+    let mut wrong_claim = claim_bytes.clone();
+    let last = wrong_claim.len() - 1;
+    wrong_claim[last] ^= 1;
+    assert!(
+      crate::FlockStage2Backend
+        .prepare_ixvm_leaf(
+          &vk_bytes,
+          &wrong_claim,
+          &proof_bytes,
+          &fri,
+          verify_index,
+        )
+        .is_err()
+    );
+    let mut corrupted_proof = proof_bytes;
+    let last = corrupted_proof.len() - 1;
+    corrupted_proof[last] ^= 1;
+    assert!(
+      crate::FlockStage2Backend
+        .prepare_ixvm_leaf(
+          &vk_bytes,
+          &claim_bytes,
+          &corrupted_proof,
+          &fri,
+          verify_index,
+        )
+        .is_err()
+    );
+  }
+
+  #[test]
+  #[ignore = "real Flock proof of a complete ten-word IxVM P3 verifier"]
+  fn real_ixvm_stage2_leaf_flock_round_trip() {
+    let (_, fri, vk_bytes, claim_bytes, proof_bytes, verify_index) =
+      prepared_ixvm_pcs_fixture();
+    let backend = crate::FlockStage2Backend;
+    let artifact = backend
+      .prove_ixvm_leaf(
+        &vk_bytes,
+        &claim_bytes,
+        &proof_bytes,
+        &fri,
+        verify_index,
+      )
+      .expect("prove complete IxVM leaf verifier");
+    let relation_digest = artifact.relation_manifest().relation_digest();
+    backend
+      .verify_ixvm_leaf(&artifact, artifact.statement(), &relation_digest)
+      .expect("verify complete IxVM leaf verifier");
+
+    let mut wrong_statement_bytes = artifact.statement().to_bytes();
+    let last = wrong_statement_bytes.len() - 1;
+    wrong_statement_bytes[last] ^= 1;
+    let wrong_statement =
+      P3ProofStatementV1::from_bytes(&wrong_statement_bytes).unwrap();
+    assert!(
+      backend
+        .verify_ixvm_leaf(&artifact, &wrong_statement, &relation_digest)
+        .is_err()
+    );
+
+    let mut wrong_relation = relation_digest;
+    wrong_relation[0] ^= 1;
+    assert!(
+      backend
+        .verify_ixvm_leaf(&artifact, artifact.statement(), &wrong_relation)
+        .is_err()
+    );
+    assert!(
+      verify_stage2_air_pcs_fri_production(artifact.flock_artifact()).is_err()
+    );
+
+    let inner = artifact.flock_artifact();
+    let mut corrupted_bundle = inner.proof_bundle_bytes().to_vec();
+    let last = corrupted_bundle.len() - 1;
+    corrupted_bundle[last] ^= 1;
+    let corrupted = Stage2AirPcsFriArtifactV1::from_parts(
+      inner.witness().clone(),
+      *inner.circuit_digest(),
+      corrupted_bundle,
+    )
+    .unwrap();
+    assert!(verify_p3_verifier_leaf(&corrupted).is_err());
+    eprintln!(
+      "Flock Stage 2 IxVM leaf proof bundle: {} bytes",
+      artifact.proof_bundle_bytes().len()
+    );
+  }
+
+  #[test]
+  #[ignore = "real Flock proof for the structured Stage 2 benchmark report"]
+  fn real_ixvm_stage2_verifier_core_benchmark_report() {
+    let (prepared, fri, vk_bytes, claim_bytes, proof_bytes, verify_index) =
+      prepared_ixvm_pcs_fixture();
+    let report = crate::FlockStage2Backend
+      .benchmark_ixvm_verifier_core(
+        &vk_bytes,
+        &claim_bytes,
+        &proof_bytes,
+        &fri,
+        verify_index,
+      )
+      .expect("benchmark complete IxVM verifier core");
+
+    assert_eq!(
+      report.preflight.p3_statement_digest,
+      prepared.statement().digest()
+    );
+    assert_eq!(
+      report.preflight.output_claim_digest,
+      std::array::from_fn(|index| u8::try_from(index).unwrap())
+    );
+    assert_eq!(report.circuit_digest, report.preflight.relation.circuit_digest);
+    assert_eq!(report.proof_bundle_bytes, 371_083);
+    assert_ne!(report.proof_bundle_digest, [0; 32]);
+
+    let timings = &report.timings;
+    let primary_phase_ns = [
+      timings.prepare_ns,
+      timings.typed_witness_ns,
+      timings.preflight_ns,
+      timings.manifest_ns,
+      timings.same_witness_prove_ns,
+      timings.valid_verify_ns,
+    ]
+    .into_iter()
+    .sum::<u64>();
+    assert!(timings.input_to_verified_output_ns >= primary_phase_ns);
+    assert!(
+      timings.wall_with_negative_check_ns
+        >= timings.input_to_verified_output_ns
+    );
+    eprintln!("structured Flock Stage 2 benchmark: {report:#?}");
   }
 
   #[test]

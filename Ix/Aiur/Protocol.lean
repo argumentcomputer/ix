@@ -296,6 +296,21 @@ descriptive error while remaining linkable. -/
 opaque sp1CompressAggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
   @& FriParameters → @& String → @& String → @& String → Except String Unit
 
+/-- Profile (`profile`), size without finalization (`pcs-size`/`size`),
+compile/evaluate a PCS/FRI query prefix (`pcs`), compile/evaluate the complete
+relation (`preflight`), or prove (`prove`) the no-RISC-V Flock P3-verifier leaf
+for one raw IxVM proof. This diagnostic API does not persist an artifact. -/
+@[extern "rs_flock_stage2_ixvm_leaf"]
+opaque flockStage2IxvmLeaf : @& ByteArray → @& ByteArray → @& ByteArray →
+  @& FriParameters → @& Nat → @& Nat → @& String → Except String Unit
+
+/-- Prove and verify the current verifier-only Flock Stage 2 leaf while
+returning a structured JSON report. The report labels its exact-witness cache
+scope and must not be presented as the semantically complete `CheckEnv` leaf. -/
+@[extern "rs_flock_stage2_ixvm_leaf_benchmark"]
+opaque flockStage2IxvmLeafBenchmark : @& ByteArray → @& ByteArray →
+  @& ByteArray → @& FriParameters → @& Nat → Except String ByteArray
+
 /-- Compile/evaluate (`preflight`) or prove (`prove`) the complete no-RISC-V
 Flock Stage 3 relation for one Aiur aggregate root. `prove` requires an output
 path and atomically installs the verified `Stage3ArtifactV1`. Without the Cargo

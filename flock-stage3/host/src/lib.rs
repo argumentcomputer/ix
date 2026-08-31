@@ -15,6 +15,7 @@ mod goldilocks;
 mod merkle;
 mod multiplication;
 mod relation;
+mod stage2;
 mod transcript;
 mod typed_witness;
 mod window;
@@ -22,8 +23,7 @@ mod window;
 use aiur::vk_codec::AiurVerifyingKey;
 use anyhow::{Result, bail};
 use ix_terminal::{
-  Stage2AdviceProfileV1, ValidatedStage2RootV1,
-  validate_and_expand_root_inputs, validate_root_inputs,
+  Stage2AdviceProfileV1, ValidatedStage2RootV1, validate_and_expand_root_inputs,
 };
 use multi_stark::types::FriParameters;
 use std::fmt;
@@ -72,6 +72,7 @@ pub use fri::{
   Stage2AirPcsFriArtifactV1, Stage2AirPcsFriWitnessV1, Stage2PcsBatchOpeningV1,
   Stage2PcsBatchV1, Stage2PcsFriWitnessV1, Stage2PcsInstanceV1,
   Stage2PcsMatrixV1, Stage2PcsOpeningPointV1, Stage2PcsQueryV1,
+  Stage2RelationMemoryEstimateV1, Stage2RelationSizingV1,
   Stage3RelationCensusV1, TranscriptBoundFriCommitPhaseArtifactV1,
   TranscriptBoundFriQueriesArtifactV1, TranscriptBoundPcsFriQueriesArtifactV1,
   TranscriptBoundPcsFriQueryV1, TranscriptBoundPcsReductionArtifactV1,
@@ -101,6 +102,15 @@ pub use relation::{
   STAGE3_RELATION_MANIFEST_DOMAIN, STAGE3_VERIFIER_PHASES_V1,
   Stage3LoweringStatusV1, Stage3RelationBoundsV1, Stage3RelationManifestV1,
   Stage3VerifierPhaseV1,
+};
+pub use stage2::{
+  FLOCK_STAGE2_P3_LEAF_TRANSCRIPT_DOMAIN, FlockStage2Backend,
+  FlockStage2ConfigV1, FlockStage2LeafPreflightReportV1,
+  FlockStage2LeafProfileReportV1, FlockStage2P3LeafArtifactV1,
+  FlockStage2PcsFriProfileReportV1, FlockStage2SizingReportV1,
+  FlockStage2VerifierCoreBenchmarkV1, FlockStage2VerifierCoreTimingsV1,
+  P3_VERIFIER_RELATION_MANIFEST_BYTES, P3_VERIFIER_RELATION_MANIFEST_DOMAIN,
+  P3VerifierRelationBoundsV1, P3VerifierRelationManifestV1,
 };
 pub use transcript::{
   STAGE2_TRANSCRIPT_CONFORMANCE_ARTIFACT_MAGIC,
@@ -180,7 +190,7 @@ impl fmt::Display for Stage3PreflightReportV1 {
     )?;
     write!(
       formatter,
-      "  gate rows: blake3={}, order={}, add={}, mul={}, repack={}, canonical={}, equality={}, hash-sample={}, field-sample={}, split={}, window={}",
+      "  gate rows: blake3={}, order={}, add={}, mul={}, repack={}, canonical={}, equality={}, zero={}, hash-sample={}, field-sample={}, split={}, window={}",
       self.relation.blake3_rows,
       self.relation.digest_order_rows,
       self.relation.goldilocks_add_rows,
@@ -188,6 +198,7 @@ impl fmt::Display for Stage3PreflightReportV1 {
       self.relation.lane_repack_rows,
       self.relation.canonical_goldilocks_rows,
       self.relation.equality_rows,
+      self.relation.zero_constraint_rows,
       self.relation.hash_sample_rows,
       self.relation.field_sample_rows,
       self.relation.u64_split_rows,
@@ -212,9 +223,8 @@ impl FlockStage3Backend {
     fri: &FriParameters,
   ) -> Result<ValidatedStage2RootV1> {
     // Fail before relation construction on an invalid compact root. The
-    // Flock relation repeats verification; this native pass is only the
-    // inexpensive guard needed before allocating a production-scale circuit.
-    validate_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
+    // shared expansion path performs native verification first; the Flock
+    // relation still repeats every check.
     validate_and_expand_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)
   }
 
