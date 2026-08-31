@@ -85,6 +85,9 @@ import Compilatrix.IxIR1.LowerProgress
 import Compilatrix.IxIR1.LowerAddressedSim
 import Compilatrix.IxIR1.LowerMutualAddressedSim
 import Compilatrix.IxIR1.LowerMutualAddressedProgress
+import Compilatrix.IxIR2.Basic
+import Compilatrix.IxIR2.Validate
+import Compilatrix.IxIR2.ValidateExamples
 import Compilatrix.Pipeline
 import Compilatrix.PipelineSound
 import Compilatrix.Fence

@@ -2,12 +2,21 @@
 
 Last reviewed 2026-08-31.
 
-This document freezes the first IxIR₂ semantic data model before its Lean
-implementation. It is normative for the v0 syntax, ownership-flow checker,
+This document freezes the first IxIR₂ semantic data model. It is normative for
+the v0 syntax, ownership-flow checker,
 reuse-credit behavior, and IxIR₁→IxIR₂ simulation boundary. Forward-looking
 pass ideas remain in the local plans; an implementation that disagrees with
 this document must change the specification deliberately rather than silently
 choosing a different contract.
+
+The in-memory syntax and bounded executable validator are implemented in
+[`IxIR2/Basic.lean`](../Compilatrix/IxIR2/Basic.lean) and
+[`IxIR2/Validate.lean`](../Compilatrix/IxIR2/Validate.lean), with executable
+acceptance and rejection witnesses in
+[`IxIR2/ValidateExamples.lean`](../Compilatrix/IxIR2/ValidateExamples.lean).
+The logical/physical evaluators, codec, lowering, and simulations remain later
+tranches below; their absence does not weaken the validator's fail-closed
+result.
 
 The freeze covers the in-memory Lean model and proof interfaces. Numeric wire
 tags and a persistent codec are not frozen yet. No artifact may advertise a
@@ -105,7 +114,7 @@ Block parameters carry the checker-facing capability available at block
 entry:
 
 ```text
-BorrowLender := caller | parameter ValueId
+BorrowLender := caller | value ValueId
 
 ValueCap :=
   | scalar
@@ -118,10 +127,11 @@ CreditCap :=
 ```
 
 `BorrowLender.caller` is legal only for a function parameter or a value
-derived transitively from one. `BorrowLender.parameter i` names an owning
-parameter of the same block. The validator remaps lender identities across
-edges and rejects a borrow whose lender is neither transferred nor
-caller-rooted.
+derived transitively from one. `BorrowLender.value i` names an owning value in
+the same block. Serialized borrowed block parameters may name only another
+owning parameter; instruction-derived borrows may name any prior live owning
+value. The validator remaps lender identities across edges and rejects a
+borrow whose lender is neither transferred nor caller-rooted.
 
 The `scalar` capability is stronger information, not a third heap world. A
 scalar may flow to any value parameter whose dynamic contract accepts
@@ -144,7 +154,12 @@ CtorSchema := {
   layout : LayoutId,
   fields : Array Owned
 }
+
+SchemaEnv := Owned -> CtorId -> Option CtorSchema
 ```
+
+Schemas are keyed by ownership world as well as constructor identity: the same
+source constructor may have distinct unique and shared representations.
 
 The sidecar may describe header class, payload capacity, alignment, and target
 representation details behind `LayoutId`; those details remain parameterized
@@ -265,22 +280,25 @@ The v0 terminators are:
 | Terminator | Behavior |
 | --- | --- |
 | `jump edge` | Transfer to one block. |
-| `switchCtor scrut alternatives` | Observe a constructor tag and take the unique full-`CtorId` edge. It does not expose or consume fields. |
-| `switchNat scrut zero succ` | Preserve IxIR₁ literal peeling. The successor edge prepends the predecessor literal to its explicit value arguments. |
+| `switchValue scrut constructors natPeel?` | Observe one dynamic scrutinee. Locations take the unique full-`CtorId` edge; when `natPeel?` is present, Nat literals take its zero/successor edge. The successor edge prepends the predecessor literal to its explicit value arguments. |
 | `branchCredit credit some none` | Observe whether an optional credit is present and take the corresponding edge; the edge must still transfer or consume that credit on its path. |
 | `return value` | Return one scalar or owned result and terminate the activation. |
 | `tailCall address args` | Transfer directly to an addressed function. |
 | `tailCallSelf args` | Transfer directly to the current function entry. |
 
-`switchCtor` deliberately does not bind fields. A structured IxIR₁ `case`
-lowers to tag edges followed by checked `fetch` instructions, or to
-`takeUnique`/`resetShared` when the case is consuming. This keeps ordinary
-block arguments explicit and makes the lifetime of every field borrow visible
-to the ownership checker.
+`switchValue` deliberately does not bind constructor fields. A structured
+IxIR₁ `case` lowers to tag edges followed by checked `fetch` instructions, or
+to `takeUnique`/`resetShared` when the case is consuming. Keeping constructor
+and optional Nat-literal dispatch in one terminator is necessary because one
+IxIR₁ scrutinee may have either representation dynamically. Adapter blocks may
+join a fetched constructor field and a peeled predecessor after giving them a
+compatible parameter capability. This keeps ordinary block arguments explicit
+and makes the lifetime of every field borrow visible to the ownership checker.
 
-Alternatives must be nonempty and have unique tags. Missing tags retain the
-source stuck behavior. A `switchNat` successor target has one leading scalar
-parameter for the predecessor, followed by its explicit edge parameters.
+The combined constructor/Nat alternative set must be nonempty, and constructor
+tags are unique. Missing tags retain the source stuck behavior. A Nat
+successor target has one leading scalar parameter for the predecessor,
+followed by its explicit edge parameters.
 
 ## Ownership-flow judgment
 
@@ -446,8 +464,9 @@ oracle:
 3. Translate `letOp` sequences in order; `pure` becomes `move`, while
    effect-only instructions map their erased IxIR₁ result binder directly to
    the erased atom.
-4. Translate non-consuming cases to `switchCtor`/`switchNat`; materialize the
-   old alternative field binders with checked `fetch` instructions.
+4. Translate non-consuming cases to `switchValue`; materialize the old
+   constructor-alternative field binders with checked `fetch` instructions and
+   the literal-successor binder from the terminator's implicit predecessor.
 5. Preserve `callSelf` unless it is syntactically tail-positioned, where it
    becomes `tailCallSelf`. Recognized direct-recursion recovery is a later
    candidate validated through the same block interface.
@@ -515,7 +534,7 @@ The validator checks at least:
 - edge arity, capability compatibility, and lender remapping;
 - addressed function existence, call arity, result world, and `papSafe` use;
 - constructor existence, full identity, field count/worlds, and layout;
-- unique switch alternatives and exact `switchNat` successor shape;
+- unique constructor alternatives and exact optional Nat-successor shape;
 - owned-root and borrow rules on every path and loop backedge;
 - credit linearity, optionality, exact-layout compatibility, and empty
   terminal credit state;
