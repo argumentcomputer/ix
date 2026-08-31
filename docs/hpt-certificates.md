@@ -603,6 +603,12 @@ sentinel-owned main, attributes one scalar-drop elimination and one unique
 leaf specialization, changes static `dropU` to `free`, preserves the exact
 Nat result and allocation/free/live observations, and reports an unchanged
 second run; an unsupported destruction version fails soft to the input graph.
+The adjacent recursive-fuel guard pins the current IR boundary with two
+successful-source counterexamples: inline `fetch`/`free` expansion exhausts
+continuation fuel, and the equivalent stored helper exhausts call-entry fuel.
+Consequently deeper unique plans and the shared RC-zero branch are staged with
+the fuel-neutral consuming-destructure/reset primitive rather than encoded as
+ordinary IxIR₁ `Code`.
 The pipeline integration suite separately compiles a usage-checked Ixon
 constructor main alongside six stored functions with only one runtime-reachable
 target. The default optimizer removes the other five and preserves the exact

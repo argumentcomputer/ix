@@ -65,6 +65,11 @@ status ledger here:
   conservative dynamic-apply fallback. It runs behind a versioned fail-soft
   optimizer policy with canonical before/after reports, pass-attributed
   counters, and deterministic fixed-point regressions.
+  Executable exact-fuel counterexamples close the IxIR₁ destruction boundary:
+  recursive inline expansion steals continuation fuel, helper expansion adds
+  call-entry fuel, and shared specialization lacks an explicit RC-zero branch.
+  Recursive/shared known-shape destruction is therefore staged with the
+  fuel-neutral consuming-destructure/reset path in IxIR₂.
   See [HPT certificates](hpt-certificates.md) and the
   [optimizer harness](optimizer-harness.md).
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
@@ -130,7 +135,7 @@ This is the current milestone.
 | --- | --- | --- |
 | Whole-pass value/ownership/progress simulation | active | Every validator-accepted current-fragment main has a composed IxIR₀→IxIR₁ forward simulation, no reachable memory error, and the existing reclamation/cost results without fixture-specific assumptions. |
 | Proof-structure consolidation | active | Shared recursive judgments have one foundational traversal each; public theorems depend on those cores without duplicating the induction. Stop recording individual consolidation cuts in this roadmap. |
-| HPT consumer tranche O1 | active | Extend the landed scalar and exact-all-scalar unique-leaf destructor to bounded recursive shapes and the shared-root zero branch without unbounded code duplication; retain arbitrary-fuel proofs, conservative fallback, one content-address rebuild, pass attribution, and fixed-point regressions. |
+| HPT consumer tranche O1 | delivered | Checked case pruning/collapse, scalar fetch forwarding, scalar and exact-all-scalar unique-leaf destruction, PAP/application fusion, and rooted reachability compose through one owner-sensitive traversal and one rebuild, with arbitrary-fuel proofs, fail-soft policy/reporting, and fixed-point regressions. Recursive/shared destruction is assigned to the IxIR₂ consuming-destructure rows below because ordinary IxIR₁ expansion cannot preserve the same-fuel contract. |
 | IxIR₁ extern ownership ABI | next | Heap-valued extern arguments/results have explicit consume/borrow/retain contracts or remain rejected by the validated fragment. |
 | Address reproducibility | next | Two independent full compilations of the same validated root produce the same addressed IxIR₀/IxIR₁ graph and certificate identities. |
 | HPT/cache scaling | deferred | Wake when bounded Std/corpus work demonstrates that directory enumeration, sharding, garbage collection, or cross-store scheduling is the bottleneck. |
@@ -149,8 +154,8 @@ not perturb that interface may start earlier.
 | --- | --- | --- |
 | IxIR₂ CFG and join points | next | Structured IxIR₁ lowers to validated blocks with explicit parameters, tail calls, and a compositional simulation theorem. |
 | Direct-recursion recovery | next | Recognized recursor images validate to direct loops; unrecognized terms retain the literal correct fallback. |
-| Static unique reuse | next | Consuming unique destructure produces affine reuse credits and compiler-emitted list reversal reaches the FIP counter target. |
-| Dynamic shared reset/reuse | next | Ordinary all-shared code reuses RC=1 nodes on a checked hot path and allocates correctly on the cold path. |
+| Static unique reuse | next | Fuel-neutral consuming unique destructure specializes recursive known shapes, produces affine reuse credits, and compiler-emitted list reversal reaches the FIP counter target. |
+| Dynamic shared reset/reuse | next | A checked RC-zero branch specializes known shared shapes; ordinary all-shared code reuses RC=1 nodes on the hot path and allocates correctly on the cold path. |
 | Borrowed parameter ABI and RC coalescing | next | Read-only call chains remove call-boundary RC traffic under a checked interprocedural borrow artifact. |
 | x86-64 semantics and emitter | next | A typed System V subset, executable local semantics, encoder, minimal ELF object writer, and native differential co-simulation run one compiled program with the provisional ISA-specification trust entry exposed. |
 | x86 reference-semantics bridge | deferred | Wake when Sail's Lean backend can reproducibly import the needed x86-from-ACL2 slice; before substantially expanding v0, prove per-form decode/execution equivalence between encoded bytes, the local model, and that reference. |
@@ -254,16 +259,14 @@ this repository's completion claims.
 1. **Close the M2b semantic spine.** Finish the shared LowerSim/LowerProgress
    traversal consolidation and expose one whole-pass theorem for the current
    validated fragment.
-2. **Finish O1 shape-specialized destruction.** Extend the landed scalar and
-   exact-all-scalar unique-leaf cases to bounded recursive shapes and the
-   shared-root zero branch, preserving the owner-sensitive proof, conservative
-   fallback, shared one-rebuild boundary, and fixed-point reporting.
-3. **Specify IxIR₂ before implementing it.** Freeze block parameters,
+2. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse
-   credits together with the simulation statement.
-4. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
+   credits together with the simulation statement. Include the fuel-neutral
+   recursive unique destructor and shared RC-zero branch required beyond the
+   delivered IxIR₁ leaf specialization.
+3. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
    separate; prove fragment containment through the typed instruction AST.
-5. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
+4. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
    the gate from hand-written reuse semantics to an optimizing compiler.
 
 Do not retain completed items in this list. Move durable evidence to the

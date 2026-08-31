@@ -13,8 +13,9 @@ enough ownership-neutral evidence:
 The second rewrite is the first useful known-shape destructor.  It preserves
 the root free while removing the generic node dispatch and recursive field
 walk.  Heap-valued, widened, identity-only, multi-shape, and shared-root facts
-remain on the generic path.  Recursive constructor helpers can extend this
-boundary later without weakening this leaf certificate.
+remain on the generic path.  The fuel-boundary guard below records why deeper
+destruction needs a fuel-neutral primitive rather than an expansion in the
+current `Code` language.
 -/
 
 namespace Compilatrix.IxIR1.HPT.Destroy
@@ -132,6 +133,85 @@ private def decisionBoundary : Bool :=
     (specialize? [guardLeafFact] (.free (.var 0))).isNone
 
 #guard decisionBoundary
+
+/-! ## Why recursive expansion is not an IxIR₁ `Code` rewrite
+
+The evaluator exposes `Code` nesting through fuel.  Expanding one `dropU`
+inline consumes extra continuation fuel; putting the same expansion behind a
+call preserves continuation fuel but adds call/invoke fuel at the destructor's
+minimum successful boundary.  The two executable witnesses below pin both
+failures on the smallest recursive unique tree (a unary root over a nullary
+child).  This is an IR constraint, independent of HPT precision or
+owner-sensitive declaration rewriting.
+-/
+
+private def fuelChildIdentity : CtorId :=
+  { block := Ixon.Address.replicate 0xd3, indIdx := 0, cidx := 0 }
+
+private def fuelRootIdentity : CtorId :=
+  { block := Ixon.Address.replicate 0xd4, indIdx := 0, cidx := 0 }
+
+private def fuelHelperAddress : Ixon.Address :=
+  Ixon.Address.replicate 0xd5
+
+/-- Fetch the unary child, shallow-free the root, then shallow-free the
+nullary child.  Semantically this is the obvious exact recursive destructor. -/
+private def fuelHelperBody : Code :=
+  .letOp (.fetch (.var 0) 0)
+    (.letOp (.free (.var 1))
+      (.letOp (.free (.var 1))
+        (.ret .erased)))
+
+private def fuelHelper : FnDef :=
+  { arity := 1, result := .shared, body := fuelHelperBody }
+
+private def fuelCtx : Ctx :=
+  { decls := Env.ofList [(fuelHelperAddress, .fn fuelHelper)] }
+
+private def fuelInput : Store × RVal :=
+  let (withChild, child) := ({} : Store).allocNode .unique
+    (.ctorN fuelChildIdentity #[])
+  let (withRoot, root) := withChild.allocNode .unique
+    (.ctorN fuelRootIdentity #[.loc child])
+  (withRoot, .loc root)
+
+private def pureContinuation : Nat → Code
+  | 0 => .ret .erased
+  | fuel + 1 => .letOp (.pure .erased) (pureContinuation fuel)
+
+private def genericRecursiveDrop (rest : Code) : Code :=
+  .letOp (.dropU (.var 0)) rest
+
+private def inlineRecursiveDrop (rest : Code) : Code :=
+  .letOp (.fetch (.var 0) 0)
+    (.letOp (.free (.var 1))
+      (.letOp (.free (.var 1)) rest))
+
+private def helperRecursiveDrop (rest : Code) : Code :=
+  .letOp (.call fuelHelperAddress #[.var 0]) rest
+
+private def fuelCurrent : FnDef :=
+  { arity := 1, result := .shared, body := .ret .erased }
+
+private def recursiveExpansionFuelBoundary : Bool :=
+  let (store, root) := fuelInput
+  let short := .ret .erased
+  let long := pureContinuation 5
+  match
+      runCode fuelCtx 6 fuelCurrent store [root]
+        (genericRecursiveDrop short),
+      runCode fuelCtx 6 fuelCurrent store [root]
+        (helperRecursiveDrop short),
+      runCode fuelCtx 7 fuelCurrent store [root]
+        (genericRecursiveDrop long),
+      runCode fuelCtx 7 fuelCurrent store [root]
+        (inlineRecursiveDrop long) with
+  | .ok (shortStore, .erased), .error .fuel,
+      .ok (longStore, .erased), .error .fuel =>
+      shortStore.live == 0 && longStore.live == 0
+  | _, _, _, _ => false
+
+#guard recursiveExpansionFuelBoundary
 
 /-- Proof-facing view of an accepted executable decision. -/
 inductive Spec (facts : List Fact) : Op → Specialization → Prop where

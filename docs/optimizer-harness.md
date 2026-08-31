@@ -151,9 +151,19 @@ refinement for each accepted destructor decision; and
 decisions through main, stored declarations, recursive self calls, direct
 calls, PAP application, and the final one-rebuild path.
 
-## Next extension
+## Staged extension boundary
 
-The remaining destruction extension is bounded recursive specialization and a
-known-shape shared-root zero branch, with content-addressed helpers if direct
-expansion would duplicate code. Exact-case collapse beyond the checked unary
-form also remains active work.
+The scalar and exact-leaf cases are the complete destruction slice for the
+current IxIR₁ instruction set. Recursive expansion is not merely a code-size
+question: inline `fetch`/`free` expansion reduces the fuel available to the
+continuation, while moving that expansion into a content-addressed helper adds
+call/invoke fuel at the generic destructor's minimum successful boundary.
+`HPTDestroy.recursiveExpansionFuelBoundary` executes both counterexamples.
+A shared-root specialization additionally needs an explicit RC-zero branch,
+which IxIR₁ does not expose as code.
+
+Recursive unique destruction and the known-shape shared zero branch therefore
+resume with the fuel-neutral consuming-destructure/reset operation in the
+IxIR₂ final-RC path (or an equivalently primitive operation with the same
+semantic contract). Exact-case collapse beyond the checked unary form remains
+the next extension that fits the current IxIR₁ contract.
