@@ -91,6 +91,33 @@ Print the selected Flock configuration and digest with:
 cargo run -p flock-stage3-host --bin flock-stage3-config
 ```
 
+## Production aggregate preflight
+
+Build the optional root connector and compile/evaluate the complete Stage 3
+relation for a persisted `ix_aggr` root without starting the Flock prover:
+
+```sh
+IX_FLOCK=1 nix develop --command lake exe ix flock-root ROOT_ADDRESS \
+  --mode preflight
+```
+
+Preflight natively verifies and expands the compact Stage 2 proof, constructs
+the typed AIR/PCS/FRI witness, evaluates every Flock gate, and prints the Stage
+2 advice geometry, `nu`, table capacity, relation/public sizes, per-gate row
+counts, and content-addressed relation/statement digests. It is the mandatory
+gate before a production-sized proof.
+
+Once preflight succeeds, retain the expensive verified artifact explicitly:
+
+```sh
+IX_FLOCK=1 nix develop --command lake exe ix flock-root ROOT_ADDRESS \
+  --mode prove --output root.stage3.flock
+```
+
+The output is installed atomically. The binary-FRI lowering supports the full
+height-derived schedule: the prior eight-round implementation ceiling is gone,
+with evaluated regressions at 9, 16, and the current 30-round maximum.
+
 ## Scope and remaining work
 
 The current relation is deliberately specialised to the configuration used by

@@ -1677,3 +1677,127 @@ fn decode_io_buffer_map(
   }
   map
 }
+
+// =============================================================================
+// Flock aggregate-root Stage 3 (feature flock)
+// =============================================================================
+
+#[cfg(feature = "flock")]
+fn write_flock_artifact_atomic(
+  path: &std::path::Path,
+  bytes: &[u8],
+) -> anyhow::Result<()> {
+  use anyhow::{Context, bail};
+
+  let Some(file_name) = path.file_name() else {
+    bail!("Flock output path has no file name: {}", path.display());
+  };
+  let temporary = path.with_file_name(format!(
+    ".{}.tmp-{}",
+    file_name.to_string_lossy(),
+    std::process::id(),
+  ));
+  std::fs::write(&temporary, bytes).with_context(|| {
+    format!("write temporary Flock artifact {}", temporary.display())
+  })?;
+  if let Err(error) = std::fs::rename(&temporary, path) {
+    let _ = std::fs::remove_file(&temporary);
+    return Err(error)
+      .with_context(|| format!("install Flock artifact {}", path.display()));
+  }
+  Ok(())
+}
+
+/// Compile/evaluate or prove the complete no-RISC-V Flock relation for one
+/// canonical ix_aggr root. Default builds retain a checked feature-disabled
+/// stub so the Lean CLI remains linkable.
+#[unsafe(no_mangle)]
+extern "C" fn rs_flock_stage3_aggregate_root(
+  vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "flock")]
+  {
+    let fri = decode_fri_parameters(&fri_parameters);
+    let backend = flock_stage3_host::FlockStage3Backend;
+    let result = match mode.as_str().to_ascii_lowercase().as_str() {
+      "preflight" => {
+        if !output.as_str().is_empty() {
+          Err(anyhow::anyhow!("--output is only valid with --mode prove"))
+        } else {
+          backend
+            .preflight_stage2(
+              vk_bytes.as_bytes(),
+              claim_bytes.as_bytes(),
+              proof_bytes.as_bytes(),
+              &fri,
+            )
+            .map(|report| println!("{report}"))
+        }
+      },
+      "prove" => {
+        if output.as_str().is_empty() {
+          Err(anyhow::anyhow!(
+            "Flock proving requires --output so the expensive artifact is retained"
+          ))
+        } else {
+          (|| {
+            let report = backend.preflight_stage2(
+              vk_bytes.as_bytes(),
+              claim_bytes.as_bytes(),
+              proof_bytes.as_bytes(),
+              &fri,
+            )?;
+            println!("{report}");
+            println!("starting Flock Stage 3 prover");
+            let artifact = backend.prove_stage2(
+              vk_bytes.as_bytes(),
+              claim_bytes.as_bytes(),
+              proof_bytes.as_bytes(),
+              &fri,
+            )?;
+            if artifact.statement().stage2_root_digest()
+              != &report.stage2_root_digest
+              || artifact.statement().relation_digest()
+                != &report.relation_digest
+              || artifact.statement().digest() != report.stage3_statement_digest
+            {
+              return Err(anyhow::anyhow!(
+                "Flock prover rebuilt a statement different from preflight"
+              ));
+            }
+            backend.verify_stage2(&artifact, artifact.statement())?;
+            let encoded = artifact.to_bytes();
+            let output_path = std::path::Path::new(output.as_str());
+            write_flock_artifact_atomic(output_path, &encoded)?;
+            println!(
+              "Flock Stage 3 proof verified; artifact={} bytes; saved to {}",
+              encoded.len(),
+              output_path.display(),
+            );
+            Ok(())
+          })()
+        }
+      },
+      other => Err(anyhow::anyhow!(
+        "unknown Flock mode '{other}' (expected preflight|prove)"
+      )),
+    };
+    match result {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+    }
+  }
+  #[cfg(not(feature = "flock"))]
+  {
+    let _ =
+      (&vk_bytes, &claim_bytes, &proof_bytes, &fri_parameters, &mode, &output);
+    LeanExcept::error_string(
+      "ix was built without Flock Stage 3; rebuild with IX_FLOCK=1",
+    )
+  }
+}

@@ -106,7 +106,6 @@ const FIXED_SUFFIX_BYTES: usize = 32 + 32 + 8;
 const MAX_BUNDLE_BYTES: usize = 64 * 1024 * 1024;
 const MIN_LOG_HEIGHT: u8 = 1;
 const MAX_LOG_HEIGHT: u8 = 31;
-const MAX_COMMIT_PHASE_ROUNDS: usize = 8;
 const MAX_REDUCED_OPENING_WIDTH: usize = 1 << 16;
 // The arithmetic slots need enough rows for the bit-reversed exponentiation
 // at the maximum supported height. This also keeps every table in a Flock
@@ -330,6 +329,48 @@ impl Stage2AirPcsFriWitnessV1 {
       &typed,
     )?;
     Ok(Self { pcs_fri, air })
+  }
+}
+
+/// Exact circuit census produced by the no-prove Stage 3 preflight.
+///
+/// Counts are witness rows before Flock pads each table to `2^nu`. Keeping
+/// them named makes production-root growth visible without exposing Flock's
+/// internal slot identifiers as part of the Ix API.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stage3RelationCensusV1 {
+  pub circuit_digest: [u8; 32],
+  pub nu: u64,
+  pub table_capacity: u64,
+  pub relation_inputs: u64,
+  pub public_values: u64,
+  pub blake3_rows: u64,
+  pub digest_order_rows: u64,
+  pub goldilocks_add_rows: u64,
+  pub goldilocks_mul_rows: u64,
+  pub lane_repack_rows: u64,
+  pub canonical_goldilocks_rows: u64,
+  pub equality_rows: u64,
+  pub hash_sample_rows: u64,
+  pub field_sample_rows: u64,
+  pub u64_split_rows: u64,
+  pub byte_window_rows: u64,
+}
+
+impl Stage3RelationCensusV1 {
+  pub fn total_rows(&self) -> u64 {
+    self
+      .blake3_rows
+      .saturating_add(self.digest_order_rows)
+      .saturating_add(self.goldilocks_add_rows)
+      .saturating_add(self.goldilocks_mul_rows)
+      .saturating_add(self.lane_repack_rows)
+      .saturating_add(self.canonical_goldilocks_rows)
+      .saturating_add(self.equality_rows)
+      .saturating_add(self.hash_sample_rows)
+      .saturating_add(self.field_sample_rows)
+      .saturating_add(self.u64_split_rows)
+      .saturating_add(self.byte_window_rows)
   }
 }
 
@@ -1650,6 +1691,83 @@ pub(crate) fn stage2_air_pcs_fri_circuit_digest(
   witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<[u8; 32]> {
   Ok(build_stage2_air_pcs_fri_relation(witness)?.shape.circuit.digest())
+}
+
+pub(crate) fn preflight_stage2_air_pcs_fri(
+  stage2_witness: &Stage2AirPcsFriWitnessV1,
+) -> Result<Stage3RelationCensusV1> {
+  let relation = build_stage2_air_pcs_fri_relation(stage2_witness)?;
+  let evaluated = relation.shape.run(&relation.inputs, &[]);
+  if evaluated.public != relation.public {
+    bail!("Flock Stage 3 preflight disagrees with native verifier semantics");
+  }
+
+  let count = |value: usize, label: &str| {
+    u64::try_from(value)
+      .map_err(|error| anyhow::anyhow!("{label} exceeds u64: {error}"))
+  };
+  let nu = count(relation.nu, "Flock table logarithm")?;
+  let shift = u32::try_from(nu).map_err(|error| {
+    anyhow::anyhow!("Flock table logarithm exceeds u32: {error}")
+  })?;
+  let table_capacity = 1u64.checked_shl(shift).ok_or_else(|| {
+    anyhow::anyhow!("Flock table logarithm {nu} exceeds the preflight report")
+  })?;
+  let field_sample_rows = relation
+    .slots
+    .field_sample
+    .map_or(0, |slot| evaluated.rows::<GoldilocksSampleGate>(slot).len());
+  let byte_window_rows = relation
+    .window_slot
+    .map_or(0, |slot| evaluated.rows::<ByteWindowGate>(slot).len());
+
+  Ok(Stage3RelationCensusV1 {
+    circuit_digest: relation.shape.circuit.digest(),
+    nu,
+    table_capacity,
+    relation_inputs: count(relation.inputs.len(), "relation input count")?,
+    public_values: count(relation.public.len(), "public-value count")?,
+    blake3_rows: count(
+      evaluated.rows::<Blake3Gate>(relation.slots.blake3).len(),
+      "BLAKE3 row count",
+    )?,
+    digest_order_rows: count(
+      evaluated.rows::<DigestOrderGate>(relation.slots.order).len(),
+      "digest-order row count",
+    )?,
+    goldilocks_add_rows: count(
+      evaluated.rows::<GoldilocksAddPairGate>(relation.slots.add).len(),
+      "Goldilocks-add row count",
+    )?,
+    goldilocks_mul_rows: count(
+      evaluated.rows::<GoldilocksMulPairGate>(relation.slots.mul).len(),
+      "Goldilocks-mul row count",
+    )?,
+    lane_repack_rows: count(
+      evaluated.rows::<GoldilocksLaneRepackGate>(relation.slots.repack).len(),
+      "lane-repack row count",
+    )?,
+    canonical_goldilocks_rows: count(
+      evaluated
+        .rows::<CanonicalGoldilocksPairGate>(relation.slots.canonical)
+        .len(),
+      "canonical-Goldilocks row count",
+    )?,
+    equality_rows: count(
+      evaluated.rows::<F128EqualityGate>(relation.slots.equality).len(),
+      "equality row count",
+    )?,
+    hash_sample_rows: count(
+      evaluated.rows::<HashSampleGate>(relation.sample_slot).len(),
+      "hash-sample row count",
+    )?,
+    field_sample_rows: count(field_sample_rows, "field-sample row count")?,
+    u64_split_rows: count(
+      evaluated.rows::<U64SplitGate>(relation.split_slot).len(),
+      "u64-split row count",
+    )?,
+    byte_window_rows: count(byte_window_rows, "byte-window row count")?,
+  })
 }
 
 pub fn verify_stage2_air_pcs_fri_conformance(
@@ -4104,7 +4222,12 @@ fn validate_commit_phase_round_count(
   initial_log_height: u8,
   round_count: usize,
 ) -> Result<()> {
-  let maximum = usize::from(initial_log_height).min(MAX_COMMIT_PHASE_ROUNDS);
+  // Every round lowers the authenticated tree by one level. The height is
+  // already capped by `MAX_LOG_HEIGHT`, so this is a protocol-derived bound
+  // rather than a second, arbitrary implementation ceiling. The
+  // transcript-bound path additionally fixes the exact count through its
+  // folding-arity schedule and FRI parameters.
+  let maximum = usize::from(initial_log_height);
   if !(1..=maximum).contains(&round_count) {
     bail!("FRI commit-phase round count {round_count}; expected 1..={maximum}");
   }
@@ -5540,14 +5663,19 @@ mod tests {
     (path, current)
   }
 
-  fn transcript_bound_fri_fixture() -> (
+  fn transcript_bound_fri_fixture_with_round_count(
+    round_count: usize,
+  ) -> (
     Stage2TranscriptReplayV1,
     Stage2FriTranscriptReplayV1,
     FriCommitPhaseQueryV1,
   ) {
     let prefix = transcript_replay_fixture();
-    let initial_log_height = 4u8;
-    let round_count = 3usize;
+    // Model the production binary schedule with logBlowup=2 and a constant
+    // final polynomial: global height = rounds + 2, while the first folded
+    // height is global height - 1.
+    assert!((1..=30).contains(&round_count));
+    let initial_log_height = u8::try_from(round_count + 1).unwrap();
     let trees: Vec<_> = (0..round_count)
       .map(|round| {
         zero_extension_tree(initial_log_height - u8::try_from(round).unwrap())
@@ -5590,6 +5718,14 @@ mod tests {
       final_polynomial: [0, 0],
     };
     (prefix, fri_transcript, query)
+  }
+
+  fn transcript_bound_fri_fixture() -> (
+    Stage2TranscriptReplayV1,
+    Stage2FriTranscriptReplayV1,
+    FriCommitPhaseQueryV1,
+  ) {
+    transcript_bound_fri_fixture_with_round_count(3)
   }
 
   fn transcript_bound_fri_all_queries_fixture() -> (
@@ -5945,6 +6081,63 @@ mod tests {
   }
 
   #[test]
+  fn deep_binary_fri_schedules_construct_and_evaluate() {
+    for round_count in [9, 16, 30] {
+      let (prefix, fri_transcript, query) =
+        transcript_bound_fri_fixture_with_round_count(round_count);
+      validate_commit_phase_structure(&query).unwrap();
+      assert_eq!(query.rounds.len(), round_count);
+
+      let challenges = fri_transcript.challenges(&prefix).unwrap();
+      ensure_transcript_binds_fri_query(
+        &fri_transcript,
+        &challenges,
+        0,
+        &query,
+      )
+      .unwrap();
+      let computation = compute_commit_phase(&query).unwrap();
+      ensure_final_polynomial(&query, &computation).unwrap();
+
+      let relation = TranscriptBoundFriCommitPhaseRelation::build(
+        &prefix,
+        &fri_transcript,
+        &challenges,
+        0,
+        &query,
+        &computation,
+      )
+      .unwrap();
+      let witness = relation.shape.run(&relation.inputs, &[]);
+      assert_eq!(witness.public, relation.public);
+
+      let mut missing_last_round = query.clone();
+      missing_last_round.rounds.pop();
+      assert!(
+        ensure_transcript_binds_fri_query(
+          &fri_transcript,
+          &challenges,
+          0,
+          &missing_last_round,
+        )
+        .is_err()
+      );
+
+      let mut wrong_last_path = query;
+      wrong_last_path.rounds.last_mut().unwrap().opening_proof[0][0] ^= 1;
+      assert!(
+        ensure_transcript_binds_fri_query(
+          &fri_transcript,
+          &challenges,
+          0,
+          &wrong_last_path,
+        )
+        .is_err()
+      );
+    }
+  }
+
+  #[test]
   fn commit_phase_parser_is_strict_before_crypto() {
     let query = commit_phase_fixture();
     let artifact = FriCommitPhaseConformanceArtifactV1 {
@@ -6187,12 +6380,10 @@ mod tests {
 
   #[test]
   fn real_stage2_root_lowers_to_the_combined_pcs_fri_relation() {
-    let (prepared, fri, _, _, _) = prepared_stage2_pcs_fixture();
+    let (prepared, fri, vk_bytes, claim_bytes, proof_bytes) =
+      prepared_stage2_pcs_fixture();
     let lowered =
       Stage2PcsFriWitnessV1::from_prepared(&prepared, &fri).unwrap();
-    let air =
-      Stage2AirProgramV1::from_prepared(&prepared, &fri, &lowered.pcs_instance)
-        .unwrap();
 
     assert_eq!(lowered.pcs_instance.batches.len(), 4);
     assert!(
@@ -6209,30 +6400,16 @@ mod tests {
     let prefix_challenges = lowered.prefix.challenges().unwrap();
     let fri_challenges =
       lowered.fri_transcript.challenges(&lowered.prefix).unwrap();
-    let (fri_computations, pcs_computations) =
-      validate_all_transcript_bound_pcs_fri_queries(
-        &lowered.prefix,
-        &lowered.fri_transcript,
-        &fri_challenges,
-        prefix_challenges,
-        &lowered.pcs_instance,
-        &lowered.queries,
-      )
+    let report = crate::FlockStage3Backend
+      .preflight_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
       .unwrap();
-    let relation =
-      TranscriptBoundFriCommitPhaseRelation::build_all_with_pcs_and_air(
-        &lowered.prefix,
-        &lowered.fri_transcript,
-        &fri_challenges,
-        &lowered.pcs_instance,
-        &air,
-        &lowered.queries,
-        &fri_computations,
-        &pcs_computations,
-      )
-      .unwrap();
-    let relation_witness = relation.shape.run(&relation.inputs, &[]);
-    assert_eq!(relation_witness.public, relation.public);
+    let census = &report.relation;
+    assert!(census.nu >= u64::try_from(NU).unwrap());
+    assert!(census.blake3_rows > 0);
+    assert!(census.total_rows() > census.blake3_rows);
+    assert_eq!(report.advice.queries, u64::try_from(fri.num_queries).unwrap());
+    assert_eq!(report.stage2_root_digest, prepared.statement().digest());
+    assert!(report.to_string().contains("gate rows: blake3="));
 
     let mut wrong_row = lowered.queries;
     wrong_row[0].pcs.batch_openings[0].opened_rows[0][0] ^= 1;

@@ -60,12 +60,16 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixCuda ← IO.getEnv "IX_CUDA"
+  -- IX_FLOCK=1 builds ix flock-root against the isolated Flock workspace.
+  -- Default builds retain a descriptive FFI stub.
+  let ixFlock ← IO.getEnv "IX_FLOCK"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
     features := features.push "cuda"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
+  if ixFlock == some "1" then features := features.push "flock"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
@@ -77,8 +81,14 @@ arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
 archive from a previous invocation. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
-  let sources ← inputDir (pkg.dir / "crates") true fun path =>
+  let coreSources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.fileName == "Cargo.toml"
+  -- Trace the optional path dependency so feature changes cannot reuse a stale
+  -- static archive.
+  let flockSources ← inputDir (pkg.dir / "flock-stage3") true fun path =>
+    path.extension == some "rs" || path.fileName == "Cargo.toml" ||
+      path.fileName == "Cargo.lock"
+  let sources := coreSources.zipWith (fun core flock => core ++ flock) flockSources
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")

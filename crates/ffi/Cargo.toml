@@ -35,6 +35,10 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
 
+# Optional no-RISC-V Flock Stage 3 connector. This stays out of the normal
+# host build because the pinned prover stack is intentionally isolated.
+flock-stage3-host = { path = "../../flock-stage3/host", optional = true }
+
 # Iroh dependencies
 bytes = { version = "1.10.1", optional = true }
 tokio = { version = "1.44.1", optional = true }
@@ -51,6 +55,7 @@ parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
+flock = ["dep:flock-stage3-host"]
 
 [lints]
 workspace = true
