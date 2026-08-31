@@ -3369,9 +3369,10 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_below
     {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {src : IxIR0.Env}
     {compilerFuel limit : Nat}
     (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
-    {state finalState : LowSt} {code : Code}
+    {state finalState : LowSt} {code : Code} {papSafeFlag : Bool}
     (hbodyPreserves : LowerEValuePreservesBelow funRel recSelfRel
-      sourceCtx ctx ⟨modes.length, world, code⟩ limit src compilerFuel)
+      sourceCtx ctx ⟨modes.length, world, papSafeFlag, code⟩
+        limit src compilerFuel)
     (hadmissible : ParameterDropsAdmissible modes
       (fun index => countUses index body))
     (hrun : (lowerFnBody src (compilerFuel + 1)
@@ -3388,7 +3389,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_below
         IxIR0.eval sourceCtx sourceFuel sourceArgs.reverse body =
           .ok sourceResult) :
     FnValuePreservesAt funRel sourceCtx ctx
-      ⟨modes.length, world, code⟩ (modes.map worldOfUses)
+      ⟨modes.length, world, papSafeFlag, code⟩ (modes.map worldOfUses)
       sourceFunction limit := by
   let remaining : Nat → Nat := fun index => countUses index body
   let input : VEnv :=
@@ -3445,11 +3446,11 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_below
   obtain ⟨sourceFuel, hsource⟩ := hsaturates
     (hsourceArgsLength.trans hargsLength) happlies
   have hbodySound : LowerResultValueSoundBelow funRel recSelfRel ctx
-      ⟨modes.length, world, code⟩ limit plannedMiddle output
+      ⟨modes.length, world, papSafeFlag, code⟩ limit plannedMiddle output
       sourceArgs.reverse sourceArgs.reverse sourceResult world emit av :=
     hbodyPreserves hsource hbodyRun
   have hfull : LowerResultValueSoundBelow funRel recSelfRel ctx
-      ⟨modes.length, world, code⟩ limit input output
+      ⟨modes.length, world, papSafeFlag, code⟩ limit input output
       sourceArgs.reverse sourceArgs.reverse sourceResult world
       (plannedEmit ∘ emit) av :=
     hbodySound.afterRelease (hplan'.valueSoundBelow sourceArgs.reverse)
@@ -3464,7 +3465,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_below
           (rootsForWorlds (modes.map worldOfUses) args)).symm.append_right
             rest)
   have hcodeRun' : runCode ctx limit
-      ⟨modes.length, world, code⟩ store args.reverse
+      ⟨modes.length, world, papSafeFlag, code⟩ store args.reverse
       ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
         .ok (store', value) := by
     rw [hcode]
@@ -3497,23 +3498,27 @@ theorem lowerDecl_defn_valuePreservesAt_below
   obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+      some (address, Decl.fn ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩) =
           some (address, Decl.fn d) ∧
         bodyState = finalState := by
     simpa using hpureRun
-  have hd : d = ⟨lamArity body, result, code⟩ := by
+  have hd : d = ⟨lamArity body, result,
+      result == .shared && papSafe body, code⟩ := by
     have hp := Option.some.inj hpure.1
     exact Decl.fn.inj (Prod.mk.inj hp).2.symm
   cases hpure.2
   subst d
   have hbodyPreserves' : LowerEValuePreservesBelow funRel
       (fun _ _ => False) sourceCtx ctx
-      ⟨(lamUses body).length, result, code⟩ limit src compilerFuel := by
+      ⟨(lamUses body).length, result,
+        result == .shared && papSafe body, code⟩ limit src compilerFuel := by
     intro input output world expr sourceEnv sourceFuel sourceValue
       state finalState emit av hsource hrun
     simpa using hbodyPreserves hsource hrun
   have hpreserves : FnValuePreservesAt funRel sourceCtx ctx
-      ⟨(lamUses body).length, result, code⟩
+      ⟨(lamUses body).length, result,
+        result == .shared && papSafe body, code⟩
       ((lamUses body).map worldOfUses) sourceFunction limit :=
     lowerFnBody_parameterEntries_valuePreservesAt_below
       (recSelfRel := fun _ _ => False)
@@ -3523,8 +3528,10 @@ theorem lowerDecl_defn_valuePreservesAt_below
       (by
         intro sourceArgs sourceResult hlength happlies
         exact href.defnSaturate hlookup (by simpa using hlength) happlies)
-  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
-      ⟨lamArity body, result, code⟩ := by
+  have hfn : (⟨(lamUses body).length, result,
+      result == .shared && papSafe body, code⟩ : FnDef) =
+      ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩ := by
     rw [lamUses_length]
   rw [← hfn]
   intro store store' args value sourceArgs sourceResult sourceRest rest
@@ -3547,7 +3554,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_within_below
     (hvalues : CompilerValueContractsBelow
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
     (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
-    {state finalState : LowSt} {code : Code}
+    {state finalState : LowSt} {code : Code} {papSafeFlag : Bool}
     (hadmissible : ParameterDropsAdmissible modes
       (fun index => countUses index body))
     (hrun : (lowerFnBody src (compilerFuel + 1)
@@ -3565,7 +3572,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_within_below
         IxIR0.eval sourceCtx sourceFuel sourceArgs.reverse body =
           .ok sourceResult) :
     FnValuePreservesAt (CompilerFunctionRel sourceCtx src ambient)
-      sourceCtx ctx ⟨modes.length, world, code⟩
+      sourceCtx ctx ⟨modes.length, world, papSafeFlag, code⟩
       (modes.map worldOfUses) sourceFunction limit := by
   let remaining : Nat → Nat := fun index => countUses index body
   let input : VEnv :=
@@ -3627,16 +3634,16 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_within_below
     (hsourceArgsLength.trans hargsLength) happlies
   have hbodySound : LowerResultValueSoundBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ limit plannedMiddle output
+      ⟨modes.length, world, papSafeFlag, code⟩ limit plannedMiddle output
       sourceArgs.reverse sourceArgs.reverse sourceResult world emit av :=
     lowerE_run_value_sound_within_noRecSelf_below
       (recSelfRel := recSelfRel)
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hsource hbodyRun hextends
       hmiddleNo
   have hfull : LowerResultValueSoundBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ limit input output
+      ⟨modes.length, world, papSafeFlag, code⟩ limit input output
       sourceArgs.reverse sourceArgs.reverse sourceResult world
       (plannedEmit ∘ emit) av :=
     hbodySound.afterRelease (hplan'.valueSoundBelow sourceArgs.reverse)
@@ -3652,7 +3659,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt_within_below
           (rootsForWorlds (modes.map worldOfUses) args)).symm.append_right
             rest)
   have hcodeRun' : runCode ctx limit
-      ⟨modes.length, world, code⟩ store args.reverse
+      ⟨modes.length, world, papSafeFlag, code⟩ store args.reverse
       ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
         .ok (store', value) := by
     rw [hcode]
@@ -3714,11 +3721,13 @@ theorem lowerDecl_defn_valuePreservesAt_within_below
   obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+      some (address, Decl.fn ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩) =
           some (address, Decl.fn d) ∧
         bodyState = finalState := by
     simpa using hpureRun
-  have hd : d = ⟨lamArity body, result, code⟩ := by
+  have hd : d = ⟨lamArity body, result,
+      result == .shared && papSafe body, code⟩ := by
     have hp := Option.some.inj hpure.1
     exact Decl.fn.inj (Prod.mk.inj hp).2.symm
   cases hpure.2
@@ -3728,7 +3737,8 @@ theorem lowerDecl_defn_valuePreservesAt_within_below
     exact hsrc
   have hpreserves : FnValuePreservesAt
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨(lamUses body).length, result, code⟩
+      ⟨(lamUses body).length, result,
+        result == .shared && papSafe body, code⟩
       ((lamUses body).map worldOfUses) sourceFunction limit :=
     lowerFnBody_parameterEntries_valuePreservesAt_within_below
       (recSelfRel := fun _ _ => False)
@@ -3738,8 +3748,10 @@ theorem lowerDecl_defn_valuePreservesAt_within_below
       (by
         intro sourceArgs sourceResult hlength happlies
         exact href.defnSaturate hlookup (by simpa using hlength) happlies)
-  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
-      ⟨lamArity body, result, code⟩ := by
+  have hfn : (⟨(lamUses body).length, result,
+      result == .shared && papSafe body, code⟩ : FnDef) =
+      ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩ := by
     rw [lamUses_length]
   rw [← hfn]
   intro store store' args value sourceArgs sourceResult sourceRest rest
@@ -3760,7 +3772,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt
     (hvalues : CompilerValueContracts
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx)
     (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
-    {state finalState : LowSt} {code : Code}
+    {state finalState : LowSt} {code : Code} {papSafeFlag : Bool}
     (hadmissible : ParameterDropsAdmissible modes
       (fun index => countUses index body))
     (hrun : (lowerFnBody src (compilerFuel + 1)
@@ -3778,7 +3790,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt
         IxIR0.eval sourceCtx sourceFuel sourceArgs.reverse body =
           .ok sourceResult) :
     FnValuePreservesAt (CompilerFunctionRel sourceCtx src ambient)
-      sourceCtx ctx ⟨modes.length, world, code⟩
+      sourceCtx ctx ⟨modes.length, world, papSafeFlag, code⟩
       (modes.map worldOfUses) sourceFunction targetFuel := by
   let remaining : Nat → Nat := fun index => countUses index body
   let input : VEnv :=
@@ -3840,16 +3852,16 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt
     (hsourceArgsLength.trans hargsLength) happlies
   have hbodySound : LowerResultValueSound
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ plannedMiddle output
+      ⟨modes.length, world, papSafeFlag, code⟩ plannedMiddle output
       sourceArgs.reverse sourceArgs.reverse sourceResult world emit av :=
     lowerE_run_value_sound_within_noRecSelf
       (recSelfRel := recSelfRel)
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hsource hbodyRun hextends
       hmiddleNo
   have hfull : LowerResultValueSound
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ input output
+      ⟨modes.length, world, papSafeFlag, code⟩ input output
       sourceArgs.reverse sourceArgs.reverse sourceResult world
       (plannedEmit ∘ emit) av :=
     hbodySound.afterRelease (hplan'.valueSound sourceArgs.reverse)
@@ -3865,7 +3877,7 @@ theorem lowerFnBody_parameterEntries_valuePreservesAt
           (rootsForWorlds (modes.map worldOfUses) args)).symm.append_right
             rest)
   have hcodeRun' : runCode ctx targetFuel
-      ⟨modes.length, world, code⟩ store args.reverse
+      ⟨modes.length, world, papSafeFlag, code⟩ store args.reverse
       ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
         .ok (store', value) := by
     rw [hcode]
@@ -3902,11 +3914,13 @@ theorem lowerDecl_defn_valuePreservesAt
   obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+      some (address, Decl.fn ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩) =
           some (address, Decl.fn d) ∧
         bodyState = finalState := by
     simpa using hpureRun
-  have hd : d = ⟨lamArity body, result, code⟩ := by
+  have hd : d = ⟨lamArity body, result,
+      result == .shared && papSafe body, code⟩ := by
     have hp := Option.some.inj hpure.1
     exact Decl.fn.inj (Prod.mk.inj hp).2.symm
   cases hpure.2
@@ -3916,7 +3930,8 @@ theorem lowerDecl_defn_valuePreservesAt
     exact hsrc
   have hpreserves : FnValuePreservesAt
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨(lamUses body).length, result, code⟩
+      ⟨(lamUses body).length, result,
+        result == .shared && papSafe body, code⟩
       ((lamUses body).map worldOfUses) sourceFunction targetFuel :=
     lowerFnBody_parameterEntries_valuePreservesAt
       (recSelfRel := fun _ _ => False)
@@ -3926,8 +3941,10 @@ theorem lowerDecl_defn_valuePreservesAt
       (by
         intro sourceArgs sourceResult hlength happlies
         exact href.defnSaturate hlookup (by simpa using hlength) happlies)
-  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
-      ⟨lamArity body, result, code⟩ := by
+  have hfn : (⟨(lamUses body).length, result,
+      result == .shared && papSafe body, code⟩ : FnDef) =
+      ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩ := by
     rw [lamUses_length]
   rw [← hfn]
   intro store store' args value sourceArgs sourceResult sourceRest rest
@@ -3965,11 +3982,13 @@ theorem lowerDecl_defn_valueContract
     obtain ⟨code, bodyState, _, hpureRun⟩ :=
       trackedBindRun_ok_inv hrunShape
     have hpure :
-        some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+        some (address, Decl.fn ⟨lamArity body, result,
+          result == .shared && papSafe body, code⟩) =
             some (address, Decl.fn d) ∧
           bodyState = finalState := by
       simpa using hpureRun
-    have hd : d = ⟨lamArity body, result, code⟩ := by
+    have hd : d = ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩ := by
       have hp := Option.some.inj hpure.1
       exact Decl.fn.inj (Prod.mk.inj hp).2.symm
     rw [hd]
@@ -4071,7 +4090,7 @@ theorem lowerAllAction_main_owned
     subst middle
     subst releaseEmit
     cases heq.2
-    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    let cur : FnDef := ⟨0, .shared, false, mainCode⟩
     have hbodySound : LowerResultSoundBelow ctx cur targetFuel input output
         mainWorld emit av :=
       (lowerClusterPreservesBelow (cur := cur)
@@ -4167,7 +4186,7 @@ theorem lowerAllAction_main_value_graph
     subst middle
     subst releaseEmit
     cases heq.2
-    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    let cur : FnDef := ⟨0, .shared, false, mainCode⟩
     have hbodySound : LowerResultValueSound
         (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
         (fun _ _ => False) ctx cur input output [] [] sourceValue
@@ -4820,7 +4839,7 @@ theorem lowerRecursor_preservesAt
   obtain ⟨alts, rulesState, hrulesRun, hafterRules⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩ : FnDef) = d ∧
         rulesState = finalState := by
     simpa using hafterRules
@@ -4828,24 +4847,24 @@ theorem lowerRecursor_preservesAt
   subst d
   subst rulesState
   have hplan : RecursorRulesPlanBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit src fuel numArgs state rules.toList.zipIdx finalState alts :=
     recursorRulesPlanBelow_of_run happly hdecls hself rfl
       fuel numArgs hrulesRun hrepresented
   have hverified :
       (lowerRecursor src fuel numArgs natLit rules).run state =
-          .ok ⟨numArgs + 1, .shared,
+          .ok ⟨numArgs + 1, .shared, true,
             .case (.var 0) natLit alts.toArray⟩ finalState ∧
         FnOwnershipPreservesAt ctx
-          ⟨numArgs + 1, .shared,
+          ⟨numArgs + 1, .shared, true,
             .case (.var 0) natLit alts.toArray⟩
           (List.replicate (numArgs + 1) .shared) limit :=
     lowerRecursor_generated_verified_below
       limit src fuel numArgs natLit rules state finalState alts
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       rfl hplan
   have hpreserves : FnOwnershipPreservesAt ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       (List.replicate (numArgs + 1) .shared) limit := hverified.2
   intro store store' args value rest hlength hown hcodeRun
   exact hpreserves hlength hown hcodeRun
@@ -4878,7 +4897,7 @@ theorem lowerRecursor_valuePreservesAt_within_below
   obtain ⟨alts, rulesState, hrulesRun, hafterRules⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩ : FnDef) = d ∧
         rulesState = finalState := by
     simpa using hafterRules
@@ -4897,24 +4916,24 @@ theorem lowerRecursor_valuePreservesAt_within_below
   obtain ⟨ownedD, hownedDecl, _, _, hownedContract⟩ :=
     hcontracts.decls.recursor hsrc
   have hownedD : ownedD =
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
         .case (.var 0) natLit alts.toArray⟩ : FnDef) := by
     have hsame : some (Decl.fn ownedD) = some
-        (.fn ⟨numArgs + 1, .shared,
+        (.fn ⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩) :=
       hownedDecl.symm.trans hdecl
     exact Decl.fn.inj (Option.some.inj hsame)
   subst ownedD
   have hvalueContract : FnValueContractBelow
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       (List.replicate (numArgs + 1) .shared)
       (.pap (.rec_ address (numArgs + 1)) []) limit := by
     apply hvalues.decls.fnContract hsrc (by rfl) hdecl href
     simp
   have hself : CurrentSelfValueContractBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit := by
     refine ⟨rfl, ?_, ?_⟩
     · simpa using hownedContract.below limit
@@ -4926,10 +4945,10 @@ theorem lowerRecursor_valuePreservesAt_within_below
   have hfinalRepresented : ExtraRepresented ctx finalState :=
     hrepresented.of_extends hextends
   have hownershipSelf : CurrentSelfContractBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit := ⟨hself.result, hself.ownership⟩
   have hplan : RecursorRulesPlanBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit src compilerFuel numArgs state rules.toList.zipIdx
       finalState alts :=
     recursorRulesPlanBelow_of_run (hcontracts.below limit).apply
@@ -4979,7 +4998,7 @@ theorem lowerRecursor_valuePreservesAt_within_below
         simpa [hargsForm] using hown
       rw [hreverse] at htarget
       change runCode ctx (branchFuel + 1)
-          ⟨numArgs + 1, .shared,
+          ⟨numArgs + 1, .shared, true,
             .case (.var 0) natLit alts.toArray⟩
           store (major :: runtimePre)
           (.case (.var 0) natLit alts.toArray) =
@@ -5001,7 +5020,7 @@ theorem lowerRecursor_valuePreservesAt_within_below
           (hfieldWorld : ∀ field ∈ targetFields,
             HasWorld store .shared field)
           (hbranchRun : runCode ctx branchFuel
-            ⟨numArgs + 1, .shared,
+            ⟨numArgs + 1, .shared, true,
               .case (.var 0) natLit alts.toArray⟩
             store (targetFields.reverse ++ major :: runtimePre) body =
               .ok (store', value)) :
@@ -5267,7 +5286,7 @@ theorem lowerFnBody_parameterEntries_preservesAt
     (happly : ApplyOwnershipContractBelow ctx limit)
     (hdecls : SourceDeclContractsBelow src ctx limit)
     (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
-    {state finalState : LowSt} {code : Code}
+    {state finalState : LowSt} {code : Code} {papSafeFlag : Bool}
     (hadmissible : ParameterDropsAdmissible modes
       (fun index => countUses index body))
     (hrun : (lowerFnBody src (fuel + 1)
@@ -5276,7 +5295,7 @@ theorem lowerFnBody_parameterEntries_preservesAt
       (parameterDrops 0 modes (fun index => countUses index body))
       world body).run state = .ok code finalState)
     (hrepresented : ExtraRepresented ctx finalState) :
-    FnOwnershipPreservesAt ctx ⟨modes.length, world, code⟩
+    FnOwnershipPreservesAt ctx ⟨modes.length, world, papSafeFlag, code⟩
       (modes.map worldOfUses) limit := by
   let remaining : Nat → Nat := fun index => countUses index body
   let input : VEnv :=
@@ -5289,7 +5308,7 @@ theorem lowerFnBody_parameterEntries_preservesAt
   obtain ⟨middle, releaseEmit, releaseState, output, emit, av,
       hreleaseRun, hbodyRun, hcode, hbodySound⟩ :=
     lowerFnBody_run_sound_below_noRecSelf
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       happly hdecls hrun' hrepresented
       (by simpa [input, remaining] using
         parameterEntries_noRecSelf 0 modes remaining modes.length)
@@ -5316,7 +5335,8 @@ theorem lowerFnBody_parameterEntries_preservesAt
   have hreleased : EntriesReleased output.entries :=
     hconsume.entriesReleased htracks (Eq.trans hcount hmiddleLength)
   have hfull : LowerResultSoundBelow ctx
-      (⟨modes.length, world, code⟩ : FnDef) limit input output world
+      (⟨modes.length, world, papSafeFlag, code⟩ : FnDef)
+        limit input output world
       (releaseEmit ∘ emit) av :=
     hbodySound.afterRelease hplan'.soundBelow
   apply hfull.fnOwnershipPreservesAt
@@ -5343,22 +5363,27 @@ theorem lowerDecl_defn_preservesAt
   obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+      some (address, Decl.fn ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩) =
           some (address, Decl.fn d) ∧ bodyState = finalState := by
     simpa using hpureRun
-  have hd : d = ⟨lamArity body, result, code⟩ := by
+  have hd : d = ⟨lamArity body, result,
+      result == .shared && papSafe body, code⟩ := by
     have hp := Option.some.inj hpure.1
     exact Decl.fn.inj (Prod.mk.inj hp).2.symm
   cases hpure.2
   subst d
   have hpreserves : FnOwnershipPreservesAt ctx
-      ⟨(lamUses body).length, result, code⟩
+      ⟨(lamUses body).length, result,
+        result == .shared && papSafe body, code⟩
       ((lamUses body).map worldOfUses) limit :=
     lowerFnBody_parameterEntries_preservesAt
       happly hdecls (lamUses body) result (stripLams body) hadmissible
       (by simpa using hbodyRun) hrepresented
-  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
-      ⟨lamArity body, result, code⟩ := by
+  have hfn : (⟨(lamUses body).length, result,
+      result == .shared && papSafe body, code⟩ : FnDef) =
+      ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩ := by
     rw [lamUses_length]
   rw [← hfn]
   intro store store' args value rest hlength hown hcodeRun
@@ -6014,7 +6039,7 @@ theorem lowerFnBody_liftedEntries_preservesAt
     (hrepresented : ExtraRepresented ctx finalState) :
     let captures := (List.range entryCount).filter selected
     FnOwnershipPreservesAt ctx
-      ⟨captures.length + modes.length, .shared, code⟩
+      ⟨captures.length + modes.length, .shared, true, code⟩
       (List.replicate (captures.length + modes.length) .shared) limit := by
   dsimp only
   let captures := (List.range entryCount).filter selected
@@ -6042,7 +6067,8 @@ theorem lowerFnBody_liftedEntries_preservesAt
   obtain ⟨middle, releaseEmit, releaseState, output, emit, av,
       hreleaseRun, hbodyRun, hcode, hbodySound⟩ :=
     lowerFnBody_run_sound_below_noRecSelf
-      (cur := (⟨captures.length + modes.length, .shared, code⟩ : FnDef))
+      (cur :=
+        (⟨captures.length + modes.length, .shared, true, code⟩ : FnDef))
       happly hdecls hrun' hrepresented hno
   obtain ⟨parameterOutput, plannedEmit, hparameterPlan, hparameterTracks⟩ :=
     parameterDrops_releasePlan_tracked_atDepth captures.length
@@ -6091,7 +6117,7 @@ theorem lowerFnBody_liftedEntries_preservesAt
   have hreleased : EntriesReleased output.entries :=
     hconsume.entriesReleased htracks (Eq.trans hcount hmiddleLength)
   have hfull : LowerResultSoundBelow ctx
-      (⟨captures.length + modes.length, .shared, code⟩ : FnDef)
+      (⟨captures.length + modes.length, .shared, true, code⟩ : FnDef)
       limit input output .shared (plannedEmit ∘ emit) av :=
     hbodySound.afterRelease hplan.soundBelow
   apply hfull.fnOwnershipPreservesAt
@@ -6163,7 +6189,7 @@ theorem lowerFnBody_liftedEntries_run_value_within_below
     (htarget : targetFuel ≤ limit)
     (hcodeRun : runCode ctx targetFuel
       ⟨((List.range entryCount).filter selected).length + modes.length,
-        .shared, code⟩ store (captureArgs ++ parameterArgs).reverse code =
+        .shared, true, code⟩ store (captureArgs ++ parameterArgs).reverse code =
       .ok (store', value)) :
     Sim.ValueGraph (CompilerFunctionRel sourceCtx src ambient) store'
         sourceResult value ∧
@@ -6257,17 +6283,20 @@ theorem lowerFnBody_liftedEntries_run_value_within_below
   obtain ⟨sourceFuel, hsourceEval⟩ := hsource
   have hbodySound : LowerResultValueSoundBelow
       (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) ctx
-      ⟨captures.length + modes.length, .shared, code⟩ limit plannedMiddle
+      ⟨captures.length + modes.length, .shared, true, code⟩
+        limit plannedMiddle
       output (parameterSources.reverse ++ sourceEnv)
       (parameterSources.reverse ++ sourceEnv) sourceResult .shared emit av :=
     lowerE_run_value_sound_within_noRecSelf_below
       (recSelfRel := fun _ _ => False)
-      (cur := (⟨captures.length + modes.length, .shared, code⟩ : FnDef))
+      (cur :=
+        (⟨captures.length + modes.length, .shared, true, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hsourceEval hbodyRun hextends
       hmiddleNo
   have hfull : LowerResultValueSoundBelow
       (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) ctx
-      ⟨captures.length + modes.length, .shared, code⟩ limit input output
+      ⟨captures.length + modes.length, .shared, true, code⟩
+        limit input output
       (parameterSources.reverse ++ sourceEnv)
       (parameterSources.reverse ++ sourceEnv) sourceResult .shared
       (plannedEmit ∘ emit) av :=
@@ -6310,7 +6339,7 @@ theorem lowerFnBody_liftedEntries_run_value_within_below
               (⟨.shared, value⟩ : Root)))).append_right rest
     exact hown.perm hrootPerm
   have hcodeRun' : runCode ctx targetFuel
-      ⟨captures.length + modes.length, .shared, code⟩ store
+      ⟨captures.length + modes.length, .shared, true, code⟩ store
       (captureArgs ++ parameterArgs).reverse
       ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
         .ok (store', value) := by
@@ -6364,7 +6393,7 @@ theorem invoke_lifted_value_below
   have hselectedLength := hselectedValues.length
   rw [← hselectedLength] at hmember
   have hdecl : ctx.decls address = some (.fn
-      ⟨selectedSources.length + lamArity expr, .shared, code⟩) :=
+      ⟨selectedSources.length + lamArity expr, .shared, true, code⟩) :=
     hrepresented.decl hmember
   have hmodes := papSafe_lamUses_eq_replicate hsafe
   have hadmissible : ParameterDropsAdmissible (lamUses expr)
@@ -6458,7 +6487,8 @@ theorem invoke_lifted_value_below
         obtain ⟨sourceFuel, hsourceEval⟩ :=
           hprefix.saturate hlambdaLength happlies
         cases hcodeEval : runCode ctx innerFuel
-            ⟨selectedSources.length + lamArity expr, .shared, code⟩ store
+            ⟨selectedSources.length + lamArity expr, .shared, true, code⟩
+            store
             (got ++ args).reverse code with
         | error error =>
             rw [hcodeEval] at hinvoke
@@ -6473,7 +6503,7 @@ theorem invoke_lifted_value_below
             have hcodeEval' : runCode ctx innerFuel
                 ⟨(liftCaptureIndices sourceEnv.length expr).length +
                     (lamUses expr).length,
-                  .shared, code⟩ store
+                  .shared, true, code⟩ store
                 (selectedArgs ++ (suppliedArgs ++ args)).reverse code =
                 .ok (store', value) := by
               rw [htotalSplit, ← hselectedLength, lamUses_length]
@@ -6568,7 +6598,7 @@ theorem invoke_lifted_owned_below
       hbodyRun, hbodyExtends, hmember⟩ := hliftCode
   have hdecl : ctx.decls address = some (.fn
       ⟨(liftCaptureIndices sourceEnv.length expr).length + lamArity expr,
-        .shared, code⟩) := hrepresented.decl hmember
+        .shared, true, code⟩) := hrepresented.decl hmember
   have hmodes := papSafe_lamUses_eq_replicate hsafe
   have hadmissible : ParameterDropsAdmissible (lamUses expr)
       (fun index => countUses index (stripLams expr)) := by
@@ -6604,7 +6634,7 @@ theorem invoke_lifted_owned_below
       hrepresented.of_extends hbodyExtends
     have hownership : FnOwnershipContractBelow ctx
         ⟨(liftCaptureIndices sourceEnv.length expr).length + lamArity expr,
-          .shared, code⟩
+          .shared, true, code⟩
         (List.replicate
           ((liftCaptureIndices sourceEnv.length expr).length +
             lamArity expr) .shared) fuel := by
@@ -6614,7 +6644,7 @@ theorem invoke_lifted_owned_below
         have hpreserves : FnOwnershipPreservesAt ctx
             ⟨(liftCaptureIndices sourceEnv.length expr).length +
                 (lamUses expr).length,
-              .shared, code⟩
+              .shared, true, code⟩
             (List.replicate
               ((liftCaptureIndices sourceEnv.length expr).length +
                 (lamUses expr).length) .shared) smaller :=
@@ -6669,13 +6699,13 @@ theorem invoke_compilerFunction_value_owned_below
       SourceRefValue sourceCtx memo.source baseFunction →
       FnValueContract (CompilerFunctionRel sourceCtx src ambient)
         sourceCtx ctx
-        ⟨memo.arity, .shared,
+        ⟨memo.arity, .shared, true,
           .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
             (descendingVars memo.arity).toArray) (.ret (.var 0))⟩
         (List.replicate memo.arity .shared) baseFunction)
     (hwrapperOwnership : ∀ memo : WrapperMemo,
       FnOwnershipContract ctx
-        ⟨memo.arity, .shared,
+        ⟨memo.arity, .shared, true,
           .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
             (descendingVars memo.arity).toArray) (.ret (.var 0))⟩
         (List.replicate memo.arity .shared))
@@ -6817,7 +6847,7 @@ theorem invoke_compilerFunction_value_owned_below
   | @wrapper relatedFunction baseFunction storedSources memo hmember hsrc
       href hprefix hunder =>
     let wrapperDef : FnDef :=
-      ⟨memo.arity, .shared,
+      ⟨memo.arity, .shared, true,
         .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
           (descendingVars memo.arity).toArray) (.ret (.var 0))⟩
     have hdecl : ctx.decls memo.wrapper = some (.fn wrapperDef) := by
@@ -6877,34 +6907,34 @@ theorem lowerLam_generatedFn_preservesAt
       (fun index => countUses index expr > 0)
     ∃ address code,
       (address, .fn
-        ⟨captures.length + lamArity expr, .shared, code⟩) ∈
+        ⟨captures.length + lamArity expr, .shared, true, code⟩) ∈
           finalState.extra ∧
       ctx.decls address = some (.fn
-        ⟨captures.length + lamArity expr, .shared, code⟩) ∧
+        ⟨captures.length + lamArity expr, .shared, true, code⟩) ∧
       FnOwnershipPreservesAt ctx
-        ⟨captures.length + lamArity expr, .shared, code⟩
+        ⟨captures.length + lamArity expr, .shared, true, code⟩
         (List.replicate (captures.length + lamArity expr) .shared) limit := by
   let captures := liftCaptureIndices input.entries.length expr
   change ∃ address code,
     (address, .fn
-      ⟨captures.length + lamArity expr, .shared, code⟩) ∈
+      ⟨captures.length + lamArity expr, .shared, true, code⟩) ∈
         finalState.extra ∧
     ctx.decls address = some (.fn
-      ⟨captures.length + lamArity expr, .shared, code⟩) ∧
+      ⟨captures.length + lamArity expr, .shared, true, code⟩) ∧
     FnOwnershipPreservesAt ctx
-      ⟨captures.length + lamArity expr, .shared, code⟩
+      ⟨captures.length + lamArity expr, .shared, true, code⟩
       (List.replicate (captures.length + lamArity expr) .shared) limit
   refine lowerLam_run_core
     (Result := fun finalState _ _ _ =>
       ExtraRepresented ctx finalState →
       ∃ address code,
         (address, .fn
-          ⟨captures.length + lamArity expr, .shared, code⟩) ∈
+          ⟨captures.length + lamArity expr, .shared, true, code⟩) ∈
             finalState.extra ∧
         ctx.decls address = some (.fn
-          ⟨captures.length + lamArity expr, .shared, code⟩) ∧
+          ⟨captures.length + lamArity expr, .shared, true, code⟩) ∧
         FnOwnershipPreservesAt ctx
-          ⟨captures.length + lamArity expr, .shared, code⟩
+          ⟨captures.length + lamArity expr, .shared, true, code⟩
           (List.replicate
             (captures.length + lamArity expr) .shared) limit)
     ?_ hrun hrepresented
@@ -6914,12 +6944,13 @@ theorem lowerLam_generatedFn_preservesAt
   let ambient : LowSt :=
     { bodyState with
       extra := (fnAddr, .fn
-        ⟨captures.length + lamArity expr, .shared, code⟩) ::
+        ⟨captures.length + lamArity expr, .shared, true, code⟩) ::
           bodyState.extra }
   change ExtraRepresented ctx ambient at hrepresented
   have hextends : ExtraExtends bodyState ambient := by
     refine ⟨[(fnAddr, .fn
-      ⟨captures.length + lamArity expr, .shared, code⟩)], [], ?_, ?_, ?_⟩
+      ⟨captures.length + lamArity expr, .shared, true, code⟩)],
+      [], ?_, ?_, ?_⟩
     · simp [ambient]
     · simp [ambient]
     · simp
@@ -6927,7 +6958,7 @@ theorem lowerLam_generatedFn_preservesAt
     hrepresented.of_extends hextends
   have hmember :
       (fnAddr, .fn
-        ⟨captures.length + lamArity expr, .shared, code⟩) ∈
+        ⟨captures.length + lamArity expr, .shared, true, code⟩) ∈
           ambient.extra := by
     simp [ambient]
   have hdecl := hrepresented.decl hmember
@@ -6975,7 +7006,7 @@ theorem lowerLam_generatedFn_preservesAt
       simpa [liftedBodyVEnv, liftedBodyDrops, liftCaptureIndices,
         lamUses_length] using hbodyRun
     have hpreserves : FnOwnershipPreservesAt ctx
-        ⟨captures.length + (lamUses expr).length, .shared, code⟩
+        ⟨captures.length + (lamUses expr).length, .shared, true, code⟩
         (List.replicate
           (captures.length + (lamUses expr).length) .shared) limit := by
       exact lowerFnBody_liftedEntries_preservesAt
@@ -7032,7 +7063,7 @@ vector and returns ownership of the freshly allocated shared constructor. -/
 theorem ctorWrapper_fnOwnershipContract (ctx : Ctx)
     (source : Ixon.Address) (tag arity : Nat) :
     FnOwnershipContract ctx
-      ⟨arity, .shared,
+      ⟨arity, .shared, true,
         .letOp (.alloc .shared (ctorIdOf source tag)
           (descendingVars arity).toArray)
           (.ret (.var 0))⟩
@@ -7079,7 +7110,7 @@ theorem ctorWrapper_fnValueContract
     (hlookup : sourceCtx.env source = some (.ctor tag arity))
     (href : SourceRefValue sourceCtx source sourceFunction) :
     FnValueContract funRel sourceCtx ctx
-      ⟨arity, .shared,
+      ⟨arity, .shared, true,
         .letOp (.alloc .shared (ctorIdOf source tag)
           (descendingVars arity).toArray)
           (.ret (.var 0))⟩
@@ -7236,6 +7267,17 @@ theorem applyValuePreservesAt_within_below
           next hnotUnder =>
             split at hrun
             next hexact =>
+              have hsafety : ∃ declaration,
+                  ctx.decls address = some declaration ∧
+                    declPapSafe declaration = true := by
+                cases hdecl : ctx.decls address with
+                | none => simp [hdecl] at hrun
+                | some declaration =>
+                  cases hpapsafe : declPapSafe declaration with
+                  | false => simp [hdecl, hpapsafe] at hrun
+                  | true => exact ⟨declaration, rfl, hpapsafe⟩
+              obtain ⟨declaration, hdecl, hpapsafe⟩ := hsafety
+              simp only [hdecl, hpapsafe, if_true] at hrun
               have hcalled := invoke_compilerFunction_value_owned_below
                 henv hrepresented hcontracts hvalues
                 (fun memo baseFunction hlookup href =>
@@ -7249,6 +7291,17 @@ theorem applyValuePreservesAt_within_below
                 (Nat.le_succ fuel) hrun
               exact ⟨hcalled.1, hcalled.2.1⟩
             next hover =>
+              have hsafety : ∃ declaration,
+                  ctx.decls address = some declaration ∧
+                    declPapSafe declaration = true := by
+                cases hdecl : ctx.decls address with
+                | none => simp [hdecl] at hrun
+                | some declaration =>
+                  cases hpapsafe : declPapSafe declaration with
+                  | false => simp [hdecl, hpapsafe] at hrun
+                  | true => exact ⟨declaration, rfl, hpapsafe⟩
+              obtain ⟨declaration, hdecl, hpapsafe⟩ := hsafety
+              simp only [hdecl, hpapsafe, if_true] at hrun
               have hfunUnder := hfun.underfilled
               have hgotUnder : got.toList.length < arity := by
                 have hlength := hgotReady.length
@@ -7431,6 +7484,124 @@ theorem lowerAllAction_callable_decl_trace
   rw [hgenerated] at hrun
   exact ⟨itemInitial, itemFinal, hrun, hextends⟩
 
+/-- A successful ordinary-definition lowering run exposes the PAP-safety bit
+computed from the source result world and body. -/
+theorem lowerDecl_defn_papSafe_of_run
+    {src : IxIR0.Env} {fuel : Nat} {address : Ixon.Address}
+    {result : Owned} {body : IxIR0.Expr} {initial final : LowSt}
+    {d : FnDef}
+    (hrun : (lowerDecl src fuel (address, .defn result body)).run initial =
+      .ok (some (address, .fn d)) final)
+    (hresult : result = .shared) (hbody : papSafe body = true) :
+    d.papSafe = true := by
+  simp only [lowerDecl] at hrun
+  obtain ⟨code, bodyState, _, hpureRun⟩ := trackedBindRun_ok_inv hrun
+  have hpure :
+      some (address, Decl.fn ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩) =
+          some (address, Decl.fn d) ∧ bodyState = final := by
+    simpa using hpureRun
+  have hd : d = ⟨lamArity body, result,
+      result == .shared && papSafe body, code⟩ := by
+    have hp := Option.some.inj hpure.1
+    exact Decl.fn.inj (Prod.mk.inj hp).2.symm
+  subst d
+  simp [hresult, hbody]
+
+/-- Generated recursor declarations always permit dynamic PAP entry. -/
+theorem lowerDecl_recursor_papSafe_of_run
+    {src : IxIR0.Env} {fuel numArgs : Nat} {address : Ixon.Address}
+    {natLit : Bool} {rules : Array IxIR0.RecRule}
+    {initial final : LowSt} {d : FnDef}
+    (hrun : (lowerDecl src fuel
+      (address, .recursor numArgs natLit rules)).run initial =
+        .ok (some (address, .fn d)) final) :
+    d.papSafe = true := by
+  simp only [lowerDecl] at hrun
+  obtain ⟨actual, recursorState, hrecursorRun, hafterRecursor⟩ :=
+    trackedBindRun_ok_inv hrun
+  have hpure :
+      some (address, Decl.fn actual) = some (address, Decl.fn d) ∧
+        recursorState = final := by
+    simpa using hafterRecursor
+  have hd : actual = d := by
+    have hp := Option.some.inj hpure.1
+    exact Decl.fn.inj (Prod.mk.inj hp).2
+  subst actual
+  simp only [lowerRecursor] at hrecursorRun
+  obtain ⟨alts, rulesState, _, hafterRules⟩ :=
+    trackedBindRun_ok_inv hrecursorRun
+  have hshape :
+      (⟨numArgs + 1, .shared, true,
+        .case (.var 0) natLit alts.toArray⟩ : FnDef) = d ∧
+        rulesState = recursorState := by
+    simpa using hafterRules
+  rw [← hshape.1]
+
+/-- Every PAP admitted by the whole-pass compiler relation resolves to a
+declaration whose content-addressed metadata permits dynamic PAP entry.  The
+proof is origin-sensitive: source definitions expose the computed bit,
+recursors and generated functions are safe by construction, and externs are
+scalar-only. -/
+theorem lowerAllAction_compilerFunction_declPapSafe
+    {sourceCtx : IxIR0.Ctx}
+    {decls : List (Ixon.Address × IxIR0.Decl)} {main : IxIR0.Expr}
+    {mainWorld : Owned} {compilerFuel : Nat}
+    {initial finalState : LowSt}
+    {targetDecls : List (Ixon.Address × Decl)} {mainCode : Code}
+    {ctx : Ctx}
+    (hlower :
+      (lowerAllAction decls main mainWorld compilerFuel).run initial =
+        .ok (targetDecls, mainCode) finalState)
+    (htarget : ∀ {targetAddress targetDecl},
+      (targetAddress, targetDecl) ∈ targetDecls →
+      ctx.decls targetAddress = some targetDecl)
+    (hrepresented : ExtraRepresented ctx finalState)
+    (hcontracts : CompilerContracts (IxIR0.Env.ofList decls) ctx)
+    {sourceFunction : IxIR0.Value} {address : Ixon.Address}
+    {arity : Nat} {captures : List IxIR0.Value}
+    (hrel : CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls)
+      finalState sourceFunction address arity captures) :
+    ∃ declaration, ctx.decls address = some declaration ∧
+      declPapSafe declaration = true := by
+  cases hrel with
+  | @source relatedFunction baseFunction targetAddress targetArity
+      storedSources source hsrc heligible harity href happly hunder =>
+    cases source with
+    | defn result body =>
+      obtain ⟨hresult, hbody⟩ := heligible
+      obtain ⟨d, hdecl, _, _, _⟩ := hcontracts.decls.defn hsrc
+      obtain ⟨itemInitial, itemFinal, hrun, _⟩ :=
+        lowerAllAction_callable_decl_trace hlower htarget hsrc (by rfl)
+          hdecl
+      refine ⟨.fn d, hdecl, ?_⟩
+      exact lowerDecl_defn_papSafe_of_run hrun hresult hbody
+    | ctor tag ctorArity => exact heligible.elim
+    | recursor numArgs natLit rules =>
+      obtain ⟨d, hdecl, _, _, _⟩ := hcontracts.decls.recursor hsrc
+      obtain ⟨itemInitial, itemFinal, hrun, _⟩ :=
+        lowerAllAction_callable_decl_trace hlower htarget hsrc (by rfl)
+          hdecl
+      refine ⟨.fn d, hdecl, ?_⟩
+      exact lowerDecl_recursor_papSafe_of_run hrun
+    | extern externArity =>
+      have hdecl := hcontracts.decls.extern hsrc
+      exact ⟨.extern externArity, hdecl, rfl⟩
+  | @wrapper relatedFunction baseFunction storedSources memo hmember hsrc
+      href happly hunder =>
+    refine ⟨ctorWrapperDecl memo.source memo.tag memo.arity,
+      hrepresented.wrapper hmember, ?_⟩
+    simp [ctorWrapperDecl, declPapSafe]
+  | lifted hlifted =>
+    obtain ⟨sourceEnv, expr, selected, supplied, hliftCode, _, _, _, _⟩ :=
+      hlifted
+    obtain ⟨fuel, bodyInitial, generated, code, _, _, _, hmember⟩ :=
+      hliftCode
+    refine ⟨.fn
+        ⟨(liftCaptureIndices sourceEnv.length expr).length + lamArity expr,
+          .shared, true, code⟩,
+      hrepresented.decl hmember, rfl⟩
+
 /-- At one evaluator index, every source-backed callable emitted by an
 actual whole-pass run satisfies its semantic function contract using only
 the mutually recursive semantic contracts below that index. -/
@@ -7607,7 +7778,7 @@ theorem ctorWrapper_ownershipContract (ctx : Ctx)
     ∃ d, ctorWrapperDecl source tag arity = .fn d ∧
       d.result = .shared ∧
       FnOwnershipContract ctx d (List.replicate d.arity .shared) := by
-  refine ⟨⟨arity, .shared,
+  refine ⟨⟨arity, .shared, true,
       .letOp (.alloc .shared (ctorIdOf source tag)
         (descendingVars arity).toArray) (.ret (.var 0))⟩, rfl, rfl, ?_⟩
   exact ctorWrapper_fnOwnershipContract ctx source tag arity

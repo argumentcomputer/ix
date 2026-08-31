@@ -1715,7 +1715,7 @@ theorem runMain_runRecursive_eq
       runMain ctx input fuel := by
   simpa [runMain, rewriteCurrent] using
     (runCode_runRecursive_rewriteCurrent_eq hpost
-      (current := ⟨0, .shared, input⟩) (store := {}) (environment := [])
+      (current := ⟨0, .shared, false, input⟩) (store := {}) (environment := [])
       (input := input) (fuel := fuel) hctx)
 
 /-- Whole-program certificate specialization of `runCode_run_eq`. -/

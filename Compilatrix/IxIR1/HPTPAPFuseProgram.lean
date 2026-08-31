@@ -228,7 +228,7 @@ theorem abstractEnvironment_rewriteCtx
       { source with body :=
           (rewriteCode passes declarations summaries address source
             (List.replicate source.arity Fact.top) source.body).code }
-    refine ⟨target, ?_, rfl, rfl, ?_⟩
+    refine ⟨target, ?_, rfl, rfl, rfl, ?_⟩
     · simp [rewriteCtx, rewriteDeclEnv, hdeclaration,
         rewriteDeclaration, target]
     · exact rewriteCode_bodyRefines hpost hctx hdeclaration
@@ -331,7 +331,7 @@ def rewriteMain (passes : Passes) (declarations : DeclEnv)
         removedAlternatives := 0
         collapsedCases := 0
         materializedFetches := 0 }
-  let current : FnDef := ⟨0, .shared, pruned.code⟩
+  let current : FnDef := ⟨0, .shared, false, pruned.code⟩
   let forwarded : FetchForward.Outcome :=
     if passes.fetchForward && (summaries default).isNone then
       FetchForward.runWithFacts declarations summaries default current []
@@ -380,7 +380,7 @@ theorem rewriteMain_staticBodyRefines
           removedAlternatives := 0
           collapsedCases := 0
           materializedFetches := 0 }
-    let source : FnDef := ⟨0, .shared, pruned.code⟩
+    let source : FnDef := ⟨0, .shared, false, pruned.code⟩
     StaticFunctionBodyRefines ctx source
       { source with body :=
           (rewriteMain passes declarations summaries main).code } := by
@@ -392,7 +392,7 @@ theorem rewriteMain_staticBodyRefines
         removedAlternatives := 0
         collapsedCases := 0
         materializedFetches := 0 }
-  let source : FnDef := ⟨0, .shared, pruned.code⟩
+  let source : FnDef := ⟨0, .shared, false, pruned.code⟩
   change StaticFunctionBodyRefines ctx source
     { source with body :=
         (rewriteMain passes declarations summaries main).code }
@@ -484,7 +484,7 @@ theorem runMain_rewriteMain_refines
         have heq := CasePrune.runMain_runRecursive_eq hpost
           (input := main) (fuel := fuel) hctx
         simpa [pruned, hcase] using heq.trans hrun
-  let source : FnDef := ⟨0, .shared, pruned.code⟩
+  let source : FnDef := ⟨0, .shared, false, pruned.code⟩
   let target : FnDef :=
     { source with body :=
         (rewriteMain passes declarations summaries main).code }

@@ -447,7 +447,7 @@ private def addTargetCtx : IxIR1.Ctx :=
   { decls := IxIR1.Env.ofList addTargetDecls }
 
 private def addExpectedLiftedDef : IxIR1.FnDef :=
-  ⟨2, .shared,
+  ⟨2, .shared, true,
     .letOp (.drop (.var 1))
       (.letOp (.alloc .shared (IxIR1.Lower.ctorIdOf aSucc 1) #[.var 1])
         (.ret (.var 0)))⟩
@@ -571,7 +571,7 @@ private theorem sourceEnv_lookup_of_mem_nodup
 
 private def firstExtraFn : List (Ixon.Address × IxIR1.Decl) → IxIR1.FnDef
   | (_, .fn d) :: _ => d
-  | _ => ⟨0, .shared, .ret .erased⟩
+  | _ => ⟨0, .shared, false, .ret .erased⟩
 
 private def addLiftedDef : IxIR1.FnDef := firstExtraFn addFinalState.extra
 
@@ -706,7 +706,7 @@ private theorem addTargetFn_of_shape
 private def targetFnAt (ctx : IxIR1.Ctx) (address : Ixon.Address) : IxIR1.FnDef :=
   match ctx.decls address with
   | some (.fn d) => d
-  | _ => ⟨0, .shared, .ret .erased⟩
+  | _ => ⟨0, .shared, false, .ret .erased⟩
 
 private def isFnAtB (ctx : IxIR1.Ctx) (address : Ixon.Address) : Bool :=
   match ctx.decls address with
@@ -771,8 +771,8 @@ private theorem addSourceLayout : SourceDeclLayout ienv addTargetCtx := by
     all_goals obtain ⟨rfl, h⟩ := h
     all_goals simp at h
 
-private theorem addSourceAllShared : SourceAllShared ienv := by
-  intro address source worlds result hsrc hsignature
+private theorem addSourcePapSafe : SourcePapSafe ienv addTargetCtx := by
+  intro address source worlds result d hsrc hsignature _hdecl _hpapsafe
   rcases ienv_cases hsrc with h | h | h | h | h | h | h
   all_goals obtain ⟨rfl, rfl⟩ := h
   all_goals
@@ -1156,23 +1156,27 @@ private theorem eq_expectedLiftedBody_of_matches {body : IxIR1.Code}
                 rfl
 
 private def matchesAddLiftedDefB (d : IxIR1.FnDef) : Bool :=
-  d.arity == 2 && (d.result == .shared && matchesAddLiftedBodyB d.body)
+  d.arity == 2 && (d.result == .shared &&
+    (d.papSafe && matchesAddLiftedBodyB d.body))
 
 private theorem eq_expectedLiftedDef_of_matches {d : IxIR1.FnDef}
     (h : matchesAddLiftedDefB d = true) : d = expectedLiftedDef := by
-  rcases d with ⟨arity, result, body⟩
+  rcases d with ⟨arity, result, papSafe, body⟩
   change (arity == 2 &&
-    (result == .shared && matchesAddLiftedBodyB body)) = true at h
+    (result == .shared && (papSafe && matchesAddLiftedBodyB body))) = true at h
   have hsplit : (arity == 2) = true ∧
-      (result == .shared && matchesAddLiftedBodyB body) = true := by
+      (result == .shared && (papSafe && matchesAddLiftedBodyB body)) = true := by
     simpa only [Bool.and_eq_true] using h
   have harity := hsplit.1
   have hrest := hsplit.2
   have hsplit : (result == .shared) = true ∧
-      matchesAddLiftedBodyB body = true := by
+      (papSafe && matchesAddLiftedBodyB body) = true := by
     simpa only [Bool.and_eq_true] using hrest
   have hresult := hsplit.1
-  have hbody := hsplit.2
+  have hpapBody : papSafe = true ∧ matchesAddLiftedBodyB body = true := by
+    simpa only [Bool.and_eq_true] using hsplit.2
+  have hpapsafe := hpapBody.1
+  have hbody := hpapBody.2
   have harity' : arity = 2 := beq_iff_eq.mp harity
   have hresult' : result = .shared := by
     cases result with
@@ -1186,6 +1190,7 @@ private theorem eq_expectedLiftedDef_of_matches {d : IxIR1.FnDef}
     eq_expectedLiftedBody_of_matches hbody
   subst arity
   subst result
+  subst papSafe
   rw [hbody']
   rfl
 
@@ -1276,21 +1281,21 @@ private theorem addLifted_preservesAt
     (by simp [addLiftedExpr, IxIR1.Lower.lamArity]) hrun
     addLiftedReplayRepresented
   have hgenerated' : ∃ address code,
-      (address, .fn ⟨2, .shared, code⟩) ∈ addLiftedReplayState.extra ∧
-      addTargetCtx.decls address = some (.fn ⟨2, .shared, code⟩) ∧
+      (address, .fn ⟨2, .shared, true, code⟩) ∈ addLiftedReplayState.extra ∧
+      addTargetCtx.decls address = some (.fn ⟨2, .shared, true, code⟩) ∧
       IxIR1.Sim.FnOwnershipPreservesAt addTargetCtx
-        ⟨2, .shared, code⟩ (List.replicate 2 .shared) limit := by
+        ⟨2, .shared, true, code⟩ (List.replicate 2 .shared) limit := by
     simpa [addLiftedExpr, IxIR1.Lower.lamArity] using hgenerated
   obtain ⟨address, code, hmember, _, hpreserves⟩ := hgenerated'
   rw [addLiftedReplayState_extra] at hmember
   simp only [List.mem_singleton, Prod.mk.injEq] at hmember
-  have hfn : (⟨2, .shared, code⟩ : IxIR1.FnDef) = expectedLiftedDef :=
+  have hfn : (⟨2, .shared, true, code⟩ : IxIR1.FnDef) = expectedLiftedDef :=
     IxIR1.Decl.fn.inj hmember.2
-  have hd : addLiftedDef = (⟨2, .shared, code⟩ : IxIR1.FnDef) :=
+  have hd : addLiftedDef = (⟨2, .shared, true, code⟩ : IxIR1.FnDef) :=
     addLiftedDef_eq_expected.trans hfn.symm
   intro store store' args value rest hlength hown hcodeRun
   have hcodeRun' : IxIR1.runCode addTargetCtx limit
-      (⟨2, .shared, code⟩ : IxIR1.FnDef) store args.reverse code =
+      (⟨2, .shared, true, code⟩ : IxIR1.FnDef) store args.reverse code =
         .ok (store', value) := by
     simpa only [hd] using hcodeRun
   have hout := hpreserves hlength hown hcodeRun'
@@ -1322,7 +1327,7 @@ theorem addIxIR1CompilerContracts :
     CompilerContracts ienv addTargetCtx ∧
       ExtraFnContracts addTargetCtx addFinalState := by
   apply compilerContracts_of_source_extra_below_step
-    addSourceLayout addSourceAllShared addExtraResultsShared addFnDeclCovered
+    addSourceLayout addSourcePapSafe addExtraResultsShared addFnDeclCovered
   intro limit hsource _ happly
   exact ⟨addSourceFnPreservesAt limit happly hsource,
     addExtraFnPreservesAt limit happly hsource⟩
@@ -1357,7 +1362,7 @@ private def expectedMainCode : IxIR1.Code :=
                   (.ret (.var 0)))))))))
 
 private def expectedRecursorDef : IxIR1.FnDef :=
-  ⟨4, .shared,
+  ⟨4, .shared, true,
     .case (.var 0) true #[
       .mk 0 0
         (.letOp (.drop (.var 0))
@@ -1375,20 +1380,20 @@ private def expectedRecursorDef : IxIR1.FnDef :=
                       (.ret (.var 0)))))))))]⟩
 
 private def expectedAliasDef : IxIR1.FnDef :=
-  ⟨0, .shared,
+  ⟨0, .shared, true,
     .letOp (.papp maNatRec #[]) (.ret (.var 0))⟩
 
 private def expectedAddDef : IxIR1.FnDef :=
-  ⟨2, .shared,
+  ⟨2, .shared, true,
     .letOp (.call aNatRec #[])
       (.letOp (.papp (IxIR1.Lower.synthAddr 0) #[])
         (.letOp (.apply (.var 1) #[.erased, .var 3, .var 0, .var 2])
           (.ret (.var 0))))⟩
 
 private def expectedTargetDecls : List (Ixon.Address × IxIR1.Decl) :=
-  [(maNat, .fn ⟨0, .shared, .ret .erased⟩),
+  [(maNat, .fn ⟨0, .shared, true, .ret .erased⟩),
    (maNatRec, .fn expectedRecursorDef),
-   (aNat, .fn ⟨0, .shared, .ret .erased⟩),
+   (aNat, .fn ⟨0, .shared, true, .ret .erased⟩),
    (aNatRec, .fn expectedAliasDef),
    (aAdd, .fn expectedAddDef),
    (IxIR1.Lower.synthAddr 0, .fn expectedLiftedDef)]
@@ -1526,7 +1531,7 @@ private theorem runOp_apply_of_applyGo {ctx : IxIR1.Ctx} {fuel : Nat}
   rw [hargs]
   exact happly
 
-private def mainCur : IxIR1.FnDef := ⟨0, .shared, expectedMainCode⟩
+private def mainCur : IxIR1.FnDef := ⟨0, .shared, false, expectedMainCode⟩
 
 private def mainStep0 := ({} : IxIR1.Store).allocNode .shared
   (.ctorN (IxIR1.Lower.ctorIdOf aZero 0) #[])
@@ -1668,10 +1673,12 @@ private theorem dropVal_pap_one_empty {ctx : IxIR1.Ctx} {fuel : Nat}
 
 private theorem applyGo_pap_empty_saturated {ctx : IxIR1.Ctx} {fuel : Nat}
     {store : IxIR1.Store} {loc : Nat} {address : Ixon.Address}
-    {arity : Nat} {args : List IxIR1.RVal}
+    {arity : Nat} {args : List IxIR1.RVal} {declaration : IxIR1.Decl}
     (hget : store.get? loc =
       some ⟨.shared, 1, .papN address arity #[]⟩)
-    (hlength : args.length = arity) :
+    (hlength : args.length = arity)
+    (hdecl : ctx.decls address = some declaration)
+    (hpapsafe : IxIR1.declPapSafe declaration = true) :
     IxIR1.applyGo ctx (fuel + 3) store (.loc loc) args =
       IxIR1.invoke ctx (fuel + 2) address args
         (store.rcTick.kill loc) := by
@@ -1683,7 +1690,7 @@ private theorem applyGo_pap_empty_saturated {ctx : IxIR1.Ctx} {fuel : Nat}
   rw [hdup]
   simp only [bind, Except.bind, List.nil_append]
   rw [dropVal_pap_one_empty hget]
-  simp [hlength]
+  simp [hlength, hdecl, hpapsafe]
 
 private theorem liftStore_alias_get : liftStore.get? aliasLoc =
     some ⟨.shared, 1,
@@ -1710,7 +1717,7 @@ private theorem initial_applyGo :
         recEntryStore := by
   simpa [recEntryStore] using
     (applyGo_pap_empty_saturated (fuel := 29)
-      liftStore_alias_get (by rfl))
+      liftStore_alias_get (by rfl) expectedExpectedCtx_recursor (by rfl))
 
 example : recEntryStore.get? mainLoc6 =
     some ⟨.shared, 1,
@@ -1925,12 +1932,15 @@ private theorem applyGo_pap_empty_saturated_of_eval {ctx : IxIR1.Ctx}
     {fuel : Nat} {store dropped store' : IxIR1.Store}
     {loc : Nat} {address : Ixon.Address} {arity : Nat}
     {args : List IxIR1.RVal} {value : IxIR1.RVal}
+    {declaration : IxIR1.Decl}
     (hget : store.get? loc =
       some ⟨.shared, 1, .papN address arity #[]⟩ ∨
       ∃ rc, 1 < rc ∧ store.get? loc =
         some ⟨.shared, rc, .papN address arity #[]⟩)
     (hdrop : IxIR1.dropVal ctx fuel store (.loc loc) = .ok dropped)
     (hlength : args.length = arity)
+    (hdecl : ctx.decls address = some declaration)
+    (hpapsafe : IxIR1.declPapSafe declaration = true)
     (hinvoke : IxIR1.invoke ctx fuel address args dropped =
       .ok (store', value)) :
     IxIR1.applyGo ctx (fuel + 1) store (.loc loc) args =
@@ -1944,7 +1954,7 @@ private theorem applyGo_pap_empty_saturated_of_eval {ctx : IxIR1.Ctx}
     rw [hdup]
     simp only [bind, Except.bind, List.nil_append]
     rw [hdrop]
-    simp [hlength, hinvoke]
+    simp [hlength, hdecl, hpapsafe, hinvoke]
   · rw [IxIR1.applyGo.eq_def]
     dsimp only
     rw [hget]
@@ -1953,7 +1963,7 @@ private theorem applyGo_pap_empty_saturated_of_eval {ctx : IxIR1.Ctx}
     rw [hdup]
     simp only [bind, Except.bind, List.nil_append]
     rw [hdrop]
-    simp [hlength, hinvoke]
+    simp [hlength, hdecl, hpapsafe, hinvoke]
 
 private def level1ApplyStore := IxIR1.Sim.decRcStore baseStore liftLoc
   ⟨.shared, 3,
@@ -2001,6 +2011,8 @@ private theorem level1_applyGo :
   · right
     exact ⟨3, by decide, by rfl⟩
   · rfl
+  · rfl
+  · exact expectedExpectedCtx_lifted
   · rfl
   · exact level1_lifted_invoke
 
@@ -2069,6 +2081,8 @@ private theorem level2_applyGo :
   · right
     exact ⟨2, by decide, by rfl⟩
   · rfl
+  · rfl
+  · exact expectedExpectedCtx_lifted
   · rfl
   · exact level2_lifted_invoke
 
@@ -2153,6 +2167,8 @@ private theorem top_applyGo :
   · left
     rfl
   · rfl
+  · rfl
+  · exact expectedExpectedCtx_lifted
   · rfl
   · exact top_lifted_invoke
 

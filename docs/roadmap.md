@@ -1,6 +1,6 @@
 # Compilatr.ix roadmap
 
-Last reviewed 2026-08-30. This is the canonical source for priorities,
+Last reviewed 2026-08-31. This is the canonical source for priorities,
 milestone state, and activation gates. It is intentionally forward-looking:
 completed implementation detail belongs in the source tree, focused documents,
 and version history—not in the live queue.
@@ -55,7 +55,10 @@ status ledger here:
   ownership checks, leak-freedom fixtures, cost counters, mutual-block
   addressing, and a proof-facing validated compilation record that retains
   the scoped erasure and both address-pass witnesses used by the current
-  formal simulation spine.
+  formal simulation spine. Function declarations now carry an address-
+  committed owner-sensitive PAP-entry policy: direct known calls retain mixed
+  affine/unique boundaries, while dynamic saturation is admitted only for
+  declarations with homogeneous shared contracts.
 - A bounded HPT post-fixpoint checker, durable content-addressed summaries,
   recursive constructor-field facts, and the first semantics-preserving
   whole-program fact consumer: owner-sensitive propagation through stored
@@ -144,11 +147,14 @@ This is the current milestone.
 
 `ValidatedCompilation.semanticForwardSimulation` is now the concise semantic
 spine: validator-derived member scope and coverage plus both address-pass
-equations are carried by the compilation result. The first row remains active
-because `CompilerContracts` is not yet derived for mixed-mode validated
-programs. Closing it requires a PAP-safe, owner-sensitive reachable-store
-invariant; a global all-shared assumption would reject accepted affine and
-unique declarations.
+equations are carried by the compilation result. The owner-sensitive
+`CompilerContracts` layer has landed: declaration rewriting preserves
+`papSafe`, the mutual seal requires all-shared ownership only for dynamically
+enterable declarations, and a mixed unique/direct-call model proves that this
+is strictly weaker than the former global premise. The first row remains
+active until those contracts and coverage are derived from every validated
+compilation record and attached to its memory-safety, reclamation, and cost
+corollaries.
 
 M2b exits when that ownership premise is discharged for every accepted main
 and the first useful certified whole-program optimization bundle is attached
@@ -266,9 +272,9 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Discharge the M2b mixed-mode ownership boundary.** Prove the PAP-safe,
-   owner-sensitive reachable-store/compiler contracts for validated affine
-   and unique declarations, then attach the memory-safety and existing
+1. **Finish the M2b mixed-mode pipeline attachment.** Derive the landed
+   owner-sensitive PAP and declaration-coverage premises from every validated
+   compilation record, then attach the memory-safety and existing
    reclamation/cost corollaries to the pipeline semantic endpoint.
 2. **Specify IxIR₂ before implementing it.** Freeze block parameters,
    terminators, ownership flow, consuming unique destructure, and affine reuse

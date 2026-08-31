@@ -458,12 +458,14 @@ Bounded `lowerBorrow` derives dynamic borrows from smaller-fuel expression
 soundness while handling source variables directly. Projection composes that
 interface with borrowed `fetch`, field retention, optional final-use target
 release, erased absorption, and the vacuous scalar-stuck branch. The resulting
-nonbinding `lowerE` dispatcher covers variables, references, applications,
-projections, literals, and erased terms. The remaining expression work is
-bounded local-lambda lifting and let installation, followed by threading the
-explicit valid `recSelf` and generated-wrapper invariants into
-`RecursorRuleBodySoundBelow` and the exact-fuel declaration step consumed by
-the joint seal.
+compiler induction now reaches the joint declaration/application seal.
+Dynamic saturation resolves the PAP owner and consults its address-committed
+`papSafe` bit; direct known calls do not. `PapSafeDeclContracts` therefore
+requires a homogeneous shared boundary only for dynamically enterable
+declarations, while source and generated declarations retain their own direct
+contracts. Rewrite and readdress simulations preserve this policy, and the
+mixed-mode model establishes that the resulting `SourcePapSafe` premise is
+strictly weaker than a globally all-shared source environment.
 
 The v1 extern decision is fixed before the compiler induction: arguments and
 results are scalar-only, enforced on both direct and declaration-mediated

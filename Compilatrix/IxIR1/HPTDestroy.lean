@@ -163,7 +163,7 @@ private def fuelHelperBody : Code :=
         (.ret .erased)))
 
 private def fuelHelper : FnDef :=
-  { arity := 1, result := .shared, body := fuelHelperBody }
+  { arity := 1, result := .shared, papSafe := false, body := fuelHelperBody }
 
 private def fuelCtx : Ctx :=
   { decls := Env.ofList [(fuelHelperAddress, .fn fuelHelper)] }
@@ -191,7 +191,7 @@ private def helperRecursiveDrop (rest : Code) : Code :=
   .letOp (.call fuelHelperAddress #[.var 0]) rest
 
 private def fuelCurrent : FnDef :=
-  { arity := 1, result := .shared, body := .ret .erased }
+  { arity := 1, result := .shared, papSafe := false, body := .ret .erased }
 
 private def recursiveExpansionFuelBoundary : Bool :=
   let (store, root) := fuelInput

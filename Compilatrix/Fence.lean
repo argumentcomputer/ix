@@ -1160,6 +1160,43 @@ semantic endpoint. -/
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_semanticForwardSimulation_of_certificate_trace_sealed
 
+/-! ## Owner-sensitive dynamic application
+
+Dynamic PAP entry is guarded by declaration metadata, while saturated direct
+calls retain heterogeneous ownership boundaries. These pins keep the computed
+metadata, whole-pass provenance, strictly-weaker mixed-mode premise, and joint
+contract seal inside the ordinary proof axiom envelope. -/
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerDecl_defn_papSafe_of_run' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerDecl_defn_papSafe_of_run
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerDecl_recursor_papSafe_of_run' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerDecl_recursor_papSafe_of_run
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerFunction_declPapSafe' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.lowerAllAction_compilerFunction_declPapSafe
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.SourceAllShared.papSafe' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.SourceAllShared.papSafe
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.sourcePapSafe_not_sourceAllShared' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.sourcePapSafe_not_sourceAllShared
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.papSafeDeclContractsBelow_of_source_extra' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.papSafeDeclContractsBelow_of_source_extra
+
+/-- info: 'Compilatrix.IxIR1.LowerSim.compilerContracts_of_source_extra_below_step' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.LowerSim.compilerContracts_of_source_extra_below_step
+
+/-- info: 'Compilatrix.IxIR1.Sim.applyOwnershipContract_of_papSafeDecls' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Sim.applyOwnershipContract_of_papSafeDecls
+
 /-! ## Semantic projection (`Compilatrix/IxIR1/LowerSim.lean`)
 
 The premise-free member of the projection value pipeline: variable-target

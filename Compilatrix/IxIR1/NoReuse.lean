@@ -702,24 +702,38 @@ private theorem evalReusesAt : ∀ fuel, EvalReusesAt fuel := by
                         (captured.toList ++ args).length = arity
                     · simp only [hexact, beq_self_eq_true, if_true]
                         at heval
-                      exact (ihInvoke _ _ _ _ _ _ hctx heval).trans
-                        (hdropReuse.trans hdupReuse)
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at heval
+                      | some declaration =>
+                        cases hpapsafe : declPapSafe declaration with
+                        | false => simp [hdecl, hpapsafe] at heval
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at heval
+                          exact (ihInvoke _ _ _ _ _ _ hctx heval).trans
+                            (hdropReuse.trans hdupReuse)
                     · have hbeq :
                           ((captured.toList ++ args).length == arity) =
                             false := by
                         exact beq_eq_false_iff_ne.mpr hexact
-                      simp only [hbeq] at heval
-                      cases hinvoke : invoke ctx fuel address
-                          ((captured.toList ++ args).take arity) ready with
-                      | error err =>
-                        rw [hinvoke, bindErr] at heval
-                        contradiction
-                      | ok called =>
-                        rcases called with ⟨calledStore, calledValue⟩
-                        rw [hinvoke, bindOk] at heval
-                        exact (ihApply _ _ _ _ _ _ hctx heval).trans
-                          ((ihInvoke _ _ _ _ _ _ hctx hinvoke).trans
-                            (hdropReuse.trans hdupReuse))
+                      simp only [hbeq, Bool.false_eq_true, if_false] at heval
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at heval
+                      | some declaration =>
+                        cases hpapsafe : declPapSafe declaration with
+                        | false => simp [hdecl, hpapsafe] at heval
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at heval
+                          cases hinvoke : invoke ctx fuel address
+                              ((captured.toList ++ args).take arity) ready with
+                          | error err =>
+                            rw [hinvoke, bindErr] at heval
+                            contradiction
+                          | ok called =>
+                            rcases called with ⟨calledStore, calledValue⟩
+                            rw [hinvoke, bindOk] at heval
+                            exact (ihApply _ _ _ _ _ _ hctx heval).trans
+                              ((ihInvoke _ _ _ _ _ _ hctx hinvoke).trans
+                                (hdropReuse.trans hdupReuse))
 
 theorem runCode_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
     {store store' : Store} {env : List RVal} {code : Code} {value : RVal}
@@ -737,7 +751,7 @@ theorem runMain_reuses_eq_zero {ctx : Ctx} {fuel : Nat} {code : Code}
     (hcode : CodeNoReuse code)
     (heval : runMain ctx code fuel = .ok (store, value)) :
     store.reuses = 0 := by
-  exact (evalReusesAt fuel).1 ctx ⟨0, .shared, code⟩ ({} : Store) []
+  exact (evalReusesAt fuel).1 ctx ⟨0, .shared, false, code⟩ ({} : Store) []
     code store value hctx hcode hcode heval
 
 /-- The exact counter equation contributed by the current lowerer. -/
@@ -3067,7 +3081,7 @@ theorem lowerRecursor_preservesStateNoReuse
       rules.toList.zipIdx)
   intro alternatives
   exact PreservesStateNoReuse.pure
-    (⟨numArgs + 1, .shared,
+    (⟨numArgs + 1, .shared, true,
       .case (.var 0) natLit alternatives.toArray⟩ : FnDef)
 
 /-- A successfully lowered recursor has reuse-free alternatives. -/
@@ -3102,7 +3116,8 @@ theorem lowerDecl_preservesStateNoReuse
         ((lowerStateNoReuse src fuel).fnBody _ _ result _)
       intro code
       exact PreservesStateNoReuse.pure
-        (some (address, Decl.fn ⟨lamArity body, result, code⟩))
+        (some (address, Decl.fn ⟨lamArity body, result,
+          result == .shared && papSafe body, code⟩))
   | (_, .ctor tag arity) => by
       simp only [lowerDecl]
       exact PreservesStateNoReuse.pure

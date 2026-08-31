@@ -17912,7 +17912,7 @@ theorem lowerFnBody_liftedEntries_valueTraceProgress_within_below
     ∃ targetFuel store' value,
       runCode ctx targetFuel
         ⟨((List.range entryCount).filter selected).length + modes.length,
-          .shared, code⟩ store
+          .shared, true, code⟩ store
         (captureArgs ++ parameterArgs).reverse code = .ok (store', value) ∧
       RootOwnership store' (⟨.shared, value⟩ :: rest) := by
   let captures := (List.range entryCount).filter selected
@@ -17974,18 +17974,20 @@ theorem lowerFnBody_liftedEntries_valueTraceProgress_within_below
   cases heq.2
   have hbodyProgress : LowerResultValueProgress
       (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) ctx
-      ⟨captures.length + modes.length, .shared, code⟩ plannedMiddle output
+      ⟨captures.length + modes.length, .shared, true, code⟩
+        plannedMiddle output
       (parameterSources.reverse ++ sourceEnv)
       (parameterSources.reverse ++ sourceEnv) sourceResult .shared emit av :=
     (lowerValueTraceProgressClusterWithinBelow
       (recSelfRel := fun _ _ => False)
-      (cur := (⟨captures.length + modes.length, .shared, code⟩ : FnDef))
+      (cur :=
+        (⟨captures.length + modes.length, .shared, true, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hprogress compilerFuel).expr
         hsourceBound hsource hbodyRun hextends
         (SelfTraceProgressAvailableBelow.of_noRecSelf hmiddleNo)
   have hfull : LowerResultValueProgress
       (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) ctx
-      ⟨captures.length + modes.length, .shared, code⟩ input output
+      ⟨captures.length + modes.length, .shared, true, code⟩ input output
       (parameterSources.reverse ++ sourceEnv)
       (parameterSources.reverse ++ sourceEnv) sourceResult .shared
       (plannedEmit ∘ emit) av :=
@@ -18029,13 +18031,13 @@ theorem lowerFnBody_liftedEntries_valueTraceProgress_within_below
   obtain ⟨targetFuel, store', value, htarget⟩ :=
     hfull.closeProgress sourceRest rest hpre
   have htarget' : runCode ctx targetFuel
-      ⟨captures.length + modes.length, .shared, code⟩ store
+      ⟨captures.length + modes.length, .shared, true, code⟩ store
       (captureArgs ++ parameterArgs).reverse code = .ok (store', value) := by
     simpa only [hcode] using htarget
   have hfinalRepresented : ExtraRepresented ctx finalState :=
     hrepresented.of_extends hextends
   have hownershipAt : FnOwnershipPreservesAt ctx
-      ⟨captures.length + modes.length, .shared, code⟩
+      ⟨captures.length + modes.length, .shared, true, code⟩
       (List.replicate (captures.length + modes.length) .shared)
       targetFuel := by
     intro ownStore ownStore' ownArgs ownValue ownRest
@@ -18109,7 +18111,7 @@ theorem invoke_lifted_value_trace_progress_within_below
   have hselectedLength := hselectedValues.length
   rw [← hselectedLength] at hmember
   have hdecl : ctx.decls address = some (.fn
-      ⟨selectedSources.length + lamArity expr, .shared, code⟩) :=
+      ⟨selectedSources.length + lamArity expr, .shared, true, code⟩) :=
     hrepresented.decl hmember
   have hmodes := papSafe_lamUses_eq_replicate hsafe
   have hadmissible : ParameterDropsAdmissible (lamUses expr)
@@ -18219,7 +18221,8 @@ theorem invoke_lifted_value_trace_progress_within_below
         hparameterLength hselectedGraph hparameterGraph hsourceBound
         (by simpa using hsourceTrace) hframe hownSplit
     have htarget' : runCode ctx targetFuel
-        ⟨selectedSources.length + lamArity expr, .shared, code⟩ store
+        ⟨selectedSources.length + lamArity expr, .shared, true, code⟩
+        store
         (got ++ args).reverse code = .ok (store', value) := by
       simpa [liftCaptureIndices, hselectedLength, lamUses_length,
         htotalSplit] using htarget
@@ -18441,7 +18444,7 @@ theorem lowerFnBody_parameterEntries_valueTraceProgressesAt_within_below
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx
       sourceLimit)
     (modes : List Uses) (world : Owned) (body : IxIR0.Expr)
-    {state finalState : LowSt} {code : Code}
+    {state finalState : LowSt} {code : Code} {papSafeFlag : Bool}
     (hadmissible : ParameterDropsAdmissible modes
       (fun index => countUses index body))
     (hrun : (lowerFnBody src (compilerFuel + 1)
@@ -18461,7 +18464,7 @@ theorem lowerFnBody_parameterEntries_valueTraceProgressesAt_within_below
           body sourceResult) :
     FnValueTraceProgressesAt
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨modes.length, world, code⟩ (modes.map worldOfUses)
+      ⟨modes.length, world, papSafeFlag, code⟩ (modes.map worldOfUses)
       sourceFunction sourceLimit := by
   let remaining : Nat → Nat := fun index => countUses index body
   let input : VEnv :=
@@ -18514,17 +18517,17 @@ theorem lowerFnBody_parameterEntries_valueTraceProgressesAt_within_below
     (hsourceArgsLength.trans hargsLength) happlies
   have hbodyProgress : LowerResultValueProgress
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ plannedMiddle output
+      ⟨modes.length, world, papSafeFlag, code⟩ plannedMiddle output
       sourceArgs.reverse sourceArgs.reverse sourceResult world emit av :=
     (lowerValueTraceProgressClusterWithinBelow
       (recSelfRel := recSelfRel)
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hprogress compilerFuel).expr
         hsourceBound hsource hbodyRun hextends
         (SelfTraceProgressAvailableBelow.of_noRecSelf hmiddleNo)
   have hfull : LowerResultValueProgress
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ input output
+      ⟨modes.length, world, papSafeFlag, code⟩ input output
       sourceArgs.reverse sourceArgs.reverse sourceResult world
       (plannedEmit ∘ emit) av :=
     hbodyProgress.afterRelease hplan'
@@ -18575,11 +18578,13 @@ theorem lowerDecl_defn_valueTraceProgressesAt_within_below
   obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+      some (address, Decl.fn ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩) =
           some (address, Decl.fn d) ∧
         bodyState = finalState := by
     simpa using hpureRun
-  have hd : d = ⟨lamArity body, result, code⟩ := by
+  have hd : d = ⟨lamArity body, result,
+      result == .shared && papSafe body, code⟩ := by
     have hp := Option.some.inj hpure.1
     exact Decl.fn.inj (Prod.mk.inj hp).2.symm
   cases hpure.2
@@ -18589,7 +18594,8 @@ theorem lowerDecl_defn_valueTraceProgressesAt_within_below
     exact hsrc
   have hprogresses : FnValueTraceProgressesAt
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨(lamUses body).length, result, code⟩
+      ⟨(lamUses body).length, result,
+        result == .shared && papSafe body, code⟩
       ((lamUses body).map worldOfUses) sourceFunction sourceLimit :=
     lowerFnBody_parameterEntries_valueTraceProgressesAt_within_below
       (recSelfRel := fun _ _ => False)
@@ -18599,8 +18605,10 @@ theorem lowerDecl_defn_valueTraceProgressesAt_within_below
       (by
         intro sourceArgs sourceResult hlength happlies
         exact href.defnSaturate hlookup (by simpa using hlength) happlies)
-  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
-      ⟨lamArity body, result, code⟩ := by
+  have hfn : (⟨(lamUses body).length, result,
+      result == .shared && papSafe body, code⟩ : FnDef) =
+      ⟨lamArity body, result,
+        result == .shared && papSafe body, code⟩ := by
     rw [lamUses_length]
   rw [← hfn]
   intro store args sourceArgs sourceResult sourceRest rest hlength hargs
@@ -18639,7 +18647,7 @@ theorem lowerRecursor_valueTraceProgressesAt_within_below
   obtain ⟨alts, rulesState, hrulesRun, hafterRules⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩ : FnDef) = d ∧
         rulesState = finalState := by
     simpa using hafterRules
@@ -18660,24 +18668,24 @@ theorem lowerRecursor_valueTraceProgressesAt_within_below
   obtain ⟨ownedD, hownedDecl, _, _, hownedContract⟩ :=
     hcontracts.decls.recursor hsrc
   have hownedD : ownedD =
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
         .case (.var 0) natLit alts.toArray⟩ : FnDef) := by
     have hsame : some (Decl.fn ownedD) = some
-        (.fn ⟨numArgs + 1, .shared,
+        (.fn ⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩) :=
       hownedDecl.symm.trans hdecl
     exact Decl.fn.inj (Option.some.inj hsame)
   subst ownedD
   have hvalueContract : FnValueContract
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       (List.replicate (numArgs + 1) .shared)
       (.pap (.rec_ address (numArgs + 1)) []) := by
     apply hvalues.decls.fnContract hsrc (by rfl) hdecl hrefValue
     simp
   have hself : CurrentSelfTraceProgressContractBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       sourceLimit := by
     refine
       { toCurrentSelfValueContract := ?_
@@ -18713,11 +18721,11 @@ theorem lowerRecursor_valueTraceProgressesAt_within_below
   have hfinalRepresented : ExtraRepresented ctx finalState :=
     hrepresented.of_extends hextends
   have hownershipSelf : CurrentSelfContractBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       sourceLimit :=
     ⟨hself.result, hself.ownership.below sourceLimit⟩
   have hplan : RecursorRulesPlanBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       sourceLimit src compilerFuel numArgs state rules.toList.zipIdx
       finalState alts :=
     recursorRulesPlanBelow_of_run (hcontracts.below sourceLimit).apply
@@ -18796,7 +18804,7 @@ theorem lowerRecursor_valueTraceProgressesAt_within_below
             HasWorld store .shared field) :
           ∃ branchFuel store' value,
             runCode ctx branchFuel
-              ⟨numArgs + 1, .shared,
+              ⟨numArgs + 1, .shared, true,
                 .case (.var 0) natLit alts.toArray⟩
               store (targetFields.reverse ++ major :: runtimePre) body =
                 .ok (store', value) ∧
@@ -19043,7 +19051,7 @@ theorem ctorWrapper_fnValueTraceProgressesAt
     {sourceLimit : Nat} (source : Ixon.Address) (tag arity : Nat)
     (sourceFunction : IxIR0.Value) :
     FnValueTraceProgressesAt funRel sourceCtx ctx
-      ⟨arity, .shared,
+      ⟨arity, .shared, true,
         .letOp (.alloc .shared (ctorIdOf source tag)
           (descendingVars arity).toArray) (.ret (.var 0))⟩
       (List.replicate arity .shared) sourceFunction sourceLimit := by
@@ -19357,7 +19365,7 @@ theorem invoke_compilerFunction_value_trace_progress_within_below
     subst sourceFunction
     have hfullTrace := hstoredTrace.append happlies
     let wrapperDef : FnDef :=
-      ⟨memo.arity, .shared,
+      ⟨memo.arity, .shared, true,
         .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
           (descendingVars memo.arity).toArray) (.ret (.var 0))⟩
     have hdecl : ctx.decls memo.wrapper = some (.fn wrapperDef) := by
@@ -19493,6 +19501,9 @@ theorem lowerAllAction_applyValueTraceProgressesAt_within_below
           | cons _ hstep _ => cases hstep
       | @function relatedFunction address arity captures loc rc got hget
           hrel hcaptures =>
+        obtain ⟨declaration, hdeclaration, hpapsafe⟩ :=
+          lowerAllAction_compilerFunction_declPapSafe hlower htarget
+            hrepresented hcontracts hrel
         obtain ⟨dropFuel, dupStore, readyStore, hdup, hdrop,
             hcapturesReady, hargsReady, hframeReady, hready⟩ :=
           applyGo_preparePap_valueGraphs_progress
@@ -19542,6 +19553,8 @@ theorem lowerAllAction_applyValueTraceProgressesAt_within_below
             have hbeq : ((got.toList ++ args).length == arity) = true := by
               simp [hexact']
             rw [hbeq]
+            rw [hdeclaration]
+            simp only [hpapsafe, ↓reduceIte]
             simpa using hinvoke'
           · have hcapturesUnder : captures.length < arity :=
               hrel.underfilled
@@ -19697,6 +19710,8 @@ theorem lowerAllAction_applyValueTraceProgressesAt_within_below
               exact hexact'
             rw [hbeq]
             simp only [Bool.false_eq_true, if_false]
+            rw [hdeclaration]
+            simp only [hpapsafe, ↓reduceIte]
             rw [hinvoke', bindOk]
             exact hrecursive'
   intro store function args sourceFunction sourceArgs sourceResult
@@ -19801,7 +19816,7 @@ theorem lowerAllAction_main_settlement
     subst middle
     subst releaseEmit
     cases heq.2
-    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    let cur : FnDef := ⟨0, .shared, false, mainCode⟩
     have hbodySettles : LowerResultValueSettlement
         (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
         (fun _ _ => False) ctx cur input output [] [] sourceValue
@@ -19885,7 +19900,7 @@ theorem lowerAllAction_main_progress_of_projectionSafe
     subst middle
     subst releaseEmit
     cases heq.2
-    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    let cur : FnDef := ⟨0, .shared, false, mainCode⟩
     have hbodyProgress : LowerResultValueProgress
         (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
         (fun _ _ => False) ctx cur input output [] [] sourceValue
@@ -19972,7 +19987,7 @@ theorem lowerAllAction_main_progress_of_trace_below
     subst middle
     subst releaseEmit
     cases heq.2
-    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    let cur : FnDef := ⟨0, .shared, false, mainCode⟩
     have hbodyProgress : LowerResultValueProgress
         (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
         (fun _ _ => False) ctx cur input output [] [] sourceValue
@@ -20887,7 +20902,7 @@ theorem
 memory-safety proposition. -/
 theorem memoryErrorUnreachable_of_codeSettlement
     {ctx : Ctx} {code : Code} {pre : StatePred}
-    (hsettles : CodeSettlement ctx ⟨0, .shared, code⟩ pre code)
+    (hsettles : CodeSettlement ctx ⟨0, .shared, false, code⟩ pre code)
     (hpre : pre {} []) :
     MemoryErrorUnreachable ctx code := by
   apply memoryErrorUnreachable_of_settlement

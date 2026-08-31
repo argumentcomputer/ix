@@ -189,7 +189,8 @@ theorem runMain_exact (n : Nat) :
       .ok (targetStore n, .loc n) := by
   unfold runMain targetCode
   have hprefix := runCode_targetEmit
-    { arity := 0, result := .shared, body := targetEmit n (.ret (.var 0)) }
+    { arity := 0, result := .shared, papSafe := false,
+      body := targetEmit n (.ret (.var 0)) }
     n 0 (.ret (.var 0))
   simp only [Nat.zero_add] at hprefix
   rw [hprefix]

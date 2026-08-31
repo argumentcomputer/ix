@@ -2164,6 +2164,7 @@ theorem ApplyOwnershipRunCost.papExact
     {location arity rc : Nat} {address : Ixon.Address}
     {world : Ixon.Owned} {captured : Array RVal} {args : List RVal}
     {value : RVal} {invokeAllowance : OwnershipAllowance}
+    {declaration : Decl}
     (horder : AllocationOrderInvariant before)
     (hargs : ValuesInBounds before args)
     (hbox : before.get? location =
@@ -2171,6 +2172,8 @@ theorem ApplyOwnershipRunCost.papExact
     (hdup : dupVals before captured.toList = .ok duplicated)
     (hdrop : dropVal ctx fuel duplicated (.loc location) = .ok ready)
     (hexact : (captured.toList ++ args).length = arity)
+    (hdecl : ctx.decls address = some declaration)
+    (hpapsafe : declPapSafe declaration = true)
     (hinvoke : InvokeOwnershipRunCost ctx fuel address
       (captured.toList ++ args) ready after value invokeAllowance) :
     ApplyOwnershipRunCost ctx (fuel + 1) before (.loc location) args after
@@ -2190,6 +2193,8 @@ theorem ApplyOwnershipRunCost.papExact
     have hunder : ¬(captured.toList ++ args).length < arity := by
       omega
     simp only [hunder, if_false]
+    rw [hdecl]
+    simp only [hpapsafe, if_true]
     simpa [hexact] using hinvoke.run
   · simpa [OwnershipAllowance.add] using hgrowth
 
@@ -2201,7 +2206,7 @@ theorem ApplyOwnershipRunCost.papOver
     {before duplicated ready called after : Store}
     {location arity rc : Nat} {address : Ixon.Address}
     {world : Ixon.Owned} {captured : Array RVal} {args : List RVal}
-    {calledValue value : RVal}
+    {calledValue value : RVal} {declaration : Decl}
     {invokeAllowance applyAllowance : OwnershipAllowance}
     (horder : AllocationOrderInvariant before)
     (hargs : ValuesInBounds before args)
@@ -2210,6 +2215,8 @@ theorem ApplyOwnershipRunCost.papOver
     (hdup : dupVals before captured.toList = .ok duplicated)
     (hdrop : dropVal ctx fuel duplicated (.loc location) = .ok ready)
     (hover : arity < (captured.toList ++ args).length)
+    (hdecl : ctx.decls address = some declaration)
+    (hpapsafe : declPapSafe declaration = true)
     (hinvoke : InvokeOwnershipRunCost ctx fuel address
       ((captured.toList ++ args).take arity) ready called calledValue
       invokeAllowance)
@@ -2236,6 +2243,8 @@ theorem ApplyOwnershipRunCost.papOver
       omega
     simp only [hunder, if_false]
     simp only [hne, beq_iff_eq, if_false]
+    rw [hdecl]
+    simp only [hpapsafe, if_true]
     rw [hinvoke.run, bindOk]
     exact happly.run
   · simpa [OwnershipAllowance.add] using hgrowth
@@ -22611,7 +22620,7 @@ theorem ProfileFundedApplyRun.papExact
     {ctx : Ctx} {fuel : Nat} {before duplicated ready after : Store}
     {location arity rc : Nat} {address : Ixon.Address}
     {world : Ixon.Owned} {captured : Array RVal} {args : List RVal}
-    {value : RVal} {invokeProfile : SourceProfile}
+    {value : RVal} {invokeProfile : SourceProfile} {declaration : Decl}
     (horder : AllocationOrderInvariant before)
     (hargs : ValuesInBounds before args)
     (hbox : before.get? location =
@@ -22619,6 +22628,8 @@ theorem ProfileFundedApplyRun.papExact
     (hdup : dupVals before captured.toList = .ok duplicated)
     (hdrop : dropVal ctx fuel duplicated (.loc location) = .ok ready)
     (hexact : (captured.toList ++ args).length = arity)
+    (hdecl : ctx.decls address = some declaration)
+    (hpapsafe : declPapSafe declaration = true)
     (hinvoke : ProfileFundedInvokeRun ctx fuel address
       (captured.toList ++ args) ready after value invokeProfile) :
     ProfileFundedApplyRun ctx (fuel + 1) before (.loc location) args after
@@ -22628,7 +22639,7 @@ theorem ProfileFundedApplyRun.papExact
   refine ⟨(retainedOwnershipAllowance captured.toList.length).add
       invokeAllowance,
     ApplyOwnershipRunCost.papExact horder hargs hbox hdup hdrop hexact
-      hinvokeCost, ?_⟩
+      hdecl hpapsafe hinvokeCost, ?_⟩
   rw [sourceProfileOwnershipAllowance_add,
     sourceProfileOwnershipAllowance_retain]
   exact (OwnershipAllowanceLE.refl _).add hinvokeFunded
@@ -22640,7 +22651,7 @@ theorem ProfileFundedApplyRun.papOver
     {before duplicated ready called after : Store}
     {location arity rc : Nat} {address : Ixon.Address}
     {world : Ixon.Owned} {captured : Array RVal} {args : List RVal}
-    {calledValue value : RVal}
+    {calledValue value : RVal} {declaration : Decl}
     {invokeProfile applyProfile : SourceProfile}
     (horder : AllocationOrderInvariant before)
     (hargs : ValuesInBounds before args)
@@ -22649,6 +22660,8 @@ theorem ProfileFundedApplyRun.papOver
     (hdup : dupVals before captured.toList = .ok duplicated)
     (hdrop : dropVal ctx fuel duplicated (.loc location) = .ok ready)
     (hover : arity < (captured.toList ++ args).length)
+    (hdecl : ctx.decls address = some declaration)
+    (hpapsafe : declPapSafe declaration = true)
     (hinvoke : ProfileFundedInvokeRun ctx fuel address
       ((captured.toList ++ args).take arity) ready called calledValue
       invokeProfile)
@@ -22663,7 +22676,7 @@ theorem ProfileFundedApplyRun.papOver
   refine ⟨((retainedOwnershipAllowance captured.toList.length).add
       invokeAllowance).add applyAllowance,
     ApplyOwnershipRunCost.papOver horder hargs hbox hdup hdrop hover
-      hinvokeCost happlyCost, ?_⟩
+      hdecl hpapsafe hinvokeCost happlyCost, ?_⟩
   rw [sourceProfileOwnershipAllowance_add,
     sourceProfileOwnershipAllowance_add,
     sourceProfileOwnershipAllowance_retain]
@@ -22762,6 +22775,20 @@ theorem applyProfilePreservesAt_within_below
           next hnotUnder =>
             split at hrun
             next hexact =>
+              obtain ⟨declaration, hdeclaration, hpapsafe, hinvokeRun⟩ :
+                  ∃ declaration,
+                    ctx.decls address = some declaration ∧
+                    declPapSafe declaration = true ∧
+                    invoke ctx fuel address (got.toList ++ args) readyStore =
+                      .ok (after, value) := by
+                cases hdecl : ctx.decls address with
+                | none => simp [hdecl] at hrun
+                | some declaration =>
+                  cases hpapsafe : declPapSafe declaration with
+                  | false => simp [hdecl, hpapsafe] at hrun
+                  | true =>
+                    refine ⟨declaration, rfl, hpapsafe, ?_⟩
+                    simpa [hdecl, hpapsafe, total] using hrun
               have hfullSourceLength :
                   (captures ++ sourceArgs).length = arity := by
                 have htotalLength := (hgotReady.append hargsReady).length
@@ -22769,15 +22796,13 @@ theorem applyProfilePreservesAt_within_below
                   simpa [total] using hexact
                 simp only [List.length_append] at htotalLength hexact' ⊢
                 omega
-              have hinvokeRun : invoke ctx fuel address
-                  (got.toList ++ args) readyStore = .ok (after, value) := by
-                simpa [total] using hrun
               obtain ⟨invokeProfile, hinvokeCost, hfunded⟩ :=
                 hprofiles.residual.preserves (Nat.lt_succ_self fuel)
                   hreadyOrder hfun hgotReady hargsReady hsource hnonempty
                   hfullSourceLength hframeReady hready hinvokeRun
               have hbase := ProfileFundedApplyRun.papExact horder hargsBounds
-                hget hdup hdrop (by simpa [total] using hexact) hinvokeCost
+                hget hdup hdrop (by simpa [total] using hexact)
+                hdeclaration hpapsafe hinvokeCost
               have haligned : OwnershipAllowanceLE
                   (sourceProfileOwnershipAllowance
                     (IxIR0.DynamicCost.retain got.toList.length +
@@ -22883,14 +22908,29 @@ theorem applyProfilePreservesAt_within_below
                 rw [hrootsSplit] at hsplit
                 rw [htakeTotal, hdropTotal] at hsplit
                 simpa [tailRoots, List.append_assoc] using hsplit
+              obtain ⟨declaration, hdeclaration, hpapsafe, hguardRun⟩ :
+                  ∃ declaration,
+                    ctx.decls address = some declaration ∧
+                    declPapSafe declaration = true ∧
+                    (invoke ctx fuel address (total.take arity) readyStore >>=
+                      fun called => applyGo ctx fuel called.1 called.2
+                        (total.drop arity)) = .ok (after, value) := by
+                cases hdecl : ctx.decls address with
+                | none => simp [hdecl] at hrun
+                | some declaration =>
+                  cases hpapsafe : declPapSafe declaration with
+                  | false => simp [hdecl, hpapsafe] at hrun
+                  | true =>
+                    refine ⟨declaration, rfl, hpapsafe, ?_⟩
+                    simpa [hdecl, hpapsafe, total] using hrun
               cases hinvoke : invoke ctx fuel address
                   (total.take arity) readyStore with
               | error error =>
-                  rw [hinvoke, bindErr] at hrun
+                  rw [hinvoke, bindErr] at hguardRun
                   contradiction
               | ok called =>
                 rcases called with ⟨calledStore, calledValue⟩
-                rw [hinvoke, bindOk] at hrun
+                rw [hinvoke, bindOk] at hguardRun
                 have hinvokePrefix : invoke ctx fuel address
                     (got.toList ++ args.take missing) readyStore =
                     .ok (calledStore, calledValue) := by
@@ -22923,10 +22963,8 @@ theorem applyProfilePreservesAt_within_below
                   htailFrameAfter.valuesGraph
                 have hrecursiveRun : applyGo ctx fuel calledStore calledValue
                     (args.drop missing) = .ok (after, value) := by
-                  change applyGo ctx fuel calledStore calledValue
-                    (total.drop arity) = .ok (after, value) at hrun
-                  rw [hdropTotal] at hrun
-                  exact hrun
+                  rw [hdropTotal] at hguardRun
+                  exact hguardRun
                 have hcalledOrder : AllocationOrderInvariant calledStore := by
                   obtain ⟨allowance, hinvokeRunCost, _⟩ := hinvokeCost
                   exact hinvokeRunCost.finalOrderAndValue.1
@@ -22945,8 +22983,8 @@ theorem applyProfilePreservesAt_within_below
                   rw [hdropTotal]
                   exact htailCost
                 have hcomposed := ProfileFundedApplyRun.papOver horder
-                  hargsBounds hget hdup hdrop hoverLength hinvokeCostTotal
-                  htailCostTotal
+                  hargsBounds hget hdup hdrop hoverLength hdeclaration
+                  hpapsafe hinvokeCostTotal htailCostTotal
                 have hprefixFundedAligned : OwnershipAllowanceLE
                     (sourceProfileOwnershipAllowance
                       (IxIR0.DynamicCost.retain got.toList.length +
@@ -23445,7 +23483,7 @@ theorem lowerRecursor_profilePreservesAt_within_below
   obtain ⟨alts, rulesState, hrulesRun, hafterRules⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩ : FnDef) = d ∧
         rulesState = finalState := by
     simpa using hafterRules
@@ -23464,31 +23502,31 @@ theorem lowerRecursor_profilePreservesAt_within_below
   obtain ⟨ownedD, hownedDecl, _, _, hownedContract⟩ :=
     hcontracts.decls.recursor hsrc
   have hownedD : ownedD =
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
         .case (.var 0) natLit alts.toArray⟩ : FnDef) := by
     have hsame : some (Decl.fn ownedD) = some
-        (.fn ⟨numArgs + 1, .shared,
+        (.fn ⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩) :=
       hownedDecl.symm.trans hdecl
     exact Decl.fn.inj (Option.some.inj hsame)
   subst ownedD
   have hvalueContract : FnValueContract
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       (List.replicate (numArgs + 1) .shared)
       (.pap (.rec_ address (numArgs + 1)) []) := by
     apply hvalues.decls.fnContract hsrc (by rfl) hdecl href
     simp
   have hprofileContract : FnProfileContractBelow
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx address
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       (List.replicate (numArgs + 1) .shared)
       (.pap (.rec_ address (numArgs + 1)) []) limit := by
     apply hprofiles.decls.fnContract hsrc (by rfl) hdecl href
     simp
   have hself : CurrentSelfProfileContractBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit := by
     refine ⟨rfl, by omega, hownedContract, ?_, ?_⟩
     · intro candidate hcandidate
@@ -23504,10 +23542,10 @@ theorem lowerRecursor_profilePreservesAt_within_below
   have hfinalRepresented : ExtraRepresented ctx finalState :=
     hrepresented.of_extends hextends
   have hownershipSelf : CurrentSelfContractBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit := ⟨hself.result, hself.ownership.below limit⟩
   have hplan : RecursorRulesPlanBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit src compilerFuel numArgs state rules.toList.zipIdx
       finalState alts :=
     recursorRulesPlanBelow_of_run (hcontracts.below limit).apply
@@ -23568,7 +23606,7 @@ theorem lowerRecursor_profilePreservesAt_within_below
         simpa [hargsForm] using hown
       rw [hreverse] at htarget
       change runCode ctx (branchFuel + 1)
-          ⟨numArgs + 1, .shared,
+          ⟨numArgs + 1, .shared, true,
             .case (.var 0) natLit alts.toArray⟩
           store (major :: runtimePre)
           (.case (.var 0) natLit alts.toArray) =
@@ -23590,12 +23628,12 @@ theorem lowerRecursor_profilePreservesAt_within_below
           (hfieldWorld : ∀ field ∈ targetFields,
             Sim.HasWorld store .shared field)
           (hbranchRun : runCode ctx branchFuel
-            ⟨numArgs + 1, .shared,
+            ⟨numArgs + 1, .shared, true,
               .case (.var 0) natLit alts.toArray⟩
             store (targetFields.reverse ++ major :: runtimePre) body =
               .ok (store', value)) :
           ProfileFundedCodeRun ctx (branchFuel + 1)
-            ⟨numArgs + 1, .shared,
+            ⟨numArgs + 1, .shared, true,
               .case (.var 0) natLit alts.toArray⟩
             store (major :: runtimePre)
             (.case (.var 0) natLit alts.toArray) store' value profile := by
@@ -23799,7 +23837,7 @@ theorem lowerFnBody_parameterEntries_profileRun_below
     (hprofiles : CompilerProfileContractsBelow
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
     (modes : List Ixon.Uses) (world : Ixon.Owned) (body : IxIR0.Expr)
-    {state finalState : LowSt} {code : Code}
+    {state finalState : LowSt} {code : Code} {papSafeFlag : Bool}
     (hadmissible : ParameterDropsAdmissible modes
       (fun index => countUses index body))
     (hrun : (lowerFnBody src (compilerFuel + 1)
@@ -23828,10 +23866,10 @@ theorem lowerFnBody_parameterEntries_profileRun_below
       (Sim.rootsForWorlds (modes.map worldOfUses) args ++ rest))
     (htarget : targetFuel ≤ limit)
     (hcodeRun : runCode ctx targetFuel
-      ⟨modes.length, world, code⟩ before args.reverse code =
+      ⟨modes.length, world, papSafeFlag, code⟩ before args.reverse code =
         .ok (after, value)) :
     ProfileFundedCodeRun ctx targetFuel
-      ⟨modes.length, world, code⟩ before args.reverse code after value
+      ⟨modes.length, world, papSafeFlag, code⟩ before args.reverse code after value
       profile := by
   let remaining : Nat → Nat := fun index => countUses index body
   let input : VEnv :=
@@ -23876,12 +23914,12 @@ theorem lowerFnBody_parameterEntries_profileRun_below
   cases heq.2
   have hbodySound : LowerResultProfileSoundBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ limit plannedMiddle output
+      ⟨modes.length, world, papSafeFlag, code⟩ limit plannedMiddle output
       sourceArgs.reverse sourceArgs.reverse sourceResult world emit av
       bodyProfile :=
     lowerE_run_profile_sound_within_noRecSelf_below
       (recSelfRel := recSelfRel)
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hprofiles hsource hbodyRun
       hextends hmiddleNo
   have hbodySound' := hbodySound.monoProfile hbodyFunded
@@ -23908,13 +23946,13 @@ theorem lowerFnBody_parameterEntries_profileRun_below
     releasePlan_profileFundedValueStateRunSoundBelow hplan'
       (funRel := CompilerFunctionRel sourceCtx src ambient)
       (recSelfRel := recSelfRel) (ctx := ctx)
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       (limit := limit) sourceArgs.reverse sourceRest rest []
   have hbodyCost := hbodySound'.profileEmits sourceRest rest []
   have hcombined := ProfileFundedEmitStateRunSoundBelow.comp
     hreleaseCost hbodyCost
   have hcombined' : ProfileFundedEmitStateRunSoundBelow ctx
-      ⟨modes.length, world, code⟩ limit (plannedEmit ∘ emit)
+      ⟨modes.length, world, papSafeFlag, code⟩ limit (plannedEmit ∘ emit)
       (GraphOwnsVEnvProtected
         (CompilerFunctionRel sourceCtx src ambient) recSelfRel input
         sourceArgs.reverse sourceRest rest [])
@@ -23949,7 +23987,7 @@ theorem lowerFnBody_parameterEntries_profilePreservesAt_within_below
     (hprofiles : CompilerProfileContractsBelow
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx src ctx limit)
     (modes : List Ixon.Uses) (world : Ixon.Owned) (body : IxIR0.Expr)
-    {state finalState : LowSt} {code : Code}
+    {state finalState : LowSt} {code : Code} {papSafeFlag : Bool}
     (hadmissible : ParameterDropsAdmissible modes
       (fun index => countUses index body))
     (hrun : (lowerFnBody src (compilerFuel + 1)
@@ -23972,7 +24010,7 @@ theorem lowerFnBody_parameterEntries_profilePreservesAt_within_below
           (sourceProfileOwnershipAllowance profile)) :
     FnProfilePreservesAt
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx address
-      ⟨modes.length, world, code⟩ (modes.map worldOfUses)
+      ⟨modes.length, world, papSafeFlag, code⟩ (modes.map worldOfUses)
       sourceFunction limit := by
   let remaining : Nat → Nat := fun index => countUses index body
   let input : VEnv :=
@@ -24022,12 +24060,12 @@ theorem lowerFnBody_parameterEntries_profilePreservesAt_within_below
     hsaturates (by simpa using hsourceLength) hentry
   have hbodySound : LowerResultProfileSoundBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel ctx
-      ⟨modes.length, world, code⟩ limit plannedMiddle output
+      ⟨modes.length, world, papSafeFlag, code⟩ limit plannedMiddle output
       sourceArgs.reverse sourceArgs.reverse sourceResult world emit av
       bodyProfile :=
     lowerE_run_profile_sound_within_noRecSelf_below
       (recSelfRel := recSelfRel)
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hprofiles hsource hbodyRun
       hextends hmiddleNo
   have hbodySound' := hbodySound.monoProfile hbodyFunded
@@ -24054,13 +24092,13 @@ theorem lowerFnBody_parameterEntries_profilePreservesAt_within_below
     releasePlan_profileFundedValueStateRunSoundBelow hplan'
       (funRel := CompilerFunctionRel sourceCtx src ambient)
       (recSelfRel := recSelfRel) (ctx := ctx)
-      (cur := (⟨modes.length, world, code⟩ : FnDef))
+      (cur := (⟨modes.length, world, papSafeFlag, code⟩ : FnDef))
       (limit := limit) sourceArgs.reverse sourceRest rest []
   have hbodyCost := hbodySound'.profileEmits sourceRest rest []
   have hcombined := ProfileFundedEmitStateRunSoundBelow.comp
     hreleaseCost hbodyCost
   have hcombined' : ProfileFundedEmitStateRunSoundBelow ctx
-      ⟨modes.length, world, code⟩ limit (plannedEmit ∘ emit)
+      ⟨modes.length, world, papSafeFlag, code⟩ limit (plannedEmit ∘ emit)
       (GraphOwnsVEnvProtected
         (CompilerFunctionRel sourceCtx src ambient) recSelfRel input
         sourceArgs.reverse sourceRest rest [])
@@ -24071,7 +24109,7 @@ theorem lowerFnBody_parameterEntries_profilePreservesAt_within_below
     ProfileFundedEmitStateRunSoundBelow.of_profile_eq hcombined
       (IxIR0.DynamicCost.Profile.zero_add profile)
   have hrun' : runCode ctx limit
-      ⟨modes.length, world, code⟩ before args.reverse
+      ⟨modes.length, world, papSafeFlag, code⟩ before args.reverse
       ((plannedEmit ∘ emit) (.ret (av.toAtom output))) =
         .ok (after, value) := by
     rw [hcode]
@@ -24187,18 +24225,18 @@ theorem lowerDecl_defn_profilePreservesAt_within_below
   obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+      some (address, Decl.fn ⟨lamArity body, result, result == .shared && papSafe body, code⟩) =
           some (address, Decl.fn d) ∧
         bodyState = finalState := by
     simpa using hpureRun
-  have hd : d = ⟨lamArity body, result, code⟩ := by
+  have hd : d = ⟨lamArity body, result, result == .shared && papSafe body, code⟩ := by
     have hp := Option.some.inj hpure.1
     exact Decl.fn.inj (Prod.mk.inj hp).2.symm
   cases hpure.2
   subst d
   have hpreserves : FnProfilePreservesAt
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx address
-      ⟨(lamUses body).length, result, code⟩
+      ⟨(lamUses body).length, result, result == .shared && papSafe body, code⟩
       ((lamUses body).map worldOfUses) sourceFunction limit :=
     lowerFnBody_parameterEntries_profilePreservesAt_within_below
       (recSelfRel := fun _ _ => False)
@@ -24209,8 +24247,8 @@ theorem lowerDecl_defn_profilePreservesAt_within_below
         intro sourceArgs sourceResult profile hlength hentry
         exact sourceDefn_entryProfile_stripLams henv hsrc href hlength
           hentry)
-  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
-      ⟨lamArity body, result, code⟩ := by
+  have hfn : (⟨(lamUses body).length, result, result == .shared && papSafe body, code⟩ : FnDef) =
+      ⟨lamArity body, result, result == .shared && papSafe body, code⟩ := by
     rw [lamUses_length]
   rw [← hfn]
   intro before after args value sourceArgs sourceResult sourceRest rest
@@ -24267,17 +24305,17 @@ theorem lowerDecl_defn_profileRun_below
   obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      some (address, Decl.fn ⟨lamArity body, result, code⟩) =
+      some (address, Decl.fn ⟨lamArity body, result, result == .shared && papSafe body, code⟩) =
           some (address, Decl.fn d) ∧
         bodyState = finalState := by
     simpa using hpureRun
-  have hd : d = ⟨lamArity body, result, code⟩ := by
+  have hd : d = ⟨lamArity body, result, result == .shared && papSafe body, code⟩ := by
     have hp := Option.some.inj hpure.1
     exact Decl.fn.inj (Prod.mk.inj hp).2.symm
   cases hpure.2
   subst d
-  have hfn : (⟨(lamUses body).length, result, code⟩ : FnDef) =
-      ⟨lamArity body, result, code⟩ := by
+  have hfn : (⟨(lamUses body).length, result, result == .shared && papSafe body, code⟩ : FnDef) =
+      ⟨lamArity body, result, result == .shared && papSafe body, code⟩ := by
     rw [lamUses_length]
   rw [← hfn] at hcodeRun ⊢
   exact lowerFnBody_parameterEntries_profileRun_below
@@ -24582,7 +24620,7 @@ theorem ctorWrapper_retainedProfileFundedInvokeRun
     {args : List RVal} {before after : Store} {value : RVal}
     {rest : List Sim.Root} {profile : SourceProfile}
     (hdecl : ctx.decls wrapper = some (.fn
-      ⟨arity, .shared,
+      ⟨arity, .shared, true,
         .letOp (.alloc .shared (ctorIdOf source tag)
           (descendingVars arity).toArray) (.ret (.var 0))⟩))
     (harity : args.length = arity)
@@ -24598,7 +24636,7 @@ theorem ctorWrapper_retainedProfileFundedInvokeRun
     RetainedProfileFundedInvokeRun ctx limit wrapper args before after value
       reserve profile := by
   let wrapperDef : FnDef :=
-    ⟨arity, .shared,
+    ⟨arity, .shared, true,
       .letOp (.alloc .shared (ctorIdOf source tag)
         (descendingVars arity).toArray) (.ret (.var 0))⟩
   have hdecl' : ctx.decls wrapper = some (.fn wrapperDef) := by
@@ -24713,11 +24751,11 @@ theorem lowerFnBody_liftedEntries_profileRun_below
     (htarget : targetFuel ≤ limit)
     (hcodeRun : runCode ctx targetFuel
       ⟨((List.range entryCount).filter selected).length + modes.length,
-        .shared, code⟩ store (captureArgs ++ parameterArgs).reverse code =
+        .shared, true, code⟩ store (captureArgs ++ parameterArgs).reverse code =
       .ok (store', value)) :
     ProfileFundedCodeRun ctx targetFuel
       ⟨((List.range entryCount).filter selected).length + modes.length,
-        .shared, code⟩ store (captureArgs ++ parameterArgs).reverse code
+        .shared, true, code⟩ store (captureArgs ++ parameterArgs).reverse code
       store' value profile := by
   let captures := (List.range entryCount).filter selected
   let parameterRemaining : Nat → Nat := fun index => countUses index body
@@ -24778,13 +24816,13 @@ theorem lowerFnBody_liftedEntries_profileRun_below
   cases heq.2
   have hbodySound : LowerResultProfileSoundBelow
       (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) ctx
-      ⟨captures.length + modes.length, .shared, code⟩ limit plannedMiddle
+      ⟨captures.length + modes.length, .shared, true, code⟩ limit plannedMiddle
       output (parameterSources.reverse ++ sourceEnv)
       (parameterSources.reverse ++ sourceEnv) sourceResult .shared emit av
       bodyProfile :=
     lowerE_run_profile_sound_within_noRecSelf_below
       (recSelfRel := fun _ _ => False)
-      (cur := (⟨captures.length + modes.length, .shared, code⟩ : FnDef))
+      (cur := (⟨captures.length + modes.length, .shared, true, code⟩ : FnDef))
       henv hrepresented hcontracts hvalues hprofiles hsource hbodyRun
       hextends hmiddleNo
   have hbodySound' := hbodySound.monoProfile hbodyFunded
@@ -24838,14 +24876,14 @@ theorem lowerFnBody_liftedEntries_profileRun_below
     releasePlan_profileFundedValueStateRunSoundBelow hplan
       (funRel := CompilerFunctionRel sourceCtx src ambient)
       (recSelfRel := fun _ _ => False) (ctx := ctx)
-      (cur := (⟨captures.length + modes.length, .shared, code⟩ : FnDef))
+      (cur := (⟨captures.length + modes.length, .shared, true, code⟩ : FnDef))
       (limit := limit) (parameterSources.reverse ++ sourceEnv)
       sourceRest rest []
   have hbodyCost := hbodySound'.profileEmits sourceRest rest []
   have hcombined := ProfileFundedEmitStateRunSoundBelow.comp
     hreleaseCost hbodyCost
   have hcombined' : ProfileFundedEmitStateRunSoundBelow ctx
-      ⟨captures.length + modes.length, .shared, code⟩ limit
+      ⟨captures.length + modes.length, .shared, true, code⟩ limit
       (plannedEmit ∘ emit)
       (GraphOwnsVEnvProtected
         (CompilerFunctionRel sourceCtx src ambient) (fun _ _ => False) input
@@ -24913,7 +24951,7 @@ theorem invoke_lifted_retainedProfile_below
   have hselectedLength := hselectedValues.length
   rw [← hselectedLength] at hmember
   have hdecl : ctx.decls address = some (.fn
-      ⟨selectedSources.length + lamArity expr, .shared, code⟩) :=
+      ⟨selectedSources.length + lamArity expr, .shared, true, code⟩) :=
     hrepresented.decl hmember
   have hmodes := papSafe_lamUses_eq_replicate hsafe
   have hadmissible : ParameterDropsAdmissible (lamUses expr)
@@ -25017,7 +25055,7 @@ theorem invoke_lifted_retainedProfile_below
             (reserve := (selectedSources ++ suppliedSources).length)
             hreserve hlambdaLength hsource hnonempty
         cases hcodeEval : runCode ctx innerFuel
-            ⟨selectedSources.length + lamArity expr, .shared, code⟩ store
+            ⟨selectedSources.length + lamArity expr, .shared, true, code⟩ store
             (got ++ args).reverse code with
         | error error =>
           rw [hcodeEval] at hinvoke
@@ -25031,7 +25069,7 @@ theorem invoke_lifted_retainedProfile_below
           have hcodeEval' : runCode ctx innerFuel
               ⟨(liftCaptureIndices sourceEnv.length expr).length +
                   (lamUses expr).length,
-                .shared, code⟩ store
+                .shared, true, code⟩ store
               (selectedArgs ++ (suppliedArgs ++ args)).reverse code =
               .ok (store', value) := by
             rw [htotalSplit, ← hselectedLength, lamUses_length]
@@ -25056,7 +25094,7 @@ theorem invoke_lifted_retainedProfile_below
             hsourceEval (OwnershipAllowanceLE.refl _) horder hframe
             hownSplit (Nat.le_refl _) hcodeEval'
           have hbodyCost' : ProfileFundedCodeRun ctx innerFuel
-              ⟨selectedSources.length + lamArity expr, .shared, code⟩ store
+              ⟨selectedSources.length + lamArity expr, .shared, true, code⟩ store
               (got ++ args).reverse code store' value bodyProfile := by
             rw [hselectedLength, ← lamUses_length, ← htotalSplit]
             exact hbodyCost
@@ -25198,7 +25236,7 @@ theorem lowerRecursor_residual_profile_below
   obtain ⟨alts, rulesState, hrulesRun, hafterRules⟩ :=
     trackedBindRun_ok_inv hrun
   have hpure :
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩ : FnDef) = d ∧
         rulesState = finalState := by
     simpa using hafterRules
@@ -25217,31 +25255,31 @@ theorem lowerRecursor_residual_profile_below
   obtain ⟨ownedD, hownedDecl, _, _, hownedContract⟩ :=
     hcontracts.decls.recursor hsrc
   have hownedD : ownedD =
-      (⟨numArgs + 1, .shared,
+      (⟨numArgs + 1, .shared, true,
         .case (.var 0) natLit alts.toArray⟩ : FnDef) := by
     have hsame : some (Decl.fn ownedD) = some
-        (.fn ⟨numArgs + 1, .shared,
+        (.fn ⟨numArgs + 1, .shared, true,
           .case (.var 0) natLit alts.toArray⟩) :=
       hownedDecl.symm.trans hdecl
     exact Decl.fn.inj (Option.some.inj hsame)
   subst ownedD
   have hvalueContract : FnValueContract
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       (List.replicate (numArgs + 1) .shared)
       (.pap (.rec_ address (numArgs + 1)) []) := by
     apply hvalues.decls.fnContract hsrc (by rfl) hdecl href
     simp
   have hprofileContract : FnProfileContractBelow
       (CompilerFunctionRel sourceCtx src ambient) sourceCtx ctx address
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       (List.replicate (numArgs + 1) .shared)
       (.pap (.rec_ address (numArgs + 1)) []) limit := by
     apply hprofiles.decls.fnContract hsrc (by rfl) hdecl href
     simp
   have hself : CurrentSelfProfileContractBelow
       (CompilerFunctionRel sourceCtx src ambient) recSelfRel sourceCtx ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit := by
     refine ⟨rfl, by omega, hownedContract, ?_, ?_⟩
     · intro candidate hcandidate
@@ -25257,10 +25295,10 @@ theorem lowerRecursor_residual_profile_below
   have hfinalRepresented : ExtraRepresented ctx finalState :=
     hrepresented.of_extends hextends
   have hownershipSelf : CurrentSelfContractBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit := ⟨hself.result, hself.ownership.below limit⟩
   have hplan : RecursorRulesPlanBelow ctx
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts.toArray⟩
       limit src compilerFuel numArgs state rules.toList.zipIdx
       finalState alts :=
     recursorRulesPlanBelow_of_run (hcontracts.below limit).apply
@@ -25280,7 +25318,7 @@ theorem lowerRecursor_residual_profile_below
     · contradiction
     next hlength =>
       cases hcodeEval : runCode ctx branchFuel
-          ⟨numArgs + 1, .shared,
+          ⟨numArgs + 1, .shared, true,
             .case (.var 0) natLit alts.toArray⟩
           store (captures ++ args).reverse
           (.case (.var 0) natLit alts.toArray) with
@@ -25347,7 +25385,7 @@ theorem lowerRecursor_residual_profile_below
             | zero => simp [runCode] at hcodeEval
             | succ caseFuel => exact ⟨caseFuel, by omega⟩
           have htarget : runCode ctx (caseFuel + 1)
-              ⟨numArgs + 1, .shared,
+              ⟨numArgs + 1, .shared, true,
                 .case (.var 0) natLit alts.toArray⟩
               store (major :: runtimePre)
               (.case (.var 0) natLit alts.toArray) =
@@ -25374,12 +25412,12 @@ theorem lowerRecursor_residual_profile_below
               (hfieldWorld : ∀ field ∈ targetFields,
                 Sim.HasWorld store .shared field)
               (hbranchRun : runCode ctx caseFuel
-                ⟨numArgs + 1, .shared,
+                ⟨numArgs + 1, .shared, true,
                   .case (.var 0) natLit alts.toArray⟩
                 store (targetFields.reverse ++ major :: runtimePre) body =
                   .ok (store', value)) :
               ProfileFundedCodeRun ctx (caseFuel + 1)
-                ⟨numArgs + 1, .shared,
+                ⟨numArgs + 1, .shared, true,
                   .case (.var 0) natLit alts.toArray⟩
                 store (major :: runtimePre)
                 (.case (.var 0) natLit alts.toArray) store' value
@@ -25434,7 +25472,7 @@ theorem lowerRecursor_residual_profile_below
               simpa using hsuffix
             · simpa using htarget
           have hbodyCost : ProfileFundedCodeRun ctx (caseFuel + 1)
-              ⟨numArgs + 1, .shared,
+              ⟨numArgs + 1, .shared, true,
                 .case (.var 0) natLit alts.toArray⟩
               store (major :: runtimePre)
               (.case (.var 0) natLit alts.toArray) store' value
@@ -25645,7 +25683,7 @@ theorem lowerAllAction_residualFnProfilePreservesAt_within_below
   | @wrapper relatedFunction baseFunction storedSources memo hmember hsrc
       href hprefix hunder =>
     have hdecl : ctx.decls memo.wrapper = some (.fn
-        ⟨memo.arity, .shared,
+        ⟨memo.arity, .shared, true,
           .letOp (.alloc .shared (ctorIdOf memo.source memo.tag)
             (descendingVars memo.arity).toArray) (.ret (.var 0))⟩) := by
       simpa [ctorWrapperDecl] using hrepresented.wrapper hmember
@@ -25724,7 +25762,7 @@ theorem lowerAllAction_main_profileFundedCodeRun_sealed
       sourceValue profile)
     (htarget : runMain ctx mainCode targetFuel =
       .ok (targetStore, targetValue)) :
-    ProfileFundedCodeRun ctx targetFuel ⟨0, .shared, mainCode⟩
+    ProfileFundedCodeRun ctx targetFuel ⟨0, .shared, false, mainCode⟩
       ({} : Store) [] mainCode targetStore targetValue profile := by
   have hvalues := lowerAllAction_compilerValueContracts
     henv hlower htargetDecls hrepresented hcontracts hextern
@@ -25764,7 +25802,7 @@ theorem lowerAllAction_main_profileFundedCodeRun_sealed
     subst middle
     subst releaseEmit
     cases heq.2
-    let cur : FnDef := ⟨0, .shared, mainCode⟩
+    let cur : FnDef := ⟨0, .shared, false, mainCode⟩
     have hbodySound : LowerResultProfileSound
         (CompilerFunctionRel sourceCtx (IxIR0.Env.ofList decls) finalState)
         (fun _ _ => False) ctx cur input output [] [] sourceValue
@@ -25858,7 +25896,7 @@ the particular dynamic trace rather than to the finite target syntax. -/
 theorem CodeOwnershipRunCost.runCertificate
     {ctx : Ctx} {code : Code} {allowance : OwnershipAllowance}
     {profile : SourceProfile} {fuel : Nat} {store : Store} {value : RVal}
-    (hcost : CodeOwnershipRunCost ctx fuel ⟨0, .shared, code⟩
+    (hcost : CodeOwnershipRunCost ctx fuel ⟨0, .shared, false, code⟩
       ({} : Store) [] code store value allowance)
     (hfunded : OwnershipAllowanceLE allowance
       (sourceProfileOwnershipAllowance profile)) :
@@ -25877,7 +25915,7 @@ certificate, including when its allowance was assembled recursively. -/
 theorem ProfileFundedCodeRun.runCertificate
     {ctx : Ctx} {code : Code} {profile : SourceProfile} {fuel : Nat}
     {store : Store} {value : RVal}
-    (hcost : ProfileFundedCodeRun ctx fuel ⟨0, .shared, code⟩
+    (hcost : ProfileFundedCodeRun ctx fuel ⟨0, .shared, false, code⟩
       ({} : Store) [] code store value profile) :
     OwnershipAmortizedRunCertificate profile store := by
   obtain ⟨_allowance, hrunCost, hfunded⟩ := hcost
@@ -25919,7 +25957,7 @@ main execution directly into the public certificate. -/
 theorem ProfileFundedCodeCostSound.runCertificate
     {ctx : Ctx} {code : Code} {profile : SourceProfile} {fuel : Nat}
     {store : Store} {value : RVal}
-    (hsound : ProfileFundedCodeCostSound ctx ⟨0, .shared, code⟩ code
+    (hsound : ProfileFundedCodeCostSound ctx ⟨0, .shared, false, code⟩ code
       profile)
     (hrun : runMain ctx code fuel = .ok (store, value)) :
     OwnershipAmortizedRunCertificate profile store := by
@@ -25934,7 +25972,7 @@ public run certificate follows without another evaluator proof. -/
 theorem CodeOwnershipCostSound.runCertificate
     {ctx : Ctx} {code : Code} {allowance : OwnershipAllowance}
     {profile : SourceProfile} {fuel : Nat} {store : Store} {value : RVal}
-    (hsound : CodeOwnershipCostSound ctx ⟨0, .shared, code⟩ code allowance)
+    (hsound : CodeOwnershipCostSound ctx ⟨0, .shared, false, code⟩ code allowance)
     (hfunded : OwnershipAllowanceLE allowance
       (sourceProfileOwnershipAllowance profile))
     (hrun : runMain ctx code fuel = .ok (store, value)) :
@@ -25975,7 +26013,7 @@ theorem OwnershipAmortizedRunCertificate.withinBudget
 theorem CodeOwnershipCostSound.withinBudget
     {ctx : Ctx} {code : Code} {allowance : OwnershipAllowance}
     {profile : SourceProfile} {fuel : Nat} {store : Store} {value : RVal}
-    (hsound : CodeOwnershipCostSound ctx ⟨0, .shared, code⟩ code allowance)
+    (hsound : CodeOwnershipCostSound ctx ⟨0, .shared, false, code⟩ code allowance)
     (hfunded : OwnershipAllowanceLE allowance
       (sourceProfileOwnershipAllowance profile))
     (hrun : runMain ctx code fuel = .ok (store, value)) :

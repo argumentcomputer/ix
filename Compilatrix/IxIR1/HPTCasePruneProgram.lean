@@ -45,7 +45,7 @@ theorem exactEnvironment_rewriteCtx
       rw [← hctx]
       exact hsource
     refine ⟨rewriteCurrentAt declarations summaries address source, ?_,
-      rfl, rfl, ?_⟩
+      rfl, rfl, rfl, ?_⟩
     · simp [rewriteCtx, rewriteDeclEnv, hdeclaration, rewriteDeclarationAt]
     · intro fuel store environment hlength
       have henvironment : EnvironmentHolds declarations store
@@ -84,7 +84,7 @@ theorem runMain_rewriteProgram_eq
       runMain ctx (runRecursive declarations summaries input).code fuel := by
         simpa [runMain] using
           (runCode_rewriteCtx_eq hpost
-            (current := ⟨0, .shared,
+            (current := ⟨0, .shared, false,
               (runRecursive declarations summaries input).code⟩)
             (store := {}) (environment := [])
             (input := (runRecursive declarations summaries input).code)

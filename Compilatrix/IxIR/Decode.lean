@@ -299,6 +299,32 @@ theorem getSpecMap3 {getFirst : GetM α} {getSecond : GetM β}
   have htotal := GetSpec.bind (next := afterFirst) hfirst htail
   simpa [afterFirst, ByteArray.append_assoc] using htotal
 
+theorem getSpecMap4 {getFirst : GetM α} {getSecond : GetM β}
+    {getThird : GetM γ} {getFourth : GetM δ}
+    {firstBytes secondBytes thirdBytes fourthBytes : ByteArray}
+    {first : α} {second : β} {third : γ} {fourth : δ}
+    (hfirst : GetSpec getFirst firstBytes first)
+    (hsecond : GetSpec getSecond secondBytes second)
+    (hthird : GetSpec getThird thirdBytes third)
+    (hfourth : GetSpec getFourth fourthBytes fourth)
+    (map : α → β → γ → δ → ε) :
+    GetSpec (do
+      let decodedFirst ← getFirst
+      let decodedSecond ← getSecond
+      let decodedThird ← getThird
+      let decodedFourth ← getFourth
+      return map decodedFirst decodedSecond decodedThird decodedFourth)
+      (firstBytes ++ secondBytes ++ thirdBytes ++ fourthBytes)
+      (map first second third fourth) := by
+  let afterFirst : α → GetM ε := fun decodedFirst => do
+    let decodedSecond ← getSecond
+    let decodedThird ← getThird
+    let decodedFourth ← getFourth
+    return map decodedFirst decodedSecond decodedThird decodedFourth
+  have htail := getSpecMap3 hsecond hthird hfourth (map first)
+  have htotal := GetSpec.bind (next := afterFirst) hfirst htail
+  simpa [afterFirst, ByteArray.append_assoc] using htotal
+
 /-- Concatenated element payload beneath a counted sequence. -/
 def listBytes (encode : α → ByteArray) : List α → ByteArray
   | [] => ByteArray.empty

@@ -7,7 +7,8 @@ import Compilatrix.IxIR1.Basic
 
 Every first-order operation, branch, and declaration has an explicit byte
 spelling. The top-level declaration preimage is domain-separated as
-`compilatrix/ixir1/decl/1`, followed by NUL and the declaration payload.
+`compilatrix/ixir1/decl/2`, followed by NUL and the declaration payload. Version
+2 commits the owner-sensitive dynamic-PAP-entry bit on function declarations.
 `callSelf` prevents an ordinary recursive function from placing its own digest
 inside its preimage; other call and PAP edges retain exact 32-byte addresses.
 
@@ -98,7 +99,8 @@ namespace FnDef
 
 /-- Canonical saturated-function payload. -/
 def bytes (fn : FnDef) : ByteArray :=
-  Encoding.nat fn.arity ++ Encoding.tag fn.result.toBits ++ fn.body.bytes
+  Encoding.nat fn.arity ++ Encoding.tag fn.result.toBits ++
+    Encoding.bool fn.papSafe ++ fn.body.bytes
 
 end FnDef
 
@@ -106,7 +108,7 @@ namespace Decl
 
 /-- The versioned domain prefix for IxIR₁ declaration identities. -/
 def addressDomain : ByteArray :=
-  Encoding.domain "compilatrix/ixir1/decl/1" ++ Encoding.tag 0
+  Encoding.domain "compilatrix/ixir1/decl/2" ++ Encoding.tag 0
 
 /-- Canonical declaration payload, without the address domain. -/
 def payloadBytes : Decl → ByteArray
@@ -150,8 +152,8 @@ compiled test executable because the current hash implementation is FFI. -/
 #guard Atom.bytes (.lit (.nat 128)) == ByteArray.mk #[1, 0, 128, 1]
 #guard Code.bytes (.case .erased false #[.mk 0 0 (.ret .erased)]) ==
   ByteArray.mk #[2, 2, 0, 1, 0, 0, 0, 2]
-#guard Decl.payloadBytes (.fn ⟨1, .shared, .ret (.var 0)⟩) ==
-  ByteArray.mk #[0, 1, 1, 0, 0, 0]
+#guard Decl.payloadBytes (.fn ⟨1, .shared, true, .ret (.var 0)⟩) ==
+  ByteArray.mk #[0, 1, 1, 1, 0, 0, 0]
 #guard Decl.payloadBytes (.extern 128) == ByteArray.mk #[1, 128, 1]
 
 end Compilatrix.IxIR1

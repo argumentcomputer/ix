@@ -2268,7 +2268,21 @@ private theorem applyGo_historyIsoStep {fuel : Nat}
                               rightCaptured.size + rightArguments.length =
                                 arity := by
                             simpa [rightTotal] using hrightExact
-                          simp [hunderSize, hexactSize] at hrun
+                          obtain ⟨definition, hdecl, hpapsafe⟩ :
+                              ∃ definition,
+                                ctx.decls function = some definition ∧
+                                  declPapSafe definition = true := by
+                            cases hdecl : ctx.decls function with
+                            | none =>
+                                simp [hunderSize, hexactSize, hdecl] at hrun
+                            | some definition =>
+                                cases hpapsafe : declPapSafe definition with
+                                | false =>
+                                    simp [hunderSize, hexactSize, hdecl,
+                                      hpapsafe] at hrun
+                                | true => exact ⟨definition, rfl, hpapsafe⟩
+                          simp [hunderSize, hexactSize, hdecl,
+                            hpapsafe] at hrun
                           have hrunInvoke : IxIR1.invoke ctx fuel function
                               leftTotal readyLeft = .ok leftOut := by
                             simpa [leftTotal] using hrun
@@ -2284,7 +2298,7 @@ private theorem applyGo_historyIsoStep {fuel : Nat}
                           rw [hrightDrop]
                           simp only [bind, Except.bind]
                           simpa [rightTotal, hrightUnderSize,
-                            hrightExactSize] using hrightInvoke
+                            hrightExactSize, hdecl, hpapsafe] using hrightInvoke
                         · have hrightExact : rightTotal.length ≠ arity := by
                             intro heq
                             exact hexact (hlength.trans heq)
@@ -2320,7 +2334,21 @@ private theorem applyGo_historyIsoStep {fuel : Nat}
                               rightCaptured.size + rightArguments.length ≠
                                 arity := by
                             simpa [rightTotal] using hrightExact
-                          simp [hunderSize, hexactSize] at hrun
+                          obtain ⟨definition, hdecl, hpapsafe⟩ :
+                              ∃ definition,
+                                ctx.decls function = some definition ∧
+                                  declPapSafe definition = true := by
+                            cases hdecl : ctx.decls function with
+                            | none =>
+                                simp [hunderSize, hexactSize, hdecl] at hrun
+                            | some definition =>
+                                cases hpapsafe : declPapSafe definition with
+                                | false =>
+                                    simp [hunderSize, hexactSize, hdecl,
+                                      hpapsafe] at hrun
+                                | true => exact ⟨definition, rfl, hpapsafe⟩
+                          simp [hunderSize, hexactSize, hdecl,
+                            hpapsafe] at hrun
                           cases hinvoke : IxIR1.invoke ctx fuel function
                               (leftTotal.take arity) readyLeft with
                           | error error =>
@@ -2360,7 +2388,8 @@ private theorem applyGo_historyIsoStep {fuel : Nat}
                               simp only [bind, Except.bind]
                               rw [hrightDrop]
                               simp only [bind, Except.bind]
-                              simp [hrightUnderSize, hrightExactSize]
+                              simp [hrightUnderSize, hrightExactSize, hdecl,
+                                hpapsafe]
                               rw [hrightInvoke]
                               simp only [bind, Except.bind]
                               exact hrightApply

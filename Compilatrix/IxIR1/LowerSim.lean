@@ -11690,7 +11690,7 @@ def CompilerLiftCodeRel (src : IxIR0.Env) (state : LowSt) : LiftCodeRel :=
       ExtraExtends generated state ∧
       (address, .fn
         ⟨(liftCaptureIndices entryCount expr).length + lamArity expr,
-          .shared, code⟩) ∈ state.extra
+          .shared, true, code⟩) ∈ state.extra
 
 /-- The lowering-specific function oracle for generated lifted paps in one
 final compiler state. -/
@@ -12707,7 +12707,7 @@ theorem lowerLam_run_core
           extra := (fnAddr, .fn
             ⟨(liftCaptureIndices input.entries.length e).length +
                 lamArity e,
-              .shared, code⟩) :: bodyState.extra }
+              .shared, true, code⟩) :: bodyState.extra }
         captureOutput.bump
         (captureEmit ∘ emitOp (.papp fnAddr
           (captureValues.map (·.toAtom captureOutput)).toArray))
@@ -12742,7 +12742,7 @@ theorem lowerLam_run_core
       change
         (pushExtra
             (fnAddr, .fn
-              ⟨caps.length + lamArity e, .shared, code⟩) >>= fun _ =>
+              ⟨caps.length + lamArity e, .shared, true, code⟩) >>= fun _ =>
           pure (captureOutput.bump,
             captureEmit ∘ emitOp (.papp fnAddr
               (captureValues.map (·.toAtom captureOutput)).toArray),
@@ -12809,14 +12809,14 @@ theorem lowerLam_run_value_core
       caps = liftCaptureIndices input.entries.length e →
       ArgsResult selected captureOutput captureEmit captureValues →
       ctx.decls fnAddr = some (.fn
-        ⟨caps.length + lamArity e, .shared, code⟩) →
+        ⟨caps.length + lamArity e, .shared, true, code⟩) →
       funRel sourceValue fnAddr
         (caps.length + lamArity e) selected →
       captureValues.length < caps.length + lamArity e →
       Result
         { bodyState with
           extra := (fnAddr, .fn
-            ⟨caps.length + lamArity e, .shared, code⟩) ::
+            ⟨caps.length + lamArity e, .shared, true, code⟩) ::
               bodyState.extra }
         captureOutput.bump
         (captureEmit ∘ emitOp (.papp fnAddr
@@ -12849,7 +12849,7 @@ theorem lowerLam_run_value_core
   let ambient : LowSt :=
     { bodyState with
       extra := (fnAddr, .fn
-        ⟨caps.length + lamArity e, .shared, code⟩) :: bodyState.extra }
+        ⟨caps.length + lamArity e, .shared, true, code⟩) :: bodyState.extra }
   change (lowerCaptures e input caps).run state =
     .ok (captureOutput, captureEmit, captureValues) _ at hcaptureRun
   change (∀ value address arity captures,
@@ -12857,14 +12857,14 @@ theorem lowerLam_run_value_core
     funRel value address arity captures) at hinclude
   change ExtraRepresented ctx ambient at hrepresented
   have hdecl : ctx.decls fnAddr = some (.fn
-      ⟨caps.length + lamArity e, .shared, code⟩) := by
+      ⟨caps.length + lamArity e, .shared, true, code⟩) := by
     apply hrepresented.decl
     simp [ambient]
   have hliftCode : CompilerLiftCodeRel src ambient fnAddr
       input.entries.length e := by
     refine ⟨bodyFuel, addressState, bodyState, code, hp, hbodyRun, ?_, ?_⟩
     · refine ⟨[(fnAddr, .fn
-          ⟨caps.length + lamArity e, .shared, code⟩)], [], ?_, ?_, ?_⟩
+          ⟨caps.length + lamArity e, .shared, true, code⟩)], [], ?_, ?_, ?_⟩
       · simp [ambient]
       · simp [ambient]
       · simp
@@ -12921,7 +12921,7 @@ theorem lowerLam_run_sound_below
   change (lowerCaptures e input caps).run state =
     .ok (captureOutput, captureEmit, captureValues) _ at hcaptureRun
   have hdecl : ctx.decls fnAddr = some (.fn
-      ⟨caps.length + lamArity e, .shared, code⟩) := by
+      ⟨caps.length + lamArity e, .shared, true, code⟩) := by
     apply hrepresented.decl
     simp [caps]
   have hlength := lowerCaptures_success_length e hcaptureRun
@@ -13608,7 +13608,7 @@ theorem lowerDecl_defn_verified {ctx : Ctx}
     (hbodyRun : (lowerE src fuel middle result (stripLams body)).run state =
       .ok (output, emit, av) finalState)
     (hd : d =
-      ⟨lamArity body, result,
+      ⟨lamArity body, result, result == .shared && papSafe body,
         (releaseEmit ∘ emit) (.ret (av.toAtom output))⟩)
     (hbody : LowerResultSound ctx d middle output result emit av)
     (hreleased : EntriesReleased output.entries) :
@@ -13621,7 +13621,7 @@ theorem lowerDecl_defn_verified {ctx : Ctx}
     ⟨parameterEntries 0 (lamUses body) remaining, lamArity body⟩
   let drops := parameterDrops 0 (lamUses body) remaining
   have hfn := lowerFnBody_verified (ctx := ctx)
-    (cur := ⟨lamArity body, result,
+    (cur := ⟨lamArity body, result, result == .shared && papSafe body,
       (releaseEmit ∘ emit) (.ret (av.toAtom output))⟩)
     src fuel input middle output drops result (stripLams body)
     releaseEmit emit av state finalState (by simpa [input, drops, remaining]
@@ -13669,7 +13669,7 @@ theorem lowerDecl_defn_generated_verified {ctx : Ctx}
         (lowerE src fuel middle result (stripLams body)).run state =
           .ok (output, emit, av) finalState ∧
         LowerResultSound ctx
-          ⟨lamArity body, result,
+          ⟨lamArity body, result, result == .shared && papSafe body,
             (releaseEmit ∘ emit) (.ret (av.toAtom output))⟩
           middle output result emit av ∧
         EntriesReleased output.entries) :
@@ -13690,7 +13690,7 @@ theorem lowerDecl_defn_generated_verified {ctx : Ctx}
     hbody middle releaseEmit
       (by simpa [input, drops, remaining] using hplan.run state)
   let d : FnDef :=
-    ⟨lamArity body, result,
+    ⟨lamArity body, result, result == .shared && papSafe body,
       (releaseEmit ∘ emit) (.ret (av.toAtom output))⟩
   refine ⟨finalState, d, ?_⟩
   have hdecl := lowerDecl_defn_verified (ctx := ctx)
@@ -15118,13 +15118,13 @@ alternative preserve the public all-shared recursor boundary. -/
 theorem recursorFnOwnershipPreservesAt (ctx : Ctx) (numArgs : Nat)
     (natLit : Bool) (alts : Array Alt) (fuel : Nat) :
     let d : FnDef :=
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts⟩
     RecursorAltContractsBelow ctx d numArgs alts fuel →
       FnOwnershipPreservesAt ctx d
         (List.replicate (numArgs + 1) .shared) fuel := by
   dsimp only
   let d : FnDef :=
-    ⟨numArgs + 1, .shared, .case (.var 0) natLit alts⟩
+    ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts⟩
   intro hcontracts
   intro store store' args value rest hargsLength hown hrun
   have hargsArity : args.length = numArgs + 1 := by
@@ -15274,13 +15274,13 @@ self contracts when constructed by the mutual compiler proof. -/
 theorem recursorFnOwnershipContract (ctx : Ctx) (numArgs : Nat)
     (natLit : Bool) (alts : Array Alt) :
     let d : FnDef :=
-      ⟨numArgs + 1, .shared, .case (.var 0) natLit alts⟩
+      ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts⟩
     RecursorAltContracts ctx d numArgs alts →
       FnOwnershipContract ctx d
         (List.replicate (numArgs + 1) .shared) := by
   dsimp only
   let d : FnDef :=
-    ⟨numArgs + 1, .shared, .case (.var 0) natLit alts⟩
+    ⟨numArgs + 1, .shared, true, .case (.var 0) natLit alts⟩
   intro hcontracts
   apply fnOwnershipContract_of_below_step (by simp)
   intro limit _
@@ -15295,7 +15295,7 @@ private theorem lowerRecursor_generated_verified_core
     (src : IxIR0.Env) (fuel numArgs : Nat) (natLit : Bool)
     (rules : Array IxIR0.RecRule) (state finalState : LowSt)
     (alts : List Alt) (d : FnDef)
-    (hd : d = ⟨numArgs + 1, .shared,
+    (hd : d = ⟨numArgs + 1, .shared, true,
       .case (.var 0) natLit alts.toArray⟩)
     {Plan Result : FnDef → Prop}
     (hplan : Plan d)
@@ -15303,9 +15303,9 @@ private theorem lowerRecursor_generated_verified_core
       (rules.toList.zipIdx.mapM
         (lowerRecursorRule src fuel numArgs)).run state =
           .ok alts finalState)
-    (hresult : Plan ⟨numArgs + 1, .shared,
+    (hresult : Plan ⟨numArgs + 1, .shared, true,
       .case (.var 0) natLit alts.toArray⟩ →
-      Result ⟨numArgs + 1, .shared,
+      Result ⟨numArgs + 1, .shared, true,
         .case (.var 0) natLit alts.toArray⟩) :
     (lowerRecursor src fuel numArgs natLit rules).run state =
         .ok d finalState ∧
@@ -15324,7 +15324,7 @@ theorem lowerRecursor_generated_verified {ctx : Ctx}
     (src : IxIR0.Env) (fuel numArgs : Nat) (natLit : Bool)
     (rules : Array IxIR0.RecRule) (state finalState : LowSt)
     (alts : List Alt) (d : FnDef)
-    (hd : d = ⟨numArgs + 1, .shared,
+    (hd : d = ⟨numArgs + 1, .shared, true,
       .case (.var 0) natLit alts.toArray⟩)
     (hplan : RecursorRulesPlan ctx d src fuel numArgs state
       rules.toList.zipIdx finalState alts) :
@@ -15350,7 +15350,7 @@ theorem lowerRecursor_generated_verified_below {ctx : Ctx}
     (limit : Nat) (src : IxIR0.Env) (fuel numArgs : Nat) (natLit : Bool)
     (rules : Array IxIR0.RecRule) (state finalState : LowSt)
     (alts : List Alt) (d : FnDef)
-    (hd : d = ⟨numArgs + 1, .shared,
+    (hd : d = ⟨numArgs + 1, .shared, true,
       .case (.var 0) natLit alts.toArray⟩)
     (hplan : RecursorRulesPlanBelow ctx d limit src fuel numArgs state
       rules.toList.zipIdx finalState alts) :
@@ -15400,10 +15400,11 @@ theorem lowerDecl_output_fn_of_callable
     obtain ⟨code, bodyState, hbodyRun, hpureRun⟩ :=
       estateBindRun_ok_inv hrun
     have hpure : some (address, Decl.fn
-        ⟨lamArity body, result, code⟩) = output ∧
+        ⟨lamArity body, result, result == .shared && papSafe body, code⟩) = output ∧
         bodyState = final := by
       simpa using hpureRun
-    exact ⟨⟨lamArity body, result, code⟩, hpure.1.symm⟩
+    exact ⟨⟨lamArity body, result,
+      result == .shared && papSafe body, code⟩, hpure.1.symm⟩
   | ctor tag arity => simp [sourceCallableSignature] at hsignature
   | recursor numArgs natLit rules =>
     simp only [lowerDecl] at hrun
@@ -15700,6 +15701,60 @@ def SourceAllShared (src : IxIR0.Env) : Prop :=
     result = .shared ∧
       worlds = List.replicate worlds.length .shared
 
+/-- A source-backed callable needs the homogeneous shared signature only when
+its lowered declaration permits dynamic PAP entry. Direct calls to declarations
+with unique or affine boundaries remain legal because they bypass `applyGo`.
+Keeping this premise owner-sensitive is what lets mixed-mode programs close the
+same whole-context compiler contracts as all-shared programs. -/
+def SourcePapSafe (src : IxIR0.Env) (ctx : Ctx) : Prop :=
+  ∀ {address source worlds result d},
+    src address = some source →
+    sourceCallableSignature source = some (worlds, result) →
+    ctx.decls address = some (.fn d) →
+    d.papSafe = true →
+    result = .shared ∧
+      worlds = List.replicate worlds.length .shared
+
+/-- The former global all-shared premise is a sufficient, but no longer
+necessary, way to establish owner-sensitive PAP safety. -/
+theorem SourceAllShared.papSafe {src : IxIR0.Env} {ctx : Ctx}
+    (hshared : SourceAllShared src) : SourcePapSafe src ctx := by
+  intro address source worlds result d hsrc hsignature _ _
+  exact hshared hsrc hsignature
+
+/-- `SourcePapSafe` is genuinely weaker than the former global all-shared
+premise: a unique-boundary declaration remains available to direct calls when
+its target declaration rejects shared-PAP entry. -/
+theorem sourcePapSafe_not_sourceAllShared :
+    ∃ src ctx, SourcePapSafe src ctx ∧ ¬ SourceAllShared src := by
+  let address : Ixon.Address := Ixon.Address.replicate 0xA5
+  let source : IxIR0.Decl :=
+    .defn .unique (.lam .affine (.var 0))
+  let target : FnDef :=
+    ⟨1, .unique, false, .ret (.var 0)⟩
+  let src : IxIR0.Env := fun candidate =>
+    if candidate = address then some source else none
+  let ctx : Ctx :=
+    { decls := fun candidate =>
+        if candidate = address then some (.fn target) else none }
+  refine ⟨src, ctx, ?_, ?_⟩
+  · intro candidate found worlds result d hsrc hsignature hdecl hsafe
+    have hcandidate : candidate = address := by
+      by_cases heq : candidate = address
+      · exact heq
+      · simp [src, heq] at hsrc
+    subst candidate
+    have htarget : target = d := by
+      simpa [ctx] using hdecl
+    subst d
+    simp [target] at hsafe
+  · intro hshared
+    have h := hshared (address := address) (source := source)
+      (worlds := [.unique]) (result := .unique)
+      (by simp [src]) (by simp [source, sourceCallableSignature, lamUses,
+        worldOfUses])
+    cases h.1
+
 /-- Every target function is either the lowering of the same-address source
 callable or an exact generated-state member. -/
 def FnDeclCovered (src : IxIR0.Env) (ctx : Ctx) (state : LowSt) : Prop :=
@@ -15709,17 +15764,17 @@ def FnDeclCovered (src : IxIR0.Env) (ctx : Ctx) (state : LowSt) : Prop :=
       sourceCallableSignature source = some (worlds, result)) ∨
     (address, .fn d) ∈ state.extra
 
-/-- Source and generated contracts cover the generic all-shared declaration
-premise used by the evaluator's application theorem. -/
-theorem sharedDeclContractsBelow_of_source_extra
+/-- Source and generated contracts cover exactly the declarations admitted by
+the evaluator's dynamic PAP-entry check. -/
+theorem papSafeDeclContractsBelow_of_source_extra
     {src : IxIR0.Env} {ctx : Ctx} {state : LowSt} {limit : Nat}
     (hsource : SourceDeclContractsBelow src ctx limit)
     (hextra : ExtraFnContractsBelow ctx state limit)
-    (hshared : SourceAllShared src)
+    (hpapsafe : SourcePapSafe src ctx)
     (hcovered : FnDeclCovered src ctx state) :
-    SharedDeclContractsBelow ctx limit := by
+    PapSafeDeclContractsBelow ctx limit := by
   refine ⟨?_⟩
-  intro address d hdecl
+  intro address d hdecl hsafe
   cases hcovered hdecl with
   | inl hsourceMember =>
     obtain ⟨source, worlds, result, hsrc, hsignature⟩ := hsourceMember
@@ -15730,7 +15785,8 @@ theorem sharedDeclContractsBelow_of_source_extra
         htargetDecl.symm.trans hdecl
       exact Decl.fn.inj (Option.some.inj heq)
     subst target
-    obtain ⟨hsourceResult, hworlds⟩ := hshared hsrc hsignature
+    obtain ⟨hsourceResult, hworlds⟩ :=
+      hpapsafe hsrc hsignature hdecl hsafe
     have hresultShared : d.result = .shared :=
       hresult.trans hsourceResult
     have hworlds' : worlds = List.replicate d.arity .shared := by
@@ -15750,7 +15806,7 @@ three strictly smaller environments, so the cycle remains contractive. -/
 theorem compilerContracts_of_source_extra_below_step
     {src : IxIR0.Env} {ctx : Ctx} {state : LowSt}
     (hlayout : SourceDeclLayout src ctx)
-    (hshared : SourceAllShared src)
+    (hpapsafe : SourcePapSafe src ctx)
     (hextraResults : ExtraFnResultsShared state)
     (hcovered : FnDeclCovered src ctx state)
     (hstep : ∀ limit,
@@ -15775,10 +15831,10 @@ theorem compilerContracts_of_source_extra_below_step
       let happlyBelow : ApplyOwnershipContractBelow ctx fuel :=
         ⟨fun hprior => (ih _ hprior).2.2⟩
       have hfunctions := hstep fuel hsourceBelow hextraBelow happlyBelow
-      have hdecls := sharedDeclContractsBelow_of_source_extra
-        hsourceBelow hextraBelow hshared hcovered
+      have hdecls := papSafeDeclContractsBelow_of_source_extra
+        hsourceBelow hextraBelow hpapsafe hcovered
       exact ⟨hfunctions.1, hfunctions.2,
-        applyOwnershipPreservesAt_of_sharedDeclsBelow hdecls happlyBelow⟩
+        applyOwnershipPreservesAt_of_papSafeDeclsBelow hdecls happlyBelow⟩
   have hsourceContracts : SourceDeclContracts src ctx :=
     sourceDeclContracts_of_below_step hlayout fun limit _ => (hall limit).1
   have hextraContracts : ExtraFnContracts ctx state := by
@@ -25042,7 +25098,8 @@ theorem lowerRecursor_extraMonotone (src : IxIR0.Env) (fuel numArgs : Nat)
       rules.toList.zipIdx)
   intro alts
   exact ExtraMonotone.pure
-    (⟨numArgs + 1, .shared, .case (.var 0) natLit alts.toArray⟩ : FnDef)
+    (⟨numArgs + 1, .shared, true,
+      .case (.var 0) natLit alts.toArray⟩ : FnDef)
 
 /-- Every declaration-lowering branch preserves generated state. -/
 theorem lowerDecl_extraMonotone (src : IxIR0.Env) (fuel : Nat) :
@@ -25053,7 +25110,8 @@ theorem lowerDecl_extraMonotone (src : IxIR0.Env) (fuel : Nat) :
         ((lowerExtraMonotone src fuel).fnBody _ _ result _)
       intro code
       exact ExtraMonotone.pure
-        (some (address, Decl.fn ⟨lamArity body, result, code⟩))
+        (some (address, Decl.fn ⟨lamArity body, result,
+          result == .shared && papSafe body, code⟩))
   | (_, .ctor tag arity) => by
       simp only [lowerDecl]
       exact ExtraMonotone.pure
@@ -32186,11 +32244,11 @@ theorem lowerDecl_all_dead_mixed_generated_verified {ctx : Ctx}
     refine ⟨middle, (_root_.id : Emit), .constA (.lit literal), state,
       ?_, ?_, ?_⟩
     · exact (lowerE_lit_verified (ctx := ctx)
-        (cur := ⟨3, .shared,
+        (cur := ⟨3, .shared, false,
           (releaseEmit ∘ (_root_.id : Emit)) (.ret (.lit literal))⟩)
         src fuel middle .shared literal state).1
     · exact (lowerE_lit_verified (ctx := ctx)
-        (cur := ⟨3, .shared,
+        (cur := ⟨3, .shared, false,
           (releaseEmit ∘ (_root_.id : Emit)) (.ret (.lit literal))⟩)
         src fuel middle .shared literal state).2
     · exact hreleased
@@ -32202,7 +32260,7 @@ theorem lowerFnBody_single_var_verified {ctx : Ctx}
     (src : IxIR0.Env) (fuel : Nat) (uses : Uses) (state : LowSt) :
     let input : VEnv := ⟨[.slot 0 1 uses true], 1⟩
     let d : FnDef :=
-      ⟨1, worldOfUses uses, .ret (.var 0)⟩
+      ⟨1, worldOfUses uses, false, .ret (.var 0)⟩
     (lowerFnBody src (Nat.succ (Nat.succ fuel)) input []
       (worldOfUses uses) (.var 0)).run state =
         .ok d.body state ∧
@@ -32215,7 +32273,7 @@ theorem lowerFnBody_single_var_verified {ctx : Ctx}
       VEnv.rel, AVal.toAtom]
   · let input : VEnv := ⟨[.slot 0 1 uses true], 1⟩
     let output := input.setEntry 0 (.slot 0 0 uses false)
-    let d : FnDef := ⟨1, worldOfUses uses, .ret (.var 0)⟩
+    let d : FnDef := ⟨1, worldOfUses uses, false, .ret (.var 0)⟩
     have hsound : LowerResultSound ctx d input output
         (worldOfUses uses) (_root_.id : Emit) (.slotA 0) := by
       apply lower_var_move_sound
@@ -32233,7 +32291,7 @@ theorem lowerFnBody_dead_many_verified {ctx : Ctx}
     let input : VEnv :=
       ⟨[.slot 1 1 .many true, .slot 0 0 .many true], 2⟩
     let d : FnDef :=
-      ⟨2, .shared, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
+      ⟨2, .shared, false, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
     (lowerFnBody src (Nat.succ (Nat.succ fuel)) input
       [⟨1, 0, .many⟩] .shared (.var 0)).run state =
         .ok d.body state ∧
@@ -32248,7 +32306,7 @@ theorem lowerFnBody_dead_many_verified {ctx : Ctx}
   let releaseEmit : Emit :=
     emitOp (.drop (.var (input.rel 0))) ∘ (_root_.id : Emit)
   let d : FnDef :=
-    ⟨2, .shared, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
+    ⟨2, .shared, false, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
   have hplan : ReleasePlan input [⟨1, 0, .many⟩] middle releaseEmit := by
     apply ReleasePlan.many
     · rfl
@@ -32279,7 +32337,7 @@ theorem lowerDecl_dead_many_verified {ctx : Ctx}
     let sourceBody : IxIR0.Expr :=
       .lam .many (.lam .many (.var 0))
     let d : FnDef :=
-      ⟨2, .shared, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
+      ⟨2, .shared, true, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
     (lowerDecl src (Nat.succ (Nat.succ fuel))
       (address, .defn .shared sourceBody)).run state =
         .ok (some (address, .fn d)) state ∧
@@ -32294,7 +32352,7 @@ theorem lowerDecl_dead_many_verified {ctx : Ctx}
   let releaseEmit : Emit :=
     emitOp (.drop (.var (input.rel 0))) ∘ (_root_.id : Emit)
   let d : FnDef :=
-    ⟨2, .shared, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
+    ⟨2, .shared, true, .letOp (.drop (.var 1)) (.ret (.var 1))⟩
   have hplan : ReleasePlan input [⟨1, 0, .many⟩] middle releaseEmit := by
     apply ReleasePlan.many
     · rfl
@@ -32311,7 +32369,7 @@ theorem lowerDecl_dead_many_verified {ctx : Ctx}
     (by simpa [sourceBody, output, stripLams, worldOfUses] using hvar.1)
     (by simp [d, sourceBody, releaseEmit, input, output, middle,
       remaining, parameterEntries, VEnv.rel, VEnv.setEntry, VEnv.bump,
-      lamArity, AVal.toAtom, emitOp, Function.comp_def])
+      lamArity, papSafe, lamUses, AVal.toAtom, emitOp, Function.comp_def])
     hvar.2 hreleased
   simpa [sourceBody, d, lamUses, worldOfUses] using hdecl
 
@@ -32527,7 +32585,7 @@ theorem lowerRecursor_nullary_lit_verified {ctx : Ctx}
     (state : LowSt) :
     let alt : Alt :=
       .mk 0 0 (.letOp (.drop (.var 0)) (.ret (.lit literal)))
-    let d : FnDef := ⟨1, .shared, .case (.var 0) false #[alt]⟩
+    let d : FnDef := ⟨1, .shared, true, .case (.var 0) false #[alt]⟩
     (lowerRecursor src (Nat.succ fuel) 0 false
       #[⟨0, .lit literal⟩]).run state = .ok d state ∧
       AltOwnershipContract ctx d alt .shared
@@ -32550,7 +32608,7 @@ theorem lowerRecursor_one_field_dead_param_verified {ctx : Ctx}
         (.letOp (.dup (.var 0))
           (.letOp (.drop (.var 2))
             (.letOp (.drop (.var 4)) (.ret (.var 2)))))
-    let d : FnDef := ⟨2, .shared, .case (.var 0) false #[alt]⟩
+    let d : FnDef := ⟨2, .shared, true, .case (.var 0) false #[alt]⟩
     (lowerRecursor src (Nat.succ fuel) 1 false
       #[⟨1, .var 0⟩]).run state = .ok d state ∧
       AltOwnershipContract ctx d alt .shared
@@ -32576,7 +32634,7 @@ theorem lowerRecursor_three_params_release_order_verified
         (.letOp (.drop (.var 0))
           (.letOp (.drop (.var 2))
             (.letOp (.drop (.var 5)) (.ret (.var 5)))))
-    let d : FnDef := ⟨4, .shared, .case (.var 0) false #[alt]⟩
+    let d : FnDef := ⟨4, .shared, true, .case (.var 0) false #[alt]⟩
     (lowerRecursor src (Nat.succ fuel) 3 false
       #[⟨0, .var 1⟩]).run state = .ok d state := by
   dsimp only

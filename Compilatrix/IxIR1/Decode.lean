@@ -78,7 +78,8 @@ def getCode : GetM Code := do
   getCodeFuel (state.bytes.size + 1)
 
 def getFnDef : GetM FnDef := do
-  return ⟨← Decode.getNat, ← IxIR0.getOwned, ← getCode⟩
+  return ⟨← Decode.getNat, ← IxIR0.getOwned, ← Decode.getBool,
+    ← getCode⟩
 
 def getDeclTag : UInt8 → GetM Decl
   | 0 => do return .fn (← getFnDef)
@@ -383,8 +384,9 @@ theorem getCode_spec (code : Code) :
 
 theorem getFnDef_spec (definition : FnDef) :
     GetSpec getFnDef definition.bytes definition := by
-  have hspec := Decode.getSpecMap3 (Decode.getNat_spec definition.arity)
-    (IxIR0.getOwned_spec definition.result) (getCode_spec definition.body)
+  have hspec := Decode.getSpecMap4 (Decode.getNat_spec definition.arity)
+    (IxIR0.getOwned_spec definition.result)
+    (Decode.getBool_spec definition.papSafe) (getCode_spec definition.body)
     FnDef.mk
   simpa [getFnDef, FnDef.bytes] using hspec
 

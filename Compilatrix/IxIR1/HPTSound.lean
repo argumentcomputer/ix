@@ -2560,6 +2560,16 @@ private theorem soundAt {declarations : DeclEnv} {summaries : SummaryEnv}
                                                       simp only [hunder,
                                                         if_false]
                                                         at hconcrete
+                                                      have hpapsafe :
+                                                          declPapSafe declaration = true := by
+                                                        cases hsafety :
+                                                            declPapSafe declaration with
+                                                        | false =>
+                                                            simp [hctx, hdecl, hsafety]
+                                                              at hconcrete
+                                                        | true => rfl
+                                                      simp only [hctx, hdecl, hpapsafe,
+                                                        if_true] at hconcrete
                                                       by_cases hexactEq :
                                                           (((captured.toList ++
                                                             arguments).length ==

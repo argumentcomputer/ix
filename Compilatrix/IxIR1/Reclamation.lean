@@ -892,17 +892,33 @@ private theorem footprintAt : ∀ fuel, FootprintAt fuel := by
                     cases hexact :
                         (captured.toList ++ args).length == arity
                     · simp only [hexact, Bool.false_eq_true, if_false] at h
-                      cases hinvoke : invoke ctx fuel address
-                          ((captured.toList ++ args).take arity) ready with
-                      | error err => rw [hinvoke, bindErr] at h; contradiction
-                      | ok called =>
-                        rcases called with ⟨calledStore, calledValue⟩
-                        rw [hinvoke, bindOk] at h
-                        exact hprefix.trans
-                          ((ihInvoke _ _ _ _ _ _ hinvoke).trans
-                            (ihApply _ _ _ _ _ _ h))
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at h
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false => simp [hdecl, hpapsafe] at h
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at h
+                          cases hinvoke : invoke ctx fuel address
+                              ((captured.toList ++ args).take arity) ready with
+                          | error err =>
+                            rw [hinvoke, bindErr] at h
+                            contradiction
+                          | ok called =>
+                            rcases called with ⟨calledStore, calledValue⟩
+                            rw [hinvoke, bindOk] at h
+                            exact hprefix.trans
+                              ((ihInvoke _ _ _ _ _ _ hinvoke).trans
+                                (ihApply _ _ _ _ _ _ h))
                     · simp only [hexact, if_true] at h
-                      exact hprefix.trans (ihInvoke _ _ _ _ _ _ h)
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at h
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false => simp [hdecl, hpapsafe] at h
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at h
+                          exact hprefix.trans (ihInvoke _ _ _ _ _ _ h)
     · intro ctx store value store' h
       rw [dropVal.eq_def] at h
       dsimp only at h
@@ -2072,53 +2088,69 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
                         (captured.toList ++ args).length == arity
                     · simp only [hexact, Bool.false_eq_true, if_false]
                         at heval
-                      cases hinvoke : invoke ctx fuel address
-                          ((captured.toList ++ args).take arity) ready with
-                      | error err =>
-                        rw [hinvoke, bindErr] at heval
-                        contradiction
-                      | ok called =>
-                        rcases called with ⟨calledStore, calledValue⟩
-                        rw [hinvoke, bindOk] at heval
-                        have hinvokeFoot := invoke_footprint hinvoke
-                        have happlyFoot := applyGo_footprint heval
-                        have hprefixReuseLe :
-                            store.reuses ≤ ready.reuses :=
-                          hprefix.reuses
-                        have hinvokeReuseLe :
-                            ready.reuses ≤ calledStore.reuses := by
-                          simpa using hinvokeFoot.reuses
-                        have happlyReuseLe :
-                            calledStore.reuses ≤ store'.reuses := by
-                          simpa using happlyFoot.reuses
-                        have hreadyReuse : ready.reuses = store.reuses := by
-                          omega
-                        have hcalledReuse :
-                            calledStore.reuses = ready.reuses := by omega
-                        have hfinalReuse :
-                            store'.reuses = calledStore.reuses := by omega
-                        obtain ⟨hcalledOrder, hcalledValue⟩ :=
-                          ihInvoke _ _ _ _ _ _ hreadyOrder
-                            (htotal.take arity) hcalledReuse hinvoke
-                        have hrestBounds : ValuesInBounds calledStore
-                            ((captured.toList ++ args).drop arity) :=
-                          (htotal.drop arity).mono hinvokeFoot.nodes_size
-                        exact ihApply _ _ _ _ _ _ hcalledOrder
-                          hcalledValue hrestBounds hfinalReuse heval
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at heval
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false => simp [hdecl, hpapsafe] at heval
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at heval
+                          cases hinvoke : invoke ctx fuel address
+                              ((captured.toList ++ args).take arity) ready with
+                          | error err =>
+                            rw [hinvoke, bindErr] at heval
+                            contradiction
+                          | ok called =>
+                            rcases called with ⟨calledStore, calledValue⟩
+                            rw [hinvoke, bindOk] at heval
+                            have hinvokeFoot := invoke_footprint hinvoke
+                            have happlyFoot := applyGo_footprint heval
+                            have hprefixReuseLe :
+                                store.reuses ≤ ready.reuses :=
+                              hprefix.reuses
+                            have hinvokeReuseLe :
+                                ready.reuses ≤ calledStore.reuses := by
+                              simpa using hinvokeFoot.reuses
+                            have happlyReuseLe :
+                                calledStore.reuses ≤ store'.reuses := by
+                              simpa using happlyFoot.reuses
+                            have hreadyReuse :
+                                ready.reuses = store.reuses := by
+                              omega
+                            have hcalledReuse :
+                                calledStore.reuses = ready.reuses := by omega
+                            have hfinalReuse :
+                                store'.reuses = calledStore.reuses := by omega
+                            obtain ⟨hcalledOrder, hcalledValue⟩ :=
+                              ihInvoke _ _ _ _ _ _ hreadyOrder
+                                (htotal.take arity) hcalledReuse hinvoke
+                            have hrestBounds : ValuesInBounds calledStore
+                                ((captured.toList ++ args).drop arity) :=
+                              (htotal.drop arity).mono hinvokeFoot.nodes_size
+                            exact ihApply _ _ _ _ _ _ hcalledOrder
+                              hcalledValue hrestBounds hfinalReuse heval
                     · simp only [hexact, if_true] at heval
-                      have hinvokeFoot := invoke_footprint heval
-                      have hprefixReuseLe :
-                          store.reuses ≤ ready.reuses :=
-                        hprefix.reuses
-                      have hinvokeReuseLe :
-                          ready.reuses ≤ store'.reuses := by
-                        simpa using hinvokeFoot.reuses
-                      have hreadyReuse : ready.reuses = store.reuses := by
-                        omega
-                      have hfinalReuse : store'.reuses = ready.reuses := by
-                        omega
-                      exact ihInvoke _ _ _ _ _ _ hreadyOrder htotal
-                        hfinalReuse heval
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at heval
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false => simp [hdecl, hpapsafe] at heval
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at heval
+                          have hinvokeFoot := invoke_footprint heval
+                          have hprefixReuseLe :
+                              store.reuses ≤ ready.reuses :=
+                            hprefix.reuses
+                          have hinvokeReuseLe :
+                              ready.reuses ≤ store'.reuses := by
+                            simpa using hinvokeFoot.reuses
+                          have hreadyReuse : ready.reuses = store.reuses := by
+                            omega
+                          have hfinalReuse :
+                              store'.reuses = ready.reuses := by
+                            omega
+                          exact ihInvoke _ _ _ _ _ _ hreadyOrder htotal
+                            hfinalReuse heval
 
 theorem runCode_order_of_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
     {store store' : Store} {env : List RVal} {code : Code} {value : RVal}
@@ -2179,7 +2211,7 @@ theorem runMain_order_of_reuses_eq_zero {ctx : Ctx} {fuel : Nat}
     (heval : runMain ctx code fuel = .ok (store, value))
     (hreuses : store.reuses = 0) :
     AllocationOrderInvariant store ∧ ValueInBounds store value := by
-  exact (orderAt fuel).1 ctx ⟨0, .shared, code⟩ ({} : Store) [] code
+  exact (orderAt fuel).1 ctx ⟨0, .shared, false, code⟩ ({} : Store) [] code
     store value AllocationOrderInvariant.empty
     (ValuesInBounds.nil ({} : Store)) hreuses heval
 

@@ -37,6 +37,7 @@ private def aAddLit := addrOf 0x64
 private def aIsZero := addrOf 0x65
 private def aKonstAdd := addrOf 0x66
 private def aNatAdd := addrOf 0x67
+private def aDirectOnly := addrOf 0x69
 
 private def nilId : CtorId := ⟨aListBlock, 0, 0⟩
 private def consId : CtorId := ⟨aListBlock, 0, 1⟩
@@ -86,11 +87,12 @@ private def konstAddBody : Code :=
   lets [.papp aAddLit #[.var 0]] (.ret (.var 0))
 
 private def decls : List (Address × Decl) :=
-  [(aRev, .fn ⟨2, .unique, revBody⟩),
-   (aAdd, .fn ⟨2, .unique, addBody⟩),
-   (aAddLit, .fn ⟨2, .shared, addLitBody⟩),
-   (aIsZero, .fn ⟨1, .shared, isZeroBody⟩),
-   (aKonstAdd, .fn ⟨1, .shared, konstAddBody⟩),
+  [(aRev, .fn ⟨2, .unique, false, revBody⟩),
+   (aAdd, .fn ⟨2, .unique, false, addBody⟩),
+   (aAddLit, .fn ⟨2, .shared, true, addLitBody⟩),
+   (aIsZero, .fn ⟨1, .shared, true, isZeroBody⟩),
+   (aKonstAdd, .fn ⟨1, .shared, true, konstAddBody⟩),
+   (aDirectOnly, .fn ⟨1, .shared, false, .ret (.var 0)⟩),
    (aNatAdd, .extern 2)]
 
 private def oracle : Address → List RVal → Option RVal := fun a args =>
@@ -253,6 +255,20 @@ private def papOverfill : Code := lets
 
 #guard checkRun (run papOverfill) fun _ v => v == .lit (.nat 42)
 
+-- Direct entry remains available for declarations that do not opt into the
+-- shared PAP calling convention.
+#guard checkRun (run (lets
+  [.call aDirectOnly #[.lit (.nat 42)]] (.ret (.var 0)))) fun _ v =>
+    v == .lit (.nat 42)
+
+-- The same declaration cannot be entered through a saturated PAP.
+#guard
+  match run (lets
+      [.papp aDirectOnly #[], .apply (.var 0) #[.lit (.nat 42)]]
+      (.ret (.var 0))) with
+  | .error (.stuck "shared pap targets a non-pap-safe declaration") => true
+  | _ => false
+
 -- `apply` consumes its pap: the chain's intermediates are reclaimed
 -- without caller-side drops…
 #guard checkRun (run papChain) fun s _ => s.frees == 2 && s.live == 0
@@ -325,7 +341,7 @@ private def papOverfill : Code := lets
 -- malformed hand-written code cannot return a unique node as `.shared`.
 private def aBadResult := addrOf 0x68
 private def badResultCtx : Ctx :=
-  { decls := Env.ofList [(aBadResult, .fn ⟨0, .shared,
+  { decls := Env.ofList [(aBadResult, .fn ⟨0, .shared, false,
       lets [.alloc .unique nilId #[]] (.ret (.var 0))⟩)] }
 
 #guard

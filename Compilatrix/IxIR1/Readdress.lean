@@ -235,6 +235,7 @@ def references (definition : FnDef) : List Address :=
 
 def structurallyEq (left right : FnDef) : Bool :=
   left.arity == right.arity && left.result == right.result &&
+    left.papSafe == right.papSafe &&
     Code.structurallyEq left.body right.body
 
 theorem structurallyEq_eq_true_iff (left right : FnDef) :

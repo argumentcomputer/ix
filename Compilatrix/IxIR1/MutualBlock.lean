@@ -75,6 +75,7 @@ end
 structure FnDef where
   arity : Nat
   result : Owned
+  papSafe : Bool
   body : Code
 
 /-- A declaration in a symbolic IxIR₁ block. -/
@@ -263,11 +264,12 @@ namespace FnDef
 def abstract (keys : List Address) (definition : IxIR1.FnDef) : FnDef :=
   { arity := definition.arity
     result := definition.result
+    papSafe := definition.papSafe
     body := Code.abstract keys definition.body }
 
 def materialize (memberKeys : Array Address)
     (definition : FnDef) : Except String IxIR1.FnDef :=
-  return ⟨definition.arity, definition.result,
+  return ⟨definition.arity, definition.result, definition.papSafe,
     ← definition.body.materialize memberKeys⟩
 
 def externalReferences (definition : FnDef) : List Address :=
@@ -395,6 +397,7 @@ namespace FnDef
 
 def structurallyEq (left right : FnDef) : Bool :=
   left.arity == right.arity && left.result == right.result &&
+    left.papSafe == right.papSafe &&
     Code.structurallyEq left.body right.body
 
 theorem structurallyEq_eq_true_iff (left right : FnDef) :
@@ -496,7 +499,7 @@ namespace FnDef
 
 def bytes (definition : FnDef) : ByteArray :=
   Encoding.nat definition.arity ++ Encoding.tag definition.result.toBits ++
-    definition.body.bytes
+    Encoding.bool definition.papSafe ++ definition.body.bytes
 
 end FnDef
 
@@ -511,7 +514,7 @@ end Decl
 namespace Block
 
 def addressDomain : ByteArray :=
-  Encoding.domain "compilatrix/ixir1/mutual-block/1" ++ Encoding.tag 0
+  Encoding.domain "compilatrix/ixir1/mutual-block/2" ++ Encoding.tag 0
 
 def preimage (members : List Decl) : ByteArray :=
   addressDomain ++ Encoding.list Decl.bytes members
@@ -618,7 +621,8 @@ def getCode : GetM Code := do
   getCodeFuel (state.bytes.size + 1)
 
 def getFnDef : GetM FnDef := do
-  return ⟨← Decode.getNat, ← IxIR0.getOwned, ← getCode⟩
+  return ⟨← Decode.getNat, ← IxIR0.getOwned, ← Decode.getBool,
+    ← getCode⟩
 
 def getDeclTag : UInt8 → GetM Decl
   | 0 => do return .fn (← getFnDef)
@@ -912,8 +916,9 @@ theorem getCode_spec (code : Code) :
 
 theorem getFnDef_spec (definition : FnDef) :
     GetSpec getFnDef definition.bytes definition := by
-  have hspec := Decode.getSpecMap3 (Decode.getNat_spec definition.arity)
-    (IxIR0.getOwned_spec definition.result) (getCode_spec definition.body)
+  have hspec := Decode.getSpecMap4 (Decode.getNat_spec definition.arity)
+    (IxIR0.getOwned_spec definition.result)
+    (Decode.getBool_spec definition.papSafe) (getCode_spec definition.body)
     FnDef.mk
   simpa [getFnDef, FnDef.bytes] using hspec
 
@@ -1215,19 +1220,19 @@ private def fixtureExternal : Address := Address.replicate 0xee
 #guard Ref.bytes (.local 128) == ByteArray.mk #[0, 128, 1]
 #guard (Ref.bytes (.external fixtureExternal)).size == 33
 #guard Op.bytes (.call (.local 1) #[]) == ByteArray.mk #[8, 0, 1, 0]
-#guard Decl.bytes (.fn ⟨0, .shared,
+#guard Decl.bytes (.fn ⟨0, .shared, true,
   .letOp (.call (.local 1) #[]) (.ret .erased)⟩) ==
-    ByteArray.mk #[0, 0, 1, 1, 8, 0, 1, 0, 0, 2]
+    ByteArray.mk #[0, 0, 1, 1, 1, 8, 0, 1, 0, 0, 2]
 #guard
   DeclList.structurallyEq
     (abstractMembers
-      [(fixtureA, .fn ⟨0, .shared,
+      [(fixtureA, .fn ⟨0, .shared, true,
           .letOp (.call fixtureB #[]) (.ret .erased)⟩),
-       (fixtureB, .fn ⟨0, .shared,
+       (fixtureB, .fn ⟨0, .shared, true,
           .letOp (.papp fixtureA #[]) (.ret .erased)⟩)])
-    [.fn ⟨0, .shared,
+    [.fn ⟨0, .shared, true,
         .letOp (.call (.local 1) #[]) (.ret .erased)⟩,
-     .fn ⟨0, .shared,
+     .fn ⟨0, .shared, true,
         .letOp (.papp (.local 0) #[]) (.ret .erased)⟩]
 
 end MutualBlock

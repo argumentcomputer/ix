@@ -129,6 +129,10 @@ structure FnDef where
   /-- Ownership world of a returned heap location. Scalars satisfy
   either result world. -/
   result : Owned
+  /-- Whether this declaration may be entered through a shared PAP. The
+  production lowerer sets this exactly when the result and every parameter
+  live in the shared world; saturated direct calls remain valid either way. -/
+  papSafe : Bool
   body : Code
 
 /-- Top-level declarations. No constructor declarations (`alloc`

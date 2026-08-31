@@ -1405,12 +1405,23 @@ private structure FreshApplyReady (ctx : Ctx) (fuel : Nat)
      if total.length < arity then
        let (next, location) := ready.allocNode .shared
          (.papN function arity total.toArray)
-       .ok (next, .loc location)
+       Except.ok (next, .loc location)
      else if total.length == arity then
-       invoke ctx fuel function total ready
-     else do
-       let (called, value) ← invoke ctx fuel function (total.take arity) ready
-       applyGo ctx fuel called value (total.drop arity)) = .ok out
+       match ctx.decls function with
+       | none => Except.error (Err.unknownRef function)
+       | some declaration =>
+         if declPapSafe declaration then
+           invoke ctx fuel function total ready
+         else Except.error (.stuck "shared pap targets a non-pap-safe declaration")
+     else
+       match ctx.decls function with
+       | none => Except.error (Err.unknownRef function)
+       | some declaration =>
+         if declPapSafe declaration then do
+           let (called, value) ← invoke ctx fuel function (total.take arity) ready
+           applyGo ctx fuel called value (total.drop arity)
+         else Except.error (.stuck "shared pap targets a non-pap-safe declaration")) =
+      Except.ok out
 
 private def freshApplyReady_of_run
     {ctx : Ctx} {fuel : Nat} {store : Store} {function : Address}
@@ -1652,10 +1663,15 @@ private theorem fuseSpec_refinesAt
       have htotalExact' : capturedValues.length + suppliedValues.length =
           declArity declaration := by
         simpa using htotalExact
+      have hpapsafe : declPapSafe declaration = true := by
+        cases hpapsafe : declPapSafe declaration with
+        | false =>
+            simp [htotalExact', hctxDeclaration, hpapsafe] at hremainder
+        | true => rfl
       have hremainder' : invoke ctx fuel function
           (capturedValues ++ suppliedValues) ready =
             .ok (resultStore, resultValue) := by
-        simpa [htotalExact'] using hremainder
+        simpa [htotalExact', hctxDeclaration, hpapsafe] using hremainder
       let omitted := base.omitDeadAllocLeft .shared
         (.papN function (declArity declaration) capturedValues.toArray)
       let readyHeap : HeapHistoryIso ready store :=
@@ -1762,6 +1778,12 @@ private theorem fuseSpec_refinesAt
       have hnotExact : capturedValues.length + suppliedValues.length ≠
           declArity declaration := by
         omega
+      have hpapsafe : declPapSafe declaration = true := by
+        cases hpapsafe : declPapSafe declaration with
+        | false =>
+            simp [hnotUnder, hnotExact, hctxDeclaration, hpapsafe]
+              at hremainder
+        | true => rfl
       have hremainder' :
           (do
             let (called, value) ← invoke ctx fuel function
@@ -1770,7 +1792,7 @@ private theorem fuseSpec_refinesAt
             applyGo ctx fuel called value
               ((capturedValues ++ suppliedValues).drop
                 (declArity declaration))) = .ok (resultStore, resultValue) := by
-        simpa [hnotUnder, hnotExact] using hremainder
+        simpa [hnotUnder, hnotExact, hctxDeclaration, hpapsafe] using hremainder
       let omitted := base.omitDeadAllocLeft .shared
         (.papN function (declArity declaration) capturedValues.toArray)
       let readyHeap : HeapHistoryIso ready store :=
@@ -2695,7 +2717,7 @@ theorem abstractEnvironment_rewriteCtx
       rw [← hctx]
       exact hsource
     refine ⟨rewriteFunction declarations summaries address source, ?_,
-      rfl, rfl, ?_⟩
+      rfl, rfl, rfl, ?_⟩
     · simp [rewriteCtx, rewriteDeclEnv, hdeclaration,
         rewriteDeclaration]
     · exact rewriteFunction_bodyRefines hpost hctx hdeclaration

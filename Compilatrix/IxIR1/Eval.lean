@@ -164,6 +164,12 @@ def declArity : Decl → Nat
   | .fn d => d.arity
   | .extern ar => ar
 
+/-- Dynamic PAP entry is valid for compiler functions explicitly marked safe
+and for scalar-only externs. Saturated direct calls do not consult this bit. -/
+def declPapSafe : Decl → Bool
+  | .fn d => d.papSafe
+  | .extern _ => true
+
 /-- Executable result-world check. Scalars are ownership-polymorphic;
 a returned location must be live in the function's declared world. -/
 def RVal.hasWorld (store : Store) (world : Owned) : RVal → Bool
@@ -379,10 +385,24 @@ def applyGo (ctx : Ctx) (fuel : Nat) (store : Store) (fv : RVal)
               store.allocNode .shared (.papN f ar total.toArray)
             .ok (store', .loc l')
           else if total.length == ar then
-            invoke ctx fuel f total store
+            match ctx.decls f with
+            | none => .error (.unknownRef f)
+            | some declaration =>
+              if declPapSafe declaration then
+                invoke ctx fuel f total store
+              else
+                .error (.stuck
+                  "shared pap targets a non-pap-safe declaration")
           else do
-            let (store', r) ← invoke ctx fuel f (total.take ar) store
-            applyGo ctx fuel store' r (total.drop ar)
+            match ctx.decls f with
+            | none => .error (.unknownRef f)
+            | some declaration =>
+              if declPapSafe declaration then
+                let (store', r) ← invoke ctx fuel f (total.take ar) store
+                applyGo ctx fuel store' r (total.drop ar)
+              else
+                .error (.stuck
+                  "shared pap targets a non-pap-safe declaration")
         | .ctorN .. => .error (.stuck "apply of a constructor node")
     | .erased => do
       let store ← dropMany ctx fuel store args
@@ -472,6 +492,6 @@ end
 the code itself, so `callSelf` at top level re-enters it). -/
 def runMain (ctx : Ctx) (c : Code) (fuel : Nat := 100000) :
     Except Err (Store × RVal) :=
-  runCode ctx fuel ⟨0, .shared, c⟩ {} [] c
+  runCode ctx fuel ⟨0, .shared, false, c⟩ {} [] c
 
 end Compilatrix.IxIR1

@@ -10,8 +10,9 @@ argument needed to lift such a local body theorem through direct calls,
 
 The abstraction is deliberately semantic.  It does not require a particular
 declaration map implementation or a syntactic rewrite function: each source
-function lookup supplies a target function with the same arity and result
-world, plus a local successful-run refinement in the source context.  The
+function lookup supplies a target function with the same arity, result world,
+and PAP-entry policy, plus a local successful-run refinement in the source
+context.  The
 common fuel induction below is therefore reusable by every body optimizer and
 by the old-keyed logical environment that precedes content readdressing.
 -/
@@ -63,6 +64,7 @@ structure AbstractEnvironment (before after : Ctx) : Prop where
         after.decls address = some (.fn target) ∧
           target.arity = source.arity ∧
           target.result = source.result ∧
+          target.papSafe = source.papSafe ∧
           FunctionBodyRefines before source target
 
 /-- Strong body obligation for rewrites which preserve the complete evaluator
@@ -89,6 +91,7 @@ structure ExactEnvironment (before after : Ctx) : Prop where
         after.decls address = some (.fn target) ∧
           target.arity = source.arity ∧
           target.result = source.result ∧
+          target.papSafe = source.papSafe ∧
           FunctionBodyEq before source target
 
 namespace AbstractEnvironment
@@ -99,16 +102,15 @@ theorem declaration {before after : Ctx}
     (hsource : before.decls address = some source) :
     ∃ target,
       after.decls address = some target ∧
-        declArity target = declArity source := by
+        declArity target = declArity source ∧
+        declPapSafe target = declPapSafe source := by
   cases source with
   | extern arity =>
-      exact ⟨.extern arity, environment.extern hsource, rfl⟩
+      exact ⟨.extern arity, environment.extern hsource, rfl, rfl⟩
   | fn source =>
-      obtain ⟨target, htarget, harity, _, _⟩ :=
+      obtain ⟨target, htarget, harity, _, hpapsafe, _⟩ :=
         environment.function hsource
-      refine ⟨.fn target, htarget, ?_⟩
-      change target.arity = source.arity
-      exact harity
+      exact ⟨.fn target, htarget, harity, hpapsafe⟩
 
 end AbstractEnvironment
 
@@ -980,7 +982,7 @@ private theorem runOp_rewriteStep
           cases hdeclaration : before.decls function with
           | none => simp [hdeclaration] at hrun
           | some declaration =>
-              obtain ⟨targetDeclaration, htargetDeclaration, harity⟩ :=
+              obtain ⟨targetDeclaration, htargetDeclaration, harity, _⟩ :=
                 abstract.declaration hdeclaration
               simp only [hdeclaration] at hrun
               simp only [htargetDeclaration]
@@ -1059,7 +1061,7 @@ private theorem invoke_rewriteStep
           refine ⟨sourceOut, ?_, hiso⟩
           simpa [callScalarOracle, abstract.oracle_eq] using hrun
       | fn source =>
-          obtain ⟨target, htargetDeclaration, harity, hresult,
+          obtain ⟨target, htargetDeclaration, harity, hresult, _,
               hbodyRefines⟩ := abstract.function hdeclaration
           simp only [hdeclaration] at hrun
           simp only [htargetDeclaration]
@@ -1108,6 +1110,7 @@ private theorem invoke_rewriteStep
 
 private theorem applyGo_rewriteStep
     {before after : Ctx} {fuel : Nat}
+    (abstract : AbstractEnvironment before after)
     (smaller : EvalRewriteAt before after fuel) :
     ∀ (store : Store) (base : HeapHistoryIso store store)
       (function : RVal) (arguments : List RVal),
@@ -1242,14 +1245,46 @@ private theorem applyGo_rewriteStep
                                   (captured.toList ++ arguments).length =
                                     arity := by
                                 simpa [total] using hexact
-                              simp [hunderRaw, hexactRaw] at hrun
+                              obtain ⟨sourceDeclaration, targetDeclaration,
+                                  hsourceDeclaration, htargetDeclaration,
+                                  hpapsafe, hsourceSafe⟩ :
+                                  ∃ sourceDeclaration targetDeclaration,
+                                    before.decls called = some sourceDeclaration ∧
+                                      after.decls called = some targetDeclaration ∧
+                                      declPapSafe targetDeclaration =
+                                        declPapSafe sourceDeclaration ∧
+                                      declPapSafe sourceDeclaration = true := by
+                                cases hsourceDeclaration : before.decls called with
+                                | none =>
+                                    simp [hunderRaw, hexactRaw,
+                                      hsourceDeclaration] at hrun
+                                | some sourceDeclaration =>
+                                    obtain ⟨targetDeclaration,
+                                        htargetDeclaration, _, hpapsafe⟩ :=
+                                      abstract.declaration hsourceDeclaration
+                                    cases hsourceSafe :
+                                        declPapSafe sourceDeclaration with
+                                    | false =>
+                                        simp [hunderRaw, hexactRaw,
+                                          hsourceDeclaration, hsourceSafe]
+                                          at hrun
+                                    | true =>
+                                        exact ⟨sourceDeclaration,
+                                          targetDeclaration, rfl,
+                                          htargetDeclaration, hpapsafe,
+                                          hsourceSafe⟩
+                              have htargetSafe :
+                                  declPapSafe targetDeclaration = true :=
+                                hpapsafe.trans hsourceSafe
+                              simp [hunderRaw, hexactRaw, hsourceDeclaration,
+                                hsourceSafe] at hrun
                               obtain ⟨targetOut, htargetInvoke, hiso⟩ :=
                                 smaller.invoke called total ready readyHeap
                                   htotal sourceOut (by simpa [total] using hrun)
                               refine ⟨targetOut, ?_,
                                 RunHistoryIso.weaken hbaseReady hiso⟩
-                              simpa [total, hunderRaw, hexactRaw] using
-                                htargetInvoke
+                              simpa [total, hunderRaw, hexactRaw,
+                                htargetDeclaration, htargetSafe] using htargetInvoke
                             · have hunderRaw :
                                   ¬(captured.toList ++ arguments).length <
                                     arity := by
@@ -1266,7 +1301,39 @@ private theorem applyGo_rewriteStep
                                   captured.size + arguments.length ≠
                                     arity := by
                                 simpa [total] using hexact
-                              simp [hunderSize, hexactSize] at hrun
+                              obtain ⟨sourceDeclaration, targetDeclaration,
+                                  hsourceDeclaration, htargetDeclaration,
+                                  hpapsafe, hsourceSafe⟩ :
+                                  ∃ sourceDeclaration targetDeclaration,
+                                    before.decls called = some sourceDeclaration ∧
+                                      after.decls called = some targetDeclaration ∧
+                                      declPapSafe targetDeclaration =
+                                        declPapSafe sourceDeclaration ∧
+                                      declPapSafe sourceDeclaration = true := by
+                                cases hsourceDeclaration : before.decls called with
+                                | none =>
+                                    simp [hunderSize, hexactSize,
+                                      hsourceDeclaration] at hrun
+                                | some sourceDeclaration =>
+                                    obtain ⟨targetDeclaration,
+                                        htargetDeclaration, _, hpapsafe⟩ :=
+                                      abstract.declaration hsourceDeclaration
+                                    cases hsourceSafe :
+                                        declPapSafe sourceDeclaration with
+                                    | false =>
+                                        simp [hunderSize, hexactSize,
+                                          hsourceDeclaration, hsourceSafe]
+                                          at hrun
+                                    | true =>
+                                        exact ⟨sourceDeclaration,
+                                          targetDeclaration, rfl,
+                                          htargetDeclaration, hpapsafe,
+                                          hsourceSafe⟩
+                              have htargetSafe :
+                                  declPapSafe targetDeclaration = true :=
+                                hpapsafe.trans hsourceSafe
+                              simp [hunderSize, hexactSize, hsourceDeclaration,
+                                hsourceSafe] at hrun
                               cases hinvoke : IxIR1.invoke before fuel called
                                   (total.take arity) ready with
                               | error error =>
@@ -1293,7 +1360,8 @@ private theorem applyGo_rewriteStep
                                   refine ⟨targetOut, ?_,
                                     RunHistoryIso.weaken
                                       (hbaseReady.trans hreadyCall) hiso⟩
-                                  simp [hunderSize, hexactSize]
+                                  simp [hunderSize, hexactSize,
+                                    htargetDeclaration, htargetSafe]
                                   rw [htargetInvoke]
                                   simp only [bind, Except.bind]
                                   exact htargetApply
@@ -1310,7 +1378,7 @@ private theorem evalRewriteAt {before after : Ctx}
       exact ⟨runCode_rewriteStep smaller,
         runOp_rewriteStep abstract smaller,
         invoke_rewriteStep abstract smaller,
-        applyGo_rewriteStep smaller⟩
+        applyGo_rewriteStep abstract smaller⟩
 
 /-- A successful run in the source context is reproduced in any abstractly
 related target environment.  The theorem accepts arbitrary related entry
@@ -1577,7 +1645,7 @@ private theorem exactRewriteAt {before after : Ctx}
                         have htarget := exact.extern hsource
                         simp [htarget]
                     | fn source =>
-                        obtain ⟨target, htarget, harity, _, _⟩ :=
+                        obtain ⟨target, htarget, harity, _, _, _⟩ :=
                           exact.function hsource
                         rw [htarget]
                         simp only [declArity]
@@ -1605,7 +1673,7 @@ private theorem exactRewriteAt {before after : Ctx}
                 have htarget := exact.extern hsource
                 simp [htarget, callScalarOracle, exact.oracle_eq]
             | fn source =>
-                obtain ⟨target, htarget, harity, hresult, hbody⟩ :=
+                obtain ⟨target, htarget, harity, hresult, _, hbody⟩ :=
                   exact.function hsource
                 by_cases hsourceArity : arguments.length = source.arity
                 · have htargetArity : arguments.length = target.arity := by
@@ -1661,44 +1729,59 @@ private theorem exactRewriteAt {before after : Ctx}
                         | error error => rfl
                         | ok dropped =>
                             let total := captured.toList ++ arguments
-                            change (if total.length < arity then
-                                let (next, fresh) := dropped.allocNode .shared
-                                  (.papN called arity total.toArray)
-                                .ok (next, .loc fresh)
-                              else if total.length == arity then
-                                IxIR1.invoke after fuel called total dropped
-                              else do
-                                let (next, value) ← IxIR1.invoke after fuel
-                                  called (total.take arity) dropped
-                                IxIR1.applyGo after fuel next value
-                                  (total.drop arity)) =
-                              (if total.length < arity then
-                                let (next, fresh) := dropped.allocNode .shared
-                                  (.papN called arity total.toArray)
-                                .ok (next, .loc fresh)
-                              else if total.length == arity then
-                                IxIR1.invoke before fuel called total dropped
-                              else do
-                                let (next, value) ← IxIR1.invoke before fuel
-                                  called (total.take arity) dropped
-                                IxIR1.applyGo before fuel next value
-                                  (total.drop arity))
                             by_cases hless : total.length < arity
-                            · simp [hless]
-                            · simp only [hless]
-                              by_cases hequal : total.length == arity
-                              · simp only [hequal]
-                                exact smaller.invoke called total dropped
-                              · simp only [hequal]
-                                rw [smaller.invoke called (total.take arity)
-                                  dropped]
-                                cases hinvoke : IxIR1.invoke before fuel called
-                                    (total.take arity) dropped with
-                                | error error => rfl
-                                | ok output =>
-                                    rcases output with ⟨next, value⟩
-                                    exact smaller.applyGo next value
-                                      (total.drop arity)
+                            · have hlessSize :
+                                  captured.size + arguments.length < arity := by
+                                simpa [total] using hless
+                              simp [hlessSize]
+                            · by_cases hequal : total.length = arity
+                              · have hunderSize :
+                                    ¬captured.size + arguments.length < arity := by
+                                  simpa [total] using hless
+                                have hequalSize :
+                                    captured.size + arguments.length = arity := by
+                                  simpa [total] using hequal
+                                cases hsource : before.decls called with
+                                | none =>
+                                    have htarget := exact.missing hsource
+                                    simp [hunderSize, hequalSize, hsource, htarget]
+                                | some declaration =>
+                                    cases declaration with
+                                    | extern declarationArity =>
+                                        have htarget := exact.extern hsource
+                                        simp [hunderSize, hequalSize, hsource,
+                                          htarget, smaller.invoke]
+                                    | fn source =>
+                                        obtain ⟨target, htarget, _, _, hpapsafe,
+                                            _⟩ := exact.function hsource
+                                        simp [hunderSize, hequalSize, hsource,
+                                          htarget, declPapSafe, hpapsafe,
+                                          smaller.invoke]
+                                        rfl
+                              · have hunderSize :
+                                    ¬captured.size + arguments.length < arity := by
+                                  simpa [total] using hless
+                                have hnequalSize :
+                                    captured.size + arguments.length ≠ arity := by
+                                  simpa [total] using hequal
+                                cases hsource : before.decls called with
+                                | none =>
+                                    have htarget := exact.missing hsource
+                                    simp [hunderSize, hnequalSize, hsource,
+                                      htarget]
+                                | some declaration =>
+                                    cases declaration with
+                                    | extern declarationArity =>
+                                        have htarget := exact.extern hsource
+                                        simp [hunderSize, hnequalSize, hsource,
+                                          htarget, smaller.invoke, smaller.applyGo]
+                                    | fn source =>
+                                        obtain ⟨target, htarget, _, _, hpapsafe,
+                                            _⟩ := exact.function hsource
+                                        simp [hunderSize, hnequalSize, hsource,
+                                          htarget, declPapSafe, hpapsafe,
+                                          smaller.invoke, smaller.applyGo]
+                                        rfl
       · intro store value
         cases value with
         | lit literal => simp [IxIR1.dropVal]

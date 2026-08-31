@@ -706,7 +706,7 @@ theorem runMain_filterEntries_eq_of_validate
         filterEntries_eq_self_of_allRetained hall
       rw [hentries]
   | inr hclosed =>
-      let current : FnDef := ⟨0, .shared, main⟩
+      let current : FnDef := ⟨0, .shared, false, main⟩
       have heq :=
         (restrictedAt entries certificate.retained oracle hclosed.2 fuel).runCode
           current hclosed.1 {} [] main hclosed.1

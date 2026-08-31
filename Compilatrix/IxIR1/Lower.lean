@@ -238,7 +238,7 @@ def descendingVars : Nat → List Atom
 
 def ctorWrapperDecl (source : Address) (tag arity : Nat) : Decl :=
   let atoms := (descendingVars arity).toArray
-  .fn ⟨arity, .shared,
+  .fn ⟨arity, .shared, true,
     .letOp (.alloc .shared (ctorIdOf source tag) atoms)
       (.ret (.var 0))⟩
 
@@ -921,7 +921,7 @@ def lowerLam (src : IxIR0.Env) (fuel : Nat) (Γ : VEnv)
     let paramDrops := parameterDrops k us fun i => countUses i body
     let code ← lowerFnBody src fuel
       ⟨paramEnts ++ outerEnts, fnArity⟩ paramDrops .shared body
-    pushExtra (fnAddr, .fn ⟨fnArity, .shared, code⟩)
+    pushExtra (fnAddr, .fn ⟨fnArity, .shared, true, code⟩)
     let capAtoms := (capVals.map (·.toAtom Γ)).toArray
     let res := Γ.depth
     pure (Γ.bump, emC ∘ emitOp (.papp fnAddr capAtoms), .slotA res)
@@ -993,7 +993,7 @@ def lowerRecursor (src : IxIR0.Env) (fuel : Nat) (numArgs : Nat)
   let arity := numArgs + 1
   let altsL ← rules.toList.zipIdx.mapM
     (lowerRecursorRule src fuel numArgs)
-  pure ⟨arity, .shared, .case (.var 0) natLit altsL.toArray⟩
+  pure ⟨arity, .shared, true, .case (.var 0) natLit altsL.toArray⟩
 
 /-- Lower one declaration. Constructors get no declaration of their
 own (saturated sites `alloc`; first-class sites go through wrappers,
@@ -1009,7 +1009,8 @@ def lowerDecl (src : IxIR0.Env) (fuel : Nat) :
     let entries := parameterEntries 0 us fun i => countUses i b
     let drops := parameterDrops 0 us fun i => countUses i b
     let code ← lowerFnBody src fuel ⟨entries, n⟩ drops result b
-    pure (some (a, .fn ⟨n, result, code⟩))
+    pure (some (a, .fn
+      ⟨n, result, result == .shared && papSafe body, code⟩))
   | (_, .ctor _ _) => pure none
   | (a, .recursor numArgs natLit rules) => do
     pure (some (a, .fn (← lowerRecursor src fuel numArgs natLit rules)))

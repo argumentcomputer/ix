@@ -1009,20 +1009,22 @@ structure ApplyOwnershipContractBelow (ctx : Ctx) (limit : Nat) : Prop where
   preserves : ∀ {fuel : Nat}, fuel < limit →
     ApplyOwnershipPreservesAt ctx fuel
 
-/-- Every function declaration in a context has an all-shared signature and
-preserves ownership below the supplied evaluator-fuel bound. Externs need no
-stored contract because their successful ABI is scalar-only. This is the
-declaration-side premise sufficient for arbitrary well-owned pap nodes. -/
-structure SharedDeclContractsBelow (ctx : Ctx) (limit : Nat) : Prop where
+/-- Every function declaration marked safe for shared PAP entry has an
+all-shared signature and preserves ownership below the supplied evaluator-fuel
+bound. Externs need no stored contract because their successful ABI is
+scalar-only. -/
+structure PapSafeDeclContractsBelow (ctx : Ctx) (limit : Nat) : Prop where
   fn : ∀ {address d}, ctx.decls address = some (.fn d) →
+    d.papSafe = true →
     d.result = .shared ∧
       FnOwnershipContractBelow ctx d
         (List.replicate d.arity .shared) limit
 
-/-- Unbounded all-shared ownership contracts for every function declaration
-in a target context. -/
-structure SharedDeclContracts (ctx : Ctx) : Prop where
+/-- Unbounded ownership contracts for every PAP-safe function declaration in
+a target context. -/
+structure PapSafeDeclContracts (ctx : Ctx) : Prop where
   fn : ∀ {address d}, ctx.decls address = some (.fn d) →
+    d.papSafe = true →
     d.result = .shared ∧
       FnOwnershipContract ctx d (List.replicate d.arity .shared)
 
@@ -1044,22 +1046,22 @@ theorem ApplyOwnershipContractBelow.mono {ctx : Ctx}
   intro fuel hfuel
   exact hcontract.preserves (Nat.lt_of_lt_of_le hfuel hbound)
 
-theorem SharedDeclContractsBelow.mono {ctx : Ctx}
+theorem PapSafeDeclContractsBelow.mono {ctx : Ctx}
     {smaller larger : Nat}
-    (hdecls : SharedDeclContractsBelow ctx larger)
+    (hdecls : PapSafeDeclContractsBelow ctx larger)
     (hbound : smaller ≤ larger) :
-    SharedDeclContractsBelow ctx smaller := by
+    PapSafeDeclContractsBelow ctx smaller := by
   refine ⟨?_⟩
-  intro address d hdecl
-  obtain ⟨hresult, hcontract⟩ := hdecls.fn hdecl
+  intro address d hdecl hpapsafe
+  obtain ⟨hresult, hcontract⟩ := hdecls.fn hdecl hpapsafe
   exact ⟨hresult, hcontract.mono hbound⟩
 
-theorem SharedDeclContracts.below {ctx : Ctx}
-    (hdecls : SharedDeclContracts ctx) (limit : Nat) :
-    SharedDeclContractsBelow ctx limit := by
+theorem PapSafeDeclContracts.below {ctx : Ctx}
+    (hdecls : PapSafeDeclContracts ctx) (limit : Nat) :
+    PapSafeDeclContractsBelow ctx limit := by
   refine ⟨?_⟩
-  intro address d hdecl
-  obtain ⟨hresult, hcontract⟩ := hdecls.fn hdecl
+  intro address d hdecl hpapsafe
+  obtain ⟨hresult, hcontract⟩ := hdecls.fn hdecl hpapsafe
   exact ⟨hresult, hcontract.below limit⟩
 
 /-- Seal a contractive exact-fuel application proof into the public
@@ -3292,20 +3294,21 @@ private theorem rootsForWorlds_replicate_eq_rootsFor_apply (world : Owned) :
       simp only [List.length_cons, Nat.succ.injEq] at hlength
       simp [List.replicate_succ, rootsFor, ih hlength]
 
-/-- Invocation through an arbitrary declaration stored in an all-shared
-context consumes shared argument roots and returns one shared root. Successful
-extern calls are covered by their scalar-only ABI. -/
-theorem invoke_shared_owned_below {ctx : Ctx} {fuel : Nat}
-    (hdecls : SharedDeclContractsBelow ctx fuel)
+/-- Invocation through a declaration approved for shared PAP entry consumes
+shared argument roots and returns one shared root. Successful extern calls are
+covered by their scalar-only ABI. -/
+theorem invoke_papSafe_owned_below {ctx : Ctx} {fuel : Nat}
+    (hdecls : PapSafeDeclContractsBelow ctx fuel)
     {address : Address} {d : Decl} {args : List RVal}
     {store store' : Store} {value : RVal} {rest : List Root}
     (hdecl : ctx.decls address = some d)
+    (hpapSafe : declPapSafe d = true)
     (hown : RootOwnership store (rootsFor .shared args ++ rest))
     (hrun : invoke ctx fuel address args store = .ok (store', value)) :
     RootOwnership store' (⟨.shared, value⟩ :: rest) := by
   cases d with
   | fn fnDef =>
-    obtain ⟨hresult, hcontract⟩ := hdecls.fn hdecl
+    obtain ⟨hresult, hcontract⟩ := hdecls.fn hdecl hpapSafe
     have hworlds : rootsForWorlds
         (List.replicate fnDef.arity .shared) args =
           rootsFor .shared args := by
@@ -4413,9 +4416,9 @@ theorem runOp_papp_owned_valueGraph
 /-- Exact ownership preservation for one `applyGo` index, assuming all
 function declarations and recursive application indices below it are already
 available. The proof covers pap under-fill, saturation, and over-application. -/
-theorem applyOwnershipPreservesAt_of_sharedDeclsBelow
+theorem applyOwnershipPreservesAt_of_papSafeDeclsBelow
     {ctx : Ctx} {limit : Nat}
-    (hdecls : SharedDeclContractsBelow ctx limit)
+    (hdecls : PapSafeDeclContractsBelow ctx limit)
     (happly : ApplyOwnershipContractBelow ctx limit) :
     ApplyOwnershipPreservesAt ctx limit := by
   intro store store' function args value rest hown hrun
@@ -4478,56 +4481,62 @@ theorem applyOwnershipPreservesAt_of_sharedDeclsBelow
                   split at hrun
                   next hexact =>
                     cases hdecl : ctx.decls address with
-                    | none =>
-                      cases fuel with
-                      | zero => simp [invoke] at hrun
-                      | succ innerFuel => simp [invoke, hdecl] at hrun
+                    | none => simp [hdecl] at hrun
                     | some decl =>
-                      have hsmallDecls := hdecls.mono (Nat.le_succ fuel)
-                      exact invoke_shared_owned_below hsmallDecls hdecl
-                        hready hrun
+                      cases hpapsafe : declPapSafe decl with
+                      | false => simp [hdecl, hpapsafe] at hrun
+                      | true =>
+                        have hinvoke : invoke ctx fuel address total
+                            readyStore = .ok (store', value) := by
+                          simpa [hdecl, hpapsafe] using hrun
+                        have hsmallDecls :=
+                          hdecls.mono (Nat.le_succ fuel)
+                        exact invoke_papSafe_owned_below hsmallDecls hdecl
+                          hpapsafe hready hinvoke
                   next hover =>
-                    cases hinvoke : invoke ctx fuel address
-                        (total.take arity) readyStore with
-                    | error err =>
-                      rw [hinvoke, bindErr] at hrun
-                      contradiction
-                    | ok called =>
-                      rcases called with ⟨calledStore, result⟩
-                      rw [hinvoke, bindOk] at hrun
-                      cases hdecl : ctx.decls address with
-                      | none =>
-                        cases fuel with
-                        | zero => simp [invoke] at hinvoke
-                        | succ innerFuel => simp [invoke, hdecl] at hinvoke
-                      | some decl =>
-                        have hpartition : RootOwnership readyStore
-                            (rootsFor .shared (total.take arity) ++
-                              (rootsFor .shared (total.drop arity) ++ rest)) := by
-                          have hsplit := hready
-                          have hrootsSplit : rootsFor .shared total =
-                              rootsFor .shared (total.take arity) ++
-                                rootsFor .shared (total.drop arity) := by
-                            unfold rootsFor
-                            rw [← List.map_append]
-                            exact congrArg _
-                              (List.take_append_drop arity total).symm
-                          rw [hrootsSplit] at hsplit
-                          simpa only [List.append_assoc] using hsplit
-                        have hsmallDecls := hdecls.mono (Nat.le_succ fuel)
-                        have hcalled := invoke_shared_owned_below hsmallDecls
-                          hdecl hpartition hinvoke
-                        exact happly.preserves (Nat.lt_succ_self fuel)
-                          hcalled hrun
+                    cases hdecl : ctx.decls address with
+                    | none => simp [hdecl] at hrun
+                    | some decl =>
+                      cases hpapsafe : declPapSafe decl with
+                      | false => simp [hdecl, hpapsafe] at hrun
+                      | true =>
+                        simp only [hdecl, hpapsafe, if_true] at hrun
+                        cases hinvoke : invoke ctx fuel address
+                            (total.take arity) readyStore with
+                        | error err =>
+                          rw [hinvoke, bindErr] at hrun
+                          contradiction
+                        | ok called =>
+                          rcases called with ⟨calledStore, result⟩
+                          rw [hinvoke, bindOk] at hrun
+                          have hpartition : RootOwnership readyStore
+                              (rootsFor .shared (total.take arity) ++
+                                (rootsFor .shared (total.drop arity) ++ rest)) := by
+                            have hsplit := hready
+                            have hrootsSplit : rootsFor .shared total =
+                                rootsFor .shared (total.take arity) ++
+                                  rootsFor .shared (total.drop arity) := by
+                              unfold rootsFor
+                              rw [← List.map_append]
+                              exact congrArg _
+                                (List.take_append_drop arity total).symm
+                            rw [hrootsSplit] at hsplit
+                            simpa only [List.append_assoc] using hsplit
+                          have hsmallDecls := hdecls.mono (Nat.le_succ fuel)
+                          have hcalled := invoke_papSafe_owned_below hsmallDecls
+                            hdecl hpapsafe hpartition hinvoke
+                          exact happly.preserves (Nat.lt_succ_self fuel)
+                            hcalled hrun
 
-/-- An all-shared target declaration environment validates every pap that can
-occur in an ownership-valid store. -/
-theorem applyOwnershipContract_of_sharedDecls {ctx : Ctx}
-    (hdecls : SharedDeclContracts ctx) :
+/-- PAP-safe declaration contracts validate every successful shared PAP entry;
+unsafe dynamic targets fail before invocation, while direct calls are
+unaffected. -/
+theorem applyOwnershipContract_of_papSafeDecls {ctx : Ctx}
+    (hdecls : PapSafeDeclContracts ctx) :
     ApplyOwnershipContract ctx := by
   apply applyOwnershipContract_of_below_step
   intro limit happly
-  exact applyOwnershipPreservesAt_of_sharedDeclsBelow
+  exact applyOwnershipPreservesAt_of_papSafeDeclsBelow
     (hdecls.below limit) happly
 
 theorem runOp_drop_owned {ctx : Ctx} {fuel : Nat} {cur : FnDef}
@@ -5409,12 +5418,12 @@ theorem fixture_swap_reuse_sound :
       (before := fixtureSwapBefore) (after := fixtureSwapAfter))
 
 private def fixtureCur : FnDef :=
-  { arity := 0, result := .shared, body := .ret .erased }
+  { arity := 0, result := .shared, papSafe := false, body := .ret .erased }
 
 private def fixtureIdAddr : Address := default
 
 private def fixtureIdFn : FnDef :=
-  { arity := 1, result := .unique, body := .ret (.var 0) }
+  { arity := 1, result := .unique, papSafe := false, body := .ret (.var 0) }
 
 private def fixtureIdCtx : Ctx :=
   { decls := fun a =>
@@ -5511,7 +5520,7 @@ private def fixtureCaseCode : Code :=
   .case (.var 0) false fixtureCaseAlts
 
 private def fixtureCaseCur : FnDef :=
-  { arity := 0, result := .unique, body := fixtureCaseCode }
+  { arity := 0, result := .unique, papSafe := false, body := fixtureCaseCode }
 
 theorem fixture_case_field_borrowed :
     HasWorld fixtureUniqueStore .unique (.loc fixtureUniqueLeafLoc) := by
@@ -5578,7 +5587,7 @@ private def fixtureNatCode : Code :=
   .case (.var 0) true fixtureNatAlts
 
 private def fixtureNatCur : FnDef :=
-  { arity := 0, result := .shared, body := fixtureNatCode }
+  { arity := 0, result := .shared, papSafe := false, body := fixtureNatCode }
 
 theorem fixture_nat_case_eval :
     runCode fixtureCtx 2 fixtureNatCur ({} : Store)

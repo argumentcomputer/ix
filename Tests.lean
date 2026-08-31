@@ -121,7 +121,7 @@ def ir0Decl : Compilatrix.IxIR0.Decl :=
     ⟨1, .app (.var 1) (.lit (.str "x"))⟩]
 
 def ir1Decl : Compilatrix.IxIR1.Decl :=
-  .fn ⟨2, .unique,
+  .fn ⟨2, .unique, false,
     .letOp
       (.alloc .unique
         ⟨Address.replicate 0x2a, 1, 2⟩
@@ -141,16 +141,16 @@ def expectedIr0Hash : List Nat :=
 
 def expectedIr1Bytes : ByteArray := ByteArray.mk #[
   99, 111, 109, 112, 105, 108, 97, 116, 114, 105, 120, 47, 105, 120,
-  105, 114, 49, 47, 100, 101, 99, 108, 47, 49, 0, 0, 2, 0, 1, 1, 0,
+  105, 114, 49, 47, 100, 101, 99, 108, 47, 50, 0, 0, 2, 0, 0, 1, 1, 0,
   42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42,
   42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42,
   1, 2, 2, 0, 1, 1, 0, 128, 1, 2, 0, 0, 1, 1, 2, 1, 0, 1, 1, 1,
   120]
 
 def expectedIr1Hash : List Nat :=
-  [37, 131, 212, 153, 37, 145, 42, 197, 85, 245, 164, 220, 11, 22, 23,
-   120, 224, 210, 77, 83, 249, 156, 218, 229, 119, 1, 202, 182, 221, 38,
-   2, 136]
+  [168, 15, 142, 42, 202, 39, 215, 3, 84, 101, 26, 27, 100, 29, 247,
+   9, 29, 165, 55, 137, 160, 249, 47, 228, 54, 229, 201, 244, 99, 5,
+   108, 71]
 
 private def rejected {alpha : Type} : Except String alpha → Bool
   | .error _ => true
@@ -189,7 +189,7 @@ def ir1Malformed : List (String × ByteArray) := [
     Compilatrix.IxIR1.Decl.addressDomain ++ ByteArray.mk #[1, 128, 0]),
   ("invalid nested UTF-8",
     Compilatrix.IxIR1.Decl.addressDomain ++
-      ByteArray.mk #[0, 0, 0, 0, 1, 1, 1, 0xff]),
+      ByteArray.mk #[0, 0, 0, 0, 0, 1, 1, 1, 0xff]),
   ("truncated declaration",
     expectedIr1Bytes.extract 0 (expectedIr1Bytes.size - 1))]
 
@@ -210,14 +210,14 @@ def oldParent : Address := Address.replicate 0xfb
 def sourceKey : Address := Address.replicate 0x11
 
 def leaf : Decl :=
-  .fn ⟨0, .shared, .ret (.lit (.nat 7))⟩
+  .fn ⟨0, .shared, true, .ret (.lit (.nat 7))⟩
 
 def parent : Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call oldLeaf #[]) (.ret (.var 0))⟩
 
 def sourceDeclaration : Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call oldParent #[])
       (.letOp (.papp oldLeaf #[]) (.ret (.var 0)))⟩
 
@@ -240,8 +240,8 @@ def contentHexes (result : Readdress.Result) : List String :=
   result.addressMap.map fun entry => Address.toHex entry.2
 
 def expectedChainContent : List String :=
-  ["d9eac9e13b81ee374aefc00a5ba0b8eb6aea8e59ccd4f8114937e539c9947e95",
-   "cabab2c8a30e40b763193873ea7e21cf92fd1cde0e969323afdb7a33d6173e7b"]
+  ["bffd28385492968a674f7090824348301087119dfa377a6b682bff177ede78d1",
+   "571f9c86b9289add35eda891c1f019c0da121f6e7738a1767193da7948261ff9"]
 
 def chainOk (result : Readdress.Result) : Bool :=
   let mapAddress := Readdress.Renaming.apply result.addressMap
@@ -275,8 +275,8 @@ def deduplicate : Except String Readdress.Result :=
       (.letOp (.call oldDuplicateB #[]) (.ret (.var 0))))
 
 def expectedDeduplicatedContent : List String :=
-  ["d9eac9e13b81ee374aefc00a5ba0b8eb6aea8e59ccd4f8114937e539c9947e95",
-   "d9eac9e13b81ee374aefc00a5ba0b8eb6aea8e59ccd4f8114937e539c9947e95"]
+  ["bffd28385492968a674f7090824348301087119dfa377a6b682bff177ede78d1",
+   "bffd28385492968a674f7090824348301087119dfa377a6b682bff177ede78d1"]
 
 def deduplicateOk (result : Readdress.Result) : Bool :=
   match result.generated with
@@ -298,10 +298,12 @@ def cycleA : Address := Address.replicate 0xf1
 def cycleB : Address := Address.replicate 0xf2
 
 def cycleDeclA : Decl :=
-  .fn ⟨0, .shared, .letOp (.call cycleB #[]) (.ret (.var 0))⟩
+  .fn ⟨0, .shared, true,
+    .letOp (.call cycleB #[]) (.ret (.var 0))⟩
 
 def cycleDeclB : Decl :=
-  .fn ⟨0, .shared, .letOp (.call cycleA #[]) (.ret (.var 0))⟩
+  .fn ⟨0, .shared, true,
+    .letOp (.call cycleA #[]) (.ret (.var 0))⟩
 
 def cycleRejected : Bool :=
   match Readdress.run [] [(cycleA, cycleDeclA), (cycleB, cycleDeclB)]
@@ -353,11 +355,11 @@ def loweringAudits (source : List (Address × Compilatrix.IxIR0.Decl))
   | .error _ _ => false
 
 def expectedNestedContent : List String :=
-  ["881d79fa9de295102db79219cf88a9277601ba3eab2d47c01369afe1f665099f",
-   "d2030b3d78a9f02fb14898cba6117454a4fe5e4a1bd1a83c5cef9b06ded9137b",
-   "39c4ab28ad85bbf1fb7b7c0d58a937aa570173b237db854821640338afab6827",
-   "b431958984e6161cad46fc26163aabd4401da3289e9f3deabe48a0a7f814362a",
-   "e96af6bedfddb64d99a668a4546402025b1148d8b1d4c53afeb25ac2d0cb22d4"]
+  ["acdd7ed6dd2ff0f364ea7697b85c32098d843b7ff3daa1f62b4ec2e0dc6d9fc5",
+   "04374cf03ca115a555c4cc2b3fccac7009b405ae83d6df238e1f05b533c72f0c",
+   "5a51d499b2f13429d9a04cf59d8f20a2e5b5def8d27a454bc821e8d0d7508393",
+   "df504cb4ec73814775bb8d0cae6f3f360d01972a66df694b9ca0c0d1ee7e2fa6",
+   "ca360f51322575138a9b9025f245bd18117a2c48c9286ce763ceeccd635e8976"]
 
 def nestedLoweringOk (result : Readdress.Result) : Bool :=
   let ctx : Ctx :=
@@ -386,10 +388,10 @@ def wrapperLowering : Except String Readdress.Result :=
     Compilatrix.IxIR0.Examples.declList wrapperExpression
 
 def expectedWrapperContent : List String :=
-  ["da41cde773f34e46865fe869fc9eab3384bbc2895022d1f5e063ef554792bb02",
-   "39c4ab28ad85bbf1fb7b7c0d58a937aa570173b237db854821640338afab6827",
-   "b431958984e6161cad46fc26163aabd4401da3289e9f3deabe48a0a7f814362a",
-   "e96af6bedfddb64d99a668a4546402025b1148d8b1d4c53afeb25ac2d0cb22d4"]
+  ["2ff8127bf306efa22913c6c3c44ba3f560e1aedf94a94b85939f0f772aa97138",
+   "5a51d499b2f13429d9a04cf59d8f20a2e5b5def8d27a454bc821e8d0d7508393",
+   "df504cb4ec73814775bb8d0cae6f3f360d01972a66df694b9ca0c0d1ee7e2fa6",
+   "ca360f51322575138a9b9025f245bd18117a2c48c9286ce763ceeccd635e8976"]
 
 def wrapperLoweringOk (result : Readdress.Result) : Bool :=
   -- Three generated declarations come from the corpus; this partial
@@ -433,17 +435,17 @@ def external : Address := Address.replicate 0xd4
 def leaf : Decl := .extern 1
 
 def declarationA : Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call oldB #[])
       (.letOp (.call oldLeaf #[]) (.ret .erased))⟩
 
 def declarationB : Decl :=
-  .fn ⟨0, .unique,
+  .fn ⟨0, .unique, false,
     .letOp (.papp oldA #[])
       (.letOp (.extern external #[]) (.ret .erased))⟩
 
 def root : Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call oldA #[]) (.ret (.var 0))⟩
 
 /-- Source order deliberately opposes dependency order. -/
@@ -459,12 +461,12 @@ def built : Except String ReaddressAll.Result :=
 
 def expectedTargetHexes : List String :=
   ["d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3",
-   "18e2b28f34365d9a87eff73f6432ce54218f79e5c37a6466ae6c6775c45c691a",
-   "3119c8380ae364d292229ab0e28301fe572a6f314fb7679c3a2b0ade051b0d86",
-   "1f6ff1217932cea61b5f6c654a3290e90e679abf15717568cc397c3836cdcebe"]
+   "9f879169042641be6111442a373d7799aa1aa34b44ea6aca2b303013815b2287",
+   "eded0797fe0dc6c8f382111845bfefc7d83eef1bfe3813d65d5b268774deed05",
+   "c86d1f0cbfa5eb1ad35d6990f7582ef4c872663779143f732a41c53cbd46075c"]
 
 def expectedBlockHex : String :=
-  "c986dddb4a3498557876b1f69dd6d68dd687dca8073fe776ff18cf2b08299959"
+  "fac32ac632054612f912abec284c37b0a331f84e4ebe72ec09e16f4966f1cddd"
 
 def componentsOk : Bool :=
   (ReaddressAll.discoverComponents raw).map Component.keys ==
@@ -483,7 +485,7 @@ def longChainRaw : List (Address × Decl) :=
           (.ret .erased)
       else
         .ret .erased
-    (address, .fn ⟨0, .shared, body⟩)
+    (address, .fn ⟨0, .shared, true, body⟩)
 
 def longChainComponentsOk : Bool :=
   let components := ReaddressAll.discoverComponents longChainRaw
@@ -525,14 +527,14 @@ def newA : Address := Address.replicate 0xe1
 def newB : Address := Address.replicate 0xe2
 def renamedRaw : List (Address × Decl) :=
   [(newRoot,
-      .fn ⟨0, .shared,
+      .fn ⟨0, .shared, true,
         .letOp (.call newA #[]) (.ret (.var 0))⟩),
    (newA,
-    .fn ⟨0, .shared,
+    .fn ⟨0, .shared, true,
       .letOp (.call newB #[])
           (.letOp (.call oldLeaf #[]) (.ret .erased))⟩),
    (newB,
-      .fn ⟨0, .unique,
+      .fn ⟨0, .unique, false,
         .letOp (.papp newA #[])
           (.letOp (.extern external #[]) (.ret .erased))⟩),
    (oldLeaf, leaf)]
@@ -563,7 +565,7 @@ def duplicateA : Address := Address.replicate 0xf0
 def duplicateB : Address := Address.replicate 0xf1
 
 def plainLeaf : Decl :=
-  .fn ⟨0, .shared, .ret (.lit (.nat 7))⟩
+  .fn ⟨0, .shared, true, .ret (.lit (.nat 7))⟩
 
 def ordinaryDeduplicates : Bool :=
   match ReaddressAll.run []
@@ -585,7 +587,7 @@ def selfKey : Address := Address.replicate 0xf2
 
 def explicitSelfUsesBlock : Bool :=
   let declaration : Decl :=
-    .fn ⟨0, .shared,
+    .fn ⟨0, .shared, true,
       .letOp (.call selfKey #[]) (.ret .erased)⟩
   match ReaddressAll.run [] [(selfKey, declaration)] (.ret .erased) with
   | .ok result => result.blocks.length == 1 && result.ordinary.isEmpty
@@ -593,7 +595,7 @@ def explicitSelfUsesBlock : Bool :=
 
 def callSelfUsesOrdinaryHash : Bool :=
   let declaration : Decl :=
-    .fn ⟨0, .shared,
+    .fn ⟨0, .shared, true,
       .letOp (.callSelf #[]) (.ret .erased)⟩
   match ReaddressAll.run [] [(selfKey, declaration)] (.ret .erased) with
   | .ok result => result.blocks.isEmpty && result.ordinary.length == 1
@@ -639,19 +641,19 @@ def fullyNested : Except String ReaddressAll.Result :=
     IxIRReaddressFixtures.nestedExpression
 
 def expectedFullyNestedTargets : List String :=
-  ["dedd722687841ed7fbed7c87b31815beefa0cc6dd6295bc2df5f2cbeea52ebfa",
-   "c72a5bf8fee71faae798bbef0bed67fb1f1923870d5813923e01c0e8895f9a2a",
-   "90a1ae87fda0d3916a47b022d58e8ff247452cf0eae0999a50ab5414c631543a",
-   "c1a7dd19777c6b104d10a968468218e666fbe98d9568f4d2b2c40143dd982554",
+  ["4982c3a7b9dedd44f9319e71e6f1c9f3a283bdf9ea756f7e0222f46384992fdf",
+   "b09b67046ea7c5f432aaf8d9a0ad364f275859425285e2f0d13b1ff2a4ce745b",
+   "b23ea729574d305094e1a192cd98fb9f4c6ac6c3b426e64d17149cb2330c2a9c",
+   "93b0f7191ee298a04c041218a2c31b2a6d47e716c9f06adabf6b4ffa52aa59b5",
    "4040404040404040404040404040404040404040404040404040404040404040",
-   "881d79fa9de295102db79219cf88a9277601ba3eab2d47c01369afe1f665099f",
-   "d2030b3d78a9f02fb14898cba6117454a4fe5e4a1bd1a83c5cef9b06ded9137b",
-   "39c4ab28ad85bbf1fb7b7c0d58a937aa570173b237db854821640338afab6827",
-   "0ea130eb58f031140dc524b5a12c8c67074df90a2acd28b40dbe15107e12377f",
-   "b431958984e6161cad46fc26163aabd4401da3289e9f3deabe48a0a7f814362a",
-   "f1c7c729455485384bbcdfce9092110e5cfefef49343febec05040f00dc02fd7",
-   "e96af6bedfddb64d99a668a4546402025b1148d8b1d4c53afeb25ac2d0cb22d4",
-   "6c08824c3e15561cf358a1d3941a552a476c54c10050cbb14d6389f3fd62a0eb"]
+   "acdd7ed6dd2ff0f364ea7697b85c32098d843b7ff3daa1f62b4ec2e0dc6d9fc5",
+   "04374cf03ca115a555c4cc2b3fccac7009b405ae83d6df238e1f05b533c72f0c",
+   "5a51d499b2f13429d9a04cf59d8f20a2e5b5def8d27a454bc821e8d0d7508393",
+   "33c1a0b2b85fab57e9310cc224469ae678bfea3771bc40cf29da7286d590f008",
+   "df504cb4ec73814775bb8d0cae6f3f360d01972a66df694b9ca0c0d1ee7e2fa6",
+   "5cddf5abadbb430a64d074bee0c0580ac0001429265aacc5d844139d0714e5ed",
+   "ca360f51322575138a9b9025f245bd18117a2c48c9286ce763ceeccd635e8976",
+   "9193adfb5265d9d0db333d02918ac51134c8dff437538e09b82f30414079ddd9"]
 
 def fullyLoweredAudit
     (source : List (Address × Compilatrix.IxIR0.Decl))
@@ -703,11 +705,11 @@ def fullyCyclicLowering : Except String ReaddressAll.Result :=
     (.ref cyclicSourceKey)
 
 def expectedFullyCyclicTargets : List String :=
-  ["0a314f2f24a65cf1304afdc07583615247841330112f5bf3ae5002800b3280f9",
-   "f053a40e7ee2d7c5e82cc2d01f75639957b01caff419f3ae0ca2ecbfd6bbc201"]
+  ["82bf8557e67293e4a0e19784fb206c0bc0d7a7e38f2ad34d4df6b3cc4da86a9a",
+   "d9699af86a4c4726934dae674b3e420c4376bbfaf30a1d08eff073fa37681c7b"]
 
 def expectedFullyCyclicBlock : String :=
-  "eafd63dbd8b102acf5ae90601512722addf916bbff4f7bd5ae5fc2836d10e049"
+  "28cb53ac21a976d278cb1294be05a273214bbab09768afb32b221044896106c5"
 
 def fullyCyclicLoweringOk (result : ReaddressAll.Result) : Bool :=
   fullyLoweredAudit [(cyclicSourceKey, cyclicSourceDeclaration)]
@@ -902,11 +904,11 @@ def external : Address := Address.replicate 0xc3
 /-- A source/generated-style cycle with a stable external oracle edge nested
 beneath a case alternative. -/
 def declarationA : Compilatrix.IxIR1.Decl :=
-  .fn ⟨1, .shared,
+  .fn ⟨1, .shared, true,
     .letOp (.call oldB #[.var 0]) (.ret (.var 0))⟩
 
 def declarationB : Compilatrix.IxIR1.Decl :=
-  .fn ⟨0, .unique,
+  .fn ⟨0, .unique, false,
     .case .erased false #[.mk 0 0
       (.letOp (.papp oldA #[])
         (.letOp (.extern external #[]) (.ret .erased)))]⟩
@@ -919,9 +921,9 @@ def symbolic : List MutualBlock.Decl := abstractMembers raw
 def expectedBlockBytes : ByteArray := ByteArray.mk #[
   99, 111, 109, 112, 105, 108, 97, 116, 114, 105, 120, 47, 105, 120,
   105, 114, 49, 47, 109, 117, 116, 117, 97, 108, 45, 98, 108, 111,
-  99, 107, 47, 49, 0, 2,
-  0, 1, 1, 1, 8, 0, 1, 1, 0, 0, 0, 0, 0, 0,
-  0, 0, 2, 2, 0, 1, 0, 0, 1, 10, 0, 0, 0, 1, 12, 1,
+  99, 107, 47, 50, 0, 2,
+  0, 1, 1, 1, 1, 8, 0, 1, 1, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 2, 2, 0, 1, 0, 0, 1, 10, 0, 0, 0, 1, 12, 1,
   195, 195, 195, 195, 195, 195, 195, 195,
   195, 195, 195, 195, 195, 195, 195, 195,
   195, 195, 195, 195, 195, 195, 195, 195,
@@ -929,11 +931,11 @@ def expectedBlockBytes : ByteArray := ByteArray.mk #[
   0, 0, 2]
 
 def expectedBlockHex : String :=
-  "9ffff049c2f82a44306978bc7c1d27ba6488f53833d021c0311c361659392c79"
+  "200b6f0ff4d00b038d54ac7f9f63801347c14e71f9ffa6cf655c3542e8131e66"
 
 def expectedMemberHexes : List String :=
-  ["3ea281479aaeb9ff5eb2e7e3eec9c88f169b807ddf6c52a678436b2011fc3e3f",
-   "0649a32174610b319de1ee0796c1b800b9e9877cfd29e58f0b9d54c8cb241bb9"]
+  ["5f5829956d0ffdafba051bc63ca0f922561e10bbd9782012fcf2d48bf4e2e09f",
+   "c8a8aef455e2b56a4d80b41bf9cbb171c428bce2a3d5e16a02d81283be70013e"]
 
 def built : Except String MutualBlock.Result :=
   MutualBlock.run [external] raw
@@ -965,11 +967,11 @@ def decodeOk : Bool :=
 def malformed : List (String × ByteArray) := [
   ("trailing byte", expectedBlockBytes.push 0),
   ("wrong domain", expectedBlockBytes.set! 0 0),
-  ("invalid local-reference tag", expectedBlockBytes.set! 39 0xff),
+  ("invalid local-reference tag", expectedBlockBytes.set! 40 0xff),
   ("nonminimal member count",
     Block.addressDomain ++ ByteArray.mk #[130, 0] ++
       expectedBlockBytes.extract 34 expectedBlockBytes.size),
-  ("out-of-range local reference", expectedBlockBytes.set! 40 2),
+  ("out-of-range local reference", expectedBlockBytes.set! 41 2),
   ("truncated block",
     expectedBlockBytes.extract 0 (expectedBlockBytes.size - 1)),
   ("empty block", Block.addressDomain ++ ByteArray.mk #[0])]
@@ -1010,10 +1012,10 @@ def renamedRaw : List (Address × Compilatrix.IxIR1.Decl) :=
   let newA := Address.replicate 0xa1
   let newB := Address.replicate 0xa2
   [(newA,
-      .fn ⟨1, .shared,
+      .fn ⟨1, .shared, true,
         .letOp (.call newB #[.var 0]) (.ret (.var 0))⟩),
    (newB,
-      .fn ⟨0, .unique,
+      .fn ⟨0, .unique, false,
         .case .erased false #[.mk 0 0
           (.letOp (.papp newA #[])
             (.letOp (.extern external #[]) (.ret .erased)))]⟩)]
@@ -1204,12 +1206,12 @@ def validatedPipelineBuilt : Except Pipeline.Error Pipeline.Artifact :=
   Pipeline.compileValidated sharedPipelineConstants projection
 
 def expectedTargetBlockHex : String :=
-  "8f954c9839137cf7f68f16bcf6c3fd73732cadab5dd44997f6610c7f2def2063"
+  "3ecbe37b727c6fbe939db9fa01c4c9b3dfbbf376b2812d1b045546846a3715cb"
 
 def expectedTargetMapHexes : List String :=
-  ["44c17de36902152de0306db2c6192b512fd7d4f87bf06de62c285f72ef091dfa",
-   "254fb32c855b39402e633fb518ffefa6793e60f053767110af047bc6876dbc70",
-   "7c143b74054dd77446825c2890fb946ffb68b0f28f820c138c28b64d42c7f81d"]
+  ["eec1f36398b68ed5b253505079e260a21a8b3d6c148b4766a0cd9a00e93a6d9e",
+   "0e400d87105ce7a391d272bc3cb535598242ad2cb65e11dbf921571be985929a",
+   "d9fc41365f30d4397fdefd6626449cfae2d744bd21461aff8e3b7a82c482f412"]
 
 def pipelineOk (artifact : Pipeline.Artifact) : Bool :=
   let finalKeys := artifact.targetDecls.map (Prod.fst)
@@ -1412,25 +1414,25 @@ def constructorBlock : Address := Address.replicate 0xda
 def constructorId : IxIR1.CtorId := ⟨constructorBlock, 0, 0⟩
 
 def targetDeclaration : IxIR1.Decl :=
-  .fn ⟨2, .shared, .ret (.lit (.nat 42))⟩
+  .fn ⟨2, .shared, true, .ret (.lit (.nat 42))⟩
 
 def callerDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.papp rawTarget #[.lit (.nat 20)])
       (.letOp (.apply (.var 0) #[.lit (.nat 22)])
         (.ret (.var 0)))⟩
 
 def constructorDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.alloc .shared constructorId #[.lit (.nat 7)])
       (.ret (.var 0))⟩
 
 def cycleLeftDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call rawCycleRight #[]) (.ret (.var 0))⟩
 
 def cycleRightDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .case (.lit (.nat 0)) true #[
       .mk 0 0
         (.letOp (.alloc .shared constructorId #[.lit (.nat 7)])
@@ -1499,17 +1501,17 @@ def widened (result : IxIR1.ReaddressAll.Result) :
   IxIR1.HPT.run result.artifacts (widenedCertificate result)
 
 def expectedCacheKeys : List String :=
-  ["bf5475b32971b741a6d602197289d11f9912d2b109293b8a62c4db491d1ed06a",
-   "ee79c844985ae806483fc786e2f0ab835172ebedd269b6d9aab9398dcb8bd7f0",
-   "e059b05f30091306fa73f67d640b0c191a5bd13205f9ad9f183d0f08fd400d75",
-   "282720aac19fc275a6ff94d70624ba0b9c709d586013bbc5ade99c1c9e51ef25",
+  ["aa0edd4e751dcf06272bc2732dececb251cbfe069f938cfc2714e3954699692d",
+   "e25e2f1ac5d876e00bb1a500896fcc6c9f08a463c2a116b847e759c9ea66e6cd",
+   "0425d4800a33f31155d461ebb7c42fd1c5f98ba7a13ef22012236c779ef841c3",
+   "49e96f64307e0b092fcf7d0d80ebc8b3954fcf7394bb4d6183962bf6c5df7e7a",
    "b3545b3b84a80b48985948ce2cf695100997782b53b9ee6047f2a7fdc02e10f5"]
 
 def expectedSummaryAddresses : List String :=
-  ["1caf2dd882d704bb3ea7953c28a6122ec19bc2e4dca874f66a77824d69c7f4ff",
-   "c4d282d11ba1b51f48d39b4e922ac609757859fdd64dc8300e3c2a7c1e7ce2f0",
-   "513733427bff6e37cab46f596e40bd62de340c1843b5ebb595229c7bcf5ba095",
-   "7a57f2442e57cd62830e30054d2063850128eff307db4b76adbb17c9d7809c69",
+  ["e63bfc3574ff2dcc567f40c08742b392872cff5727191ab69bd21e312b2c26d8",
+   "0440bda2b04538bf529aacced15dcdd26251d749476daef6f03a63d88fc7cc5c",
+   "9e0beee98136479c7a2c8d2389210fd6087659790709963646dd1a9a519ac164",
+   "8c2eae674fa8fe6efab7f98d5f94462e7c678fd76298a87f2b379a95e1cdca8b",
    "ce6e76ed9c44e92f8a659583dfb8461241f8e9dd6d937a30fc1b9d5a96d18994"]
 
 def findSummary (analysis : IxIR1.HPT.Result) (function : Address) :
@@ -1778,7 +1780,7 @@ the cache identity vectors used above. -/
 def rawCaseBinder : Address := Address.replicate 0xde
 
 def caseBinderDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call rawConstructor #[])
       (.case (.var 0) false #[
         .mk 0 1 (.ret (.var 0))])⟩
@@ -1866,20 +1868,20 @@ def deepInnerId : IxIR1.CtorId := ⟨constructorBlock, 0, 0⟩
 def deepOuterId : IxIR1.CtorId := ⟨constructorBlock, 0, 1⟩
 
 def deepConstructorDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.alloc .shared deepInnerId #[.lit (.nat 11)])
       (.letOp (.alloc .shared deepOuterId #[.var 0])
         (.ret (.var 0)))⟩
 
 def deepFetchDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call rawDeepConstructor #[])
       (.letOp (.fetch (.var 0) 0)
         (.letOp (.fetch (.var 0) 0)
           (.ret (.var 0))))⟩
 
 def deepCaseDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call rawDeepConstructor #[])
       (.case (.var 0) false #[
         .mk 1 1
@@ -2063,7 +2065,7 @@ def casePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
       let ctx : IxIR1.Ctx := { decls := declarations }
       -- `runCode_run_eq` deliberately holds the current frame fixed; this
       -- fixture contains no `callSelf`, so that boundary is explicit here.
-      let current : IxIR1.FnDef := ⟨0, .shared, input⟩
+      let current : IxIR1.FnDef := ⟨0, .shared, false, input⟩
       preciseAnalysis.semanticAudit && topAnalysis.semanticAudit &&
         pruned.removedAlternatives == 1 &&
         pruned.collapsedCases == 1 &&
@@ -2142,7 +2144,7 @@ def recursiveCasePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
       let conservative := IxIR1.HPT.CasePrune.runRecursive declarations
         topCandidate.summaryEnv input
       let ctx : IxIR1.Ctx := { decls := declarations }
-      let current : IxIR1.FnDef := ⟨0, .shared, input⟩
+      let current : IxIR1.FnDef := ⟨0, .shared, false, input⟩
       preciseAnalysis.semanticAudit && topAnalysis.semanticAudit &&
         rootOnly.removedAlternatives == 0 &&
         rootOnly.collapsedCases == 0 &&
@@ -2188,7 +2190,7 @@ def callSelfCasePruneOk (program : IxIR1.ReaddressAll.Result) : Bool :=
       let input := callSelfCasePruneInput program
       let pruned := IxIR1.HPT.CasePrune.runRecursive declarations
         candidate.summaryEnv input
-      let current : IxIR1.FnDef := ⟨1, .shared, input⟩
+      let current : IxIR1.FnDef := ⟨1, .shared, false, input⟩
       let rewritten := IxIR1.HPT.CasePrune.rewriteCurrent declarations
         candidate.summaryEnv current
       let ctx : IxIR1.Ctx := { decls := declarations }
@@ -2264,7 +2266,7 @@ def graphCallerBody : IxIR1.Code :=
         .mk 1 0 (.ret (.lit (.nat 99))) ]))
 
 def graphCallerDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared, graphCallerBody⟩
+  .fn ⟨0, .shared, true, graphCallerBody⟩
 
 def graphRawDeclarations : List (Address × IxIR1.Decl) :=
   [(graphRawCaller, graphCallerDeclaration),
@@ -2430,18 +2432,18 @@ def reachRawDeadLeft : Address := Address.replicate 0xf3
 def reachRawDeadRight : Address := Address.replicate 0xf4
 
 def reachLeafDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared, .ret (.lit (.nat 42))⟩
+  .fn ⟨0, .shared, true, .ret (.lit (.nat 42))⟩
 
 def reachMiddleDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call reachRawLeaf #[]) (.ret (.var 0))⟩
 
 def reachDeadLeftDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call reachRawDeadRight #[]) (.ret (.var 0))⟩
 
 def reachDeadRightDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .shared,
+  .fn ⟨0, .shared, true,
     .letOp (.call reachRawDeadLeft #[]) (.ret (.var 0))⟩
 
 def reachRawDeclarations : List (Address × IxIR1.Decl) :=
@@ -2572,13 +2574,13 @@ def papRawMaker : Address := Address.replicate 0xe1
 def papRawUnary : Address := Address.replicate 0xe2
 
 def papScalarTargetDeclaration : IxIR1.Decl :=
-  .fn ⟨2, .shared, .ret (.lit (.nat 42))⟩
+  .fn ⟨2, .shared, true, .ret (.lit (.nat 42))⟩
 
 def papUnaryDeclaration : IxIR1.Decl :=
-  .fn ⟨1, .shared, .ret (.lit (.nat 99))⟩
+  .fn ⟨1, .shared, true, .ret (.lit (.nat 99))⟩
 
 def papMakerDeclaration : IxIR1.Decl :=
-  .fn ⟨2, .shared,
+  .fn ⟨2, .shared, true,
     .letOp (.papp papRawUnary #[]) (.ret (.var 0))⟩
 
 def papFusionRawDeclarations : List (Address × IxIR1.Decl) :=
@@ -3344,7 +3346,7 @@ def aliasCtorA : IxIR1.CtorId := ⟨aliasConstructorBlock, 0, 0⟩
 def aliasCtorB : IxIR1.CtorId := ⟨aliasConstructorBlock, 0, 1⟩
 
 def aliasReuseDeclaration : IxIR1.Decl :=
-  .fn ⟨0, .unique,
+  .fn ⟨0, .unique, false,
     .letOp (.alloc .unique aliasCtorA #[])
       (.letOp (.pure (.var 0))
         (.letOp (.reuse (.var 0) aliasCtorB #[])
@@ -4459,7 +4461,7 @@ def main : IO UInt32 := do
     ok := false
   | .ok result =>
     if !IxIRReaddressFixtures.chainOk result then
-      IO.eprintln "FAIL: dependency-ordered IxIR₁ readdressing drifted"
+      IO.eprintln s!"FAIL: dependency-ordered IxIR₁ readdressing drifted (content={repr (IxIRReaddressFixtures.contentHexes result)})"
       ok := false
 
   match IxIRReaddressFixtures.deduplicate with
@@ -4468,7 +4470,7 @@ def main : IO UInt32 := do
     ok := false
   | .ok result =>
     if !IxIRReaddressFixtures.deduplicateOk result then
-      IO.eprintln "FAIL: IxIR₁ content deduplication drifted"
+      IO.eprintln s!"FAIL: IxIR₁ content deduplication drifted (content={repr (IxIRReaddressFixtures.contentHexes result)})"
       ok := false
 
   if !IxIRReaddressFixtures.cycleRejected then
@@ -4635,7 +4637,7 @@ def main : IO UInt32 := do
     ok := false
   | .ok result =>
     if !IxIR1ReaddressAllFixtures.fullyCyclicLoweringOk result then
-      IO.eprintln s!"FAIL: source/lifted IxIR₁ cycle did not become one two-member block (blocks={result.blocks.length}, declarations={result.declarations.length}, audit={IxIR1ReaddressAllFixtures.fullyLoweredAudit [(IxIR1ReaddressAllFixtures.cyclicSourceKey, IxIR1ReaddressAllFixtures.cyclicSourceDeclaration)] (.ref IxIR1ReaddressAllFixtures.cyclicSourceKey) result})"
+      IO.eprintln s!"FAIL: source/lifted IxIR₁ cycle did not become one two-member block (targets={repr (result.addressMap.map fun entry => Address.toHex entry.2)}, blocks={repr (result.blockAddresses.map Address.toHex)}, declarations={result.declarations.length}, audit={IxIR1ReaddressAllFixtures.fullyLoweredAudit [(IxIR1ReaddressAllFixtures.cyclicSourceKey, IxIR1ReaddressAllFixtures.cyclicSourceDeclaration)] (.ref IxIR1ReaddressAllFixtures.cyclicSourceKey) result})"
       ok := false
   if !IxIR1ReaddressAllFixtures.fullyProtectedSourceIdentityRejected then
     IO.eprintln "FAIL: fully addressed lowering allowed a generated key to capture a constructor identity"

@@ -42,7 +42,7 @@ The complete declaration preimages begin with an ASCII domain and NUL:
 | IR | Domain |
 | --- | --- |
 | IxIR₀ | `compilatrix/ixir0/decl/1\0` |
-| IxIR₁ | `compilatrix/ixir1/decl/1\0` |
+| IxIR₁ | `compilatrix/ixir1/decl/2\0` |
 
 Changing any tag, field order, primitive spelling, or domain is an address
 version roll, not a compatible refactor.
@@ -65,6 +65,11 @@ IxIR₁ uses these tags:
 | `Op` | `pure=0`, `alloc=1`, `reuse=2`, `free=3`, `dup=4`, `drop=5`, `dropU=6`, `fetch=7`, `call=8`, `callSelf=9`, `papp=10`, `apply=11`, `extern=12` |
 | `Code` | `ret=0`, `letOp=1`, `case=2` |
 | `Decl` | `fn=0`, `extern=1` |
+
+An IxIR₁ function payload is `arity`, result ownership, the canonical
+`papSafe` Boolean, then its body. The `/2` declaration domain was rolled when
+that owner-sensitive dynamic-entry policy became address-significant; a
+reader never reinterprets an old `/1` preimage as the new shape.
 
 `IxIR0.Decl.address` and `IxIR1.Decl.address` are BLAKE3 of the corresponding
 complete preimage; `Decl.addressed` pairs the computed key with the value.
@@ -202,8 +207,13 @@ It symbolically covers every static IxIR₁ address position: constructor
 blocks in `alloc`/`reuse`, and the targets of `call`, `papp`, and `extern`.
 Edges inside the ordered block use `local(index)`; all other edges retain a
 full external address. The block and member domains are respectively
-`compilatrix/ixir1/mutual-block/1\0` and
+`compilatrix/ixir1/mutual-block/2\0` and
 `compilatrix/ixir1/mutual-member/1\0`.
+
+The symbolic function spelling also commits to `papSafe`, hence the block
+domain roll. Member framing remains block-address plus index, so its `/1`
+domain is unchanged; every member identity still changes because the `/2`
+block digest is its first input.
 
 Like its IxIR₀ counterpart, the module exposes a strict, full-consuming,
 exact-reencoding decoder; scope-aware ingress materialization; independently
@@ -211,7 +221,7 @@ derived executable member keys; collision and namespace checks; and a
 successful-run semantic audit proving the concrete result is exactly the
 recorded address image and re-abstracts to the same symbolic block. Kernel
 roundtrip, accepted-byte canonicality, and preimage-injectivity theorems bring
-the fence to twenty-two codec laws. The compiled fixture freezes a 99-byte
+the fence to twenty-two codec laws. The compiled fixture freezes a 101-byte
 source/generated-style two-node cycle, its block and member digests, transient
 name independence, order sensitivity, rematerialization, malformed framing and
 scope rejection, and duplicate/reserved-identity failures.
@@ -292,10 +302,14 @@ oracle correspondence, target layout, compiler ownership, and extern behavior
 remain explicit semantic or ABI premises.
 
 The member-aware route intentionally does not strengthen a validated program
-to globally all-shared. Accepted affine and unique declarations may be safe
-when reached only through saturated known calls, so discharging the remaining
-`CompilerContracts` premise requires a PAP-safe, owner-sensitive reachable-
-store argument rather than a blanket ownership assumption.
+to globally all-shared. `FnDef.papSafe` now follows declarations through
+ordinary and mutual content addressing, and the compiler-contract seal asks
+for homogeneous shared ownership only for declarations whose bit admits
+dynamic PAP entry. Accepted affine and unique declarations remain available
+through saturated known calls. The remaining production obligation is to
+derive this landed owner-sensitive premise and declaration coverage from the
+validated compilation's retained witnesses, rather than to assume a blanket
+all-shared environment.
 
 The production semantic endpoint uses `AddressedValueGraph`: the final heap is
 the address image of a raw heap carrying the existing `ValueGraph`. This is

@@ -147,6 +147,12 @@ structure Renames (rename : Address → Address) (before after : Ctx) : Prop whe
 
 end Ctx
 
+@[simp] theorem declPapSafe_mapAddresses (rename : Address → Address)
+    (declaration : Decl) :
+    declPapSafe (Decl.mapAddresses rename declaration) =
+      declPapSafe declaration := by
+  cases declaration <;> rfl
+
 /-! ## Certified readdressing contexts -/
 
 private theorem envOfList_some_mem
@@ -1220,12 +1226,25 @@ theorem evalTransportAt {rename : Address → Address} {before after : Ctx}
                                 (.papN (rename called) arity total.toArray)
                               .ok (next, .loc fresh)
                             else if total.length == arity then
-                              IxIR1.invoke after fuel (rename called) total dropped
-                            else do
-                              let (next, value) ← IxIR1.invoke after fuel
-                                (rename called) (total.take arity) dropped
-                              IxIR1.applyGo after fuel next value
-                                (total.drop arity)) =
+                              match after.decls (rename called) with
+                              | none => .error (.unknownRef (rename called))
+                              | some declaration =>
+                                if declPapSafe declaration then
+                                  IxIR1.invoke after fuel (rename called)
+                                    total dropped
+                                else .error (.stuck
+                                  "shared pap targets a non-pap-safe declaration")
+                            else
+                              match after.decls (rename called) with
+                              | none => .error (.unknownRef (rename called))
+                              | some declaration =>
+                                if declPapSafe declaration then do
+                                  let (next, value) ← IxIR1.invoke after fuel
+                                    (rename called) (total.take arity) dropped
+                                  IxIR1.applyGo after fuel next value
+                                    (total.drop arity)
+                                else .error (.stuck
+                                  "shared pap targets a non-pap-safe declaration")) =
                           mapRunResult rename (do
                             let dropped ← IxIR1.dropVal before fuel duplicated
                               (.loc location)
@@ -1235,12 +1254,24 @@ theorem evalTransportAt {rename : Address → Address} {before after : Ctx}
                                 (.papN called arity total.toArray)
                               .ok (next, .loc fresh)
                             else if total.length == arity then
-                              IxIR1.invoke before fuel called total dropped
-                            else do
-                              let (next, value) ← IxIR1.invoke before fuel called
-                                (total.take arity) dropped
-                              IxIR1.applyGo before fuel next value
-                                (total.drop arity))
+                              match before.decls called with
+                              | none => .error (.unknownRef called)
+                              | some declaration =>
+                                if declPapSafe declaration then
+                                  IxIR1.invoke before fuel called total dropped
+                                else .error (.stuck
+                                  "shared pap targets a non-pap-safe declaration")
+                            else
+                              match before.decls called with
+                              | none => .error (.unknownRef called)
+                              | some declaration =>
+                                if declPapSafe declaration then do
+                                  let (next, value) ← IxIR1.invoke before fuel
+                                    called (total.take arity) dropped
+                                  IxIR1.applyGo before fuel next value
+                                    (total.drop arity)
+                                else .error (.stuck
+                                  "shared pap targets a non-pap-safe declaration"))
                         rw [smaller.dropVal duplicated (.loc location)]
                         cases hdrop : IxIR1.dropVal before fuel duplicated
                             (.loc location) with
@@ -1259,26 +1290,50 @@ theorem evalTransportAt {rename : Address → Address} {before after : Ctx}
                                     (.papN (rename called) arity total.toArray)
                                 .ok (next, .loc fresh)
                               else if total.length == arity then
-                                IxIR1.invoke after fuel (rename called) total
-                                  (Store.mapAddresses rename dropped)
-                              else do
-                                let (next, value) ← IxIR1.invoke after fuel
-                                  (rename called) (total.take arity)
-                                  (Store.mapAddresses rename dropped)
-                                IxIR1.applyGo after fuel next value
-                                  (total.drop arity)) =
+                                match after.decls (rename called) with
+                                | none => .error (.unknownRef (rename called))
+                                | some declaration =>
+                                  if declPapSafe declaration then
+                                    IxIR1.invoke after fuel (rename called)
+                                      total (Store.mapAddresses rename dropped)
+                                  else .error (.stuck
+                                    "shared pap targets a non-pap-safe declaration")
+                              else
+                                match after.decls (rename called) with
+                                | none => .error (.unknownRef (rename called))
+                                | some declaration =>
+                                  if declPapSafe declaration then do
+                                    let (next, value) ← IxIR1.invoke after fuel
+                                      (rename called) (total.take arity)
+                                      (Store.mapAddresses rename dropped)
+                                    IxIR1.applyGo after fuel next value
+                                      (total.drop arity)
+                                  else .error (.stuck
+                                    "shared pap targets a non-pap-safe declaration")) =
                               mapRunResult rename
                                 (if total.length < arity then
                                   let (next, fresh) := dropped.allocNode .shared
                                     (.papN called arity total.toArray)
                                   .ok (next, .loc fresh)
                                 else if total.length == arity then
-                                  IxIR1.invoke before fuel called total dropped
-                                else do
-                                  let (next, value) ← IxIR1.invoke before fuel
-                                    called (total.take arity) dropped
-                                  IxIR1.applyGo before fuel next value
-                                    (total.drop arity))
+                                  match before.decls called with
+                                  | none => .error (.unknownRef called)
+                                  | some declaration =>
+                                    if declPapSafe declaration then
+                                      IxIR1.invoke before fuel called total dropped
+                                    else .error (.stuck
+                                      "shared pap targets a non-pap-safe declaration")
+                                else
+                                  match before.decls called with
+                                  | none => .error (.unknownRef called)
+                                  | some declaration =>
+                                    if declPapSafe declaration then do
+                                      let (next, value) ← IxIR1.invoke before fuel
+                                        called (total.take arity) dropped
+                                      IxIR1.applyGo before fuel next value
+                                        (total.drop arity)
+                                    else .error (.stuck
+                                      "shared pap targets a non-pap-safe declaration"))
                             by_cases hless : total.length < arity
                             · simp only [hless]
                               change Except.ok
@@ -1303,24 +1358,38 @@ theorem evalTransportAt {rename : Address → Address} {before after : Ctx}
                                   .shared
                                   (.papN called arity total.toArray)).symm
                             · simp only [hless]
-                              by_cases hequal : total.length == arity
-                              · simp only [hequal]
-                                exact smaller.invoke called total dropped
-                              · simp only [hequal]
-                                rw [smaller.invoke called (total.take arity)
-                                  dropped]
-                                cases hinvoke : IxIR1.invoke before fuel called
-                                    (total.take arity) dropped with
-                                | error error =>
-                                    change Except.error
-                                        (Err.mapAddresses rename error) =
-                                      mapRunResult rename (Except.error error)
-                                    rfl
-                                | ok out =>
-                                    rcases out with ⟨calledStore, value⟩
-                                    simp only [mapRunResult]
-                                    exact smaller.applyGo calledStore value
-                                      (total.drop arity)
+                              rw [contexts.decls called]
+                              cases hdecl : before.decls called with
+                              | none =>
+                                  simp [hdecl, mapRunResult, Err.mapAddresses]
+                              | some declaration =>
+                                simp only [hdecl, Option.map_some,
+                                  declPapSafe_mapAddresses]
+                                cases hpapsafe : declPapSafe declaration with
+                                | false =>
+                                  simp [hpapsafe, mapRunResult,
+                                    Err.mapAddresses]
+                                | true =>
+                                  simp only [hpapsafe, if_true]
+                                  by_cases hequal : total.length == arity
+                                  · simp only [hequal]
+                                    exact smaller.invoke called total dropped
+                                  · simp only [hequal]
+                                    rw [smaller.invoke called (total.take arity)
+                                      dropped]
+                                    cases hinvoke : IxIR1.invoke before fuel
+                                        called (total.take arity) dropped with
+                                    | error error =>
+                                        change Except.error
+                                            (Err.mapAddresses rename error) =
+                                          mapRunResult rename
+                                            (Except.error error)
+                                        rfl
+                                    | ok out =>
+                                        rcases out with ⟨calledStore, value⟩
+                                        simp only [mapRunResult]
+                                        exact smaller.applyGo calledStore value
+                                          (total.drop arity)
       · intro store value
         cases value with
         | lit literal => simp [IxIR1.dropVal, mapStoreResult]
@@ -1453,7 +1522,7 @@ theorem runMain_mapAddresses {rename : Address → Address}
       mapRunResult rename (runMain before code fuel) := by
   simpa [runMain, FnDef.mapAddresses] using
     (runCode_mapAddresses contexts fuel
-      (⟨0, .shared, code⟩ : FnDef) ({} : Store) [] code)
+      (⟨0, .shared, false, code⟩ : FnDef) ({} : Store) [] code)
 
 /-- The concrete content-addressing pass preserves a top-level run exactly.
 The source side uses the certified pre-address context: it agrees with every

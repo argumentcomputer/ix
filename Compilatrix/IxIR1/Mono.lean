@@ -368,18 +368,32 @@ private theorem monoAt : ∀ fuel, MonoAt fuel := by
                         (captured.toList ++ args).length == arity
                     · simp only [hexact, Bool.false_eq_true,
                         if_false] at h ⊢
-                      cases hinvoke : invoke ctx fuel address
-                          ((captured.toList ++ args).take arity) ready with
-                      | error err =>
-                        rw [hinvoke, bindErr] at h
-                        contradiction
-                      | ok called =>
-                        rcases called with ⟨calledStore, calledValue⟩
-                        rw [hinvoke, bindOk] at h
-                        rw [ihInvoke _ _ _ _ _ hinvoke, bindOk]
-                        exact ihApply _ _ _ _ _ h
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at h
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false => simp [hdecl, hpapsafe] at h
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at h ⊢
+                          cases hinvoke : invoke ctx fuel address
+                              ((captured.toList ++ args).take arity) ready with
+                          | error err =>
+                            rw [hinvoke, bindErr] at h
+                            contradiction
+                          | ok called =>
+                            rcases called with ⟨calledStore, calledValue⟩
+                            rw [hinvoke, bindOk] at h
+                            rw [ihInvoke _ _ _ _ _ hinvoke, bindOk]
+                            exact ihApply _ _ _ _ _ h
                     · simp only [hexact, if_true] at h ⊢
-                      exact ihInvoke _ _ _ _ _ h
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at h
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false => simp [hdecl, hpapsafe] at h
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at h ⊢
+                          exact ihInvoke _ _ _ _ _ h
     · intro ctx store value out h
       rw [dropVal.eq_def] at h ⊢
       dsimp only at h ⊢
@@ -827,20 +841,40 @@ private theorem errorMonoAt : ∀ fuel error, error ≠ .fuel → ErrorMonoAt fu
                         (captured.toList ++ args).length == arity
                     · simp only [hexact, Bool.false_eq_true,
                         if_false] at h ⊢
-                      cases hinvoke : invoke ctx fuel address
-                          ((captured.toList ++ args).take arity) ready with
-                      | error err =>
-                        rw [hinvoke, bindErr] at h
-                        have herr : err = error := Except.error.inj h
-                        subst err
-                        rw [ihInvoke _ _ _ _ hinvoke, bindErr]
-                      | ok called =>
-                        rcases called with ⟨calledStore, calledValue⟩
-                        rw [hinvoke, bindOk] at h
-                        rw [monoInvoke _ _ _ _ _ hinvoke, bindOk]
-                        exact ihApply _ _ _ _ h
+                      cases hdecl : ctx.decls address with
+                      | none => simp only [hdecl] at h ⊢; exact h
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false =>
+                          simp only [hdecl, hpapsafe,
+                            Bool.false_eq_true, if_false] at h ⊢
+                          exact h
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at h ⊢
+                          cases hinvoke : invoke ctx fuel address
+                              ((captured.toList ++ args).take arity) ready with
+                          | error err =>
+                            rw [hinvoke, bindErr] at h
+                            have herr : err = error := Except.error.inj h
+                            subst err
+                            rw [ihInvoke _ _ _ _ hinvoke, bindErr]
+                          | ok called =>
+                            rcases called with ⟨calledStore, calledValue⟩
+                            rw [hinvoke, bindOk] at h
+                            rw [monoInvoke _ _ _ _ _ hinvoke, bindOk]
+                            exact ihApply _ _ _ _ h
                     · simp only [hexact, if_true] at h ⊢
-                      exact ihInvoke _ _ _ _ h
+                      cases hdecl : ctx.decls address with
+                      | none => simp only [hdecl] at h ⊢; exact h
+                      | some decl =>
+                        cases hpapsafe : declPapSafe decl with
+                        | false =>
+                          simp only [hdecl, hpapsafe,
+                            Bool.false_eq_true, if_false] at h ⊢
+                          exact h
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at h ⊢
+                          exact ihInvoke _ _ _ _ h
     · intro ctx store value h
       rw [dropVal.eq_def] at h ⊢
       dsimp only at h ⊢

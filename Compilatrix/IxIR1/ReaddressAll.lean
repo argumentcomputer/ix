@@ -828,21 +828,21 @@ private def fixtureC : Address := Address.replicate 0xa3
 private def fixtureD : Address := Address.replicate 0xa4
 
 private def fixtureRaw : List (Address × Decl) :=
-  [(fixtureA, .fn ⟨1, .shared,
+  [(fixtureA, .fn ⟨1, .shared, true,
       .letOp (.call fixtureB #[.var 0]) (.ret (.var 0))⟩),
-   (fixtureB, .fn ⟨0, .shared,
+   (fixtureB, .fn ⟨0, .shared, true,
       .letOp (.papp fixtureA #[]) (.ret .erased)⟩),
-   (fixtureC, .fn ⟨0, .shared,
+   (fixtureC, .fn ⟨0, .shared, true,
       .letOp (.call fixtureA #[]) (.ret .erased)⟩),
    (fixtureD, .extern 0)]
 
 #guard (discoverComponents fixtureRaw).map Component.keys ==
   [[fixtureA, fixtureB], [fixtureC], [fixtureD]]
 #guard (discoverComponents
-  [(fixtureA, .fn ⟨0, .shared,
+  [(fixtureA, .fn ⟨0, .shared, true,
       .letOp (.call fixtureA #[]) (.ret .erased)⟩)]).all Component.cyclic
 #guard !(discoverComponents
-  [(fixtureA, .fn ⟨0, .shared,
+  [(fixtureA, .fn ⟨0, .shared, true,
       .letOp (.callSelf #[]) (.ret .erased)⟩)]).any Component.cyclic
 
 end ReaddressAll
