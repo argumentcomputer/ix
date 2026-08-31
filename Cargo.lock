@@ -1699,6 +1699,7 @@ dependencies = [
  "flock-prover",
  "ix-terminal",
  "multi-stark",
+ "rayon",
  "serde",
 ]
 
