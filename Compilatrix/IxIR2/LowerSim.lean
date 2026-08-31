@@ -9,7 +9,7 @@ This file fixes the theorem shape before the proof is scaled over every
 instruction. Its foundation discharges scalar and vector operand resolution,
 extends related environments across value and erased bindings, and closes the
 public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
-constructor allocation.
+constructor allocation, plus the scalar and heap-bearing shared-retain paths.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -52,6 +52,29 @@ theorem StoreRel.alloc_location {source : IxIR1.Store}
     (target.allocNode world node).2 =
       (source.allocNode world node).2 := by
   rw [Eval.Store.allocNode_location, relation.heap]
+
+/-- Updating the same node preserves exact heap correspondence. -/
+theorem StoreRel.setBox {source : IxIR1.Store} {target : Eval.Store}
+    (relation : StoreRel source target) (location : Nat)
+    (box : IxIR1.NodeBox) :
+    StoreRel (source.setBox location box) (target.setBox location box) := by
+  constructor
+  · rw [Eval.Store.setBox_heap, relation.heap]
+  · exact relation.resetAttempts
+  · exact relation.hotResets
+  · exact relation.coldResets
+  · exact relation.reusedPayloadUnits
+
+/-- Charging the same RC operation preserves exact store correspondence. -/
+theorem StoreRel.rcTick {source : IxIR1.Store} {target : Eval.Store}
+    (relation : StoreRel source target) :
+    StoreRel source.rcTick target.rcTick := by
+  constructor
+  · rw [Eval.Store.rcTick_heap, relation.heap]
+  · exact relation.resetAttempts
+  · exact relation.hotResets
+  · exact relation.coldResets
+  · exact relation.reusedPayloadUnits
 
 /-- Translate one source atom through an explicit source-slot-to-target-atom
 map. This is the runtime view of the environment mapping recorded on CFG
@@ -227,6 +250,131 @@ theorem simulate_pure_move {context : Eval.Context}
     resolveAtom_of_envRel relation translated sourceResolved
   exact ⟨step_move control blockAt pc instruction targetResolved,
     relation.bindValue value⟩
+
+/-- Retaining a scalar is operationally inert. -/
+theorem retainShared_of_scalar {store : Eval.Store} {value : RVal}
+    (scalar : Eval.RVal.isScalar value = true) :
+    Eval.retainShared store value = .ok store := by
+  cases value <;> simp [Eval.RVal.isScalar, Eval.retainShared] at scalar ⊢
+
+/-- The scalar branch of IxIR₁ `dup` and IxIR₂ `retainShared` is an
+identical store-preserving step. -/
+theorem simulate_dup_retain_scalar {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef} {sourceFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom} {value : RVal}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved : IxIR1.resolveAtom source sourceAtom = .ok value)
+    (scalar : Eval.RVal.isScalar value = true)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .retainShared targetAtom) :
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.dup sourceAtom) = .ok (sourceStore, value) ∧
+      Eval.Step context interpretation machine
+        { machine with
+          control := .running
+            { frame with
+              pc := frame.pc + 1
+              values := frame.values.push value }
+            stack } ∧
+      StoreRel sourceStore machine.store ∧
+      EnvRel (value :: source) (frame.values.push value)
+        (#[.reg frame.values.size] ++ mapping) := by
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok value :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  have targetStep := Eval.Step.retainShared (context := context)
+    (interpretation := interpretation) control blockAt pc instruction
+    targetResolved (retainShared_of_scalar scalar)
+  refine ⟨?_, targetStep, stores, environments.bindValue value⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  cases value with
+  | loc location => simp [Eval.RVal.isScalar] at scalar
+  | lit literal => rfl
+  | erased => rfl
+
+/-- The heap-bearing branch increments the same shared node and RC counter in
+both exact stores before binding the retained location. -/
+theorem simulate_dup_retain_shared {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef} {sourceFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom}
+    {location : Nat} {box : IxIR1.NodeBox}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved :
+      IxIR1.resolveAtom source sourceAtom = .ok (.loc location))
+    (sourceGet : sourceStore.get? location = some box)
+    (shared : box.world = .shared)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .retainShared targetAtom) :
+    let nextBox := { box with rc := box.rc + 1 }
+    let sourceStore' := (sourceStore.setBox location nextBox).rcTick
+    let targetStore' := (machine.store.setBox location nextBox).rcTick
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.dup sourceAtom) = .ok (sourceStore', .loc location) ∧
+      Eval.Step context interpretation machine
+        { machine with
+          store := targetStore'
+          control := .running
+            { frame with
+              pc := frame.pc + 1
+              values := frame.values.push (.loc location) }
+            stack } ∧
+      StoreRel sourceStore' targetStore' ∧
+      EnvRel (.loc location :: source)
+        (frame.values.push (.loc location))
+        (#[.reg frame.values.size] ++ mapping) := by
+  dsimp only
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok (.loc location) :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  have targetGet : machine.store.get? location = some box := by
+    unfold Eval.Store.get?
+    rw [stores.heap]
+    exact sourceGet
+  have retained :
+      Eval.retainShared machine.store (.loc location) =
+        .ok ((machine.store.setBox location
+          { box with rc := box.rc + 1 }).rcTick) := by
+    unfold Eval.retainShared
+    simp only
+    rw [targetGet]
+    simp only
+    rw [shared]
+    rfl
+  have targetStep := Eval.Step.retainShared (context := context)
+    (interpretation := interpretation) control blockAt pc instruction
+    targetResolved retained
+  refine ⟨?_, targetStep,
+    (stores.setBox location { box with rc := box.rc + 1 }).rcTick,
+    environments.bindValue (.loc location)⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  simp only [bind, Except.bind]
+  rw [sourceGet]
+  simp only
+  rw [shared]
 
 /-- Pointwise translation of an operand vector. Keeping this relation
 separate from the executable translators makes it compose directly with

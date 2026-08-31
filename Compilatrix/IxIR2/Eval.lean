@@ -97,11 +97,20 @@ def Store.allocNode (store : Store) (world : Owned) (node : Node) :
 def Store.setBox (store : Store) (location : Nat) (box : NodeBox) : Store :=
   { store with heap := store.heap.setBox location box }
 
+@[simp] theorem Store.setBox_heap (store : Store) (location : Nat)
+    (box : NodeBox) :
+    (store.setBox location box).heap = store.heap.setBox location box := by
+  rfl
+
 def Store.kill (store : Store) (location : Nat) : Store :=
   { store with heap := store.heap.kill location }
 
 def Store.rcTick (store : Store) : Store :=
   { store with heap := store.heap.rcTick }
+
+@[simp] theorem Store.rcTick_heap (store : Store) :
+    store.rcTick.heap = store.heap.rcTick := by
+  rfl
 
 /-- Remove a live node without counting a free.  The physical credit becomes
 the sole authority for this empty slot. -/
@@ -220,7 +229,8 @@ private def requireCtor (store : Store) (location : Nat) (world : Owned)
 
 /-! ## Heap-only recursive primitives -/
 
-private def retainShared (store : Store) (value : RVal) : Except Error Store :=
+/-- Increment one shared reference, leaving scalar values unchanged. -/
+def retainShared (store : Store) (value : RVal) : Except Error Store :=
   match value with
   | .lit _ | .erased => .ok store
   | .loc location =>
@@ -861,6 +871,36 @@ theorem Step.alloc {context : Context} {interpretation : Interpretation}
   simp only
   unfold FieldWorlds at fields
   rw [fields]
+
+/-- Reduction rule for a successful shared retain. -/
+theorem Step.retainShared {context : Context}
+    {interpretation : Interpretation} {machine : Machine}
+    {frame : Frame} {stack : List Continuation} {block : Block}
+    {atom : Atom} {value : RVal} {store : Store}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .retainShared atom)
+    (resolved : resolveAtom frame.values atom = .ok value)
+    (retained : retainShared machine.store value = .ok store) :
+    Step context interpretation machine
+      { machine with
+        store
+        control := .running
+          { frame with
+            pc := frame.pc + 1
+            values := frame.values.push value }
+          stack } := by
+  unfold Step step currentBlock runInstruction Frame.advance Frame.pushValue
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp only
+  rw [resolved]
+  simp only
+  rw [retained]
 
 /-- Total runner with a control budget independent of `Machine.heapFuel`. -/
 def runMachine (context : Context) (interpretation : Interpretation) :

@@ -1590,3 +1590,15 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_alloc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_alloc
+
+/-- info: 'Compilatrix.IxIR2.Eval.Step.retainShared' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Step.retainShared
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.StoreRel.rcTick' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.StoreRel.rcTick
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_dup_retain_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_dup_retain_scalar
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_dup_retain_shared' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_dup_retain_shared
