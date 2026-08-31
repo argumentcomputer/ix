@@ -1569,3 +1569,15 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.resolveAtom_of_envRel' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.resolveAtom_of_envRel
+
+/-- info: 'Compilatrix.IxIR2.Eval.Step.move' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Step.move
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.resolveAtoms_of_envRel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.resolveAtoms_of_envRel
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.EnvRel.bindValue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.EnvRel.bindValue
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_pure_move' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_pure_move

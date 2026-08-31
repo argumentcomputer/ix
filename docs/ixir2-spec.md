@@ -528,10 +528,11 @@ a live-heap relation. It does not require equal location numbers or equal
 fuel.
 
 [`IxIR2/LowerSim.lean`](../Compilatrix/IxIR2/LowerSim.lean) fixes this public
-whole-main contract and proves the common environment-mapped atom-resolution
-lemma. Its baseline outcome currently uses the stronger exact-heap relation;
-the instruction/block induction and the later isomorphic credit refinement
-remain active proof work.
+whole-main contract; proves scalar and vector operand resolution plus value and
+erased environment extension; and closes the public small-step case for
+`pure`/`move`. Its baseline outcome currently uses the stronger exact-heap
+relation; the remaining instruction/block induction and the later isomorphic
+credit refinement remain active proof work.
 
 ### 2. Credit implementation refinement
 
@@ -632,8 +633,9 @@ not satisfy the optimization milestone by themselves.
    passes.
 
 Items 1 and 2 are implemented. Item 3 has its executable lowering core,
-validation witness, trace, theorem interface, and first local lemma; its full
-simulation and pipeline attachment remain the active compiler milestone.
+validation witness, trace, theorem interface, operand/environment foundations,
+and first instruction case; its full simulation and pipeline attachment remain
+the active compiler milestone.
 
 Static unique reuse precedes dynamic reset quality work, but the v0 syntax and
 semantics include both lanes now so the ownership and layout contracts cannot

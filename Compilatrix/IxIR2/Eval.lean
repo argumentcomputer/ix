@@ -779,6 +779,33 @@ def Step (context : Context) (interpretation : Interpretation)
     (before after : Machine) : Prop :=
   step context interpretation before = .ok after
 
+/-- Reduction rule for the public small-step relation at a `move`
+instruction.  Simulation proofs can use this rule without depending on the
+evaluator's private instruction dispatcher. -/
+theorem Step.move {context : Context} {interpretation : Interpretation}
+    {machine : Machine} {frame : Frame} {stack : List Continuation}
+    {block : Block} {atom : Atom} {value : RVal}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .move atom)
+    (resolved : resolveAtom frame.values atom = .ok value) :
+    Step context interpretation machine
+      { machine with
+        control := .running
+          { frame with
+            pc := frame.pc + 1
+            values := frame.values.push value }
+          stack } := by
+  unfold Step step currentBlock runInstruction Frame.advance Frame.pushValue
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp only
+  rw [resolved]
+
 /-- Total runner with a control budget independent of `Machine.heapFuel`. -/
 def runMachine (context : Context) (interpretation : Interpretation) :
     Nat → Machine → Except Error Result
