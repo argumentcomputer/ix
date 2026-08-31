@@ -9,7 +9,8 @@ This file fixes the theorem shape before the proof is scaled over every
 instruction. Its foundation discharges scalar and vector operand resolution,
 extends related environments across value and erased bindings, and closes the
 public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
-constructor allocation, plus the scalar and heap-bearing shared-retain paths.
+constructor allocation, scalar and heap-bearing shared-retain paths, and
+checked non-consuming projection.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -375,6 +376,65 @@ theorem simulate_dup_retain_shared {sourceContext : IxIR1.Ctx}
   rw [sourceGet]
   simp only
   rw [shared]
+
+/-- A checked IxIR₂ fetch refines the corresponding non-consuming IxIR₁
+projection when the owner's exact constructor sidecar identifies the runtime
+node.  Both machines keep the store unchanged and bind the same field value. -/
+theorem simulate_fetch {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef} {sourceFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom}
+    {cid : IxIR1.CtorId} {field location : Nat}
+    {box : IxIR1.NodeBox} {fields : Array RVal} {value : RVal}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved :
+      IxIR1.resolveAtom source sourceAtom = .ok (.loc location))
+    (sourceGet : sourceStore.get? location = some box)
+    (node : box.node = .ctorN cid fields)
+    (fieldAt : fields[field]? = some value)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .fetch targetAtom cid field) :
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.fetch sourceAtom field) = .ok (sourceStore, value) ∧
+      Eval.Step context interpretation machine
+        { machine with
+          control := .running
+            { frame with
+              pc := frame.pc + 1
+              values := frame.values.push value }
+            stack } ∧
+      StoreRel sourceStore machine.store ∧
+      EnvRel (value :: source) (frame.values.push value)
+        (#[.reg frame.values.size] ++ mapping) := by
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok (.loc location) :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  have targetGet : machine.store.get? location = some box := by
+    unfold Eval.Store.get?
+    rw [stores.heap]
+    exact sourceGet
+  have targetStep := Eval.Step.fetch (context := context)
+    (interpretation := interpretation) control blockAt pc instruction
+    targetResolved targetGet node fieldAt
+  refine ⟨?_, targetStep, stores, environments.bindValue value⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  simp only [bind, Except.bind]
+  rw [sourceGet]
+  simp only
+  rw [node]
+  simp only
+  rw [fieldAt]
 
 /-- Pointwise translation of an operand vector. Keeping this relation
 separate from the executable translators makes it compose directly with

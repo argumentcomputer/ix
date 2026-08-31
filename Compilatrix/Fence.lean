@@ -1602,3 +1602,9 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_dup_retain_shared' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_dup_retain_shared
+
+/-- info: 'Compilatrix.IxIR2.Eval.Step.fetch' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Step.fetch
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_fetch' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_fetch

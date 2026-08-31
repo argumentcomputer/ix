@@ -902,6 +902,40 @@ theorem Step.retainShared {context : Context}
   simp only
   rw [retained]
 
+/-- Reduction rule for a successful checked constructor projection. -/
+theorem Step.fetch {context : Context} {interpretation : Interpretation}
+    {machine : Machine} {frame : Frame} {stack : List Continuation}
+    {block : Block} {atom : Atom} {cid : CtorId} {field location : Nat}
+    {box : NodeBox} {fields : Array RVal} {value : RVal}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .fetch atom cid field)
+    (resolved : resolveAtom frame.values atom = .ok (.loc location))
+    (boxAt : machine.store.get? location = some box)
+    (node : box.node = .ctorN cid fields)
+    (fieldAt : fields[field]? = some value) :
+    Step context interpretation machine
+      { machine with
+        control := .running
+          { frame with
+            pc := frame.pc + 1
+            values := frame.values.push value }
+          stack } := by
+  unfold Step step currentBlock runInstruction Frame.advance Frame.pushValue
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp only
+  rw [resolved]
+  simp only
+  rw [boxAt]
+  simp only
+  rw [node]
+  simp [fieldAt]
+
 /-- Total runner with a control budget independent of `Machine.heapFuel`. -/
 def runMachine (context : Context) (interpretation : Interpretation) :
     Nat → Machine → Except Error Result
