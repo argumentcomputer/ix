@@ -1,12 +1,13 @@
 # IxIR₁ optimizer harness
 
-Status: checked rooted declaration reachability joined the default O1 bundle
+Status: checked scalar and exact-leaf destruction joined the default O1 bundle
 on 2026-08-30. The checked HPT consumers propagate facts through complete
 stored function bodies, prune impossible alternatives, collapse a certified
 detailed unary case to one checked `fetch`, forward certified scalar fields
-after allocation or successful reuse, and fuse adjacent PAP/application pairs.
-Rooted reachability then filters the rewritten old-keyed graph before all four
-consumers share one content-address rebuild.
+after allocation or successful reuse, specialize certified destructor sites,
+and fuse adjacent PAP/application pairs. Rooted reachability then filters the
+rewritten old-keyed graph before all five consumers share one content-address
+rebuild.
 
 The implementation is `Compilatrix/IxIR1/Optimizer.lean`, with compiler-facing
 entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
@@ -14,13 +15,14 @@ entry points `Pipeline.Artifact.optimizeWithProducedHPT` and
 
 ## Policy and fallback
 
-`Optimizer.Policy` carries harness version 4, case-simplifier version 3,
-fetch-forwarding version 1, PAP-fusion version 1, and reachability version 1.
-The four passes have independent enable bits and are enabled by default.
+`Optimizer.Policy` carries harness version 5, case-simplifier version 3,
+fetch-forwarding version 1, destruction version 1, PAP-fusion version 1, and
+reachability version 1. The five passes have independent enable bits and are
+enabled by default.
 Reachability additionally carries an ordered list of exported declaration
 roots. The shared deterministic bounds cover input instructions, canonical
 code bytes, and checked-certificate bytes. The harness is disabled only when
-all four pass bits are false.
+all five pass bits are false.
 
 Fetch forwarding recognizes an `alloc` or `reuse` immediately followed by a
 fetch of any field from its result. The selected constructor argument must be
@@ -28,6 +30,16 @@ HPT-proven scalar. The pass retains both binders and replaces the fetch with
 `pure` of the source atom lifted across the constructor-result binder, so fuel,
 stores, numeric locations, and cost counters are preserved exactly. Heap-valued
 and out-of-range fields fail closed.
+
+Destruction removes a `drop` or `dropU` of an HPT-proven scalar by replacing
+it with `pure erased`. It also replaces `dropU` with shallow `free` when HPT
+proves one exact constructor with a complete all-scalar field vector. The
+rewrite preserves the result binder and the root free, while avoiding generic
+tag dispatch and the recursive field walk. Shared constructor roots,
+heap-valued fields, identity-only facts, multiple shapes, widened facts, and
+unresolved operands stay on the generic path. The successful-run theorem is
+one-way because the specialized shallow free can succeed with less fuel than
+the generic deep destructor.
 
 PAP fusion recognizes adjacent `papp`/`apply` binders and classifies their
 combined arguments as under-, exactly-, or over-saturated. It retains both
@@ -80,9 +92,10 @@ Checked HPT certificate identity is the digest of its canonical cache-store
 spelling; its exact framed byte count is reported separately. A pass report
 contains the complete policy, typed disposition, input/output/certificate
 roots, certificate size, before/after observations, case-pruning counters,
-total forwarded fetches, total fused PAPs, under/exact/over fusion counters,
-removed declarations, and a rebuild diagnostic only on fallback. Report
-schema 5 uses `compilatrix/ixir1/optimizer-report/5\0`; pass behavior is
+total forwarded fetches, scalar drops elided, unique leaf drops specialized,
+total fused PAPs, under/exact/over fusion counters, removed declarations, and
+a rebuild diagnostic only on fallback. Report schema 6 uses
+`compilatrix/ixir1/optimizer-report/6\0`; pass behavior is
 versioned separately inside the encoded policy.
 
 This makes equality of reports executable byte equality rather than equality
@@ -90,7 +103,7 @@ of human-formatted text.
 
 ## Regression boundary
 
-The compiled tests pin eight properties:
+The compiled tests pin nine properties:
 
 1. two independent runs over the same checked input produce identical output
    roots, report bytes, and report addresses;
@@ -111,9 +124,14 @@ The compiled tests pin eight properties:
    reuse projection, checks the lifted variable form, rejects heap-valued and
    out-of-range sources, preserves the exact result and all heap counters, and
    reaches a fixed point after HPT recomputation;
-7. a direct-call closure removes a dead two-function SCC, a PAP root retains
+7. the destruction pass elides one scalar drop and specializes one exact
+   all-scalar unique leaf, replaces the generic deep drop with shallow free,
+   preserves the exact scalar result and allocation/free/live observations,
+   rejects every conservative fact boundary, and reaches an unchanged second
+   run, while an unsupported destruction version selects the input graph;
+8. a direct-call closure removes a dead two-function SCC, a PAP root retains
    its target, and an explicit exported root retains the whole SCC; and
-8. stale input identity, substituted roots, and a canonical but non-closed
+9. stale input identity, substituted roots, and a canonical but non-closed
    retained set fail closed, while reachable dynamic apply retains the whole
    graph and both the filtered and rebuilt programs return the same result.
 
@@ -126,14 +144,16 @@ from the checked whole-program history-refinement and
 exact readdressing theorems documented in
 [HPT certificates](hpt-certificates.md). `fusePair?_refines` proves each local
 PAP decision; `FetchForward.runCode_forwardHead?_eq` proves literal evaluator
-equality for each accepted fetch decision; and
+equality for each accepted fetch decision;
+`Destroy.runOp_specialize?_success` proves arbitrary-fuel successful-run
+refinement for each accepted destructor decision; and
 `runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle` lifts the composed
 decisions through main, stored declarations, recursive self calls, direct
 calls, PAP application, and the final one-rebuild path.
 
 ## Next extension
 
-Each remaining O1 consumer must add a versioned control, pass-attributed
-counters, a canonical report entry, a fail-soft path, a whole-program theorem,
-and a fixed-point regression. Known-shape destruction and exact-case collapse
-beyond the checked unary form remain active work.
+The remaining destruction extension is bounded recursive specialization and a
+known-shape shared-root zero branch, with content-addressed helpers if direct
+expansion would duplicate code. Exact-case collapse beyond the checked unary
+form also remains active work.

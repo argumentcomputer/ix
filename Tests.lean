@@ -2353,6 +2353,7 @@ def optimizerHarnessOk : Bool :=
           let disabledPolicy : IxIR1.Optimizer.Policy :=
             { casePrune := { enabled := false }
               fetchForward := { enabled := false }
+              destruction := { enabled := false }
               papFuse := { enabled := false }
               reachability := { enabled := false } }
           let disabled := IxIR1.Optimizer.runWithProducedHPT disabledPolicy

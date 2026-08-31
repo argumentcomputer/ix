@@ -31,6 +31,7 @@ import Compilatrix.IxIR1.HPTCasePrune
 import Compilatrix.IxIR1.HPTCasePruneProgram
 import Compilatrix.IxIR1.HPTPAPFuse
 import Compilatrix.IxIR1.HPTFetchForward
+import Compilatrix.IxIR1.HPTDestroy
 import Compilatrix.IxIR1.Reachability
 import Compilatrix.IxIR1.HPTPAPFuseProgram
 import Compilatrix.SimInstance
@@ -819,6 +820,17 @@ pair and through its owner-sensitive recursive traversal. -/
  Classical.choice,
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.HPT.FetchForward.runCode_runWithFacts_eq_ownerCompatible
+
+/-! Shape-specialized destruction is pure at both the accepted local
+decision and the complete owner-sensitive fact traversal. -/
+
+/-- info: 'Compilatrix.IxIR1.HPT.Destroy.runOp_specialize?_success' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.Destroy.runOp_specialize?_success
+
+/-- info: 'Compilatrix.IxIR1.HPT.Destroy.runCode_runWithFacts_success_ownerCompatible' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.HPT.Destroy.runCode_runWithFacts_success_ownerCompatible
 
 /-! Rooted reachability is exact after validation and through its fail-soft
 produce/check/apply wrapper.  Both public theorems expose the native BLAKE3

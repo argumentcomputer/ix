@@ -7,8 +7,9 @@ import Compilatrix.IxIR1.HPTPAPFuseProgram
 This module is the control and observation boundary for whole-program IxIR₁
 optimization.  It wraps the checked, fact-propagating HPT case simplifier
 (impossible-alternative pruning plus exact unary case collapse), exact scalar
-fetch forwarding after allocation/reuse, local PAP/application fusion, and
-checked rooted declaration reachability with:
+fetch forwarding after allocation/reuse, scalar and exact-leaf destruction
+specialization, local PAP/application fusion, and checked rooted declaration
+reachability with:
 
 - explicit harness and pass-policy versions;
 - deterministic, fail-soft resource controls;
@@ -32,9 +33,10 @@ namespace Compilatrix.IxIR1.Optimizer
 open Compilatrix.Ixon (Address)
 open Compilatrix.IxIR
 
-def currentHarnessVersion : Nat := 4
+def currentHarnessVersion : Nat := 5
 def currentCasePruneVersion : Nat := 3
 def currentFetchForwardVersion : Nat := 1
+def currentDestructionVersion : Nat := 1
 def currentPAPFuseVersion : Nat := 1
 def currentReachabilityVersion : Nat := Reachability.currentVersion
 
@@ -212,6 +214,11 @@ structure FetchForwardPolicy where
   enabled : Bool := true
   deriving BEq, Repr
 
+structure DestructionPolicy where
+  version : Nat := currentDestructionVersion
+  enabled : Bool := true
+  deriving BEq, Repr
+
 structure PAPFusePolicy where
   version : Nat := currentPAPFuseVersion
   enabled : Bool := true
@@ -229,6 +236,7 @@ structure Policy where
   version : Nat := currentHarnessVersion
   casePrune : CasePrunePolicy := {}
   fetchForward : FetchForwardPolicy := {}
+  destruction : DestructionPolicy := {}
   papFuse : PAPFusePolicy := {}
   reachability : ReachabilityPolicy := {}
   deriving BEq, Repr
@@ -239,6 +247,7 @@ inductive SkipReason where
   | unsupportedHarnessVersion (actual expected : Nat)
   | unsupportedPassVersion (actual expected : Nat)
   | unsupportedFetchForwardVersion (actual expected : Nat)
+  | unsupportedDestructionVersion (actual expected : Nat)
   | unsupportedPAPFuseVersion (actual expected : Nat)
   | unsupportedReachabilityVersion (actual expected : Nat)
   | disabled
@@ -267,6 +276,8 @@ structure Report where
   collapsedCases : Nat
   materializedFetches : Nat
   forwardedFetches : Nat
+  elidedScalarDrops : Nat
+  specializedUniqueDrops : Nat
   fusedPaps : Nat
   underSaturatedPaps : Nat
   exactlySaturatedPaps : Nat
@@ -304,6 +315,8 @@ private def Policy.bytes (policy : Policy) : ByteArray :=
     Encoding.bool policy.casePrune.enabled ++ policy.casePrune.budget.bytes ++
     Encoding.nat policy.fetchForward.version ++
     Encoding.bool policy.fetchForward.enabled ++
+    Encoding.nat policy.destruction.version ++
+    Encoding.bool policy.destruction.enabled ++
     Encoding.nat policy.papFuse.version ++ Encoding.bool policy.papFuse.enabled ++
     Encoding.nat policy.reachability.version ++
     Encoding.bool policy.reachability.enabled ++
@@ -328,6 +341,8 @@ private def SkipReason.bytes : SkipReason → ByteArray
       Encoding.tag 8 ++ natFields [actual, expected]
   | .unsupportedReachabilityVersion actual expected =>
       Encoding.tag 9 ++ natFields [actual, expected]
+  | .unsupportedDestructionVersion actual expected =>
+      Encoding.tag 10 ++ natFields [actual, expected]
 
 private def Disposition.bytes : Disposition → ByteArray
   | .skipped reason => Encoding.tag 0 ++ reason.bytes
@@ -337,7 +352,7 @@ private def Disposition.bytes : Disposition → ByteArray
 namespace Report
 
 def addressDomain : ByteArray :=
-  Encoding.domain "compilatrix/ixir1/optimizer-report/5" ++ Encoding.tag 0
+  Encoding.domain "compilatrix/ixir1/optimizer-report/6" ++ Encoding.tag 0
 
 /-- Canonical machine-independent report spelling. -/
 def bytes (report : Report) : ByteArray :=
@@ -349,6 +364,8 @@ def bytes (report : Report) : ByteArray :=
     Encoding.nat report.collapsedCases ++
     Encoding.nat report.materializedFetches ++
     Encoding.nat report.forwardedFetches ++
+    Encoding.nat report.elidedScalarDrops ++
+    Encoding.nat report.specializedUniqueDrops ++
     Encoding.nat report.fusedPaps ++
     Encoding.nat report.underSaturatedPaps ++
     Encoding.nat report.exactlySaturatedPaps ++
@@ -389,6 +406,9 @@ private def skipReason? (policy : Policy) (before : Observation)
   else if policy.fetchForward.version != currentFetchForwardVersion then
     some (.unsupportedFetchForwardVersion policy.fetchForward.version
       currentFetchForwardVersion)
+  else if policy.destruction.version != currentDestructionVersion then
+    some (.unsupportedDestructionVersion policy.destruction.version
+      currentDestructionVersion)
   else if policy.papFuse.version != currentPAPFuseVersion then
     some (.unsupportedPAPFuseVersion policy.papFuse.version
       currentPAPFuseVersion)
@@ -396,7 +416,8 @@ private def skipReason? (policy : Policy) (before : Observation)
     some (.unsupportedReachabilityVersion policy.reachability.version
       currentReachabilityVersion)
   else if !policy.casePrune.enabled && !policy.fetchForward.enabled &&
-      !policy.papFuse.enabled && !policy.reachability.enabled then
+      !policy.destruction.enabled && !policy.papFuse.enabled &&
+      !policy.reachability.enabled then
     some .disabled
   else if before.counts.instructions >
       policy.casePrune.budget.maxInputInstructions then
@@ -428,6 +449,8 @@ private def skippedOutcome (policy : Policy) (reason : SkipReason)
         collapsedCases := 0
         materializedFetches := 0
         forwardedFetches := 0
+        elidedScalarDrops := 0
+        specializedUniqueDrops := 0
         fusedPaps := 0
         underSaturatedPaps := 0
         exactlySaturatedPaps := 0
@@ -449,6 +472,7 @@ private def runChecked (policy : Policy)
       let passes : HPT.OptimizeProgram.Passes :=
         { casePrune := policy.casePrune.enabled
           fetchForward := policy.fetchForward.enabled
+          destroy := policy.destruction.enabled
           papFuse := policy.papFuse.enabled
           reachability := policy.reachability.enabled
           roots := policy.reachability.roots }
@@ -462,6 +486,7 @@ private def runChecked (policy : Policy)
           let outputRoot := graphRoot pruned.result.artifacts pruned.result.main
           let caseChanges := pruned.changes.casePrune
           let fetchChanges := pruned.changes.fetchForward
+          let destructionChanges := pruned.changes.destroy
           let papChanges := pruned.changes.papFuse
           { rebuilt := some pruned.result
             report :=
@@ -471,6 +496,8 @@ private def runChecked (policy : Policy)
                       caseChanges.collapsedCases == 0 &&
                       caseChanges.materializedFetches == 0 &&
                       fetchChanges.forwardedFetches == 0 &&
+                      destructionChanges.elidedScalarDrops == 0 &&
+                      destructionChanges.specializedUniqueDrops == 0 &&
                       papChanges.fusedPaps == 0 &&
                       pruned.changes.removedDeclarations == 0 then .unchanged
                   else .changed
@@ -484,6 +511,9 @@ private def runChecked (policy : Policy)
                 collapsedCases := caseChanges.collapsedCases
                 materializedFetches := caseChanges.materializedFetches
                 forwardedFetches := fetchChanges.forwardedFetches
+                elidedScalarDrops := destructionChanges.elidedScalarDrops
+                specializedUniqueDrops :=
+                  destructionChanges.specializedUniqueDrops
                 fusedPaps := papChanges.fusedPaps
                 underSaturatedPaps := papChanges.underSaturated
                 exactlySaturatedPaps := papChanges.exactlySaturated

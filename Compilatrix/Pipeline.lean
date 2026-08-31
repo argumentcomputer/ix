@@ -1324,6 +1324,7 @@ private def optimizerHarnessOnCompiled : Bool :=
           let disabledPolicy : IxIR1.Optimizer.Policy :=
             { casePrune := { enabled := false }
               fetchForward := { enabled := false }
+              destruction := { enabled := false }
               papFuse := { enabled := false }
               reachability := { enabled := false } }
           let (disabledArtifact, disabledReport) :=
@@ -1351,6 +1352,63 @@ private def optimizerHarnessOnCompiled : Bool :=
             disabledReport.outputRoot == inputRoot &&
             IxIR1.Optimizer.graphRoot disabledArtifact.targetArtifacts
               disabledArtifact.main == inputRoot
+
+private def destructionCid : IxIR1.CtorId :=
+  { block := address 0x7d, indIdx := 0, cidx := 0 }
+
+/-- The first binding proves scalar-drop elimination; the unique allocation
+proves exact all-scalar leaf destruction.  Keeping both in `main` exercises
+the sentinel analysis owner as well as the empty-program rebuild path. -/
+private def destructionMain : IxIR1.Code :=
+  .letOp (.pure (.lit (.nat 5)))
+    (.letOp (.drop (.var 0))
+      (.letOp (.alloc .unique destructionCid #[.lit (.nat 7)])
+        (.letOp (.dropU (.var 0))
+          (.ret (.lit (.nat 42))))))
+
+private def destructionRuntimeOk (code : IxIR1.Code) : Bool :=
+  match IxIR1.runMain { decls := IxIR1.Env.empty } code with
+  | .ok (store, .lit (.nat 42)) =>
+      store.allocs == 1 && store.frees == 1 && store.rcops == 0 &&
+        store.live == 0
+  | _ => false
+
+/-- Checked production specializes both destructor sites, attributes the
+changes, preserves the exact executable observation, and reaches a structural
+fixed point on the immediately rechecked output. -/
+private def optimizerSpecializesDestruction : Bool :=
+  match IxIR1.HPT.produce ([] : List IxIR1.ReaddressAll.Artifact) with
+  | .error _ => false
+  | .ok production =>
+      let first := IxIR1.Optimizer.runWithProducedHPT
+        IxIR1.Optimizer.defaultPolicy [] destructionMain production
+      let optimizedMain := first.main destructionMain
+      let second := IxIR1.Optimizer.runWithProducedHPT
+        IxIR1.Optimizer.defaultPolicy [] optimizedMain production
+      let unsupportedPolicy : IxIR1.Optimizer.Policy :=
+        { destruction := { version := 0 } }
+      let unsupported := IxIR1.Optimizer.runWithProducedHPT
+        unsupportedPolicy [] destructionMain production
+      destructionRuntimeOk destructionMain &&
+        destructionRuntimeOk optimizedMain &&
+        first.report.disposition == .changed &&
+        first.report.elidedScalarDrops == 1 &&
+        first.report.specializedUniqueDrops == 1 &&
+        first.report.before.counts.rcDecrements == 1 &&
+        first.report.before.counts.uniqueDrops == 1 &&
+        first.report.before.counts.frees == 0 &&
+        first.report.after.counts.rcDecrements == 0 &&
+        first.report.after.counts.uniqueDrops == 0 &&
+        first.report.after.counts.frees == 1 &&
+        second.report.disposition == .unchanged &&
+        second.report.elidedScalarDrops == 0 &&
+        second.report.specializedUniqueDrops == 0 &&
+        second.report.inputRoot == second.report.outputRoot &&
+        (second.main optimizedMain).bytes == optimizedMain.bytes &&
+        unsupported.rebuilt.isNone &&
+        unsupported.report.disposition ==
+          .skipped (.unsupportedDestructionVersion 0
+            IxIR1.Optimizer.currentDestructionVersion)
 
 private def reachabilityConstants : List (Address × Constant) :=
   [(aBlock, cBlock), (aBox, cBox), (aCtor, cCtor),
@@ -1483,6 +1541,8 @@ def nativeIntegrationChecks : List (String × Bool) :=
    ("addressed pipeline runtime and cost", targetAgrees),
    ("compiler-produced optimizer report is deterministic and disable-safe",
       optimizerHarnessOnCompiled),
+   ("checked optimizer specializes exact destruction and reaches a fixed point",
+      optimizerSpecializesDestruction),
    ("compiler-emitted unreachable declarations are removed",
       compilerReachabilityRemovesUnused),
    ("usage rejection precedes addressed erasure", rejectsBadUsage),

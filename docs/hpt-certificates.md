@@ -12,8 +12,9 @@ the checked detailed-unary singleton case to one checked fetch even when the
 producer and case are not syntactically adjacent. Its whole-program path then
 performs a content-addressed graph rebuild; its proofs cover dynamic self calls
 and exact transport of the complete evaluator result. Conservative scalar
-fetch forwarding and PAP/application fusion now compose with that consumer
-through the same owner-sensitive traversal. Checked rooted declaration
+fetch forwarding, scalar/exact-leaf destruction, and PAP/application fusion
+now compose with that consumer through the same owner-sensitive traversal.
+Checked rooted declaration
 reachability then filters their rewritten old-keyed graph before the shared
 content-address rebuild.
 This is a semantically justified analysis and optimization boundary, not yet
@@ -31,10 +32,11 @@ untrusted cache scheduling, `HPTCacheIO.lean` is the bounded one-file adapter,
 owner-sensitive fact-propagating rewrites. `HPTCasePruneProgram.lean` closes
 the declaration-environment recursion, content-address rebuild, and exact
 whole-program evaluator transport. `HPTFetchForward.lean` implements exact
-scalar projection forwarding, while `HPTPAPFuse.lean` implements local
+scalar projection forwarding, `HPTDestroy.lean` implements scalar and exact
+all-scalar unique-leaf destruction, and `HPTPAPFuse.lean` implements local
 PAP/application fusion. `Reachability.lean` implements the exact rooted graph
 restriction and its independent checked certificate. `HPTPAPFuseProgram.lean`
-composes all four consumers.
+composes all five consumers.
 `Optimizer.lean` wraps that bundle in the versioned, deterministic, fail-soft
 policy and reporting boundary described in the
 [optimizer harness](optimizer-harness.md).
@@ -592,6 +594,15 @@ single rebuild. It reports two removed declarations and four-to-two functions,
 removes the mutual artifact, preserves content-address audits and execution,
 honors the exported-root policy, and selects the original graph for an
 unsupported reachability version.
+The destruction decision guard accepts scalar `drop`/`dropU` and one exact
+constructor with a complete all-scalar field vector, while rejecting shared
+constructor destruction, heap-valued fields, identity-only facts, multiple
+shapes, widening, unresolved variables, and unrelated operations. The native
+pipeline fixture crosses HPT production and the one-rebuild optimizer on a
+sentinel-owned main, attributes one scalar-drop elimination and one unique
+leaf specialization, changes static `dropU` to `free`, preserves the exact
+Nat result and allocation/free/live observations, and reports an unchanged
+second run; an unsupported destruction version fails soft to the input graph.
 The pipeline integration suite separately compiles a usage-checked Ixon
 constructor main alongside six stored functions with only one runtime-reachable
 target. The default optimizer removes the other five and preserves the exact
@@ -658,7 +669,9 @@ accepted, materialized certificate adds exactly that already-ledgered native
 hash axiom. Both direct-production and persistent-cache result layers,
 together with the one-root and recursive pipeline corollaries, are
 mechanically pinned. The two public reachability equalities are pinned as
-well. Their restriction induction is semantic, while their public validation
+well. The destruction fence separately pins the accepted local arbitrary-fuel
+refinement and its owner-sensitive recursive traversal. Reachability's
+restriction induction is semantic, while its public validation
 premise exposes the same ledgered native BLAKE3 axiom because it commits to the
 exact reachability input digest.
 
