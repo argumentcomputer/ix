@@ -907,10 +907,13 @@ private def validateTerminator (limits : Limits) (context : Context)
       ensureNoLiveCallCredit site flow
       match declarationAt? declarations function with
       | some (.fn definition) =>
-          let flow ← checkTailArguments limits site flow arguments
-            definition.signature [] terminator
-          ensureExhausted site flow
-          return 0
+          if definition.signature.result != signature.result then
+            failAt site .call "tail-call result world does not match the caller"
+          else
+            let flow ← checkTailArguments limits site flow arguments
+              definition.signature [] terminator
+            ensureExhausted site flow
+            return 0
       | some (.extern _) => failAt site .call "tailCall cannot target an extern"
       | none => failAt site .call "tail-call target is not declared"
   | .tailCallSelf arguments =>

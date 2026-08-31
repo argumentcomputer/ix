@@ -39,6 +39,8 @@ import Compilatrix.UsageSound
 import Compilatrix.Ixon.Address
 import Compilatrix.Ixon.Const
 import Compilatrix.IxIR2.EvalCounter
+import Compilatrix.IxIR2.Lower
+import Compilatrix.IxIR2.LowerSim
 import Compilatrix.Pipeline
 import Compilatrix.PipelineSound
 
@@ -1559,3 +1561,11 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Eval.CounterLaw.terminalFrees' does not depend on any axioms -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Eval.CounterLaw.terminalFrees
+
+/-! ## IxIR₂ structured-lowering acceptance -/
+
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.valid' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.valid
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.resolveAtom_of_envRel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.resolveAtom_of_envRel

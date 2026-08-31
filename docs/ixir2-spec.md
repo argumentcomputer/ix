@@ -18,9 +18,13 @@ rejection, hot/cold reset, reuse/discard, PAP, and budget witnesses live in
 [`IxIR2/ValidateExamples.lean`](../Compilatrix/IxIR2/ValidateExamples.lean) and
 [`IxIR2/EvalExamples.lean`](../Compilatrix/IxIR2/EvalExamples.lean).
 [`IxIR2/EvalCounter.lean`](../Compilatrix/IxIR2/EvalCounter.lean) supplies the
-credit-local heap relation and proved local counter algebra. The codec,
-IxIR₁ lowering, whole-step simulations, and their pipeline composition remain
-later tranches below.
+credit-local heap relation and proved local counter algebra.
+[`IxIR2/Lower.lean`](../Compilatrix/IxIR2/Lower.lean) now supplies the
+validator-gated structured baseline lowerer and its generated trace;
+[`IxIR2/LowerExamples.lean`](../Compilatrix/IxIR2/LowerExamples.lean) executes
+Nat and constructor branches against IxIR₁. The codec, the complete
+block-compositional simulation, and pipeline composition remain later
+tranches below.
 
 The freeze covers the in-memory Lean model and proof interfaces. Numeric wire
 tags and a persistent codec are not frozen yet. No artifact may advertise a
@@ -491,6 +495,16 @@ instruction interval. It also records the environment-to-parameter relation
 at every edge. These witnesses are proof data; they are not trusted claims
 from the optimizer.
 
+The current executable tranche implements this baseline for the no-`reuse`
+subset. Owner-keyed sidecars supply parameter worlds and exact constructor
+identities at fetch, scalar-leaf free, and case sites—the facts IxIR₁ syntax
+intentionally erased. The producer derives block IDs, SSA ordinals,
+capability flow, conservative join parameters, leaf-fact target coordinates,
+and the trace, then retains the exact successful validator equation. Nat and
+constructor cases, fetched-field ownership, tail calls, missing facts, and
+raw-reuse rejection have executable guards. It is not yet attached to the
+validated pipeline artifact.
+
 ## Required simulation interface
 
 The implementation must expose three compositional results rather than one
@@ -512,6 +526,12 @@ IxIR1.runMain sourceCtx sourceMain sourceFuel = ok sourceOut
 `OutcomeRel` includes the semantic result relation, exact root ownership, and
 a live-heap relation. It does not require equal location numbers or equal
 fuel.
+
+[`IxIR2/LowerSim.lean`](../Compilatrix/IxIR2/LowerSim.lean) fixes this public
+whole-main contract and proves the common environment-mapped atom-resolution
+lemma. Its baseline outcome currently uses the stronger exact-heap relation;
+the instruction/block induction and the later isomorphic credit refinement
+remain active proof work.
 
 ### 2. Credit implementation refinement
 
@@ -592,10 +612,11 @@ Negative witnesses:
 9. borrowed-ABI dynamic PAP entry;
 10. pre-existing raw IxIR₁ `reuse` at the v0 translation boundary.
 
-The theorem-backed exit additionally requires an axiom-fence entry and a
-compiler-produced unique list-reversal witness. The hand-written credit
-fixtures establish the primitive; they do not satisfy the optimization
-milestone by themselves.
+The structured case fixture and its differential execution witness are now
+producer-generated. The theorem-backed exit additionally requires the full
+block-compositional induction and a compiler-produced unique list-reversal
+witness. The hand-written credit fixtures establish the primitive; they do
+not satisfy the optimization milestone by themselves.
 
 ## Implementation order fixed by this specification
 
@@ -610,7 +631,9 @@ milestone by themselves.
    borrow inference, and RC normalization as separately switchable checked
    passes.
 
-Items 1 and 2 are implemented. Item 3 is the active compiler milestone.
+Items 1 and 2 are implemented. Item 3 has its executable lowering core,
+validation witness, trace, theorem interface, and first local lemma; its full
+simulation and pipeline attachment remain the active compiler milestone.
 
 Static unique reuse precedes dynamic reset quality work, but the v0 syntax and
 semantics include both lanes now so the ownership and layout contracts cannot

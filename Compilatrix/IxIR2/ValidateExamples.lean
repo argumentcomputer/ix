@@ -466,6 +466,26 @@ private def borrowedTailEscape : Program :=
 
 #guard rejectsAs .borrow borrowedTailEscape
 
+private def mismatchedTailResult : Program :=
+  { declarations :=
+      [(functionAddress,
+        .fn
+          { signature := nullarySignature .unique
+            blocks := #[
+              { valueParams := #[]
+                creditParams := #[]
+                instructions := #[]
+                terminator := .ret .erased }] })]
+    main :=
+      { signature := nullarySignature .shared
+        blocks := #[
+          { valueParams := #[]
+            creditParams := #[]
+            instructions := #[]
+            terminator := .tailCall functionAddress #[] }] } }
+
+#guard rejectsAs .call mismatchedTailResult
+
 private def borrowedDynamicEntry : Program :=
   { declarations := [(functionAddress, .fn borrowedCallee)]
     main :=

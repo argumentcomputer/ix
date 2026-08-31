@@ -105,15 +105,22 @@ status ledger here:
   reservations, hot/cold reset, reuse and discard observations, a credit-local
   heap-relation interface, proved local counter algebra, and non-degenerate
   intermediate and terminal executable witnesses.
+- The standalone structured IxIR₁→IxIR₂ baseline lowerer for the no-`reuse`
+  subset. Owner-keyed erased-information sidecars feed producer-derived SSA
+  blocks, conservative join parameters, constructor/Nat dispatch, tail
+  transfers, target-coordinate leaf facts, traces, and an exact validator
+  equation. Differential Nat/constructor runs and the first axiom-fenced
+  environment-resolution lemma establish the active simulation seam.
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
   bounded production-Std contact.
   See [counter evidence](thesis-counter-evidence.md),
   [well-moded generation](well-moded-generator.md), and
   [corpus contact](corpus-contact.md).
 
-The current compiler-output boundary is IxIR₁. IxIR₂ syntax, validation, and
-logical/physical execution are implemented, but no compiler path yet emits
-IxIR₂, paired reuse, native instructions, or a self-hosted binary.
+The current pipeline-output boundary is IxIR₁. IxIR₂ syntax, validation,
+logical/physical execution, and a standalone structured baseline translator
+are implemented, but the validated pipeline does not yet emit IxIR₂, paired
+reuse, native instructions, or a self-hosted binary.
 
 ## Known boundaries carried forward
 
@@ -235,7 +242,7 @@ validation obligations, and simulation interface are frozen in the
 | --- | --- | --- |
 | IxIR₂ syntax and validation | delivered | The frozen v0 in-memory syntax, world-keyed schemas, bounded ownership/borrow/credit validator, stable rejection classes, proof-facing acceptance predicate, and positive/negative executable fixtures land together. |
 | IxIR₂ logical/physical semantics | delivered | Executable semantics separate control from heap-traversal budgets, model logical frees versus physical reservations/reuse, cover calls/PAPs and CFG transfer, expose a credit-local heap relation, prove the local counter algebra, and validate intermediate and terminal equations on non-degenerate credit paths. Whole-machine refinement composes in the lowering tranche. |
-| IxIR₂ CFG and join points | active | Lower structured IxIR₁ to validated blocks with explicit parameters, combined constructor/Nat dispatch, tail calls, and a compositional simulation theorem. |
+| IxIR₂ CFG and join points | active | The validator-gated executable lowerer, generated trace, explicit parameters, constructor/Nat dispatch, tail calls, differential witnesses, theorem interface, and first operand lemma are delivered. Complete the instruction/block induction and attach its sidecars to the validated pipeline artifact. |
 | Direct-recursion recovery | next | Recognized recursor images validate to direct loops; unrecognized terms retain the literal correct fallback. |
 | Static unique reuse | next | Fuel-neutral consuming unique destructure specializes recursive known shapes, produces affine reuse credits, and compiler-emitted list reversal reaches the FIP counter target. |
 | Dynamic shared reset/reuse | next | A checked RC-zero branch specializes known shared shapes; ordinary all-shared code reuses RC=1 nodes on the hot path and allocates correctly on the cold path. |
@@ -339,9 +346,10 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Lower structured IxIR₁ to validated IxIR₂.** Emit explicit block
-   parameters, combined constructor/Nat dispatch, and tail transfers, then
-   prove the block-compositional control simulation.
+1. **Finish and attach structured IxIR₁→IxIR₂ lowering.** Prove the
+   instruction/block-compositional control simulation over the generated
+   trace, then derive the owner-keyed sidecars from the validated pipeline
+   artifact and expose the checked IxIR₂ result there.
 2. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
    separate; prove fragment containment through the typed instruction AST.
 3. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is

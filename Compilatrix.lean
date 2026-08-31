@@ -91,6 +91,9 @@ import Compilatrix.IxIR2.ValidateExamples
 import Compilatrix.IxIR2.Eval
 import Compilatrix.IxIR2.EvalCounter
 import Compilatrix.IxIR2.EvalExamples
+import Compilatrix.IxIR2.Lower
+import Compilatrix.IxIR2.LowerExamples
+import Compilatrix.IxIR2.LowerSim
 import Compilatrix.Pipeline
 import Compilatrix.PipelineSound
 import Compilatrix.Fence
