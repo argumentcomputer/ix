@@ -8,7 +8,8 @@ import Compilatrix.IxIR2.Lower
 This file fixes the theorem shape before the proof is scaled over every
 instruction. Its foundation discharges scalar and vector operand resolution,
 extends related environments across value and erased bindings, and closes the
-first public small-step case for an IxIR₁ `pure` lowered to IxIR₂ `move`.
+public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
+constructor allocation.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -16,6 +17,41 @@ namespace Compilatrix.IxIR2.Lower.Sim
 open Compilatrix.IxIR2
 
 abbrev RVal := IxIR1.RVal
+
+/-- The structured baseline executes against exactly the IxIR₁ heap and
+does not exercise any reset/reuse-credit counters.  Peak-live accounting is a
+target-only observation and is intentionally omitted. -/
+structure StoreRel (source : IxIR1.Store) (target : Eval.Store) : Prop where
+  heap : target.heap = source
+  resetAttempts : target.resetAttempts = 0
+  hotResets : target.hotResets = 0
+  coldResets : target.coldResets = 0
+  reusedPayloadUnits : target.reusedPayloadUnits = 0
+
+/-- Ordinary allocation preserves the exact baseline store relation. -/
+theorem StoreRel.alloc {source : IxIR1.Store} {target : Eval.Store}
+    (relation : StoreRel source target) (world : Compilatrix.Ixon.Owned)
+    (node : IxIR1.Node) :
+    StoreRel (source.allocNode world node).1
+      (target.allocNode world node).1 := by
+  constructor
+  · rw [Eval.Store.allocNode_heap, relation.heap]
+  · change target.resetAttempts = 0
+    exact relation.resetAttempts
+  · change target.hotResets = 0
+    exact relation.hotResets
+  · change target.coldResets = 0
+    exact relation.coldResets
+  · change target.reusedPayloadUnits = 0
+    exact relation.reusedPayloadUnits
+
+/-- Related stores choose the same fresh location. -/
+theorem StoreRel.alloc_location {source : IxIR1.Store}
+    {target : Eval.Store} (relation : StoreRel source target)
+    (world : Compilatrix.Ixon.Owned) (node : IxIR1.Node) :
+    (target.allocNode world node).2 =
+      (source.allocNode world node).2 := by
+  rw [Eval.Store.allocNode_location, relation.heap]
 
 /-- Translate one source atom through an explicit source-slot-to-target-atom
 map. This is the runtime view of the environment mapping recorded on CFG
@@ -273,17 +309,77 @@ theorem resolveAtoms_of_envRel {source : List RVal} {target : Array RVal}
   apply resolveFold_of_envRel relation atoms [] values
   simpa only [IxIR1.resolveAtoms, Array.foldlM_toList] using resolved
 
+/-- Ordinary allocation is the first heap-changing instruction case.  The
+source and logical target allocate the same constructor at the same fresh
+location, preserve the exact baseline store relation, and bind related result
+slots. -/
+theorem simulate_alloc {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef} {sourceFuel : Nat}
+    {context : Eval.Context} {machine : Eval.Machine}
+    {frame : Eval.Frame} {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {world : Compilatrix.Ixon.Owned} {cid : IxIR1.CtorId}
+    {sourceArguments : Array IxIR1.Atom}
+    {targetArguments : Array Atom} {schema : CtorSchema}
+    {values : List RVal}
+    (arguments : AtomsRel mapping sourceArguments targetArguments)
+    (sourceResolved :
+      IxIR1.resolveAtoms source sourceArguments = .ok values)
+    (fields : Eval.FieldWorlds machine.store schema values.toArray)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .alloc world cid targetArguments)
+    (schemaAt : context.schemas world cid = some schema) :
+    let node := IxIR1.Node.ctorN cid values.toArray
+    let sourceAllocation := sourceStore.allocNode world node
+    let targetAllocation := machine.store.allocNode world node
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.alloc world cid sourceArguments) =
+        .ok (sourceAllocation.1, .loc sourceAllocation.2) ∧
+      Eval.Step context .logical machine
+        { machine with
+          store := targetAllocation.1
+          control := .running
+            { frame with
+              pc := frame.pc + 1
+              values := frame.values.push (.loc sourceAllocation.2) }
+            stack } ∧
+      StoreRel sourceAllocation.1 targetAllocation.1 ∧
+      EnvRel (.loc sourceAllocation.2 :: source)
+        (frame.values.push (.loc sourceAllocation.2))
+        (#[.reg frame.values.size] ++ mapping) := by
+  dsimp only
+  have targetResolved :
+      Eval.resolveAtoms frame.values targetArguments = .ok values.toArray :=
+    resolveAtoms_of_envRel environments arguments sourceResolved
+  have locationEq :
+      (machine.store.allocNode world (.ctorN cid values.toArray)).2 =
+        (sourceStore.allocNode world (.ctorN cid values.toArray)).2 :=
+    stores.alloc_location world (.ctorN cid values.toArray)
+  have targetStep := Eval.Step.alloc (interpretation := .logical)
+    control blockAt pc instruction schemaAt targetResolved fields
+  dsimp only at targetStep
+  rw [locationEq] at targetStep
+  refine ⟨?_, targetStep,
+    stores.alloc world (.ctorN cid values.toArray), ?_⟩
+  · unfold IxIR1.runOp
+    simp only
+    rw [sourceResolved]
+    rfl
+  · exact environments.bindValue
+      (.loc (sourceStore.allocNode world (.ctorN cid values.toArray)).2)
+
 /-- Baseline logical execution preserves the exact IxIR₁ heap and value.
 Later credit insertion weakens this to heap isomorphism; keeping the stronger
 baseline relation makes that proof boundary explicit. -/
 structure OutcomeRel (source : IxIR1.Store × RVal)
-    (target : Eval.Result) : Prop where
-  heap : target.store.heap = source.1
+    (target : Eval.Result) extends StoreRel source.1 target.store where
   value : target.value = source.2
-  resetAttempts : target.store.resetAttempts = 0
-  hotResets : target.store.hotResets = 0
-  coldResets : target.store.coldResets = 0
-  reusedPayloadUnits : target.store.reusedPayloadUnits = 0
 
 /-- The block-compositional proof's public whole-main endpoint. Fuel is not
 equated: source success existentially obtains independent target control and

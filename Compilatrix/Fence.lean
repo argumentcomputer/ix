@@ -1581,3 +1581,12 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_pure_move' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_pure_move
+
+/-- info: 'Compilatrix.IxIR2.Eval.Step.alloc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Step.alloc
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.StoreRel.alloc' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.StoreRel.alloc
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_alloc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_alloc

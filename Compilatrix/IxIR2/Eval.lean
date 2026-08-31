@@ -82,6 +82,18 @@ def Store.allocNode (store : Store) (world : Owned) (node : Node) :
   let (heap, location) := store.heap.allocNode world node
   ({ store with heap }.withPeak, location)
 
+@[simp] theorem Store.allocNode_heap (store : Store) (world : Owned)
+    (node : Node) :
+    (store.allocNode world node).1.heap =
+      (store.heap.allocNode world node).1 := by
+  rfl
+
+@[simp] theorem Store.allocNode_location (store : Store) (world : Owned)
+    (node : Node) :
+    (store.allocNode world node).2 =
+      (store.heap.allocNode world node).2 := by
+  rfl
+
 def Store.setBox (store : Store) (location : Nat) (box : NodeBox) : Store :=
   { store with heap := store.heap.setBox location box }
 
@@ -386,6 +398,12 @@ private def checkFieldWorlds (store : Store) (schema : CtorSchema)
     for pair in values.toList.zip schema.fields.toList do
       if !pair.1.hasWorld store pair.2 then
         .error (.mem "constructor field ownership-world mismatch")
+
+/-- Public semantic premise used by allocation reduction and simulation
+lemmas.  Its executable witness remains shared with the evaluator. -/
+def FieldWorlds (store : Store) (schema : CtorSchema)
+    (values : Array RVal) : Prop :=
+  checkFieldWorlds store schema values = .ok ()
 
 private def callScalarOracle (context : Context) (address : Address)
     (arguments : Array RVal) : Except Error RVal :=
@@ -805,6 +823,44 @@ theorem Step.move {context : Context} {interpretation : Interpretation}
   rw [dif_pos pc, instruction]
   simp only
   rw [resolved]
+
+/-- Reduction rule for a checked ordinary allocation. -/
+theorem Step.alloc {context : Context} {interpretation : Interpretation}
+    {machine : Machine} {frame : Frame} {stack : List Continuation}
+    {block : Block} {world : Owned} {cid : CtorId}
+    {arguments : Array Atom} {schema : CtorSchema}
+    {values : Array RVal}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .alloc world cid arguments)
+    (schemaAt : context.schemas world cid = some schema)
+    (resolved : resolveAtoms frame.values arguments = .ok values)
+    (fields : FieldWorlds machine.store schema values) :
+    let allocation := machine.store.allocNode world (.ctorN cid values)
+    Step context interpretation machine
+      { machine with
+        store := allocation.1
+        control := .running
+          { frame with
+            pc := frame.pc + 1
+            values := frame.values.push (.loc allocation.2) }
+          stack } := by
+  unfold Step step currentBlock runInstruction Frame.advance Frame.pushValue
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp only
+  unfold lookupSchema
+  rw [schemaAt]
+  simp only
+  rw [resolved]
+  simp only
+  unfold FieldWorlds at fields
+  rw [fields]
 
 /-- Total runner with a control budget independent of `Machine.heapFuel`. -/
 def runMachine (context : Context) (interpretation : Interpretation) :

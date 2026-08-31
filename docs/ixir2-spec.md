@@ -529,8 +529,9 @@ fuel.
 
 [`IxIR2/LowerSim.lean`](../Compilatrix/IxIR2/LowerSim.lean) fixes this public
 whole-main contract; proves scalar and vector operand resolution plus value and
-erased environment extension; and closes the public small-step case for
-`pure`/`move`. Its baseline outcome currently uses the stronger exact-heap
+erased environment extension; defines the exact baseline store relation; and
+closes the public small-step cases for `pure`/`move` and ordinary constructor
+allocation. Its baseline outcome currently uses that stronger exact-heap
 relation; the remaining instruction/block induction and the later isomorphic
 credit refinement remain active proof work.
 
@@ -634,8 +635,8 @@ not satisfy the optimization milestone by themselves.
 
 Items 1 and 2 are implemented. Item 3 has its executable lowering core,
 validation witness, trace, theorem interface, operand/environment foundations,
-and first instruction case; its full simulation and pipeline attachment remain
-the active compiler milestone.
+exact store relation, and initial pure/allocation cases; its full simulation
+and pipeline attachment remain the active compiler milestone.
 
 Static unique reuse precedes dynamic reset quality work, but the v0 syntax and
 semantics include both lanes now so the ownership and layout contracts cannot
