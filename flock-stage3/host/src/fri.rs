@@ -6429,32 +6429,85 @@ mod tests {
   #[test]
   #[ignore = "real production Flock proof of a complete Stage 2 verifier"]
   fn real_stage2_production_artifact_round_trip() {
+    let total_started = std::time::Instant::now();
+
+    let fixture_started = std::time::Instant::now();
     let (prepared, fri, vk_bytes, claim_bytes, proof_bytes) =
       prepared_stage2_pcs_fixture();
+    let fixture_elapsed = fixture_started.elapsed();
+
     let backend = crate::FlockStage3Backend;
+
+    let prove_started = std::time::Instant::now();
     let artifact = backend
       .prove_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
       .expect("prove complete Stage 3 relation");
+    let prove_elapsed = prove_started.elapsed();
+
+    let encode_started = std::time::Instant::now();
+    let encoded = artifact.to_bytes();
+    let encode_elapsed = encode_started.elapsed();
     eprintln!(
       "Flock complete Stage 3 artifact: {} bytes (payload: {} bytes)",
-      artifact.to_bytes().len(),
+      encoded.len(),
       artifact.proof_bytes().len(),
     );
-    let encoded = artifact.to_bytes();
+
+    let decode_started = std::time::Instant::now();
     let decoded = crate::Stage3ArtifactV1::from_bytes(&encoded).unwrap();
+    let decode_elapsed = decode_started.elapsed();
+
+    let valid_verify_started = std::time::Instant::now();
     backend
       .verify_stage2(&decoded, decoded.statement())
       .expect("verify complete Stage 3 relation");
+    let valid_verify_elapsed = valid_verify_started.elapsed();
 
     let wrong_relation =
       crate::Stage3StatementV1::new(prepared.statement(), [0xa5; 32]);
+    let wrong_relation_started = std::time::Instant::now();
     assert!(backend.verify_stage2(&decoded, &wrong_relation).is_err());
+    let wrong_relation_elapsed = wrong_relation_started.elapsed();
 
+    let corrupt_decode_started = std::time::Instant::now();
     let mut corrupted = encoded;
     let flip_at = corrupted.len() - 1;
     corrupted[flip_at] ^= 1;
     let corrupted = crate::Stage3ArtifactV1::from_bytes(&corrupted).unwrap();
+    let corrupt_decode_elapsed = corrupt_decode_started.elapsed();
+
+    let corrupt_verify_started = std::time::Instant::now();
     assert!(backend.verify_stage2(&corrupted, corrupted.statement()).is_err());
+    let corrupt_verify_elapsed = corrupt_verify_started.elapsed();
+
+    let total_elapsed = total_started.elapsed();
+    let negative_checks_elapsed =
+      wrong_relation_elapsed + corrupt_decode_elapsed + corrupt_verify_elapsed;
+    eprintln!(
+      concat!(
+        "Flock complete Stage 3 timings (seconds):\n",
+        "  fixture setup:                    {:>10.3}\n",
+        "  prove:                            {:>10.3}\n",
+        "  artifact encode:                  {:>10.3}\n",
+        "  artifact decode:                  {:>10.3}\n",
+        "  valid cryptographic verification: {:>10.3}\n",
+        "  reject wrong relation statement:  {:>10.6}\n",
+        "  corrupt and decode artifact:       {:>10.3}\n",
+        "  reject corrupted proof:           {:>10.3}\n",
+        "  all negative checks:               {:>10.3}\n",
+        "  total:                             {:>10.3}",
+      ),
+      fixture_elapsed.as_secs_f64(),
+      prove_elapsed.as_secs_f64(),
+      encode_elapsed.as_secs_f64(),
+      decode_elapsed.as_secs_f64(),
+      valid_verify_elapsed.as_secs_f64(),
+      wrong_relation_elapsed.as_secs_f64(),
+      corrupt_decode_elapsed.as_secs_f64(),
+      corrupt_verify_elapsed.as_secs_f64(),
+      negative_checks_elapsed.as_secs_f64(),
+      total_elapsed.as_secs_f64(),
+    );
   }
 
   #[test]
