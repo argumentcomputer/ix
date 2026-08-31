@@ -18,6 +18,7 @@ tracing-texray = { workspace = true }
 [features]
 default = []
 parallel = ["multi-stark/parallel"]
+cuda = ["multi-stark/cuda"]
 
 [lints]
 workspace = true

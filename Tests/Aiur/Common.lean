@@ -123,16 +123,18 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
       else .done
     if !testCase.withProof then execTest ++ interpTest
     else
-      let (claim, proof, ioBuffer) := env.aiurSystem.prove
-        funIdx testCase.input testCase.inputIOBuffer
-      let claimTest := test s!"Claim matches for {label}"
-        (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
-      let ioTest := test s!"IOBuffer matches for {label}"
-        (ioBuffer == testCase.expectedIOBuffer)
-      let proof := .ofBytes proof.toBytes
-      let pvTest := withExceptOk s!"Prove/verify works for {label}"
-        (env.aiurSystem.verify claim proof) fun _ => .done
-      execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
+      match env.aiurSystem.prove funIdx testCase.input testCase.inputIOBuffer with
+      | .error _ =>
+        execTest ++ interpTest ++ test s!"Prove succeeds for {label}" false
+      | .ok (claim, proof, ioBuffer) =>
+        let claimTest := test s!"Claim matches for {label}"
+          (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+        let ioTest := test s!"IOBuffer matches for {label}"
+          (ioBuffer == testCase.expectedIOBuffer)
+        let proof := .ofBytes proof.toBytes
+        let pvTest := withExceptOk s!"Prove/verify works for {label}"
+          (env.aiurSystem.verify claim proof) fun _ => .done
+        execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
 
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=

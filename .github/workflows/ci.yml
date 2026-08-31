@@ -101,9 +101,9 @@ jobs:
       - name: Check Rustfmt code style
         uses: actions-rust-lang/rustfmt@v1
       - name: Check clippy warnings
-        run: cargo clippy --workspace --all-targets --all-features
+        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi -- -D warnings
       - name: Check *everything* compiles
-        run: cargo check --all-targets --all-features --workspace
+        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi
       - name: Tests
         run: cargo nextest run --release --profile ci --workspace
       - name: Get Rust version
@@ -113,6 +113,34 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: ${{ env.RUST_VERSION }}
+
+  # Compile and link the opt-in backend without requiring a GPU. Runtime and
+  # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
+  cuda-compile:
+    runs-on: warp-ubuntu-latest-x64-8x
+    container: nvidia/cuda:12.8.1-devel-ubuntu24.04
+    env:
+      # This job validates feature plumbing and the Rust-staticlib-to-Lean
+      # link without paying for a GPU runner. Multi-stark CI compiles the
+      # complete supported cubin set; one representative architecture is
+      # sufficient for this downstream integration gate.
+      MULTI_STARK_CUDA_ARCHS: "80"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install toolchain bootstrap dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential ca-certificates curl git libclang-dev
+      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Compile CUDA Rust targets
+        run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda
+      - name: Link a CUDA-enabled Lean executable
+        run: IX_CUDA=1 lake build bench-typecheck
 
   # zkVM host build + execute gate: do the Zisk/SP1 hosts (and their guest
   # ELFs, via each workspace's build.rs) still compile AND run? rust-test

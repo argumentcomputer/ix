@@ -2084,9 +2084,10 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=c72d32130eb084327b73849e39c92734a8829011#c72d32130eb084327b73849e39c92734a8829011"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=e43201522a95775d1495b4467fbab69fbf7a1ae8#e43201522a95775d1495b4467fbab69fbf7a1ae8"
 dependencies = [
  "bincode",
+ "itertools 0.14.0",
  "p3-air",
  "p3-blake3",
  "p3-challenger",
@@ -2095,6 +2096,7 @@ dependencies = [
  "p3-field",
  "p3-fri",
  "p3-goldilocks",
+ "p3-interpolation",
  "p3-keccak",
  "p3-matrix",
  "p3-maybe-rayon",

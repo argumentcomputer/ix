@@ -179,6 +179,27 @@ https://bencher.dev/console/projects/ix/plots. `ix bench` runs the same
 cells locally, and `!benchmark` runs them on a PR — see
 [docs/benchmarking.md](docs/benchmarking.md).
 
+### CUDA-accelerated Aiur proving
+
+Aiur can use multi-stark's first-party CUDA backend. CUDA is opt-in: ordinary
+Cargo and Lake builds remain CPU-only and do not require a CUDA toolkit or
+runtime. First generate the benchmark environment, then set `IX_CUDA=1` (also
+accepts `true` or `yes`) for the proving command:
+
+```sh
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out InitStd.ixe
+IX_CUDA=1 lake exe bench-typecheck --ixe InitStd.ixe \
+  --consts Vector.extract_append --recursive
+```
+
+Rust consumers can instead enable the `cuda` feature on `aiur` or `ix-ffi`.
+The backend requires an NVIDIA GPU and a CUDA toolkit with `nvcc`; build and
+architecture controls are documented in the multi-stark repository. It keeps
+the Goldilocks/BLAKE3 protocol and proof format unchanged, and GPU proofs remain
+verifiable by the CPU implementation. Dated hardware measurements belong in
+[BENCHMARKS.md](BENCHMARKS.md) and [docs/benchmarking.md](docs/benchmarking.md),
+not this stable overview.
+
 ## Usage
 
 ### Prerequisites

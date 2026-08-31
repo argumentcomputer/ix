@@ -10,17 +10,20 @@
                     module, roots) for the full or mini tier
     validate [--mini] [--only Q[,Q…]] [--jobs N] [--ceiling-gb N]
              [--no-watchdog]
-                    per-member METADATA fidelity: run the 8-phase
+                    per-library METADATA fidelity: run the 8-phase
                     `ix validate` pipeline (aux-gen congruence, alpha
                     canonicity, decompile both ways, per-constant
-                    roundtrip) over each member's driver module — the
-                    same import closure its piece compiles from, so
-                    the records stay the only pin source. Exit-code
-                    gated, no report artifacts. Heavy members
+                    roundtrip) over each member's Benchmarks/Compile
+                    driver — the same import closure its piece compiles
+                    from, so the records stay the only pin source. The
+                    full tier also validates Palomar.ix as one aggregate
+                    library. Exit-code gated, no report artifacts. Heavy members
                     (mathlib-class) hold two compile+decompile states
                     at once, so the default is one member at a time
-                    under the box-level ceiling; raise --jobs for
-                    small-member sweeps or --only subsets.
+                    under the box-level ceiling. Sweeps first prebuild
+                    their selected drivers in one Lake process, then run
+                    --jobs validators with `--no-build` over the quiescent
+                    shared package store.
     build [--mini] [--out DIR.ixc] [--jobs N] [--ceiling-gb N]
           [--no-watchdog] [--no-cache] [--palomar-ixc DIR.ixc]
                     gen-check, build the member root oleans (network +
@@ -88,9 +91,15 @@ private structure GenFile where
 
 private def genFiles : List GenFile :=
   [ ⟨workspaceLakefilePath, renderWorkspaceLakefile⟩,
-    ⟨workspaceToolchainPath, renderWorkspaceToolchain⟩ ]
+    ⟨workspaceToolchainPath, renderWorkspaceToolchain⟩,
+    ⟨compileWorkspaceLakefilePath, renderCompileWorkspaceLakefile⟩,
+    ⟨compileWorkspaceToolchainPath, renderWorkspaceToolchain⟩,
+    ⟨compilePalomarModulePath, renderCompilePalomarModule⟩ ]
   ++ (driverLibs.map fun lib =>
       ⟨driverModulePath lib.qualifier, renderDriverModule lib⟩).toList
+  ++ (driverLibs.map fun lib =>
+      ⟨compileMemberModulePath lib.qualifier,
+        renderCompileMemberModule lib⟩).toList
 
 private def readIfExists (path : System.FilePath) : IO (Option String) := do
   if (← path.pathExists) then return some (← IO.FS.readFile path)
@@ -609,6 +618,11 @@ private structure ValidateOptions where
   noWatchdog : Bool := false
   mini : Bool := false
 
+private structure ValidationLib where
+  qualifier : String
+  driver : System.FilePath
+deriving Inhabited
+
 private def parseValidate : List String → Except String ValidateOptions
   | [] => .ok {}
   | "--only" :: value :: rest => do
@@ -628,9 +642,10 @@ private def parseValidate : List String → Except String ValidateOptions
     pure { ← parseValidate rest with mini := true }
   | arg :: _ => .error s!"unknown validate argument `{arg}`"
 
-/-- Per-member metadata-fidelity sweep: the 8-phase `ix validate`
-    pipeline over each member's driver module. Exit-code gated (the
-    validator's phase table goes to stdout); no artifacts. -/
+/-- Per-library metadata-fidelity sweep: the 8-phase `ix validate` pipeline
+    over each native member's `Benchmarks/Compile` driver plus Palomar.ix as
+    one aggregate library in the full tier. Exit-code gated (the validator's
+    phase table goes to stdout); no artifacts. -/
 private def runValidate (options : ValidateOptions) : IO UInt32 := do
   let tier := if options.mini then "mini" else "corpus"
   let spec := if options.mini then catalogMiniSpec else catalogSpec
@@ -642,15 +657,22 @@ run `lake exe truthmines gen` first"
   unless (← ixExe.pathExists) do
     IO.eprintln s!"{ixExe} missing — run `lake build ix` first"
     return 1
+  let available := spec.libs.map fun lib => {
+    qualifier := lib.qualifier.toString (escape := false)
+    driver := compileMemberModulePath lib.qualifier
+  }
+  let available := if options.mini then available else available.push {
+    qualifier := "Palomar"
+    driver := compilePalomarModulePath
+  }
   let libs ← match options.only with
-    | none => pure spec.libs
+    | none => pure available
     | some wanted => do
       for w in wanted do
-        unless spec.libs.any (·.qualifier.toString (escape := false) == w) do
-          IO.eprintln s!"--only names `{w}`, which is not a {tier} member"
+        unless available.any (·.qualifier == w) do
+          IO.eprintln s!"--only names `{w}`, which is not a {tier} library"
           return 1
-      pure <| spec.libs.filter fun lib =>
-        wanted.contains (lib.qualifier.toString (escape := false))
+      pure <| available.filter fun lib => wanted.contains lib.qualifier
   let ceiling? : Option Nat ←
     if options.noWatchdog then
       pure none
@@ -664,18 +686,26 @@ unprotected"
       return 1
   -- Validation holds two compile states plus a decompile state at
   -- mathlib scale: one member at a time under the box ceiling is the
-  -- safe default; --jobs is for small-member subsets.
+  -- safe default. Validation must never race separate Lake builds against
+  -- the shared package store: prebuild every selected driver in one Lake
+  -- process, then tell each validator to skip its implicit build. This also
+  -- makes the single-job path use the same deterministic boundary.
   let jobs := options.jobs?.getD 1
+  stageLine s!"[truthmines] prebuilding {libs.size} selected driver(s) in one Lake process…"
+  let buildArgs := #["build"] ++ libs.map fun lib => s!"Members.{lib.qualifier}"
+  let buildExit ← watched ceiling? "lake" buildArgs compileWorkspaceDir
+  if buildExit != 0 then
+    reportOom buildExit ceiling? "validate prebuild"
+    IO.eprintln s!"selected-driver prebuild failed ({buildExit})"
+    return 1
   let exe ← IO.FS.realPath ixExe
   let root ← IO.currentDir
-  stageLine s!"[truthmines] validate: {libs.size} member(s), {jobs} in \
-flight ({tier} tier; 8-phase ix validate per driver module)"
-  let runOne (lib : CatalogSpecLib) : IO MemberOutcome := do
-    let q := lib.qualifier.toString (escape := false)
-    let driver := driverModulePath lib.qualifier
+  stageLine s!"[truthmines] validate: {libs.size} libraries, {jobs} in \
+flight ({tier} tier; 8-phase ix validate per Benchmarks/Compile driver)"
+  let runOne (lib : ValidationLib) : IO MemberOutcome := do
     let exit ← watched ceiling? exe.toString
-      #["validate", driver.toString] root
-    return { qualifier := q, cached := false, exit }
+      #["validate", lib.driver.toString, "--no-build"] root
+    return { qualifier := lib.qualifier, cached := false, exit }
   let mut pending := libs.toList
   let mut inFlight : Array (Task (Except IO.Error MemberOutcome)) := #[]
   let mut failures : List String := []
@@ -697,7 +727,7 @@ flight ({tier} tier; 8-phase ix validate per driver module)"
       failures := failures ++ [s!"{outcome.qualifier} ({outcome.exit})"]
       stageLine s!"[truthmines] {outcome.qualifier}: fidelity FAILED \
 ({outcome.exit})"
-  stageLine s!"[truthmines] validate done: {passed}/{libs.size} member(s) \
+  stageLine s!"[truthmines] validate done: {passed}/{libs.size} libraries \
 clean{if failures.isEmpty then "" else s!"; failed: {failures}"}"
   return if failures.isEmpty then 0 else 1
 

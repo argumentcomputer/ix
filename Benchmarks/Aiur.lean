@@ -88,7 +88,7 @@ def main : IO Unit := do
     let system ← benchStep "build AiurSystem"
         (Aiur.AiurSystem.build compiled.bytecode commitmentParameters) friParameters
     let funIdx := compiled.getFuncIdx `main |>.get!
-    let (claim, proof, _) ← benchStep "prove fib 10"
+    let (claim, proof, _) ← benchStepE "prove fib 10"
         (Aiur.AiurSystem.prove system funIdx #[10]) default (oneShot := true)
     let _ ← benchStepE "verify fib 10"
         (Aiur.AiurSystem.verify system claim) proof

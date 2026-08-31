@@ -153,7 +153,9 @@ def endToEndSuite : IO UInt32 := do
 
   -- ── prove factorial(5) = 120 (`G` is a reserved DSL token, spell it qualified)
   let input := #[Aiur.G.ofNat 5]
-  let (claim, proof, _) := facSystem.prove facIdx input default
+  let (claim, proof, _) ← match facSystem.prove facIdx input default with
+    | .ok result => pure result
+    | .error e => IO.eprintln s!"factorial prove failed: {e}"; return 1
   let expectedClaim := buildClaim facIdx input #[Aiur.G.ofNat 120]
   let proofBytes := proof.toBytes
 

@@ -2593,24 +2593,35 @@ fn handle_substcore_step(
     })
     .collect();
 
-  // Build the new local_context for the continuation: replace the
-  // original forward_deps with their substituted versions (same fvar
-  // names, substituted domains). Non-dep entries are unchanged. The
-  // abstracted_fvar is removed (Lean's `clearH := true` clears it).
-  let new_local_context: Vec<LocalDecl> = local_context
+  // Build the new local_context for the continuation. `substCore` reverts
+  // the abstracted fvar together with every forward dependency, introduces
+  // the equality pair, and only then re-introduces the remaining reverted
+  // declarations (`introNP (vars.size - 2)`). Consequently forward deps move
+  // to the END of the surviving local context; replacing them in place is
+  // observably wrong when a later substitution depends on both a moved field
+  // and an unaffected field. For example, after substituting the first index
+  // of `C : I i j -> T j -> I i j`, `C` moves behind `T`; substituting `j`
+  // must therefore see the forward deps in `T, C` order, exactly as Lean's
+  // local context does.
+  //
+  // Remove the abstracted fvar and the old forward-dep declarations first,
+  // preserve every unaffected declaration in place, then append the
+  // substituted forward deps in their revert order. `clearH := true` also
+  // removes the abstracted fvar; equality binders are modeled separately by
+  // `remaining` and never participate in forward-dependency discovery here.
+  let mut new_local_context: Vec<LocalDecl> = local_context
     .iter()
     .filter_map(|d| {
-      if d.fvar_name == abstracted_fvar_name {
-        None
-      } else if let Some(new_d) =
-        new_forward_deps.iter().find(|nd| nd.fvar_name == d.fvar_name)
+      if d.fvar_name == abstracted_fvar_name
+        || forward_deps.iter().any(|fd| fd.fvar_name == d.fvar_name)
       {
-        Some(new_d.clone())
+        None
       } else {
         Some(d.clone())
       }
     })
     .collect();
+  new_local_context.extend(new_forward_deps.iter().cloned());
 
   let inner_proof = build_proof_for_remaining(
     &new_rest,
