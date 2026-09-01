@@ -1061,6 +1061,39 @@ theorem Step.pappFn {context : Context} {interpretation : Interpretation}
     Nat.not_le.mpr under]
   rfl
 
+/-- A finite sequence of genuine running-state transitions.  Requiring the
+source of each transition to be running prevents the evaluator's halted
+self-step from pretending to consume control fuel. -/
+inductive Steps (context : Context) (interpretation : Interpretation) :
+    Nat → Machine → Machine → Prop where
+  | refl (machine : Machine) : Steps context interpretation 0 machine machine
+  | cons {count : Nat} {before middle after : Machine}
+      {frame : Frame} {stack : List Continuation}
+      (running : before.control = .running frame stack)
+      (head : Step context interpretation before middle)
+      (tail : Steps context interpretation count middle after) :
+      Steps context interpretation (Nat.succ count) before after
+
+/-- One running small step is a one-element finite execution. -/
+theorem Step.toSteps {context : Context} {interpretation : Interpretation}
+    {before after : Machine} {frame : Frame} {stack : List Continuation}
+    (running : before.control = .running frame stack)
+    (step : Step context interpretation before after) :
+    Steps context interpretation 1 before after :=
+  .cons running step (.refl after)
+
+/-- Finite executions compose and their exact step counts add. -/
+theorem Steps.trans {context : Context} {interpretation : Interpretation}
+    {firstCount secondCount : Nat} {before middle after : Machine}
+    (first : Steps context interpretation firstCount before middle)
+    (second : Steps context interpretation secondCount middle after) :
+    Steps context interpretation (firstCount + secondCount) before after := by
+  induction first with
+  | refl => simpa using second
+  | cons running head tail ih =>
+      simpa only [Nat.succ_add] using
+        (Steps.cons running head (ih second))
+
 /-- Total runner with a control budget independent of `Machine.heapFuel`. -/
 def runMachine (context : Context) (interpretation : Interpretation) :
     Nat → Machine → Except Error Result
@@ -1089,5 +1122,44 @@ def runMain (context : Context) (interpretation : Interpretation)
     (program : Program) (controlFuel : Nat := 100000)
     (heapFuel : Nat := 100000) : Except Error Result :=
   runFunction context interpretation program.main #[] controlFuel heapFuel
+
+/-- Running a finite execution prefix spends exactly its step count from the
+control budget and leaves evaluation of the suffix unchanged. -/
+theorem Steps.runMachine {context : Context}
+    {interpretation : Interpretation} {count controlFuel : Nat}
+    {before after : Machine}
+    (steps : Steps context interpretation count before after) :
+    Compilatrix.IxIR2.Eval.runMachine context interpretation
+        (count + controlFuel) before =
+      Compilatrix.IxIR2.Eval.runMachine context interpretation
+        controlFuel after := by
+  induction steps with
+  | refl => simp only [Nat.zero_add]
+  | @cons count before middle after frame stack running head tail ih =>
+      rw [Nat.succ_add]
+      cases before with
+      | mk store heapFuel beforeControl =>
+          simp only at running
+          subst beforeControl
+          simp only [Compilatrix.IxIR2.Eval.runMachine]
+          rw [head]
+          simp only [bind, Except.bind]
+          exact ih
+
+/-- A finite execution ending in a halt gives an exact successful runner
+witness with no unused control fuel. -/
+theorem Steps.runMachine_halted {context : Context}
+    {interpretation : Interpretation} {count : Nat}
+    {before : Machine} {store : Store} {heapFuel : Nat} {value : RVal}
+    (steps : Steps context interpretation count before
+      { store, heapFuel, control := .halted value }) :
+    Compilatrix.IxIR2.Eval.runMachine context interpretation count before =
+      .ok
+        { store
+          value
+          controlRemaining := 0
+          heapRemaining := heapFuel } := by
+  simpa [Compilatrix.IxIR2.Eval.runMachine] using
+    (steps.runMachine (controlFuel := 0))
 
 end Compilatrix.IxIR2.Eval

@@ -422,6 +422,12 @@ recursive primitives such as shared RC-zero release and `dropUnique`; it never
 reduces the control fuel available to the continuation. Shallow
 `takeUnique`/`resetShared` uses no heap fuel.
 
+The public finite-step closure admits only transitions whose source control is
+running, excluding the evaluator's inert halted self-step. Its composition law
+adds exact step counts, and its runner adequacy theorem removes exactly that
+count from the control budget. A finite execution ending in a halt therefore
+constructs a successful `runMachine` witness with zero unused control fuel.
+
 IxIR₁→IxIR₂ correctness does not assert equal budgets: one source transition
 may match zero or more target transitions, and successful-run wrappers
 existentially choose both target budgets. This avoids the exact-fuel
