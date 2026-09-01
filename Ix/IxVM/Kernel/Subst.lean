@@ -69,7 +69,7 @@ def subst := ⟦
   }
 
   fn lbr_max(a: G, b: G) -> G {
-    match u32_less_than(a, b) {
+    match u32_lt(a, b) {
       1 => b,
       0 => a,
     }
@@ -83,7 +83,7 @@ def subst := ⟦
   }
 
   fn lbr_min(a: G, b: G) -> G {
-    match u32_less_than(a, b) {
+    match u32_lt(a, b) {
       1 => a,
       0 => b,
     }
@@ -93,8 +93,8 @@ def subst := ⟦
   -- the u32 decomposition in this helper avoids charging its wide intrinsic
   -- layout on every row of a hot substitution circuit; repeated `(depth,lbr)`
   -- pairs share one constrained helper row.
-  fn memo_u32_less_than(a: G, b: G) -> G {
-    u32_less_than(a, b)
+  fn memo_u32_lt(a: G, b: G) -> G {
+    u32_lt(a, b)
   }
 
   -- ============================================================================
@@ -118,9 +118,9 @@ def subst := ⟦
   fn has_bvar_in_range(e: KExpr, lo: G, hi: G) -> G {
     match load(e) {
       KExprNode.BVar(i) =>
-        match u32_less_than(i, lo) {
+        match u32_lt(i, lo) {
           1 => 0,
-          0 => u32_less_than(i, hi),
+          0 => u32_lt(i, hi),
         },
       KExprNode.Srt(_) => 0,
       KExprNode.Const(_, _) => 0,
@@ -191,7 +191,7 @@ def subst := ⟦
   -- Smallest valid cut ≥ `need`. Requires `1 ≤ need ≤ len`.
   fn ctx_seek_cut(types: List‹KExpr›, need: G) -> G {
     let c = ctx_next_cut(types);
-    match u32_less_than(c, need) {
+    match u32_lt(c, need) {
       0 => c,
       1 => c + ctx_seek_cut(list_drop(types, c), need - c),
     }
@@ -210,7 +210,7 @@ def subst := ⟦
       0 => 0,
       _ =>
         let c = ctx_next_cut(rest);
-        match u32_less_than(c, l) {
+        match u32_lt(c, l) {
           0 => c,
           1 => c + ctx_close_cut(list_drop(rest, c), l - c),
         },
@@ -224,7 +224,7 @@ def subst := ⟦
     match base {
       0 => store(ListNode.Nil),
       _ =>
-        match u32_less_than(base, list_length(types)) {
+        match u32_lt(base, list_length(types)) {
           0 => types,
           1 => list_take(types, @ctx_reachable(types, base)),
         },
@@ -236,7 +236,7 @@ def subst := ⟦
   --
   -- `expr_glb(e, c)`: MINIMUM loose-BVar index of `e` relative to cutoff
   -- `c` (i.e. min over `{i - c : BVar i loose, i ≥ c}`), or the sentinel
-  -- `4294967295` when `e` has no loose BVar at or above `c`. The min of a
+  -- `IDX_MAX` (the width profile's +∞ index sentinel) when `e` has no loose BVar at or above `c`. The min of a
   -- term that only references the OUTERMOST binders of a deep telescope
   -- is large — and every context frame below that min is unreferenced.
   --
@@ -247,8 +247,8 @@ def subst := ⟦
   fn expr_glb(e: KExpr, c: G) -> G {
     -- Fast path: no loose BVar at or above `c` (lbr ≤ c) → sentinel,
     -- skipping the walk of closed subtrees entirely.
-    match memo_u32_less_than(expr_lbr(e), c + 1) {
-      1 => 4294967295,
+    match memo_u32_lt(expr_lbr(e), c + 1) {
+      1 => .IDX_MAX,
       _ => expr_glb_walk(e, c),
     }
   }
@@ -256,13 +256,13 @@ def subst := ⟦
   fn expr_glb_walk(e: KExpr, c: G) -> G {
     match load(e) {
       KExprNode.BVar(i) =>
-        match memo_u32_less_than(i, c) {
-          1 => 4294967295,
+        match memo_u32_lt(i, c) {
+          1 => .IDX_MAX,
           0 => i - c,
         },
-      KExprNode.Srt(_) => 4294967295,
-      KExprNode.Const(_, _) => 4294967295,
-      KExprNode.Lit(_) => 4294967295,
+      KExprNode.Srt(_) => .IDX_MAX,
+      KExprNode.Const(_, _) => .IDX_MAX,
+      KExprNode.Lit(_) => .IDX_MAX,
       KExprNode.App(f, a) => lbr_min(expr_glb(f, c), expr_glb(a, c)),
       KExprNode.Lam(ty, body) => expr_glb_binder(ty, body, c),
       KExprNode.Forall(ty, body) => expr_glb_binder(ty, body, c),
@@ -296,7 +296,7 @@ def subst := ⟦
       0 => e,
       _ =>
         let l = expr_lbr(e);
-        match memo_u32_less_than(cutoff, l) {
+        match memo_u32_lt(cutoff, l) {
           0 => e,
           1 => expr_lift_walk(e, shift, cutoff),
         },
@@ -332,7 +332,7 @@ def subst := ⟦
   -- `store(BVar(i))` content-dedups to the same pointer the inline arm
   -- returned.
   fn expr_lift_bvar(i: G, shift: G, cutoff: G) -> KExpr {
-    match u32_less_than(i, cutoff) {
+    match u32_lt(i, cutoff) {
       1 => store(KExprNode.BVar(i)),
       0 => store(KExprNode.BVar(i + shift)),
     }
@@ -369,7 +369,7 @@ def subst := ⟦
       0 => e,
       _ =>
         let l = expr_lbr(e);
-        match memo_u32_less_than(cutoff, l) {
+        match memo_u32_lt(cutoff, l) {
           0 => e,
           1 => expr_lower_walk(e, shift, cutoff),
         },
@@ -379,7 +379,7 @@ def subst := ⟦
   fn expr_lower_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, cutoff);
+        let lt = u32_lt(i, cutoff);
         match lt {
           1 => e,
           0 => store(KExprNode.BVar(i - shift)),
@@ -462,7 +462,7 @@ def subst := ⟦
     -- Fast path: when `expr_lbr(e) <= depth`, no BVar at or above depth
     -- exists in `e`, so the substitution is a no-op.
     let l = expr_lbr(e);
-    match memo_u32_less_than(depth, l) {
+    match memo_u32_lt(depth, l) {
       0 => e,
       1 =>
         match expr_has_bvar_at(e, depth) {
@@ -501,7 +501,7 @@ def subst := ⟦
   -- walk narrow. `store(BVar(i))` content-dedups to the same pointer the
   -- inline arm returned.
   fn expr_inst1_bvar(i: G, arg: KExpr, depth: G) -> KExpr {
-    match memo_u32_less_than(i, depth) {
+    match memo_u32_lt(i, depth) {
       1 => store(KExprNode.BVar(i)),
       0 =>
         match i - depth {
@@ -536,7 +536,7 @@ def subst := ⟦
       0 => e,
       _ =>
         let l = expr_lbr(e);
-        match memo_u32_less_than(depth, l) {
+        match memo_u32_lt(depth, l) {
           0 => e,
           1 =>
             match has_bvar_in_range(e, depth, depth + n) {
@@ -559,7 +559,7 @@ def subst := ⟦
   fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
     let n = list_length(substs);
     let ofs = i - depth;
-    match memo_u32_less_than(ofs, n) {
+    match memo_u32_lt(ofs, n) {
       1 => expr_lift(list_lookup(substs, ofs), depth, 0),
       0 => store(KExprNode.BVar(i - n)),
     }

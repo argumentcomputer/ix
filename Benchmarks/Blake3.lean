@@ -4,6 +4,7 @@ import Ix.IxVM.Blake3
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
+import Ix.IxVM.Width.Goldilocks
 
 open BgroupM
 
@@ -25,6 +26,7 @@ def friParameters : Aiur.FriParameters := {
 
 def mergedToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
   let tl ← IxVM.core.merge IxVM.byteStream
+  let tl ← tl.merge IxVM.widthGoldilocks
   tl.merge IxVM.blake3
 
 def blake3Bench : IO $ Array BenchReport := do

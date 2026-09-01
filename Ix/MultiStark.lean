@@ -5,6 +5,7 @@ public import Ix.Aiur.Protocol
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.U64.Goldilocks
+public import Ix.IxVM.Width.Goldilocks
 public import Ix.IxVM.Blake3
 public import Ix.MultiStark.Field.GoldilocksNative
 public import Ix.MultiStark.Field.GoldilocksBytes
@@ -120,9 +121,11 @@ the pruned forms. -/
 def multiStarkFullOver (field pcs : Aiur.Source.Toplevel) :
     Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
-  -- The deserializer reads counts through the U64 boundary interface;
-  -- `u64Goldilocks` because these toplevels are proved over Goldilocks.
+  -- The deserializer reads counts through the U64 boundary interface and
+  -- the FRI verifier compares through the width profile; the Goldilocks
+  -- forms because these toplevels are proved over Goldilocks.
   let t ← t.merge IxVM.u64Goldilocks
+  let t ← t.merge IxVM.widthGoldilocks
   let t ← t.merge field
   let t ← t.merge transcriptBlake3
   let t ← t.merge twoAdicDomain

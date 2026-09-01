@@ -607,7 +607,7 @@ def infer := ⟦
                                      head_lvls: List‹KLevel›,
                                      spine: List‹KExpr›,
                                      types: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match u32_lt(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let a0 = list_lookup(spine, 0);
@@ -653,7 +653,7 @@ def infer := ⟦
   fn try_dec_dispatch(head_addr: Addr, head_lvls: List‹KLevel›,
                           spine: List‹KExpr›, types: List‹KExpr›)
                           -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match u32_lt(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         match is_int_dec_prim_addr(head_addr) {
@@ -767,7 +767,7 @@ def infer := ⟦
   -- head_addr, spine assumed pre-whnf'd (caller runs whnf_spine).
   fn try_str_dec_eq(head_addr: Addr, spine: List‹KExpr›,
                         types: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match u32_lt(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let a0 = list_lookup(spine, 0);
@@ -813,7 +813,7 @@ def infer := ⟦
     let call_ty_w = whnf(call_ty, types);
     match collect_spine(call_ty_w) {
       (_, dec_args) =>
-        match u32_less_than(list_length(dec_args), 1) {
+        match u32_lt(list_length(dec_args), 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let prop = list_lookup(dec_args, 0);
@@ -843,7 +843,7 @@ def infer := ⟦
     let call_ty_w = whnf(call_ty, types);
     match collect_spine(call_ty_w) {
       (_, dec_args) =>
-        match u32_less_than(list_length(dec_args), 1) {
+        match u32_lt(list_length(dec_args), 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let prop = list_lookup(dec_args, 0);

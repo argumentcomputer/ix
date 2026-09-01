@@ -265,7 +265,7 @@ def klimbs := ⟦
   -- `#split_u32` unconstrained witness generators, so the O(x/256)
   -- iteration cost is off-circuit (untraced).
   fn divmod_256(x: G, q: G) -> (G, G) {
-    match u32_less_than(x, 256) {
+    match u32_lt(x, 256) {
       1 => (x, q),
       0 => divmod_256(x - 256, q + 1),
     }

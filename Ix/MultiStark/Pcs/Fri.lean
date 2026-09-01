@@ -423,7 +423,7 @@ def pcsFri := ⟦
   }
 
   fn b3_io_chunks(ch: G, i: G, remaining: G, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: Layer) -> Layer {
-    match u32_less_than(remaining, 64) {
+    match u32_lt(remaining, 64) {
       0 =>
         -- A full 64-byte block is available.
         let [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
@@ -1097,7 +1097,7 @@ def pcsFri := ⟦
       ListNode.Nil => 0,
       ListNode.Cons(h, rest) =>
         let m = heights_max(rest);
-        match u32_less_than(m, h) {
+        match u32_lt(m, h) {
           0 => m,
           _ => h,
         },
@@ -1284,7 +1284,7 @@ def pcsFri := ⟦
     -- num_rounds is proof advice (commit-phase commitment count); bound the
     -- max height so `two_adic_gen`'s squaring chain (bits ≤ 32) and the
     -- 32-bit query-index decomposition stay within range.
-    assert_eq!(u32_less_than(log_gmax, 33), 1);
+    assert_eq!(u32_lt(log_gmax, 33), 1);
     query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
       prep_opt, s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta,
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)

@@ -3,6 +3,7 @@ public import Ix.Aiur.Meta
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.U64.Goldilocks
+public import Ix.IxVM.Width.Goldilocks
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.RBTreeMap
 public import Ix.IxVM.Ixon
@@ -175,22 +176,28 @@ def entrypoints := ⟦
   -- The digest is public input as 8 field elements of 4 packed LE bytes
   -- (injective in Goldilocks; 8 input columns instead of 32) — the same
   -- representation the recursive verifier's entrypoint uses.
-  pub fn verify_claim(claim_digest: [G; 8]) {
+  pub fn verify_claim(claim_digest: PackedDigest) {
     run_claim(claim_digest);
   }
 ⟧
 
 open IxVM (core byteStream blake3 rbTreeMap ixon ixonSerialize ixonDeserialize)
 
-/-- The full IxVM kernel toplevel over a U64 boundary implementation
-    (`u64Goldilocks`, or `u64Small` for an outer field too narrow to pack
-    7 bytes): shared modules (core, ixon, blake3, …) merged with the
-    kernel-specific `kernelTypes`, `convert`, `ingress`, and
+/-- The Goldilocks field profile: the U64 boundary plus the width
+    interface (core and kernel extras). A narrow-field profile composes
+    `u64Small` with `Width/Small.lean`'s implementations instead. -/
+def goldilocksProfile : Except Aiur.Global Aiur.Source.Toplevel := do
+  let p ← u64Goldilocks.merge widthGoldilocks
+  p.merge kernelWidthGoldilocks
+
+/-- The full IxVM kernel toplevel over a field profile (see
+    `goldilocksProfile`): shared modules (core, ixon, blake3, …) merged
+    with the kernel-specific `kernelTypes`, `convert`, `ingress`, and
     `entrypoints`. Carries the test and benchmark entrypoints too. -/
-def ixVMFullOver (u64 : Aiur.Source.Toplevel) :
+def ixVMFullOver (profile : Aiur.Source.Toplevel) :
     Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← core.merge byteStream
-  let vm ← vm.merge u64
+  let vm ← vm.merge profile
   let vm ← vm.merge blake3
   let vm ← vm.merge rbTreeMap
   let vm ← vm.merge ixon
@@ -214,8 +221,8 @@ def ixVMFullOver (u64 : Aiur.Source.Toplevel) :
 
 /-- The full IxVM kernel toplevel over Goldilocks (the production field);
     `ixVM` below is its pruned production form. -/
-def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel :=
-  ixVMFullOver u64Goldilocks
+def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
+  ixVMFullOver (← goldilocksProfile)
 
 /-- Pruned production toplevel: `verify_claim` and nothing else.
 

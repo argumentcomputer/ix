@@ -33,7 +33,7 @@ def canonicalCheck := ⟦
     match a - b {
       0 => 1,
       _ =>
-        match u32_less_than(a, b) {
+        match u32_lt(a, b) {
           1 => 0,
           0 => 2,
         },
@@ -87,13 +87,6 @@ def canonicalCheck := ⟦
                                             to_field(ya[24]), to_field(ya[25]), to_field(ya[26]), to_field(ya[27])),
                               canon_addr_chunk(to_field(xa[28]), to_field(xa[29]), to_field(xa[30]), to_field(xa[31]),
                                              to_field(ya[28]), to_field(ya[29]), to_field(ya[30]), to_field(ya[31])))))))))
-  }
-
-  fn canon_addr_chunk(x0: G, x1: G, x2: G, x3: G,
-                    y0: G, y1: G, y2: G, y3: G) -> G {
-    let xv = x0 * 16777216 + x1 * 65536 + x2 * 256 + x3;
-    let yv = y0 * 16777216 + y1 * 65536 + y2 * 256 + y3;
-    canon_ord_cmp_g(xv, yv)
   }
 
   -- ==========================================================================
@@ -597,7 +590,7 @@ def canonicalCheck := ⟦
         let entries = store(ListNode.Cons(
           (list_lookup(proj_addrs, pos), j),
           list_concat(ctor_entries, rest_entries)));
-        match u32_less_than(rest_max, n) {
+        match u32_lt(rest_max, n) {
           1 => (entries, n),
           _ => (entries, rest_max),
         },
@@ -845,7 +838,7 @@ def canonicalCheck := ⟦
                          canon_muts_has_kind(members, 0), 0,
               "mutual block mixes a definition member with inductives");
             let indcs = canon_indc_positions(members, 0);
-            match u32_less_than(list_length(indcs), 2) {
+            match u32_lt(list_length(indcs), 2) {
               1 => (),
               _ =>
                 let proj_addrs = build_recur_addrs(members, block_addr);

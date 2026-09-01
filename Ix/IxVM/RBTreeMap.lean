@@ -64,7 +64,7 @@ def rbTreeMap := ⟦
       RBTreeMap.Nil =>
         RBTreeMap.Node(0, key, value, store(RBTreeMap.Nil), store(RBTreeMap.Nil)),
       RBTreeMap.Node(color, k, v, &left, &right) =>
-        let lt = u32_less_than(key, k);
+        let lt = u32_lt(key, k);
         match lt {
           1 => rbtree_map_balance(color, k, v, rbtree_map_ins(key, value, left), right),
           _ =>
@@ -95,7 +95,7 @@ def rbTreeMap := ⟦
   fn rbtree_map_lookup‹V›(key: G, tree: RBTreeMap‹V›) -> V {
     match tree {
       RBTreeMap.Node(_, k, v, &left, &right) =>
-        let lt = u32_less_than(key, k);
+        let lt = u32_lt(key, k);
         match lt {
           1 => rbtree_map_lookup(key, left),
           _ =>
@@ -115,7 +115,7 @@ def rbTreeMap := ⟦
     match tree {
       RBTreeMap.Nil => default,
       RBTreeMap.Node(_, k, v, &left, &right) =>
-        let lt = u32_less_than(key, k);
+        let lt = u32_lt(key, k);
         match lt {
           1 => rbtree_map_lookup_or_default(key, left, default),
           _ =>

@@ -103,7 +103,7 @@ def check := ⟦
         validate_univ_params_seen(a, bound);
         validate_univ_params_seen(b, bound),
       KLevelNode.Param(i) =>
-        assert_eq!(u32_less_than(i, bound), 1,
+        assert_eq!(u32_lt(i, bound), 1,
           "universe param index out of range");
         (),
     }
@@ -123,7 +123,7 @@ def check := ⟦
   fn validate_expr_well_scoped(e: KExpr, depth: G, bound: G) {
     match load(e) {
       KExprNode.BVar(i) =>
-        assert_eq!(u32_less_than(i, depth), 1,
+        assert_eq!(u32_lt(i, depth), 1,
           "loose bound variable: BVar index exceeds binder depth");
         (),
       KExprNode.Srt(l) => validate_univ_params_seen(l, bound),
@@ -1863,7 +1863,7 @@ def check := ⟦
       0 => store(KExprNode.BVar((n_rec_params - 1) - j)),
       _ =>
         let len = list_length(spec_params);
-        match u32_less_than(j, len) {
+        match u32_lt(j, len) {
           1 => list_lookup(spec_params, j),
           _ => store(KExprNode.BVar((n_rec_params - 1) - j)),
         },
@@ -2443,7 +2443,7 @@ def check := ⟦
             -- wrong value hands the minor premise the wrong slice.
             assert_eq!(cidx, pos,
               "recursor rule is out of ctor order");
-            assert_eq!(u32_less_than(cidx, num_ctors), 1,
+            assert_eq!(u32_lt(cidx, num_ctors), 1,
               "recursor rule names a ctor index out of range");
             let ctor_ci = load(get_ci_cprj(block_addr, ind_idx, cidx));
             match ctor_ci {
@@ -2810,7 +2810,7 @@ def check := ⟦
       0 => store(KExprNode.BVar((depth - 1) - j)),
       _ =>
         let len = list_length(spec_params);
-        match u32_less_than(j, len) {
+        match u32_lt(j, len) {
           1 => expr_lift(list_lookup(spec_params, j), spec_lift, 0),
           _ => store(KExprNode.BVar((depth - 1) - j)),
         },
@@ -3701,7 +3701,7 @@ def check := ⟦
           KRecRule.Mk(cidx, num_args, rhs) =>
             assert_eq!(cidx, expected_cidx,
               "aux recursor rule is out of ctor order");
-            assert_eq!(u32_less_than(cidx, num_ctors), 1,
+            assert_eq!(u32_lt(cidx, num_ctors), 1,
               "aux recursor rule names a ctor index out of range");
             let ctor_ci = load(get_ci_cprj(parent_block_addr,
               parent_ind_idx, cidx));
@@ -3743,7 +3743,7 @@ def check := ⟦
           KRecRule.Mk(cidx, num_args, rhs) =>
             assert_eq!(cidx, expected_cidx,
               "recursor rule is out of ctor order");
-            assert_eq!(u32_less_than(cidx, num_ctors), 1,
+            assert_eq!(u32_lt(cidx, num_ctors), 1,
               "recursor rule names a ctor index out of range");
             let ctor_ci = load(get_ci_cprj(block_addr, ind_idx, cidx));
             match ctor_ci {

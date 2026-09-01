@@ -49,35 +49,6 @@ def byteStream := ⟦
     }
   }
 
-  -- Wrapping little-endian u32 addition. The four result bytes are advice and
-  -- are range-checked here. The carry is the virtual expression
-  -- `(a + b - result) / 2^32`; constraining it to be boolean uniquely pins the
-  -- wrapping result, so a separate packed-sum equality would be redundant.
-  fn u32_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
-    let (raw, carry) = unconstrained_u32_add(a, b);
-    let (z0, z1) = u8_range_check(raw[0], raw[1]);
-    let (z2, z3) = u8_range_check(raw[2], raw[3]);
-
-    assert_eq!(carry * carry, carry, "u32_add: carry is not boolean");
-
-    [z0, z1, z2, z3]
-  }
-
-  -- Wrapping sum of three little-endian u32s. The output costs two paired
-  -- range-check lookups. The virtual carry is
-  -- `(a + b + c - result) / 2^32`; constraining it to {0, 1, 2} uniquely pins
-  -- the result, so no separate packed-sum equality is needed.
-  fn u32_add3(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
-    let (raw, carry) = unconstrained_u32_add3(a, b, c);
-    let (z0, z1) = u8_range_check(raw[0], raw[1]);
-    let (z2, z3) = u8_range_check(raw[2], raw[3]);
-
-    assert_eq!(carry * (carry - 1) * (carry - 2), 0,
-      "u32_add3: carry is not in {0, 1, 2}");
-
-    [z0, z1, z2, z3]
-  }
-
   fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let c0 = u8_xor(a[0], b[0]);
     let c1 = u8_xor(a[1], b[1]);
