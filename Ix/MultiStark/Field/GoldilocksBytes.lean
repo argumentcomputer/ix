@@ -83,6 +83,12 @@ def goldilocksBytes := ⟦
   const VAL_GENERATOR: Val = store([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
   -- A primitive 2^32-th root of unity (= 1753635133440165772).
   const VAL_TWO_ADIC_ROOT: Val = store([140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8])
+
+  -- The extension's zero and one, composed from the base consts — the SAME
+  -- body in every implementation, since consts substitute structurally.
+  const EXT_ZERO: Ext = [.VAL_ZERO, .VAL_ZERO]
+  const EXT_ONE: Ext = [.VAL_ONE, .VAL_ZERO]
+  const EXT_X: Ext = [.VAL_ZERO, .VAL_ONE]
   -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
   -- ConstSmall ingest. Already canonical: the two bytes ARE the low limbs.
   inline fn val_from_u16(lo: U8, hi: U8) -> Val {

@@ -63,6 +63,12 @@ def goldilocksNative := ⟦
   -- A primitive 2^32-th root of unity (Plonky3's maximal two-adic
   -- generator); smaller-order roots derive by squaring (`two_adic_gen`).
   const VAL_TWO_ADIC_ROOT: Val = 1753635133440165772
+
+  -- The extension's zero and one, composed from the base consts — the SAME
+  -- body in every implementation, since consts substitute structurally.
+  const EXT_ZERO: Ext = [.VAL_ZERO, .VAL_ZERO]
+  const EXT_ONE: Ext = [.VAL_ONE, .VAL_ZERO]
+  const EXT_X: Ext = [.VAL_ZERO, .VAL_ONE]
   -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
   -- ConstSmall ingest (byte sums cannot wrap, and 2¹⁶ < p in every field).
   inline fn val_from_u16(lo: U8, hi: U8) -> Val {
