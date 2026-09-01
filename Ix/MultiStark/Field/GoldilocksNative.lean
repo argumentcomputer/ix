@@ -24,7 +24,7 @@ Contents:
 
 - the representation types: `Val` (native: `G` itself) and the degree-2
   extension `Ext = 𝔽_p[X]/(X² − 7)` (a pair `[c0, c1] = c0 + c1·X`);
-- pure values: `val_zero`/`val_one`/`val_two`, the binomial modulus `ext_w`
+- consts: `.VAL_ZERO`/`.VAL_ONE`/`.VAL_TWO`, the binomial modulus `.EXT_W`
   (X² = 7), the multiplicative-coset generator `val_generator` (7), and
   the maximal two-adic root `val_two_adic_root` (order 2^32);
 - base ring ops `val_add`/`val_sub`/`val_neg`/`val_mul`, the zero test
@@ -53,16 +53,16 @@ def goldilocksNative := ⟦
   -- ==========================================================================
   -- Pure values.
   -- ==========================================================================
-  inline fn val_zero() -> Val { 0 }
-  inline fn val_one() -> Val { 1 }
-  inline fn val_two() -> Val { 2 }
+  const VAL_ZERO: Val = 0
+  const VAL_ONE: Val = 1
+  const VAL_TWO: Val = 2
   -- The extension's binomial modulus: ExtGoldilocks = 𝔽_p[X]/(X² − W).
-  inline fn ext_w() -> Val { 7 }
+  const EXT_W: Val = 7
   -- The multiplicative-coset generator (Plonky3 `Goldilocks::GENERATOR`).
-  inline fn val_generator() -> Val { 7 }
+  const VAL_GENERATOR: Val = 7
   -- A primitive 2^32-th root of unity (Plonky3's maximal two-adic
   -- generator); smaller-order roots derive by squaring (`two_adic_gen`).
-  inline fn val_two_adic_root() -> Val { 1753635133440165772 }
+  const VAL_TWO_ADIC_ROOT: Val = 1753635133440165772
   -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
   -- ConstSmall ingest (byte sums cannot wrap, and 2¹⁶ < p in every field).
   inline fn val_from_u16(lo: U8, hi: U8) -> Val {
@@ -155,12 +155,12 @@ def goldilocksNative := ⟦
   }
   -- (a0 + a1·X)(b0 + b1·X) = (a0·b0 + 7·a1·b1) + (a0·b1 + a1·b0)·X.
   inline fn ext_mul(a: Ext, b: Ext) -> Ext {
-    [val_add(val_mul(a[0], b[0]), val_mul(ext_w(), val_mul(a[1], b[1]))),
+    [val_add(val_mul(a[0], b[0]), val_mul(.EXT_W, val_mul(a[1], b[1]))),
      val_add(val_mul(a[0], b[1]), val_mul(a[1], b[0]))]
   }
   -- conjugate ā = a0 − a1·X, norm a·ā = a0² − 7·a1² ∈ 𝔽_p, a⁻¹ = ā / norm.
   inline fn ext_inverse(a: Ext) -> Ext {
-    let norm = val_sub(val_mul(a[0], a[0]), val_mul(ext_w(), val_mul(a[1], a[1])));
+    let norm = val_sub(val_mul(a[0], a[0]), val_mul(.EXT_W, val_mul(a[1], a[1])));
     let ninv = val_inverse(norm);
     [val_mul(a[0], ninv), val_mul(val_neg(a[1]), ninv)]
   }

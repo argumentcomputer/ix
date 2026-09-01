@@ -778,7 +778,7 @@ def pcsFri := ⟦
   -- `base` is a native Goldilocks element; `bits` is a native bit list.
   fn exp_by_bits(base: Val, bits: List‹G›) -> Val {
     match load(bits) {
-      ListNode.Nil => val_one(),
+      ListNode.Nil => .VAL_ONE,
       ListNode.Cons(b, rest) =>
         let half = exp_by_bits(val_mul(base, base), rest);
         match b {
@@ -794,8 +794,8 @@ def pcsFri := ⟦
     let g = two_adic_gen(log_height + 1);
     let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
     let two_s = val_add(s, s);
-    let t1 = ext_div(ext_add(e0, e1), [val_two(), val_zero()]);
-    let t2 = ext_mul(beta, ext_div(ext_sub(e0, e1), [two_s, val_zero()]));
+    let t1 = ext_div(ext_add(e0, e1), [.VAL_TWO, .VAL_ZERO]);
+    let t2 = ext_mul(beta, ext_div(ext_sub(e0, e1), [two_s, .VAL_ZERO]));
     ext_add(t1, t2)
   }
 
@@ -815,7 +815,7 @@ def pcsFri := ⟦
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
   fn ro_x(index_bits: List‹G›, log_height: G) -> Val {
-    val_mul(val_generator(), exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
+    val_mul(.VAL_GENERATOR, exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
   }
 
   -- Accumulate one matrix-point's column contributions WITHOUT the quotient
@@ -832,7 +832,7 @@ def pcsFri := ⟦
       ListNode.Nil => (s, ap),
       ListNode.Cons(lane, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = ext_mul(ap, ext_sub(pz, [val_from_bytes(lane), val_zero()]));
+        let term = ext_mul(ap, ext_sub(pz, [val_from_bytes(lane), .VAL_ZERO]));
         ro_fold(pxr, pzr, alpha, ext_add(s, term), ext_mul(ap, alpha)),
     }
   }
@@ -943,7 +943,7 @@ def pcsFri := ⟦
       _ => match circ_has_height(log_degrees, log_blowup, num_circuits, 0, h) {
         0 => build_buckets(log_degrees, log_blowup, num_circuits, h - 1),
         _ => store(ListNode.Cons(
-               Bucket.Mk(h, [val_one(), val_zero()], [val_zero(), val_zero()]),
+               Bucket.Mk(h, [.VAL_ONE, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO]),
                build_buckets(log_degrees, log_blowup, num_circuits, h - 1))),
       },
     }
@@ -958,7 +958,7 @@ def pcsFri := ⟦
         let Bucket.Mk(h, ap, ro) = b;
         match eq_zero(h - lh) {
           1 =>
-            let (s, ap2) = ro_fold(p_x, p_z, alpha, [val_zero(), val_zero()], ap);
+            let (s, ap2) = ro_fold(p_x, p_z, alpha, [.VAL_ZERO, .VAL_ZERO], ap);
             let ro2 = ext_add(ro, ext_mul(q, s));
             store(ListNode.Cons(Bucket.Mk(h, ap2, ro2), rest)),
           _ => store(ListNode.Cons(b, bucket_update(rest, lh, p_x, p_z, q, alpha))),
@@ -974,7 +974,7 @@ def pcsFri := ⟦
       ListNode.Cons(b, rest) =>
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_blowup) {
-          1 => assert_eq!(ext_eq(ro, [val_zero(), val_zero()]), 1); 1,
+          1 => assert_eq!(ext_eq(ro, [.VAL_ZERO, .VAL_ZERO]), 1); 1,
           _ => assert_blowup_zero(rest, log_blowup),
         },
     }
@@ -994,7 +994,7 @@ def pcsFri := ⟦
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
     let x = @ro_x(list_drop(idxbits, log_gmax - lh), lh);
-    let q = ext_inverse(ext_sub(z, [x, val_zero()]));
+    let q = ext_inverse(ext_sub(z, [x, .VAL_ZERO]));
     bucket_update(buckets, lh, p_x, p_z, q, alpha)
   }
 
@@ -1005,7 +1005,7 @@ def pcsFri := ⟦
       -> List‹Bucket› {
     let pz0 = list_lookup(mat, 0);
     let pz1 = list_lookup(mat, 1);
-    let zn = ext_mul(zeta, [two_adic_gen(ldeg), val_zero()]);
+    let zn = ext_mul(zeta, [two_adic_gen(ldeg), .VAL_ZERO]);
     let b1 = ri_apply(buckets, lh, idxbits, log_gmax, zeta, p_x, pz0, alpha);
     ri_apply(b1, lh, idxbits, log_gmax, zn, p_x, pz1, alpha)
   }

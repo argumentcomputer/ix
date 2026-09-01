@@ -213,7 +213,7 @@ def verifier := ⟦
   -- Reconstruct an extension element from its two opened base coordinates,
   -- `from_ext_basis([c0, c1]) = c0 + c1·X` (the ExtVal basis is `[1, X]`).
   fn from_ext_basis(c0: Ext, c1: Ext) -> Ext {
-    ext_add(c0, ext_mul(c1, [val_zero(), val_one()]))
+    ext_add(c0, ext_mul(c1, [.VAL_ZERO, .VAL_ONE]))
   }
 
   -- A stage-2 / quotient opened row arrives as `stage_2_width·2` extension
@@ -254,7 +254,7 @@ def verifier := ⟦
       isf: Ext, isl: Ext, ist: Ext) -> Ext {
     let nd = list_lookup(nodes, i);
     match nd {
-      SysNode.Const(c) => [c, val_zero()],
+      SysNode.Const(c) => [c, .VAL_ZERO],
       SysNode.Var(src, off, idx) =>
         -- flatten (source, offset) into one selector: 2·source + offset,
         -- with source 0 Preprocessed / 1 Main / 2 Stage2, offset 0 cur / 1 next.
@@ -317,7 +317,7 @@ def verifier := ⟦
   -- (a0·b0 + 7·a1·b1, a0·b1 + a1·b0).
   -- ==========================================================================
   fn pair_mul(a0: Ext, a1: Ext, b0: Ext, b1: Ext) -> (Ext, Ext) {
-    (ext_add(ext_mul(a0, b0), ext_mul([ext_w(), val_zero()], ext_mul(a1, b1))),
+    (ext_add(ext_mul(a0, b0), ext_mul([.EXT_W, .VAL_ZERO], ext_mul(a1, b1))),
      ext_add(ext_mul(a0, b1), ext_mul(a1, b0)))
   }
 
@@ -328,7 +328,7 @@ def verifier := ⟦
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext) -> (Ext, Ext) {
     match load(args) {
-      ListNode.Nil => ([val_zero(), val_zero()], [val_zero(), val_zero()]),
+      ListNode.Nil => ([.VAL_ZERO, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO]),
       ListNode.Cons(a, rest) =>
         let (f0, f1) = logup_fingerprint(rest, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
@@ -395,7 +395,7 @@ def verifier := ⟦
               let acc1 = ood_fold(ood_fold(acc, alpha, ext_sub(c0, nr0)), alpha,
                                   ext_sub(c1, nr1));
               logup_steps_fold(acc1, alpha, rest, j + 1, lcount,
-                g + 1, k, k, [val_one(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()],
+                g + 1, k, k, [.VAL_ONE, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO],
                 inj0, inj1, b0, b1, g0, g1, nodes,
                 main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
             _ =>
@@ -419,22 +419,22 @@ def verifier := ⟦
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       lch: Ext, fch: Ext, accp: Ext, naccp: Ext,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: Val) -> Ext {
-    let base = fold_roots([val_zero(), val_zero()], alpha, zeros, nodes,
+    let base = fold_roots([.VAL_ZERO, .VAL_ZERO], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
     -- The lookup-argument coordinates come straight from the challenge /
     -- accumulator values (pure wiring) — `publics` is only for the node
     -- graph's Public(idx) leaves; looking these 8 back out of the list cost
     -- 8 calls for values already in hand.
-    let b0 = [lch[0], val_zero()]; let b1 = [lch[1], val_zero()];
-    let g0 = [fch[0], val_zero()]; let g1 = [fch[1], val_zero()];
-    let a0 = [accp[0], val_zero()]; let a1 = [accp[1], val_zero()];
-    let na0 = [naccp[0], val_zero()]; let na1 = [naccp[1], val_zero()];
+    let b0 = [lch[0], .VAL_ZERO]; let b1 = [lch[1], .VAL_ZERO];
+    let g0 = [fch[0], .VAL_ZERO]; let g1 = [fch[1], .VAL_ZERO];
+    let a0 = [accp[0], .VAL_ZERO]; let a1 = [accp[1], .VAL_ZERO];
+    let na0 = [naccp[0], .VAL_ZERO]; let na1 = [naccp[1], .VAL_ZERO];
     -- Boundary injection: is_last_row·(acc_final − acc_initial) with the
     -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
     -- p3's raw selector has value n·g at the last row, and Δ is constant
     -- across the domain, mirroring the Rust prover/verifier).
-    let inj0 = ext_mul(isl, ext_mul(ext_sub(na0, a0), [inorm, val_zero()]));
-    let inj1 = ext_mul(isl, ext_mul(ext_sub(na1, a1), [inorm, val_zero()]));
+    let inj0 = ext_mul(isl, ext_mul(ext_sub(na0, a0), [inorm, .VAL_ZERO]));
+    let inj1 = ext_mul(isl, ext_mul(ext_sub(na1, a1), [inorm, .VAL_ZERO]));
     match load(lks) {
       -- No lookups: single pass-through column, acc′ − acc + inj = 0.
       ListNode.Nil =>
@@ -444,7 +444,7 @@ def verifier := ⟦
           ext_add(ext_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
       ListNode.Cons(_h, _t) =>
         logup_steps_fold(base, alpha, lks, 0, list_length(lks),
-          0, k, k, [val_one(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()], inj0, inj1,
+          0, k, k, [.VAL_ONE, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO], inj0, inj1,
           b0, b1, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
     }
@@ -455,10 +455,10 @@ def verifier := ⟦
   -- (`EF::from(coord)`). Indexed by the compiled `Public` node index
   -- (`num_publics = 4·D`, `D = 2`).
   fn build_publics(lch: Ext, fch: Ext, accp: Ext, naccp: Ext) -> List‹Ext› {
-    store(ListNode.Cons([lch[0], val_zero()], store(ListNode.Cons([lch[1], val_zero()],
-    store(ListNode.Cons([fch[0], val_zero()], store(ListNode.Cons([fch[1], val_zero()],
-    store(ListNode.Cons([accp[0], val_zero()], store(ListNode.Cons([accp[1], val_zero()],
-    store(ListNode.Cons([naccp[0], val_zero()], store(ListNode.Cons([naccp[1], val_zero()],
+    store(ListNode.Cons([lch[0], .VAL_ZERO], store(ListNode.Cons([lch[1], .VAL_ZERO],
+    store(ListNode.Cons([fch[0], .VAL_ZERO], store(ListNode.Cons([fch[1], .VAL_ZERO],
+    store(ListNode.Cons([accp[0], .VAL_ZERO], store(ListNode.Cons([accp[1], .VAL_ZERO],
+    store(ListNode.Cons([naccp[0], .VAL_ZERO], store(ListNode.Cons([naccp[1], .VAL_ZERO],
     store(ListNode.Nil)))))))))))))))))
   }
 
@@ -478,7 +478,7 @@ def verifier := ⟦
   -- power, starting at 1).
   fn quotient_eval(slices: List‹Ext›, zeta_pow_n: Ext, pow: Ext) -> Ext {
     match load(slices) {
-      ListNode.Nil => [val_zero(), val_zero()],
+      ListNode.Nil => [.VAL_ZERO, .VAL_ZERO],
       ListNode.Cons(c, rest) =>
         ext_add(ext_mul(pow, c), quotient_eval(rest, zeta_pow_n, ext_mul(pow, zeta_pow_n))),
     }
@@ -551,7 +551,7 @@ def verifier := ⟦
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
         assert_eq!(eq_zero(list_length(slices) - qd), 1);
-        let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [val_one(), val_zero()]);
+        let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [.VAL_ONE, .VAL_ZERO]);
         assert_eq!(ext_eq(ext_mul(comp, invv), quot), 1);
         ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
                  q_opened, i + 1, naccp, lch, fch, alpha, zeta),
@@ -562,9 +562,9 @@ def verifier := ⟦
   -- its raw u64 limb to an extension element). Mirrors `lookup::fingerprint`.
   fn fingerprint_vals(fch: Ext, vals: List‹U64›) -> Ext {
     match load(vals) {
-      ListNode.Nil => [val_zero(), val_zero()],
+      ListNode.Nil => [.VAL_ZERO, .VAL_ZERO],
       ListNode.Cons(v, rest) =>
-        ext_add([val_from_bytes(v), val_zero()], ext_mul(fch, fingerprint_vals(fch, rest))),
+        ext_add([val_from_bytes(v), .VAL_ZERO], ext_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 
@@ -612,7 +612,7 @@ def verifier := ⟦
     -- stage-2 cost there — the one small circuit is cheaper.
     let prep_cap = @opt_commitment(commit);
     let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, cbytes, accs);
-    let acc0 = claims_acc([val_zero(), val_zero()], claims, lch, fch);
+    let acc0 = claims_acc([.VAL_ZERO, .VAL_ZERO], claims, lch, fch);
     -- Step 5: OOD composition/quotient identity for every active circuit.
     let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
              prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);

@@ -96,7 +96,7 @@ mirroring multi-stark's `pcs-traits` (generic over the field and the PCS):
 
 * **Field** (`Ix/MultiStark/Field/*`): types `Val` (the verified system's
   base field, Rust `Val<SC>`) and `Ext` (its extension / challenge field);
-  values `val_zero/one/two/generator/two_adic_root`, `ext_w`; ops
+  consts `.VAL_ZERO/ONE/TWO`, `.VAL_GENERATOR`, `.VAL_TWO_ADIC_ROOT`, `.EXT_W`; ops
   `val_add/sub/neg/mul/is_zero/inverse`, `ext_add/sub/neg/mul/inverse/div/eq`;
   wire boundary `val_from_bytes`/`val_to_bytes`/`val_from_u16`/
   `bytes_lt_modulus`. Implementations: `goldilocksNative` (`Val = G`),
