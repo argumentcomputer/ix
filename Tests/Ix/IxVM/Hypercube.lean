@@ -85,4 +85,14 @@ def benchConst (name : Lean.Name) (env : Lean.Environment) : IO UInt32 := do
 def benchNatAddComm (env : Lean.Environment) : IO UInt32 :=
   benchConst ``Nat.add_comm env
 
+/-- Print the multi-stark verifying key's serialized size for the production
+kernel system (no proving). -/
+def vkSizes (_env : Lean.Environment) : IO UInt32 := do
+  let goldTop ← IO.ofExcept <| IxVM.ixVM.mapError toString
+  let goldCompiled ← IO.ofExcept goldTop.compile
+  let goldSys := Aiur.AiurSystem.build goldCompiled.bytecode
+    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+  IO.println s!"multi-stark kernel vk: {goldSys.vkBytes.size} bytes"
+  pure 0
+
 end Tests.Ix.IxVM.Hypercube

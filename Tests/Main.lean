@@ -199,6 +199,7 @@ def primaryRunners : List (String × IO UInt32) := [
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("hypercube-nataddcomm", Tests.Ix.IxVM.Hypercube.benchNatAddComm env),
+  ("vk-sizes", Tests.Ix.IxVM.Hypercube.vkSizes env),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

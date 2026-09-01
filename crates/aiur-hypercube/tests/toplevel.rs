@@ -149,3 +149,26 @@ fn rejects_a_forged_memory_pointer() {
   let (vk, proof) = aiur_hypercube::prove(machine.machine(), record, params());
   assert!(verify(machine.machine(), params(), &vk, &proof).is_err());
 }
+
+#[test]
+fn prints_vk_size() {
+  // The vk is machine-independent in size (commitments + constants), so the
+  // toy machine's number is the kernel's too.
+  let toplevel = mul_toplevel();
+  let machine = ToplevelMachine::build(&toplevel, 0).unwrap();
+  let (_claim, vk, proof) = machine
+    .execute_and_prove(
+      &toplevel,
+      &[FF::from_u32(3), FF::from_u32(5)],
+      &mut io_buffer(),
+      params(),
+    )
+    .unwrap();
+  let vk_bytes = bincode::serialize(&vk).unwrap();
+  let proof_bytes = bincode::serialize(&proof).unwrap();
+  println!(
+    "hypercube vk: {} bytes; proof alone: {} bytes",
+    vk_bytes.len(),
+    proof_bytes.len()
+  );
+}

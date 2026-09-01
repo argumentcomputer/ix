@@ -32,3 +32,6 @@ p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "e9d75614dd6
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+bincode = "1"

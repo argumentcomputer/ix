@@ -89,6 +89,7 @@ name = "aiur-hypercube"
 version = "0.1.0"
 dependencies = [
  "aiur",
+ "bincode 1.3.3",
  "hashbrown 0.14.5",
  "multi-stark",
  "p3-koala-bear 0.5.1",
