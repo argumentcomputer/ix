@@ -43,11 +43,10 @@ deserializer calls are constrained, so the public `system_digest` binds every
 value reconstructed below. Per-node degrees are neither serialized nor needed
 (the node sweep just evaluates the graph).
 
-The Fiat-Shamir shape limbs (`observe_shape`): the width-binding policy
-word, the circuit count, then per circuit the seven words
-constraint_count, max_constraint_degree, preprocessed_height,
-preprocessed_width, main_width, stage_2_width, lookup_group_size (as
-8-byte LE limbs).
+The Fiat-Shamir shape limbs (`observe_shape`): the circuit count then,
+per circuit, the seven words constraint_count, max_constraint_degree,
+preprocessed_height, preprocessed_width, main_width, stage_2_width,
+lookup_group_size (as 8-byte LE limbs).
 -/
 
 public section
@@ -98,8 +97,7 @@ def systemDeserialize := ⟦
   -- preprocessed_indices. The transcript limbs are the u64 words the
   -- challenger observes before any commitment — the 7 parameters (bound via
   -- the challenger seed) followed by the system shape (`observe_shape`: the
-  -- width-binding policy word, the circuit count, then 7 metadata words per
-  -- circuit) — kept as limbs because
+  -- circuit count, then 6 metadata words per circuit) — kept as limbs because
   -- the Fiat-Shamir replay needs their little-endian bytes.
   enum Sys { Mk(SysParams, List‹U64›, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
 
@@ -318,12 +316,7 @@ def systemDeserialize := ⟦
 
   fn read_sys_lookup(i: ByteStream) -> (SysLookup, ByteStream) {
     let (m, i1) = read_vk_u16(i);
-    -- The declared per-row multiplicity bound (u64 LE). It feeds the logUp
-    -- height bound, which the native verifier enforces; the in-circuit
-    -- verifier does not enforce it yet, so the value is parsed past and
-    -- bound only through the vk digest.
-    let (_mm, i1b) = read_vk_u64(i1);
-    let (ac, i2) = read_vk_u16(i1b);
+    let (ac, i2) = read_vk_u16(i1);
     let (args, i3) = read_node_ids_n(i2, ac);
     (SysLookup.Mk(m, args), i3)
   }
@@ -457,13 +450,8 @@ def systemDeserialize := ⟦
     let (circuits, climbs, j2) = read_sys_circuits_n(j1, n);
     let (commit, j3) = read_opt_commit(j2);
     let (indices, j4) = read_opt_idx_n(j3, n);
-    -- The width-binding policy is the first `observe_shape` word. Aiur
-    -- declares `WidthBinding::ByConstruction` (discriminant 1); the plain
-    -- Horner fold in `logup_fingerprint` is the matching message shape.
-    let wblimb = @gl_to_bytes(1);
     (Sys.Mk(params,
-            list_concat(plimbs,
-              store(ListNode.Cons(wblimb, store(ListNode.Cons(nlimb, climbs))))),
+            list_concat(plimbs, store(ListNode.Cons(nlimb, climbs))),
             circuits, commit, indices),
      j4)
   }
