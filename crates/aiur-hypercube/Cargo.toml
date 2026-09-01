@@ -1,0 +1,32 @@
+[package]
+name = "aiur-hypercube"
+description = "SP1 Hypercube proving backend for Aiur circuits"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# The Aiur frontend: bytecode, execution, synthesis and witness generation.
+aiur = { workspace = true }
+# Frontend IR (`Expr`, `Lookup`) and the Plonky3 field traits Aiur's
+# circuits are expressed in.
+multi-stark = { workspace = true }
+# Must match the version `sp1-hypercube` uses in `MachineRecord::stats`.
+hashbrown = "0.14"
+
+# SP1 Hypercube proof system and its `slop` primitives.
+sp1-hypercube = "=6.5.0"
+sp1-primitives = "=6.5.0"
+slop-air = "=6.5.0"
+slop-algebra = "=6.5.0"
+slop-basefold = "=6.5.0"
+slop-matrix = "=6.5.0"
+
+# The Hypercube prover is async.
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "e9d75614dd6816f9b5dbb4413c69be63536efd64" }
+
+[lints]
+workspace = true

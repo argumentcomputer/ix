@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/aiur",
+  "crates/aiur-hypercube",
   "crates/bench",
   "crates/common",
   "crates/compile",
