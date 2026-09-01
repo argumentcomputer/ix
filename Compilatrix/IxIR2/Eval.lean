@@ -1023,6 +1023,44 @@ theorem Step.fetch {context : Context} {interpretation : Interpretation}
   rw [node]
   simp [fieldAt]
 
+/-- Reduction rule for allocating a strictly under-saturated PAP whose target
+is a compiler function.  Baseline lowering carries no credits, so its call
+boundary is discharged by the empty credit file. -/
+theorem Step.pappFn {context : Context} {interpretation : Interpretation}
+    {machine : Machine} {frame : Frame} {stack : List Continuation}
+    {block : Block} {address : Address} {arguments : Array Atom}
+    {values : Array RVal} {definition : Function}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .papp address arguments)
+    (noCredits : frame.credits = #[])
+    (declaration : context.declarations address = some (.fn definition))
+    (papSafe : definition.signature.papSafe = true)
+    (resolved : resolveAtoms frame.values arguments = .ok values)
+    (under : values.size < definition.signature.params.size) :
+    let allocation := machine.store.allocNode .shared
+      (.papN address definition.signature.params.size values)
+    Step context interpretation machine
+      { machine with
+        store := allocation.1
+        control := .running
+          { frame with
+            pc := frame.pc + 1
+            values := frame.values.push (.loc allocation.2) }
+          stack } := by
+  dsimp only
+  unfold Step step currentBlock runInstruction Frame.advance Frame.pushValue
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp [ensureCallBoundary, Frame.hasCredits, noCredits, resolved,
+    declaration, declarationArity, declarationPapSafe, papSafe,
+    Nat.not_le.mpr under]
+  rfl
+
 /-- Total runner with a control budget independent of `Machine.heapFuel`. -/
 def runMachine (context : Context) (interpretation : Interpretation) :
     Nat → Machine → Except Error Result

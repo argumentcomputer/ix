@@ -11,8 +11,8 @@ extends related environments across value and erased bindings, and closes the
 public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
 constructor allocation, scalar and heap-bearing shared-retain paths, scalar
 and fully recursive shared-release paths, scalar unique drop, checked
-scalar-leaf unique free, general recursive unique destruction, and checked
-non-consuming projection.
+scalar-leaf unique free, general recursive unique destruction, checked
+non-consuming projection, and exact function-PAP allocation.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -1806,6 +1806,92 @@ theorem simulate_alloc {sourceContext : IxIR1.Ctx}
     rfl
   · exact environments.bindValue
       (.loc (sourceStore.allocNode world (.ctorN cid values.toArray)).2)
+
+/-- Strictly under-saturated partial application allocates the same shared PAP
+node in IxIR₁ and IxIR₂.  The declaration premises are the function-level
+context correspondence that the later whole-program induction will supply. -/
+theorem simulate_papp_fn {sourceContext : IxIR1.Ctx}
+    {sourceCurrent sourceDefinition : IxIR1.FnDef} {sourceFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {targetDefinition : Function}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {address : Compilatrix.Ixon.Address}
+    {sourceArguments : Array IxIR1.Atom}
+    {targetArguments : Array Atom} {values : List RVal}
+    (arguments : AtomsRel mapping sourceArguments targetArguments)
+    (sourceResolved :
+      IxIR1.resolveAtoms source sourceArguments = .ok values)
+    (sourceDeclaration :
+      sourceContext.decls address = some (.fn sourceDefinition))
+    (targetDeclaration :
+      context.declarations address = some (.fn targetDefinition))
+    (arity :
+      targetDefinition.signature.params.size = sourceDefinition.arity)
+    (papSafe : targetDefinition.signature.papSafe = true)
+    (under : values.length < sourceDefinition.arity)
+    (noCredits : frame.credits = #[])
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .papp address targetArguments) :
+    let node := IxIR1.Node.papN address sourceDefinition.arity values.toArray
+    let sourceAllocation := sourceStore.allocNode .shared node
+    let targetAllocation := machine.store.allocNode .shared node
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.papp address sourceArguments) =
+        .ok (sourceAllocation.1, .loc sourceAllocation.2) ∧
+      Eval.Step context interpretation machine
+        { machine with
+          store := targetAllocation.1
+          control := .running
+            { frame with
+              pc := frame.pc + 1
+              values := frame.values.push (.loc sourceAllocation.2) }
+            stack } ∧
+      StoreRel sourceAllocation.1 targetAllocation.1 ∧
+      EnvRel (.loc sourceAllocation.2 :: source)
+        (frame.values.push (.loc sourceAllocation.2))
+        (#[.reg frame.values.size] ++ mapping) := by
+  dsimp only
+  have targetResolved :
+      Eval.resolveAtoms frame.values targetArguments = .ok values.toArray :=
+    resolveAtoms_of_envRel environments arguments sourceResolved
+  have targetUnder :
+      values.toArray.size < targetDefinition.signature.params.size := by
+    simpa [arity] using under
+  have targetStep := Eval.Step.pappFn (interpretation := interpretation)
+    control blockAt pc instruction noCredits targetDeclaration papSafe
+    targetResolved targetUnder
+  rw [arity] at targetStep
+  dsimp only at targetStep
+  have locationEq :
+      (machine.store.allocNode .shared
+        (.papN address sourceDefinition.arity values.toArray)).2 =
+      (sourceStore.allocNode .shared
+        (.papN address sourceDefinition.arity values.toArray)).2 :=
+    stores.alloc_location .shared
+      (.papN address sourceDefinition.arity values.toArray)
+  rw [locationEq] at targetStep
+  refine ⟨?_, targetStep,
+    stores.alloc .shared
+      (.papN address sourceDefinition.arity values.toArray),
+    environments.bindValue
+      (.loc (sourceStore.allocNode .shared
+        (.papN address sourceDefinition.arity values.toArray)).2)⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  simp only [bind, Except.bind]
+  rw [sourceDeclaration]
+  unfold IxIR1.declArity
+  simp only
+  rw [if_pos under]
 
 /-- Baseline logical execution preserves the exact IxIR₁ heap and value.
 Later credit insertion weakens this to heap isomorphism; keeping the stronger

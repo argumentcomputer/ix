@@ -1,6 +1,6 @@
 # IxIR₂ v0 specification
 
-Last reviewed 2026-08-31.
+Last reviewed 2026-09-01.
 
 This document freezes the first IxIR₂ semantic data model. It is normative for
 the v0 syntax, ownership-flow checker,
@@ -533,11 +533,10 @@ erased environment extension; defines the exact baseline store relation; and
 closes the public small-step cases for `pure`/`move` and ordinary constructor
 allocation, both scalar and shared-node retain branches, scalar shared release,
 nonunit shared-node release, scalar unique drop, checked scalar-leaf unique
-free, fully recursive unique destruction, all-scalar-child final-owner shared
-destruction, and checked non-consuming fetch. Its baseline outcome currently
-uses that stronger exact-heap relation; recursive shared release, the remaining
-instruction/block induction, and the later isomorphic credit refinement remain
-active proof work.
+free, fully recursive unique and shared destruction, checked non-consuming
+fetch, and function-targeted PAP allocation. Its baseline outcome currently
+uses that stronger exact-heap relation; the remaining instruction/block
+induction and the later isomorphic credit refinement remain active proof work.
 
 ### 2. Credit implementation refinement
 
