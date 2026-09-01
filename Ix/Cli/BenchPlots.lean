@@ -70,6 +70,11 @@ def plotTitle (workload measure : String) : String :=
   | "aiur", "fri-verifier-peak-rss"    => "Aiur FRI Verifier Peak RAM Usage"
   | "aiur", "ixvm-proof-size"          => "Aiur IxVM Proof Size"
   | "aiur", "fri-verifier-proof-size"  => "Aiur FRI Verifier Proof Size"
+  | "aiur", "join-prove-time"          => "Aiur Aggregate Join Time"
+  | "aiur", "join-fft-cost"            => "Aiur Aggregate Join FFT Cost"
+  | "aiur", "join-verify-time"         => "Aiur Aggregate Join Verify Time"
+  | "aiur", "join-peak-rss"            => "Aiur Aggregate Join Peak RAM Usage"
+  | "aiur", "join-proof-size"          => "Aiur Aggregate Join Proof Size"
   | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
   | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
   | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
@@ -111,6 +116,7 @@ def plotSkips : List (String × String) :=
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
    ("aiur", "ixvm-peak-rss"), ("aiur", "ixvm-verify-time"),
    ("aiur", "ixvm-execute-time"), ("aiur", "fri-verifier-execute-time"),
+   ("aiur", "join-execute-time"),
    ("aiur", "ixvm-throughput"), ("aiur", "fri-verifier-throughput")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher

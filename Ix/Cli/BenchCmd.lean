@@ -136,11 +136,13 @@ def workloadOf (testbed : String) : String :=
 /-- The stage qualifiers a pipeline measure may carry ahead of its base
     name — one per pipeline stage, named for what the stage proves
     (`ixvm-`: the IxVM typecheck; `fri-verifier-`: the in-circuit FRI
-    verifier over the previous proof; the KZG stages add their own
-    entries as they land) — plus `pipeline-` for the whole run. Stripped
+    verifier over the previous proof; `join-`: the optional pair-wide
+    aggregate join; the KZG stages add their own entries as they land) —
+    plus `pipeline-` for the whole run. Stripped
     wherever a measure is interpreted by its base name (formatting kind,
     units) or labelled under a heading that already says the stage. -/
-def stagePrefixes : List String := ["ixvm-", "fri-verifier-", "pipeline-"]
+def stagePrefixes : List String :=
+  ["ixvm-", "fri-verifier-", "join-", "pipeline-"]
 
 /-- The stage qualifier `metric` carries, if any. -/
 def stagePrefixOf (metric : String) : Option String :=
@@ -213,7 +215,9 @@ structure BackendSpec where
 
 def backendSpecs : List BackendSpec := [
   -- aiur: the proof-pipeline benchmark (bench-typecheck --recursive) —
-  -- every stage of the pipeline, per constant, plus the total. The ixvm
+  -- every stage of the pipeline, per constant, plus the total. The optional
+  -- `bench-typecheck --join` W0 diagnostic contributes a separate pair row;
+  -- it is not part of the scheduled one-constant CI invocation. The ixvm
   -- stage proves the constant's IxVM typecheck; the fri-verifier stage
   -- executes the in-circuit multi-stark verifier over that fresh proof
   -- and proves THAT execution; the KZG stages will join as stages 3/4
@@ -245,6 +249,9 @@ def backendSpecs : List BackendSpec := [
           "fri-verifier-throughput", "fri-verifier-peak-rss",
           "fri-verifier-proof-size", "fri-verifier-verify-time",
           "fri-verifier-fft-cost"]),
+       ("Aggregate flat join",
+         ["join-execute-time", "join-prove-time", "join-peak-rss",
+          "join-proof-size", "join-verify-time", "join-fft-cost"]),
        ("Pipeline total",
          ["total-time", "pipeline-throughput", "pipeline-peak-rss"])])],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -269,6 +276,12 @@ def backendSpecs : List BackendSpec := [
                    ("fri-verifier-prove-time", "0.10", "_"),
                    ("ixvm-peak-rss", "0.10", "_"),
                    ("fri-verifier-peak-rss", "0.10", "_"),
+                   ("join-execute-time", "0.10", "_"),
+                   ("join-prove-time", "0.10", "_"),
+                   ("join-peak-rss", "0.10", "_"),
+                   ("join-proof-size", "0.05", "_"),
+                   ("join-verify-time", "0.10", "_"),
+                   ("join-fft-cost", "0.25", "_"),
                    ("pipeline-peak-rss", "0.10", "_"),
                    ("ixvm-proof-size", "0.05", "_"),
                    ("fri-verifier-proof-size", "0.05", "_"),
@@ -418,6 +431,14 @@ def BackendSpec.envNames (b : BackendSpec) : List String :=
       b.scheduledModes.any fun m =>
         !(selectNames env b.name m).isEmpty
 
+/-- Stable pair rows produced by the opt-in aggregate W0 diagnostic. These are
+    registered for dashboard filtering even though the scheduled aiur cell
+    remains one process per constant and therefore does not produce them. Keep
+    the order synchronized with the documented `bench-typecheck --join`
+    invocation: pair-row identity is deliberately order-sensitive. -/
+def aiurJoinBenchmarkNames : Array String :=
+  #["Nat.add_comm + String.append"]
+
 /-- The benchmark row names this backend uploads — the bencher slugs the
     dashboard plots and compare table key on — from its `inputs`: env-keyed
     backends key one row per compiled env; the per-constant backends select
@@ -433,6 +454,8 @@ def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
     for env in b.envNames do
       if b.inputs == .perConstantWithEnv then ns := ns.push env
       ns := ns ++ (selectNames env b.name mode).map (·.name)
+    if b.name == "aiur" && mode == "prove" then
+      return ns ++ aiurJoinBenchmarkNames
     return ns
 
 /-- Default RAM watchdog ceiling (`--ceiling-gb` overrides): see

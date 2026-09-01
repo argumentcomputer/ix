@@ -3875,17 +3875,7 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   // set. Dropping them inline alongside the bookkeeping below is
   // negligible compared to the DashMap dropdance.
   // `..` covers the env's private fields.
-  let IxonEnv {
-    consts,
-    named,
-    blobs,
-    names,
-    comms,
-    anon_hints: _,
-    main: _,
-    assumptions: _,
-    ..
-  } = ixon_env;
+  let IxonEnv { consts, named, blobs, names, comms, .. } = ixon_env;
   let consts_len = consts.len();
   let named_len = named.len();
   let names_len = names.len();

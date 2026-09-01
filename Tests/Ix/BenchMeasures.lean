@@ -25,6 +25,9 @@ def testStagePrefix : TestSeq :=
       (stagePrefixOf "ixvm-verify-time" == some "ixvm-")
   ++ test "fri-verifier- prefix identified"
       (stagePrefixOf "fri-verifier-fft-cost" == some "fri-verifier-")
+  ++ test "join- strips" (dropStagePrefix "join-proof-size" == "proof-size")
+  ++ test "join- prefix identified"
+      (stagePrefixOf "join-execute-time" == some "join-")
   ++ test "unqualified name passes through"
       (dropStagePrefix "execute-time" == "execute-time")
   ++ test "prefix without dash is not a qualifier"
@@ -34,6 +37,10 @@ def testStagePrefix : TestSeq :=
   ++ test "phase spans pass through"
       (dropStagePrefix "phase-stark-stage1-commit"
         == "phase-stark-stage1-commit")
+  ++ test "aiur join pair is registered for dashboard filtering"
+      ((backendSpecs.find? (·.name == "aiur")).any fun backend =>
+        (backend.benchmarkNames "prove").contains
+          "Nat.add_comm + String.append")
 
 def suite : List TestSeq := [testStagePrefix]
 

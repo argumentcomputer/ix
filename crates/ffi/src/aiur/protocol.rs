@@ -59,6 +59,27 @@ extern "C" fn rs_aiur_proof_of_bytes(
   LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)
 }
 
+/// `Aiur.Proof.ofBytesChecked : @& ByteArray → Except String Proof`
+///
+/// Unlike the legacy trusted-byte constructor above, this is safe at cache and
+/// network boundaries: malformed bytes become a Lean error instead of a Rust
+/// panic that aborts the process.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_of_bytes_checked(
+  byte_array: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  match AiurProof::from_bytes(byte_array.as_bytes()) {
+    Ok(proof) => {
+      let lean_proof: LeanOwned =
+        LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+      LeanExcept::ok(lean_proof)
+    },
+    Err(err) => {
+      LeanExcept::error_string(&format!("proof deserialization failed: {err}"))
+    },
+  }
+}
+
 /// `Aiur.AiurSystem.vkBytes : @& AiurSystem → ByteArray`
 ///
 /// Serializes the verifying key (`System<AiurCircuit>`) — see
@@ -139,6 +160,24 @@ extern "C" fn rs_aiur_system_verify(
   let claim = claim.map(|x| lean_unbox_g(&x));
   match aiur_system_obj.get().verify(&claim, proof_obj.get()) {
     Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+    Err(err) => LeanExcept::error_string(&format!("{err:?}")),
+  }
+}
+
+/// `AiurSystem.proofToAdviceBytes : @& AiurSystem → @& Array G → @& Proof → Except String ByteArray`
+///
+/// The proof re-encoded in the per-query advice transport the in-circuit
+/// verifier consumes (pruned FRI multiproofs expanded to one path per
+/// query); errors if the proof does not verify natively.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_to_advice_bytes(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  claim: LeanArray<LeanBorrowed<'_>>,
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let claim = claim.map(|x| lean_unbox_g(&x));
+  match aiur_system_obj.get().proof_to_advice_bytes(&claim, proof_obj.get()) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
     Err(err) => LeanExcept::error_string(&format!("{err:?}")),
   }
 }
@@ -402,7 +441,9 @@ fn decode_owned_blob(
   }
   Ok(
     bytes
-      .chunks_exact(32)
+      .as_chunks::<32>()
+      .0
+      .iter()
       .map(|c| ix_common::address::Address::from_slice(c).unwrap())
       .collect(),
   )
@@ -685,7 +726,9 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
       }
       shards.push(
         bytes[off..off + n * 32]
-          .chunks_exact(32)
+          .as_chunks::<32>()
+          .0
+          .iter()
           .map(|c| ix_common::address::Address::from_slice(c).unwrap())
           .collect(),
       );
@@ -967,7 +1010,9 @@ extern "C" fn rs_aiur_system_prove_ixvm(
 }
 
 /// `Bytecode.Toplevel.executeMultiStark`: run the MultiStark recursive
-/// verifier over raw proof/vk/claims byte blobs. The IO advice buffer
+/// verifier over proof-advice/vk/claims byte blobs. The proof blob is the
+/// expanded per-query transport produced by `proof_to_advice_bytes`, not the
+/// compact persisted `Proof::to_bytes` representation. The IO advice buffer
 /// (channel 0 = proof, 1 = vk, 2 = claims, key `[0]` each) is built
 /// natively via `verifier_io_buffer` — no per-byte Lean boxing, no
 /// buffer marshalling across FFI. `use_bytecode` selects the executor:
@@ -1017,8 +1062,106 @@ extern "C" fn rs_aiur_multi_stark_execute(
   LeanExcept::ok(result)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn build_multi_stark_join_io_buffer(
+  left_proof: &[u8],
+  right_proof: &[u8],
+  recursion_vk: &[u8],
+  left_claims: &[u8],
+  right_claims: &[u8],
+  output_claim: &[u8],
+  allowed: &[u8],
+  preimages_blob: &[u8],
+  trees_blob: &[u8],
+  paths_blob: &[u8],
+) -> Result<IOBuffer, String> {
+  use ixvm_codegen::aiur_multi_stark_runner::{
+    JoinAdvice, decode_join_paths, decode_join_preimages, decode_join_trees,
+    join_io_buffer,
+  };
+
+  let preimages = decode_join_preimages(preimages_blob)?;
+  let trees = decode_join_trees(trees_blob)?;
+  let paths = decode_join_paths(paths_blob)?;
+  Ok(join_io_buffer(&JoinAdvice {
+    proofs: [left_proof, right_proof],
+    recursion_vk,
+    child_claims: [left_claims, right_claims],
+    output_claim,
+    allowed,
+    preimages: &preimages,
+    trees: &trees,
+    paths: &paths,
+  }))
+}
+
+/// `Bytecode.Toplevel.executeMultiStarkJoin`: execute either join entrypoint over
+/// child proof-advice/claim/tree/path blobs. Each proof is expanded with
+/// `proof_to_advice_bytes` before crossing this boundary. The native builder expands the compact keyed
+/// framing directly into the circuit's seven-channel IO buffer.
+/// As with `rs_aiur_multi_stark_execute`, callers may select either generated
+/// execution or the generic bytecode interpreter.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+extern "C" fn rs_aiur_multi_stark_join_execute(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  pub_input: LeanArray<LeanBorrowed<'_>>,
+  left_proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  recursion_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  left_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  output_claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
+  trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let mut io_buffer = match build_multi_stark_join_io_buffer(
+    left_proof_bytes.as_bytes(),
+    right_proof_bytes.as_bytes(),
+    recursion_vk_bytes.as_bytes(),
+    left_claims_bytes.as_bytes(),
+    right_claims_bytes.as_bytes(),
+    output_claim_bytes.as_bytes(),
+    allowed_bytes.as_bytes(),
+    preimages_blob.as_bytes(),
+    trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
+  ) {
+    Ok(io) => io,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let input = pub_input.map(|x| lean_unbox_g(&x));
+
+  let _g = tracing::info_span!("aiur/execute_multi_stark_join").entered();
+  let result = if use_bytecode {
+    toplevel.execute(fun_idx, input, &mut io_buffer)
+  } else {
+    ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
+      &toplevel,
+      fun_idx,
+      input,
+      &mut io_buffer,
+    )
+  };
+  let (query_record, output) = match result {
+    Ok(pair) => pair,
+    Err(err) => return LeanExcept::error_string(&err.to_string()),
+  };
+
+  let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
+  LeanExcept::ok(LeanProd::new(build_g_array(&output), lean_query_counts))
+}
+
 /// `AiurSystem.proveMultiStark`: prove the MultiStark recursive
-/// verifier over raw proof/vk/claims byte blobs. Buffer construction
+/// verifier over proof-advice/vk/claims byte blobs. The proof blob is the
+/// expanded per-query transport, while `Proof::to_bytes` remains the compact
+/// storage/wire representation. Buffer construction
 /// and executor selection as in `rs_aiur_multi_stark_execute`; the
 /// prove itself reuses the executor-generic `AiurSystem::prove_ixvm`.
 /// Returns `(claim, proof)`; the final buffer is not returned.
@@ -1059,6 +1202,228 @@ extern "C" fn rs_aiur_multi_stark_prove(
     // Array G × Proof
     LeanProd::new(build_g_array(&claim), lean_proof).into()
   })
+}
+
+/// `AiurSystem.proveMultiStarkJoin`: prove one valid join-entrypoint execution
+/// using the same native advice builder and generated/interpreted executor
+/// selection as `rs_aiur_multi_stark_join_execute`.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+extern "C" fn rs_aiur_multi_stark_join_prove(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  pub_input: LeanArray<LeanBorrowed<'_>>,
+  left_proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  recursion_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  left_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  output_claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
+  trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+) -> LeanExcept<LeanOwned> {
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let mut io_buffer = match build_multi_stark_join_io_buffer(
+    left_proof_bytes.as_bytes(),
+    right_proof_bytes.as_bytes(),
+    recursion_vk_bytes.as_bytes(),
+    left_claims_bytes.as_bytes(),
+    right_claims_bytes.as_bytes(),
+    output_claim_bytes.as_bytes(),
+    allowed_bytes.as_bytes(),
+    preimages_blob.as_bytes(),
+    trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
+  ) {
+    Ok(io) => io,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let args = pub_input.map(|x| lean_unbox_g(&x));
+
+  let system = aiur_system_obj.get();
+  let (claim, proof) = if use_bytecode {
+    system.prove(fun_idx, &args, &mut io_buffer)
+  } else {
+    system.prove_ixvm(
+      fun_idx,
+      &args,
+      &mut io_buffer,
+      ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark,
+    )
+  };
+
+  let lean_proof: LeanOwned =
+    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+  LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_ix_aggr_io_buffer(
+  shape: usize,
+  left_proof_advice: &[u8],
+  right_proof_advice: &[u8],
+  ixvm_vk: &[u8],
+  self_vk: &[u8],
+  left_claims: &[u8],
+  right_claims: &[u8],
+  output_claim: &[u8],
+  allowed: &[u8],
+  preimages_blob: &[u8],
+  trees_blob: &[u8],
+  paths_blob: &[u8],
+) -> Result<IOBuffer, String> {
+  use ixvm_codegen::aiur_ix_aggr_runner::{
+    AggrAdvice, aggr_io_buffer, decode_aggr_paths, decode_aggr_preimages,
+    decode_aggr_trees,
+  };
+
+  let shape = u8::try_from(shape)
+    .map_err(|err| format!("aggr shape {shape} out of range: {err}"))?;
+  let preimages = decode_aggr_preimages(preimages_blob)?;
+  let trees = decode_aggr_trees(trees_blob)?;
+  let paths = decode_aggr_paths(paths_blob)?;
+  Ok(aggr_io_buffer(&AggrAdvice {
+    shape,
+    proof_advice: [left_proof_advice, right_proof_advice],
+    ixvm_vk,
+    self_vk,
+    child_claims: [left_claims, right_claims],
+    output_claim,
+    allowed,
+    preimages: &preimages,
+    trees: &trees,
+    paths: &paths,
+  }))
+}
+
+/// `Bytecode.Toplevel.executeIxAggr`: execute the `ix_aggr` entrypoint over
+/// raw proof-advice/claim/tree blobs plus the shape hint. The native builder
+/// expands the compact keyed framing directly into the circuit's
+/// seven-channel IO buffer. As with `rs_aiur_multi_stark_execute`, callers
+/// may select either generated execution or the generic bytecode
+/// interpreter.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+extern "C" fn rs_aiur_ix_aggr_execute(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  pub_input: LeanArray<LeanBorrowed<'_>>,
+  shape: LeanNat<LeanBorrowed<'_>>,
+  left_proof_advice_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_proof_advice_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  ixvm_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  self_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  left_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  output_claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
+  trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let mut io_buffer = match build_ix_aggr_io_buffer(
+    lean_unbox_nat_as_usize(shape.inner()),
+    left_proof_advice_bytes.as_bytes(),
+    right_proof_advice_bytes.as_bytes(),
+    ixvm_vk_bytes.as_bytes(),
+    self_vk_bytes.as_bytes(),
+    left_claims_bytes.as_bytes(),
+    right_claims_bytes.as_bytes(),
+    output_claim_bytes.as_bytes(),
+    allowed_bytes.as_bytes(),
+    preimages_blob.as_bytes(),
+    trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
+  ) {
+    Ok(io) => io,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let input = pub_input.map(|x| lean_unbox_g(&x));
+
+  let _g = tracing::info_span!("aiur/execute_ix_aggr").entered();
+  let result = if use_bytecode {
+    toplevel.execute(fun_idx, input, &mut io_buffer)
+  } else {
+    ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr(
+      &toplevel,
+      fun_idx,
+      input,
+      &mut io_buffer,
+    )
+  };
+  let (query_record, output) = match result {
+    Ok(pair) => pair,
+    Err(err) => return LeanExcept::error_string(&err.to_string()),
+  };
+
+  let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
+  LeanExcept::ok(LeanProd::new(build_g_array(&output), lean_query_counts))
+}
+
+/// `AiurSystem.proveIxAggr`: prove one valid `ix_aggr` execution using the
+/// same native advice builder and generated/interpreted executor selection
+/// as `rs_aiur_ix_aggr_execute`.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+extern "C" fn rs_aiur_ix_aggr_prove(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  pub_input: LeanArray<LeanBorrowed<'_>>,
+  shape: LeanNat<LeanBorrowed<'_>>,
+  left_proof_advice_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_proof_advice_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  ixvm_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  self_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  left_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  output_claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
+  trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+) -> LeanExcept<LeanOwned> {
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let mut io_buffer = match build_ix_aggr_io_buffer(
+    lean_unbox_nat_as_usize(shape.inner()),
+    left_proof_advice_bytes.as_bytes(),
+    right_proof_advice_bytes.as_bytes(),
+    ixvm_vk_bytes.as_bytes(),
+    self_vk_bytes.as_bytes(),
+    left_claims_bytes.as_bytes(),
+    right_claims_bytes.as_bytes(),
+    output_claim_bytes.as_bytes(),
+    allowed_bytes.as_bytes(),
+    preimages_blob.as_bytes(),
+    trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
+  ) {
+    Ok(io) => io,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let args = pub_input.map(|x| lean_unbox_g(&x));
+
+  let system = aiur_system_obj.get();
+  let (claim, proof) = if use_bytecode {
+    system.prove(fun_idx, &args, &mut io_buffer)
+  } else {
+    system.prove_ixvm(
+      fun_idx,
+      &args,
+      &mut io_buffer,
+      ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr,
+    )
+  };
+
+  let lean_proof: LeanOwned =
+    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+  LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
 }
 
 // =============================================================================

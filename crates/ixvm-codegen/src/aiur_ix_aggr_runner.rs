@@ -1,103 +1,101 @@
-//! MultiStark-native execute path.
+//! ixAggr-native execute path.
 //!
-//! Parallel to `aiur::execute::Toplevel::execute`, but routes the
-//! Aiur fn invocation through the codegen'd Rust recursive verifier
-//! (`crate::aiur_multi_stark::execute_generated`) instead of the
-//! interpreter. Mirror of `aiur_ixvm_runner` for the MultiStark
-//! toplevel — same `QueryRecord` shape, same multiplicity rules,
-//! same memory and IO side effects, so the trace produced here is
-//! byte-for-byte identical to the interpreter's (modulo the
-//! `execute_generated` codegen's correctness, which is the standing
-//! parity invariant).
+//! Mirror of `aiur_multi_stark_runner` for the `ixAggr` toplevel: routes the
+//! Aiur fn invocation through the codegen'd Rust aggregator
+//! (`crate::aiur_ix_aggr::execute_generated`) instead of the interpreter,
+//! with the same `QueryRecord` shape, multiplicity rules, and IO side
+//! effects, so the trace produced here is byte-for-byte identical to the
+//! interpreter's (modulo the codegen parity invariant).
 //!
-//! Also home to `verifier_io_buffer`, the native builder for
-//! `verify_multi_stark_proof`'s IO advice — replaces the Lean-side
-//! `MultiStark.verifierInput` buffer construction, which boxed every
-//! proof/vk/claims byte into a Lean `G` and marshalled the whole
-//! buffer across FFI.
+//! Also home to `aggr_io_buffer`, the native builder for `ix_aggr`'s
+//! seven-channel IO advice, and the strict decoders for the compact keyed
+//! blob framing the Lean host uses to hand preimages and trees across FFI.
 
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use rustc_hash::FxHashMap;
 
-use crate::aiur_multi_stark::execute_generated;
+use crate::aiur_ix_aggr::execute_generated;
 use aiur::G;
 use aiur::bytecode::{FunIdx, Toplevel};
 use aiur::execute::{ExecError, IOBuffer, IOKeyInfo, QueryRecord};
 
-/// One content-addressed preimage consumed by `join_two` on IO channel 4.
-/// The digest is keyed in the same packed-four-byte form as an Aiur public
-/// digest; the circuit re-hashes `bytes` before using the decoded claim.
+/// One content-addressed `CheckEnv` preimage consumed by `ix_aggr` on IO
+/// channel 4. The digest is keyed in the packed-four-byte public-digest
+/// form; the circuit re-hashes `bytes` before using the decoded claim.
 #[derive(Clone, Copy, Debug)]
-pub struct JoinPreimage<'a> {
+pub struct AggrPreimage<'a> {
   pub digest: [u8; 32],
   pub bytes: &'a [u8],
 }
 
-/// One serialized `AssumptionTree` consumed by `join_two` on IO channel 5.
-/// Tree roots use the kernel's address key representation: one field element
-/// per byte, rather than the packed public-digest representation.
+/// One serialized canonical `AssumptionTree` consumed by `ix_aggr` on IO
+/// channel 5. Tree roots use the raw-address key representation: one field
+/// element per byte.
 #[derive(Clone, Copy, Debug)]
-pub struct JoinTree<'a> {
+pub struct AggrTree<'a> {
   pub root: [u8; 32],
   pub bytes: &'a [u8],
 }
 
-/// One carried/discharged choice consumed by `join_two_structural` on IO
-/// channel 6. Candidates use the same raw-address key representation as trees;
-/// the circuit strictly parses the choice and verifies every discharge path.
+/// One carried/discharged choice consumed by structural `ix_aggr` shapes on
+/// IO channel 6. Candidates use the raw-address key representation; the
+/// circuit strictly parses each payload and verifies every discharge path.
 #[derive(Clone, Copy, Debug)]
-pub struct JoinPath<'a> {
+pub struct AggrPath<'a> {
   pub candidate: [u8; 32],
   pub bytes: &'a [u8],
 }
 
-/// Raw advice for one binary aggregate-first join.
+/// Raw advice for one `ix_aggr` invocation, any shape.
 ///
-/// This is deliberately a borrowed view: real shard and recursive proofs are
-/// multi-megabyte blobs, so constructing an IO buffer must not first clone the
-/// caller's byte arrays into an intermediate owned request object.
+/// Borrowed view: real proofs are multi-megabyte blobs, so constructing an
+/// IO buffer must not first clone the caller's byte arrays. `proof_advice`
+/// contains the expanded per-query transport, never compact proof wire bytes. Wrap shapes
+/// leave the right-child slots empty; the circuit never reads them.
 #[derive(Clone, Copy, Debug)]
-pub struct JoinAdvice<'a> {
-  pub proofs: [&'a [u8]; 2],
-  pub recursion_vk: &'a [u8],
+pub struct AggrAdvice<'a> {
+  pub shape: u8,
+  pub proof_advice: [&'a [u8]; 2],
+  pub ixvm_vk: &'a [u8],
+  pub self_vk: &'a [u8],
   pub child_claims: [&'a [u8]; 2],
   pub output_claim: &'a [u8],
   pub allowed: &'a [u8],
-  pub preimages: &'a [JoinPreimage<'a>],
-  pub trees: &'a [JoinTree<'a>],
-  pub paths: &'a [JoinPath<'a>],
+  pub preimages: &'a [AggrPreimage<'a>],
+  pub trees: &'a [AggrTree<'a>],
+  pub paths: &'a [AggrPath<'a>],
 }
 
-/// Decode the compact host/FFI representation of digest-addressed join
+/// Decode the compact host/FFI representation of digest-addressed
 /// preimages. The wire format is a little-endian `u32` entry count followed
 /// by `(32-byte key, u32 payload length, payload)` entries.
-pub fn decode_join_preimages(
+pub fn decode_aggr_preimages(
   blob: &[u8],
-) -> Result<Vec<JoinPreimage<'_>>, String> {
-  decode_keyed_blobs(blob, "join preimages").map(|entries| {
+) -> Result<Vec<AggrPreimage<'_>>, String> {
+  decode_keyed_blobs(blob, "aggr preimages").map(|entries| {
     entries
       .into_iter()
-      .map(|(digest, bytes)| JoinPreimage { digest, bytes })
+      .map(|(digest, bytes)| AggrPreimage { digest, bytes })
       .collect()
   })
 }
 
-/// Decode the compact host/FFI representation of root-addressed join trees.
-/// Its framing is identical to [`decode_join_preimages`].
-pub fn decode_join_trees(blob: &[u8]) -> Result<Vec<JoinTree<'_>>, String> {
-  decode_keyed_blobs(blob, "join trees").map(|entries| {
-    entries.into_iter().map(|(root, bytes)| JoinTree { root, bytes }).collect()
+/// Decode the compact host/FFI representation of root-addressed trees. Its
+/// framing is identical to [`decode_aggr_preimages`].
+pub fn decode_aggr_trees(blob: &[u8]) -> Result<Vec<AggrTree<'_>>, String> {
+  decode_keyed_blobs(blob, "aggr trees").map(|entries| {
+    entries.into_iter().map(|(root, bytes)| AggrTree { root, bytes }).collect()
   })
 }
 
-/// Decode the compact candidate-addressed structural-discharge choices. Its
-/// framing is identical to [`decode_join_preimages`]; payload semantics are
-/// checked by the circuit.
-pub fn decode_join_paths(blob: &[u8]) -> Result<Vec<JoinPath<'_>>, String> {
-  decode_keyed_blobs(blob, "join paths").map(|entries| {
+/// Decode compact candidate-addressed structural-discharge choices. Framing
+/// is identical to [`decode_aggr_preimages`]; payload semantics are checked by
+/// the circuit.
+pub fn decode_aggr_paths(blob: &[u8]) -> Result<Vec<AggrPath<'_>>, String> {
+  decode_keyed_blobs(blob, "aggr paths").map(|entries| {
     entries
       .into_iter()
-      .map(|(candidate, bytes)| JoinPath { candidate, bytes })
+      .map(|(candidate, bytes)| AggrPath { candidate, bytes })
       .collect()
   })
 }
@@ -184,7 +182,7 @@ fn index_key(index: u8) -> Vec<G> {
 }
 
 /// A Blake3 digest as eight packed little-endian `u32` field elements.
-/// Mirrors in-circuit `b3_pack` and Lean `MultiStark.digestGs`.
+/// Mirrors in-circuit `b3_pack` and Lean `Aggr.digestGs`.
 #[inline]
 fn packed_digest_key(digest: &[u8; 32]) -> Vec<G> {
   digest
@@ -195,21 +193,21 @@ fn packed_digest_key(digest: &[u8; 32]) -> Vec<G> {
     .collect()
 }
 
-/// A 32-byte address as 32 field elements, matching the IxVM tree-loader key.
+/// A 32-byte address as 32 field elements, matching the tree-loader key.
 #[inline]
 fn address_key(address: &[u8; 32]) -> Vec<G> {
   address.iter().map(|b| G::from_u8(*b)).collect()
 }
 
-/// Mirror of `Toplevel::execute` (same return shape, same
-/// `entry`-flag gate), but routes execution through the codegen'd
-/// Rust verifier. Deep recursion is handled via per-fn
-/// `stacker::maybe_grow` checks in the generated code.
-// `args: Vec<G>` mirrors `Toplevel::execute`'s signature so this fn
-// can be used as an `impl Fn(&Toplevel, _, Vec<G>, _) -> _` in
+/// Mirror of `Toplevel::execute` (same return shape, same `entry`-flag
+/// gate), but routes execution through the codegen'd Rust aggregator. Deep
+/// recursion is handled via per-fn `stacker::maybe_grow` checks in the
+/// generated code.
+// `args: Vec<G>` mirrors `Toplevel::execute`'s signature so this fn can be
+// used as an `impl Fn(&Toplevel, _, Vec<G>, _) -> _` in
 // `AiurSystem::prove_ixvm` — a `&[G]` here would break that bound.
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute_multi_stark(
+pub fn execute_ix_aggr(
   toplevel: &Toplevel,
   fun_idx: FunIdx,
   args: Vec<G>,
@@ -223,45 +221,26 @@ pub fn execute_multi_stark(
   Ok((record, output))
 }
 
-/// Build `verify_multi_stark_proof`'s IO advice directly from the raw
-/// byte blobs: channel 0 = proof, 1 = vk, 2 = claims, each registered
-/// under key `[0]` on its channel (one stream per channel). Mirrors
-/// the layout of `MultiStark.verifierInput` (`Ix/MultiStark.lean`).
-pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
-  // Measurement hook: dump the raw advice blobs for offline analysis
-  // (vk encoding/activation studies) when IX_DUMP_RECURSION_IO is set
-  // to a directory.
-  if let Ok(dir) = std::env::var("IX_DUMP_RECURSION_IO") {
-    let _ = std::fs::write(format!("{dir}/proof.bin"), proof);
-    let _ = std::fs::write(format!("{dir}/vk.bin"), vk);
-    let _ = std::fs::write(format!("{dir}/claims.bin"), claims);
-  }
-  let mut io =
-    IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() };
-  for (channel, bytes) in [(0u8, proof), (1, vk), (2, claims)] {
-    extend_bytes(&mut io, G::from_u8(channel), index_key(0), bytes);
-  }
-  io
-}
-
-/// Build the flat/structural join entrypoints' seven-channel IO advice buffer.
+/// Build `ix_aggr`'s seven-channel IO advice buffer.
 ///
 /// Layout (the circuit binds every digest-addressed blob before decoding):
 ///
-/// * ch 0 `[0]`, `[1]`: left/right recursive proof bytes;
-/// * ch 1 `[0]`: the recursion system verifying key;
-/// * ch 2 `[0]`, `[1]`, `[2]`: child outer claims and output `CheckEnv` claim;
-/// * ch 3 `[0]`: the digest-bound allowed-vk blob;
-/// * ch 4 `packed(blake3)`: nested claim preimages;
-/// * ch 5 `root bytes`: serialized subject/assumption trees;
-/// * ch 6 `candidate bytes`: carried/discharged choices and Merkle paths.
-pub fn join_io_buffer(advice: &JoinAdvice<'_>) -> IOBuffer {
+/// * ch 0 `[0]`, `[1]`: left/right expanded child proof advice;
+/// * ch 1 `[0]`, `[1]`: the IxVM and self verifying keys, by child kind;
+/// * ch 2 `[0]`, `[1]`, `[2]`: child claims and the output `CheckEnv` claim;
+/// * ch 3 `[0]`: the digest-bound 80-byte allowed blob;
+/// * ch 4 `packed(blake3)`: `CheckEnv` claim preimages;
+/// * ch 5 `root bytes`: serialized canonical assumption trees;
+/// * ch 6 `[0]`: the one-byte shape hint;
+/// * ch 6 `candidate bytes`: structural carried/discharged choices and paths.
+pub fn aggr_io_buffer(advice: &AggrAdvice<'_>) -> IOBuffer {
   let mut io =
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() };
 
-  extend_bytes(&mut io, G::from_u8(0), index_key(0), advice.proofs[0]);
-  extend_bytes(&mut io, G::from_u8(0), index_key(1), advice.proofs[1]);
-  extend_bytes(&mut io, G::from_u8(1), index_key(0), advice.recursion_vk);
+  extend_bytes(&mut io, G::from_u8(0), index_key(0), advice.proof_advice[0]);
+  extend_bytes(&mut io, G::from_u8(0), index_key(1), advice.proof_advice[1]);
+  extend_bytes(&mut io, G::from_u8(1), index_key(0), advice.ixvm_vk);
+  extend_bytes(&mut io, G::from_u8(1), index_key(1), advice.self_vk);
   extend_bytes(&mut io, G::from_u8(2), index_key(0), advice.child_claims[0]);
   extend_bytes(&mut io, G::from_u8(2), index_key(1), advice.child_claims[1]);
   extend_bytes(&mut io, G::from_u8(2), index_key(2), advice.output_claim);
@@ -278,6 +257,7 @@ pub fn join_io_buffer(advice: &JoinAdvice<'_>) -> IOBuffer {
   for tree in advice.trees {
     extend_bytes(&mut io, G::from_u8(5), address_key(&tree.root), tree.bytes);
   }
+  extend_bytes(&mut io, G::from_u8(6), index_key(0), &[advice.shape]);
   for path in advice.paths {
     extend_bytes(
       &mut io,
@@ -309,18 +289,7 @@ mod tests {
   }
 
   #[test]
-  fn verifier_layout_remains_three_zero_keyed_channels() {
-    let io = verifier_io_buffer(&[1, 2], &[3], &[4, 5, 6]);
-    assert_eq!(info(&io, 0, index_key(0)), (0, 2));
-    assert_eq!(info(&io, 1, index_key(0)), (0, 1));
-    assert_eq!(info(&io, 2, index_key(0)), (0, 3));
-    assert_eq!(arena_bytes(&io, 0), vec![1, 2]);
-    assert_eq!(arena_bytes(&io, 1), vec![3]);
-    assert_eq!(arena_bytes(&io, 2), vec![4, 5, 6]);
-  }
-
-  #[test]
-  fn join_layout_indexes_streams_and_uses_both_digest_key_encodings() {
+  fn aggr_layout_indexes_streams_and_uses_both_digest_key_encodings() {
     let mut digest = [0u8; 32];
     for (i, byte) in digest.iter_mut().enumerate() {
       *byte = u8::try_from(i).expect("32-byte index");
@@ -329,12 +298,14 @@ mod tests {
     for (i, byte) in root.iter_mut().enumerate() {
       *byte = u8::try_from(31 - i).expect("32-byte reverse index");
     }
-    let preimages = [JoinPreimage { digest, bytes: &[11, 12] }];
-    let trees = [JoinTree { root, bytes: &[13, 14, 15] }];
-    let paths = [JoinPath { candidate: root, bytes: &[1, 0] }];
-    let advice = JoinAdvice {
-      proofs: [&[1, 2], &[3]],
-      recursion_vk: &[4, 5],
+    let preimages = [AggrPreimage { digest, bytes: &[11, 12] }];
+    let trees = [AggrTree { root, bytes: &[13, 14, 15] }];
+    let paths = [AggrPath { candidate: root, bytes: &[1, 0] }];
+    let advice = AggrAdvice {
+      shape: 3,
+      proof_advice: [&[1, 2], &[3]],
+      ixvm_vk: &[4, 5],
+      self_vk: &[16, 17, 18],
       child_claims: [&[6], &[7, 8]],
       output_claim: &[9],
       allowed: &[10],
@@ -343,11 +314,15 @@ mod tests {
       paths: &paths,
     };
 
-    let io = join_io_buffer(&advice);
+    let io = aggr_io_buffer(&advice);
 
     assert_eq!(arena_bytes(&io, 0), vec![1, 2, 3]);
     assert_eq!(info(&io, 0, index_key(0)), (0, 2));
     assert_eq!(info(&io, 0, index_key(1)), (2, 1));
+
+    assert_eq!(arena_bytes(&io, 1), vec![4, 5, 16, 17, 18]);
+    assert_eq!(info(&io, 1, index_key(0)), (0, 2));
+    assert_eq!(info(&io, 1, index_key(1)), (2, 3));
 
     assert_eq!(arena_bytes(&io, 2), vec![6, 7, 8, 9]);
     assert_eq!(info(&io, 2, index_key(0)), (0, 1));
@@ -357,12 +332,14 @@ mod tests {
     assert_eq!(info(&io, 3, index_key(0)), (0, 1));
     assert_eq!(info(&io, 4, packed_digest_key(&digest)), (0, 2));
     assert_eq!(info(&io, 5, address_key(&root)), (0, 3));
-    assert_eq!(info(&io, 6, address_key(&root)), (0, 2));
+    assert_eq!(arena_bytes(&io, 6), vec![3, 1, 0]);
+    assert_eq!(info(&io, 6, index_key(0)), (0, 1));
+    assert_eq!(info(&io, 6, address_key(&root)), (1, 2));
     assert_ne!(packed_digest_key(&digest), address_key(&digest));
   }
 
   #[test]
-  fn keyed_join_blobs_decode_strictly_without_copying_payloads() {
+  fn keyed_aggr_blobs_decode_strictly_without_copying_payloads() {
     let key = [7u8; 32];
     let mut blob = Vec::new();
     blob.extend_from_slice(&1u32.to_le_bytes());
@@ -370,22 +347,22 @@ mod tests {
     blob.extend_from_slice(&3u32.to_le_bytes());
     blob.extend_from_slice(&[8, 9, 10]);
 
-    let preimages = decode_join_preimages(&blob).expect("valid preimage blob");
+    let preimages = decode_aggr_preimages(&blob).expect("valid preimage blob");
     assert_eq!(preimages.len(), 1);
     assert_eq!(preimages[0].digest, key);
     assert_eq!(preimages[0].bytes, &[8, 9, 10]);
 
-    let trees = decode_join_trees(&blob).expect("valid tree blob");
+    let trees = decode_aggr_trees(&blob).expect("valid tree blob");
     assert_eq!(trees[0].root, key);
     assert_eq!(trees[0].bytes, &[8, 9, 10]);
 
-    let paths = decode_join_paths(&blob).expect("valid path blob");
+    let paths = decode_aggr_paths(&blob).expect("valid path blob");
     assert_eq!(paths[0].candidate, key);
     assert_eq!(paths[0].bytes, &[8, 9, 10]);
 
     blob.push(11);
-    assert!(decode_join_preimages(&blob).is_err());
-    assert!(decode_join_trees(&[1, 0, 0]).is_err());
-    assert!(decode_join_paths(&[1, 0, 0]).is_err());
+    assert!(decode_aggr_preimages(&blob).is_err());
+    assert!(decode_aggr_trees(&[1, 0, 0]).is_err());
+    assert!(decode_aggr_paths(&[1, 0, 0]).is_err());
   }
 }

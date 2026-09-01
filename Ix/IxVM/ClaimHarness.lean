@@ -400,7 +400,13 @@ composition of per-piece check-env claims"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
-/-- the kernel shard claim with a THIN frontier: asm = the DIRECT out-of-owned
+/-- The kernel shard claim and its canonical subject/assumption trees, without
+    constructing the witness byte closure. This is the claim-only path used by
+    aggregation and verification: those callers need the Merkle trees but do
+    not consume the dependency bytes, so walking the full closure would be
+    pure discarded work.
+
+    The frontier is THIN: asm = the DIRECT out-of-owned
     walk edges (refs + Prj→block) of the owned constants, not the full
     `closure ∖ owned`. the kernel's env walk exits the shard only through a
     direct external edge and stops there, so everything below the first
@@ -412,15 +418,9 @@ composition of per-piece check-env claims"
     from `env.consts` is not something the kernel walk can reach, so
     including it would inflate the asm tree and break digest agreement
     between the Rust prover and this verifier. -/
-def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
-    Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
-  let closure : Std.HashSet Address := Id.run do
-    let mut s : Std.HashSet Address := {}
-    for a in owned do
-      for x in (closureFrom env a).toArray do
-        s := s.insert x
-    return s
   let frontier : Array Address := Id.run do
     let mut fs : Std.HashSet Address := {}
     for o in owned do
@@ -457,10 +457,22 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
+  pure (claim, trees)
+
+/-- Claim/tree construction plus the byte closure needed by a Lean-built shard
+    witness. Reachability distributes over root union, so one graph walk from
+    all owned and primitive roots is exactly the old union of one
+    `closureFrom` walk per owned constant, without repeatedly traversing the
+    same shared dependency core. -/
+def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+  let (claim, trees) ← shardCheckEnvClaimTrees env owned
+  let primitiveRoots := Ix.Tc.primAddrSet.toArray.filter env.consts.contains
+  let closure := closureFromRoots env (owned ++ primitiveRoots)
   pure (claim, closure, trees)
 
 /-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
-    `shardCheckEnvClaim`) with the `closureFrom` byte scope, which
+    `shardCheckEnvClaimTrees`) with the `closureFrom` byte scope, which
     carries the IPrj/CPrj/RPrj/DPrj wrappers the kernel's `get_ci`
     synthesizes via kernel-side blake3 as forward Muts→wrapper edges. -/
 def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :

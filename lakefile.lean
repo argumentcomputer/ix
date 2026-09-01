@@ -13,7 +13,7 @@ BLAKE3 backend to Lean's native evaluator, and that dynlib gates every
 `IxTcVerify` module, so this pin must stay at or after the revision that
 introduced the target. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "1b0fbd2bd78b2b873e14264037af8c8b1536b9e9"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "e6e908bfd3af607ab44fb462fa2276a2c81addba"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
@@ -183,6 +183,14 @@ lean_exe «bench-typecheck» where
 lean_exe «bench-recursion-debug» where
   root := `Benchmarks.RecursionDebug
   supportInterpreter := true
+
+lean_exe «bench-aggregate-policy» where
+  root := `Benchmarks.AggregatePolicy
+  supportInterpreter := true
+  -- Keep ix_ffi ahead of Blake3's Rust staticlib. Importing the converged
+  -- aggregator makes both archives direct dependencies; Rust allocator
+  -- symbols are then resolved from ix_ffi and not pulled twice.
+  moreLinkObjs := #[ix_rs]
 
 /- The lean4lean replay machinery as an importable lib: the
 `bench-lean4lean` exe root and the ignored `lean4lean` test runner both

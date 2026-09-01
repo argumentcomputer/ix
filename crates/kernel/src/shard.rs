@@ -311,12 +311,25 @@ impl AggNode {
   /// `None` when nothing remains. Lets a prover fold along the tree even when
   /// only a subset of shards was proven (empty shards, `--only-shard`).
   pub fn prune(&self, keep: &impl Fn(u32) -> bool) -> Option<AggNode> {
+    self.filter_map_leaves(&|id| keep(id).then_some(id))
+  }
+
+  /// Generalized pruning used when a manifest writer drops empty shards and
+  /// densely renumbers the retained leaves.
+  fn filter_map_leaves(
+    &self,
+    map: &impl Fn(u32) -> Option<u32>,
+  ) -> Option<AggNode> {
     match self {
-      AggNode::Leaf(id) => keep(*id).then_some(AggNode::Leaf(*id)),
-      AggNode::Internal(l, r) => match (l.prune(keep), r.prune(keep)) {
-        (Some(a), Some(b)) => Some(AggNode::Internal(Box::new(a), Box::new(b))),
-        (Some(a), None) | (None, Some(a)) => Some(a),
-        (None, None) => None,
+      AggNode::Leaf(id) => map(*id).map(AggNode::Leaf),
+      AggNode::Internal(l, r) => {
+        match (l.filter_map_leaves(map), r.filter_map_leaves(map)) {
+          (Some(a), Some(b)) => {
+            Some(AggNode::Internal(Box::new(a), Box::new(b)))
+          },
+          (Some(a), None) | (None, Some(a)) => Some(a),
+          (None, None) => None,
+        }
       },
     }
   }
@@ -1399,18 +1412,41 @@ impl ShardManifest {
 
   /// Serialize to the `.ixes` binary format.
   pub fn to_bytes(&self) -> Vec<u8> {
+    use rustc_hash::FxHashMap;
+
+    // Older/fixed-count planners can leave block-empty shard records when the
+    // requested count exceeds the realizable partition. Never persist those
+    // leaves: omit them, contract the aggregation tree, and densely renumber
+    // the survivors. The Lean consumer additionally prunes zero-*constant*
+    // legacy leaves after validating them against the environment.
+    let retained: Vec<&ShardInfo> =
+      self.shards.iter().filter(|shard| !shard.blocks.is_empty()).collect();
+    let remap: FxHashMap<u32, u32> = retained
+      .iter()
+      .enumerate()
+      .map(|(new_id, shard)| (shard.id, new_id as u32))
+      .collect();
+    let tree = self
+      .tree
+      .as_ref()
+      .and_then(|tree| tree.filter_map_leaves(&|id| remap.get(&id).copied()));
+    let total_cross_ingress = retained
+      .iter()
+      .map(|shard| u128::from(shard.cross_ingress))
+      .sum::<u128>();
+
     let mut out = Vec::new();
     out.extend_from_slice(SHARD_MAGIC);
-    out.extend_from_slice(&self.total_cross_ingress.to_le_bytes());
-    out.extend_from_slice(&(self.shards.len() as u32).to_le_bytes());
+    out.extend_from_slice(&total_cross_ingress.to_le_bytes());
+    out.extend_from_slice(&(retained.len() as u32).to_le_bytes());
     let put_addrs = |out: &mut Vec<u8>, addrs: &[Address]| {
       out.extend_from_slice(&(addrs.len() as u32).to_le_bytes());
       for a in addrs {
         out.extend_from_slice(a.as_bytes());
       }
     };
-    for sh in &self.shards {
-      out.extend_from_slice(&sh.id.to_le_bytes());
+    for (new_id, sh) in retained.iter().enumerate() {
+      out.extend_from_slice(&(new_id as u32).to_le_bytes());
       out.extend_from_slice(&sh.heartbeats.to_le_bytes());
       out.extend_from_slice(&sh.own_size.to_le_bytes());
       out.extend_from_slice(&sh.cross_ingress.to_le_bytes());
@@ -1427,7 +1463,7 @@ impl ShardManifest {
     // Trailing optional bisection-tree section: presence byte then preorder
     // tree. Appended after the shards so older readers that stop at the shard
     // count simply ignore it, and `from_bytes` treats end-of-input as `None`.
-    match &self.tree {
+    match &tree {
       Some(t) => {
         out.push(1);
         t.put(&mut out);
@@ -2929,6 +2965,27 @@ mod tests {
     let m0 = ShardManifest::build(&p, &shard_of, 2);
     let q0 = ShardManifest::from_bytes(&m0.to_bytes()).unwrap();
     assert_eq!(q0.tree, None);
+  }
+
+  #[test]
+  fn manifest_writer_prunes_empty_shards_and_contracts_tree() {
+    let p = two_clusters();
+    // Keep the two clusters in old shards 0 and 2, deliberately leaving shard
+    // 1 empty. Serialization must emit dense ids 0/1 and contract leaf 1.
+    let shard_of = vec![0, 0, 0, 2, 2, 2];
+    let tree = node(leaf(0), node(leaf(1), leaf(2)));
+    let m = ShardManifest::build(&p, &shard_of, 3).with_tree(tree);
+    assert!(m.shards[1].blocks.is_empty());
+
+    let q = ShardManifest::from_bytes(&m.to_bytes()).unwrap();
+    assert_eq!(q.num_shards, 2);
+    assert_eq!(q.shards.len(), 2);
+    assert_eq!(
+      q.shards.iter().map(|shard| shard.id).collect::<Vec<_>>(),
+      vec![0, 1]
+    );
+    assert!(q.shards.iter().all(|shard| !shard.blocks.is_empty()));
+    assert_eq!(q.tree, Some(node(leaf(0), leaf(1))));
   }
 
   #[test]
