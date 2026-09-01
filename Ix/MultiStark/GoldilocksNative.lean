@@ -63,6 +63,11 @@ def goldilocksNative := ⟦
   -- A primitive 2^32-th root of unity (Plonky3's maximal two-adic
   -- generator); smaller-order roots derive by squaring (`two_adic_gen`).
   fn g_two_adic_root() -> Goldilocks { 1753635133440165772 }
+  -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
+  -- ConstSmall ingest (byte sums cannot wrap, and 2¹⁶ < p in every field).
+  fn gl_from_u16(lo: U8, hi: U8) -> Goldilocks {
+    to_field(lo) + 256 * to_field(hi)
+  }
 
   -- ==========================================================================
   -- Ring operations. Native: the outer field's own `+`/`-`/`*`.

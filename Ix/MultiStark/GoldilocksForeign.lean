@@ -60,6 +60,11 @@ def goldilocksForeign := ⟦
   fn g_two_adic_root() -> Goldilocks {
     [140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8]
   }
+  -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
+  -- ConstSmall ingest. Already canonical: the two bytes ARE the low limbs.
+  fn gl_from_u16(lo: U8, hi: U8) -> Goldilocks {
+    [lo, hi, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]
+  }
   -- p = 2⁶⁴ − 2³² + 1 and EPSILON = 2³² − 1, little-endian (internal).
   fn gl_p() -> Goldilocks { [1u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8] }
   fn gl_eps() -> Goldilocks { [255u8, 255u8, 255u8, 255u8, 0u8, 0u8, 0u8, 0u8] }

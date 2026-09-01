@@ -9,6 +9,7 @@ public import Ix.IxVM.Blake3
 public import Ix.MultiStark.GoldilocksNative
 public import Ix.MultiStark.Aggregate
 public import Ix.MultiStark.Host
+public import Ix.MultiStark.GoldilocksForeign
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
@@ -96,14 +97,17 @@ def entrypoints := ⟦
   }
 ⟧
 
-/-- The FULL Multi-STARK verifier toplevel: `core` (lists/options) +
-`byteStream` (`U64`, `flatten_u64`, `read_byte_stream`, …) + the deserializer,
-the Blake3 hash, and both production entrypoints — unpruned, including entries inherited
-from the shared modules (`blake3_test`/`blake3_bench`). Only `multiStarkTests`
-builds on this; production uses `multiStark` (pruned). -/
-def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel := do
+/-- The FULL Multi-STARK verifier toplevel over a chosen inner-field module
+(`goldilocksNative` or `goldilocksForeign` — same interface, exactly one
+merges): `core` (lists/options) + `byteStream` (`U64`, `flatten_u64`,
+`read_byte_stream`, …) + the deserializer, the Blake3 hash, the aggregation
+module and the production entrypoints — unpruned, including entries inherited from the shared modules
+(`blake3_test`/`blake3_bench`). Only the `*Tests` toplevels build on this;
+production uses the pruned forms. -/
+def multiStarkFullOver (goldilocks : Aiur.Source.Toplevel) :
+    Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
-  let t ← t.merge MultiStark.goldilocksNative
+  let t ← t.merge goldilocks
   let t ← t.merge deserialize
   let t ← t.merge IxVM.blake3
   let t ← t.merge systemDeserialize
@@ -112,16 +116,33 @@ def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← t.merge aggregate
   t.merge entrypoints
 
+def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel :=
+  multiStarkFullOver MultiStark.goldilocksNative
+
+/-- `multiStarkFull` with the byte-limb inner field: the SAME verifier
+program, its Goldilocks arithmetic emulated on bytes, so the toplevel is
+outer-field-independent — executable under the Goldilocks interpreter today
+(the Phase-B gate) and provable over the BLS12-381 scalar field under the
+KZG backend (stage 3). -/
+def multiStarkForeignFull : Except Aiur.Global Aiur.Source.Toplevel :=
+  multiStarkFullOver MultiStark.goldilocksForeign
+
 /-- The production recursion toplevel: `multiStarkFull` pruned to the combined
 call closures of `verify_multi_stark_proof` (lift), `join_two` (flat join), and
-`join_two_structural`. Every
-compiled function is a committed circuit whose openings pad every proof of the
-system's execution, so functions only reachable from unrelated entries
-(kernel-oriented helpers of the shared modules, test/bench entries) cost real
-proof bytes if kept. -/
+`join_two_structural`. Every compiled function is a committed circuit whose
+openings pad every proof of the system's execution, so functions only
+reachable from unrelated entries (kernel-oriented helpers of the shared
+modules, test/bench entries) cost real proof bytes if kept. -/
 def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← multiStarkFull
   pure (t.prune [`verify_multi_stark_proof, `join_two, `join_two_structural])
+
+/-- The production FOREIGN verifier toplevel (stage 3): `multiStarkForeignFull`
+pruned to `verify_multi_stark_proof`'s call closure (also drops the foreign
+module's `fg_*` self-test entrypoints). -/
+def multiStarkForeign : Except Aiur.Global Aiur.Source.Toplevel := do
+  let t ← multiStarkForeignFull
+  pure (t.prune [`verify_multi_stark_proof])
 
 /-! ## Lean-side input assembly
 
