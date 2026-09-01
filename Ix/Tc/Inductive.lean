@@ -2881,13 +2881,32 @@ def generatedRecursorSelectionStep (ty : KExpr m)
     return typeMatches.push gi
   return typeMatches
 
-/-- Collect every metadata-compatible generated entry whose complete closed
-type is definitionally equal to the frozen stored type.  The explicit list
-fold exposes the precise callback order to verification. -/
+/-- Compare the generated entry at the canonical stored block position with
+the frozen stored type.  A successful result is still justified by a complete
+closed-type comparison; the position only determines which candidate to try
+first. -/
+def selectGeneratedRecursorAtPosition (storedPos : Option Nat)
+    (ty : KExpr m) (params motives minors : UInt64) (indId : KId m)
+    (generated : Array (GeneratedRecursor m)) : RecM m (Option Nat) := do
+  let some index := storedPos
+    | return none
+  let some selected := generated[index]?
+    | return none
+  if selected.indAddr != indId.addr || selected.params != params ||
+      selected.motives != motives || selected.minors != minors then
+    return none
+  if ← isDefEq selected.ty ty then
+    return some index
+  return none
+
+/-- Collect every remaining metadata-compatible generated entry whose complete
+closed type is definitionally equal to the frozen stored type.  The explicit
+list fold exposes the precise fallback callback order to verification. -/
 def collectGeneratedRecursorTypeMatches (ty : KExpr m)
     (params motives minors : UInt64) (indId : KId m)
-    (generated : Array (GeneratedRecursor m)) : RecM m (Array Nat) :=
-  (List.range generated.size).foldlM
+    (generated : Array (GeneratedRecursor m))
+    (skip : Option Nat) : RecM m (Array Nat) :=
+  ((List.range generated.size).filter fun index => some index != skip).foldlM
     (generatedRecursorSelectionStep ty params motives minors indId generated)
     #[]
 
@@ -2899,13 +2918,18 @@ verification an exact boundary between selection and exhaustive comparison. -/
 def selectGeneratedRecursorIndex (recBlock id : KId m) (ty : KExpr m)
     (params motives minors : UInt64) (indId : KId m)
     (generated : Array (GeneratedRecursor m)) : RecM m (Option Nat) := do
-  -- Full-type selection disambiguates auxiliaries sharing a major head.
+  -- Full-type selection disambiguates auxiliaries sharing a major head.  The
+  -- canonical block position is already established by the surrounding block
+  -- checks, so try it first without weakening the complete-type comparison.
   let storedPos := (← get).env.blocks[recBlock]?.bind
     (·.findIdx? (fun mem => mem == id))
-  let typeMatches ← collectGeneratedRecursorTypeMatches ty params motives
-    minors indId generated
-  return (storedPos.bind (fun p => typeMatches.find? (· == p))) <|>
-    typeMatches[0]?
+  match ← selectGeneratedRecursorAtPosition storedPos ty params motives
+      minors indId generated with
+  | some selected => return some selected
+  | none =>
+    let typeMatches ← collectGeneratedRecursorTypeMatches ty params motives
+      minors indId generated storedPos
+    return typeMatches[0]?
 
 /-- Select from one frozen generated cache snapshot and exhaustively compare
 the selected entry with the complete frozen stored declaration. -/

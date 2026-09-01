@@ -1876,7 +1876,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return;
     }
-    log::info!(
+    eprintln!(
       "[deq max] rec-fuel depth={} a={} b={}",
       self.def_eq_depth,
       compact_def_eq_expr(a),

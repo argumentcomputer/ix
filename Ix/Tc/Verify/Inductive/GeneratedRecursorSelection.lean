@@ -6,9 +6,10 @@ import Ix.Tc.Verify.RecursiveMethods.ScopedCallDomains
 # Generated-recursor selection callbacks
 
 Production selects a generated recursor by comparing complete closed types.
-This module verifies the explicit finite fold used by that selection phase.
-Every stateful DefEq call is tied to the exact generated array position and
-the frozen stored type; metadata-only iterations are state-pure.
+It first checks the canonical stored block position, then uses an explicit
+finite fold over the remaining entries as a fallback. Every stateful DefEq
+call is tied to the exact generated array position and the frozen stored type;
+metadata-only iterations are state-pure.
 -/
 
 namespace Ix.Tc
@@ -18,8 +19,8 @@ open GeneratedRecursorSemantics
 namespace GeneratedRecursorSemantics
 
 /-- Exact call-domain coverage for every array entry that selection could
-compare with the frozen stored type.  Metadata filtering can only reduce this
-finite set. -/
+compare with the frozen stored type. Metadata filtering, the positional short
+circuit, and fallback filtering can only reduce this finite set. -/
 def GeneratedSelectionCallPlan (calls : Methods.CallDomain)
     (generated : Array (GeneratedRecursor .anon))
     (ty : KExpr .anon) : Prop :=
@@ -85,6 +86,36 @@ private theorem generatedRecursorSelectionStep_wf
         intro answer after _
         cases answer <;> exact TcM.WF.pure fun _ => trivial
 
+private theorem selectGeneratedRecursorAtPosition_wf
+    {calls : Methods.CallDomain} {methods : Methods .anon}
+    {invariant : TcState .anon → Prop}
+    {ty : KExpr .anon} {params motives minors : UInt64}
+    {indId : KId .anon}
+    {generated : Array (GeneratedRecursor .anon)}
+    (callPlan : GeneratedSelectionCallPlan calls generated ty)
+    (defEq : GeneratedSelectionDefEqStateContract calls methods invariant
+      generated ty)
+    (storedPos : Option Nat) (state : TcState .anon) :
+    TcM.WF invariant state
+      ((selectGeneratedRecursorAtPosition storedPos ty params motives minors
+        indId generated).run methods)
+      (fun _ _ => True) := by
+  unfold selectGeneratedRecursorAtPosition
+  cases storedPos with
+  | none => exact TcM.WF.pure fun _ => trivial
+  | some index =>
+      simp only
+      cases lookup : generated[index]? with
+      | none => exact TcM.WF.pure fun _ => trivial
+      | some selected =>
+          simp only
+          split
+          · exact TcM.WF.pure fun _ => trivial
+          · rw [ReaderT.run_bind]
+            apply TcM.WF.bind (defEq lookup (callPlan lookup))
+            intro answer after _
+            cases answer <;> exact TcM.WF.pure fun _ => trivial
+
 private theorem collectGeneratedRecursorTypeMatchesList_wf
     {calls : Methods.CallDomain} {methods : Methods .anon}
     {invariant : TcState .anon → Prop}
@@ -121,16 +152,16 @@ theorem collectGeneratedRecursorTypeMatches_wf
     {generated : Array (GeneratedRecursor .anon)}
     (callPlan : GeneratedSelectionCallPlan calls generated ty)
     (defEq : GeneratedSelectionDefEqStateContract calls methods invariant
-      generated ty) (state : TcState .anon) :
+      generated ty) (skip : Option Nat) (state : TcState .anon) :
     TcM.WF invariant state
       ((collectGeneratedRecursorTypeMatches ty params motives minors indId
-        generated).run methods)
+        generated skip).run methods)
       (fun _ _ => True) := by
   unfold collectGeneratedRecursorTypeMatches
   exact collectGeneratedRecursorTypeMatchesList_wf callPlan defEq _ #[] state
 
-/-- The outer stored-position read and pure result selection add no stateful
-operations around the verified finite DefEq fold. -/
+/-- The outer stored-position read, complete positional comparison, and finite
+fallback fold all preserve the supplied checker invariant. -/
 theorem selectGeneratedRecursorIndex_wf
     {calls : Methods.CallDomain} {methods : Methods .anon}
     {invariant : TcState .anon → Prop}
@@ -153,9 +184,16 @@ theorem selectGeneratedRecursorIndex_wf
   subst observed
   rw [ReaderT.run_bind]
   apply TcM.WF.bind
-    (collectGeneratedRecursorTypeMatches_wf callPlan defEq after)
-  intro typeMatches final _
-  exact TcM.WF.pure fun _ => trivial
+    (selectGeneratedRecursorAtPosition_wf callPlan defEq _ after)
+  intro selected afterPosition _
+  cases selected with
+  | some index => exact TcM.WF.pure fun _ => trivial
+  | none =>
+      rw [ReaderT.run_bind]
+      apply TcM.WF.bind
+        (collectGeneratedRecursorTypeMatches_wf callPlan defEq _ afterPosition)
+      intro typeMatches final _
+      exact TcM.WF.pure fun _ => trivial
 
 /-- A successful concrete selection therefore exposes an invariant-preserving
 post-state, independently of which matching index its pure final choice

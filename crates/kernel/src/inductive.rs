@@ -4751,22 +4751,40 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
       .blocks
       .get(&rec_block)
       .and_then(|members| members.iter().position(|m| m == id));
+    let header_matches = |g: &GeneratedRecursor<M>| {
+      g.ind_addr == ind_id.addr
+        && g.params == params
+        && g.motives == motives
+        && g.minors == minors
+    };
+
+    // Canonical block alignment was already checked position-by-position by
+    // `populate_recursor_rules_from_block`. Try that position first and stop
+    // as soon as its complete type matches. Scanning every same-major
+    // auxiliary before consulting the position is catastrophically expensive
+    // for nested mutual blocks: their recursor types share a hundred-binder
+    // prefix, so each *wrong* candidate consumes substantial def-eq fuel before
+    // diverging near the tail. The positional candidate is hash-identical in
+    // canonical production environments, making the common path O(1).
     let mut type_matches: Vec<usize> = Vec::new();
-    for (gi, g) in generated.iter().enumerate() {
-      if g.ind_addr != ind_id.addr
-        || g.params != params
-        || g.motives != motives
-        || g.minors != minors
-      {
-        continue;
-      }
-      if self.is_def_eq(&g.ty, &ty)? {
-        type_matches.push(gi);
+    if let Some(p) = stored_pos
+      && let Some(g) = generated.get(p)
+      && header_matches(g)
+      && self.is_def_eq(&g.ty, &ty)?
+    {
+      type_matches.push(p);
+    }
+    if type_matches.is_empty() {
+      for (gi, g) in generated.iter().enumerate() {
+        if Some(gi) == stored_pos || !header_matches(g) {
+          continue;
+        }
+        if self.is_def_eq(&g.ty, &ty)? {
+          type_matches.push(gi);
+        }
       }
     }
-    let selected_idx = stored_pos
-      .and_then(|p| type_matches.iter().copied().find(|&gi| gi == p))
-      .or_else(|| type_matches.first().copied());
+    let selected_idx = type_matches.first().copied();
 
     if self.recursor_dump_matches_id(id) {
       eprintln!(
