@@ -12,6 +12,7 @@ public import Ix.Aiur.Semantics.BytecodeFfi
 public import Ix.Aiur.Semantics.SourceEval
 public import Ix.Aiur.Semantics.BytecodeEval
 public import Ix.Aiur.Protocol
+public import Ix.Aiur.Hypercube
 public import Ix.Aiur.Interpret
 public import Ix.Aiur.Compiler.Check
 public import Ix.Aiur.Compiler.Match
