@@ -11,7 +11,7 @@ public import Ix.MultiStark.Transcript.Blake3
 public import Ix.MultiStark.Domain
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
-public import Ix.MultiStark.Pcs
+public import Ix.MultiStark.Pcs.Fri
 public import Ix.MultiStark.SystemDeserialize
 public import Ix.MultiStark.Verifier
 public import Ix.MultiStark.Tests
@@ -89,17 +89,37 @@ def entrypoints := ⟦
   }
 ⟧
 
-/-- The FULL Multi-STARK verifier toplevel over a chosen inner-field module
-(`goldilocksNative` or `goldilocksForeign` — same interface, exactly one
-merges): `core` (lists/options) + `byteStream` (`U64`, `flatten_u64`,
-`read_byte_stream`, …) + the deserializer, the Blake3 hash, and the
-entrypoint — unpruned, including entries inherited from the shared modules
-(`blake3_test`/`blake3_bench`). Only the `*Tests` toplevels build on this;
-production uses the pruned forms. -/
-def multiStarkFullOver (goldilocks : Aiur.Source.Toplevel) :
+/-- The FULL Multi-STARK verifier toplevel, assembled from one implementation
+of each interface — the verifier core is written against interface NAMES,
+mirroring multi-stark's `pcs-traits` (generic over the field and the PCS):
+
+* **Field** (`Ix/MultiStark/Field/*`): types `Val` (the verified system's
+  base field, Rust `Val<SC>`) and `Ext` (its extension / challenge field);
+  values `val_zero/one/two/generator/two_adic_root`, `ext_w`; ops
+  `val_add/sub/neg/mul/is_zero/inverse`, `ext_add/sub/neg/mul/inverse/div/eq`;
+  wire boundary `val_from_bytes`/`val_to_bytes`/`val_from_u16`/
+  `bytes_lt_modulus`. Implementations: `goldilocksNative` (`Val = G`),
+  `goldilocksForeign` (Goldilocks emulated in a large outer field).
+* **Pcs** (`Ix/MultiStark/Pcs/*`): types `Commitment`, `PcsProof`,
+  `PcsParams`; readers `read_commitment_at`/`read_pcs_proof` (proof stream),
+  `read_vk_commitment`/`read_pcs_params` (vk stream); transcript bytes
+  `commitment_onto`/`snoc_commitment`; `pcs_empty_commitment`; and
+  `pcs_verify` (Rust `Pcs::verify`). Implementation: `pcsFri`.
+* **Transcript** (`Ix/MultiStark/Transcript/Blake3.lean`): the byte
+  challenger (`ch_*`) — blake3, the one implementation by design.
+* **Domain** (`Ix/MultiStark/Domain.lean`): two-adic coset math over the
+  field interface, shared by every PCS.
+
+Exactly one implementation of each interface merges (same names by design).
+The merge: `core` (lists/options) + `byteStream` + field + transcript +
+domain + the deserializer + Blake3 + the vk deserializer + PCS + the verifier
+core + the entrypoint — unpruned, including entries inherited from the
+shared modules. Only the `*Tests` toplevels build on this; production uses
+the pruned forms. -/
+def multiStarkFullOver (field pcs : Aiur.Source.Toplevel) :
     Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
-  let t ← t.merge goldilocks
+  let t ← t.merge field
   let t ← t.merge transcriptBlake3
   let t ← t.merge twoAdicDomain
   let t ← t.merge deserialize
@@ -109,8 +129,9 @@ def multiStarkFullOver (goldilocks : Aiur.Source.Toplevel) :
   let t ← t.merge verifier
   t.merge entrypoints
 
+/-- The native instantiation: Goldilocks as `Val` itself, the FRI PCS. -/
 def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel :=
-  multiStarkFullOver MultiStark.goldilocksNative
+  multiStarkFullOver MultiStark.goldilocksNative MultiStark.pcsFri
 
 /-- `multiStarkFull` with the byte-limb inner field: the SAME verifier
 program, its Goldilocks arithmetic emulated on bytes, so the toplevel is
@@ -118,7 +139,7 @@ outer-field-independent — executable under the Goldilocks interpreter today
 (the Phase-B gate) and provable over the BLS12-381 scalar field under the
 KZG backend (stage 3). -/
 def multiStarkForeignFull : Except Aiur.Global Aiur.Source.Toplevel :=
-  multiStarkFullOver MultiStark.goldilocksForeign
+  multiStarkFullOver MultiStark.goldilocksForeign MultiStark.pcsFri
 
 /-- The production Multi-STARK verifier toplevel: `multiStarkFull` pruned to
 `verify_multi_stark_proof`'s call closure. Every compiled function is a

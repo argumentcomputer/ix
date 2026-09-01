@@ -12,7 +12,7 @@ layout). The multi-stark constraint-IR migration replaced the per-circuit
 *symbolic* AIR (`SymbolicExpression` trees + `LookupAir`) with a *compiled*
 flat base-field node graph, so this reader parses that compiled form:
 
-* GLOBAL HEADER: 7 × u16 parameters + u16 circuit count.
+* GLOBAL HEADER: the PCS parameters (`read_pcs_params`; FRI: 7 × u16) + u16 circuit count.
 * PER-CIRCUIT RECORD (no framing prefix; nothing derivable is serialized —
   constraint_count, stage_2_width, num_publics, and lookup_prefix_len are
   all recomputed from the counts below):
@@ -31,7 +31,7 @@ flat base-field node graph, so this reader parses that compiled form:
     - u16 lookup_count, then the compiled lookups (u16 multiplicity NodeId,
       u16 arg count, u16 arg NodeIds) — these drive the verifier's direct
       logUp constraint evaluation (`Verifier.lean`).
-* TRAILER: preprocessed commit (`0` = None / `1` + MerkleCap) then one u16
+* TRAILER: preprocessed commit (`0` = None / `1` + the PCS's `Commitment`) then one u16
   per circuit for the preprocessed index (`0xFFFF` = None).
 
 The vk stream (IO channel 1) is fetched once as unconstrained advice, then
@@ -81,13 +81,12 @@ def systemDeserialize := ⟦
   enum SysLookup { Mk(G, List‹G›) }
   enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›, G) }   -- nodes, node_count, zeros, max_constraint_degree, lookups, lookup_group_size
 
-  -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
-  -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
-  -- parameters the config (and its challenger seed) was built from.
-  enum SysParams { Mk(G, G, G, G, G, G, G) }
+  -- The PCS/config parameters the vk opens with (`PcsParams`, read by the
+  -- PCS module's `read_pcs_params`): for FRI, log_blowup, cap_height,
+  -- log_final_poly_len, max_log_arity, num_queries, commit/query PoW bits.
 
   -- `Option`s as dedicated non-generic enums (unambiguous constructors).
-  enum OptCommit { NoCommit, SomeCommit(MerkleCap) }
+  enum OptCommit { NoCommit, SomeCommit(Commitment) }
   enum OptIdx { NoIdx, SomeIdx(G) }
 
   -- parameters, transcript limbs, circuits, preprocessed_commit,
@@ -96,7 +95,7 @@ def systemDeserialize := ⟦
   -- the challenger seed) followed by the system shape (`observe_shape`: the
   -- circuit count, then 6 metadata words per circuit) — kept as limbs because
   -- the Fiat-Shamir replay needs their little-endian bytes.
-  enum Sys { Mk(SysParams, List‹U64›, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
+  enum Sys { Mk(PcsParams, List‹U64›, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
 
   -- ==========================================================================
   -- Byte primitives over the already materialized vk stream. Each returns
@@ -169,23 +168,6 @@ def systemDeserialize := ⟦
     let (b0, s0) = read_vk_u8(s);
     let (b1, s1) = read_vk_u8(s0);
     (@val_from_u16(b0, b1), s1)
-  }
-
-  fn read_vk_digest(i: ByteStream) -> (Digest, ByteStream) {
-    let (a, j0) = read_vk_u64(i);
-    let (b, j1) = read_vk_u64(j0);
-    let (c, j2) = read_vk_u64(j1);
-    let (d, j3) = read_vk_u64(j2);
-    ([a, b, c, d], j3)
-  }
-  fn read_vk_cap_n(i: ByteStream, n: G) -> (MerkleCap, ByteStream) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = @read_vk_digest(i);
-        let (rest, j2) = read_vk_cap_n(j, n - 1);
-        (store(ListNode.Cons(store(x), rest)), j2),
-    }
   }
 
   -- ==========================================================================
@@ -412,8 +394,7 @@ def systemDeserialize := ⟦
     match tag {
       0 => (OptCommit.NoCommit, j),
       _ =>
-        let (n, j1) = read_vk_u16(j);
-        let (c, j2) = read_vk_cap_n(j1, n);
+        let (c, j2) = @read_vk_commitment(j);
         (OptCommit.SomeCommit(c), j2),
     }
   }
@@ -431,27 +412,10 @@ def systemDeserialize := ⟦
     }
   }
 
-  -- The 7 protocol parameters, both as field values (for the verifier logic)
-  -- and as u64 limbs (their LE bytes seed the challenger).
-  fn read_sys_params(i: ByteStream) -> (SysParams, List‹U64›, ByteStream) {
-    let (p0, l0, j0) = read_vk_u16_limb(i);
-    let (p1, l1, j1) = read_vk_u16_limb(j0);
-    let (p2, l2, j2) = read_vk_u16_limb(j1);
-    let (p3, l3, j3) = read_vk_u16_limb(j2);
-    let (p4, l4, j4) = read_vk_u16_limb(j3);
-    let (p5, l5, j5) = read_vk_u16_limb(j4);
-    let (p6, l6, j6) = read_vk_u16_limb(j5);
-    (SysParams.Mk(p0, p1, p2, p3, p4, p5, p6),
-     store(ListNode.Cons(l0, store(ListNode.Cons(l1, store(ListNode.Cons(l2,
-     store(ListNode.Cons(l3, store(ListNode.Cons(l4, store(ListNode.Cons(l5,
-     store(ListNode.Cons(l6, store(ListNode.Nil))))))))))))))),
-     j6)
-  }
-
   -- Full `System<AiurConfig>` parsed from the digest-bound byte stream.
   -- Returns the unconsumed suffix; the entrypoint asserts it is empty.
   fn read_system(i: ByteStream) -> (Sys, ByteStream) {
-    let (params, plimbs, j) = @read_sys_params(i);
+    let (params, plimbs, j) = @read_pcs_params(i);
     let (n, nlimb, j1) = read_vk_u16_limb(j);
     let (circuits, climbs, j2) = read_sys_circuits_n(j1, n);
     let (commit, j3) = read_opt_commit(j2);

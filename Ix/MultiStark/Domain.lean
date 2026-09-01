@@ -40,7 +40,7 @@ def twoAdicDomain := ⟦
   -- aux + 33 selectors; the chain is one short memoized circuit — the
   -- first call materialises ≤ 32 rows, every later call is a cache hit.
   -- Callers must keep `bits ≤ 32` (guarded where `bits` comes from proof
-  -- advice: log_degrees in `ood_loop`, log_gmax in `pcs_fri_verify`);
+  -- advice: log_degrees in `ood_loop`, log_gmax in `pcs_verify`);
   -- an unguarded larger value would recurse without a base case.
   fn two_adic_gen(bits: G) -> Val {
     match bits {

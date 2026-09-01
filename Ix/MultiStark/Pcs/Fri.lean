@@ -2,7 +2,7 @@ module
 public import Ix.Aiur.Meta
 
 /-!
-# PCS (FRI) verification
+# PCS interface: FRI implementation
 
 Ports `multi-stark/src/verifier.rs`'s `pcs.verify(...)` — a `TwoAdicFriPcs` FRI
 verification: Merkle `verify_batch` (binary tree, multi-height injection), the
@@ -27,7 +27,247 @@ public section
 
 namespace MultiStark
 
-def pcs := ⟦
+def pcsFri := ⟦
+  -- ==========================================================================
+  -- The PCS interface, FRI implementation (`TwoAdicFriPcs` over a Blake3
+  -- `MerkleTreeMmcs`): the types and names the generic verifier refers to.
+  -- ==========================================================================
+  -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
+  type Digest = [U64; 4]
+
+  -- Digests thread the Merkle machinery BY POINTER: a digest is 32 columns,
+  -- so every value crossing a circuit boundary (input, call output, list
+  -- node) paid 32; a pointer pays 1. `store` is content-addressed (same
+  -- digest -> same pointer), so pointer identity preserves the cross-query
+  -- compress memoization. Bytes are loaded only where actually consumed
+  -- (block assembly in mmcs_compress, cap observation, the root equality).
+  type DigestP = &Digest
+
+  -- `Commitment = MerkleCap<..>`: only the `cap: Vec<Digest>` is on the wire.
+  type MerkleCap = List‹DigestP›
+
+  -- Interface type: the PCS commitment on the wire — a Merkle cap.
+  type Commitment = MerkleCap
+  -- `BatchOpening<Val, Mmcs>`: per-round input opening of a FRI query.
+  --   opened_values : Vec<Vec<Val>>   (one row of base-field values per matrix)
+  --   opening_proof : Vec<Digest>     (Merkle authentication path)
+  enum BatchOpening {
+    Mk(List‹List‹U64››, List‹DigestP›)
+  }
+
+  -- `CommitPhaseProofStep<ExtVal, ExtMmcs>`: one folding step of a FRI query.
+  --   log_arity      : u8
+  --   sibling_values : Vec<Ext>  (arity - 1 siblings)
+  --   opening_proof  : Vec<Digest>
+  enum CommitPhaseProofStep {
+    Mk(U8, List‹Ext›, List‹DigestP›)
+  }
+
+  -- `QueryProof<ExtVal, ExtMmcs, Vec<BatchOpening<Val, Mmcs>>>`.
+  enum QueryProof {
+    Mk(List‹BatchOpening›, List‹CommitPhaseProofStep›)
+  }
+
+  -- `PcsProof = FriProof<ExtVal, ExtMmcs, Witness = Val, ..>`.
+  --   commit_phase_commits : Vec<MerkleCap>
+  --   commit_pow_witnesses : Vec<Val>
+  --   query_proofs         : Vec<QueryProof>
+  --   final_poly           : Vec<Ext>
+  --   query_pow_witness    : Val
+  enum FriProof {
+    Mk(List‹MerkleCap›, List‹U64›, List‹QueryProof›, List‹Ext›, U64)
+  }
+
+  -- Interface type: the PCS opening proof — the FRI proof.
+  type PcsProof = FriProof
+
+  -- Interface type: the PCS/config parameters the vk opens with —
+  -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
+  -- commit_proof_of_work_bits, query_proof_of_work_bits (the commitment +
+  -- FRI parameters the config and its challenger seed were built from).
+  enum PcsParams { Mk(G, G, G, G, G, G, G) }
+
+  -- The empty commitment (observes nothing): a missing preprocessed commit.
+  fn pcs_empty_commitment() -> Commitment { store(ListNode.Nil) }
+
+  -- ==========================================================================
+  -- Proof-stream readers for the PCS shapes (indexed channel-0 reads; the
+  -- generic readers `read_u64_at`/`read_count_at`/`read_ext_vec`/... come
+  -- from the deserializer).
+  -- ==========================================================================
+  fn read_digest_at(i: G) -> (Digest, G) {
+    let (a, j0) = #read_u64_at(i);
+    let (b, j1) = #read_u64_at(j0);
+    let (c, j2) = #read_u64_at(j1);
+    let (d, j3) = #read_u64_at(j2);
+    ([a, b, c, d], j3)
+  }
+
+  fn read_digest_vec_at(i: G) -> (List‹DigestP›, G) {
+    let (n, j) = read_count_at(i);
+    read_digest_vec_at_n(j, n)
+  }
+  fn read_digest_vec_at_n(i: G, n: G) -> (List‹DigestP›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_digest_at(i);
+        let (rest, j2) = read_digest_vec_at_n(j, n - 1);
+        (store(ListNode.Cons(store(x), rest)), j2),
+    }
+  }
+
+  -- `Vec<Vec<Val>>` for `BatchOpening.opened_values`.
+  fn read_u64_vec_vec(i: G) -> (List‹List‹U64››, G) {
+    let (n, j) = read_count_at(i);
+    read_u64_vec_vec_n(j, n)
+  }
+  fn read_u64_vec_vec_n(i: G, n: G) -> (List‹List‹U64››, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = read_u64_vec(i);
+        let (rest, j2) = read_u64_vec_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  -- Interface: read one commitment at proof offset `i`.
+  fn read_commitment_at(i: G) -> (Commitment, G) {
+    read_digest_vec_at(i)
+  }
+  fn read_merkle_cap_vec(i: G) -> (List‹MerkleCap›, G) {
+    let (n, j) = read_count_at(i);
+    read_merkle_cap_vec_n(j, n)
+  }
+  fn read_merkle_cap_vec_n(i: G, n: G) -> (List‹MerkleCap›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_commitment_at(i);
+        let (rest, j2) = read_merkle_cap_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_batch_opening(i: G) -> (BatchOpening, G) {
+    let (opened_values, j0) = @read_u64_vec_vec(i);
+    let (opening_proof, j1) = read_digest_vec_at(j0);
+    (BatchOpening.Mk(opened_values, opening_proof), j1)
+  }
+  fn read_batch_opening_vec(i: G) -> (List‹BatchOpening›, G) {
+    let (n, j) = read_count_at(i);
+    read_batch_opening_vec_n(j, n)
+  }
+  fn read_batch_opening_vec_n(i: G, n: G) -> (List‹BatchOpening›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_batch_opening(i);
+        let (rest, j2) = read_batch_opening_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_commit_phase_step(i: G) -> (CommitPhaseProofStep, G) {
+    let (log_arity, j0) = #read_u8_at(i);
+    let (sibling_values, j1) = read_ext_vec(j0);
+    let (opening_proof, j2) = read_digest_vec_at(j1);
+    (CommitPhaseProofStep.Mk(log_arity, sibling_values, opening_proof), j2)
+  }
+  fn read_commit_phase_step_vec(i: G) -> (List‹CommitPhaseProofStep›, G) {
+    let (n, j) = read_count_at(i);
+    read_commit_phase_step_vec_n(j, n)
+  }
+  fn read_commit_phase_step_vec_n(i: G, n: G) -> (List‹CommitPhaseProofStep›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_commit_phase_step(i);
+        let (rest, j2) = read_commit_phase_step_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_query_proof(i: G) -> (QueryProof, G) {
+    let (input_proof, j0) = @read_batch_opening_vec(i);
+    let (commit_phase_openings, j1) = @read_commit_phase_step_vec(j0);
+    (QueryProof.Mk(input_proof, commit_phase_openings), j1)
+  }
+  fn read_query_proof_vec(i: G) -> (List‹QueryProof›, G) {
+    let (n, j) = read_count_at(i);
+    read_query_proof_vec_n(j, n)
+  }
+  fn read_query_proof_vec_n(i: G, n: G) -> (List‹QueryProof›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_query_proof(i);
+        let (rest, j2) = read_query_proof_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  -- Interface: read the PCS proof at proof offset `i`.
+  fn read_pcs_proof(i: G) -> (PcsProof, G) {
+    let (commit_phase_commits, j0) = @read_merkle_cap_vec(i);
+    let (commit_pow_witnesses, j1) = read_u64_vec(j0);
+    let (query_proofs, j2) = @read_query_proof_vec(j1);
+    let (final_poly, j3) = read_ext_vec(j2);
+    let (query_pow_witness, j4) = #read_u64_at(j3);
+    (FriProof.Mk(commit_phase_commits, commit_pow_witnesses, query_proofs,
+                 final_poly, query_pow_witness), j4)
+  }
+
+
+  -- ==========================================================================
+  -- Verifying-key readers for the PCS shapes (materialized `ByteStream`; the
+  -- `read_vk_*` primitives come from the vk deserializer).
+  -- ==========================================================================
+  fn read_vk_digest(i: ByteStream) -> (Digest, ByteStream) {
+    let (a, j0) = read_vk_u64(i);
+    let (b, j1) = read_vk_u64(j0);
+    let (c, j2) = read_vk_u64(j1);
+    let (d, j3) = read_vk_u64(j2);
+    ([a, b, c, d], j3)
+  }
+  fn read_vk_cap_n(i: ByteStream, n: G) -> (MerkleCap, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_vk_digest(i);
+        let (rest, j2) = read_vk_cap_n(j, n - 1);
+        (store(ListNode.Cons(store(x), rest)), j2),
+    }
+  }
+
+
+  -- Interface: the commitment as serialized in the vk (u16 count + caps).
+  fn read_vk_commitment(i: ByteStream) -> (Commitment, ByteStream) {
+    let (n, j1) = read_vk_u16(i);
+    read_vk_cap_n(j1, n)
+  }
+
+  -- The 7 protocol parameters, both as field values (for the verifier logic)
+  -- and as u64 limbs (their LE bytes seed the challenger).
+  -- Interface: the PCS parameters (and their u64 limbs, whose LE bytes seed
+  -- the challenger).
+  fn read_pcs_params(i: ByteStream) -> (PcsParams, List‹U64›, ByteStream) {
+    let (p0, l0, j0) = read_vk_u16_limb(i);
+    let (p1, l1, j1) = read_vk_u16_limb(j0);
+    let (p2, l2, j2) = read_vk_u16_limb(j1);
+    let (p3, l3, j3) = read_vk_u16_limb(j2);
+    let (p4, l4, j4) = read_vk_u16_limb(j3);
+    let (p5, l5, j5) = read_vk_u16_limb(j4);
+    let (p6, l6, j6) = read_vk_u16_limb(j5);
+    (PcsParams.Mk(p0, p1, p2, p3, p4, p5, p6),
+     store(ListNode.Cons(l0, store(ListNode.Cons(l1, store(ListNode.Cons(l2,
+     store(ListNode.Cons(l3, store(ListNode.Cons(l4, store(ListNode.Cons(l5,
+     store(ListNode.Cons(l6, store(ListNode.Nil))))))))))))))),
+     j6)
+  }
+
+
   -- ==========================================================================
   -- Blake3 MMCS hash primitives.
   --
@@ -677,7 +917,7 @@ def pcs := ⟦
       ListNode.Nil => (store(ListNode.Nil), input),
       ListNode.Cons(c, rest) =>
         let &ListNode.Cons(w, wrest) = witnesses;
-        let (i1, o1) = pcs_check_witness(snoc_cap(input, c), w, bits);
+        let (i1, o1) = pcs_check_witness(snoc_commitment(input, c), w, bits);
         let (b0, b1, i2, _o) = ch_sample_ext(i1, o1);
         let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
         (store(ListNode.Cons([@val_from_bytes(b0), @val_from_bytes(b1)], bs)), i3),
@@ -1003,12 +1243,17 @@ def pcs := ⟦
   -- ── top-level FRI verification ────────────────────────────────────────────
   -- All FRI parameters (`log_blowup`, `num_queries`, `commit_pow_bits`,
   -- `query_pow_bits`) come from the digest-bound verifying key.
-  fn pcs_fri_verify(post_zeta_input: ByteStream, stage1: OpenedRound, stage2: OpenedRound,
-      q_opened: OpenedRound, prep_opt: PreprocessedOpt, opening: FriProof,
-      s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap, prep_commit: MerkleCap,
+  -- Interface: verify the PCS opening proof — Rust `Pcs::verify` — over the
+  -- post-ζ transcript, the rounds (commitments + opened values per round),
+  -- and the PCS parameters from the vk.
+  fn pcs_verify(post_zeta_input: ByteStream, stage1: OpenedRound, stage2: OpenedRound,
+      q_opened: OpenedRound, prep_opt: PreprocessedOpt, opening: PcsProof,
+      s1c: Commitment, s2c: Commitment, qc: Commitment, prep_commit: Commitment,
       prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
-      zeta: Ext, num_circuits: G, log_blowup: G, num_queries: G, commit_pow_bits: G,
-      query_pow_bits: G) -> G {
+      zeta: Ext, num_circuits: G, params: PcsParams) -> G {
+    let PcsParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
+                     _max_log_arity, num_queries, commit_pow_bits,
+                     query_pow_bits) = params;
     let FriProof.Mk(commit_phase_commits, pw, query_proofs, final_poly, qpw) = opening;
     let num_rounds = list_length(commit_phase_commits);
     -- FRI shape: one PoW witness per round, num_queries query proofs, and (since
@@ -1056,16 +1301,18 @@ def pcs := ⟦
   }
 
   -- A commitment (`MerkleCap` = `Vec<Digest>`): all digest bytes, onto `tail`.
-  fn cap_onto(cap: MerkleCap, tail: ByteStream) -> ByteStream {
+  -- Interface: a commitment's transcript bytes (all digest bytes), onto `tail`.
+  fn commitment_onto(cap: Commitment, tail: ByteStream) -> ByteStream {
     match load(cap) {
       ListNode.Nil => tail,
-      ListNode.Cons(d, rest) => @digest_onto(load(d), cap_onto(rest, tail)),
+      ListNode.Cons(d, rest) => @digest_onto(load(d), commitment_onto(rest, tail)),
     }
   }
 
   -- Append (observe) a commitment (`MerkleCap`) at the end of the buffer.
-  fn snoc_cap(input: ByteStream, cap: MerkleCap) -> ByteStream {
-    list_concat(input, cap_onto(cap, store(ListNode.Nil)))
+  -- Interface: append (observe) a commitment at the end of the buffer.
+  fn snoc_commitment(input: ByteStream, cap: Commitment) -> ByteStream {
+    list_concat(input, commitment_onto(cap, store(ListNode.Nil)))
   }
 ⟧
 
