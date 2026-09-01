@@ -443,6 +443,22 @@ impl AiurSystem {
   ) -> Result<(), VerificationError<PcsError>> {
     self.system.verify(claim, proof)
   }
+
+  /// Re-encode a verified proof into the per-query authentication-path
+  /// transport consumed by the in-circuit recursive verifier.
+  pub fn proof_to_advice_bytes(
+    &self,
+    claim: &[G],
+    proof: &AiurProof,
+  ) -> Result<Vec<u8>, multi_stark::advice::AdviceError> {
+    multi_stark::advice::proof_to_advice_bytes(
+      &self.system,
+      self.commitment_parameters,
+      self.fri_parameters,
+      &[claim],
+      proof,
+    )
+  }
 }
 
 #[cfg(test)]

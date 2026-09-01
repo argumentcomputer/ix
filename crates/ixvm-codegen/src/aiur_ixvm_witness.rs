@@ -75,7 +75,9 @@ fn addr_key(addr: &Address) -> Vec<G> {
 fn packed_digest_key(addr: &Address) -> Vec<G> {
   addr
     .as_bytes()
-    .chunks_exact(4)
+    .as_chunks::<4>()
+    .0
+    .iter()
     .map(|w| {
       G::from_u32(
         u32::from(w[0])

@@ -31,7 +31,7 @@
 
     # Blake3 Rust bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean/1b0fbd2bd78b2b873e14264037af8c8b1536b9e9";
+      url = "github:argumentcomputer/Blake3.lean/e6e908bfd3af607ab44fb462fa2276a2c81addba";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };
@@ -79,7 +79,7 @@
           # Pins the Rust toolchain
           rustToolchain = fenix.packages.${system}.fromToolchainFile {
             file = ./rust-toolchain.toml;
-            sha256 = "sha256-sqSWJDUxc+zaz1nBWMAJKTAGBuGWP25GCftIOlCEAtA=";
+            sha256 = "sha256-P30Tm3O7vQAE725YtDCDHGjNrSsfZO4us11UwJGZSJo=";
           };
 
           # Rust package
