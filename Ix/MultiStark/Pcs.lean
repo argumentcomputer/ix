@@ -582,16 +582,17 @@ def pcs := ⟦
   -- factor: `s = Σᵢ apᵢ·(p_zᵢ − p_xᵢ)`. The caller multiplies by
   -- `q = 1/(z − x)` once per matrix-point (it is constant across the
   -- point's columns), saving an ext mul per column. `p_x` is the RAW wire
-  -- lane list — `limb_to_field` reduces mod p as pure wiring, so no
-  -- intermediate `List‹Goldilocks›` is ever materialized (the former
-  -- `lanes_to_gl` pass and its per-lane stores/loads).
+  -- lane list — `gl_val` reduces each limb into the inner-field
+  -- representation as it is consumed, so no intermediate `List‹Goldilocks›`
+  -- is ever materialized (the former `lanes_to_gl` pass and its per-lane
+  -- stores/loads).
   fn ro_fold(p_x: List‹U64›, p_z: List‹Ext›, alpha: Ext, s: Ext, ap: Ext)
       -> (Ext, Ext) {
     match load(p_x) {
       ListNode.Nil => (s, ap),
       ListNode.Cons(lane, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = @eg_mul(ap, @eg_sub(pz, [@limb_to_field(lane), @g_zero()]));
+        let term = @eg_mul(ap, @eg_sub(pz, [@gl_val(lane), @g_zero()]));
         ro_fold(pxr, pzr, alpha, @eg_add(s, term), @eg_mul(ap, alpha)),
     }
   }
