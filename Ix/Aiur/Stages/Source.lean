@@ -380,9 +380,10 @@ namespace Source
 * `unconstrained` — a call whose callee is trusted (no lookup / circuit
   constraint); the old `unconstrained := true`.
 * `inlined` — the callee's body is spliced into the caller at compile
-  time (no separate circuit, no interface columns). Eliminated by
-  `Toplevel.inlineCalls` before typechecking; forbidden for callees that
-  are (transitively) inline-recursive. -/
+  time (no separate circuit, no interface columns). A `normal` call to a
+  function declared `inline` (`Function.inline`) is treated the same way.
+  Eliminated by `Toplevel.inlineCalls` before typechecking; forbidden for
+  callees that are (transitively) inline-recursive. -/
 inductive CallMode
   | normal
   | unconstrained
@@ -508,6 +509,12 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
+  /-- Definition-site inlining: every call to this function is spliced into
+  the caller (as if written `@f(..)`), so whether an interface operation is
+  inlined is the implementor's choice, not the caller's. Inline functions
+  may not be (transitively) inline-recursive, nor called `unconstrained`.
+  -/
+  inline : Bool := false
   /-- Polymorphic public entry points are forbidden by construction:
   either the function is monomorphic (`params = []`) or not public
   (`entry = false`). -/
@@ -528,22 +535,22 @@ instance : Inhabited Function where
 
 /-- Smart constructor for non-entry monomorphic functions. -/
 def Function.monoNonEntry (name : Global) (inputs : List (Local × Typ))
-    (output : Typ) (body : Term) : Function :=
-  { name, params := [], inputs, output, body, entry := false,
+    (output : Typ) (body : Term) (inline : Bool := false) : Function :=
+  { name, params := [], inputs, output, body, entry := false, inline,
     entryMonomorphic := Or.inl rfl, entryPointerFree := Or.inr rfl }
 
 /-- Smart constructor for public entry functions. Requires a proof that the
 signature contains no pointer types. -/
 def Function.monoEntry (name : Global) (inputs : List (Local × Typ))
     (output : Typ) (body : Term)
-    (h : sigPointerFree inputs output = true) : Function :=
-  { name, params := [], inputs, output, body, entry := true,
+    (h : sigPointerFree inputs output = true) (inline : Bool := false) : Function :=
+  { name, params := [], inputs, output, body, entry := true, inline,
     entryMonomorphic := Or.inl rfl, entryPointerFree := Or.inl h }
 
 /-- Smart constructor for polymorphic functions (`entry = false` forced). -/
 def Function.poly (name : Global) (params : List String) (inputs : List (Local × Typ))
-    (output : Typ) (body : Term) : Function :=
-  { name, params, inputs, output, body, entry := false,
+    (output : Typ) (body : Term) (inline : Bool := false) : Function :=
+  { name, params, inputs, output, body, entry := false, inline,
     entryMonomorphic := Or.inr rfl, entryPointerFree := Or.inr rfl }
 
 structure Toplevel where
@@ -727,37 +734,38 @@ def Term.wrapLets : List (Pattern × Term) → Term → Term
   | [], body => body
   | (p, v) :: fs, body => .let p v (Term.wrapLets fs body)
 
-/-- Every `.inlined` call site in `t`, as `(callee, argCount)` pairs. Drives
-both validation (callee exists, arity matches) and the inline-dependency
+/-- Every inline call site in `t` — an `.inlined` application, or any
+application of a function declared `inline` (`inl g`) — as
+`(callee, argCount, mode)` triples. Drives
+both validation (callee exists, arity matches, not `unconstrained`) and the inline-dependency
 graph the bottom-up expansion is ordered by. -/
-def Term.inlineCallSites : Term → List (Global × Nat)
-  | .app g args .inlined =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites) [(g, args.length)]
-  | .app _ args _ =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites) []
+def Term.inlineCallSites (inl : Global → Bool) : Term → List (Global × Nat × CallMode)
+  | .app g args mode =>
+    let here := if mode == .inlined || inl g then [(g, args.length, mode)] else []
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites inl) here
   | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => []
   | .tuple ts | .array ts =>
-    ts.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites) []
+    ts.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites inl) []
   | .match s arms =>
-    arms.attach.foldl (fun acc ⟨(_, a), _⟩ => acc ++ a.inlineCallSites) s.inlineCallSites
-  | .let _ v b => v.inlineCallSites ++ b.inlineCallSites
+    arms.attach.foldl (fun acc ⟨(_, a), _⟩ => acc ++ a.inlineCallSites inl) (s.inlineCallSites inl)
+  | .let _ v b => v.inlineCallSites inl ++ b.inlineCallSites inl
   | .add a b | .sub a b | .mul a b | .set a _ b
   | .u8Xor a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
   | .u8LessThan a b | .u32LessThan a b | .u8XorSplit7 a b | .u8XorSplit4 a b | .unconstrainedU32Add a b
   | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b | .ioGetInfo a b =>
-    a.inlineCallSites ++ b.inlineCallSites
-  | .assertEq a b _ c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
-  | .ioWrite a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
+    a.inlineCallSites inl ++ b.inlineCallSites inl
+  | .assertEq a b _ c => a.inlineCallSites inl ++ b.inlineCallSites inl ++ c.inlineCallSites inl
+  | .ioWrite a b c => a.inlineCallSites inl ++ b.inlineCallSites inl ++ c.inlineCallSites inl
   | .ioSetInfo c k i l rv =>
-    c.inlineCallSites ++ k.inlineCallSites ++ i.inlineCallSites ++ l.inlineCallSites ++ rv.inlineCallSites
-  | .ioRead a b _ => a.inlineCallSites ++ b.inlineCallSites
+    c.inlineCallSites inl ++ k.inlineCallSites inl ++ i.inlineCallSites inl ++ l.inlineCallSites inl ++ rv.inlineCallSites inl
+  | .ioRead a b _ => a.inlineCallSites inl ++ b.inlineCallSites inl
   | .ret a | .eqZero a | .proj a _ | .get a _ | .slice a _ _ | .store a | .load a
   | .ptrVal a | .ann _ a | .u8BitDecomposition a | .u8ShiftLeft a | .u8ShiftRight a
   | .toField a | .u8FromFieldUnsafe a
-  | .unconstrainedGToBytes a | .unconstrainedGInverse a => a.inlineCallSites
-  | .u32ToField a => a.inlineCallSites
-  | .unconstrainedU32Add3 a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
-  | .debug _ o a => (match o with | none => [] | some x => x.inlineCallSites) ++ a.inlineCallSites
+  | .unconstrainedGToBytes a | .unconstrainedGInverse a => a.inlineCallSites inl
+  | .u32ToField a => a.inlineCallSites inl
+  | .unconstrainedU32Add3 a b c => a.inlineCallSites inl ++ b.inlineCallSites inl ++ c.inlineCallSites inl
+  | .debug _ o a => (match o with | none => [] | some x => x.inlineCallSites inl) ++ a.inlineCallSites inl
 termination_by t => sizeOf t
 decreasing_by
   all_goals first
@@ -779,109 +787,109 @@ already inline-free, so the spliced body is NOT re-traversed — the recursion
 is purely structural on `t` and needs no fuel. `cnt` threads the fresh-name
 counter. If `done` lacks `g` the site is left untouched; the ordering makes
 that unreachable. -/
-def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat) :
+def Term.expandOnce (inl : Global → Bool) (done : Std.HashMap Global (List Local × Term)) (cnt : Nat) :
     Term → Nat × Term := fun t => match t with
-  | .app g args .inlined =>
-    let (cnt, args') := args.attach.foldl (init := (cnt, ([] : List Term)))
-      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc ++ [a'])
-    match done[g]? with
-    | none => (cnt, .app g args' .inlined)
-    | some (ins, body) =>
-      let (cnt, subst, freshInputs) := ins.foldl
-        (init := (cnt, (∅ : Std.HashMap Local Local), ([] : List Local)))
-        fun (cnt, subst, acc) inp =>
-          let inp' : Local := .str s!"inl#{cnt}"
-          (cnt + 1, subst.insert inp inp', acc ++ [inp'])
-      let (cnt, freshBody) := Term.freshen cnt subst body
-      -- A branching callee ends in a `match`. In a strict argument position
-      -- the splice's leading lets hoist out (`Term.hoistLets`) but the match
-      -- core would stay put, which lowering rejects as a non-tail match in
-      -- arbitrary position. Bind the match to a fresh local so hoisting
-      -- leaves only a variable behind; in let-RHS/tail positions the extra
-      -- binding is harmless.
-      let (cnt, freshBody) :=
-        match Term.peelLets freshBody with
-        | (fs, core@(.match ..)) =>
-          let out : Local := .str s!"inl#{cnt}"
-          (cnt + 1, Term.wrapLets fs (.let (.var out) core (.var out)))
-        | _ => (cnt, freshBody)
-      (cnt, (freshInputs.zip args').foldr
-        (fun (input, arg) acc => Term.let (.var input) arg acc) freshBody)
   | .app g args mode =>
     let (cnt, args') := args.attach.foldl (init := (cnt, ([] : List Term)))
-      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc ++ [a'])
-    (cnt, .app g args' mode)
+      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, acc ++ [a'])
+    -- `@`-calls and plain calls to `inline` functions splice; other
+    -- applications only expand their arguments.
+    if mode == .inlined || (mode == .normal && inl g) then
+      match done[g]? with
+      | none => (cnt, .app g args' .inlined)
+      | some (ins, body) =>
+        let (cnt, subst, freshInputs) := ins.foldl
+          (init := (cnt, (∅ : Std.HashMap Local Local), ([] : List Local)))
+          fun (cnt, subst, acc) inp =>
+            let inp' : Local := .str s!"inl#{cnt}"
+            (cnt + 1, subst.insert inp inp', acc ++ [inp'])
+        let (cnt, freshBody) := Term.freshen cnt subst body
+        -- A branching callee ends in a `match`. In a strict argument position
+        -- the splice's leading lets hoist out (`Term.hoistLets`) but the match
+        -- core would stay put, which lowering rejects as a non-tail match in
+        -- arbitrary position. Bind the match to a fresh local so hoisting
+        -- leaves only a variable behind; in let-RHS/tail positions the extra
+        -- binding is harmless.
+        let (cnt, freshBody) :=
+          match Term.peelLets freshBody with
+          | (fs, core@(.match ..)) =>
+            let out : Local := .str s!"inl#{cnt}"
+            (cnt + 1, Term.wrapLets fs (.let (.var out) core (.var out)))
+          | _ => (cnt, freshBody)
+        (cnt, (freshInputs.zip args').foldr
+          (fun (input, arg) acc => Term.let (.var input) arg acc) freshBody)
+    else (cnt, .app g args' mode)
   | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => (cnt, t)
   | .tuple ts =>
     let (cnt, ts') := ts.attach.foldl (init := (cnt, #[]))
-      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc.push a')
+      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, acc.push a')
     (cnt, .tuple ts')
   | .array ts =>
     let (cnt, ts') := ts.attach.foldl (init := (cnt, #[]))
-      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc.push a')
+      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, acc.push a')
     (cnt, .array ts')
   | .match s arms =>
-    let (cnt, s') := Term.expandOnce done cnt s
+    let (cnt, s') := Term.expandOnce inl done cnt s
     let (cnt, arms') := arms.attach.foldl (init := (cnt, ([] : List (Pattern × Term))))
-      fun (cnt, acc) ⟨(p, a), _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc ++ [(p, a')])
+      fun (cnt, acc) ⟨(p, a), _⟩ => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, acc ++ [(p, a')])
     (cnt, .match s' arms')
   | .let p v b =>
-    let (cnt, v') := Term.expandOnce done cnt v
-    let (cnt, b') := Term.expandOnce done cnt b
+    let (cnt, v') := Term.expandOnce inl done cnt v
+    let (cnt, b') := Term.expandOnce inl done cnt b
     (cnt, .let p v' b')
-  | .ret a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ret a')
-  | .add a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .add a' b')
-  | .sub a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .sub a' b')
-  | .mul a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .mul a' b')
-  | .eqZero a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .eqZero a')
-  | .proj a n => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .proj a' n)
-  | .get a n => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .get a' n)
-  | .slice a i j => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .slice a' i j)
-  | .set a n v => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, v') := Term.expandOnce done cnt v; (cnt, .set a' n v')
-  | .store a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .store a')
-  | .load a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .load a')
-  | .ptrVal a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ptrVal a')
-  | .ann τ a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ann τ a')
+  | .ret a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .ret a')
+  | .add a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .add a' b')
+  | .sub a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .sub a' b')
+  | .mul a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .mul a' b')
+  | .eqZero a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .eqZero a')
+  | .proj a n => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .proj a' n)
+  | .get a n => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .get a' n)
+  | .slice a i j => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .slice a' i j)
+  | .set a n v => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, v') := Term.expandOnce inl done cnt v; (cnt, .set a' n v')
+  | .store a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .store a')
+  | .load a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .load a')
+  | .ptrVal a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .ptrVal a')
+  | .ann τ a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .ann τ a')
   | .assertEq a b msg c =>
-    let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b
-    let (cnt, c') := Term.expandOnce done cnt c; (cnt, .assertEq a' b' msg c')
-  | .ioGetInfo c k => let (cnt, c') := Term.expandOnce done cnt c; let (cnt, k') := Term.expandOnce done cnt k; (cnt, .ioGetInfo c' k')
+    let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b
+    let (cnt, c') := Term.expandOnce inl done cnt c; (cnt, .assertEq a' b' msg c')
+  | .ioGetInfo c k => let (cnt, c') := Term.expandOnce inl done cnt c; let (cnt, k') := Term.expandOnce inl done cnt k; (cnt, .ioGetInfo c' k')
   | .ioSetInfo c k i l rv =>
-    let (cnt, c') := Term.expandOnce done cnt c; let (cnt, k') := Term.expandOnce done cnt k
-    let (cnt, i') := Term.expandOnce done cnt i; let (cnt, l') := Term.expandOnce done cnt l
-    let (cnt, rv') := Term.expandOnce done cnt rv; (cnt, .ioSetInfo c' k' i' l' rv')
-  | .ioRead c i n => let (cnt, c') := Term.expandOnce done cnt c; let (cnt, i') := Term.expandOnce done cnt i; (cnt, .ioRead c' i' n)
+    let (cnt, c') := Term.expandOnce inl done cnt c; let (cnt, k') := Term.expandOnce inl done cnt k
+    let (cnt, i') := Term.expandOnce inl done cnt i; let (cnt, l') := Term.expandOnce inl done cnt l
+    let (cnt, rv') := Term.expandOnce inl done cnt rv; (cnt, .ioSetInfo c' k' i' l' rv')
+  | .ioRead c i n => let (cnt, c') := Term.expandOnce inl done cnt c; let (cnt, i') := Term.expandOnce inl done cnt i; (cnt, .ioRead c' i' n)
   | .ioWrite c d rv =>
-    let (cnt, c') := Term.expandOnce done cnt c; let (cnt, d') := Term.expandOnce done cnt d
-    let (cnt, rv') := Term.expandOnce done cnt rv; (cnt, .ioWrite c' d' rv')
-  | .u8BitDecomposition a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8BitDecomposition a')
-  | .u8ShiftLeft a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8ShiftLeft a')
-  | .u8ShiftRight a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8ShiftRight a')
-  | .u8Xor a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Xor a' b')
-  | .u8Add a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Add a' b')
-  | .u8Mul a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Mul a' b')
-  | .u8Sub a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Sub a' b')
-  | .u8And a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8And a' b')
-  | .u8Or a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Or a' b')
-  | .u8LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8LessThan a' b')
-  | .u32LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u32LessThan a' b')
-  | .u8XorSplit7 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8XorSplit7 a' b')
-  | .u8XorSplit4 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8XorSplit4 a' b')
-  | .unconstrainedU32Add a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .unconstrainedU32Add a' b')
-  | .unconstrainedU32Add3 a b c => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; let (cnt, c') := Term.expandOnce done cnt c; (cnt, .unconstrainedU32Add3 a' b' c')
-  | .u32ToField a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u32ToField a')
+    let (cnt, c') := Term.expandOnce inl done cnt c; let (cnt, d') := Term.expandOnce inl done cnt d
+    let (cnt, rv') := Term.expandOnce inl done cnt rv; (cnt, .ioWrite c' d' rv')
+  | .u8BitDecomposition a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .u8BitDecomposition a')
+  | .u8ShiftLeft a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .u8ShiftLeft a')
+  | .u8ShiftRight a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .u8ShiftRight a')
+  | .u8Xor a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8Xor a' b')
+  | .u8Add a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8Add a' b')
+  | .u8Mul a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8Mul a' b')
+  | .u8Sub a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8Sub a' b')
+  | .u8And a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8And a' b')
+  | .u8Or a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8Or a' b')
+  | .u8LessThan a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8LessThan a' b')
+  | .u32LessThan a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u32LessThan a' b')
+  | .u8XorSplit7 a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8XorSplit7 a' b')
+  | .u8XorSplit4 a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8XorSplit4 a' b')
+  | .unconstrainedU32Add a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .unconstrainedU32Add a' b')
+  | .unconstrainedU32Add3 a b c => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; let (cnt, c') := Term.expandOnce inl done cnt c; (cnt, .unconstrainedU32Add3 a' b' c')
+  | .u32ToField a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .u32ToField a')
   | .unconstrainedBigUintDivMod a b =>
-    let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .unconstrainedBigUintDivMod a' b')
-  | .u8RangeCheck a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8RangeCheck a' b')
-  | .toField a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .toField a')
-  | .u8FromFieldUnsafe a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8FromFieldUnsafe a')
-  | .unconstrainedGToBytes a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGToBytes a')
-  | .unconstrainedGInverse a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGInverse a')
+    let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .unconstrainedBigUintDivMod a' b')
+  | .u8RangeCheck a b => let (cnt, a') := Term.expandOnce inl done cnt a; let (cnt, b') := Term.expandOnce inl done cnt b; (cnt, .u8RangeCheck a' b')
+  | .toField a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .toField a')
+  | .u8FromFieldUnsafe a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .u8FromFieldUnsafe a')
+  | .unconstrainedGToBytes a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .unconstrainedGToBytes a')
+  | .unconstrainedGInverse a => let (cnt, a') := Term.expandOnce inl done cnt a; (cnt, .unconstrainedGInverse a')
   | .debug s o a =>
     let (cnt, o') := match o with
       | none => (cnt, none)
-      | some x => let (cnt, x') := Term.expandOnce done cnt x; (cnt, some x')
-    let (cnt, a') := Term.expandOnce done cnt a
+      | some x => let (cnt, x') := Term.expandOnce inl done cnt x; (cnt, some x')
+    let (cnt, a') := Term.expandOnce inl done cnt a
     (cnt, .debug s o' a')
 termination_by t => sizeOf t
 decreasing_by
@@ -1055,7 +1063,8 @@ partial def Term.restoreTailMatches : Term → Term
   | t => t
 
 /-- Inline-expand every function body in the toplevel, eliminating all
-`.inlined` applications. Run before typechecking.
+`.inlined` applications and all applications of `inline` functions. Run
+before typechecking.
 
 Bottom-up and fuel-free: `.inlined` calls form a DAG (cycles are rejected as
 inline recursion), so functions are expanded in topological order — every
@@ -1066,13 +1075,18 @@ and its already-inline-free result is memoized in `done` and spliced (with
 def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
   let funcs : Std.HashMap Global Function :=
     t.functions.foldl (fun m f => m.insert f.name f) ∅
-  -- Inline dependencies per function, validating callee existence and arity.
+  -- Functions declared `inline`: every plain call to them is a splice site.
+  let inl : Global → Bool := fun g => (funcs[g]?.map (·.inline)).getD false
+  -- Inline dependencies per function, validating callee existence, arity,
+  -- and that `inline` functions are never called `unconstrained`.
   let deps : Std.HashMap Global (List Global) ← t.functions.foldlM (init := ∅)
     fun deps f => do
-      let gs ← f.body.inlineCallSites.foldlM (init := ([] : List Global))
-        fun acc (g, n) => do
+      let gs ← (f.body.inlineCallSites inl).foldlM (init := ([] : List Global))
+        fun acc (g, n, mode) => do
           let some callee := funcs[g]?
             | throw s!"inline call to unknown function `{g.toName}`"
+          if mode == .unconstrained then
+            throw s!"`{g.toName}` is declared inline: it cannot be called unconstrained"
           if n != callee.inputs.length then
             throw s!"inline `{g.toName}`: got {n} args, expects {callee.inputs.length}"
           pure (acc ++ [g])
@@ -1085,7 +1099,7 @@ def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
     fun done g =>
       match funcs[g]? with
       | none => done
-      | some f => done.insert g (f.inputs.map Prod.fst, (f.body.expandOnce done 0).2)
+      | some f => done.insert g (f.inputs.map Prod.fst, (f.body.expandOnce inl done 0).2)
   -- Rebuild each function with its expanded body, then hoist argument-position
   -- lets that splicing may have introduced.
   let functions := t.functions.map fun f =>
