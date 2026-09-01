@@ -112,8 +112,8 @@ status ledger here:
   equation. Differential Nat/constructor runs plus axiom-fenced scalar/vector
   operand resolution, environment extension, exact baseline-store
   correspondence, and the `pure`/`move`, ordinary-allocation, and scalar/shared
-  retain, scalar-release, scalar-leaf-free, and checked-fetch cases establish
-  the active simulation seam.
+  retain, scalar/nonunit shared-release, scalar unique-drop, scalar-leaf-free,
+  and checked-fetch cases establish the active simulation seam.
 - Deterministic mode/counter fixtures, a generated well-moded corpus, and a
   bounded production-Std contact.
   See [counter evidence](thesis-counter-evidence.md),
@@ -245,7 +245,7 @@ validation obligations, and simulation interface are frozen in the
 | --- | --- | --- |
 | IxIR₂ syntax and validation | delivered | The frozen v0 in-memory syntax, world-keyed schemas, bounded ownership/borrow/credit validator, stable rejection classes, proof-facing acceptance predicate, and positive/negative executable fixtures land together. |
 | IxIR₂ logical/physical semantics | delivered | Executable semantics separate control from heap-traversal budgets, model logical frees versus physical reservations/reuse, cover calls/PAPs and CFG transfer, expose a credit-local heap relation, prove the local counter algebra, and validate intermediate and terminal equations on non-degenerate credit paths. Whole-machine refinement composes in the lowering tranche. |
-| IxIR₂ CFG and join points | active | The validator-gated executable lowerer, generated trace, explicit parameters, constructor/Nat dispatch, tail calls, differential witnesses, theorem interface, operand-vector/environment lemmas, and pure/allocation/retain/scalar-release/scalar-leaf-free/fetch instruction cases are delivered. Complete the remaining instruction/block induction and attach its sidecars to the validated pipeline artifact. |
+| IxIR₂ CFG and join points | active | The validator-gated executable lowerer, generated trace, explicit parameters, constructor/Nat dispatch, tail calls, differential witnesses, theorem interface, operand-vector/environment lemmas, and pure/allocation/retain/scalar-or-nonunit-release/scalar-unique-drop/scalar-leaf-free/fetch instruction cases are delivered. Complete the remaining instruction/block induction and attach its sidecars to the validated pipeline artifact. |
 | Direct-recursion recovery | next | Recognized recursor images validate to direct loops; unrecognized terms retain the literal correct fallback. |
 | Static unique reuse | next | Fuel-neutral consuming unique destructure specializes recursive known shapes, produces affine reuse credits, and compiler-emitted list reversal reaches the FIP counter target. |
 | Dynamic shared reset/reuse | next | A checked RC-zero branch specializes known shared shapes; ordinary all-shared code reuses RC=1 nodes on the hot path and allocates correctly on the cold path. |

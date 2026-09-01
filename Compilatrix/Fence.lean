@@ -1629,3 +1629,15 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_free_freeUnique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_free_freeUnique
+
+/-- info: 'Compilatrix.IxIR2.Eval.Step.dropUnique' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Step.dropUnique
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.dropUnique_of_scalar' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.dropUnique_of_scalar
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_scalar' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_scalar
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_shared_nonunit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_shared_nonunit

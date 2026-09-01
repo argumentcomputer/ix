@@ -932,6 +932,32 @@ theorem Step.releaseShared {context : Context}
   simp only
   rw [released]
 
+/-- Reduction rule for a successful deep unique drop. -/
+theorem Step.dropUnique {context : Context}
+    {interpretation : Interpretation} {machine : Machine}
+    {frame : Frame} {stack : List Continuation} {block : Block}
+    {atom : Atom} {value : RVal} {store : Store} {heapFuel : Nat}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .dropUnique atom)
+    (resolved : resolveAtom frame.values atom = .ok value)
+    (dropped : dropUnique machine.heapFuel machine.store value =
+      .ok (store, heapFuel)) :
+    Step context interpretation machine
+      { store, heapFuel,
+        control := .running { frame with pc := frame.pc + 1 } stack } := by
+  unfold Step step currentBlock runInstruction Frame.advance
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp only
+  rw [resolved]
+  simp only
+  rw [dropped]
+
 /-- Reduction rule for a checked all-scalar unique constructor free. -/
 theorem Step.freeUnique {context : Context}
     {interpretation : Interpretation} {machine : Machine}

@@ -9,9 +9,9 @@ This file fixes the theorem shape before the proof is scaled over every
 instruction. Its foundation discharges scalar and vector operand resolution,
 extends related environments across value and erased bindings, and closes the
 public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
-constructor allocation, scalar and heap-bearing shared-retain paths, and
-scalar shared release, checked scalar-leaf unique free, and checked
-non-consuming projection.
+constructor allocation, scalar and heap-bearing shared-retain paths, scalar
+and nonunit shared-release paths, scalar unique drop, checked scalar-leaf
+unique free, and checked non-consuming projection.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -279,6 +279,15 @@ theorem releaseShared_of_scalar {store : Eval.Store} {value : RVal}
     simp [Eval.RVal.isScalar, Eval.releaseShared,
       Eval.releaseSharedWork] at scalar ⊢
 
+/-- Dropping a unique scalar has the same one-item heap-budget behavior as a
+shared scalar release. -/
+theorem dropUnique_of_scalar {store : Eval.Store} {value : RVal}
+    (heapFuel : Nat) (scalar : Eval.RVal.isScalar value = true) :
+    Eval.dropUnique (heapFuel + 1) store value = .ok (store, heapFuel) := by
+  cases value <;>
+    simp [Eval.RVal.isScalar, Eval.dropUnique,
+      Eval.dropUniqueWork] at scalar ⊢
+
 /-- The scalar branch of IxIR₁ `dup` and IxIR₂ `retainShared` is an
 identical store-preserving step. -/
 theorem simulate_dup_retain_scalar {sourceContext : IxIR1.Ctx}
@@ -448,6 +457,125 @@ theorem simulate_drop_release_scalar {sourceContext : IxIR1.Ctx}
   | loc location => simp [Eval.RVal.isScalar] at scalar
   | lit literal => rfl
   | erased => rfl
+
+/-- A scalar IxIR₁ unique drop and its effect-only IxIR₂ counterpart preserve
+the exact store while spending one target heap-traversal unit. -/
+theorem simulate_dropU_dropUnique_scalar {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef} {sourceFuel targetHeapFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom} {value : RVal}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved : IxIR1.resolveAtom source sourceAtom = .ok value)
+    (scalar : Eval.RVal.isScalar value = true)
+    (heapFuel : machine.heapFuel = targetHeapFuel + 1)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .dropUnique targetAtom) :
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.dropU sourceAtom) = .ok (sourceStore, .erased) ∧
+      Eval.Step context interpretation machine
+        { store := machine.store
+          heapFuel := targetHeapFuel
+          control := .running { frame with pc := frame.pc + 1 } stack } ∧
+      StoreRel sourceStore machine.store ∧
+      EnvRel (.erased :: source) frame.values
+        (#[.erased] ++ mapping) := by
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok value :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  have dropped :
+      Eval.dropUnique machine.heapFuel machine.store value =
+        .ok (machine.store, targetHeapFuel) := by
+    rw [heapFuel]
+    exact dropUnique_of_scalar targetHeapFuel scalar
+  have targetStep := Eval.Step.dropUnique (context := context)
+    (interpretation := interpretation) control blockAt pc instruction
+    targetResolved dropped
+  refine ⟨?_, targetStep, stores, environments.bindErased⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  cases value with
+  | loc location => simp [Eval.RVal.isScalar] at scalar
+  | lit literal => rfl
+  | erased => rfl
+
+/-- Releasing a shared node with more than one owner decrements the same
+refcount and charges the same RC operation in both exact stores.  This is the
+non-recursive heap-bearing branch of deep shared release. -/
+theorem simulate_drop_release_shared_nonunit {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef}
+    {sourceDropFuel targetHeapFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom}
+    {location : Nat} {box : IxIR1.NodeBox}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved :
+      IxIR1.resolveAtom source sourceAtom = .ok (.loc location))
+    (sourceGet : sourceStore.get? location = some box)
+    (shared : box.world = .shared)
+    (nonzero : box.rc ≠ 0)
+    (nonunit : box.rc ≠ 1)
+    (heapFuel : machine.heapFuel = targetHeapFuel + 1)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .releaseShared targetAtom) :
+    let nextBox := { box with rc := box.rc - 1 }
+    let sourceStore' := sourceStore.rcTick.setBox location nextBox
+    let targetStore' := machine.store.rcTick.setBox location nextBox
+    IxIR1.runOp sourceContext ((sourceDropFuel + 1) + 1) sourceCurrent
+          sourceStore source (.drop sourceAtom) =
+        .ok (sourceStore', .erased) ∧
+      Eval.Step context interpretation machine
+        { store := targetStore'
+          heapFuel := targetHeapFuel
+          control := .running { frame with pc := frame.pc + 1 } stack } ∧
+      StoreRel sourceStore' targetStore' ∧
+      EnvRel (.erased :: source) frame.values
+        (#[.erased] ++ mapping) := by
+  dsimp only
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok (.loc location) :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  have targetGet : machine.store.get? location = some box := by
+    unfold Eval.Store.get?
+    rw [stores.heap]
+    exact sourceGet
+  have released :
+      Eval.releaseShared machine.heapFuel machine.store (.loc location) =
+        .ok (machine.store.rcTick.setBox location
+          { box with rc := box.rc - 1 }, targetHeapFuel) := by
+    rw [heapFuel]
+    simp [Eval.releaseShared, Eval.releaseSharedWork, targetGet, shared,
+      nonzero, nonunit]
+  have targetStep := Eval.Step.releaseShared (context := context)
+    (interpretation := interpretation) control blockAt pc instruction
+    targetResolved released
+  refine ⟨?_, targetStep, (stores.rcTick).setBox location
+    { box with rc := box.rc - 1 }, environments.bindErased⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  simp only [bind, Except.bind]
+  rw [IxIR1.dropVal.eq_def]
+  simp only
+  rw [sourceGet]
+  simp [shared, nonunit]
 
 /-- A checked scalar-leaf IxIR₁ free and IxIR₂ `freeUnique` kill the same
 unique constructor location and bind the source's erased effect result. -/
