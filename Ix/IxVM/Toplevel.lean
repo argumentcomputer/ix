@@ -4,6 +4,8 @@ public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.U64.Goldilocks
 public import Ix.IxVM.Width.Goldilocks
+public import Ix.IxVM.U64.Small
+public import Ix.IxVM.Width.KoalaBear
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.RBTreeMap
 public import Ix.IxVM.Ixon
@@ -189,6 +191,12 @@ open IxVM (core byteStream blake3 rbTreeMap ixon ixonSerialize ixonDeserialize)
 def goldilocksProfile : Except Aiur.Global Aiur.Source.Toplevel := do
   let p ← u64Goldilocks.merge widthGoldilocks
   p.merge kernelWidthGoldilocks
+
+/-- The KoalaBear field profile: the narrow U64 boundary (3-byte checked
+    packing) plus the narrow width implementations. -/
+def koalaBearProfile : Except Aiur.Global Aiur.Source.Toplevel := do
+  let p ← u64Small.merge widthKoalaBear
+  p.merge kernelWidthKoalaBear
 
 /-- The full IxVM kernel toplevel over a field profile (see
     `goldilocksProfile`): shared modules (core, ixon, blake3, …) merged

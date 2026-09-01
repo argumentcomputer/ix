@@ -45,6 +45,12 @@ def widthGoldilocks := ⟦
       + 16777216 * to_field(w[3])
   }
 
+  inline fn b3_pack(h: [[U8; 4]; 8]) -> PackedDigest {
+    let [w0, w1, w2, w3, w4, w5, w6, w7] = h;
+    [b3_pack_w(w0), b3_pack_w(w1), b3_pack_w(w2), b3_pack_w(w3),
+     b3_pack_w(w4), b3_pack_w(w5), b3_pack_w(w6), b3_pack_w(w7)]
+  }
+
   -- u32 less-than on field-held values `< 2^32` (indices, lengths, counts;
   -- the op's carry-chain identity needs `p > 2^33`).
   inline fn u32_lt(a: G, b: G) -> G {
