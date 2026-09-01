@@ -16,20 +16,22 @@ use rustc_hash::FxBuildHasher;
 pub type G = multi_stark::p3_goldilocks::Goldilocks;
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
-/// The field surface Aiur needs beyond multi-stark's crate traits:
-/// canonical integer extraction. The executor and witness builders only
-/// ever call it on values that are small by construction (bytes,
+/// The field surface Aiur needs: the p3 field traits plus canonical
+/// integer extraction. The executor and witness builders only ever call
+/// `as_canonical_u64` on values that are small by construction (bytes,
 /// pointers, counters, u32 words) or on the deliberate 8-byte hint
-/// decomposition (`UnconstrainedGToBytes`), so implementations for
-/// fields larger than 64 bits may take the canonical value's low 64
-/// bits — with the caveat that such a field's toplevels must not use
-/// the 8-byte hint (the foreign Goldilocks interface doesn't).
+/// decomposition (`UnconstrainedGToBytes`). Every 64-bit-or-smaller prime
+/// field qualifies, so Aiur circuits synthesize and execute over
+/// Goldilocks (the default, `G`) or e.g. KoalaBear alike.
 pub trait AiurField: Field + TwoAdicField + Ord + std::fmt::Display {
-  /// The canonical value as a `u64`; exact for values < 2^64.
+  /// The canonical value as a `u64`.
   fn as_canonical_u64(&self) -> u64;
 }
 
-impl AiurField for G {
+impl<F> AiurField for F
+where
+  F: Field + TwoAdicField + Ord + std::fmt::Display + PrimeField64,
+{
   #[inline]
   fn as_canonical_u64(&self) -> u64 {
     <Self as PrimeField64>::as_canonical_u64(self)
@@ -109,4 +111,13 @@ pub fn u8_xor_split7_channel<F: AiurField>() -> F {
 #[inline]
 pub fn u8_xor_split4_channel<F: AiurField>() -> F {
   F::from_u8(14)
+}
+
+/// Channel of the memory allocation counter: backends without row
+/// transitions (Hypercube) thread the pointers of each memory table through
+/// a lookup chain on this channel instead of a `ptr + 1 = ptr_next`
+/// constraint.
+#[inline]
+pub fn memory_counter_channel<F: AiurField>() -> F {
+  F::from_u8(15)
 }
