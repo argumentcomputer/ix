@@ -197,10 +197,16 @@ def endToEndSuite : IO UInt32 := do
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
 
   -- ── negative-test inputs ────────────────────────────────────────────────────
-  -- Tampered proof advice: flip byte 0 (the first stage_1-commitment limb) so the
-  -- replayed Fiat-Shamir transcript diverges from the one the proof was made under.
+  -- Tampered proof advice: locate the first stage-1 commitment byte after the
+  -- native proof's `Vec<bool>` activation bitmap and cap-length prefix. This
+  -- keeps the proof structurally parseable while forcing Fiat-Shamir and the
+  -- Merkle checks away from the proof that was actually produced.
+  let activeLen := (List.range 8).foldl (fun n i =>
+    n ||| (proofBytes.data[i]!.toUInt64 <<< (i * 8).toUInt64)) 0
+  let firstCommitByte := 8 + activeLen.toNat + 8
   let badProofBytes :=
-    proofBytes.set! 0 (UInt8.ofNat ((proofBytes.data[0]!.toNat + 1) % 256))
+    proofBytes.set! firstCommitByte
+      (UInt8.ofNat ((proofBytes.data[firstCommitByte]!.toNat + 1) % 256))
   -- Tampered claim (with a matching keccak digest): 120 → 121. Feeds a different
   -- value into Fiat-Shamir (→ different ζ) and the lookup accumulator, so the
   -- composition/quotient identity no longer holds even though the binding passes.

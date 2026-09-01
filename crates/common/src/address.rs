@@ -46,7 +46,7 @@ impl Address {
   }
 
   /// Iterate addresses out of a flat `[u8; 32 * N]` byte blob. Trailing
-  /// bytes shorter than 32 are silently dropped (via `chunks_exact`).
+  /// bytes shorter than 32 are silently dropped.
   pub fn unpack(bytes: &[u8]) -> impl Iterator<Item = Address> + '_ {
     bytes
       .as_chunks::<32>()

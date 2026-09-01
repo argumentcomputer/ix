@@ -448,22 +448,17 @@ impl AiurSystem {
     self.system.verify(claim, proof)
   }
 
-  /// Re-encodes a verified proof into the per-query advice transport the
-  /// in-circuit verifier consumes (see `multi_stark::advice`): the pruned
-  /// FRI Merkle multiproofs expanded into one authentication path per
-  /// query. Fails if the proof does not verify natively.
+  /// Verify and serialize the native Plonky3 multiproof for the in-circuit
+  /// recursive verifier.
   pub fn proof_to_advice_bytes(
     &self,
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<Vec<u8>, multi_stark::advice::AdviceError> {
-    multi_stark::advice::proof_to_advice_bytes(
-      &self.system,
-      self.commitment_parameters,
-      self.fri_parameters,
-      &[claim],
-      proof,
-    )
+    self.verify(claim, proof).map_err(|e| {
+      multi_stark::advice::AdviceError::Verification(format!("{e:?}"))
+    })?;
+    proof.to_bytes().map_err(multi_stark::advice::AdviceError::Encode)
   }
 }
 

@@ -90,14 +90,6 @@ def subst := ⟦
     }
   }
 
-  -- Memoized structural comparison used by substitution fast paths. Keeping
-  -- the u32 decomposition in this helper avoids charging its wide intrinsic
-  -- layout on every row of a hot substitution circuit; repeated `(depth,lbr)`
-  -- pairs share one constrained helper row.
-  fn memo_u32_less_than(a: G, b: G) -> G {
-    u32_less_than(a, b)
-  }
-
   -- ============================================================================
   -- has_bvar_in_range
   --

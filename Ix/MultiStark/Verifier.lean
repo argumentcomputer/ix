@@ -874,9 +874,17 @@ def verifier := ⟦
     -- `query_pow_bits`) all come from the verifying key, which the public
     -- statement binds through `system_digest` — no separate public inputs.
     let Sys.Mk(params, tlimbs, circuits, commit, prep_indices) = sys;
-    let SysParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
-                     _max_log_arity, num_queries, commit_pow_bits,
+    let SysParams.Mk(log_blowup, cap_height, log_final_poly_len,
+                     max_log_arity, num_queries, commit_pow_bits,
                      query_pow_bits) = params;
+    -- This recursive verifier is deliberately specialized to root caps,
+    -- binary FRI folds, and a constant final polynomial. These parameters are
+    -- digest-bound but still prover-visible inputs to this circuit, so reject
+    -- unsupported systems explicitly instead of silently applying the wrong
+    -- Merkle geometry or folding semantics.
+    assert_eq!(cap_height, 0);
+    assert_eq!(log_final_poly_len, 0);
+    assert_eq!(max_log_arity, 1);
     let Proof.Mk(active, commitments, accs, log_degrees, opening,
                  q_opened, prep_opt, stage1, stage2) = proof;
     -- Sparse activation: the bitmap covers the canonical circuit set;
