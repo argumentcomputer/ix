@@ -5,7 +5,7 @@ public import Ix.Aiur.Protocol
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
-public import Ix.MultiStark.Goldilocks
+public import Ix.MultiStark.GoldilocksNative
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
@@ -93,7 +93,7 @@ from the shared modules (`blake3_test`/`blake3_bench`). Only `multiStarkTests`
 builds on this; production uses `multiStark` (pruned). -/
 def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
-  let t ← t.merge MultiStark.goldilocks
+  let t ← t.merge MultiStark.goldilocksNative
   let t ← t.merge deserialize
   let t ← t.merge IxVM.blake3
   let t ← t.merge systemDeserialize
