@@ -450,11 +450,9 @@ impl AiurSystem {
     &self,
     claim: &[G],
     proof: &AiurProof,
-  ) -> Result<Vec<u8>, multi_stark::advice::AdviceError> {
-    self.verify(claim, proof).map_err(|e| {
-      multi_stark::advice::AdviceError::Verification(format!("{e:?}"))
-    })?;
-    proof.to_bytes().map_err(multi_stark::advice::AdviceError::Encode)
+  ) -> Result<Vec<u8>, String> {
+    self.verify(claim, proof).map_err(|e| format!("{e:?}"))?;
+    proof.to_bytes().map_err(|e| format!("{e:?}"))
   }
 }
 
