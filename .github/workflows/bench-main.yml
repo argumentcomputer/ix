@@ -166,7 +166,7 @@ jobs:
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
-      - run: lake build Compile${{ matrix.env }}
+      - run: lake build --wfail Compile${{ matrix.env }}
         working-directory: ${{ env.COMPILE_DIR }}
       # The measured compile: serializes the env to `<env>.ixe` at the
       # workspace root and writes one results row keyed by the env name.
