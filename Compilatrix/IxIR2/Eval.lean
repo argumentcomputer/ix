@@ -105,6 +105,10 @@ def Store.setBox (store : Store) (location : Nat) (box : NodeBox) : Store :=
 def Store.kill (store : Store) (location : Nat) : Store :=
   { store with heap := store.heap.kill location }
 
+@[simp] theorem Store.kill_heap (store : Store) (location : Nat) :
+    (store.kill location).heap = store.heap.kill location := by
+  rfl
+
 def Store.rcTick (store : Store) : Store :=
   { store with heap := store.heap.rcTick }
 
@@ -901,6 +905,63 @@ theorem Step.retainShared {context : Context}
   rw [resolved]
   simp only
   rw [retained]
+
+/-- Reduction rule for a successful deep shared release. -/
+theorem Step.releaseShared {context : Context}
+    {interpretation : Interpretation} {machine : Machine}
+    {frame : Frame} {stack : List Continuation} {block : Block}
+    {atom : Atom} {value : RVal} {store : Store} {heapFuel : Nat}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .releaseShared atom)
+    (resolved : resolveAtom frame.values atom = .ok value)
+    (released : releaseShared machine.heapFuel machine.store value =
+      .ok (store, heapFuel)) :
+    Step context interpretation machine
+      { store, heapFuel,
+        control := .running { frame with pc := frame.pc + 1 } stack } := by
+  unfold Step step currentBlock runInstruction Frame.advance
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp only
+  rw [resolved]
+  simp only
+  rw [released]
+
+/-- Reduction rule for a checked all-scalar unique constructor free. -/
+theorem Step.freeUnique {context : Context}
+    {interpretation : Interpretation} {machine : Machine}
+    {frame : Frame} {stack : List Continuation} {block : Block}
+    {atom : Atom} {cid : CtorId} {location : Nat}
+    {box : NodeBox} {fields : Array RVal}
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] = .freeUnique atom cid)
+    (resolved : resolveAtom frame.values atom = .ok (.loc location))
+    (boxAt : machine.store.get? location = some box)
+    (unique : box.world = .unique)
+    (node : box.node = .ctorN cid fields)
+    (scalarFields : fields.all RVal.isScalar = true) :
+    Step context interpretation machine
+      { machine with
+        store := machine.store.kill location
+        control := .running { frame with pc := frame.pc + 1 } stack } := by
+  unfold Step step currentBlock runInstruction Frame.advance requireCtor
+  rw [control]
+  simp only
+  rw [blockAt]
+  simp only [bind, Except.bind, pure, Except.pure]
+  rw [dif_pos pc, instruction]
+  simp only
+  rw [resolved]
+  simp only
+  rw [boxAt]
+  simp [unique, node, scalarFields]
 
 /-- Reduction rule for a successful checked constructor projection. -/
 theorem Step.fetch {context : Context} {interpretation : Interpretation}

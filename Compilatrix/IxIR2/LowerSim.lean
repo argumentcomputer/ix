@@ -10,7 +10,8 @@ instruction. Its foundation discharges scalar and vector operand resolution,
 extends related environments across value and erased bindings, and closes the
 public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
 constructor allocation, scalar and heap-bearing shared-retain paths, and
-checked non-consuming projection.
+scalar shared release, checked scalar-leaf unique free, and checked
+non-consuming projection.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -61,6 +62,17 @@ theorem StoreRel.setBox {source : IxIR1.Store} {target : Eval.Store}
     StoreRel (source.setBox location box) (target.setBox location box) := by
   constructor
   · rw [Eval.Store.setBox_heap, relation.heap]
+  · exact relation.resetAttempts
+  · exact relation.hotResets
+  · exact relation.coldResets
+  · exact relation.reusedPayloadUnits
+
+/-- Killing the same location preserves exact heap correspondence. -/
+theorem StoreRel.kill {source : IxIR1.Store} {target : Eval.Store}
+    (relation : StoreRel source target) (location : Nat) :
+    StoreRel (source.kill location) (target.kill location) := by
+  constructor
+  · rw [Eval.Store.kill_heap, relation.heap]
   · exact relation.resetAttempts
   · exact relation.hotResets
   · exact relation.coldResets
@@ -258,6 +270,15 @@ theorem retainShared_of_scalar {store : Eval.Store} {value : RVal}
     Eval.retainShared store value = .ok store := by
   cases value <;> simp [Eval.RVal.isScalar, Eval.retainShared] at scalar ⊢
 
+/-- Releasing a scalar leaves the store unchanged and spends exactly the one
+heap-traversal unit used to inspect the work-list item. -/
+theorem releaseShared_of_scalar {store : Eval.Store} {value : RVal}
+    (heapFuel : Nat) (scalar : Eval.RVal.isScalar value = true) :
+    Eval.releaseShared (heapFuel + 1) store value = .ok (store, heapFuel) := by
+  cases value <;>
+    simp [Eval.RVal.isScalar, Eval.releaseShared,
+      Eval.releaseSharedWork] at scalar ⊢
+
 /-- The scalar branch of IxIR₁ `dup` and IxIR₂ `retainShared` is an
 identical store-preserving step. -/
 theorem simulate_dup_retain_scalar {sourceContext : IxIR1.Ctx}
@@ -376,6 +397,113 @@ theorem simulate_dup_retain_shared {sourceContext : IxIR1.Ctx}
   rw [sourceGet]
   simp only
   rw [shared]
+
+/-- A scalar IxIR₁ shared drop and its effect-only IxIR₂ release leave the
+exact store and runtime environments unchanged.  The target accounts for the
+single scalar work-list visit in its independent heap budget. -/
+theorem simulate_drop_release_scalar {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef} {sourceFuel targetHeapFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom} {value : RVal}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved : IxIR1.resolveAtom source sourceAtom = .ok value)
+    (scalar : Eval.RVal.isScalar value = true)
+    (heapFuel : machine.heapFuel = targetHeapFuel + 1)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .releaseShared targetAtom) :
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.drop sourceAtom) = .ok (sourceStore, .erased) ∧
+      Eval.Step context interpretation machine
+        { store := machine.store
+          heapFuel := targetHeapFuel
+          control := .running { frame with pc := frame.pc + 1 } stack } ∧
+      StoreRel sourceStore machine.store ∧
+      EnvRel (.erased :: source) frame.values
+        (#[.erased] ++ mapping) := by
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok value :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  have released :
+      Eval.releaseShared machine.heapFuel machine.store value =
+        .ok (machine.store, targetHeapFuel) := by
+    rw [heapFuel]
+    exact releaseShared_of_scalar targetHeapFuel scalar
+  have targetStep := Eval.Step.releaseShared (context := context)
+    (interpretation := interpretation) control blockAt pc instruction
+    targetResolved released
+  refine ⟨?_, targetStep, stores, environments.bindErased⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  cases value with
+  | loc location => simp [Eval.RVal.isScalar] at scalar
+  | lit literal => rfl
+  | erased => rfl
+
+/-- A checked scalar-leaf IxIR₁ free and IxIR₂ `freeUnique` kill the same
+unique constructor location and bind the source's erased effect result. -/
+theorem simulate_free_freeUnique {sourceContext : IxIR1.Ctx}
+    {sourceCurrent : IxIR1.FnDef} {sourceFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom}
+    {cid : IxIR1.CtorId} {location : Nat}
+    {box : IxIR1.NodeBox} {fields : Array RVal}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved :
+      IxIR1.resolveAtom source sourceAtom = .ok (.loc location))
+    (sourceGet : sourceStore.get? location = some box)
+    (unique : box.world = .unique)
+    (node : box.node = .ctorN cid fields)
+    (scalarFields : fields.all Eval.RVal.isScalar = true)
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .freeUnique targetAtom cid) :
+    IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+          source (.free sourceAtom) =
+        .ok (sourceStore.kill location, .erased) ∧
+      Eval.Step context interpretation machine
+        { machine with
+          store := machine.store.kill location
+          control := .running { frame with pc := frame.pc + 1 } stack } ∧
+      StoreRel (sourceStore.kill location)
+        (machine.store.kill location) ∧
+      EnvRel (.erased :: source) frame.values
+        (#[.erased] ++ mapping) := by
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok (.loc location) :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  have targetGet : machine.store.get? location = some box := by
+    unfold Eval.Store.get?
+    rw [stores.heap]
+    exact sourceGet
+  have targetStep := Eval.Step.freeUnique (context := context)
+    (interpretation := interpretation) control blockAt pc instruction
+    targetResolved targetGet unique node scalarFields
+  refine ⟨?_, targetStep, stores.kill location, environments.bindErased⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  simp only [bind, Except.bind]
+  rw [sourceGet]
+  simp only
+  rw [unique]
 
 /-- A checked IxIR₂ fetch refines the corresponding non-consuming IxIR₁
 projection when the owner's exact constructor sidecar identifies the runtime

@@ -1608,3 +1608,24 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_fetch' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_fetch
+
+/-- info: 'Compilatrix.IxIR2.Eval.Step.releaseShared' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Step.releaseShared
+
+/-- info: 'Compilatrix.IxIR2.Eval.Step.freeUnique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Step.freeUnique
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.StoreRel.kill' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.StoreRel.kill
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.releaseShared_of_scalar' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.releaseShared_of_scalar
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.EnvRel.bindErased' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.EnvRel.bindErased
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_scalar' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_scalar
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_free_freeUnique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_free_freeUnique
