@@ -1045,6 +1045,28 @@ def pcs := ⟦
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)
   }
 
+
+  -- ==========================================================================
+  -- Commitment serialization for the transcript (a `MerkleCap` = `Vec<Digest>`
+  -- observes all its digest bytes).
+  -- ==========================================================================
+  -- A digest = `[u64; 4]` = 32 bytes (each limb little-endian) onto `tail`.
+  fn digest_onto(d: Digest, tail: ByteStream) -> ByteStream {
+    b8_onto(d[0], b8_onto(d[1], b8_onto(d[2], b8_onto(d[3], tail))))
+  }
+
+  -- A commitment (`MerkleCap` = `Vec<Digest>`): all digest bytes, onto `tail`.
+  fn cap_onto(cap: MerkleCap, tail: ByteStream) -> ByteStream {
+    match load(cap) {
+      ListNode.Nil => tail,
+      ListNode.Cons(d, rest) => @digest_onto(load(d), cap_onto(rest, tail)),
+    }
+  }
+
+  -- Append (observe) a commitment (`MerkleCap`) at the end of the buffer.
+  fn snoc_cap(input: ByteStream, cap: MerkleCap) -> ByteStream {
+    list_concat(input, cap_onto(cap, store(ListNode.Nil)))
+  }
 ⟧
 
 end MultiStark
