@@ -189,6 +189,12 @@ def shardProveWithEnv (system : @& AiurSystem)
 opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
+/-- Re-encode a natively valid proof into the per-query Merkle-path advice
+transport consumed by the in-circuit recursive verifier. -/
+@[extern "rs_aiur_proof_to_advice_bytes"]
+opaque proofToAdviceBytes : @& AiurSystem →
+  @& Array G → @& Proof → Except String ByteArray
+
 end AiurSystem
 
 namespace Bytecode.Toplevel

@@ -2549,7 +2549,7 @@ mod tests {
     let index = Env::parse_lazy_index(&bytes).expect("lazy index");
     let mut sizes: Vec<(usize, Address)> =
       index.consts.iter().map(|c| (c.len, c.addr.clone())).collect();
-    sizes.sort_by(|a, b| b.0.cmp(&a.0));
+    sizes.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     let total: usize = sizes.iter().map(|(l, _)| *l).sum();
     println!("consts: {} total bytes: {}", sizes.len(), total);
     for (len, addr) in sizes.iter().take(top) {

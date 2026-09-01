@@ -46,10 +46,12 @@ impl Address {
   }
 
   /// Iterate addresses out of a flat `[u8; 32 * N]` byte blob. Trailing
-  /// bytes shorter than 32 are silently dropped (via `chunks_exact`).
+  /// bytes shorter than 32 are silently dropped.
   pub fn unpack(bytes: &[u8]) -> impl Iterator<Item = Address> + '_ {
     bytes
-      .chunks_exact(32)
+      .as_chunks::<32>()
+      .0
+      .iter()
       .map(|c| Address::from_slice(c).expect("malformed address chunk"))
   }
 
