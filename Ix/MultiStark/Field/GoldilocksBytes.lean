@@ -45,7 +45,7 @@ same discipline recurses INSIDE the impls: the byte-vector primitives
 circuit ever carries another's carry chain. Only genuinely trivial pieces
 splice: per-byte steps inside their own primitive (`adc`, `sbb`), pure
 arithmetic with no lookups (`sel`/`select8`), and the value constructors /
-byte logic (`val_zero`…, `val_is_zero`, `bytes_lt_modulus`, `val_from_u16`,
+byte logic (the `.VAL_*` consts, `val_is_zero`, `bytes_lt_modulus`, `val_from_u16`,
 `val_to_bytes`).
 
 Exactly one of `goldilocksNative`/`goldilocksBytes` merges into a toplevel
@@ -74,17 +74,15 @@ def goldilocksBytes := ⟦
   -- ==========================================================================
   -- Pure values (canonical little-endian bytes).
   -- ==========================================================================
-  inline fn val_zero() -> Val { store([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
-  inline fn val_one() -> Val { store([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
-  inline fn val_two() -> Val { store([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
+  const VAL_ZERO: Val = store([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
+  const VAL_ONE: Val = store([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
+  const VAL_TWO: Val = store([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
   -- The extension's binomial modulus: Ext = 𝔽_p[X]/(X² − W).
-  inline fn ext_w() -> Val { store([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
+  const EXT_W: Val = store([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
   -- The multiplicative-coset generator (Plonky3 `Val::GENERATOR`).
-  inline fn val_generator() -> Val { store([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
+  const VAL_GENERATOR: Val = store([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
   -- A primitive 2^32-th root of unity (= 1753635133440165772).
-  inline fn val_two_adic_root() -> Val {
-    store([140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8])
-  }
+  const VAL_TWO_ADIC_ROOT: Val = store([140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8])
   -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
   -- ConstSmall ingest. Already canonical: the two bytes ARE the low limbs.
   inline fn val_from_u16(lo: U8, hi: U8) -> Val {
@@ -178,7 +176,7 @@ def goldilocksBytes := ⟦
     store(@select8(borrow, d_minus_eps, d))
   }
 
-  inline fn val_neg(a: Val) -> Val { val_sub_impl(val_zero(), a) }
+  inline fn val_neg(a: Val) -> Val { val_sub_impl(.VAL_ZERO, a) }
 
   -- 1 iff the value is zero. Canonical representation: zero iff every byte
   -- is zero, and a sum of 8 bytes (< 2¹¹) cannot wrap in any large field.
@@ -380,13 +378,13 @@ def goldilocksBytes := ⟦
     ext_mul_impl(a, b)
   }
   fn ext_mul_impl(a: Ext, b: Ext) -> Ext {
-    [val_add(val_mul(a[0], b[0]), val_mul(ext_w(), val_mul(a[1], b[1]))),
+    [val_add(val_mul(a[0], b[0]), val_mul(.EXT_W, val_mul(a[1], b[1]))),
      val_add(val_mul(a[0], b[1]), val_mul(a[1], b[0]))]
   }
   -- conjugate ā = a0 − a1·X, norm a·ā = a0² − 7·a1² ∈ 𝔽_p, a⁻¹ = ā / norm.
   inline fn ext_inverse(a: Ext) -> Ext { ext_inverse_impl(a) }
   fn ext_inverse_impl(a: Ext) -> Ext {
-    let norm = val_sub(val_mul(a[0], a[0]), val_mul(ext_w(), val_mul(a[1], a[1])));
+    let norm = val_sub(val_mul(a[0], a[0]), val_mul(.EXT_W, val_mul(a[1], a[1])));
     let ninv = val_inverse(norm);
     [val_mul(a[0], ninv), val_mul(val_neg(a[1]), ninv)]
   }
@@ -484,9 +482,9 @@ def goldilocksBytes := ⟦
     assert_eq!(bytes_lt_modulus([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]), 1);
     -- val_is_zero on zero and one; two-adic root sanity: root^(2^32) = 1 via
     -- 32 squarings, and root^(2^31) = p − 1 (≠ 1).
-    assert_eq!(val_is_zero(val_zero()), 1);
-    assert_eq!(val_is_zero(val_one()), 0);
-    let r31 = gl_run(val_two_adic_root(), val_one(), 31);  -- 31 squarings (base 1)
+    assert_eq!(val_is_zero(.VAL_ZERO), 1);
+    assert_eq!(val_is_zero(.VAL_ONE), 0);
+    let r31 = gl_run(.VAL_TWO_ADIC_ROOT, .VAL_ONE, 31);  -- 31 squarings (base 1)
     assert_eq!(@assert_g8(r31, [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]), 1);
     assert_eq!(@assert_g8(val_mul(r31, r31), [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
     1

@@ -44,8 +44,8 @@ def twoAdicDomain := ⟦
   -- an unguarded larger value would recurse without a base case.
   fn two_adic_gen(bits: G) -> Val {
     match bits {
-      0  => val_one(),
-      32 => val_two_adic_root(),
+      0  => .VAL_ONE,
+      32 => .VAL_TWO_ADIC_ROOT,
       _  =>
         let g = two_adic_gen(bits + 1);
         val_mul(g, g),
@@ -55,7 +55,7 @@ def twoAdicDomain := ⟦
   -- Vanishing polynomial of the trace domain (shift = 1, size 2^L) at point ζ:
   -- `Z_H(ζ) = ζ^(2^L) - 1`.
   fn trace_vanishing(zeta: Ext, l: G) -> Ext {
-    ext_sub(ext_exp_pow2(zeta, l), [val_one(), val_zero()])
+    ext_sub(ext_exp_pow2(zeta, l), [.VAL_ONE, .VAL_ZERO])
   }
 
   -- Lagrange selectors at ζ for the trace domain (shift = 1), mirroring
@@ -68,17 +68,17 @@ def twoAdicDomain := ⟦
   -- 2^l as an inner-field value (l is a small log-height).
   fn pow2(l: G) -> Val {
     match l {
-      0 => val_one(),
-      _ => val_mul(val_two(), pow2(l - 1)),
+      0 => .VAL_ONE,
+      _ => val_mul(.VAL_TWO, pow2(l - 1)),
     }
   }
 
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = @trace_vanishing(zeta, l);
     let ginv = val_inverse(two_adic_gen(l));
-    let is_first = ext_div(zh, ext_sub(zeta, [val_one(), val_zero()]));
-    let is_last = ext_div(zh, ext_sub(zeta, [ginv, val_zero()]));
-    let is_trans = ext_sub(zeta, [ginv, val_zero()]);
+    let is_first = ext_div(zh, ext_sub(zeta, [.VAL_ONE, .VAL_ZERO]));
+    let is_last = ext_div(zh, ext_sub(zeta, [ginv, .VAL_ZERO]));
+    let is_trans = ext_sub(zeta, [ginv, .VAL_ZERO]);
     let inv_van = ext_inverse(zh);
     (is_first, is_last, is_trans, inv_van)
   }
