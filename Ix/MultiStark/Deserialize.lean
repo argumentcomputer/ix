@@ -1,7 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
 
 /-!
 # Multi-STARK proof deserializer (Aiur)

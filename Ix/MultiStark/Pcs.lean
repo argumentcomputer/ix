@@ -1,7 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.MultiStark.Deserialize
-public import Ix.MultiStark.Keccak
 
 /-!
 # PCS (FRI) verification

@@ -1,7 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.KernelTypes
-public import Ix.IxVM.Kernel.Klimbs
 
 set_option maxRecDepth 8192
 

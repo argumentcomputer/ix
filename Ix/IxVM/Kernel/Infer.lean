@@ -1,11 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.KernelTypes
-public import Ix.IxVM.Kernel.Subst
-public import Ix.IxVM.Kernel.Levels
-public import Ix.IxVM.Kernel.Whnf
-public import Ix.IxVM.Kernel.DefEq
-public import Ix.IxVM.Ingress
 
 public section
 
