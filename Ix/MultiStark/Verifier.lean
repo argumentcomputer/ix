@@ -62,7 +62,7 @@ def verifier := ⟦
   -- An extension element `[c0, c1]` (`= c0 + c1·X`) is zero iff both Goldilocks
   -- coefficients are zero. (`read_ext` already reduced the limbs mod p.)
   fn ext_is_zero(e: Ext) -> G {
-    eq_zero(e[0]) * eq_zero(e[1])
+    @g_is_zero(e[0]) * @g_is_zero(e[1])
   }
 
   -- 1 iff the LAST element of the accumulator list is the zero extension
@@ -395,18 +395,18 @@ def verifier := ⟦
   -- an unguarded larger value would recurse without a base case.
   fn two_adic_gen(bits: G) -> Goldilocks {
     match bits {
-      0  => 1,
-      32 => 1753635133440165772,
+      0  => @g_one(),
+      32 => @g_two_adic_root(),
       _  =>
         let g = two_adic_gen(bits + 1);
-        g * g,
+        @g_mul(g, g),
     }
   }
 
   -- Vanishing polynomial of the trace domain (shift = 1, size 2^L) at point ζ:
   -- `Z_H(ζ) = ζ^(2^L) - 1`.
   fn trace_vanishing(zeta: Ext, l: G) -> Ext {
-    @eg_sub(ext_exp_pow2(zeta, l), [1, 0])
+    @eg_sub(ext_exp_pow2(zeta, l), [@g_one(), @g_zero()])
   }
 
   -- Lagrange selectors at ζ for the trace domain (shift = 1), mirroring
@@ -419,17 +419,17 @@ def verifier := ⟦
   -- 2^l as a field value (l is a small log-height).
   fn pow2(l: G) -> G {
     match l {
-      0 => 1,
-      _ => 2 * pow2(l - 1),
+      0 => @g_one(),
+      _ => @g_mul(@g_two(), pow2(l - 1)),
     }
   }
 
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = @trace_vanishing(zeta, l);
     let ginv = @gl_inverse(two_adic_gen(l));
-    let is_first = @eg_div(zh, @eg_sub(zeta, [1, 0]));
-    let is_last = @eg_div(zh, @eg_sub(zeta, [ginv, 0]));
-    let is_trans = @eg_sub(zeta, [ginv, 0]);
+    let is_first = @eg_div(zh, @eg_sub(zeta, [@g_one(), @g_zero()]));
+    let is_last = @eg_div(zh, @eg_sub(zeta, [ginv, @g_zero()]));
+    let is_trans = @eg_sub(zeta, [ginv, @g_zero()]);
     let inv_van = @eg_inverse(zh);
     (is_first, is_last, is_trans, inv_van)
   }
@@ -488,7 +488,7 @@ def verifier := ⟦
   -- Reconstruct an extension element from its two opened base coordinates,
   -- `from_ext_basis([c0, c1]) = c0 + c1·X` (the ExtVal basis is `[1, X]`).
   fn from_ext_basis(c0: Ext, c1: Ext) -> Ext {
-    @eg_add(c0, @eg_mul(c1, [0, 1]))
+    @eg_add(c0, @eg_mul(c1, [@g_zero(), @g_one()]))
   }
 
   -- A stage-2 / quotient opened row arrives as `stage_2_width·2` extension
@@ -529,7 +529,7 @@ def verifier := ⟦
       isf: Ext, isl: Ext, ist: Ext) -> Ext {
     let nd = list_lookup(nodes, i);
     match nd {
-      SysNode.Const(c) => [c, 0],
+      SysNode.Const(c) => [c, @g_zero()],
       SysNode.Var(src, off, idx) =>
         -- flatten (source, offset) into one selector: 2·source + offset,
         -- with source 0 Preprocessed / 1 Main / 2 Stage2, offset 0 cur / 1 next.
@@ -592,7 +592,7 @@ def verifier := ⟦
   -- (a0·b0 + 7·a1·b1, a0·b1 + a1·b0).
   -- ==========================================================================
   fn pair_mul(a0: Ext, a1: Ext, b0: Ext, b1: Ext) -> (Ext, Ext) {
-    (@eg_add(@eg_mul(a0, b0), @eg_mul([7, 0], @eg_mul(a1, b1))),
+    (@eg_add(@eg_mul(a0, b0), @eg_mul([@g_w(), @g_zero()], @eg_mul(a1, b1))),
      @eg_add(@eg_mul(a0, b1), @eg_mul(a1, b0)))
   }
 
@@ -603,7 +603,7 @@ def verifier := ⟦
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext) -> (Ext, Ext) {
     match load(args) {
-      ListNode.Nil => ([0, 0], [0, 0]),
+      ListNode.Nil => ([@g_zero(), @g_zero()], [@g_zero(), @g_zero()]),
       ListNode.Cons(a, rest) =>
         let (f0, f1) = logup_fingerprint(rest, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
@@ -670,7 +670,7 @@ def verifier := ⟦
               let acc1 = ood_fold(ood_fold(acc, alpha, @eg_sub(c0, nr0)), alpha,
                                   @eg_sub(c1, nr1));
               logup_steps_fold(acc1, alpha, rest, j + 1, lcount,
-                g + 1, k, k, [1, 0], [0, 0], [0, 0], [0, 0],
+                g + 1, k, k, [@g_one(), @g_zero()], [@g_zero(), @g_zero()], [@g_zero(), @g_zero()], [@g_zero(), @g_zero()],
                 inj0, inj1, b0, b1, g0, g1, nodes,
                 main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
             _ =>
@@ -694,22 +694,22 @@ def verifier := ⟦
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       lch: Ext, fch: Ext, accp: Ext, naccp: Ext,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: G) -> Ext {
-    let base = fold_roots([0, 0], alpha, zeros, nodes,
+    let base = fold_roots([@g_zero(), @g_zero()], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
     -- The lookup-argument coordinates come straight from the challenge /
     -- accumulator values (pure wiring) — `publics` is only for the node
     -- graph's Public(idx) leaves; looking these 8 back out of the list cost
     -- 8 calls for values already in hand.
-    let b0 = [lch[0], 0]; let b1 = [lch[1], 0];
-    let g0 = [fch[0], 0]; let g1 = [fch[1], 0];
-    let a0 = [accp[0], 0]; let a1 = [accp[1], 0];
-    let na0 = [naccp[0], 0]; let na1 = [naccp[1], 0];
+    let b0 = [lch[0], @g_zero()]; let b1 = [lch[1], @g_zero()];
+    let g0 = [fch[0], @g_zero()]; let g1 = [fch[1], @g_zero()];
+    let a0 = [accp[0], @g_zero()]; let a1 = [accp[1], @g_zero()];
+    let na0 = [naccp[0], @g_zero()]; let na1 = [naccp[1], @g_zero()];
     -- Boundary injection: is_last_row·(acc_final − acc_initial) with the
     -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
     -- p3's raw selector has value n·g at the last row, and Δ is constant
     -- across the domain, mirroring the Rust prover/verifier).
-    let inj0 = @eg_mul(isl, @eg_mul(@eg_sub(na0, a0), [inorm, 0]));
-    let inj1 = @eg_mul(isl, @eg_mul(@eg_sub(na1, a1), [inorm, 0]));
+    let inj0 = @eg_mul(isl, @eg_mul(@eg_sub(na0, a0), [inorm, @g_zero()]));
+    let inj1 = @eg_mul(isl, @eg_mul(@eg_sub(na1, a1), [inorm, @g_zero()]));
     match load(lks) {
       -- No lookups: single pass-through column, acc′ − acc + inj = 0.
       ListNode.Nil =>
@@ -719,7 +719,7 @@ def verifier := ⟦
           @eg_add(@eg_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
       ListNode.Cons(_h, _t) =>
         logup_steps_fold(base, alpha, lks, 0, list_length(lks),
-          0, k, k, [1, 0], [0, 0], [0, 0], [0, 0], inj0, inj1,
+          0, k, k, [@g_one(), @g_zero()], [@g_zero(), @g_zero()], [@g_zero(), @g_zero()], [@g_zero(), @g_zero()], inj0, inj1,
           b0, b1, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
     }
@@ -730,10 +730,10 @@ def verifier := ⟦
   -- (`EF::from(coord)`). Indexed by the compiled `Public` node index
   -- (`num_publics = 4·D`, `D = 2`).
   fn build_publics(lch: Ext, fch: Ext, accp: Ext, naccp: Ext) -> List‹Ext› {
-    store(ListNode.Cons([lch[0], 0], store(ListNode.Cons([lch[1], 0],
-    store(ListNode.Cons([fch[0], 0], store(ListNode.Cons([fch[1], 0],
-    store(ListNode.Cons([accp[0], 0], store(ListNode.Cons([accp[1], 0],
-    store(ListNode.Cons([naccp[0], 0], store(ListNode.Cons([naccp[1], 0],
+    store(ListNode.Cons([lch[0], @g_zero()], store(ListNode.Cons([lch[1], @g_zero()],
+    store(ListNode.Cons([fch[0], @g_zero()], store(ListNode.Cons([fch[1], @g_zero()],
+    store(ListNode.Cons([accp[0], @g_zero()], store(ListNode.Cons([accp[1], @g_zero()],
+    store(ListNode.Cons([naccp[0], @g_zero()], store(ListNode.Cons([naccp[1], @g_zero()],
     store(ListNode.Nil)))))))))))))))))
   }
 
@@ -753,7 +753,7 @@ def verifier := ⟦
   -- power, starting at 1).
   fn quotient_eval(slices: List‹Ext›, zeta_pow_n: Ext, pow: Ext) -> Ext {
     match load(slices) {
-      ListNode.Nil => [0, 0],
+      ListNode.Nil => [@g_zero(), @g_zero()],
       ListNode.Cons(c, rest) =>
         @eg_add(@eg_mul(pow, c), quotient_eval(rest, zeta_pow_n, @eg_mul(pow, zeta_pow_n))),
     }
@@ -817,7 +817,7 @@ def verifier := ⟦
         let (prep, prep_next) = @ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
         let (isf, isl, ist, invv) = @trace_selectors(zeta, l);
         let publics = @build_publics(lch, fch, accp, naccp);
-        let inorm = @gl_inverse(pow2(l) * two_adic_gen(l));
+        let inorm = @gl_inverse(@g_mul(pow2(l), two_adic_gen(l)));
         let comp = @ood_composition(nodes, zeros, lks, k,
                                    main, main_next, prep, prep_next, s2row, s2next,
                                    publics, lch, fch, accp, naccp,
@@ -826,7 +826,7 @@ def verifier := ⟦
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
         assert_eq!(eq_zero(list_length(slices) - qd), 1);
-        let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [1, 0]);
+        let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [@g_one(), @g_zero()]);
         assert_eq!(@eg_eq(@eg_mul(comp, invv), quot), 1);
         ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
                  q_opened, i + 1, naccp, lch, fch, alpha, zeta),
@@ -837,9 +837,9 @@ def verifier := ⟦
   -- its raw u64 limb to an extension element). Mirrors `lookup::fingerprint`.
   fn fingerprint_vals(fch: Ext, vals: List‹U64›) -> Ext {
     match load(vals) {
-      ListNode.Nil => [0, 0],
+      ListNode.Nil => [@g_zero(), @g_zero()],
       ListNode.Cons(v, rest) =>
-        @eg_add([@gl_val(v), 0], @eg_mul(fch, fingerprint_vals(fch, rest))),
+        @eg_add([@gl_val(v), @g_zero()], @eg_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 
@@ -890,7 +890,7 @@ def verifier := ⟦
     -- stage-2 cost there — the one small circuit is cheaper.
     let prep_cap = @opt_commit_cap(commit);
     let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, cbytes, accs);
-    let acc0 = claims_acc([0, 0], claims, lch, fch);
+    let acc0 = claims_acc([@g_zero(), @g_zero()], claims, lch, fch);
     -- Step 5: OOD composition/quotient identity for every active circuit.
     let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
              prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
