@@ -24,6 +24,10 @@ pub mod record;
 /// The Hypercube base field (KoalaBear).
 pub type F = sp1_primitives::SP1Field;
 
+/// The frontend field Aiur circuits are expressed in for this backend:
+/// Plonky3's KoalaBear (same modulus as [`F`], checked at the boundary).
+pub type FrontendField = p3_koala_bear::KoalaBear;
+
 pub use air::AiurAir;
 pub use frontend::ToplevelMachine;
 pub use machine::{AiurMachine, BuildError, CircuitSpec};

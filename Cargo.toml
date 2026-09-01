@@ -35,6 +35,7 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 # Internal crates
 aiur = { path = "crates/aiur" }
+aiur-hypercube = { path = "crates/aiur-hypercube" }
 ixvm-codegen = { path = "crates/ixvm-codegen" }
 ix-bench = { path = "crates/bench" }
 ix-common = { path = "crates/common" }

@@ -1981,6 +1981,7 @@ name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
  "aiur",
+ "aiur-hypercube",
  "anyhow",
  "bignat",
  "bincode 2.0.1",

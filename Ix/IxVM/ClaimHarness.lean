@@ -207,13 +207,50 @@ def buildSerdeIOBuffer (ixonEnv : Ixon.Env) : Aiur.IOBuffer × Nat :=
     let bytes := lc.rawBytes
     (ioBuffer.extend 0 #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
 
+/-- An `Address` as 8 packed-4-LE-byte field elements: the `verify_claim`
+    public-input (and ch-0 key) form. Must match the in-circuit `b3_pack`
+    of the GOLDILOCKS width profile. -/
+@[inline] def packedDigestKey (a : Address) : Array Aiur.G :=
+  let h := a.hash.data
+  (Array.range 8).map fun i =>
+    .ofNat (h[4*i]!.toNat + 256 * h[4*i+1]!.toNat
+      + 65536 * h[4*i+2]!.toNat + 16777216 * h[4*i+3]!.toNat)
+
+/-- An `Address` as 16 packed-2-LE-byte field elements: the narrow-field
+    (`IxVM.koalaBearProfile`) counterpart, matching that profile's
+    `b3_pack` (`PackedDigest = [G; 16]`). -/
+@[inline] def packedDigestKey2 (a : Address) : Array Aiur.G :=
+  let h := a.hash.data
+  (Array.range 16).map fun i =>
+    .ofNat (h[2*i]!.toNat + 256 * h[2*i+1]!.toNat)
+
+/-- Host-side width profile of a claim witness: the digest packing (must
+    match the merged width profile's `b3_pack`) and the reducibility-hint
+    sentinel scale (hints are compared only RELATIVELY, via `u32_lt` rank
+    ordering in lazy-delta, so any scale preserving the order works as
+    long as it stays inside the profile's comparison bound). -/
+structure WitnessProfile where
+  digestPack : Address → Array Aiur.G
+  /-- `abbrev` encodes as this value; `regular n` clamps to it minus one. -/
+  hintMax : Nat
+
+/-- Goldilocks: 4-byte digest words, u32-scaled hint sentinels. -/
+def goldilocksWitnessProfile : WitnessProfile :=
+  { digestPack := packedDigestKey, hintMax := 0xFFFFFFFF }
+
+/-- KoalaBear (`IxVM.koalaBearProfile`): 2-byte digest words, 24-bit hint
+    sentinels (inside `u32_lt`'s checked bound). -/
+def koalaBearWitnessProfile : WitnessProfile :=
+  { digestPack := packedDigestKey2, hintMax := 0xFFFFFF }
+
 /-- Encode a `Lean.ReducibilityHints` as a single `G` per the convention
-    Aiur's `load_constant_hint` decodes (opaque → 0, abbrev → 0xFFFFFFFF,
-    regular n → clamp(1 + n, 0xFFFFFFFE)). -/
-private def hintToG : Lean.ReducibilityHints → Aiur.G
+    Aiur's `load_constant_hint` decodes (opaque → 0, abbrev → `hintMax`,
+    regular n → clamp(1 + n, `hintMax` - 1)); the scale comes from the
+    `WitnessProfile` (hints are compared only relatively). -/
+private def hintToG (hintMax : Nat) : Lean.ReducibilityHints → Aiur.G
   | .opaque => .ofNat 0
-  | .abbrev => .ofNat 0xFFFFFFFF
-  | .regular n => .ofNat (min (1 + n.toNat) 0xFFFFFFFE)
+  | .abbrev => .ofNat hintMax
+  | .regular n => .ofNat (min (1 + n.toNat) (hintMax - 1))
 
 /-! ## IxVM IOBuffer interface
 
@@ -282,7 +319,9 @@ production path.
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
     `ioBuffer`. See the channel table above. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
-    (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
+    (ioBuffer : Aiur.IOBuffer)
+    (profile : WitnessProfile := goldilocksWitnessProfile) :
+    Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
   for (addr, lc) in ixonEnv.consts do
     if !keep addr then continue
@@ -298,7 +337,7 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
   for (addr, hints) in ixonEnv.anonHints do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
+    ioBuffer := ioBuffer.extend 3 key #[hintToG profile.hintMax hints]
   return ioBuffer
 
 -- ============================================================================
@@ -318,13 +357,6 @@ structure ClaimWitness where
 @[inline] private def addrKey (a : Address) : Array Aiur.G :=
   a.hash.data.map .ofUInt8
 
-/-- An `Address` as 8 packed-4-LE-byte field elements: the `verify_claim`
-    public-input (and ch-0 key) form. Must match the in-circuit `b3_pack`. -/
-@[inline] def packedDigestKey (a : Address) : Array Aiur.G :=
-  let h := a.hash.data
-  (Array.range 8).map fun i =>
-    .ofNat (h[4*i]!.toNat + 256 * h[4*i+1]!.toNat
-      + 65536 * h[4*i+2]!.toNat + 16777216 * h[4*i+3]!.toNat)
 
 /-- Look up the `AssumptionTree` at `root` in the caller-supplied
     `trees` map and seed its serialized bytes at key=`root` in
@@ -363,10 +395,11 @@ def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
     address the claim variant names (plus any caller-supplied
     `AssumptionTree`s under their merkle roots). -/
 def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
-    (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
+    (trees : Std.HashMap Address Ix.AssumptionTree := {})
+    (profile : WitnessProfile := goldilocksWitnessProfile) :
     Except String ClaimWitness := do
   let claimBytes := Ix.Claim.ser claim
-  let digestKey := packedDigestKey (Address.blake3 claimBytes)
+  let digestKey := profile.digestPack (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
   let seedAsm asm buf := match asm with
@@ -374,7 +407,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     | none => .ok buf
   match claim with
   | .check addr asm =>
-    ioBuffer := addEntries env (closureFrom env addr).contains ioBuffer
+    ioBuffer := addEntries env (closureFrom env addr).contains ioBuffer profile
     ioBuffer ← seedAsm asm ioBuffer
   | .eval input output asm =>
     let inputClosure := closureFrom env input

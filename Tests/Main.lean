@@ -4,6 +4,7 @@ import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Exploits
+import Tests.Ix.IxVM.Hypercube
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -197,6 +198,7 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("hypercube-nataddcomm", Tests.Ix.IxVM.Hypercube.benchNatAddComm env),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
