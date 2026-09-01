@@ -18,6 +18,16 @@ def core := ⟦
     None
   }
 
+  -- Memoized u32 comparison for hot structural and frontier walks. Aiur
+  -- memoizes function calls automatically, so keeping the decomposition in
+  -- this shared helper avoids charging the wide intrinsic layout repeatedly;
+  -- recurring `(a, b)` pairs share one constrained helper row. This belongs
+  -- in Core because both the IxVM substitution circuits and the recursive
+  -- multi-STARK verifier rely on the same optimization.
+  fn memo_u32_less_than(a: G, b: G) -> G {
+    u32_less_than(a, b)
+  }
+
   -- Interned 32-element address (blake3 content hash).
   --
   -- DIFFERENT POINTER VALUES DO NOT IMPLY DIFFERENT DATA. The Aiur
