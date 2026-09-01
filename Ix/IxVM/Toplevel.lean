@@ -2,6 +2,7 @@ module
 public import Ix.Aiur.Meta
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
+public import Ix.IxVM.U64.Goldilocks
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.RBTreeMap
 public import Ix.IxVM.Ixon
@@ -181,12 +182,15 @@ def entrypoints := ⟦
 
 open IxVM (core byteStream blake3 rbTreeMap ixon ixonSerialize ixonDeserialize)
 
-/-- The full IxVM kernel toplevel: shared modules (core, ixon, blake3, …)
-    merged with the kernel-specific `kernelTypes`, `convert`, `ingress`,
-    and `entrypoints`. Carries the test and benchmark entrypoints too;
-    `ixVM` below is the pruned production toplevel. -/
-def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
+/-- The full IxVM kernel toplevel over a U64 boundary implementation
+    (`u64Goldilocks`, or `u64Small` for an outer field too narrow to pack
+    7 bytes): shared modules (core, ixon, blake3, …) merged with the
+    kernel-specific `kernelTypes`, `convert`, `ingress`, and
+    `entrypoints`. Carries the test and benchmark entrypoints too. -/
+def ixVMFullOver (u64 : Aiur.Source.Toplevel) :
+    Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← core.merge byteStream
+  let vm ← vm.merge u64
   let vm ← vm.merge blake3
   let vm ← vm.merge rbTreeMap
   let vm ← vm.merge ixon
@@ -207,6 +211,11 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge check
   let vm ← vm.merge claim
   vm.merge entrypoints
+
+/-- The full IxVM kernel toplevel over Goldilocks (the production field);
+    `ixVM` below is its pruned production form. -/
+def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel :=
+  ixVMFullOver u64Goldilocks
 
 /-- Pruned production toplevel: `verify_claim` and nothing else.
 
