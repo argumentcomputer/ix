@@ -128,8 +128,7 @@ jobs:
         # lake target (Compile<env>), the cache-key suffix, and the
         # bencher row name. Every registry env compiles here; which envs
         # the benchmark job then proves/checks depends on which envs have
-        # constants in Ix/BenchConstants.lean. Add FC once it's on
-        # current Lean.
+        # constants in Ix/BenchConstants.lean.
         include:
           - { env: InitStd }
           - { env: Lean }
@@ -139,7 +138,6 @@ jobs:
           - { env: ISLB }
           - { env: Mathlib, mathlib: true }
           - { env: FLT, cache_pkg: flt, mathlib: true }
-          # - { env: FC, cache_pkg: formal_conjectures, mathlib: true }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/cache/restore@v6
@@ -152,10 +150,6 @@ jobs:
           label: Compile measurement CPU
           provenance-file: ~/.local/bin/benchmark-build-cpu.txt
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-      # FC's library env lives in a sibling `${COMPILE_DIR}FC` package dir, so
-      # point COMPILE_DIR there for the FC matrix job.
-      # - if: matrix.env == 'FC'
-      #   run: echo "COMPILE_DIR=${{ env.COMPILE_DIR }}FC" | tee -a $GITHUB_ENV
       # Install the Lean toolchain. The mathlib olean cache is fetched only
       # for envs that import Mathlib (Mathlib, FLT) — the shared
       # Benchmarks/Compile package depends on mathlib, so without this
@@ -166,14 +160,12 @@ jobs:
           auto-config: false
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
-      # FLT and FC take a few minutes to rebuild, so cache their build artifacts.
+      # FLT takes a few minutes to rebuild, so cache its build artifacts.
       - if: matrix.cache_pkg
         uses: actions/cache@v6
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
-      # No `--wfail` here: formal-conjectures (FC) emits a copyright-notice
-      # warning that must not fail the build.
       - run: lake build Compile${{ matrix.env }}
         working-directory: ${{ env.COMPILE_DIR }}
       # The measured compile: serializes the env to `<env>.ixe` at the
