@@ -1661,3 +1661,18 @@ transparent first-binding-wins list semantics as the proof specification. -/
  Classical.choice,
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_shared_unit_scalar_ctor
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.dropUniqueWork_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.dropUniqueWork_append
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.uniqueDropWork_simulation' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.uniqueDropWork_simulation
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.dropUVal_simulates_dropUniqueWork' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.dropUVal_simulates_dropUniqueWork
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.dropManyU_simulates_dropUniqueWork' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.dropManyU_simulates_dropUniqueWork
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_recursive' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_recursive

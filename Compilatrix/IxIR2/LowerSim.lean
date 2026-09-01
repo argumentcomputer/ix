@@ -11,8 +11,8 @@ extends related environments across value and erased bindings, and closes the
 public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
 constructor allocation, scalar and heap-bearing shared-retain paths, scalar
 and nonunit shared-release paths, scalar unique drop, checked scalar-leaf
-unique free, all-scalar-child final-owner destruction, and checked
-non-consuming projection.
+unique free, general recursive unique destruction, all-scalar-child final-owner
+shared destruction, and checked non-consuming projection.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -391,6 +391,199 @@ theorem dropUniqueWork_of_scalars {store : Eval.Store}
           simp only [Eval.dropUniqueWork]
           exact ih heapFuel scalars.2
 
+/-- Exact-budget unique work on a prefix composes with an independently
+budgeted suffix.  The zero remaining fuel pins the split point unambiguously. -/
+theorem dropUniqueWork_append {firstFuel secondFuel : Nat}
+    {store middle output : Eval.Store} {first second : List RVal}
+    {remaining : Nat}
+    (firstRun : Eval.dropUniqueWork firstFuel store first = .ok (middle, 0))
+    (secondRun : Eval.dropUniqueWork secondFuel middle second =
+      .ok (output, remaining)) :
+    Eval.dropUniqueWork (firstFuel + secondFuel) store (first ++ second) =
+      .ok (output, remaining) := by
+  induction firstFuel generalizing store first middle with
+  | zero =>
+      cases first with
+      | nil =>
+          simp only [Eval.dropUniqueWork, Except.ok.injEq, Prod.mk.injEq]
+            at firstRun
+          obtain ⟨rfl, _⟩ := firstRun
+          simpa [Eval.dropUniqueWork] using secondRun
+      | cons value first => simp [Eval.dropUniqueWork] at firstRun
+  | succ firstFuel ih =>
+      cases first with
+      | nil => simp [Eval.dropUniqueWork] at firstRun
+      | cons value first =>
+          cases value with
+          | lit literal =>
+              have prefix' :
+                  Eval.dropUniqueWork firstFuel store first =
+                    .ok (middle, 0) := by
+                simpa [Eval.dropUniqueWork] using firstRun
+              have combined := ih prefix' secondRun
+              simpa [Eval.dropUniqueWork, Nat.succ_add] using combined
+          | erased =>
+              have prefix' :
+                  Eval.dropUniqueWork firstFuel store first =
+                    .ok (middle, 0) := by
+                simpa [Eval.dropUniqueWork] using firstRun
+              have combined := ih prefix' secondRun
+              simpa [Eval.dropUniqueWork, Nat.succ_add] using combined
+          | loc location =>
+              cases boxAt : store.get? location with
+              | none => simp [Eval.dropUniqueWork, boxAt] at firstRun
+              | some box =>
+                  cases world : box.world with
+                  | shared =>
+                      simp [Eval.dropUniqueWork, boxAt, world] at firstRun
+                  | unique =>
+                      cases node : box.node with
+                      | papN address arity arguments =>
+                          simp [Eval.dropUniqueWork, boxAt, world, node]
+                            at firstRun
+                      | ctorN cid fields =>
+                          have prefix' :
+                              Eval.dropUniqueWork firstFuel
+                                  (store.kill location)
+                                  (fields.toList ++ first) =
+                                .ok (middle, 0) := by
+                            simpa [Eval.dropUniqueWork, boxAt, world, node]
+                              using firstRun
+                          have combined := ih prefix' secondRun
+                          simpa [Eval.dropUniqueWork, boxAt, world, node,
+                            Nat.succ_add, List.append_assoc] using combined
+
+/-- At a fixed IxIR₁ recursive fuel, one successful unique-value drop has an
+exact-store IxIR₂ work-list execution with some exact target budget. -/
+def UniqueValSimAt (context : IxIR1.Ctx) (fuel : Nat) : Prop :=
+  ∀ {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {value : RVal} {sourceOut : IxIR1.Store},
+    StoreRel sourceStore targetStore →
+    IxIR1.dropUVal context fuel sourceStore value = .ok sourceOut →
+    ∃ targetFuel targetOut,
+      Eval.dropUniqueWork targetFuel targetStore [value] =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut
+
+/-- The list half of the mutually recursive unique-drop correspondence. -/
+def UniqueManySimAt (context : IxIR1.Ctx) (fuel : Nat) : Prop :=
+  ∀ {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {values : List RVal} {sourceOut : IxIR1.Store},
+    StoreRel sourceStore targetStore →
+    IxIR1.dropManyU context fuel sourceStore values = .ok sourceOut →
+    ∃ targetFuel targetOut,
+      Eval.dropUniqueWork targetFuel targetStore values =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut
+
+/-- Successful recursive IxIR₁ unique destruction is simulated by the flat
+IxIR₂ work list.  Target fuel is existential because the source budgets tree
+depth/list recursion while the target counts visited runtime values. -/
+theorem uniqueDropWork_simulation (context : IxIR1.Ctx) :
+    ∀ fuel, UniqueValSimAt context fuel ∧ UniqueManySimAt context fuel := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      constructor
+      · unfold UniqueValSimAt
+        intro sourceStore targetStore value sourceOut stores sourceRun
+        simp [IxIR1.dropUVal] at sourceRun
+      · unfold UniqueManySimAt
+        intro sourceStore targetStore values sourceOut stores sourceRun
+        simp [IxIR1.dropManyU] at sourceRun
+  | succ fuel ih =>
+      have valueIH : UniqueValSimAt context fuel := ih.1
+      have manyIH : UniqueManySimAt context fuel := ih.2
+      unfold UniqueValSimAt at valueIH
+      unfold UniqueManySimAt at manyIH
+      constructor
+      · unfold UniqueValSimAt
+        intro sourceStore targetStore value sourceOut stores sourceRun
+        cases value with
+        | lit literal =>
+            simp only [IxIR1.dropUVal] at sourceRun
+            cases sourceRun
+            refine ⟨1, targetStore, ?_, stores⟩
+            simp [Eval.dropUniqueWork]
+        | erased =>
+            simp only [IxIR1.dropUVal] at sourceRun
+            cases sourceRun
+            refine ⟨1, targetStore, ?_, stores⟩
+            simp [Eval.dropUniqueWork]
+        | loc location =>
+            rw [IxIR1.dropUVal.eq_def] at sourceRun
+            dsimp only at sourceRun
+            cases sourceGet : sourceStore.get? location with
+            | none => simp [sourceGet] at sourceRun
+            | some box =>
+                cases world : box.world with
+                | shared => simp [sourceGet, world] at sourceRun
+                | unique =>
+                    cases node : box.node with
+                    | papN address arity arguments =>
+                        simp [sourceGet, world, node] at sourceRun
+                    | ctorN cid fields =>
+                        simp only [sourceGet, world, node] at sourceRun
+                        have targetGet :
+                            targetStore.get? location = some box := by
+                          unfold Eval.Store.get?
+                          rw [stores.heap]
+                          exact sourceGet
+                        obtain ⟨targetFuel, targetOut, targetRun, outputStores⟩ :=
+                          manyIH (stores.kill location) sourceRun
+                        refine ⟨targetFuel + 1, targetOut, ?_, outputStores⟩
+                        simpa [Eval.dropUniqueWork, targetGet, world, node]
+                          using targetRun
+      · unfold UniqueManySimAt
+        intro sourceStore targetStore values sourceOut stores sourceRun
+        cases values with
+        | nil =>
+            simp only [IxIR1.dropManyU] at sourceRun
+            cases sourceRun
+            refine ⟨0, targetStore, ?_, stores⟩
+            simp [Eval.dropUniqueWork]
+        | cons value values =>
+            rw [IxIR1.dropManyU.eq_def] at sourceRun
+            dsimp only at sourceRun
+            cases valueRun : IxIR1.dropUVal context fuel sourceStore value with
+            | error error =>
+                simp [valueRun, bind, Except.bind] at sourceRun
+            | ok middleStore =>
+                simp only [valueRun, bind, Except.bind] at sourceRun
+                obtain ⟨valueFuel, targetMiddle, targetValueRun,
+                    middleStores⟩ := valueIH stores valueRun
+                obtain ⟨valuesFuel, targetOut, targetValuesRun,
+                    outputStores⟩ := manyIH middleStores sourceRun
+                refine ⟨valueFuel + valuesFuel, targetOut, ?_, outputStores⟩
+                simpa using
+                  (dropUniqueWork_append targetValueRun targetValuesRun)
+
+/-- Public value projection of the mutual recursive unique-drop theorem. -/
+theorem dropUVal_simulates_dropUniqueWork {context : IxIR1.Ctx}
+    {fuel : Nat} {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {value : RVal} {sourceOut : IxIR1.Store}
+    (stores : StoreRel sourceStore targetStore)
+    (sourceRun :
+      IxIR1.dropUVal context fuel sourceStore value = .ok sourceOut) :
+    ∃ targetFuel targetOut,
+      Eval.dropUniqueWork targetFuel targetStore [value] =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut :=
+  (uniqueDropWork_simulation context fuel).1 stores sourceRun
+
+/-- Public list projection of the mutual recursive unique-drop theorem. -/
+theorem dropManyU_simulates_dropUniqueWork {context : IxIR1.Ctx}
+    {fuel : Nat} {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {values : List RVal} {sourceOut : IxIR1.Store}
+    (stores : StoreRel sourceStore targetStore)
+    (sourceRun :
+      IxIR1.dropManyU context fuel sourceStore values = .ok sourceOut) :
+    ∃ targetFuel targetOut,
+      Eval.dropUniqueWork targetFuel targetStore values =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut :=
+  (uniqueDropWork_simulation context fuel).2 stores sourceRun
+
 /-- The scalar branch of IxIR₁ `dup` and IxIR₂ `retainShared` is an
 identical store-preserving step. -/
 theorem simulate_dup_retain_scalar {sourceContext : IxIR1.Ctx}
@@ -609,6 +802,67 @@ theorem simulate_dropU_dropUnique_scalar {sourceContext : IxIR1.Ctx}
   | loc location => simp [Eval.RVal.isScalar] at scalar
   | lit literal => rfl
   | erased => rfl
+
+/-- Every successful recursive IxIR₁ unique-location drop has a sufficient
+IxIR₂ heap budget that drives one effect-only `dropUnique` step to the same
+exact heap.  The theorem exposes the locally chosen budget explicitly; later
+block composition can add slack and combine these finite witnesses. -/
+theorem simulate_dropU_dropUnique_recursive
+    {sourceContext : IxIR1.Ctx} {sourceCurrent : IxIR1.FnDef}
+    {sourceFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore sourceStore' : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom} {location : Nat}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved :
+      IxIR1.resolveAtom source sourceAtom = .ok (.loc location))
+    (sourceDropped :
+      IxIR1.dropUVal sourceContext sourceFuel sourceStore (.loc location) =
+        .ok sourceStore')
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .dropUnique targetAtom) :
+    ∃ targetHeapFuel targetStore,
+      IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+            source (.dropU sourceAtom) = .ok (sourceStore', .erased) ∧
+        Eval.Step context interpretation
+          { machine with heapFuel := targetHeapFuel }
+          { store := targetStore
+            heapFuel := 0
+            control := .running { frame with pc := frame.pc + 1 } stack } ∧
+        StoreRel sourceStore' targetStore ∧
+        EnvRel (.erased :: source) frame.values
+          (#[.erased] ++ mapping) := by
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok (.loc location) :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  obtain ⟨targetHeapFuel, targetStore, targetRun, outputStores⟩ :=
+    dropUVal_simulates_dropUniqueWork stores sourceDropped
+  have targetDropped :
+      Eval.dropUnique targetHeapFuel machine.store (.loc location) =
+        .ok (targetStore, 0) := by
+    simpa [Eval.dropUnique] using targetRun
+  have beforeControl :
+      ({ machine with heapFuel := targetHeapFuel } : Eval.Machine).control =
+        .running frame stack := by
+    simpa using control
+  have targetStep := Eval.Step.dropUnique (context := context)
+    (interpretation := interpretation) beforeControl blockAt pc instruction
+    targetResolved targetDropped
+  refine ⟨targetHeapFuel, targetStore, ?_, targetStep, outputStores,
+    environments.bindErased⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  simp only [bind, Except.bind]
+  rw [sourceDropped]
 
 /-- Releasing a shared node with more than one owner decrements the same
 refcount and charges the same RC operation in both exact stores.  This is the

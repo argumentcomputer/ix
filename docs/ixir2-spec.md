@@ -533,10 +533,11 @@ erased environment extension; defines the exact baseline store relation; and
 closes the public small-step cases for `pure`/`move` and ordinary constructor
 allocation, both scalar and shared-node retain branches, scalar shared release,
 nonunit shared-node release, scalar unique drop, checked scalar-leaf unique
-free, all-scalar-child final-owner destruction, and checked non-consuming
-fetch. Its baseline outcome currently uses that stronger exact-heap relation;
-recursive destruction, the remaining instruction/block induction, and the
-later isomorphic credit refinement remain active proof work.
+free, fully recursive unique destruction, all-scalar-child final-owner shared
+destruction, and checked non-consuming fetch. Its baseline outcome currently
+uses that stronger exact-heap relation; recursive shared release, the remaining
+instruction/block induction, and the later isomorphic credit refinement remain
+active proof work.
 
 ### 2. Credit implementation refinement
 
@@ -639,9 +640,9 @@ not satisfy the optimization milestone by themselves.
 Items 1 and 2 are implemented. Item 3 has its executable lowering core,
 validation witness, trace, theorem interface, operand/environment foundations,
 exact store relation, initial pure/allocation/retain/fetch cases, and
-destruction through nonrecursive and all-scalar-child paths; recursive
-destruction, its full simulation, and pipeline attachment remain the active
-compiler milestone.
+fully recursive unique destruction plus shared destruction through
+all-scalar-child paths; recursive shared release, its full simulation, and
+pipeline attachment remain the active compiler milestone.
 
 Static unique reuse precedes dynamic reset quality work, but the v0 syntax and
 semantics include both lanes now so the ownership and layout contracts cannot
