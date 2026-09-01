@@ -8,6 +8,12 @@ namespace IxVM
 def byteStream := ⟦
   type ByteStream = List‹U8›
 
+  -- A `u64` is its 8 little-endian bytes; all `u64_*` arithmetic below is
+  -- byte-level and field-agnostic. The bytes <-> field boundary
+  -- (`flatten_u64`, `idx_to_u64`) is the U64 INTERFACE, implemented per
+  -- outer field in `Ix/IxVM/U64/` (Goldilocks: 7-byte packing; small
+  -- fields: 3-byte, checked) and merged into the toplevel alongside this
+  -- module.
   type U64 = [U8; 8]
 
   fn read_byte_stream(channel: G, idx: G, len: G) -> ByteStream {
@@ -286,34 +292,6 @@ def byteStream := ⟦
       },
       _ => [u8_from_field_unsafe(to_field(b0) - 1), b1, b2, b3, b4, b5, b6, b7],
     }
-  }
-
-  -- Flatten a [U8; 8] (U64 little-endian bytes) into a single G via
-  -- b0 + 256 * b1 + ... + 256^6 * b6. The most significant byte (b7) must be zero;
-  -- this is enforced by assert_eq!, limiting the range to 7 bytes (< 2^56).
-  --
-  -- INJECTIVITY IS CONDITIONAL ON THE CALLER. `[U8; 8]` is nominal typing,
-  -- not a constraint — `u8_from_field_unsafe` mints a `U8` holding any
-  -- field element — so this function alone does NOT pin a unique input
-  -- for a given output. With unchecked bytes the sum is satisfiable many
-  -- ways (`b1 = k`, `b0 = x - 256k`). Only when every byte is
-  -- range-checked does `b7 = 0` bound the value by 2^56 - 1, which is
-  -- below Goldilocks `p`, so the sum cannot wrap and the decomposition is
-  -- unique.
-  --
-  -- Callers relying on that uniqueness must therefore supply
-  -- range-checked bytes, and must not lose the `b7 = 0` assert: widening
-  -- this to a full u64 would silently break them, since 8-byte strings
-  -- are not injective into the field (a value and value + p collide).
-  -- `Ingress.idx_to_u64` is one such caller — it pins a projection index
-  -- whose bytes are hashed into a member's content address.
-  fn flatten_u64(x: [U8; 8]) -> G {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = x;
-    assert_eq!(to_field(b7), 0,
-      "u64 -> field: value exceeds 2^56 (top byte must be zero)");
-    to_field(b0) + 0x100 * to_field(b1) + 0x10000 * to_field(b2)
-      + 0x1000000 * to_field(b3) + 0x100000000 * to_field(b4)
-      + 0x10000000000 * to_field(b5) + 0x1000000000000 * to_field(b6)
   }
 ⟧
 
