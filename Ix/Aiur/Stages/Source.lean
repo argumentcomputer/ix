@@ -515,6 +515,11 @@ structure Function where
   may not be (transitively) inline-recursive, nor called `unconstrained`.
   -/
   inline : Bool := false
+  /-- A `const NAME: T = body` declaration: a nullary `inline` function whose
+  every use is substituted — in term position through inlining, in pattern
+  position (`.NAME`) by the pattern read off its body (see
+  `Toplevel.expandConsts`). -/
+  isConst : Bool := false
   /-- Polymorphic public entry points are forbidden by construction:
   either the function is monomorphic (`params = []`) or not public
   (`entry = false`). -/
@@ -552,6 +557,13 @@ def Function.poly (name : Global) (params : List String) (inputs : List (Local �
     (output : Typ) (body : Term) (inline : Bool := false) : Function :=
   { name, params, inputs, output, body, entry := false, inline,
     entryMonomorphic := Or.inr rfl, entryPointerFree := Or.inr rfl }
+
+/-- Smart constructor for `const NAME: T = body`: a nullary, inline,
+non-entry function flagged `isConst`. -/
+def Function.constant (name : Global) (output : Typ) (body : Term) : Function :=
+  { name, params := [], inputs := [], output, body, entry := false,
+    inline := true, isConst := true,
+    entryMonomorphic := Or.inl rfl, entryPointerFree := Or.inr rfl }
 
 structure Toplevel where
   dataTypes : Array DataType
@@ -1020,6 +1032,134 @@ decreasing_by
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
 
+/-! ## Constants
+
+`const NAME: T = body` (`Function.isConst`: a nullary `inline` function) is
+substituted at every use. In term position `.NAME` becomes the inline call
+`NAME()`, spliced by `Toplevel.inlineCalls` like any inline function. In
+pattern position `.NAME` becomes the PATTERN read off `body`, which must
+then be pattern-shaped: field/byte literals, tuples and arrays, constructor
+applications, `store(v)` (the pointer pattern `&v`), and other consts. A
+const whose body is anything else (a call, arithmetic, a variable) is
+usable in terms only; using it in a pattern is an error, as is a cycle of
+const references. Consumers of an interface thus match on `.ZERO` without
+knowing whether the implementation's `ZERO` is a field literal or a
+pointer to bytes: the implementor's representation decides the pattern. -/
+
+/-- The pattern read off a pattern-shaped const body. `isFn` tells function
+names apart from constructor names; `consts` resolves nested const
+references; `visiting` detects cycles; `owner` names the const in errors. -/
+partial def Term.constPattern (consts : Std.HashMap Global Function)
+    (isFn : Global → Bool) (visiting : List Global) (owner : Global) :
+    Term → Except String Pattern
+  | .field n | .u8Lit n => pure (.field n)
+  | .tuple ts => .tuple <$> ts.mapM (Term.constPattern consts isFn visiting owner)
+  | .array ts => .array <$> ts.mapM (Term.constPattern consts isFn visiting owner)
+  | .store t => .pointer <$> Term.constPattern consts isFn visiting owner t
+  | .ann _ t => Term.constPattern consts isFn visiting owner t
+  | .ref g =>
+    match consts[g]? with
+    | some c =>
+      if visiting.contains g then
+        throw s!"const `{owner.toName}`: cyclic const reference through `{g.toName}`"
+      else Term.constPattern consts isFn (g :: visiting) owner c.body
+    | none => pure (.ref g [])
+  | .app g args .normal =>
+    if isFn g then
+      throw s!"const `{owner.toName}` is not usable as a pattern: its body calls `{g.toName}`"
+    else .ref g <$> args.mapM (Term.constPattern consts isFn visiting owner)
+  | _ =>
+    throw s!"const `{owner.toName}` is not usable as a pattern: its body is not literal \
+      data (field/byte literals, tuples, arrays, constructors, `store`, consts)"
+
+/-- Replace every nullary `.ref NAME` of a const in a pattern by the pattern
+read off the const's body. -/
+partial def Pattern.expandConsts (consts : Std.HashMap Global Function)
+    (isFn : Global → Bool) : Pattern → Except String Pattern
+  | .ref g [] =>
+    match consts[g]? with
+    | some c => Term.constPattern consts isFn [g] g c.body
+    | none => pure (.ref g [])
+  | .ref g ps => .ref g <$> ps.mapM (Pattern.expandConsts consts isFn)
+  | .tuple ps => .tuple <$> ps.mapM (Pattern.expandConsts consts isFn)
+  | .array ps => .array <$> ps.mapM (Pattern.expandConsts consts isFn)
+  | .or a b => .or <$> Pattern.expandConsts consts isFn a <*> Pattern.expandConsts consts isFn b
+  | .pointer p => .pointer <$> Pattern.expandConsts consts isFn p
+  | p@(.var _) | p@(.wildcard) | p@(.field _) => pure p
+
+/-- Rewrite const uses in a term: `.ref NAME` of a const becomes the inline
+call `NAME()`; patterns in `let` and `match` go through
+`Pattern.expandConsts`. -/
+partial def Term.expandConsts (consts : Std.HashMap Global Function)
+    (isFn : Global → Bool) : Term → Except String Term
+  | .ref g => pure (if consts.contains g then .app g [] .normal else .ref g)
+  | t@(.unit) | t@(.var _) | t@(.field _) | t@(.u8Lit _) => pure t
+  | .tuple ts => .tuple <$> ts.mapM (Term.expandConsts consts isFn)
+  | .array ts => .array <$> ts.mapM (Term.expandConsts consts isFn)
+  | .app g args mode => (.app g · mode) <$> args.mapM (Term.expandConsts consts isFn)
+  | .let p v b =>
+    .let <$> Pattern.expandConsts consts isFn p <*> Term.expandConsts consts isFn v
+      <*> Term.expandConsts consts isFn b
+  | .match s arms =>
+    .match <$> Term.expandConsts consts isFn s <*> arms.mapM fun (p, a) => do
+      pure (← Pattern.expandConsts consts isFn p, ← Term.expandConsts consts isFn a)
+  | .add a b => .add <$> go a <*> go b
+  | .sub a b => .sub <$> go a <*> go b
+  | .mul a b => .mul <$> go a <*> go b
+  | .set a n b => (.set · n ·) <$> go a <*> go b
+  | .u8Xor a b => .u8Xor <$> go a <*> go b
+  | .u8Add a b => .u8Add <$> go a <*> go b
+  | .u8Mul a b => .u8Mul <$> go a <*> go b
+  | .u8Sub a b => .u8Sub <$> go a <*> go b
+  | .u8And a b => .u8And <$> go a <*> go b
+  | .u8Or a b => .u8Or <$> go a <*> go b
+  | .u8LessThan a b => .u8LessThan <$> go a <*> go b
+  | .u32LessThan a b => .u32LessThan <$> go a <*> go b
+  | .u8XorSplit7 a b => .u8XorSplit7 <$> go a <*> go b
+  | .u8XorSplit4 a b => .u8XorSplit4 <$> go a <*> go b
+  | .unconstrainedU32Add a b => .unconstrainedU32Add <$> go a <*> go b
+  | .unconstrainedBigUintDivMod a b => .unconstrainedBigUintDivMod <$> go a <*> go b
+  | .u8RangeCheck a b => .u8RangeCheck <$> go a <*> go b
+  | .ioGetInfo a b => .ioGetInfo <$> go a <*> go b
+  | .assertEq a b msg c => (.assertEq · · msg ·) <$> go a <*> go b <*> go c
+  | .ioWrite a b c => .ioWrite <$> go a <*> go b <*> go c
+  | .ioSetInfo c k i l rv => .ioSetInfo <$> go c <*> go k <*> go i <*> go l <*> go rv
+  | .ioRead a b n => (.ioRead · · n) <$> go a <*> go b
+  | .ret a => .ret <$> go a
+  | .eqZero a => .eqZero <$> go a
+  | .proj a n => (.proj · n) <$> go a
+  | .get a n => (.get · n) <$> go a
+  | .slice a i j => (.slice · i j) <$> go a
+  | .store a => .store <$> go a
+  | .load a => .load <$> go a
+  | .ptrVal a => .ptrVal <$> go a
+  | .ann ty a => .ann ty <$> go a
+  | .u8BitDecomposition a => .u8BitDecomposition <$> go a
+  | .u8ShiftLeft a => .u8ShiftLeft <$> go a
+  | .u8ShiftRight a => .u8ShiftRight <$> go a
+  | .toField a => .toField <$> go a
+  | .u8FromFieldUnsafe a => .u8FromFieldUnsafe <$> go a
+  | .unconstrainedGToBytes a => .unconstrainedGToBytes <$> go a
+  | .unconstrainedGInverse a => .unconstrainedGInverse <$> go a
+  | .u32ToField a => .u32ToField <$> go a
+  | .unconstrainedU32Add3 a b c => .unconstrainedU32Add3 <$> go a <*> go b <*> go c
+  | .debug s o a => .debug s <$> o.mapM go <*> go a
+where go := Term.expandConsts consts isFn
+
+/-- Substitute every const use (see the `Constants` section above). Runs
+first in `Toplevel.inlineCalls`; a toplevel without consts is unchanged. -/
+def Toplevel.expandConsts (t : Toplevel) : Except String Toplevel := do
+  let consts : Std.HashMap Global Function :=
+    t.functions.foldl (fun m f => if f.isConst then m.insert f.name f else m) ∅
+  if consts.isEmpty then return t
+  let fnNames : Std.HashSet Global :=
+    t.functions.foldl (fun s f => if f.isConst then s else s.insert f.name) ∅
+  let isFn := fun g => fnNames.contains g
+  let functions ← t.functions.mapM fun f => do
+    let body ← f.body.expandConsts consts isFn
+    pure { f with body }
+  pure { t with functions }
+
 /-- Kahn-style topological sort of the inline-dependency graph: each pass
 emits every function whose inline-callees are already emitted, so callees
 precede callers. `rounds` bounds the number of passes by the function count
@@ -1073,6 +1213,7 @@ expanded exactly once (`Term.expandOnce`, structurally recursive on the term),
 and its already-inline-free result is memoized in `done` and spliced (with
 α-renaming) at every call site. -/
 def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
+  let t ← t.expandConsts
   let funcs : Std.HashMap Global Function :=
     t.functions.foldl (fun m f => m.insert f.name f) ∅
   -- Functions declared `inline`: every plain call to them is a splice site.

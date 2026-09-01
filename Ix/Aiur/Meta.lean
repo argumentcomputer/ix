@@ -787,10 +787,23 @@ where
             "Public (entry) function signatures cannot contain pointer types"
       mkAppM ``Source.Function.monoEntry #[name, inputs, output, body, proof, toExpr isInline]
 
+declare_syntax_cat aiur_const (behavior := both)
+syntax &"const " ident ": " aiur_typ " = " aiur_trm : aiur_const
+
+/-- `const NAME: T = body` — a nullary inline function flagged `isConst`,
+substituted at every use (`.NAME` in terms and patterns; see
+`Source.Toplevel.expandConsts`). -/
+def elabConst : ElabStxCat `aiur_const
+  | `(aiur_const| const $i:ident : $ty:aiur_typ = $t:aiur_trm) => do
+    let g ← mkAppM ``Global.mk #[toExpr i.getId]
+    mkAppM ``Source.Function.constant #[g, ← elabTyp ty, ← elabTrm t]
+  | stx => throw $ .error stx "Invalid syntax for constant"
+
 declare_syntax_cat       aiur_declaration
 syntax aiur_function   : aiur_declaration
 syntax aiur_data_type  : aiur_declaration
 syntax aiur_type_alias : aiur_declaration
+syntax aiur_const      : aiur_declaration
 
 def accElabDeclarations (declarations : (Array Expr × Array Expr × Array Expr))
     (stx : TSyntax `aiur_declaration) :
@@ -803,6 +816,8 @@ def accElabDeclarations (declarations : (Array Expr × Array Expr × Array Expr)
     pure (dataTypes.push $ ← elabDataType d, typeAliases, functions)
   | `(aiur_declaration| $ta:aiur_type_alias) => do
     pure (dataTypes, typeAliases.push $ ← elabTypeAlias ta, functions)
+  | `(aiur_declaration| $c:aiur_const) => do
+    pure (dataTypes, typeAliases, functions.push $ ← elabConst c)
   | stx => throw $ .error stx "Invalid syntax for declaration"
 
 declare_syntax_cat          aiur_toplevel
