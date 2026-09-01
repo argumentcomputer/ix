@@ -55,7 +55,7 @@ def twoAdicDomain := ⟦
   -- Vanishing polynomial of the trace domain (shift = 1, size 2^L) at point ζ:
   -- `Z_H(ζ) = ζ^(2^L) - 1`.
   fn trace_vanishing(zeta: Ext, l: G) -> Ext {
-    ext_sub(ext_exp_pow2(zeta, l), [.VAL_ONE, .VAL_ZERO])
+    ext_sub(ext_exp_pow2(zeta, l), .EXT_ONE)
   }
 
   -- Lagrange selectors at ζ for the trace domain (shift = 1), mirroring
@@ -76,7 +76,7 @@ def twoAdicDomain := ⟦
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = @trace_vanishing(zeta, l);
     let ginv = val_inverse(two_adic_gen(l));
-    let is_first = ext_div(zh, ext_sub(zeta, [.VAL_ONE, .VAL_ZERO]));
+    let is_first = ext_div(zh, ext_sub(zeta, .EXT_ONE));
     let is_last = ext_div(zh, ext_sub(zeta, [ginv, .VAL_ZERO]));
     let is_trans = ext_sub(zeta, [ginv, .VAL_ZERO]);
     let inv_van = ext_inverse(zh);

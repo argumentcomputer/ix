@@ -943,7 +943,7 @@ def pcsFri := ⟦
       _ => match circ_has_height(log_degrees, log_blowup, num_circuits, 0, h) {
         0 => build_buckets(log_degrees, log_blowup, num_circuits, h - 1),
         _ => store(ListNode.Cons(
-               Bucket.Mk(h, [.VAL_ONE, .VAL_ZERO], [.VAL_ZERO, .VAL_ZERO]),
+               Bucket.Mk(h, .EXT_ONE, .EXT_ZERO),
                build_buckets(log_degrees, log_blowup, num_circuits, h - 1))),
       },
     }
@@ -958,7 +958,7 @@ def pcsFri := ⟦
         let Bucket.Mk(h, ap, ro) = b;
         match eq_zero(h - lh) {
           1 =>
-            let (s, ap2) = ro_fold(p_x, p_z, alpha, [.VAL_ZERO, .VAL_ZERO], ap);
+            let (s, ap2) = ro_fold(p_x, p_z, alpha, .EXT_ZERO, ap);
             let ro2 = ext_add(ro, ext_mul(q, s));
             store(ListNode.Cons(Bucket.Mk(h, ap2, ro2), rest)),
           _ => store(ListNode.Cons(b, bucket_update(rest, lh, p_x, p_z, q, alpha))),
@@ -974,7 +974,7 @@ def pcsFri := ⟦
       ListNode.Cons(b, rest) =>
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_blowup) {
-          1 => assert_eq!(ext_eq(ro, [.VAL_ZERO, .VAL_ZERO]), 1); 1,
+          1 => assert_eq!(ext_eq(ro, .EXT_ZERO), 1); 1,
           _ => assert_blowup_zero(rest, log_blowup),
         },
     }
