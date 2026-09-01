@@ -42,15 +42,9 @@ def blake3 := ⟦
     Some([[U8; 4]; 8])
   }
 
-  -- Blake3 output words packed 4 LE bytes -> 1 field element (injective:
-  -- 2^32 < p, unlike full 8-byte limbs). Pure wiring when @-inlined; the
-  -- packed form is the public-input digest representation shared by the
-  -- kernel's `verify_claim` and the recursive verifier's entrypoint.
-  fn b3_pack_w(w: [U8; 4]) -> G {
-    to_field(w[0]) + 256 * to_field(w[1]) + 65536 * to_field(w[2])
-      + 16777216 * to_field(w[3])
-  }
-  fn b3_pack(h: [[U8; 4]; 8]) -> [G; 8] {
+  -- The packed digest form: per-word packing from the width profile
+  -- (`b3_pack_w`), 8 words per digest.
+  fn b3_pack(h: [[U8; 4]; 8]) -> PackedDigest {
     [@b3_pack_w(h[0]), @b3_pack_w(h[1]), @b3_pack_w(h[2]), @b3_pack_w(h[3]),
      @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
   }

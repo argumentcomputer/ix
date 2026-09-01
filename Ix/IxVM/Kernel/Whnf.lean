@@ -189,7 +189,7 @@ def whnf := ⟦
                 match address_eq(rec_addr, decidable_rec_addr()) {
                   0 => (0, store(KExprNode.BVar(0))),
                   _ =>
-                    match u32_less_than(list_length(inner_args), 5) {
+                    match u32_lt(list_length(inner_args), 5) {
                       1 => (0, store(KExprNode.BVar(0))),
                       _ =>
                         let a0 = list_lookup(inner_args, 0);
@@ -383,7 +383,7 @@ def whnf := ⟦
 
   fn try_quot_lift(spine: List‹KExpr›, types: List‹KExpr›) -> (G, KExpr) {
     let n = list_length(spine);
-    match u32_less_than(n, 6) {
+    match u32_lt(n, 6) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let f = list_lookup(spine, 3);
@@ -399,7 +399,7 @@ def whnf := ⟦
 
   fn try_quot_ind(spine: List‹KExpr›, types: List‹KExpr›) -> (G, KExpr) {
     let n = list_length(spine);
-    match u32_less_than(n, 5) {
+    match u32_lt(n, 5) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let m = list_lookup(spine, 3);
@@ -567,7 +567,7 @@ def whnf := ⟦
                                           spine: List‹KExpr›) -> (G, KExpr) {
     match projection_definition_info(value, 0) {
       (1, arity, struct_addr, field, struct_arg_idx) =>
-        match u32_less_than(list_length(spine), arity) {
+        match u32_lt(list_length(spine), arity) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let target_arg = list_lookup(spine, struct_arg_idx);
@@ -590,7 +590,7 @@ def whnf := ⟦
       KExprNode.Proj(struct_addr, field, projected) =>
         match load(projected) {
           KExprNode.BVar(i) =>
-            match u32_less_than(i, arity) {
+            match u32_lt(i, arity) {
               1 => (1, arity, struct_addr, field, (arity - 1) - i),
               _ => (0, 0, store([0u8; 32]), 0, 0),
             },
@@ -672,7 +672,7 @@ def whnf := ⟦
             -- now runs BEFORE `try_iota`, so it must re-establish the
             -- precondition itself. A recursor short of its major cannot iota
             -- at all, so declining here is also the right verdict.
-            match memo_u32_less_than(major_idx, list_length(spine)) {
+            match memo_u32_lt(major_idx, list_length(spine)) {
               0 => (0, store(KExprNode.BVar(0))),
               _ =>
                 let raw_major = list_lookup(spine, major_idx);
@@ -789,7 +789,7 @@ def whnf := ⟦
                   head: KExpr, rec_parent: Addr) -> (G, KExpr) {
     let major_idx = nparams + nmotives + nminors + nindices;
     let spine_len = list_length(spine);
-    match u32_less_than(major_idx, spine_len) {
+    match u32_lt(major_idx, spine_len) {
       0 => (0, store(KExprNode.BVar(0))),
       _ =>
         --  linear-rec fast path: `Nat.rec base (fun _ ih => succ ih) (Lit n)`
@@ -938,7 +938,7 @@ def whnf := ⟦
                                     -- cannot establish the major's type; do
                                     -- the same instead of indexing past
                                     -- `types` in `k_infer`.
-                                    match memo_u32_less_than(list_length(types),
+                                    match memo_u32_lt(list_length(types),
                                         expr_lbr(major)) {
                                       1 => (0, store(KExprNode.BVar(0))),
                                       _ =>

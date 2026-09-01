@@ -105,7 +105,7 @@ def defEq := ⟦
   -- memo row, and the recursion below issues instantiation traffic
   -- with a canonical orientation.
   fn k_is_def_eq_core(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    match u32_less_than(ptr_val(a), ptr_val(b)) {
+    match u32_lt(ptr_val(a), ptr_val(b)) {
       1 => k_is_def_eq_ordered(a, b, types),
       _ => k_is_def_eq_ordered(b, a, types),
     }
@@ -1090,10 +1090,10 @@ def defEq := ⟦
           _ =>
             let ar = delta_rank(a_ci);
             let br = delta_rank(b_ci);
-            match u32_less_than(br, ar) {
+            match u32_lt(br, ar) {
               1 => unfold_a_and_loop(a, b, fuel, types),
               _ =>
-                match u32_less_than(ar, br) {
+                match u32_lt(ar, br) {
                   1 => unfold_b_and_loop(a, b, fuel, types),
                   _ => unfold_both_and_loop(a, b, fuel, types),
                 },

@@ -97,10 +97,10 @@ def levels := ⟦
         match load(b) {
           ListNode.Nil => 2,
           ListNode.Cons(y, br) =>
-            match u32_less_than(x, y) {
+            match u32_lt(x, y) {
               1 => 1,
               0 =>
-                match u32_less_than(y, x) {
+                match u32_lt(y, x) {
                   1 => 2,
                   0 => glist_cmp(ar, br),
                 },
@@ -117,10 +117,10 @@ def levels := ⟦
         match load(ys) {
           ListNode.Nil => 0,
           ListNode.Cons(y, yr) =>
-            match u32_less_than(x, y) {
+            match u32_lt(x, y) {
               1 => 0,
               0 =>
-                match u32_less_than(y, x) {
+                match u32_lt(y, x) {
                   1 => glist_subset(xs, yr),
                   0 => glist_subset(xr, yr),
                 },
@@ -150,10 +150,10 @@ def levels := ⟦
     match load(l) {
       ListNode.Nil => (1, store(ListNode.Cons(x, store(ListNode.Nil)))),
       ListNode.Cons(h, r) =>
-        match u32_less_than(x, h) {
+        match u32_lt(x, h) {
           1 => (1, store(ListNode.Cons(x, l))),
           0 =>
-            match u32_less_than(h, x) {
+            match u32_lt(h, x) {
               0 => (0, l),
               1 =>
                 match glist_ordered_insert(x, r) {
@@ -173,13 +173,13 @@ def levels := ⟦
       ListNode.Cons(v, rest) =>
         match load(v) {
           NLVar.Mk(vi, vo) =>
-            match u32_less_than(idx, vi) {
+            match u32_lt(idx, vi) {
               1 => store(ListNode.Cons(store(NLVar.Mk(idx, k)), vars)),
               0 =>
-                match u32_less_than(vi, idx) {
+                match u32_lt(vi, idx) {
                   1 => store(ListNode.Cons(v, nlvars_add(rest, idx, k))),
                   0 =>
-                    match u32_less_than(vo, k) {
+                    match u32_lt(vo, k) {
                       1 => store(ListNode.Cons(store(NLVar.Mk(vi, k)), rest)),
                       0 => vars,
                     },
@@ -225,7 +225,7 @@ def levels := ⟦
         match load(v) {
           NLVar.Mk(_, vo) =>
             let m = nlvars_max_offset(rest);
-            match u32_less_than(m, vo) {
+            match u32_lt(m, vo) {
               1 => vo,
               0 => m,
             },
@@ -246,13 +246,13 @@ def levels := ⟦
               NLVar.Mk(xi, xo) =>
                 match load(y) {
                   NLVar.Mk(yi, yo) =>
-                    match u32_less_than(xi, yi) {
+                    match u32_lt(xi, yi) {
                       1 => store(ListNode.Cons(x, nlvars_subsume(xr, ys))),
                       0 =>
-                        match u32_less_than(yi, xi) {
+                        match u32_lt(yi, xi) {
                           1 => nlvars_subsume(xs, yr),
                           0 =>
-                            match u32_less_than(yo, xo) {
+                            match u32_lt(yo, xo) {
                               1 => store(ListNode.Cons(x, nlvars_subsume(xr, yr))),
                               0 => nlvars_subsume(xr, yr),
                             },
@@ -291,7 +291,7 @@ def levels := ⟦
           NLEntry.Mk(ep, ec, ev) =>
             match glist_cmp(path, ep) {
               0 =>
-                match u32_less_than(ec, k) {
+                match u32_lt(ec, k) {
                   1 => store(ListNode.Cons(store(NLEntry.Mk(ep, k, ev)), rest)),
                   0 => acc,
                 },
@@ -421,12 +421,12 @@ def levels := ⟦
                       _ =>
                         let or1 = match same {
                           1 => 1,
-                          0 => u32_less_than(c2, c1),
+                          0 => u32_lt(c2, c1),
                         };
                         let or2 = match load(v2) {
                           ListNode.Nil => 1,
                           ListNode.Cons(_, _) =>
-                            u32_less_than(nlvars_max_offset(v1) + 1, c1),
+                            u32_lt(nlvars_max_offset(v1) + 1, c1),
                         };
                         match or1 * or2 {
                           0 => 0,
@@ -524,7 +524,7 @@ def levels := ⟦
             match glist_subset(p2, p1) {
               0 => nl_covers_const(rest, p1, c),
               _ =>
-                let hit = match u32_less_than(c2, c) {
+                let hit = match u32_lt(c2, c) {
                   0 => 1,
                   1 => nlvars_any_offset_geq(v2, c),
                 };
@@ -544,7 +544,7 @@ def levels := ⟦
       ListNode.Cons(v, rest) =>
         match load(v) {
           NLVar.Mk(_, vo) =>
-            match u32_less_than(vo + 1, c) {
+            match u32_lt(vo + 1, c) {
               0 => 1,
               1 => nlvars_any_offset_geq(rest, c),
             },
@@ -580,7 +580,7 @@ def levels := ⟦
           NLVar.Mk(vi, vo) =>
             match vi - w {
               0 =>
-                match u32_less_than(vo, off) {
+                match u32_lt(vo, off) {
                   0 => 1,
                   1 => nlvars_dominates(rest, w, off),
                 },
@@ -675,7 +675,7 @@ def levels := ⟦
       (1, na) =>
         match level_explicit_val(b) {
           (1, nb) =>
-            match u32_less_than(na, nb) {
+            match u32_lt(na, nb) {
               1 => b,
               0 => a,
             },
@@ -774,7 +774,7 @@ def levels := ⟦
           (base_b, off_b) =>
             match level_struct_eq(base_a, base_b) {
               1 =>
-                match u32_less_than(off_a, off_b) {
+                match u32_lt(off_a, off_b) {
                   1 => b,
                   0 => a,
                 },

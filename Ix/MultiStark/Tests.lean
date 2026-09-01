@@ -294,7 +294,7 @@ def tests := ⟦
       0 => store(ListNode.Nil),
       _ =>
         -- n mod 256, valid for n ≤ 511 (largest size used below is 500).
-        let lo = u8_from_field_unsafe(n - 256 * u32_less_than(255, n));
+        let lo = u8_from_field_unsafe(n - 256 * u32_lt(255, n));
         store(ListNode.Cons([lo, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8],
                             lane_test_row(n - 1))),
     }

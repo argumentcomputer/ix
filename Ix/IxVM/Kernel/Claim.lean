@@ -1196,7 +1196,7 @@ def claim := ⟦
   -- Variants without an arm here (notably 3, Eval) have no defined
   -- semantics upstream, so the match falls through and aborts rather
   -- than accepting a claim whose meaning is unspecified.
-  fn run_claim(digest: [G; 8]) {
+  fn run_claim(digest: PackedDigest) {
     -- `digest` is the packed-4-byte public claim digest; the ch-0 key uses
     -- the same packed form (io keys are execution-side only — no columns).
     let (idx, len) = io_get_info(0, digest);

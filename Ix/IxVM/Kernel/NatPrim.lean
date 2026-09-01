@@ -284,7 +284,7 @@ def natPrim := ⟦
               match is_rb + is_rn {
                 0 => (0, store(KExprNode.BVar(0))),
                 _ =>
-                  match u32_less_than(list_length(spine), 1) {
+                  match u32_lt(list_length(spine), 1) {
                     1 => (0, store(KExprNode.BVar(0))),
                     _ =>
                       let arg = list_lookup(spine, 0);
@@ -303,7 +303,7 @@ def natPrim := ⟦
   -- Subtype.val A P (System.Platform.getNumBits ()) → 64.
   -- Spine: [A, P, val_arg]. val_arg's spine head must = getNumBits.
   fn try_reduce_subtype_val(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 3) {
+    match u32_lt(list_length(spine), 3) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         match collect_spine(list_lookup(spine, 2)) {
@@ -434,7 +434,7 @@ def natPrim := ⟦
 
   -- BitVec.ult width lhs rhs → mk_bool(lhs_nat < rhs_nat)
   fn try_reduce_bit_vec_ult(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 3) {
+    match u32_lt(list_length(spine), 3) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let width_e = list_lookup(spine, 0);
@@ -456,7 +456,7 @@ def natPrim := ⟦
 
   -- decide (LT.lt BitVec width lhs rhs) inst → bit_vec_ult.
   fn try_reduce_decide_bitvec_lt(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match u32_lt(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let prop = list_lookup(spine, 0);
@@ -467,7 +467,7 @@ def natPrim := ⟦
                 match address_eq(lt_caddr, lt_lt_addr()) {
                   0 => (0, store(KExprNode.BVar(0))),
                   _ =>
-                    match u32_less_than(list_length(lt_args), 4) {
+                    match u32_lt(list_length(lt_args), 4) {
                       1 => (0, store(KExprNode.BVar(0))),
                       _ =>
                         let ty_arg = list_lookup(lt_args, 0);
@@ -478,7 +478,7 @@ def natPrim := ⟦
                                 match address_eq(ty_caddr, bit_vec_addr()) {
                                   0 => (0, store(KExprNode.BVar(0))),
                                   _ =>
-                                    match u32_less_than(list_length(ty_args), 1) {
+                                    match u32_lt(list_length(ty_args), 1) {
                                       1 => (0, store(KExprNode.BVar(0))),
                                       _ =>
                                         let width = list_lookup(ty_args, 0);
@@ -532,7 +532,7 @@ def natPrim := ⟦
                               types: List‹KExpr›) -> (G, KExpr) {
     match address_eq(head_addr, bit_vec_to_nat_addr()) {
       1 =>
-        match u32_less_than(list_length(spine), 2) {
+        match u32_lt(list_length(spine), 2) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let spine_p = bitvec_prep_spine(spine, types);
@@ -739,7 +739,7 @@ def natPrim := ⟦
       _ =>
     match address_eq(head_addr, string_utf8_byte_size_addr()) {
       1 =>
-        match u32_less_than(spine_len, 1) {
+        match u32_lt(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let a0 = list_lookup(spine, 0);
@@ -774,7 +774,7 @@ def natPrim := ⟦
       _ =>
         match address_eq(head_addr, string_append_addr()) {
           1 =>
-            match u32_less_than(spine_len, 2) {
+            match u32_lt(spine_len, 2) {
               1 => (0, store(KExprNode.BVar(0))),
               _ =>
                 let a0 = list_lookup(spine, 0);
@@ -811,7 +811,7 @@ def natPrim := ⟦
   -- String.back / legacy_back over Lit(Str(bs)) →
   -- App(Const(char_of_nat), Lit(Nat last_cp)). Empty bs → 65 ('A').
   fn try_str_back(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 1) {
+    match u32_lt(list_length(spine), 1) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         match load(list_lookup(spine, 0)) {
@@ -834,7 +834,7 @@ def natPrim := ⟦
   -- String.toByteArray on Lit(Str "")  →  Const(byte_array_empty).
   -- Non-empty bails to structural (caller falls back to Defn unfold).
   fn try_str_to_byte_array(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 1) {
+    match u32_lt(list_length(spine), 1) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         match load(list_lookup(spine, 0)) {
@@ -954,7 +954,7 @@ def natPrim := ⟦
                             -- >= 0x800. Reject anything below (e.g.
                             -- [0xE0,0x80,0x80] -> 0, which would alias
                             -- the one-byte NUL).
-                            match u32_less_than(cp, 2048) {
+                            match u32_lt(cp, 2048) {
                               0 => (cp, r2),
                             },
                         },
@@ -972,7 +972,7 @@ def natPrim := ⟦
                                        + utf8_cont(b3);
                                 -- Overlong: a real four-byte scalar is
                                 -- >= 0x10000.
-                                match u32_less_than(cp, 65536) {
+                                match u32_lt(cp, 65536) {
                                   0 => (cp, r3),
                                 },
                             },
@@ -1083,27 +1083,15 @@ def natPrim := ⟦
   -- four u8 range checks + the reconstruction assert. `x >= 2^32` is
   -- rejected (assert fails) rather than silently truncated.
   fn klimbs_from_g(x: G) -> KLimbs {
-    match #split_u32(x) {
-      (rb0, rb1, rb2, rb3) =>
-        let b0 = u8_xor(u8_from_field_unsafe(rb0), 0u8);
-        let b1 = u8_xor(u8_from_field_unsafe(rb1), 0u8);
-        let b2 = u8_xor(u8_from_field_unsafe(rb2), 0u8);
-        let b3 = u8_xor(u8_from_field_unsafe(rb3), 0u8);
-        -- Pins the unconstrained byte-split hint: the four witnessed
-        -- bytes must recompose to exactly the field element they claim
-        -- to decompose.
-        assert_eq!(x, to_field(b0) + 256 * to_field(b1)
-                   + 65536 * to_field(b2) + 16777216 * to_field(b3),
-          "u32 byte split does not recompose to the original value");
-        -- Normalize HERE, not at each caller: `x == 0` gives the all-zero
-        -- limb, which is the denormalized `[[0;8]]`. `klimbs_eq` (behind
-        -- `Nat.beq`/`decEq`) compares limbs without normalizing, so an
-        -- unnormalized zero disagrees with the canonical empty list and
-        -- makes a reducer's literal wrong. Callers used to normalize
-        -- individually and one (`String.back`) was missed.
-        klimbs_normalize(store(ListNode.Cons(
-          [b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)))),
-    }
+    let [b0, b1, b2, b3] = u32_split(x);
+    -- Normalize HERE, not at each caller: `x == 0` gives the all-zero
+    -- limb, which is the denormalized `[[0;8]]`. `klimbs_eq` (behind
+    -- `Nat.beq`/`decEq`) compares limbs without normalizing, so an
+    -- unnormalized zero disagrees with the canonical empty list and
+    -- makes a reducer's literal wrong. Callers used to normalize
+    -- individually and one (`String.back`) was missed.
+    klimbs_normalize(store(ListNode.Cons(
+          [b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil))))
   }
 
   -- Mirror walk_char_list_bytes: whnf `list`, expect a fully applied
@@ -1195,13 +1183,13 @@ def natPrim := ⟦
               0 => (0, 0),
               _ =>
                 let cp = to_field(b0) + to_field(b1) * 256 + to_field(b2) * 65536;
-                match u32_less_than(cp, 55296) {
+                match u32_lt(cp, 55296) {
                   1 => (1, cp),
                   _ =>
-                    match u32_less_than(57343, cp) {
+                    match u32_lt(57343, cp) {
                       0 => (0, 0),
                       _ =>
-                        match u32_less_than(cp, 1114112) {
+                        match u32_lt(cp, 1114112) {
                           1 => (1, cp),
                           _ => (0, 0),
                         },
@@ -1218,7 +1206,7 @@ def natPrim := ⟦
   -- provided results MUST be pinned by u8 + window range checks +
   -- reconstruction assert.
   fn divmod_64u(x: G, q: G) -> (G, G) {
-    match u32_less_than(x, 64) {
+    match u32_lt(x, 64) {
       1 => (x, q),
       _ => divmod_64u(x - 64, q + 1),
     }
@@ -1252,26 +1240,26 @@ def natPrim := ⟦
         let f3 = to_field(g3u);
         -- Pins the unconstrained UTF-8 group hint: each group is a
         -- 6-bit value and together they recompose to the codepoint.
-        assert_eq!(u32_less_than(f0, 64), 1,
+        assert_eq!(u32_lt(f0, 64), 1,
           "utf8 group 0 is not a 6-bit value");
-        assert_eq!(u32_less_than(f1, 64), 1,
+        assert_eq!(u32_lt(f1, 64), 1,
           "utf8 group 1 is not a 6-bit value");
-        assert_eq!(u32_less_than(f2, 64), 1,
+        assert_eq!(u32_lt(f2, 64), 1,
           "utf8 group 2 is not a 6-bit value");
-        assert_eq!(u32_less_than(f3, 64), 1,
+        assert_eq!(u32_lt(f3, 64), 1,
           "utf8 group 3 is not a 6-bit value");
         assert_eq!(cp, f0 + f1 * 64 + f2 * 4096 + f3 * 262144,
           "utf8 groups do not recompose to the codepoint");
-        match u32_less_than(cp, 128) {
+        match u32_lt(cp, 128) {
           1 => store(ListNode.Cons(u8_from_field_unsafe(cp), tail)),
           _ =>
-            match u32_less_than(cp, 2048) {
+            match u32_lt(cp, 2048) {
               1 =>
                 let t1 = u8_from_field_unsafe(f0 + 128);
                 let l1 = u8_from_field_unsafe(f1 + 192);
                 store(ListNode.Cons(l1, store(ListNode.Cons(t1, tail)))),
               _ =>
-                match u32_less_than(cp, 65536) {
+                match u32_lt(cp, 65536) {
                   1 =>
                     let t2 = u8_from_field_unsafe(f0 + 128);
                     let t1 = u8_from_field_unsafe(f1 + 128);
@@ -1522,7 +1510,7 @@ def natPrim := ⟦
     let n = list_length(sw);
     let unary = address_eq(head_addr, int_neg_addr()) + address_eq(head_addr, int_nat_abs_addr());
     match unary {
-      1 => match u32_less_than(n, 1) {
+      1 => match u32_lt(n, 1) {
         1 => (0, store(KExprNode.BVar(0))),
         _ => match try_extract_int_prim(list_lookup(sw, 0)) {
           (1, s, a) =>
@@ -1534,7 +1522,7 @@ def natPrim := ⟦
           _ => (0, store(KExprNode.BVar(0))),
         },
       },
-      _ => match u32_less_than(n, 2) {
+      _ => match u32_lt(n, 2) {
         1 => (0, store(KExprNode.BVar(0))),
         _ => match try_extract_int_prim(list_lookup(sw, 0)) {
           (1, sa, a) => try_int_prim_second(head_addr, sw, sa, a),
@@ -1790,7 +1778,7 @@ def natPrim := ⟦
   -- major (via whnf_spine).
   fn try_nat_linear_rec(spine: List‹KExpr›, nparams: G, nmotives: G,
                              nminors: G, major_idx: G) -> (G, KExpr) {
-    match u32_less_than(nminors, 2) {
+    match u32_lt(nminors, 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let raw_major = list_lookup(spine, major_idx);
@@ -1825,7 +1813,7 @@ def natPrim := ⟦
     let is_succ = address_eq(head_addr, nat_succ_addr());
     match is_succ {
       1 =>
-        match u32_less_than(spine_len, 1) {
+        match u32_lt(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let a0 = list_lookup(spine, 0);
@@ -1839,7 +1827,7 @@ def natPrim := ⟦
       _ =>
         match is_pred {
           1 =>
-            match u32_less_than(spine_len, 1) {
+            match u32_lt(spine_len, 1) {
               1 => (0, store(KExprNode.BVar(0))),
               _ =>
                 let a0 = list_lookup(spine, 0);
@@ -1863,7 +1851,7 @@ def natPrim := ⟦
   -- charges rows that actually dispatch a binop.
   fn try_nat_binop_dispatch(head_addr: Addr, spine: List‹KExpr›,
                                  spine_len: G) -> (G, KExpr) {
-    match u32_less_than(spine_len, 2) {
+    match u32_lt(spine_len, 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let a0 = list_lookup(spine, 0);
