@@ -6,6 +6,7 @@ public import Tests.Aiur.Cost
 public import Tests.Aiur.Inline
 public import Tests.Aiur.U64
 public import Tests.Aiur.Const
+public import Tests.Aiur.Width
 public import Tests.Aiur.Hashes
 public import Tests.Aiur.RBTreeMap
 public import Tests.Aiur.Cross

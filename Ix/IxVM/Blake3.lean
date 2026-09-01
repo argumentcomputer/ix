@@ -42,13 +42,6 @@ def blake3 := ⟦
     Some([[U8; 4]; 8])
   }
 
-  -- The packed digest form: per-word packing from the width profile
-  -- (`b3_pack_w`), 8 words per digest.
-  fn b3_pack(h: [[U8; 4]; 8]) -> PackedDigest {
-    [@b3_pack_w(h[0]), @b3_pack_w(h[1]), @b3_pack_w(h[2]), @b3_pack_w(h[3]),
-     @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
-  }
-
   fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
     blake3_compress_layer(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
