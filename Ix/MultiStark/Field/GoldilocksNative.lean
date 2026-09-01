@@ -7,23 +7,23 @@ public import Ix.Aiur.Meta
 The single module where the recursive verifier assumes the Aiur outer
 field IS Goldilocks (`aiur::G = p3_goldilocks`): the inner field's
 types, values, and operations, base and extension. Everything
-downstream (`Pcs.lean`, `Verifier.lean`) does its inner-field
-arithmetic exclusively through calls into this interface — always
-inlined (`@val_add(..)`, `@ext_mul(..)`), so every function here splices
-away at compile time.
+downstream (`Pcs/Fri.lean`, `Verifier.lean`, `Domain.lean`, the
+deserializers) does its inner-field arithmetic exclusively through plain
+calls into this interface (`val_add(..)`, `ext_mul(..)`). Whether a call
+splices is the IMPLEMENTOR's decision (`inline fn`, see
+`Ix/Aiur/Stages/Source.lean`): here every operation is trivial native
+arithmetic, so all of them are `inline` and splice away at compile time.
 
-The point of the indirection: a future `GoldilocksForeign.lean` will
-provide the same interface over a non-Goldilocks outer field (e.g. the
-BLS12-381 scalar field for the KZG terminal stage), where a `Goldilocks`
-value is a different representation and the operations are emulated.
-Swapping fields is then a matter of choosing which module to merge into
-the toplevel — no verifier-side changes.
+The point of the indirection: `GoldilocksBytes.lean` provides the same
+interface over a smaller outer field (e.g. KoalaBear under the Hypercube
+backend), where a `Val` is a byte-limb representation and the operations
+are emulated. Swapping fields is then a matter of choosing which module
+to merge into the toplevel — no verifier-side changes.
 
 Contents:
 
-- the representation types: `Goldilocks` (native: `G` itself) and the
-  degree-2 extension `ExtGoldilocks = 𝔽_p[X]/(X² − 7)` (a pair
-  `[c0, c1] = c0 + c1·X`);
+- the representation types: `Val` (native: `G` itself) and the degree-2
+  extension `Ext = 𝔽_p[X]/(X² − 7)` (a pair `[c0, c1] = c0 + c1·X`);
 - pure values: `val_zero`/`val_one`/`val_two`, the binomial modulus `ext_w`
   (X² = 7), the multiplicative-coset generator `val_generator` (7), and
   the maximal two-adic root `val_two_adic_root` (order 2^32);
@@ -53,32 +53,32 @@ def goldilocksNative := ⟦
   -- ==========================================================================
   -- Pure values.
   -- ==========================================================================
-  fn val_zero() -> Val { 0 }
-  fn val_one() -> Val { 1 }
-  fn val_two() -> Val { 2 }
+  inline fn val_zero() -> Val { 0 }
+  inline fn val_one() -> Val { 1 }
+  inline fn val_two() -> Val { 2 }
   -- The extension's binomial modulus: ExtGoldilocks = 𝔽_p[X]/(X² − W).
-  fn ext_w() -> Val { 7 }
+  inline fn ext_w() -> Val { 7 }
   -- The multiplicative-coset generator (Plonky3 `Goldilocks::GENERATOR`).
-  fn val_generator() -> Val { 7 }
+  inline fn val_generator() -> Val { 7 }
   -- A primitive 2^32-th root of unity (Plonky3's maximal two-adic
   -- generator); smaller-order roots derive by squaring (`two_adic_gen`).
-  fn val_two_adic_root() -> Val { 1753635133440165772 }
+  inline fn val_two_adic_root() -> Val { 1753635133440165772 }
   -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
   -- ConstSmall ingest (byte sums cannot wrap, and 2¹⁶ < p in every field).
-  fn val_from_u16(lo: U8, hi: U8) -> Val {
+  inline fn val_from_u16(lo: U8, hi: U8) -> Val {
     to_field(lo) + 256 * to_field(hi)
   }
 
   -- ==========================================================================
   -- Ring operations. Native: the outer field's own `+`/`-`/`*`.
   -- ==========================================================================
-  fn val_add(a: Val, b: Val) -> Val { a + b }
-  fn val_sub(a: Val, b: Val) -> Val { a - b }
-  fn val_neg(a: Val) -> Val { 0 - a }
-  fn val_mul(a: Val, b: Val) -> Val { a * b }
+  inline fn val_add(a: Val, b: Val) -> Val { a + b }
+  inline fn val_sub(a: Val, b: Val) -> Val { a - b }
+  inline fn val_neg(a: Val) -> Val { 0 - a }
+  inline fn val_mul(a: Val, b: Val) -> Val { a * b }
 
   -- 1 iff the value is zero (as a native boolean flag).
-  fn val_is_zero(a: Val) -> G { eq_zero(a) }
+  inline fn val_is_zero(a: Val) -> G { eq_zero(a) }
 
   -- ==========================================================================
   -- Base field inverse: hinted, verified with one multiplication.
@@ -86,7 +86,7 @@ def goldilocksNative := ⟦
   -- assert gives x·i = 1) and `i = 0` when `x = 0` (t = −1, second assert).
   -- Matches the reference semantics `0⁻¹ = 0` (Fermat: 0^(p−2) = 0).
   -- ==========================================================================
-  fn val_inverse(x: Val) -> Val {
+  inline fn val_inverse(x: Val) -> Val {
     let iv = unconstrained_g_inverse(x);
     let t = (x * iv) - 1;
     assert_eq!(x * t, 0);
@@ -103,7 +103,7 @@ def goldilocksNative := ⟦
   -- arbitrary 8-byte value (< 2⁶⁴ < 2p) the field sum wraps at most once,
   -- yielding exactly the reduced representative — so this is both the
   -- canonical-bytes recomposition AND the wire-limb reduction.
-  fn val_from_bytes(x: [U8; 8]) -> G {
+  inline fn val_from_bytes(x: [U8; 8]) -> G {
     to_field(x[0]) + 256 * to_field(x[1]) + 65536 * to_field(x[2])
       + 16777216 * to_field(x[3]) + 4294967296 * to_field(x[4])
       + 1099511627776 * to_field(x[5]) + 281474976710656 * to_field(x[6])
@@ -116,7 +116,7 @@ def goldilocksNative := ⟦
   -- is zero iff its byte sum is zero (a sum of four bytes cannot wrap).
   -- Inputs must be range-checked bytes. (Used by the challenger's rejection
   -- sampling, which works on raw sampled bytes.)
-  fn bytes_lt_modulus(x: [U8; 8]) -> G {
+  inline fn bytes_lt_modulus(x: [U8; 8]) -> G {
     let hi_max = eq_zero(
       to_field(x[4]) + to_field(x[5]) + to_field(x[6]) + to_field(x[7]) - 1020);
     let lo_zero = eq_zero(
@@ -128,15 +128,15 @@ def goldilocksNative := ⟦
   -- challenger observations). The bytes are prover hints; the range checks +
   -- recomposition equality + canonicality check pin the unique canonical
   -- decomposition (two distinct byte strings < p have distinct field values).
-  fn val_to_bytes(v: G) -> [U8; 8] {
+  inline fn val_to_bytes(v: G) -> [U8; 8] {
     let b = unconstrained_g_to_bytes(v);
     let (c0, c1) = u8_range_check(b[0], b[1]);
     let (c2, c3) = u8_range_check(b[2], b[3]);
     let (c4, c5) = u8_range_check(b[4], b[5]);
     let (c6, c7) = u8_range_check(b[6], b[7]);
     let r = [c0, c1, c2, c3, c4, c5, c6, c7];
-    assert_eq!(@val_from_bytes(r), v);
-    assert_eq!(@bytes_lt_modulus(r), 1);
+    assert_eq!(val_from_bytes(r), v);
+    assert_eq!(bytes_lt_modulus(r), 1);
     r
   }
 
@@ -144,32 +144,32 @@ def goldilocksNative := ⟦
   -- Extension algebra ExtGoldilocks = 𝔽_p[X]/(X² − 7), over the base
   -- interface (no raw arithmetic below this line).
   -- ==========================================================================
-  fn ext_add(a: Ext, b: Ext) -> Ext {
-    [@val_add(a[0], b[0]), @val_add(a[1], b[1])]
+  inline fn ext_add(a: Ext, b: Ext) -> Ext {
+    [val_add(a[0], b[0]), val_add(a[1], b[1])]
   }
-  fn ext_sub(a: Ext, b: Ext) -> Ext {
-    [@val_sub(a[0], b[0]), @val_sub(a[1], b[1])]
+  inline fn ext_sub(a: Ext, b: Ext) -> Ext {
+    [val_sub(a[0], b[0]), val_sub(a[1], b[1])]
   }
-  fn ext_neg(a: Ext) -> Ext {
-    [@val_neg(a[0]), @val_neg(a[1])]
+  inline fn ext_neg(a: Ext) -> Ext {
+    [val_neg(a[0]), val_neg(a[1])]
   }
   -- (a0 + a1·X)(b0 + b1·X) = (a0·b0 + 7·a1·b1) + (a0·b1 + a1·b0)·X.
-  fn ext_mul(a: Ext, b: Ext) -> Ext {
-    [@val_add(@val_mul(a[0], b[0]), @val_mul(@ext_w(), @val_mul(a[1], b[1]))),
-     @val_add(@val_mul(a[0], b[1]), @val_mul(a[1], b[0]))]
+  inline fn ext_mul(a: Ext, b: Ext) -> Ext {
+    [val_add(val_mul(a[0], b[0]), val_mul(ext_w(), val_mul(a[1], b[1]))),
+     val_add(val_mul(a[0], b[1]), val_mul(a[1], b[0]))]
   }
   -- conjugate ā = a0 − a1·X, norm a·ā = a0² − 7·a1² ∈ 𝔽_p, a⁻¹ = ā / norm.
-  fn ext_inverse(a: Ext) -> Ext {
-    let norm = @val_sub(@val_mul(a[0], a[0]), @val_mul(@ext_w(), @val_mul(a[1], a[1])));
-    let ninv = @val_inverse(norm);
-    [@val_mul(a[0], ninv), @val_mul(@val_neg(a[1]), ninv)]
+  inline fn ext_inverse(a: Ext) -> Ext {
+    let norm = val_sub(val_mul(a[0], a[0]), val_mul(ext_w(), val_mul(a[1], a[1])));
+    let ninv = val_inverse(norm);
+    [val_mul(a[0], ninv), val_mul(val_neg(a[1]), ninv)]
   }
-  fn ext_div(a: Ext, b: Ext) -> Ext {
-    @ext_mul(a, @ext_inverse(b))
+  inline fn ext_div(a: Ext, b: Ext) -> Ext {
+    ext_mul(a, ext_inverse(b))
   }
   -- 1 iff two extension elements are equal.
-  fn ext_eq(a: Ext, b: Ext) -> G {
-    @val_is_zero(@val_sub(a[0], b[0])) * @val_is_zero(@val_sub(a[1], b[1]))
+  inline fn ext_eq(a: Ext, b: Ext) -> G {
+    val_is_zero(val_sub(a[0], b[0])) * val_is_zero(val_sub(a[1], b[1]))
   }
 ⟧
 

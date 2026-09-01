@@ -62,7 +62,7 @@ def verifier := ⟦
   -- An extension element `[c0, c1]` (`= c0 + c1·X`) is zero iff both Goldilocks
   -- coefficients are zero. (`read_ext` already reduced the limbs mod p.)
   fn ext_is_zero(e: Ext) -> G {
-    @val_is_zero(e[0]) * @val_is_zero(e[1])
+    val_is_zero(e[0]) * val_is_zero(e[1])
   }
 
   -- 1 iff the LAST element of the accumulator list is the zero extension
@@ -152,10 +152,10 @@ def verifier := ⟦
     let input = snoc_commitment(input, q);
     -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
     let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
-    ([@val_from_bytes(l0), @val_from_bytes(l1)],
-     [@val_from_bytes(f0), @val_from_bytes(f1)],
-     [@val_from_bytes(a0), @val_from_bytes(a1)],
-     [@val_from_bytes(z0), @val_from_bytes(z1)],
+    ([val_from_bytes(l0), val_from_bytes(l1)],
+     [val_from_bytes(f0), val_from_bytes(f1)],
+     [val_from_bytes(a0), val_from_bytes(a1)],
+     [val_from_bytes(z0), val_from_bytes(z1)],
      zinput)
   }
 
@@ -207,13 +207,13 @@ def verifier := ⟦
   -- One Horner fold step of the constraint folder: `acc := acc·α + x`
   -- (`VerifierConstraintFolder::assert_zero` / `assert_zero_ext`).
   fn ood_fold(acc: Ext, alpha: Ext, x: Ext) -> Ext {
-    @ext_add(@ext_mul(acc, alpha), x)
+    ext_add(ext_mul(acc, alpha), x)
   }
 
   -- Reconstruct an extension element from its two opened base coordinates,
   -- `from_ext_basis([c0, c1]) = c0 + c1·X` (the ExtVal basis is `[1, X]`).
   fn from_ext_basis(c0: Ext, c1: Ext) -> Ext {
-    @ext_add(c0, @ext_mul(c1, [@val_zero(), @val_one()]))
+    ext_add(c0, ext_mul(c1, [val_zero(), val_one()]))
   }
 
   -- A stage-2 / quotient opened row arrives as `stage_2_width·2` extension
@@ -254,7 +254,7 @@ def verifier := ⟦
       isf: Ext, isl: Ext, ist: Ext) -> Ext {
     let nd = list_lookup(nodes, i);
     match nd {
-      SysNode.Const(c) => [c, @val_zero()],
+      SysNode.Const(c) => [c, val_zero()],
       SysNode.Var(src, off, idx) =>
         -- flatten (source, offset) into one selector: 2·source + offset,
         -- with source 0 Preprocessed / 1 Main / 2 Stage2, offset 0 cur / 1 next.
@@ -272,16 +272,16 @@ def verifier := ⟦
       SysNode.IsLastRow => isl,
       SysNode.IsTransition => ist,
       SysNode.Add(a, b) =>
-        @ext_add(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+        ext_add(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
       SysNode.Sub(a, b) =>
-        @ext_sub(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+        ext_sub(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
       SysNode.Mul(a, b) =>
-        @ext_mul(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+        ext_mul(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
       SysNode.Neg(a) =>
-        @ext_neg(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
+        ext_neg(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
     }
   }
 
@@ -317,8 +317,8 @@ def verifier := ⟦
   -- (a0·b0 + 7·a1·b1, a0·b1 + a1·b0).
   -- ==========================================================================
   fn pair_mul(a0: Ext, a1: Ext, b0: Ext, b1: Ext) -> (Ext, Ext) {
-    (@ext_add(@ext_mul(a0, b0), @ext_mul([@ext_w(), @val_zero()], @ext_mul(a1, b1))),
-     @ext_add(@ext_mul(a0, b1), @ext_mul(a1, b0)))
+    (ext_add(ext_mul(a0, b0), ext_mul([ext_w(), val_zero()], ext_mul(a1, b1))),
+     ext_add(ext_mul(a0, b1), ext_mul(a1, b0)))
   }
 
   -- fingerprint(γ, args) = Σᵢ argsᵢ·γ^i as a coordinate pair:
@@ -328,14 +328,14 @@ def verifier := ⟦
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext) -> (Ext, Ext) {
     match load(args) {
-      ListNode.Nil => ([@val_zero(), @val_zero()], [@val_zero(), @val_zero()]),
+      ListNode.Nil => ([val_zero(), val_zero()], [val_zero(), val_zero()]),
       ListNode.Cons(a, rest) =>
         let (f0, f1) = logup_fingerprint(rest, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
         let (m0, m1) = pair_mul(f0, f1, g0, g1);
         let av = eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next,
                          publics, isf, isl, ist);
-        (@ext_add(m0, av), m1),
+        (ext_add(m0, av), m1),
     }
   }
 
@@ -365,14 +365,14 @@ def verifier := ⟦
         let SysLookup.Mk(mid, args) = lk;
         let (f0, f1) = logup_fingerprint(args, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-        let m0 = @ext_add(f0, b0);
-        let m1 = @ext_add(f1, b1);
+        let m0 = ext_add(f0, b0);
+        let m1 = ext_add(f1, b1);
         let mv = eval_at(nodes, mid, main, main_next, prep, prep_next, s2, s2next,
                          publics, isf, isl, ist);
         -- R ← R·m + mult·P, then P ← P·m.
         let (rm0, rm1) = pair_mul(r0, r1, m0, m1);
-        let nr0 = @ext_add(rm0, @ext_mul(mv, p0));
-        let nr1 = @ext_add(rm1, @ext_mul(mv, p1));
+        let nr0 = ext_add(rm0, ext_mul(mv, p0));
+        let nr1 = ext_add(rm1, ext_mul(mv, p1));
         let (np0, np1) = pair_mul(p0, p1, m0, m1);
         match (j + 1 - lcount) {
           0 =>
@@ -380,10 +380,10 @@ def verifier := ⟦
             -- the wrap target.
             let s0 = list_lookup(s2, g + g);
             let s1 = list_lookup(s2, g + g + 1);
-            let t0 = @ext_add(list_lookup(s2next, 0), inj0);
-            let t1 = @ext_add(list_lookup(s2next, 1), inj1);
-            let (c0, c1) = pair_mul(np0, np1, @ext_sub(t0, s0), @ext_sub(t1, s1));
-            ood_fold(ood_fold(acc, alpha, @ext_sub(c0, nr0)), alpha, @ext_sub(c1, nr1)),
+            let t0 = ext_add(list_lookup(s2next, 0), inj0);
+            let t1 = ext_add(list_lookup(s2next, 1), inj1);
+            let (c0, c1) = pair_mul(np0, np1, ext_sub(t0, s0), ext_sub(t1, s1));
+            ood_fold(ood_fold(acc, alpha, ext_sub(c0, nr0)), alpha, ext_sub(c1, nr1)),
           _ => match rem - 1 {
             0 =>
               -- Group full: close against the next slot, reset the state.
@@ -391,11 +391,11 @@ def verifier := ⟦
               let s1 = list_lookup(s2, g + g + 1);
               let t0 = list_lookup(s2, g + g + 2);
               let t1 = list_lookup(s2, g + g + 3);
-              let (c0, c1) = pair_mul(np0, np1, @ext_sub(t0, s0), @ext_sub(t1, s1));
-              let acc1 = ood_fold(ood_fold(acc, alpha, @ext_sub(c0, nr0)), alpha,
-                                  @ext_sub(c1, nr1));
+              let (c0, c1) = pair_mul(np0, np1, ext_sub(t0, s0), ext_sub(t1, s1));
+              let acc1 = ood_fold(ood_fold(acc, alpha, ext_sub(c0, nr0)), alpha,
+                                  ext_sub(c1, nr1));
               logup_steps_fold(acc1, alpha, rest, j + 1, lcount,
-                g + 1, k, k, [@val_one(), @val_zero()], [@val_zero(), @val_zero()], [@val_zero(), @val_zero()], [@val_zero(), @val_zero()],
+                g + 1, k, k, [val_one(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()],
                 inj0, inj1, b0, b1, g0, g1, nodes,
                 main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
             _ =>
@@ -419,32 +419,32 @@ def verifier := ⟦
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       lch: Ext, fch: Ext, accp: Ext, naccp: Ext,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: Val) -> Ext {
-    let base = fold_roots([@val_zero(), @val_zero()], alpha, zeros, nodes,
+    let base = fold_roots([val_zero(), val_zero()], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
     -- The lookup-argument coordinates come straight from the challenge /
     -- accumulator values (pure wiring) — `publics` is only for the node
     -- graph's Public(idx) leaves; looking these 8 back out of the list cost
     -- 8 calls for values already in hand.
-    let b0 = [lch[0], @val_zero()]; let b1 = [lch[1], @val_zero()];
-    let g0 = [fch[0], @val_zero()]; let g1 = [fch[1], @val_zero()];
-    let a0 = [accp[0], @val_zero()]; let a1 = [accp[1], @val_zero()];
-    let na0 = [naccp[0], @val_zero()]; let na1 = [naccp[1], @val_zero()];
+    let b0 = [lch[0], val_zero()]; let b1 = [lch[1], val_zero()];
+    let g0 = [fch[0], val_zero()]; let g1 = [fch[1], val_zero()];
+    let a0 = [accp[0], val_zero()]; let a1 = [accp[1], val_zero()];
+    let na0 = [naccp[0], val_zero()]; let na1 = [naccp[1], val_zero()];
     -- Boundary injection: is_last_row·(acc_final − acc_initial) with the
     -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
     -- p3's raw selector has value n·g at the last row, and Δ is constant
     -- across the domain, mirroring the Rust prover/verifier).
-    let inj0 = @ext_mul(isl, @ext_mul(@ext_sub(na0, a0), [inorm, @val_zero()]));
-    let inj1 = @ext_mul(isl, @ext_mul(@ext_sub(na1, a1), [inorm, @val_zero()]));
+    let inj0 = ext_mul(isl, ext_mul(ext_sub(na0, a0), [inorm, val_zero()]));
+    let inj1 = ext_mul(isl, ext_mul(ext_sub(na1, a1), [inorm, val_zero()]));
     match load(lks) {
       -- No lookups: single pass-through column, acc′ − acc + inj = 0.
       ListNode.Nil =>
         let acc = ood_fold(base, alpha,
-          @ext_add(@ext_sub(list_lookup(s2next, 0), list_lookup(s2, 0)), inj0));
+          ext_add(ext_sub(list_lookup(s2next, 0), list_lookup(s2, 0)), inj0));
         ood_fold(acc, alpha,
-          @ext_add(@ext_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
+          ext_add(ext_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
       ListNode.Cons(_h, _t) =>
         logup_steps_fold(base, alpha, lks, 0, list_length(lks),
-          0, k, k, [@val_one(), @val_zero()], [@val_zero(), @val_zero()], [@val_zero(), @val_zero()], [@val_zero(), @val_zero()], inj0, inj1,
+          0, k, k, [val_one(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()], [val_zero(), val_zero()], inj0, inj1,
           b0, b1, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
     }
@@ -455,10 +455,10 @@ def verifier := ⟦
   -- (`EF::from(coord)`). Indexed by the compiled `Public` node index
   -- (`num_publics = 4·D`, `D = 2`).
   fn build_publics(lch: Ext, fch: Ext, accp: Ext, naccp: Ext) -> List‹Ext› {
-    store(ListNode.Cons([lch[0], @val_zero()], store(ListNode.Cons([lch[1], @val_zero()],
-    store(ListNode.Cons([fch[0], @val_zero()], store(ListNode.Cons([fch[1], @val_zero()],
-    store(ListNode.Cons([accp[0], @val_zero()], store(ListNode.Cons([accp[1], @val_zero()],
-    store(ListNode.Cons([naccp[0], @val_zero()], store(ListNode.Cons([naccp[1], @val_zero()],
+    store(ListNode.Cons([lch[0], val_zero()], store(ListNode.Cons([lch[1], val_zero()],
+    store(ListNode.Cons([fch[0], val_zero()], store(ListNode.Cons([fch[1], val_zero()],
+    store(ListNode.Cons([accp[0], val_zero()], store(ListNode.Cons([accp[1], val_zero()],
+    store(ListNode.Cons([naccp[0], val_zero()], store(ListNode.Cons([naccp[1], val_zero()],
     store(ListNode.Nil)))))))))))))))))
   }
 
@@ -478,9 +478,9 @@ def verifier := ⟦
   -- power, starting at 1).
   fn quotient_eval(slices: List‹Ext›, zeta_pow_n: Ext, pow: Ext) -> Ext {
     match load(slices) {
-      ListNode.Nil => [@val_zero(), @val_zero()],
+      ListNode.Nil => [val_zero(), val_zero()],
       ListNode.Cons(c, rest) =>
-        @ext_add(@ext_mul(pow, c), quotient_eval(rest, zeta_pow_n, @ext_mul(pow, zeta_pow_n))),
+        ext_add(ext_mul(pow, c), quotient_eval(rest, zeta_pow_n, ext_mul(pow, zeta_pow_n))),
     }
   }
 
@@ -542,7 +542,7 @@ def verifier := ⟦
         let (prep, prep_next) = @ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
         let (isf, isl, ist, invv) = @trace_selectors(zeta, l);
         let publics = @build_publics(lch, fch, accp, naccp);
-        let inorm = @val_inverse(@val_mul(pow2(l), two_adic_gen(l)));
+        let inorm = val_inverse(val_mul(pow2(l), two_adic_gen(l)));
         let comp = @ood_composition(nodes, zeros, lks, k,
                                    main, main_next, prep, prep_next, s2row, s2next,
                                    publics, lch, fch, accp, naccp,
@@ -551,8 +551,8 @@ def verifier := ⟦
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
         assert_eq!(eq_zero(list_length(slices) - qd), 1);
-        let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [@val_one(), @val_zero()]);
-        assert_eq!(@ext_eq(@ext_mul(comp, invv), quot), 1);
+        let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [val_one(), val_zero()]);
+        assert_eq!(ext_eq(ext_mul(comp, invv), quot), 1);
         ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
                  q_opened, i + 1, naccp, lch, fch, alpha, zeta),
     }
@@ -562,9 +562,9 @@ def verifier := ⟦
   -- its raw u64 limb to an extension element). Mirrors `lookup::fingerprint`.
   fn fingerprint_vals(fch: Ext, vals: List‹U64›) -> Ext {
     match load(vals) {
-      ListNode.Nil => [@val_zero(), @val_zero()],
+      ListNode.Nil => [val_zero(), val_zero()],
       ListNode.Cons(v, rest) =>
-        @ext_add([@val_from_bytes(v), @val_zero()], @ext_mul(fch, fingerprint_vals(fch, rest))),
+        ext_add([val_from_bytes(v), val_zero()], ext_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 
@@ -575,8 +575,8 @@ def verifier := ⟦
     match load(claims) {
       ListNode.Nil => acc,
       ListNode.Cons(c, rest) =>
-        let msg = @ext_add(lch, fingerprint_vals(fch, c));
-        claims_acc(@ext_add(acc, @ext_inverse(msg)), rest, lch, fch),
+        let msg = ext_add(lch, fingerprint_vals(fch, c));
+        claims_acc(ext_add(acc, ext_inverse(msg)), rest, lch, fch),
     }
   }
 
@@ -612,7 +612,7 @@ def verifier := ⟦
     -- stage-2 cost there — the one small circuit is cheaper.
     let prep_cap = @opt_commitment(commit);
     let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, cbytes, accs);
-    let acc0 = claims_acc([@val_zero(), @val_zero()], claims, lch, fch);
+    let acc0 = claims_acc([val_zero(), val_zero()], claims, lch, fch);
     -- Step 5: OOD composition/quotient identity for every active circuit.
     let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
              prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);

@@ -598,7 +598,7 @@ def pcsFri := ⟦
   fn canon_lanes(l: List‹U64›) -> List‹U64› {
     match load(l) {
       ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(@val_to_bytes(@val_from_bytes(x)), canon_lanes(rest))),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(val_to_bytes(val_from_bytes(x)), canon_lanes(rest))),
     }
   }
   -- ==========================================================================
@@ -632,7 +632,7 @@ def pcsFri := ⟦
   -- non-empty, so advancing to the next row always yields a lane).
   fn rows_pop(cur: List‹U64›, rows: List‹List‹U64››) -> (U64, List‹U64›, List‹List‹U64››, G) {
     match load(cur) {
-      ListNode.Cons(x, rest) => (@val_to_bytes(@val_from_bytes(x)), rest, rows, 1),
+      ListNode.Cons(x, rest) => (val_to_bytes(val_from_bytes(x)), rest, rows, 1),
       ListNode.Nil => match load(rows) {
         ListNode.Nil => ([0u8; 8], cur, rows, 0),
         ListNode.Cons(r, rrest) => rows_pop(r, rrest),
@@ -778,12 +778,12 @@ def pcsFri := ⟦
   -- `base` is a native Goldilocks element; `bits` is a native bit list.
   fn exp_by_bits(base: Val, bits: List‹G›) -> Val {
     match load(bits) {
-      ListNode.Nil => @val_one(),
+      ListNode.Nil => val_one(),
       ListNode.Cons(b, rest) =>
-        let half = exp_by_bits(@val_mul(base, base), rest);
+        let half = exp_by_bits(val_mul(base, base), rest);
         match b {
           0 => half,
-          _ => @val_mul(base, half),
+          _ => val_mul(base, half),
         },
     }
   }
@@ -793,10 +793,10 @@ def pcsFri := ⟦
   fn fri_fold2(index_bits: List‹G›, log_height: G, beta: Ext, e0: Ext, e1: Ext) -> Ext {
     let g = two_adic_gen(log_height + 1);
     let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
-    let two_s = @val_add(s, s);
-    let t1 = @ext_div(@ext_add(e0, e1), [@val_two(), @val_zero()]);
-    let t2 = @ext_mul(beta, @ext_div(@ext_sub(e0, e1), [two_s, @val_zero()]));
-    @ext_add(t1, t2)
+    let two_s = val_add(s, s);
+    let t1 = ext_div(ext_add(e0, e1), [val_two(), val_zero()]);
+    let t2 = ext_mul(beta, ext_div(ext_sub(e0, e1), [two_s, val_zero()]));
+    ext_add(t1, t2)
   }
 
   -- ==========================================================================
@@ -815,7 +815,7 @@ def pcsFri := ⟦
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
   fn ro_x(index_bits: List‹G›, log_height: G) -> Val {
-    @val_mul(@val_generator(), exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
+    val_mul(val_generator(), exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
   }
 
   -- Accumulate one matrix-point's column contributions WITHOUT the quotient
@@ -832,8 +832,8 @@ def pcsFri := ⟦
       ListNode.Nil => (s, ap),
       ListNode.Cons(lane, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = @ext_mul(ap, @ext_sub(pz, [@val_from_bytes(lane), @val_zero()]));
-        ro_fold(pxr, pzr, alpha, @ext_add(s, term), @ext_mul(ap, alpha)),
+        let term = ext_mul(ap, ext_sub(pz, [val_from_bytes(lane), val_zero()]));
+        ro_fold(pxr, pzr, alpha, ext_add(s, term), ext_mul(ap, alpha)),
     }
   }
 
@@ -864,7 +864,7 @@ def pcsFri := ⟦
   fn ext_row_onto(row: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(row) {
       ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(@val_to_bytes(e[0]), b8_onto(@val_to_bytes(e[1]), ext_row_onto(rest, tail))),
+      ListNode.Cons(e, rest) => b8_onto(val_to_bytes(e[0]), b8_onto(val_to_bytes(e[1]), ext_row_onto(rest, tail))),
     }
   }
   fn points_onto(pts: List‹List‹Ext››, tail: ByteStream) -> ByteStream {
@@ -920,7 +920,7 @@ def pcsFri := ⟦
         let (i1, o1) = pcs_check_witness(snoc_commitment(input, c), w, bits);
         let (b0, b1, i2, _o) = ch_sample_ext(i1, o1);
         let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
-        (store(ListNode.Cons([@val_from_bytes(b0), @val_from_bytes(b1)], bs)), i3),
+        (store(ListNode.Cons([val_from_bytes(b0), val_from_bytes(b1)], bs)), i3),
     }
   }
 
@@ -943,7 +943,7 @@ def pcsFri := ⟦
       _ => match circ_has_height(log_degrees, log_blowup, num_circuits, 0, h) {
         0 => build_buckets(log_degrees, log_blowup, num_circuits, h - 1),
         _ => store(ListNode.Cons(
-               Bucket.Mk(h, [@val_one(), @val_zero()], [@val_zero(), @val_zero()]),
+               Bucket.Mk(h, [val_one(), val_zero()], [val_zero(), val_zero()]),
                build_buckets(log_degrees, log_blowup, num_circuits, h - 1))),
       },
     }
@@ -958,8 +958,8 @@ def pcsFri := ⟦
         let Bucket.Mk(h, ap, ro) = b;
         match eq_zero(h - lh) {
           1 =>
-            let (s, ap2) = ro_fold(p_x, p_z, alpha, [@val_zero(), @val_zero()], ap);
-            let ro2 = @ext_add(ro, @ext_mul(q, s));
+            let (s, ap2) = ro_fold(p_x, p_z, alpha, [val_zero(), val_zero()], ap);
+            let ro2 = ext_add(ro, ext_mul(q, s));
             store(ListNode.Cons(Bucket.Mk(h, ap2, ro2), rest)),
           _ => store(ListNode.Cons(b, bucket_update(rest, lh, p_x, p_z, q, alpha))),
         },
@@ -974,7 +974,7 @@ def pcsFri := ⟦
       ListNode.Cons(b, rest) =>
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_blowup) {
-          1 => assert_eq!(@ext_eq(ro, [@val_zero(), @val_zero()]), 1); 1,
+          1 => assert_eq!(ext_eq(ro, [val_zero(), val_zero()]), 1); 1,
           _ => assert_blowup_zero(rest, log_blowup),
         },
     }
@@ -994,7 +994,7 @@ def pcsFri := ⟦
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
     let x = @ro_x(list_drop(idxbits, log_gmax - lh), lh);
-    let q = @ext_inverse(@ext_sub(z, [x, @val_zero()]));
+    let q = ext_inverse(ext_sub(z, [x, val_zero()]));
     bucket_update(buckets, lh, p_x, p_z, q, alpha)
   }
 
@@ -1005,7 +1005,7 @@ def pcsFri := ⟦
       -> List‹Bucket› {
     let pz0 = list_lookup(mat, 0);
     let pz1 = list_lookup(mat, 1);
-    let zn = @ext_mul(zeta, [two_adic_gen(ldeg), @val_zero()]);
+    let zn = ext_mul(zeta, [two_adic_gen(ldeg), val_zero()]);
     let b1 = ri_apply(buckets, lh, idxbits, log_gmax, zeta, p_x, pz0, alpha);
     ri_apply(b1, lh, idxbits, log_gmax, zn, p_x, pz1, alpha)
   }
@@ -1125,8 +1125,8 @@ def pcsFri := ⟦
   }
   -- Flatten two ext evals to the 4 base coords of the ExtensionMmcs leaf row.
   fn flatten2(e0: Ext, e1: Ext) -> List‹U64› {
-    store(ListNode.Cons(@val_to_bytes(e0[0]), store(ListNode.Cons(@val_to_bytes(e0[1]),
-      store(ListNode.Cons(@val_to_bytes(e1[0]), store(ListNode.Cons(@val_to_bytes(e1[1]), store(ListNode.Nil)))))))))
+    store(ListNode.Cons(val_to_bytes(e0[0]), store(ListNode.Cons(val_to_bytes(e0[1]),
+      store(ListNode.Cons(val_to_bytes(e1[0]), store(ListNode.Cons(val_to_bytes(e1[1]), store(ListNode.Nil)))))))))
   }
   -- Roll the next reduced opening into the folded eval when its height matches
   -- the new folded height: `folded += beta^(2^log_arity) · ro`  (log_arity = 1).
@@ -1136,7 +1136,7 @@ def pcsFri := ⟦
       ListNode.Cons(b, rest) =>
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_folded) {
-          1 => (@ext_add(folded, @ext_mul(ext_exp_pow2(beta, 1), ro)), rest),
+          1 => (ext_add(folded, ext_mul(ext_exp_pow2(beta, 1), ro)), rest),
           _ => (folded, ro_rest),
         },
     }
@@ -1214,7 +1214,7 @@ def pcsFri := ⟦
     assert_eq!(eq_zero(h0 - log_gmax), 1);
     let folded = verify_query(folded_start, betas, commit_phase_commits, commit_phase_openings, idxbits, log_gmax, ro_rest, log_blowup);
     -- final check: with log_final_poly_len = 0, eval = final_poly[0]
-    assert_eq!(@ext_eq(list_lookup(final_poly, 0), folded), 1);
+    assert_eq!(ext_eq(list_lookup(final_poly, 0), folded), 1);
     1
   }
 
@@ -1269,7 +1269,7 @@ def pcsFri := ⟦
     let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
-    let alpha = [@val_from_bytes(a0), @val_from_bytes(a1)];
+    let alpha = [val_from_bytes(a0), val_from_bytes(a1)];
     -- per-round FRI fold challenges β (with commit-phase PoW), then observe
     -- final_poly + the log-arity schedule.
     let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);

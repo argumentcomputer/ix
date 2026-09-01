@@ -107,7 +107,7 @@ def transcriptBlake3 := ⟦
   -- limb is canonical (< p) by construction.
   fn ch_sample_field(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
     let (raw, i1, o1) = ch_sample8(input, output);
-    match @bytes_lt_modulus(raw) {
+    match bytes_lt_modulus(raw) {
       1 => (raw, i1, o1),
       _ => ch_sample_field(i1, o1),
     }
@@ -171,7 +171,7 @@ def transcriptBlake3 := ⟦
   fn accs_onto(accs: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(accs) {
       ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(@val_to_bytes(e[0]), b8_onto(@val_to_bytes(e[1]), accs_onto(rest, tail))),
+      ListNode.Cons(e, rest) => b8_onto(val_to_bytes(e[0]), b8_onto(val_to_bytes(e[1]), accs_onto(rest, tail))),
     }
   }
 
@@ -198,7 +198,7 @@ def transcriptBlake3 := ⟦
   fn pcs_sample_ext(input: ByteStream, output: ByteStream)
       -> (Ext, ByteStream, ByteStream) {
     let (c0, c1, i1, o1) = ch_sample_ext(input, output);
-    ([@val_from_bytes(c0), @val_from_bytes(c1)], i1, o1)
+    ([val_from_bytes(c0), val_from_bytes(c1)], i1, o1)
   }
 
   -- `b"multi-stark/v0"` — the domain-separation tag the challenger seed

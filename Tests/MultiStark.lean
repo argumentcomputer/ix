@@ -5,7 +5,7 @@ public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.MultiStark
-public import Ix.MultiStark.Field.GoldilocksForeign
+public import Ix.MultiStark.Field.GoldilocksBytes
 public import Blake3.Rust
 
 /-!
@@ -76,19 +76,19 @@ def selfTests : List (Lean.Name × String) := [
 ]
 
 /-- Self-test entrypoints of the FOREIGN (byte-limb) Goldilocks module
-(`Ix/MultiStark/GoldilocksForeign.lean`). Same reference vectors as the
+(`Ix/MultiStark/GoldilocksBytes.lean`). Same reference vectors as the
 native form's suite — the interface contract is identical semantics. The
 module compiles as its own toplevel: it is the ALTERNATIVE to
 `goldilocksNative` (same names by design), so it can never merge into the
 verifier toplevel alongside it. -/
-def foreignSelfTests : List (Lean.Name × String) := [
-  (`fg_addsub_test, "foreign (byte-limb) Goldilocks add/sub match reference"),
-  (`fg_muldiv_test, "foreign (byte-limb) Goldilocks mul/inverse match reference"),
-  (`fg_ext_ops_test, "foreign (byte-limb) ExtGoldilocks ops match reference"),
-  (`fg_boundary_test, "foreign (byte-limb) val_from_bytes/val_to_bytes/bytes_lt_modulus/two-adic root"),
+def bytesSelfTests : List (Lean.Name × String) := [
+  (`gb_addsub_test, "byte-limb Goldilocks add/sub match reference"),
+  (`gb_muldiv_test, "byte-limb Goldilocks mul/inverse match reference"),
+  (`gb_ext_ops_test, "byte-limb ExtGoldilocks ops match reference"),
+  (`gb_boundary_test, "byte-limb val_from_bytes/val_to_bytes/bytes_lt_modulus/two-adic root"),
 ]
 
-/-- Compile the verifier-plus-tests toplevel (and the standalone foreign
+/-- Compile the verifier-plus-tests toplevel (and the standalone byte-form
 Goldilocks module) once, then execute each `*_test` entrypoint and assert it
 returns `1`. -/
 def selfTestSuite : IO UInt32 := do
@@ -99,10 +99,10 @@ def selfTestSuite : IO UInt32 := do
   let compiled ← match top.compile with
     | .error e => IO.eprintln s!"verifier-tests compilation failed: {e}"; return 1
     | .ok c => pure c
-  let foreignCompiled ← match MultiStark.goldilocksForeign.compile with
-    | .error e => IO.eprintln s!"goldilocks-foreign compilation failed: {e}"; return 1
+  let bytesCompiled ← match MultiStark.goldilocksBytes.compile with
+    | .error e => IO.eprintln s!"goldilocks-bytes compilation failed: {e}"; return 1
     | .ok c => pure c
-  let cases := selfTests.map (compiled, ·) ++ foreignSelfTests.map (foreignCompiled, ·)
+  let cases := selfTests.map (compiled, ·) ++ bytesSelfTests.map (bytesCompiled, ·)
   lspecEachIO cases fun (unit, (name, desc)) => pure <|
     match unit.getFuncIdx name with
     | none => test s!"{name}: {desc} — entrypoint not found" false
@@ -248,18 +248,18 @@ def endToEndSuite : IO UInt32 := do
   ])]) []
 
 -- ════════════════════════════════════════════════════════════════════════════
--- `foreign-verifier`: the SAME pipeline over `multiStarkForeign` — the
--- byte-limb (outer-field-independent) verifier toplevel, stage 3's program
+-- `bytes-verifier`: the SAME pipeline over `multiStarkBytes` — the
+-- byte-limb (outer-field-independent) verifier toplevel
 -- ════════════════════════════════════════════════════════════════════════════
 
-/-- Phase-B gate of `docs/kzg-stage.md`: the foreign (byte-limb Goldilocks)
-verifier toplevel, executed under the existing Goldilocks interpreter against
-the same factorial stage-2 vectors the native verifier passes. The foreign
-module's semantics are outer-field-independent (byte gadgets and carry
-chains), so acceptance here validates the exact program that stage 3 proves
-over the BLS12-381 scalar field — before any Fr machinery exists. Interpreter
-only: the foreign toplevel has no codegen'd runner yet. -/
-def foreignEndToEndSuite : IO UInt32 := do
+/-- The byte-limb Goldilocks verifier toplevel, executed under the existing
+Goldilocks interpreter against the same factorial stage-2 vectors the native
+verifier passes. The byte module's semantics are outer-field-independent
+(byte gadgets and carry chains), so acceptance here validates the exact
+program a smaller-field backend (KoalaBear/Hypercube) would prove — before
+any such machinery is wired. Interpreter only: the byte toplevel has no
+codegen'd runner. -/
+def bytesEndToEndSuite : IO UInt32 := do
   -- ── factorial system + proof (same recipe as `endToEndSuite`) ─────────────
   let facCompiled ← match factorialProgram.compile with
     | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
@@ -268,7 +268,9 @@ def foreignEndToEndSuite : IO UInt32 := do
   let facIdx ← match facCompiled.getFuncIdx `fact_entry with
     | some i => pure i
     | none => IO.eprintln "fact_entry entrypoint not found"; return 1
-  let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
+  let (claim, proof, _) ← match facSystem.prove facIdx #[Aiur.G.ofNat 5] default with
+    | .ok result => pure result
+    | .error e => IO.eprintln s!"factorial prove failed: {e}"; return 1
   let proofBytes := proof.toBytes
   let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
   let vkBytes := facSystem.vkBytes
@@ -281,11 +283,11 @@ def foreignEndToEndSuite : IO UInt32 := do
       2 #[Aiur.G.ofNat 0] cGs
 
   -- ── the FOREIGN production toplevel ───────────────────────────────────────
-  let vTop ← match MultiStark.multiStarkForeign with
-    | .error e => IO.eprintln s!"foreign toplevel merge failed: {e}"; return 1
+  let vTop ← match MultiStark.multiStarkBytes with
+    | .error e => IO.eprintln s!"byte toplevel merge failed: {e}"; return 1
     | .ok t => pure t
   let vCompiled ← match vTop.compile with
-    | .error e => IO.eprintln s!"foreign compilation failed: {e}"; return 1
+    | .error e => IO.eprintln s!"byte-form compilation failed: {e}"; return 1
     | .ok c => pure c
   let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
     | some i => pure i
@@ -301,15 +303,15 @@ def foreignEndToEndSuite : IO UInt32 := do
   let badClaimInput : Array Aiur.G :=
     MultiStark.verifierPubInput vkBytes badClaimBytes
 
-  IO.println "foreign-verifier (byte-limb Goldilocks, interpreted; slow)…"
+  IO.println "bytes-verifier (byte-limb Goldilocks, interpreted; slow)…"
   let honest := vCompiled.bytecode.execute vIdx pubInput (mkIO proofGs claimGs)
   let tamperedProof := vCompiled.bytecode.execute vIdx pubInput (mkIO badProofGs claimGs)
   let tamperedClaim :=
     vCompiled.bytecode.execute vIdx badClaimInput (mkIO proofGs badClaimGs)
-  lspecIO (.ofList [("foreign-verifier", [
-    expectOk "foreign verifier accepts honest proof (byte-limb Goldilocks)" honest,
-    expectErr "tampered proof advice rejected (foreign)" tamperedProof,
-    expectErr "tampered claim rejected (foreign)" tamperedClaim,
+  lspecIO (.ofList [("bytes-verifier", [
+    expectOk "byte-form verifier accepts honest proof (byte-limb Goldilocks)" honest,
+    expectErr "tampered proof advice rejected (byte-form)" tamperedProof,
+    expectErr "tampered claim rejected (byte-form)" tamperedClaim,
   ])]) []
 
 end Tests.MultiStark
