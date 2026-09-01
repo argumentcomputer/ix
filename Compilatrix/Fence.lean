@@ -1676,3 +1676,22 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_recursive' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_recursive
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.releaseSharedWork_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.releaseSharedWork_append
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.sharedReleaseWork_simulation' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.sharedReleaseWork_simulation
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.dropVal_simulates_releaseSharedWork' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.dropVal_simulates_releaseSharedWork
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.dropMany_simulates_releaseSharedWork' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.dropMany_simulates_releaseSharedWork
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_recursive' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_recursive

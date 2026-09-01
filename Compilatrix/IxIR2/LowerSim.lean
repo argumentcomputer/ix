@@ -10,9 +10,9 @@ instruction. Its foundation discharges scalar and vector operand resolution,
 extends related environments across value and erased bindings, and closes the
 public small-step cases for IxIR₁ `pure`/IxIR₂ `move` and exact ordinary
 constructor allocation, scalar and heap-bearing shared-retain paths, scalar
-and nonunit shared-release paths, scalar unique drop, checked scalar-leaf
-unique free, general recursive unique destruction, all-scalar-child final-owner
-shared destruction, and checked non-consuming projection.
+and fully recursive shared-release paths, scalar unique drop, checked
+scalar-leaf unique free, general recursive unique destruction, and checked
+non-consuming projection.
 -/
 
 namespace Compilatrix.IxIR2.Lower.Sim
@@ -89,6 +89,101 @@ theorem StoreRel.rcTick {source : IxIR1.Store} {target : Eval.Store}
   · exact relation.hotResets
   · exact relation.coldResets
   · exact relation.reusedPayloadUnits
+
+/-- The exact source-side condition needed to reconcile shared release:
+IxIR₁ historically permits decrementing a malformed live node from zero,
+whereas IxIR₂ rejects that state.  No allocation-order or ownership-graph
+assumption is needed by the recursive work-list correspondence. -/
+def PositiveSharedRC (store : IxIR1.Store) : Prop :=
+  ∀ {location box}, store.get? location = some box →
+    box.world = .shared → 0 < box.rc
+
+private theorem sourceNodesGet_of_get {store : IxIR1.Store}
+    {location : Nat} {box : IxIR1.NodeBox}
+    (found : store.get? location = some box) :
+    store.nodes[location]? = some (some box) := by
+  rw [IxIR1.Store.get?, Option.bind_eq_some_iff] at found
+  obtain ⟨slot, slotAt, equal⟩ := found
+  change slot = some box at equal
+  subst slot
+  exact slotAt
+
+private theorem sourceGet_setBox_same {store : IxIR1.Store}
+    {location : Nat} {old new : IxIR1.NodeBox}
+    (found : store.get? location = some old) :
+    (store.setBox location new).get? location = some new := by
+  have nodesAt := sourceNodesGet_of_get found
+  obtain ⟨inBounds, _⟩ := Array.getElem?_eq_some_iff.mp nodesAt
+  simp [IxIR1.Store.setBox, IxIR1.Store.get?,
+    Array.set!_eq_setIfInBounds, inBounds]
+
+private theorem sourceGet_of_setBox_other {store : IxIR1.Store}
+    {location other : Nat} {old new box : IxIR1.NodeBox}
+    (different : location ≠ other)
+    (live : store.get? location = some old)
+    (found : (store.setBox location new).get? other = some box) :
+    store.get? other = some box := by
+  have nodesAt := sourceNodesGet_of_get live
+  obtain ⟨inBounds, _⟩ := Array.getElem?_eq_some_iff.mp nodesAt
+  simpa [IxIR1.Store.setBox, IxIR1.Store.get?,
+    Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds,
+    inBounds, different] using found
+
+private theorem sourceGet_kill_same {store : IxIR1.Store}
+    {location : Nat} {box : IxIR1.NodeBox}
+    (found : store.get? location = some box) :
+    (store.kill location).get? location = none := by
+  have nodesAt := sourceNodesGet_of_get found
+  obtain ⟨inBounds, _⟩ := Array.getElem?_eq_some_iff.mp nodesAt
+  simp [IxIR1.Store.kill, IxIR1.Store.get?,
+    Array.set!_eq_setIfInBounds, inBounds]
+
+private theorem sourceGet_of_kill_other {store : IxIR1.Store}
+    {location other : Nat} {old box : IxIR1.NodeBox}
+    (different : location ≠ other)
+    (live : store.get? location = some old)
+    (found : (store.kill location).get? other = some box) :
+    store.get? other = some box := by
+  have nodesAt := sourceNodesGet_of_get live
+  obtain ⟨inBounds, _⟩ := Array.getElem?_eq_some_iff.mp nodesAt
+  simpa [IxIR1.Store.kill, IxIR1.Store.get?,
+    Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds,
+    inBounds, different] using found
+
+theorem PositiveSharedRC.rcTick {store : IxIR1.Store}
+    (positive : PositiveSharedRC store) : PositiveSharedRC store.rcTick := by
+  intro location box found shared
+  exact positive (by
+    simpa [IxIR1.Store.rcTick, IxIR1.Store.get?] using found) shared
+
+theorem PositiveSharedRC.setRc {store : IxIR1.Store} {location : Nat}
+    {box : IxIR1.NodeBox} {newRC : Nat}
+    (positive : PositiveSharedRC store)
+    (found : store.get? location = some box) (newPositive : 0 < newRC) :
+    PositiveSharedRC (store.setBox location { box with rc := newRC }) := by
+  intro other otherBox otherFound otherShared
+  by_cases equal : location = other
+  · subst other
+    have updated := sourceGet_setBox_same
+      (new := { box with rc := newRC }) found
+    have boxEqual : otherBox = { box with rc := newRC } :=
+      Option.some.inj (otherFound.symm.trans updated)
+    subst otherBox
+    exact newPositive
+  · exact positive
+      (sourceGet_of_setBox_other equal found otherFound) otherShared
+
+theorem PositiveSharedRC.kill {store : IxIR1.Store} {location : Nat}
+    {box : IxIR1.NodeBox} (positive : PositiveSharedRC store)
+    (found : store.get? location = some box) :
+    PositiveSharedRC (store.kill location) := by
+  intro other otherBox otherFound otherShared
+  by_cases equal : location = other
+  · subst other
+    rw [sourceGet_kill_same found] at otherFound
+    contradiction
+  · exact positive (sourceGet_of_kill_other equal found otherFound)
+      otherShared
 
 /-- Translate one source atom through an explicit source-slot-to-target-atom
 map. This is the runtime view of the environment mapping recorded on CFG
@@ -391,6 +486,94 @@ theorem dropUniqueWork_of_scalars {store : Eval.Store}
           simp only [Eval.dropUniqueWork]
           exact ih heapFuel scalars.2
 
+/-- Exact-budget shared-release work on a prefix composes with an
+independently budgeted suffix.  Recursive final-owner expansion stays in the
+prefix because the target prepends the released node's children. -/
+theorem releaseSharedWork_append {firstFuel secondFuel : Nat}
+    {store middle output : Eval.Store} {first second : List RVal}
+    {remaining : Nat}
+    (firstRun : Eval.releaseSharedWork firstFuel store first =
+      .ok (middle, 0))
+    (secondRun : Eval.releaseSharedWork secondFuel middle second =
+      .ok (output, remaining)) :
+    Eval.releaseSharedWork (firstFuel + secondFuel) store (first ++ second) =
+      .ok (output, remaining) := by
+  induction firstFuel generalizing store first middle with
+  | zero =>
+      cases first with
+      | nil =>
+          simp only [Eval.releaseSharedWork, Except.ok.injEq, Prod.mk.injEq]
+            at firstRun
+          obtain ⟨rfl, _⟩ := firstRun
+          simpa [Eval.releaseSharedWork] using secondRun
+      | cons value first => simp [Eval.releaseSharedWork] at firstRun
+  | succ firstFuel ih =>
+      cases first with
+      | nil => simp [Eval.releaseSharedWork] at firstRun
+      | cons value first =>
+          cases value with
+          | lit literal =>
+              have prefix' :
+                  Eval.releaseSharedWork firstFuel store first =
+                    .ok (middle, 0) := by
+                simpa [Eval.releaseSharedWork] using firstRun
+              have combined := ih prefix' secondRun
+              simpa [Eval.releaseSharedWork, Nat.succ_add] using combined
+          | erased =>
+              have prefix' :
+                  Eval.releaseSharedWork firstFuel store first =
+                    .ok (middle, 0) := by
+                simpa [Eval.releaseSharedWork] using firstRun
+              have combined := ih prefix' secondRun
+              simpa [Eval.releaseSharedWork, Nat.succ_add] using combined
+          | loc location =>
+              cases boxAt : store.get? location with
+              | none => simp [Eval.releaseSharedWork, boxAt] at firstRun
+              | some box =>
+                  cases world : box.world with
+                  | unique =>
+                      simp [Eval.releaseSharedWork, boxAt, world] at firstRun
+                  | shared =>
+                      by_cases zero : box.rc = 0
+                      · simp [Eval.releaseSharedWork, boxAt, world, zero]
+                          at firstRun
+                      · by_cases unit : box.rc = 1
+                        · cases node : box.node with
+                          | ctorN cid fields =>
+                              have prefix' :
+                                  Eval.releaseSharedWork firstFuel
+                                      (store.rcTick.kill location)
+                                      (fields.toList ++ first) =
+                                    .ok (middle, 0) := by
+                                simpa [Eval.releaseSharedWork, boxAt, world,
+                                  zero, unit, node] using firstRun
+                              have combined := ih prefix' secondRun
+                              simpa [Eval.releaseSharedWork, boxAt, world,
+                                zero, unit, node, Nat.succ_add,
+                                List.append_assoc] using combined
+                          | papN address arity arguments =>
+                              have prefix' :
+                                  Eval.releaseSharedWork firstFuel
+                                      (store.rcTick.kill location)
+                                      (arguments.toList ++ first) =
+                                    .ok (middle, 0) := by
+                                simpa [Eval.releaseSharedWork, boxAt, world,
+                                  zero, unit, node] using firstRun
+                              have combined := ih prefix' secondRun
+                              simpa [Eval.releaseSharedWork, boxAt, world,
+                                zero, unit, node, Nat.succ_add,
+                                List.append_assoc] using combined
+                        · have prefix' :
+                              Eval.releaseSharedWork firstFuel
+                                  (store.rcTick.setBox location
+                                    { box with rc := box.rc - 1 }) first =
+                                .ok (middle, 0) := by
+                            simpa [Eval.releaseSharedWork, boxAt, world,
+                              zero, unit] using firstRun
+                          have combined := ih prefix' secondRun
+                          simpa [Eval.releaseSharedWork, boxAt, world,
+                            zero, unit, Nat.succ_add] using combined
+
 /-- Exact-budget unique work on a prefix composes with an independently
 budgeted suffix.  The zero remaining fuel pins the split point unambiguously. -/
 theorem dropUniqueWork_append {firstFuel secondFuel : Nat}
@@ -452,6 +635,212 @@ theorem dropUniqueWork_append {firstFuel secondFuel : Nat}
                           have combined := ih prefix' secondRun
                           simpa [Eval.dropUniqueWork, boxAt, world, node,
                             Nat.succ_add, List.append_assoc] using combined
+
+/-- At a fixed IxIR₁ recursive fuel, successful shared release of one value
+has an exact-store IxIR₂ work-list execution.  Positivity is both the one
+extra source premise and a preserved output fact. -/
+def SharedValSimAt (context : IxIR1.Ctx) (fuel : Nat) : Prop :=
+  ∀ {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {value : RVal} {sourceOut : IxIR1.Store},
+    PositiveSharedRC sourceStore →
+    StoreRel sourceStore targetStore →
+    IxIR1.dropVal context fuel sourceStore value = .ok sourceOut →
+    ∃ targetFuel targetOut,
+      Eval.releaseSharedWork targetFuel targetStore [value] =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut ∧
+        PositiveSharedRC sourceOut
+
+/-- The list half of the mutually recursive shared-release correspondence. -/
+def SharedManySimAt (context : IxIR1.Ctx) (fuel : Nat) : Prop :=
+  ∀ {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {values : List RVal} {sourceOut : IxIR1.Store},
+    PositiveSharedRC sourceStore →
+    StoreRel sourceStore targetStore →
+    IxIR1.dropMany context fuel sourceStore values = .ok sourceOut →
+    ∃ targetFuel targetOut,
+      Eval.releaseSharedWork targetFuel targetStore values =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut ∧
+        PositiveSharedRC sourceOut
+
+/-- Successful recursive IxIR₁ shared destruction is simulated by the flat
+IxIR₂ work list.  The positivity premise excludes exactly IxIR₁'s legacy
+zero-refcount decrement case; target fuel remains independently existential. -/
+theorem sharedReleaseWork_simulation (context : IxIR1.Ctx) :
+    ∀ fuel, SharedValSimAt context fuel ∧ SharedManySimAt context fuel := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      constructor
+      · unfold SharedValSimAt
+        intro sourceStore targetStore value sourceOut positive stores sourceRun
+        simp [IxIR1.dropVal] at sourceRun
+      · unfold SharedManySimAt
+        intro sourceStore targetStore values sourceOut positive stores sourceRun
+        simp [IxIR1.dropMany] at sourceRun
+  | succ fuel ih =>
+      have valueIH : SharedValSimAt context fuel := ih.1
+      have manyIH : SharedManySimAt context fuel := ih.2
+      unfold SharedValSimAt at valueIH
+      unfold SharedManySimAt at manyIH
+      constructor
+      · unfold SharedValSimAt
+        intro sourceStore targetStore value sourceOut positive stores sourceRun
+        cases value with
+        | lit literal =>
+            simp only [IxIR1.dropVal] at sourceRun
+            cases sourceRun
+            refine ⟨1, targetStore, ?_, stores, positive⟩
+            simp [Eval.releaseSharedWork]
+        | erased =>
+            simp only [IxIR1.dropVal] at sourceRun
+            cases sourceRun
+            refine ⟨1, targetStore, ?_, stores, positive⟩
+            simp [Eval.releaseSharedWork]
+        | loc location =>
+            rw [IxIR1.dropVal.eq_def] at sourceRun
+            dsimp only at sourceRun
+            cases sourceGet : sourceStore.get? location with
+            | none => simp [sourceGet] at sourceRun
+            | some box =>
+                cases world : box.world with
+                | unique => simp [sourceGet, world] at sourceRun
+                | shared =>
+                    have targetGet :
+                        targetStore.get? location = some box := by
+                      unfold Eval.Store.get?
+                      rw [stores.heap]
+                      exact sourceGet
+                    have countPositive : 0 < box.rc :=
+                      positive sourceGet world
+                    have nonzero : box.rc ≠ 0 := by omega
+                    have tickGet :
+                        sourceStore.rcTick.get? location = some box := by
+                      simpa [IxIR1.Store.rcTick, IxIR1.Store.get?]
+                        using sourceGet
+                    by_cases unit : box.rc = 1
+                    · cases node : box.node with
+                      | ctorN cid fields =>
+                          have childRun :
+                              IxIR1.dropMany context fuel
+                                  (sourceStore.rcTick.kill location)
+                                  fields.toList = .ok sourceOut := by
+                            simpa [sourceGet, world, unit, node]
+                              using sourceRun
+                          have prefixPositive :
+                              PositiveSharedRC
+                                (sourceStore.rcTick.kill location) :=
+                            PositiveSharedRC.kill
+                              (PositiveSharedRC.rcTick positive) tickGet
+                          obtain ⟨targetFuel, targetOut, targetRun,
+                              outputStores, outputPositive⟩ :=
+                            manyIH prefixPositive
+                              ((stores.rcTick).kill location) childRun
+                          refine ⟨targetFuel + 1, targetOut, ?_,
+                            outputStores, outputPositive⟩
+                          simpa [Eval.releaseSharedWork, targetGet, world,
+                            nonzero, unit, node] using targetRun
+                      | papN address arity arguments =>
+                          have childRun :
+                              IxIR1.dropMany context fuel
+                                  (sourceStore.rcTick.kill location)
+                                  arguments.toList = .ok sourceOut := by
+                            simpa [sourceGet, world, unit, node]
+                              using sourceRun
+                          have prefixPositive :
+                              PositiveSharedRC
+                                (sourceStore.rcTick.kill location) :=
+                            PositiveSharedRC.kill
+                              (PositiveSharedRC.rcTick positive) tickGet
+                          obtain ⟨targetFuel, targetOut, targetRun,
+                              outputStores, outputPositive⟩ :=
+                            manyIH prefixPositive
+                              ((stores.rcTick).kill location) childRun
+                          refine ⟨targetFuel + 1, targetOut, ?_,
+                            outputStores, outputPositive⟩
+                          simpa [Eval.releaseSharedWork, targetGet, world,
+                            nonzero, unit, node] using targetRun
+                    · have unitTest : (box.rc == 1) = false := by
+                        simp [unit]
+                      have directRun :
+                          (.ok (sourceStore.rcTick.setBox location
+                            { box with rc := box.rc - 1 }) :
+                              Except IxIR1.Err IxIR1.Store) =
+                            .ok sourceOut := by
+                        simpa [sourceGet, world, unitTest] using sourceRun
+                      injection directRun with outputEqual
+                      subst sourceOut
+                      have decrementedPositive : 0 < box.rc - 1 := by omega
+                      have outputPositive :
+                          PositiveSharedRC
+                            (sourceStore.rcTick.setBox location
+                              { box with rc := box.rc - 1 }) :=
+                        PositiveSharedRC.setRc
+                          (PositiveSharedRC.rcTick positive) tickGet
+                          decrementedPositive
+                      refine ⟨1,
+                        targetStore.rcTick.setBox location
+                          { box with rc := box.rc - 1 }, ?_,
+                        (stores.rcTick).setBox location
+                          { box with rc := box.rc - 1 }, outputPositive⟩
+                      simp [Eval.releaseSharedWork, targetGet, world,
+                        nonzero, unit]
+      · unfold SharedManySimAt
+        intro sourceStore targetStore values sourceOut positive stores sourceRun
+        cases values with
+        | nil =>
+            simp only [IxIR1.dropMany] at sourceRun
+            cases sourceRun
+            refine ⟨0, targetStore, ?_, stores, positive⟩
+            simp [Eval.releaseSharedWork]
+        | cons value values =>
+            rw [IxIR1.dropMany.eq_def] at sourceRun
+            dsimp only at sourceRun
+            cases valueRun : IxIR1.dropVal context fuel sourceStore value with
+            | error error =>
+                simp [valueRun, bind, Except.bind] at sourceRun
+            | ok middleStore =>
+                simp only [valueRun, bind, Except.bind] at sourceRun
+                obtain ⟨valueFuel, targetMiddle, targetValueRun,
+                    middleStores, middlePositive⟩ :=
+                  valueIH positive stores valueRun
+                obtain ⟨valuesFuel, targetOut, targetValuesRun,
+                    outputStores, outputPositive⟩ :=
+                  manyIH middlePositive middleStores sourceRun
+                refine ⟨valueFuel + valuesFuel, targetOut, ?_,
+                  outputStores, outputPositive⟩
+                simpa using
+                  (releaseSharedWork_append targetValueRun targetValuesRun)
+
+/-- Public value projection of the mutual recursive shared-release theorem. -/
+theorem dropVal_simulates_releaseSharedWork {context : IxIR1.Ctx}
+    {fuel : Nat} {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {value : RVal} {sourceOut : IxIR1.Store}
+    (positive : PositiveSharedRC sourceStore)
+    (stores : StoreRel sourceStore targetStore)
+    (sourceRun : IxIR1.dropVal context fuel sourceStore value = .ok sourceOut) :
+    ∃ targetFuel targetOut,
+      Eval.releaseSharedWork targetFuel targetStore [value] =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut ∧
+        PositiveSharedRC sourceOut :=
+  (sharedReleaseWork_simulation context fuel).1 positive stores sourceRun
+
+/-- Public list projection of the mutual recursive shared-release theorem. -/
+theorem dropMany_simulates_releaseSharedWork {context : IxIR1.Ctx}
+    {fuel : Nat} {sourceStore : IxIR1.Store} {targetStore : Eval.Store}
+    {values : List RVal} {sourceOut : IxIR1.Store}
+    (positive : PositiveSharedRC sourceStore)
+    (stores : StoreRel sourceStore targetStore)
+    (sourceRun :
+      IxIR1.dropMany context fuel sourceStore values = .ok sourceOut) :
+    ∃ targetFuel targetOut,
+      Eval.releaseSharedWork targetFuel targetStore values =
+          .ok (targetOut, 0) ∧
+        StoreRel sourceOut targetOut ∧
+        PositiveSharedRC sourceOut :=
+  (sharedReleaseWork_simulation context fuel).2 positive stores sourceRun
 
 /-- At a fixed IxIR₁ recursive fuel, one successful unique-value drop has an
 exact-store IxIR₂ work-list execution with some exact target budget. -/
@@ -858,6 +1247,69 @@ theorem simulate_dropU_dropUnique_recursive
     targetResolved targetDropped
   refine ⟨targetHeapFuel, targetStore, ?_, targetStep, outputStores,
     environments.bindErased⟩
+  unfold IxIR1.runOp
+  simp only
+  rw [sourceResolved]
+  simp only [bind, Except.bind]
+  rw [sourceDropped]
+
+/-- Every successful recursive IxIR₁ shared-location drop from a positive-RC
+heap has a sufficient IxIR₂ budget for one effect-only `releaseShared` step
+to the same exact heap.  Positivity is returned for subsequent instructions. -/
+theorem simulate_drop_release_recursive
+    {sourceContext : IxIR1.Ctx} {sourceCurrent : IxIR1.FnDef}
+    {sourceFuel : Nat}
+    {context : Eval.Context} {interpretation : Eval.Interpretation}
+    {machine : Eval.Machine} {frame : Eval.Frame}
+    {stack : List Eval.Continuation} {block : Block}
+    {sourceStore sourceStore' : IxIR1.Store} {source : List RVal}
+    {mapping : Array Atom}
+    (positive : PositiveSharedRC sourceStore)
+    (stores : StoreRel sourceStore machine.store)
+    (environments : EnvRel source frame.values mapping)
+    {sourceAtom : IxIR1.Atom} {targetAtom : Atom} {location : Nat}
+    (translated : translateAtom mapping sourceAtom = some targetAtom)
+    (sourceResolved :
+      IxIR1.resolveAtom source sourceAtom = .ok (.loc location))
+    (sourceDropped :
+      IxIR1.dropVal sourceContext sourceFuel sourceStore (.loc location) =
+        .ok sourceStore')
+    (control : machine.control = .running frame stack)
+    (blockAt : frame.definition.blocks[frame.block]? = some block)
+    (pc : frame.pc < block.instructions.size)
+    (instruction : block.instructions[frame.pc] =
+      .releaseShared targetAtom) :
+    ∃ targetHeapFuel targetStore,
+      IxIR1.runOp sourceContext (sourceFuel + 1) sourceCurrent sourceStore
+            source (.drop sourceAtom) = .ok (sourceStore', .erased) ∧
+        Eval.Step context interpretation
+          { machine with heapFuel := targetHeapFuel }
+          { store := targetStore
+            heapFuel := 0
+            control := .running { frame with pc := frame.pc + 1 } stack } ∧
+        StoreRel sourceStore' targetStore ∧
+        PositiveSharedRC sourceStore' ∧
+        EnvRel (.erased :: source) frame.values
+          (#[.erased] ++ mapping) := by
+  have targetResolved :
+      Eval.resolveAtom frame.values targetAtom = .ok (.loc location) :=
+    resolveAtom_of_envRel environments translated sourceResolved
+  obtain ⟨targetHeapFuel, targetStore, targetRun, outputStores,
+      outputPositive⟩ :=
+    dropVal_simulates_releaseSharedWork positive stores sourceDropped
+  have targetReleased :
+      Eval.releaseShared targetHeapFuel machine.store (.loc location) =
+        .ok (targetStore, 0) := by
+    simpa [Eval.releaseShared] using targetRun
+  have beforeControl :
+      ({ machine with heapFuel := targetHeapFuel } : Eval.Machine).control =
+        .running frame stack := by
+    simpa using control
+  have targetStep := Eval.Step.releaseShared (context := context)
+    (interpretation := interpretation) beforeControl blockAt pc instruction
+    targetResolved targetReleased
+  refine ⟨targetHeapFuel, targetStore, ?_, targetStep, outputStores,
+    outputPositive, environments.bindErased⟩
   unfold IxIR1.runOp
   simp only
   rw [sourceResolved]
