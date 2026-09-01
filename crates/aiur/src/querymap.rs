@@ -1,22 +1,20 @@
-use multi_stark::p3_field::PrimeField64;
-
-use crate::G;
+use crate::{AiurField, G};
 
 /// Immutable view of one query entry.
 #[derive(Clone, Copy)]
-pub struct QueryRef<'a> {
-  pub(crate) output: &'a [G],
-  pub multiplicity: G,
+pub struct QueryRef<'a, F = G> {
+  pub(crate) output: &'a [F],
+  pub multiplicity: F,
 }
 
 /// Mutable view of one query entry: the output is fixed at insertion,
 /// only the multiplicity is bumped on memo hits.
-pub struct QueryRefMut<'a> {
-  pub output: &'a [G],
-  pub multiplicity: &'a mut G,
+pub struct QueryRefMut<'a, F = G> {
+  pub output: &'a [F],
+  pub multiplicity: &'a mut F,
 }
 
-fn hash_g_slice(key: &[G]) -> u64 {
+fn hash_g_slice<F: AiurField>(key: &[F]) -> u64 {
   use std::hash::Hasher;
   let mut h = rustc_hash::FxHasher::default();
   for g in key {
@@ -146,22 +144,22 @@ impl<T: Copy> Drop for HugeVec<T> {
   }
 }
 
-/// Append-only segmented arena of fixed-stride `G` entries. Entry `i` lives
-/// at segment `i >> SEG_BITS`, offset `(i & SEG_MASK) * stride` — no entry
-/// ever straddles a segment.
-struct SegStore {
+/// Append-only segmented arena of fixed-stride field entries. Entry `i`
+/// lives at segment `i >> SEG_BITS`, offset `(i & SEG_MASK) * stride` — no
+/// entry ever straddles a segment.
+struct SegStore<F: Copy> {
   stride: usize,
-  segs: Vec<HugeVec<G>>,
+  segs: Vec<HugeVec<F>>,
   entries: usize,
 }
 
-impl SegStore {
+impl<F: AiurField> SegStore<F> {
   fn new(stride: usize) -> Self {
     Self { stride, segs: Vec::new(), entries: 0 }
   }
 
   #[inline]
-  fn at(&self, i: usize) -> &[G] {
+  fn at(&self, i: usize) -> &[F] {
     if self.stride == 0 {
       return &[];
     }
@@ -170,7 +168,7 @@ impl SegStore {
   }
 
   #[inline]
-  fn at_mut(&mut self, i: usize) -> &mut [G] {
+  fn at_mut(&mut self, i: usize) -> &mut [F] {
     if self.stride == 0 {
       return &mut [];
     }
@@ -179,7 +177,7 @@ impl SegStore {
   }
 
   #[inline]
-  fn push(&mut self, vals: &[G]) {
+  fn push(&mut self, vals: &[F]) {
     debug_assert_eq!(vals.len(), self.stride);
     if self.stride != 0 {
       let seg = self.entries >> SEG_BITS;
@@ -243,18 +241,18 @@ impl SegHashes {
 ///
 /// Entry index == insertion order; memory circuits use it as the pointer
 /// value, mirroring the old `IndexMap::get_index_of` semantics.
-pub struct QueryMap {
+pub struct QueryMap<F: Copy = G> {
   /// Output width; inferred on first insert (not statically available in
   /// `FunctionLayout`).
   out_stride_set: bool,
-  keys: SegStore,
-  outs: SegStore,
-  mults: SegStore,
+  keys: SegStore<F>,
+  outs: SegStore<F>,
+  mults: SegStore<F>,
   hashes: SegHashes,
   table: hashbrown::HashTable<u32>,
 }
 
-impl QueryMap {
+impl<F: AiurField> QueryMap<F> {
   pub fn new(key_stride: usize) -> Self {
     Self {
       out_stride_set: false,
@@ -282,7 +280,7 @@ impl QueryMap {
     self.keys.retained_elems() + self.outs.retained_elems()
   }
 
-  pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
+  pub fn get_index_of(&self, key: &[F]) -> Option<usize> {
     debug_assert_eq!(key.len(), self.keys.stride);
     let hash = hash_g_slice(key);
     self
@@ -291,7 +289,7 @@ impl QueryMap {
       .map(|&i| i as usize)
   }
 
-  pub fn get(&self, key: &[G]) -> Option<QueryRef<'_>> {
+  pub fn get(&self, key: &[F]) -> Option<QueryRef<'_, F>> {
     let i = self.get_index_of(key)?;
     Some(QueryRef {
       output: self.outs.at(i),
@@ -299,7 +297,7 @@ impl QueryMap {
     })
   }
 
-  pub fn get_mut(&mut self, key: &[G]) -> Option<QueryRefMut<'_>> {
+  pub fn get_mut(&mut self, key: &[F]) -> Option<QueryRefMut<'_, F>> {
     let i = self.get_index_of(key)?;
     Some(QueryRefMut {
       output: self.outs.at(i),
@@ -310,7 +308,7 @@ impl QueryMap {
   /// Append a new entry. The key must not already be present: call sites
   /// only insert on a confirmed miss, and a same-key re-entrant call
   /// would loop forever before reaching its own insert.
-  pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
+  pub fn insert(&mut self, key: &[F], output: &[F], multiplicity: F) {
     debug_assert_eq!(key.len(), self.keys.stride);
     debug_assert!(self.get_index_of(key).is_none());
     if !self.out_stride_set {
@@ -331,14 +329,14 @@ impl QueryMap {
 
   /// Entry at insertion index `i`: the key slice plus a mutable handle on
   /// the multiplicity (memory `Load` bumps the pointed-to row's count).
-  pub fn get_index_mut(&mut self, i: usize) -> Option<(&[G], &mut G)> {
+  pub fn get_index_mut(&mut self, i: usize) -> Option<(&[F], &mut F)> {
     if i >= self.mults.entries {
       return None;
     }
     Some((self.keys.at(i), &mut self.mults.at_mut(i)[0]))
   }
 
-  pub fn get_index(&self, i: usize) -> Option<(&[G], QueryRef<'_>)> {
+  pub fn get_index(&self, i: usize) -> Option<(&[F], QueryRef<'_, F>)> {
     if i >= self.len() {
       return None;
     }
@@ -348,7 +346,7 @@ impl QueryMap {
     ))
   }
 
-  pub fn iter(&self) -> impl Iterator<Item = (&[G], QueryRef<'_>)> {
+  pub fn iter(&self) -> impl Iterator<Item = (&[F], QueryRef<'_, F>)> {
     (0..self.len()).map(|i| {
       (
         self.keys.at(i),

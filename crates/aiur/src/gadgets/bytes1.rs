@@ -1,13 +1,12 @@
 use multi_stark::{
   expr::Expr,
   lookup::{Lookup, LookupValues},
-  p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
 };
 
 use crate::{
-  G, execute::QueryRecord, gadgets::AiurGadget, u8_bit_decomposition_channel,
-  u8_shift_left_channel, u8_shift_right_channel,
+  AiurField, G, execute::QueryRecord, gadgets::AiurGadget,
+  u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
@@ -32,7 +31,7 @@ pub enum Bytes1Op {
   ShiftRight,
 }
 
-impl AiurGadget for Bytes1 {
+impl<F: AiurField> AiurGadget<F> for Bytes1 {
   type Op = Bytes1Op;
 
   fn output_size(&self, op: &Bytes1Op) -> usize {
@@ -47,11 +46,11 @@ impl AiurGadget for Bytes1 {
   }
 
   /// Builds the preprocessed trace over all 256 byte values.
-  fn preprocessed(&self) -> Option<RowMajorMatrix<G>> {
-    let mut values = vec![G::ZERO; 256 * PREPROCESSED_TRACE_WIDTH];
+  fn preprocessed(&self) -> Option<RowMajorMatrix<F>> {
+    let mut values = vec![F::ZERO; 256 * PREPROCESSED_TRACE_WIDTH];
     values.chunks_exact_mut(PREPROCESSED_TRACE_WIDTH).enumerate().for_each(
       |(i, row)| {
-        let byte = G::from_usize(i);
+        let byte = F::from_usize(i);
 
         // Raw byte value
         row[0] = byte;
@@ -76,9 +75,9 @@ impl AiurGadget for Bytes1 {
   fn execute(
     &self,
     op: &Bytes1Op,
-    input: &[G],
-    record: &mut QueryRecord,
-  ) -> Vec<G> {
+    input: &[F],
+    record: &mut QueryRecord<F>,
+  ) -> Vec<F> {
     let byte = &input[0];
     match op {
       Bytes1Op::BitDecomposition => {
@@ -96,7 +95,7 @@ impl AiurGadget for Bytes1 {
     }
   }
 
-  fn lookups(&self) -> Vec<Lookup<Expr<G>>> {
+  fn lookups(&self) -> Vec<Lookup<Expr<F>>> {
     // Channels
     let bit_decomposition_channel =
       Expr::constant(u8_bit_decomposition_channel());
@@ -153,10 +152,10 @@ impl AiurGadget for Bytes1 {
 
   fn witness_data(
     &self,
-    record: &QueryRecord,
+    record: &QueryRecord<F>,
     slot_arg_widths: &[usize],
-  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
-    let mut rows = vec![G::ZERO; 256 * TRACE_WIDTH];
+  ) -> (RowMajorMatrix<F>, LookupValues<F>) {
+    let mut rows = vec![F::ZERO; 256 * TRACE_WIDTH];
 
     // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
     let mut builder = LookupValues::builder(256, slot_arg_widths);
@@ -173,7 +172,7 @@ impl AiurGadget for Bytes1 {
       .zip(&record.bytes1_queries.0)
       .zip(row_writers.iter_mut())
       .for_each(|(((byte, row), &[bd, shl, shr]), row_lookups)| {
-        let byte = G::from_usize(byte);
+        let byte = F::from_usize(byte);
         row[0] = bd;
         row[1] = shl;
         row[2] = shr;
@@ -204,46 +203,46 @@ impl AiurGadget for Bytes1 {
 }
 
 /// Accumulator of queries performed against `Bytes1`.
-pub struct Bytes1Queries([[G; TRACE_WIDTH]; 256]);
+pub struct Bytes1Queries<F = G>([[F; TRACE_WIDTH]; 256]);
 
-impl Bytes1Queries {
+impl<F: AiurField> Bytes1Queries<F> {
   #[inline]
   pub(crate) fn new() -> Self {
-    Self([[G::ZERO; TRACE_WIDTH]; 256])
+    Self([[F::ZERO; TRACE_WIDTH]; 256])
   }
 
-  pub(crate) fn bump_bit_decomposition(&mut self, byte: &G) {
+  pub(crate) fn bump_bit_decomposition(&mut self, byte: &F) {
     self.bump_multiplicity_for(byte, 0)
   }
 
-  pub(crate) fn bump_shift_left(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_left(&mut self, byte: &F) {
     self.bump_multiplicity_for(byte, 1)
   }
 
-  pub(crate) fn bump_shift_right(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_right(&mut self, byte: &F) {
     self.bump_multiplicity_for(byte, 2)
   }
 
-  pub(crate) fn bump_multiplicity_for(&mut self, byte: &G, col: usize) {
+  pub(crate) fn bump_multiplicity_for(&mut self, byte: &F, col: usize) {
     let row = usize::try_from(byte.as_canonical_u64()).unwrap();
-    self.0[row][col] += G::ONE;
+    self.0[row][col] += F::ONE;
   }
 }
 
 impl Bytes1 {
   #[inline]
-  pub fn bit_decompose(byte: &G) -> Vec<G> {
+  pub fn bit_decompose<F: AiurField>(byte: &F) -> Vec<F> {
     let byte_u64 = byte.as_canonical_u64();
-    (0..8).map(|i| G::from_bool((byte_u64 >> i) & 1 == 1)).collect()
+    (0..8).map(|i| F::from_bool((byte_u64 >> i) & 1 == 1)).collect()
   }
 
   #[inline]
-  pub fn shift_left(byte: &G) -> G {
-    G::from_u64((byte.as_canonical_u64() << 1) & 255)
+  pub fn shift_left<F: AiurField>(byte: &F) -> F {
+    F::from_u64((byte.as_canonical_u64() << 1) & 255)
   }
 
   #[inline]
-  pub fn shift_right(byte: &G) -> G {
-    G::from_u64(byte.as_canonical_u64() >> 1)
+  pub fn shift_right<F: AiurField>(byte: &F) -> F {
+    F::from_u64(byte.as_canonical_u64() >> 1)
   }
 }

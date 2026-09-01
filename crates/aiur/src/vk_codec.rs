@@ -514,19 +514,19 @@ mod tests {
     let (cp, fp) = test_parameters();
     let inputs = [
       CircuitInputs {
-        main_width: Bytes1.main_width(),
-        preprocessed: Bytes1.preprocessed(),
+        main_width: AiurGadget::<crate::G>::main_width(&Bytes1),
+        preprocessed: AiurGadget::<crate::G>::preprocessed(&Bytes1),
         constraints: vec![],
         ext_constraints: vec![],
-        lookups: Bytes1.lookups(),
+        lookups: AiurGadget::<crate::G>::lookups(&Bytes1),
         lookup_group_size: 1,
       },
       CircuitInputs {
-        main_width: Bytes2.main_width(),
-        preprocessed: Bytes2.preprocessed(),
+        main_width: AiurGadget::<crate::G>::main_width(&Bytes2),
+        preprocessed: AiurGadget::<crate::G>::preprocessed(&Bytes2),
         constraints: vec![],
         ext_constraints: vec![],
-        lookups: Bytes2.lookups(),
+        lookups: AiurGadget::<crate::G>::lookups(&Bytes2),
         // Grouped-circuit coverage: the codec must carry the group size
         // through (it changes the derived stage-2 width and count).
         lookup_group_size: 2,

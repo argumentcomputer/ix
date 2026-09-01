@@ -7,7 +7,7 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
 };
 
-use crate::{G, execute::QueryRecord};
+use crate::execute::QueryRecord;
 
 /// A trait representing a generic Aiur gadget.
 ///
@@ -18,7 +18,7 @@ use crate::{G, execute::QueryRecord};
 /// - How to execute its computation on concrete inputs.
 /// - Which symbolic lookups it requires during circuit synthesis.
 /// - How to provide witness data for the prover.
-pub(crate) trait AiurGadget {
+pub(crate) trait AiurGadget<F: Copy> {
   /// The type representing the gadget's operation.
   type Op;
 
@@ -29,18 +29,18 @@ pub(crate) trait AiurGadget {
   fn main_width(&self) -> usize;
 
   /// The gadget's preprocessed trace, if any.
-  fn preprocessed(&self) -> Option<RowMajorMatrix<G>>;
+  fn preprocessed(&self) -> Option<RowMajorMatrix<F>>;
 
   /// Executes the gadget on concrete inputs, returning the resulting output values.
   fn execute(
     &self,
     op: &Self::Op,
-    input: &[G],
-    record: &mut QueryRecord,
-  ) -> Vec<G>;
+    input: &[F],
+    record: &mut QueryRecord<F>,
+  ) -> Vec<F>;
 
   /// Returns the lookups associated with this gadget.
-  fn lookups(&self) -> Vec<Lookup<Expr<G>>>;
+  fn lookups(&self) -> Vec<Lookup<Expr<F>>>;
 
   /// Returns the witness data for the prover, including a row-major trace matrix and
   /// the flat lookup values.
@@ -50,7 +50,7 @@ pub(crate) trait AiurGadget {
   /// layout always matches the AIR.
   fn witness_data(
     &self,
-    record: &QueryRecord,
+    record: &QueryRecord<F>,
     slot_arg_widths: &[usize],
-  ) -> (RowMajorMatrix<G>, LookupValues<G>);
+  ) -> (RowMajorMatrix<F>, LookupValues<F>);
 }

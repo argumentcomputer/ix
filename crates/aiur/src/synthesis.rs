@@ -1,13 +1,13 @@
 use multi_stark::{
+  config::PcsError,
+  config::{StarkGenericConfig, Val},
   expr::Expr,
   lookup::Lookup,
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{CircuitInputs, ProverKey, System, SystemWitness},
-  types::{
-    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
-  },
+  types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config},
   verifier::VerificationError,
 };
 use rayon::iter::{
@@ -15,7 +15,7 @@ use rayon::iter::{
 };
 
 use crate::{
-  G,
+  AiurField, G,
   bytecode::{FunIdx, Toplevel},
   execute::{ExecError, IOBuffer, QueryRecord},
   function_channel,
@@ -38,15 +38,15 @@ pub struct PeakProveBytes {
   pub peak: usize,
 }
 
-pub struct AiurSystem {
-  toplevel: Toplevel,
+pub struct AiurSystem<SC: StarkGenericConfig = AiurConfig> {
+  toplevel: Toplevel<Val<SC>>,
   // perhaps remove the key from the system in verifier only mode?
-  key: ProverKey<AiurConfig>,
+  key: ProverKey<SC>,
   /// The parameters the system's config was built from, kept for the
   /// verifying-key codec (the config itself doesn't expose them back).
   pub(crate) commitment_parameters: CommitmentParameters,
   pub(crate) fri_parameters: FriParameters,
-  pub(crate) system: System<AiurConfig>,
+  pub(crate) system: System<SC>,
   /// Per-circuit lookup-slot argument widths (in system order), retained so
   /// the witness builder can size its `LookupValues` without reading them
   /// back off the (now AIR-free) compiled circuits.
@@ -73,20 +73,22 @@ pub struct CircuitShape {
   pub preprocessed_height: usize,
 }
 
-impl AiurSystem {
-  pub fn build(
-    toplevel: Toplevel,
-    commitment_parameters: CommitmentParameters,
-    fri_parameters: FriParameters,
-  ) -> Self {
-    let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
+/// The circuit list of a toplevel, in system order (constrained functions
+/// ascending, memories, `Bytes1`, `Bytes2`), plus the per-circuit lookup
+/// slot widths. Field-generic: the same bytecode synthesizes over any
+/// [`AiurField`].
+fn build_circuit_inputs<F: AiurField>(
+  toplevel: &Toplevel<F>,
+) -> (Vec<CircuitInputs<F>>, Vec<Vec<usize>>) {
+  {
+    let mut circuit_inputs: Vec<CircuitInputs<F>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
     let mut push_circuit =
       |main_width: usize,
-       preprocessed: Option<RowMajorMatrix<G>>,
-       constraints: Vec<Expr<G>>,
-       lookups: Vec<Lookup<Expr<G>>>,
+       preprocessed: Option<RowMajorMatrix<F>>,
+       constraints: Vec<Expr<F>>,
+       lookups: Vec<Lookup<Expr<F>>>,
        lookup_group_size: usize| {
         slot_widths.push(lookups.iter().map(|l| l.args.len()).collect());
         circuit_inputs.push(CircuitInputs {
@@ -135,20 +137,31 @@ impl AiurSystem {
     // lookups also group 2 per chained step at degree 3 — halving the
     // stage-2 accumulators (Bytes2: 10 → 5 at height 65536).
     push_circuit(
-      Bytes1.main_width(),
-      Bytes1.preprocessed(),
+      AiurGadget::<F>::main_width(&Bytes1),
+      AiurGadget::<F>::preprocessed(&Bytes1),
       vec![],
-      Bytes1.lookups(),
+      AiurGadget::<F>::lookups(&Bytes1),
       2,
     );
     push_circuit(
-      Bytes2.main_width(),
-      Bytes2.preprocessed(),
+      AiurGadget::<F>::main_width(&Bytes2),
+      AiurGadget::<F>::preprocessed(&Bytes2),
       vec![],
-      Bytes2.lookups(),
+      AiurGadget::<F>::lookups(&Bytes2),
       2,
     );
 
+    (circuit_inputs, slot_widths)
+  }
+}
+
+impl AiurSystem {
+  pub fn build(
+    toplevel: Toplevel,
+    commitment_parameters: CommitmentParameters,
+    fri_parameters: FriParameters,
+  ) -> Self {
+    let (circuit_inputs, slot_widths) = build_circuit_inputs(&toplevel);
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
     let (system, key) = System::new(config, circuit_inputs);
     AiurSystem {
@@ -160,7 +173,12 @@ impl AiurSystem {
       slot_widths,
     }
   }
+}
 
+impl<SC: StarkGenericConfig> AiurSystem<SC>
+where
+  Val<SC>: AiurField,
+{
   /// The circuit list in system order: constrained functions (ascending
   /// index), then memories, then `Bytes1`, then `Bytes2`. This matches the
   /// order the circuits were chained in [`AiurSystem::build`], so index `i`
@@ -228,7 +246,10 @@ impl AiurSystem {
   /// residency committed at setup. Heights are `next_power_of_two` of the
   /// record's unique queries — the padding the trace actually commits,
   /// which per-fft models blur.
-  pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
+  pub fn peak_prove_bytes(
+    &self,
+    record: &QueryRecord<Val<SC>>,
+  ) -> PeakProveBytes {
     self.peak_prove_bytes_by(
       |_, ct| match ct {
         CircuitType::Function { idx } => record.function_queries[*idx].len(),
@@ -247,7 +268,7 @@ impl AiurSystem {
     raw_of: impl Fn(usize, &CircuitType) -> usize,
     record_bytes: usize,
   ) -> PeakProveBytes {
-    const S: usize = 8; // bytes per base field element (Goldilocks)
+    let s = size_of::<Val<SC>>(); // bytes per base field element
     const DG: usize = 32; // blake3 digest bytes (Merkle nodes, arity 2)
     let b = 1usize << self.commitment_parameters.log_blowup;
     let fold = 1usize << self.fri_parameters.max_log_arity;
@@ -278,21 +299,21 @@ impl AiurSystem {
       let args: usize = self.slot_widths[i].iter().sum();
       let q = c.quotient_degree();
       witness +=
-        S * n * c.main_width + S * n * (c.num_lookups + args) + 40 * raw;
-      s1_lde += S * b * n * c.main_width;
-      lookup_w += S * n * (c.num_lookups + args);
-      msgs += 2 * S * d * n * c.num_lookups;
-      s2_trace += S * n * c.stage_2_width;
-      committed += S * b * n * (c.main_width + c.stage_2_width + q * d);
-      prep += S * (1 + b) * c.preprocessed_width * c.preprocessed_height
+        s * n * c.main_width + s * n * (c.num_lookups + args) + 40 * raw;
+      s1_lde += s * b * n * c.main_width;
+      lookup_w += s * n * (c.num_lookups + args);
+      msgs += 2 * s * d * n * c.num_lookups;
+      s2_trace += s * n * c.stage_2_width;
+      committed += s * b * n * (c.main_width + c.stage_2_width + q * d);
+      prep += s * (1 + b) * c.preprocessed_width * c.preprocessed_height
         + 2 * DG * b * c.preprocessed_height;
     }
     let h = b * tallest;
     let phase_witness = record_bytes + witness;
     let phase_stage2 = s1_lde + 2 * DG * h + lookup_w + msgs + s2_trace;
     // Trees (3 rounds) + retained FRI fold layers + open buffers, all ∝ H.
-    let fri_layers = (2 * S + 2 * DG) * h * fold / (fold - 1).max(1);
-    let phase_open = committed + 3 * 2 * DG * h + fri_layers + 11 * S * h;
+    let fri_layers = (2 * s + 2 * DG) * h * fold / (fold - 1).max(1);
+    let phase_open = committed + 3 * 2 * DG * h + fri_layers + 11 * s * h;
     PeakProveBytes {
       phase_witness,
       phase_stage2,
@@ -301,14 +322,26 @@ impl AiurSystem {
       peak: phase_witness.max(phase_stage2).max(phase_open) + prep,
     }
   }
+}
 
+/// Proving is bound to the concrete Goldilocks/FRI configuration: multi-stark's
+/// `System::prove` requires a `Dft` bound that is not nameable through the
+/// pinned crate's re-exports. Synthesis and witness generation stay
+/// field-generic (see the `impl<SC>` blocks).
+impl AiurSystem<AiurConfig> {
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
   pub fn prove(
     &self,
     fun_idx: FunIdx,
     input: &[G],
-    io_buffer: &mut IOBuffer,
-  ) -> (Vec<G>, AiurProof) {
+    io_buffer: &mut IOBuffer<G>,
+  ) -> (Vec<G>, Proof<AiurConfig>)
+  where
+    // The witness builder fans out per circuit under rayon with `&self`
+    // captured; the bound lands here (not on the impl) so read-only
+    // paths stay unconstrained.
+    Self: Sync,
+  {
     tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
@@ -374,20 +407,21 @@ impl AiurSystem {
   /// generation are all unchanged — the proof produced here is
   /// verification-compatible with one produced by `prove`.
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_ixvm")]
-  pub fn prove_ixvm<F>(
+  pub fn prove_ixvm<E>(
     &self,
     fun_idx: FunIdx,
     input: &[G],
-    io_buffer: &mut IOBuffer,
-    executor: F,
-  ) -> (Vec<G>, AiurProof)
+    io_buffer: &mut IOBuffer<G>,
+    executor: E,
+  ) -> (Vec<G>, Proof<AiurConfig>)
   where
-    F: FnOnce(
-      &Toplevel,
+    E: FnOnce(
+      &Toplevel<G>,
       FunIdx,
       Vec<G>,
-      &mut IOBuffer,
-    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
+      &mut IOBuffer<G>,
+    ) -> Result<(QueryRecord<G>, Vec<G>), ExecError>,
+    Self: Sync,
   {
     tracing_texray::examine_current();
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
@@ -434,13 +468,18 @@ impl AiurSystem {
     let proof = self.system.prove(&self.key, &claim, witness);
     (claim, proof)
   }
+}
 
+impl<SC: StarkGenericConfig> AiurSystem<SC>
+where
+  Val<SC>: AiurField,
+{
   #[inline]
   pub fn verify(
     &self,
-    claim: &[G],
-    proof: &AiurProof,
-  ) -> Result<(), VerificationError<PcsError>> {
+    claim: &[Val<SC>],
+    proof: &Proof<SC>,
+  ) -> Result<(), VerificationError<PcsError<SC>>> {
     self.system.verify(claim, proof)
   }
 }
@@ -448,6 +487,7 @@ impl AiurSystem {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::G;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
     execute::IOBuffer,
