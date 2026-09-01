@@ -313,6 +313,7 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, AiurProof) {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
@@ -393,6 +394,7 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
     let (query_record, output) =
@@ -568,6 +570,23 @@ mod tests {
       ]
     );
     system.verify(&claim, &proof).expect("xor split outputs must verify");
+
+    // The terminal zkVM receives only the serialized verifier key, not the
+    // prover-side `AiurSystem`. Exercise that exact path against a real proof
+    // so codec round trips alone cannot mask a transcript/config mismatch.
+    let vk_bytes = crate::vk_codec::aiur_system_to_bytes(&system)
+      .expect("encode verifier key");
+    let vk = crate::vk_codec::AiurVerifyingKey::from_bytes(&vk_bytes)
+      .expect("decode verifier key");
+    assert_eq!(vk.to_bytes(), vk_bytes, "verifier key is canonical");
+    vk.verify(&claim, &proof).expect("decoded verifier key must verify");
+
+    let mut tampered_claim = claim.clone();
+    tampered_claim[2] += G::ONE;
+    assert!(
+      vk.verify(&tampered_claim, &proof).is_err(),
+      "decoded verifier key must bind the outer claim"
+    );
   }
 
   /// Hand-build a toplevel exercising the two migrated integration paths that
