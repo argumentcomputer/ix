@@ -60,7 +60,7 @@ def systemDeserialize := ⟦
   -- not sub-trees: the graph is flat and topologically ordered (a node's
   -- children always have smaller indices).
   enum SysNode {
-    Const(Goldilocks),   -- inner-field constant (reduced on read via `gl_val`)
+    Const(Val),   -- inner-field constant (reduced on read via `val_from_bytes`)
     Var(G, G, G),        -- source (0 Preprocessed, 1 Main, 2 Stage2), offset (0 current, 1 next), column index
     Public(G),           -- public-input coordinate index
     IsFirstRow,
@@ -158,17 +158,17 @@ def systemDeserialize := ⟦
   -- A full (u64) Goldilocks constant, reduced into the merged module's
   -- inner-field representation so it can feed the composition arithmetic
   -- directly.
-  fn read_field(i: ByteStream) -> (Goldilocks, ByteStream) {
+  fn read_field(i: ByteStream) -> (Val, ByteStream) {
     let (u, j) = read_vk_u64(i);
-    (@gl_val(u), j)
+    (@val_from_bytes(u), j)
   }
 
   -- A small (u16) constant, ingested from its two raw bytes into the
   -- inner-field representation (`ConstSmall` nodes).
-  fn read_small_field(s: ByteStream) -> (Goldilocks, ByteStream) {
+  fn read_small_field(s: ByteStream) -> (Val, ByteStream) {
     let (b0, s0) = read_vk_u8(s);
     let (b1, s1) = read_vk_u8(s0);
-    (@gl_from_u16(b0, b1), s1)
+    (@val_from_u16(b0, b1), s1)
   }
 
   fn read_vk_digest(i: ByteStream) -> (Digest, ByteStream) {
