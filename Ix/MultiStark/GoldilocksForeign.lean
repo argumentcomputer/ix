@@ -2,7 +2,7 @@ module
 public import Ix.Aiur.Meta
 
 /-!
-# Goldilocks arithmetic, FOREIGN form (`Goldilocks = [U8; 8]`)
+# Goldilocks arithmetic, FOREIGN form (`Goldilocks = &GBytes`, byte-limb)
 
 The same interface as `GoldilocksNative.lean` — types, values, and
 operations, base and extension — implemented WITHOUT assuming the Aiur
@@ -11,7 +11,9 @@ BLS12-381 scalar field of the KZG terminal stage), inner-field
 arithmetic cannot use the native `+`/`*`; it is emulated on bytes.
 
 A `Goldilocks` element is its canonical value `< p = 2⁶⁴ − 2³² + 1`
-held as 8 little-endian bytes (`[U8; 8]`). All ops are built from the
+held as 8 little-endian bytes, threaded BY POINTER (`&GBytes` — one
+holder column, like the native form's one field column; see the
+convention below). All ops are built from the
 u8 gadgets (`u8_add`/`u8_sub`/`u8_mul` give full carry/borrow/16-bit
 product), so the module only assumes the outer field is large enough
 for byte sums — field-agnostic. `EPSILON = 2³² − 1` and
@@ -24,8 +26,8 @@ Differences from the native form, same interface:
   `unconstrained_g_inverse` hint speaks the OUTER field, so it cannot
   help here.
 - `gl_val` (wire-limb ingest) is one conditional subtraction of `p`
-  (the representation already IS bytes); `gl_to_bytes` (egress) is the
-  identity.
+  (the representation already IS bytes); `gl_to_bytes` (egress) is one
+  load.
 - `g_is_zero` is a byte-sum test (canonical representation: zero has
   all-zero bytes; a sum of 8 bytes cannot wrap in any large field).
 
@@ -61,31 +63,39 @@ public section
 namespace MultiStark
 
 def goldilocksForeign := ⟦
-  type Goldilocks = [U8; 8]
+  -- The raw representation: canonical little-endian bytes. Interface
+  -- values thread BY POINTER (`store` is content-addressed, so equal
+  -- values share a pointer and memoization survives): a `Goldilocks`
+  -- costs its holder ONE column — the same as the native form — and an
+  -- `ExtGoldilocks` two, instead of 8/16 by-value byte columns at every
+  -- call boundary, list node, and enum field. Only the impls ever load
+  -- the bytes.
+  type GBytes = [U8; 8]
+  type Goldilocks = &GBytes
   type ExtGoldilocks = [Goldilocks; 2]
 
   -- ==========================================================================
   -- Pure values (canonical little-endian bytes).
   -- ==========================================================================
-  fn g_zero() -> Goldilocks { [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] }
-  fn g_one() -> Goldilocks { [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] }
-  fn g_two() -> Goldilocks { [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] }
+  fn g_zero() -> Goldilocks { store([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
+  fn g_one() -> Goldilocks { store([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
+  fn g_two() -> Goldilocks { store([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
   -- The extension's binomial modulus: ExtGoldilocks = 𝔽_p[X]/(X² − W).
-  fn g_w() -> Goldilocks { [7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] }
+  fn g_w() -> Goldilocks { store([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
   -- The multiplicative-coset generator (Plonky3 `Goldilocks::GENERATOR`).
-  fn g_generator() -> Goldilocks { [7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] }
+  fn g_generator() -> Goldilocks { store([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) }
   -- A primitive 2^32-th root of unity (= 1753635133440165772).
   fn g_two_adic_root() -> Goldilocks {
-    [140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8]
+    store([140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8])
   }
   -- A small (< 2¹⁶) constant from its two little-endian bytes — the vk's
   -- ConstSmall ingest. Already canonical: the two bytes ARE the low limbs.
   fn gl_from_u16(lo: U8, hi: U8) -> Goldilocks {
-    [lo, hi, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]
+    store([lo, hi, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
   }
   -- p = 2⁶⁴ − 2³² + 1 and EPSILON = 2³² − 1, little-endian (internal).
-  fn gl_p() -> Goldilocks { [1u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8] }
-  fn gl_eps() -> Goldilocks { [255u8, 255u8, 255u8, 255u8, 0u8, 0u8, 0u8, 0u8] }
+  fn gl_p() -> GBytes { [1u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8] }
+  fn gl_eps() -> GBytes { [255u8, 255u8, 255u8, 255u8, 0u8, 0u8, 0u8, 0u8] }
 
   -- ==========================================================================
   -- Byte-vector primitives (carry/borrow chains over the u8 gadgets).
@@ -108,7 +118,7 @@ def goldilocksForeign := ⟦
   }
 
   -- 8-byte (64-bit) add. Returns the 8-byte sum and the final carry (0/1).
-  fn add8(a: Goldilocks, b: Goldilocks) -> (Goldilocks, G) {
+  fn add8(a: GBytes, b: GBytes) -> (GBytes, G) {
     let (r0, c0) = @adc(a[0], b[0], 0);
     let (r1, c1) = @adc(a[1], b[1], c0);
     let (r2, c2) = @adc(a[2], b[2], c1);
@@ -121,7 +131,7 @@ def goldilocksForeign := ⟦
   }
 
   -- 8-byte (64-bit) subtract. Returns the 8-byte difference and final borrow.
-  fn sub8(a: Goldilocks, b: Goldilocks) -> (Goldilocks, G) {
+  fn sub8(a: GBytes, b: GBytes) -> (GBytes, G) {
     let (r0, w0) = @sbb(a[0], b[0], 0);
     let (r1, w1) = @sbb(a[1], b[1], w0);
     let (r2, w2) = @sbb(a[2], b[2], w1);
@@ -139,7 +149,7 @@ def goldilocksForeign := ⟦
   fn sel(cond: G, x: U8, y: U8) -> U8 {
     u8_from_field_unsafe(to_field(x) * cond + to_field(y) * (1 - cond))
   }
-  fn select8(cond: G, x: Goldilocks, y: Goldilocks) -> Goldilocks {
+  fn select8(cond: G, x: GBytes, y: GBytes) -> GBytes {
     [@sel(cond, x[0], y[0]), @sel(cond, x[1], y[1]), @sel(cond, x[2], y[2]),
      @sel(cond, x[3], y[3]), @sel(cond, x[4], y[4]), @sel(cond, x[5], y[5]),
      @sel(cond, x[6], y[6]), @sel(cond, x[7], y[7])]
@@ -155,20 +165,20 @@ def goldilocksForeign := ⟦
   --   • c = 0 ⇒ reduce by one conditional subtraction of p (when s ≥ p).
   fn g_add(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_add_impl(a, b) }
   fn g_add_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
-    let (s, c) = add8(a, b);
+    let (s, c) = add8(load(a), load(b));
     let (s_minus_p, borrow) = sub8(s, @gl_p());  -- borrow = 1 iff s < p
     let (s_plus_eps, _) = add8(s, @gl_eps());
     let c0 = @select8(1 - borrow, s_minus_p, s); -- c=0 branch: (s≥p ? s−p : s)
-    @select8(c, s_plus_eps, c0)
+    store(@select8(c, s_plus_eps, c0))
   }
 
   -- a − b mod p. `sub8` borrow = 1 iff a < b, in which case the true result is
   -- `(a − b mod 2⁶⁴) − EPSILON = a − b + p`.
   fn g_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_sub_impl(a, b) }
   fn g_sub_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
-    let (d, borrow) = sub8(a, b);
+    let (d, borrow) = sub8(load(a), load(b));
     let (d_minus_eps, _) = sub8(d, @gl_eps());
-    @select8(borrow, d_minus_eps, d)
+    store(@select8(borrow, d_minus_eps, d))
   }
 
   fn g_neg(a: Goldilocks) -> Goldilocks { g_sub_impl(@g_zero(), a) }
@@ -176,8 +186,9 @@ def goldilocksForeign := ⟦
   -- 1 iff the value is zero. Canonical representation: zero iff every byte
   -- is zero, and a sum of 8 bytes (< 2¹¹) cannot wrap in any large field.
   fn g_is_zero(a: Goldilocks) -> G {
-    eq_zero(to_field(a[0]) + to_field(a[1]) + to_field(a[2]) + to_field(a[3])
-      + to_field(a[4]) + to_field(a[5]) + to_field(a[6]) + to_field(a[7]))
+    let v = load(a);
+    eq_zero(to_field(v[0]) + to_field(v[1]) + to_field(v[2]) + to_field(v[3])
+      + to_field(v[4]) + to_field(v[5]) + to_field(v[6]) + to_field(v[7]))
   }
 
   -- ==========================================================================
@@ -188,7 +199,7 @@ def goldilocksForeign := ⟦
   -- 8-byte × 1-byte → 9-byte product (`a · m`, with `a < 2⁶⁴`, `m < 2⁸`, so the
   -- result is `< 2⁷²`). Column `k` is `lo_k + hi_{k-1} + carry`, and the carry
   -- provably stays in {0,1} (each column sum ≤ 255+255+1 = 511 < 512).
-  fn mul1(a: Goldilocks, m: U8) -> [U8; 9] {
+  fn mul1(a: GBytes, m: U8) -> [U8; 9] {
     let (l0, h0) = u8_mul(a[0], m);
     let (l1, h1) = u8_mul(a[1], m);
     let (l2, h2) = u8_mul(a[2], m);
@@ -232,7 +243,7 @@ def goldilocksForeign := ⟦
 
   -- Full 64×64 → 128-bit product as 16 little-endian bytes. Eight single-byte
   -- rows `a · b[i]`, each shifted left by `i` bytes and accumulated.
-  fn mul128(a: Goldilocks, b: Goldilocks) -> [U8; 16] {
+  fn mul128(a: GBytes, b: GBytes) -> [U8; 16] {
     let m0 = mul1(a, b[0]);
     let m1 = mul1(a, b[1]);
     let m2 = mul1(a, b[2]);
@@ -270,7 +281,7 @@ def goldilocksForeign := ⟦
   -- `2⁶⁴ ≡ EPSILON` and `2⁹⁶ ≡ −1` give `x ≡ x_lo − x_hi_hi + x_hi_lo·EPSILON`.
   -- A final conditional subtraction of p canonicalizes (Plonky3 keeps a
   -- non-canonical u64; we need the canonical bytes).
-  fn reduce128(p: [U8; 16]) -> Goldilocks {
+  fn reduce128(p: [U8; 16]) -> GBytes {
     let xlo = [p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]];
     let xhl = [p[8], p[9], p[10], p[11], 0u8, 0u8, 0u8, 0u8];   -- low 32 bits of x_hi
     let xhh = [p[12], p[13], p[14], p[15], 0u8, 0u8, 0u8, 0u8]; -- high 32 bits of x_hi
@@ -295,7 +306,7 @@ def goldilocksForeign := ⟦
 
   fn g_mul(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_mul_impl(a, b) }
   fn g_mul_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
-    @reduce128(mul128(a, b))
+    store(@reduce128(mul128(load(a), load(b))))
   }
 
   -- ==========================================================================
@@ -329,7 +340,7 @@ def goldilocksForeign := ⟦
   fn gl_val(x: [U8; 8]) -> Goldilocks { gl_val_impl(x) }
   fn gl_val_impl(x: [U8; 8]) -> Goldilocks {
     let (x_minus_p, borrow) = sub8(x, @gl_p());  -- borrow = 1 iff x < p
-    @select8(borrow, x, x_minus_p)
+    store(@select8(borrow, x, x_minus_p))
   }
 
   -- 1 iff the 8-byte LE integer is < p. Byte-sum logic (sums < 2¹¹ cannot
@@ -343,8 +354,8 @@ def goldilocksForeign := ⟦
     1 - (hi_max * (1 - lo_zero))
   }
 
-  -- Egress: the canonical LE bytes ARE the representation.
-  fn gl_to_bytes(v: Goldilocks) -> [U8; 8] { v }
+  -- Egress: the canonical LE bytes ARE the representation — one load.
+  fn gl_to_bytes(v: Goldilocks) -> [U8; 8] { load(v) }
 
   -- ==========================================================================
   -- Extension algebra ExtGoldilocks = 𝔽_p[X]/(X² − 7), over the base
@@ -394,7 +405,7 @@ def goldilocksForeign := ⟦
   -- Self-tests (vs `gl_ops_ref` — the same byte vectors the native form's
   -- suite pins, plus the boundary ops).
   -- ==========================================================================
-  fn assert_g8(x: Goldilocks, e: Goldilocks) -> G {
+  fn assert_b8(x: GBytes, e: GBytes) -> G {
     assert_eq!(to_field(x[0]), to_field(e[0]));
     assert_eq!(to_field(x[1]), to_field(e[1]));
     assert_eq!(to_field(x[2]), to_field(e[2]));
@@ -405,44 +416,47 @@ def goldilocksForeign := ⟦
     assert_eq!(to_field(x[7]), to_field(e[7]));
     1
   }
+  fn assert_g8(x: Goldilocks, e: GBytes) -> G {
+    @assert_b8(load(x), e)
+  }
   pub fn fg_addsub_test() -> G {
-    let a = [16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]; -- 0xFEDCBA9876543210
-    let b = [240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]; -- 0x123456789ABCDEF0
+    let a = store([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]); -- 0xFEDCBA9876543210
+    let b = store([240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]); -- 0x123456789ABCDEF0
     assert_eq!(@assert_g8(@g_add(a, b), [255u8, 16u8, 17u8, 17u8, 18u8, 17u8, 17u8, 17u8]), 1);
     assert_eq!(@assert_g8(@g_sub(a, b), [32u8, 83u8, 151u8, 219u8, 31u8, 100u8, 168u8, 236u8]), 1);
     assert_eq!(@assert_g8(@g_sub(b, a), [225u8, 172u8, 104u8, 36u8, 223u8, 155u8, 87u8, 19u8]), 1);
     -- edge: (p-1) + 5 ≡ 4 ; 5 - (p-1) ≡ 6
-    let pm1 = [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]; -- 0xFFFFFFFF00000000
-    let five = [5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let pm1 = store([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]); -- 0xFFFFFFFF00000000
+    let five = store([5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
     assert_eq!(@assert_g8(@g_add(pm1, five), [4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
     assert_eq!(@assert_g8(@g_sub(five, pm1), [6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
     1
   }
   pub fn fg_muldiv_test() -> G {
-    let a = [16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]; -- 0xFEDCBA9876543210
-    let b = [240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]; -- 0x123456789ABCDEF0
+    let a = store([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]); -- 0xFEDCBA9876543210
+    let b = store([240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]); -- 0x123456789ABCDEF0
     assert_eq!(@assert_g8(@g_mul(a, b), [212u8, 186u8, 123u8, 108u8, 31u8, 253u8, 234u8, 250u8]), 1);
     assert_eq!(@assert_g8(@gl_inverse(a), [97u8, 29u8, 109u8, 46u8, 183u8, 100u8, 8u8, 102u8]), 1);
     -- edge: (p-1)·5 ≡ p-5
-    let pm1 = [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8];
-    let five = [5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let pm1 = store([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]);
+    let five = store([5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
     assert_eq!(@assert_g8(@g_mul(pm1, five), [252u8, 255u8, 255u8, 255u8, 254u8, 255u8, 255u8, 255u8]), 1);
     -- a·a⁻¹ = 1 and b·b⁻¹ = 1
-    assert_eq!(@assert_g8(@g_mul(a, @gl_inverse(a)), @g_one()), 1);
-    assert_eq!(@assert_g8(@g_mul(b, @gl_inverse(b)), @g_one()), 1);
+    assert_eq!(@assert_g8(@g_mul(a, @gl_inverse(a)), [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
+    assert_eq!(@assert_g8(@g_mul(b, @gl_inverse(b)), [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
     1
   }
-  fn assert_eg(x: ExtGoldilocks, e0: Goldilocks, e1: Goldilocks) -> G {
+  fn assert_eg(x: ExtGoldilocks, e0: GBytes, e1: GBytes) -> G {
     assert_eq!(@assert_g8(x[0], e0), 1);
     assert_eq!(@assert_g8(x[1], e1), 1);
     1
   }
   pub fn fg_ext_ops_test() -> G {
     -- e0 = (0xFEDCBA9876543210, 0x0123456789ABCDEF), e1 = (0x1111111122222222, 0x3333333344444444)
-    let e0 = [[16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8],
-              [239u8, 205u8, 171u8, 137u8, 103u8, 69u8, 35u8, 1u8]];
-    let e1 = [[34u8, 34u8, 34u8, 34u8, 17u8, 17u8, 17u8, 17u8],
-              [68u8, 68u8, 68u8, 68u8, 51u8, 51u8, 51u8, 51u8]];
+    let e0 = [store([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]),
+              store([239u8, 205u8, 171u8, 137u8, 103u8, 69u8, 35u8, 1u8])];
+    let e1 = [store([34u8, 34u8, 34u8, 34u8, 17u8, 17u8, 17u8, 17u8]),
+              store([68u8, 68u8, 68u8, 68u8, 51u8, 51u8, 51u8, 51u8])];
     assert_eq!(@assert_eg(@eg_add(e0, e1),
       [49u8, 84u8, 118u8, 152u8, 170u8, 203u8, 237u8, 15u8],
       [51u8, 18u8, 240u8, 205u8, 154u8, 120u8, 86u8, 52u8]), 1);
@@ -456,7 +470,7 @@ def goldilocksForeign := ⟦
       [42u8, 59u8, 64u8, 77u8, 226u8, 214u8, 95u8, 63u8],
       [200u8, 46u8, 148u8, 147u8, 124u8, 180u8, 248u8, 140u8]), 1);
     -- e0 · e0⁻¹ = 1
-    assert_eq!(@assert_eg(@eg_mul(e0, @eg_inverse(e0)), @g_one(), @g_zero()), 1);
+    assert_eq!(@assert_eg(@eg_mul(e0, @eg_inverse(e0)), [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
     1
   }
   pub fn fg_boundary_test() -> G {
@@ -466,8 +480,8 @@ def goldilocksForeign := ⟦
     assert_eq!(@assert_g8(@gl_val(p_plus_3), [3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
     let a = [16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8];
     assert_eq!(@assert_g8(@gl_val(a), a), 1);
-    -- gl_to_bytes is the identity on the canonical representation.
-    assert_eq!(@assert_g8(@gl_to_bytes(a), a), 1);
+    -- gl_to_bytes is one load of the canonical representation.
+    assert_eq!(@assert_b8(@gl_to_bytes(@gl_val(a)), a), 1);
     -- gl_lt_p: p is not < p; p − 1 is.
     assert_eq!(@gl_lt_p([1u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]), 0);
     assert_eq!(@gl_lt_p([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]), 1);
@@ -477,7 +491,7 @@ def goldilocksForeign := ⟦
     assert_eq!(@g_is_zero(@g_one()), 0);
     let r31 = gl_run(@g_two_adic_root(), @g_one(), 31);  -- 31 squarings (base 1)
     assert_eq!(@assert_g8(r31, [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]), 1);
-    assert_eq!(@assert_g8(@g_mul(r31, r31), @g_one()), 1);
+    assert_eq!(@assert_g8(@g_mul(r31, r31), [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
     1
   }
 ⟧
