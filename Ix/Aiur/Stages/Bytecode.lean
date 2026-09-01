@@ -19,7 +19,7 @@ abbrev ValIdx := Nat
 abbrev SelIdx := Nat
 
 inductive Op
-  | const : G → Op
+  | const : Nat → Op
   | add : ValIdx → ValIdx → Op
   | sub : ValIdx → ValIdx → Op
   | mul : ValIdx → ValIdx → Op
@@ -76,10 +76,10 @@ inductive Op
 
 mutual
   inductive Ctrl where
-    | match : ValIdx → Array (G × Block) → Option Block → Ctrl
+    | match : ValIdx → Array (Nat × Block) → Option Block → Ctrl
     | return : SelIdx → Array ValIdx → Ctrl
     | yield : SelIdx → Array ValIdx → Ctrl
-    | matchContinue : ValIdx → Array (G × Block) → Option Block
+    | matchContinue : ValIdx → Array (Nat × Block) → Option Block
         → (outputSize : Nat) → (sharedAuxiliaries : Nat) → (sharedLookups : Nat)
         → Block → Ctrl
     deriving Inhabited, Repr
@@ -115,6 +115,27 @@ def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
     else max l.lookups 1
   l.width + G.extensionDegree * slots
 
+mutual
+  /-- Largest constant in a block (0 if none): `Op.const` values and match
+  keys. Consumers specialize constants to a concrete field and must ERROR
+  when this exceeds the field size (`maxConstant ≥ p` means the field
+  cannot represent the circuit). -/
+  partial def Block.maxConstant (b : Block) : Nat :=
+    b.ops.foldl (fun acc op => match op with
+      | .const c => max acc c
+      | _ => acc) (Ctrl.maxConstant b.ctrl)
+
+  partial def Ctrl.maxConstant : Ctrl → Nat
+    | .match _ cases def? =>
+      let m := cases.foldl (fun acc (c, b) => max acc (max c b.maxConstant)) 0
+      match def? with | some b => max m b.maxConstant | none => m
+    | .matchContinue _ cases def? _ _ _ cont =>
+      let m := cases.foldl (fun acc (c, b) => max acc (max c b.maxConstant)) 0
+      let m := match def? with | some b => max m b.maxConstant | none => m
+      max m cont.maxConstant
+    | .return _ _ | .yield _ _ => 0
+end
+
 structure Function where
   body : Block
   layout: FunctionLayout
@@ -126,6 +147,17 @@ structure Toplevel where
   functions : Array Function
   memorySizes : Array Nat
   deriving Repr
+
+/-- Specialization guard: every constant must fit the target field. Run
+by each consumer (interpreter entry, FFI, codegen) before converting
+constants; overflow is an ERROR — the field cannot represent the
+circuit — never a silent wrap. -/
+def Toplevel.checkConstants (t : Toplevel) (fieldSize : Nat) :
+    Except String Unit := do
+  for f in t.functions do
+    let m := f.body.maxConstant
+    if m ≥ fieldSize then
+      throw s!"constant {m} does not fit the field (size {fieldSize}): the field cannot represent this circuit"
 
 end Bytecode
 

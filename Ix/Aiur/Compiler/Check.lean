@@ -818,7 +818,7 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     pure (Typed.Term.u32ToField .field false a')
   | .u8Lit n => do
     if n ≥ 256 then throw (.u8LitOutOfRange n)
-    pure (Typed.Term.field .u8 false (G.ofNat n))
+    pure (Typed.Term.field .u8 false n)
   | .u8RangeCheck a b => do
     let a' ← checkNoEscape a .field
     let b' ← checkNoEscape b .field

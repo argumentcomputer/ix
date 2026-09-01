@@ -84,7 +84,8 @@ private def matchPattern (store : Store) :
     Pattern → Value → Option Bindings
   | .wildcard,    _           => some []
   | .var l,       v           => some [(l, v)]
-  | .field g,     .field g'   => if g == g' then some [] else none
+  -- Checked embedding: an unrepresentable constant matches no value.
+  | .field g,     .field g'   => if G.ofNat? g == some g' then some [] else none
   | .tuple pats,  .tuple vs   => matchPatsArr store pats vs
   | .array pats,  .array vs   => matchPatsArr store pats vs
   | .ref g pats,  .ctor g' vs =>
@@ -302,7 +303,9 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           else throwErr s!"ref: constructor '{g}' requires {ctor.argTypes.length} argument(s)"
       | some (.dataType _)          => throwErr s!"ref: '{g}' is a type, not a value"
       | none                        => throwErr s!"ref: '{g}' is not known"
-  | .field g  => return .field g
+  | .field g  => match G.ofNat? g with
+    | some gv => return .field gv
+    | none => throwErr s!"constant {g} does not fit the field"
   | .tuple ts => return .tuple (← ts.mapM (interp decls bindings))
   | .array ts => return .array (← ts.mapM (interp decls bindings))
   | .ret t   => do let v ← interp decls bindings t; throw (.ret v)

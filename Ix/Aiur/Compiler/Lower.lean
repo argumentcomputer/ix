@@ -151,7 +151,7 @@ def toIndex
   | .var _ _ name => pure (bindings[name]?.getD #[])
   | .ref _ _ name => match layoutMap[name]? with
     | some (.function layout) => do
-      pushOp (.const (.ofNat layout.index))
+      pushOp (.const layout.index)
     | some (.constructor layout) => do
       let size := layout.size
       -- Tagless single-variant: no tag slot. A nullary ctor is then a width-0
@@ -159,10 +159,10 @@ def toIndex
       if layout.tagless then
         if size == 0 then pure #[]
         else
-          let padding := (← pushOp (.const (.ofNat 0)))[0]!
+          let padding := (← pushOp (.const 0))[0]!
           pure $ Array.replicate size padding
       else
-        let paddingOp := Bytecode.Op.const (.ofNat layout.index)
+        let paddingOp := Bytecode.Op.const layout.index
         let index ← pushOp paddingOp
         if index.size < size then
           let padding := (← pushOp paddingOp)[0]!
@@ -202,10 +202,10 @@ def toIndex
       -- offset 0, exactly like a tuple.
       let index ←
         if layout.tagless then pure #[]
-        else pushOp (.const (.ofNat layout.index))
+        else pushOp (.const layout.index)
       let index ← buildArgs layoutMap bindings args index
       if index.size < size then
-        let padding := (← pushOp (.const (.ofNat 0)))[0]!
+        let padding := (← pushOp (.const 0))[0]!
         pure $ index ++ Array.replicate (size - index.size) padding
       else
         pure index
@@ -390,7 +390,7 @@ end
 /-- Compute the max aux/lookup usage across match-continue branches (for layout
 pre-reservation). Uses `Bytecode.blockLayout` with the current degree array. -/
 def Concrete.computeSharedLayout
-    (matchCases : Array (G × Bytecode.Block))
+    (matchCases : Array (Nat × Bytecode.Block))
     (defaultBlock : Option Bytecode.Block) : CompileM (Nat × Nat) := do
   let degrees := (← get).degrees
   let initLS : Bytecode.LayoutMState :=
@@ -549,9 +549,9 @@ def Concrete.addCase
     (returnTyp : Concrete.Typ)
     (idxs : Array Bytecode.ValIdx)
     (yieldCtrl : Bool := false) :
-    (Array (G × Bytecode.Block) × Option Bytecode.Block) →
+    (Array (Nat × Bytecode.Block) × Option Bytecode.Block) →
     (Concrete.Pattern × Concrete.Term) →
-    CompileM (Array (G × Bytecode.Block) × Option Bytecode.Block) :=
+    CompileM (Array (Nat × Bytecode.Block) × Option Bytecode.Block) :=
   fun (cases, defaultBlock) (pat, term) =>
     match pat with
     | .field g => do
@@ -583,7 +583,7 @@ def Concrete.addCase
       -- cases the `.match`/`.matchContinue` always falls through to it, so no tag
       -- discrimination occurs (`idxs[0]` is a field, never a tag).
       if tagless then pure (cases, .some term)
-      else pure (cases.push (.ofNat index, term), defaultBlock)
+      else pure (cases.push (index, term), defaultBlock)
     | .wildcard => do
       let initState ← get
       let term ← term.compile returnTyp layoutMap bindings yieldCtrl

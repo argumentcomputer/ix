@@ -66,6 +66,10 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
   let compiled ← match src.compile with
     | .ok c => pure c
     | .error e => IO.eprintln s!"{t.label} Aiur compile error: {e}"; return false
+  -- Specialization guard: the emitted Rust bakes constants into the
+  -- Goldilocks field; a constant that does not fit is a hard error.
+  if let .error e := compiled.bytecode.checkConstants Aiur.gSize.toNat then
+    throw $ IO.userError s!"codegen: {e}"
   let rustSource := Aiur.Codegen.emit compiled.bytecode
   if checkOnly then
     -- CI mode: compare emitted source against the on-disk file.
