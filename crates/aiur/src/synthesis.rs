@@ -2,7 +2,7 @@ use multi_stark::{
   config::PcsError,
   config::{StarkGenericConfig, Val},
   expr::Expr,
-  lookup::Lookup,
+  lookup::{Lookup, LookupValues},
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
@@ -53,7 +53,10 @@ pub struct AiurSystem<SC: StarkGenericConfig = AiurConfig> {
   slot_widths: Vec<Vec<usize>>,
 }
 
-enum CircuitType {
+/// One circuit of a toplevel's system, in system order (see
+/// [`circuit_types`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CircuitType {
   Function { idx: usize },
   Memory { width: usize },
   Bytes1,
@@ -77,7 +80,7 @@ pub struct CircuitShape {
 /// ascending, memories, `Bytes1`, `Bytes2`), plus the per-circuit lookup
 /// slot widths. Field-generic: the same bytecode synthesizes over any
 /// [`AiurField`].
-fn build_circuit_inputs<F: AiurField>(
+pub fn build_circuit_inputs<F: AiurField>(
   toplevel: &Toplevel<F>,
 ) -> (Vec<CircuitInputs<F>>, Vec<Vec<usize>>) {
   {
@@ -155,6 +158,48 @@ fn build_circuit_inputs<F: AiurField>(
   }
 }
 
+/// The circuit list of a toplevel in system order: constrained functions
+/// (ascending index), then memories, then `Bytes1`, then `Bytes2`. Index
+/// `i` corresponds to circuit `i` of [`build_circuit_inputs`].
+pub fn circuit_types<F>(toplevel: &Toplevel<F>) -> Vec<CircuitType> {
+  let functions = (0..toplevel.functions.len()).filter_map(|idx| {
+    toplevel.functions[idx].constrained.then_some(CircuitType::Function { idx })
+  });
+  let memories =
+    toplevel.memory_sizes.iter().map(|&width| CircuitType::Memory { width });
+  let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2];
+  functions.chain(memories).chain(gadgets).collect()
+}
+
+/// The per-circuit witness (main trace and lookup values) of an execution,
+/// in system order. `slot_widths[i]` are circuit `i`'s lookup-slot argument
+/// widths as returned by [`build_circuit_inputs`]. Field-generic and
+/// backend-agnostic: the traces are what any proof system consumes.
+pub fn build_witness<F: AiurField>(
+  toplevel: &Toplevel<F>,
+  record: &QueryRecord<F>,
+  io_buffer: &IOBuffer<F>,
+  slot_widths: &[Vec<usize>],
+) -> Vec<(RowMajorMatrix<F>, LookupValues<F>)> {
+  circuit_types(toplevel)
+    .into_par_iter()
+    .enumerate()
+    .map(|(circuit_idx, circuit_type)| {
+      let slot_arg_widths = &slot_widths[circuit_idx];
+      match circuit_type {
+        CircuitType::Function { idx } => {
+          toplevel.witness_data(idx, record, io_buffer, slot_arg_widths)
+        },
+        CircuitType::Memory { width } => {
+          Memory::witness_data(width, record, slot_arg_widths)
+        },
+        CircuitType::Bytes1 => Bytes1.witness_data(record, slot_arg_widths),
+        CircuitType::Bytes2 => Bytes2.witness_data(record, slot_arg_widths),
+      }
+    })
+    .collect()
+}
+
 impl AiurSystem {
   pub fn build(
     toplevel: Toplevel,
@@ -179,30 +224,8 @@ impl<SC: StarkGenericConfig> AiurSystem<SC>
 where
   Val<SC>: AiurField,
 {
-  /// The circuit list in system order: constrained functions (ascending
-  /// index), then memories, then `Bytes1`, then `Bytes2`. This matches the
-  /// order the circuits were chained in [`AiurSystem::build`], so index `i`
-  /// of the returned `Vec` corresponds to `self.system.circuits[i]`.
   fn circuit_types(&self) -> Vec<CircuitType> {
-    let functions = (0..self.toplevel.functions.len()).filter_map(|idx| {
-      self.toplevel.functions[idx]
-        .constrained
-        .then_some(CircuitType::Function { idx })
-    });
-    let memories = self
-      .toplevel
-      .memory_sizes
-      .iter()
-      .map(|&width| CircuitType::Memory { width });
-    let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2];
-    functions.chain(memories).chain(gadgets).collect()
-  }
-
-  /// The argument width of each lookup slot of circuit `circuit_idx`, taken
-  /// from the lookups built at construction so the witness layout always
-  /// matches the compiled circuit.
-  fn slot_arg_widths(&self, circuit_idx: usize) -> Vec<usize> {
-    self.slot_widths[circuit_idx].clone()
+    circuit_types(&self.toplevel)
   }
 
   /// Per-circuit shape data for the FFT cost model, read straight off the
@@ -356,31 +379,12 @@ impl AiurSystem<AiurConfig> {
 
     // Build the `SystemWitness`
     let _g = tracing::info_span!("aiur/witness").entered();
-    let circuit_types = self.circuit_types();
-    let witness_data = circuit_types
-      .into_par_iter()
-      .enumerate()
-      .map(|(circuit_idx, circuit_type)| {
-        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
-        match circuit_type {
-          CircuitType::Function { idx } => self.toplevel.witness_data(
-            idx,
-            &query_record,
-            io_buffer,
-            &slot_arg_widths,
-          ),
-          CircuitType::Memory { width } => {
-            Memory::witness_data(width, &query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes1 => {
-            Bytes1.witness_data(&query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes2 => {
-            Bytes2.witness_data(&query_record, &slot_arg_widths)
-          },
-        }
-      })
-      .collect::<Vec<_>>();
+    let witness_data = build_witness(
+      &self.toplevel,
+      &query_record,
+      io_buffer,
+      &self.slot_widths,
+    );
     drop(query_record); // Early drop to free memory.
     let (traces, lookups) = witness_data.into_iter().unzip();
     let witness = SystemWitness { traces, lookups };
@@ -431,31 +435,12 @@ impl AiurSystem<AiurConfig> {
     drop(_g);
 
     let _g = tracing::info_span!("aiur/witness").entered();
-    let circuit_types = self.circuit_types();
-    let witness_data = circuit_types
-      .into_par_iter()
-      .enumerate()
-      .map(|(circuit_idx, circuit_type)| {
-        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
-        match circuit_type {
-          CircuitType::Function { idx } => self.toplevel.witness_data(
-            idx,
-            &query_record,
-            io_buffer,
-            &slot_arg_widths,
-          ),
-          CircuitType::Memory { width } => {
-            Memory::witness_data(width, &query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes1 => {
-            Bytes1.witness_data(&query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes2 => {
-            Bytes2.witness_data(&query_record, &slot_arg_widths)
-          },
-        }
-      })
-      .collect::<Vec<_>>();
+    let witness_data = build_witness(
+      &self.toplevel,
+      &query_record,
+      io_buffer,
+      &self.slot_widths,
+    );
     drop(query_record);
     let (traces, lookups) = witness_data.into_iter().unzip();
     let witness = SystemWitness { traces, lookups };
