@@ -365,7 +365,7 @@ inductive Pattern
   | var : Local → Pattern
   | wildcard : Pattern
   | ref : Global → List Pattern → Pattern
-  | field : G → Pattern
+  | field : Nat → Pattern
   | tuple : Array Pattern → Pattern
   | array : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
@@ -395,7 +395,7 @@ inductive Term
   | unit
   | var : Local → Term
   | ref : Global → Term
-  | field : G → Term
+  | field : Nat → Term
   | tuple : Array Term → Term
   | array : Array Term → Term
   | ret : Term → Term

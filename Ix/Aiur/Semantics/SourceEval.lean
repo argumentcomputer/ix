@@ -69,6 +69,9 @@ inductive SourceError
   | ioReadOoB
   | invalidPointer (n : Nat)
   | notCallable (g : Global)
+  /-- A constant does not fit the field: the field cannot represent the
+  circuit. -/
+  | constantOverflow (c : Nat)
   | notAFunctionValue
   | earlyReturn (v : Value) (st : EvalState)
   deriving Repr, Inhabited
@@ -84,7 +87,8 @@ def matchPattern (store : Store) :
     Pattern → Value → Option Bindings
   | .wildcard,    _           => some []
   | .var l,       v           => some [(l, v)]
-  | .field g,     .field g'   => if g == g' then some [] else none
+  -- Checked embedding: an unrepresentable constant matches no value.
+  | .field g,     .field g'   => if G.ofNat? g == some g' then some [] else none
   | .tuple pats,  .tuple vs   => matchPatsArr store pats vs
   | .array pats,  .array vs   => matchPatsArr store pats vs
   | .ref g pats,  .ctor g' vs =>
@@ -318,7 +322,9 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
           else .error (.notCallable g)
       | some (.dataType _)          => .error (.notCallable g)
       | none                        => .error (.unboundGlobal g)
-  | .field g  => .ok (.field g, st)
+  | .field g  => match G.ofNat? g with
+    | some gv => .ok (.field gv, st)
+    | none => .error (.constantOverflow g)
   | .tuple ts =>
       match evalList decls fuel bindings ts.toList st with
       | .error e => .error e

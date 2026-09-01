@@ -64,6 +64,9 @@ inductive BytecodeError
   | callOutputSizeMismatch
   | unreachableAfterLayout
   | u8RangeCheckFailed
+  /-- A constant does not fit the field: the field cannot represent the
+  circuit. -/
+  | constantOverflow (c : Nat)
   | unconstrainedBigUintDivModFailed
   | earlyReturn (outs : Array G) (st : EvalState)
   deriving Repr, Inhabited
@@ -170,7 +173,7 @@ private theorem Block.sizeOf_ctrl_lt (b : Block) : sizeOf b.ctrl < sizeOf b := b
 /-- For a match-case `(g, block)` drawn from `cases`, the block's `sizeOf` is
 strictly less than `sizeOf cases + sizeOf defaultBlock`. -/
 private theorem sizeOf_caseBlock_lt
-    (cases : Array (G × Block)) (defaultBlock : Option Block) (i : Nat)
+    (cases : Array (Nat × Block)) (defaultBlock : Option Block) (i : Nat)
     (h : i < cases.size) :
     sizeOf cases[i].snd < sizeOf cases + sizeOf defaultBlock := by
   have h1 : sizeOf cases[i] < sizeOf cases := Array.sizeOf_get cases i h
@@ -202,7 +205,9 @@ consumes fuel. -/
 def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     Except BytecodeError EvalState :=
   match op with
-  | .const g => .ok (pushMap st g)
+  | .const g => match G.ofNat? g with
+    | some gv => .ok (pushMap st gv)
+    | none => .error (.constantOverflow g)
   | .add a b => do
     let x ← readIdx st a
     let y ← readIdx st b
@@ -448,11 +453,12 @@ separate helper so each recursive step is structurally smaller than `cases`,
 which lets `Array.sizeOf_get` discharge the termination goal when we call
 `evalBlock` on an arm's `Block`. -/
 def evalMatchArm (t : Bytecode.Toplevel) (fuel : Nat)
-    (cases : Array (G × Block)) (defaultBlock : Option Block)
+    (cases : Array (Nat × Block)) (defaultBlock : Option Block)
     (scrut : G) (st : EvalState) (i : Nat := 0) :
     Except BytecodeError (Array G × EvalState) :=
   if h : i < cases.size then
-    if cases[i].fst == scrut then evalBlock t fuel cases[i].snd st
+    -- On-the-fly checked embedding: an unrepresentable key matches no value.
+    if G.ofNat? cases[i].fst == some scrut then evalBlock t fuel cases[i].snd st
     else evalMatchArm t fuel cases defaultBlock scrut st (i + 1)
   else evalDefaultBlock t fuel defaultBlock st
 termination_by (fuel, sizeOf cases + sizeOf defaultBlock, 2 + (cases.size - i))

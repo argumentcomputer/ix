@@ -358,8 +358,8 @@ def Op.outputCount : Op → Nat
   | .u32ToField _ => 1
   | .debug _ _ => 0
 
-private def emitConst (out : Nat) (c : Aiur.G) : Array RustStmt :=
-  #[declVal out (gFromU64 c.n)]
+private def emitConst (out : Nat) (c : Nat) : Array RustStmt :=
+  #[declVal out (gFromU64 c)]
 
 private def emitBinop (out : Nat) (op : String) (a b : ValIdx) : Array RustStmt :=
   #[declVal out (.binop op (valVar a) (valVar b))]
@@ -839,7 +839,7 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let mut arms : Array MatchArm := #[]
     for ⟨key, blk⟩ in cases do
       let armBody ← withSavedNextVal (emitBlock funIdx mcLabel? blk)
-      arms := arms.push { pat := .litU64 key.n, body := armBody }
+      arms := arms.push { pat := .litU64 key, body := armBody }
     let dfltBody ← (match dflt? with
       | some d => withSavedNextVal (emitBlock funIdx mcLabel? d)
       | none => pure #[
@@ -871,7 +871,7 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let mut arms : Array MatchArm := #[]
     for ⟨key, blk⟩ in cases do
       let armBody ← withSavedNextVal (emitBlock funIdx (some label) blk)
-      arms := arms.push { pat := .litU64 key.n, body := armBody }
+      arms := arms.push { pat := .litU64 key, body := armBody }
     let dfltBody ← (match dflt? with
       | some d => withSavedNextVal (emitBlock funIdx (some label) d)
       | none => pure #[

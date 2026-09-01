@@ -69,7 +69,9 @@ def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
   mkListLit (mkConst listEltTypeName) []
 
 def elabG (n : TSyntax `num) : TermElabM Expr :=
-  mkAppM ``G.ofNat #[mkNatLit n.getNat]
+  -- Constants are exact naturals; specialization to a field (with an
+  -- overflow ERROR, never a wrap) happens per consumer.
+  pure $ mkNatLit n.getNat
 
 partial def elabTyp : ElabStxCat `aiur_typ
   | `(aiur_typ| G) => pure $ mkConst ``Typ.field

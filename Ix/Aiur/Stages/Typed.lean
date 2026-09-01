@@ -21,7 +21,7 @@ inductive Term : Type where
   | unit (typ : Typ) (escapes : Bool) : Term
   | var (typ : Typ) (escapes : Bool) (l : Local) : Term
   | ref (typ : Typ) (escapes : Bool) (g : Global) (tArgs : Array Typ) : Term
-  | field (typ : Typ) (escapes : Bool) (g : G) : Term
+  | field (typ : Typ) (escapes : Bool) (g : Nat) : Term
   | tuple (typ : Typ) (escapes : Bool) (ts : Array Term) : Term
   | array (typ : Typ) (escapes : Bool) (ts : Array Term) : Term
   | ret (typ : Typ) (escapes : Bool) (sub : Term) : Term

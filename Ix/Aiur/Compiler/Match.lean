@@ -38,7 +38,7 @@ abbrev UniqTerm := TermId × Term
 /-- The patterns that `Simple.Pattern` admits directly, plus a `pointer` form
 that the match compiler lowers to a `letLoad`. -/
 inductive SPattern
-  | field : G → SPattern
+  | field : Nat → SPattern
   | ref : Global → Array Local → SPattern
   | tuple : Array Local → SPattern
   | array : Array Local → SPattern
