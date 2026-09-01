@@ -718,41 +718,41 @@ def elabBind : ElabStxCat `aiur_bind
     | _ => throw $ .error i "Illegal variable name"
   | stx => throw $ .error stx "Invalid syntax for binding"
 
-declare_syntax_cat                                                                                aiur_function
-syntax ("pub ")? "fn " ident "(" ")" (" -> " aiur_typ)? "{" aiur_trm "}"                      : aiur_function
-syntax ("pub ")? "fn " ident "(" aiur_bind (", " aiur_bind)* ")"
+declare_syntax_cat aiur_function (behavior := both)
+syntax ("pub ")? (&"inline ")? "fn " ident "(" ")" (" -> " aiur_typ)? "{" aiur_trm "}"        : aiur_function
+syntax ("pub ")? (&"inline ")? "fn " ident "(" aiur_bind (", " aiur_bind)* ")"
        (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
-syntax "fn " ident "‹" ident (", " ident)* "›" "(" ")"
+syntax (&"inline ")? "fn " ident "‹" ident (", " ident)* "›" "(" ")"
        (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
-syntax "fn " ident "‹" ident (", " ident)* "›"
+syntax (&"inline ")? "fn " ident "‹" ident (", " ident)* "›"
        "(" aiur_bind (", " aiur_bind)* ")"
        (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
 
 def elabFunction : ElabStxCat `aiur_function
-  | `(aiur_function| $[pub%$e]? fn $i:ident() $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
+  | `(aiur_function| $[pub%$e]? $[inline%$inl]? fn $i:ident() $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let inputs ← mkListLit bindType []
     let output ← elabRetTyp ty
     let body ← elabTrm t
-    mkMonoFun e g inputs output body
-  | `(aiur_function| $[pub%$e]? fn $i:ident($b:aiur_bind $[, $bs:aiur_bind]*)
+    mkMonoFun e inl.isSome g inputs output body
+  | `(aiur_function| $[pub%$e]? $[inline%$inl]? fn $i:ident($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let inputs ← elabListCore b bs elabBind bindType
     let output ← elabRetTyp ty
     let body ← elabTrm t
-    mkMonoFun e g inputs output body
-  | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›()
+    mkMonoFun e inl.isSome g inputs output body
+  | `(aiur_function| $[inline%$inl]? fn $i:ident‹$p:ident $[, $ps:ident]*›()
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     mkAppM ``Source.Function.poly
       #[g, paramsExpr, ← mkListLit bindType [],
-        ← elabRetTyp ty, ← elabTrm t]
-  | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›
+        ← elabRetTyp ty, ← elabTrm t, toExpr inl.isSome]
+  | `(aiur_function| $[inline%$inl]? fn $i:ident‹$p:ident $[, $ps:ident]*›
         ($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
@@ -761,7 +761,7 @@ def elabFunction : ElabStxCat `aiur_function
     mkAppM ``Source.Function.poly
       #[g, paramsExpr,
         ← elabListCore b bs elabBind bindType,
-        ← elabRetTyp ty, ← elabTrm t]
+        ← elabRetTyp ty, ← elabTrm t, toExpr inl.isSome]
   | stx => throw $ .error stx "Invalid syntax for function"
 where
   elabRetTyp : Option (TSyntax `aiur_typ) → TermElabM Expr
@@ -769,12 +769,13 @@ where
     | some typ => elabTyp typ
   /-- Build a monomorphic `Source.Function`. If `pubKw?` is `some _`
   (public/entry function), require a `sigPointerFree` proof: signatures
-  with `.pointer` types are rejected with a Meta-level error. -/
-  mkMonoFun (pubKw? : Option Syntax) (name inputs output body : Expr) :
+  with `.pointer` types are rejected with a Meta-level error. `isInline` is
+  the definition-site inline flag (`Function.inline`). -/
+  mkMonoFun (pubKw? : Option Syntax) (isInline : Bool) (name inputs output body : Expr) :
       TermElabM Expr := do
     match pubKw? with
     | none =>
-      mkAppM ``Source.Function.monoNonEntry #[name, inputs, output, body]
+      mkAppM ``Source.Function.monoNonEntry #[name, inputs, output, body, toExpr isInline]
     | some kw =>
       let sigExpr ← mkAppM ``Source.sigPointerFree #[inputs, output]
       let propExpr ← mkAppM ``Eq #[sigExpr, mkConst ``Bool.true]
@@ -784,7 +785,7 @@ where
         catch _ =>
           throw $ .error kw
             "Public (entry) function signatures cannot contain pointer types"
-      mkAppM ``Source.Function.monoEntry #[name, inputs, output, body, proof]
+      mkAppM ``Source.Function.monoEntry #[name, inputs, output, body, proof, toExpr isInline]
 
 declare_syntax_cat       aiur_declaration
 syntax aiur_function   : aiur_declaration

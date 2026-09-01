@@ -635,6 +635,12 @@ def toplevel := ⟦
   -- Gadget lookup inside the callee
   fn inl_add8(a: U8, b: U8) -> (U8, U8) { u8_add(a, b) }
 
+  -- Definition-site inlining (`inline fn`): plain calls splice exactly like
+  -- `@`-calls, and an inline callee may itself plainly call another inline
+  -- function (chained splice).
+  inline fn inl_triple(x: G) -> G { x + x + x }
+  inline fn inl_six(x: G) -> G { inl_triple(x) + inl_triple(x) }
+
   -- Single aggregate entry: every scenario in one circuit/proof.
   pub fn inline_test() -> G {
     -- Basic splice
@@ -662,7 +668,11 @@ def toplevel := ⟦
     -- Gadget lookup in the callee joins this circuit
     let (s, c) = @inl_add8(200u8, 100u8);         -- (44, 1)
     let r10 = to_field(s) + to_field(c) * 1000;   -- 1044
-    r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
+    -- `inline fn`: plain and `@`-calls both splice
+    let r11 = inl_triple(4) + @inl_triple(1);     -- 15
+    -- Chained: an inline function plainly calling an inline function
+    let r12 = inl_six(2);                         -- 12
+    r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10 + r11 + r12
   }
 
   ---------------------------------------------------------------------------
@@ -858,7 +868,7 @@ def aiurTestCases : List AiurTestCase := [
     .prove `non_tail_match #[] #[2593],
 
     -- Inlined function calls (`@fn(args)`): all scenarios in one proof
-    .prove `inline_test #[] #[3182],
+    .prove `inline_test #[] #[3209],
 
     -- Unconstrained big-uint div/mod: all cases in one proof
     -- (6042 + 300 + 1000300 + 2^63 + 1)
