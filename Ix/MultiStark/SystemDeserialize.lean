@@ -159,7 +159,7 @@ def systemDeserialize := ⟦
   -- directly.
   fn read_field(i: ByteStream) -> (Val, ByteStream) {
     let (u, j) = read_vk_u64(i);
-    (@val_from_bytes(u), j)
+    (val_from_bytes(u), j)
   }
 
   -- A small (u16) constant, ingested from its two raw bytes into the
@@ -167,7 +167,7 @@ def systemDeserialize := ⟦
   fn read_small_field(s: ByteStream) -> (Val, ByteStream) {
     let (b0, s0) = read_vk_u8(s);
     let (b1, s1) = read_vk_u8(s0);
-    (@val_from_u16(b0, b1), s1)
+    (val_from_u16(b0, b1), s1)
   }
 
   -- ==========================================================================

@@ -146,7 +146,7 @@ def deserialize := ⟦
   -- `c < 2³² − 1` would also admit the bytes of `c + p` — rejected by
   -- `bytes_lt_modulus`; over a > 2⁶⁴ field recomposition alone is injective and the
   -- check is trivially satisfiable). This is the native `val_to_bytes` body
-  -- over outer values — needed because under `goldilocksForeign` the
+  -- over outer values — needed because under `goldilocksBytes` the
   -- interface's `val_to_bytes` takes the byte representation, not a count.
   fn count_to_bytes(v: G) -> [U8; 8] {
     let b = unconstrained_g_to_bytes(v);
@@ -156,7 +156,7 @@ def deserialize := ⟦
     let (c6, c7) = u8_range_check(b[6], b[7]);
     let r = [c0, c1, c2, c3, c4, c5, c6, c7];
     assert_eq!(@limb_to_field(r), v);
-    assert_eq!(@bytes_lt_modulus(r), 1);
+    assert_eq!(bytes_lt_modulus(r), 1);
     r
   }
 
@@ -192,7 +192,7 @@ def deserialize := ⟦
   fn read_ext_at(i: G) -> (Ext, G) {
     let (a, j0) = #read_u64_at(i);
     let (b, j1) = #read_u64_at(j0);
-    ([@val_from_bytes(a), @val_from_bytes(b)], j1)
+    ([val_from_bytes(a), val_from_bytes(b)], j1)
   }
 
   -- ==========================================================================

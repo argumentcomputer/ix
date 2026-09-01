@@ -197,7 +197,7 @@ def primaryRunners : List (String × IO UInt32) := [
   -- Multi-STARK recursive verifier: `multi-stark` runs the verifier's
   -- primitive self-tests, `recursive-verifier` the full
   -- factorial-prove → recursive-verify → reject-tampering pipeline, and
-  -- `foreign-verifier` the same pipeline over the byte-limb (stage-3)
+  -- `bytes-verifier` the same pipeline over the byte-limb (stage-3)
   -- toplevel under the Goldilocks interpreter.
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
@@ -207,7 +207,7 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ix-aggr", Tests.Aggr.convergedSuite),
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
   ("ixes-manifest", Tests.Ix.Ixes.suite),
-  ("foreign-verifier", Tests.MultiStark.foreignEndToEndSuite),
+  ("bytes-verifier", Tests.MultiStark.bytesEndToEndSuite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/

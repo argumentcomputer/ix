@@ -7,7 +7,7 @@ public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.MultiStark.Field.GoldilocksNative
-public import Ix.MultiStark.Field.GoldilocksForeign
+public import Ix.MultiStark.Field.GoldilocksBytes
 public import Ix.MultiStark.Aggregate
 public import Ix.MultiStark.Host
 public import Ix.MultiStark.Transcript.Blake3
@@ -109,7 +109,7 @@ mirroring multi-stark's `pcs-traits` (generic over the field and the PCS):
   `val_add/sub/neg/mul/is_zero/inverse`, `ext_add/sub/neg/mul/inverse/div/eq`;
   wire boundary `val_from_bytes`/`val_to_bytes`/`val_from_u16`/
   `bytes_lt_modulus`. Implementations: `goldilocksNative` (`Val = G`),
-  `goldilocksForeign` (Goldilocks emulated in a large outer field).
+  `goldilocksBytes` (Goldilocks emulated on bytes, for any outer field of 31+ bits).
 * **Pcs** (`Ix/MultiStark/Pcs/*`): types `Commitment`, `PcsProof`,
   `PcsParams`; readers `read_commitment_at`/`read_pcs_proof` (proof stream),
   `read_vk_commitment`/`read_pcs_params` (vk stream); transcript bytes
@@ -147,10 +147,9 @@ def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel :=
 /-- `multiStarkFull` with the byte-limb inner field: the SAME verifier
 program, its Goldilocks arithmetic emulated on bytes, so the toplevel is
 outer-field-independent — executable under the Goldilocks interpreter today
-(the Phase-B gate) and provable over the BLS12-381 scalar field under the
-KZG backend (stage 3). -/
-def multiStarkForeignFull : Except Aiur.Global Aiur.Source.Toplevel :=
-  multiStarkFullOver MultiStark.goldilocksForeign MultiStark.pcsFri
+and provable over a smaller outer field (KoalaBear, Hypercube backend). -/
+def multiStarkBytesFull : Except Aiur.Global Aiur.Source.Toplevel :=
+  multiStarkFullOver MultiStark.goldilocksBytes MultiStark.pcsFri
 
 /-- The production recursion toplevel: `multiStarkFull` pruned to the combined
 call closures of `verify_multi_stark_proof` (lift), `join_two` (flat join), and
@@ -162,11 +161,11 @@ def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← multiStarkFull
   pure (t.prune [`verify_multi_stark_proof, `join_two, `join_two_structural])
 
-/-- The production FOREIGN verifier toplevel (stage 3): `multiStarkForeignFull`
-pruned to `verify_multi_stark_proof`'s call closure (also drops the foreign
-module's `fg_*` self-test entrypoints). -/
-def multiStarkForeign : Except Aiur.Global Aiur.Source.Toplevel := do
-  let t ← multiStarkForeignFull
+/-- The production BYTE-FORM verifier toplevel: `multiStarkBytesFull` pruned
+to `verify_multi_stark_proof`'s call closure (also drops the byte module's
+`gb_*` self-test entrypoints). -/
+def multiStarkBytes : Except Aiur.Global Aiur.Source.Toplevel := do
+  let t ← multiStarkBytesFull
   pure (t.prune [`verify_multi_stark_proof])
 
 /-! ## Lean-side input assembly
