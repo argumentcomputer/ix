@@ -63,12 +63,15 @@
 #![allow(dead_code)]
 
 use multi_stark::{
+  config::StarkGenericConfig,
   expr::{ColRef, RowOffset, Source},
   graph::{ConstraintGraph, Node, NodeId},
   lookup::{Lookup, WidthBinding},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   system::{Circuit, System},
-  types::{Commitment, CommitmentParameters, FriParameters, PcsError, Val},
+  types::{
+    Commitment, CommitmentParameters, ExtVal, FriParameters, PcsError, Val,
+  },
 };
 
 use crate::synthesis::{AiurConfig, AiurSystem};
@@ -245,6 +248,20 @@ pub(crate) fn to_bytes(
   buf
 }
 
+/// Serialize a verifier key for a custom [`AiurConfig`] circuit system.
+///
+/// Most callers should use [`aiur_system_to_bytes`]. This lower-level entry
+/// point exists for custom frontends which build the same concrete Aiur STARK
+/// configuration without going through [`AiurSystem`]. The supplied protocol
+/// parameters must be the ones used to construct `system.config`.
+pub fn aiur_config_system_to_bytes(
+  system: &System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  fri_parameters: FriParameters,
+) -> Vec<u8> {
+  to_bytes(system, commitment_parameters, fri_parameters)
+}
+
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
 pub fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
   Ok(to_bytes(&sys.system, sys.commitment_parameters, sys.fri_parameters))
@@ -403,9 +420,7 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
   };
   let num_lookups = graph.lookups.len();
   let ext_degree =
-    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
-      Val,
-    >>::DIMENSION;
+    <ExtVal as multi_stark::p3_field::BasedVectorSpace<Val>>::DIMENSION;
   Ok(Circuit {
     graph,
     main_width,
@@ -513,6 +528,34 @@ pub struct AiurVerifyingKey {
   fri_parameters: FriParameters,
 }
 
+/// Verifier-known matrix geometry needed to specialise the terminal PCS
+/// relation without carrying the full constraint graph into that relation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AiurPcsCircuitMetadata {
+  pub main_width: usize,
+  pub stage_2_width: usize,
+  pub quotient_width: usize,
+  pub preprocessed_width: usize,
+  pub preprocessed_height: usize,
+  pub preprocessed_slot: Option<usize>,
+}
+
+/// Constraint program and geometry needed to specialise the terminal AIR
+/// evaluation relation for one circuit.
+///
+/// This is deliberately a clone of the verifier-owned compiled graph. Stage 3
+/// treats the graph as fixed circuit data, never as proof witness data.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiurAirCircuitMetadata {
+  pub graph: ConstraintGraph<Val>,
+  pub main_width: usize,
+  pub stage_2_width: usize,
+  pub quotient_degree: usize,
+  pub preprocessed_width: usize,
+  pub preprocessed_slot: Option<usize>,
+  pub lookup_group_size: usize,
+}
+
 impl AiurVerifyingKey {
   /// Decode a verifying key and require full input consumption.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -534,8 +577,103 @@ impl AiurVerifyingKey {
     self.fri_parameters
   }
 
+  pub fn width_binding(&self) -> WidthBinding {
+    self.system.config.width_binding()
+  }
+
   pub fn num_circuits(&self) -> usize {
     self.system.circuits.len()
+  }
+
+  /// Canonical PCS matrix widths and preprocessed slots in circuit order.
+  pub fn pcs_circuit_metadata(&self) -> Vec<AiurPcsCircuitMetadata> {
+    let extension_degree =
+      <ExtVal as multi_stark::p3_field::BasedVectorSpace<Val>>::DIMENSION;
+    self
+      .system
+      .circuits
+      .iter()
+      .zip(&self.system.preprocessed_indices)
+      .map(|(circuit, &preprocessed_slot)| AiurPcsCircuitMetadata {
+        main_width: circuit.main_width,
+        stage_2_width: circuit.stage_2_width,
+        quotient_width: circuit.quotient_degree() * extension_degree,
+        preprocessed_width: circuit.preprocessed_width,
+        preprocessed_height: circuit.preprocessed_height,
+        preprocessed_slot,
+      })
+      .collect()
+  }
+
+  /// Fixed compiled AIR programs in canonical circuit order.
+  pub fn air_circuit_metadata(&self) -> Vec<AiurAirCircuitMetadata> {
+    self
+      .system
+      .circuits
+      .iter()
+      .zip(&self.system.preprocessed_indices)
+      .map(|(circuit, &preprocessed_slot)| AiurAirCircuitMetadata {
+        graph: circuit.graph.clone(),
+        main_width: circuit.main_width,
+        stage_2_width: circuit.stage_2_width,
+        quotient_degree: circuit.quotient_degree(),
+        preprocessed_width: circuit.preprocessed_width,
+        preprocessed_slot,
+        lookup_group_size: circuit.lookup_group_size,
+      })
+      .collect()
+  }
+
+  /// Exact challenger seed followed by the `System::observe_shape` words,
+  /// serialized as the Goldilocks byte challenger observes them.
+  ///
+  /// Terminal verifier circuits use this instead of duplicating the shape
+  /// derivation from the compact verifying-key codec.
+  pub fn transcript_seed_and_shape_bytes(&self) -> Vec<u8> {
+    let mut bytes = b"multi-stark/v0".to_vec();
+    for parameter in [
+      self.commitment_parameters.log_blowup,
+      self.commitment_parameters.cap_height,
+      self.fri_parameters.log_final_poly_len,
+      self.fri_parameters.max_log_arity,
+      self.fri_parameters.num_queries,
+      self.fri_parameters.commit_proof_of_work_bits,
+      self.fri_parameters.query_proof_of_work_bits,
+    ] {
+      bytes.extend_from_slice(
+        &u64::try_from(parameter)
+          .expect("protocol parameter fits u64")
+          .to_le_bytes(),
+      );
+    }
+    let mut observe = |value: usize| {
+      bytes.extend_from_slice(
+        &u64::try_from(value)
+          .expect("system shape value fits u64")
+          .to_le_bytes(),
+      );
+    };
+    observe(self.system.config.width_binding() as usize);
+    observe(self.system.circuits.len());
+    for circuit in &self.system.circuits {
+      observe(circuit.constraint_count());
+      observe(circuit.max_constraint_degree());
+      observe(circuit.preprocessed_height);
+      observe(circuit.preprocessed_width);
+      observe(circuit.main_width);
+      observe(circuit.stage_2_width);
+      observe(circuit.lookup_group_size);
+    }
+    bytes
+  }
+
+  /// Roots observed for the optional preprocessed commitment, in cap order.
+  pub fn preprocessed_commitment_roots(&self) -> Option<Vec<[u8; 32]>> {
+    self
+      .system
+      .preprocessed_commit
+      .as_ref()
+      .map(|commitment| commitment.roots().to_vec())
   }
 
   pub fn verify(
@@ -544,6 +682,25 @@ impl AiurVerifyingKey {
     proof: &crate::synthesis::AiurProof,
   ) -> Result<(), multi_stark::verifier::VerificationError<PcsError>> {
     self.system.verify(claim, proof)
+  }
+
+  /// Verify and convert a compact proof into the canonical per-query advice
+  /// transport consumed by circuit verifiers. The expansion authenticates
+  /// every reconstructed path against the original commitments before
+  /// returning any bytes.
+  pub fn proof_to_advice_bytes(
+    &self,
+    claim: &[Val],
+    proof: &crate::synthesis::AiurProof,
+  ) -> Result<Vec<u8>, String> {
+    multi_stark::advice::proof_to_advice_bytes(
+      &self.system,
+      self.commitment_parameters,
+      self.fri_parameters,
+      &[claim],
+      proof,
+    )
+    .map_err(|error| format!("{error:?}"))
   }
 }
 
@@ -620,6 +777,48 @@ mod tests {
       assert_eq!(a.preprocessed_width, b.preprocessed_width);
       assert_eq!(a.preprocessed_height, b.preprocessed_height);
     }
+  }
+
+  #[test]
+  fn transcript_seed_and_shape_bytes_match_observe_shape_order() {
+    let (system, cp, fp) = test_system();
+    let key = AiurVerifyingKey {
+      system,
+      commitment_parameters: cp,
+      fri_parameters: fp,
+    };
+    let mut expected = b"multi-stark/v0".to_vec();
+    for value in [
+      cp.log_blowup,
+      cp.cap_height,
+      fp.log_final_poly_len,
+      fp.max_log_arity,
+      fp.num_queries,
+      fp.commit_proof_of_work_bits,
+      fp.query_proof_of_work_bits,
+      WidthBinding::ByConstruction as usize,
+      key.system.circuits.len(),
+    ] {
+      expected.extend_from_slice(&(value as u64).to_le_bytes());
+    }
+    for circuit in &key.system.circuits {
+      for value in [
+        circuit.constraint_count(),
+        circuit.max_constraint_degree(),
+        circuit.preprocessed_height,
+        circuit.preprocessed_width,
+        circuit.main_width,
+        circuit.stage_2_width,
+        circuit.lookup_group_size,
+      ] {
+        expected.extend_from_slice(&(value as u64).to_le_bytes());
+      }
+    }
+    assert_eq!(key.transcript_seed_and_shape_bytes(), expected);
+    assert_eq!(
+      key.preprocessed_commitment_roots().is_some(),
+      key.system.preprocessed_commit.is_some()
+    );
   }
 
   #[test]

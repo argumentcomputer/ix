@@ -3,12 +3,12 @@
 
 use std::{path::Path, str::FromStr};
 
-use aiur::{G, synthesis::AiurProof, vk_codec::AiurVerifyingKey};
 use anyhow::{Context, Result, bail};
-use multi_stark::{
-  p3_field::{PrimeCharacteristicRing, PrimeField64},
-  types::FriParameters,
+pub use ix_terminal::{
+  OUTER_CLAIM_ELEMENTS, PUBLIC_VALUES_DOMAIN, expected_public_values,
+  fri_parameters_to_bytes,
 };
+use multi_stark::types::FriParameters;
 #[cfg(not(clippy))]
 use sp1_sdk::include_elf;
 use sp1_sdk::{
@@ -22,9 +22,6 @@ pub const GUEST_ELF: Elf = include_elf!("sp1-compress-guest");
 // clippy itself.
 #[cfg(clippy)]
 pub const GUEST_ELF: Elf = Elf::Static(&[]);
-pub const PUBLIC_VALUES_DOMAIN: &[u8; 8] = b"IXROOT01";
-pub const OUTER_CLAIM_ELEMENTS: usize = 18;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
   Execute,
@@ -51,89 +48,18 @@ impl FromStr for Mode {
   }
 }
 
-pub fn fri_parameters_to_bytes(fri: &FriParameters) -> Vec<u8> {
-  [
-    fri.log_final_poly_len,
-    fri.max_log_arity,
-    fri.num_queries,
-    fri.commit_proof_of_work_bits,
-    fri.query_proof_of_work_bits,
-  ]
-  .iter()
-  .flat_map(|&value| (value as u64).to_le_bytes())
-  .collect()
-}
-
-fn decode_claim(claim_bytes: &[u8]) -> Result<Vec<G>> {
-  if claim_bytes.len() != OUTER_CLAIM_ELEMENTS * 8 {
-    bail!(
-      "ix_aggr outer claim is {} bytes; expected {} (18 Goldilocks words)",
-      claim_bytes.len(),
-      OUTER_CLAIM_ELEMENTS * 8
-    );
-  }
-  claim_bytes
-    .as_chunks::<8>()
-    .0
-    .iter()
-    .enumerate()
-    .map(|(index, chunk)| {
-      let word = u64::from_le_bytes(*chunk);
-      let value = G::from_u64(word);
-      if value.as_canonical_u64() != word {
-        bail!("outer claim word {index} is not canonical Goldilocks");
-      }
-      Ok(value)
-    })
-    .collect()
-}
-
-fn fri_matches(actual: &FriParameters, expected: &FriParameters) -> bool {
-  actual.log_final_poly_len == expected.log_final_poly_len
-    && actual.max_log_arity == expected.max_log_arity
-    && actual.num_queries == expected.num_queries
-    && actual.commit_proof_of_work_bits == expected.commit_proof_of_work_bits
-    && actual.query_proof_of_work_bits == expected.query_proof_of_work_bits
-}
-
 /// Fail fast natively before starting SP1 setup or proving. The guest repeats
-/// every one of these checks; this preflight is an ergonomics and cost guard,
-/// not part of the soundness argument.
+/// every check; this preflight is an ergonomics and cost guard, not part of the
+/// soundness argument. Keep the original `Result<()>` host API while sharing
+/// its implementation with other terminal backends.
 pub fn validate_root_inputs(
   vk_bytes: &[u8],
   claim_bytes: &[u8],
   proof_bytes: &[u8],
   fri: &FriParameters,
 ) -> Result<()> {
-  let claim = decode_claim(claim_bytes)?;
-  let vk = AiurVerifyingKey::from_bytes(vk_bytes)
-    .map_err(|error| anyhow::anyhow!("invalid Aiur verifying key: {error}"))?;
-  if !fri_matches(&vk.fri_parameters(), fri) {
-    bail!("requested recursion FRI parameters do not match the Aiur vk");
-  }
-  let proof = AiurProof::from_bytes(proof_bytes)
-    .map_err(|error| anyhow::anyhow!("invalid Aiur proof: {error}"))?;
-  vk.verify(&claim, &proof).map_err(|error| {
-    anyhow::anyhow!("aggregate root does not verify: {error:?}")
-  })
-}
-
-/// Canonical SP1 public values:
-/// `IXROOT01 || blake3(aiur_vk) || fri_parameters || ix_aggr_outer_claim`.
-pub fn expected_public_values(
-  vk_bytes: &[u8],
-  claim_bytes: &[u8],
-  fri: &FriParameters,
-) -> Result<Vec<u8>> {
-  let claim = decode_claim(claim_bytes)?;
-  let mut expected = Vec::with_capacity(8 + 32 + 40 + OUTER_CLAIM_ELEMENTS * 8);
-  expected.extend_from_slice(PUBLIC_VALUES_DOMAIN);
-  expected.extend_from_slice(blake3::hash(vk_bytes).as_bytes());
-  expected.extend_from_slice(&fri_parameters_to_bytes(fri));
-  for value in claim {
-    expected.extend_from_slice(&value.as_canonical_u64().to_le_bytes());
-  }
-  Ok(expected)
+  ix_terminal::validate_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
+  Ok(())
 }
 
 /// Execute or prove the SP1 terminal. `output` receives the SDK's verified

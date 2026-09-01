@@ -24,16 +24,45 @@ public section
 
 namespace Ix.Cli.CompressRootCmd
 
-private def addrOfHex! (label : String) (s : String) : IO Address := do
-  match Address.fromString s with
-  | some a => pure a
-  | none =>
-    throw <| IO.userError
-      s!"error: {label}: expected 64-char hex (32-byte address), got {s.length}-char {s}"
-
 /-- Canonical guest claim encoding: one little-endian u64 per Goldilocks word. -/
 def outerClaimBytes (claim : Array Aiur.G) : ByteArray :=
   claim.foldl (init := .empty) fun bytes value => bytes ++ value.val.toLEBytes
+
+/-- Canonical terminal-backend transport reconstructed from a persisted
+aggregate wrapper. SP1 and Flock share this adapter so they cannot drift on the
+recursion key, outer claim, proof bytes, or FRI parameters. -/
+structure AggregateRootInputs where
+  rootAddress : Address
+  bundledClaim : Ix.Claim
+  verifyingKey : ByteArray
+  outerClaim : ByteArray
+  proof : ByteArray
+  fri : Aiur.FriParameters
+
+def prepareAggregateRootInputs (rootHex : String) : IO (Except String AggregateRootInputs) := do
+  let some rootAddress := Address.fromString rootHex
+    | return .error s!"aggregate root: expected 64-char hex (32-byte address), \
+        got {rootHex.length}-char {rootHex}"
+  let wrapper ← match Ixon.Proof.de (← StoreIO.toIO (Store.read rootAddress)) with
+    | .ok wrapper => pure wrapper
+    | .error error =>
+      return .error s!"aggregate wrapper {rootAddress} does not decode: {error}"
+  let recursionParameters := MultiStark.defaultRecursionParameters
+  let backend ← match ← Ix.Cli.VerifyCmd.buildAggregateBackend recursionParameters with
+    | .ok backend => pure backend
+    | .error error => return .error error
+  let outerClaim := Ix.Cli.AggregateCmd.aggregateOuterClaim
+    backend.allowed backend.aggrIdx wrapper.claim
+  if outerClaim.size != 18 then
+    return .error s!"internal ix_aggr claim width is {outerClaim.size}, expected 18"
+  return .ok {
+    rootAddress
+    bundledClaim := wrapper.claim
+    verifyingKey := backend.system.vkBytes
+    outerClaim := outerClaimBytes outerClaim
+    proof := wrapper.proof
+    fri := recursionParameters.fri
+  }
 
 /-- Final compression accepts only closed `CheckEnv` roots. The explicit open
 escape hatch is intentionally execute-only: it exists for cycle profiling and
@@ -58,35 +87,22 @@ def runCompressRootCmd (p : Cli.Parsed) : IO UInt32 := do
   let allowOpenRoot := p.hasFlag "allow-open-root"
   let output := (p.flag? "output").map (·.as! String) |>.getD ""
   let onchainOutput := (p.flag? "onchain-output").map (·.as! String) |>.getD ""
-  let rootAddress ← addrOfHex! "aggregate root" rootHex
-  let wrapper ← match Ixon.Proof.de (← StoreIO.toIO (Store.read rootAddress)) with
-    | .ok wrapper => pure wrapper
-    | .error error =>
-      IO.eprintln s!"error: aggregate wrapper {rootAddress} does not decode: {error}"
-      return 1
-  match validateBundledClaim wrapper.claim mode allowOpenRoot with
+  let inputs ← match ← prepareAggregateRootInputs rootHex with
+    | .ok inputs => pure inputs
+    | .error error => IO.eprintln s!"error: {error}"; return 1
+  match validateBundledClaim inputs.bundledClaim mode allowOpenRoot with
   | .ok () => pure ()
   | .error error => IO.eprintln s!"error: {error}"; return 1
 
-  let recursionParameters := MultiStark.defaultRecursionParameters
-  let backend ← match ← Ix.Cli.VerifyCmd.buildAggregateBackend recursionParameters with
-    | .ok backend => pure backend
-    | .error error => IO.eprintln s!"error: {error}"; return 1
-  let outerClaim := Ix.Cli.AggregateCmd.aggregateOuterClaim
-    backend.allowed backend.aggrIdx wrapper.claim
-  if outerClaim.size != 18 then
-    IO.eprintln s!"error: internal ix_aggr claim width is {outerClaim.size}, expected 18"
-    return 1
-
-  IO.println s!"Compressing aggregate root {rootAddress} with SP1 ({mode})"
-  IO.println s!"  bundled claim: {wrapper.claim}"
-  IO.println s!"  recursion vk: {Address.blake3 backend.system.vkBytes}"
+  IO.println s!"Compressing aggregate root {inputs.rootAddress} with SP1 ({mode})"
+  IO.println s!"  bundled claim: {inputs.bundledClaim}"
+  IO.println s!"  recursion vk: {Address.blake3 inputs.verifyingKey}"
   (← IO.getStdout).flush
-  match Aiur.sp1CompressAggregateRoot backend.system.vkBytes
-      (outerClaimBytes outerClaim) wrapper.proof recursionParameters.fri
+  match Aiur.sp1CompressAggregateRoot inputs.verifyingKey
+      inputs.outerClaim inputs.proof inputs.fri
       mode output onchainOutput with
   | .ok () =>
-    IO.println s!"ok: SP1 {mode} accepted aggregate root {rootAddress}"
+    IO.println s!"ok: SP1 {mode} accepted aggregate root {inputs.rootAddress}"
     return 0
   | .error error =>
     IO.eprintln s!"error: SP1 root compression failed: {error}"

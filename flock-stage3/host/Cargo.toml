@@ -1,0 +1,19 @@
+[package]
+name = "flock-stage3-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+aiur = { workspace = true }
+bincode = { workspace = true }
+blake3 = { workspace = true }
+flock-prover = { workspace = true }
+ix-terminal = { workspace = true }
+multi-stark = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+
+[lints]
+workspace = true

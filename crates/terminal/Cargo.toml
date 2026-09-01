@@ -1,0 +1,15 @@
+[package]
+name = "ix-terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aiur = { workspace = true, features = ["parallel"] }
+anyhow = { workspace = true }
+bincode = { workspace = true }
+blake3 = { workspace = true }
+multi-stark = { workspace = true, features = ["parallel"] }
+
+[lints]
+workspace = true
