@@ -1641,3 +1641,23 @@ transparent first-binding-wins list semantics as the proof specification. -/
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_shared_nonunit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_shared_nonunit
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.sourceDropMany_of_scalars' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.sourceDropMany_of_scalars
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.sourceDropManyU_of_scalars' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.sourceDropManyU_of_scalars
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.releaseSharedWork_of_scalars' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.releaseSharedWork_of_scalars
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.dropUniqueWork_of_scalars' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.dropUniqueWork_of_scalars
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_scalar_ctor' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_dropU_dropUnique_scalar_ctor
+
+/-- info: 'Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_shared_unit_scalar_ctor' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Sim.simulate_drop_release_shared_unit_scalar_ctor
