@@ -39,7 +39,7 @@ def FullWFAt (semantics : CacheSemantics) (trProj : RawProjRel)
     s.inferOnly = false →
     world.nameOf structId.addr = some structName →
     TrKExprS world.venv uvars world.nameOf trProj Delta val valV →
-    trProj Delta.toCtx structName field.toNat valV projectedV →
+    trProj uvars Delta.toCtx structName field.toNat valV projectedV →
     support valTy →
     InferPost trProj world uvars Delta valV valTy →
     TcM.WF

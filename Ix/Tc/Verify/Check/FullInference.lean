@@ -79,7 +79,7 @@ theorem inferWith_fullHit_pre_acceptance
   rw [hkey] at hkeyPost
   have hprovenance := hkeyPost.1.1.caches.hit (.infer hhit)
   have hmeaning := hprovenance.kernelInferMeaningOfMatches
-    .infer hsourceSupport hkeyPost.2.1
+    .infer hsourceSupport hkeyPost.2.1 hsource.contextScoped
   obtain ⟨typedV, htyped, hcachedPost⟩ := hmeaning
   have hDelta := hI.2.1.wf
   have hsourceTyped : TrKExprS world.venv model.keys.uvars world.nameOf

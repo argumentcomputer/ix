@@ -547,5 +547,75 @@ theorem checkPositiveRecursiveApplication_valid
   PositiveRecursiveApplicationTrace.valid
     (checkPositiveRecursiveApplication_success hrun)
 
+/-- The logical resolved-header invariant is execution-complete: its retained
+parameter run and pure guards reconstruct the exact production call.  This is
+the converse of `checkPositiveRecursiveApplicationHeader_valid`, and is useful
+when a larger retained traversal must align its final state with another exact
+production execution. -/
+theorem ValidPositiveRecursiveApplicationHeader.run
+    {id : KId m} {us : Array (KUniv m)} {args : Array (KExpr m)}
+    {group : PositivityGroup m} {rootAddrs : Array Address}
+    {nParams nIndices levels : Nat} {methods : Methods m}
+    {initial final : TcState m}
+    (valid : ValidPositiveRecursiveApplicationHeader id us args group
+      rootAddrs nParams nIndices levels methods initial final) :
+    (checkPositiveRecursiveApplicationHeader id us args group rootAddrs
+      nParams nIndices levels).run methods initial = .ok () final := by
+  rcases valid with
+    ⟨hargs, hus, huniverses, hparams, afterParameters, hparameterRun,
+      _comparisonTrace, hindependent, hfinal⟩
+  subst final
+  have hpreconditions :
+      checkPositiveRecursiveApplicationPreconditions us args group nParams
+        nIndices levels = .ok () :=
+    checkPositiveRecursiveApplicationPreconditions_success_iff.mpr
+      ⟨hargs, hus,
+        (positiveUniverseArgumentsAgree_eq_true_iff group us).mpr huniverses,
+        hparams⟩
+  have hindependent' :
+      positiveIndicesIndependent args nParams rootAddrs = true :=
+    (positiveIndicesIndependent_eq_true_iff args nParams rootAddrs).mpr
+      hindependent
+  unfold checkPositiveRecursiveApplicationHeader
+  simp only [hpreconditions]
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    ((checkPositiveParameters id args group.params nParams).run methods) _
+      initial = _
+  unfold EStateM.bind
+  rw [hparameterRun]
+  simp [hindependent']
+  rfl
+
+/-- `ValidPositiveRecursiveApplication` retains enough physical selection and
+state-threaded evidence to replay the complete production validator exactly.
+In particular, consumers may use determinism to align the final state of a
+classified direct positivity branch with a separately named enclosing run. -/
+theorem ValidPositiveRecursiveApplication.run
+    {id : KId m} {us : Array (KUniv m)} {args : Array (KExpr m)}
+    {groups : Array (PositivityGroup m)} {rootAddrs : Array Address}
+    {methods : Methods m} {initial final : TcState m}
+    (valid : ValidPositiveRecursiveApplication id us args groups rootAddrs
+      methods initial final) :
+    (checkPositiveRecursiveApplication id us args groups rootAddrs).run
+      methods initial = .ok () final := by
+  rcases valid with
+    ⟨group, concrete, nParams, nIndices, levels, afterLookup, hgroup,
+      hlookup, hheader, hvalid⟩
+  unfold checkPositiveRecursiveApplication
+  simp only [hgroup]
+  simp only [ReaderT.run_bind, ReaderT.run_monadLift, monadLift_self]
+  rw [runTcBind, hlookup]
+  cases concrete with
+  | indc name levelParams actualLevels actualParams actualIndices isUnsafe
+      block memberIdx ty ctors leanAll =>
+      rcases hheader with ⟨rfl, rfl, rfl⟩
+      exact ValidPositiveRecursiveApplicationHeader.run hvalid
+  | defn => contradiction
+  | recr => contradiction
+  | axio => contradiction
+  | quot => contradiction
+  | ctor => contradiction
+
 end RecM
 end Ix.Tc

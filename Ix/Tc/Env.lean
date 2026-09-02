@@ -91,6 +91,37 @@ structure GeneratedRecursor (m : Mode) where
   ty : KExpr m
   rules : Array (RecRule m)
 
+/-- Canonical header cached with a generated recursor.  The type and rules are
+    semantic artifacts proved separately; these seven fields describe the
+    recursor's position and binder layout in its validated flat block. -/
+structure GeneratedRecursorMetadata where
+  indAddr : Address
+  lvls : UInt64
+  params : UInt64
+  motives : UInt64
+  minors : UInt64
+  indices : UInt64
+  isUnsafe : Bool
+  deriving Inhabited, BEq
+
+/-- Project the layout metadata whose value must remain independent of later
+    rule population. -/
+def GeneratedRecursor.metadata (recursor : GeneratedRecursor m) :
+    GeneratedRecursorMetadata :=
+  { indAddr := recursor.indAddr
+    lvls := recursor.lvls
+    params := recursor.params
+    motives := recursor.motives
+    minors := recursor.minors
+    indices := recursor.indices
+    isUnsafe := recursor.isUnsafe }
+
+/-- Replace only the generated equations, preserving the canonical header and
+    recursor type by construction. -/
+@[inline] def GeneratedRecursor.withRules (recursor : GeneratedRecursor m)
+    (rules : Array (RecRule m)) : GeneratedRecursor m :=
+  { recursor with rules }
+
 /-- Which nested-auxiliary order generated-recursor validation should use.
     Lean's original environment emits nested auxiliary recursors in
     source/queue order; Ix's compiled environment canonicalizes the aux

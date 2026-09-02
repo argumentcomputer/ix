@@ -38,6 +38,13 @@ theorem standalone_allows_coordinated_route (selected : Option (KId .anon)) :
     (AnonWorkItem.standalone E1Fixture.first).SelectedBlockMatches selected :=
   trivial
 
+/-- The fixed-certificate replay surface cannot bypass K3 for definition
+blocks. -/
+theorem certificate_backed_definition_excluded :
+    ¬ CheckBlockKind.CertificateBacked .defn := by
+  intro h
+  exact h
+
 /-! ## Concrete E2b body bridge -/
 
 /-- E2b's actual Boolean family/constructor block inhabits the exact

@@ -143,8 +143,8 @@ def ixonExprTests : TestSeq :=
   test "Ixon.Expr.nat" (roundtripIxonExpr (.nat 42) == .nat 42) ++
   test "Ixon.Expr.share" (roundtripIxonExpr (.share 0) == .share 0) ++
   test "Ixon.Expr.app" (roundtripIxonExpr (.app (.var 0) (.var 1)) == .app (.var 0) (.var 1)) ++
-  test "Ixon.Expr.lam" (roundtripIxonExpr (.lam (.sort 0) (.var 0)) == .lam (.sort 0) (.var 0)) ++
-  test "Ixon.Expr.all" (roundtripIxonExpr (.all (.sort 0) (.var 0)) == .all (.sort 0) (.var 0)) ++
+  test "Ixon.Expr.lam affine" (roundtripIxonExpr (.lam .affine (.sort 0) (.var 0)) == .lam .affine (.sort 0) (.var 0)) ++
+  test "Ixon.Expr.all linear unique" (roundtripIxonExpr (.all .linear .unique (.sort 0) (.var 0)) == .all .linear .unique (.sort 0) (.var 0)) ++
   test "Ixon.Expr.letE" (roundtripIxonExpr (.letE true (.sort 0) (.var 0) (.var 1)) == .letE true (.sort 0) (.var 0) (.var 1)) ++
   test "Ixon.Expr.prj" (roundtripIxonExpr (.prj 0 1 (.var 0)) == .prj 0 1 (.var 0))
 

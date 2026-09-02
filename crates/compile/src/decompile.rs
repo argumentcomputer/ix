@@ -1093,7 +1093,7 @@ pub fn decompile_expr(
                   .clone();
               }
               match body.as_ref() {
-                Expr::Lam(_, b) => body = b.clone(),
+                Expr::Lam(_, _, b) => body = b.clone(),
                 _ => {
                   return Err(DecompileError::BadConstantFormat {
                     msg: format!(
@@ -1350,7 +1350,7 @@ pub fn decompile_expr(
           // Lam: extract binder name/info from arena
           (
             ExprMetaData::Binder { name: name_addr, info, children },
-            Expr::Lam(ty, body),
+            Expr::Lam(_, ty, body),
           ) => {
             // Binder name address must resolve. The compiler registers
             // every binder name it emits; a missing entry here means
@@ -1367,7 +1367,7 @@ pub fn decompile_expr(
             stack.push(Frame::Decompile(ty.clone(), children[0]));
           },
 
-          (_, Expr::Lam(ty, body)) => {
+          (_, Expr::Lam(_, ty, body)) => {
             stack.push(Frame::BuildLam(
               Name::anon(),
               BinderInfo::Default,
@@ -1380,7 +1380,7 @@ pub fn decompile_expr(
           // All: extract binder name/info from arena
           (
             ExprMetaData::Binder { name: name_addr, info, children },
-            Expr::All(ty, body),
+            Expr::All(_, _, ty, body),
           ) => {
             // See Lam arm above: binder address must resolve.
             let binder_name = decompile_name(name_addr, stt)?;
@@ -1393,7 +1393,7 @@ pub fn decompile_expr(
             stack.push(Frame::Decompile(ty.clone(), children[0]));
           },
 
-          (_, Expr::All(ty, body)) => {
+          (_, Expr::All(_, _, ty, body)) => {
             stack.push(Frame::BuildAll(
               Name::anon(),
               BinderInfo::Default,

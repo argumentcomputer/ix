@@ -62,12 +62,14 @@ theorem TrKExprS.simulSubstBeta
     (henv : env.Ordered)
     (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
       {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' →
-      trProj Γ s i e e' → trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+      trProj uvars Γ s i e e' →
+      trProj uvars Γ' s i (e.liftN n k) (e'.liftN n k))
     (htpI : ∀ {Γ₀ : List VExpr} {e₀ A₀ : VExpr} {position : Nat}
       {Γ₁ Γ : List VExpr} {s : Lean.Name} {i : Nat} {e e' : VExpr},
+      env.HasType uvars Γ₀ e₀ A₀ →
       Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ position Γ₁ Γ →
-      trProj Γ₁ s i e e' →
-      trProj Γ s i (e.inst e₀ position) (e'.inst e₀ position))
+      trProj uvars Γ₁ s i e e' →
+      trProj uvars Γ s i (e.inst e₀ position) (e'.inst e₀ position))
     {base : KVLCtx} {substs : Array (KExpr .anon)}
     {arguments : List VExpr}
     (harguments : RecM.SimulArgs env uvars nameOf trProj base substs arguments)

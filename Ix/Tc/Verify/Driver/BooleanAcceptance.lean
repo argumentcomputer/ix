@@ -7,7 +7,7 @@ import Ix.Tc.Verify.Inductive.EnumerationAcceptance
 This module connects the concrete E2 Boolean generation certificate to the
 E3-S production-driver adapter.  The runtime checker call remains a required
 gate, but semantic authority for these two coordinated blocks comes from the
-explicit `InductiveOracle` values proved by the E2 fixture.  In particular,
+fixed family transition and existing-recursor certificates.  In particular,
 the proof does not reinterpret the runtime cache order as a topological
 semantic schedule: the recursor work item is physically enumerated first,
 while its successful checker call also validates and caches the family block.
@@ -15,8 +15,9 @@ while its successful checker call also validates and caches the family block.
 The staged baseline below has the constructively generated Boolean Theory
 environment and an empty trust predicate.  Its `VEnv.WF` field is derived
 from `CertifiedGenerationTransaction`; it is not an assumed target-world
-well-formedness premise.  Residual oracles are then restaged at each monotone
-current world and admit exactly the exact block members not already trusted.
+well-formedness premise.  The certificates' per-member semantic entries are
+then transported to each monotone current world and replayed idempotently;
+neither row constructs or admits an `InductiveOracle`.
 -/
 
 namespace Ix.Tc
@@ -105,25 +106,25 @@ def recursorProjectionConstant : Ixon.Constant :=
 
 private theorem sourceAddressesNative :
     orderedAnonConstAddrs recursorIxonEnv =
-      #[recursorBlockAddress, trueId.addr, familyBlockAddress,
-        recursorId.addr, falseId.addr, familyId.addr] := by
+      #[recursorId.addr, recursorBlockAddress, trueId.addr,
+        familyBlockAddress, falseId.addr, familyId.addr] := by
   native_decide
 
 theorem sourceAddresses :
     orderedAnonConstAddrs recursorIxonEnv =
-      #[recursorBlockAddress, trueId.addr, familyBlockAddress,
-        recursorId.addr, falseId.addr, familyId.addr] :=
+      #[recursorId.addr, recursorBlockAddress, trueId.addr,
+        familyBlockAddress, falseId.addr, familyId.addr] :=
   sourceAddressesNative
 
 private theorem sourceKeysNative :
     recursorIxonEnv.consts.keys =
-      [recursorBlockAddress, recursorId.addr, falseId.addr,
+      [recursorBlockAddress, falseId.addr, recursorId.addr,
         trueId.addr, familyBlockAddress, familyId.addr] := by
   native_decide
 
 private theorem sourceAddressesNodupNative :
-    (#[recursorBlockAddress, trueId.addr, familyBlockAddress,
-      recursorId.addr, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
+    (#[recursorId.addr, recursorBlockAddress, trueId.addr,
+      familyBlockAddress, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
   native_decide
 
 private theorem recursorTargetsNonemptyNative :
@@ -139,7 +140,7 @@ is used to classify arbitrary successful lookups, independently of the
 ordering implementation used by `buildAnonWork`. -/
 theorem sourceKeys :
     recursorIxonEnv.consts.keys =
-      [recursorBlockAddress, recursorId.addr, falseId.addr,
+      [recursorBlockAddress, falseId.addr, recursorId.addr,
         trueId.addr, familyBlockAddress, familyId.addr] :=
   sourceKeysNative
 
@@ -200,6 +201,9 @@ private theorem sourceEntryCases {addr : Address} {constant : Ixon.Constant}
   simp at haddr
   rcases haddr with haddr | haddr | haddr | haddr | haddr | haddr
   · subst addr
+    exact .inr (.inr (.inr (.inl ⟨rfl,
+      ExactAnonEntry.constant_unique hentry recursorProjectionEntry⟩)))
+  · subst addr
     exact .inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry recursorBlockEntry⟩
   · subst addr
@@ -208,9 +212,6 @@ private theorem sourceEntryCases {addr : Address} {constant : Ixon.Constant}
   · subst addr
     exact .inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry familyBlockEntry⟩))
-  · subst addr
-    exact .inr (.inr (.inr (.inl ⟨rfl,
-      ExactAnonEntry.constant_unique hentry recursorProjectionEntry⟩)))
   · subst addr
     exact .inr (.inr (.inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry falseProjectionEntry⟩))))
@@ -229,10 +230,10 @@ def sourceWF : AnonWorkEnvWF recursorIxonEnv where
     rw [sourceAddresses] at haddr
     simp at haddr
     rcases haddr with rfl | rfl | rfl | rfl | rfl | rfl
+    · exact ⟨recursorProjectionConstant, recursorProjectionEntry⟩
     · exact ⟨recursorBlockConstant, recursorBlockEntry⟩
     · exact ⟨trueProjectionConstant, trueProjectionEntry⟩
     · exact ⟨familyBlockConstant, familyBlockEntry⟩
-    · exact ⟨recursorProjectionConstant, recursorProjectionEntry⟩
     · exact ⟨falseProjectionConstant, falseProjectionEntry⟩
     · exact ⟨familyProjectionConstant, familyProjectionEntry⟩
   blocksNonempty := by
@@ -339,12 +340,12 @@ def blockOfIdempotent : IxonEnv.BlockOfIdempotent recursorIxonEnv := by
       rcases hkey with rfl | rfl | rfl | rfl | rfl | rfl
       · simp [blockOfAddr, recursorBlockEntry.getConst,
           recursorBlockConstant]
-      · simp [blockOfAddr, recursorProjectionEntry.getConst,
-          recursorBlockEntry.getConst, recursorProjectionConstant,
-          recursorBlockConstant]
       · simp [blockOfAddr, falseProjectionEntry.getConst,
           familyBlockEntry.getConst, falseProjectionConstant,
           familyBlockConstant]
+      · simp [blockOfAddr, recursorProjectionEntry.getConst,
+          recursorBlockEntry.getConst, recursorProjectionConstant,
+          recursorBlockConstant]
       · simp [blockOfAddr, trueProjectionEntry.getConst,
           familyBlockEntry.getConst, trueProjectionConstant,
           familyBlockConstant]
@@ -467,88 +468,63 @@ def wellFounded :
     · change dependencyGraph.dependsOn familyBlockAddress target at hdependency
       exact (family_no_dependencies hdependency).elim
 
-/-- Restage the E2 family oracle at an arbitrary monotone current world,
-admitting only family members which are still missing there. -/
-def familyResidualResources
-    (current : VerifyWorld) (hle : stagedWorld ≤ current)
-    (hnot : ¬WorkItemAccepted current familyItem) :
-    ResidualOracleBlockResources current familyBlockAddress familyId.addr
-      #[familyId.addr, falseId.addr, trueId.addr] := by
-  have hexact := stagedExactFamily.rebaseWorld hle
-  have hwork : familyItem.MatchesBlockCatalog current.blocks := by
-    simpa only [← hle.blocks] using familyWorkCatalog
-  have hmissing : ∃ id,
-      familyBlockOracle.members id ∧ ¬current.trusted id :=
-    ResidualOracleBlockResources.missing_of_not_accepted
-      hexact hwork (fun id => familyLink.oracle_members_iff id) hnot
-  have hcatalog : world.catalog = current.catalog := by
-    simpa [stagedWorld] using hle.catalog
-  have hnameOf : world.nameOf = current.nameOf := by
-    simpa [stagedWorld] using hle.nameOf
-  let reindexed := familyBlockOracle.reindex hcatalog hnameOf
-  have henv : reindexed.after ≤ current.venv := by
-    simp only [reindexed, InductiveOracle.reindex_after]
-    exact hle.venv
-  let oracle := reindexed.restageMissing henv current.venvWF
-    current.trusted (by
-      simpa [reindexed] using hmissing)
-  exact {
-    trProj := RawProjRel.none
-    members := familyMembers
-    kind := .inductive'
-    oracleBacked := trivial
-    exactBlock := hexact
-    workCatalog := hwork
-    oracle := oracle
-    memberIff := by
-      intro id
-      dsimp only [oracle]
-      rw [InductiveOracle.restageMissing_members_iff,
-        InductiveOracle.reindex_members]
-      exact and_congr (familyLink.oracle_members_iff id) Iff.rfl
-  }
+/-! ## Fixed certificate resources -/
 
-/-- Recursor analogue of `familyResidualResources`, including the E2 proof
-that both Boolean iota rules are the generated enumeration equations. -/
-def recursorResidualResources
-    (current : VerifyWorld) (hle : stagedWorld ≤ current)
-    (hnot : ¬WorkItemAccepted current recursorItem) :
-    ResidualOracleBlockResources current recursorBlockAddress recursorId.addr
-      #[recursorId.addr] := by
-  have hexact := stagedExactRecursor.rebaseWorld hle
-  have hwork : recursorItem.MatchesBlockCatalog current.blocks := by
-    simpa only [← hle.blocks] using recursorWorkCatalog
-  have hmissing : ∃ id,
-      recursorBlockOracle.members id ∧ ¬current.trusted id :=
-    ResidualOracleBlockResources.missing_of_not_accepted
-      hexact hwork
-        (fun id => recursorLink.oracle_members_iff enumerationShape id) hnot
-  have hcatalog : world.catalog = current.catalog := by
-    simpa [stagedWorld] using hle.catalog
-  have hnameOf : world.nameOf = current.nameOf := by
-    simpa [stagedWorld] using hle.nameOf
-  let reindexed := recursorBlockOracle.reindex hcatalog hnameOf
-  have henv : reindexed.after ≤ current.venv := by
-    simp only [reindexed, InductiveOracle.reindex_after]
-    exact hle.venv
-  let oracle := reindexed.restageMissing henv current.venvWF
-    current.trusted (by
-      simpa [reindexed] using hmissing)
-  exact {
-    trProj := RawProjRel.none
-    members := recursorMembers
-    kind := .recursor
-    oracleBacked := trivial
-    exactBlock := hexact
-    workCatalog := hwork
-    oracle := oracle
-    memberIff := by
-      intro id
-      dsimp only [oracle]
-      rw [InductiveOracle.restageMissing_members_iff,
-        InductiveOracle.reindex_members]
-      exact and_congr (recursorLink.oracle_members_iff enumerationShape id) Iff.rfl
-  }
+/-- The family transition's exact per-member provenance, viewed in the staged
+driver world where its generated Theory environment is already installed but
+no concrete Ix member is trusted yet. -/
+def stagedFamilyResources :
+    CertificateBackedBlockResources stagedWorld familyBlockAddress
+      familyId.addr #[familyId.addr, falseId.addr, trueId.addr] where
+  trProj := RawProjRel.none
+  members := familyMembers
+  kind := .inductive'
+  certificateBacked := trivial
+  exactBlock := stagedExactFamily
+  workCatalog := familyWorkCatalog
+  entry := by
+    intro id hmember
+    change TrustedCatalogEntry RawProjRel.none world.catalog world.nameOf
+      theoryAfter id
+    exact familyBlockCertificate.entry hmember
+
+/-- The separately certified generated recursor already has its complete type,
+registered-rule, and positional iota-pattern provenance in the same staged
+Theory environment. -/
+def stagedRecursorResources :
+    CertificateBackedBlockResources stagedWorld recursorBlockAddress
+      recursorId.addr #[recursorId.addr] where
+  trProj := RawProjRel.none
+  members := recursorMembers
+  kind := .recursor
+  certificateBacked := trivial
+  exactBlock := stagedExactRecursor
+  workCatalog := recursorWorkCatalog
+  entry := by
+    intro id hmember
+    have hid : id = recursorId := by
+      simpa [recursorMembers_eq] using hmember
+    subst id
+    change TrustedCatalogEntry RawProjRel.none world.catalog world.nameOf
+      theoryAfter recursorId
+    exact familyRecursorSemanticEntry
+
+/-- Transport the fixed family certificate to an arbitrary monotone E1 world.
+No freshness premise is needed: replay unions all exact members
+idempotently. -/
+def familyCertificateResources
+    (current : VerifyWorld) (hle : stagedWorld ≤ current) :
+    CertificateBackedBlockResources current familyBlockAddress familyId.addr
+      #[familyId.addr, falseId.addr, trueId.addr] :=
+  stagedFamilyResources.rebaseWorld hle
+
+/-- Transport the fixed generated-recursor certificate to an arbitrary
+monotone E1 world. -/
+def recursorCertificateResources
+    (current : VerifyWorld) (hle : stagedWorld ≤ current) :
+    CertificateBackedBlockResources current recursorBlockAddress recursorId.addr
+      #[recursorId.addr] :=
+  stagedRecursorResources.rebaseWorld hle
 
 /-! ## Supported production calls -/
 
@@ -558,22 +534,20 @@ successful `checkConst` equation remains in the provider interface and hence
 in `CheckSuccessSound`; it is deliberately not used as a substitute for the
 E2 semantic certificate. -/
 def supportedFragment :
-    SupportedCheckFragment stagedWorld dependencyGraph booleanWork where
+    CertificateBackedCheckFragment stagedWorld dependencyGraph booleanWork where
   resources := by
     intro item hitem before checker hrun current hle hdeps hnot
     have hcases : item = recursorItem ∨ item = familyItem := by
       simpa [booleanWork] using hitem
     by_cases hrecursor : item = recursorItem
     · subst item
-      exact .certificateBackedBlock
-        (recursorResidualResources current hle hnot)
+      exact .block (recursorCertificateResources current hle)
     · have hfamily : item = familyItem := hcases.resolve_left hrecursor
       subst item
-      exact .certificateBackedBlock
-        (familyResidualResources current hle hnot)
+      exact .block (familyCertificateResources current hle)
 
 def supportedExpectedFragment :
-    SupportedCheckFragment stagedWorld dependencyGraph
+    CertificateBackedCheckFragment stagedWorld dependencyGraph
       (expectedAnonWork recursorIxonEnv) := by
   rw [expectedAnonWork_eq]
   exact supportedFragment
@@ -610,13 +584,13 @@ theorem allResultsSucceeded :
 /-- Whole-driver E3-S witness for a real environment containing an inductive
 family and its generated recursor.  The theorem consumes the actual
 `checkEnvAnon` success, the exact finite source domain, the collapsed
-dependency schedule, and the residual E2 certificates for both coordinated
-blocks. -/
+dependency schedule, and fixed E2 semantic entries for both coordinated
+blocks. Its dependency path contains no oracle-selected world materialization. -/
 theorem subjectWF :
     SubjectWF stagedWorld dependencyGraph
       (expectedAnonWork recursorIxonEnv) sourceWF.subjects
       noAssumptions := by
-  exact sourceWF.checkEnvAnon_supported_subjectWF blockOfIdempotent
+  exact sourceWF.checkEnvAnon_certificateBacked_subjectWF blockOfIdempotent
     depsClosed wellFounded assumptionsWF subjects_disjoint_assumptions
     supportedExpectedFragment checkCfg checkEnvAnon_eq allResultsSucceeded
 

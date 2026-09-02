@@ -224,8 +224,9 @@ structure SingletonFamilyIngressInterpretation
     tx.certificate.generation constructorIds
   familyName : nameOf familyId.addr =
     some tx.certificate.generation.block.sourceType.name
-  familyType : RawExprRel theoryAfter nameOf trProj [] familyConcrete.ty
-    tx.certificate.generation.block.sourceType.type
+  familyType : RawExprRel (uvars := familyConcrete.lvls.toNat) theoryAfter
+    nameOf trProj [] familyConcrete.ty
+      tx.certificate.generation.block.sourceType.type
   constructor : ∀ (index : Nat) (hindex : index < constructorIds.size),
     ∃ sourceConstructor concrete,
       tx.certificate.generation.block.sourceType.ctors[index]? =
@@ -234,7 +235,8 @@ structure SingletonFamilyIngressInterpretation
       concrete.IsCertifiedSingletonConstructor source familyId index
         sourceConstructor ∧
       nameOf constructorIds[index].addr = some sourceConstructor.name ∧
-      RawExprRel theoryAfter nameOf trProj [] concrete.ty sourceConstructor.type
+      RawExprRel (uvars := concrete.lvls.toNat) theoryAfter nameOf trProj []
+        concrete.ty sourceConstructor.type
 
 namespace SingletonFamilyIngressInterpretation
 
@@ -389,8 +391,9 @@ structure SingletonRecursorIngressInterpretation
     tx.certificate.generation family.constructorIds
   recursorName : nameOf recursorId.addr =
     some (.str tx.certificate.generation.block.sourceType.name "rec")
-  recursorType : RawExprRel theoryAfter nameOf trProj [] recursorConcrete.ty
-    tx.certificate.generation.recursor.type
+  recursorType : RawExprRel (uvars := recursorConcrete.lvls.toNat)
+    theoryAfter nameOf trProj [] recursorConcrete.ty
+      tx.certificate.generation.recursor.type
   rule : ∀ (index : Nat) (_hindex : index < family.constructorIds.size),
     ∃ concreteRule normalizedConstructor,
       recursorConcrete.RecursorRuleAt index concreteRule ∧
@@ -398,7 +401,10 @@ structure SingletonRecursorIngressInterpretation
         some normalizedConstructor ∧
       concreteRule.fields.toNat =
         (normalizedConstructor.fieldsR source.uvars source.nparams).length ∧
-      RawExprRel theoryAfter nameOf trProj [] concreteRule.rhs
+      RawExprRel
+        (uvars :=
+          (tx.certificate.generation.rule index normalizedConstructor).uvars)
+        theoryAfter nameOf trProj [] concreteRule.rhs
         (tx.certificate.generation.rule index normalizedConstructor).rhs ∧
       TrKExprS theoryAfter
         (tx.certificate.generation.rule index normalizedConstructor).uvars

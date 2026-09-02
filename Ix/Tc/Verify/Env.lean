@@ -37,11 +37,11 @@ content-addressed environment. The structural divergences:
   refinement of `defn` (it currently registers the defeq for every kind),
   and `AddKInduct` — an EMPTY inductive (exact upstream parity: their
   `AddInduct` is an empty `-- TODO`). Thus this legacy relation remains
-  uninhabited for envs containing inductives. The trusted-world path below
-  does not use it: `TrustedCatalogLog.ambient` admits an explicit
-  `InductiveOracle`. G2b removes the legacy relation from the remaining
-  C1--C3 consumer interfaces; E2 eventually replaces the oracle with checked
-  block construction.
+  uninhabited for envs containing inductives. The trusted-world log below
+  retains `TrustedCatalogLog.ambient` and its explicit `InductiveOracle` as a
+  compatibility constructor. Certificate-backed E2c paths instead use
+  `semanticBlock` and `existingBlock`; migrating the remaining ambient users
+  depends on completing the broader inductive fragment.
 -/
 
 namespace Ix.DefinitionSafety
@@ -110,7 +110,7 @@ def KConst.safety {m : Mode} : KConst m → Ix.DefinitionSafety
 
 variable (safety : Ix.DefinitionSafety) (env : VEnv)
     (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The constant is in-safety and its type translates in the empty
     context, with the positional uvar counts linked (upstream
     `TrConstant`, minus the levelParams-list translation ours doesn't
@@ -121,7 +121,7 @@ def TrKConstant (c : KConst .anon) (ci' : VConstant) : Prop :=
 
 variable (safety : Ix.DefinitionSafety) (env : VEnv)
     (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- `TrKConstant` plus the ghost name link (upstream `TrConstVal`;
     the name comes from `nameOf`, not the constant — anon constants
     are nameless). -/
@@ -132,7 +132,7 @@ def TrKConstVal (addr : Address) (c : KConst .anon) (ci' : VConstVal) :
 
 variable (safety : Ix.DefinitionSafety) (env : VEnv)
     (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- `TrKConstVal` plus the value translation (upstream `TrDefVal`). -/
 def TrKDefVal (addr : Address) (c : KConst .anon) (val : KExpr .anon)
     (ci' : VDefVal) : Prop :=
@@ -144,7 +144,7 @@ def TrKDefVal (addr : Address) (c : KConst .anon) (val : KExpr .anon)
 
 theorem TrKConstant.sf_mono {safety safety' : Ix.DefinitionSafety}
     {env : VEnv} {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {c : KConst .anon} {ci' : VConstant} (hsf : safety ≤ safety')
     (H : TrKConstant safety' env nameOf trProj c ci') :
     TrKConstant safety env nameOf trProj c ci' :=
@@ -153,7 +153,7 @@ theorem TrKConstant.sf_mono {safety safety' : Ix.DefinitionSafety}
 theorem TrKConstant.mono {safety : Ix.DefinitionSafety}
     {env env' : VEnv} (henv : env ≤ env')
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {c : KConst .anon} {ci' : VConstant}
     (H : TrKConstant safety env nameOf trProj c ci') :
     TrKConstant safety env' nameOf trProj c ci' :=
@@ -162,7 +162,7 @@ theorem TrKConstant.mono {safety : Ix.DefinitionSafety}
 theorem TrKConstVal.mono {safety : Ix.DefinitionSafety}
     {env env' : VEnv} (henv : env ≤ env')
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {addr : Address} {c : KConst .anon} {ci' : VConstVal}
     (H : TrKConstVal safety env nameOf trProj addr c ci') :
     TrKConstVal safety env' nameOf trProj addr c ci' :=
@@ -171,7 +171,7 @@ theorem TrKConstVal.mono {safety : Ix.DefinitionSafety}
 theorem TrKDefVal.mono {safety : Ix.DefinitionSafety}
     {env env' : VEnv} (henv : env ≤ env')
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {addr : Address} {c : KConst .anon} {val : KExpr .anon}
     {ci' : VDefVal}
     (H : TrKDefVal safety env nameOf trProj addr c val ci') :
@@ -196,7 +196,7 @@ theorem AddKInduct.to_addInduct
 
 variable (safety : Ix.DefinitionSafety)
     (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The environment translation as an event log (upstream `TrEnv'`
     fused with upstream `Aligned`'s skip steps): each translating step
     checks the declaration against the pre-`VEnv`, requires
@@ -254,7 +254,7 @@ inductive TrKEnv' :
     packaged. -/
 def TrKEnv (safety : Ix.DefinitionSafety)
     (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop)
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop)
     (kenv : KEnv .anon) (venv : VEnv) : Prop :=
   ∃ Q, TrKEnv' safety nameOf trProj kenv.consts Q venv
 
@@ -263,7 +263,7 @@ def TrKEnv (safety : Ix.DefinitionSafety)
     (upstream `TrEnv'.wf`). -/
 theorem TrKEnv'.wf {safety : Ix.DefinitionSafety}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool} {venv : VEnv}
     (H : TrKEnv' safety nameOf trProj C Q venv) : venv.WF := by
   induction H with
@@ -279,7 +279,7 @@ theorem TrKEnv'.wf {safety : Ix.DefinitionSafety}
 
 theorem TrKEnv.wf {safety : Ix.DefinitionSafety}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {kenv : KEnv .anon} {venv : VEnv}
     (H : TrKEnv safety nameOf trProj kenv venv) : venv.WF :=
   let ⟨_, H⟩ := H
@@ -319,7 +319,7 @@ instance : LawfulHashable (KId .anon) where
     map but have no Theory-side image. -/
 theorem TrKEnv'.find? {safety : Ix.DefinitionSafety}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool} {venv : VEnv}
     (H : TrKEnv' safety nameOf trProj C Q venv)
     {j : KId .anon} {c : KConst .anon} (h : C[j]? = some c)
@@ -365,7 +365,7 @@ theorem TrKEnv'.find? {safety : Ix.DefinitionSafety}
 /-- `TrKEnv.find?` at the `KEnv` API (`KEnv.get?` is the map lookup). -/
 theorem TrKEnv.find? {safety : Ix.DefinitionSafety}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {kenv : KEnv .anon} {venv : VEnv}
     (H : TrKEnv safety nameOf trProj kenv venv)
     {j : KId .anon} {c : KConst .anon} (h : kenv.get? j = some c)
@@ -410,13 +410,25 @@ end TrustInsert
 
 /-! ### Trusted entry provenance -/
 
-/-- Provenance for one trusted catalog id.  Standalone entries retain their
-actual declaration-WF transition.  Ambient inductive-family entries retain
-the oracle's raw translation, exact Theory lookup, constant-WF fact, and every
-registered recursor-rule and exact iota-pattern witnesses.  Keeping both here
-is important: `TrustedCatalogLog.find` is the consumer path from an admission
-event to WHNF, so dropping either at this boundary would make the oracle's
-rule semantics unusable after admission. -/
+/-- The one canonical Theory constant associated with each quotient role.
+
+This relation is intentionally closed: quotient provenance cannot name an
+arbitrary well-formed Theory constant. It must select the exact constant and
+Lean name installed by `VEnv.addQuot` for the concrete declaration's role. -/
+inductive QuotientConstRel :
+    Ix.QuotKind → Lean.Name → VConstant → Prop
+  | quotType : QuotientConstRel .type ``Quot Lean4Lean.quotConst
+  | quotCtor : QuotientConstRel .ctor ``Quot.mk Lean4Lean.quotMkConst
+  | quotLift : QuotientConstRel .lift ``Quot.lift Lean4Lean.quotLiftConst
+  | quotInd : QuotientConstRel .ind ``Quot.ind Lean4Lean.quotIndConst
+
+/-- Provenance for one trusted catalog id. Standalone entries retain their
+actual declaration-WF transition. Ambient inductive-family entries retain the
+oracle's raw translation, exact Theory lookup, constant-WF fact, and every
+registered recursor-rule and exact iota-pattern witness. Quotient entries
+retain their closed role-to-constant relation and canonical raw translation.
+`TrustedCatalogLog.find` is the consumer path from an admission event to WHNF,
+so each case keeps all of the provenance its consumers require. -/
 inductive TrustedCatalogEntry (trProj : RawProjRel) (catalog : Catalog)
     (nameOf : Address → Option Lean.Name) (env : VEnv)
     (id : KId .anon) : Prop
@@ -438,6 +450,17 @@ inductive TrustedCatalogEntry (trProj : RawProjRel) (catalog : Catalog)
         RawRecursorRulePatternRel env catalog nameOf id c rule pattern ∧
           pattern.ruleIndex = ruleIndex) →
     TrustedCatalogEntry trProj catalog nameOf env id
+  | quotient {kind : Ix.QuotKind} {levels : UInt64} {type : KExpr .anon}
+      {name : Lean.Name} {ci : VConstant} :
+    catalog id = some (.quot () () kind levels type) →
+    QuotientConstRel kind name ci →
+    nameOf id.addr = some name →
+    TrKConstant .safe env nameOf trProj
+      (.quot () () kind levels type) ci →
+    RawExprRel (uvars := levels.toNat) env nameOf trProj [] type ci.type →
+    env.constants name = some ci →
+    ci.WF env →
+    TrustedCatalogEntry trProj catalog nameOf env id
 
 namespace TrustedCatalogEntry
 
@@ -455,8 +478,11 @@ theorem mono {trProj : RawProjRel} {catalog : Catalog}
       (fun {_ _} hrule => by
         obtain ⟨pattern, hpattern, hindex⟩ := hpatterns hrule
         exact ⟨pattern, hpattern.mono henv, hindex⟩)
+  | quotient hcat hrole hname htranslated hraw hlookup hwf =>
+    exact .quotient hcat hrole hname (htranslated.mono henv)
+      (hraw.mono henv) (henv.constants hlookup) (hwf.mono henv)
 
-/-- Both provenance cases expose the exact catalog/name/Theory lookup needed
+/-- Every provenance case exposes the exact catalog/name/Theory lookup needed
 by expression translation. -/
 theorem lookup {trProj : RawProjRel} {catalog : Catalog}
     {nameOf : Address → Option Lean.Name} {env : VEnv}
@@ -488,6 +514,8 @@ theorem lookup {trProj : RawProjRel} {catalog : Catalog}
             hinstalled.constants (VEnv.addConst_self hadd)⟩
   | ambient hcat hraw hlookup hwf hrules hpatterns =>
     exact ⟨_, _, _, hcat, hraw.nameEq, hlookup⟩
+  | quotient hcat hrole hname htranslated hraw hlookup hwf =>
+    exact ⟨_, _, _, hcat, hname, hlookup⟩
 
 /-- Recover the registered Theory equation for any concrete recursor rule
 carried by this trusted entry.  Standalone promotion cannot produce a
@@ -508,6 +536,12 @@ theorem recursorRule {trProj : RawProjRel} {catalog : Catalog}
       have hc : c' = c := Option.some.inj (hcatalog'.symm.trans hcatalog)
       subst c'
       exact hrules hrule
+  | @quotient kind levels type name ci hcatalog' hrole hname htranslated hraw
+      hlookup hwf =>
+      have hc : (.quot () () kind levels type : KConst .anon) = c :=
+        Option.some.inj (hcatalog'.symm.trans hcatalog)
+      subst c
+      exact False.elim hrule
 
 /-- Recover the exact Lean4Lean iota-pattern witness associated with a
 trusted concrete recursor rule. -/
@@ -529,6 +563,12 @@ theorem recursorPattern {trProj : RawProjRel} {catalog : Catalog}
       have hc : c' = c := Option.some.inj (hcatalog'.symm.trans hcatalog)
       subst c'
       exact hpatterns hrule
+  | @quotient kind levels type name ci hcatalog' hrole hname htranslated hraw
+      hlookup hwf =>
+      have hc : (.quot () () kind levels type : KConst .anon) = c :=
+        Option.some.inj (hcatalog'.symm.trans hcatalog)
+      subst c
+      exact False.elim hrule
 
 end TrustedCatalogEntry
 
@@ -553,7 +593,8 @@ structure TrustedConstRel (trProj : RawProjRel) (world : VerifyWorld)
   nameEq : world.nameOf id.addr = some name
   lookup : world.venv.constants name = some ci
   uvars : c.lvls.toNat = ci.uvars
-  type : RawExprRel world.venv world.nameOf trProj [] c.ty ci.type
+  type : RawExprRel (uvars := c.lvls.toNat) world.venv world.nameOf
+    trProj [] c.ty ci.type
   wf : ci.WF world.venv
 
 namespace TrustedConstRel
@@ -591,9 +632,13 @@ end TrustedConstRel
 
 /-- Event log for exactly the declarations admitted to the Theory world.
 
-The `promote` constructor is the only way to grow the trusted set.  Its final
-premise is the new declaration-WF evidence supplied by successful checking;
-neither catalog membership nor raw correspondence can synthesize it. -/
+`promote` grows both the Theory environment and the trusted set from a fresh
+standalone declaration-WF derivation. `semanticBlock` records an explicit
+Theory-environment extension together with complete consumer-facing
+provenance for every newly trusted member. `existingBlock` is its degenerate
+same-environment counterpart, used when a certified inductive transaction has
+already installed generated recursors but Ix checks their physical block
+separately. Catalog membership alone cannot synthesize trust. -/
 inductive TrustedCatalogLog (trProj : RawProjRel) (catalog : Catalog)
     (nameOf : Address → Option Lean.Name) :
     (KId .anon → Prop) → VEnv → Prop
@@ -612,6 +657,20 @@ inductive TrustedCatalogLog (trProj : RawProjRel) (catalog : Catalog)
       (oracle : InductiveOracle trProj catalog nameOf trusted env) :
     TrustedCatalogLog trProj catalog nameOf trusted env →
     TrustedCatalogLog trProj catalog nameOf oracle.TrustBlock oracle.after
+  | semanticBlock {trusted members : KId .anon → Prop} {env env' : VEnv} :
+    TrustedCatalogLog trProj catalog nameOf trusted env →
+    env ≤ env' →
+    env'.WF →
+    (∀ ⦃id⦄, members id →
+      TrustedCatalogEntry trProj catalog nameOf env' id) →
+    TrustedCatalogLog trProj catalog nameOf
+      (fun id => members id ∨ trusted id) env'
+  | existingBlock {trusted members : KId .anon → Prop} {env : VEnv} :
+    TrustedCatalogLog trProj catalog nameOf trusted env →
+    (∀ ⦃id⦄, members id →
+      TrustedCatalogEntry trProj catalog nameOf env id) →
+    TrustedCatalogLog trProj catalog nameOf
+      (fun id => members id ∨ trusted id) env
 
 namespace TrustedCatalogLog
 
@@ -626,6 +685,8 @@ theorem wf {trProj : RawProjRel} {catalog : Catalog}
     obtain ⟨ds, hds⟩ := ih
     exact ⟨_, .decl hwf hds⟩
   | ambient oracle _ _ => exact oracle.blockWF
+  | semanticBlock _ _ hafter _ _ => exact hafter
+  | existingBlock _ _ ih => exact ih
 
 /-- Every trusted id is committed by the immutable catalog. -/
 theorem catalogued {trProj : RawProjRel} {catalog : Catalog}
@@ -646,6 +707,18 @@ theorem catalogued {trProj : RawProjRel} {catalog : Catalog}
     change oracle.members id ∨ trusted id at htrusted
     rcases htrusted with hnew | hold
     · exact oracle.catalogued hnew
+    · exact ih hold
+  | @semanticBlock trusted members env env' hlog hle hwf hentries ih =>
+    change members id ∨ trusted id at htrusted
+    rcases htrusted with hnew | hold
+    · obtain ⟨c, _, _, hcatalog, _, _⟩ := (hentries hnew).lookup
+      exact ⟨c, hcatalog⟩
+    · exact ih hold
+  | @existingBlock trusted members env hlog hentries ih =>
+    change members id ∨ trusted id at htrusted
+    rcases htrusted with hnew | hold
+    · obtain ⟨c, _, _, hcatalog, _, _⟩ := (hentries hnew).lookup
+      exact ⟨c, hcatalog⟩
     · exact ih hold
 
 /-- Read a trusted log entry.  The raw relation is transported to the final
@@ -675,6 +748,16 @@ theorem find {trProj : RawProjRel} {catalog : Catalog}
         (fun rule hrule => oracle.recursorFacts hnew hcat hrule)
         fun {_ _} hrule => oracle.recursorPatterns hnew hcat hrule
     · exact (ih hold).mono oracle.envLE
+  | @semanticBlock trusted members env env' hlog hle hwf hentries ih =>
+    change members id ∨ trusted id at htrusted
+    rcases htrusted with hnew | hold
+    · exact hentries hnew
+    · exact (ih hold).mono hle
+  | @existingBlock trusted members env hlog hentries ih =>
+    change members id ∨ trusted id at htrusted
+    rcases htrusted with hnew | hold
+    · exact hentries hnew
+    · exact ih hold
 
 end TrustedCatalogLog
 
@@ -766,6 +849,13 @@ theorem resolve {trProj : RawProjRel} {world : VerifyWorld}
     subst c'
     exact ⟨name, ci, hcatalog, htrusted, hraw.nameEq, hlookup,
       hraw.uvars, hraw.type, hwf⟩
+  | @quotient kind levels type name ci hcatalog' hrole hname htranslated hraw
+      hlookup hwf =>
+    have hc : (.quot () () kind levels type : KConst .anon) = c :=
+      Option.some.inj (hcatalog'.symm.trans hcatalog)
+    subst c
+    exact ⟨name, ci, hcatalog, htrusted, hname, hlookup,
+      htranslated.2.1, hraw, hwf⟩
 
 /-- Operational trusted lookup: the id's assigned Theory name resolves to
 the exact constant supplied by its recorded provenance. -/

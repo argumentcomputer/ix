@@ -35,7 +35,8 @@ theorem rhsRaw
     {trProj : RawProjRel} {id : KId .anon} {c : KConst .anon}
     {rule : RecRule .anon} {defeq : VDefEq}
     (h : RegisteredRecursorRuleRhsRel env nameOf trProj id c rule defeq) :
-    RawExprRel env nameOf trProj [] rule.rhs defeq.rhs := by
+    RawExprRel (uvars := defeq.uvars) env nameOf trProj []
+      rule.rhs defeq.rhs := by
   obtain ⟨_, _, _, _, _, _, _, hrhs, _⟩ := h
   exact hrhs
 

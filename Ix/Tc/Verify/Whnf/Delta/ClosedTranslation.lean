@@ -72,7 +72,7 @@ shift: the new context is outside every variable already resolved by the
 prefix. -/
 theorem weakRight {env : VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (henv : env.Ordered)
     (hlit : ∀ l, env.ContainsLits l →
       VExpr.WF env uvars [] (VExpr.trLiteral l))
@@ -176,8 +176,8 @@ theorem weakRight {env : VEnv} {uvars : Nat}
         Lean4Lean.Ctx.LiftN.right hclosed outer.toCtx
       have hproj' := htp.weakN hlift hproj
       have hproj'' :
-          trProj (KVLCtx.appendOuter inner outer).toCtx structName field.toNat
-            val' result' := by
+          trProj uvars (KVLCtx.appendOuter inner outer).toCtx structName
+            field.toNat val' result' := by
         simpa only [KVLCtx.toCtx_appendOuter,
           hvalClosed.liftN_eq (Nat.le_refl _),
           hresultClosed.liftN_eq (Nat.le_refl _)] using hproj'
@@ -195,7 +195,7 @@ namespace TrKExpr
 mixed context. -/
 theorem weakRight {env : VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (henv : env.Ordered)
     (hlit : ∀ l, env.ContainsLits l →
       VExpr.WF env uvars [] (VExpr.trLiteral l))

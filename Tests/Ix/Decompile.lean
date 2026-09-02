@@ -148,7 +148,7 @@ private def nX : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "x"
     tables. -/
 private def extFixture :
     Ixon.Constant × ConstantMeta × ExprMetaArena × Ixon.Expr := Id.run do
-  let ty : Ixon.Expr := .all (.ref 1 #[]) (.sort 1)
+  let ty : Ixon.Expr := .leanAll (.ref 1 #[]) (.sort 1)
   let aAddr := Address.blake3 "ext-fixture-A".toUTF8
   let cnst : Ixon.Constant :=
     ⟨.axio ⟨false, 1, ty⟩, #[], #[aAddr], #[.var 0]⟩

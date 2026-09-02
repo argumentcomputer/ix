@@ -37,7 +37,7 @@ theorem tryEtaStructFields_wf
     (hfieldSupport : ∀ offset, offset < fuel →
       support args[numParams + field + offset]!)
     (hprojection : ∀ offset, offset < fuel →
-      trProj Delta.toCtx structName (field + offset).toUInt64.toNat
+      trProj uvars Delta.toCtx structName (field + offset).toUInt64.toNat
         baseV (projectedV offset))
     (hfield : ∀ offset, offset < fuel →
       TrKExprS world.venv uvars world.nameOf trProj Delta

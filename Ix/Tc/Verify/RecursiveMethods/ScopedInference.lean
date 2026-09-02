@@ -15,6 +15,241 @@ globally quantified `KernelSuffixModel`.
 
 namespace Ix.Tc
 
+namespace InternTable
+
+/-- Expressions newly present in `after` at keys absent from `before`.  This
+is the exact finite support delta needed by an intern-only checker phase. -/
+def NewExpr (before after : InternTable .anon) (e : KExpr .anon) : Prop :=
+  ∃ address : Address, after.exprs[address]? = some e ∧
+    before.exprs[address]? = none
+
+/-- The range newly introduced by one concrete intern-table transition is
+constructively finite. -/
+theorem newExpr_finite (before after : InternTable .anon) :
+    FiniteSupport (NewExpr before after) := by
+  refine ⟨after.exprs.toList.map Prod.snd, ?_⟩
+  rintro e ⟨address, hafter, _⟩
+  apply List.mem_map.mpr
+  exact ⟨(address, e),
+    Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hafter, rfl⟩
+
+/-- Every old expression binding remains physically present in the new
+table.  This is stronger than range inclusion and rules out callback-driven
+replacement at an already occupied digest. -/
+def ExprExtends (before after : InternTable .anon) : Prop :=
+  ∀ {address : Address} {expression : KExpr .anon},
+    before.exprs[address]? = some expression →
+    after.exprs[address]? = some expression
+
+/-- A finite `toList` certificate establishes physical expression-map
+extension. -/
+theorem ExprExtends.of_toList {before after : InternTable .anon}
+    (h : ∀ address expression,
+      (address, expression) ∈ before.exprs.toList →
+        after.exprs[address]? = some expression) :
+    ExprExtends before after := by
+  unfold ExprExtends
+  intro address expression hbefore
+  exact h address expression
+    (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hbefore)
+
+/-- Finite key-coherence certificates reconstruct the ordinary intern-table
+well-formedness predicate.  Concrete execution fixtures can discharge these
+two list predicates by evaluation without postulating a state invariant. -/
+theorem WF.of_toList {it : InternTable .anon}
+    (hunivs : ∀ (address : Address) (univ : KUniv .anon),
+      (address, univ) ∈ it.univs.toList → univ.addr = address)
+    (hexprs : ∀ (address : Address) (expression : KExpr .anon),
+      (address, expression) ∈ it.exprs.toList →
+        expression.internKey = address) :
+    it.WF := by
+  constructor
+  · intro address univ hlookup
+    exact hunivs address univ
+      (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hlookup)
+  · intro address expression hlookup
+    exact hexprs address expression
+      (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hlookup)
+
+end InternTable
+
+namespace RunSupport.CoversIntern
+
+/-- Extend run support across a concrete expression-only intern transition.
+Old bindings are retained, universe bindings frame exactly, and the caller
+supplies support only for the finite `InternTable.NewExpr` delta. -/
+theorem of_expr_extension {support : RunSupport}
+    {before after : InternTable .anon}
+    (hbefore : support.CoversIntern before)
+    (hunivs : after.univs = before.univs)
+    (hextends : before.ExprExtends after)
+    (hnew : ∀ expression, before.NewExpr after expression →
+      support expression) :
+    support.CoversIntern after := by
+  constructor
+  · intro expression hsupport
+    obtain ⟨address, hafter⟩ := hsupport
+    cases hbeforeLookup : before.exprs[address]? with
+    | none => exact hnew expression ⟨address, hafter, hbeforeLookup⟩
+    | some old =>
+        unfold InternTable.ExprExtends at hextends
+        have hold := hextends hbeforeLookup
+        rw [hafter] at hold
+        cases hold
+        exact hbefore.expr expression ⟨address, hbeforeLookup⟩
+  · intro univ hsupport
+    apply hbefore.univ univ
+    simpa only [InternTable.UnivSupport, hunivs] using hsupport
+
+end RunSupport.CoversIntern
+
+namespace ScopedWhnfStateInv
+
+/-- The extensional state projection needed to transport the ordinary WHNF
+invariant across rule-building intern effects.  Binder traversal may consume
+fresh-variable ids and truncate the local-context index back to an
+extensionally equal declaration stack, so neither exact `KEnv` equality nor
+exact `LocalContext` representation equality belongs here.
+
+The physical cache and loaded-constant fields are framed by lookup transfer,
+the mutable equivalence manager by preservation of its semantic invariant,
+and the local context by declaration-array equality plus preservation of its
+extensional index invariant.  Diagnostic counters and fuel are intentionally
+absent. -/
+structure InternSemanticFrame (before after : TcState .anon) : Prop where
+  consts : ∀ {id constant}, after.env.get? id = some constant →
+    before.env.get? id = some constant
+  blocks : ∀ {block : KId .anon} {members : Array (KId .anon)},
+    after.env.blocks[block]? = some members →
+    before.env.blocks[block]? = some members
+  cacheEntries : ∀ {entry}, after.env.HasCacheEntry entry →
+    before.env.HasCacheEntry entry
+  equivalences : ∀ {relation},
+    EquivManager.WF relation before.equivManager →
+    EquivManager.WF relation after.equivManager
+  primitiveAddresses : after.prims.addressTable = before.prims.addressTable
+  noAccel : after.noAccel = before.noAccel
+  ctx : after.ctx = before.ctx
+  letVals : after.letVals = before.letVals
+  numLetBindings : after.numLetBindings = before.numLetBindings
+  lctxDecls : after.lctx.decls = before.lctx.decls
+  lctxWF : before.lctx.WF → after.lctx.WF
+  nextFVarId : before.env.nextFVarId.toNat ≤ after.env.nextFVarId.toNat
+
+/-- Rebuild the complete run-scoped invariant from the smallest exact state
+projection it consumes. -/
+theorem of_internSemanticFrame
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {model : ScopedKernelSuffixModel trProj world}
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {support : RunSupport} {Delta : KVLCtx}
+    {before after : TcState .anon}
+    (hframe : InternSemanticFrame before after)
+    (hintern : after.env.intern.WF)
+    (hcover : support.CoversIntern after.env.intern)
+    (hscope : model.StateInScope before → model.StateInScope after)
+    (hI : ScopedWhnfStateInv model layer semantics support Delta before) :
+    ScopedWhnfStateInv model layer semantics support Delta after := by
+  have hkernel : KernelStateWF semantics trProj world support after := {
+    core := {
+      trustedCatalog := hI.1.1.core.trustedCatalog
+      loaded := fun hget => hI.1.1.core.loaded (hframe.consts hget)
+      intern := hintern }
+    internSupport := hcover
+    caches := fun {_} hentry => hI.1.1.caches (hframe.cacheEntries hentry)
+    equivalences := hframe.equivalences hI.1.1.equivalences }
+  have hbase : WhnfStateInv layer semantics trProj world support
+      model.keys.uvars Delta after := by
+    refine ⟨hkernel, ?_, ?_⟩
+    · exact {
+        size_eq := by
+          rw [hframe.ctx, hframe.letVals]
+          exact hI.1.2.1.size_eq
+        recon := by
+          rw [hframe.ctx, hframe.letVals, hframe.lctxDecls]
+          exact hI.1.2.1.recon
+        lwf := hframe.lctxWF hI.1.2.1.lwf
+        incr := by
+          rw [hframe.lctxDecls]
+          exact hI.1.2.1.incr
+        fresh := by
+          rw [hframe.lctxDecls]
+          exact fun declaration hmem =>
+            Nat.lt_of_lt_of_le (hI.1.2.1.fresh declaration hmem)
+              hframe.nextFVarId
+        lets := by
+          rw [hframe.numLetBindings]
+          exact hI.1.2.1.lets }
+    · cases layer with
+      | structuralNoAccel =>
+          simpa [WhnfLayer.StateOK, hframe.noAccel] using hI.1.2.2
+      | noAccel =>
+          rcases hI.1.2.2 with ⟨hnoAccel, hcanonical⟩
+          refine ⟨by simpa only [hframe.noAccel] using hnoAccel, ?_⟩
+          unfold Primitives.CanonicalAnon at hcanonical ⊢
+          simpa only [hframe.primitiveAddresses] using hcanonical
+      | accelerated =>
+          change after.prims.CanonicalAnon
+          have hcanonical : before.prims.CanonicalAnon := hI.1.2.2
+          unfold Primitives.CanonicalAnon at hcanonical ⊢
+          simpa only [hframe.primitiveAddresses] using hcanonical
+  exact ⟨hbase, hscope hI.2⟩
+
+/-- Rebuild the complete run-scoped invariant after an expression-only intern
+transition.  The ordinary WHNF invariant uses the supplied key coherence and
+range coverage; the suffix witness advances through the same digest-neutral
+frame. -/
+theorem of_internUpdateFrame
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {model : ScopedKernelSuffixModel trProj world}
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {support : RunSupport} {Delta : KVLCtx}
+    {before after : TcState .anon}
+    (hframe : InternUpdateFrame before after)
+    (hintern : after.env.intern.WF)
+    (hcover : support.CoversIntern after.env.intern)
+    (hI : ScopedWhnfStateInv model layer semantics support Delta before) :
+    ScopedWhnfStateInv model layer semantics support Delta after := by
+  apply of_internSemanticFrame (hintern := hintern) (hcover := hcover)
+    (hscope := fun hscope => model.preservesFrame hscope
+      (ContextDigestFrame.ofInternUpdateFrame hframe)) (hI := hI)
+  rw [hframe]
+  exact {
+    consts := fun hget => hget
+    blocks := fun hget => hget
+    cacheEntries := by
+      intro entry hentry
+      cases hentry with
+      | whnf hget => exact .whnf hget
+      | whnfNoDelta hget => exact .whnfNoDelta hget
+      | whnfNoDeltaCheap hget => exact .whnfNoDeltaCheap hget
+      | whnfCore hget => exact .whnfCore hget
+      | whnfCoreCheap hget => exact .whnfCoreCheap hget
+      | infer hget => exact .infer hget
+      | inferOnly hget => exact .inferOnly hget
+      | defEq hget => exact .defEq hget
+      | defEqCheap hget => exact .defEqCheap hget
+      | defEqFailure hmem => exact .defEqFailure hmem
+      | unfold hget => exact .unfold hget
+      | natSuccStuck hmem => exact .natSuccStuck hmem
+      | isProp hget => exact .isProp hget
+      | isRec hget => exact .isRec hget
+      | recursor hget => exact .recursor hget
+      | recMajors hget => exact .recMajors hget
+      | blockPeer hmem => exact .blockPeer hmem
+      | blockResult hget => exact .blockResult hget
+    equivalences := fun h => h
+    primitiveAddresses := rfl
+    noAccel := rfl
+    ctx := rfl
+    letVals := rfl
+    numLetBindings := rfl
+    lctxDecls := rfl
+    lctxWF := fun h => h
+    nextFVarId := Nat.le_refl _ }
+
+end ScopedWhnfStateInv
+
 namespace TcM
 
 /-- Direct interning preserves a run-scoped suffix model because its exact
@@ -33,6 +268,31 @@ theorem intern_scoped_wf
   intro hI
   obtain ⟨after, hrun, hbase, hframe⟩ :=
     TcM.intern_whnf_eval hcollision hsupport hI.1
+  rw [hrun]
+  exact ⟨⟨hbase, model.preservesFrame hI.2
+    (ContextDigestFrame.ofInternUpdateFrame hframe)⟩, rfl, hframe⟩
+
+/-- Lift any exact, support-preserving `InternM` computation to the run-scoped
+suffix invariant.  Unlike direct `intern_scoped_wf`, this form covers the
+finite lift/substitution/instantiation walkers used while constructing
+generated recursor rules. -/
+theorem runIntern_scoped_wf
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {model : ScopedKernelSuffixModel trProj world}
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {support : RunSupport} {Delta : KVLCtx}
+    {x : InternM .anon α} {expected : α} {s : TcState .anon}
+    (hspec : ∀ it : InternTable .anon, it.WF →
+      support.CoversIntern it →
+      (x it).1 = expected ∧ (x it).2.WF ∧
+        support.CoversIntern (x it).2) :
+    TcM.WF (ScopedWhnfStateInv model layer semantics support Delta) s
+      (TcM.runIntern x)
+      (fun result after =>
+        result = expected ∧ InternUpdateFrame s after) := by
+  intro hI
+  obtain ⟨after, hrun, hbase, hframe⟩ :=
+    TcM.runIntern_whnf_eval hspec hI.1
   rw [hrun]
   exact ⟨⟨hbase, model.preservesFrame hI.2
     (ContextDigestFrame.ofInternUpdateFrame hframe)⟩, rfl, hframe⟩
@@ -220,7 +480,7 @@ theorem inferWith_scopedWFOn
         exact RecM.ScopedWFOn.pure fun hI => by
           have hprovenance := hI.1.1.caches.hit (.infer hhit)
           have hmeaning := hprovenance.kernelInferMeaningOfMatches
-            .infer hsourceSupport hmatch
+            .infer hsourceSupport hmatch hsource.contextScoped
           exact ⟨hprovenance.supported.2,
             hmeaning.post context.theory hI.1.2.1.wf hsource⟩
     | none =>
@@ -250,7 +510,7 @@ theorem inferWith_scopedWFOn
                 exact RecM.ScopedWFOn.pure fun hI => by
                   have hprovenance := hI.1.1.caches.hit (.inferOnly hhit)
                   have hmeaning := hprovenance.kernelInferMeaningOfMatches
-                    .inferOnly hsourceSupport hmatch
+                    .inferOnly hsourceSupport hmatch hsource.contextScoped
                   exact ⟨hprovenance.supported.2,
                     hmeaning.post context.theory hI.1.2.1.wf hsource⟩
             | none =>

@@ -149,7 +149,7 @@ jobs:
 
       - name: Check Ix.Tc exported theorem trust manifest
         if: ${{ matrix.kind == 'tc' }}
-        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements
+        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional Ix.Tc.Verify.Audit.Statements
       - name: Build Ix.Tc formal verification
         if: ${{ matrix.kind == 'tc' }}
         run: lake build IxTcVerify

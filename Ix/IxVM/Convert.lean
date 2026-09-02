@@ -175,12 +175,12 @@ def convert := ⟦
           convert_expr(f, sharing, refs, recur_addrs, univs),
           convert_expr(a, sharing, refs, recur_addrs, univs))),
 
-      Expr.Lam(ty, body) =>
+      Expr.Lam(_, ty, body) =>
         store(KExprNode.Lam(
           convert_expr(ty, sharing, refs, recur_addrs, univs),
           convert_expr(body, sharing, refs, recur_addrs, univs))),
 
-      Expr.All(ty, body) =>
+      Expr.All(_, _, ty, body) =>
         store(KExprNode.Forall(
           convert_expr(ty, sharing, refs, recur_addrs, univs),
           convert_expr(body, sharing, refs, recur_addrs, univs))),

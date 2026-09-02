@@ -16,40 +16,6 @@ open Lean4Lean (VEnv VInductDecl)
 
 namespace SingletonRecursorCatalogLink
 
-/-- The exact physical member array of the singleton recursor block. -/
-def members
-    {trProj : RawProjRel} {catalog : Catalog}
-    {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}
-    {source : VInductDecl} {before after : VEnv}
-    {tx : CertifiedGenerationTransaction source before after}
-    {family : SingletonFamilyCatalogLink trProj catalog nameOf trusted tx}
-    (link : SingletonRecursorCatalogLink trProj catalog nameOf trusted tx
-      family) : Array (KId .anon) :=
-  #[link.recursorId]
-
-@[simp] theorem recursor_mem
-    {trProj : RawProjRel} {catalog : Catalog}
-    {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}
-    {source : VInductDecl} {before after : VEnv}
-    {tx : CertifiedGenerationTransaction source before after}
-    {family : SingletonFamilyCatalogLink trProj catalog nameOf trusted tx}
-    (link : SingletonRecursorCatalogLink trProj catalog nameOf trusted tx
-      family) : link.recursorId ∈ link.members := by
-  simp [members]
-
-/-- Membership in the recursor block identifies its sole declaration. -/
-theorem member_eq
-    {trProj : RawProjRel} {catalog : Catalog}
-    {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}
-    {source : VInductDecl} {before after : VEnv}
-    {tx : CertifiedGenerationTransaction source before after}
-    {family : SingletonFamilyCatalogLink trProj catalog nameOf trusted tx}
-    (link : SingletonRecursorCatalogLink trProj catalog nameOf trusted tx
-      family)
-    {id : KId .anon} (hmember : id ∈ link.members) :
-    id = link.recursorId := by
-  simpa [members] using hmember
-
 /-- Construct a complete `InductiveOracle` for the actual singleton recursor
 block.  Every rule and pattern is selected by its concrete array position and
 is justified by the equation installed by the E2a transaction. -/

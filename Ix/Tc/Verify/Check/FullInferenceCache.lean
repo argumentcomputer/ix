@@ -149,7 +149,7 @@ theorem inferWith_full_wf
       exact TcM.WF.pure fun hI => by
         have hprovenance := hI.1.caches.hit (.infer hhit)
         have hmeaning := hprovenance.kernelInferMeaningOfMatches
-          .infer hsourceSupport hmatch
+          .infer hsourceSupport hmatch hsource.contextScoped
         obtain ⟨typedV, htyped, hcachedPost⟩ := hmeaning
         have hsourceTyped : TrKExprS world.venv model.keys.uvars
             world.nameOf trProj Delta source sourceV :=

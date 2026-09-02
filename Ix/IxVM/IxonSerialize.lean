@@ -40,12 +40,12 @@ def ixonSerialize := ⟦
         put_tag4(0x7, count, put_app_telescope(expr, rest)),
 
       -- Lam: Tag4(0x8, count) + telescope
-      Expr.Lam(_, _) =>
+      Expr.Lam(_, _, _) =>
         let count = lam_telescope_count(expr);
         put_tag4(0x8, count, put_lam_telescope(expr, rest)),
 
       -- All: Tag4(0x9, count) + telescope
-      Expr.All(_, _) =>
+      Expr.All(_, _, _, _) =>
         let count = all_telescope_count(expr);
         put_tag4(0x9, count, put_all_telescope(expr, rest)),
 
@@ -119,6 +119,30 @@ def ixonSerialize := ⟦
     }
   }
 
+  -- Write an Ixon v2 lambda usage byte.
+  fn put_lam_mode(uses: Uses, rest: ByteStream) -> ByteStream {
+    match uses {
+      Uses.Erased => store(ListNode.Cons(0u8, rest)),
+      Uses.Linear => store(ListNode.Cons(1u8, rest)),
+      Uses.Affine => store(ListNode.Cons(2u8, rest)),
+      Uses.Many => store(ListNode.Cons(3u8, rest)),
+    }
+  }
+
+  -- Write usage in bits 0-1 and forall-result ownership in bit 2.
+  fn put_all_mode(uses: Uses, owned: Owned, rest: ByteStream) -> ByteStream {
+    match (uses, owned) {
+      (Uses.Erased, Owned.Unique) => store(ListNode.Cons(0u8, rest)),
+      (Uses.Linear, Owned.Unique) => store(ListNode.Cons(1u8, rest)),
+      (Uses.Affine, Owned.Unique) => store(ListNode.Cons(2u8, rest)),
+      (Uses.Many, Owned.Unique) => store(ListNode.Cons(3u8, rest)),
+      (Uses.Erased, Owned.Shared) => store(ListNode.Cons(4u8, rest)),
+      (Uses.Linear, Owned.Shared) => store(ListNode.Cons(5u8, rest)),
+      (Uses.Affine, Owned.Shared) => store(ListNode.Cons(6u8, rest)),
+      (Uses.Many, Owned.Shared) => store(ListNode.Cons(7u8, rest)),
+    }
+  }
+
   -- Count nested App expressions
   fn app_telescope_count(expr: Expr) -> U64 {
     match expr {
@@ -130,7 +154,7 @@ def ixonSerialize := ⟦
   -- Count nested Lam expressions
   fn lam_telescope_count(expr: Expr) -> U64 {
     match expr {
-      Expr.Lam(_, &body) => relaxed_u64_succ(lam_telescope_count(body)),
+      Expr.Lam(_, _, &body) => relaxed_u64_succ(lam_telescope_count(body)),
       _ => [0u8; 8],
     }
   }
@@ -138,7 +162,7 @@ def ixonSerialize := ⟦
   -- Count nested All expressions
   fn all_telescope_count(expr: Expr) -> U64 {
     match expr {
-      Expr.All(_, &body) => relaxed_u64_succ(all_telescope_count(body)),
+      Expr.All(_, _, _, &body) => relaxed_u64_succ(all_telescope_count(body)),
       _ => [0u8; 8],
     }
   }
@@ -152,20 +176,20 @@ def ixonSerialize := ⟦
     }
   }
 
-  -- Serialize Lam telescope body (all types, then body)
+  -- Serialize Lam telescope body (mode/type pairs, then body)
   fn put_lam_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
-      Expr.Lam(&ty, &body) =>
-        put_expr(ty, put_lam_telescope(body, rest)),
+      Expr.Lam(uses, &ty, &body) =>
+        put_lam_mode(uses, put_expr(ty, put_lam_telescope(body, rest))),
       _ => put_expr(expr, rest),
     }
   }
 
-  -- Serialize All telescope body (all types, then body)
+  -- Serialize All telescope body (mode/type pairs, then body)
   fn put_all_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
-      Expr.All(&ty, &body) =>
-        put_expr(ty, put_all_telescope(body, rest)),
+      Expr.All(uses, owned, &ty, &body) =>
+        put_all_mode(uses, owned, put_expr(ty, put_all_telescope(body, rest))),
       _ => put_expr(expr, rest),
     }
   }

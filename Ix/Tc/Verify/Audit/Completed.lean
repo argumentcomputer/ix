@@ -76,13 +76,47 @@ import Ix.Tc.Verify.Frame
 import Ix.Tc.Verify.Infer.CacheSoundness
 import Ix.Tc.Verify.InferDefEq.Closure
 import Ix.Tc.Verify.Inductive.Certificate
+import Ix.Tc.Verify.Inductive.AliasFormerAdmission
+import Ix.Tc.Verify.Inductive.AliasRecAdmission
+import Ix.Tc.Verify.Inductive.AnnotatedPiCertificate
+import Ix.Tc.Verify.Inductive.AnnotatedPiAdmission
+import Ix.Tc.Verify.Inductive.EliminationBreadthFixture
+import Ix.Tc.Verify.Inductive.MutualBlockCertificate
+import Ix.Tc.Verify.Inductive.MutualFamilyAdmission
+import Ix.Tc.Verify.Inductive.IndexedRecursiveCertificate
+import Ix.Tc.Verify.Inductive.RecursivePiCertificate
+import Ix.Tc.Verify.Inductive.RecursivePiAdmission
+import Ix.Tc.Verify.Inductive.IndexedRecursiveAcceptance
+import Ix.Tc.Verify.Inductive.IndexedConstructorValidation
 import Ix.Tc.Verify.Inductive.SpecializationIdentity
+import Ix.Tc.Verify.Inductive.GeneratedRecursorMetadata
+import Ix.Tc.Verify.Inductive.GeneratedRecursorAcceptance
+import Ix.Tc.Verify.Inductive.GeneratedRecursorAcceptanceClosure
+import Ix.Tc.Verify.Inductive.GeneratedRecursorAdmission
+import Ix.Tc.Verify.Inductive.IndexedProducerClosure
+import Ix.Tc.Verify.Inductive.GeneratedRecursorCheckerFixture
+import Ix.Tc.Verify.Inductive.GeneratedRecursorCommitFixture
+import Ix.Tc.Verify.Inductive.GeneratedRecursorComparison
+import Ix.Tc.Verify.Inductive.GeneratedRecursorRuleFixture
+import Ix.Tc.Verify.Inductive.GeneratedRecursorSelection
+import Ix.Tc.Verify.Inductive.GeneratedRecursorSemantics
+import Ix.Tc.Verify.Inductive.GeneratedRecursorTypeClosure
+import Ix.Tc.Verify.Inductive.GeneratedRecursorTypeFixture
+import Ix.Tc.Verify.Inductive.NestedAuxiliaryExpansion
+import Ix.Tc.Verify.Inductive.NestedAdmission
+import Ix.Tc.Verify.Inductive.NestedConstructorValidation
+import Ix.Tc.Verify.Inductive.NestedRecursiveFixture
+import Ix.Tc.Verify.Inductive.NestedRecursorAdmission
+import Ix.Tc.Verify.Inductive.OccurrenceClosure
+import Ix.Tc.Verify.Inductive.PositivityTraceAdapter
+import Ix.Tc.Verify.Inductive.RecursivePositivityTraversal
 import Ix.Tc.Verify.Ingress.LiteralBlobs
 import Ix.Tc.Verify.Ingress.SerializedBoolean
 import Ix.Tc.Verify.InstL
 import Ix.Tc.Verify.Whnf.Closure
 import Ix.Tc.Verify.Knot
 import Ix.Tc.Verify.NatFixture
+import Ix.Tc.Verify.Projection.ConcreteFixture
 import Ix.Tc.Verify.Run
 import Ix.Tc.Verify.RecursiveMethods.Closure
 import Ix.Tc.Verify.RecursiveMethods.FiniteSupportBoundary
@@ -121,6 +155,72 @@ private def standardWithoutQuot : Array Lean.Name :=
   #[``propext, ``Classical.choice]
 
 private def propextOnly : Array Lean.Name := #[``propext]
+
+/- The executable `AnnotatedPi` replay in the pinned Lean4Lean fork crosses
+its verified wrappers for Lean's pointer-aware expression implementation.
+Keep that nonlogical upstream footprint distinct from `standard`: these are
+not ordinary logical axioms and must not become globally permitted. -/
+private def annotatedPiUpstreamAxioms : Array Lean.Name := #[
+  ``Lean4Lean.ptrEqConstantInfo_eq,
+  ``Lean.Expr.abstractRange_eq,
+  ``Lean.Expr.abstract_eq,
+  ``Lean.Expr.eqv_eq,
+  ``Lean.Expr.hasLooseBVar_eq,
+  ``Lean.Expr.instantiate1_eq,
+  ``Lean.Expr.instantiateRange_eq,
+  ``Lean.Expr.instantiateRevRange_eq,
+  ``Lean.Expr.instantiateRev_eq,
+  ``Lean.Expr.instantiate_eq,
+  ``Lean.Expr.looseBVarRange_eq,
+  ``Lean.Expr.lowerLooseBVars_eq,
+  ``Lean.Expr.mkAppData_eq,
+  ``Lean.Expr.mkData_eq,
+  ``Lean.Expr.replace_eq,
+  ``Lean.Level.hasMVar_eq,
+  ``Lean.Level.hasParam_eq,
+  ``Lean.Level.isExplicitSubsumedAux_eq,
+  ``Lean.Level.instLawfulBEqLevel,
+  ``Lean.Level.normalize_eq,
+  ``Lean.PersistentArray.toList'_push,
+  ``Lean.PersistentHashMap.findAux_isSome,
+  ``Lean.Syntax.structEq_eq,
+  ``Lean.PersistentHashMap.WF.find?_eq,
+  ``Lean.PersistentHashMap.WF.toList'_insert,
+  ``Std.TreeMap.all_eq_all_toList
+]
+
+/- Exact direct `sorryAx` frontier inherited from Lean4Lean's executable
+candidate-normalization proof.  Unlike the earlier closed-form fixtures,
+`AnnotatedPi` exercises the verified implementation path far enough to reach
+the currently declared projection/typechecker proof debt. -/
+private def annotatedPiUpstreamDebt : Array Lean.Name := #[
+  ``Lean4Lean.VEnv.IsDefEqU.forallE_inv_stratified,
+  ``Lean4Lean.VEnv.IsDefEqU.sort_forallE_inv,
+  ``Lean4Lean.VEnv.IsDefEqU.sort_inv,
+  ``Lean4Lean.VEnv.IsDefEqU.weakN_iff,
+  ``Lean4Lean.VEnv.WF.registeredStructureHeadInversion,
+  ``Lean4Lean.TypeChecker.Inner.reduceRecursor.WF
+]
+
+/- `AliasFormer` reaches the same executable normalization boundary as
+`AnnotatedPi`: the former unfolds a reducible family-result alias, while the
+latter unfolds a constructor-domain annotation.  Keep separate aliases so
+the audit will expose either fixture if their upstream footprints diverge. -/
+private def aliasFormerUpstreamAxioms : Array Lean.Name :=
+  annotatedPiUpstreamAxioms
+
+private def aliasFormerUpstreamDebt : Array Lean.Name :=
+  annotatedPiUpstreamDebt.push
+    ``Lean4Lean.InductiveReplayFixtures.aliasFormerAlignmentRun
+
+/- `AliasRec` reaches the same executable normalization boundary while
+unfolding a reducible wrapper around a recursive constructor field.  Keep its
+allowances separately named so the exact-root audit detects any divergence. -/
+private def aliasRecUpstreamAxioms : Array Lean.Name :=
+  annotatedPiUpstreamAxioms
+
+private def aliasRecUpstreamDebt : Array Lean.Name :=
+  annotatedPiUpstreamDebt
 
 private def blake3Native : Array Lean.Name := #[
   nativeAxiom `Blake3
@@ -214,11 +314,2020 @@ private def inductiveNative : Array Lean.Name := (inferNative.push
   (nativeAxiom `Ix.Tc.Inductive
     `Ix.Tc.RecM.canonicalAuxOrder._native.native_decide.ax_9)
 
+/- Mutual-block fixtures use many small closed `native_decide` facts.  Build
+their exact private names structurally so the audit stays reviewable while
+still enumerating every generated axiom. -/
+private def mutualNativeUserName (decl : String) (index : Nat) : Lean.Name :=
+  Lean.Name.str
+    (Lean.Name.str
+      (Lean.Name.str
+        (Lean.Name.str `Ix.Tc.MutualTreeFixture decl)
+        "_native")
+      "native_decide")
+    s!"ax_1_{index + 1}"
+
+private def mutualNativeSeries (moduleName : Lean.Name) (decl : String)
+    (count : Nat) : Array Lean.Name :=
+  (Array.range count).map fun index =>
+    nativeAxiom moduleName (mutualNativeUserName decl index)
+
+private def mutualPublicNativeSeries (decl : String)
+    (count : Nat) : Array Lean.Name :=
+  (Array.range count).map fun index => mutualNativeUserName decl index
+
+private def mutualNativeSingletons (moduleName : Lean.Name)
+    (decls : Array String) : Array Lean.Name :=
+  decls.map fun decl => nativeAxiom moduleName (mutualNativeUserName decl 0)
+
+private def mutualFamilyAdmissionNativeSeries (decl : String)
+    (count : Nat) : Array Lean.Name :=
+  mutualNativeSeries `Ix.Tc.Verify.Inductive.MutualFamilyAdmission decl count
+
+private def mutualBlockFixtureNativeSeries (decl : String)
+    (count : Nat) : Array Lean.Name :=
+  mutualNativeSeries `Ix.Tc.Verify.Inductive.MutualBlockFixture decl count
+
+private def mutualRecursorAdmissionNativeSeries (decl : String)
+    (count : Nat) : Array Lean.Name :=
+  mutualNativeSeries `Ix.Tc.Verify.Inductive.MutualRecursorAdmission decl count
+
+private def mutualInternDataValueNative : Lean.Name :=
+  nativeAxiom `Ix.CanonM
+    `Ix.CanonM.internDataValue._native.native_decide.ax_1
+
+/-- Exact native footprint of the unconditional seven-member mutual-family
+admission.  This is public only so the conditional audit can reuse the exact
+completed prefix instead of maintaining a second copy. -/
+def mutualFamilyNative : Array Lean.Name :=
+  inductiveNative.push mutualInternDataValueNative ++
+  mutualPublicNativeSeries "catalog_branch" 5 ++
+  mutualPublicNativeSeries "catalog_cons" 7 ++
+  mutualPublicNativeSeries "catalog_leaf" 3 ++
+  mutualPublicNativeSeries "catalog_nil" 6 ++
+  mutualPublicNativeSeries "catalog_node" 4 ++
+  mutualPublicNativeSeries "catalog_tree" 1 ++
+  mutualPublicNativeSeries "catalog_treeList" 2 ++
+  mutualPublicNativeSeries "catalog_treeListRec" 9 ++
+  mutualPublicNativeSeries "catalog_treeRec" 8 ++
+  mutualPublicNativeSeries "nameOf_branch" 5 ++
+  mutualPublicNativeSeries "nameOf_cons" 7 ++
+  mutualPublicNativeSeries "nameOf_leaf" 3 ++
+  mutualPublicNativeSeries "nameOf_nil" 6 ++
+  mutualPublicNativeSeries "nameOf_node" 4 ++
+  mutualPublicNativeSeries "nameOf_tree" 1 ++
+  mutualPublicNativeSeries "nameOf_treeList" 2 ++
+  mutualPublicNativeSeries "familyMembers_eq" 1 ++
+  mutualPublicNativeSeries "recursorMembers_eq" 1 ++
+  mutualNativeSingletons `Ix.Tc.Verify.Inductive.MutualBlockFixture #[
+    "familyAuxCompileSucceededNative",
+    "familyBlockLoadedNative",
+    "familyIngressSucceededNative",
+    "recursorBlockLoadedNative",
+    "recursorIngressSucceededNative"
+  ] ++
+  mutualNativeSingletons `Ix.Tc.Verify.Inductive.MutualBlockValidation #[
+    "familyKernelSucceededNative",
+    "recursorKernelSucceededNative"
+  ] ++
+  mutualFamilyAdmissionNativeSeries "familyMemberShapeFactsNative" 19 ++
+  mutualFamilyAdmissionNativeSeries "ownershipShapeFactsNative" 9 ++
+  mutualNativeSingletons `Ix.Tc.Verify.Inductive.MutualFamilyAdmission #[
+    "treeBranchTypeRawNative",
+    "treeLeafTypeRawNative",
+    "treeListConsTypeRawNative",
+    "treeListNilTypeRawNative",
+    "treeListTypeRawNative",
+    "treeNodeTypeRawNative",
+    "treeTypeRawNative"
+  ]
+
+/-- Native footprint added by the physical-order two-recursor link.  The two
+pending semantic assumptions are intentionally not part of this array; the
+conditional audit accounts for them in `RootAllowance.pendingAxioms`. -/
+def mutualRecursorConditionalNative : Array Lean.Name :=
+  mutualFamilyNative ++
+  mutualPublicNativeSeries "nameOf_treeListRec" 9 ++
+  mutualPublicNativeSeries "nameOf_treeRec" 8 ++
+  mutualRecursorAdmissionNativeSeries
+    "physicalSourceMembershipFactsNative" 5 ++
+  mutualRecursorAdmissionNativeSeries "recursorRepresentationFactsNative" 55 ++
+  mutualNativeSingletons `Ix.Tc.Verify.Inductive.MutualRecursorAdmission #[
+    "branchRuleRawNative",
+    "consRuleRawNative",
+    "flatCtorFour",
+    "flatCtorOne",
+    "flatCtorThree",
+    "flatCtorTwo",
+    "flatCtorZero",
+    "leafRuleRawNative",
+    "nilRuleRawNative",
+    "nodeRuleRawNative",
+    "physicalBranchTypeRawNative",
+    "physicalConsTypeRawNative",
+    "physicalLeafTypeRawNative",
+    "physicalNilTypeRawNative",
+    "physicalNodeTypeRawNative",
+    "physicalTreeListTypeRawNative",
+    "physicalTreeTypeRawNative",
+    "recursorOne",
+    "recursorZero",
+    "treeListRecNotFamily",
+    "treeListRecTypeRawNative",
+    "treeListRuleOne",
+    "treeListRuleZero",
+    "treeRecNotFamily",
+    "treeRecTypeRawNative",
+    "treeRuleOne",
+    "treeRuleTwo",
+    "treeRuleZero"
+  ]
+
+private def recursivePiFixtureNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.RecursivePiFixture name
+
+private def recursivePiRecursorFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.RecursivePiRecursorFixture name
+
+private def recursivePiAdmissionNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.RecursivePiAdmission name
+
+private def annotatedPiCertificateNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AnnotatedPiCertificate name
+
+private def annotatedPiCertificateBreadthNative : Array Lean.Name := #[
+  annotatedPiCertificateNativeAxiom
+    `Ix.Tc.AnnotatedPiCertificateFixture.breadthNative._native.native_decide.ax_1_1
+]
+
+private def annotatedPiFixtureNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AnnotatedPiFixture name
+
+private def annotatedPiRecursorFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AnnotatedPiRecursorFixture name
+
+private def annotatedPiAdmissionNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AnnotatedPiAdmission name
+
+private def aliasFormerCertificateNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasFormerCertificate name
+
+private def aliasFormerCertificateBreadthNative : Array Lean.Name := #[
+  aliasFormerCertificateNativeAxiom
+    `Ix.Tc.AliasFormerCertificateFixture.breadthNative._native.native_decide.ax_1_1
+]
+
+private def aliasFormerFixtureNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasFormerFixture name
+
+private def aliasFormerPatternNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasFormerPattern name
+
+private def aliasFormerRecursorFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasFormerRecursorFixture name
+
+private def aliasFormerAdmissionNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasFormerAdmission name
+
+private def aliasRecCertificateNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasRecCertificate name
+
+private def aliasRecCertificateBreadthNative : Array Lean.Name := #[
+  aliasRecCertificateNativeAxiom
+    `Ix.Tc.AliasRecCertificateFixture.breadthNative._native.native_decide.ax_1_1
+]
+
+private def aliasRecFixtureNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasRecFixture name
+
+private def aliasRecRecursorFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasRecRecursorFixture name
+
+private def aliasRecAdmissionNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.AliasRecAdmission name
+
+/- Exact executable footprint of the family-result-normalizing
+AliasFormer family/recursor transaction. -/
+private def aliasFormerAtomicClosureNative : Array Lean.Name :=
+  inductiveNative ++ aliasFormerCertificateBreadthNative ++ #[
+  aliasFormerAdmissionNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  aliasFormerAdmissionNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorOwnerNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.entriesSizeNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.entriesUniqueNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.entryAtOneNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.entryAtZeroNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.entryIdsNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.familyEntryNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.familyIngressSucceededNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.familyShapeNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.memberKidsNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.mkEntryNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.mkShapeNative._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.sourceConstructorZero._native.native_decide.ax_1_1,
+  aliasFormerFixtureNativeAxiom
+    `Ix.Tc.AliasFormerFixture.typeFamilyAliasIngressSucceededNative._native.native_decide.ax_1_1,
+  aliasFormerPatternNativeAxiom
+    `Ix.Tc.AliasFormerPattern.generationCtorPairsNonempty._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogFamilyNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogFamilyNative._native.native_decide.ax_1_2,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogMkNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogMkNative._native.native_decide.ax_1_2,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogMkNative._native.native_decide.ax_1_3,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_2,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_3,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_4,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.catalogTypeFamilyAliasNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.constructorCountNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.familyTypeRawNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.generationCtorPairZero._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.mkRuleBinderCoreNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.mkRuleFieldsNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.mkRuleRawNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.mkRuleScopedNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.mkRuleSizeBoundNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.mkSourceNameNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.mkTypeRawNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.nameOfFamilyNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.nameOfMkNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.nameOfRecursorNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.nameOfTypeFamilyAliasNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorEntriesUniqueNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorEntryIdsNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorEntryNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorEntrySizeNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorIngressSucceededNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorMemberKidsNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorRulesSizeNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorUniverseCountNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorShapeNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.recursorTypeRawNative._native.native_decide.ax_1_1,
+  aliasFormerRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasFormerRecursorFixture.typeFamilyAliasTranslationsNative._native.native_decide.ax_1_1
+]
+
+/- Exact executable footprint of the recursive-field-normalizing `AliasRec`
+family/recursor transaction. -/
+private def aliasRecAtomicClosureNative : Array Lean.Name :=
+  inductiveNative ++ aliasRecCertificateBreadthNative ++ #[
+  aliasRecAdmissionNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  aliasRecAdmissionNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorOwnerNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.entriesSizeNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.entriesUniqueNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.entryAtOneNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.entryAtZeroNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.entryIdsNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.familyEntryNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.familyIngressSucceededNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.familyShapeNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.memberKidsNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.mkEntryNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.mkShapeNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.recAliasIngressSucceededNative._native.native_decide.ax_1_1,
+  aliasRecFixtureNativeAxiom
+    `Ix.Tc.AliasRecFixture.sourceConstructorZero._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogFamilyNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogFamilyNative._native.native_decide.ax_1_2,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogMkNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogMkNative._native.native_decide.ax_1_2,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogMkNative._native.native_decide.ax_1_3,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogRecAliasNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_2,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_3,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_4,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.constructorCountNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.familyTypeRawNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.generationCtorPairZero._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.mkRuleBinderCoreNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.mkRuleFieldsNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.mkRuleRawNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.mkRuleScopedNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.mkRuleSizeBoundNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.mkSourceNameNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.mkTypeRawNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.nameOfFamilyNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.nameOfMkNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.nameOfRecAliasNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.nameOfRecursorNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recAliasTranslationsNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorEntriesUniqueNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorEntryIdsNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorEntryNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorEntrySizeNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorIngressSucceededNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorMemberKidsNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorRulesSizeNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorUniverseCountNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorShapeNative._native.native_decide.ax_1_1,
+  aliasRecRecursorFixtureNativeAxiom
+    `Ix.Tc.AliasRecRecursorFixture.recursorTypeRawNative._native.native_decide.ax_1_1
+]
+
+/- Exact executable footprint of the annotation-normalizing family/recursor
+transaction, including its Theory breadth witness and physical outParam,
+family, constructor, and recursor entries. -/
+private def annotatedPiAtomicClosureNative : Array Lean.Name :=
+  inductiveNative ++ annotatedPiCertificateBreadthNative ++ #[
+  annotatedPiAdmissionNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  annotatedPiAdmissionNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorOwnerNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.entriesSizeNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.entriesUniqueNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.entryAtOneNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.entryAtZeroNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.entryIdsNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.familyEntryNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.familyIngressSucceededNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.familyShapeNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.memberKidsNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.mkEntryNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.mkShapeNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.outParamIngressSucceededNative._native.native_decide.ax_1_1,
+  annotatedPiFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiFixture.sourceConstructorZero._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogFamilyNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogFamilyNative._native.native_decide.ax_1_2,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogMkNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogMkNative._native.native_decide.ax_1_2,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogMkNative._native.native_decide.ax_1_3,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogOutParamNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_2,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_3,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_4,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.constructorCountNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.familyTypeRawNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.generationCtorPairZero._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.mkRuleBinderCoreNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.mkRuleFieldsNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.mkRuleRawNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.mkRuleScopedNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.mkRuleSizeBoundNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.mkSourceNameNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.mkTypeRawNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.nameOfFamilyNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.nameOfMkNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.nameOfOutParamNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.nameOfRecursorNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.outParamTranslationsNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorEntriesUniqueNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorEntryIdsNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorEntryNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorEntrySizeNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorIngressSucceededNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorMemberKidsNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorRulesSizeNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorUniverseCountNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorShapeNative._native.native_decide.ax_1_1,
+  annotatedPiRecursorFixtureNativeAxiom
+    `Ix.Tc.AnnotatedPiRecursorFixture.recursorTypeRawNative._native.native_decide.ax_1_1
+]
+
+/- Exact executable footprint of the recursive-Pi family/recursor transaction.
+The list is deliberately independent from the broader IndexedVec fixture so
+the `Acc` closure cannot silently acquire unrelated native assumptions. -/
+private def recursivePiAtomicClosureNative : Array Lean.Name :=
+  inductiveNative ++ #[
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.entriesSizeNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.entriesUniqueNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.entryAtOneNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.entryAtZeroNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.entryIdsNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.familyEntryNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.familyShapeNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.ingressSucceededNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.introEntryNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.introShapeNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.memberKidsNative._native.native_decide.ax_1_1,
+  recursivePiFixtureNativeAxiom
+    `Ix.Tc.RecursivePiFixture.sourceConstructorZero._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.catalogFamilyNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.catalogIntroNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.catalogIntroNative._native.native_decide.ax_1_2,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_2,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.catalogRecursorNative._native.native_decide.ax_1_3,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.constructorCountNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.familyTypeRawNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.generationCtorPairZero._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.introRuleBinderCoreNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.introRuleFieldsNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.introRuleRawNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.introRuleScopedNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.introRuleSizeBoundNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.introSourceNameNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.introTypeRawNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.nameOfFamilyNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.nameOfIntroNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.nameOfRecursorNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorEntriesUniqueNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorEntryIdsNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorEntryNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorEntrySizeNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorIngressSucceededNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorMemberKidsNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorRulesSizeNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorShapeNative._native.native_decide.ax_1_1,
+  recursivePiRecursorFixtureNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorTypeRawNative._native.native_decide.ax_1_1,
+  recursivePiAdmissionNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  recursivePiAdmissionNativeAxiom
+    `Ix.Tc.RecursivePiRecursorFixture.recursorOwnerNative._native.native_decide.ax_1_1
+]
+
 private def enumerationFixtureNativeAxiom (name : Lean.Name) : Lean.Name :=
   nativeAxiom `Ix.Tc.Verify.Inductive.EnumerationFixture name
 
 private def enumerationAcceptanceNativeAxiom (name : Lean.Name) : Lean.Name :=
   nativeAxiom `Ix.Tc.Verify.Inductive.EnumerationAcceptance name
+
+private def indexedRecursiveFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedRecursiveFixture name
+
+private def indexedRecursiveAcceptanceNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedRecursiveAcceptance name
+
+private def eliminationBreadthNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.EliminationBreadthFixture name
+
+private def smallEliminationAcceptanceNative : Array Lean.Name :=
+  inductiveNative.push mutualInternDataValueNative ++ #[
+    `Lean4Lean.InductiveReplayFixtures.smallSourceAlignment06._native.native_decide.ax_1,
+    `Lean4Lean.InductiveReplayFixtures.smallSourceEliminationResult06_isOk._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.smallCompiledIdentity._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.smallCompiledIdentity._native.native_decide.ax_1_2,
+    `Ix.Tc.EliminationBreadthFixture.smallCompiledIdentity._native.native_decide.ax_1_3,
+    `Ix.Tc.EliminationBreadthFixture.smallCompiledIdentity._native.native_decide.ax_1_4,
+    `Ix.Tc.EliminationBreadthFixture.smallCompiledIdentity._native.native_decide.ax_1_5,
+    `Ix.Tc.EliminationBreadthFixture.smallCompiledIdentity._native.native_decide.ax_1_6,
+    `Ix.Tc.EliminationBreadthFixture.smallCompiledIdentity._native.native_decide.ax_1_7,
+    `Ix.Tc.EliminationBreadthFixture.smallComputeKMatches_eq._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.smallPreparationMatches_eq._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.smallRecursorShape._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.smallTheoryRecUvars._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.smallCompilerSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.smallExecutionKNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.smallExecutionModeNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.smallFamilyIngressSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.smallFamilyKernelSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.smallRecursorIngressSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.smallRecursorKernelSucceededNative._native.native_decide.ax_1_1
+  ]
+
+private def kTargetAcceptanceNative : Array Lean.Name :=
+  inductiveNative.push mutualInternDataValueNative ++ #[
+    `Lean4Lean.InductiveReplayFixtures.eqAlignment06._native.native_decide.ax_1,
+    `Lean4Lean.InductiveReplayFixtures.eqEliminationResult06_isOk._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.eqCompiledIdentity._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.eqCompiledIdentity._native.native_decide.ax_1_2,
+    `Ix.Tc.EliminationBreadthFixture.eqCompiledIdentity._native.native_decide.ax_1_3,
+    `Ix.Tc.EliminationBreadthFixture.eqCompiledIdentity._native.native_decide.ax_1_4,
+    `Ix.Tc.EliminationBreadthFixture.eqCompiledIdentity._native.native_decide.ax_1_5,
+    `Ix.Tc.EliminationBreadthFixture.eqCompiledIdentity._native.native_decide.ax_1_6,
+    `Ix.Tc.EliminationBreadthFixture.eqComputeKMatches_eq._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.eqPreparationMatches_eq._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.eqRecursorShape._native.native_decide.ax_1_1,
+    `Ix.Tc.EliminationBreadthFixture.eqTheoryRecUvars._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.eqCompilerSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.eqExecutionKNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.eqExecutionModeNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.eqFamilyIngressSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.eqFamilyKernelSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.eqRecursorIngressSucceededNative._native.native_decide.ax_1_1,
+    eliminationBreadthNativeAxiom
+      `Ix.Tc.EliminationBreadthFixture.eqRecursorKernelSucceededNative._native.native_decide.ax_1_1
+  ]
+
+private def indexedRecursiveFixtureNativeNames : Array Lean.Name := #[
+  `Ix.Tc.IndexedRecursiveFixture.catalogConsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.catalogConsNative._native.native_decide.ax_1_2,
+  `Ix.Tc.IndexedRecursiveFixture.catalogConsNative._native.native_decide.ax_1_3,
+  `Ix.Tc.IndexedRecursiveFixture.catalogFamilyNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_2,
+  `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_3,
+  `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_4,
+  `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_5,
+  `Ix.Tc.IndexedRecursiveFixture.catalogNilNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.catalogNilNative._native.native_decide.ax_1_2,
+  `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_2,
+  `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_3,
+  `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_4,
+  `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_2,
+  `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_3,
+  `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_4,
+  `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_5,
+  `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_6,
+  `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_7,
+  `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_2,
+  `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_3,
+  `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_4,
+  `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_5,
+  `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_6,
+  `Ix.Tc.IndexedRecursiveFixture.consEntryNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consSourceNameNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consRuleBinderCoreNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consRuleFieldsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consRuleRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consRuleScopedNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consRuleSizeBoundNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consShapeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.consTypeRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.constructorCountNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyEntriesSizeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyEntriesUniqueNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyEntryAtOneNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyEntryAtTwoNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyEntryAtZeroNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyEntryIdsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyEntryNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyIngressSucceededNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyMemberKidsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyShapeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyTypeRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.generationCtorPairOne._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.generationCtorPairZero._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nameOfConsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nameOfFamilyNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nameOfNatNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nameOfNilNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nameOfRecursorNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nameOfSuccNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nameOfZeroNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natConstructorCountNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natEntriesSizeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natEntriesUniqueNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natEntryAtOneNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natEntryAtTwoNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natEntryAtZeroNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natEntryIdsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natEntryNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natFamilyShapeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natIngressSucceededNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natMemberKidsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natSourceConstructorOne._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natSourceConstructorZero._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natTypeRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilEntryNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilSourceNameNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilRuleBinderCoreNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilRuleFieldsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilRuleRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilRuleScopedNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilRuleSizeBoundNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilShapeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.nilTypeRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorEntriesSizeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorEntriesUniqueNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorEntryIdsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorEntryNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorIngressSucceededNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorMemberKidsNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorRulesSizeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorShapeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorTypeRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorUniverseCountNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.sourceConstructorOne._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.sourceConstructorZero._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.succEntryNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.succSourceNameNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.succShapeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.succTypeRawNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.zeroEntryNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.zeroSourceNameNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.zeroShapeNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.zeroTypeRawNative._native.native_decide.ax_1_1
+]
+
+private def indexedRecursiveAcceptanceNativeNames : Array Lean.Name := #[
+  `Ix.Tc.IndexedRecursiveFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.malformedRecursorRejectedNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natKernelSucceededNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.natNotFamilyDirectOwnerNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1,
+  `Ix.Tc.IndexedRecursiveFixture.recursorOwnerNative._native.native_decide.ax_1_1
+]
+
+private def indexedRecursiveNative : Array Lean.Name :=
+  inductiveNative ++
+    indexedRecursiveFixtureNativeNames.map indexedRecursiveFixtureNativeAxiom ++
+    indexedRecursiveAcceptanceNativeNames.map
+      indexedRecursiveAcceptanceNativeAxiom
+
+/-- Exact native footprint of the concrete production `buildRecType` run.
+The broad indexed-recursive fixture manifest is intentionally not reused: a
+new observation in an unrelated acceptance theorem must not silently widen
+this builder root. -/
+private def generatedRecursorTypeFixtureNative : Array Lean.Name :=
+  inductiveNative ++ #[
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorEntriesSizeNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeBinderCoreNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeRawNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeScopedNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeSizeBoundNative._native.native_decide.ax_1_1,
+    nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorTypeFixture
+      `Ix.Tc.IndexedRecursiveFixture.familyBuildTypeResultNative._native.native_decide.ax_1_1,
+    nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorTypeFixture
+      `Ix.Tc.IndexedRecursiveFixture.familyBuildTypeSucceededNative._native.native_decide.ax_1_1,
+    nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorTypeFixture
+      `Ix.Tc.IndexedRecursiveFixture.familyPreparationSucceededNative._native.native_decide.ax_1_1
+  ]
+
+private def generatedRecursorRuleFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorRuleFixture name
+
+/-- Exact native footprint of the complete IndexedVec peer-alignment and
+`buildRuleRhs` run. -/
+private def generatedRecursorRuleFixtureNative : Array Lean.Name :=
+  inductiveNative ++ #[
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorEntriesSizeNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeBinderCoreNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeRawNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeScopedNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeSizeBoundNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.generationCtorPairZero._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.generationCtorPairOne._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleBinderCoreNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleFieldsNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleRawNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleScopedNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleSizeBoundNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleBinderCoreNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleFieldsNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleRawNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleScopedNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleSizeBoundNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.familyBuiltRulesNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.familyCompletedRecursorTypeNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.familyRulePopulationSucceededNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.generationRuleCountNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorRulesLiteralNative._native.native_decide.ax_1_1
+  ]
+
+/- Exact native footprint of the transactional rule commit.  This is kept
+separate from `generatedRecursorRuleFixtureNative`: the commit proof observes
+the two intermediate array sizes, but no longer depends on the standalone
+completed-type observation used by the builder fixture. -/
+private def generatedRecursorCommitFixtureNative : Array Lean.Name :=
+  inductiveNative ++ #[
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorEntriesSizeNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeBinderCoreNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeRawNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeScopedNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorTypeSizeBoundNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.generationCtorPairZero._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.generationCtorPairOne._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleBinderCoreNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleFieldsNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleRawNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleScopedNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.nilRuleSizeBoundNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleBinderCoreNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleFieldsNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleRawNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleScopedNative._native.native_decide.ax_1_1,
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.consRuleSizeBoundNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.familyBuiltRulesNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.familyGeneratedSnapshotSizeNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.familyGeneratedWithRulesSizeNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.familyRulePopulationSucceededNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.generationRuleCountNative._native.native_decide.ax_1_1,
+    generatedRecursorRuleFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorRulesLiteralNative._native.native_decide.ax_1_1,
+    nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorCommitFixture
+      `Ix.Tc.IndexedRecursiveFixture.familyRuleCommitSucceededNative._native.native_decide.ax_1_1,
+    nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorCommitFixture
+      `Ix.Tc.IndexedRecursiveFixture.familyGeneratedSnapshotTypeNative._native.native_decide.ax_1_1
+  ]
+
+private def generatedRecursorCheckerFixtureNative : Array Lean.Name :=
+  generatedRecursorCommitFixtureNative ++ #[
+    indexedRecursiveFixtureNativeAxiom
+      `Ix.Tc.IndexedRecursiveFixture.recursorRulesSizeNative._native.native_decide.ax_1_1,
+    nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorCheckerFixture
+      `Ix.Tc.IndexedRecursiveFixture.familyCacheCheckSucceededNative._native.native_decide.ax_1_1
+  ]
+
+/- The additional native facts used to construct the concrete IndexedVec
+semantic world.  They are disjoint from the checker execution footprint
+above, so the concatenated canonical fixture manifest remains exact. -/
+private def generatedRecursorCanonicalWorldNative : Array Lean.Name := #[
+  indexedRecursiveAcceptanceNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  indexedRecursiveAcceptanceNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  indexedRecursiveAcceptanceNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natNotFamilyDirectOwnerNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogConsNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogConsNative._native.native_decide.ax_1_2,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogConsNative._native.native_decide.ax_1_3,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogFamilyNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_2,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_3,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_4,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogNatNative._native.native_decide.ax_1_5,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogNilNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogNilNative._native.native_decide.ax_1_2,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_2,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_3,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_4,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_5,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_6,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogSuccNative._native.native_decide.ax_1_7,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_2,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_3,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_4,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_5,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogZeroNative._native.native_decide.ax_1_6,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.consEntryNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.consShapeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.consSourceNameNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.consTypeRawNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.constructorCountNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyEntriesSizeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyEntriesUniqueNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyEntryAtOneNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyEntryAtTwoNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyEntryAtZeroNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyEntryIdsNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyEntryNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyIngressSucceededNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberKidsNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyShapeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyTypeRawNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nameOfConsNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nameOfFamilyNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nameOfNatNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nameOfNilNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nameOfSuccNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nameOfZeroNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natConstructorCountNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natEntriesSizeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natEntriesUniqueNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natEntryAtOneNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natEntryAtTwoNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natEntryAtZeroNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natEntryIdsNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natEntryNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natFamilyShapeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natIngressSucceededNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natMemberKidsNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natSourceConstructorOne._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natSourceConstructorZero._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.natTypeRawNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nilEntryNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nilShapeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nilSourceNameNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nilTypeRawNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.sourceConstructorOne._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.sourceConstructorZero._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.succEntryNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.succShapeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.succSourceNameNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.succTypeRawNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.zeroEntryNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.zeroShapeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.zeroSourceNameNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.zeroTypeRawNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorShapeNative._native.native_decide.ax_1_1
+]
+
+private def generatedRecursorCanonicalFixtureNative : Array Lean.Name :=
+  generatedRecursorCheckerFixtureNative ++
+    generatedRecursorCanonicalWorldNative
+
+private def generatedRecursorCommitFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorCommitFixture name
+
+private def generatedRecursorMemberFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.GeneratedRecursorMemberFixture name
+
+private def generatedRecursorInitialInvariantNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom
+    `Ix.Tc.Verify.Inductive.GeneratedRecursorInitialInvariant name
+
+/- Exact executable footprint of the complete concrete recursor-member
+transaction.  The earlier commit and semantic-world manifests are reused
+only where they are exact subsets.  The remaining entries pin the outer
+member prelude, the finite initial cache invariant, and the semantic recursor
+entry used by the oracle-free second admission. -/
+private def generatedRecursorAtomicClosureNative : Array Lean.Name :=
+  generatedRecursorCommitFixtureNative ++
+    generatedRecursorCanonicalWorldNative ++ #[
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorRulesSizeNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorUniverseCountNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_2,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_3,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.catalogRecursorNative._native.native_decide.ax_1_4,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.nameOfRecursorNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorEntriesUniqueNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorEntryIdsNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorEntryNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorIngressSucceededNative._native.native_decide.ax_1_1,
+  indexedRecursiveFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorMemberKidsNative._native.native_decide.ax_1_1,
+  indexedRecursiveAcceptanceNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  indexedRecursiveAcceptanceNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorOwnerNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.consConcreteHeaderNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyConcreteHeaderNative._native.native_decide.ax_1_1,
+  generatedRecursorCommitFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyInstalledRecursorAtZeroMemberNative._native.native_decide.ax_1_1,
+  generatedRecursorCommitFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyInstalledRecursorTypeEqNative._native.native_decide.ax_1_1,
+  generatedRecursorCommitFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyInstalledConsRuleInternSupported._native.native_decide.ax_1_1,
+  generatedRecursorCommitFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyInstalledNilRuleInternSupported._native.native_decide.ax_1_1,
+  generatedRecursorCommitFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyInstalledRecursorInductiveAddress._native.native_decide.ax_1_1,
+  generatedRecursorCommitFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyInstalledRecursorRules._native.native_decide.ax_1_1,
+  generatedRecursorCommitFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyInstalledRecursorTypeInternSupported._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberArityBoundNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberSingletonSizeNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialPrimitivesNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyCharOfNatAbsent._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberCheckSucceededNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberDirectMajorShapeNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialBlocksCoveredNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialClosedFieldsNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialConstsCoveredNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialEquivEntriesEmpty._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialEquivLabelsEmpty._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialEquivParentEmpty._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialExprKeysNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialRecursorLoaded._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialReferencesCovered._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInitialUnivKeysNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberMajorSkipRunNeutral._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberOwnerCacheMatchesNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberPopulationReferencesCovered._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberPreparationMatchesNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRecursorConcreteHeader._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberReferenceId_authorized._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberReferenceId_authorized._native.native_decide.ax_1_2,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberReferenceId_authorized._native.native_decide.ax_1_3,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberResolutionPrefixMatchesNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberResultLevelNonzero._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberResultSortShape._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRulePopulationCacheChecksNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRulePopulationExprKeysNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRulePopulationExtendsNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRulePopulationMatchesNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRulePopulationNoLazyNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRulePopulationSemanticChecksNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRulePopulationUnivKeysNative._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberSnapshotFamilyLoaded._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberSnapshotGeneratedCache._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyNatSuccLookup._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyNatZeroLookup._native.native_decide.ax_1_1,
+  generatedRecursorMemberFixtureNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyNilConcreteHeader._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberBlockPeersClassifiedNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberBlockResultKeysClassifiedNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberConsInfoLookup._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberConsInnerResultLevel_raw._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberConsResultLevel_raw._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberConsTypeTranslation._native.native_decide.ax_1_2,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberDefEqCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberDefEqCheapCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberDefEqFailureCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberFamilyInfoLookup._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberFamilyReferenceTranslation._native.native_decide.ax_1_2,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberFamilyResultLevel_raw._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberFamilyTypeTranslation._native.native_decide.ax_1_2,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInferCensusNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberInferOnlyCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberIsPropCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberIsRecCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatBlockAccepted._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatBlockAccepted._native.native_decide.ax_1_2,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatInfoLookup._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatReferenceTranslation._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatReferenceWhnf._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatSuccStuckCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatTrusted._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNatTypeTranslation._native.native_decide.ax_1_2,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNilInfoLookup._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberNilTypeTranslation._native.native_decide.ax_1_2,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRecMajorsClassifiedNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRecursorBlocksClassifiedNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRecursorOwnersClassifiedNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberRecursorPayloadsInternedNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberSuccInfoLookup._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberSuccReferenceTranslation._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberSuccTrusted._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberSuccTypeTranslation._native.native_decide.ax_1_2,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberTypedConstantSyntaxNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberUnfoldCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberWhnfCensusNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberWhnfCoreCensusNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberWhnfCoreCheapCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberWhnfNoDeltaCensusNative._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberWhnfNoDeltaCheapCacheEmpty._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberZeroInfoLookup._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberZeroReferenceTranslation._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberZeroTrusted._native.native_decide.ax_1_1,
+  generatedRecursorInitialInvariantNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberZeroTypeTranslation._native.native_decide.ax_1_2
+]
+
+/-- Exact executable delta between the existing semantic recursor closure
+and the stronger closure that also retains the analyzer's candidate producer
+equation.  The latter adds only the two outer production block checks. -/
+private def indexedProducerClosureNative : Array Lean.Name :=
+  generatedRecursorAtomicClosureNative ++ #[
+  indexedRecursiveAcceptanceNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  indexedRecursiveAcceptanceNativeAxiom
+    `Ix.Tc.IndexedRecursiveFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1
+]
+
+/-- Exact executable footprint of the production-linked IndexedVec
+constructor-validation replay.  Keep this separate from the broader
+end-to-end acceptance fixture so a new observation changes this root's audit. -/
+private def indexedConstructorValidationNative : Array Lean.Name := #[
+  nativeAxiom `Blake3
+    `Blake3.HasherOps.hash._native.native_decide.ax_1,
+  nativeAxiom `Ix.Environment
+    `Ix.Name.mkStr._native.native_decide.ax_1,
+  nativeAxiom `Ix.Tc.Expr
+    `Ix.Tc.KExpr.mkVar._native.native_decide.ax_1,
+  nativeAxiom `Ix.Tc.Inductive
+    `Ix.Tc.RecM.canonicalAuxOrder._native.native_decide.ax_9,
+  nativeAxiom `Ix.Tc.Level
+    `Ix.Tc.KUniv.mkSucc._native.native_decide.ax_1,
+  nativeAxiom `Ix.Tc.Monad
+    `Ix.Tc.TcM.ctxAddrForLbrUncached._native.native_decide.ax_3,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.consConcreteHeaderNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyAritySucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyClassificationMatchesNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyConcreteHeaderNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyDiscoveryMatchesNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyMemberLoadedNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyNilAfterConsLoadedNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyNilValidationSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyPeerAgreementSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedBlockValidation
+    `Ix.Tc.IndexedRecursiveFixture.familyResultLevelSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedCandidateSyntax
+    `Ix.Tc.IndexedRecursiveFixture.candidateBlockSyntaxNative._native.native_decide.ax_1_2,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedCandidateSyntax
+    `Ix.Tc.IndexedRecursiveFixture.candidateBlockSyntaxNative._native.native_decide.ax_1_3,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedCandidateSyntax
+    `Ix.Tc.IndexedRecursiveFixture.candidateBlockSyntaxNative._native.native_decide.ax_1_4,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedCandidateSyntax
+    `Ix.Tc.IndexedRecursiveFixture.candidateBlockSyntaxNative._native.native_decide.ax_1_5,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedCandidateSyntax
+    `Ix.Tc.IndexedRecursiveFixture.candidateBlockSyntaxNative._native.native_decide.ax_1_6,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedCandidateSyntax
+    `Ix.Tc.IndexedRecursiveFixture.candidateBlockSyntaxNative._native.native_decide.ax_1_7,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorAfterParamShapeNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorAlphaEnsureTypeNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorConsumeAlphaNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorConsumeNatNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorConsumeTailNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorGetTypeAlphaNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorInstantiateHeadNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorInstantiateNNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorInstantiateTailNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorNatEnsureTypeNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorNatUniverse._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorParamIsDefEqNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorParamUniverse._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorResultIsValidNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorTailEnsureTypeNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedConstructorValidation
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecConstructorTypeShapeNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.familyConsHeadDomainCandidateCheckNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.familyConsNatDomainCandidateCheckNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailDomainCandidateCheckNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailWhnfCandidateCheckNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecAlphaCandidateWhnfNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecAlphaHasNoIndOccTrusted._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecNatCandidateWhnfNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecNatHasNoIndOccTrusted._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecTailAppIsValidTrusted._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecTailCandidateWhnfNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedPositivityTransport
+    `Ix.Tc.IndexedRecursiveFixture.indexedVecTailHasIndOccTrusted._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsHeadDomainRootFreeNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsHeadOpenSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsHeadTelescopeWhnfIsForallNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsNatDomainRootFreeNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsNatOpenSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsNatTelescopeWhnfIsForallNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsPositivityParametersSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsResultWhnfSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsResultWhnfTerminalNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailDomainMentionsRootNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailDomainSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailDomainWhnfNotForallNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailDomainWhnfSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailOpenSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailTelescopeWhnfIsForallNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailWhnfSpineActiveNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedProductionPositivity
+    `Ix.Tc.IndexedRecursiveFixture.familyConsTailWhnfSpineIsConstNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedRecursiveAcceptance
+    `Ix.Tc.IndexedRecursiveFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  nativeAxiom `Ix.Tc.Verify.Inductive.IndexedRecursiveFixture
+    `Ix.Tc.IndexedRecursiveFixture.familyEntriesSizeNative._native.native_decide.ax_1_1
+]
+
+private def nestedRecursiveFixtureNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.NestedRecursiveFixture name
+
+private def nestedRecursiveActionNative : Array Lean.Name :=
+  nameContextNative ++ #[
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.boxInactiveNative._native.native_decide.ax_1_1,
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.nestedMentionsRootNative._native.native_decide.ax_1_1,
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.nestedSpineNative._native.native_decide.ax_1_1,
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.nestedWhnfSucceededNative._native.native_decide.ax_1_1,
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.positivitySucceededNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedRecursiveProducedNative : Array Lean.Name :=
+  nestedRecursiveActionNative ++ #[
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.boxConcreteHeaderMatchesNative._native.native_decide.ax_1_1,
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.boxLookupConcreteNative._native.native_decide.ax_1_1,
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.boxLookupSucceededNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedRecursiveFreshNative : Array Lean.Name :=
+  nestedRecursiveProducedNative.push
+    (nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.positivityRequestAbsentNative._native.native_decide.ax_1_1)
+
+private def nestedRecursiveReachabilityNative : Array Lean.Name :=
+  nestedRecursiveFreshNative ++ #[
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.builtFlatShapeNative._native.native_decide.ax_1_1,
+    nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.flatBuildSucceededNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedCandidateSyntaxNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.NestedCandidateSyntax name
+
+private def nestedPositivityTransportNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.NestedPositivityTransport name
+
+private def nestedAuxiliaryPositivityNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.NestedAuxiliaryPositivity name
+
+private def nestedConstructorValidationNativeAxiom
+    (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.NestedConstructorValidation name
+
+private def nestedCandidateRelationNative : Array Lean.Name := #[
+  nestedCandidateSyntaxNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.leanAuxiliaryOccursNative._native.native_decide.ax_1_1,
+  nestedCandidateSyntaxNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.leanAuxiliarySourceNative._native.native_decide.ax_1_1,
+  nestedCandidateSyntaxNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.leanAuxiliaryTargetNative._native.native_decide.ax_1_1,
+  nestedCandidateSyntaxNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.leanFlatNodeTypeNative._native.native_decide.ax_1_1,
+  nestedCandidateSyntaxNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedDomainCandidateCheckNative._native.native_decide.ax_1_1
+]
+
+private def nestedRecursiveReachabilityWithResultNative : Array Lean.Name :=
+  nestedRecursiveReachabilityNative.push
+    (nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.nestedWhnfResultNative._native.native_decide.ax_1_1)
+
+private def nestedOuterTransportNative : Array Lean.Name :=
+  nestedRecursiveReachabilityWithResultNative ++ nestedCandidateRelationNative ++ #[
+    nestedPositivityTransportNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanAuxiliaryCandidateWhnfNative._native.native_decide.ax_1_1,
+    nestedPositivityTransportNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.nestedDomainMentionsRootNative._native.native_decide.ax_1_1,
+    nestedPositivityTransportNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.nestedExternalInactiveNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedAuxiliaryCandidateTargetNative : Array Lean.Name :=
+  nestedRecursiveReachabilityNative ++ nestedCandidateRelationNative
+
+private def nestedAuxiliaryExecutionNative : Array Lean.Name := #[
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryDiscoverySucceededNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryDomainWhnfNotForallNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryDomainWhnfResultNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryDomainWhnfSucceededNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryFieldWhnfShapeNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryFieldWhnfSucceededNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryInstantiationSucceededNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryParameterArgsNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryStrippingSucceededNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliarySubstitutionSucceededNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryTreeMentionsRootNative._native.native_decide.ax_1_1,
+  nestedAuxiliaryPositivityNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.auxiliaryWrapLookupSucceededNative._native.native_decide.ax_1_1
+]
+
+private def nestedAuxiliaryProductionNative : Array Lean.Name :=
+  nestedRecursiveFreshNative ++ nestedAuxiliaryExecutionNative
+
+private def nestedAuxiliaryTransportNative : Array Lean.Name :=
+  nameContextNative ++ #[
+    nestedAuxiliaryPositivityNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.auxiliaryDomainWhnfResultNative._native.native_decide.ax_1_1,
+    nestedAuxiliaryPositivityNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.auxiliaryDomainWhnfSucceededNative._native.native_decide.ax_1_1,
+    nestedAuxiliaryPositivityNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.auxiliaryTreeMentionsRootNative._native.native_decide.ax_1_1,
+    nestedAuxiliaryPositivityNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeCandidateWhnfNative._native.native_decide.ax_1_1,
+    nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeOccursNative._native.native_decide.ax_1_1,
+    nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeTargetNative._native.native_decide.ax_1_1,
+    nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.treeCandidateCheckNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedAuxiliaryConstructorNative : Array Lean.Name :=
+  nestedAuxiliaryProductionNative ++ #[
+    nestedAuxiliaryPositivityNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeCandidateWhnfNative._native.native_decide.ax_1_1,
+    nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeOccursNative._native.native_decide.ax_1_1,
+    nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeTargetNative._native.native_decide.ax_1_1,
+    nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.treeCandidateCheckNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedNodeConstructorValidationNative : Array Lean.Name :=
+  nestedOuterTransportNative ++ #[
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.consumeLeanAuxiliaryNative._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.instantiateLeanTreeNative._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanAuxiliaryEnsureTypeNative._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanFlatFieldUniverse._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeTerminalNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedWrapConstructorValidationNative : Array Lean.Name :=
+  nestedAuxiliaryConstructorNative ++ #[
+    nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanFlatWrapTypeNative._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.consumeLeanTreeNative._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.instantiateLeanAuxiliaryNative._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanAuxiliaryTerminalNative._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanFlatFieldUniverse._native.native_decide.ax_1_1,
+    nestedConstructorValidationNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.leanTreeEnsureTypeNative._native.native_decide.ax_1_1
+  ]
+
+private def nestedTreeCandidateSyntaxNative : Array Lean.Name :=
+  expressionNative.push
+    (nestedCandidateSyntaxNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.treeCandidateCheckNative._native.native_decide.ax_1_1)
+
+/- The nested semantic transaction has two independently executable halves:
+the Lean4Lean source/restoration proof and Ix's physical catalog/checker
+join.  Keep their native footprints explicit so the headline audit cannot
+silently acquire oracle materialization or pending assumptions. -/
+private def nativeUnion (left right : Array Lean.Name) : Array Lean.Name :=
+  right.foldl (fun names name =>
+    if names.contains name then names else names.push name) left
+
+private def nestedSemanticBoxNative : Array Lean.Name := #[
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxAfter_isSome._native.native_decide.ax_1_1,
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxChecked._native.native_decide.ax_1,
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxGeneration._native.native_decide.ax_1,
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxShape._native.native_decide.ax_1_1,
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxShape._native.native_decide.ax_1_2,
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxShape._native.native_decide.ax_1_3,
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxShape._native.native_decide.ax_1_4,
+  `Ix.Tc.NestedRecursiveFixture.semanticBoxShape._native.native_decide.ax_1_5
+]
+
+private def nestedSemanticWFNative : Array Lean.Name :=
+  nestedSemanticBoxNative ++ #[
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeNested_isSome._native.native_decide.ax_1_1,
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeRecursors_eq._native.native_decide.ax_1_1,
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeRules_eq._native.native_decide.ax_1_1
+  ]
+
+private def nestedSemanticCertificateNative : Array Lean.Name :=
+  nestedSemanticWFNative.push
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeAfter_isSome._native.native_decide.ax_1_1
+
+private def nestedSemanticFactsNative : Array Lean.Name :=
+  nestedSemanticCertificateNative ++ #[
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeNodeName._native.native_decide.ax_1_1,
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeRestoredClean._native.native_decide.ax_1_1
+  ]
+
+private def nestedSemanticAdmissionNative : Array Lean.Name :=
+  nestedSemanticCertificateNative ++ #[
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeNodeName._native.native_decide.ax_1_1,
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeSourceInventory._native.native_decide.ax_1_1,
+    `Ix.Tc.NestedRecursiveFixture.semanticTreeSourceInventory._native.native_decide.ax_1_2
+  ]
+
+private def nestedAdmissionNativeAxiom (name : Lean.Name) : Lean.Name :=
+  nativeAxiom `Ix.Tc.Verify.Inductive.NestedAdmission name
+
+private def nestedAdmissionPublicNative : Array Lean.Name := #[
+  `Ix.Tc.NestedRecursiveFixture.nestedCatalog_node._native.native_decide.ax_1_1,
+  `Ix.Tc.NestedRecursiveFixture.nestedCatalog_node._native.native_decide.ax_1_2,
+  `Ix.Tc.NestedRecursiveFixture.nestedCatalog_tree._native.native_decide.ax_1_1,
+  `Ix.Tc.NestedRecursiveFixture.nestedNameOf_node._native.native_decide.ax_1_1,
+  `Ix.Tc.NestedRecursiveFixture.nestedNameOf_node._native.native_decide.ax_1_2,
+  `Ix.Tc.NestedRecursiveFixture.nestedNameOf_node._native.native_decide.ax_1_3,
+  `Ix.Tc.NestedRecursiveFixture.nestedNameOf_node._native.native_decide.ax_1_4,
+  `Ix.Tc.NestedRecursiveFixture.nestedNameOf_tree._native.native_decide.ax_1_1,
+  `Ix.Tc.NestedRecursiveFixture.nestedNameOf_tree._native.native_decide.ax_1_2,
+  `Ix.Tc.NestedRecursiveFixture.nestedNameOf_tree._native.native_decide.ax_1_3
+]
+
+private def nestedAdmissionPrivateNative : Array Lean.Name := #[
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedFamilyBlockLoadedNative._native.native_decide.ax_1_1,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedMemberShapeFactsNative._native.native_decide.ax_1_1,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedMemberShapeFactsNative._native.native_decide.ax_1_2,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedMemberShapeFactsNative._native.native_decide.ax_1_3,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedMemberShapeFactsNative._native.native_decide.ax_1_4,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedNodeDirectConstructor._native.native_decide.ax_1_1,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedNodeTypeRawNative._native.native_decide.ax_1_1,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedTreeDirectOwner._native.native_decide.ax_1_1,
+  nestedAdmissionNativeAxiom
+    `Ix.Tc.NestedRecursiveFixture.nestedTreeTypeRawNative._native.native_decide.ax_1_1
+]
+
+private def nestedFamilyCertificateNative : Array Lean.Name :=
+  nativeUnion
+    (nativeUnion nameNative nestedSemanticAdmissionNative)
+    (nestedAdmissionPublicNative ++ nestedAdmissionPrivateNative)
+
+private def nestedFamilyKernelNative : Array Lean.Name :=
+  inductiveNative.push
+    (nestedAdmissionNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.nestedFamilyKernelSucceededNative._native.native_decide.ax_1_1)
+
+private def nestedSemanticTransactionClosureNative : Array Lean.Name :=
+  let withSemantics := nativeUnion nestedFamilyCertificateNative
+    nestedSemanticFactsNative
+  let withKernel := nativeUnion withSemantics nestedFamilyKernelNative
+  let withNode := nativeUnion withKernel nestedNodeConstructorValidationNative
+  let withWrap := nativeUnion withNode nestedWrapConstructorValidationNative
+  let withBoxIngress := withWrap.push
+    (nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.boxIngressSucceededNative._native.native_decide.ax_1_1)
+  withBoxIngress.push
+    (nestedRecursiveFixtureNativeAxiom
+      `Ix.Tc.NestedRecursiveFixture.treeIngressSucceededNative._native.native_decide.ax_1_1)
+
+/- The physical nested-recursor slice is deliberately separate from the
+source transaction above.  It compiles the retained kernel declarations,
+ingresses the generated two-member recursor block, proves both restored iota
+patterns, and admits family plus recursors in one semantic closure.  Generate
+the repetitive exact native names structurally, but keep every declaration
+and cardinality visible in the manifest. -/
+private def nestedRecursorNativeUserName (decl : String)
+    (index : Nat) : Lean.Name :=
+  Lean.Name.str
+    (Lean.Name.str
+      (Lean.Name.str
+        (Lean.Name.str `Ix.Tc.NestedRecursiveFixture decl)
+        "_native")
+      "native_decide")
+    s!"ax_1_{index + 1}"
+
+private def nestedRecursorNativeSeries (moduleName : Lean.Name)
+    (decl : String) (count : Nat) : Array Lean.Name :=
+  (Array.range count).map fun index =>
+    nativeAxiom moduleName (nestedRecursorNativeUserName decl index)
+
+private def nestedRecursorPublicNativeSeries (decl : String)
+    (count : Nat) : Array Lean.Name :=
+  (Array.range count).map fun index =>
+    nestedRecursorNativeUserName decl index
+
+private def nestedRecursorFixtureNativeSeries (decl : String)
+    (count : Nat := 1) : Array Lean.Name :=
+  nestedRecursorNativeSeries
+    `Ix.Tc.Verify.Inductive.NestedRecursorFixture decl count
+
+private def nestedRecursorPatternNativeSeries (decl : String)
+    (count : Nat := 1) : Array Lean.Name :=
+  nestedRecursorNativeSeries
+    `Ix.Tc.Verify.Inductive.NestedRecursorPattern decl count
+
+private def nestedRecursorSoundnessNativeSeries (decl : String)
+    (count : Nat := 1) : Array Lean.Name :=
+  nestedRecursorNativeSeries
+    `Ix.Tc.Verify.Inductive.NestedRecursorSoundness decl count
+
+private def nestedRecursorAdmissionNativeSeries (decl : String)
+    (count : Nat := 1) : Array Lean.Name :=
+  nestedRecursorNativeSeries
+    `Ix.Tc.Verify.Inductive.NestedRecursorAdmission decl count
+
+private def nestedRecursorCompilerBaseNative : Array Lean.Name :=
+  nameContextNative.push mutualInternDataValueNative
+
+private def nestedRecursorCompilerRunNative : Array Lean.Name :=
+  nestedRecursorCompilerBaseNative ++
+    nestedRecursorFixtureNativeSeries "nestedCompilerSucceededNative"
+
+private def nestedRecursorCompilerIdentityNative : Array Lean.Name :=
+  nestedRecursorCompilerBaseNative ++
+    nestedRecursorFixtureNativeSeries "nestedCompiledIdentityFactsNative" 7
+
+private def nestedRecursorIngressNative : Array Lean.Name :=
+  nestedRecursorCompilerBaseNative ++
+    nestedRecursorFixtureNativeSeries "recursorIngressSucceededNative"
+
+private def nestedRecursorRepresentationNative : Array Lean.Name :=
+  nestedRecursorCompilerBaseNative ++
+    nestedRecursorPatternNativeSeries
+      "nestedRecursorRepresentationFactsNative" 20 ++
+    nestedRecursorPatternNativeSeries "treeRecOneRuleZero" ++
+    nestedRecursorPatternNativeSeries "treeRecRuleZero"
+
+private def nestedRecursorSemanticNative : Array Lean.Name :=
+  nativeUnion nestedSemanticFactsNative nestedSemanticAdmissionNative
+
+private def nestedRecursorNodePublicNative : Array Lean.Name :=
+  nestedRecursorPublicNativeSeries "nestedRecursorCatalog_node" 4 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_node" 4 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_treeRec" 5
+
+private def nestedRecursorWrapPublicNative : Array Lean.Name :=
+  nestedRecursorPublicNativeSeries "nestedRecursorCatalog_wrap" 2 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_treeRecOne" 6 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_wrap" 2
+
+private def nestedRecursorNodeSoundnessNative : Array Lean.Name :=
+  nestedRecursorSoundnessNativeSeries "commonBindersLength" ++
+    nestedRecursorSoundnessNativeSeries "nodeConstructorTypeInstLNil" ++
+    nestedRecursorSoundnessNativeSeries "nodeRuleBindersLength" ++
+    nestedRecursorSoundnessNativeSeries "nodeRuleLhsShape"
+
+private def nestedRecursorWrapSoundnessNative : Array Lean.Name :=
+  nestedRecursorSoundnessNativeSeries "commonBindersLength" ++
+    nestedRecursorSoundnessNativeSeries "treeFamilyTypeInstLNil" ++
+    nestedRecursorSoundnessNativeSeries "treeFamilyTypeShape" ++
+    nestedRecursorSoundnessNativeSeries "wrapConstructorTypeInstLNil" ++
+    nestedRecursorSoundnessNativeSeries "wrapRuleBindersLength" ++
+    nestedRecursorSoundnessNativeSeries "wrapRuleLhsShape"
+
+private def nestedRecursorNodePatternNative : Array Lean.Name :=
+  nativeUnion
+    (nativeUnion
+      (nativeUnion nestedRecursorRepresentationNative
+        nestedSemanticFactsNative)
+      nestedRecursorNodePublicNative)
+    nestedRecursorNodeSoundnessNative
+
+private def nestedRecursorWrapPatternNative : Array Lean.Name :=
+  nativeUnion
+    (nativeUnion
+      (nativeUnion nestedRecursorRepresentationNative
+        nestedSemanticFactsNative)
+      nestedRecursorWrapPublicNative)
+    nestedRecursorWrapSoundnessNative
+
+private def nestedRecursorPublicNative : Array Lean.Name :=
+  nestedRecursorPublicNativeSeries "nestedRecursorCatalog_box" 1 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorCatalog_node" 4 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorCatalog_tree" 3 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorCatalog_treeRec" 5 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorCatalog_treeRecOne" 6 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorCatalog_wrap" 2 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_node" 4 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_tree" 3 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_treeRec" 5 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_treeRecOne" 6 ++
+    nestedRecursorPublicNativeSeries "nestedRecursorNameOf_wrap" 2
+
+private def nestedRecursorMemberShapeNative : Array Lean.Name :=
+  nestedRecursorNativeSeries `Ix.Tc.Verify.Inductive.NestedAdmission
+    "nestedMemberShapeFactsNative" 4
+
+private def nestedRecursorAdmissionFactsNative : Array Lean.Name :=
+  nestedRecursorAdmissionNativeSeries "nestedBlocksDistinct" ++
+    nestedRecursorAdmissionNativeSeries "nestedBoxDirectOwner" ++
+    nestedRecursorAdmissionNativeSeries
+      "nestedNodeDirectConstructorComplete" ++
+    nestedRecursorAdmissionNativeSeries "nestedRecursorNodeTypeRawNative" ++
+    nestedRecursorAdmissionNativeSeries "nestedRecursorTreeTypeRawNative" ++
+    nestedRecursorAdmissionNativeSeries "nestedTreeDirectOwnerComplete" ++
+    nestedRecursorAdmissionNativeSeries "nestedWrapDirectConstructor" ++
+    nestedRecursorAdmissionNativeSeries "treeRecDirectOwner" ++
+    nestedRecursorAdmissionNativeSeries "treeRecNotFamily" ++
+    nestedRecursorAdmissionNativeSeries "treeRecOneDirectOwner" ++
+    nestedRecursorAdmissionNativeSeries "treeRecOneNotFamily"
+
+private def nestedRecursorRegisteredRuleNative : Array Lean.Name :=
+  nestedRecursorPatternNativeSeries "treeNodeRuleHeadNative" ++
+    nestedRecursorPatternNativeSeries "treeNodeRuleRawNative" ++
+    nestedRecursorPatternNativeSeries "treeRecOneTypeRawNative" ++
+    nestedRecursorPatternNativeSeries "treeRecTypeRawNative" ++
+    nestedRecursorPatternNativeSeries "treeWrapRuleHeadNative" ++
+    nestedRecursorPatternNativeSeries "treeWrapRuleRawNative"
+
+private def nestedRecursorBlockLookupNative : Array Lean.Name :=
+  nestedRecursorFixtureNativeSeries "nestedRecursorBlockLoadedNative" ++
+    nestedRecursorFixtureNativeSeries
+      "nestedRecursorFamilyBlockLoadedNative"
+
+private def nestedRecursorAtomicAdmissionNative : Array Lean.Name :=
+  let withSemantics := nativeUnion nestedRecursorRepresentationNative
+    nestedRecursorSemanticNative
+  let withPublic := nativeUnion withSemantics nestedRecursorPublicNative
+  let withShapes := nativeUnion withPublic nestedRecursorMemberShapeNative
+  let withAdmission := nativeUnion withShapes nestedRecursorAdmissionFactsNative
+  let withRules := nativeUnion withAdmission nestedRecursorRegisteredRuleNative
+  let withNode := nativeUnion withRules nestedRecursorNodeSoundnessNative
+  let withWrap := nativeUnion withNode nestedRecursorWrapSoundnessNative
+  nativeUnion withWrap nestedRecursorBlockLookupNative
+
+private def nestedRecursorOperationalNative : Array Lean.Name :=
+  nestedRecursorFixtureNativeSeries "nestedCompiledIdentityFactsNative" 7 ++
+    nestedRecursorFixtureNativeSeries "nestedCompilerGroundedNative" ++
+    nestedRecursorFixtureNativeSeries "nestedCompilerSucceededNative" ++
+    nestedRecursorFixtureNativeSeries "nestedRecursorFamilySucceededNative" ++
+    nestedRecursorFixtureNativeSeries "nestedRecursorKernelSucceededNative" ++
+    nestedRecursorFixtureNativeSeries "recursorEntriesUniqueNative" ++
+    nestedRecursorFixtureNativeSeries "recursorEntryIdsNative" ++
+    nestedRecursorFixtureNativeSeries "recursorIngressSucceededNative" ++
+    #[nativeAxiom `Ix.Tc.Inductive
+      `Ix.Tc.RecM.canonicalAuxOrder._native.native_decide.ax_9]
+
+private def nestedRecursorAtomicClosureNative : Array Lean.Name :=
+  nativeUnion nestedRecursorAtomicAdmissionNative
+    nestedRecursorOperationalNative
+
+private def nestedRestoredPatternUpstreamDebt : Array Lean.Name := #[
+  ``Lean4Lean.VEnv.IsDefEqU.forallE_inv_stratified,
+  ``Lean4Lean.VEnv.IsDefEqU.sort_inv
+]
 
 private def booleanAcceptanceNativeAxiom (name : Lean.Name) : Lean.Name :=
   nativeAxiom `Ix.Tc.Verify.Driver.BooleanAcceptance name
@@ -229,33 +2338,11 @@ private def serializedBooleanNativeAxiom (name : Lean.Name) : Lean.Name :=
 private def literalBlobsNativeAxiom (name : Lean.Name) : Lean.Name :=
   nativeAxiom `Ix.Tc.Verify.Ingress.LiteralBlobs name
 
-/- The concrete Boolean E2b witness deliberately evaluates the real ingress,
-checker, content-address, scoping, and finite catalog computations.  Keep every
-fixture-local native proof explicit rather than treating the witness as one
-opaque executable assumption. -/
-private def booleanEnumerationNative : Array Lean.Name := inductiveNative ++ #[
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.familyBodySucceededNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.familyClassificationSucceededNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.recursorBlockLoadedAfterFamilyNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.recursorBodySucceededNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.recursorClassificationSucceededNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1,
-  enumerationAcceptanceNativeAxiom
-    `Ix.Tc.BooleanEnumerationFixture.recursorOwnerNative._native.native_decide.ax_1_1,
+/- The explicit Boolean one-family admission consumes the finite catalog,
+ingress, generation, rule, and pattern facts below.  Checker executions are
+kept out of this shared semantic slice so the one-family root cannot inherit
+them merely because the larger end-to-end witness also records those runs. -/
+private def booleanSemanticFixtureNative : Array Lean.Name := #[
   enumerationFixtureNativeAxiom
     `Ix.Tc.BooleanEnumerationFixture.catalogFalseNative._native.native_decide.ax_1_1,
   enumerationFixtureNativeAxiom
@@ -379,6 +2466,48 @@ private def booleanEnumerationNative : Array Lean.Name := inductiveNative ++ #[
   enumerationFixtureNativeAxiom
     `Ix.Tc.BooleanEnumerationFixture.trueTypeNative._native.native_decide.ax_1_2
 ]
+
+private def booleanSemanticAdmissionNative : Array Lean.Name :=
+    nameNative ++ #[
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorOwnerNative._native.native_decide.ax_1_1
+] ++ booleanSemanticFixtureNative
+
+/- The concrete Boolean end-to-end witness additionally evaluates the real
+block loads, checker branches, content-address context, and canonical
+auxiliary ordering.  Keep every fixture-local native proof explicit rather
+than treating the witness as one opaque executable assumption. -/
+private def booleanEnumerationNative : Array Lean.Name :=
+    inductiveNative ++ #[
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.familyBodySucceededNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.familyClassificationSucceededNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.familyDirectOwnerNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.familyKernelSucceededNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorBlockLoadedNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorBlockLoadedAfterFamilyNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorBodySucceededNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorClassificationSucceededNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorKernelSucceededNative._native.native_decide.ax_1_1,
+  enumerationAcceptanceNativeAxiom
+    `Ix.Tc.BooleanEnumerationFixture.recursorOwnerNative._native.native_decide.ax_1_1
+] ++ booleanSemanticFixtureNative
 
 /- The E3-S family-body bridge consumes only the family-side slice of the
 full end-to-end Boolean witness.  Keep this narrower than
@@ -859,6 +2988,14 @@ private def sortInv : Lean.Name := ``Lean4Lean.VEnv.IsDefEqU.sort_inv
 private def typingDebt : Array Lean.Name :=
   #[forallEInv, sortInv]
 
+/- P0's concrete projection adapter consumes Lean4Lean's structural laws.
+Its uniqueness law reaches the named registered-structure inversion theorem;
+the context-defeq law also crosses Lean4Lean's current unique-typing boundary
+and therefore inherits the two L2 inversion origins.  Keep this exact rather
+than allowing the remainder of the executable inductive-fixture debt. -/
+private def projectionDebt : Array Lean.Name :=
+  typingDebt.push ``Lean4Lean.VEnv.WF.registeredStructureHeadInversion
+
 /- The empty legacy whole-`KEnv` inductive path is forbidden from every G2b
 consumer root.  Keeping this list in the executable audit prevents an
 innocent-looking helper from reintroducing the old `nomatch` dependency. -/
@@ -878,6 +3015,18 @@ private def certificateAdapterForbidden : Array Lean.Name := #[
   ``Ix.Tc.RawRecursorRulePatternRel,
   ``Ix.Tc.InductiveOracle,
   ``Lean4Lean.TrProj
+]
+
+/- `AnnotatedPi`'s upstream certificate is produced by Lean4Lean's executable
+normalization pipeline, so it cannot satisfy the earlier closed-form
+certificate quarantine against `TrProj`.  It must still remain independent of
+all Ix catalog, checker-pattern, and oracle authority. -/
+private def annotatedPiCertificateForbidden : Array Lean.Name := #[
+  ``Ix.Tc.Catalog,
+  ``Ix.Tc.RawInductiveConstRel,
+  ``Ix.Tc.RawRecursorRuleRel,
+  ``Ix.Tc.RawRecursorRulePatternRel,
+  ``Ix.Tc.InductiveOracle
 ]
 
 /- The pre-TrustedBody delta route admitted successful unfolding through a broad
@@ -915,6 +3064,30 @@ not from the ambient semantic inductive oracle retained by E2b. -/
 private def occurrenceValidationForbiddenDependencies : Array Lean.Name :=
   boundedKnotForbiddenDependencies.push ``Ix.Tc.InductiveOracle
 
+/- Existing semantic admission returns the shared `TrustedCatalogLog`, whose
+inductive declaration necessarily mentions its legacy ambient constructor.
+Constructor-insensitive dependency traversal therefore cannot forbid the
+`InductiveOracle` type itself here.  Instead, quarantine every operation that
+materializes or admits an oracle-selected future world. -/
+private def oracleWorldMaterialization : Array Lean.Name := #[
+    ``Ix.Tc.VerifyWorld.admitOracle,
+    ``Ix.Tc.VerifyWorld.le_admitOracle,
+    ``Ix.Tc.OracleBlockCertificate.admit,
+    ``Ix.Tc.OracleBlockCertificate.admitState,
+    ``Ix.Tc.RecM.certifyOracleBackedBlock,
+    ``Ix.Tc.RecM.certifyOracleBackedAdmittedBlock,
+    ``Ix.Tc.SingletonFamilyCatalogLink.oracle,
+    ``Ix.Tc.SingletonRecursorCatalogLink.oracle,
+    ``Ix.Tc.InductiveOracle.reindex,
+    ``Ix.Tc.InductiveOracle.restageMissing,
+    ``Ix.Tc.IndexedRecursivePattern.oracle,
+    ``Ix.Tc.IndexedRecursiveFixture.recursorBlockOracle,
+    ``Ix.Tc.IndexedRecursiveFixture.recursorAtomicAdmission
+]
+
+private def existingSemanticBlockForbiddenDependencies : Array Lean.Name :=
+  boundedKnotForbiddenDependencies ++ oracleWorldMaterialization
+
 /- K2S keeps the global suffix model as a compatibility surface only.  The
 finite positive-fuel construction must neither manufacture that model nor
 reach the older public adapters that consume it. -/
@@ -931,6 +3104,18 @@ private def legacyGlobalSuffix : Array Lean.Name := #[
 
 private def scopedK2SForbiddenDependencies : Array Lean.Name :=
   boundedKnotForbiddenDependencies ++ legacyGlobalSuffix
+
+private def canonicalRecursorForbiddenDependencies : Array Lean.Name :=
+  scopedK2SForbiddenDependencies ++ oracleWorldMaterialization
+
+private def certificateBackedDriverForbiddenDependencies : Array Lean.Name :=
+  scopedK2SForbiddenDependencies ++ oracleWorldMaterialization
+
+-- The generated code for this deliberately exhaustive manifest contains more
+-- than nineteen hundred nested array pushes.  Keep the compiler's structural
+-- recursion budget above the manifest size so adding audited roots cannot make
+-- the audit definition itself fail to compile.
+set_option maxRecDepth 100000
 
 private def roots : Array RootAllowance := #[
   -- Level decision procedures.
@@ -953,7 +3138,9 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Tc.TcM.instantiateUnivParams_wf,
     standardAxioms := standard, nativeAxioms := levelNative },
 
-  -- G3a finite run support and generated-term resource bounds.
+  -- G3a finite run support and generated-term resource bounds. Universe
+  -- instantiation can rebuild sorts/constants and therefore reaches the now
+  -- total expression serializer's standard `UInt8` quotient implementation.
   { root := ``Ix.Tc.KExpr.LiftReach.finite,
     standardAxioms := standardWithoutQuot,
     nativeAxioms := expressionNative },
@@ -961,7 +3148,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standardWithoutQuot,
     nativeAxioms := expressionNative },
   { root := ``Ix.Tc.KExpr.InstUnivReach.finite,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := levelNative },
   { root := ``Ix.Tc.WalkerRequest.reach_finite,
     standardAxioms := standard,
@@ -1003,12 +3190,14 @@ private def roots : Array RootAllowance := #[
     forbiddenDependencies := legacyWholeEnv },
 
   -- G3b closes the remaining formalized walker/direct-intern families and
-  -- ties the exact finite request list to an actual TcM computation.
+  -- ties the exact finite request list to an actual TcM computation. The
+  -- simultaneous/reverse instantiation specs can likewise rebuild serialized
+  -- expressions and inherit the same standard quotient footprint.
   { root := ``Ix.Tc.KExpr.SimulSubstReach.finite,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative },
   { root := ``Ix.Tc.KExpr.InstRevReach.finite,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative },
   { root := ``Ix.Tc.KExpr.AbstractReach.finite,
     standardAxioms := standard, nativeAxioms := expressionNative },
@@ -1271,6 +3460,171 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standardWithoutChoice,
     forbiddenDependencies := certificateAdapterForbidden },
 
+  -- L4L-08's Theory-only block adapter preserves the same quarantine while
+  -- exposing one atomic all-families/all-constructors/all-recursors/all-rules
+  -- transaction rather than a sequence of singleton admissions.
+  { root := ``Ix.Tc.CertifiedBlockGenerationTransaction.trace,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.CertifiedBlockGenerationTransaction.afterWF,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.CertifiedBlockGenerationTransaction.facts,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := certificateAdapterForbidden },
+
+  -- E2c retains the exact Lean4Lean candidate-producer equation alongside
+  -- the certified Theory transaction.  Unlike the Theory-only adapter above,
+  -- this Verify-backed bridge deliberately inherits the pinned analyzer debt.
+  { root := ``Ix.Tc.ProducedGenerationTransaction.facts,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.ExactProducedGenerationTransaction.facts,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+
+  -- First genuine multi-family semantic witness: Tree/TreeList has two
+  -- motives and recursors, five flattened constructors/rules, sibling
+  -- recursion in both directions, and one recursive occurrence below a Pi.
+  { root := ``Ix.Tc.MutualTreeCertificateFixture.breadth,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.MutualTreeCertificateFixture.certifiedFacts,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.MutualTreeCertificateFixture.finalEnvWF,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+
+  -- The production compiler emits this SCC in physical order
+  -- `TreeList, Tree`.  All seven family/constructor entries are linked to the
+  -- complete catalog and admitted atomically without the pending recursor
+  -- pattern/WF witnesses used by the later conditional closure.
+  { root := ``Ix.Tc.MutualTreeFixture.mutualFamilyAtomicClosure,
+    standardAxioms := standard,
+    nativeAxioms := mutualFamilyNative },
+
+  -- E2c's first concrete breadth witness is the exact staged `IndexedVec`
+  -- certificate: one parameter, one changing index, a recursive field, large
+  -- elimination, and both generated rules.  It remains Theory-only here;
+  -- production Ix catalog correspondence is audited in the later linkage.
+  { root :=
+      ``Ix.Tc.IndexedRecursiveCertificateFixture.transaction_generation,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.IndexedRecursiveCertificateFixture.breadth,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.IndexedRecursiveCertificateFixture.certifiedFacts,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.IndexedRecursiveCertificateFixture.producedCertificate_eq,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.IndexedRecursiveCertificateFixture.producedToCertified_eq,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.IndexedRecursiveCertificateFixture.producerLinkedFacts,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+
+  -- The next honest one-family breadth witness is `Acc`: its sole recursive
+  -- occurrence is reached beneath a two-binder Pi telescope, and the
+  -- generated induction hypothesis is therefore itself a function. Like the
+  -- IndexedVec certificate, these roots remain entirely on the Theory side
+  -- of the catalog/checker boundary.
+  { root :=
+      ``Ix.Tc.RecursivePiCertificateFixture.transaction_generation,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.RecursivePiCertificateFixture.breadth,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+  { root := ``Ix.Tc.RecursivePiCertificateFixture.certifiedFacts,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateAdapterForbidden },
+
+  -- `AnnotatedPi` is the first certified singleton whose recursive-Pi
+  -- candidate is genuinely normalized: the stored constructor retains
+  -- `outParam Prop`, while the analyzer-owned candidate exposes `Prop`.
+  -- These certificate roots remain entirely on the Theory side.
+  { root :=
+      ``Ix.Tc.AnnotatedPiCertificateFixture.transaction_generation,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AnnotatedPiCertificateFixture.breadth,
+    standardAxioms := standardWithoutChoice,
+    nativeAxioms := annotatedPiCertificateBreadthNative,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AnnotatedPiCertificateFixture.certifiedFacts,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AnnotatedPiCertificateFixture.producerLinkedFacts,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+
+  -- `AliasFormer` keeps the stored family result at `TypeFamilyAlias`, while
+  -- the analyzer-owned candidate unfolds that reducible dependency to
+  -- `Type`.  These roots certify the non-identity family-result view without
+  -- Ix catalog, checker-pattern, or oracle authority.
+  { root :=
+      ``Ix.Tc.AliasFormerCertificateFixture.transaction_generation,
+    standardAxioms := standard,
+    upstreamAxioms := aliasFormerUpstreamAxioms,
+    sorryOrigins := aliasFormerUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AliasFormerCertificateFixture.breadth,
+    standardAxioms := standardWithoutChoice,
+    nativeAxioms := aliasFormerCertificateBreadthNative,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AliasFormerCertificateFixture.certifiedFacts,
+    standardAxioms := standard,
+    upstreamAxioms := aliasFormerUpstreamAxioms,
+    sorryOrigins := aliasFormerUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AliasFormerCertificateFixture.producerLinkedFacts,
+    standardAxioms := standard,
+    upstreamAxioms := aliasFormerUpstreamAxioms,
+    sorryOrigins := aliasFormerUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+
+  -- `AliasRec` retains `RecAlias AliasRec` in the stored constructor while
+  -- certifying the direct-recursive checked field.  The adapter packages the
+  -- pinned upstream generation/WF replay without Ix-side semantic authority.
+  { root :=
+      ``Ix.Tc.AliasRecCertificateFixture.transaction_generation,
+    standardAxioms := standard,
+    upstreamAxioms := aliasRecUpstreamAxioms,
+    sorryOrigins := aliasRecUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AliasRecCertificateFixture.breadth,
+    standardAxioms := standard,
+    upstreamAxioms := aliasRecUpstreamAxioms,
+    nativeAxioms := aliasRecCertificateBreadthNative,
+    sorryOrigins := aliasRecUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+  { root := ``Ix.Tc.AliasRecCertificateFixture.certifiedFacts,
+    standardAxioms := standard,
+    upstreamAxioms := aliasRecUpstreamAxioms,
+    sorryOrigins := aliasRecUpstreamDebt,
+    forbiddenDependencies := annotatedPiCertificateForbidden },
+
   -- E2c occurrence-validation seam.  These roots expose the selected loaded
   -- family and strengthen every production guard into the elementwise
   -- valid-inductive-application invariant, without oracle authority.
@@ -1307,6 +3661,20 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard,
     nativeAxioms := inferNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.PositiveParameterComparisonTrace.theoryDefEqScoped,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    -- This is the K2S instantiation bridge, not the oracle-free occurrence
+    -- theorem above. `ScopedWhnfStateInv` contains `TrustedCatalogLog`, whose
+    -- ambient constructor names `InductiveOracle`; semantic use remains
+    -- confined to the projected `ScopedWFAtOn.isDefEq` field.
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.ValidPositiveRecursiveApplicationHeader.theoryParametersScoped,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
   { root := ``Ix.Tc.RecM.positivityGroupMatches_eq_true_iff,
     standardAxioms := standardWithoutChoice,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
@@ -1341,10 +3709,825 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := inferNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2b's first executable fragment.  The family and recursor physical
-  -- blocks are linked positionally to one certified singleton enumeration;
-  -- the recursor pattern is proved from the exact registered equation and
-  -- then consumed by the ordinary E0 oracle-backed block transaction.
+  -- E2c production-traversal seam.  Root-free domains are state-preserving;
+  -- direct recursive-family applications inherit the oracle-free occurrence
+  -- invariant; and forall success exposes the decremented recursive run plus
+  -- exact local-context restoration.
+  { root := ``Ix.Tc.RecM.withLctxRestoration_success,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkPositivityDomainFuel_rootFree,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkPositivityDomainFuel_direct,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkPositivityDomainFuel_direct_valid,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkPositivityDomainFuel_nested,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkPositivityDomainFuel_forall_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkPositivityDomainFuel_forall_negative,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- Exhaustive nested positivity.  These roots expose exact header and
+  -- constructor lookup, specialization selection, source-ordered constructor
+  -- traversal, universe instantiation, parameter stripping/substitution,
+  -- recursive field-domain checks, and context restoration.  The final root
+  -- classifies every successful production domain without a branch oracle.
+  { root := ``Ix.Tc.RecM.findNestedPositivityGroup?_some,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.checkNestedPositivityApplicationPreconditions_success_iff,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.checkNestedPositivityApplicationResolvedFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.checkNestedPositivityApplicationCheckedFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkNestedConstructorFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkNestedConstructorsFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.checkFreshNestedPositivityApplicationFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.stripNestedCtorParameters_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkNestedCtorFieldsLoopFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkNestedCtorFieldsFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.completeNestedConstructor_of_trace,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.completeNestedConstructorList_of_trace,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.completeFreshNestedPositivity_of_trace,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.completeNestedPositivityChecked_of_trace,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.completeNestedPositivityResolved_of_trace,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.checkNestedPositivityApplicationFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.checkNestedPositivityApplicationFuel_complete,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkPositivityDomainFuel_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- E2c nested auxiliary expansion.  The complete positivity trace emits an
+  -- exact existing-or-fresh request; the flat scanner classifies every
+  -- successful detector call as an unchanged pair or one fresh exact append.
+  -- The source-ordered constructor and bounded-queue histories prove that the
+  -- real public builder returns an aligned, duplicate-free physical/key list.
+  -- The next fixture must identify its positivity request with one detector
+  -- call; it cannot replace that reachability evidence with DefEq.
+  { root := ``Ix.Tc.lawfulBEqNestedSpecializationKey,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedAuxiliaryHeaderRel.key_eq,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedAuxiliaryHeaderRel.positivityFlatIdentity,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedAuxiliaryAppendTrace.member_mem,
+    standardAxioms := standard,
+    nativeAxioms := occurrenceValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedAuxiliaryAppendTrace.key_mem,
+    standardAxioms := standard,
+    nativeAxioms := occurrenceValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.appendNestedAuxiliary_fresh,
+    standardAxioms := standard,
+    nativeAxioms := occurrenceValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.appendNestedAuxiliary_existing,
+    standardAxioms := standard,
+    nativeAxioms := occurrenceValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxSeenSound.empty,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxSeenSound.push,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxTransition.seenSound,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxTransition.flat_mem,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxTransition.key_mem,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxHistory.single,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxHistory.trans,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxHistory.seenSound,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxHistory.flat_mem,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxHistory.key_mem,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxQueueExact.empty,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxQueueExact.pushOriginal,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxQueueExact.transition,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.FlatAuxQueueExact.history,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.appendNestedAuxiliary_transition,
+    standardAxioms := standard,
+    nativeAxioms := occurrenceValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.appendNestedAuxiliary_seenSound,
+    standardAxioms := standard,
+    nativeAxioms := occurrenceValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryDetectNestedCore_transition,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryDetectNested_transition,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryDetectNested_seenSound,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.scanFlatConstructorFields_history,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.scanFlatConstructor_history,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.scanFlatConstructors_history,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.buildFlatBlockQueueStep_history,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.runBounded_flatAuxHistory,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.seedFlatBlockMembers_exact,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.buildFlatBlockWithAuxSeen_exact,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.buildFlatBlock_auxiliaryOrder,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.CompleteNestedPositivityApplicationTrace.auxiliaryRequest,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.CompleteNestedPositivityApplicationTrace.producedRequest,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- Concrete E2c nested reachability.  The compiler-shaped Box/Tree fixture
+  -- runs production ingress, positivity, and flat-block construction on the
+  -- same `Box Tree` occurrence.  Its headline root proves that the exact
+  -- fresh positivity request is retained under the audited queue invariant.
+  { root := ``Ix.Tc.NestedRecursiveFixture.boxIngressRun,
+    standardAxioms := standard,
+    nativeAxioms := levelNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.boxIngressSucceededNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.treeIngressRun,
+    standardAxioms := standard,
+    nativeAxioms := levelNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.treeIngressSucceededNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.boxConcreteHeader,
+    standardAxioms := standard,
+    nativeAxioms := levelNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.boxConcreteHeaderMatchesNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nodeConcreteType,
+    standardAxioms := standard,
+    nativeAxioms := levelNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.nodeConcreteTypeNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.positivityRun,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.positivitySucceededNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedWhnfRun,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.nestedWhnfSucceededNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedWhnfResult_eq,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.nestedWhnfResultNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedActionRun,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursiveActionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.requestHeaderRelation,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.positivityCompleteTrace,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursiveActionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.boxLookupRun,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.boxLookupSucceededNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.boxLookupConcrete_eq,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.boxLookupConcreteNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.positivityRequestProduced,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursiveProducedNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.positivityRequestFreshExpansion,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursiveFreshNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.flatBuildRun,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.flatBuildSucceededNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.builtFlatShape,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.builtFlatShapeNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.requestedAuxiliaryPresent,
+    standardAxioms := standard,
+    nativeAxioms := nameContextNative.push
+      (nestedRecursiveFixtureNativeAxiom
+        `Ix.Tc.NestedRecursiveFixture.builtFlatShapeNative._native.native_decide.ax_1_1),
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedAuxiliaryReachability,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursiveReachabilityNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- Exact Lean4Lean syntax and semantic transport for the retained nested
+  -- member.  The outer field reaches the fresh auxiliary; the auxiliary's
+  -- own field recursively reaches the original Tree member at lower fuel.
+  { root := ``Ix.Tc.NestedRecursiveFixture.treeCandidateSyntax,
+    standardAxioms := standard,
+    nativeAxioms := nestedTreeCandidateSyntaxNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedAuxiliaryCandidateTarget,
+    standardAxioms := standard,
+    nativeAxioms := nestedAuxiliaryCandidateTargetNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedOuterPositivityTransport,
+    standardAxioms := standard,
+    nativeAxioms := nestedOuterTransportNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedOuterConstructorPositivityTrace,
+    standardAxioms := standard,
+    nativeAxioms := nestedOuterTransportNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedAuxiliaryFieldProductionTrace,
+    standardAxioms := standard,
+    nativeAxioms := nestedAuxiliaryProductionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedAuxiliaryPositivityTransport,
+    standardAxioms := standard,
+    nativeAxioms := nestedAuxiliaryTransportNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedAuxiliaryFieldProductionTraceAt,
+    standardAxioms := standard,
+    nativeAxioms := nestedAuxiliaryProductionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedAuxiliaryConstructorPositivityTraceAt,
+    standardAxioms := standard,
+    nativeAxioms := nestedAuxiliaryConstructorNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedAuxiliaryConstructorPositivityTrace,
+    standardAxioms := standard,
+    nativeAxioms := nestedAuxiliaryConstructorNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.leanFlatNodeConstructorTypeValidationTrace,
+    standardAxioms := standard,
+    nativeAxioms := nestedNodeConstructorValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.leanFlatNodeConstructorValidationRun,
+    standardAxioms := standard,
+    nativeAxioms := nestedNodeConstructorValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.leanFlatWrapConstructorTypeValidationTrace,
+    standardAxioms := standard,
+    nativeAxioms := nestedWrapConstructorValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.leanFlatWrapConstructorValidationRun,
+    standardAxioms := standard,
+    nativeAxioms := nestedWrapConstructorValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- Completed nested semantic transaction.  The generic adapter consumes a
+  -- pinned Lean4Lean `NestedBlockCertificate`; the concrete roots then prove
+  -- restored source/recursor/rule well-formedness, run Ix's real nested
+  -- family checker, and admit the exact two-member source block atomically.
+  -- No auxiliary flattening name, legacy inductive oracle, or pending axiom
+  -- may enter this completed boundary.
+  { root := ``Ix.Tc.NestedFamilyCatalogLink.translateMember,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedFamilyCatalogLink.semanticEntry,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedFamilyCatalogLink.transition,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.semanticTreeCertificate,
+    standardAxioms := standard,
+    nativeAxioms := nestedSemanticCertificateNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.semanticTreeTransactionFacts,
+    standardAxioms := standard,
+    nativeAxioms := nestedSemanticFactsNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedFamilyKernelRun,
+    standardAxioms := standard,
+    nativeAxioms := nestedFamilyKernelNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedFamilyBlockCertificate,
+    standardAxioms := standard,
+    nativeAxioms := nestedFamilyCertificateNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedFamilyAtomicAdmission,
+    standardAxioms := standard,
+    nativeAxioms := nestedFamilyCertificateNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedSemanticTransactionClosure,
+    standardAxioms := standard,
+    nativeAxioms := nestedSemanticTransactionClosureNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+
+  -- Completed physical nested-recursor transaction.  The compiler and
+  -- ingress roots pin the actual generated block; the two pattern roots pin
+  -- the restored node/wrap equations independently; the final roots require
+  -- all-or-nothing family-plus-recursor admission.  The only `sorryAx`
+  -- origins are two exact inversion lemmas inherited from Lean4Lean.
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedCompilerRun,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorCompilerRunNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedCompiledIdentityFacts,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorCompilerIdentityNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.recursorIngressRun,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorIngressNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.NestedRecursiveFixture.nestedRecursorRepresentationFacts,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorRepresentationNative,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.treeNodePatternRel,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorNodePatternNative,
+    sorryOrigins := nestedRestoredPatternUpstreamDebt,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.treeWrapPatternRel,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorWrapPatternNative,
+    sorryOrigins := nestedRestoredPatternUpstreamDebt,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedRecursorAtomicAdmission,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorAtomicAdmissionNative,
+    sorryOrigins := nestedRestoredPatternUpstreamDebt,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.NestedRecursiveFixture.nestedRecursorAtomicClosure,
+    standardAxioms := standard,
+    nativeAxioms := nestedRecursorAtomicClosureNative,
+    sorryOrigins := nestedRestoredPatternUpstreamDebt,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+
+  -- E2c generated-recursor metadata.  The seven cached header fields are
+  -- derived positionally from the certified flat block and are invariant
+  -- under both best-effort and complete rule population.  The final root
+  -- covers the actual anonymous-mode cache insertion phase; none of these
+  -- roots may recover the legacy inductive oracle.
+  { root := ``Ix.Tc.GeneratedRecursorMetadata.at_of_expectedFlat,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.initialGeneratedRecursor_metadata,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursor.metadata_setRules,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursor.metadata_withRules,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursor.ty_withRules,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursor.map_metadata_modify_withRules,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursor.map_metadata_zipWithRules,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursor.map_ty_zipWithRules,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.commitGeneratedRecursorRulesAt_artifacts,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.populateOptionalGeneratedRecursorRules_metadata,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecM.populateCompleteGeneratedRecursorRules_metadata,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.populateRecursorRulesFromBlock_artifacts,
+    standardAxioms := standard,
+    nativeAxioms := inductiveNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.populateRecursorRulesFromBlock_metadata,
+    standardAxioms := standard,
+    nativeAxioms := inductiveNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorSemantics.CanonicalRulesS.generatedRuleAt,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorSemantics.CanonicalArtifactsS.withRules,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorSemantics.CanonicalTypeS.canonical,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorSemantics.CanonicalRulesS.canonical,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorSemantics.CanonicalArtifactsS.canonical,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorSemantics.RecM.commitGeneratedRecursorRulesAt_canonicalAt,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.buildGeneratedRecursorTypes_metadata,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.buildAndCacheGeneratedRecursors_metadata,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- E2c generated-recursor type closure. Production closes the accumulated
+  -- domains through explicit right-to-left intern requests. These roots prove
+  -- exact finite-support execution, operation-shaped structural translation,
+  -- and equality with Lean4Lean's public canonical mixed recursor type.
+  { root := ``Ix.Tc.CertifiedGenerationTransaction.generationEnv,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.opened_toCtx,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.isType_forallN_inv,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.onTel_isType_getElem,
+    standardAxioms := propextOnly,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorTypeClosure.canonical_onTel_and_bodyType,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.canonical_domainType,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.canonical_bodyType,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorTypeClosure.TelescopeS.of_canonical,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorTypeClosure.closeV_eq_forallN_take,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.closeV_canonical,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.TelescopeS.close,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.run_exact,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.run_translation,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.run_canonicalType,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.GeneratedRecursorTypeClosure.buildRecType_decompose,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.GeneratedRecursorTypeClosure.buildRecType_canonical_of_body,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.familyBuildTypeExecution,
+    standardAxioms := standard,
+    nativeAxioms := generatedRecursorTypeFixtureNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.familyBuildArtifactsExecution,
+    standardAxioms := standard,
+    nativeAxioms := generatedRecursorRuleFixtureNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- E2c generated-recursor commit, selection, and exhaustive comparison.
+  -- Production selection compares complete closed types through an explicit
+  -- finite fold; one K2S successor layer preserves the scoped state across
+  -- selection and gives semantic meaning to the repeated type and positional
+  -- rule comparisons.
+  { root := ``Ix.Tc.RecM.checkGeneratedRecursorFromCache_success,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkGeneratedRecursorFromCache_canonical,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkGeneratedRecursorFromCache_canonicalScoped,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := scopedK2SForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.selectGeneratedRecursorIndex_preservesScoped,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := scopedK2SForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.familyRuleCommitExecution,
+    standardAxioms := standard,
+    nativeAxioms := generatedRecursorCommitFixtureNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.familyCacheCheckExecution,
+    standardAxioms := standard,
+    nativeAxioms := generatedRecursorCheckerFixtureNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.familyCacheCheckCanonicalScoped,
+    standardAxioms := standard,
+    nativeAxioms := generatedRecursorCanonicalFixtureNative,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+
+  -- E2c outer member closure and exact semantic admission.  The explicit
+  -- transition bridge fixes both Theory environments and requires complete
+  -- trusted provenance for every exact physical member; the existing-block
+  -- specialization keeps that environment unchanged for the recursor block.
+  -- Their shared log type mentions the legacy ambient constructor, so the
+  -- audit forbids every oracle constructor/world-materialization operation
+  -- rather than the `InductiveOracle` type name itself.
+  { root :=
+      ``Ix.Tc.SemanticBlockTransitionCertificate.le_admittedWorld,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.SemanticBlockTransitionCertificate.admit,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.SemanticBlockTransitionCertificate.admitState,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.ExistingSemanticBlockCertificate.le_admittedWorld,
+    standardAxioms := standard,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.ExistingSemanticBlockCertificate.admit,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.ExistingSemanticBlockCertificate.admitState,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.OneFamilyRecursorCertificate.atomicClosure,
+    standardAxioms := standard,
+    forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.familyRecursorAtomicClosure,
+    standardAxioms := standard,
+    nativeAxioms := generatedRecursorAtomicClosureNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.producerLinkedOneFamilyClosure,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    nativeAxioms := indexedProducerClosureNative,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.RecursivePiRecursorFixture.recursivePiAtomicClosure,
+    standardAxioms := standard,
+    nativeAxioms := recursivePiAtomicClosureNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.AnnotatedPiRecursorFixture.annotatedPiAtomicClosure,
+    standardAxioms := standard,
+    upstreamAxioms := annotatedPiUpstreamAxioms,
+    nativeAxioms := annotatedPiAtomicClosureNative,
+    sorryOrigins := annotatedPiUpstreamDebt,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.AliasFormerRecursorFixture.aliasFormerAtomicClosure,
+    standardAxioms := standard,
+    upstreamAxioms := aliasFormerUpstreamAxioms,
+    nativeAxioms := aliasFormerAtomicClosureNative,
+    sorryOrigins := aliasFormerUpstreamDebt,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.AliasRecRecursorFixture.aliasRecAtomicClosure,
+    standardAxioms := standard,
+    upstreamAxioms := aliasRecUpstreamAxioms,
+    nativeAxioms := aliasRecAtomicClosureNative,
+    sorryOrigins := aliasRecUpstreamDebt,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+
+  -- E2c flat semantic transport.  The refined flat production trace erases
+  -- to the exhaustive classifier, and the operation-shaped cross-kernel
+  -- contract recursively constructs Lean4Lean's retained positivity trace.
+  -- Nested auxiliary expansion remains a separate explicit bridge.
+  { root := ``Ix.Tc.FlatPositivityDomainTrace.toPositivityDomainTrace,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.FlatPositivityTraceTransport.constructorPositivityTrace,
+    standardAxioms := standard,
+    nativeAxioms := inferNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- E2c's concrete cross-kernel trace bridge.  These roots start at the
+  -- exact positivity calls selected by the production IndexedVec family
+  -- checker, transport those operations to Lean4Lean, and replay the complete
+  -- retained constructor validator.  The direct recursive fixture has no
+  -- nested auxiliary expansion; that remains the next generic E2c bridge.
+  { root :=
+      ``Ix.Tc.IndexedRecursiveFixture.indexedVecConsConstructorValidationRun,
+    standardAxioms := standard,
+    nativeAxioms := indexedConstructorValidationNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- E2c's first production-linked indexed/recursive vertical slice.  The
+  -- generated cons equation includes its predecessor recursive call; the
+  -- oracle is then instantiated by exact anonymous ingress, production
+  -- family/recursor checking, exact ownership, and atomic admission.  The
+  -- same executable witness rejects a recursor whose stored index arity was
+  -- changed while its canonical type and rules were retained.
+  { root := ``Lean4Lean.VEnv.HasType.lamN_appN_beta,
+    standardAxioms := standard,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursivePattern.nilPatternRel,
+    standardAxioms := standard,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursivePattern.consPatternRel,
+    standardAxioms := standard,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursivePattern.oracle,
+    standardAxioms := standard,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.IndexedRecursiveFixture.endToEndAcceptance,
+    standardAxioms := standard,
+    nativeAxioms := indexedRecursiveNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+
+  -- Elimination-breadth regression over exact kernel declarations.  These
+  -- roots compile, ingress, and run the production family/recursor checkers
+  -- for both a source-universe-bearing small eliminator and `Eq`'s positive
+  -- K branch, then relate the stored physical metadata to Lean4Lean's exact
+  -- generation trace.
+  { root := ``Ix.Tc.EliminationBreadthFixture.smallEliminationAcceptance,
+    standardAxioms := standard,
+    nativeAxioms := smallEliminationAcceptanceNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+  { root := ``Ix.Tc.EliminationBreadthFixture.kTargetAcceptance,
+    standardAxioms := standard,
+    nativeAxioms := kTargetAcceptanceNative,
+    forbiddenDependencies := occurrenceValidationForbiddenDependencies },
+
+  -- E2b's singleton link and legacy oracle constructors remain audited as
+  -- compatibility surfaces.  The concrete Boolean closure below no longer
+  -- consumes those oracle constructors: its family block advances the exact
+  -- generated Theory environment, and its recursor block consumes entries
+  -- already installed there.
   { root := ``Lean4Lean.VEnv.HasType.transfer_appN_telescope,
     standardAxioms := standard,
     sorryOrigins := typingDebt,
@@ -1367,13 +4550,21 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := inductiveNative,
     sorryOrigins := typingDebt,
     forbiddenDependencies := boundedKnotForbiddenDependencies },
-  -- Concrete E2b closure: anonymous ingress, both production block-body and
-  -- branch checkers, exact physical/catalog ownership, and the two stable
-  -- oracle admissions are joined by one premise-free Boolean witness.
+  -- Oracle-free semantic composition is audited independently of production
+  -- execution so its native boundary contains only the finite representation,
+  -- generation, equation, and pattern checks.
+  { root := ``Ix.Tc.BooleanEnumerationFixture.oneFamilyAtomicClosure,
+    standardAxioms := standard,
+    nativeAxioms := booleanSemanticAdmissionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
+  -- The headline additionally joins anonymous ingress, both production
+  -- block-body and branch checkers, exact physical/catalog ownership, and the
+  -- composed two-stage semantic transaction in one final world.
   { root := ``Ix.Tc.BooleanEnumerationFixture.endToEndAcceptance,
     standardAxioms := standard, nativeAxioms := booleanEnumerationNative,
     sorryOrigins := typingDebt,
-    forbiddenDependencies := boundedKnotForbiddenDependencies },
+    forbiddenDependencies := canonicalRecursorForbiddenDependencies },
 
   -- G2a's explicit ambient-inductive assumption boundary.  Audit every
   -- oracle projection so adding a field changes this manifest, then pin the
@@ -1558,6 +4749,13 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := typingDebt },
   { root := ``Ix.Tc.RawProjRel.none_ok,
     standardAxioms := propextOnly },
+  { root := ``Ix.Tc.RawProjRel.lean4Lean_ok,
+    standardAxioms := standard,
+    sorryOrigins := projectionDebt },
+  { root := ``Ix.Tc.ConcreteProjectionFixture.acceptance,
+    standardAxioms := standard,
+    nativeAxioms := expressionNative,
+    sorryOrigins := projectionDebt },
   { root := ``Ix.Tc.TcM.ctxAddrForLbr_zero,
     standardAxioms := standard, nativeAxioms := contextNative },
   { root := ``Ix.Tc.TcM.whnfKey_closed,
@@ -1614,7 +4812,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.betaSimulSpec,
-    standardAxioms := standardWithoutQuot, nativeAxioms := expressionNative },
+    standardAxioms := standard, nativeAxioms := expressionNative },
   { root := ``Ix.Tc.AmbientNat.betaSimulMeaning,
     standardAxioms := standard, nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
@@ -1657,7 +4855,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Tc.RecM.whnfCoreWithFlagsUncached_fvarZeta_acceptance,
     standardAxioms := standard, nativeAxioms := inferNative },
   { root := ``Ix.Tc.AmbientNat.bvarZetaLiftSpec,
-    standardAxioms := standardWithoutQuot, nativeAxioms := expressionNative },
+    standardAxioms := standard, nativeAxioms := expressionNative },
   { root := ``Ix.Tc.AmbientNat.bvarZetaLookupEval,
     standardAxioms := standard, nativeAxioms := expressionNative },
   { root := ``Ix.Tc.AmbientNat.bvarZetaMeaning,
@@ -2249,13 +5447,13 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Tc.RecM.runBounded_succ,
     standardAxioms := standardWithoutChoice },
   { root := ``Ix.Tc.RecM.consumeBetaLams_equation,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative },
   { root := ``Ix.Tc.RecM.consumeBetaLamsFuel_zero,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative },
   { root := ``Ix.Tc.RecM.consumeBetaLamsFuel_succ,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative },
   { root := ``Ix.Tc.RecM.compareRank_equation,
     standardAxioms := propextOnly },
@@ -3735,10 +6933,10 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.StructEtaFinishRequests,
-    standardAxioms := standardWithoutQuot, nativeAxioms := levelNative,
+    standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.StructEtaFinishRequestCensus,
-    standardAxioms := standardWithoutQuot, nativeAxioms := levelNative,
+    standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.StructEtaFinishPreserves.of_requests,
     standardAxioms := standard, nativeAxioms := levelNative,
@@ -3765,10 +6963,10 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := blake3Native,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.KSynthCandidateRequests,
-    standardAxioms := standardWithoutQuot, nativeAxioms := expressionNative,
+    standardAxioms := standard, nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.KSynthCandidateRequestCensus,
-    standardAxioms := standardWithoutQuot, nativeAxioms := expressionNative,
+    standardAxioms := standard, nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.KSynthCandidateInputs,
     standardAxioms := standard, nativeAxioms := expressionNative,
@@ -3902,13 +7100,58 @@ private def roots : Array RootAllowance := #[
   -- Quotient: quotient reduction derives the selected major's support and
   -- translation from its real application-spine position, executes the
   -- predecessor WHNF callback, and covers the initial representative
-  -- application plus every trailing suffix intern.
+  -- application plus every trailing suffix intern.  The former successful-
+  -- run reflection input is now constructed from two Theory-only contraction
+  -- laws.  Ix owns the complete dynamic trace, exact lift/ind layouts,
+  -- normalized `Quot.mk` transport, collision-free base intern, and suffix
+  -- reconstruction.
   { root := ``Ix.Tc.QuotientReductionRequestCensus,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.QuotientReductionReflection,
     standardAxioms := standard, nativeAxioms := expressionNative,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.QuotientReductionLaws,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TrAppSpine.three,
+    standardAxioms := standard,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TrAppSpine.four,
+    standardAxioms := standard,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TrAppSpine.five,
+    standardAxioms := standard,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TrKExprS.const_name,
+    standardAxioms := standard,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.quotientLiftMeaning,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.quotientIndMeaning,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.QuotientSelectedSuccessTrace.complete,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.QuotientSelectedSuccessTrace.semanticInputs,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.QuotientSelectedSuccessTrace.liftMeaning,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.QuotientSelectedSuccessTrace.indMeaning,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.QuotientReductionReflection.of_laws,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.RecM.tryQuotReduceSelected,
     standardAxioms := standard, nativeAxioms := expressionNative,
@@ -4026,7 +7269,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := nameContextNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.structEtaBuildRequests,
-    standardAxioms := standardWithoutQuot, nativeAxioms := expressionNative,
+    standardAxioms := standard, nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.structEtaDispatchSuccess,
     standardAxioms := standard, nativeAxioms := nameContextNative,
@@ -4078,18 +7321,18 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.support_le_iotaArgsSupport,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.iotaArgsStateInv,
     standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.iotaArgsSupport_head,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.iotaArgsSupport_source,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.appStuckIotaTransientThreeSegments,
@@ -4100,19 +7343,19 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaSecondResult,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.appStuckHead_constructed,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiBetaInner_constructed,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaIntermediate_constructed,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.appStuckHead_tr_ctx,
@@ -4125,26 +7368,26 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.support_le_multiIotaSupport,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaStateInv,
     standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaSupport_start,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaSupport_intermediate,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaSupport_head,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaSupport_result,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaFirstTrace,
@@ -4161,15 +7404,15 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := typingDebt,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaPrefixSlice,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaFieldSlice,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaTrailingSlice,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.multiIotaRuleEval,
@@ -4627,7 +7870,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := expressionNative.push nameDecideNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.noDeltaNatAddSuffixFinishRequests,
-    standardAxioms := standardWithoutQuot,
+    standardAxioms := standard,
     nativeAxioms := expressionNative,
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.AmbientNat.noDeltaNatAddSuffixReduction,
@@ -6324,8 +9567,10 @@ private def roots : Array RootAllowance := #[
     forbiddenDependencies := boundedKnotForbiddenDependencies },
   -- Quotients remain physically standalone, but semantic admission is one
   -- exact four-member Theory transaction followed by the registered quotient
-  -- equation. These roots expose that atomic target without claiming that
-  -- the production checker constructs it yet.
+  -- equation. The production bridge inverts all four real checkQuot runs,
+  -- converts digest equality through a finite collision scope, and publishes
+  -- the completed transaction as one exact trusted-log event. Its temporary
+  -- Lean4Lean semantic input is an explicit theorem parameter, not an axiom.
   { root := ``Ix.Tc.QuotientAdmissionStep.bind,
     standardAxioms := standard,
     forbiddenDependencies := boundedKnotForbiddenDependencies },
@@ -6364,6 +9609,30 @@ private def roots : Array RootAllowance := #[
     forbiddenDependencies := boundedKnotForbiddenDependencies },
   { root := ``Ix.Tc.QuotientAdmission.le,
     standardAxioms := standard,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkQuot_success_typeAddress,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkQuot_success_levels,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.checkQuot_success_type,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.CheckedQuotientBundle.toAdmission,
+    standardAxioms := standard, nativeAxioms := levelNative,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.QuotientAdmission.entry,
+    standardAxioms := standard,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.QuotientAdmission.admit,
+    standardAxioms := standard,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.QuotientAdmission.newlyTrustedMember,
+    standardAxioms := standard,
+    forbiddenDependencies := boundedKnotForbiddenDependencies },
+  { root := ``Ix.Tc.CheckedQuotientBundle.admitAtomically,
+    standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := boundedKnotForbiddenDependencies },
   { root := ``Ix.Tc.AmbientNat.E0.atomicAdmission,
     standardAxioms := standard,
@@ -6499,10 +9768,12 @@ private def roots : Array RootAllowance := #[
     forbiddenDependencies := boundedKnotForbiddenDependencies },
 
   -- E3-S assembles the scoped K3 standalone theorem and E0's exact atomic
-  -- disposition into E1's concrete-call adapter.  The body sum is
-  -- transparent: singleton definitions use the scoped K3 certificate and
-  -- inductive/recursor bodies retain an explicit E2 oracle resource.  The
-  -- public SubjectWF root may not pass through any global suffix model.
+  -- disposition into E1's concrete-call adapter.  The operational body sum
+  -- remains transparent: singleton definitions use the scoped K3 certificate
+  -- and fresh inductive/recursor bodies retain an explicit E2 oracle resource.
+  -- Separately, the certificate-backed replay adapter consumes already-
+  -- installed member provenance, admits exact arrays idempotently, and gives
+  -- all-block consumers a path which cannot reach oracle materialization.
   { root := ``Ix.Tc.SupportedStandaloneResources.promotes,
     standardAxioms := standard, nativeAxioms := inductiveNative,
     sorryOrigins := typingDebt,
@@ -6523,14 +9794,27 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := inductiveNative,
     sorryOrigins := typingDebt,
     forbiddenDependencies := scopedK2SForbiddenDependencies },
+  { root := ``Ix.Tc.CertificateBackedBlockResources.newlyTrustedMember,
+    standardAxioms := standard,
+    forbiddenDependencies := certificateBackedDriverForbiddenDependencies },
+  { root := ``Ix.Tc.CertificateBackedBlockResources.accepts,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    forbiddenDependencies := certificateBackedDriverForbiddenDependencies },
+  { root := ``Ix.Tc.CertificateBackedCheckFragment.checkSuccessSound,
+    standardAxioms := standard, nativeAxioms := inductiveNative,
+    forbiddenDependencies := certificateBackedDriverForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.AnonWorkEnvWF.checkEnvAnon_certificateBacked_subjectWF,
+    standardAxioms := standard, nativeAxioms := inductiveNative,
+    forbiddenDependencies := certificateBackedDriverForbiddenDependencies },
   { root := ``Ix.Tc.BooleanEnumerationFixture.subjectWF,
     standardAxioms := standard, nativeAxioms := booleanDriverNative,
     sorryOrigins := typingDebt,
-    forbiddenDependencies := scopedK2SForbiddenDependencies },
+    forbiddenDependencies := certificateBackedDriverForbiddenDependencies },
   { root := ``Ix.Tc.BooleanSerialized.subjectWF,
     standardAxioms := standard, nativeAxioms := serializedBooleanNative,
     sorryOrigins := typingDebt,
-    forbiddenDependencies := scopedK2SForbiddenDependencies },
+    forbiddenDependencies := certificateBackedDriverForbiddenDependencies },
   { root := ``Ix.Tc.SerializedLiteralBlobs.literalRoundTrip,
     standardAxioms := standard, nativeAxioms := literalRoundTripNative,
     forbiddenDependencies := scopedK2SForbiddenDependencies },
@@ -6547,6 +9831,9 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Tc.SupportedAcceptanceFixture.block_rejects_wrong_route,
     standardAxioms := propextOnly,
     forbiddenDependencies := scopedK2SForbiddenDependencies },
+  { root :=
+      ``Ix.Tc.SupportedAcceptanceFixture.certificate_backed_definition_excluded,
+    forbiddenDependencies := certificateBackedDriverForbiddenDependencies },
   { root :=
       ``Ix.Tc.SupportedAcceptanceFixture.booleanFamilyBody_certified,
     standardAxioms := standard, nativeAxioms := booleanFamilyBodyNative,

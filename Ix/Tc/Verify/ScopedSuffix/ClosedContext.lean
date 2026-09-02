@@ -16,12 +16,19 @@ the concrete fields needed to derive the empty reconciliation.
 namespace Ix.Tc
 
 /-- Concrete eager checker states with no legacy/opened local bindings and
-no driver-owned lazy-ingress hook. -/
+no driver-owned lazy-ingress hook.
+
+Closedness is intentionally extensional in the local-context index.  A
+push/truncate pair restores the empty declaration stack but `Std.HashMap`
+does not promise that erasing a freshly inserted key restores the original
+bucket representation.  Context reconstruction observes the declaration
+stack and its lookup-coherence invariant, not that representation. -/
 structure ClosedContextState (s : TcState .anon) : Prop where
   ctx : s.ctx = #[]
   letVals : s.letVals = #[]
   numLetBindings : s.numLetBindings = 0
-  lctx : s.lctx = {}
+  lctxDecls : s.lctx.decls = #[]
+  lctxWF : s.lctx.WF
   lazyFault : s.lazyFault = none
 
 namespace ClosedContextState
@@ -36,7 +43,8 @@ theorem contextKeyFrame {before after : TcState .anon}
     ctx := hbefore.ctx
     letVals := hbefore.letVals
     numLetBindings := hbefore.numLetBindings
-    lctx := hbefore.lctx
+    lctxDecls := hbefore.lctxDecls
+    lctxWF := hbefore.lctxWF
     lazyFault := hbefore.lazyFault }
 
 /-- Digest-neutral cache/intern updates retain closedness. -/
@@ -47,7 +55,8 @@ theorem contextDigestFrame {before after : TcState .anon}
   ctx := hframe.ctx.trans hbefore.ctx
   letVals := hframe.letVals.trans hbefore.letVals
   numLetBindings := hframe.numLetBindings.trans hbefore.numLetBindings
-  lctx := hframe.lctx.trans hbefore.lctx
+  lctxDecls := by rw [hframe.lctx]; exact hbefore.lctxDecls
+  lctxWF := by rw [hframe.lctx]; exact hbefore.lctxWF
   lazyFault := hframe.lazyFault.trans hbefore.lazyFault
 
 /-- Reconciliation from a concretely closed state has exactly the empty
@@ -60,7 +69,7 @@ theorem delta_eq_nil
     (hctx : CtxRecon env uvars nameOf trProj s Delta) :
     Delta = [] := by
   have hrecon := hctx.recon
-  rw [hclosed.ctx, hclosed.letVals, hclosed.lctx] at hrecon
+  rw [hclosed.ctx, hclosed.letVals, hclosed.lctxDecls] at hrecon
   cases hrecon
   rfl
 
@@ -187,8 +196,7 @@ theorem model_resetPreservesScope
     unfold TcM.reset at hrun
     injection hrun with hafter
     subst after
-    constructor <;> try rfl
-    exact hnoLazy
+    refine ⟨rfl, rfl, rfl, rfl, LocalContext.WF.empty, hnoLazy⟩
   exact model_stateInScope hclosed
 
 end ClosedContextDigest

@@ -125,10 +125,10 @@ def testSharingTopoOrder : TestSeq :=
   let t := Expr.var 0  -- type
   let b := Expr.var 1  -- body
   let a := Expr.var 2  -- arg
-  let lam := Expr.lam t b
+  let lam := Expr.leanLam t b
   let app := Expr.app lam a
   -- Use the same type in another expression
-  let e2 := Expr.app (Expr.lam t (Expr.var 3)) a
+  let e2 := Expr.app (Expr.leanLam t (Expr.var 3)) a
   let exprs := #[app, e2]
   let (_, sharingVec) := applySharing exprs
   -- Verify no forward references in sharing vector
@@ -142,8 +142,8 @@ where
     match e with
     | .share idx => idx.toNat < maxIdx
     | .app f a => checkNoForwardRefs f maxIdx && checkNoForwardRefs a maxIdx
-    | .lam t b => checkNoForwardRefs t maxIdx && checkNoForwardRefs b maxIdx
-    | .all t b => checkNoForwardRefs t maxIdx && checkNoForwardRefs b maxIdx
+    | .lam _ t b => checkNoForwardRefs t maxIdx && checkNoForwardRefs b maxIdx
+    | .all _ _ t b => checkNoForwardRefs t maxIdx && checkNoForwardRefs b maxIdx
     | .letE _ t v b =>
       checkNoForwardRefs t maxIdx && checkNoForwardRefs v maxIdx && checkNoForwardRefs b maxIdx
     | .prj _ _ v => checkNoForwardRefs v maxIdx
@@ -241,10 +241,10 @@ def testRecursorSharing : TestSeq := Id.run do
   let sortU := Expr.sort 1
 
   -- Use t four times: in nested all expressions
-  let e1 := Expr.all t sortU  -- use 1
-  let e2 := Expr.all t e1      -- use 2
-  let e3 := Expr.all t e2      -- use 3
-  let e4 := Expr.all t e3      -- use 4
+  let e1 := Expr.leanAll t sortU  -- use 1
+  let e2 := Expr.leanAll t e1      -- use 2
+  let e3 := Expr.leanAll t e2      -- use 3
+  let e4 := Expr.leanAll t e3      -- use 4
 
   let result := analyzeBlock #[e4]
   let effectiveSizes := computeEffectiveSizes result.infoMap result.topoOrder
@@ -291,23 +291,23 @@ def testRealisticRecursor : TestSeq := Id.run do
 
   -- ∀ (t : T), motive t  (motive is var 1 here due to binder)
   let targetBody := Expr.app (Expr.var 1) tVar
-  let target := Expr.all tRef targetBody
+  let target := Expr.leanAll tRef targetBody
 
   -- motive C3 → target  (motive is var 3 here)
   let minor3 := Expr.app (Expr.var 3) c3
-  let withMinor3 := Expr.all minor3 target
+  let withMinor3 := Expr.leanAll minor3 target
 
   -- motive C2 → ...  (motive is var 2 here)
   let minor2 := Expr.app (Expr.var 2) c2
-  let withMinor2 := Expr.all minor2 withMinor3
+  let withMinor2 := Expr.leanAll minor2 withMinor3
 
   -- motive C1 → ...  (motive is var 1 here)
   let minor1 := Expr.app (Expr.var 1) c1
-  let withMinor1 := Expr.all minor1 withMinor2
+  let withMinor1 := Expr.leanAll minor1 withMinor2
 
   -- ∀ (motive : T → Sort u), ...
-  let motiveType := Expr.all tRef sortU
-  let fullType := Expr.all motiveType withMinor1
+  let motiveType := Expr.leanAll tRef sortU
+  let fullType := Expr.leanAll motiveType withMinor1
 
   -- Rules are just bound variables (minor arguments)
   let rule1 := Expr.var 1
@@ -352,9 +352,9 @@ def testContentHashCollision : TestSeq := Id.run do
   let r3 := Expr.ref 0 #[]
 
   -- Wrap each in a different expression
-  let e1 := Expr.all r1 (Expr.sort 0)
-  let e2 := Expr.all r2 (Expr.sort 1)
-  let e3 := Expr.all r3 (Expr.sort 2)
+  let e1 := Expr.leanAll r1 (Expr.sort 0)
+  let e2 := Expr.leanAll r2 (Expr.sort 1)
+  let e3 := Expr.leanAll r3 (Expr.sort 2)
 
   let result := analyzeBlock #[e1, e2, e3]
 
@@ -374,10 +374,10 @@ def testCrossImplSharingSimple : TestSeq := Id.run do
   -- Create expressions with 4 usages of ref 0 #[] (should be shared)
   let t := Expr.ref 0 #[]
   let sortU := Expr.sort 1
-  let e1 := Expr.all t sortU
-  let e2 := Expr.all t e1
-  let e3 := Expr.all t e2
-  let e4 := Expr.all t e3
+  let e1 := Expr.leanAll t sortU
+  let e2 := Expr.leanAll t e1
+  let e3 := Expr.leanAll t e2
+  let e4 := Expr.leanAll t e3
   let exprs := #[e4]
 
   -- Run Lean's sharing analysis
@@ -401,9 +401,9 @@ def testCrossImplContentHash : TestSeq := Id.run do
   let r1 := Expr.ref 0 #[]
   let r2 := Expr.ref 0 #[]
   let r3 := Expr.ref 0 #[]
-  let e1 := Expr.all r1 (Expr.sort 0)
-  let e2 := Expr.all r2 (Expr.sort 1)
-  let e3 := Expr.all r3 (Expr.sort 2)
+  let e1 := Expr.leanAll r1 (Expr.sort 0)
+  let e2 := Expr.leanAll r2 (Expr.sort 1)
+  let e3 := Expr.leanAll r3 (Expr.sort 2)
   let exprs := #[e1, e2, e3]
 
   -- Run Lean's sharing analysis
@@ -433,19 +433,19 @@ def testCrossImplRecursor : TestSeq := Id.run do
 
   -- Build from inside out
   let targetBody := Expr.app (Expr.var 1) (Expr.var 0)  -- motive t
-  let target := Expr.all tRef targetBody                 -- ∀ (t : T), motive t
+  let target := Expr.leanAll tRef targetBody                 -- ∀ (t : T), motive t
 
   let minor3 := Expr.app (Expr.var 3) c3
-  let withMinor3 := Expr.all minor3 target
+  let withMinor3 := Expr.leanAll minor3 target
 
   let minor2 := Expr.app (Expr.var 2) c2
-  let withMinor2 := Expr.all minor2 withMinor3
+  let withMinor2 := Expr.leanAll minor2 withMinor3
 
   let minor1 := Expr.app (Expr.var 1) c1
-  let withMinor1 := Expr.all minor1 withMinor2
+  let withMinor1 := Expr.leanAll minor1 withMinor2
 
-  let motiveType := Expr.all tRef sortU
-  let fullType := Expr.all motiveType withMinor1
+  let motiveType := Expr.leanAll tRef sortU
+  let fullType := Expr.leanAll motiveType withMinor1
 
   -- Rules (just return minor arguments)
   let rule1 := Expr.var 1
@@ -493,28 +493,28 @@ def testForallImpReal : TestSeq := Id.run do
   -- where the same content might have different Lean pointers
 
   -- Build type with fresh objects
-  let typ := Expr.all (Expr.sort 0)  -- ∀ α : Sort u
-    (Expr.all (Expr.all (Expr.var 0) (Expr.sort 1))  -- ∀ p : α → Prop (fresh)
-      (Expr.all (Expr.all (Expr.var 1) (Expr.sort 1))  -- ∀ q : α → Prop (fresh!)
-        (Expr.all  -- ∀ h : ∀ a, p a → q a
-          (Expr.all (Expr.var 2)
-            (Expr.all (Expr.app (Expr.var 2) (Expr.var 0))  -- p a → q a
+  let typ := Expr.leanAll (Expr.sort 0)  -- ∀ α : Sort u
+    (Expr.leanAll (Expr.leanAll (Expr.var 0) (Expr.sort 1))  -- ∀ p : α → Prop (fresh)
+      (Expr.leanAll (Expr.leanAll (Expr.var 1) (Expr.sort 1))  -- ∀ q : α → Prop (fresh!)
+        (Expr.leanAll  -- ∀ h : ∀ a, p a → q a
+          (Expr.leanAll (Expr.var 2)
+            (Expr.leanAll (Expr.app (Expr.var 2) (Expr.var 0))  -- p a → q a
                       (Expr.app (Expr.var 2) (Expr.var 1))))
-          (Expr.all  -- (∀ a, p a) → (∀ a, q a)
-            (Expr.all (Expr.var 3) (Expr.app (Expr.var 3) (Expr.var 0)))  -- ∀ a, p a
-            (Expr.all (Expr.var 4) (Expr.app (Expr.var 3) (Expr.var 0)))))))  -- ∀ a, q a
+          (Expr.leanAll  -- (∀ a, p a) → (∀ a, q a)
+            (Expr.leanAll (Expr.var 3) (Expr.app (Expr.var 3) (Expr.var 0)))  -- ∀ a, p a
+            (Expr.leanAll (Expr.var 4) (Expr.app (Expr.var 3) (Expr.var 0)))))))  -- ∀ a, q a
 
   -- Build value with fresh objects
-  let value := Expr.lam (Expr.sort 0)  -- λ α
-    (Expr.lam (Expr.all (Expr.var 0) (Expr.sort 1))  -- λ p : α → Prop (fresh)
-      (Expr.lam (Expr.all (Expr.var 1) (Expr.sort 1))  -- λ q : α → Prop (fresh!)
-        (Expr.lam  -- λ h : ∀ a, p a → q a
-          (Expr.all (Expr.var 2)
-            (Expr.all (Expr.app (Expr.var 2) (Expr.var 0))  -- p a → q a (fresh)
+  let value := Expr.leanLam (Expr.sort 0)  -- λ α
+    (Expr.leanLam (Expr.leanAll (Expr.var 0) (Expr.sort 1))  -- λ p : α → Prop (fresh)
+      (Expr.leanLam (Expr.leanAll (Expr.var 1) (Expr.sort 1))  -- λ q : α → Prop (fresh!)
+        (Expr.leanLam  -- λ h : ∀ a, p a → q a
+          (Expr.leanAll (Expr.var 2)
+            (Expr.leanAll (Expr.app (Expr.var 2) (Expr.var 0))  -- p a → q a (fresh)
                       (Expr.app (Expr.var 2) (Expr.var 1))))  -- (fresh)
-          (Expr.lam  -- λ h' : ∀ a, p a
-            (Expr.all (Expr.var 3) (Expr.app (Expr.var 3) (Expr.var 0)))  -- (fresh)
-            (Expr.lam (Expr.var 4)  -- λ a : α
+          (Expr.leanLam  -- λ h' : ∀ a, p a
+            (Expr.leanAll (Expr.var 3) (Expr.app (Expr.var 3) (Expr.var 0)))  -- (fresh)
+            (Expr.leanLam (Expr.var 4)  -- λ a : α
               (Expr.app
                 (Expr.app (Expr.var 2) (Expr.var 0))  -- h a
                 (Expr.app (Expr.var 1) (Expr.var 0))))))))  -- h' a
@@ -559,10 +559,10 @@ def testForallImpSharing : TestSeq := Id.run do
   let app20 := Expr.app (Expr.var 2) (Expr.var 0)
 
   -- Use each twice
-  let e1 := Expr.all app21 app20  -- p a → q a pattern
-  let e2 := Expr.all app20 app21  -- q a → p a (reversed)
-  let e3 := Expr.all (Expr.var 3) e1  -- ∀ a, p a → q a
-  let e4 := Expr.all (Expr.var 3) e2  -- ∀ a, q a → p a
+  let e1 := Expr.leanAll app21 app20  -- p a → q a pattern
+  let e2 := Expr.leanAll app20 app21  -- q a → p a (reversed)
+  let e3 := Expr.leanAll (Expr.var 3) e1  -- ∀ a, p a → q a
+  let e4 := Expr.leanAll (Expr.var 3) e2  -- ∀ a, q a → p a
 
   let exprs := #[e3, e4]
 
@@ -600,25 +600,25 @@ def testFlipSharing : TestSeq := Id.run do
   -- where <func-type> = all (var 2) (all (var 2) (var 2))
 
   -- The key subexpression that appears multiple times
-  let innerAll := Expr.all (Expr.var 2) (Expr.var 2)  -- (var 2) → (var 2)
-  let funcType := Expr.all (Expr.var 2) innerAll       -- (var 2) → (var 2) → (var 2)
+  let innerAll := Expr.leanAll (Expr.var 2) (Expr.var 2)  -- (var 2) → (var 2)
+  let funcType := Expr.leanAll (Expr.var 2) innerAll       -- (var 2) → (var 2) → (var 2)
 
   -- Build the full type
-  let resultType := Expr.all (Expr.var 2) (Expr.all (Expr.var 4) (Expr.var 3))  -- B → A → C
-  let withFunc := Expr.all funcType resultType  -- (A → B → C) → B → A → C
-  let withC := Expr.all (Expr.sort 2) withFunc
-  let withB := Expr.all (Expr.sort 1) withC
-  let typ := Expr.all (Expr.sort 0) withB
+  let resultType := Expr.leanAll (Expr.var 2) (Expr.leanAll (Expr.var 4) (Expr.var 3))  -- B → A → C
+  let withFunc := Expr.leanAll funcType resultType  -- (A → B → C) → B → A → C
+  let withC := Expr.leanAll (Expr.sort 2) withFunc
+  let withB := Expr.leanAll (Expr.sort 1) withC
+  let typ := Expr.leanAll (Expr.sort 0) withB
 
   -- Value: λ A B C f b a => f a b
   -- In Ixon.Expr terms: lam ... lam (app (app (var 2) (var 0)) (var 1))
   let body := Expr.app (Expr.app (Expr.var 2) (Expr.var 0)) (Expr.var 1)  -- f a b
-  let lamA := Expr.lam (Expr.var 4) body
-  let lamB := Expr.lam (Expr.var 2) lamA
-  let lamFunc := Expr.lam funcType lamB  -- Note: funcType appears again here!
-  let lamC := Expr.lam (Expr.sort 2) lamFunc
-  let lamBSort := Expr.lam (Expr.sort 1) lamC
-  let value := Expr.lam (Expr.sort 0) lamBSort
+  let lamA := Expr.leanLam (Expr.var 4) body
+  let lamB := Expr.leanLam (Expr.var 2) lamA
+  let lamFunc := Expr.leanLam funcType lamB  -- Note: funcType appears again here!
+  let lamC := Expr.leanLam (Expr.sort 2) lamFunc
+  let lamBSort := Expr.leanLam (Expr.sort 1) lamC
+  let value := Expr.leanLam (Expr.sort 0) lamBSort
 
   let exprs := #[typ, value]
 

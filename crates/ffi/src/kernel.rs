@@ -549,16 +549,19 @@ fn wrong_successor_rule_returning_first_minor(
   succ_rhs: &Arc<IxonExpr>,
 ) -> Result<Arc<IxonExpr>, String> {
   match succ_rhs.as_ref() {
-    IxonExpr::Lam(motive_ty, rest) => match rest.as_ref() {
-      IxonExpr::Lam(h_zero_ty, rest) => match rest.as_ref() {
-        IxonExpr::Lam(h_succ_ty, rest) => match rest.as_ref() {
-          IxonExpr::Lam(n_ty, _) => Ok(IxonExpr::lam(
+    IxonExpr::Lam(motive_uses, motive_ty, rest) => match rest.as_ref() {
+      IxonExpr::Lam(h_zero_uses, h_zero_ty, rest) => match rest.as_ref() {
+        IxonExpr::Lam(h_succ_uses, h_succ_ty, rest) => match rest.as_ref() {
+          IxonExpr::Lam(n_uses, n_ty, _) => Ok(IxonExpr::lam_mode(
+            *motive_uses,
             motive_ty.clone(),
-            IxonExpr::lam(
+            IxonExpr::lam_mode(
+              *h_zero_uses,
               h_zero_ty.clone(),
-              IxonExpr::lam(
+              IxonExpr::lam_mode(
+                *h_succ_uses,
                 h_succ_ty.clone(),
-                IxonExpr::lam(n_ty.clone(), IxonExpr::var(2)),
+                IxonExpr::lam_mode(*n_uses, n_ty.clone(), IxonExpr::var(2)),
               ),
             ),
           )),

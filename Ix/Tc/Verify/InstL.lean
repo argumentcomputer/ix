@@ -250,7 +250,7 @@ private theorem wf_instL_size {env : VEnv} {us : Array (KUniv .anon)}
     conditions over the walk's reach set. -/
 theorem TrKExprS.instL {env : VEnv} {uvars U' : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (henv : VEnv.WF env)
     (hlit : ∀ l, env.ContainsLits l →
       VExpr.WF env U' [] (VExpr.trLiteral l))

@@ -2775,11 +2775,14 @@ extern "C" fn rs_compile_validate_aux(
             expand_shares_expr(fun, sharing),
             expand_shares_expr(arg, sharing),
           ),
-          Expr::Lam(ty, body) => Expr::lam(
+          Expr::Lam(uses, ty, body) => Expr::lam_mode(
+            *uses,
             expand_shares_expr(ty, sharing),
             expand_shares_expr(body, sharing),
           ),
-          Expr::All(ty, body) => Expr::all(
+          Expr::All(uses, owned, ty, body) => Expr::all_mode(
+            *uses,
+            *owned,
             expand_shares_expr(ty, sharing),
             expand_shares_expr(body, sharing),
           ),

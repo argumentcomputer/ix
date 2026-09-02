@@ -71,6 +71,40 @@ theorem HasType.appN_head
         hhead.app_inv henv.ordered hGamma
       exact ⟨_, hfun⟩
 
+/-- Typing a complete application spine also types every left prefix.  This
+is the form needed by indexed iota rules: the recursor prefix provides the
+common parameter/motive/minor arguments, while its final index and major are
+handled separately. -/
+theorem HasType.appN_prefix
+    {env : VEnv} {U : Nat} {Gamma : List VExpr}
+    (henv : env.WF) (hGamma : OnCtx Gamma (env.IsType U))
+    {f : VExpr} {prefixArgs suffixArgs : List VExpr} {A : VExpr}
+    (h : env.HasType U Gamma
+      (VExpr.appN f (prefixArgs ++ suffixArgs)) A) :
+    ∃ B, env.HasType U Gamma (VExpr.appN f prefixArgs) B := by
+  rw [VExpr.appN_append] at h
+  exact HasType.appN_head henv hGamma h
+
+/-- Recover an application's argument at the domain exposed by a separately
+known exact type for its head.  Application inversion alone returns an
+existential domain; uniqueness and Π-injectivity align it with the certified
+head type. -/
+theorem HasType.app_argument_of_head
+    {env : VEnv} {U : Nat} {Gamma : List VExpr}
+    (henv : env.WF) (hGamma : OnCtx Gamma (env.IsType U))
+    {f argument domain body result : VExpr}
+    (happlication : env.HasType U Gamma (.app f argument) result)
+    (hhead : env.HasType U Gamma f (.forallE domain body)) :
+    env.HasType U Gamma argument domain := by
+  obtain ⟨actualDomain, actualBody, hactualHead, hactualArgument⟩ :=
+    happlication.app_inv henv.ordered hGamma
+  have htypes : env.IsDefEqU U Gamma
+      (.forallE actualDomain actualBody) (.forallE domain body) :=
+    hactualHead.uniqU henv hGamma hhead
+  obtain ⟨sortLevel, hdomain⟩ :=
+    (htypes.forallE_inv henv hGamma).1
+  exact hactualArgument.defeqU_r henv hGamma ⟨.sort sortLevel, hdomain⟩
+
 /-- If two heads expose the same dependent binder telescope, any complete
 argument spine which types the first head also types the second.  Their result
 bodies may differ.  This is the typed congruence needed to apply a generated
@@ -142,6 +176,79 @@ theorem HasType.transfer_appN_telescope
             (leftBody := leftBody.inst argument binders.length)
             (rightBody := rightBody.inst argument binders.length)
             htransLength hsource hleftApp' hrightApp'
+
+/-- Exact-result variant of `transfer_appN_telescope`.  Applying every
+binder of a telescope produces `instRev` of its body; retaining that result
+is essential when a generated rule has constructor fields after the common
+recursor prefix. -/
+theorem HasType.transfer_appN_telescope_instRev
+    {env : VEnv} {U : Nat} {Gamma : List VExpr}
+    (henv : env.WF) (hGamma : OnCtx Gamma (env.IsType U))
+    {binders : List VExpr} {leftBody rightBody : VExpr}
+    {left right : VExpr} {arguments : List VExpr} {A : VExpr}
+    (hlength : arguments.length = binders.length)
+    (hsource : env.HasType U Gamma (VExpr.appN left arguments) A)
+    (hleft : env.HasType U Gamma left
+      (VExpr.forallN binders leftBody))
+    (hright : env.HasType U Gamma right
+      (VExpr.forallN binders rightBody)) :
+    env.HasType U Gamma (VExpr.appN right arguments)
+      (VExpr.instRev rightBody arguments) := by
+  induction arguments generalizing binders left right leftBody rightBody A with
+  | nil =>
+      cases binders with
+      | nil => exact hright
+      | cons binder binders => simp at hlength
+  | cons argument arguments ih =>
+      cases binders with
+      | nil => simp at hlength
+      | cons binder binders =>
+          have hrestLength : arguments.length = binders.length := by
+            simpa using hlength
+          have hsource' : env.HasType U Gamma
+              (VExpr.appN (.app left argument) arguments) A := hsource
+          obtain ⟨prefixType, hprefix⟩ :=
+            HasType.appN_head henv hGamma hsource'
+          obtain ⟨actualDomain, actualBody, hleftActual, hargument⟩ :=
+            hprefix.app_inv henv.ordered hGamma
+          have hleft' : env.HasType U Gamma left
+              (.forallE binder (VExpr.forallN binders leftBody)) := by
+            simpa only [VExpr.forallN] using hleft
+          have htypes : env.IsDefEqU U Gamma
+              (.forallE actualDomain actualBody)
+              (.forallE binder (VExpr.forallN binders leftBody)) :=
+            hleftActual.uniqU henv hGamma hleft'
+          obtain ⟨sortLevel, hdomain⟩ :=
+            (htypes.forallE_inv henv hGamma).1
+          have hargument' : env.HasType U Gamma argument binder :=
+            hargument.defeqU_r henv hGamma ⟨.sort sortLevel, hdomain⟩
+          have hleftApp : env.HasType U Gamma (.app left argument)
+              ((VExpr.forallN binders leftBody).inst argument) :=
+            .app hleft' hargument'
+          have hright' : env.HasType U Gamma right
+              (.forallE binder (VExpr.forallN binders rightBody)) := by
+            simpa only [VExpr.forallN] using hright
+          have hrightApp : env.HasType U Gamma (.app right argument)
+              ((VExpr.forallN binders rightBody).inst argument) :=
+            .app hright' hargument'
+          rw [VExpr.instN_forallN] at hleftApp hrightApp
+          have hleftApp' : env.HasType U Gamma (.app left argument)
+              (VExpr.forallN (VExpr.instTelN argument binders 0)
+                (leftBody.inst argument binders.length)) := by
+            simpa only [Nat.zero_add] using hleftApp
+          have hrightApp' : env.HasType U Gamma (.app right argument)
+              (VExpr.forallN (VExpr.instTelN argument binders 0)
+                (rightBody.inst argument binders.length)) := by
+            simpa only [Nat.zero_add] using hrightApp
+          have htransLength : arguments.length =
+              (VExpr.instTelN argument binders 0).length := by
+            simpa [VExpr.instTelN_length] using hrestLength
+          have hresult := ih
+            (binders := VExpr.instTelN argument binders 0)
+            (leftBody := leftBody.inst argument binders.length)
+            (rightBody := rightBody.inst argument binders.length)
+            htransLength hsource hleftApp' hrightApp'
+          simpa only [VExpr.appN, VExpr.instRev, hrestLength] using hresult
 
 /-- A typed equality remains valid after applying the same typed spine to
 both sides.  The final left-hand typing is enough: application inversion and

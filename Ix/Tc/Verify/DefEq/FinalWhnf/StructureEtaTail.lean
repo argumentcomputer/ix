@@ -55,7 +55,7 @@ theorem tryEtaStructAfterTypes_wf
     (hgeneratedSupport : ∀ field, field < numFields →
       support (KExpr.mkPrj inductId field.toUInt64 base))
     (hgenerated : ∀ field, field < numFields →
-      trProj Delta.toCtx structName field.toUInt64.toNat
+      trProj uvars Delta.toCtx structName field.toUInt64.toNat
         baseV (projectedV field))
     (hfieldIndex : ∀ field, field < numFields →
       field.toUInt64.toNat = field)

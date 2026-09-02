@@ -244,7 +244,7 @@ structure RawInductiveConstRel (env : VEnv)
   kind : c.IsInductiveMember
   nameEq : nameOf id.addr = some name
   uvars : c.lvls.toNat = ci.uvars
-  type : RawExprRel env nameOf trProj [] c.ty ci.type
+  type : RawExprRel (uvars := c.lvls.toNat) env nameOf trProj [] c.ty ci.type
 
 namespace RawInductiveConstRel
 
@@ -274,7 +274,8 @@ def RegisteredRecursorRuleRhsRel (env : VEnv)
     env.defeqs defeq ∧
     defeq.WF env ∧
     HeadConstUnderLambdas name defeq.lhs ∧
-    RawExprRel env nameOf trProj [] rule.rhs defeq.rhs ∧
+    RawExprRel (uvars := defeq.uvars) env nameOf trProj []
+      rule.rhs defeq.rhs ∧
     TrKExprS env defeq.uvars nameOf trProj [] rule.rhs defeq.rhs
 
 /-- Existential rule-level form retained by the inductive oracle and trusted

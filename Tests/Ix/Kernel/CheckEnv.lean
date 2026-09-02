@@ -283,7 +283,11 @@ def focusConsts : Array Lean.Name := #[
   Lean.mkPrivateNameCore `Lean.Exception
     `Lean.throwKernelException._sparseCasesOn_1,
   Lean.mkPrivateNameCore `Lean.Compiler.IR.Basic
-    `Lean.IR.FnBody.isTerminal._sparseCasesOn_1
+    `Lean.IR.FnBody.isTerminal._sparseCasesOn_1,
+
+  -- 2026-09-01: guard the nested-auxiliary recursor-selection fuel regression.
+  `Lean.Meta.Grind.Arith.Cutsat.CooperSplitPred.rec,
+  `Lean.Doc.Block.rec
 ]
 
 def expectedPass (_name : Lean.Name) : Bool := true

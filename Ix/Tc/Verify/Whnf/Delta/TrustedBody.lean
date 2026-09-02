@@ -156,7 +156,7 @@ theorem instantiatedBody
       simpa only [hzero] using h.bodyStructural
     have hbodyU :
         TrKExprS world.venv uvars world.nameOf trProj [] body ci.value :=
-      hbody0.monoU (Nat.zero_le uvars) (by trivial)
+      hbody0.monoU (Nat.zero_le uvars) theory.projections (by trivial)
     have hbodyDelta :
         TrKExprS world.venv uvars world.nameOf trProj Delta body ci.value := by
       simpa only [KVLCtx.appendOuter] using

@@ -23,6 +23,17 @@ def coordinatedBlock (world : VerifyWorld)
   world := world
   active := fun id => id ∈ members
 
+/-- Entering an atomic block only adds temporary member authority; it does
+not change the trusted world. -/
+theorem stable_le_coordinatedBlock {world : VerifyWorld}
+    {members : Array (KId .anon)} :
+    stable world ≤ coordinatedBlock world members := by
+  refine ⟨VerifyWorld.LE.rfl, ?_⟩
+  intro id hauthorized
+  rcases hauthorized with htrusted | hactive
+  · exact .inl htrusted
+  · exact False.elim hactive
+
 /-- Once the exact block has been accepted in a larger world, every temporary
 member authority becomes ordinary stable trust. -/
 theorem coordinatedBlock_le_stable

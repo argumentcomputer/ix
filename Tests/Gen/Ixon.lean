@@ -43,6 +43,12 @@ def genDefinitionSafety : Gen DefinitionSafety :=
 def genQuotKindNew : Gen QuotKind :=
   elements #[.type, .ctor, .lift, .ind]
 
+def genUses : Gen Uses :=
+  elements #[.erased, .linear, .affine, .many]
+
+def genOwned : Gen Owned :=
+  elements #[.unique, .shared]
+
 def genArray (g: Gen α) : Gen (Array α) :=
   Array.mk <$> genList g
 
@@ -89,8 +95,8 @@ partial def genExpr : Gen Expr :=
     (15, .recur <$> genUInt64Small <*> genArray genUInt64Small),
     (5, .prj <$> genUInt64Small <*> genUInt64Small <*> genExpr),
     (5, .app <$> genExpr <*> genExpr),
-    (5, .lam <$> genExpr <*> genExpr),
-    (5, .all <$> genExpr <*> genExpr),
+    (5, .lam <$> genUses <*> genExpr <*> genExpr),
+    (5, .all <$> genUses <*> genOwned <*> genExpr <*> genExpr),
     (2, .letE <$> genBool <*> genExpr <*> genExpr <*> genExpr),
   ]
 
@@ -184,6 +190,8 @@ def genConstant : Gen Constant :=
 instance : Shrinkable DefKind where shrink _ := []
 instance : Shrinkable DefinitionSafety where shrink _ := []
 instance : Shrinkable QuotKind where shrink _ := []
+instance : Shrinkable Uses where shrink _ := []
+instance : Shrinkable Owned where shrink _ := []
 
 -- Recursive types - shrink by returning sub-terms / halving indices
 instance : Shrinkable Univ where
@@ -206,8 +214,8 @@ instance : Shrinkable Expr where
     | .str ri => if ri > 0 then [.str (ri / 2)] else []
     | .nat ri => if ri > 0 then [.nat (ri / 2)] else []
     | .app f a => [f, a]
-    | .lam ty body => [ty, body]
-    | .all ty body => [ty, body]
+    | .lam _ ty body => [ty, body]
+    | .all _ _ ty body => [ty, body]
     | .letE _ ty val body => [ty, val, body]
     | .share idx => if idx > 0 then [.share (idx / 2)] else []
 

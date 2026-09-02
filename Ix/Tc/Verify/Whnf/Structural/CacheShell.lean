@@ -84,8 +84,9 @@ theorem closed
     have htransport : forall other, support other -> other.addr = key.1 ->
         forall Delta,
           (WhnfContextKeys.closed uvars).Represents other.lbr key.2 Delta ->
+          other.ContextScoped Delta ->
           WhnfMeaning trProj world uvars Delta other result := by
-      intro other hother haddr Delta hrepresented
+      intro other hother haddr Delta hrepresented _hscoped
       have heq : source = other := by
         have herase := hcollision.expr hsource hother
           (hmatch.sourceAddr.trans haddr.symm)
@@ -177,6 +178,7 @@ theorem whnfCoreWithFlagsNonLeaf_wf
                     (hI2.1.caches.hit (.whnfCore hcache)).supported.2
                   have hmeaning := hI2.1.caches.whnfHitOfMatches
                     (.whnfCore hcache) .whnfCore hsupport hmatch
+                    hsource.contextScoped
                   have hstart := WhnfPost.refl hsource
                     (theory.exprWF hI2.2.1 hsource)
                   exact ⟨hcached,
@@ -225,6 +227,7 @@ theorem whnfCoreWithFlagsNonLeaf_wf
                     (hI2.1.caches.hit (.whnfCoreCheap hcache)).supported.2
                   have hmeaning := hI2.1.caches.whnfHitOfMatches
                     (.whnfCoreCheap hcache) .whnfCoreCheap hsupport hmatch
+                    hsource.contextScoped
                   have hstart := WhnfPost.refl hsource
                     (theory.exprWF hI2.2.1 hsource)
                   exact ⟨hcached,
@@ -368,8 +371,9 @@ theorem coreCacheWriteOracle
         exact .whnfCoreCheap
     have hvalid : ∀ other, support other → other.addr = key.1 →
         ∀ Delta', model.keys.Represents other.lbr key.2 Delta' →
+          other.ContextScoped Delta' →
           WhnfMeaning trProj world model.keys.uvars Delta' other result := by
-      intro other hother haddr Delta' hrepresented
+      intro other hother haddr Delta' hrepresented _hscoped
       have heq : source = other := by
         have herase := hcollision.expr hsource hother
           (hmatch.sourceAddr.trans haddr.symm)

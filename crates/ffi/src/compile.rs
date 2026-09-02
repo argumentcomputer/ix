@@ -27,7 +27,7 @@ use ixon::constant::Constant as IxonConstant;
 #[cfg(feature = "test-ffi")]
 use ixon::constant::ConstantInfo;
 #[cfg(feature = "test-ffi")]
-use ixon::expr::Expr as IxonExpr;
+use ixon::expr::{Expr as IxonExpr, Owned as IxonOwned, Uses as IxonUses};
 use ixon::{Comm, ConstantMeta};
 use lean_ffi::object::LeanIOResult;
 use lean_ffi::object::LeanNat;
@@ -940,8 +940,8 @@ extern "C" fn rs_get_block_sharing_len(
 enum UnshareFrame<'a> {
   Visit(&'a Arc<IxonExpr>),
   BuildApp,
-  BuildLam,
-  BuildAll,
+  BuildLam(IxonUses),
+  BuildAll(IxonUses, IxonOwned),
   BuildLet(bool),
   BuildPrj(u64, u64),
 }
@@ -974,13 +974,13 @@ fn unshare_expr(
           stack.push(UnshareFrame::Visit(a));
           stack.push(UnshareFrame::Visit(f));
         },
-        IxonExpr::Lam(t, b) => {
-          stack.push(UnshareFrame::BuildLam);
+        IxonExpr::Lam(uses, t, b) => {
+          stack.push(UnshareFrame::BuildLam(*uses));
           stack.push(UnshareFrame::Visit(b));
           stack.push(UnshareFrame::Visit(t));
         },
-        IxonExpr::All(t, b) => {
-          stack.push(UnshareFrame::BuildAll);
+        IxonExpr::All(uses, owned, t, b) => {
+          stack.push(UnshareFrame::BuildAll(*uses, *owned));
           stack.push(UnshareFrame::Visit(b));
           stack.push(UnshareFrame::Visit(t));
         },
@@ -1002,15 +1002,15 @@ fn unshare_expr(
         let f = results.pop().unwrap();
         results.push(Arc::new(IxonExpr::App(f, a)));
       },
-      UnshareFrame::BuildLam => {
+      UnshareFrame::BuildLam(uses) => {
         let b = results.pop().unwrap();
         let t = results.pop().unwrap();
-        results.push(Arc::new(IxonExpr::Lam(t, b)));
+        results.push(Arc::new(IxonExpr::Lam(uses, t, b)));
       },
-      UnshareFrame::BuildAll => {
+      UnshareFrame::BuildAll(uses, owned) => {
         let b = results.pop().unwrap();
         let t = results.pop().unwrap();
-        results.push(Arc::new(IxonExpr::All(t, b)));
+        results.push(Arc::new(IxonExpr::All(uses, owned, t, b)));
       },
       UnshareFrame::BuildLet(nd) => {
         let b = results.pop().unwrap();

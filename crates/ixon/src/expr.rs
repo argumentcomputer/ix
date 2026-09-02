@@ -5,6 +5,54 @@
 
 use std::sync::Arc;
 
+/// Binder usage carried by Ixon v2 lambda and forall nodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Uses {
+  Erased = 0,
+  Linear = 1,
+  Affine = 2,
+  Many = 3,
+}
+
+impl Uses {
+  pub const fn to_bits(self) -> u8 {
+    self as u8
+  }
+
+  pub const fn from_bits(bits: u8) -> Option<Self> {
+    match bits {
+      0 => Some(Self::Erased),
+      1 => Some(Self::Linear),
+      2 => Some(Self::Affine),
+      3 => Some(Self::Many),
+      _ => None,
+    }
+  }
+}
+
+/// Ownership made available to the caller for a forall result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Owned {
+  Unique = 0,
+  Shared = 1,
+}
+
+impl Owned {
+  pub const fn to_bits(self) -> u8 {
+    self as u8
+  }
+
+  pub const fn from_bits(bits: u8) -> Option<Self> {
+    match bits {
+      0 => Some(Self::Unique),
+      1 => Some(Self::Shared),
+      _ => None,
+    }
+  }
+}
+
 /// Expression in the Ixon format.
 ///
 /// This is the alpha-invariant representation of Lean expressions.
@@ -30,10 +78,10 @@ pub enum Expr {
   Nat(u64),
   /// Application: (function, argument)
   App(Arc<Expr>, Arc<Expr>),
-  /// Lambda: (binder_type, body)
-  Lam(Arc<Expr>, Arc<Expr>),
-  /// Forall/Pi: (binder_type, body)
-  All(Arc<Expr>, Arc<Expr>),
+  /// Lambda: (binder_usage, binder_type, body)
+  Lam(Uses, Arc<Expr>, Arc<Expr>),
+  /// Forall/Pi: (binder_usage, result_ownership, binder_type, body)
+  All(Uses, Owned, Arc<Expr>, Arc<Expr>),
   /// Let: (non_dep, type, value, body)
   Let(bool, Arc<Expr>, Arc<Expr>, Arc<Expr>),
   /// Reference to shared subexpression in MutualBlock.sharing[idx]
@@ -88,11 +136,24 @@ impl Expr {
   }
 
   pub fn lam(ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
-    Arc::new(Expr::Lam(ty, body))
+    Self::lam_mode(Uses::Many, ty, body)
+  }
+
+  pub fn lam_mode(uses: Uses, ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
+    Arc::new(Expr::Lam(uses, ty, body))
   }
 
   pub fn all(ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
-    Arc::new(Expr::All(ty, body))
+    Self::all_mode(Uses::Many, Owned::Shared, ty, body)
+  }
+
+  pub fn all_mode(
+    uses: Uses,
+    owned: Owned,
+    ty: Arc<Expr>,
+    body: Arc<Expr>,
+  ) -> Arc<Self> {
+    Arc::new(Expr::All(uses, owned, ty, body))
   }
 
   pub fn let_(
@@ -123,7 +184,7 @@ impl Expr {
   pub fn lam_telescope_count(&self) -> u64 {
     let mut count = 0u64;
     let mut curr = self;
-    while let Expr::Lam(_, body) = curr {
+    while let Expr::Lam(_, _, body) = curr {
       count += 1;
       curr = body.as_ref();
     }
@@ -134,7 +195,7 @@ impl Expr {
   pub fn all_telescope_count(&self) -> u64 {
     let mut count = 0u64;
     let mut curr = self;
-    while let Expr::All(_, body) = curr {
+    while let Expr::All(_, _, _, body) = curr {
       count += 1;
       curr = body.as_ref();
     }
@@ -240,6 +301,12 @@ pub mod tests {
           stack.push(f_ptr);
         },
         Case::Lam => {
+          let uses = match gen_range(g, 0..4) {
+            0 => Uses::Erased,
+            1 => Uses::Linear,
+            2 => Uses::Affine,
+            _ => Uses::Many,
+          };
           let mut ty = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
           let (ty_ptr, body_ptr) = (
@@ -247,12 +314,20 @@ pub mod tests {
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
           unsafe {
-            ptr::write(ptr, Expr::Lam(ty, body));
+            ptr::write(ptr, Expr::Lam(uses, ty, body));
           }
           stack.push(body_ptr);
           stack.push(ty_ptr);
         },
         Case::All => {
+          let uses = match gen_range(g, 0..4) {
+            0 => Uses::Erased,
+            1 => Uses::Linear,
+            2 => Uses::Affine,
+            _ => Uses::Many,
+          };
+          let owned =
+            if gen_range(g, 0..2) == 0 { Owned::Unique } else { Owned::Shared };
           let mut ty = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
           let (ty_ptr, body_ptr) = (
@@ -260,7 +335,7 @@ pub mod tests {
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
           unsafe {
-            ptr::write(ptr, Expr::All(ty, body));
+            ptr::write(ptr, Expr::All(uses, owned, ty, body));
           }
           stack.push(body_ptr);
           stack.push(ty_ptr);
@@ -385,7 +460,7 @@ pub mod tests {
       Expr::lam(ty.clone(), Expr::lam(ty.clone(), Expr::lam(ty, Expr::var(0))));
     let mut buf = Vec::new();
     put_expr(expr.as_ref(), &mut buf);
-    assert_eq!(buf.len(), 5);
+    assert_eq!(buf.len(), 8);
     assert!(expr_roundtrip(&expr));
   }
 
@@ -413,7 +488,7 @@ pub mod tests {
       }
       let mut buf = Vec::new();
       put_expr(expr.as_ref(), &mut buf);
-      assert_eq!(buf.len(), tag_bytes + (n as usize) + 1);
+      assert_eq!(buf.len(), tag_bytes + 2 * (n as usize) + 1);
       assert!(expr_roundtrip(&expr));
     }
   }

@@ -132,6 +132,31 @@ def TrustedReferences (world : VerifyWorld) (support : RunSupport) : Prop :=
   ∀ {source : KExpr .anon} {id : KId .anon},
     support source → source.References id → world.trusted id
 
+/-- Authority-aware form of `TrustedReferences`.  Stable method runs inhabit
+this through ordinary trust.  An atomic coordinated-block run may instead
+authorize a direct reference to one of the exact active members.  This
+predicate does not make active declarations well typed and must never be used
+as a replacement for `TrustedReferences` by reduction, inference, or DefEq
+caches; it exists for subject-scoped structural artifacts such as generated
+recursor batches. -/
+def AuthorizedReferences (authority : CacheAuthority)
+    (support : RunSupport) : Prop :=
+  ∀ {source : KExpr .anon} {id : KId .anon},
+    support source → source.References id →
+      authority.world.trusted id ∨ authority.active id
+
+namespace TrustedReferences
+
+/-- Ordinary stable reference closure is exactly the no-active-member case
+of authority-aware closure. -/
+theorem authorized {world : VerifyWorld} {support : RunSupport}
+    (h : TrustedReferences world support) :
+    AuthorizedReferences (CacheAuthority.stable world) support := by
+  intro source id hsource href
+  exact .inl (h hsource href)
+
+end TrustedReferences
+
 /-- Result-support contract for the exact predecessor-table WHNF callbacks
 crossed by helper scans.  Unlike `WhnfCallbackPreserves`, this retains the
 finite result witness needed to authorize declaration references selected

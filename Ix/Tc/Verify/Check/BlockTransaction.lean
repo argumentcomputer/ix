@@ -53,12 +53,8 @@ theorem ofKernel
     (hblocks : LoadedBlocksAgrees world.blocks state.env) :
     ActiveBlockStateWF semantics trProj world support members state := by
   have hauthority : CacheAuthority.stable world ≤
-      CacheAuthority.coordinatedBlock world members := by
-    refine ⟨VerifyWorld.LE.rfl, ?_⟩
-    intro id hauthorized
-    rcases hauthorized with htrusted | hactive
-    · exact .inl htrusted
-    · exact False.elim hactive
+      CacheAuthority.coordinatedBlock world members :=
+    CacheAuthority.stable_le_coordinatedBlock
   exact
     { blockState := ⟨h.core, hblocks⟩
       internSupport := h.internSupport

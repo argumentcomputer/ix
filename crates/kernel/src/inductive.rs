@@ -1701,182 +1701,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
-  fn recursor_major_domain_for_addr(
-    &mut self,
-    rec_ty: &KExpr<M>,
-    prefix_skip: u64,
-    target_addr: &Address,
-  ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    const MAX_MAJOR_SCAN_FORALLS: u64 = 64;
-
-    let mut ty = rec_ty.clone();
-    for _ in 0..prefix_skip {
-      let w = self.whnf(&ty)?;
-      match w.data() {
-        ExprData::All(_, _, _, body, _) => ty = body.clone(),
-        _ => return Ok(None),
-      }
-    }
-
-    for _ in 0..=MAX_MAJOR_SCAN_FORALLS {
-      let w = self.whnf(&ty)?;
-      match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
-          let (head, _) = collect_app_spine(dom);
-          if let ExprData::Const(id, _, _) = head.data()
-            && id.addr == *target_addr
-            && matches!(self.try_get_const(id)?, Some(KConst::Indc { .. }))
-          {
-            return Ok(Some(dom.clone()));
-          }
-          ty = body.clone();
-        },
-        _ => return Ok(None),
-      }
-    }
-
-    Ok(None)
-  }
-
-  fn major_domain_signature_eq(
-    &mut self,
-    a: &KExpr<M>,
-    b: &KExpr<M>,
-  ) -> Result<bool, TcError<M>> {
-    let (a_head, a_args) = collect_app_spine(a);
-    let (b_head, b_args) = collect_app_spine(b);
-    let (a_id, a_us) = match a_head.data() {
-      ExprData::Const(id, us, _) => (id, us),
-      _ => return Ok(false),
-    };
-    let (b_id, b_us) = match b_head.data() {
-      ExprData::Const(id, us, _) => (id, us),
-      _ => return Ok(false),
-    };
-    if a_id.addr != b_id.addr
-      || a_us.len() != b_us.len()
-      || a_args.len() != b_args.len()
-    {
-      return Ok(false);
-    }
-    if !a_us.iter().zip(b_us.iter()).all(|(u, v)| univ_eq(u, v)) {
-      return Ok(false);
-    }
-    for (a_arg, b_arg) in a_args.iter().zip(b_args.iter()) {
-      if !self.is_def_eq(a_arg, b_arg)? {
-        return Ok(false);
-      }
-    }
-    Ok(true)
-  }
-
-  fn major_domain_signature_text(domain: Option<&KExpr<M>>) -> String {
-    match domain {
-      Some(d) => {
-        let (head, args) = collect_app_spine(d);
-        match head.data() {
-          ExprData::Const(id, _, _) => {
-            format!("head={id} args={} dom={d}", args.len())
-          },
-          _ => format!("head=<non-const> args={} dom={d}", args.len()),
-        }
-      },
-      None => "<none>".to_string(),
-    }
-  }
-
-  /// Dump the full per-peer alignment table when
-  /// `populate_recursor_rules_from_block` detects canonical-order divergence.
-  /// Prints both the kernel's reconstructed flat layout and the stored
-  /// recursor block side-by-side, with the extracted major-domain signature
-  /// for each peer, so the divergence can be pinpointed.
-  ///
-  /// Always emits to stderr (this is a real bug, not opt-in tracing). Output
-  /// is bounded by the block's recursor count, so even a worst-case mutual
-  /// block with many auxiliaries produces a few dozen lines, not thousands.
-  #[allow(clippy::too_many_arguments)]
-  fn dump_recursor_alignment_failure(
-    &mut self,
-    ind_block_id: &KId<M>,
-    rec_block_id: &KId<M>,
-    generated_snapshot: &[GeneratedRecursor<M>],
-    flat: &[FlatBlockMember<M>],
-    rec_ids: &[KId<M>],
-    prefix_base: u64,
-    failed_gi: usize,
-    failed_gen_major: Option<&KExpr<M>>,
-    failed_stored_major: Option<&KExpr<M>>,
-  ) {
-    eprintln!(
-      "[recursor.align] FAIL ind_block={ind_block_id} rec_block={rec_block_id} \
-peers={} flat={} rec_ids={} failed_gi={failed_gi}",
-      generated_snapshot.len(),
-      flat.len(),
-      rec_ids.len()
-    );
-    eprintln!(
-      "  failed gen major: {}",
-      Self::major_domain_signature_text(failed_gen_major)
-    );
-    eprintln!(
-      "  failed stored major: {}",
-      Self::major_domain_signature_text(failed_stored_major)
-    );
-    let n = generated_snapshot.len().min(flat.len()).min(rec_ids.len());
-    for gi in 0..n {
-      let gen_rec = &generated_snapshot[gi];
-      let target_addr = &gen_rec.ind_addr;
-      let gen_skip = checked_metadata_sum::<M>(
-        "generated recursor major index",
-        &[prefix_base, flat[gi].n_indices],
-      )
-      .ok();
-      let gen_major = gen_skip.and_then(|skip| {
-        self
-          .recursor_major_domain_for_addr(&gen_rec.ty, skip, target_addr)
-          .unwrap_or(None)
-      });
-      let rid = &rec_ids[gi];
-      let (stored_skip, stored_ty) =
-        match self.try_get_const(rid).ok().flatten() {
-          Some(KConst::Recr {
-            params, motives, minors, indices, ty, ..
-          }) => (
-            checked_metadata_sum::<M>(
-              "recursor major index",
-              &[params, motives, minors, indices],
-            )
-            .ok(),
-            Some(ty.clone()),
-          ),
-          _ => (None, None),
-        };
-      let stored_major = match (stored_skip, stored_ty) {
-        (Some(skip), Some(ty)) => self
-          .recursor_major_domain_for_addr(&ty, skip, target_addr)
-          .unwrap_or(None),
-        _ => None,
-      };
-      let mark = if gi == failed_gi { "!!" } else { "  " };
-      eprintln!(
-        "  {mark} peer[{gi:2}] flat.id={} target={}… aux={} ind={}…",
-        flat[gi].id,
-        &target_addr.hex()[..8],
-        flat[gi].is_aux,
-        &gen_rec.ind_addr.hex()[..8]
-      );
-      eprintln!(
-        "       gen   : {}",
-        Self::major_domain_signature_text(gen_major.as_ref())
-      );
-      eprintln!(
-        "       sto   : {} (rid={})",
-        Self::major_domain_signature_text(stored_major.as_ref()),
-        rid
-      );
-    }
-  }
-
   fn dump_rule_rhs_first_diff(
     &mut self,
     lhs: &KExpr<M>,
@@ -2370,7 +2194,12 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       let w = self.whnf(&ty)?;
       match w.data() {
         ExprData::All(_, _, _, body, _) => ty = body.clone(),
-        _ => return Ok(()), // not enough foralls — ok
+        _ => {
+          return Err(TcError::Other(
+            "positivity: nested constructor has fewer parameter binders than declared"
+              .into(),
+          ));
+        },
       }
     }
 
@@ -2601,29 +2430,30 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     ty: &KExpr<M>,
     n: usize,
   ) -> Result<KUniv<M>, TcError<M>> {
-    let saved = self.lctx.len();
-    let mut t = ty.clone();
-    for i in 0..n {
+    let saved = self.save_depth();
+    let result = (|| -> Result<KUniv<M>, TcError<M>> {
+      let mut t = ty.clone();
+      for i in 0..n {
+        let w = self.whnf(&t)?;
+        match w.data() {
+          ExprData::All(_, _, dom, body, _) => {
+            self.push_local(dom.clone());
+            t = body.clone();
+          },
+          _ => {
+            return Err(TcError::Other(format!(
+              "get_result_sort_level: expected {n} foralls, only found {i}"
+            )));
+          },
+        }
+      }
       let w = self.whnf(&t)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
-          let (open, _) = self.open_binder_anon(dom.clone(), body);
-          t = open;
-        },
-        _ => {
-          self.lctx.truncate(saved);
-          return Err(TcError::Other(format!(
-            "get_result_sort_level: expected {n} foralls, only found {i}"
-          )));
-        },
+        ExprData::Sort(u, _) => Ok(u.clone()),
+        _ => Err(TcError::Other("get_result_sort_level: not a sort".into())),
       }
-    }
-    let w = self.whnf(&t)?;
-    let result = match w.data() {
-      ExprData::Sort(u, _) => Ok(u.clone()),
-      _ => Err(TcError::Other("get_result_sort_level: not a sort".into())),
-    };
-    self.lctx.truncate(saved);
+    })();
+    self.restore_depth(saved);
     result
   }
 
@@ -2936,24 +2766,15 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     }
 
     if self.recursor_dump_matches_block(block_id, &flat) {
-      let prefix_skip = checked_metadata_sum::<M>(
-        "generated recursor params + motives + minors",
-        &[n_params, n_motives, n_minors],
-      )?;
       eprintln!(
-        "[recursor.dump] generated recursors for {block_id}: count={} prefix_skip={prefix_skip}",
+        "[recursor.dump] generated recursors for {block_id}: count={}",
         generated.len()
       );
       for (gi, g) in generated.iter().enumerate() {
-        let major = self.recursor_major_domain_for_addr(
-          &g.ty,
-          prefix_skip,
-          &g.ind_addr,
-        )?;
         eprintln!(
-          "  gen[{gi:2}] ind_addr={} {}",
+          "  gen[{gi:2}] ind_addr={} type={}",
           &g.ind_addr.hex()[..8],
-          Self::major_domain_signature_text(major.as_ref())
+          g.ty
         );
       }
     }
@@ -3545,7 +3366,14 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
   ) -> Result<Option<usize>, TcError<M>> {
     let mut ty = dom.clone();
     loop {
-      let w = self.whnf(&ty)?;
+      // An exposed flat-member spine is already headed by an inductive
+      // constant, so full WHNF cannot reveal a different recursive target.
+      // This matters in rule construction, where the future lambda positions
+      // are represented by loose de Bruijn variables but are not installed in
+      // the checker's live local context. Hidden heads and non-member
+      // constants retain the ordinary WHNF path.
+      let head_matches_flat = Self::has_flat_member_head(&ty, flat);
+      let w = if head_matches_flat { ty.clone() } else { self.whnf(&ty)? };
       match w.data() {
         ExprData::All(_, _, _, body, _) => ty = body.clone(),
         _ => {
@@ -3587,6 +3415,17 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           return Ok(None);
         },
       }
+    }
+  }
+
+  /// Whether `e` already exposes one of the flattened inductive members at
+  /// the head of its application spine. Such a head is irreducible: WHNF
+  /// cannot turn it into another forall or recursive target.
+  fn has_flat_member_head(e: &KExpr<M>, flat: &[FlatBlockMember<M>]) -> bool {
+    let (head, _) = collect_app_spine(e);
+    match head.data() {
+      ExprData::Const(id, _, _) => flat.iter().any(|m| m.id.addr == id.addr),
+      _ => false,
     }
   }
 
@@ -3937,13 +3776,73 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       Some(g) => g.clone(),
       None => return Ok(()),
     };
+    let generated_with_rules = self.populate_recursor_rules_from_block_core(
+      ind_block_id,
+      rec_block_id,
+      &generated_snapshot,
+    )?;
+
+    let Some(cached) = self.env.recursor_cache.get(ind_block_id) else {
+      return Err(TcError::Other(
+        "populate_recursor_rules_from_block: cache disappeared before return"
+          .into(),
+      ));
+    };
+    let metadata_matches =
+      cached.iter().zip(generated_snapshot.iter()).all(|(actual, expected)| {
+        actual.ind_addr == expected.ind_addr
+          && actual.lvls == expected.lvls
+          && actual.params == expected.params
+          && actual.motives == expected.motives
+          && actual.minors == expected.minors
+          && actual.indices == expected.indices
+          && actual.is_unsafe == expected.is_unsafe
+      });
+    if cached.len() != generated_snapshot.len() || !metadata_matches {
+      return Err(TcError::Other(
+        "populate_recursor_rules_from_block: cache header metadata changed before return".into(),
+      ));
+    }
+    if generated_with_rules.len() != generated_snapshot.len() {
+      return Err(TcError::Other(format!(
+        "populate_recursor_rules_from_block: generated rule batch changed length: generated={} expected={}",
+        generated_with_rules.len(),
+        generated_snapshot.len()
+      )));
+    }
+
+    // Callback-written types and rules are untrusted. Rebuild the installed
+    // batch from the immutable ingress headers/types and the rule arrays
+    // returned by the local construction path.
+    let installed = generated_snapshot
+      .into_iter()
+      .zip(generated_with_rules)
+      .map(|(mut header, generated)| {
+        header.rules = generated.rules;
+        header
+      })
+      .collect();
+    self.env.recursor_cache.insert(ind_block_id.clone(), installed);
+
+    Ok(())
+  }
+
+  /// Internal rule-population body for an already-snapshotted generated batch.
+  /// The public wrapper validates the snapshot again on every successful
+  /// return, including the early exits below.
+  fn populate_recursor_rules_from_block_core(
+    &mut self,
+    ind_block_id: &KId<M>,
+    rec_block_id: &KId<M>,
+    generated_snapshot: &[GeneratedRecursor<M>],
+  ) -> Result<Vec<GeneratedRecursor<M>>, TcError<M>> {
     if generated_snapshot.is_empty() {
-      return Ok(());
+      return Ok(generated_snapshot.to_vec());
     }
 
     let members = match self.try_get_block(rec_block_id)? {
       Some(m) => m,
-      None => return Ok(()),
+      None => return Ok(generated_snapshot.to_vec()),
     };
     let mut rec_ids: Vec<KId<M>> = Vec::new();
     for id in members {
@@ -3952,16 +3851,16 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       }
     }
     if rec_ids.is_empty() {
-      return Ok(());
+      return Ok(generated_snapshot.to_vec());
     }
 
     let block_inds = self.discover_block_inductives(ind_block_id)?;
     if block_inds.is_empty() {
-      return Ok(());
+      return Ok(generated_snapshot.to_vec());
     }
     let n_params_u64 = match self.try_get_const(&block_inds[0])? {
       Some(KConst::Indc { params, .. }) => params,
-      _ => return Ok(()),
+      _ => return Ok(generated_snapshot.to_vec()),
     };
     let ind_lvls = match self.try_get_const(&block_inds[0])? {
       Some(KConst::Indc { lvls, .. }) => lvls,
@@ -4017,20 +3916,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       .zip(flat.iter())
       .all(|(g, member)| g.rules.len() == member.ctors.len())
     {
-      return Ok(());
+      return Ok(generated_snapshot.to_vec());
     }
-
-    let n_motives = flat.len() as u64;
-    let n_minors = flat.iter().try_fold(0u64, |sum, member| {
-      checked_metadata_sum::<M>(
-        "generated recursor minors",
-        &[sum, member.ctors.len() as u64],
-      )
-    })?;
-    let prefix_base = checked_metadata_sum::<M>(
-      "generated recursor params + motives + minors",
-      &[n_params_u64, n_motives, n_minors],
-    )?;
 
     // Position-by-position alignment.
     //
@@ -4041,11 +3928,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     // around line 2069 and `docs/ix_canonicity.md` §6.2. So generated peer
     // `gi` aligns with `rec_ids[gi]` directly: no search, no greedy match.
     //
-    // We still verify the alignment by comparing extracted major-domain
-    // signatures peer-by-peer. A mismatch means canonical order has in fact
-    // diverged between the kernel's flat reconstruction and the stored
-    // block — a real bug. Surface it loudly with a per-peer diagnostic so
-    // the divergence is debuggable, then fail.
+    // Verify the alignment with every header field and the complete closed
+    // recursor type. Peeling forall bodies here would expose dangling de
+    // Bruijn variables to stateful WHNF/DefEq callbacks.
     if rec_ids.len() != flat.len() {
       return Err(TcError::Other(format!(
         "populate_recursor_rules_from_block: rec_ids/flat count mismatch: rec_ids={} flat={}",
@@ -4056,58 +3941,46 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     let mut peers: Vec<KId<M>> = Vec::with_capacity(flat.len());
     for (gi, gen_rec) in generated_snapshot.iter().enumerate() {
-      let target_addr = &gen_rec.ind_addr;
       let rid = &rec_ids[gi];
-      let (params, motives, minors, indices, ty) = match self.get_const(rid)? {
-        KConst::Recr { params, motives, minors, indices, ty, .. } => {
-          (params, motives, minors, indices, ty.clone())
-        },
+      let (lvls, is_unsafe, params, motives, minors, indices, ty) = match self
+        .get_const(
+        rid,
+      )? {
+        KConst::Recr {
+          lvls,
+          is_unsafe,
+          params,
+          motives,
+          minors,
+          indices,
+          ty,
+          ..
+        } => (lvls, is_unsafe, params, motives, minors, indices, ty.clone()),
         _ => {
           return Err(TcError::Other(format!(
             "populate_recursor_rules_from_block: rec_ids[{gi}]={rid} is not a recursor"
           )));
         },
       };
-      let gen_skip = checked_metadata_sum::<M>(
-        "generated recursor major index",
-        &[prefix_base, flat[gi].n_indices],
-      )?;
-      let gen_major = self.recursor_major_domain_for_addr(
-        &gen_rec.ty,
-        gen_skip,
-        target_addr,
-      )?;
-      let stored_skip = checked_metadata_sum::<M>(
-        "recursor major index",
-        &[params, motives, minors, indices],
-      )?;
-      let stored_major =
-        self.recursor_major_domain_for_addr(&ty, stored_skip, target_addr)?;
-      let signatures_match = match (&gen_major, &stored_major) {
-        (Some(g), Some(s)) => self.major_domain_signature_eq(g, s)?,
-        _ => false,
-      };
-      if !signatures_match {
-        self.dump_recursor_alignment_failure(
-          ind_block_id,
-          rec_block_id,
-          &generated_snapshot,
-          &flat,
-          &rec_ids,
-          prefix_base,
-          gi,
-          gen_major.as_ref(),
-          stored_major.as_ref(),
-        );
+      if (lvls, is_unsafe, params, motives, minors, indices)
+        != (
+          gen_rec.lvls,
+          gen_rec.is_unsafe,
+          gen_rec.params,
+          gen_rec.motives,
+          gen_rec.minors,
+          gen_rec.indices,
+        )
+      {
+        return Err(TcError::Other(format!(
+          "populate_recursor_rules_from_block: canonical header mismatch at peer {gi}"
+        )));
+      }
+      if !self.is_def_eq(&gen_rec.ty, &ty)? {
         return Err(TcError::Other(format!(
           "populate_recursor_rules_from_block: canonical-order mismatch at peer {gi}: \
-flat[{gi}].id={} (target_addr={}…), rec_ids[{gi}]={}; gen and stored major-domain signatures differ. \
-This indicates the kernel's `canonical_aux_order` and the stored recursor block diverge — \
-re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
-          flat[gi].id,
-          &target_addr.hex()[..8],
-          rid,
-          ind_block_id
+flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
+          flat[gi].id, rid
         )));
       }
       peers.push(rid.clone());
@@ -4116,7 +3989,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     let peer_recs: Vec<KId<M>> = peers;
     let is_large = univ_offset > 0;
     let n_params = u64_to_usize::<M>(n_params_u64)?;
-    let mut generated_with_rules = generated_snapshot;
+    let mut generated_with_rules = generated_snapshot.to_vec();
 
     for gi in 0..flat.len() {
       let member = &flat[gi];
@@ -4152,21 +4025,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       generated_with_rules[gi].rules = rules;
     }
 
-    if let Some(cached) = self.env.recursor_cache.get_mut(ind_block_id) {
-      if cached.len() != generated_with_rules.len() {
-        return Err(TcError::Other(format!(
-          "populate_recursor_rules_from_block: cache changed length: cached={} generated={}",
-          cached.len(),
-          generated_with_rules.len()
-        )));
-      }
-      for (dst, src) in cached.iter_mut().zip(generated_with_rules.into_iter())
-      {
-        dst.rules = src.rules;
-      }
-    }
-
-    Ok(())
+    Ok(generated_with_rules)
   }
 
   /// Build the rule RHS for a single constructor.
@@ -4227,6 +4086,12 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     let mut n_fields = 0u64;
     let mut tmp = count_ty;
     loop {
+      // The constructor result is an exposed application of its flat member.
+      // It cannot reduce to another field forall, and its arguments may use
+      // the virtual de Bruijn frame of the rule currently being built.
+      if Self::has_flat_member_head(&tmp, flat) {
+        break;
+      }
       let w = self.whnf(&tmp)?;
       match w.data() {
         ExprData::All(_, _, _, body, _) => {
@@ -4356,6 +4221,11 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       })?;
     let mut field_idx = 0u64;
     loop {
+      // Stop before sending the exposed inductive result, whose arguments
+      // inhabit the future lambda frame rather than `self.lctx`, through WHNF.
+      if Self::has_flat_member_head(&ty2, flat) {
+        break;
+      }
       let w = self.whnf(&ty2)?;
       match w.data() {
         ExprData::All(_, _, dom, body2, _) => {
@@ -4556,7 +4426,11 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
 
     // Peel foralls from the domain to detect wrapping.
     // After peeling, the head should be `I_target params idx_args`.
-    let wdom = self.whnf(dom)?;
+    let wdom = if Self::has_flat_member_head(dom, flat) {
+      dom.clone()
+    } else {
+      self.whnf(dom)?
+    };
     let mut inner = wdom.clone();
     let mut forall_doms: Vec<KExpr<M>> = Vec::new();
 
@@ -4578,7 +4452,11 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     )?;
 
     // Extract index args from the inner application: `I_target params idx_args`
-    let inner_w = self.whnf(&inner)?;
+    let inner_w = if Self::has_flat_member_head(&inner, flat) {
+      inner.clone()
+    } else {
+      self.whnf(&inner)?
+    };
     let (_, inner_args) = collect_app_spine(&inner_w);
     let idx_args: Vec<KExpr<M>> =
       inner_args.iter().skip(target_n_params).cloned().collect();
@@ -4732,6 +4610,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       motives,
       minors,
       indices,
+      stored_rules,
     ) = match self.get_const(id)? {
       KConst::Recr {
         block,
@@ -4743,6 +4622,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
         motives,
         minors,
         indices,
+        rules,
         ..
       } => (
         block.clone(),
@@ -4754,6 +4634,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
         motives,
         minors,
         indices,
+        rules.clone(),
       ),
       _ => {
         return Err(TcError::Other("check_recursor: not a recursor".into()));
@@ -4858,73 +4739,59 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       },
     };
 
-    // Signature-based match for aux recursors.
+    // Full-type match for aux recursors.
     //
     // Nested auxiliaries can contain several recursors with the same external
-    // major head (for example multiple `List` auxes with different element
-    // types). Matching only by `ind_addr` picks the first such recursor.
-    // Matching primarily by the stored recursor's block position is also too
-    // brittle: the compiled recursor block is sorted as recursor constants,
-    // while generation is ordered by the flat inductive layout. Select by the
-    // extracted major premise domain first, then keep the old positional and
-    // address lookups as fixture fallbacks.
+    // major head. Complete recursor types disambiguate those specializations
+    // while remaining closed. Extracting a major domain by peeling forall
+    // bodies would instead send dangling de Bruijn variables through
+    // stateful WHNF/DefEq callbacks.
     let stored_pos: Option<usize> = self
       .env
       .blocks
       .get(&rec_block)
       .and_then(|members| members.iter().position(|m| m == id));
-    let prefix_skip = checked_metadata_sum::<M>(
-      "recursor params + motives + minors",
-      &[params, motives, minors],
-    )?;
-    let stored_major =
-      self.recursor_major_domain_for_addr(&ty, prefix_skip, &ind_id.addr)?;
-    let mut signature_matches: Vec<usize> = Vec::new();
-    if let Some(stored_major) = stored_major.as_ref() {
+    let header_matches = |g: &GeneratedRecursor<M>| {
+      g.ind_addr == ind_id.addr
+        && g.params == params
+        && g.motives == motives
+        && g.minors == minors
+    };
+
+    // Canonical block alignment was already checked position-by-position by
+    // `populate_recursor_rules_from_block`. Try that position first and stop
+    // as soon as its complete type matches. Scanning every same-major
+    // auxiliary before consulting the position is catastrophically expensive
+    // for nested mutual blocks: their recursor types share a hundred-binder
+    // prefix, so each *wrong* candidate consumes substantial def-eq fuel before
+    // diverging near the tail. The positional candidate is hash-identical in
+    // canonical production environments, making the common path O(1).
+    let mut type_matches: Vec<usize> = Vec::new();
+    if let Some(p) = stored_pos
+      && let Some(g) = generated.get(p)
+      && header_matches(g)
+      && self.is_def_eq(&g.ty, &ty)?
+    {
+      type_matches.push(p);
+    }
+    if type_matches.is_empty() {
       for (gi, g) in generated.iter().enumerate() {
-        if g.ind_addr != ind_id.addr {
+        if Some(gi) == stored_pos || !header_matches(g) {
           continue;
         }
-        if let Some(gen_major) = self.recursor_major_domain_for_addr(
-          &g.ty,
-          prefix_skip,
-          &g.ind_addr,
-        )? && self.major_domain_signature_eq(&gen_major, stored_major)?
-        {
-          signature_matches.push(gi);
+        if self.is_def_eq(&g.ty, &ty)? {
+          type_matches.push(gi);
         }
       }
     }
-    let selected_idx = stored_pos
-      .and_then(|p| signature_matches.iter().copied().find(|&gi| gi == p))
-      .or_else(|| signature_matches.first().copied())
-      .or_else(|| stored_pos.filter(|&p| p < generated.len()))
-      .or_else(|| generated.iter().position(|g| g.ind_addr == ind_id.addr));
+    let selected_idx = type_matches.first().copied();
 
     if self.recursor_dump_matches_id(id) {
       eprintln!(
         "[recursor.dump] check {} rec_block={} resolved_block={} stored_pos={stored_pos:?} selected_idx={selected_idx:?}",
         id, rec_block, resolved_block
       );
-      eprintln!(
-        "[recursor.dump] stored major: {}",
-        Self::major_domain_signature_text(stored_major.as_ref())
-      );
-      eprintln!("[recursor.dump] signature_matches={signature_matches:?}");
-      for (gi, g) in generated.iter().enumerate() {
-        if g.ind_addr != ind_id.addr {
-          continue;
-        }
-        let major = self.recursor_major_domain_for_addr(
-          &g.ty,
-          prefix_skip,
-          &g.ind_addr,
-        )?;
-        eprintln!(
-          "  cand[{gi:2}] {}",
-          Self::major_domain_signature_text(major.as_ref())
-        );
-      }
+      eprintln!("[recursor.dump] full_type_matches={type_matches:?}");
     }
 
     let gen_rec = selected_idx.map(|i| &generated[i]);
@@ -5031,10 +4898,6 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
         // The one-sided `is_empty()` branches below remain as legitimate
         // asymmetric mismatches (e.g., generator produced N rules but
         // storage has none, or vice versa).
-        let stored_rules = match self.get_const(id)? {
-          KConst::Recr { rules, .. } => rules.clone(),
-          _ => vec![],
-        };
         if gen_rules.is_empty() && !stored_rules.is_empty() {
           // C1: Generator produced no canonical rules but Lean stored
           // some — we cannot verify the stored rules against a missing
@@ -5695,7 +5558,12 @@ mod tests {
     let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("Bool.rec")) {
       Err(TcError::Other(s)) => {
-        assert!(s.contains("check_recursor: universe arity mismatch"));
+        assert!(
+          s.contains(
+            "populate_recursor_rules_from_block: canonical header mismatch"
+          ),
+          "unexpected rejection: {s}"
+        );
       },
       other => {
         panic!("expected recursor universe arity mismatch, got {other:?}")
@@ -5711,7 +5579,12 @@ mod tests {
     let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("Bool.rec")) {
       Err(TcError::Other(s)) => {
-        assert!(s.contains("check_recursor: safety mismatch"));
+        assert!(
+          s.contains(
+            "populate_recursor_rules_from_block: canonical header mismatch"
+          ),
+          "unexpected rejection: {s}"
+        );
       },
       other => panic!("expected recursor safety mismatch, got {other:?}"),
     }
@@ -7613,6 +7486,18 @@ mod tests {
   // -----------------------------------------------------------------------
 
   #[test]
+  fn reject_nested_constructor_with_short_parameter_telescope() {
+    let mut env = nat_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let result = tc.check_nested_ctor_fields(&sort1(), 1, &[], &[], &[], &[]);
+    assert!(
+      matches!(result, Err(TcError::Other(ref msg))
+        if msg.contains("fewer parameter binders than declared")),
+      "short nested constructor telescope must be rejected, got {result:?}"
+    );
+  }
+
+  #[test]
   fn reject_fabricated_multi_motive_recursor() {
     let mut env = nat_env();
     let rec_id = mk_id("Bad.rec");
@@ -7633,9 +7518,9 @@ mod tests {
         level_params: (),
         k: false,
         is_unsafe: false,
-        // Nat.rec has one recursor universe parameter. Keep the fabricated
-        // declaration canonical on metadata so this test reaches the intended
-        // multi-motive/type comparison rather than the earlier metadata gate.
+        // Nat.rec has one recursor universe parameter. The fabricated motive
+        // count is deliberately non-canonical and must fail the peer-header
+        // alignment gate before any rules can be installed.
         lvls: 1,
         params: 0,
         indices: 0,
@@ -7654,7 +7539,7 @@ mod tests {
     let result = tc.check_const(&rec_id);
     assert!(
       matches!(result, Err(TcError::Other(ref msg))
-        if msg.contains("arity metadata mismatch") || msg.contains("type mismatch")),
+        if msg.contains("populate_recursor_rules_from_block: canonical header mismatch")),
       "fabricated multi-motive recursor must be rejected, got {result:?}"
     );
   }

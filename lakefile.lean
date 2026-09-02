@@ -263,7 +263,8 @@ no local `sorry` tokens. Required CI builds it separately without `--wfail`,
 audits the exact local sorry frontier, and checks exact per-root transitive
 axiom plus direct-`sorryAx`-origin manifests. Dev loop:
 `lake build IxTcVerify`; focused trust audit:
-`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements`. -/
+`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional
+Ix.Tc.Verify.Audit.Statements`. -/
 lean_lib IxTcVerify where
   globs := #[.submodules `Ix.Tc.Verify]
   -- `supportInterpreter` is a `lean_exe` option and takes effect only when
@@ -273,6 +274,17 @@ lean_lib IxTcVerify where
   dynlibs := #[ix_native_decide_dynlib]
 
 end IxTcVerify
+
+section IxCompileVerify
+
+/- Formal verification of the Lean-to-Ixon compiler against the same
+Lean4Lean Theory endpoint as `IxTcVerify`.  Kept as a separate non-default
+library so compiler proofs cannot accidentally inherit checker acceptance
+theorems as their specification. -/
+lean_lib IxCompileVerify where
+  globs := #[.submodules `Ix.Compile.Verify]
+
+end IxCompileVerify
 
 section IxApplications
 

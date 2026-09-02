@@ -96,8 +96,9 @@ grows.  The source mixed context is required to be well-formed at the smaller
 budget so the embedded Theory typing premises can be transported. -/
 theorem monoU {env : VEnv} {before after : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (hle : before ≤ after)
+    (htp : TrProjOK env after trProj)
     {m : Mode} {Delta : KVLCtx} {e : KExpr m} {e' : VExpr}
     (H : TrKExprS env before nameOf trProj Delta e e')
     (hDelta : KVLCtx.WF env before Delta) :
@@ -150,7 +151,7 @@ theorem monoU {env : VEnv} {before after : Nat}
         (ihvalue hDelta)
         (ihbody hbodyDelta)
   | prj hname hvalue hproj ihvalue =>
-      exact .prj hname (ihvalue hDelta) hproj
+      exact .prj hname (ihvalue hDelta) (htp.monoU hle hDelta.toCtx hproj)
   | nat h =>
       exact .nat h
   | str h =>

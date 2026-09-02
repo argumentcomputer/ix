@@ -84,7 +84,7 @@ exactly the source universes. -/
 def KConst.IsCertifiedSingletonRecursor
     (source : VInductDecl) (generation : source.GenerationChecked)
     (constructorIds : Array (KId .anon)) : KConst .anon → Prop
-  | concrete@(.recr (lvls := levels) (params := params)
+  | concrete@(.recr (k := k) (lvls := levels) (params := params)
       (indices := indices) (motives := motives) (minors := minors)
       (memberIdx := memberIdx) (rules := rules) ..) =>
     levels.toNat = generation.recUvars ∧
@@ -94,7 +94,8 @@ def KConst.IsCertifiedSingletonRecursor
       minors.toNat = constructorIds.size ∧
       memberIdx = 0 ∧
       rules.size = constructorIds.size ∧
-      concrete.RecursorMajorIdxCoherent
+      concrete.RecursorMajorIdxCoherent ∧
+      k = generation.kTarget
   | _ => False
 
 namespace KConst.IsCertifiedSingletonRecursor
@@ -118,6 +119,20 @@ theorem levels
     simp_all [KConst.IsCertifiedSingletonRecursor, KConst.lvls,
       VInductDecl.GenerationChecked.recursor]
 
+/-- The physical recursor's declared K bit is exactly the independently
+computed flag retained by the certified Lean4Lean generation. -/
+theorem kTarget
+    {source : VInductDecl} {generation : source.GenerationChecked}
+    {constructorIds : Array (KId .anon)} {concrete : KConst .anon}
+    (h : concrete.IsCertifiedSingletonRecursor source generation
+      constructorIds) :
+    ∀ {k : Bool}, (∃ name levelParams isUnsafe levels params indices motives
+        minors block memberIdx type rules leanAll,
+      concrete = .recr name levelParams k isUnsafe levels params indices
+        motives minors block memberIdx type rules leanAll) →
+      k = generation.kTarget := by
+  cases concrete <;> simp_all [KConst.IsCertifiedSingletonRecursor]
+
 theorem coherent
     {source : VInductDecl} {generation : source.GenerationChecked}
     {constructorIds : Array (KId .anon)} {concrete : KConst .anon}
@@ -125,7 +140,7 @@ theorem coherent
       constructorIds) : concrete.RecursorMajorIdxCoherent := by
   cases concrete <;>
     simp only [KConst.IsCertifiedSingletonRecursor] at h
-  exact h.2.2.2.2.2.2.2
+  exact h.2.2.2.2.2.2.2.1
 
 theorem ruleCount
     {source : VInductDecl} {generation : source.GenerationChecked}
@@ -168,8 +183,9 @@ structure SingletonRecursorCatalogLink
     tx.certificate.generation family.constructorIds
   recursorName : nameOf recursorId.addr =
     some (.str tx.certificate.generation.block.sourceType.name "rec")
-  recursorType : RawExprRel after nameOf trProj [] recursorConcrete.ty
-    tx.certificate.generation.recursor.type
+  recursorType : RawExprRel (uvars := recursorConcrete.lvls.toNat) after
+    nameOf trProj [] recursorConcrete.ty
+      tx.certificate.generation.recursor.type
   rule : ∀ (index : Nat) (_hindex : index < family.constructorIds.size),
     ∃ concreteRule normalizedConstructor,
       recursorConcrete.RecursorRuleAt index concreteRule ∧
@@ -177,7 +193,10 @@ structure SingletonRecursorCatalogLink
         some normalizedConstructor ∧
       concreteRule.fields.toNat =
         (normalizedConstructor.fieldsR source.uvars source.nparams).length ∧
-      RawExprRel after nameOf trProj [] concreteRule.rhs
+      RawExprRel
+        (uvars :=
+          (tx.certificate.generation.rule index normalizedConstructor).uvars)
+        after nameOf trProj [] concreteRule.rhs
         (tx.certificate.generation.rule index normalizedConstructor).rhs ∧
       TrKExprS after
         (tx.certificate.generation.rule index normalizedConstructor).uvars
@@ -233,7 +252,10 @@ theorem ruleAt
         some (tx.certificate.generation.rule index normalizedConstructor) ∧
       concreteRule.fields.toNat =
         (normalizedConstructor.fieldsR source.uvars source.nparams).length ∧
-      RawExprRel after nameOf trProj [] concreteRule.rhs
+      RawExprRel
+        (uvars :=
+          (tx.certificate.generation.rule index normalizedConstructor).uvars)
+        after nameOf trProj [] concreteRule.rhs
         (tx.certificate.generation.rule index normalizedConstructor).rhs ∧
       TrKExprS after
         (tx.certificate.generation.rule index normalizedConstructor).uvars
@@ -301,6 +323,42 @@ theorem registeredRule
   obtain ⟨normalizedConstructor, _, hregistered⟩ :=
     link.registeredRuleAt hat
   exact ⟨_, hregistered⟩
+
+/-- The exact physical member array of a singleton recursor block.  This is a
+representation fact shared by enumeration and genuinely recursive recursors,
+so it lives below either pattern-specific oracle. -/
+def members
+    {trProj : RawProjRel} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}
+    {source : VInductDecl} {before after : VEnv}
+    {tx : CertifiedGenerationTransaction source before after}
+    {family : SingletonFamilyCatalogLink trProj catalog nameOf trusted tx}
+    (link : SingletonRecursorCatalogLink trProj catalog nameOf trusted tx
+      family) : Array (KId .anon) :=
+  #[link.recursorId]
+
+@[simp] theorem recursor_mem
+    {trProj : RawProjRel} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}
+    {source : VInductDecl} {before after : VEnv}
+    {tx : CertifiedGenerationTransaction source before after}
+    {family : SingletonFamilyCatalogLink trProj catalog nameOf trusted tx}
+    (link : SingletonRecursorCatalogLink trProj catalog nameOf trusted tx
+      family) : link.recursorId ∈ link.members := by
+  simp [members]
+
+/-- Membership in the recursor block identifies its sole declaration. -/
+theorem member_eq
+    {trProj : RawProjRel} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}
+    {source : VInductDecl} {before after : VEnv}
+    {tx : CertifiedGenerationTransaction source before after}
+    {family : SingletonFamilyCatalogLink trProj catalog nameOf trusted tx}
+    (link : SingletonRecursorCatalogLink trProj catalog nameOf trusted tx
+      family)
+    {id : KId .anon} (hmember : id ∈ link.members) :
+    id = link.recursorId := by
+  simpa [members] using hmember
 
 end SingletonRecursorCatalogLink
 
