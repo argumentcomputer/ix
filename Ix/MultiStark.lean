@@ -5,7 +5,9 @@ public import Ix.Aiur.Protocol
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.U64.Goldilocks
+public import Ix.IxVM.U64.Small
 public import Ix.IxVM.Width.Goldilocks
+public import Ix.IxVM.Width.KoalaBear
 public import Ix.IxVM.Blake3
 public import Ix.MultiStark.Field.GoldilocksNative
 public import Ix.MultiStark.Field.GoldilocksBytes
@@ -54,7 +56,7 @@ def entrypoints := ⟦
   -- non-deterministic advice on IO channel 0 — see the module docstring. One
   -- stream per channel (0 = proof, 1 = vk, 2 = claims), each registered under
   -- key `[0]` on its channel.
-  pub fn verify_multi_stark_proof(system_digest: [G; 8], claims_digest: [G; 8]) {
+  pub fn verify_multi_stark_proof(system_digest: PackedDigest, claims_digest: PackedDigest) {
     -- Proof advice from IO channel 0: deserialize directly from the IO arena
     -- by byte offset (no materialized byte stream), assert fully consumed.
     -- The byte FETCHES inside the readers are unconstrained (the proof is
@@ -118,14 +120,12 @@ domain + the deserializer + Blake3 + the vk deserializer + PCS + the verifier
 core + the entrypoint — unpruned, including entries inherited from the
 shared modules. Only the `*Tests` toplevels build on this; production uses
 the pruned forms. -/
-def multiStarkFullOver (field pcs : Aiur.Source.Toplevel) :
+def multiStarkFullOver (profile field pcs : Aiur.Source.Toplevel) :
     Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
-  -- The deserializer reads counts through the U64 boundary interface and
-  -- the FRI verifier compares through the width profile; the Goldilocks
-  -- forms because these toplevels are proved over Goldilocks.
-  let t ← t.merge IxVM.u64Goldilocks
-  let t ← t.merge IxVM.widthGoldilocks
+  -- The deserializer reads counts and the FRI verifier compares digests
+  -- through the width profile (U64 boundary + width core + verifier wire).
+  let t ← t.merge profile
   let t ← t.merge field
   let t ← t.merge transcriptBlake3
   let t ← t.merge twoAdicDomain
@@ -136,16 +136,40 @@ def multiStarkFullOver (field pcs : Aiur.Source.Toplevel) :
   let t ← t.merge verifier
   t.merge entrypoints
 
+/-- The Goldilocks verifier profile: U64 boundary + width core + wire. -/
+def goldilocksVerifierProfile : Except Aiur.Global Aiur.Source.Toplevel := do
+  let p ← IxVM.u64Goldilocks.merge IxVM.widthGoldilocks
+  p.merge IxVM.widthGoldilocksWire
+
+/-- The KoalaBear verifier profile (Hypercube backend): narrow U64
+boundary, narrow width core, narrow wire. -/
+def koalaBearVerifierProfile : Except Aiur.Global Aiur.Source.Toplevel := do
+  let p ← IxVM.u64Small.merge IxVM.widthKoalaBear
+  p.merge IxVM.widthKoalaBearWire
+
 /-- The native instantiation: Goldilocks as `Val` itself, the FRI PCS. -/
-def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel :=
-  multiStarkFullOver MultiStark.goldilocksNative MultiStark.pcsFri
+def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel := do
+  multiStarkFullOver (← goldilocksVerifierProfile)
+    MultiStark.goldilocksNative MultiStark.pcsFri
 
 /-- `multiStarkFull` with the byte-limb inner field: the SAME verifier
 program, its Goldilocks arithmetic emulated on bytes, so the toplevel is
 outer-field-independent — executable under the Goldilocks interpreter today
 and provable over a smaller outer field (KoalaBear, Hypercube backend). -/
-def multiStarkBytesFull : Except Aiur.Global Aiur.Source.Toplevel :=
-  multiStarkFullOver MultiStark.goldilocksBytes MultiStark.pcsFri
+def multiStarkBytesFull : Except Aiur.Global Aiur.Source.Toplevel := do
+  multiStarkFullOver (← goldilocksVerifierProfile)
+    MultiStark.goldilocksBytes MultiStark.pcsFri
+
+/-- The byte-form verifier over the KOALABEAR profiles: the toplevel the
+Hypercube backend proves (stage 2 on Hypercube). -/
+def multiStarkKoalaBearFull : Except Aiur.Global Aiur.Source.Toplevel := do
+  multiStarkFullOver (← koalaBearVerifierProfile)
+    MultiStark.goldilocksBytes MultiStark.pcsFri
+
+/-- `multiStarkKoalaBearFull` pruned to the verification entrypoint. -/
+def multiStarkKoalaBear : Except Aiur.Global Aiur.Source.Toplevel := do
+  let t ← multiStarkKoalaBearFull
+  pure (t.prune [`verify_multi_stark_proof])
 
 /-- The production Multi-STARK verifier toplevel: `multiStarkFull` pruned to
 `verify_multi_stark_proof`'s call closure. Every compiled function is a
@@ -197,6 +221,15 @@ def verifierPubInput (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
     (Array.range 8).map fun i =>
       .ofNat (h[4*i]!.toNat + 256 * h[4*i+1]!.toNat
         + 65536 * h[4*i+2]!.toNat + 16777216 * h[4*i+3]!.toNat)
+  digestGs vkBytes ++ digestGs claimBytes
+
+/-- 2-byte-word digest packing for the narrow-field verifier profile
+(matches `widthKoalaBear`'s `b3_pack`: `PackedDigest = [G; 16]`). -/
+def verifierPubInput2 (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
+  let digestGs : ByteArray → Array Aiur.G := fun b =>
+    let h := (Blake3.Rust.hash b).val.data
+    (Array.range 16).map fun i =>
+      .ofNat (h[2*i]!.toNat + 256 * h[2*i+1]!.toNat)
   digestGs vkBytes ++ digestGs claimBytes
 
 /-- The verifier toplevel PLUS its self-test entrypoints

@@ -5,6 +5,8 @@ public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.MultiStark
+public import Ix.Aiur.Hypercube
+public import Ix.Aiur.Statistics
 public import Ix.MultiStark.Field.GoldilocksBytes
 public import Blake3.Rust
 
@@ -313,6 +315,97 @@ def bytesEndToEndSuite : IO UInt32 := do
     expectErr "tampered proof advice rejected (byte-form)" tamperedProof,
     expectErr "tampered claim rejected (byte-form)" tamperedClaim,
   ])]) []
+
+
+/-- Stage 2 on Hypercube: the byte-form verifier over the KOALABEAR
+profiles (`multiStarkKoalaBear`) verifying a real stage-1 proof, proven by
+the Hypercube backend. Gates in order: the compiled toplevel's constants
+fit KoalaBear's modulus; the interpreter accepts the honest proof and
+rejects a tampered one (2-byte public digests); then the FFT-model stats
+and the Hypercube prove/verify with wall times and peak RSS. -/
+def stage2HypercubeSuite : IO UInt32 := do
+  let hwm : IO String := do
+    let s ← IO.FS.readFile "/proc/self/status"
+    pure <| (((s.splitOn "\n").find? (·.startsWith "VmHWM")).getD "VmHWM: ?").trimAscii.toString
+  IO.println "stage2-hypercube (byte verifier over KoalaBear, proved by Hypercube)…"
+  let facCompiled ← match factorialProgram.compile with
+    | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
+  let facIdx ← match facCompiled.getFuncIdx `fact_entry with
+    | some i => pure i
+    | none => IO.eprintln "fact_entry entrypoint not found"; return 1
+  let (claim, proof, _) ← match facSystem.prove facIdx #[Aiur.G.ofNat 5] default with
+    | .ok result => pure result
+    | .error e => IO.eprintln s!"factorial prove failed: {e}"; return 1
+  let proofBytes := proof.toBytes
+  let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
+  let vkBytes := facSystem.vkBytes
+  let vkGs : Array Aiur.G := vkBytes.data.map .ofUInt8
+  let claimBytes := serializeClaims #[claim]
+  let claimGs : Array Aiur.G := claimBytes.data.map .ofUInt8
+  let pubInput : Array Aiur.G := MultiStark.verifierPubInput2 vkBytes claimBytes
+  let mkIO := fun (pGs : Array Aiur.G) =>
+    (((default : IOBuffer).extend 0 #[Aiur.G.ofNat 0] pGs).extend 1 #[Aiur.G.ofNat 0] vkGs).extend
+      2 #[Aiur.G.ofNat 0] claimGs
+  IO.println s!"  stage-1 proof: {proofBytes.size} bytes (vk {vkBytes.size} bytes)"
+
+  let vTop ← match MultiStark.multiStarkKoalaBear with
+    | .error e => IO.eprintln s!"koalabear verifier merge failed: {e}"; return 1
+    | .ok t => pure t
+  let vCompiled ← match vTop.compile with
+    | .error e => IO.eprintln s!"koalabear verifier compilation failed: {e}"; return 1
+    | .ok c => pure c
+  match vCompiled.bytecode.checkConstants 2130706433 with
+    | .error e => IO.eprintln s!"checkConstants(koalabear): {e}"; return 1
+    | .ok _ => IO.println "  constants fit KoalaBear's modulus"
+  let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
+    | some i => pure i
+    | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
+
+  match vCompiled.bytecode.execute vIdx pubInput (mkIO proofGs) with
+  | .error e => IO.eprintln s!"interpreter rejected the honest proof: {e}"; return 1
+  | .ok (_, _, queryCounts) =>
+    IO.println "  interpreter accepts the honest proof"
+    let badProofBytes :=
+      proofBytes.set! 0 (UInt8.ofNat ((proofBytes.data[0]!.toNat + 1) % 256))
+    let badProofGs : Array Aiur.G := badProofBytes.data.map .ofUInt8
+    match vCompiled.bytecode.execute vIdx pubInput (mkIO badProofGs) with
+    | .ok _ => IO.eprintln "tampered proof was ACCEPTED"; return 1
+    | .error _ => IO.println "  interpreter rejects a tampered proof"
+    let sys := AiurSystem.build vCompiled.bytecode recCommitParams innerFri
+    let stats := Aiur.computeStats vCompiled queryCounts sys.circuitShapes
+    let live := stats.circuits.filter (·.height > 0)
+    let pow2 (n : Nat) : Nat := if n ≤ 1 then n else Nat.nextPowerOfTwo n
+    let area := live.foldl (fun a c => a + c.width * pow2 c.height) 0
+    let tallest := live.foldl (fun a c => max a c.height) 0
+    IO.println s!"  stats: totalFftCost {stats.totalFftCost}, live circuits {live.size}, \
+      Σ width·2^⌈h⌉ = {area}, tallest height {tallest}"
+    for c in (live.qsort (fun a b => a.fftCost > b.fftCost)).extract 0 6 do
+      IO.println s!"    {c.name}: w {c.width}, h {c.height}, fft {c.fftCost}"
+    IO.println s!"  {← hwm} (before hypercube)"
+    let t0 ← IO.monoMsNow
+    let hSys ← match Aiur.HypercubeSystem.build vCompiled.bytecode vIdx with
+      | .error e => IO.eprintln s!"hypercube build failed: {e}"; return 1
+      | .ok s => pure s
+    let t1 ← IO.monoMsNow
+    let (hClaim, blob) ← match hSys.prove pubInput (mkIO proofGs) with
+      | .error e => IO.eprintln s!"hypercube prove failed: {e}"; return 1
+      | .ok r => pure r
+    let t2 ← IO.monoMsNow
+    IO.println "── hypercube (KoalaBear, env-overridable ProverParams)"
+    IO.println s!"  machine build {t1 - t0} ms"
+    IO.println s!"  prove         {t2 - t1} ms"
+    IO.println s!"  blob          {blob.size} bytes (vk + proof)"
+    IO.println s!"  {← hwm} (process peak)"
+    match Aiur.HypercubeSystem.verify hSys hClaim blob with
+      | .error e => IO.eprintln s!"hypercube verify failed: {e}"; return 1
+      | .ok _ => pure ()
+    let t3 ← IO.monoMsNow
+    IO.println s!"  verify        {t3 - t2} ms"
+    let expected := #[Aiur.G.ofNat 0, Aiur.G.ofNat vIdx] ++ pubInput
+    IO.println s!"  claim ok: {hClaim == expected}"
+    pure 0
 
 end Tests.MultiStark
 

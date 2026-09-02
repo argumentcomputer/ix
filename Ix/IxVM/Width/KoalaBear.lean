@@ -143,6 +143,38 @@ def kernelWidthKoalaBear := ⟦
   }
 ⟧
 
+/-- Verifier-only wire plumbing, narrow-field forms: counts are CHECKED
+24-bit values inside the fixed 8-byte wire format (a wire count at or
+beyond 2²⁴ fails, never wraps), and digest limbs compare byte-wise —
+folding a 64-bit limb mod a 31-bit field would admit ~2³³ aliases per
+limb. -/
+def widthKoalaBearWire := ⟦
+  -- A raw little-endian `u64` wire limb as a checked 24-bit count.
+  fn limb_to_field(b: U64) -> G {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
+    assert_eq!(to_field(b3) + to_field(b4) + to_field(b5)
+               + to_field(b6) + to_field(b7), 0,
+      "wire count exceeds 2^24 (narrow-field bound)");
+    to_field(b0) + 256 * to_field(b1) + 65536 * to_field(b2)
+  }
+
+  -- The canonical wire decomposition of a checked 24-bit count: three
+  -- pinned bytes, five zeros.
+  fn count_to_bytes(v: G) -> [U8; 8] {
+    let [h0, h1, h2, h3, h4, h5, h6, h7] = unconstrained_g_to_bytes(v);
+    let (b0, b1) = u8_range_check(h0, h1);
+    let (b2, b2x) = u8_range_check(h2, h2);
+    assert_eq!(v, to_field(b0) + 256 * to_field(b1) + 65536 * to_field(b2),
+      "count exceeds 2^24 (narrow-field bound)");
+    [b0, b1, b2, 0u8, 0u8, 0u8, 0u8, 0u8]
+  }
+
+  -- Byte-wise digest-limb equality (`u64_eq` from the byte-level u64 ops).
+  inline fn wire_limb_eq(a: U64, b: U64) -> G {
+    u64_eq(a, b)
+  }
+⟧
+
 end IxVM
 
 end
