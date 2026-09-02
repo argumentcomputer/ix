@@ -200,6 +200,7 @@ def primaryRunners : List (String × IO UInt32) := [
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("hypercube-nataddcomm", Tests.Ix.IxVM.Hypercube.benchNatAddComm env),
   ("vk-sizes", Tests.Ix.IxVM.Hypercube.vkSizes env),
+  ("kernel-stats", Tests.Ix.IxVM.Hypercube.kernelStatsNatAddComm env),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

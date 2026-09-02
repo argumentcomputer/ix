@@ -2,6 +2,7 @@ module
 
 public import Ix.Aiur.Hypercube
 public import Ix.Aiur.Compiler
+public import Ix.Aiur.Statistics
 public import Ix.IxVM.ClaimHarness
 public import Ix.IxVM.Toplevel
 
@@ -84,6 +85,49 @@ def benchConst (name : Lean.Name) (env : Lean.Environment) : IO UInt32 := do
 
 def benchNatAddComm (env : Lean.Environment) : IO UInt32 :=
   benchConst ``Nat.add_comm env
+
+/-- Execute the same `Claim.check` on both kernels and print the FFT-cost
+model's statistics (heights, widths, per-circuit cost) side by side. The
+KoalaBear bytecode's constants all fit under the Goldilocks modulus, so the
+multi-stark system (whose shapes feed the model) builds for it too — the
+model then says what multi-stark WOULD pay for the narrow-field circuits,
+a like-for-like circuit-complexity comparison. -/
+def kernelStats (name : Lean.Name) (env : Lean.Environment) : IO UInt32 := do
+  IO.println s!"kernel-stats: {name}"
+  let ixonEnv ← loadIxonEnv name env
+  let target ← lookupAddr ixonEnv name
+  let claim := Ix.Claim.check target none
+  let kbTopE : Except String Aiur.Source.Toplevel := (do
+    let p ← IxVM.koalaBearProfile
+    let f ← IxVM.ixVMFullOver p
+    pure (f.prune [`verify_claim])).mapError toString
+  let cases : List (String × Except String Aiur.Source.Toplevel × WitnessProfile) :=
+    [("goldilocks", IxVM.ixVM.mapError toString, goldilocksWitnessProfile),
+     ("koalabear ", kbTopE, koalaBearWitnessProfile)]
+  for (label, topE, profile) in cases do
+    let top ← IO.ofExcept topE
+    let compiled ← IO.ofExcept top.compile
+    let some idx := compiled.getFuncIdx `verify_claim
+      | IO.eprintln s!"{label}: verify_claim not found"; return 1
+    let sys := Aiur.AiurSystem.build compiled.bytecode
+      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+    let w ← IO.ofExcept <| buildClaimWitness ixonEnv claim {} (profile := profile)
+    match compiled.bytecode.execute idx w.input w.inputIOBuffer with
+    | .error e => IO.eprintln s!"{label}: execute failed: {e}"; return 1
+    | .ok (_, _, queryCounts) =>
+      let stats := Aiur.computeStats compiled queryCounts sys.circuitShapes
+      let live := stats.circuits.filter (·.height > 0)
+      let pow2 (n : Nat) : Nat := if n ≤ 1 then n else Nat.nextPowerOfTwo n
+      let area := live.foldl (fun a c => a + c.width * pow2 c.height) 0
+      let tallest := live.foldl (fun a c => max a c.height) 0
+      IO.println s!"{label}: totalFftCost {stats.totalFftCost}, live circuits {live.size},         Σ width·2^⌈h⌉ = {area}, tallest height {tallest}"
+      let top := (live.qsort (fun a b => a.fftCost > b.fftCost)).extract 0 8
+      for c in top do
+        IO.println s!"    {c.name}: w {c.width}, h {c.height}, fft {c.fftCost}"
+  pure 0
+
+def kernelStatsNatAddComm (env : Lean.Environment) : IO UInt32 :=
+  kernelStats ``Nat.add_comm env
 
 /-- Print the multi-stark verifying key's serialized size for the production
 kernel system (no proving). -/
