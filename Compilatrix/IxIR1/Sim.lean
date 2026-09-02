@@ -393,6 +393,29 @@ theorem checkResultWorld_ok {world : Owned} {out out' : Store × RVal}
     exact ⟨rfl, rval_hasWorld_eq_true_iff.mp hw⟩
   next => contradiction
 
+/-- Successful ownership-aware main execution exposes both its literal body
+run and the checked result-world witness.  This is the top-level analogue of
+`invoke_fn_result_hasWorld`, with the exact synthetic current function kept
+available to structured lowering simulations. -/
+theorem runOwnedMain_ok {ctx : Ctx} {world : Owned} {code : Code}
+    {fuel : Nat} {out : Store × RVal}
+    (run : runOwnedMain ctx world code fuel = .ok out) :
+    runCode ctx fuel ⟨0, world, false, code⟩ ({} : Store) [] code =
+        .ok out ∧
+      HasWorld out.1 world out.2 := by
+  unfold runOwnedMain at run
+  cases bodyRun :
+      runCode ctx fuel ⟨0, world, false, code⟩ ({} : Store) [] code with
+  | error error =>
+      simp only [bodyRun, bind, Except.bind] at run
+      contradiction
+  | ok bodyOut =>
+      have checked : checkResultWorld world bodyOut = .ok out := by
+        simpa only [bodyRun, bind, Except.bind] using run
+      obtain ⟨outputEq, resultWorld⟩ := checkResultWorld_ok checked
+      subst out
+      exact ⟨rfl, resultWorld⟩
+
 /-- A successful call to a function declaration returns a scalar or a
 live location in the `FnDef.result` world. This is the first reusable
 call-result ownership contract for the compiler simulation. -/
@@ -1002,6 +1025,27 @@ def ApplyOwnershipPreservesAt (ctx : Ctx) (fuel : Nat) : Prop :=
     applyGo ctx fuel store function args = .ok (store', value) →
     RootOwnership store' (⟨.shared, value⟩ :: rest)
 
+/-- Ownership preservation for one evaluator-fuel index and one fixed input
+heap. Reachability-sensitive simulations use this boundary when their
+compiler contract is valid on certified heap images rather than arbitrary
+synthetic heaps. -/
+def ApplyOwnershipPreservesFrom (ctx : Ctx) (fuel : Nat)
+    (store : Store) : Prop :=
+  ∀ {store' : Store} {function : RVal} {args : List RVal}
+      {value : RVal} {rest : List Root},
+    RootOwnership store
+      (⟨.shared, function⟩ :: rootsFor .shared args ++ rest) →
+    applyGo ctx fuel store function args = .ok (store', value) →
+    RootOwnership store' (⟨.shared, value⟩ :: rest)
+
+/-- A whole-context application contract specializes to every fixed input
+heap. -/
+theorem ApplyOwnershipContract.preservesFrom {ctx : Ctx}
+    (contract : ApplyOwnershipContract ctx) (fuel : Nat) (store : Store) :
+    ApplyOwnershipPreservesFrom ctx fuel store := by
+  intro store' function args value rest ownership run
+  exact contract.preserves ownership run
+
 /-- Higher-order application ownership restricted to indices below
 `limit`. Saturating and over-applied paps invoke declarations at smaller
 fuel, so this contract belongs in the same mutual fuel induction. -/
@@ -1195,6 +1239,13 @@ structure HeapIso (left right : Store) where
 
 namespace RValIso
 
+theorem eq_of_location_eq {left right : RVal}
+    (h : RValIso (fun l r => l = r) left right) : left = right := by
+  cases h with
+  | loc related => cases related; rfl
+  | lit => rfl
+  | erased => rfl
+
 theorem mono {r₁ r₂ : Nat → Nat → Prop}
     (hmono : ∀ {l r}, r₁ l r → r₂ l r) {v₁ v₂ : RVal}
     (h : RValIso r₁ v₁ v₂) : RValIso r₂ v₁ v₂ := by
@@ -1226,10 +1277,18 @@ theorem trans {r₁ r₂ : Nat → Nat → Prop} {v₁ v₂ v₃ : RVal}
 
 end RValIso
 
-private theorem rvalsIso_refl : ∀ values : List RVal,
+/-- Every runtime value vector is related to itself by location equality. -/
+theorem RValsIso.refl : ∀ values : List RVal,
     RValsIso (fun l r => l = r) values values
   | [] => .nil
-  | v :: rest => .cons (RValIso.refl v) (rvalsIso_refl rest)
+  | v :: rest => .cons (RValIso.refl v) (RValsIso.refl rest)
+
+theorem RValsIso.eq_of_location_eq {left right : List RVal}
+    (h : RValsIso (fun l r => l = r) left right) : left = right := by
+  induction h with
+  | nil => rfl
+  | cons head tail ih =>
+      rw [head.eq_of_location_eq, ih]
 
 private theorem rvalsIso_symm {r : Nat → Nat → Prop} :
     ∀ {left right : List RVal}, RValsIso r left right →
@@ -1264,8 +1323,8 @@ theorem mono {r₁ r₂ : Nat → Nat → Prop}
 
 theorem refl (node : Node) : NodeIso (fun l r => l = r) node node := by
   cases node with
-  | ctorN cid fields => exact .ctor (rvalsIso_refl fields.toList)
-  | papN f arity args => exact .pap (rvalsIso_refl args.toList)
+  | ctorN cid fields => exact .ctor (RValsIso.refl fields.toList)
+  | papN f arity args => exact .pap (RValsIso.refl args.toList)
 
 theorem symm {r : Nat → Nat → Prop} {left right : Node}
     (h : NodeIso r left right) : NodeIso (fun x y => r y x) right left := by
@@ -1506,6 +1565,724 @@ def alloc {left right : Store} (iso : HeapIso left right)
     · obtain ⟨leftBox, rightBox, hl, hr, hb⟩ := iso.related_live hold
       refine ⟨leftBox, rightBox, get?_allocNode_old hl,
         get?_allocNode_old hr, hb.mono (fun h => .inr h)⟩
+
+end HeapIso
+
+/-! ## Exact ownership under heap isomorphism -/
+
+private theorem sum_map_eq_of_bijective_rel
+    {α β : Type} (rel : α → β → Prop) (leftValue : α → Nat)
+    (rightValue : β → Nat) :
+    ∀ (left : List α) (right : List β),
+      left.Nodup → right.Nodup →
+      (∀ x ∈ left, ∃ y ∈ right, rel x y) →
+      (∀ y ∈ right, ∃ x ∈ left, rel x y) →
+      (∀ {x y₁ y₂}, rel x y₁ → rel x y₂ → y₁ = y₂) →
+      (∀ {x₁ x₂ y}, rel x₁ y → rel x₂ y → x₁ = x₂) →
+      (∀ {x y}, rel x y → leftValue x = rightValue y) →
+      (left.map leftValue).sum = (right.map rightValue).sum := by
+  intro left
+  induction left with
+  | nil =>
+      intro right _ _ _ rightTotal _ _ _
+      cases right with
+      | nil => rfl
+      | cons y ys =>
+          obtain ⟨x, member, _⟩ := rightTotal y (by simp)
+          simp at member
+  | cons x xs ih =>
+      intro right leftNodup rightNodup leftTotal rightTotal
+        leftFunctional rightFunctional values
+      have xNotMem : x ∉ xs := (List.nodup_cons.mp leftNodup).1
+      have xsNodup : xs.Nodup := (List.nodup_cons.mp leftNodup).2
+      obtain ⟨y, yMember, related⟩ := leftTotal x (by simp)
+      obtain ⟨before, after, rightEq⟩ := List.mem_iff_append.mp yMember
+      subst right
+      let rightRest := before ++ after
+      have rearranged : (before ++ y :: after).Perm (y :: rightRest) := by
+        exact List.perm_middle
+      have rearrangedNodup : (y :: rightRest).Nodup :=
+        rearranged.nodup rightNodup
+      have yNotMem : y ∉ rightRest :=
+        (List.nodup_cons.mp rearrangedNodup).1
+      have rightRestNodup : rightRest.Nodup :=
+        (List.nodup_cons.mp rearrangedNodup).2
+      have tailLeftTotal : ∀ candidate ∈ xs,
+          ∃ target ∈ rightRest, rel candidate target := by
+        intro candidate candidateMember
+        obtain ⟨target, targetMember, candidateRelated⟩ :=
+          leftTotal candidate (by simp [candidateMember])
+        have targetNe : target ≠ y := by
+          intro equal
+          subst target
+          have candidateEq : candidate = x :=
+            rightFunctional candidateRelated related
+          subst candidate
+          exact xNotMem candidateMember
+        refine ⟨target, ?_, candidateRelated⟩
+        change target ∈ before ++ after
+        rw [List.mem_append]
+        simp only [List.mem_append, List.mem_cons] at targetMember
+        rcases targetMember with inBefore | targetMember
+        · exact Or.inl inBefore
+        · rcases targetMember with equal | inAfter
+          · exact False.elim (targetNe equal)
+          · exact Or.inr inAfter
+      have tailRightTotal : ∀ target ∈ rightRest,
+          ∃ candidate ∈ xs, rel candidate target := by
+        intro target targetMember
+        have targetMemberOriginal : target ∈ before ++ y :: after := by
+          change target ∈ before ++ after at targetMember
+          rw [List.mem_append] at targetMember
+          rcases targetMember with inBefore | inAfter
+          · exact List.mem_append.mpr (Or.inl inBefore)
+          · exact List.mem_append.mpr
+              (Or.inr (List.mem_cons.mpr (Or.inr inAfter)))
+        obtain ⟨candidate, candidateMember, candidateRelated⟩ :=
+          rightTotal target targetMemberOriginal
+        have candidateNe : candidate ≠ x := by
+          intro equal
+          subst candidate
+          have targetEq : target = y :=
+            leftFunctional candidateRelated related
+          subst target
+          exact yNotMem targetMember
+        refine ⟨candidate, ?_, candidateRelated⟩
+        exact List.mem_of_ne_of_mem candidateNe candidateMember
+      have tailSums := ih rightRest xsNodup rightRestNodup tailLeftTotal
+        tailRightTotal leftFunctional rightFunctional values
+      simp only [List.map_cons, List.sum_cons]
+      rw [values related, tailSums]
+      simp [rightRest, List.map_append, List.sum_append, Nat.add_left_comm]
+
+private def indexedBoxes : List (Option NodeBox) → Nat →
+    List (Nat × NodeBox)
+  | [], _ => []
+  | none :: rest, start => indexedBoxes rest (start + 1)
+  | some box :: rest, start =>
+      (start, box) :: indexedBoxes rest (start + 1)
+
+private theorem indexedBoxes_eq_zipIdx_filterMap
+    (entries : List (Option NodeBox)) (start : Nat) :
+    indexedBoxes entries start =
+      (entries.zipIdx start).filterMap fun (slot, location) =>
+        slot.map fun box => (location, box) := by
+  induction entries generalizing start with
+  | nil => rfl
+  | cons head tail ih =>
+      cases head <;> simp [indexedBoxes, ih]
+
+private def liveBoxes (store : Store) : List (Nat × NodeBox) :=
+  indexedBoxes store.nodes.toList 0
+
+private theorem mem_liveBoxes_iff {store : Store} {location : Nat}
+    {box : NodeBox} :
+    (location, box) ∈ liveBoxes store ↔ store.get? location = some box := by
+  constructor
+  · intro member
+    rw [liveBoxes, indexedBoxes_eq_zipIdx_filterMap,
+      List.mem_filterMap] at member
+    obtain ⟨entry, entryMember, mapped⟩ := member
+    rcases entry with ⟨slot, index⟩
+    cases slot with
+    | none => simp at mapped
+    | some entryBox =>
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at mapped
+        obtain ⟨locationEq, boxEq⟩ := mapped
+        subst index
+        subst entryBox
+        have indexed := List.mem_zipIdx entryMember
+        obtain ⟨_lower, upper, slotEq⟩ := indexed
+        have listAt : store.nodes.toList[location]? = some (some box) := by
+          rw [List.getElem?_eq_getElem (by simpa using upper)]
+          exact congrArg some slotEq.symm
+        have arrayAt : store.nodes[location]? = some (some box) := by
+          simpa using listAt
+        simp [Store.get?, arrayAt]
+  · intro found
+    have arrayAt : store.nodes[location]? = some (some box) := by
+      cases slot : store.nodes[location]? with
+      | none => simp [Store.get?, slot] at found
+      | some entry =>
+          cases entry with
+          | none => simp [Store.get?, slot] at found
+          | some entryBox =>
+              have boxEq : entryBox = box := by
+                simpa [Store.get?, slot] using found
+              subst entryBox
+              rfl
+    have listAt : store.nodes.toList[location]? = some (some box) := by
+      simpa using arrayAt
+    have zippedAt : store.nodes.toList.zipIdx[location]? =
+        some (some box, location) := by
+      rw [List.getElem?_zipIdx]
+      simpa using listAt
+    have zippedMember : (some box, location) ∈
+        store.nodes.toList.zipIdx := List.mem_of_getElem? zippedAt
+    rw [liveBoxes, indexedBoxes_eq_zipIdx_filterMap,
+      List.mem_filterMap]
+    exact ⟨(some box, location), zippedMember, by simp⟩
+
+private theorem indexedBoxes_location_ge
+    {entries : List (Option NodeBox)} {start location : Nat}
+    {box : NodeBox} (member : (location, box) ∈ indexedBoxes entries start) :
+    start ≤ location := by
+  induction entries generalizing start with
+  | nil => simp [indexedBoxes] at member
+  | cons head tail ih =>
+      cases head with
+      | none =>
+          exact Nat.le_trans (Nat.le_add_right start 1)
+            (ih (start := start + 1) member)
+      | some headBox =>
+          simp only [indexedBoxes, List.mem_cons] at member
+          rcases member with equal | member
+          · exact Nat.le_of_eq (congrArg Prod.fst equal).symm
+          · exact Nat.le_trans (Nat.le_add_right start 1)
+              (ih (start := start + 1) member)
+
+private theorem indexedBoxes_nodup (entries : List (Option NodeBox)) :
+    ∀ start, (indexedBoxes entries start).Nodup := by
+  induction entries with
+  | nil => simp [indexedBoxes]
+  | cons head tail ih =>
+      intro start
+      cases head with
+      | none => exact ih (start + 1)
+      | some box =>
+          rw [indexedBoxes, List.nodup_cons]
+          refine ⟨?_, ih (start + 1)⟩
+          intro member
+          have bound := indexedBoxes_location_ge member
+          omega
+
+private theorem liveBoxes_nodup (store : Store) :
+    (liveBoxes store).Nodup := by
+  exact indexedBoxes_nodup store.nodes.toList 0
+
+private def boxEdgeCount (needle : Nat) (entry : Nat × NodeBox) : Nat :=
+  ((nodeChildren entry.2.node).filterMap rvalLocation?).count needle
+
+private theorem edgeCount_indexedBoxes
+    (entries : List (Option NodeBox)) (start needle : Nat) :
+    (entries.flatMap slotEdgeLocations).count needle =
+      ((indexedBoxes entries start).map (boxEdgeCount needle)).sum := by
+  induction entries generalizing start with
+  | nil => rfl
+  | cons head tail ih =>
+      cases head with
+      | none => simpa [indexedBoxes, slotEdgeLocations] using ih (start + 1)
+      | some box =>
+          simp [indexedBoxes, slotEdgeLocations, boxEdgeCount,
+            List.count_append, ih (start + 1)]
+
+private theorem edgeLocations_count_eq_liveBoxes_sum
+    (store : Store) (needle : Nat) :
+    (edgeLocations store).count needle =
+      ((liveBoxes store).map (boxEdgeCount needle)).sum := by
+  exact edgeCount_indexedBoxes store.nodes.toList 0 needle
+
+private theorem RValsIso.locationCount_eq
+    {left right : Store} (iso : HeapIso left right)
+    {leftLoc rightLoc : Nat} (locations : iso.locRel leftLoc rightLoc) :
+    ∀ {leftValues rightValues : List RVal},
+      RValsIso iso.locRel leftValues rightValues →
+      (leftValues.filterMap rvalLocation?).count leftLoc =
+        (rightValues.filterMap rvalLocation?).count rightLoc
+  | _, _, .nil => rfl
+  | _, _, .cons head tail => by
+      have tailEq := RValsIso.locationCount_eq iso locations tail
+      cases head with
+      | @loc headLeft headRight related =>
+          have iff : headLeft = leftLoc ↔ headRight = rightLoc := by
+            constructor
+            · intro equal
+              subst_vars
+              exact iso.left_unique related locations
+            · intro equal
+              subst_vars
+              exact iso.right_unique related locations
+          by_cases leftEqual : headLeft = leftLoc
+          · have rightEqual := iff.mp leftEqual
+            simp [rvalLocation?, leftEqual, rightEqual, tailEq]
+          · have rightNe : headRight ≠ rightLoc := fun rightEqual =>
+              leftEqual (iff.mpr rightEqual)
+            simp [rvalLocation?, leftEqual, rightNe, tailEq]
+      | lit => simpa [rvalLocation?, tailEq]
+      | erased => simpa [rvalLocation?, tailEq]
+
+private theorem NodeIso.edgeCount_eq
+    {left right : Store} (iso : HeapIso left right)
+    {leftLoc rightLoc : Nat} (locations : iso.locRel leftLoc rightLoc)
+    {leftNode rightNode : Node} (nodes : NodeIso iso.locRel leftNode rightNode) :
+    ((nodeChildren leftNode).filterMap rvalLocation?).count leftLoc =
+      ((nodeChildren rightNode).filterMap rvalLocation?).count rightLoc := by
+  cases nodes with
+  | ctor fields =>
+      exact RValsIso.locationCount_eq iso locations fields
+  | pap args =>
+      exact RValsIso.locationCount_eq iso locations args
+
+private def liveBoxRel {left right : Store} (iso : HeapIso left right)
+    (leftEntry rightEntry : Nat × NodeBox) : Prop :=
+  iso.locRel leftEntry.1 rightEntry.1 ∧
+    left.get? leftEntry.1 = some leftEntry.2 ∧
+    right.get? rightEntry.1 = some rightEntry.2
+
+private theorem HeapIso.edgeLocations_count_eq
+    {left right : Store} (iso : HeapIso left right)
+    {leftLoc rightLoc : Nat} (locations : iso.locRel leftLoc rightLoc) :
+    (edgeLocations left).count leftLoc =
+      (edgeLocations right).count rightLoc := by
+  rw [edgeLocations_count_eq_liveBoxes_sum,
+    edgeLocations_count_eq_liveBoxes_sum]
+  apply sum_map_eq_of_bijective_rel (liveBoxRel iso)
+    (boxEdgeCount leftLoc) (boxEdgeCount rightLoc)
+    (liveBoxes left) (liveBoxes right)
+  · exact liveBoxes_nodup left
+  · exact liveBoxes_nodup right
+  · intro leftEntry leftMember
+    rcases leftEntry with ⟨entryLoc, entryBox⟩
+    have leftLive := mem_liveBoxes_iff.mp leftMember
+    obtain ⟨rightEntryLoc, related⟩ := iso.left_total leftLive
+    obtain ⟨relatedLeftBox, rightEntryBox, relatedLeftLive,
+      rightLive, _⟩ := iso.related_live related
+    have leftBoxEq : relatedLeftBox = entryBox :=
+      Option.some.inj (relatedLeftLive.symm.trans leftLive)
+    subst relatedLeftBox
+    exact ⟨(rightEntryLoc, rightEntryBox),
+      mem_liveBoxes_iff.mpr rightLive, related, leftLive, rightLive⟩
+  · intro rightEntry rightMember
+    rcases rightEntry with ⟨entryLoc, entryBox⟩
+    have rightLive := mem_liveBoxes_iff.mp rightMember
+    obtain ⟨leftEntryLoc, related⟩ := iso.right_total rightLive
+    obtain ⟨leftEntryBox, relatedRightBox, leftLive,
+      relatedRightLive, _⟩ := iso.related_live related
+    have rightBoxEq : relatedRightBox = entryBox :=
+      Option.some.inj (relatedRightLive.symm.trans rightLive)
+    subst relatedRightBox
+    exact ⟨(leftEntryLoc, leftEntryBox),
+      mem_liveBoxes_iff.mpr leftLive, related, leftLive, rightLive⟩
+  · intro leftEntry rightEntry₁ rightEntry₂ first second
+    rcases leftEntry with ⟨leftEntryLoc, leftEntryBox⟩
+    rcases rightEntry₁ with ⟨rightEntryLoc₁, rightEntryBox₁⟩
+    rcases rightEntry₂ with ⟨rightEntryLoc₂, rightEntryBox₂⟩
+    have locationEq : rightEntryLoc₁ = rightEntryLoc₂ :=
+      iso.left_unique first.1 second.1
+    subst rightEntryLoc₂
+    have boxEq : rightEntryBox₁ = rightEntryBox₂ :=
+      Option.some.inj (first.2.2.symm.trans second.2.2)
+    subst rightEntryBox₂
+    rfl
+  · intro leftEntry₁ leftEntry₂ rightEntry first second
+    rcases leftEntry₁ with ⟨leftEntryLoc₁, leftEntryBox₁⟩
+    rcases leftEntry₂ with ⟨leftEntryLoc₂, leftEntryBox₂⟩
+    rcases rightEntry with ⟨rightEntryLoc, rightEntryBox⟩
+    have locationEq : leftEntryLoc₁ = leftEntryLoc₂ :=
+      iso.right_unique first.1 second.1
+    subst leftEntryLoc₂
+    have boxEq : leftEntryBox₁ = leftEntryBox₂ :=
+      Option.some.inj (first.2.1.symm.trans second.2.1)
+    subst leftEntryBox₂
+    rfl
+  · intro leftEntry rightEntry related
+    rcases leftEntry with ⟨leftEntryLoc, leftEntryBox⟩
+    rcases rightEntry with ⟨rightEntryLoc, rightEntryBox⟩
+    obtain ⟨relatedLeftBox, relatedRightBox, leftLive, rightLive,
+      boxes⟩ := iso.related_live related.1
+    have leftBoxEq : relatedLeftBox = leftEntryBox :=
+      Option.some.inj (leftLive.symm.trans related.2.1)
+    have rightBoxEq : relatedRightBox = rightEntryBox :=
+      Option.some.inj (rightLive.symm.trans related.2.2)
+    subst relatedLeftBox
+    subst relatedRightBox
+    exact boxes.node.edgeCount_eq iso locations
+
+/-- External roots agree in ownership world and runtime value modulo a
+location relation. -/
+structure RootIso (locRel : Nat → Nat → Prop) (left right : Root) : Prop where
+  world : left.world = right.world
+  value : RValIso locRel left.value right.value
+
+/-- Pointwise root-list agreement modulo a location relation. -/
+inductive RootsIso (locRel : Nat → Nat → Prop) :
+    List Root → List Root → Prop where
+  | nil : RootsIso locRel [] []
+  | cons {left right : Root} {lefts rights : List Root} :
+      RootIso locRel left right →
+      RootsIso locRel lefts rights →
+      RootsIso locRel (left :: lefts) (right :: rights)
+
+namespace RootIso
+
+theorem mono {first second : Nat → Nat → Prop}
+    (lift : ∀ {left right}, first left right → second left right)
+    {left right : Root} (root : RootIso first left right) :
+    RootIso second left right :=
+  ⟨root.world, root.value.mono lift⟩
+
+theorem symm {locRel : Nat → Nat → Prop} {left right : Root}
+    (root : RootIso locRel left right) :
+    RootIso (fun rightLoc leftLoc => locRel leftLoc rightLoc) right left :=
+  ⟨root.world.symm, root.value.symm⟩
+
+/-- A heap isomorphism determines at most one root preimage for a fixed
+target root. -/
+theorem left_eq_of_right {leftStore rightStore : Store}
+    (iso : HeapIso leftStore rightStore)
+    {left₁ left₂ right : Root}
+    (first : RootIso iso.locRel left₁ right)
+    (second : RootIso iso.locRel left₂ right) : left₁ = left₂ := by
+  rcases left₁ with ⟨leftWorld₁, leftValue₁⟩
+  rcases left₂ with ⟨leftWorld₂, leftValue₂⟩
+  rcases right with ⟨rightWorld, rightValue⟩
+  have worldEq : leftWorld₁ = leftWorld₂ :=
+    first.world.trans second.world.symm
+  subst leftWorld₂
+  congr 1
+  cases first.value with
+  | loc firstRelated =>
+      cases second.value with
+      | loc secondRelated =>
+          exact congrArg RVal.loc
+            (iso.right_unique firstRelated secondRelated)
+  | lit => cases second.value; rfl
+  | erased => cases second.value; rfl
+
+end RootIso
+
+namespace HeapIso
+
+/-- Heap-world evidence follows a related runtime value across a heap
+isomorphism. -/
+theorem hasWorld {left right : Store} (iso : HeapIso left right)
+    {leftValue rightValue : RVal}
+    (value : RValIso iso.locRel leftValue rightValue)
+    {world : Compilatrix.Ixon.Owned}
+    (hasWorld : HasWorld left world leftValue) :
+    HasWorld right world rightValue := by
+  cases value with
+  | loc related =>
+      obtain ⟨sourceBox, sourceLive, sourceWorld⟩ := hasWorld
+      obtain ⟨relatedSourceBox, targetBox, relatedSourceLive, targetLive,
+        boxes⟩ := iso.related_live related
+      have boxEq : sourceBox = relatedSourceBox :=
+        Option.some.inj (sourceLive.symm.trans relatedSourceLive)
+      subst sourceBox
+      exact ⟨targetBox, targetLive, boxes.world.symm.trans sourceWorld⟩
+  | lit => trivial
+  | erased => trivial
+
+end HeapIso
+
+namespace RootsIso
+
+theorem mono {first second : Nat → Nat → Prop}
+    (lift : ∀ {left right}, first left right → second left right) :
+    ∀ {left right : List Root}, RootsIso first left right →
+      RootsIso second left right
+  | _, _, .nil => .nil
+  | _, _, .cons head tail => .cons (head.mono lift) (tail.mono lift)
+
+theorem symm {locRel : Nat → Nat → Prop} :
+    ∀ {left right : List Root}, RootsIso locRel left right →
+      RootsIso (fun rightLoc leftLoc => locRel leftLoc rightLoc) right left
+  | _, _, .nil => .nil
+  | _, _, .cons head tail => .cons head.symm tail.symm
+
+/-- Homogeneous root framing preserves a pointwise runtime-value
+isomorphism. -/
+theorem rootsFor {locRel : Nat → Nat → Prop}
+    (world : Compilatrix.Ixon.Owned) :
+    ∀ {left right : List RVal}, RValsIso locRel left right →
+      RootsIso locRel (rootsFor world left) (rootsFor world right)
+  | _, _, .nil => .nil
+  | _, _, .cons head tail => .cons ⟨rfl, head⟩ (rootsFor world tail)
+
+/-- Pointwise root isomorphisms concatenate. -/
+theorem append {locRel : Nat → Nat → Prop}
+    {leftPrefix rightPrefix leftSuffix rightSuffix : List Root}
+    (first : RootsIso locRel leftPrefix rightPrefix)
+    (suffix : RootsIso locRel leftSuffix rightSuffix) :
+    RootsIso locRel (leftPrefix ++ leftSuffix)
+      (rightPrefix ++ rightSuffix) := by
+  induction first with
+  | nil => exact suffix
+  | cons head tail ih => exact .cons head ih
+
+theorem tail {locRel : Nat → Nat → Prop} {left right : Root}
+    {lefts rights : List Root}
+    (roots : RootsIso locRel (left :: lefts) (right :: rights)) :
+    RootsIso locRel lefts rights := by
+  cases roots with
+  | cons head tail => exact tail
+
+/-- Dropping equal pointwise prefixes preserves root-list isomorphism. -/
+theorem drop {locRel : Nat → Nat → Prop} :
+    ∀ {left right : List Root}, RootsIso locRel left right →
+      ∀ count, RootsIso locRel (left.drop count) (right.drop count)
+  | _, _, .nil, count => by cases count <;> exact .nil
+  | _, _, .cons head tail, 0 => .cons head tail
+  | _, _, .cons head tail, count + 1 => tail.drop count
+
+theorem left_of_right_mem {locRel : Nat → Nat → Prop} :
+    ∀ {left right : List Root}, RootsIso locRel left right →
+      ∀ {rightRoot}, rightRoot ∈ right →
+        ∃ leftRoot, leftRoot ∈ left ∧ RootIso locRel leftRoot rightRoot
+  | _, _, .nil, _, member => by simp at member
+  | _, _, .cons head tail, rightRoot, member => by
+      simp only [List.mem_cons] at member
+      rcases member with equal | member
+      · subst rightRoot
+        exact ⟨_, by simp, head⟩
+      · obtain ⟨leftRoot, leftMember, related⟩ :=
+          tail.left_of_right_mem member
+        exact ⟨leftRoot, by simp [leftMember], related⟩
+
+/-- Pointwise root preimages of the same target list are unique. -/
+theorem left_eq_of_right {leftStore rightStore : Store}
+    (iso : HeapIso leftStore rightStore) :
+    ∀ {left₁ left₂ right : List Root},
+      RootsIso iso.locRel left₁ right →
+      RootsIso iso.locRel left₂ right →
+      left₁ = left₂
+  | _, _, _, .nil, .nil => rfl
+  | _, _, _, .cons firstHead firstTail, .cons secondHead secondTail => by
+      have headEq := RootIso.left_eq_of_right iso firstHead secondHead
+      have tailEq := RootsIso.left_eq_of_right iso firstTail secondTail
+      rw [headEq, tailEq]
+
+/-- Reorder the target presentation of a pointwise root isomorphism while
+applying the same permutation to its source presentation. -/
+theorem permuteRight {locRel : Nat → Nat → Prop}
+    {left right right' : List Root}
+    (roots : RootsIso locRel left right) (permutation : right.Perm right') :
+    ∃ left', left.Perm left' ∧ RootsIso locRel left' right' := by
+  induction permutation generalizing left with
+  | nil =>
+      cases roots
+      exact ⟨[], .refl [], .nil⟩
+  | cons root permutation ih =>
+      cases roots with
+      | cons head tail =>
+          obtain ⟨leftTail, tailPermutation, tailRoots⟩ := ih tail
+          exact ⟨_ :: leftTail, tailPermutation.cons _, .cons head tailRoots⟩
+  | swap first second rest =>
+      cases roots with
+      | cons firstRoot roots =>
+          cases roots with
+          | cons secondRoot tail =>
+              exact ⟨_, .swap _ _ _, .cons secondRoot (.cons firstRoot tail)⟩
+  | trans first second firstIh secondIh =>
+      obtain ⟨middleLeft, firstPerm, middleRoots⟩ := firstIh roots
+      obtain ⟨rightLeft, secondPerm, rightRoots⟩ := secondIh middleRoots
+      exact ⟨rightLeft, firstPerm.trans secondPerm, rightRoots⟩
+
+private theorem values {locRel : Nat → Nat → Prop} :
+    ∀ {left right : List Root}, RootsIso locRel left right →
+      RValsIso locRel (left.map Root.value) (right.map Root.value)
+  | _, _, .nil => .nil
+  | _, _, .cons head tail => .cons head.value tail.values
+
+private theorem right_hasWorld {left right : Store} (iso : HeapIso left right)
+    {leftRoots rightRoots : List Root}
+    (roots : RootsIso iso.locRel leftRoots rightRoots)
+    (leftWorlds : ∀ root ∈ leftRoots,
+      HasWorld left root.world root.value) :
+    ∀ root ∈ rightRoots, HasWorld right root.world root.value := by
+  induction roots with
+  | nil => intro root member; simp at member
+  | @cons leftRoot rightRoot leftRoots rightRoots head tail ih =>
+    intro root member
+    have tailWorlds : ∀ candidate ∈ leftRoots,
+        HasWorld left candidate.world candidate.value := by
+      intro candidate candidateMember
+      exact leftWorlds candidate (by simp [candidateMember])
+    simp only [List.mem_cons] at member
+    rcases member with equal | member
+    · subst root
+      have leftWorld := leftWorlds leftRoot (by simp)
+      have rightWorld := iso.hasWorld head.value leftWorld
+      simpa [head.world] using rightWorld
+    · exact ih tailWorlds root member
+
+private theorem locationCount_eq {left right : Store} (iso : HeapIso left right)
+    {leftLoc rightLoc : Nat} (locations : iso.locRel leftLoc rightLoc)
+    {leftRoots rightRoots : List Root}
+    (roots : RootsIso iso.locRel leftRoots rightRoots) :
+    (leftRoots.filterMap rootLocation?).count leftLoc =
+      (rightRoots.filterMap rootLocation?).count rightLoc := by
+  have values := RValsIso.locationCount_eq iso locations roots.values
+  have locationFunction :
+      (rvalLocation? ∘ Root.value) = rootLocation? := by
+    funext root
+    rfl
+  simpa only [List.filterMap_map, locationFunction] using values
+
+end RootsIso
+
+namespace HeapIso
+
+/-- Incoming ownership multiplicity is invariant under corresponding heap
+and root-list renamings. -/
+theorem incoming_eq {left right : Store} (iso : HeapIso left right)
+    {leftRoots rightRoots : List Root}
+    (roots : RootsIso iso.locRel leftRoots rightRoots)
+    {leftLoc rightLoc : Nat} (locations : iso.locRel leftLoc rightLoc) :
+    incoming left leftRoots leftLoc = incoming right rightRoots rightLoc := by
+  unfold incoming
+  rw [List.count_append, List.count_append,
+    roots.locationCount_eq iso locations,
+    iso.edgeLocations_count_eq locations]
+
+end HeapIso
+
+private theorem RValsIso.left_of_right_mem {locRel : Nat → Nat → Prop} :
+    ∀ {left right : List RVal}, RValsIso locRel left right →
+      ∀ {rightValue}, rightValue ∈ right →
+        ∃ leftValue, leftValue ∈ left ∧
+          RValIso locRel leftValue rightValue
+  | _, _, .nil, _, member => by simp at member
+  | _, _, .cons head tail, rightValue, member => by
+      simp only [List.mem_cons] at member
+      rcases member with equal | member
+      · subst rightValue
+        exact ⟨_, by simp, head⟩
+      · obtain ⟨leftValue, leftMember, related⟩ :=
+          tail.left_of_right_mem member
+        exact ⟨leftValue, by simp [leftMember], related⟩
+
+private theorem NodeIso.children {locRel : Nat → Nat → Prop}
+    {left right : Node} (nodes : NodeIso locRel left right) :
+    RValsIso locRel (nodeChildren left) (nodeChildren right) := by
+  cases nodes with
+  | ctor fields => exact fields
+  | pap args => exact args
+
+private theorem NodeIso.left_pap_of_right {locRel : Nat → Nat → Prop}
+    {left : Node} {f : Compilatrix.Ixon.Address} {arity : Nat}
+    {rightArgs : Array RVal}
+    (nodes : NodeIso locRel left (.papN f arity rightArgs)) :
+    ∃ leftArgs, left = .papN f arity leftArgs := by
+  cases nodes with
+  | pap fields => exact ⟨_, rfl⟩
+
+namespace HeapIso
+
+/-- Exact ownership is invariant under a heap isomorphism when the external
+root list is renamed pointwise by the same location relation. -/
+theorem rootOwnership {left right : Store} (iso : HeapIso left right)
+    {leftRoots rightRoots : List Root}
+    (roots : RootsIso iso.locRel leftRoots rightRoots)
+    (owned : RootOwnership left leftRoots) :
+    RootOwnership right rightRoots := by
+  refine ⟨roots.right_hasWorld iso owned.roots_world, ?_, ?_, ?_⟩
+  · intro rightLoc rightBox rightLive child childMember
+    obtain ⟨leftLoc, related⟩ := iso.right_total rightLive
+    obtain ⟨leftBox, relatedRightBox, leftLive, relatedRightLive,
+      boxes⟩ := iso.related_live related
+    have rightBoxEq : relatedRightBox = rightBox :=
+      Option.some.inj (relatedRightLive.symm.trans rightLive)
+    subst relatedRightBox
+    obtain ⟨leftChild, leftMember, children⟩ :=
+      boxes.node.children.left_of_right_mem childMember
+    have leftWorld := owned.edges_world leftLive leftChild leftMember
+    have rightWorld := iso.hasWorld children leftWorld
+    simpa [boxes.world] using rightWorld
+  · intro rightLoc rightBox f arity args rightLive rightNode
+    obtain ⟨leftLoc, related⟩ := iso.right_total rightLive
+    obtain ⟨leftBox, relatedRightBox, leftLive, relatedRightLive,
+      boxes⟩ := iso.related_live related
+    have rightBoxEq : relatedRightBox = rightBox :=
+      Option.some.inj (relatedRightLive.symm.trans rightLive)
+    subst relatedRightBox
+    have nodes : NodeIso iso.locRel leftBox.node (.papN f arity args) := by
+      simpa [rightNode] using boxes.node
+    obtain ⟨leftArgs, leftNode⟩ := nodes.left_pap_of_right
+    have leftShared := owned.pap_shared leftLive leftNode
+    exact boxes.world ▸ leftShared
+  · intro rightLoc rightBox rightLive
+    obtain ⟨leftLoc, related⟩ := iso.right_total rightLive
+    obtain ⟨leftBox, relatedRightBox, leftLive, relatedRightLive,
+      boxes⟩ := iso.related_live related
+    have rightBoxEq : relatedRightBox = rightBox :=
+      Option.some.inj (relatedRightLive.symm.trans rightLive)
+    subst relatedRightBox
+    have leftCounts := owned.counts leftLive
+    have incomingEq := iso.incoming_eq roots related
+    rw [← boxes.world, ← boxes.rc, ← incomingEq]
+    exact leftCounts
+
+private theorem preimageRoot {left right : Store} (iso : HeapIso left right)
+    (root : Root) (world : HasWorld right root.world root.value) :
+    ∃ leftRoot, RootIso iso.locRel leftRoot root := by
+  rcases root with ⟨rootWorld, value⟩
+  cases value with
+  | loc rightLoc =>
+      obtain ⟨rightBox, rightLive, _rightWorld⟩ := world
+      obtain ⟨leftLoc, related⟩ := iso.right_total rightLive
+      exact ⟨⟨rootWorld, .loc leftLoc⟩, rfl, .loc related⟩
+  | lit literal =>
+      exact ⟨⟨rootWorld, .lit literal⟩, rfl, .lit⟩
+  | erased =>
+      exact ⟨⟨rootWorld, .erased⟩, rfl, .erased⟩
+
+private theorem rootsIsoPreimage {left right : Store}
+    (iso : HeapIso left right) :
+    ∀ (rightRoots : List Root),
+      (∀ root ∈ rightRoots, HasWorld right root.world root.value) →
+      ∃ leftRoots, RootsIso iso.locRel leftRoots rightRoots
+  | [], _ => ⟨[], .nil⟩
+  | root :: rest, worlds => by
+      obtain ⟨leftRoot, head⟩ := iso.preimageRoot root
+        (worlds root (by simp))
+      obtain ⟨leftRest, tail⟩ := iso.rootsIsoPreimage rest
+        (fun candidate member => worlds candidate (by simp [member]))
+      exact ⟨leftRoot :: leftRest, .cons head tail⟩
+
+/-- Pull an exact external-root presentation backward through a heap
+isomorphism. The returned list preserves root order and worlds while replacing
+each live location by its unique preimage. -/
+theorem rootOwnershipPreimage {left right : Store} (iso : HeapIso left right)
+    {rightRoots : List Root} (owned : RootOwnership right rightRoots) :
+    ∃ leftRoots,
+      RootsIso iso.locRel leftRoots rightRoots ∧
+        RootOwnership left leftRoots := by
+  obtain ⟨leftRoots, roots⟩ :=
+    iso.rootsIsoPreimage rightRoots owned.roots_world
+  exact ⟨leftRoots, roots, iso.symm.rootOwnership roots.symm owned⟩
+
+/-- Pull a cons-root ownership presentation backward while fixing a known
+preimage for its distinguished head. -/
+theorem rootOwnershipPreimageCons {left right : Store}
+    (iso : HeapIso left right) {leftRoot rightRoot : Root}
+    {rightRest : List Root} (head : RootIso iso.locRel leftRoot rightRoot)
+    (owned : RootOwnership right (rightRoot :: rightRest)) :
+    ∃ leftRest,
+      RootsIso iso.locRel (leftRoot :: leftRest) (rightRoot :: rightRest) ∧
+        RootOwnership left (leftRoot :: leftRest) := by
+  obtain ⟨leftRest, tail⟩ := iso.rootsIsoPreimage rightRest
+    (fun root member => owned.roots_world root (by simp [member]))
+  let roots : RootsIso iso.locRel (leftRoot :: leftRest)
+      (rightRoot :: rightRest) := .cons head tail
+  exact ⟨leftRest, roots, iso.symm.rootOwnership roots.symm owned⟩
+
+/-- Pull an ownership presentation backward while fixing any pointwise-related
+root prefix and choosing only the ambient preimage tail. -/
+theorem rootOwnershipPreimageAppend {left right : Store}
+    (iso : HeapIso left right)
+    {leftPrefix rightPrefix rightRest : List Root}
+    (first : RootsIso iso.locRel leftPrefix rightPrefix)
+    (owned : RootOwnership right (rightPrefix ++ rightRest)) :
+    ∃ leftRest,
+      RootsIso iso.locRel (leftPrefix ++ leftRest)
+          (rightPrefix ++ rightRest) ∧
+        RootOwnership left (leftPrefix ++ leftRest) := by
+  obtain ⟨leftRest, tail⟩ := iso.rootsIsoPreimage rightRest
+    (fun root member => owned.roots_world root
+      (List.mem_append_right rightPrefix member))
+  let roots := first.append tail
+  exact ⟨leftRest, roots, iso.symm.rootOwnership roots.symm owned⟩
 
 end HeapIso
 
@@ -1904,6 +2681,117 @@ theorem HasWorld.reuseNodeStore {store : Store} {loc : Nat}
   | lit literal => trivial
   | erased => trivial
 
+/-- Ownership-facing form of in-place shared reuse.  As for unique reuse,
+the slot is killed and revived to expose the ownership transition while the
+observable allocator counters are restored to the evaluator's direct
+overwrite behavior: one reuse and no free. -/
+def reuseSharedNodeStore (store : Store) (loc : Nat) (node : Node) : Store :=
+  let revived := (store.kill loc).setBox loc ⟨.shared, 1, node⟩
+  { revived with frees := store.frees, reuses := store.reuses + 1 }
+
+theorem reuseSharedNodeStore_eq_direct (store : Store) (loc : Nat)
+    (node : Node) :
+    reuseSharedNodeStore store loc node =
+      let updated := store.setBox loc ⟨.shared, 1, node⟩
+      { updated with reuses := updated.reuses + 1 } := by
+  cases store
+  simp [reuseSharedNodeStore, Store.kill, Store.setBox,
+    Array.set!_eq_setIfInBounds]
+
+theorem get?_reuseSharedNodeStore_same {store : Store} {loc : Nat}
+    {oldBox : NodeBox} {node : Node}
+    (hget : store.get? loc = some oldBox) :
+    (reuseSharedNodeStore store loc node).get? loc =
+      some ⟨.shared, 1, node⟩ := by
+  have hnodes := nodes_get?_of_get? hget
+  obtain ⟨hlt, _⟩ := Array.getElem?_eq_some_iff.mp hnodes
+  simp [reuseSharedNodeStore, Store.kill, Store.setBox, Store.get?,
+    Array.set!_eq_setIfInBounds, hlt]
+
+theorem get?_reuseSharedNodeStore_other {store : Store} {loc other : Nat}
+    {oldBox otherBox : NodeBox} {node : Node} (hne : loc ≠ other)
+    (hlive : store.get? loc = some oldBox)
+    (hget : store.get? other = some otherBox) :
+    (reuseSharedNodeStore store loc node).get? other = some otherBox := by
+  have hnodes := nodes_get?_of_get? hlive
+  obtain ⟨hlt, _⟩ := Array.getElem?_eq_some_iff.mp hnodes
+  simpa [reuseSharedNodeStore, Store.kill, Store.setBox, Store.get?,
+    Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds, hlt, hne]
+    using hget
+
+theorem get?_of_reuseSharedNodeStore_other {store : Store}
+    {loc other : Nat} {oldBox otherBox : NodeBox} {node : Node}
+    (hne : loc ≠ other) (hlive : store.get? loc = some oldBox)
+    (hget : (reuseSharedNodeStore store loc node).get? other =
+      some otherBox) :
+    store.get? other = some otherBox := by
+  have hnodes := nodes_get?_of_get? hlive
+  obtain ⟨hlt, _⟩ := Array.getElem?_eq_some_iff.mp hnodes
+  simpa [reuseSharedNodeStore, Store.kill, Store.setBox, Store.get?,
+    Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds, hlt, hne]
+    using hget
+
+theorem count_edgeLocations_reuseSharedNodeStore {store : Store}
+    {loc : Nat} {oldBox : NodeBox} {node : Node} (needle : Nat)
+    (hget : store.get? loc = some oldBox) :
+    List.count needle (edgeLocations (reuseSharedNodeStore store loc node)) =
+      List.count needle (edgeLocations (store.kill loc)) +
+        List.count needle ((nodeChildren node).filterMap rvalLocation?) := by
+  have hnodes := nodes_get?_of_get? hget
+  obtain ⟨hlt, _⟩ := Array.getElem?_eq_some_iff.mp hnodes
+  have hslot : (store.kill loc).nodes.toList[loc]? = some none := by
+    simp [Store.kill, Array.set!_eq_setIfInBounds, hlt]
+  rw [edgeLocations, edgeLocations, reuseSharedNodeStore, Store.setBox,
+    Array.toList_set!]
+  apply count_flatMap_set_add slotEdgeLocations needle hslot
+  rfl
+
+theorem incoming_reuseSharedNodeStore_same (store : Store) (loc : Nat)
+    (oldBox : NodeBox) (node : Node) (rest : List Root)
+    (hget : store.get? loc = some oldBox) :
+    incoming (reuseSharedNodeStore store loc node)
+        (⟨.shared, .loc loc⟩ :: rest) loc =
+      incoming (store.kill loc)
+        (rootsFor .shared (nodeChildren node) ++ rest) loc + 1 := by
+  have hedge :=
+    count_edgeLocations_reuseSharedNodeStore (node := node) loc hget
+  simp [incoming, List.filterMap_append,
+    rootLocation?, rvalLocation?, List.count] at hedge ⊢
+  omega
+
+theorem incoming_reuseSharedNodeStore_other (store : Store) (loc : Nat)
+    (oldBox : NodeBox) (node : Node) (rest : List Root) {other : Nat}
+    (hne : loc ≠ other) (hget : store.get? loc = some oldBox) :
+    incoming (reuseSharedNodeStore store loc node)
+        (⟨.shared, .loc loc⟩ :: rest) other =
+      incoming (store.kill loc)
+        (rootsFor .shared (nodeChildren node) ++ rest) other := by
+  have hedge :=
+    count_edgeLocations_reuseSharedNodeStore (node := node) other hget
+  simp [incoming, List.filterMap_append, List.count_append,
+    rootLocation?, rvalLocation?, hne] at hedge ⊢
+  omega
+
+theorem HasWorld.reuseSharedNodeStore {store : Store} {loc : Nat}
+    {oldBox : NodeBox} {node : Node} {world : Owned} {value : RVal}
+    (hget : store.get? loc = some oldBox)
+    (h : HasWorld (store.kill loc) world value) :
+    HasWorld (reuseSharedNodeStore store loc node) world value := by
+  cases value with
+  | loc valueLoc =>
+    obtain ⟨valueBox, hvalue, hworld⟩ := h
+    have hne : loc ≠ valueLoc := by
+      intro heq
+      subst valueLoc
+      rw [get?_kill_same hget] at hvalue
+      contradiction
+    have hold : store.get? valueLoc = some valueBox :=
+      get?_of_kill_other hne hget hvalue
+    exact ⟨valueBox, get?_reuseSharedNodeStore_other hne hget hold,
+      hworld⟩
+  | lit literal => trivial
+  | erased => trivial
+
 /-- Store transition performed by a successful `dup` on a shared location. -/
 def incRcStore (store : Store) (loc : Nat) (box : NodeBox) : Store :=
   (store.setBox loc { box with rc := box.rc + 1 }).rcTick
@@ -2146,6 +3034,100 @@ theorem RootOwnership.reuseNode {store : Store} {loc : Nat}
   have hready := (h.killUniqueOne hget).perm hpartition
   exact hready.reviveUnique hget hworld
 
+/-- Fill a just-killed slot with a shared node.  The proof is the shared
+counterpart of `reviveUnique`: the replacement root has refcount one, and
+the children supplied as temporary roots become the replacement's outgoing
+shared edges. -/
+theorem RootOwnership.reviveShared {store : Store} {loc : Nat}
+    {oldBox : NodeBox} {node : Node} {rest : List Root}
+    (hget : store.get? loc = some oldBox)
+    (h : RootOwnership (store.kill loc)
+      (rootsFor .shared (nodeChildren node) ++ rest))
+    (_hworld : NodeWorld .shared node) :
+    RootOwnership (reuseSharedNodeStore store loc node)
+      (⟨.shared, .loc loc⟩ :: rest) := by
+  let updated : NodeBox := ⟨.shared, 1, node⟩
+  have hupdated : (reuseSharedNodeStore store loc node).get? loc =
+      some updated := get?_reuseSharedNodeStore_same hget
+  have targetWorld :
+      HasWorld (reuseSharedNodeStore store loc node) .shared (.loc loc) :=
+    ⟨updated, hupdated, rfl⟩
+  have childWorld : ∀ child ∈ nodeChildren node,
+      HasWorld (store.kill loc) .shared child := by
+    intro child hchild
+    apply h.roots_world ⟨.shared, child⟩
+    apply List.mem_append_left rest
+    simp [rootsFor, hchild]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro root hroot
+    simp only [List.mem_cons] at hroot
+    rcases hroot with rfl | hrest
+    · exact targetWorld
+    · apply HasWorld.reuseSharedNodeStore hget
+      apply h.roots_world root
+      exact List.mem_append_right _ hrest
+  · intro parent parentBox hparent child hchild
+    by_cases heq : loc = parent
+    · subst parent
+      have hboxeq : parentBox = updated := by
+        exact Option.some.inj (hparent.symm.trans hupdated)
+      subst parentBox
+      exact HasWorld.reuseSharedNodeStore hget (childWorld child hchild)
+    · have hold : store.get? parent = some parentBox :=
+        get?_of_reuseSharedNodeStore_other heq hget hparent
+      have hkilled : (store.kill loc).get? parent = some parentBox :=
+        get?_kill_other heq hget hold
+      exact HasWorld.reuseSharedNodeStore hget
+        (h.edges_world hkilled child hchild)
+  · intro parent parentBox f arity args hparent hnode
+    by_cases heq : loc = parent
+    · subst parent
+      have hboxeq : parentBox = updated := by
+        exact Option.some.inj (hparent.symm.trans hupdated)
+      subst parentBox
+      rfl
+    · have hold : store.get? parent = some parentBox :=
+        get?_of_reuseSharedNodeStore_other heq hget hparent
+      have hkilled : (store.kill loc).get? parent = some parentBox :=
+        get?_kill_other heq hget hold
+      exact h.pap_shared hkilled hnode
+  · intro parent parentBox hparent
+    by_cases heq : loc = parent
+    · subst parent
+      have hboxeq : parentBox = updated := by
+        exact Option.some.inj (hparent.symm.trans hupdated)
+      subst parentBox
+      have hzero := h.incoming_eq_zero_of_dead (get?_kill_same hget)
+      have hcount :=
+        incoming_reuseSharedNodeStore_same store loc oldBox node rest hget
+      rw [hzero] at hcount
+      exact hcount.symm
+    · have hold : store.get? parent = some parentBox :=
+        get?_of_reuseSharedNodeStore_other heq hget hparent
+      have hkilled : (store.kill loc).get? parent = some parentBox :=
+        get?_kill_other heq hget hold
+      have hcount := h.counts hkilled
+      rw [incoming_reuseSharedNodeStore_other store loc oldBox node rest
+        heq hget]
+      exact hcount
+
+/-- In-place shared reuse consumes the unit-refcount parent root and the
+selected replacement-field roots, then produces the reused location as a
+shared root.  As in unique reuse, the field/ambient accounting is stated as
+a root-multiset permutation. -/
+theorem RootOwnership.reuseSharedNode {store : Store} {loc : Nat}
+    {oldNode newNode : Node} {before after : List Root}
+    (hget : store.get? loc = some ⟨.shared, 1, oldNode⟩)
+    (h : RootOwnership store (⟨.shared, .loc loc⟩ :: before))
+    (hpartition :
+      (rootsFor .shared (nodeChildren oldNode) ++ before).Perm
+        (rootsFor .shared (nodeChildren newNode) ++ after))
+    (hworld : NodeWorld .shared newNode) :
+    RootOwnership (reuseSharedNodeStore store loc newNode)
+      (⟨.shared, .loc loc⟩ :: after) := by
+  have hready := (h.killSharedOne hget).perm hpartition
+  exact hready.reviveShared hget hworld
+
 /-- Consuming a scalar root changes no heap ownership. -/
 theorem RootOwnership.dropNoLocation {store : Store} {world : Owned}
     {value : RVal} {rest : List Root}
@@ -2272,6 +3254,25 @@ theorem StoreGraphExtends.incRcStore {store : Store} {loc rc : Nat}
     cases hbox
     exact ⟨rc + 1, get?_incRcStore_same hget⟩
   · exact ⟨otherRc, get?_incRcStore_other heq hget hother⟩
+
+/-- Incrementing one shared refcount also preserves every resulting live
+node's prior semantic shape.  This is the reverse inclusion counterpart of
+`StoreGraphExtends.incRcStore`. -/
+theorem StoreGraphRestricts.incRcStore {store : Store} {loc rc : Nat}
+    {node : Node}
+    (hget : store.get? loc = some ⟨.shared, rc, node⟩) :
+    StoreGraphRestricts store
+      (incRcStore store loc ⟨.shared, rc, node⟩) := by
+  intro other world otherRc otherNode hother
+  by_cases heq : loc = other
+  · subst other
+    have hupdated := get?_incRcStore_same hget
+    have hbox : (⟨world, otherRc, otherNode⟩ : NodeBox) =
+        ⟨.shared, rc + 1, node⟩ :=
+      Option.some.inj (hother.symm.trans hupdated)
+    cases hbox
+    exact ⟨rc, hget⟩
+  · exact ⟨otherRc, get?_of_incRcStore_other heq hget hother⟩
 
 theorem edgeLocations_incRcStore {store : Store} {loc : Nat} {box : NodeBox}
     (h : store.get? loc = some box) :
@@ -4290,6 +5291,22 @@ theorem RootOwnership.freeAllocNode {store : Store} {loc : Nat}
   have hready := (h.killUniqueOne hget).perm hpartition
   exact hready.allocNode hworld
 
+/-- Reference meaning of hot shared reuse: consume the final parent owner,
+shallow-free the old node, and freshly allocate the replacement. -/
+theorem RootOwnership.freeAllocSharedNode {store : Store} {loc : Nat}
+    {oldNode newNode : Node} {before after : List Root}
+    (hget : store.get? loc = some ⟨.shared, 1, oldNode⟩)
+    (h : RootOwnership store (⟨.shared, .loc loc⟩ :: before))
+    (hpartition :
+      (rootsFor .shared (nodeChildren oldNode) ++ before).Perm
+        (rootsFor .shared (nodeChildren newNode) ++ after))
+    (hworld : NodeWorld .shared newNode) :
+    RootOwnership ((store.kill loc).allocNode .shared newNode).1
+      (⟨.shared,
+        .loc ((store.kill loc).allocNode .shared newNode).2⟩ :: after) := by
+  have hready := (h.killSharedOne hget).perm hpartition
+  exact hready.allocNode hworld
+
 /-- Allocation consumes the resolved field roots and returns ownership of the
 fresh constructor root. -/
 theorem runOp_alloc_owned {ctx : Ctx} {fuel : Nat} {cur : FnDef}
@@ -4802,6 +5819,130 @@ def HeapIso.reuse {store : Store} {target : Nat} {oldBox : NodeBox}
       exact ⟨oldLiveBox, oldLiveBox, hleft, hright,
         ⟨rfl, rfl, nodeSelfIso hleft⟩⟩
 
+/-- In-place shared reuse and its shallow-free-plus-append-allocation
+specification are isomorphic.  Unit shared ownership excludes every
+surviving root and heap edge from the consumed slot, so the reused location
+can correspond solely to the specification's fresh location. -/
+def HeapIso.reuseShared {store : Store} {target : Nat} {oldBox : NodeBox}
+    {newNode : Node} {rest : List Root}
+    (hget : store.get? target = some oldBox)
+    (hown : RootOwnership (reuseSharedNodeStore store target newNode)
+      (⟨.shared, .loc target⟩ :: rest)) :
+    HeapIso (reuseSharedNodeStore store target newNode)
+      ((store.kill target).allocNode .shared newNode).1 := by
+  let left := reuseSharedNodeStore store target newNode
+  let right := ((store.kill target).allocNode .shared newNode).1
+  let fresh := store.nodes.size
+  have hnew : left.get? target = some ⟨.shared, 1, newNode⟩ := by
+    exact get?_reuseSharedNodeStore_same hget
+  have nodeSelfIso : ∀ {parent box}, left.get? parent = some box →
+      NodeIso (reuseRel store target) box.node box.node := by
+    intro parent box hparent
+    have childIso : ∀ child ∈ nodeChildren box.node,
+        RValIso (reuseRel store target) child child := by
+      intro child hchild
+      have hworld := hown.edges_world hparent child hchild
+      have hneValue := hown.sole_child_ne hnew hparent hchild
+      cases child with
+      | loc childLoc =>
+        obtain ⟨childBox, hchildLive, _⟩ := hworld
+        have hne : childLoc ≠ target := by
+          intro heq
+          subst childLoc
+          exact hneValue rfl
+        have hold : store.get? childLoc = some childBox :=
+          get?_of_reuseSharedNodeStore_other (Ne.symm hne) hget hchildLive
+        exact .loc (.inr ⟨rfl, hne, childBox, hold⟩)
+      | lit literal => exact .lit
+      | erased => exact .erased
+    cases hnode : box.node with
+    | ctorN cid fields =>
+      apply NodeIso.ctor
+      apply rvalsIso_refl_of_mem
+      intro child hchild
+      apply childIso child
+      simpa [nodeChildren, hnode] using hchild
+    | papN fn arity args =>
+      apply NodeIso.pap
+      apply rvalsIso_refl_of_mem
+      intro child hchild
+      apply childIso child
+      simpa [nodeChildren, hnode] using hchild
+  refine
+    { locRel := reuseRel store target
+      left_unique := ?_
+      right_unique := ?_
+      left_total := ?_
+      right_total := ?_
+      related_live := ?_ }
+  · intro loc right₁ right₂ h₁ h₂
+    rcases h₁ with h₁ | h₁ <;> rcases h₂ with h₂ | h₂
+    · exact h₁.2.trans h₂.2.symm
+    · exact False.elim (h₂.2.1 h₁.1)
+    · exact False.elim (h₁.2.1 h₂.1)
+    · exact h₁.1.symm.trans h₂.1
+  · intro left₁ left₂ loc h₁ h₂
+    rcases h₁ with h₁ | h₁ <;> rcases h₂ with h₂ | h₂
+    · exact h₁.1.trans h₂.1.symm
+    · obtain ⟨box, hbox⟩ := h₂.2.2
+      have heq : left₂ = store.nodes.size := h₂.1.trans h₁.2
+      subst left₂
+      rw [HeapIso.get?_fresh] at hbox
+      contradiction
+    · obtain ⟨box, hbox⟩ := h₁.2.2
+      have heq : left₁ = store.nodes.size := h₁.1.trans h₂.2
+      subst left₁
+      rw [HeapIso.get?_fresh] at hbox
+      contradiction
+    · exact h₁.1.trans h₂.1.symm
+  · intro loc box hbox
+    by_cases heq : loc = target
+    · exact ⟨fresh, .inl ⟨heq, rfl⟩⟩
+    · have hold : store.get? loc = some box :=
+        get?_of_reuseSharedNodeStore_other (Ne.symm heq) hget hbox
+      exact ⟨loc, .inr ⟨rfl, heq, box, hold⟩⟩
+  · intro loc box hbox
+    by_cases heq : loc = fresh
+    · exact ⟨target, .inl ⟨rfl, heq⟩⟩
+    · have hnotFresh : loc ≠ (store.kill target).nodes.size := by
+        simpa [fresh, Store.kill] using heq
+      have hkilled : (store.kill target).get? loc = some box :=
+        HeapIso.get?_of_allocNode_old hnotFresh hbox
+      have hne : target ≠ loc := by
+        intro htarget
+        subst loc
+        rw [get?_kill_same hget] at hkilled
+        contradiction
+      have hold : store.get? loc = some box :=
+        get?_of_kill_other hne hget hkilled
+      exact ⟨loc, .inr ⟨rfl, Ne.symm hne, box, hold⟩⟩
+  · intro leftLoc rightLoc hrel
+    rcases hrel with hnewRel | holdRel
+    · obtain ⟨hleftLoc, hrightLoc⟩ := hnewRel
+      subst leftLoc
+      subst rightLoc
+      refine ⟨⟨.shared, 1, newNode⟩, ⟨.shared, 1, newNode⟩,
+        hnew, ?_, ?_⟩
+      · have hrightNew := HeapIso.get?_allocNode_new
+          (store.kill target) .shared newNode
+        change ((store.kill target).allocNode .shared newNode).1.get?
+          (store.kill target).nodes.size =
+            some ⟨.shared, 1, newNode⟩ at hrightNew
+        have hsize : (store.kill target).nodes.size = store.nodes.size := by
+          simp [Store.kill]
+        rw [hsize] at hrightNew
+        exact hrightNew
+      · exact ⟨rfl, rfl, nodeSelfIso hnew⟩
+    · obtain ⟨rfl, hne, oldLiveBox, hold⟩ := holdRel
+      have hleft : left.get? leftLoc = some oldLiveBox :=
+        get?_reuseSharedNodeStore_other (Ne.symm hne) hget hold
+      have hkilled : (store.kill target).get? leftLoc = some oldLiveBox :=
+        get?_kill_other (Ne.symm hne) hget hold
+      have hright : right.get? leftLoc = some oldLiveBox :=
+        HeapIso.get?_allocNode_old hkilled
+      exact ⟨oldLiveBox, oldLiveBox, hleft, hright,
+        ⟨rfl, rfl, nodeSelfIso hleft⟩⟩
+
 /-- Full unique-reuse soundness. The in-place evaluator transition and the
 shallow-free-plus-append-allocation specification both preserve exact
 ownership, and their result roots correspond under a live-heap isomorphism.
@@ -4831,6 +5972,84 @@ theorem reuse_sound {store : Store} {target : Nat} {oldNode newNode : Node}
   change reuseRel store target target
     ((store.kill target).allocNode .unique newNode).2
   exact .inl ⟨rfl, by simp [Store.kill, Store.allocNode]⟩
+
+/-- Full hot shared-reuse soundness.  Physical in-place replacement and the
+logical shallow-free-plus-fresh-allocation path preserve exact ownership,
+their result roots correspond, and their live heaps differ only by the
+reused-slot/fresh-slot renaming. -/
+theorem reuse_shared_sound {store : Store} {target : Nat}
+    {oldNode newNode : Node} {before after : List Root}
+    (hget : store.get? target = some ⟨.shared, 1, oldNode⟩)
+    (hown : RootOwnership store (⟨.shared, .loc target⟩ :: before))
+    (hpartition :
+      (rootsFor .shared (nodeChildren oldNode) ++ before).Perm
+        (rootsFor .shared (nodeChildren newNode) ++ after))
+    (hworld : NodeWorld .shared newNode) :
+    ∃ iso : HeapIso (reuseSharedNodeStore store target newNode)
+        ((store.kill target).allocNode .shared newNode).1,
+      RootOwnership (reuseSharedNodeStore store target newNode)
+          (⟨.shared, .loc target⟩ :: after) ∧
+      RootOwnership ((store.kill target).allocNode .shared newNode).1
+          (⟨.shared,
+            .loc ((store.kill target).allocNode .shared newNode).2⟩ :: after) ∧
+      iso.locRel target
+        ((store.kill target).allocNode .shared newNode).2 := by
+  have hinPlace := hown.reuseSharedNode hget hpartition hworld
+  have hreference := hown.freeAllocSharedNode hget hpartition hworld
+  let iso := HeapIso.reuseShared hget hinPlace
+  refine ⟨iso, hinPlace, hreference, ?_⟩
+  change reuseRel store target target
+    ((store.kill target).allocNode .shared newNode).2
+  exact .inl ⟨rfl, by simp [Store.kill, Store.allocNode]⟩
+
+/-- The shared-reuse isomorphism self-relates every surviving external root.
+This stronger interface lets a caller transport continuations containing old
+live locations while mapping only the replaced result to its fresh logical
+location. -/
+theorem reuse_shared_sound_with_survivors {store : Store} {target : Nat}
+    {oldNode newNode : Node} {before after : List Root}
+    (hget : store.get? target = some ⟨.shared, 1, oldNode⟩)
+    (hown : RootOwnership store (⟨.shared, .loc target⟩ :: before))
+    (hpartition :
+      (rootsFor .shared (nodeChildren oldNode) ++ before).Perm
+        (rootsFor .shared (nodeChildren newNode) ++ after))
+    (hworld : NodeWorld .shared newNode) :
+    ∃ iso : HeapIso (reuseSharedNodeStore store target newNode)
+        ((store.kill target).allocNode .shared newNode).1,
+      RootOwnership (reuseSharedNodeStore store target newNode)
+          (⟨.shared, .loc target⟩ :: after) ∧
+      RootOwnership ((store.kill target).allocNode .shared newNode).1
+          (⟨.shared,
+            .loc ((store.kill target).allocNode .shared newNode).2⟩ :: after) ∧
+      iso.locRel target
+        ((store.kill target).allocNode .shared newNode).2 ∧
+      ∀ root ∈ after, RValIso iso.locRel root.value root.value := by
+  have hinPlace := hown.reuseSharedNode hget hpartition hworld
+  have hreference := hown.freeAllocSharedNode hget hpartition hworld
+  let iso := HeapIso.reuseShared hget hinPlace
+  refine ⟨iso, hinPlace, hreference, ?_, ?_⟩
+  · change reuseRel store target target
+      ((store.kill target).allocNode .shared newNode).2
+    exact .inl ⟨rfl, by simp [Store.kill, Store.allocNode]⟩
+  · intro root member
+    cases root with
+    | mk world value =>
+        cases value with
+        | lit literal => exact .lit
+        | erased => exact .erased
+        | loc location =>
+            have different : location ≠ target := by
+              intro same
+              apply hinPlace.sole_root_ne
+                (get?_reuseSharedNodeStore_same hget) member
+              simp [same]
+            obtain ⟨box, live, _⟩ :=
+              hinPlace.roots_world ⟨world, .loc location⟩ (by simp [member])
+            have oldLive : store.get? location = some box :=
+              get?_of_reuseSharedNodeStore_other (Ne.symm different) hget
+                live
+            apply RValIso.loc
+            exact .inr ⟨rfl, different, box, oldLive⟩
 
 /-! Value realization is insensitive to the concrete numbering of live heap
 locations. The generated mutual induction principles let these two theorems

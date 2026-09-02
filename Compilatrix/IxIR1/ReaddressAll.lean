@@ -408,9 +408,12 @@ def rebuildSemanticAudit (result : Result)
               (Readdress.Decl.mapAddresses rename before)
       | _, _ => false) &&
     result.addressMap.all (fun entry =>
-      match original entry.2 with
-      | some _ => true
-      | none => (emitted entry.1).isNone) &&
+      (match original entry.2 with
+       | some _ => true
+       | none => (emitted entry.1).isNone) &&
+      match original entry.1 with
+      | some _ => result.rebuildRename raw entry.1 == entry.2
+      | none => false) &&
     result.declarations.all (fun entry =>
       result.addressMap.any fun mapping => mapping.2 == entry.1)
 

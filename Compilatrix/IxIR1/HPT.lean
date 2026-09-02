@@ -739,6 +739,21 @@ def scalar : Fact := ⟨true, false, []⟩
 def heap (shape : HeapShape) : Fact := ⟨false, false, [shape]⟩
 def top : Fact := ⟨true, true, []⟩
 
+/-- Recover a constructor identity only when the fact excludes scalars,
+unknown heap values, PAPs, and every competing heap shape.  Field detail is
+irrelevant to identity provenance, so both identity-only and recursively
+refined constructor shapes qualify. -/
+def exactConstructor? : Fact → Option CtorId
+  | ⟨false, false, [.ctor identity _]⟩ => some identity
+  | _ => none
+
+theorem exactConstructor?_eq_some {fact : Fact} {identity : CtorId}
+    (h : fact.exactConstructor? = some identity) :
+    ∃ fields,
+      fact = ⟨false, false, [.ctor identity fields]⟩ := by
+  unfold exactConstructor? at h
+  split at h <;> simp_all
+
 def normalize (fact : Fact) : Fact :=
   if fact.unknownHeap then
     { fact with shapes := [] }

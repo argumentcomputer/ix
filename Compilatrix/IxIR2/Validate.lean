@@ -1,4 +1,4 @@
-import Compilatrix.IxIR2.Basic
+import Compilatrix.IxIR2.CreditPolicy
 import Std.Data.HashMap
 
 /-!
@@ -563,7 +563,8 @@ private def appendCallResult (limits : Limits) (site : Site) (flow : Flow)
     (signature : Signature) : Check Flow :=
   flow.pushValue limits site (.owned signature.result)
 
-private def validateInstruction (limits : Limits) (context : Context)
+private def validateInstruction (policy : CreditPolicy)
+    (limits : Limits) (context : Context)
     (declarations : DeclarationIndex) (signature : Signature) (site : Site)
     (flow : Flow) (instruction : Instr) (remaining : List Instr)
     (terminator : Terminator) : Check Flow := do
@@ -634,7 +635,7 @@ private def validateInstruction (limits : Limits) (context : Context)
       | some fieldWorld =>
           flow.pushValue limits site (.borrowed fieldWorld lender)
   | .call function arguments =>
-      ensureNoLiveCallCredit site flow
+      if policy == .callLocalV0 then ensureNoLiveCallCredit site flow
       match declarationAt? declarations function with
       | some (.fn definition) =>
           let flow ← checkCallArguments limits site flow arguments
@@ -644,7 +645,7 @@ private def validateInstruction (limits : Limits) (context : Context)
           failAt site .call "extern declarations must use the extern instruction"
       | none => failAt site .call "call target is not declared"
   | .callSelf arguments =>
-      ensureNoLiveCallCredit site flow
+      if policy == .callLocalV0 then ensureNoLiveCallCredit site flow
       let flow ← checkCallArguments limits site flow arguments
         signature remaining terminator
       appendCallResult limits site flow signature
@@ -944,7 +945,8 @@ private def validateBlockParams (limits : Limits) (site : Site)
         | _ => failAt site .borrow "block borrow names a non-owning parameter"
     | _ => pure ()
 
-private def validateBlock (limits : Limits) (context : Context)
+private def validateBlock (policy : CreditPolicy)
+    (limits : Limits) (context : Context)
     (declarations : DeclarationIndex) (signature : Signature) (owner : Owner)
     (blocks : Array Block) (blockId : BlockId) (block : Block) : Check Stats := do
   let site : Site := { owner, block := blockId }
@@ -959,7 +961,7 @@ private def validateBlock (limits : Limits) (context : Context)
     | [] => return flow
     | instruction :: remaining => do
         let flow := { flow with position := index }
-        let flow ← validateInstruction limits context declarations signature
+        let flow ← validateInstruction policy limits context declarations signature
           (instructionSite site index) flow instruction remaining block.terminator
         instructions (index + 1) flow remaining
   let flow ← instructions 0 (Flow.ofBlock block uses) block.instructions.toList
@@ -983,7 +985,8 @@ private def validateSignature (limits : Limits) (site : Site)
   else
     return ()
 
-private def validateFunction (limits : Limits) (context : Context)
+private def validateFunction (policy : CreditPolicy)
+    (limits : Limits) (context : Context)
     (declarations : DeclarationIndex) (owner : Owner)
     (definition : Function) : Check Stats := do
   let entrySite : Site := { owner, block := 0 }
@@ -1000,7 +1003,7 @@ private def validateFunction (limits : Limits) (context : Context)
       failAt entrySite .signature "function entry cannot accept reuse credits"
     else
       let stats ← foldIdxM definition.blocks.toList ({} : Stats) fun blockId current block => do
-        let blockStats ← validateBlock limits context declarations definition.signature owner
+        let blockStats ← validateBlock policy limits context declarations definition.signature owner
           definition.blocks blockId block
         let current := Stats.add current blockStats
         checkLimit entrySite .flowWork current.flowWork limits.maxFlowWork
@@ -1013,8 +1016,12 @@ private def structuralBlockCount (program : Program) : Nat :=
     | .fn definition => total + definition.blocks.size
     | .extern _ => total) 0
 
-/-- Validate a complete artifact under explicit resource limits. -/
-def validateWith (limits : Limits) (context : Context) (program : Program) :
+/-- Validate under an explicit, versioned credit boundary. Suspended credits
+remain in the caller's flow, so its continuation must consume or discard them
+and every outgoing edge must transfer them linearly. Function entries accept
+no credits under either policy. -/
+def validateWithPolicy (policy : CreditPolicy)
+    (limits : Limits) (context : Context) (program : Program) :
     Except Error Stats := do
   let programSite : Site := { owner := .main, block := 0 }
   checkLimit programSite .declarations program.declarations.length
@@ -1033,7 +1040,7 @@ def validateWith (limits : Limits) (context : Context) (program : Program) :
       let declarationStats ← program.declarations.foldlM (fun current entry => do
         let next ← match entry.2 with
           | .fn definition =>
-              validateFunction limits context declarations (.declaration entry.1) definition
+              validateFunction policy limits context declarations (.declaration entry.1) definition
           | .extern arity =>
               if !context.allowExtern then
                 failAt { owner := .declaration entry.1, block := 0 }
@@ -1044,13 +1051,18 @@ def validateWith (limits : Limits) (context : Context) (program : Program) :
         let current := Stats.add current next
         checkLimit programSite .flowWork current.flowWork limits.maxFlowWork
         return current) ({} : Stats)
-      let mainStats ← validateFunction limits context declarations .main program.main
+      let mainStats ← validateFunction policy limits context declarations .main program.main
       let overhead : Stats :=
         { declarations := program.declarations.length
           flowWork := declarationWork }
       let stats := Stats.add (Stats.add declarationStats mainStats) overhead
       checkLimit programSite .flowWork stats.flowWork limits.maxFlowWork
       return stats
+
+/-- The existing checker retains the original call-local contract. -/
+def validateWith (limits : Limits) (context : Context) (program : Program) :
+    Except Error Stats :=
+  validateWithPolicy .callLocalV0 limits context program
 
 def validate (context : Context) (program : Program) : Except Error Stats :=
   validateWith defaultLimits context program
@@ -1066,5 +1078,16 @@ def Valid (context : Context) (program : Program) : Prop :=
 structure Checked (limits : Limits) (context : Context) (program : Program) where
   stats : Stats
   accepted : validateWith limits context program = .ok stats
+
+/-- Versioned acceptance retains the exact policy as part of its type. -/
+structure CheckedWithPolicy (policy : CreditPolicy) (limits : Limits)
+    (context : Context) (program : Program) where
+  stats : Stats
+  accepted : validateWithPolicy policy limits context program = .ok stats
+
+def Checked.withPolicy {limits : Limits} {context : Context} {program : Program}
+    (checked : Checked limits context program) :
+    CheckedWithPolicy .callLocalV0 limits context program :=
+  ⟨checked.stats, checked.accepted⟩
 
 end Compilatrix.IxIR2.Validate

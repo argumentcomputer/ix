@@ -86,6 +86,53 @@ private def loweredNat := lowerChecked natContext natInput
   | .ok checked =>
       checked.stats.functions == 2 && checked.stats.blocks == 4 &&
         checked.stats.edges == 2 && checked.artifact.trace.edges.length == 2 &&
+        functionTraceMatches checked.artifact.mainTrace .main
+          natInput.mainDefinition checked.artifact.program.main &&
+        (match checked.artifact.trace.functions with
+        | [natTrace, mainTrace] =>
+            natTrace.owner == Validate.Owner.declaration natAddress &&
+              mainTrace.owner == Validate.Owner.main &&
+              functionSourceMatches natTrace.source natTrace.generated
+                natTrace.root &&
+              functionSourceMatches mainTrace.source mainTrace.generated
+                mainTrace.root &&
+              natTrace.source.arity == 1 &&
+              natTrace.source.result == .shared &&
+              natTrace.source.papSafe &&
+              mainTrace.source.arity == 0 &&
+              mainTrace.source.result == .shared &&
+              !mainTrace.source.papSafe &&
+              (match natTrace.source.body with
+              | .case (.var 0) true alternatives => alternatives.size == 2
+              | _ => false) &&
+              (match mainTrace.source.body with
+              | .letOp (.call address arguments) (.ret (.var 0)) =>
+                  address == natAddress && arguments == #[.lit (.nat 7)]
+              | _ => false) &&
+              natTrace.root.blocks.length == 3 &&
+              mainTrace.root.blocks.length == 1 &&
+              natTrace.root.switchBranchesMatch &&
+              mainTrace.root.switchBranchesMatch &&
+              match natTrace.root, mainTrace.root with
+              | .switchValue _ 0 inputMap 1 _ _ _ _ generated outgoing children,
+                  .tailCall _ 0 mainMap 0 _ _ mainGenerated =>
+                  inputMap == #[some (.reg 0)] && mainMap.isEmpty &&
+                    outgoing.length == 2 && children.length == 2 &&
+                    natTrace.generated.blocks[0]? == some generated &&
+                    mainTrace.generated.blocks[0]? == some mainGenerated
+              | _, _ => false
+        | _ => false) &&
+        (match checked.artifact.trace.edges with
+        | [zero, succ] =>
+            zero.sourceInputMap == #[some (.reg 0)] &&
+              zero.sourceMap == #[some (.reg 0)] &&
+              zero.explicitValues == #[.reg 0] &&
+              zero.implicitScalars == 0 &&
+              succ.sourceInputMap == #[some (.reg 0)] &&
+              succ.sourceMap == #[some (.reg 0), some (.reg 1)] &&
+              succ.explicitValues == #[.reg 0] &&
+              succ.implicitScalars == 1
+        | _ => false) &&
         match targetFunction? checked.artifact natAddress with
         | some definition =>
             definition.blocks.size == 3 &&
@@ -137,21 +184,32 @@ private def constructorContext : Context :=
   { parameterWorlds := fun address =>
       if address == inspectAddress then some #[.shared] else none
     schemas
-    caseCtor := fun site alternative =>
+    caseCtors := fun site alternative =>
       if site.owner == Validate.Owner.declaration inspectAddress &&
           site.branches.isEmpty && site.offset == 0 then
-        if alternative == 0 then some nilCtor
-        else if alternative == 1 then some consCtor
-        else none
+        if alternative == 0 then [nilCtor]
+        else if alternative == 1 then [consCtor]
+        else []
       else
-        none }
+        [] }
 
 private def loweredConstructor := lowerChecked constructorContext constructorInput
 
 #guard match loweredConstructor with
   | .ok checked =>
-      checked.stats.blocks == 4 && checked.stats.edges == 2 &&
+        checked.stats.blocks == 4 && checked.stats.edges == 2 &&
         checked.artifact.trace.edges.length == 2 &&
+        checked.artifact.trace.positionsMatch &&
+        checked.artifact.trace.pureCapabilitiesMatch &&
+        checked.artifact.trace.dupCapabilitiesMatch &&
+        checked.artifact.trace.fetchCapabilitiesMatch &&
+        checked.artifact.trace.allocationCapabilitiesMatch &&
+        checked.artifact.trace.positions.any fun position =>
+          position.source.owner == Validate.Owner.main &&
+            position.source.branches.isEmpty &&
+            position.source.offset == 1 && position.block == 0 &&
+            position.target == .instruction 1 &&
+            position.sourceCapabilities == #[.owned .shared] &&
         match targetFunction? checked.artifact inspectAddress with
         | some definition =>
             definition.blocks.size == 3 &&
@@ -219,6 +277,56 @@ private def freeContext : Context :=
               target.store.counters.frees == 1
         | .error _ => false
   | .error _ => false
+
+/-! ## Dead ownership slots at CFG edges -/
+
+/-- `pure` moves the only owner into a new source binder. The older runtime
+slot still contains the same location in IxIR₁, but it is dead and must not
+be related to the successor's deliberately erased block parameter. -/
+private def deadEdgeInput : Input :=
+  { declarations := []
+    main :=
+      .letOp (.alloc .shared nilCtor #[])
+        (.letOp (.pure (.var 0))
+          (.case (.var 0) false #[
+            .mk 0 0
+              (.letOp (.drop (.var 0)) (.ret (.lit (.nat 9))))]))
+    mainResult := .shared }
+
+private def deadEdgeContext : Context :=
+  { schemas
+    caseCtors := fun site alternative =>
+      if site.owner == Validate.Owner.main && site.branches.isEmpty &&
+          site.offset == 2 && alternative == 0 then
+        [nilCtor]
+      else
+        [] }
+
+private def loweredDeadEdge := lowerChecked deadEdgeContext deadEdgeInput
+
+#guard match loweredDeadEdge with
+  | .ok checked =>
+      match checked.artifact.trace.edges with
+      | [edge] =>
+          edge.sourceInputMap == #[some (.reg 1), none] &&
+            edge.sourceMap == #[some (.reg 0), none] &&
+            edge.explicitValues == #[.reg 1, .erased] &&
+            edge.targetParams == #[.owned .shared, .scalar] &&
+            edge.implicitScalars == 0
+      | _ => false
+  | .error _ => false
+
+#guard match
+    IxIR1.runMain (sourceContext deadEdgeInput) deadEdgeInput.main 20,
+    loweredDeadEdge with
+  | .ok source, .ok checked =>
+      match targetRun checked.artifact 5 10 with
+      | .ok target =>
+          source.2 == .lit (.nat 9) && target.value == source.2 &&
+            source.1.live == 0 && target.store.live == 0 &&
+            target.controlRemaining == 0
+      | .error _ => false
+  | _, _ => false
 
 /-! ## Fail-closed source boundaries -/
 

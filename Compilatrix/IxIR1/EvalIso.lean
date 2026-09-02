@@ -121,6 +121,17 @@ private theorem get?_setBox_eq {store : Store} {loc other : Nat}
     simp [Store.setBox, Store.get?, Array.set!_eq_setIfInBounds,
       Array.getElem?_setIfInBounds, hlt, hne, hsame]
 
+private theorem get?_setBox_eq_of_bound {store : Store} {loc other : Nat}
+    {new : NodeBox} (hlt : loc < store.nodes.size) :
+    (store.setBox loc new).get? other =
+      if other = loc then some new else store.get? other := by
+  by_cases hsame : other = loc
+  · subst other
+    simp [Store.setBox, Store.get?, Array.set!_eq_setIfInBounds, hlt]
+  · have hne : loc ≠ other := Ne.symm hsame
+    simp [Store.setBox, Store.get?, Array.set!_eq_setIfInBounds,
+      Array.getElem?_setIfInBounds, hlt, hne, hsame]
+
 private theorem get?_kill_eq {store : Store} {loc other : Nat}
     {box : NodeBox} (hget : store.get? loc = some box) :
     (store.kill loc).get? other =
@@ -157,6 +168,92 @@ theorem boxes {left right : Store} (iso : HeapHistoryIso left right)
     have : foundLeft = leftBox := Option.some.inj (hfound.symm.trans hleft)
     subst foundLeft
     exact ⟨rightBox, hright, hbox⟩
+
+private def liveRel {left right : Store}
+    (iso : HeapHistoryIso left right) (leftLoc rightLoc : Nat) : Prop :=
+  iso.locRel leftLoc rightLoc ∧
+    ∃ leftBox, left.get? leftLoc = some leftBox
+
+private theorem RValsIso.liveMono {left right : Store}
+    (iso : HeapHistoryIso left right) :
+    ∀ {leftValues rightValues : List RVal},
+      RValsIso iso.locRel leftValues rightValues →
+      (∀ value ∈ leftValues, LiveRVal left value) →
+      RValsIso (liveRel iso) leftValues rightValues
+  | _, _, .nil, _ => .nil
+  | _, _, .cons head tail, live => by
+      refine .cons ?_ (RValsIso.liveMono iso tail fun value member =>
+        live value (by simp [member]))
+      cases head with
+      | @loc leftLoc rightLoc related =>
+          exact .loc ⟨related, live (.loc leftLoc) (by simp)⟩
+      | lit => exact .lit
+      | erased => exact .erased
+
+private theorem NodeIso.liveMono {left right : Store}
+    (iso : HeapHistoryIso left right) :
+    ∀ {leftNode rightNode : Node},
+      NodeIso iso.locRel leftNode rightNode →
+      (∀ value ∈ nodeChildren leftNode, LiveRVal left value) →
+      NodeIso (liveRel iso) leftNode rightNode
+  | _, _, .ctor fields, live =>
+      .ctor (RValsIso.liveMono iso fields fun value member =>
+        live value (by simpa [nodeChildren] using member))
+  | _, _, .pap arguments, live =>
+      .pap (RValsIso.liveMono iso arguments fun value member =>
+        live value (by simpa [nodeChildren] using member))
+
+private theorem NodeBoxIso.liveMono {left right : Store}
+    (iso : HeapHistoryIso left right) (closed : StoreClosed left)
+    {leftLoc : Nat} {leftBox rightBox : NodeBox}
+    (leftAt : left.get? leftLoc = some leftBox)
+    (boxes : NodeBoxIso iso.locRel leftBox rightBox) :
+    NodeBoxIso (liveRel iso) leftBox rightBox :=
+  ⟨boxes.world, boxes.rc,
+    NodeIso.liveMono iso boxes.node (closed leftAt)⟩
+
+/-- Forget historical dead/dead rows, retaining the exact bijection on live
+locations. Closure ensures every child relation of a live node also belongs
+to the restricted live relation. -/
+def toHeapIso {left right : Store} (iso : HeapHistoryIso left right)
+    (closed : StoreClosed left) : HeapIso left right where
+  locRel := liveRel iso
+  left_unique := fun first second => iso.left_unique first.1 second.1
+  right_unique := fun first second => iso.right_unique first.1 second.1
+  left_total := by
+    intro leftLoc leftBox leftAt
+    obtain ⟨rightLoc, related⟩ := iso.left_total leftAt
+    exact ⟨rightLoc, related, leftBox, leftAt⟩
+  right_total := by
+    intro rightLoc rightBox rightAt
+    obtain ⟨leftLoc, related⟩ := iso.right_total rightAt
+    rcases iso.related related with dead | live
+    · exact False.elim
+        (Option.some_ne_none rightBox (rightAt.symm.trans dead.2))
+    · obtain ⟨leftBox, _foundRight, leftAt, _foundRightAt, _boxes⟩ := live
+      exact ⟨leftLoc, related, leftBox, leftAt⟩
+  related_live := by
+    intro leftLoc rightLoc related
+    obtain ⟨historyRelated, leftBox, leftAt⟩ := related
+    obtain ⟨rightBox, rightAt, boxes⟩ := iso.boxes historyRelated leftAt
+    exact ⟨leftBox, rightBox, leftAt, rightAt,
+      NodeBoxIso.liveMono iso closed leftAt boxes⟩
+
+/-- A live historical pair is retained by `toHeapIso`. -/
+theorem toHeapIso_rel {left right : Store}
+    (iso : HeapHistoryIso left right) (closed : StoreClosed left)
+    {leftLoc rightLoc : Nat} (related : iso.locRel leftLoc rightLoc)
+    {leftBox : NodeBox} (leftAt : left.get? leftLoc = some leftBox) :
+    (iso.toHeapIso closed).locRel leftLoc rightLoc :=
+  ⟨related, leftBox, leftAt⟩
+
+/-- Restricting a history relation does not invent location pairs. -/
+theorem of_toHeapIso_rel {left right : Store}
+    (iso : HeapHistoryIso left right) (closed : StoreClosed left)
+    {leftLoc rightLoc : Nat}
+    (related : (iso.toHeapIso closed).locRel leftLoc rightLoc) :
+    iso.locRel leftLoc rightLoc :=
+  related.1
 
 /-- The symmetric evaluator relation. -/
 def symm {left right : Store} (iso : HeapHistoryIso left right) :
@@ -324,6 +421,60 @@ def setBox {left right : Store} (iso : HeapHistoryIso left right)
         exact hll this
       simp only [hll, hrr, if_false, hlEq, hrEq]
       exact iso.related hlr
+
+/-- Reviving corresponding dead historical slots preserves allocation
+history.  Physical reuse credits exercise this operation: the pair remains
+the same, but its observation changes from dead/dead to related live boxes. -/
+def revive {left right : Store} (iso : HeapHistoryIso left right)
+    {leftLoc rightLoc : Nat} (hrel : iso.locRel leftLoc rightLoc)
+    (hleft : left.get? leftLoc = none)
+    (hright : right.get? rightLoc = none)
+    {newLeft newRight : NodeBox}
+    (hnew : NodeBoxIso iso.locRel newLeft newRight) :
+    HeapHistoryIso (left.setBox leftLoc newLeft)
+      (right.setBox rightLoc newRight) where
+  locRel := iso.locRel
+  left_unique := iso.left_unique
+  right_unique := iso.right_unique
+  left_bound := by
+    intro l r related
+    simpa [Store.setBox] using iso.left_bound related
+  right_bound := by
+    intro l r related
+    simpa [Store.setBox] using iso.right_bound related
+  left_total := by
+    intro loc box live
+    rw [get?_setBox_eq_of_bound (iso.left_bound hrel)] at live
+    by_cases same : loc = leftLoc
+    · exact ⟨rightLoc, same ▸ hrel⟩
+    · simp only [same, if_false] at live
+      exact iso.left_total live
+  right_total := by
+    intro loc box live
+    rw [get?_setBox_eq_of_bound (iso.right_bound hrel)] at live
+    by_cases same : loc = rightLoc
+    · exact ⟨leftLoc, same ▸ hrel⟩
+    · simp only [same, if_false] at live
+      exact iso.right_total live
+  related := by
+    intro l r related
+    have leftEq := get?_setBox_eq_of_bound
+      (new := newLeft) (iso.left_bound hrel) (other := l)
+    have rightEq := get?_setBox_eq_of_bound
+      (new := newRight) (iso.right_bound hrel) (other := r)
+    by_cases leftSame : l = leftLoc
+    · have rightSame : r = rightLoc :=
+        iso.left_unique related (leftSame ▸ hrel)
+      subst l
+      subst r
+      simp only [if_pos, leftEq, rightEq]
+      exact .inr ⟨newLeft, newRight, rfl, rfl, hnew⟩
+    · have rightDifferent : r ≠ rightLoc := by
+        intro same
+        have := iso.right_unique related (same ▸ hrel)
+        exact leftSame this
+      simp only [leftSame, rightDifferent, if_false, leftEq, rightEq]
+      exact iso.related related
 
 /-- Killing corresponding live locations retains their historical pair as a
 dead/dead row.  This is the operation for which live-only heap isomorphism is

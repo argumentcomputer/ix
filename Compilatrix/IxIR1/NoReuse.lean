@@ -47,6 +47,89 @@ def CtxNoReuse (ctx : Ctx) : Prop :=
   ∀ {address definition},
     ctx.decls address = some (.fn definition) → CodeNoReuse definition.body
 
+/-! ## Executable reflection
+
+The compiler proves reuse-freedom before content addressing, but the final
+artifact may content-deduplicate declarations.  These small structural checks
+let downstream attachment boundaries validate the exact emitted syntax and
+reflect the result back into the propositions consumed by simulation. -/
+
+/-- Executable counterpart of `OpNoReuse`. -/
+def checkOp : Op → Bool
+  | .reuse .. => false
+  | _ => true
+
+mutual
+
+/-- Executable counterpart of `CodeNoReuse`. -/
+def checkCode : Code → Bool
+  | .ret _ => true
+  | .letOp operation rest => checkOp operation && checkCode rest
+  | .case _ _ alternatives => checkAlternatives alternatives.toList
+
+/-- Executable counterpart of `AltNoReuse`. -/
+def checkAlt : Alt → Bool
+  | .mk _ _ body => checkCode body
+
+/-- Structural list walk used beneath case-alternative arrays. -/
+def checkAlternatives : List Alt → Bool
+  | [] => true
+  | head :: tail => checkAlt head && checkAlternatives tail
+
+end
+
+theorem checkOp_eq_true_iff (operation : Op) :
+    checkOp operation = true ↔ OpNoReuse operation := by
+  cases operation <;> simp [checkOp, OpNoReuse]
+
+/-- The executable recursive syntax walk decides exactly `CodeNoReuse`. -/
+theorem checkCode_eq_true_iff (code : Code) :
+    checkCode code = true ↔ CodeNoReuse code := by
+  apply Code.rec
+    (motive_1 := fun operation =>
+      checkOp operation = true ↔ OpNoReuse operation)
+    (motive_2 := fun alternative =>
+      checkAlt alternative = true ↔ AltNoReuse alternative)
+    (motive_3 := fun code =>
+      checkCode code = true ↔ CodeNoReuse code)
+    (motive_4 := fun alternatives =>
+      checkAlternatives alternatives.toList = true ↔
+        ∀ alternative ∈ alternatives, AltNoReuse alternative)
+    (motive_5 := fun alternatives =>
+      checkAlternatives alternatives = true ↔
+        ∀ alternative ∈ alternatives, AltNoReuse alternative)
+    (pure := by intros; simp [checkOp, OpNoReuse])
+    (alloc := by intros; simp [checkOp, OpNoReuse])
+    (reuse := by intros; simp [checkOp, OpNoReuse])
+    (free := by intros; simp [checkOp, OpNoReuse])
+    (dup := by intros; simp [checkOp, OpNoReuse])
+    (drop := by intros; simp [checkOp, OpNoReuse])
+    (dropU := by intros; simp [checkOp, OpNoReuse])
+    (fetch := by intros; simp [checkOp, OpNoReuse])
+    (call := by intros; simp [checkOp, OpNoReuse])
+    (callSelf := by intros; simp [checkOp, OpNoReuse])
+    (papp := by intros; simp [checkOp, OpNoReuse])
+    (apply := by intros; simp [checkOp, OpNoReuse])
+    (extern := by intros; simp [checkOp, OpNoReuse])
+    (mk := by
+      intro cidx fields body hbody
+      simpa [checkAlt, AltNoReuse] using hbody)
+    (ret := by intros; simp [checkCode, CodeNoReuse])
+    (letOp := by
+      intro operation rest hoperation hrest
+      simp [checkCode, CodeNoReuse, hoperation, hrest])
+    (case := by
+      intro scrutinee peelNat alternatives halternatives
+      simpa [checkCode, CodeNoReuse] using halternatives)
+    (by
+      intro alternatives halternatives
+      simpa using halternatives)
+    (by simp [checkAlternatives])
+    (by
+      intro head tail hhead htail
+      simp [checkAlternatives, hhead, htail])
+    code
+
 /-- A difference-list emitter preserves reuse-free continuations. -/
 def EmitNoReuse (emit : Emit) : Prop :=
   ∀ code, CodeNoReuse code → CodeNoReuse (emit code)
@@ -735,6 +818,527 @@ private theorem evalReusesAt : ∀ fuel, EvalReusesAt fuel := by
                               ((ihInvoke _ _ _ _ _ _ hctx hinvoke).trans
                                 (hdropReuse.trans hdupReuse))
 
+private def EvalPAPsUnderAt (fuel : Nat) : Prop :=
+  (∀ ctx cur store env code store' value,
+    CtxNoReuse ctx → CodeNoReuse cur.body → CodeNoReuse code →
+    Reclamation.PAPsUnder store →
+    runCode ctx fuel cur store env code = .ok (store', value) →
+      Reclamation.PAPsUnder store') ∧
+  (∀ ctx cur store env op store' value,
+    CtxNoReuse ctx → CodeNoReuse cur.body → OpNoReuse op →
+    Reclamation.PAPsUnder store →
+    runOp ctx fuel cur store env op = .ok (store', value) →
+      Reclamation.PAPsUnder store') ∧
+  (∀ ctx address args store store' value,
+    CtxNoReuse ctx → Reclamation.PAPsUnder store →
+    invoke ctx fuel address args store = .ok (store', value) →
+      Reclamation.PAPsUnder store') ∧
+  (∀ ctx store function args store' value,
+    CtxNoReuse ctx → Reclamation.PAPsUnder store →
+    applyGo ctx fuel store function args = .ok (store', value) →
+      Reclamation.PAPsUnder store')
+
+/-- Reuse-free execution preserves the strict under-saturation of every
+live PAP.  The induction follows dynamic calls and application chains; its
+only PAP-producing branches are guarded by the evaluator's strict length
+tests. -/
+private theorem evalPAPsUnderAt : ∀ fuel, EvalPAPsUnderAt fuel := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · intro ctx cur store env code store' value hctx hcur hcode hpaps heval
+      rw [runCode.eq_def] at heval
+      simp at heval
+    · intro ctx cur store env op store' value hctx hcur hop hpaps heval
+      rw [runOp.eq_def] at heval
+      simp at heval
+    · intro ctx address args store store' value hctx hpaps heval
+      rw [invoke.eq_def] at heval
+      simp at heval
+    · intro ctx store function args store' value hctx hpaps heval
+      rw [applyGo.eq_def] at heval
+      simp at heval
+  | succ fuel ih =>
+    obtain ⟨ihCode, ihOp, ihInvoke, ihApply⟩ := ih
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · intro ctx cur store env code store' value hctx hcur hcode hpaps heval
+      cases code with
+      | ret atom =>
+        rw [runCode.eq_def] at heval
+        dsimp only at heval
+        cases hresolve : resolveAtom env atom with
+        | error err => rw [hresolve, bindErr] at heval; contradiction
+        | ok result =>
+          rw [hresolve, bindOk] at heval
+          have hpair := Except.ok.inj heval
+          cases hpair
+          exact hpaps
+      | letOp op rest =>
+        simp only [CodeNoReuse] at hcode
+        rw [runCode.eq_def] at heval
+        dsimp only at heval
+        cases hopEval : runOp ctx fuel cur store env op with
+        | error err => rw [hopEval, bindErr] at heval; contradiction
+        | ok result =>
+          rcases result with ⟨middle, opValue⟩
+          rw [hopEval, bindOk] at heval
+          exact ihCode _ _ _ _ _ _ _ hctx hcur hcode.2
+            (ihOp _ _ _ _ _ _ _ hctx hcur hcode.1 hpaps hopEval) heval
+      | case scrut peelNat alternatives =>
+        simp only [CodeNoReuse] at hcode
+        rw [runCode.eq_def] at heval
+        dsimp only at heval
+        cases hscrut : resolveAtom env scrut with
+        | error err => rw [hscrut, bindErr] at heval; contradiction
+        | ok scrutValue =>
+          rw [hscrut, bindOk] at heval
+          cases scrutValue with
+          | loc location =>
+            dsimp only at heval
+            cases hbox : store.get? location with
+            | none => simp [hbox] at heval
+            | some box =>
+              simp only [hbox] at heval
+              cases box with
+              | mk world rc node =>
+                cases node with
+                | papN address arity captured => simp at heval
+                | ctorN cid fields =>
+                  cases halt : alternatives.find?
+                      (fun alternative => alternative.cidx == cid.cidx) with
+                  | none => simp [halt] at heval
+                  | some alternative =>
+                    have haltNo := hcode alternative
+                      (Array.mem_of_find?_eq_some halt)
+                    cases alternative with
+                    | mk cidx fieldCount body =>
+                      simp only [AltNoReuse] at haltNo
+                      cases hsize : fields.size != fieldCount
+                      · simp only [halt, hsize, Bool.false_eq_true,
+                          if_false] at heval
+                        exact ihCode _ _ _ _ _ _ _ hctx hcur haltNo hpaps
+                          heval
+                      · simp [halt, hsize] at heval
+          | lit literal =>
+            cases literal with
+            | str string => simp at heval
+            | nat n =>
+              cases hpeel : peelNat with
+              | false => simp [hpeel] at heval
+              | true =>
+                cases n with
+                | zero =>
+                  cases halt : alternatives.find?
+                      (fun alternative => alternative.cidx == 0) with
+                  | none => simp [hpeel, halt] at heval
+                  | some alternative =>
+                    have haltNo := hcode alternative
+                      (Array.mem_of_find?_eq_some halt)
+                    cases alternative with
+                    | mk cidx fieldCount body =>
+                      simp only [AltNoReuse] at haltNo
+                      cases fieldCount with
+                      | zero =>
+                        simp only [hpeel, halt] at heval
+                        exact ihCode _ _ _ _ _ _ _ hctx hcur haltNo hpaps
+                          heval
+                      | succ fieldCount => simp [hpeel, halt] at heval
+                | succ n =>
+                  cases halt : alternatives.find?
+                      (fun alternative => alternative.cidx == 1) with
+                  | none => simp [hpeel, halt] at heval
+                  | some alternative =>
+                    have haltNo := hcode alternative
+                      (Array.mem_of_find?_eq_some halt)
+                    cases alternative with
+                    | mk cidx fieldCount body =>
+                      simp only [AltNoReuse] at haltNo
+                      cases fieldCount with
+                      | zero => simp [hpeel, halt] at heval
+                      | succ fieldCount =>
+                        cases fieldCount with
+                        | zero =>
+                          simp only [hpeel, halt] at heval
+                          exact ihCode _ _ _ _ _ _ _ hctx hcur haltNo hpaps
+                            heval
+                        | succ fieldCount => simp [hpeel, halt] at heval
+          | erased => simp at heval
+    · intro ctx cur store env op store' value hctx hcur hop hpaps heval
+      cases op with
+      | pure atom =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases hresolve : resolveAtom env atom with
+        | error err => rw [hresolve, bindErr] at heval; contradiction
+        | ok result =>
+          rw [hresolve, bindOk] at heval
+          have hpair := Except.ok.inj heval
+          cases hpair
+          exact hpaps
+      | alloc world cid atoms =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases hargs : resolveAtoms env atoms with
+        | error err => rw [hargs, bindErr] at heval; contradiction
+        | ok values =>
+          rw [hargs, bindOk] at heval
+          have hpair := Except.ok.inj heval
+          cases hpair
+          exact hpaps.allocCtor world cid values.toArray
+      | reuse target cid atoms =>
+        simp [OpNoReuse] at hop
+      | free target =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases htarget : resolveAtom env target with
+        | error err => rw [htarget, bindErr] at heval; contradiction
+        | ok targetValue =>
+          rw [htarget, bindOk] at heval
+          cases targetValue with
+          | lit literal => simp at heval
+          | erased => simp at heval
+          | loc location =>
+            cases hbox : store.get? location with
+            | none => simp [hbox] at heval
+            | some box =>
+              simp only [hbox] at heval
+              cases box with
+              | mk world rc node =>
+                cases world with
+                | shared => simp at heval
+                | unique =>
+                  have hpair := Except.ok.inj heval
+                  cases hpair
+                  exact hpaps.kill hbox
+      | dup target =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases htarget : resolveAtom env target with
+        | error err => rw [htarget, bindErr] at heval; contradiction
+        | ok targetValue =>
+          rw [htarget, bindOk] at heval
+          cases targetValue with
+          | lit literal =>
+            have hpair := Except.ok.inj heval
+            cases hpair
+            exact hpaps
+          | erased =>
+            have hpair := Except.ok.inj heval
+            cases hpair
+            exact hpaps
+          | loc location =>
+            cases hbox : store.get? location with
+            | none => simp [hbox] at heval
+            | some box =>
+              simp only [hbox] at heval
+              cases box with
+              | mk world rc node =>
+                cases world with
+                | unique => simp at heval
+                | shared =>
+                  have hpair := Except.ok.inj heval
+                  cases hpair
+                  simpa [Sim.incRcStore] using hpaps.incRcStore hbox
+      | drop target =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases htarget : resolveAtom env target with
+        | error err => rw [htarget, bindErr] at heval; contradiction
+        | ok targetValue =>
+          rw [htarget, bindOk] at heval
+          cases targetValue with
+          | lit literal =>
+            have hpair := Except.ok.inj heval
+            cases hpair
+            exact hpaps
+          | erased =>
+            have hpair := Except.ok.inj heval
+            cases hpair
+            exact hpaps
+          | loc location =>
+            dsimp only at heval
+            cases hdrop : dropVal ctx fuel store (.loc location) with
+            | error err => rw [hdrop, bindErr] at heval; contradiction
+            | ok dropped =>
+              rw [hdrop, bindOk] at heval
+              have hpair := Except.ok.inj heval
+              cases hpair
+              exact hpaps.dropVal hdrop
+      | dropU target =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases htarget : resolveAtom env target with
+        | error err => rw [htarget, bindErr] at heval; contradiction
+        | ok targetValue =>
+          rw [htarget, bindOk] at heval
+          cases targetValue with
+          | lit literal =>
+            have hpair := Except.ok.inj heval
+            cases hpair
+            exact hpaps
+          | erased =>
+            have hpair := Except.ok.inj heval
+            cases hpair
+            exact hpaps
+          | loc location =>
+            dsimp only at heval
+            cases hdrop : dropUVal ctx fuel store (.loc location) with
+            | error err => rw [hdrop, bindErr] at heval; contradiction
+            | ok dropped =>
+              rw [hdrop, bindOk] at heval
+              have hpair := Except.ok.inj heval
+              cases hpair
+              exact hpaps.dropUVal hdrop
+      | fetch target field =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases htarget : resolveAtom env target with
+        | error err => rw [htarget, bindErr] at heval; contradiction
+        | ok targetValue =>
+          rw [htarget, bindOk] at heval
+          cases targetValue with
+          | lit literal => simp at heval
+          | erased => simp at heval
+          | loc location =>
+            cases hbox : store.get? location with
+            | none => simp [hbox] at heval
+            | some box =>
+              simp only [hbox] at heval
+              cases box with
+              | mk world rc node =>
+                cases node with
+                | papN address arity captured => simp at heval
+                | ctorN cid fields =>
+                  cases hfield : fields[field]? with
+                  | none => simp [hfield] at heval
+                  | some result =>
+                    simp only [hfield] at heval
+                    have hpair := Except.ok.inj heval
+                    cases hpair
+                    exact hpaps
+      | call address atoms =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases hargs : resolveAtoms env atoms with
+        | error err => rw [hargs, bindErr] at heval; contradiction
+        | ok values =>
+          rw [hargs, bindOk] at heval
+          exact ihInvoke _ _ _ _ _ _ hctx hpaps heval
+      | callSelf atoms =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases hargs : resolveAtoms env atoms with
+        | error err => rw [hargs, bindErr] at heval; contradiction
+        | ok values =>
+          rw [hargs, bindOk] at heval
+          cases harity : values.length != cur.arity
+          · simp only [harity, Bool.false_eq_true, if_false] at heval
+            cases hbody : runCode ctx fuel cur store values.reverse
+                cur.body with
+            | error err => rw [hbody, bindErr] at heval; contradiction
+            | ok result =>
+              rcases result with ⟨bodyStore, bodyValue⟩
+              rw [hbody, bindOk] at heval
+              obtain ⟨hresult, _⟩ := Sim.checkResultWorld_ok heval
+              cases hresult
+              exact ihCode _ _ _ _ _ _ _ hctx hcur hcur hpaps hbody
+          · simp [harity] at heval
+      | papp address atoms =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases hargs : resolveAtoms env atoms with
+        | error err => rw [hargs, bindErr] at heval; contradiction
+        | ok values =>
+          rw [hargs, bindOk] at heval
+          cases hdecl : ctx.decls address with
+          | none => simp [hdecl] at heval
+          | some declaration =>
+            simp only [hdecl] at heval
+            by_cases hlength : values.length < declArity declaration
+            · simp only [hlength, if_true] at heval
+              have hpair := Except.ok.inj heval
+              cases hpair
+              exact hpaps.allocPap .shared address (declArity declaration)
+                values.toArray (by simpa using hlength)
+            · simp [hlength] at heval
+      | apply function atoms =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases hfunction : resolveAtom env function with
+        | error err => rw [hfunction, bindErr] at heval; contradiction
+        | ok functionValue =>
+          rw [hfunction, bindOk] at heval
+          cases hargs : resolveAtoms env atoms with
+          | error err => rw [hargs, bindErr] at heval; contradiction
+          | ok values =>
+            rw [hargs, bindOk] at heval
+            exact ihApply _ _ _ _ _ _ hctx hpaps heval
+      | extern address atoms =>
+        rw [runOp.eq_def] at heval
+        dsimp only at heval
+        cases hargs : resolveAtoms env atoms with
+        | error err => rw [hargs, bindErr] at heval; contradiction
+        | ok values =>
+          rw [hargs, bindOk] at heval
+          cases hcall : callScalarOracle ctx address values with
+          | error err => rw [hcall, bindErr] at heval; contradiction
+          | ok result =>
+            rw [hcall, bindOk] at heval
+            have hpair := Except.ok.inj heval
+            cases hpair
+            exact hpaps
+    · intro ctx address args store store' value hctx hpaps heval
+      rw [invoke.eq_def] at heval
+      dsimp only at heval
+      cases hdecl : ctx.decls address with
+      | none => simp [hdecl] at heval
+      | some declaration =>
+        simp only [hdecl] at heval
+        cases declaration with
+        | extern arity =>
+          cases harity : args.length != arity
+          · simp only [harity, Bool.false_eq_true, if_false] at heval
+            cases hcall : callScalarOracle ctx address args with
+            | error err => simp [hcall] at heval
+            | ok result =>
+              simp only [hcall] at heval
+              have hpair := Except.ok.inj heval
+              cases hpair
+              exact hpaps
+          · simp [harity] at heval
+        | fn definition =>
+          cases harity : args.length != definition.arity
+          · simp only [harity, Bool.false_eq_true, if_false] at heval
+            cases hbody : runCode ctx fuel definition store args.reverse
+                definition.body with
+            | error err => rw [hbody, bindErr] at heval; contradiction
+            | ok result =>
+              rcases result with ⟨bodyStore, bodyValue⟩
+              rw [hbody, bindOk] at heval
+              obtain ⟨hresult, _⟩ := Sim.checkResultWorld_ok heval
+              cases hresult
+              have hbodyNo := hctx hdecl
+              exact ihCode _ _ _ _ _ _ _ hctx hbodyNo hbodyNo hpaps hbody
+          · simp [harity] at heval
+    · intro ctx store function args store' value hctx hpaps heval
+      rw [applyGo.eq_def] at heval
+      dsimp only at heval
+      cases function with
+      | lit literal => simp at heval
+      | erased =>
+        cases hdrop : dropMany ctx fuel store args with
+        | error err => rw [hdrop, bindErr] at heval; contradiction
+        | ok dropped =>
+          rw [hdrop, bindOk] at heval
+          have hpair := Except.ok.inj heval
+          cases hpair
+          exact hpaps.dropMany hdrop
+      | loc location =>
+        cases hbox : store.get? location with
+        | none => simp [hbox] at heval
+        | some box =>
+          simp only [hbox] at heval
+          cases box with
+          | mk world rc node =>
+            cases node with
+            | ctorN cid fields => simp at heval
+            | papN address arity captured =>
+              dsimp only at heval
+              cases hdup : dupVals store captured.toList with
+              | error err => rw [hdup, bindErr] at heval; contradiction
+              | ok retained =>
+                rw [hdup, bindOk] at heval
+                cases hdrop : dropVal ctx fuel retained (.loc location) with
+                | error err => rw [hdrop, bindErr] at heval; contradiction
+                | ok ready =>
+                  rw [hdrop, bindOk] at heval
+                  have hready := (hpaps.dupVals hdup).dropVal hdrop
+                  by_cases hunder :
+                      (captured.toList ++ args).length < arity
+                  · simp only [hunder, if_true] at heval
+                    have hpair := Except.ok.inj heval
+                    cases hpair
+                    exact hready.allocPap .shared address arity
+                      (captured.toList ++ args).toArray
+                      (by simpa using hunder)
+                  · simp only [hunder, if_false] at heval
+                    by_cases hexact :
+                        (captured.toList ++ args).length = arity
+                    · simp only [hexact, beq_self_eq_true, if_true]
+                        at heval
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at heval
+                      | some declaration =>
+                        cases hpapsafe : declPapSafe declaration with
+                        | false => simp [hdecl, hpapsafe] at heval
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at heval
+                          exact ihInvoke _ _ _ _ _ _ hctx hready heval
+                    · have hbeq :
+                          ((captured.toList ++ args).length == arity) =
+                            false := by
+                        exact beq_eq_false_iff_ne.mpr hexact
+                      simp only [hbeq, Bool.false_eq_true, if_false] at heval
+                      cases hdecl : ctx.decls address with
+                      | none => simp [hdecl] at heval
+                      | some declaration =>
+                        cases hpapsafe : declPapSafe declaration with
+                        | false => simp [hdecl, hpapsafe] at heval
+                        | true =>
+                          simp only [hdecl, hpapsafe, if_true] at heval
+                          cases hinvoke : invoke ctx fuel address
+                              ((captured.toList ++ args).take arity) ready with
+                          | error err =>
+                            rw [hinvoke, bindErr] at heval
+                            contradiction
+                          | ok called =>
+                            rcases called with ⟨calledStore, calledValue⟩
+                            rw [hinvoke, bindOk] at heval
+                            exact ihApply _ _ _ _ _ _ hctx
+                              (ihInvoke _ _ _ _ _ _ hctx hready hinvoke)
+                              heval
+
+/-- Reuse-free source code preserves strict PAP under-saturation. -/
+theorem runCode_papsUnder {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store store' : Store} {env : List RVal} {code : Code} {value : RVal}
+    (hctx : CtxNoReuse ctx) (hcur : CodeNoReuse cur.body)
+    (hcode : CodeNoReuse code) (hpaps : Reclamation.PAPsUnder store)
+    (heval : runCode ctx fuel cur store env code = .ok (store', value)) :
+    Reclamation.PAPsUnder store' :=
+  (evalPAPsUnderAt fuel).1 ctx cur store env code store' value
+    hctx hcur hcode hpaps heval
+
+/-- Operation-level PAP-shape preservation for a reuse-free instruction. -/
+theorem runOp_papsUnder {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store store' : Store} {env : List RVal} {op : Op} {value : RVal}
+    (hctx : CtxNoReuse ctx) (hcur : CodeNoReuse cur.body)
+    (hop : OpNoReuse op) (hpaps : Reclamation.PAPsUnder store)
+    (heval : runOp ctx fuel cur store env op = .ok (store', value)) :
+    Reclamation.PAPsUnder store' :=
+  (evalPAPsUnderAt fuel).2.1 ctx cur store env op store' value
+    hctx hcur hop hpaps heval
+
+/-- Declared invocation preserves PAP shape in a reuse-free context. -/
+theorem invoke_papsUnder {ctx : Ctx} {fuel : Nat}
+    {address : Ixon.Address} {args : List RVal} {store store' : Store}
+    {value : RVal} (hctx : CtxNoReuse ctx)
+    (hpaps : Reclamation.PAPsUnder store)
+    (heval : invoke ctx fuel address args store = .ok (store', value)) :
+    Reclamation.PAPsUnder store' :=
+  (evalPAPsUnderAt fuel).2.2.1 ctx address args store store' value hctx hpaps
+    heval
+
+/-- Higher-order application preserves PAP shape across all redispatches. -/
+theorem applyGo_papsUnder {ctx : Ctx} {fuel : Nat}
+    {store store' : Store} {function : RVal} {args : List RVal}
+    {value : RVal} (hctx : CtxNoReuse ctx)
+    (hpaps : Reclamation.PAPsUnder store)
+    (heval : applyGo ctx fuel store function args = .ok (store', value)) :
+    Reclamation.PAPsUnder store' :=
+  (evalPAPsUnderAt fuel).2.2.2 ctx store function args store' value hctx
+    hpaps heval
+
 theorem runCode_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
     {store store' : Store} {env : List RVal} {code : Code} {value : RVal}
     (hctx : CtxNoReuse ctx) (hcur : CodeNoReuse cur.body)
@@ -743,6 +1347,36 @@ theorem runCode_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
     store'.reuses = store.reuses :=
   (evalReusesAt fuel).1 ctx cur store env code store' value
     hctx hcur hcode heval
+
+/-- The operation-level projection of reuse-free execution.  Exporting this
+alongside `runCode_reuses_eq` lets later compositional simulations preserve
+append-only heap invariants one instruction at a time. -/
+theorem runOp_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store store' : Store} {env : List RVal} {op : Op} {value : RVal}
+    (hctx : CtxNoReuse ctx) (hcur : CodeNoReuse cur.body)
+    (hop : OpNoReuse op)
+    (heval : runOp ctx fuel cur store env op = .ok (store', value)) :
+    store'.reuses = store.reuses :=
+  (evalReusesAt fuel).2.1 ctx cur store env op store' value
+    hctx hcur hop heval
+
+/-- Declared invocation preserves the reuse counter whenever every callable
+body in the runtime context is reuse-free. -/
+theorem invoke_reuses_eq {ctx : Ctx} {fuel : Nat}
+    {address : Ixon.Address} {args : List RVal} {store store' : Store}
+    {value : RVal} (hctx : CtxNoReuse ctx)
+    (heval : invoke ctx fuel address args store = .ok (store', value)) :
+    store'.reuses = store.reuses :=
+  (evalReusesAt fuel).2.2.1 ctx address args store store' value hctx heval
+
+/-- Higher-order application preserves the reuse counter in a reuse-free
+runtime context, including every PAP branch and dynamically selected callee. -/
+theorem applyGo_reuses_eq {ctx : Ctx} {fuel : Nat}
+    {store store' : Store} {function : RVal} {args : List RVal}
+    {value : RVal} (hctx : CtxNoReuse ctx)
+    (heval : applyGo ctx fuel store function args = .ok (store', value)) :
+    store'.reuses = store.reuses :=
+  (evalReusesAt fuel).2.2.2 ctx store function args store' value hctx heval
 
 /-- A successful fresh execution of a reuse-free closed program executes no
 in-place reuse, so its counter remains definitionally zero. -/
@@ -790,6 +1424,37 @@ def DeclNoReuse : Decl → Prop
 
 def DeclListNoReuse (declarations : List (Ixon.Address × Decl)) : Prop :=
   ∀ declaration ∈ declarations, DeclNoReuse declaration.2
+
+/-- Executable reuse-freedom check for one declaration. -/
+def checkDecl : Decl → Bool
+  | .fn definition => checkCode definition.body
+  | .extern _ => true
+
+/-- Executable reuse-freedom check for a finite declaration environment. -/
+def checkDeclarations (declarations : List (Ixon.Address × Decl)) : Bool :=
+  declarations.all fun declaration => checkDecl declaration.2
+
+theorem checkDecl_eq_true_iff (declaration : Decl) :
+    checkDecl declaration = true ↔ DeclNoReuse declaration := by
+  cases declaration with
+  | fn definition =>
+      exact checkCode_eq_true_iff definition.body
+  | extern arity =>
+      simp [checkDecl, DeclNoReuse]
+
+/-- The finite declaration check reflects exactly into `DeclListNoReuse`. -/
+theorem checkDeclarations_eq_true_iff
+    (declarations : List (Ixon.Address × Decl)) :
+    checkDeclarations declarations = true ↔
+      DeclListNoReuse declarations := by
+  simp only [checkDeclarations, List.all_eq_true, DeclListNoReuse]
+  constructor
+  · intro checked declaration member
+    exact (checkDecl_eq_true_iff declaration.2).mp
+      (checked declaration member)
+  · intro noReuse declaration member
+    exact (checkDecl_eq_true_iff declaration.2).mpr
+      (noReuse declaration member)
 
 def StateNoReuse (state : LowSt) : Prop :=
   DeclListNoReuse state.extra

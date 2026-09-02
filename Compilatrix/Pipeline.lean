@@ -959,7 +959,7 @@ private def memberPlanForBlock (block : Address) :
       { block, idx := index } :: memberPlanForBlock block (index + 1) rest
 
 /-- Runtime-derived simultaneous-member scope for the exact closed program. -/
-private def programMemberPlan
+def programMemberPlan
     (constants : List (Address × Constant)) : List Sim.MemberKey :=
   constants.flatMap fun entry =>
     match entry.2.info with
@@ -1101,7 +1101,7 @@ repeat `coverageRound` until every candidate validates. Fail-closed —
 a round without progress reports the first still-rejected address and
 its validator diagnostic. At most `candidates + 1` rounds are needed,
 since a productive round covers at least one address. -/
-private def coveragePlan [Sim.MemberScope]
+def coveragePlan [Sim.MemberScope]
     (ectx : Ixon.Eval.EvalCtx) (ictx : IxIR0.Ctx)
     (validateFuel : Nat) :
     Nat → EraseValidator.CoverageDB ectx ictx → List Address →

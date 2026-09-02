@@ -124,6 +124,8 @@ private def afterTakePhysical := stepToTake .physical
   | .ok logical, .ok physical =>
       logical.presentCredits == 1 && physical.presentCredits == 1 &&
         logical.store.live == 0 && physical.store.live == 0 &&
+        physical.store.live + physical.store.counters.frees + physical.presentCredits ==
+          physical.store.counters.allocs &&
         lawHolds logical.store physical.store physical.presentCredits
   | _, _ => false
 
@@ -293,6 +295,93 @@ private def papApply : Program :=
         physical.store.counters.frees == 1 &&
         logical.store.counters.rcops == 1 &&
         physical.store.counters.rcops == 1 &&
+        lawHolds logical.store physical.store 0
+  | _, _ => false
+
+private def papFirst : Function :=
+  { signature :=
+      { params := #[
+          { world := .shared, passing := .owned },
+          { world := .shared, passing := .owned }]
+        result := .shared
+        papSafe := true }
+    blocks := #[
+      { valueParams := #[.owned .shared, .owned .shared]
+        creditParams := #[]
+        instructions := #[.releaseShared (.reg 1)]
+        terminator := .ret (.reg 0) }] }
+
+/-- Applying one argument to an empty binary PAP must take the under-saturated
+branch and allocate a longer PAP before the second application saturates it. -/
+private def papUnderApply : Program :=
+  { declarations := [(functionAddress, .fn papFirst)]
+    main :=
+      { signature := signature .shared
+        blocks := #[
+          { valueParams := #[]
+            creditParams := #[]
+            instructions := #[
+              .alloc .shared nodeCtor #[.lit (.nat 17)],
+              .alloc .shared nodeCtor #[.lit (.nat 23)],
+              .papp functionAddress #[],
+              .apply (.reg 2) #[.reg 0],
+              .apply (.reg 3) #[.reg 1]]
+            terminator := .ret (.reg 4) }] } }
+
+#guard validates papUnderApply
+
+#guard match run .logical papUnderApply 8 5,
+    run .physical papUnderApply 8 5 with
+  | .ok logical, .ok physical =>
+      sameCtorResult logical physical &&
+        returnedCtor logical == some (nodeCtor, #[.lit (.nat 17)]) &&
+        logical.controlRemaining == 0 && physical.controlRemaining == 0 &&
+        logical.heapRemaining == 0 && physical.heapRemaining == 0 &&
+        logical.store.counters.allocs == 4 &&
+        physical.store.counters.allocs == 4 &&
+        logical.store.counters.frees == 3 &&
+        physical.store.counters.frees == 3 &&
+        logical.store.counters.rcops == 5 &&
+        physical.store.counters.rcops == 5 &&
+        logical.store.peakLiveNodes == 3 &&
+        physical.store.peakLiveNodes == 3 &&
+        lawHolds logical.store physical.store 0
+  | _, _ => false
+
+/-- Over-applying an identity PAP to another identity PAP and a constructor
+forces the first callee return through `applyMore`, which then saturates the
+returned PAP with the residual constructor owner. -/
+private def papOverApply : Program :=
+  { declarations := [(functionAddress, .fn papIdentity)]
+    main :=
+      { signature := signature .shared
+        blocks := #[
+          { valueParams := #[]
+            creditParams := #[]
+            instructions := #[
+              .alloc .shared nodeCtor #[.lit (.nat 31)],
+              .papp functionAddress #[],
+              .papp functionAddress #[],
+              .apply (.reg 2) #[.reg 1, .reg 0]]
+            terminator := .ret (.reg 3) }] } }
+
+#guard validates papOverApply
+
+#guard match run .logical papOverApply 7 2,
+    run .physical papOverApply 7 2 with
+  | .ok logical, .ok physical =>
+      sameCtorResult logical physical &&
+        returnedCtor logical == some (nodeCtor, #[.lit (.nat 31)]) &&
+        logical.controlRemaining == 0 && physical.controlRemaining == 0 &&
+        logical.heapRemaining == 0 && physical.heapRemaining == 0 &&
+        logical.store.counters.allocs == 3 &&
+        physical.store.counters.allocs == 3 &&
+        logical.store.counters.frees == 2 &&
+        physical.store.counters.frees == 2 &&
+        logical.store.counters.rcops == 2 &&
+        physical.store.counters.rcops == 2 &&
+        logical.store.peakLiveNodes == 3 &&
+        physical.store.peakLiveNodes == 3 &&
         lawHolds logical.store physical.store 0
   | _, _ => false
 

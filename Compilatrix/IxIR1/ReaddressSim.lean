@@ -1501,6 +1501,19 @@ theorem runCode_mapAddresses {rename : Address → Address}
         (runCode before fuel current store environment code) :=
   (evalTransportAt contexts fuel).runCode current store environment code
 
+/-- Single-operation evaluation is equivariant under every compatible
+address renaming. -/
+theorem runOp_mapAddresses {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    (fuel : Nat) (current : FnDef) (store : Store)
+    (environment : List RVal) (operation : Op) :
+    runOp after fuel (FnDef.mapAddresses rename current)
+        (Store.mapAddresses rename store) environment
+        (Op.mapAddresses rename operation) =
+      mapRunResult rename
+        (runOp before fuel current store environment operation) :=
+  (evalTransportAt contexts fuel).runOp current store environment operation
+
 /-- Known-function invocation is equivariant under a compatible address
 renaming. -/
 theorem invoke_mapAddresses {rename : Address → Address}
@@ -1512,6 +1525,164 @@ theorem invoke_mapAddresses {rename : Address → Address}
       mapRunResult rename
         (IxIR1.invoke before fuel function arguments store) :=
   (evalTransportAt contexts fuel).invoke function arguments store
+
+/-- Dynamic application is equivariant under every context-compatible
+address renaming. Runtime values themselves need no mapping: declaration
+identities occur only in the context and in heap-resident PAP nodes. -/
+theorem applyGo_mapAddresses {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    (fuel : Nat) (store : Store) (function : RVal)
+    (arguments : List RVal) :
+    IxIR1.applyGo after fuel (Store.mapAddresses rename store)
+        function arguments =
+      mapRunResult rename
+        (IxIR1.applyGo before fuel store function arguments) :=
+  (evalTransportAt contexts fuel).applyGo store function arguments
+
+/-- Successful reference-count duplication on a renamed heap reflects to the
+original heap and preserves an exact heap preimage. -/
+theorem dupVals_success_preimage {rename : Address → Address}
+    {store store' : Store} {values : List RVal}
+    (run : dupVals (Store.mapAddresses rename store) values = .ok store') :
+    ∃ sourceStore',
+      dupVals store values = .ok sourceStore' ∧
+        store' = Store.mapAddresses rename sourceStore' := by
+  rw [dupVals_mapAddresses] at run
+  cases sourceRun : dupVals store values with
+  | error error => simp [sourceRun, mapStoreResult] at run
+  | ok sourceStore' =>
+      simp only [sourceRun, mapStoreResult, Except.ok.injEq] at run
+      exact ⟨sourceStore', rfl, run.symm⟩
+
+/-- Successful shared destruction on a renamed heap reflects to the original
+context and preserves an exact heap preimage. -/
+theorem dropVal_success_preimage {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    {fuel : Nat} {store store' : Store} {value : RVal}
+    (run : IxIR1.dropVal after fuel (Store.mapAddresses rename store) value =
+      .ok store') :
+    ∃ sourceStore',
+      IxIR1.dropVal before fuel store value = .ok sourceStore' ∧
+        store' = Store.mapAddresses rename sourceStore' := by
+  rw [(evalTransportAt contexts fuel).dropVal] at run
+  cases sourceRun : IxIR1.dropVal before fuel store value with
+  | error error => simp [sourceRun, mapStoreResult] at run
+  | ok sourceStore' =>
+      simp only [sourceRun, mapStoreResult, Except.ok.injEq] at run
+      exact ⟨sourceStore', rfl, run.symm⟩
+
+/-- Successful destruction of a list of shared values on a renamed heap
+reflects to the original context and preserves an exact heap preimage. -/
+theorem dropMany_success_preimage {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    {fuel : Nat} {store store' : Store} {values : List RVal}
+    (run : IxIR1.dropMany after fuel (Store.mapAddresses rename store) values =
+      .ok store') :
+    ∃ sourceStore',
+      IxIR1.dropMany before fuel store values = .ok sourceStore' ∧
+        store' = Store.mapAddresses rename sourceStore' := by
+  rw [(evalTransportAt contexts fuel).dropMany] at run
+  cases sourceRun : IxIR1.dropMany before fuel store values with
+  | error error => simp [sourceRun, mapStoreResult] at run
+  | ok sourceStore' =>
+      simp only [sourceRun, mapStoreResult, Except.ok.injEq] at run
+      exact ⟨sourceStore', rfl, run.symm⟩
+
+/-- A successful dynamic application on a renamed heap comes from a
+successful application on the original heap. No injectivity or surjectivity
+of the address map is needed because the input heap is already an exact image
+and mapped errors cannot become successes. -/
+theorem applyGo_success_preimage {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    {fuel : Nat} {store store' : Store} {function : RVal}
+    {arguments : List RVal} {value : RVal}
+    (run : IxIR1.applyGo after fuel (Store.mapAddresses rename store)
+      function arguments = .ok (store', value)) :
+    ∃ sourceStore',
+      IxIR1.applyGo before fuel store function arguments =
+          .ok (sourceStore', value) ∧
+        store' = Store.mapAddresses rename sourceStore' := by
+  rw [applyGo_mapAddresses contexts] at run
+  cases sourceRun : IxIR1.applyGo before fuel store function arguments with
+  | error error => simp [sourceRun, mapRunResult] at run
+  | ok output =>
+      obtain ⟨sourceStore', sourceValue⟩ := output
+      simp only [sourceRun, mapRunResult, Except.ok.injEq,
+        Prod.mk.injEq] at run
+      obtain ⟨storeEq, valueEq⟩ := run
+      subst sourceValue
+      exact ⟨sourceStore', rfl, storeEq.symm⟩
+
+/-- Successful renamed code execution reflects to a successful source run
+with the same runtime value and a heap preimage. -/
+theorem runCode_success_preimage {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    {fuel : Nat} {current : FnDef} {store store' : Store}
+    {environment : List RVal} {code : Code} {value : RVal}
+    (run : runCode after fuel (FnDef.mapAddresses rename current)
+      (Store.mapAddresses rename store) environment
+      (Code.mapAddresses rename code) = .ok (store', value)) :
+    ∃ sourceStore',
+      runCode before fuel current store environment code =
+          .ok (sourceStore', value) ∧
+        store' = Store.mapAddresses rename sourceStore' := by
+  rw [runCode_mapAddresses contexts] at run
+  cases sourceRun : runCode before fuel current store environment code with
+  | error error => simp [sourceRun, mapRunResult] at run
+  | ok output =>
+      obtain ⟨sourceStore', sourceValue⟩ := output
+      simp only [sourceRun, mapRunResult, Except.ok.injEq,
+        Prod.mk.injEq] at run
+      obtain ⟨storeEq, valueEq⟩ := run
+      subst sourceValue
+      exact ⟨sourceStore', rfl, storeEq.symm⟩
+
+/-- Successful renamed operation execution reflects to a successful source
+operation and a heap preimage. -/
+theorem runOp_success_preimage {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    {fuel : Nat} {current : FnDef} {store store' : Store}
+    {environment : List RVal} {operation : Op} {value : RVal}
+    (run : runOp after fuel (FnDef.mapAddresses rename current)
+      (Store.mapAddresses rename store) environment
+      (Op.mapAddresses rename operation) = .ok (store', value)) :
+    ∃ sourceStore',
+      runOp before fuel current store environment operation =
+          .ok (sourceStore', value) ∧
+        store' = Store.mapAddresses rename sourceStore' := by
+  rw [runOp_mapAddresses contexts] at run
+  cases sourceRun : runOp before fuel current store environment operation with
+  | error error => simp [sourceRun, mapRunResult] at run
+  | ok output =>
+      obtain ⟨sourceStore', sourceValue⟩ := output
+      simp only [sourceRun, mapRunResult, Except.ok.injEq,
+        Prod.mk.injEq] at run
+      obtain ⟨storeEq, valueEq⟩ := run
+      subst sourceValue
+      exact ⟨sourceStore', rfl, storeEq.symm⟩
+
+/-- Successful invocation of a renamed declaration reflects to the original
+declaration and produces a heap preimage. -/
+theorem invoke_success_preimage {rename : Address → Address}
+    {before after : Ctx} (contexts : Ctx.Renames rename before after)
+    {fuel : Nat} {function : Address} {arguments : List RVal}
+    {store store' : Store} {value : RVal}
+    (run : IxIR1.invoke after fuel (rename function) arguments
+      (Store.mapAddresses rename store) = .ok (store', value)) :
+    ∃ sourceStore',
+      IxIR1.invoke before fuel function arguments store =
+          .ok (sourceStore', value) ∧
+        store' = Store.mapAddresses rename sourceStore' := by
+  rw [invoke_mapAddresses contexts] at run
+  cases sourceRun : IxIR1.invoke before fuel function arguments store with
+  | error error => simp [sourceRun, mapRunResult] at run
+  | ok output =>
+      obtain ⟨sourceStore', sourceValue⟩ := output
+      simp only [sourceRun, mapRunResult, Except.ok.injEq,
+        Prod.mk.injEq] at run
+      obtain ⟨storeEq, valueEq⟩ := run
+      subst sourceValue
+      exact ⟨sourceStore', rfl, storeEq.symm⟩
 
 /-- A fresh-store top-level run has exactly the renamed result, including
 renamed errors and address-bearing heap nodes. -/

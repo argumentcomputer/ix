@@ -354,6 +354,25 @@ theorem heap_holds {declarations : DeclEnv} {store : Store}
   | lit literal => cases shape <;> contradiction
   | erased => cases shape <;> contradiction
 
+/-- An exact-constructor fact identifies the concrete constructor stored at
+the held location.  This is the small provenance bridge used by consumers
+whose emitted IxIR₂ instruction carries a concrete constructor identity. -/
+theorem exactConstructor?_holds_loc {declarations : DeclEnv} {store : Store}
+    {fact : Fact} {identity : CtorId} {location : Nat}
+    (hexact : fact.exactConstructor? = some identity)
+    (hholds : fact.Holds declarations store (.loc location)) :
+    ∃ box fields,
+      store.get? location = some box ∧
+        box.node = .ctorN identity fields := by
+  obtain ⟨fieldFacts, rfl⟩ := Fact.exactConstructor?_eq_some hexact
+  simp only [Fact.Holds, Bool.false_eq_true, false_or] at hholds
+  obtain ⟨shape, hshape, hholds⟩ := hholds
+  simp only [List.mem_singleton] at hshape
+  subst shape
+  simp only [HeapShape.Holds] at hholds
+  obtain ⟨box, fields, hget, hnode, _⟩ := hholds
+  exact ⟨box, fields, hget, hnode⟩
+
 /-- Executable subset is sound for the concrete interpretation. -/
 theorem holds_of_le {declarations : DeclEnv} {store : Store}
     {left right : Fact} {value : RVal}

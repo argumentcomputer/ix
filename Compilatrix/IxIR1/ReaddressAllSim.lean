@@ -118,8 +118,10 @@ theorem renames_rebuildSourceCtx {result : Result}
             subst target
             have hmember : (source, address) ∈ result.addressMap :=
               List.mem_of_find?_eq_some hreverse
-            have hsafe := (List.all_eq_true.mp haudit.1.2)
+            have hpair := (List.all_eq_true.mp haudit.1.2)
               (source, address) hmember
+            simp only [Bool.and_eq_true] at hpair
+            have hsafe := hpair.1
             simp only [horiginal] at hsafe
             simp only [Result.rebuildRename, horiginal, hreverse,
               Option.map_none]
@@ -165,6 +167,50 @@ theorem raw_lookup_of_mem_of_rebuildSemanticAudit {result : Result}
           have hselected : selected = declaration :=
             (Readdress.Decl.structurallyEq_eq_true_iff _ _).mp hrow.1
           simpa [hlookup, hselected]
+
+/-- Every selected emitted declaration has an exact raw producer whose key
+maps to the emitted key and whose declaration maps to the selected value.
+This is the lookup-facing provenance needed to back-translate reachable
+runtime heaps without requiring the rebuild map to be globally surjective. -/
+theorem declaration_preimage_of_lookup_of_rebuildSemanticAudit
+    {result : Result} {raw : List (Address × Decl)} {main : Code}
+    (haudit : result.rebuildSemanticAudit raw main = true)
+    {address : Address} {declaration : Decl}
+    (hlookup : Env.ofList result.declarations address = some declaration) :
+    ∃ sourceAddress sourceDeclaration,
+      Env.ofList raw sourceAddress = some sourceDeclaration ∧
+        result.rebuildRename raw sourceAddress = address ∧
+        Readdress.Decl.mapAddresses (result.rebuildRename raw)
+          sourceDeclaration = declaration := by
+  have hrenames :=
+    result.renames_rebuildSourceCtx haudit (fun _ _ => none)
+  simp only [Result.rebuildSemanticAudit, Bool.and_eq_true] at haudit
+  have hmember : (address, declaration) ∈ result.declarations :=
+    envOfList_some_mem hlookup
+  have hcovered := (List.all_eq_true.mp haudit.2)
+    (address, declaration) hmember
+  obtain ⟨mapping, mappingMember, mapsTo⟩ :=
+    List.any_eq_true.mp hcovered
+  obtain ⟨sourceAddress, targetAddress⟩ := mapping
+  have targetEq : targetAddress = address := Address.eq_of_beq mapsTo
+  subst targetAddress
+  have hsourcePair := (List.all_eq_true.mp haudit.1.2)
+    (sourceAddress, address) mappingMember
+  simp only [Bool.and_eq_true] at hsourcePair
+  have hsource := hsourcePair.2
+  cases sourceLookup : Env.ofList raw sourceAddress with
+  | none => simp [sourceLookup] at hsource
+  | some sourceDeclaration =>
+      have renameEq : result.rebuildRename raw sourceAddress = address := by
+        exact Address.eq_of_beq (by simpa [sourceLookup] using hsource)
+      have relation := hrenames.decls sourceAddress
+      simp only [Result.addressedCtx, Result.rebuildSourceCtx,
+        Readdress.Result.addressedCtx, Readdress.Result.declarations,
+        Result.asReaddressResult, List.append_nil] at relation
+      rw [renameEq, hlookup, sourceLookup] at relation
+      simp only [Option.map_some, Option.some.injEq] at relation
+      exact ⟨sourceAddress, sourceDeclaration, sourceLookup, renameEq,
+        relation.symm⟩
 
 theorem main_eq_rebuildMapAddresses {result : Result}
     {raw : List (Address × Decl)} {main : Code}

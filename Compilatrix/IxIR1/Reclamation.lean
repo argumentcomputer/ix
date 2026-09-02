@@ -41,6 +41,140 @@ structure AllocationOrderInvariant (store : Store) : Prop where
     RVal.loc childLoc ∈ nodeChildren box.node →
     childLoc < parent
 
+/-- Every live partial-application node is genuinely partial: its stored
+capture is strictly shorter than the arity at which it dispatches.  The
+source evaluator establishes this at both PAP allocation sites, but its
+unchecked heap type cannot express the fact directly. -/
+structure PAPsUnder (store : Store) : Prop where
+  captured_lt : ∀ {location world rc address arity captured},
+    store.get? location =
+      some ⟨world, rc, .papN address arity captured⟩ →
+    captured.size < arity
+
+namespace PAPsUnder
+
+/-- The empty heap contains no malformed PAP. -/
+theorem empty : PAPsUnder ({} : Store) := by
+  constructor
+  intro location world rc address arity captured found
+  simp [Store.get?] at found
+
+/-- Removing live nodes or changing only their reference counts preserves
+PAP under-saturation. -/
+theorem ofRestricts {before after : Store} (h : PAPsUnder before)
+    (restricts : StoreGraphRestricts before after) : PAPsUnder after := by
+  constructor
+  intro location world rc address arity captured found
+  obtain ⟨beforeRc, beforeFound⟩ := restricts found
+  exact h.captured_lt beforeFound
+
+/-- A shared retain changes only the selected reference count. -/
+theorem incRcStore {store : Store} {location rc : Nat} {node : Node}
+    (h : PAPsUnder store)
+    (found : store.get? location = some ⟨.shared, rc, node⟩) :
+    PAPsUnder (Sim.incRcStore store location ⟨.shared, rc, node⟩) :=
+  h.ofRestricts (StoreGraphRestricts.incRcStore found)
+
+/-- Killing a live slot cannot expose a malformed PAP. -/
+theorem kill {store : Store} {location : Nat} {box : NodeBox}
+    (h : PAPsUnder store) (found : store.get? location = some box) :
+    PAPsUnder (store.kill location) :=
+  h.ofRestricts (StoreGraphRestricts.kill found)
+
+/-- Retaining a vector of shared values cannot change PAP payloads. -/
+theorem dupVals {store store' : Store} {values : List RVal}
+    (h : PAPsUnder store) (run : dupVals store values = .ok store') :
+    PAPsUnder store' := by
+  induction values generalizing store with
+  | nil =>
+      change (.ok store : Except Err Store) = .ok store' at run
+      injection run with storeEq
+      subst store'
+      exact h
+  | cons head tail ih =>
+      cases head with
+      | lit literal =>
+          simp only [Compilatrix.IxIR1.dupVals, List.foldlM_cons] at run
+          exact ih h run
+      | erased =>
+          simp only [Compilatrix.IxIR1.dupVals, List.foldlM_cons] at run
+          exact ih h run
+      | loc location =>
+          simp only [Compilatrix.IxIR1.dupVals, List.foldlM_cons] at run
+          cases found : store.get? location with
+          | none => simp [found, bindErr] at run
+          | some box =>
+              cases box with
+              | mk world rc node =>
+                  cases world with
+                  | unique => simp [found, bindErr] at run
+                  | shared =>
+                      simp only [found] at run
+                      exact ih (h.incRcStore found) run
+
+/-- Appending a constructor preserves all existing PAP payloads. -/
+theorem allocCtor {store : Store} (h : PAPsUnder store)
+    (world : Ixon.Owned) (cid : CtorId) (fields : Array RVal) :
+    PAPsUnder (store.allocNode world (.ctorN cid fields)).1 := by
+  constructor
+  intro location boxWorld rc address arity captured found
+  by_cases fresh : location = store.nodes.size
+  · subst location
+    have allocated := HeapIso.get?_allocNode_new store world
+      (.ctorN cid fields)
+    have impossible :
+        (⟨boxWorld, rc, .papN address arity captured⟩ : NodeBox) =
+          ⟨world, 1, .ctorN cid fields⟩ :=
+      Option.some.inj (found.symm.trans allocated)
+    cases impossible
+  · exact h.captured_lt (HeapIso.get?_of_allocNode_old fresh found)
+
+/-- Appending a checked under-saturated PAP preserves the global property. -/
+theorem allocPap {store : Store} (h : PAPsUnder store)
+    (world : Ixon.Owned) (address : Ixon.Address) (arity : Nat)
+    (captured : Array RVal) (under : captured.size < arity) :
+    PAPsUnder (store.allocNode world (.papN address arity captured)).1 := by
+  constructor
+  intro location boxWorld rc foundAddress foundArity foundCaptured found
+  by_cases fresh : location = store.nodes.size
+  · subst location
+    have allocated := HeapIso.get?_allocNode_new store world
+      (.papN address arity captured)
+    have boxEq :
+        (⟨boxWorld, rc, .papN foundAddress foundArity foundCaptured⟩ :
+          NodeBox) = ⟨world, 1, .papN address arity captured⟩ :=
+      Option.some.inj (found.symm.trans allocated)
+    cases boxEq
+    exact under
+  · exact h.captured_lt (HeapIso.get?_of_allocNode_old fresh found)
+
+/-- Shared and unique recursive releases only remove nodes or alter RCs. -/
+theorem dropVal {ctx : Ctx} {fuel : Nat} {store store' : Store}
+    {value : RVal} (h : PAPsUnder store)
+    (run : Compilatrix.IxIR1.dropVal ctx fuel store value = .ok store') :
+    PAPsUnder store' :=
+  h.ofRestricts (dropVal_restricts run)
+
+theorem dropMany {ctx : Ctx} {fuel : Nat} {store store' : Store}
+    {values : List RVal} (h : PAPsUnder store)
+    (run : Compilatrix.IxIR1.dropMany ctx fuel store values = .ok store') :
+    PAPsUnder store' :=
+  h.ofRestricts (dropMany_restricts run)
+
+theorem dropUVal {ctx : Ctx} {fuel : Nat} {store store' : Store}
+    {value : RVal} (h : PAPsUnder store)
+    (run : Compilatrix.IxIR1.dropUVal ctx fuel store value = .ok store') :
+    PAPsUnder store' :=
+  h.ofRestricts (dropUVal_restricts run)
+
+theorem dropManyU {ctx : Ctx} {fuel : Nat} {store store' : Store}
+    {values : List RVal} (h : PAPsUnder store)
+    (run : Compilatrix.IxIR1.dropManyU ctx fuel store values = .ok store') :
+    PAPsUnder store' :=
+  h.ofRestricts (dropManyU_restricts run)
+
+end PAPsUnder
+
 /-- A runtime value names only a slot already present in the store.  Unlike
 `LiveRVal`, this deliberately permits a dead-but-allocated slot: stale values
 can remain in an evaluator environment after their final release, but they
@@ -1579,27 +1713,32 @@ theorem AllocationOrderInvariant.dupVals {store store' : Store}
             simp only [hget] at heval
             exact ih (h.incRcStore hget) heval
 
+private structure OrderResult (before after : Store) (value : RVal) : Prop where
+  order : AllocationOrderInvariant after
+  valueInBounds : ValueInBounds after value
+  papsUnder : PAPsUnder before → PAPsUnder after
+
 private def OrderAt (fuel : Nat) : Prop :=
   (∀ ctx cur store env code store' value,
     AllocationOrderInvariant store → ValuesInBounds store env →
     store'.reuses = store.reuses →
     runCode ctx fuel cur store env code = .ok (store', value) →
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value) ∧
+    OrderResult store store' value) ∧
   (∀ ctx cur store env op store' value,
     AllocationOrderInvariant store → ValuesInBounds store env →
     store'.reuses = store.reuses →
     runOp ctx fuel cur store env op = .ok (store', value) →
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value) ∧
+    OrderResult store store' value) ∧
   (∀ ctx address args store store' value,
     AllocationOrderInvariant store → ValuesInBounds store args →
     store'.reuses = store.reuses →
     invoke ctx fuel address args store = .ok (store', value) →
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value) ∧
+    OrderResult store store' value) ∧
   (∀ ctx store function args store' value,
     AllocationOrderInvariant store → ValueInBounds store function →
     ValuesInBounds store args → store'.reuses = store.reuses →
     applyGo ctx fuel store function args = .ok (store', value) →
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value)
+    OrderResult store store' value)
 
 /-- A successful trace whose endpoint reuse count is unchanged preserves the
 append allocation order.  The proof also establishes that its result cannot
@@ -1638,7 +1777,7 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
           rw [hresolve, bindOk] at heval
           have hpair := Except.ok.inj heval
           cases hpair
-          exact ⟨horder, resolveAtom_inBounds henv hresolve⟩
+          exact ⟨horder, resolveAtom_inBounds henv hresolve, id⟩
       | letOp op rest =>
         rw [runCode.eq_def] at heval
         dsimp only at heval
@@ -1655,12 +1794,14 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
             simpa using hrestFoot.reuses
           have hopReuses : middle.reuses = store.reuses := by omega
           have hrestReuses : store'.reuses = middle.reuses := by omega
-          obtain ⟨hmiddleOrder, hopBound⟩ :=
+          obtain ⟨hmiddleOrder, hopBound, hopPaps⟩ :=
             ihOp _ _ _ _ _ _ _ horder henv hopReuses hop
           have henvMiddle : ValuesInBounds middle env :=
             henv.mono hopFoot.nodes_size
-          exact ihCode _ _ _ _ _ _ _ hmiddleOrder
+          have tail := ihCode _ _ _ _ _ _ _ hmiddleOrder
             (henvMiddle.cons hopBound) hrestReuses heval
+          exact ⟨tail.order, tail.valueInBounds,
+            fun hpaps => tail.papsUnder (hopPaps hpaps)⟩
       | case scrut peelNat alts =>
         rw [runCode.eq_def] at heval
         dsimp only at heval
@@ -1739,7 +1880,7 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
           rw [hresolve, bindOk] at heval
           have hpair := Except.ok.inj heval
           cases hpair
-          exact ⟨horder, resolveAtom_inBounds henv hresolve⟩
+          exact ⟨horder, resolveAtom_inBounds henv hresolve, id⟩
       | alloc world cid atoms =>
         rw [runOp.eq_def] at heval
         dsimp only at heval
@@ -1750,10 +1891,12 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
           have hpair := Except.ok.inj heval
           cases hpair
           have hvalues := resolveAtoms_inBounds henv hresolve
-          constructor
+          refine ⟨?_, ?_, ?_⟩
           · apply horder.allocNodeOfInBounds
             simpa [nodeChildren] using hvalues
           · simp [ValueInBounds, Store.allocNode]
+          · intro hpaps
+            exact hpaps.allocCtor world cid values.toArray
       | reuse target cid atoms =>
         rw [runOp.eq_def] at heval
         dsimp only at heval
@@ -1803,7 +1946,8 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
                 | unique =>
                   have hpair := Except.ok.inj heval
                   cases hpair
-                  exact ⟨horder.kill hbox, by trivial⟩
+                  exact ⟨horder.kill hbox, by trivial,
+                    fun hpaps => hpaps.kill hbox⟩
       | dup target =>
         rw [runOp.eq_def] at heval
         dsimp only at heval
@@ -1815,11 +1959,11 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
           | lit literal =>
             have hpair := Except.ok.inj heval
             cases hpair
-            exact ⟨horder, by trivial⟩
+            exact ⟨horder, by trivial, id⟩
           | erased =>
             have hpair := Except.ok.inj heval
             cases hpair
-            exact ⟨horder, by trivial⟩
+            exact ⟨horder, by trivial, id⟩
           | loc loc =>
             cases hbox : store.get? loc with
             | none => simp [hbox] at heval
@@ -1832,9 +1976,11 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
                 | shared =>
                   have hpair := Except.ok.inj heval
                   cases hpair
-                  exact ⟨horder.incRcStore hbox,
+                  refine ⟨horder.incRcStore hbox,
                     (RVal.inBounds_of_get? hbox).mono
-                      (footprint_incRcStore hbox).nodes_size⟩
+                      (footprint_incRcStore hbox).nodes_size, ?_⟩
+                  intro hpaps
+                  simpa [Sim.incRcStore] using hpaps.incRcStore hbox
       | drop target =>
         rw [runOp.eq_def] at heval
         dsimp only at heval
@@ -1846,11 +1992,11 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
           | lit literal =>
             have hpair := Except.ok.inj heval
             cases hpair
-            exact ⟨horder, by trivial⟩
+            exact ⟨horder, by trivial, id⟩
           | erased =>
             have hpair := Except.ok.inj heval
             cases hpair
-            exact ⟨horder, by trivial⟩
+            exact ⟨horder, by trivial, id⟩
           | loc loc =>
             dsimp only at heval
             cases hdrop : dropVal ctx fuel store (.loc loc) with
@@ -1859,7 +2005,8 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
               rw [hdrop, bindOk] at heval
               have hpair := Except.ok.inj heval
               cases hpair
-              exact ⟨horder.dropVal hdrop, by trivial⟩
+              exact ⟨horder.dropVal hdrop, by trivial,
+                fun hpaps => hpaps.dropVal hdrop⟩
       | dropU target =>
         rw [runOp.eq_def] at heval
         dsimp only at heval
@@ -1871,11 +2018,11 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
           | lit literal =>
             have hpair := Except.ok.inj heval
             cases hpair
-            exact ⟨horder, by trivial⟩
+            exact ⟨horder, by trivial, id⟩
           | erased =>
             have hpair := Except.ok.inj heval
             cases hpair
-            exact ⟨horder, by trivial⟩
+            exact ⟨horder, by trivial, id⟩
           | loc loc =>
             dsimp only at heval
             cases hdrop : dropUVal ctx fuel store (.loc loc) with
@@ -1884,7 +2031,8 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
               rw [hdrop, bindOk] at heval
               have hpair := Except.ok.inj heval
               cases hpair
-              exact ⟨horder.dropUVal hdrop, by trivial⟩
+              exact ⟨horder.dropUVal hdrop, by trivial,
+                fun hpaps => hpaps.dropUVal hdrop⟩
       | fetch target field =>
         rw [runOp.eq_def] at heval
         dsimp only at heval
@@ -1921,7 +2069,7 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
                         (Array.mem_iff_getElem?).2 ⟨field, hfield⟩
                     exact ⟨horder,
                       horder.childrenInBounds hbox result
-                        (by simpa [nodeChildren] using hmember)⟩
+                        (by simpa [nodeChildren] using hmember), id⟩
       | call address atoms =>
         rw [runOp.eq_def] at heval
         dsimp only at heval
@@ -1968,10 +2116,13 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
               have hpair := Except.ok.inj heval
               cases hpair
               have hvalues := resolveAtoms_inBounds henv hresolve
-              constructor
+              refine ⟨?_, ?_, ?_⟩
               · apply horder.allocNodeOfInBounds
                 simpa [nodeChildren] using hvalues
               · simp [ValueInBounds, Store.allocNode]
+              · intro hpaps
+                exact hpaps.allocPap .shared address (declArity decl)
+                  values.toArray (by simpa using hlen)
             · simp [hlen] at heval
       | apply function atoms =>
         rw [runOp.eq_def] at heval
@@ -2006,9 +2157,8 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
             subst store'
             subst value
             have hscalar := (callScalarOracle_ok hcall).2
-            constructor
-            · exact horder
-            · cases result <;> simp_all [RVal.isScalar, ValueInBounds]
+            refine ⟨horder, ?_, id⟩
+            cases result <;> simp_all [RVal.isScalar, ValueInBounds]
     · intro ctx address args store store' value horder hargs hreuses heval
       rw [invoke.eq_def] at heval
       dsimp only at heval
@@ -2032,9 +2182,8 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
               subst store'
               subst value
               have hscalar := (callScalarOracle_ok hcall).2
-              constructor
-              · exact horder
-              · cases result <;> simp_all [RVal.isScalar, ValueInBounds]
+              refine ⟨horder, ?_, id⟩
+              cases result <;> simp_all [RVal.isScalar, ValueInBounds]
           · simp [harity] at heval
         | fn d =>
           cases harity : args.length != d.arity
@@ -2063,7 +2212,8 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
           rw [hdrop, bindOk] at heval
           have hpair := Except.ok.inj heval
           cases hpair
-          exact ⟨horder.dropMany hdrop, by trivial⟩
+          exact ⟨horder.dropMany hdrop, by trivial,
+            fun hpaps => hpaps.dropMany hdrop⟩
       | loc loc =>
         dsimp only at heval
         cases hbox : store.get? loc with
@@ -2100,10 +2250,15 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
                   · simp only [hunder] at heval
                     have hpair := Except.ok.inj heval
                     cases hpair
-                    constructor
+                    refine ⟨?_, ?_, ?_⟩
                     · apply hreadyOrder.allocNodeOfInBounds
                       simpa [nodeChildren] using htotal
                     · simp [ValueInBounds, Store.allocNode]
+                    · intro hpaps
+                      exact ((hpaps.dupVals hdup).dropVal hdrop).allocPap
+                        .shared address arity
+                        (captured.toList ++ args).toArray
+                        (by simpa using hunder)
                   · simp only [hunder] at heval
                     cases hexact :
                         (captured.toList ++ args).length == arity
@@ -2142,14 +2297,18 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
                                 calledStore.reuses = ready.reuses := by omega
                             have hfinalReuse :
                                 store'.reuses = calledStore.reuses := by omega
-                            obtain ⟨hcalledOrder, hcalledValue⟩ :=
+                            obtain ⟨hcalledOrder, hcalledValue,
+                              hcalledPaps⟩ :=
                               ihInvoke _ _ _ _ _ _ hreadyOrder
                                 (htotal.take arity) hcalledReuse hinvoke
                             have hrestBounds : ValuesInBounds calledStore
                                 ((captured.toList ++ args).drop arity) :=
                               (htotal.drop arity).mono hinvokeFoot.nodes_size
-                            exact ihApply _ _ _ _ _ _ hcalledOrder
+                            have tail := ihApply _ _ _ _ _ _ hcalledOrder
                               hcalledValue hrestBounds hfinalReuse heval
+                            exact ⟨tail.order, tail.valueInBounds,
+                              fun hpaps => tail.papsUnder (hcalledPaps
+                                ((hpaps.dupVals hdup).dropVal hdrop))⟩
                     · simp only [hexact, if_true] at heval
                       cases hdecl : ctx.decls address with
                       | none => simp [hdecl] at heval
@@ -2170,8 +2329,11 @@ private theorem orderAt : ∀ fuel, OrderAt fuel := by
                           have hfinalReuse :
                               store'.reuses = ready.reuses := by
                             omega
-                          exact ihInvoke _ _ _ _ _ _ hreadyOrder htotal
-                            hfinalReuse heval
+                          have called := ihInvoke _ _ _ _ _ _ hreadyOrder
+                            htotal hfinalReuse heval
+                          exact ⟨called.order, called.valueInBounds,
+                            fun hpaps => called.papsUnder
+                              ((hpaps.dupVals hdup).dropVal hdrop)⟩
 
 theorem runCode_order_of_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
     {store store' : Store} {env : List RVal} {code : Code} {value : RVal}
@@ -2179,9 +2341,21 @@ theorem runCode_order_of_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
     (henv : ValuesInBounds store env)
     (hreuses : store'.reuses = store.reuses)
     (heval : runCode ctx fuel cur store env code = .ok (store', value)) :
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value :=
-  (orderAt fuel).1 ctx cur store env code store' value
+    AllocationOrderInvariant store' ∧ ValueInBounds store' value := by
+  have result := (orderAt fuel).1 ctx cur store env code store' value
     horder henv hreuses heval
+  exact ⟨result.order, result.valueInBounds⟩
+
+/-- The same dynamic no-reuse premise preserves strict PAP shape. -/
+theorem runCode_papsUnder_of_reuses_eq {ctx : Ctx} {fuel : Nat}
+    {cur : FnDef} {store store' : Store} {env : List RVal} {code : Code}
+    {value : RVal} (horder : AllocationOrderInvariant store)
+    (henv : ValuesInBounds store env) (hpaps : PAPsUnder store)
+    (hreuses : store'.reuses = store.reuses)
+    (heval : runCode ctx fuel cur store env code = .ok (store', value)) :
+    PAPsUnder store' :=
+  ((orderAt fuel).1 ctx cur store env code store' value
+    horder henv hreuses heval).papsUnder hpaps
 
 /-- The operation-level projection of `runCode_order_of_reuses_eq`.  This is
 the compositional boundary used by local operation contracts: once a
@@ -2193,9 +2367,20 @@ theorem runOp_order_of_reuses_eq {ctx : Ctx} {fuel : Nat} {cur : FnDef}
     (henv : ValuesInBounds store env)
     (hreuses : store'.reuses = store.reuses)
     (heval : runOp ctx fuel cur store env op = .ok (store', value)) :
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value :=
-  (orderAt fuel).2.1 ctx cur store env op store' value
+    AllocationOrderInvariant store' ∧ ValueInBounds store' value := by
+  have result := (orderAt fuel).2.1 ctx cur store env op store' value
     horder henv hreuses heval
+  exact ⟨result.order, result.valueInBounds⟩
+
+theorem runOp_papsUnder_of_reuses_eq {ctx : Ctx} {fuel : Nat}
+    {cur : FnDef} {store store' : Store} {env : List RVal} {op : Op}
+    {value : RVal} (horder : AllocationOrderInvariant store)
+    (henv : ValuesInBounds store env) (hpaps : PAPsUnder store)
+    (hreuses : store'.reuses = store.reuses)
+    (heval : runOp ctx fuel cur store env op = .ok (store', value)) :
+    PAPsUnder store' :=
+  ((orderAt fuel).2.1 ctx cur store env op store' value
+    horder henv hreuses heval).papsUnder hpaps
 
 /-- Declared-call projection of the allocation-order induction.  Exposing
 this alongside the code and operation forms lets run-indexed cost contracts
@@ -2207,9 +2392,20 @@ theorem invoke_order_of_reuses_eq {ctx : Ctx} {fuel : Nat}
     (hargs : ValuesInBounds store args)
     (hreuses : store'.reuses = store.reuses)
     (heval : invoke ctx fuel address args store = .ok (store', value)) :
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value :=
-  (orderAt fuel).2.2.1 ctx address args store store' value
+    AllocationOrderInvariant store' ∧ ValueInBounds store' value := by
+  have result := (orderAt fuel).2.2.1 ctx address args store store' value
     horder hargs hreuses heval
+  exact ⟨result.order, result.valueInBounds⟩
+
+theorem invoke_papsUnder_of_reuses_eq {ctx : Ctx} {fuel : Nat}
+    {address : Ixon.Address} {args : List RVal} {store store' : Store}
+    {value : RVal} (horder : AllocationOrderInvariant store)
+    (hargs : ValuesInBounds store args) (hpaps : PAPsUnder store)
+    (hreuses : store'.reuses = store.reuses)
+    (heval : invoke ctx fuel address args store = .ok (store', value)) :
+    PAPsUnder store' :=
+  ((orderAt fuel).2.2.1 ctx address args store store' value
+    horder hargs hreuses heval).papsUnder hpaps
 
 /-- Higher-order-application projection of the allocation-order induction. -/
 theorem applyGo_order_of_reuses_eq {ctx : Ctx} {fuel : Nat}
@@ -2219,9 +2415,21 @@ theorem applyGo_order_of_reuses_eq {ctx : Ctx} {fuel : Nat}
     (hargs : ValuesInBounds store args)
     (hreuses : store'.reuses = store.reuses)
     (heval : applyGo ctx fuel store function args = .ok (store', value)) :
-    AllocationOrderInvariant store' ∧ ValueInBounds store' value :=
-  (orderAt fuel).2.2.2 ctx store function args store' value
+    AllocationOrderInvariant store' ∧ ValueInBounds store' value := by
+  have result := (orderAt fuel).2.2.2 ctx store function args store' value
     horder hfunction hargs hreuses heval
+  exact ⟨result.order, result.valueInBounds⟩
+
+theorem applyGo_papsUnder_of_reuses_eq {ctx : Ctx} {fuel : Nat}
+    {store store' : Store} {function : RVal} {args : List RVal}
+    {value : RVal} (horder : AllocationOrderInvariant store)
+    (hfunction : ValueInBounds store function)
+    (hargs : ValuesInBounds store args) (hpaps : PAPsUnder store)
+    (hreuses : store'.reuses = store.reuses)
+    (heval : applyGo ctx fuel store function args = .ok (store', value)) :
+    PAPsUnder store' :=
+  ((orderAt fuel).2.2.2 ctx store function args store' value
+    horder hfunction hargs hreuses heval).papsUnder hpaps
 
 /-- A fresh successful evaluator run with zero executed reuses is
 allocation-ordered.  No syntactic no-reuse scan is required: monotonicity of
@@ -2232,9 +2440,11 @@ theorem runMain_order_of_reuses_eq_zero {ctx : Ctx} {fuel : Nat}
     (heval : runMain ctx code fuel = .ok (store, value))
     (hreuses : store.reuses = 0) :
     AllocationOrderInvariant store ∧ ValueInBounds store value := by
-  exact (orderAt fuel).1 ctx ⟨0, .shared, false, code⟩ ({} : Store) [] code
+  have result := (orderAt fuel).1 ctx ⟨0, .shared, false, code⟩
+    ({} : Store) [] code
     store value AllocationOrderInvariant.empty
     (ValuesInBounds.nil ({} : Store)) hreuses heval
+  exact ⟨result.order, result.valueInBounds⟩
 
 /-! ## Final-root release
 

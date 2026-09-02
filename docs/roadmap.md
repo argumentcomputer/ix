@@ -1,26 +1,19 @@
 # Compilatr.ix roadmap
 
-Last reviewed 2026-08-31. This is the canonical source for priorities,
-milestone state, and activation gates. It is intentionally forward-looking:
-completed implementation detail belongs in the source tree, focused documents,
-and version history—not in the live queue.
-
-Local files under `plans/` explain designs and decisions. They do not override
-this roadmap.
+Last reviewed 2026-09-07 against the current working tree. This is the
+canonical source for priorities, milestone state, and activation gates.
+The [development plan](development-plan.md) records the code review evidence,
+bounded work packages, and acceptance criteria behind this queue. Local
+`plans/` files explain design alternatives and do not override it.
 
 ## Mission
 
-Build a self-hosting certified toolchain from Ixon to native and zk targets.
-Native and zk code generation must refine the same Ixon operational semantics,
-with:
+Build a self-hosting certified toolchain from Ixon to native and zk targets,
+with an independently checkable compilation path, explicit ownership and
+resource models, content-addressed artifacts, and a shrinking trusted-extern
+ledger. Native and zk targets refine the same Ixon operational semantics.
 
-- an independently checkable compilation path;
-- explicit ownership, cost, and runtime models;
-- content-addressed compiler artifacts and certificates;
-- a shrinking trusted-extern ledger;
-- statement-faithful certificates at the eventual source boundary.
-
-The principal end-to-end theorem is forward semantic preservation from
+The principal theorem is successful-run forward semantic preservation from
 validated Ixon evaluation to emitted machine execution. Error/divergence
 reflection, source-statement faithfulness, and resource/capability guarantees
 are separate named obligations.
@@ -33,241 +26,162 @@ are separate named obligations.
 - **Ixon** is the content-addressed input language.
 - **lean4ix** is the public kernel-theory and checker-verification anchor.
 
-Legacy project names must not appear in active plans.
+## Review direction
+
+Prioritize complete compiler entry points over additional optimization
+breadth. The baseline IxIR₁→logical-IxIR₂ induction and physical-baseline→reuse
+whole-main theorem are assembled. N1 now connects baseline interpretations and
+selects the actual compiler output of a synthetic Ixon scalar, with a composed
+typed-x86 theorem and native checks. C1 adds bounded accepted-source coverage
+and comparisons of complete compiler artifacts. D1 recovers a direct loop
+from an eager synthetic Ixon list fold with hot/cold reuse observations.
+D2 composes successful source evaluation through the actual selected physical
+program, with original owned IxIR₁ execution on outer fallback. R2 adds terminal
+allocation balance and complete shared-result reclamation. R3 proves comparative
+allocation/free laws for actual shared-main baseline and selected executions.
+R4 adds RC and peak-live bounds, including intermediate selected states and
+complete release. R5 adds a separately versioned policy for credits suspended
+across non-tail direct calls, with a checked source-map specialization and the
+same resource and cost guarantees. Static unique reuse now compiles a checked
+source-list reversal with consuming ownership, exact no-RC costs, and complete
+reclamation. Native heap selection is next; these gates do not establish
+ordinary Std compilation or self-hosting.
 
 ## Delivered baseline
 
-The following foundation is present and should not be expanded into a second
-status ledger here:
+| Boundary | Evidence and scope |
+| --- | --- |
+| Build and trust discipline | Lean/Lake/Nix builds, CI, the [axiom fence](../Compilatrix/Fence.lean), and [trusted-extern ledger](trusted-extern-ledger.md). Local review checks passed; see the development plan for the exact check surface. |
+| Ixon ingress and identity | Strict bounded v2 codecs, canonical sharing, checked content addressing, and bounded catalogs. The [Std contact](corpus-contact.md) succeeds at ingress and deliberately pins a downstream `freezeNeeded` rejection. |
+| Validated Ixon→IxIR₁ | Checked addressed erasure to IxIR₀, mode-directed explicit-store lowering, and artifact-facing forward simulation, progress, memory-error exclusion, reclamation, and scoped cost results. Genuine source sharing/oracle obligations remain explicit. See [simulation strategy](simulation-strategy.md) and [lowering restrictions](lowering-restrictions.md). |
+| IxIR₁ optimization | Bounded HPT production/checking and durable summaries; checked case simplification, scalar fetch forwarding, scalar/leaf destruction, PAP fusion, and rooted reachability through one rebuild. The selected artifact has its own semantic and reclamation endpoints; its universal counter law is `frees ≤ allocs`. See [optimizer harness](optimizer-harness.md). |
+| Baseline IxIR₂ | Frozen in-memory syntax, bounded ownership/borrow/credit validation, executable logical and physical semantics, and checked structured lowering. The attached whole-main theorem preserves successful IxIR₁ execution; the checked absence of credit operations transports its exact result and budgets to physical execution. See [IxIR₂ specification](ixir2-spec.md). |
+| Dynamic reuse | Checked insertion and whole-main preservation from successful physical baseline execution to the exact optimizer output, with compiler progress derived internally. Production selection retains a checked baseline on target rejection. D2 supplies source-facing physical composition; R2 adds terminal allocation balance and complete shared-result reclamation. R3/R4 prove allocation/free laws and RC/peak bounds for the shared-main compiler domain, with separate counter invariants and all intermediate states covered. |
+| Source recursion recovery | D1's checked immediate-list schema derives a direct accumulator recursor from actual Ixon erasure. D2 derives execution of the actual selected physical IxIR₂ or original owned IxIR₁ on outer fallback; R2/R3/R4 add shared reclamation and comparative allocation/free/RC/peak laws without new source premises. Eight source cases check terminal/reclaimed balances and comparative laws, with 25 rejection/fallback checks. See [source recursion](source-recursion.md). |
+| Reuse across calls | R5's explicit v1 policy suspends caller-owned reservations through direct `call`/`callSelf`, preserving v0 behavior. A checked closed Nat-map specialization produces actual compiler input; its source theorem includes selected execution, fallback, reclamation, and allocation/free/RC/peak laws. Nine maps, 35 policy/rejection checks, and complete fresh-process artifacts exercise hot, cold, and mixed ownership. See [source call reuse](source-call-reuse.md). |
+| Static unique reuse | Checked recursor-mode identities and closed-source reversal specialization produce consuming IxIR₁ and a validated IxIR₂ translation. The source theorem covers arbitrary accepted finite Nat lists, actual selected/fallback execution, exact no-RC allocation/reuse/peak costs, every reservation prefix, and full reclamation. Seven cases and 43 boundary checks have complete fresh-process artifacts. See [source unique reuse](source-unique-reuse.md). |
+| Native scalar path | Typed local x86-64 semantics, exact graph recognition, actual-selector and source-facing refinement theorems, E0 encoding, and ELF emission. A synthetic Ixon scalar passes the validated compiler and native checks with its real addressed IxIR₁ provenance; earlier hand-written fixtures remain useful substrate checks. |
 
-- Reproducible Lean/Lake/Nix builds, CI configuration, licensing, an axiom
-  fence, and a validated trusted-extern ledger.
-- Ixon v2 mode-bearing syntax, strict resource-bounded codecs, canonical
-  sharing, checked content addressing, and bounded catalog ingress.
-  See [wire format](ixon-v2-wire.md),
-  [canonical sharing](canonical-sharing.md),
-  [sharing policy](sharing-policy.md), and
-  [catalog ingress](catalog-ingress.md).
-- A validated, content-addressed erasure path to IxIR₀ with a theorem-backed
-  fragment covering ordinary definitions, recursors, mutual blocks,
-  projections, quotients, and configured opaque definitions. Erasure and the
-  unvalidated engineering path retain scalar-only extern support; the
-  certified compiler boundary rejects extern declarations explicitly.
-- Mode-directed lowering to the explicit-store IxIR₁, with executable
-  ownership checks, leak-freedom fixtures, cost counters, mutual-block
-  addressing, and a proof-facing validated compilation record that retains
-  the scoped erasure and both address-pass witnesses used by the current
-  formal simulation spine. Function declarations now carry an address-
-  committed owner-sensitive PAP-entry policy: direct known calls retain mixed
-  affine/unique boundaries, while dynamic saturation is admitted only for
-  declarations with homogeneous shared contracts.
-- A bounded HPT post-fixpoint checker, durable content-addressed summaries,
-  recursive constructor-field facts, and the first semantics-preserving
-  whole-program fact consumer: owner-sensitive propagation through stored
-  function bodies, impossible-alternative pruning, and checked detailed-unary
-  exact-case collapse. The same one-rebuild boundary now includes exact scalar
-  fetch forwarding after allocation/reuse, scalar-drop elimination,
-  exact-all-scalar unique-leaf destruction, checked PAP/application fusion,
-  and checked rooted declaration reachability with exported roots and a
-  conservative dynamic-apply fallback. It runs behind a versioned fail-soft
-  optimizer policy with canonical before/after reports, pass-attributed
-  counters, and deterministic fixed-point regressions. The directly produced
-  selected artifact is now attached to the validated semantic interface with
-  artifact-facing forward simulation, target progress, all-fuel memory-error
-  exclusion, full-result reclamation, and the evaluator-universal
-  allocation/free law.
-  Executable exact-fuel counterexamples close the IxIR₁ destruction boundary:
-  recursive inline expansion steals continuation fuel, helper expansion adds
-  call-entry fuel, and shared specialization lacks an explicit RC-zero branch.
-  Recursive/shared known-shape destruction is therefore staged with the
-  fuel-neutral consuming-destructure/reset path in IxIR₂.
-  Shared evaluator proof families now expose one foundational traversal per
-  recursive judgment: owner-sensitive deep-release safety and termination are
-  paired behind common cores, and arbitrary fuel increases use one generic
-  successor-stability lift across Ixon, IxIR₀, and IxIR₁.
-  The certified extern boundary is closed mechanically on both the addressed
-  IxIR₀ input and emitted IxIR₁ artifact environment; its semantic, progress,
-  safety, reclamation, and cost endpoints carry no caller-supplied extern
-  contract.
-  See [HPT certificates](hpt-certificates.md) and the
-  [optimizer harness](optimizer-harness.md).
-- The frozen IxIR₂ v0 in-memory syntax and a bounded executable validator for
-  block-local ordinals, explicit joins, owner/borrow flow, addressed call
-  signatures, world-keyed constructor schemas, exact-layout affine credits,
-  combined constructor/Nat dispatch, and the closed extern boundary. Positive
-  fixtures cover ordinary and loop edges, direct borrowed calls, required and
-  optional credit paths, joins, discard, and tail-self transfer; negative
-  fixtures pin duplication, leaks, use-after-consume, lender lifetime, layout
-  and optionality mismatches, malformed control flow, dynamic borrowed entry,
-  externs, and resource exhaustion.
-- IxIR₂ logical and physical small-step execution with independent control and
-  heap-traversal budgets, executable calls/PAPs/CFG transfer, explicit physical
-  reservations, hot/cold reset, reuse and discard observations, a credit-local
-  heap-relation interface, proved local counter algebra, and non-degenerate
-  intermediate and terminal executable witnesses.
-- The standalone structured IxIR₁→IxIR₂ baseline lowerer for the no-`reuse`
-  subset. Owner-keyed erased-information sidecars feed producer-derived SSA
-  blocks, conservative join parameters, constructor/Nat dispatch, tail
-  transfers, target-coordinate leaf facts, traces, and an exact validator
-  equation. Differential Nat/constructor runs plus axiom-fenced scalar/vector
-  operand resolution, environment extension, exact baseline-store
-  correspondence, and the `pure`/`move`, ordinary-allocation, scalar/shared
-  retain, checked-fetch, scalar-leaf-free, function-PAP allocation, and fully
-  recursive unique/shared destruction cases, plus exact finite-step/control-
-  budget composition, establish the active simulation seam.
-- Deterministic mode/counter fixtures, a generated well-moded corpus, and a
-  bounded production-Std contact.
-  See [counter evidence](thesis-counter-evidence.md),
-  [well-moded generation](well-moded-generator.md), and
-  [corpus contact](corpus-contact.md).
+The default production compilation result remains IxIR₁.
+`IxIR2.Pipeline.compileValidated` supplies a separate checked baseline
+attachment. `X86.ValidatedScalar.compile` supplies the bounded source-to-native
+scalar endpoint; general source graphs still need wider selection and runtime
+support.
 
-The current pipeline-output boundary is IxIR₁. IxIR₂ syntax, validation,
-logical/physical execution, and a standalone structured baseline translator
-are implemented, but the validated pipeline does not yet emit IxIR₂, paired
-reuse, native instructions, or a self-hosted binary.
+`Recursion.compileValidated` is the optional source-recovery endpoint. It
+retains the original validated compilation and, when recovery succeeds, the
+exact generated ownership, CFG, and reuse artifacts.
 
-## Known boundaries carried forward
+`CallReuse.compileValidated` selects the v1 pass on an ordinary checked
+attachment. `CallReuse.compileMap` adds the optional checked closed-map
+specialization and retains the original validated source on outer fallback.
 
-These are active scope constraints, not hidden qualifications:
+`UniqueReuse.compile` checks an explicit closed Ixon entry under the opt-in
+`recursor-modes/1` policy. It retains consuming IxIR₁ when target translation
+fails and a checked IxIR₂ baseline when optional static reuse fails.
 
-- The main semantic results currently prove the forward successful-run
-  direction. Error/divergence reflection is deferred until the execution
-  semantics and native boundary stabilize.
-- Erasure adequacy is not yet connected to lean4ix's kernel theory.
-- The current validated fragment remains narrower than all of Lean/Ixon;
-  unsupported features fail closed at validation.
-- IxIR₁ runtime and unvalidated compilation support only scalar extern
-  arguments/results. Validator-gated compilation rejects all extern
-  declarations on its exact source and target graphs; reopening that boundary
-  requires an explicit consume/borrow/retain ABI.
-- The lowerer emits conservative RC operations and no reuse. Borrow inference,
-  RC coalescing, and reset/reuse belong to the optimized IxIR₂ path.
-- HPT parameters currently begin at `top`; summaries are context-independent.
-- Large-corpus ingestion is bounded/in-memory. Streaming and distributed cache
-  maintenance are scaling work, not blockers for the native wedge.
-- Native BLAKE3 and durable-sync operations remain ledgered assumptions.
-- The first x86 wedge may use a local emitted-subset semantics. Until it is
-  connected to an independently maintained x86 model, that semantics remains
-  an explicit ISA-specification assumption in the ledger.
-- Threads, floats, source locality, and a zk cost model have explicit wake
-  conditions below.
+## Known boundaries
+
+- The accepted fragment is narrower than Lean/Ixon; unsupported constructs
+  fail closed. Erasure adequacy is not yet connected to lean4ix.
+- Certified compilation rejects externs on its exact source and emitted
+  graphs. Runtime/unvalidated scalar extern support is not an ownership ABI.
+- The bounded unique reversal endpoint handles consuming destructuring and
+  recursor worlds for its checked source schema. General unique recursors,
+  partial or escaping unique rule applications, and unique native heap
+  selection remain outside that endpoint.
+- Baseline lowering emits conservative RC and no reuse. Shared and bounded
+  static unique reuse are separately selected passes; borrow inference and
+  RC coalescing remain future work.
+- Baseline interpretation independence is proved for checked programs without
+  credit operations. General logical/physical credit refinement remains open.
+- IxIR₂ has no canonical codec or independent content address. Initial native
+  integration may use the implemented IxIR₁-root-plus-policy provenance;
+  persistent IxIR₂ identities require the codec gate below.
+- HPT summaries are context-independent and parameters start at `top`.
+  The bounded corpus does not establish broad source acceptance or scale.
+- Recursion recovery currently checks closed Nat-list entries with known
+  immediate-tail minor functions. General `brecOn`, open entries, mutual or
+  nested recursion, and well-founded erasure remain outside that schema.
+- Native BLAKE3 and durable sync remain ledgered interfaces. The local x86
+  semantics, E0 encoder, and ELF writer remain specification assumptions.
+  Native differential checks do not retire them.
 
 ## Operating rules
 
-Statuses used below:
+- **delivered** means the named, scoped boundary has code and evidence.
+- **active** means work is in flight and appears in the immediate queue.
+- **next** means specified work follows its named predecessor or gate.
+- **deferred** means dormant until its wake condition is met.
+- **blocked** means an external decision or dependency change is required.
 
-- **active** — work is in flight and appears in the immediate queue;
-- **next** — specified and unblocked when its named predecessor exits;
-- **deferred** — dormant until its wake condition is met;
-- **blocked** — requires an external decision or dependency change.
+Keep one observable exit per work package. A theorem-backed exit needs an
+axiom-fence entry and a non-degenerate executable witness at the claimed
+input boundary. Record semantic, resource, and native-byte guarantees
+separately. Optional optimizer failure must retain the last checked artifact;
+invalid source remains an error. Put detailed theorem evidence in focused
+documents and keep completed proof steps out of the immediate queue.
 
-Roadmap hygiene:
+## M2b — verified IxIR₁ middle end
 
-1. Keep completed work in the delivered baseline or a focused evidence
-   document; do not append implementation diaries to the queue.
-2. Give every active item one concrete exit condition.
-3. Record a dependency or risk change when reordering work.
-4. A theorem-backed exit requires a non-degenerate executable witness and an
-   axiom-fence entry.
-5. An inferred optimization may fail closed to the unoptimized path; it must
-   not reject an otherwise valid program.
-6. Use exact artifact roots and pinned revisions in code/fixtures, not prose
-   duplicated here.
+The scoped semantic milestone is complete. Compiler reproducibility is a
+cross-pipeline gate in M2c, rather than unfinished work inside this milestone.
 
-## M2b — close the verified IxIR₁ middle end
-
-This milestone is complete.
-
-| Deliverable | State | Exit condition |
+| Deliverable | State | Completed boundary |
 | --- | --- | --- |
-| Whole-pass value/ownership/progress simulation | delivered | Every validator-accepted current-fragment main has a composed IxIR₀→IxIR₁ forward simulation, no reachable memory error, and the existing reclamation/cost results without fixture-specific assumptions. |
-| Proof-structure consolidation | delivered | Shared recursive judgments have one foundational traversal each; public theorems depend on those cores without duplicating the induction. Stop recording individual consolidation cuts in this roadmap. |
-| HPT consumer tranche O1 | delivered | Checked case pruning/collapse, scalar fetch forwarding, scalar and exact-all-scalar unique-leaf destruction, PAP/application fusion, and rooted reachability compose through one owner-sensitive traversal and one rebuild, with arbitrary-fuel proofs, fail-soft policy/reporting, and fixed-point regressions. Recursive/shared destruction is assigned to the IxIR₂ consuming-destructure rows below because ordinary IxIR₁ expansion cannot preserve the same-fuel contract. |
-| IxIR₁ extern ownership ABI | delivered | The validator-gated pipeline rejects externs on the exact addressed IxIR₀ input and emitted IxIR₁ graph, retains lookup-level certificates for both, and synthesizes the now-vacuous semantic/progress contracts internally. Runtime and unvalidated compilation remain scalar-only. |
-| Address reproducibility | next | Two independent full compilations of the same validated root produce the same addressed IxIR₀/IxIR₁ graph and certificate identities. |
-| HPT/cache scaling | deferred | Wake when bounded Std/corpus work demonstrates that directory enumeration, sharding, garbage collection, or cross-store scheduling is the bottleneck. |
+| Whole-pass simulation and ownership | delivered | The validated artifact exposes forward simulation, progress, memory-error exclusion, full-result reclamation, and the stated baseline cost contracts. |
+| Proof-structure consolidation | delivered | Shared recursive judgments use common foundational traversals and public projections. |
+| HPT consumer tranche O1 | delivered | The five checked consumers compose through one owner-sensitive traversal and exact rebuild, with fail-soft policy and fixed-point regressions. |
+| Certified extern closure | delivered | Source/target scans close the current certified boundary; reopening heap-valued externs requires an explicit ownership ABI. |
 
-`ValidatedCompilation.semanticForwardSimulation` is now the concise semantic
-spine: validator-derived member scope and coverage plus both address-pass
-equations are carried by the compilation result. The owner-sensitive
-`CompilerContracts` layer has landed: declaration rewriting preserves
-`papSafe`, the mutual seal requires all-shared ownership only for dynamically
-enterable declarations, and a mixed unique/direct-call model proves that this
-is strictly weaker than the former global premise. Initial SCC content
-addressing now also certifies exact-source transport from the literal raw
-declaration list, so this attachment need not admit synthetic final-key
-aliases merely to prove declaration coverage. The concrete whole-pass trace
-now derives source declaration layout and owner-sensitive PAP safety, and
-partitions every raw function as either a selected source callable or a final
-generated declaration. Addressed erasure and exact target addressing now
-certify row selection too, so each validated compilation record exposes
-source layout, PAP safety, and raw function coverage without caller premises.
-Whole-program lowering now also carries exact operational provenance for every
-generated constructor wrapper and lifted function through the full lowering
-cluster. That provenance replays each generated body against the mutually
-smaller source/application contracts, while same-address source declarations
-are recovered from their concrete `lowerDecl` traces. One evaluator-fuel
-induction therefore seals every source, generated, and dynamic-application
-ownership contract, and each validated record exposes the resulting
-`exactCompilerContracts` theorem for its literal raw target context. The
-semantic endpoint now consumes that theorem through the certified exact-source
-target-address transport and records the rebuild renaming relating raw and
-emitted heaps; callers no longer supply target declaration, representation, or
-ownership premises. The same interface exposes certified target progress and
-all-fuel memory-error exclusion for each successful validated source main,
-unconditional full-result reclamation, the current no-reuse/allocation-free
-counter law, and the ownership-amortized four-counter budget whenever the
-ordinary source execution has a call-aware profile. The retained source and
-target extern scans prove that neither evaluator environment resolves an
-extern, so these endpoints no longer ask callers for extern value or progress
-contracts.
+Recursive/shared destruction stays in IxIR₂: IxIR₁ recursive inline/helper
+expansion breaks the same-fuel contract, and shared specialization requires an
+explicit RC-zero branch. HPT/cache scaling wakes only when measured bounded
+corpus work identifies cache scheduling or storage as the bottleneck.
 
-The directly produced O1 selection now composes that spine through the
-optimizer's allocation-history refinement and exact final rebuild. The
-artifact returned by `optimizeWithProducedHPT` therefore exposes forward
-simulation, target progress, all-fuel memory-error exclusion, and full-result
-reclamation on its own declaration environment and main. Its applicable
-counter contract is the evaluator-universal `frees ≤ allocs` law. The
-pre-optimization `reuses = 0` and ownership-amortized four-counter contracts
-are not transported through an optimizer relation that intentionally forgets
-counters and admits allocation-changing PAP/destruction rewrites.
+## M2c — source-driven optimized native execution
 
-M2b is complete. The detailed optimizer design is in
-`plans/whole-program-optimization.md`.
+This is the current milestone. The [IxIR₂ specification](ixir2-spec.md)
+fixes the in-memory contract; the [development plan](development-plan.md)
+defines the immediate proof and integration cuts.
 
-## M2c — optimized native wedge
-
-This is the current milestone. Its semantic interface is the stable M2b
-boundary above. The normative syntax, ownership-flow, credit semantics,
-validation obligations, and simulation interface are frozen in the
-[IxIR₂ v0 specification](ixir2-spec.md).
-
-| Deliverable | State | Exit condition |
+| Deliverable | State | Exit condition or delivered scope |
 | --- | --- | --- |
-| IxIR₂ syntax and validation | delivered | The frozen v0 in-memory syntax, world-keyed schemas, bounded ownership/borrow/credit validator, stable rejection classes, proof-facing acceptance predicate, and positive/negative executable fixtures land together. |
-| IxIR₂ logical/physical semantics | delivered | Executable semantics separate control from heap-traversal budgets, model logical frees versus physical reservations/reuse, cover calls/PAPs and CFG transfer, expose a credit-local heap relation, prove the local counter algebra, and validate intermediate and terminal equations on non-degenerate credit paths. Whole-machine refinement composes in the lowering tranche. |
-| IxIR₂ CFG and join points | active | The validator-gated executable lowerer, generated trace, explicit parameters, constructor/Nat dispatch, tail calls, differential witnesses, theorem interface, operand-vector/environment lemmas, pure/allocation/retain/fetch/function-PAP cases, fully recursive unique/shared destruction, and exact finite-step/control-budget composition are delivered. Complete the remaining instruction/block induction and attach its sidecars to the validated pipeline artifact. |
-| Direct-recursion recovery | next | Recognized recursor images validate to direct loops; unrecognized terms retain the literal correct fallback. |
-| Static unique reuse | next | Fuel-neutral consuming unique destructure specializes recursive known shapes, produces affine reuse credits, and compiler-emitted list reversal reaches the FIP counter target. |
-| Dynamic shared reset/reuse | next | A checked RC-zero branch specializes known shared shapes; ordinary all-shared code reuses RC=1 nodes on the hot path and allocates correctly on the cold path. |
-| Borrowed parameter ABI and RC coalescing | next | Read-only call chains remove call-boundary RC traffic under a checked interprocedural borrow artifact. |
-| x86-64 semantics and emitter | next | A typed System V subset, executable local semantics, encoder, minimal ELF object writer, and native differential co-simulation run one compiled program with the provisional ISA-specification trust entry exposed. |
-| x86 reference-semantics bridge | deferred | Wake when Sail's Lean backend can reproducibly import the needed x86-from-ACL2 slice; before substantially expanding v0, prove per-form decode/execution equivalence between encoded bytes, the local model, and that reference. |
-| Register-allocation validator | next | An untrusted allocator emits a coloring/spill certificate accepted by a verified checker over the machine CFG. |
-| End-to-end native FIP witness | next | A validated Ixon program compiles to x86-64, runs natively, returns the checked result, and satisfies its memory/capability counters. |
+| IxIR₂ syntax, validation, and local semantics | delivered | Frozen v0 syntax, bounded validation, executable CFG/call/PAP/credit behavior, and local counter laws. This does not claim general logical/physical refinement. |
+| Baseline CFG lowering and logical simulation | delivered | Exact checked attachment and canonical whole-main successful-run theorem, including calls, recursive application, constructor/Nat dispatch, and internally derived target ownership/provenance facts. |
+| Dynamic shared reset/reuse composition | delivered | R1: `OptimizedAttachment.physicalMainSimulation` preserves successful physical baseline main runs without progress callbacks. Constructor macros, tail returns, recursive residual application, and checked production fallback compose internally. Source-facing and general resource claims retain their separate gates. |
+| Baseline physical execution bridge | delivered | N1: `Attached.successfulPhysicalMainSimulation` composes logical lowering with exact interpretation transport for the checked baseline inventory. |
+| Local x86 semantics, scalar selection, and E0 emission | delivered | Both exact scalar graphs refine the actual selected typed target. Seven deterministic objects pass independent decoding and native checks. |
+| Validated source-to-native scalar path | delivered | N1: synthetic Ixon roots for zero, 42, and UInt64 max compile, select, emit, link, and run with real IxIR₁ provenance. `sourceScalarRefines` composes to the local ISA without Nat truncation; source sharing/oracle premises remain explicit. |
+| Accepted-source coverage and address reproducibility | delivered | C1: 13 Ixon cases cover accepted direct calls, constructor/Nat dispatch, PAP/application, three native scalar exits, and exact negative boundaries. Two fresh processes produce identical complete canonical IxIR₀/IxIR₁ graphs, maps, HPT certificate/cache records, IxIR₂ diagnostics, and object bytes. The production failure is preserved in a closed 17-constant dependency slice. See [source coverage](source-coverage.md). |
+| Direct-recursion recovery | delivered | D1's first schema checks an eager immediate-tail list fold and derives a direct loop from synthetic Ixon. Forward simulation reaches selected IxIR₀; eight source cases retain the established hot/cold reuse observations and complete fresh-process artifact comparison. D2 extends the rejection/fallback matrix to 25 cases. General recognition remains future work. |
+| Recovered source-to-physical composition | delivered | D2: `Compilation.sourceRefinesSelected` derives actual selected physical IxIR₂ execution after recovery and original owned IxIR₁ execution on outer fallback. Common lowering and HPT/CFG attachments supply all intermediate runs and compiler invariants; seven new fences retain the existing axiom basis. |
+| Selected terminal resources | delivered | R2: `Compilation.sourceRefinesSelectedWithResources` adds shared-result reclamation to the same source premises and value relation. Actual physical execution gives `live + frees = allocs` at halt and complete release gives `live = 0`, `allocs = frees`. Both selection branches and literal fallback are covered; nine new fences retain the existing trust basis. |
+| Comparative allocation and free laws | delivered | R3: `Compilation.sourceRefinesSelectedWithAllocationLaws` compares the actual recovered physical baseline and selected result. For shared mains, `baseline.allocs = selected.allocs + selected.reuses` and the corresponding free equation hold at halt and after complete release. Both selection branches and independent sufficient fuel are covered; twelve new fences preserve the trust basis and R2's endpoint. |
+| RC and peak-live bounds | delivered | R4: `Compilation.sourceRefinesSelectedWithCostLaws` proves `selected.rcops ≤ baseline.rcops` and `selected.peakLiveNodes ≤ baseline.peakLiveNodes` for actual shared-main executions and complete release. Every selected prefix is bounded by the actual baseline counters. Both selection branches and independent sufficient fuel are covered without new source premises; seventeen new fences preserve the trust basis and R3's endpoint. |
+| Credits across non-tail calls | delivered | R5: explicit v1 validation/execution suspends unique caller-owned reservations through `call`/`callSelf`; v0 retains its rejection. The actual compiler-selected shared pass has composed source, reclamation, allocation/free, RC/peak, and all-prefix guarantees. Nine closed source maps exercise hot/cold/mixed reuse, with 35 policy/fallback checks and seven independent artifact-corruption regressions. |
+| Static unique reuse | delivered | `UniqueReuse.Compilation.sourceRefinesWithCostLaws` composes checked source erasure, canonical recursor worlds, consuming IxIR₁, and validated IxIR₂ selection. For `n` cons cells, physical reversal uses `n + 2` allocations, `n` reuses, zero RC, and peak `n + 2`, followed by complete release. All physical prefixes have unique reservations and exact allocation accounting; checked fallbacks and independent budgets are covered. Seven source cases, 43 boundary checks, twelve independent corruption regressions, and 24 theorem fences retain the existing trust basis. |
+| Borrowed ABI and RC coalescing | next | After reuse ownership requirements stabilize, a checked interprocedural artifact removes RC traffic from a read-only direct-call chain. |
+| General credit refinement | next | Relate logical and physical execution for the full credit language beyond the current compiler-selected rewrite trace. Preserve the explicit credit/ownership domain and keep native heap selection separate. |
+| IxIR₂ codec and content addressing | next | Strict bounded decoding, canonical encoding, roundtrip/canonicality, and exact versioned preimages before independent IxIR₂ persistence/cache identity or self-hosted reproducibility. |
+| Register-allocation validator | next | When the selected machine CFG needs allocation/spills, check interference, call preservation, edge transfers, and spill layout; the scalar leaf need not wait for a general allocator. |
+| End-to-end native FIP witness | next | After physical reuse composition and heap/runtime selection, a validated Ixon program runs natively with the checked result and justified memory/capability observations. |
+| x86 reference-semantics bridge | deferred | Wake with a pinned reproducible reference-model slice; prove per-form byte decode/execution agreement before retiring the local ISA assumption or substantially expanding v0. |
 
-The x86-64 boundary and staged encoder obligations are specified in
-`plans/isa.md`. Reset/reuse, borrows, HPT consumers, and pass ordering are
-specified in `plans/whole-program-optimization.md`.
+`plans/isa.md` owns the staged ISA/encoder design;
+`plans/whole-program-optimization.md` owns reset/reuse, borrow, and pass-order
+choices. A scalar source-to-native exit does not complete the native FIP row.
 
 ## M2d — specialization and representation
 
-This milestone may overlap late M2c work once IxIR₂ and the representation
-boundary are stable.
+Activate this tranche once accepted-source measurements identify the needed
+transformations and the relevant artifact boundary is stable. The narrow
+recursion-recovery experiment in D1 may use IxIR₀ specialization machinery
+without activating this entire milestone.
 
 | Deliverable | State | Exit condition |
 | --- | --- | --- |
-| IxIR₀ˢ specialization | next | Stable, budgeted variants eliminate one higher-order/PAP path without nondeterminism or adversarial code growth. |
+| IxIR₀ˢ specialization | next | Budgeted deterministic variants eliminate one measured higher-order/PAP path without adversarial code growth. |
 | Arity/dead-parameter optimization | next | Checked liveness removes unused parameters and flattens one saturated call family end to end. |
 | Created-by and layout certificates | next | Producer/consumer groups validate independently of HPT and preserve semantic constructor identity. |
 | Field deletion and unboxing | next | One closed layout drops dead storage and one scalar record/address-key path is unboxed with semantic readback. |
@@ -301,7 +215,8 @@ critical sooner.
 
 ## Runtime and zk tracks
 
-Runtime work follows actual emitted-code needs:
+The first scalar native path needs its ABI and object/link boundary. Further
+runtime work follows actual emitted-code needs:
 
 1. allocation, memcpy-class operations, RC, reset/reuse, and the syscall
    substrate required by the native wedge;
@@ -316,9 +231,11 @@ path after self-hosting; they are bootstrap provenance, not target-runtime
 dependencies.
 
 The zk backend shares IxIR₂ and semantic/cost observations with native code.
-Its cost model wakes when the IxIR₂ operation set is stable and can be reviewed
-against Aiur's current constraint costs. Native and zk may use different
-representations, but both must refine the same semantic and resource contracts.
+Its cost model wakes when a named Aiur integration supplies a pinned
+operation/cost contract and a representative executable comparison. The v0
+syntax freeze alone does not establish that contract. Native and zk may use
+different representations, but both must refine the same semantic and
+resource contracts.
 
 ## Deferred design axes
 
@@ -350,17 +267,15 @@ this repository's completion claims.
 
 ## Immediate queue
 
-1. **Finish and attach structured IxIR₁→IxIR₂ lowering.** Prove the
-   instruction/block-compositional control simulation over the generated
-   trace, then derive the owner-keyed sidecars from the validated pipeline
-   artifact and expose the checked IxIR₂ result there.
-2. **Build the x86-64 v0 semantic skeleton.** Keep selection and encoding
-   separate; prove fragment containment through the typed instruction AST.
-3. **Run the first compiler-emitted reuse benchmark.** Unique list reversal is
-   the gate from hand-written reuse semantics to an optimizing compiler.
-4. **Prove address reproducibility.** Run two independent full compilations of
-   one validated root and compare the addressed IxIR₀/IxIR₁ graphs and
-   certificate identities.
+1. **Native heap selection for unique reversal.**
+   Define the bounded heap/runtime ABI and select the actual validated unique
+   reversal artifact into typed machine operations. Connect those operations
+   to the existing source, ownership, and resource proofs, then emit and run a
+   source-produced native witness with complete reclamation and measured
+   allocation/reuse counts. Preserve scalar selection, all source fallbacks,
+   and the artifact/trust gates. General credit refinement, broader unique
+   compilation, and an independent IxIR₂ wire identity retain separate gates.
 
-Do not retain completed items in this list. Move durable evidence to the
-relevant focused document and replace the queue entry with its successor.
+The [development plan](development-plan.md) defines the evidence that closes
+these items. Replace each completed queue entry with its successor; keep
+proof histories in focused implementation documents.

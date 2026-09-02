@@ -42,12 +42,13 @@ The same module pins static boundaries alongside the measurements:
 
 These are deterministic interpreter instruction counts, not elapsed-time or
 native-code measurements. They exercise construction, ownership transfer, and
-reclamation. The current restriction wall still forbids destructuring unique
-data, and the compiler path does not yet pair free+alloc into `reuse`; both
-columns therefore intentionally pin `reuses = 0`.
+reclamation through the ordinary lowerer; both columns intentionally pin
+`reuses = 0`.
 
-The next computational-unique benchmark remains list reversal through a case.
-It activates with the unique-destructuring lift; reuse measurements activate
-with the exact-layout credit path frozen in the
-[IxIR₂ v0 specification](ixir2-spec.md). This document does not extrapolate
-the 83⅓% micro result to general programs or wall-clock speed.
+The separate [source unique-list reversal](source-unique-reuse.md) now supplies
+a computational unique witness through checked consuming emission and exact-layout
+IxIR₂ credits. Three elements use 5 physical allocations, 3 reuses, zero RC,
+and peak 5, with full release. Its comparison is against the consuming
+program's checked target baseline; it is not another mode-erasure pair in the
+table above. Neither instrument extrapolates the 83⅓% micro result to general
+programs or wall-clock speed. Native heap measurements retain their own gate.

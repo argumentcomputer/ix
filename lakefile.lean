@@ -30,3 +30,56 @@ lean_exe tests where
 
 lean_exe «catalog-contact» where
   root := `CatalogContact
+
+/- Emit deterministic ELF fixtures for the independent object/link gate. -/
+lean_exe «x86-object-fixture» where
+  root := `X86ObjectFixture
+
+/- Source-stage coverage and fresh-process compiler artifact snapshots. -/
+lean_exe «source-coverage» where
+  root := `SourceCoverage
+
+/- Source recursor recovery and dynamic-reuse observations. -/
+lean_exe «source-recursion» where
+  root := `SourceRecursion
+
+/- Source maps and reuse across continuation-owned call credits. -/
+lean_exe «source-call-reuse» where
+  root := `SourceCallReuse
+
+/- Unique-major recursor and static-reuse source observations. -/
+lean_exe «source-unique-reuse» where
+  root := `SourceUniqueReuse
+
+/- Repository checks are Lean programs, including the independent tool oracles. -/
+lean_exe «check-x86-encoder» where
+  srcDir := "scripts"
+  root := `CheckX86Encoder
+
+lean_exe «check-x86-object» where
+  srcDir := "scripts"
+  root := `CheckX86Object
+
+lean_exe «check-trusted-externs» where
+  srcDir := "scripts"
+  root := `CheckTrustedExterns
+
+lean_exe «check-source-coverage» where
+  srcDir := "scripts"
+  root := `CheckSourceCoverage
+
+lean_exe «check-source-recursion» where
+  srcDir := "scripts"
+  root := `CheckSourceRecursion
+
+lean_exe «check-source-call-reuse» where
+  srcDir := "scripts"
+  root := `CheckSourceCallReuse
+
+lean_exe «check-source-unique-reuse» where
+  srcDir := "scripts"
+  root := `CheckSourceUniqueReuse
+
+lean_exe «check-tools-tests» where
+  srcDir := "scripts"
+  root := `CheckToolsTests

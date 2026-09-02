@@ -140,6 +140,47 @@ def resolveAtoms (env : List RVal) (as' : Array Atom) :
     Except Err (List RVal) :=
   as'.foldlM (fun acc a => do pure (acc ++ [← resolveAtom env a])) []
 
+private theorem List.resolveAtomsFrom_length (environment : List RVal) :
+    ∀ (atoms : List Atom) (accumulator output : List RVal),
+      atoms.foldlM
+        (fun values atom => do
+          pure (values ++ [← resolveAtom environment atom]))
+        accumulator = .ok output →
+      output.length = accumulator.length + atoms.length := by
+  intro atoms
+  induction atoms with
+  | nil =>
+      intro accumulator output run
+      simp only [List.foldlM_nil] at run
+      cases run
+      simp
+  | cons atom atoms ih =>
+      intro accumulator output run
+      simp only [List.foldlM_cons] at run
+      cases resolved : resolveAtom environment atom with
+      | error error =>
+          rw [resolved] at run
+          simp only [bind, Except.bind] at run
+          contradiction
+      | ok value =>
+          rw [resolved] at run
+          simp only [bind, Except.bind] at run
+          have tail := ih (accumulator ++ [value]) output run
+          simp only [List.length_append, List.length_singleton] at tail
+          simp only [List.length_cons]
+          omega
+
+/-- Successful simultaneous operand resolution preserves vector length. -/
+theorem resolveAtoms_length {environment : List RVal}
+    {atoms : Array Atom} {values : List RVal}
+    (run : resolveAtoms environment atoms = .ok values) :
+    values.length = atoms.size := by
+  unfold resolveAtoms at run
+  rw [← Array.foldlM_toList] at run
+  have length :=
+    List.resolveAtomsFrom_length environment atoms.toList [] values run
+  simpa using length
+
 def Alt.cidx : Alt → Nat
   | .mk c _ _ => c
 
@@ -488,10 +529,767 @@ def dropManyU (ctx : Ctx) (fuel : Nat) (store : Store) (vs : List RVal) :
 
 end
 
+/-- A successful source return exposes the resolved value and confirms that
+the store is unchanged.  This is the terminal inversion rule used by later
+small-step simulations. -/
+theorem runCode_ret_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {atom : Atom}
+    {output : Store × RVal}
+    (run : runCode ctx (fuel + 1) cur store env (.ret atom) = .ok output) :
+    ∃ value,
+      resolveAtom env atom = .ok value ∧ output = (store, value) := by
+  rw [runCode.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env atom with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok value =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      exact ⟨value, rfl, (Except.ok.inj run).symm⟩
+
+/-- A successful source `letOp` splits at the exact evaluator boundary:
+first the operation succeeds, then the continuation succeeds at the same
+smaller fuel. -/
+theorem runCode_letOp_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {operation : Op} {rest : Code}
+    {output : Store × RVal}
+    (run : runCode ctx (fuel + 1) cur store env (.letOp operation rest) =
+      .ok output) :
+    ∃ middle value,
+      runOp ctx fuel cur store env operation = .ok (middle, value) ∧
+        runCode ctx fuel cur middle (value :: env) rest = .ok output := by
+  rw [runCode.eq_def] at run
+  dsimp only at run
+  cases operationRun : runOp ctx fuel cur store env operation with
+  | error error =>
+      rw [operationRun] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok operationOutput =>
+      obtain ⟨middle, value⟩ := operationOutput
+      rw [operationRun] at run
+      simp only [bind, Except.bind] at run
+      exact ⟨middle, value, rfl, run⟩
+
+/-- A successful `pure` operation is exactly atom resolution and cannot
+change the store. -/
+theorem runOp_pure_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {atom : Atom}
+    {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env (.pure atom) = .ok output) :
+    ∃ value,
+      resolveAtom env atom = .ok value ∧ output = (store, value) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env atom with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok value =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      exact ⟨value, rfl, (Except.ok.inj run).symm⟩
+
+/-- A successful ordinary allocation exposes its resolved field vector and
+the exact fresh-node result chosen by the source store. -/
+theorem runOp_alloc_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {world : Owned} {cid : CtorId}
+    {arguments : Array Atom} {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env
+      (.alloc world cid arguments) = .ok output) :
+    ∃ values,
+      resolveAtoms env arguments = .ok values ∧
+        output =
+          ((store.allocNode world (.ctorN cid values.toArray)).1,
+            .loc (store.allocNode world (.ctorN cid values.toArray)).2) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtoms env arguments with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok values =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      exact ⟨values, rfl, (Except.ok.inj run).symm⟩
+
+/-- A successful in-place reuse exposes all three dynamic checks and the
+exact rewritten unique node selected by the source store. -/
+theorem runOp_reuse_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {target : Atom} {cid : CtorId}
+    {arguments : Array Atom} {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env
+      (.reuse target cid arguments) = .ok output) :
+    ∃ values location box,
+      resolveAtoms env arguments = .ok values ∧
+        resolveAtom env target = .ok (.loc location) ∧
+        store.get? location = some box ∧
+        box.world = .unique ∧
+        output =
+          ({ store.setBox location
+              ⟨.unique, 1, .ctorN cid values.toArray⟩ with
+            reuses :=
+              (store.setBox location
+                ⟨.unique, 1, .ctorN cid values.toArray⟩).reuses + 1 },
+            .loc location) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases argumentsResolved : resolveAtoms env arguments with
+  | error error =>
+      rw [argumentsResolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok values =>
+      rw [argumentsResolved] at run
+      simp only [bind, Except.bind] at run
+      cases targetResolved : resolveAtom env target with
+      | error error =>
+          rw [targetResolved] at run
+          contradiction
+      | ok value =>
+          rw [targetResolved] at run
+          cases value with
+          | lit literal => contradiction
+          | erased => contradiction
+          | loc location =>
+              simp only at run
+              cases found : store.get? location with
+              | none =>
+                  rw [found] at run
+                  contradiction
+              | some box =>
+                  rw [found] at run
+                  simp only at run
+                  cases worldEq : box.world with
+                  | shared =>
+                      rw [worldEq] at run
+                      contradiction
+                  | unique =>
+                      rw [worldEq] at run
+                      exact ⟨values, location, box, rfl, rfl, found,
+                        worldEq, (Except.ok.inj run).symm⟩
+
+/-- A successful shallow free exposes the live unique box selected by its
+operand and the exact killed-store result. -/
+theorem runOp_free_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {target : Atom}
+    {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env (.free target) = .ok output) :
+    ∃ location box,
+      resolveAtom env target = .ok (.loc location) ∧
+        store.get? location = some box ∧
+        box.world = .unique ∧
+        output = (store.kill location, .erased) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env target with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok value =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      cases value with
+      | lit literal => contradiction
+      | erased => contradiction
+      | loc location =>
+          simp only at run
+          cases found : store.get? location with
+          | none =>
+              rw [found] at run
+              contradiction
+          | some box =>
+              rw [found] at run
+              simp only at run
+              cases worldEq : box.world with
+              | shared =>
+                  rw [worldEq] at run
+                  contradiction
+              | unique =>
+                  rw [worldEq] at run
+                  exact ⟨location, box, rfl, found, worldEq,
+                    (Except.ok.inj run).symm⟩
+
+/-- A successful projection exposes the selected live constructor node and
+the exact field returned without changing the store. -/
+theorem runOp_fetch_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {target : Atom} {field : Nat}
+    {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env (.fetch target field) =
+      .ok output) :
+    ∃ location box identity fields value,
+      resolveAtom env target = .ok (.loc location) ∧
+        store.get? location = some box ∧
+        box.node = .ctorN identity fields ∧
+        fields[field]? = some value ∧
+        output = (store, value) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env target with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok resolvedValue =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      cases resolvedValue with
+      | lit literal => contradiction
+      | erased => contradiction
+      | loc location =>
+          simp only at run
+          cases found : store.get? location with
+          | none =>
+              rw [found] at run
+              contradiction
+          | some box =>
+              rw [found] at run
+              simp only at run
+              cases nodeEq : box.node with
+              | papN function supplied =>
+                  rw [nodeEq] at run
+                  contradiction
+              | ctorN identity fields =>
+                  rw [nodeEq] at run
+                  simp only at run
+                  cases fieldEq : fields[field]? with
+                  | none =>
+                      rw [fieldEq] at run
+                      contradiction
+                  | some value =>
+                      rw [fieldEq] at run
+                      exact ⟨location, box, identity, fields, value,
+                        rfl, found, nodeEq, fieldEq,
+                        (Except.ok.inj run).symm⟩
+
+/-- A successful `dup` exposes either the live shared node whose reference
+count was incremented or the inert scalar that passed through unchanged. -/
+theorem runOp_dup_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {target : Atom}
+    {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env (.dup target) = .ok output) :
+    ∃ value,
+      resolveAtom env target = .ok value ∧
+        match value with
+        | .loc location =>
+          ∃ box,
+            store.get? location = some box ∧
+              box.world = .shared ∧
+              output =
+                ((store.setBox location { box with rc := box.rc + 1 }).rcTick,
+                  .loc location)
+        | .lit _ | .erased => output = (store, value) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env target with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok value =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      cases value with
+      | lit literal =>
+          exact ⟨.lit literal, rfl, (Except.ok.inj run).symm⟩
+      | erased =>
+          exact ⟨.erased, rfl, (Except.ok.inj run).symm⟩
+      | loc location =>
+          simp only at run
+          cases found : store.get? location with
+          | none =>
+              rw [found] at run
+              contradiction
+          | some box =>
+              rw [found] at run
+              simp only at run
+              cases worldEq : box.world with
+              | unique =>
+                  rw [worldEq] at run
+                  contradiction
+              | shared =>
+                  rw [worldEq] at run
+                  refine ⟨.loc location, rfl, box, found, worldEq, ?_⟩
+                  simpa [worldEq] using (Except.ok.inj run).symm
+
+/-- A successful shared drop either delegates the selected location to
+`dropVal` or leaves the store unchanged for an inert scalar. -/
+theorem runOp_drop_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {target : Atom}
+    {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env (.drop target) = .ok output) :
+    ∃ value,
+      resolveAtom env target = .ok value ∧
+        match value with
+        | .loc location =>
+          ∃ store',
+            dropVal ctx fuel store (.loc location) = .ok store' ∧
+              output = (store', .erased)
+        | .lit _ | .erased => output = (store, .erased) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env target with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok value =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      cases value with
+      | lit literal =>
+          exact ⟨.lit literal, rfl, (Except.ok.inj run).symm⟩
+      | erased =>
+          exact ⟨.erased, rfl, (Except.ok.inj run).symm⟩
+      | loc location =>
+          simp only at run
+          cases dropped : dropVal ctx fuel store (.loc location) with
+          | error error =>
+              rw [dropped] at run
+              contradiction
+          | ok store' =>
+              rw [dropped] at run
+              exact ⟨.loc location, rfl, store', dropped,
+                (Except.ok.inj run).symm⟩
+
+/-- A successful unique drop either delegates the selected location to
+`dropUVal` or leaves the store unchanged for an inert scalar. -/
+theorem runOp_dropU_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {target : Atom}
+    {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env (.dropU target) = .ok output) :
+    ∃ value,
+      resolveAtom env target = .ok value ∧
+        match value with
+        | .loc location =>
+          ∃ store',
+            dropUVal ctx fuel store (.loc location) = .ok store' ∧
+              output = (store', .erased)
+        | .lit _ | .erased => output = (store, .erased) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env target with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok value =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      cases value with
+      | lit literal =>
+          exact ⟨.lit literal, rfl, (Except.ok.inj run).symm⟩
+      | erased =>
+          exact ⟨.erased, rfl, (Except.ok.inj run).symm⟩
+      | loc location =>
+          simp only at run
+          cases dropped : dropUVal ctx fuel store (.loc location) with
+          | error error =>
+              rw [dropped] at run
+              contradiction
+          | ok store' =>
+              rw [dropped] at run
+              exact ⟨.loc location, rfl, store', dropped,
+                (Except.ok.inj run).symm⟩
+
+/-- A successful direct call exposes argument resolution and the exact
+`invoke` boundary used by the source evaluator. -/
+theorem runOp_call_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {function : Address}
+    {arguments : Array Atom} {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env
+      (.call function arguments) = .ok output) :
+    ∃ values,
+      resolveAtoms env arguments = .ok values ∧
+        invoke ctx fuel function values store = .ok output := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtoms env arguments with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok values =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      exact ⟨values, rfl, run⟩
+
+/-- A successful self call exposes the exact recursive body run and its
+result-world boundary check. -/
+theorem runOp_callSelf_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {arguments : Array Atom}
+    {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env (.callSelf arguments) =
+      .ok output) :
+    ∃ values bodyOutput,
+      resolveAtoms env arguments = .ok values ∧
+        values.length = cur.arity ∧
+        runCode ctx fuel cur store values.reverse cur.body = .ok bodyOutput ∧
+        checkResultWorld cur.result bodyOutput = .ok output := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtoms env arguments with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok values =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      by_cases arity : values.length = cur.arity
+      · simp [arity] at run
+        cases bodyRun : runCode ctx fuel cur store values.reverse cur.body with
+        | error error =>
+            rw [bodyRun] at run
+            contradiction
+        | ok bodyOutput =>
+            rw [bodyRun] at run
+            exact ⟨values, bodyOutput, rfl, arity, bodyRun, run⟩
+      · simp [arity] at run
+
+/-- A successful partial application exposes the retained declaration,
+strict under-saturation, and the exact allocated pap node. -/
+theorem runOp_papp_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {function : Address}
+    {arguments : Array Atom} {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env
+      (.papp function arguments) = .ok output) :
+    ∃ values declaration,
+      resolveAtoms env arguments = .ok values ∧
+        ctx.decls function = some declaration ∧
+        values.length < declArity declaration ∧
+        output =
+          ((store.allocNode .shared
+            (.papN function (declArity declaration) values.toArray)).1,
+            .loc (store.allocNode .shared
+              (.papN function (declArity declaration) values.toArray)).2) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtoms env arguments with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok values =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      cases found : ctx.decls function with
+      | none =>
+          rw [found] at run
+          contradiction
+      | some declaration =>
+          rw [found] at run
+          by_cases undersaturated : values.length < declArity declaration
+          · simp only [undersaturated, ↓reduceIte] at run
+            exact ⟨values, declaration, rfl, rfl, undersaturated,
+              (Except.ok.inj run).symm⟩
+          · simp only [undersaturated, ↓reduceIte] at run
+            contradiction
+
+/-- A successful dynamic application exposes both resolver boundaries and
+the exact `applyGo` computation delegated to by `runOp`. -/
+theorem runOp_apply_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {function : Atom}
+    {arguments : Array Atom} {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env
+      (.apply function arguments) = .ok output) :
+    ∃ functionValue values,
+      resolveAtom env function = .ok functionValue ∧
+        resolveAtoms env arguments = .ok values ∧
+        applyGo ctx fuel store functionValue values = .ok output := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases functionResolved : resolveAtom env function with
+  | error error =>
+      rw [functionResolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok functionValue =>
+      rw [functionResolved] at run
+      simp only [bind, Except.bind] at run
+      cases argumentsResolved : resolveAtoms env arguments with
+      | error error =>
+          rw [argumentsResolved] at run
+          contradiction
+      | ok values =>
+          rw [argumentsResolved] at run
+          exact ⟨functionValue, values, rfl, rfl, run⟩
+
+/-- A successful trusted extern call exposes scalar-oracle evaluation and
+confirms that the source store is unchanged. -/
+theorem runOp_extern_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {function : Address}
+    {arguments : Array Atom} {output : Store × RVal}
+    (run : runOp ctx (fuel + 1) cur store env
+      (.extern function arguments) = .ok output) :
+    ∃ values value,
+      resolveAtoms env arguments = .ok values ∧
+        callScalarOracle ctx function values = .ok value ∧
+        output = (store, value) := by
+  rw [runOp.eq_def] at run
+  dsimp only at run
+  cases argumentsResolved : resolveAtoms env arguments with
+  | error error =>
+      rw [argumentsResolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok values =>
+      rw [argumentsResolved] at run
+      simp only [bind, Except.bind] at run
+      cases oracleRun : callScalarOracle ctx function values with
+      | error error =>
+          rw [oracleRun] at run
+          contradiction
+      | ok value =>
+          rw [oracleRun] at run
+          exact ⟨values, value, rfl, oracleRun,
+            (Except.ok.inj run).symm⟩
+
+/-- The successful branches of a known-address source invocation, indexed by
+the smaller fuel used for a function body. -/
+inductive InvokeSuccess (ctx : Ctx) (fuel : Nat) (function : Address)
+    (arguments : List RVal) (store : Store) (output : Store × RVal) : Prop
+  | fn {definition : FnDef} {bodyOutput : Store × RVal}
+      (declaration : ctx.decls function = some (.fn definition))
+      (arity : arguments.length = definition.arity)
+      (bodyRun : runCode ctx fuel definition store arguments.reverse
+        definition.body = .ok bodyOutput)
+      (resultRun : checkResultWorld definition.result bodyOutput = .ok output)
+  | extern {arity : Nat} {value : RVal}
+      (declaration : ctx.decls function = some (.extern arity))
+      (argumentsArity : arguments.length = arity)
+      (oracleRun : callScalarOracle ctx function arguments = .ok value)
+      (outputEq : output = (store, value))
+
+/-- Every successful `invoke` has positive fuel and selects exactly one of
+the function-body or scalar-extern branches above. -/
+theorem invoke_success {ctx : Ctx} {fuel : Nat} {function : Address}
+    {arguments : List RVal} {store : Store} {output : Store × RVal}
+    (run : invoke ctx fuel function arguments store = .ok output) :
+    ∃ bodyFuel,
+      fuel = bodyFuel + 1 ∧
+        InvokeSuccess ctx bodyFuel function arguments store output := by
+  cases fuel with
+  | zero =>
+      rw [invoke.eq_def] at run
+      contradiction
+  | succ bodyFuel =>
+      rw [invoke.eq_def] at run
+      dsimp only at run
+      cases found : ctx.decls function with
+      | none =>
+          rw [found] at run
+          contradiction
+      | some declaration =>
+          rw [found] at run
+          cases declaration with
+          | fn definition =>
+              by_cases arity : arguments.length = definition.arity
+              · simp [arity] at run
+                cases bodyRun : runCode ctx bodyFuel definition store
+                    arguments.reverse definition.body with
+                | error error =>
+                    rw [bodyRun] at run
+                    simp only [bind, Except.bind] at run
+                    contradiction
+                | ok bodyOutput =>
+                    rw [bodyRun] at run
+                    simp only [bind, Except.bind] at run
+                    exact ⟨bodyFuel, rfl,
+                      .fn found arity bodyRun run⟩
+              · simp [arity] at run
+          | extern expectedArity =>
+              by_cases arity : arguments.length = expectedArity
+              · simp [arity] at run
+                cases oracleRun : callScalarOracle ctx function arguments with
+                | error error =>
+                    rw [oracleRun] at run
+                    contradiction
+                | ok value =>
+                    rw [oracleRun] at run
+                    exact ⟨bodyFuel, rfl,
+                      .extern found arity oracleRun
+                        (Except.ok.inj run).symm⟩
+              · simp [arity] at run
+
+/-- The three successful source-case shapes.  The relation retains the exact
+selected source alternative and the recursive branch run, while ruling out
+all stuck scrutinee, tag, and field-arity paths. -/
+inductive RunCodeCaseSuccess (ctx : Ctx) (fuel : Nat) (cur : FnDef)
+    (store : Store) (env : List RVal) (scrutinee : Atom) (peelNat : Bool)
+    (alternatives : Array Alt) (output : Store × RVal) : Prop
+  | ctorBranch {location : Nat} {box : NodeBox} {cid : CtorId}
+      {fields : Array RVal} {fieldCount : Nat} {body : Code}
+      (resolved : resolveAtom env scrutinee = .ok (.loc location))
+      (found : store.get? location = some box)
+      (node : box.node = .ctorN cid fields)
+      (selected : alternatives.find? (fun alternative =>
+        alternative.cidx == cid.cidx) =
+          some (.mk cid.cidx fieldCount body))
+      (fieldArity : fields.size = fieldCount)
+      (branchRun : runCode ctx fuel cur store
+        (fields.toList.reverse ++ env) body = .ok output)
+  | natZero {body : Code}
+      (peels : peelNat = true)
+      (resolved : resolveAtom env scrutinee = .ok (.lit (.nat 0)))
+      (selected : alternatives.find? (fun alternative =>
+        alternative.cidx == 0) = some (.mk 0 0 body))
+      (branchRun : runCode ctx fuel cur store env body = .ok output)
+  | natSucc {predecessor : Nat} {body : Code}
+      (peels : peelNat = true)
+      (resolved : resolveAtom env scrutinee =
+        .ok (.lit (.nat (predecessor + 1))))
+      (selected : alternatives.find? (fun alternative =>
+        alternative.cidx == 1) = some (.mk 1 1 body))
+      (branchRun : runCode ctx fuel cur store
+        (.lit (.nat predecessor) :: env) body = .ok output)
+
+/-- A successful source `case` determines one exact recursive branch at the
+same smaller fuel. -/
+theorem runCode_case_success {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store : Store} {env : List RVal} {scrutinee : Atom} {peelNat : Bool}
+    {alternatives : Array Alt} {output : Store × RVal}
+    (run : runCode ctx (fuel + 1) cur store env
+      (.case scrutinee peelNat alternatives) = .ok output) :
+    RunCodeCaseSuccess ctx fuel cur store env scrutinee peelNat alternatives
+      output := by
+  rw [runCode.eq_def] at run
+  dsimp only at run
+  cases resolved : resolveAtom env scrutinee with
+  | error error =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      contradiction
+  | ok value =>
+      rw [resolved] at run
+      simp only [bind, Except.bind] at run
+      cases value with
+      | erased => contradiction
+      | loc location =>
+          simp only at run
+          cases found : store.get? location with
+          | none =>
+              rw [found] at run
+              contradiction
+          | some box =>
+              rw [found] at run
+              simp only at run
+              cases nodeEq : box.node with
+              | papN function arity captured =>
+                  rw [nodeEq] at run
+                  contradiction
+              | ctorN cid fields =>
+                  rw [nodeEq] at run
+                  simp only at run
+                  cases selected : alternatives.find? (fun alternative =>
+                      alternative.cidx == cid.cidx) with
+                  | none =>
+                      rw [selected] at run
+                      contradiction
+                  | some alternative =>
+                      rw [selected] at run
+                      cases alternative with
+                      | mk tag fieldCount body =>
+                          simp only at run
+                          by_cases fieldArity : fields.size = fieldCount
+                          · simp [fieldArity] at run
+                            have matched :
+                                ((.mk tag fieldCount body : Alt).cidx ==
+                                  cid.cidx) = true :=
+                              Array.find?_some
+                                (p := fun alternative : Alt =>
+                                  alternative.cidx == cid.cidx)
+                                (a := .mk tag fieldCount body)
+                                (xs := alternatives) selected
+                            have tagEq : tag = cid.cidx :=
+                              beq_iff_eq.mp matched
+                            subst tag
+                            exact .ctorBranch resolved found nodeEq selected
+                              fieldArity run
+                          · simp [fieldArity] at run
+      | lit literal =>
+          cases literal with
+          | str string => contradiction
+          | nat number =>
+              cases peelNat with
+              | false => contradiction
+              | true =>
+                  simp only at run
+                  cases number with
+                  | zero =>
+                      cases selected : alternatives.find? (fun alternative =>
+                          alternative.cidx == 0) with
+                      | none =>
+                          rw [selected] at run
+                          contradiction
+                      | some alternative =>
+                          rw [selected] at run
+                          cases alternative with
+                          | mk tag fieldCount body =>
+                              cases fieldCount with
+                              | zero =>
+                                  have matched :
+                                      ((.mk tag 0 body : Alt).cidx == 0) =
+                                        true :=
+                                    Array.find?_some
+                                      (p := fun alternative : Alt =>
+                                        alternative.cidx == 0)
+                                      (a := .mk tag 0 body)
+                                      (xs := alternatives) selected
+                                  have tagEq : tag = 0 :=
+                                    beq_iff_eq.mp matched
+                                  subst tag
+                                  exact .natZero rfl resolved selected run
+                              | succ fieldCount => contradiction
+                  | succ predecessor =>
+                      cases selected : alternatives.find? (fun alternative =>
+                          alternative.cidx == 1) with
+                      | none =>
+                          rw [selected] at run
+                          contradiction
+                      | some alternative =>
+                          rw [selected] at run
+                          cases alternative with
+                          | mk tag fieldCount body =>
+                              cases fieldCount with
+                              | zero => contradiction
+                              | succ remaining =>
+                                  cases remaining with
+                                  | zero =>
+                                      have matched :
+                                          ((.mk tag 1 body : Alt).cidx == 1) =
+                                            true :=
+                                        Array.find?_some
+                                          (p := fun alternative : Alt =>
+                                            alternative.cidx == 1)
+                                          (a := .mk tag 1 body)
+                                          (xs := alternatives) selected
+                                      have tagEq : tag = 1 :=
+                                        beq_iff_eq.mp matched
+                                      subst tag
+                                      exact .natSucc rfl resolved selected run
+                                  | succ remaining => contradiction
+
 /-- Run a top-level code sequence in a fresh store (the `cur` frame is
 the code itself, so `callSelf` at top level re-enters it). -/
 def runMain (ctx : Ctx) (c : Code) (fuel : Nat := 100000) :
     Except Err (Store × RVal) :=
   runCode ctx fuel ⟨0, .shared, false, c⟩ {} [] c
+
+/-- Run a closed top-level code sequence at its declared result world and
+check that world at the public boundary.  Unlike `runMain`, this form also
+installs the declared world in the synthetic current function, so a
+top-level `callSelf` observes the same result contract as the enclosing
+entry. -/
+def runOwnedMain (ctx : Ctx) (result : Owned) (c : Code)
+    (fuel : Nat := 100000) : Except Err (Store × RVal) := do
+  let out ← runCode ctx fuel ⟨0, result, false, c⟩ {} [] c
+  checkResultWorld result out
 
 end Compilatrix.IxIR1

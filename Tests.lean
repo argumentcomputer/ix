@@ -1206,6 +1206,28 @@ def pipelineBuilt : Except Pipeline.Error Pipeline.Artifact :=
 def validatedPipelineBuilt : Except Pipeline.Error Pipeline.Artifact :=
   Pipeline.compileValidated sharedPipelineConstants projection
 
+/-- The conservative sidecar attachment accepts this constructor-free cyclic
+program, validates the resulting IxIR₂ graph, and preserves its observable
+control-fuel divergence. -/
+def validatedIxIR2AttachmentOk : Bool :=
+  match Compilatrix.IxIR2.Pipeline.compileValidated
+      sharedPipelineConstants projection with
+  | .error _ => false
+  | .ok attached =>
+      let artifact := attached.target.artifact
+      let context := Compilatrix.IxIR2.Eval.Context.ofProgram
+        artifact.program artifact.validationContext.schemas
+      attached.sidecars.parameterEntries.length ==
+        attached.source.artifact.targetDecls.length &&
+        attached.sidecars.sourceNoReuse artifact.trace &&
+        attached.sidecars.tracePappsSafe artifact.trace &&
+        attached.sidecars.traceExactCaseTargetsMatch artifact.trace &&
+        !artifact.trace.positions.isEmpty &&
+        match Compilatrix.IxIR2.Eval.runMain context .logical
+            artifact.program 20 20 with
+        | .error .controlFuel => true
+        | _ => false
+
 def expectedTargetBlockHex : String :=
   "3ecbe37b727c6fbe939db9fa01c4c9b3dfbbf376b2812d1b045546846a3715cb"
 
@@ -1266,6 +1288,441 @@ def validatedPipelineAgrees (direct gated : Pipeline.Artifact) : Bool :=
     pipelineOk gated
 
 end AddressedErasureFixtures
+
+namespace IxIR1OwnedMainFixtures
+
+open Compilatrix
+open Compilatrix.IxIR1
+
+def constructor : CtorId :=
+  { block := Address.replicate 0xc7, indIdx := 0, cidx := 0 }
+
+def uniqueMain : Code :=
+  .letOp (.alloc .unique constructor #[]) (.ret (.var 0))
+
+def mismatchedMain : Code :=
+  .letOp (.alloc .shared constructor #[]) (.ret (.var 0))
+
+def nestedReuse : Code :=
+  .case .erased false #[
+    .mk 0 0 (.letOp (.reuse .erased constructor #[]) (.ret (.var 0)))]
+
+/-- `runOwnedMain` both accepts the declared unique result and rejects a live
+shared location at that boundary. -/
+def ownedBoundaryOk : Bool :=
+  let context : Ctx := { decls := Env.empty }
+  match runOwnedMain context .unique uniqueMain 4,
+      runOwnedMain context .unique mismatchedMain 4 with
+  | .ok (store, .loc location),
+      .error (.mem "function result ownership mismatch") =>
+      match store.get? location with
+      | some box => box.world == .unique
+      | none => false
+  | _, _ => false
+
+/-- The executable no-reuse reflection walk reaches nested case bodies and
+finite declaration lists. -/
+def noReuseChecksOk : Bool :=
+  NoReuse.checkCode uniqueMain && !NoReuse.checkCode nestedReuse &&
+    NoReuse.checkDeclarations
+      [(Address.replicate 0xc8,
+        .fn ⟨0, .unique, false, uniqueMain⟩)] &&
+    !NoReuse.checkDeclarations
+      [(Address.replicate 0xc9,
+        .fn ⟨0, .shared, false, nestedReuse⟩)]
+
+end IxIR1OwnedMainFixtures
+
+namespace IxIR2PipelineFixtures
+
+open Compilatrix
+open Compilatrix.Ixon
+
+def constructorBlockA : Address := Address.replicate 0xb1
+def constructorBlockB : Address := Address.replicate 0xb2
+
+def constructorA : IxIR2.CtorId :=
+  { block := constructorBlockA, indIdx := 0, cidx := 0 }
+
+def constructorB : IxIR2.CtorId :=
+  { block := constructorBlockB, indIdx := 0, cidx := 0 }
+
+def ambiguousInput : IxIR2.Lower.Input :=
+  { declarations := []
+    main :=
+      .letOp (.alloc .shared constructorA #[.lit (.nat 9)])
+        (.letOp (.fetch (.var 0) 0) (.ret (.var 1)))
+    mainResult := .shared }
+
+def ambiguousSidecars : IxIR2.Pipeline.Sidecars :=
+  { input := ambiguousInput
+    parameterEntries := []
+    constructors :=
+      [{ identity := constructorA, arity := 1 },
+       { identity := constructorB, arity := 1 }] }
+
+/-- Global constructor ambiguity no longer blocks a projection whose lexical
+producer is an exact local allocation. -/
+def ambiguousFetchAcceptedByProducerFact : Bool :=
+  match IxIR2.Lower.lowerChecked ambiguousSidecars.context ambiguousInput with
+  | .error _ => false
+  | .ok checked =>
+      let context := IxIR2.Eval.Context.ofProgram checked.artifact.program
+        checked.artifact.validationContext.schemas
+      checked.artifact.trace.fetchCapabilitiesMatch &&
+        ambiguousSidecars.traceExactFetchesMatch checked.artifact.trace &&
+        match IxIR2.Eval.runMain context .logical checked.artifact.program 8 2 with
+        | .ok result =>
+            match result.value with
+            | .loc _ => result.store.live == 1
+            | _ => false
+        | .error _ => false
+
+def ambiguousCaseInput : IxIR2.Lower.Input :=
+  { declarations := []
+    main :=
+      .letOp (.alloc .shared constructorA #[.lit (.nat 9)])
+        (.case (.var 0) false
+          #[.mk 0 1
+            (.letOp (.drop (.var 1)) (.ret (.lit (.nat 9))))])
+    mainResult := .shared }
+
+def ambiguousCaseSidecars : IxIR2.Pipeline.Sidecars :=
+  { ambiguousSidecars with input := ambiguousCaseInput }
+
+/-- Exact path-local HPT provenance also disambiguates a constructor switch.
+The independent trace check certifies that the selected identity occurs in
+the emitted terminator, and execution takes that branch successfully. -/
+def ambiguousCaseAcceptedByProducerFact : Bool :=
+  match IxIR2.Lower.lowerChecked ambiguousCaseSidecars.context
+      ambiguousCaseInput with
+  | .error _ => false
+  | .ok checked =>
+      let context := IxIR2.Eval.Context.ofProgram checked.artifact.program
+        checked.artifact.validationContext.schemas
+      ambiguousCaseSidecars.traceExactCaseTargetsMatch
+          checked.artifact.trace &&
+        match IxIR2.Eval.runMain context .logical checked.artifact.program 16 4 with
+        | .ok result =>
+            result.value == .lit (.nat 9) && result.store.live == 0
+        | .error _ => false
+
+def unresolvedFetcher : Address := Address.replicate 0xba
+
+def unresolvedFetchInput : IxIR2.Lower.Input :=
+  { declarations :=
+      [(unresolvedFetcher,
+        .fn
+          { arity := 1
+            result := .shared
+            papSafe := true
+            body :=
+              .letOp (.fetch (.var 0) 0) (.ret (.var 0)) })]
+    main :=
+      .letOp (.alloc .shared constructorA #[.lit (.nat 9)])
+        (.letOp (.call unresolvedFetcher #[.var 0]) (.ret (.var 0)))
+    mainResult := .shared }
+
+def unresolvedFetchSidecars : IxIR2.Pipeline.Sidecars :=
+  { input := unresolvedFetchInput
+    parameterEntries := [(unresolvedFetcher, #[.shared])]
+    constructors :=
+      [{ identity := constructorA, arity := 1 },
+       { identity := constructorB, arity := 1 }] }
+
+/-- An unrefined function parameter remains ambiguous and fails closed. -/
+def unresolvedFetchRejected : Bool :=
+  match IxIR2.Lower.lowerChecked unresolvedFetchSidecars.context
+      unresolvedFetchInput with
+  | .error (.schema _ _) => true
+  | _ => false
+
+def scalarConstructorA : IxIR2.CtorId :=
+  { block := Address.replicate 0xbb, indIdx := 0, cidx := 0 }
+
+def scalarConstructorB : IxIR2.CtorId :=
+  { block := Address.replicate 0xbc, indIdx := 0, cidx := 0 }
+
+def ambiguousScalarFreeInput : IxIR2.Lower.Input :=
+  { declarations := []
+    main :=
+      .letOp (.alloc .unique scalarConstructorA #[])
+        (.letOp (.free (.var 0)) (.ret (.lit (.nat 4))))
+    mainResult := .shared }
+
+def ambiguousScalarFreeSidecars : IxIR2.Pipeline.Sidecars :=
+  { input := ambiguousScalarFreeInput
+    parameterEntries := []
+    constructors :=
+      [{ identity := scalarConstructorA, arity := 0 },
+       { identity := scalarConstructorB, arity := 0 }] }
+
+/-- The same exact-producer rule disambiguates a shallow unique free and the
+logical machine observes an empty live heap afterward. -/
+def ambiguousScalarFreeAcceptedByProducerFact : Bool :=
+  match IxIR2.Lower.lowerChecked ambiguousScalarFreeSidecars.context
+      ambiguousScalarFreeInput with
+  | .error _ => false
+  | .ok checked =>
+      let context := IxIR2.Eval.Context.ofProgram checked.artifact.program
+        checked.artifact.validationContext.schemas
+      ambiguousScalarFreeSidecars.traceScalarLeavesMatch
+          checked.artifact.trace &&
+        match IxIR2.Eval.runMain context .logical checked.artifact.program 8 2 with
+        | .ok result =>
+            result.value == .lit (.nat 4) && result.store.live == 0
+        | .error _ => false
+
+def pappTarget : Address := Address.replicate 0xbd
+
+def pappInput : IxIR2.Lower.Input :=
+  { declarations :=
+      [(pappTarget,
+        .fn
+          { arity := 2
+            result := .shared
+            papSafe := true
+            body :=
+              .letOp (.drop (.var 0))
+                (.letOp (.drop (.var 2)) (.ret (.lit (.nat 0)))) })]
+    main :=
+      .letOp (.papp pappTarget #[.lit (.nat 7)]) (.ret (.var 0))
+    mainResult := .shared }
+
+def pappSidecars : IxIR2.Pipeline.Sidecars :=
+  { input := pappInput
+    parameterEntries := [(pappTarget, #[.shared, .shared])]
+    constructors := [] }
+
+/-- Checked function-PAP lowering records the exact shared capture transition
+and the logical machine retains precisely the fresh PAP owner. -/
+def pappCapabilityTransitionAccepted : Bool :=
+  match IxIR2.Lower.lowerChecked pappSidecars.context pappInput with
+  | .error _ => false
+  | .ok checked =>
+      let emittedPapp :=
+        match checked.artifact.program.main.blocks[0]? with
+        | some block =>
+            block.instructions[0]? ==
+              some (.papp pappTarget #[.lit (.nat 7)])
+        | none => false
+      let context := IxIR2.Eval.Context.ofProgram checked.artifact.program
+        checked.artifact.validationContext.schemas
+      emittedPapp &&
+        pappSidecars.tracePappsSafe checked.artifact.trace &&
+        checked.artifact.trace.allocationCapabilitiesMatch &&
+        match IxIR2.Eval.runMain context .logical checked.artifact.program 4 1 with
+        | .ok result =>
+            match result.value with
+            | .loc location =>
+                result.store.live == 1 &&
+                  match result.store.get? location with
+                  | some box =>
+                      box.world == .shared && box.rc == 1 &&
+                        match box.node with
+                        | .papN address arity arguments =>
+                            address == pappTarget && arity == 2 &&
+                              arguments == #[.lit (.nat 7)]
+                        | _ => false
+                  | none => false
+            | _ => false
+        | .error _ => false
+
+def unsafePappInput : IxIR2.Lower.Input :=
+  { pappInput with
+    declarations :=
+      [(pappTarget,
+        .fn
+          { arity := 2
+            result := .shared
+            papSafe := false
+            body :=
+              .letOp (.drop (.var 0))
+                (.letOp (.drop (.var 2)) (.ret (.lit (.nat 0)))) })] }
+
+def unsafePappSidecars : IxIR2.Pipeline.Sidecars :=
+  { pappSidecars with input := unsafePappInput }
+
+/-- The attachment-side trace check fails closed if the exact declaration
+environment no longer marks a retained `papp` target safe. -/
+def pappSafetyCheckRejectsUnsafe : Bool :=
+  match IxIR2.Lower.lowerChecked pappSidecars.context pappInput with
+  | .error _ => false
+  | .ok checked =>
+      !unsafePappSidecars.tracePappsSafe checked.artifact.trace
+
+def retiredBorrowInput : IxIR2.Lower.Input :=
+  { declarations := []
+    main :=
+      .letOp (.alloc .shared constructorA #[.lit (.nat 9)])
+        (.letOp (.fetch (.var 0) 0)
+          (.letOp (.drop (.var 1)) (.ret (.lit (.nat 4)))))
+    mainResult := .shared }
+
+def retiredBorrowSidecars : IxIR2.Pipeline.Sidecars :=
+  { input := retiredBorrowInput
+    parameterEntries := []
+    constructors := [{ identity := constructorA, arity := 1 }] }
+
+/-- Consuming an owner after its loan's final use retires both the owner and
+the validator-dead borrow in the producer continuation. -/
+def lenderDestructionRetiresBorrow : Bool :=
+  match IxIR2.Lower.lowerChecked retiredBorrowSidecars.context
+      retiredBorrowInput with
+  | .error _ => false
+  | .ok checked =>
+      let retired := checked.artifact.trace.positions.any fun position =>
+        position.source.owner == IxIR2.Validate.Owner.main &&
+          position.source.offset == 3 &&
+          position.sourceCapabilities ==
+            #[.scalar, .dead, .dead]
+      let context := IxIR2.Eval.Context.ofProgram checked.artifact.program
+        checked.artifact.validationContext.schemas
+      checked.artifact.trace.destructionCapabilitiesMatch && retired &&
+        match IxIR2.Eval.runMain context .logical checked.artifact.program 6 2 with
+        | .ok result =>
+            result.value == .lit (.nat 4) && result.store.live == 0
+        | .error _ => false
+
+def recursorOwner : Address := Address.replicate 0xb3
+def recursorGroupA : Address := Address.replicate 0xb4
+def recursorGroupB : Address := Address.replicate 0xb5
+
+def caseConstructorA : IxIR2.CtorId :=
+  { block := Address.replicate 0xb6, indIdx := 0, cidx := 0 }
+
+def caseConstructorB : IxIR2.CtorId :=
+  { block := Address.replicate 0xb7, indIdx := 0, cidx := 0 }
+
+def exactRecursorInput : IxIR2.Lower.Input :=
+  { declarations :=
+      [(recursorOwner,
+        .fn
+          { arity := 1
+            result := .shared
+            papSafe := true
+            body :=
+              .case (.var 0) false #[
+                .mk 0 0
+                  (.letOp (.drop (.var 0))
+                    (.ret (.lit (.nat 3))))] })]
+    main :=
+      .letOp (.alloc .shared caseConstructorA #[])
+        (.letOp (.call recursorOwner #[.var 0]) (.ret (.var 0)))
+    mainResult := .shared }
+
+def residualRecursorInput : IxIR2.Lower.Input :=
+  { exactRecursorInput with
+    main :=
+      .letOp (.alloc .shared caseConstructorB #[])
+        (.letOp (.call recursorOwner #[.var 0]) (.ret (.var 0))) }
+
+def exactRecursorSidecars : IxIR2.Pipeline.Sidecars :=
+  { input := exactRecursorInput
+    parameterEntries := [(recursorOwner, #[.shared])]
+    constructors :=
+      [{ identity := caseConstructorA
+         arity := 0
+         group := some recursorGroupA },
+       { identity := caseConstructorB
+         arity := 0
+         group := some recursorGroupB }]
+    recursorOrigins :=
+      [{ owner := recursorOwner, group := recursorGroupA }] }
+
+/-- A recursor parameter whose HPT fact remains ambiguous is lowered with
+both producer-known full identities sharing its erased tag/arity.  Executing
+the same checked branch with either constructor demonstrates that residual
+coverage no longer guesses one mutual-block identity. -/
+def exactRecursorCaseAccepted : Bool :=
+  let accepts := fun input =>
+    let sidecars := { exactRecursorSidecars with input := input }
+    match IxIR2.Lower.lowerChecked sidecars.context input with
+    | .error _ => false
+    | .ok checked =>
+        let declaration := checked.artifact.program.declarations.find? fun entry =>
+          entry.1 == recursorOwner
+        let coveredSwitch := match declaration with
+          | some (_, .fn definition) =>
+              match definition.blocks[0]? with
+              | some block =>
+                  match block.terminator with
+                  | .switchValue _ constructors _ =>
+                      constructors.size == 2 &&
+                        constructors.any (fun target =>
+                          target.cid == caseConstructorA) &&
+                        constructors.any (fun target =>
+                          target.cid == caseConstructorB)
+                  | _ => false
+              | none => false
+          | _ => false
+        let context := IxIR2.Eval.Context.ofProgram checked.artifact.program
+          checked.artifact.validationContext.schemas
+        coveredSwitch &&
+          sidecars.traceResidualCaseTargetsMatch checked.artifact.trace &&
+          sidecars.traceConstructorsKnown checked.artifact.trace &&
+          match IxIR2.Eval.runMain context .logical checked.artifact.program
+              8 2 with
+          | .ok result =>
+              result.value == .lit (.nat 3) && result.store.live == 0
+          | .error _ => false
+  accepts exactRecursorInput && accepts residualRecursorInput
+
+def recursorSourceA : Address := Address.replicate 0xb8
+def recursorSourceB : Address := Address.replicate 0xb9
+
+def sourceRecursor : IxIR0.Decl :=
+  .recursor 0 false #[{ fields := 0, rhs := .lit (.nat 3) }]
+
+def sourceRecursorFn : IxIR1.Decl :=
+  .fn
+    { arity := 1
+      result := .shared
+      papSafe := true
+      body :=
+        .case (.var 0) false #[
+          .mk 0 0
+            (.letOp (.drop (.var 0)) (.ret (.lit (.nat 3))))] }
+
+def originBlock (group source constructor : Address) :
+    IxIR0.MutualBlock.Result :=
+  { blockAddress := group
+    blockMembers := []
+    members := [(source, sourceRecursor), (constructor, .ctor 0 0)]
+    addressMap := [] }
+
+/-- The production extractor follows the complete final owner map, and rejects
+two distinct mutual-block origins collapsed onto one IxIR₁ identity. -/
+def recursorOriginExtractionOk : Bool :=
+  let sourceA :=
+    [(recursorSourceA, sourceRecursor),
+     (caseConstructorA.block, IxIR0.Decl.ctor 0 0)]
+  let blockA := originBlock recursorGroupA recursorSourceA
+    caseConstructorA.block
+  let exact := IxIR2.Pipeline.deriveRecursorOrigins sourceA [blockA]
+    [(recursorSourceA, sourceRecursorFn)]
+    [(recursorSourceA, recursorOwner)]
+  let sourceBoth := sourceA ++
+    [(recursorSourceB, sourceRecursor),
+     (caseConstructorB.block, IxIR0.Decl.ctor 0 0)]
+  let blockB := originBlock recursorGroupB recursorSourceB
+    caseConstructorB.block
+  let conflict := IxIR2.Pipeline.deriveRecursorOrigins sourceBoth
+    [blockA, blockB]
+    [(recursorSourceA, sourceRecursorFn),
+     (recursorSourceB, sourceRecursorFn)]
+    [(recursorSourceA, recursorOwner),
+     (recursorSourceB, recursorOwner)]
+  let exactOk := match exact with
+    | .ok [origin] =>
+        origin.owner == recursorOwner && origin.group == recursorGroupA
+    | _ => false
+  exactOk &&
+    match conflict with
+    | .error (.recursorOriginConflict owner) => owner == recursorOwner
+    | _ => false
+
+end IxIR2PipelineFixtures
 
 namespace ReaddressOracleFixtures
 
@@ -1756,7 +2213,10 @@ def fieldSensitiveOk (program : IxIR1.ReaddressAll.Result)
   let cycleRight := finalAddress program rawCycleRight
   let declarations := IxIR1.HPT.programDeclEnv program.artifacts
   let ctx : IxIR1.Ctx := { decls := declarations }
-  detailedConstructorFact.fetch 0 == IxIR1.HPT.Fact.scalar &&
+  detailedConstructorFact.exactConstructor? == some constructorId &&
+    IxIR1.HPT.Fact.top.exactConstructor? == none &&
+    (IxIR1.HPT.Fact.heap (.pap constructor 0)).exactConstructor? == none &&
+    detailedConstructorFact.fetch 0 == IxIR1.HPT.Fact.scalar &&
     detailedConstructorFact.fetch 1 == IxIR1.HPT.Fact.bottom &&
     (IxIR1.HPT.Fact.heap (.ctor constructorId none)).fetch 0 ==
       IxIR1.HPT.Fact.top &&
@@ -4226,68 +4686,6 @@ def replaceFatBytes (manifest : Catalog.Manifest) (index : Nat)
 
 end CatalogFixtures
 
-namespace CatalogContactFixture
-
-def directory : String := "fixtures/ixon-std-contact"
-
-def isWhitespace (c : Char) : Bool :=
-  c == ' ' || c == '\n' || c == '\r' || c == '\t'
-
-def hexNibble? (c : Char) : Option UInt8 :=
-  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat).toUInt8
-  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10).toUInt8
-  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10).toUInt8
-  else none
-
-def decodeHex (text : String) : Except String ByteArray := do
-  let digits := (text.toList.filter fun c => !isWhitespace c).toArray
-  if digits.size % 2 != 0 then
-    throw s!"odd hex digit count {digits.size}"
-  let mut bytes := ByteArray.empty
-  for index in [:digits.size / 2] do
-    let some high := hexNibble? digits[2 * index]!
-      | throw s!"invalid hex digit at {2 * index}"
-    let some low := hexNibble? digits[2 * index + 1]!
-      | throw s!"invalid hex digit at {2 * index + 1}"
-    bytes := bytes.push (high * 16 + low)
-  return bytes
-
-def readHex (filename : String) : IO (Except String ByteArray) := do
-  try
-    return decodeHex (← IO.FS.readFile s!"{directory}/{filename}")
-  catch error =>
-    return .error error.toString
-
-def expectedStats : Catalog.Stats :=
-  { manifestBytes := 267
-    members := 1
-    dependencyEdges := 0
-    storageUnits := 1
-    pieceBytes := 14600
-    constantEntries := 54
-    constantBytes := 8828
-    blobEntries := 91
-    blobBytes := 819
-    assumptions := 0
-    hints := 30
-    expressionUnits := 2143
-    expandedExpressionUnits := 3877
-    layer1NodeVisits := 34656
-    unionConstants := 54 }
-
-def expectedMembersRoot : String :=
-  "4585514401609ffa79ea09af28a0e1eb87be6b3306fe357511bc59323e18e18e"
-
-def expectedContentRoot : String :=
-  "1bc7e2215a1967d8c937f48526facdc7006cd4c9b7b6ef4f1063bb55c50dee02"
-
-def expectedPieceHash : String :=
-  "688985515005111bde0e25969181c649ada8b77d70287a71e18751f36b495988"
-
-def expectedPipelineAddress : String :=
-  "131533e96baa7f50ba89d01892243e11a1221c8831e2f394eb14f89e9a54c6c4"
-
-end CatalogContactFixture
 
 def main : IO UInt32 := do
   let mut ok := true
@@ -4328,6 +4726,14 @@ def main : IO UInt32 := do
     if !IxIRAddressFixtures.ir1Rejects fixture.2 then
       IO.eprintln s!"FAIL: IxIR₁ decoder accepted {fixture.1}"
       ok := false
+
+  if !IxIR1OwnedMainFixtures.ownedBoundaryOk then
+    IO.eprintln "FAIL: IxIR₁ owned-main result-world boundary drifted"
+    ok := false
+
+  if !IxIR1OwnedMainFixtures.noReuseChecksOk then
+    IO.eprintln "FAIL: IxIR₁ executable no-reuse reflection drifted"
+    ok := false
 
   match IxIRMutualBlockFixtures.built with
   | .error message =>
@@ -4439,6 +4845,153 @@ def main : IO UInt32 := do
     ok := false
   | _, _ =>
     IO.eprintln "FAIL: direct cyclic pipeline failed during agreement check"
+    ok := false
+
+  if !AddressedErasureFixtures.validatedIxIR2AttachmentOk then
+    IO.eprintln "FAIL: validated IxIR₁ pipeline did not attach and validate the conservative IxIR₂ sidecars"
+    ok := false
+
+  for number in [0, 42, 4294967296, UInt64.size - 1] do
+    match Compilatrix.X86.ValidatedScalar.compile number with
+    | .error error =>
+        IO.eprintln s!"FAIL: validated Ixon scalar {number} did not compile: {repr error}"
+        ok := false
+    | .ok compiled =>
+        match compiled.observe with
+        | .ok _ => pure ()
+        | .error message =>
+            IO.eprintln s!"FAIL: validated Ixon scalar {number}: {message}"
+            ok := false
+  if !Compilatrix.X86.ValidatedScalar.rejectsBareLiteral 42 then
+    IO.eprintln "FAIL: bare unique source literal lost its shared-result freezeNeeded rejection"
+    ok := false
+  if !Compilatrix.X86.ValidatedScalar.rejectsOverflow then
+    IO.eprintln "FAIL: validated Ixon scalar above 64 bits lost its selector rejection"
+    ok := false
+
+  match Compilatrix.Recursion.Examples.runAll with
+  | .ok _ => pure ()
+  | .error message =>
+    IO.eprintln s!"FAIL: Ixon source recursion/reuse: {message}"
+    ok := false
+
+  match Compilatrix.CallReuse.Examples.runAll with
+  | .ok _ => pure ()
+  | .error message =>
+    IO.eprintln s!"FAIL: Ixon source call reuse: {message}"
+    ok := false
+
+  match Compilatrix.UniqueReuse.Examples.runAll with
+  | .ok _ => pure ()
+  | .error message =>
+    IO.eprintln s!"FAIL: Ixon source unique reuse: {message}"
+    ok := false
+
+  match Compilatrix.IxIR2.Reuse.Examples.checkUnaliased with
+  | .ok _ => pure ()
+  | .error message =>
+      IO.eprintln s!"FAIL: {message}"
+      ok := false
+
+  match Compilatrix.IxIR2.Reuse.Examples.checkAliased with
+  | .ok _ => pure ()
+  | .error message =>
+      IO.eprintln s!"FAIL: {message}"
+      ok := false
+
+  for aliased in [false, true] do
+    match Compilatrix.IxIR2.Reuse.Examples.checkZeroFieldChild aliased with
+    | .ok _ => pure ()
+    | .error message =>
+        IO.eprintln s!"FAIL: {message}"
+        ok := false
+
+  for overApplied in [false, true] do
+    for aliased in [false, true] do
+      match Compilatrix.IxIR2.Reuse.Examples.checkPapTailReturn overApplied aliased with
+      | .ok _ => pure ()
+      | .error message =>
+          IO.eprintln s!"FAIL: {message}"
+          ok := false
+
+  for underApplied in [false, true] do
+    match Compilatrix.IxIR2.Reuse.Examples.checkImmediateApplyMore underApplied with
+    | .ok _ => pure ()
+    | .error message =>
+        IO.eprintln s!"FAIL: {message}"
+        ok := false
+
+  for fallback in [false, true] do
+    match Compilatrix.IxIR2.Reuse.Examples.checkProductionSelection fallback with
+    | .ok _ => pure ()
+    | .error message =>
+        IO.eprintln s!"FAIL: {message}"
+        ok := false
+
+  match Compilatrix.IxIR2.Reuse.Examples.checkProductionSourceRejection with
+  | .ok _ => pure ()
+  | .error message =>
+      IO.eprintln s!"FAIL: {message}"
+      ok := false
+
+  match Compilatrix.IxIR2.Reuse.Examples.checkIncompatibleLayout with
+  | .ok _ => pure ()
+  | .error message =>
+      IO.eprintln s!"FAIL: {message}"
+      ok := false
+
+  match Compilatrix.IxIR2.Reuse.Examples.checkGeneralizedShape with
+  | .ok _ => pure ()
+  | .error message =>
+      IO.eprintln s!"FAIL: {message}"
+      ok := false
+
+  match Compilatrix.IxIR2.Reuse.Examples.checkLateSourceUse with
+  | .ok _ => pure ()
+  | .error message =>
+      IO.eprintln s!"FAIL: {message}"
+      ok := false
+
+  match Compilatrix.IxIR2.Liveness.Examples.checkSuite with
+  | .ok _ => pure ()
+  | .error message =>
+      IO.eprintln s!"FAIL: {message}"
+      ok := false
+
+  if !IxIR2PipelineFixtures.ambiguousFetchAcceptedByProducerFact then
+    IO.eprintln "FAIL: exact local HPT producer provenance did not disambiguate an IxIR₂ fetch"
+    ok := false
+
+  if !IxIR2PipelineFixtures.ambiguousCaseAcceptedByProducerFact then
+    IO.eprintln "FAIL: exact local HPT producer provenance did not disambiguate an IxIR₂ constructor switch"
+    ok := false
+
+  if !IxIR2PipelineFixtures.unresolvedFetchRejected then
+    IO.eprintln "FAIL: IxIR₂ producer provenance accepted an unresolved fetch parameter"
+    ok := false
+
+  if !IxIR2PipelineFixtures.ambiguousScalarFreeAcceptedByProducerFact then
+    IO.eprintln "FAIL: exact local HPT producer provenance did not disambiguate an IxIR₂ shallow free"
+    ok := false
+
+  if !IxIR2PipelineFixtures.pappCapabilityTransitionAccepted then
+    IO.eprintln "FAIL: checked IxIR₂ function-PAP capability transition drifted"
+    ok := false
+
+  if !IxIR2PipelineFixtures.pappSafetyCheckRejectsUnsafe then
+    IO.eprintln "FAIL: IxIR₂ attachment PAP-safety check accepted an unsafe declaration"
+    ok := false
+
+  if !IxIR2PipelineFixtures.lenderDestructionRetiresBorrow then
+    IO.eprintln "FAIL: checked IxIR₂ destruction retained a dead lender loan"
+    ok := false
+
+  if !IxIR2PipelineFixtures.exactRecursorCaseAccepted then
+    IO.eprintln "FAIL: ambiguous recursor case did not cover and execute both full IxIR₂ constructor identities"
+    ok := false
+
+  if !IxIR2PipelineFixtures.recursorOriginExtractionOk then
+    IO.eprintln "FAIL: recursor-origin extraction lost the final owner map or accepted conflicting blocks"
     ok := false
 
   if !ReaddressOracleFixtures.adapterOk then

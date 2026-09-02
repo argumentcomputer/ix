@@ -1,19 +1,39 @@
 # Simulation scaling strategy
 
-Decision record, 2026-08-14. This is the proof architecture for growing the
-Ixon→IxIR₀ erasure theorem and for starting the distinct IxIR₀→IxIR₁ memory
-simulation. It exists to keep new syntax cases from doubling
-`Compilatrix/Sim.lean` through copied evaluator inversions.
+Proof architecture originating 2026-08-14, reviewed 2026-09-06. This document
+explains the erasure and ownership relations and their proof decomposition.
+The [roadmap](roadmap.md) owns completion state; the
+[development plan](development-plan.md) names the current composition work.
+
+The scoped IxIR₀→IxIR₁ compiler induction is complete and attached in
+`PipelineSound.lean`. The separate `IxIR2/PipelineSim.lean` induction now
+exposes `Attached.successfulCanonicalMainSimulation` into logical IxIR₂.
+Dynamic reuse now exposes `OptimizedAttachment.physicalMainSimulation` for
+the exact validated optimizer output. It derives compiler progress internally,
+including constructor macros, returns after tail calls, and repeated residual
+`applyMore` dispatch. `selectedPhysicalMainSimulation` also covers the checked
+baseline fallback returned by `selectAttachment`. `PipelinePhysical.lean`
+transports the baseline's exact logical execution to its physical interpretation;
+`X86/PipelineSim.lean` composes validated source evaluation with the actual
+selected scalar target. The detailed relation slices below describe the existing
+foundations, not the immediate queue.
 
 ## Non-negotiable theorem boundaries
 
-There are two simulations, with different relations:
+The two foundational simulations use different relations:
 
 1. **Ixon → IxIR₀** relates a typed/table-indexed source evaluation to pure
    erased values. Its hard problem is which source arguments and environment
    slots disappear.
 2. **IxIR₀ → IxIR₁** relates pure values to roots in an explicit heap. Its hard
    problem is ownership, aliasing, reclamation, and location renaming.
+
+The downstream contracts are distinct as well: structured lowering relates
+IxIR₁ to logical IxIR₂; reuse relates live heaps across changed allocation
+histories; selection consumes physical IxIR₂ and relates it to the typed
+target model. The [IxIR₂ specification](ixir2-spec.md) states the credit and
+resource obligations. A local reduction lemma or fixture does not compose
+these boundaries by itself.
 
 The differential harnesses remain regression tests. A theorem may use the same
 readback vocabulary, but “both executions happened to agree at one fuel” is not
@@ -222,8 +242,10 @@ configuration and recursively inlines representatives inside `quotV`.
    `OracleRelAt` requires related argument lists and turns each successful
    source-oracle result into a related target-oracle result. The validator can
    reconstruct the structural witness but cannot authorize semantics, so
-   `OracleRel` stays an explicit theorem premise and is threaded through the
-   IxIR₁ progress composition. The old general neutral-to-erased clause is
+   `OracleRel` stays an explicit theorem premise in the erasure relation.
+   These reusable extern cases do not reopen the production certified
+   pipeline, whose exact IxIR₀/IxIR₁ extern scans reject such declarations.
+   The old general neutral-to-erased clause is
    restricted to resolved inductive-projection type heads. A contentful axiom
    fixture returns `42` on both sides; negative guards cover absent
    configuration, target-arity drift, and a configured source oracle miss.
@@ -275,10 +297,13 @@ quotient ι and compilation → configured opaque/axiom extern correspondence.
 The constructor-wrapper lift, protected indexed-continuation/self-call lift,
 definition-projection/non-self-inductive lift, and simultaneous cyclic-member
 certificate follow that sequence, followed by opaque mutual-member identity.
-Remaining relation work is the typed higher-order/broader dropped-occurrence
-frontier; separately, real IR content addressing must retire `memberAddr`.
+The typed higher-order/broader dropped-occurrence frontier remains a possible
+fragment extension. Production mutual-member identity is supplied by the
+addressed erasure and scoped member certificates in `PipelineSound.lean`;
+retiring synthetic member identities from the production path is no longer
+an active work item here.
 
-## Starting IxIR₀ → IxIR₁
+## IxIR₀ → IxIR₁ ownership relation
 
 The memory theorem needs more than the current `Tree.agree` readback. Its
 relation has three layers:
@@ -331,8 +356,8 @@ Constructor dispatch leaves the root invariant unchanged and exposes fields
 only as borrows; Nat zero/successor peeling likewise preserves roots while
 extending only the runtime environment.
 
-The compiler induction has now begun in `IxIR1/LowerSim.lean`. Held `VEnv`
-entries realize exact roots through in-bounds absolute slots, and runtime
+The compiler induction in `IxIR1/LowerSim.lean` uses held `VEnv` entries
+that realize exact roots through in-bounds absolute slots, and runtime
 pushes preserve that realization. `EmitSound` presents the lowerer's
 `Code → Code` difference lists as weakest-precondition transformers, making
 emitter composition the sequencing rule. Evaluator interfaces have been
@@ -506,13 +531,233 @@ invocation, higher-order application, and all shared/unique drop entries. Local
 PAP/application fusion is the first consumer: removing its transient PAP is
 observable to literal stores but invisible through this history relation.
 
-Implementation order: graph/root relations and all primitive ownership
-interfaces through reuse/fetch (landed) → result `Owned` in declarations and
-the first call-result contract (landed) → exact call/case preservation
-(landed) → induction over the actual lowering derivation (active) → whole-program
-declaration correspondence.
-Lambda lifting and paps activate only after constructor data and direct calls
-are proved.
+The completed dependency order is graph/root relations and primitive
+ownership interfaces → declaration result worlds → call/case preservation
+→ actual lowering derivation → whole-program declaration correspondence and
+the generated-function/application seal. Lambda lifting and PAP ownership
+participate in that seal. Further proof extensions should reuse these
+interfaces rather than restart the induction or duplicate evaluator
+inversions. The next active composition boundary is recorded in the
+[development plan](development-plan.md).
+
+## Baseline physical and scalar target composition
+
+`IxIR2/CreditFree.lean` inventories every instruction in main and all function
+declarations. `lowerCheckedWithTrace` retains a proof that the baseline contains
+no `allocWith`, `discardCredit`, `takeUnique`, or `resetShared`. This check sits
+alongside ordinary validation and the existing lowering-trace audits.
+`IxIR2/Interpretation.lean` transports successful steps through current and
+suspended frames, calls, tail calls, returns, and residual application, preserving
+the entire machine. `runMain_creditFree` therefore preserves the exact result,
+store, counters, and both remaining budgets under either interpretation with
+the same schemas and oracle. The inventory theorem itself permits extern rows;
+the certified attachment separately retains its existing extern-closure checks.
+`Attached.successfulPhysicalMainSimulation` composes this transport with the
+logical lowering theorem and keeps its `OutcomeRel` unchanged. Programs that
+produce or consume credits still require the general refinement theorem.
+
+`IxIR2/EvalFuel.lean` proves successful result uniqueness across arbitrary
+control and heap budgets. Heap-budget extension preserves successful machine
+steps, allowing any two successful runs of the same program and interpretation
+to be compared at one common budget. `X86.Select.Output.refinesSuccessfulRun`
+uses this result to connect any successful physical run to the exact target
+returned by selection. Recognition reflects equality with either the original
+literal/alias graph or the complete `ScalarApply.program` graph, including its
+two distinct addressed declarations. `ScalarApply.runs` proves the latter's
+six-step execution uniformly in both addresses, the word, and interpretation.
+
+`X86.Select.sourceRefines` derives addressed erasure, owned addressed IxIR₁
+execution, physical baseline execution, and selected local x86 execution from
+the actual checked attachment. Its source premises remain the configured
+oracle relation, sharing well-formedness, and successful Ixon evaluation.
+`sourceScalarRefines` specializes the result relation to a source Nat: the
+selected word's `toNat` equals that Nat exactly, the typed machine halts with
+the selected word, and `rsp` is preserved. Neither theorem adds a truncation
+assumption or a caller-supplied intermediate execution.
+
+The synthetic fixture in `X86/ValidatedScalar.lean` executes each intermediate
+observation and carries the actual addressed IxIR₁ graph root into the ELF
+note. Native differential checks supplement these typed-machine theorems;
+the local ISA, encoder, and ELF writer remain ledgered specification boundaries.
+
+## Checked source recursion recovery
+
+`IxIR0/Recursion.lean` separates an untrusted proposal from an exact checker
+for the first eager immediate-tail `below` schema. A checked result fixes
+the replacement recursor, verifies source and target lookup, and gives the
+derived declaration its fresh canonical identity. Unrecognized inputs keep
+the literal declarations and entry.
+
+`IxIR0/RecursionSim.lean` proves the eager source tuple fold (`sourceTuple`)
+and its projected function application, then the direct accumulator loop.
+`recursorForwardSimulation` covers arbitrary finite lists of values and
+accumulators in the actual evaluator. `Recovered.forwardSimulation` lifts
+the result to the exact checked closed Nat-list entry, including its
+erased-argument wrappers and optional retained alias.
+`Selection.forwardSimulation` includes literal fallback.
+
+`Recursion/Sim.lean` supplies `Compilation.sourceRefines`. It uses the
+original validated source certificate and its actual member scope to derive
+raw erasure execution, then applies the selected-IxIR₀ theorem. The existing
+source sharing and oracle contracts and successful Ixon evaluation remain
+explicit premises; the intermediate execution is derived internally.
+The [D1 axiom fences](../Compilatrix/Fence.lean) retain the ordinary Lean
+basis and, for the addressed wrappers, the existing BLAKE3 assumption.
+
+`LoweredCompilation.lean` provides a common boundary for original and recovered
+IxIR₀: the exact ownership/addressing trace, selected source rows, and closed
+source/target extern checks. `Pipeline.LoweredCompilation.addressedOwnedMain`
+derives compiler contracts, progress, ownership, and addressed execution from
+that record and a call-aware source trace. `Recursion/Trace.lean` derives the
+trace for the projection-free recovered program from successful evaluation.
+The original source certificate supplies the trace for literal fallback.
+
+`Recursion/PhysicalSim.lean` composes these results with the common checked
+HPT/CFG attachment, baseline physical interpretation, and selected reuse.
+`Compilation.sourceRefinesSelected` takes only the existing source premises
+and concludes `SelectedExecution`: actual selected physical IxIR₂ for recovered
+outcomes, or original owned addressed IxIR₁ on outer fallback. No intermediate
+execution or compiler invariant is a caller premise. Seven D2 fences preserve
+the existing axiom basis.
+
+R2 keeps that semantic relation unchanged. `IxIR2/HeapAccounting.lean` proves
+heap-operation and linear-credit balances; `IxIR2/Resources.lean` carries
+`live + frees + presentCredits = allocs` across actual physical steps, including
+continuations and returns. Fresh execution establishes it, and halt yields
+`live + frees = allocs`. `IxIR2/ReuseResources.lean` transports shared release
+and an empty resulting heap through the existing stable heap relation.
+`IxIR2/PipelineResources.lean` derives the required owned baseline release
+from the common compiler record and applies it to both selection branches.
+Releasing the selected result leaves `live = 0` and `allocs = frees`.
+
+`Recursion/Resources.lean` composes these guarantees with D2's exact source
+premises and value relation, retaining original owned IxIR₁ reclamation on
+literal fallback. Allocation accounting is independent of result world;
+selected reclamation currently covers shared results. Nine further fences
+retain the same trust basis. The [source cases](source-recursion.md) check
+terminal and reclaimed allocation balances.
+
+R3 adds `IxIR2/AllocationEvents.lean`: ordinary heap operations preserve
+`allocs + reuses`, while fresh allocation and reuse each add one. Related
+unchanged instructions and returns have equal event increments, including
+dynamic partial application and `applyMore`. Accepted hot/cold macros each
+add one event on both sides. `AllocationDelta` composes these increments in
+the existing compiler synchronization proof; it is a separate component of
+the compiler invariant, leaving the semantic machine, heap, and value
+relations unchanged.
+
+`IxIR2/ReuseCost.lean` derives equal live-node counts from heap history;
+`IxIR2/ReuseAllocation.lean` combines this with event equality and terminal accounting.
+`IxIR2/PipelineAllocation.lean` derives zero baseline reuse from the actual
+owned execution and compiler trace. For the checked shared-main domain,
+both selection branches satisfy `baseline.allocs = selected.allocs + selected.reuses`
+and `baseline.frees = selected.frees + selected.reuses`, including arbitrary
+independent sufficient fuel. The free equation also holds after both actual
+shared releases complete. `Recursion/Allocation.lean` composes these laws
+using the original source premises and projects back to the unchanged R2
+endpoint. Twelve new fences retain the existing trust basis.
+
+R4 extracts the existing IxIR₁ shared-reference potential into
+`IxIR1/RcPotential.lean`, retaining its public names and original cost proofs.
+`IxIR2/CostObservations.lean` proves actual heap-operation RC charges and peaks:
+deep release conserves `rcops + pendingRC`, while each retained heap reference
+adds two. Heap history preserves pending references, so the charge equation
+gives equal raw RC increments for ordinary corresponding steps. The hot macro
+performs no selected RC work; the cold macro retains the same fields and
+decrements the same owner as the baseline. `CostDelta` attaches these facts
+independently to the existing compiler macros and their whole-run invariant.
+
+`IxIR2/CostSteps.lean` proves the exact peak update for every successful step,
+including internal application heap work. Recorded peaks and RC counters never
+decrease. `runMachine_prefix_costs` bounds every intermediate state of an actual
+successful execution. `IxIR2/PipelineCosts.lean` compares every selected prefix
+with the actual physical baseline, covering RC counts, recorded peaks, and live
+nodes inside synchronization macros. Both selection branches and independent
+sufficient control and heap budgets are included.
+
+`Recursion/Costs.lean` adds `selected.rcops ≤ baseline.rcops` and
+`selected.peakLiveNodes ≤ baseline.peakLiveNodes` to the same source premises,
+value relation, and shared-result domain. The same actual reclamations retain
+these bounds, empty balanced heaps, and R3's free equation. Its projection
+recovers R3's unchanged source endpoint. Seventeen new fences retain the
+existing trust basis; no additional rewrite-shape or compiler-state premise
+narrows the domain. The bounded static unique endpoint is described below;
+general credit refinement and native heap selection remain separate obligations.
+
+## Reuse through suspended direct calls
+
+R5 introduces explicit `call-local/0` and `suspended-direct-calls/1` policies.
+The original runner remains exactly v0. V1 saves caller credits in the return
+continuation through direct `call`/`callSelf`; the callee starts with no credits.
+`ReservationOwnership` ranges over the active frame and every continuation,
+proving unique locations and exclusion from live heap slots. Primitive heap
+operations, ordinary steps, and call suspension preserve it. Actual execution
+prefixes derive ownership and the account
+`live + frees + presentReservations = allocs` from the empty initial machine.
+
+The checked `CallReuse` pass replaces the exact shared consuming prefix and
+allocation around a nonempty direct-call sequence. Its simulation is organized
+into heap correspondence/order/shape, control and continuation correspondence,
+ordinary operation/call/return proofs, accepted prefix inversion, and whole
+finite execution. A growing location map relates fresh baseline allocations
+to reused target slots. Ownership of reservations is derived from actual
+target steps at each synchronization point. Heap transitions independently
+carry allocation-event equality and RC/peak cost deltas.
+
+`CallReuse.Sim.simulate_to_halt` follows the actual successful baseline trace,
+including nested calls, allocations, PAP application, and residual dispatch.
+The initial compiler ownership and closure facts are derived by the common
+lowering interface. `Selection.mainSimulation` and `PipelineCallReuse.lean`
+therefore preserve the established heap/value relation, shared reclamation,
+R3/R4 counter laws, and all-prefix bounds for the actual selected program,
+including v0 fallback and independent sufficient budgets.
+
+The [source-map endpoint](source-call-reuse.md) checks the literal erasure of a
+valid generic Ixon list recursor and specializes its closed Nat-map schema.
+`MapRecoverySim.lean` proves eager and direct evaluation for all finite input
+lists in that schema. `MapCompilation.sourceRefinesWithCostLaws` composes this
+with ordinary ownership lowering and the selected physical backend under only
+the original source sharing/oracle/success premises. Outer fallback retains
+the literal owned source result and its reclamation. Comparative costs use the
+specialized program's checked physical baseline. Twenty-five new fences retain
+the existing trust basis; neither the source theorem nor the generic compiler
+simulation is established by executing the finite fixture matrix.
+
+## Static unique source reversal
+
+[`UniqueReuse.compile`](../Compilatrix/UniqueReuse/Pipeline.lean) checks an
+explicit closed Ixon entry using `recursor-modes/1`. The extension checks
+saturated rule telescopes and source usage; mode evidence connects the actual
+source binders and constructor fields to canonical recursor-instance bytes.
+The recognizer checks the complete erased source schema before specializing
+its known builder. `UniqueReverseSim.lean` proves literal and direct results
+for every finite Nat list accepted by this schema.
+
+`LoweredSim.lean` derives execution and exact ownership of the consuming IxIR₁
+artifact. `UniqueLower.Translation` is indexed by that artifact and retains
+full target validation. `Translation.forwardSimulation` covers any successful
+indexed input execution and either target interpretation, relating both to
+the same pure value graph. Static selection checks liveness, layout, and the
+complete rewritten program. Credits are consumed within each loop iteration,
+so the existing `call-local/0` semantics suffices.
+
+The target proof is split into heap operations, exact machine steps, arbitrary
+accumulator loops, input construction, full-main execution, and resources.
+`Target.mainSteps` establishes the actual generated CFG from the empty heap.
+`Target.prefixResources` derives distinct reservation ownership, empty-slot
+exclusion, allocation balance, zero RC, and live/peak bounds for every physical
+prefix. The final list view proves full release even when in-place reversal
+introduces links toward later allocations. Control and heap budgets are
+independent; main execution needs no heap fuel, and release uses `2n + 1`.
+
+`Compilation.sourceRefinesWithCostLaws` composes these results using only the
+established source oracle, sharing, and successful-evaluation premises.
+It includes consuming IxIR₁ execution and release in every branch, plus actual
+baseline/selected target execution and exact comparative costs when translation
+succeeds. Optional reuse failure selects the checked baseline; target failure
+retains the consuming artifact. Twenty-four theorem fences preserve the
+existing trust basis. The [source unique record](source-unique-reuse.md)
+specifies the source domain, counter equations, and independent artifact gate.
 
 ## Acceptance gates
 

@@ -70,8 +70,18 @@
             ./Compilatrix.lean
             ./Tests.lean
             ./CatalogContact.lean
+            ./X86ObjectFixture.lean
+            ./SourceCoverage.lean
+            ./SourceRecursion.lean
+            ./SourceCallReuse.lean
+            ./SourceUniqueReuse.lean
             ./fixtures/ixon-std-contact
+            ./fixtures/source-coverage
+            ./fixtures/source-recursion
+            ./fixtures/source-call-reuse
+            ./fixtures/source-unique-reuse
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
+            (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
           ];
         };
         # The trust-ledger check reads build metadata, CI pins, and every
@@ -93,10 +103,20 @@
             ./Compilatrix.lean
             ./Tests.lean
             ./CatalogContact.lean
+            ./X86ObjectFixture.lean
+            ./SourceCoverage.lean
+            ./SourceRecursion.lean
+            ./SourceCallReuse.lean
+            ./SourceUniqueReuse.lean
             ./fixtures/ixon-std-contact
+            ./fixtures/source-coverage
+            ./fixtures/source-recursion
+            ./fixtures/source-call-reuse
+            ./fixtures/source-unique-reuse
+            ./fixtures/x86/native_harness.c
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             ./docs/trusted-externs.json
-            ./scripts/check_trusted_externs.py
+            (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
             ./.github/workflows
           ];
         };
@@ -153,16 +173,134 @@
 
         # Fail closed when source imports, native symbols, dependency
         # graphs, build pins, or CI actions drift from the reviewed ledger.
-        trustedExternCheck =
-          pkgs.runCommand "trusted-extern-ledger-check" {
-            nativeBuildInputs = [pkgs.python3];
-          } ''
-            python3 ${auditSrc}/scripts/check_trusted_externs.py \
+        trustedExternCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.coreutils];
+          name = "check-trusted-externs";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-tools-tests
+            ./.lake/build/bin/check-trusted-externs \
               --root ${auditSrc} \
               --dependency-root Blake3=${blake3-lean.outPath} \
               --gmp-version ${pkgs.gmp.version}
-            touch $out
+            ./.lake/build/bin/check-tools-tests \
+              --root ${auditSrc} --blake3 ${blake3-lean.outPath}
           '';
+        };
+
+        # E0 keeps encoding outside the proof cone, so independently decode
+        # every Lean-pinned golden byte sequence with the pinned GNU decoder.
+        x86EncoderCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.binutils];
+          name = "check-x86-encoder";
+          installArtifacts = false;
+          postBuild = ''
+            ./.lake/build/bin/check-x86-encoder \
+              --objdump ${pkgs.binutils}/bin/objdump
+          '';
+        };
+
+        # Parse each Lean-written ELF object with GNU binutils.  On the
+        # matching host ABI, also link and execute all seven fixtures; other
+        # supported hosts retain the deterministic parse/disassembly gate.
+        x86ObjectNativeArgs =
+          pkgs.lib.optionalString (system == "x86_64-linux")
+          "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/x86/native_harness.c";
+        x86ObjectCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          src = leanSrc;
+          buildInputs =
+            leanBuildInputs
+            ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "x86-object-fixture";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-x86-object
+            ./.lake/build/bin/check-x86-object \
+              --fixture ./.lake/build/bin/x86-object-fixture \
+              --readelf ${pkgs.binutils}/bin/readelf \
+              --objdump ${pkgs.binutils}/bin/objdump ${x86ObjectNativeArgs}
+          '';
+        };
+
+        # C1 compares complete source compiler artifacts across two fresh
+        # processes and checks the frozen coverage/identity/counter matrix.
+        sourceCoverageCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs =
+            leanBuildInputs
+            ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "source-coverage";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-coverage
+            ./.lake/build/bin/check-source-coverage \
+              --fixture ./.lake/build/bin/source-coverage \
+              --contact ${auditSrc}/fixtures/ixon-std-contact \
+              --expected ${auditSrc}/fixtures/source-coverage/expected.json \
+              --readelf ${pkgs.binutils}/bin/readelf \
+              --objdump ${pkgs.binutils}/bin/objdump ${x86ObjectNativeArgs}
+          '';
+        };
+
+        # D1 checks the exact source recursion/counter matrix and compares
+        # every program snapshot from two fresh compiler processes.
+        sourceRecursionCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-recursion";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-recursion
+            ./.lake/build/bin/check-source-recursion \
+              --fixture ./.lake/build/bin/source-recursion \
+              --expected ${auditSrc}/fixtures/source-recursion/expected.json
+          '';
+        };
+
+        # R5 checks source maps, suspended reservations, and all execution
+        # prefixes in complete snapshots from two fresh compiler processes.
+        sourceCallReuseCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-call-reuse";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-call-reuse
+            ./.lake/build/bin/check-source-call-reuse \
+              --fixture ./.lake/build/bin/source-call-reuse \
+              --expected ${auditSrc}/fixtures/source-call-reuse/expected.json
+          '';
+        };
+
+        # Static unique source reversal, canonical mode/policy preimages,
+        # checked fallbacks, exact FIP costs, and complete reclamation.
+        sourceUniqueReuseCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-unique-reuse";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-unique-reuse
+            ./.lake/build/bin/check-source-unique-reuse \
+              --fixture ./.lake/build/bin/source-unique-reuse \
+              --expected ${auditSrc}/fixtures/source-unique-reuse/expected.json
+          '';
+        };
 
         # Lint every workflow file; fail closed if the glob matches none.
         ciWorkflowCheck =
@@ -178,7 +316,7 @@
       in {
         _module.args.pkgs = import nixpkgs {
           inherit system;
-        };
+          };
 
         packages = {
           default = compilatrixLib;
@@ -189,6 +327,12 @@
           build = compilatrixLib;
           ci-workflow = ciWorkflowCheck;
           trusted-extern-ledger = trustedExternCheck;
+          x86-encoder-decoder = x86EncoderCheck;
+          x86-elf-object = x86ObjectCheck;
+          source-coverage = sourceCoverageCheck;
+          source-recursion = sourceRecursionCheck;
+          source-call-reuse = sourceCallReuseCheck;
+          source-unique-reuse = sourceUniqueReuseCheck;
           tests = testsCheck;
           catalog-contact = catalogContactCheck;
         };
@@ -205,8 +349,8 @@
             # toolchain (the nix build path instead injects the
             # flake-built artifact via depOverrideDeriv).
             pkgs.clang
+            pkgs.binutils
             pkgs.cargo
-            pkgs.python3
             pkgs.rustc
           ];
         };
