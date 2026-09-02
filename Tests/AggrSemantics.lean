@@ -325,6 +325,16 @@ def semanticSuite : IO UInt32 := do
   let pairCoverage ← match pairManifest with
     | .ok view => Ix.Cli.CheckCmd.shardsCover pairEnv view.shards
     | .error _ => pure false
+  let batchedShardPreparationCorrect : Bool := match pairManifest with
+    | .ok view =>
+      match Ix.Cli.AggregateCmd.prepareShards pairEnv view.shards view.shardIds with
+      | .ok prepared =>
+        prepared.map (·.claim) == (#[(.checkEnv
+            (canonicalTree #[pairLeft]).root none : Ix.Claim),
+          .checkEnv (canonicalTree #[pairRight]).root none] : Array Ix.Claim) &&
+          prepared.all fun item => item.statement.claim == item.claim
+      | .error _ => false
+    | .error _ => false
   let flatManifestValue : Option Aggr.CheckEnvTrees := match pairManifest with
     | .ok view => (Ix.Cli.VerifyCmd.expectedFromManifest pairEnv view 8).toOption
     | .error _ => none
@@ -547,6 +557,8 @@ def semanticSuite : IO UInt32 := do
       emptyPruningCorrect,
     test "one retained shard reconstructs one value-based root" singletonValueRoot,
     test "two-shard manifest passes exact environment coverage" pairCoverage,
+    test "aggregate startup prepares every shard from one ownership pass"
+      batchedShardPreparationCorrect,
     test "flat manifest value equals the canonical environment root"
       manifestFlatIsCanonical,
     test "structural manifest value equals the manifest-relative hybrid root"

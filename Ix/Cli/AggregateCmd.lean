@@ -458,12 +458,29 @@ private def addrOfHex (label value : String) : Except String Address :=
   | none => .error
     s!"{label}: expected a 64-character address, got {value.length} characters"
 
-private def prepareShard (env : Ixon.Env) (blocks : Array Address) :
+private def prepareOwnedShard (env : Ixon.Env) (owned : Array Address) :
     Except String PreparedShard := do
-  let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks env blocks
   let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   let statement ← MultiStark.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
+
+/-- Reconstruct every shard statement after partitioning environment ownership
+in one pass. Calling `ownedConstsForBlocks` once per shard rescans the complete
+environment for every leaf, which made Mathlib aggregate startup take more
+than twenty minutes before the proof store was touched. -/
+def prepareShards (env : Ixon.Env) (shards : Array (Array Address))
+    (shardIds : Array Nat := #[]) : Except String (Array PreparedShard) := do
+  let ownedAll := Ix.Cli.CheckCmd.ownedConstsPer env shards
+  if ownedAll.size != shards.size then
+    throw s!"internal: prepared ownership for {ownedAll.size} shards, expected {shards.size}"
+  let mut prepared : Array PreparedShard := #[]
+  for (owned, shard) in ownedAll.mapIdx fun shard owned => (owned, shard) do
+    let originalShard := (shardIds[shard]?).getD shard
+    let item ← match prepareOwnedShard env owned with
+      | .error e => throw s!"prepare shard {originalShard}: {e}"
+      | .ok item => pure item
+    prepared := prepared.push item
+  pure prepared
 
 private def compileToplevel (label : String)
     (source : Except Aiur.Global Aiur.Source.Toplevel) :
@@ -473,6 +490,49 @@ private def compileToplevel (label : String)
   | .ok top => match top.compile with
     | .error e => return Except.error s!"{label} compilation failed: {e}"
     | .ok compiled => return Except.ok compiled
+
+private structure AggregateBackend where
+  compiled : Aiur.CompiledToplevel
+  system : Aiur.AiurSystem
+  vk : ByteArray
+
+/-- Compile a Lean-authored Aiur program, then perform the Rust-side system
+construction and verifying-key serialization in the same worker. Keeping this
+pipeline together lets the independent IxVM and recursion backends build in
+parallel instead of serializing their Rust setup on the controller thread. -/
+private def buildAggregateBackend (label : String)
+    (source : Except Aiur.Global Aiur.Source.Toplevel)
+    (commitment : Aiur.CommitmentParameters) (fri : Aiur.FriParameters) :
+    IO (Except String AggregateBackend) := do
+  let compiled ← match ← compileToplevel label source with
+    | .error e => return .error e
+    | .ok compiled => pure compiled
+  let system := Aiur.AiurSystem.build compiled.bytecode commitment fri
+  let vk := system.vkBytes
+  return .ok { compiled, system, vk }
+
+private structure LoadedShardProof where
+  address : Address
+  wrapper : Ixon.Proof
+
+private def loadShardProofs (proofHexes : List String) :
+    IO (Except String (Array LoadedShardProof)) := do
+  let mut loaded : Array LoadedShardProof := #[]
+  for proofHex in proofHexes do
+    let proofAddress ← match addrOfHex "shard proof" proofHex with
+      | .error e => return .error e
+      | .ok address => pure address
+    let wrapper ← match Ixon.Proof.de (← StoreIO.toIO (Store.read proofAddress)) with
+      | .error e =>
+        return .error s!"decode shard proof {proofAddress}: {e}"
+      | .ok wrapper => pure wrapper
+    loaded := loaded.push { address := proofAddress, wrapper }
+  return .ok loaded
+
+private def timed {α : Type} (action : IO α) : IO (α × Nat) := do
+  let started ← IO.monoMsNow
+  let result ← action
+  pure (result, (← IO.monoMsNow) - started)
 
 /-- Execute a post-order aggregate plan as a dependency-driven DAG. The
 controller is the sole owner of completion and reservation state: it admits a
@@ -857,6 +917,8 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
     p.printError "error: aggregate requires --ixes <manifest.ixes>"
     return 1
 
+  let startupStarted ← IO.monoMsNow
+
   let rawView ← match Ix.Cli.CheckCmd.parseIxesManifest
       (← IO.FS.readBinFile manifestPath) with
     | .error e => IO.eprintln s!"manifest parse failed: {e}"; return 1
@@ -903,33 +965,66 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
     IO.eprintln s!"aggregate requires exactly {view.shards.size} shard proofs; got {proofHexes.length}"
     return 1
 
-  -- Reconstruct every shard statement/tree from the environment once. This
-  -- both binds proof wrappers to shard ids and supplies canonical join advice.
-  let mut prepared : Array PreparedShard := #[]
+  -- Statement preparation, proof loading, and the two independent backend
+  -- setup pipelines have no data dependencies. Run all four branches together,
+  -- then join every task before selecting a deterministic error to report.
+  let parallelStarted ← IO.monoMsNow
+  let prepareTask ← IO.asTask (prio := .dedicated) do
+    timed do pure (prepareShards env view.shards view.shardIds)
+  let proofsTask ← IO.asTask (prio := .dedicated) do
+    timed (loadShardProofs proofHexes)
+  let ixvmBackendTask ← IO.asTask (prio := .dedicated) do
+    timed (buildAggregateBackend "IxVM" IxVM.ixVM
+      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters)
+  let aggrBackendTask ← IO.asTask (prio := .dedicated) do
+    timed (buildAggregateBackend "ixAggr recursion" Aggr.ixAggr
+      recursionParameters.commitment recursionParameters.fri)
+
+  let prepareOutcome := prepareTask.get
+  let proofsOutcome := proofsTask.get
+  let ixvmBackendOutcome := ixvmBackendTask.get
+  let aggrBackendOutcome := aggrBackendTask.get
+  let (prepareResult, prepareMs) ← IO.ofExcept prepareOutcome
+  let (proofsResult, proofsMs) ← IO.ofExcept proofsOutcome
+  let (ixvmBackendResult, ixvmBackendMs) ← IO.ofExcept ixvmBackendOutcome
+  let (aggrBackendResult, aggrBackendMs) ← IO.ofExcept aggrBackendOutcome
+  let parallelMs := (← IO.monoMsNow) - parallelStarted
+  let startupMs := (← IO.monoMsNow) - startupStarted
+  IO.println s!"[aggregate] startup: parse/plan {parallelStarted - startupStarted}ms; \
+    parallel wall {parallelMs}ms (prepare {prepareMs}ms, proofs {proofsMs}ms, \
+    IxVM backend {ixvmBackendMs}ms, ixAggr backend {aggrBackendMs}ms); \
+    total {startupMs}ms"
+  (← IO.getStdout).flush
+
+  let prepared ← match prepareResult with
+    | .error e => IO.eprintln e; return 1
+    | .ok prepared => pure prepared
+  let loadedProofs ← match proofsResult with
+    | .error e => IO.eprintln e; return 1
+    | .ok loaded => pure loaded
+  let ixvmBackend ← match ixvmBackendResult with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
+  let aggrBackend ← match aggrBackendResult with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
+
+  -- Proof arguments may be in any order. Match them by their bundled claim and
+  -- reject duplicates/missing shards before starting an expensive wrap.
   let mut digestToShard : Std.HashMap Address Nat := {}
-  for (blocks, shard) in view.shards.mapIdx fun shard blocks => (blocks, shard) do
+  for (item, shard) in prepared.mapIdx fun shard item => (item, shard) do
     let originalShard := (view.shardIds[shard]?).getD shard
-    let item ← match prepareShard env blocks with
-      | .error e => IO.eprintln s!"prepare shard {originalShard}: {e}"; return 1
-      | .ok item => pure item
     let digest := Address.blake3 (Ix.Claim.ser item.claim)
     if digestToShard.contains digest then
       IO.eprintln s!"duplicate reconstructed shard claim digest {digest} \
         (manifest shard {originalShard})"
       return 1
     digestToShard := digestToShard.insert digest shard
-    prepared := prepared.push item
 
-  -- Proof arguments may be in any order. Match them by their bundled claim and
-  -- reject duplicates/missing shards before starting an expensive wrap.
   let mut proofsByShard : Std.HashMap Nat Ixon.Proof := {}
-  for proofHex in proofHexes do
-    let proofAddress ← match addrOfHex "shard proof" proofHex with
-      | .error e => IO.eprintln e; return 1
-      | .ok address => pure address
-    let wrapper ← match Ixon.Proof.de (← StoreIO.toIO (Store.read proofAddress)) with
-      | .error e => IO.eprintln s!"decode shard proof {proofAddress}: {e}"; return 1
-      | .ok wrapper => pure wrapper
+  for loaded in loadedProofs do
+    let proofAddress := loaded.address
+    let wrapper := loaded.wrapper
     let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
     let some shard := digestToShard.get? digest | do
       IO.eprintln s!"proof {proofAddress} claim {digest} matches no manifest shard"
@@ -949,20 +1044,12 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
     IO.eprintln "not every manifest shard has a supplied proof"
     return 1
 
-  let ixvmCompiled ← match ← compileToplevel "IxVM" IxVM.ixVM with
-    | .error e => IO.eprintln e; return 1
-    | .ok compiled => pure compiled
-  let aggrCompiled ← match ← compileToplevel "ixAggr recursion" Aggr.ixAggr with
-    | .error e => IO.eprintln e; return 1
-    | .ok compiled => pure compiled
-  let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
-  let aggrIdx := aggrCompiled.getFuncIdx `ix_aggr |>.get!
-  let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
-    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-  let aggrSystem := MultiStark.buildRecursionSystem aggrCompiled.bytecode
-    recursionParameters
-  let ixvmVk := ixvmSystem.vkBytes
-  let aggrVk := aggrSystem.vkBytes
+  let verifyIdx := ixvmBackend.compiled.getFuncIdx `verify_claim |>.get!
+  let aggrIdx := aggrBackend.compiled.getFuncIdx `ix_aggr |>.get!
+  let ixvmSystem := ixvmBackend.system
+  let aggrSystem := aggrBackend.system
+  let ixvmVk := ixvmBackend.vk
+  let aggrVk := aggrBackend.vk
   let allowed := Aggr.allowedBlob ixvmVk verifyIdx aggrVk aggrIdx
   let specs ← match buildAggrSlotSpecs plan prepared aggrVk allowed
       verifyIdx aggrIdx recursionParameters with
