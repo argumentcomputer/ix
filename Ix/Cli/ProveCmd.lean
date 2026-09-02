@@ -30,6 +30,7 @@ public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
 public import Ix.Claim
 public import Ix.Cli.CheckCmd
+public import Ix.Cli.ShardProofIndex
 public import Ix.Common
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
@@ -140,9 +141,23 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
 partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
     (ixonEnv : Ixon.Env) (aiurSystem : Aiur.AiurSystem)
     (funIdx : Aiur.Bytecode.FunIdx) (maxRamBytes : Nat)
-    (execOnly : Bool) (label : String)
+    (execOnly : Bool) (compiled : Aiur.CompiledToplevel)
+    (indexDir? : Option System.FilePath) (skipProven : Bool) (label : String)
     (blocks owned : Array Address) :
     IO (Except String (Array (Array Address × Nat))) := do
+  -- Claim-addressed resume: a leaf's identity is its claim digest, so a
+  -- verified proof of exactly this claim in the shard-proof index is the
+  -- proof this run would produce — reuse it without executing anything.
+  if skipProven then
+    if let some dir := indexDir? then
+      if let .ok (claim, _) := IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned then
+        if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof aiurSystem compiled dir claim then
+          let digest := Address.blake3 (Ix.Claim.ser claim)
+          IO.println s!"[{label}] verified proof of claim {digest} in the \
+            shard-proof index — reused"
+          IO.println s!"claim {digest}"
+          IO.println (toString addr)
+          return .ok #[(blocks, 0)]
   let mut blob := ByteArray.empty
   for a in owned do
     blob := blob ++ a.hash
@@ -173,7 +188,8 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       for (i, part, po) in (cut.zip cutOwned).mapIdx
           (fun i (part, po) => (i, part, po)) do
         match ← proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx
-            maxRamBytes execOnly s!"{label}.{i}" part po with
+            maxRamBytes execOnly compiled indexDir? skipProven
+            s!"{label}.{i}" part po with
         | .error e => return .error e
         | .ok parts => proven := proven ++ parts
       return .ok proven
@@ -188,7 +204,14 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
         let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
         let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
         let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
+        -- The claim digest is the leaf's durable identity; print it next to
+        -- the address so a runner can key its progress on it, and index the
+        -- proof under it for `--skip-proven` and `ix shard refine`.
+        let digest := Address.blake3 (Ix.Claim.ser claim)
+        IO.println s!"claim {digest}"
         IO.println (toString proofAddr)
+        if let some dir := indexDir? then
+          Ix.Cli.ShardProofIndex.writeAddress dir digest proofAddr
         return .ok #[(blocks, peakBytes)]
 
 /-- Prove shard `shardK` of the partition, splitting it as needed.
@@ -196,13 +219,14 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
 def runShardProveNative (envHandle : Aiur.EnvHandle) (ixonEnv : Ixon.Env)
     (shards ownedPerShard : Array (Array Address)) (shardK : Nat)
     (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (maxRamBytes : Nat) (execOnly : Bool) :
+    (maxRamBytes : Nat) (execOnly : Bool)
+    (indexDir? : Option System.FilePath) (skipProven : Bool) :
     IO (Except String (Array (Array Address × Nat))) := do
   match shards[shardK]?, ownedPerShard[shardK]? with
   | some blocks, some owned =>
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
     proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx maxRamBytes
-      execOnly s!"shard {shardK}" blocks owned
+      execOnly compiled indexDir? skipProven s!"shard {shardK}" blocks owned
   | _, _ => return .error s!"shard {shardK} out of range (0..{shards.size})"
 
 /-- Report the partition a prove run actually produced against the one
@@ -229,6 +253,11 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * gibBytes
   let execOnly := p.hasFlag "exec-only"
   let outIxes := (p.flag? "out-ixes").map (·.as! String)
+  -- The shard-proof index: written for every proof this run persists,
+  -- consulted before executing a leaf under `--skip-proven`.
+  let skipProven := p.hasFlag "skip-proven"
+  let indexDir? ← if p.hasFlag "no-index" then pure none
+    else some <$> Ix.Cli.ShardProofIndex.indexDir
   -- Both `--ixes` branches end the same way: the partition the run
   -- actually proved, written as a refinement of the manifest it started
   -- from — the one the next run of this env should start from.
@@ -263,7 +292,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         | .ok h => pure h
       match ← runShardProveNative envHandle ixonEnv shards
           (Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards) k aiurSystem
-          compiled maxRamBytes execOnly with
+          compiled maxRamBytes execOnly indexDir? skipProven with
       | .error e => IO.eprintln e; return 1
       | .ok parts =>
         -- A single-shard run plans exactly one shard, not the whole
@@ -288,16 +317,27 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       -- once at the end rather than rewritten per split. Ownership is
       -- assigned in ONE env pass here; splits inherit it.
       let ownedPer := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
+      -- `--shards SEL` restricts the run to some leaves (one env load for
+      -- all of them); every other leaf is carried over unchanged.
+      let selected : Array Nat ← match (p.flag? "shards").map (·.as! String) with
+        | none => pure (Array.range shards.size)
+        | some s => match Ix.Cli.CheckCmd.parseShardSelection s with
+          | .error e => IO.eprintln s!"error: {e}"; return 1
+          | .ok ids =>
+            if let some k := ids.find? (· ≥ shards.size) then
+              IO.eprintln s!"--shards: shard {k} out of range ({shards.size} shards)"
+              return 1
+            pure ids
       let mut runs : Array (Nat × Array (Array Address × Nat)) := #[]
       let mut proven : Array (Array Address × Nat) := #[]
       let mut failed : Array String := #[]
-      for k in [0 : shards.size] do
+      for k in selected do
         match ← runShardProveNative envHandle ixonEnv shards ownedPer k
-            aiurSystem compiled maxRamBytes execOnly with
+            aiurSystem compiled maxRamBytes execOnly indexDir? skipProven with
         | .error e => IO.eprintln e; failed := failed.push e
         | .ok parts => runs := runs.push (k, parts); proven := proven ++ parts
       if failed.isEmpty then
-        reportPartition proven shards.size
+        reportPartition proven selected.size
         -- Consolidation is arithmetic from the peaks this run already
         -- measured, never an extra execution: the measured sum only
         -- shrinks as shards get coarser, so the count is a safe
@@ -332,8 +372,11 @@ def proveCmd : Cli.Cmd := `[Cli|
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
     "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."
     "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
+    "shards" : String;  "With --ixes and no --shard: prove only these leaves — `K`, `a-b`, or a comma list of those — in one process (one env load); every other leaf is carried over unchanged by --out-ixes."
     "out-ixes" : String; "Write the partition this run actually proved — splits included — as a `.ixes` manifest to this path: the manifest `ix verify --ixes` checks these proofs against, and the one the next run of this env should start from. Skipped if any shard failed."
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
+    "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
+    "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
     "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."
 
   ARGS:

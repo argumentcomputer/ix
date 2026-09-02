@@ -23,6 +23,7 @@ public import Ix.MultiStark
 public import Ix.Store
 public import Ix.Cli.AggregateCmd
 public import Ix.Cli.CheckCmd
+public import Ix.Cli.ShardProofIndex
 
 public section
 
@@ -194,10 +195,17 @@ private def verifyAggregateProof (backend : AggregateBackend)
     - no `--shard` + proofs: composed verdict — coverage, every proof bound to a
       shard, and every shard covered by a valid proof. -/
 def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat)
-    (proofs : List String) : IO UInt32 := do
+    (proofs : List String) (record : Bool := false) : IO UInt32 := do
   let (ixonEnv, shards) ← match (← Ix.Cli.CheckCmd.loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
     | .ok r => pure r
+  -- `--record`: a proof that binds to its shard and verifies is indexed
+  -- under its claim digest, for `ix prove --skip-proven` / `ix shard refine`.
+  let indexDir? ← if record then some <$> Ix.Cli.ShardProofIndex.indexDir else pure none
+  let recordProof (digest proofAddr : Address) : IO Unit := do
+    if let some dir := indexDir? then
+      Ix.Cli.ShardProofIndex.writeAddress dir digest proofAddr
+      IO.println s!"[verify] recorded {proofAddr} for claim {digest} in the shard-proof index"
   let digestOf (k : Nat) : IO (Option Address) := do
     match shards[k]? with
     | none => IO.eprintln s!"shard {k} out of range ({shards.size} shards)"; pure none
@@ -224,6 +232,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
         IO.eprintln s!"[verify] FAIL: proof {proofAddr} (claim {d}) is not shard {k} (claim {expected})"
         rc := 1
       else if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
+      else recordProof d proofAddr
     return rc
   | none =>
     if !(← Ix.Cli.CheckCmd.shardsCover ixonEnv shards) then return 1
@@ -243,7 +252,9 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       | none => IO.eprintln s!"[verify] FAIL: proof {proofAddr} (claim {d}) matches no shard"; rc := 1
       | some k =>
         if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
-        else covered := covered.insert k
+        else
+          covered := covered.insert k
+          recordProof d proofAddr
     let missing := (List.range shards.size).filter (fun k => !covered.contains k)
     if !missing.isEmpty then
       IO.eprintln s!"[verify] FAIL: shards lacking a valid proof: {missing}"
@@ -308,6 +319,7 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
+      (p.hasFlag "record")
   | _, _ =>
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
@@ -337,6 +349,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
     "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, bind the canonical environment claim; add --ixes for the exact manifest-relative hybrid root."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
+    "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it. How already-proved leaves are imported before a refinement."
 
   ARGS:
     ...proofs : String; "32-byte hex address(es) of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. Omit when using --ixe + --ixes."

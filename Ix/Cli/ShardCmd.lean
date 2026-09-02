@@ -216,7 +216,8 @@ def shardCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     shardExtractCmd;
     shardGraphCmd;
-    shardRefineCmd
+    shardRefineCmd;
+    shardClaimsCmd
 ]
 
 end
