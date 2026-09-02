@@ -93,6 +93,18 @@ def vkSizes (_env : Lean.Environment) : IO UInt32 := do
   let goldSys := Aiur.AiurSystem.build goldCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
   IO.println s!"multi-stark kernel vk: {goldSys.vkBytes.size} bytes"
+  let stats (label : String) (t : Aiur.Bytecode.Toplevel) : IO Unit := do
+    let fns := t.functions.filter (·.constrained)
+    let widths := fns.foldl (fun a f => a + f.layout.width) 0
+    let lookups := fns.foldl (fun a f => a + f.layout.lookups) 0
+    IO.println s!"{label}: {fns.size} constrained fns, Σwidth {widths}, Σlookup slots {lookups}"
+  stats "goldilocks kernel" goldCompiled.bytecode
+  let kbTop ← IO.ofExcept <| (do
+    let p ← IxVM.koalaBearProfile
+    let f ← IxVM.ixVMFullOver p
+    pure (f.prune [`verify_claim])).mapError toString
+  let kbCompiled ← IO.ofExcept kbTop.compile
+  stats "koalabear kernel " kbCompiled.bytecode
   pure 0
 
 end Tests.Ix.IxVM.Hypercube
