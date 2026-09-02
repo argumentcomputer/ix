@@ -35,8 +35,7 @@ jobs:
           # The root package plus every package under Benchmarks/ — `/**`
           # walks the whole tree (catching Catalog's nested fixture
           # workspaces) and skips dotted directories, so `.lake`
-          # dependency checkouts are never swept up. This includes
-          # Benchmarks/CompileFC, previously pinned to an old toolchain.
+          # dependency checkouts are never swept up.
           lake_package_directory: ". Benchmarks/**"
           bump_mode: pinned-tags
           pr: true
