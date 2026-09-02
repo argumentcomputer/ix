@@ -905,11 +905,79 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
       claimsBytes := MultiStark.serializeClaims #[spec.outerClaim]
     }
 
+/-- Production Stage 2 entrypoint. The Lean-authored circuit sources still
+compile here, in parallel with mmap-loading the environment. Once both Aiur
+systems exist, one FFI call transfers the complete data-dependent pipeline to
+Rust; no Lean statement tree or scheduler task survives on this path. -/
+private def runAggregateCmdNativeWith
+    (recursionParameters : MultiStark.RecursionParameters)
+    (p : Cli.Parsed) : IO UInt32 := do
+  let some ixePath := (p.flag? "ixe").map (·.as! String) | do
+    p.printError "error: aggregate requires --ixe <env.ixe>"
+    return 1
+  let some manifestPath := (p.flag? "ixes").map (·.as! String) | do
+    p.printError "error: aggregate requires --ixes <manifest.ixes>"
+    return 1
+  let maxRamGb? := (p.flag? "max-ram").map (·.as! Nat)
+  if maxRamGb? == some 0 then
+    IO.eprintln "error: --max-ram must be positive"
+    return 1
+  let ramBudgetBytes ← match maxRamGb? with
+    | some gib => pure (gib * aggregateGiB)
+    | none => defaultAggregateRamBudgetBytes
+  let jobs := ((p.flag? "jobs").map (·.as! Nat)).getD 0
+  let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
+    defaultStructuralAbove
+  let proofHexes := String.intercalate "\n"
+    (p.variableArgsAs! String).toList
+
+  let setupStarted ← IO.monoMsNow
+  let envTask ← IO.asTask (prio := .dedicated) do
+    timed (IO.lazyPure fun _ => Aiur.EnvHandle.fromIxe ixePath)
+  let ixvmBackendTask ← IO.asTask (prio := .dedicated) do
+    timed (buildAggregateBackend "IxVM" (fun _ => IxVM.ixVM)
+      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters)
+  let aggrBackendTask ← IO.asTask (prio := .dedicated) do
+    timed (buildAggregateBackend "ixAggr recursion" (fun _ => Aggr.ixAggr)
+      recursionParameters.commitment recursionParameters.fri)
+
+  -- Join every setup branch before selecting an error, so a failed branch
+  -- cannot orphan compilation work in the process.
+  let (envResult, envMs) ← IO.ofExcept envTask.get
+  let (ixvmResult, ixvmMs) ← IO.ofExcept ixvmBackendTask.get
+  let (aggrResult, aggrMs) ← IO.ofExcept aggrBackendTask.get
+  let setupMs := (← IO.monoMsNow) - setupStarted
+  IO.println s!"[aggregate] parallel host setup: {setupMs}ms \
+    (environment {envMs}ms, IxVM backend {ixvmMs}ms, ixAggr backend {aggrMs}ms)"
+  (← IO.getStdout).flush
+
+  let envHandle ← match envResult with
+    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+    | .ok handle => pure handle
+  let ixvmBackend ← match ixvmResult with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
+  let aggrBackend ← match aggrResult with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
+  let verifyIdx := ixvmBackend.compiled.getFuncIdx `verify_claim |>.get!
+  let aggrIdx := aggrBackend.compiled.getFuncIdx `ix_aggr |>.get!
+  let nativeResult ← IO.lazyPure fun _ =>
+    ixvmBackend.system.aggregateStage2 aggrBackend.system envHandle
+      manifestPath proofHexes verifyIdx aggrIdx jobs ramBudgetBytes
+      structuralAbove (p.hasFlag "direct-joins")
+      (p.hasFlag "plan-only")
+      recursionParameters.cacheFriBytes !(p.hasFlag "no-cache")
+  match nativeResult with
+  | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
+  | .ok _ => return 0
+
 /-- Aggregate with an explicit recursion-proof configuration. The CLI wrapper
 below supplies `defaultRecursionParameters`; keeping this seam explicit lets a
 future policy or cache layer select a recursion configuration without changing
 the canonical IxVM proof parameters. -/
-def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
+private def runAggregateCmdLeanReferenceWith
+    (recursionParameters : MultiStark.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
   let some ixePath := (p.flag? "ixe").map (·.as! String) | do
     p.printError "error: aggregate requires --ixe <env.ixe>"
@@ -1103,6 +1171,12 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
       StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
   IO.println s!"[aggregate] root proof: {proofAddress}"
   return 0
+
+/-- Aggregate through the native Stage 2 controller. The retained Lean driver
+above is a protocol reference and unit-test seam; it is not on the CLI path. -/
+def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
+    (p : Cli.Parsed) : IO UInt32 :=
+  runAggregateCmdNativeWith recursionParameters p
 
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 :=
   runAggregateCmdWith MultiStark.defaultRecursionParameters p

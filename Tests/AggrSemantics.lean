@@ -182,6 +182,21 @@ def semanticSuite : IO UInt32 := do
     (selfVk.set! 0 (selfVk.data[0]! + 1)) childRecursionParameters leftOuter
   let cacheKeyBindsVersion := leftKey != Ix.Cli.AggregateCmd.aggregateCacheKey
     selfVk childRecursionParameters leftOuter 1
+  let repeated07 : Nat := 506381209866536711
+  let cacheVectorParameters : MultiStark.RecursionParameters := {
+    commitment := Aiur.defaultCommitmentParameters
+    fri := {
+      logFinalPolyLen := repeated07
+      maxLogArity := repeated07
+      numQueries := repeated07
+      commitProofOfWorkBits := repeated07
+      queryProofOfWorkBits := repeated07
+    }
+  }
+  let cacheKeyMatchesRustVector :=
+    toString (Ix.Cli.AggregateCmd.aggregateCacheKey "vk".toUTF8
+      cacheVectorParameters #[.ofNat 1, .ofNat 2, .ofNat 3]) ==
+      "86ed059157e2915fe0a83f1afd58f31f7553659ad778669f6b795e1473e7afe0"
 
   let ops : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp :=
     #[.leaf 0, .leaf 1, .join 0 1]
@@ -317,6 +332,23 @@ def semanticSuite : IO UInt32 := do
         statement.claim == .checkEnv (canonicalTree #[singleAddr]).root none
       | .error _ => false
     | .error _ => false
+  let nativePlanOnlyFfiWorks ← do
+    let dir ← IO.FS.createTempDir
+    let ixePath := dir / "native-plan.ixe"
+    let ixesPath := dir / "native-plan.ixes"
+    match Ixon.serEnv singleEnv with
+    | .error _ => pure false
+    | .ok envBytes =>
+      IO.FS.writeBinFile ixePath envBytes
+      IO.FS.writeBinFile ixesPath <| minimalIxesFor #[#[singleAddr]]
+        (#[1, 0] ++ u32le4 0 ++ #[0])
+      match Aiur.EnvHandle.fromIxe ixePath.toString with
+      | .error _ => pure false
+      | .ok handle =>
+        pure <| (ixvmSystem.aggregateStage2 selfSystem handle
+          ixesPath.toString "" verifyIdx fakeAggrIdx 1
+          (16 * 1024 * 1024 * 1024) 4096 false true
+          childRecursionParameters.cacheFriBytes false).isOk
 
   let (pairEnv, pairLeft, pairRight) := pairIxonEnv
   let pairManifest := Ix.Cli.CheckCmd.parseIxesManifest
@@ -522,6 +554,8 @@ def semanticSuite : IO UInt32 := do
     test "aggregate cache key binds recursion FRI parameters" cacheKeyBindsFri,
     test "aggregate cache key binds the recursion verifying key" cacheKeyBindsVk,
     test "aggregate cache key rejects version-1 entries" cacheKeyBindsVersion,
+    test "Rust and Lean aggregate cache identity share a fixed vector"
+      cacheKeyMatchesRustVector,
     test "wrap-first specs precompute every uniform claim and cache key"
       wrapSpecsComplete,
     test "direct specs retain raw IxVM leaves and one aggregate root"
@@ -556,6 +590,8 @@ def semanticSuite : IO UInt32 := do
     test "empty manifest leaves contract and retained ids remap densely"
       emptyPruningCorrect,
     test "one retained shard reconstructs one value-based root" singletonValueRoot,
+    test "native Stage 2 FFI plans a serialized environment end-to-end"
+      nativePlanOnlyFfiWorks,
     test "two-shard manifest passes exact environment coverage" pairCoverage,
     test "aggregate startup prepares every shard from one ownership pass"
       batchedShardPreparationCorrect,

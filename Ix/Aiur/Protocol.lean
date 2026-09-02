@@ -196,6 +196,21 @@ opaque proveIxAggr (system : @& AiurSystem)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)
 
+/-- Run the production aggregate-first Stage 2 pipeline natively after Lean
+has compiled the IxVM and `ix_aggr` systems. Rust owns all data-dependent
+orchestration: manifest/environment binding, shard-claim reconstruction,
+statement folding, cache validation, dependency scheduling, recursive advice,
+proving, and persistence. `proofHexes` is one store address per line;
+`cacheFriBytes` is the stable 40-byte recursion-FRI cache identity. Returns the
+persisted root proof address. -/
+@[extern "rs_aiur_stage2_aggregate"]
+opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
+  (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
+  (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove : @& Nat)
+  (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
+  (useCache : Bool) :
+    Except String String
+
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
