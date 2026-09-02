@@ -311,6 +311,17 @@ opaque shardManifestFromPartition : @& EnvHandle →
 opaque shardManifestRefine : @& EnvHandle → @& String →
   @& ByteArray → @& ByteArray → @& String → IO ByteArray
 
+@[extern "rs_aiur_detected_ram_budget"]
+private opaque detectedRamBudgetFFI : IO UInt64
+
+/-- The prover/execution RAM budget the Rust side detects on this machine:
+    85 % of `MemAvailable` (`ix_kernel::shard::RAM_USABLE_FRAC`) — the policy
+    the check batch's RAM gate and `ix prove --max-ram 0` use. `0` when
+    `/proc/meminfo` is unreadable; callers that need a budget fail closed
+    on it instead of running ungated. -/
+def detectedRamBudgetBytes : IO Nat := do
+  pure (← detectedRamBudgetFFI).toNat
+
 namespace Bytecode.Toplevel
 
 /-- One shard's result from `shardCheckBatchWithEnv`. `weights` is the

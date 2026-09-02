@@ -820,6 +820,17 @@ fn exec_rss_estimate(owned_bytes: usize) -> usize {
     .max(owned_bytes.saturating_mul(EXEC_RSS_RATIO_PER_OWNED_BYTE))
 }
 
+/// FFI: the detected prover/execution RAM budget in bytes
+/// ([`detected_ram_budget`]: [`ix_kernel::shard::RAM_USABLE_FRAC`] of
+/// `MemAvailable`), or `0` when `/proc/meminfo` is unreadable — the caller
+/// decides whether to fail closed.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_detected_ram_budget()
+-> lean_ffi::object::LeanIOResult<LeanOwned> {
+  let bytes = detected_ram_budget().unwrap_or(0);
+  lean_ffi::object::LeanIOResult::ok(LeanOwned::box_u64(bytes as u64))
+}
+
 /// Detected prover/execution RAM budget:
 /// [`ix_kernel::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
 /// the rest for the OS. `None` (no gate) when meminfo is unreadable —

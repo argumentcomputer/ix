@@ -36,6 +36,7 @@ public import Cli
 public import Ix.Common
 public import Ix.KernelCheck
 public import Ix.Cli.ConstsFile
+public import Ix.Cli.RefineCmd
 
 public section
 
@@ -195,7 +196,7 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
 
 end Ix.Cli.ShardCmd
 
-open Ix.Cli.ShardCmd in
+open Ix.Cli.ShardCmd Ix.Cli.RefineCmd in
 def shardCmd : Cli.Cmd := `[Cli|
   "shard" VIA runShardCmd;
   "Partition a `.ixe` env into shards: static strategy by default (`--shards N`, no kernel run), or the profiled pipeline via `--profile <path.ixprof>`"
@@ -214,7 +215,8 @@ def shardCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     shardExtractCmd;
-    shardGraphCmd
+    shardGraphCmd;
+    shardRefineCmd
 ]
 
 end

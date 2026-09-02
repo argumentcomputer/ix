@@ -979,6 +979,87 @@ def emitRefinedManifest (tag : String) (envHandle : Aiur.EnvHandle)
     IO.eprintln s!"--out-ixes {out} skipped: {failures} failure(s)"
     pure #[]
 
+/-- What a batch run is asked to do beyond the plain check. -/
+structure AuditOptions where
+  /-- Leaves to execute in wave 0; `none` = every leaf of the manifest. -/
+  selection : Option (Array Nat) := none
+  /-- Decide, once the env and every leaf's owned constants are loaded,
+      which selected leaves a verified proof already covers: they are
+      reported `proven-kept`, never executed and never split (the
+      shard-proof index guard of `ix shard refine`). Receives the env, the
+      leaves' block lists, their owned constants, and the selected ids. -/
+  provenGuard : Option (Ixon.Env → Array (Array Address) → Array (Array Address)
+    → Array Nat → IO (Std.HashMap Nat Address)) := none
+  /-- Write the provisional JSON report (`ix-refine/0`) here. -/
+  report : Option String := none
+  /-- `true` (`ix shard refine`): write `--out-ixes` even when some leaves
+      failed — they stay unchanged — and exit 2. `false` (`ix check`): skip
+      the manifest on any failure. -/
+  emitOnFailure : Bool := false
+  /-- The invoking command line, recorded in the report. -/
+  command : String := ""
+  /-- How the budget was chosen (`flag` or `detected`), for the report. -/
+  budgetSource : String := "flag"
+
+/-- One settled part of a leaf's cascade, for the manifest and the report. -/
+structure PartReport where
+  label : String
+  blocks : Array Address
+  owned : Array Address
+  peak : Nat
+  error : String := ""
+
+/-- Claim digest of a leaf from its already-known owned constants (no env
+    rescan): the digest `ix prove` persists and `ix aggregate` matches on. -/
+def claimDigestOfOwned (ixonEnv : Ixon.Env) (owned : Array Address) :
+    Except String Address := do
+  let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned
+  pure (Address.blake3 (Ix.Claim.ser claim))
+
+/-- `K`, `a-b`, or a comma list of those: the leaf ids a run is restricted
+    to, sorted and deduplicated. -/
+def parseShardSelection (s : String) : Except String (Array Nat) := do
+  let mut ids : Array Nat := #[]
+  for piece in s.splitOn "," do
+    let piece := piece.trimAscii.toString
+    if piece.isEmpty then continue
+    match piece.splitOn "-" with
+    | [one] =>
+      let some k := one.trimAscii.toString.toNat?
+        | throw s!"--shards: not a shard id: `{piece}`"
+      ids := ids.push k
+    | [lo, hi] =>
+      let some a := lo.trimAscii.toString.toNat?
+        | throw s!"--shards: not a range: `{piece}`"
+      let some b := hi.trimAscii.toString.toNat?
+        | throw s!"--shards: not a range: `{piece}`"
+      if b < a then throw s!"--shards: empty range `{piece}`"
+      for k in [a:b+1] do ids := ids.push k
+    | _ => throw s!"--shards: malformed `{piece}` (use K, a-b, or a comma list)"
+  if ids.isEmpty then throw "--shards: empty selection"
+  let sorted := ids.qsort (· < ·)
+  pure (sorted.foldl (fun acc k => if acc.back? == some k then acc else acc.push k) #[])
+
+private def fileDigest (path : String) : IO (Option (String × Nat)) := do
+  try
+    let bytes ← IO.FS.readBinFile path
+    pure (some (toString (Address.blake3 bytes), bytes.size))
+  catch _ => pure none
+
+private def gitRevision : IO String := do
+  try
+    let out ← IO.Process.output { cmd := "git", args := #["rev-parse", "HEAD"] }
+    pure (if out.exitCode == 0 then out.stdout.trimAscii.toString else "unknown")
+  catch _ => pure "unknown"
+
+private def fileJson (path : String) (digest : Option (String × Nat))
+    (shards : Option Nat) : Lean.Json :=
+  Lean.Json.mkObj ([("path", Lean.Json.str path)]
+    ++ (match digest with
+        | some (h, n) => [("blake3", Lean.Json.str h), ("bytes", Lean.toJson n)]
+        | none => [])
+    ++ (match shards with | some n => [("shards", Lean.toJson n)] | none => []))
+
 /-- Whole-partition check as ONE Rust rayon batch: work-stealing across
     shards, no chunk barriers (measured 2.3–2.5x faster than the
     per-shard Lean-task scheduler it replaced, whose chunk-of-N full
@@ -989,12 +1070,17 @@ def emitRefinedManifest (tag : String) (envHandle : Aiur.EnvHandle)
     under it) decisions. Builds the `EnvHandle` ONCE, shared by every
     shard. Coverage-gates the manifest before running any shard — exit
     0 has to mean "every env const was checked by some shard", same
-    soundness contract as `runShardCheckAll`. -/
+    soundness contract as `runShardCheckAll`.
+
+    `opts` turns the batch into an audit: a selection of leaves, the
+    proven-leaf guard, a JSON report, and `ix shard refine`'s failure
+    policy. -/
 def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     (compiled : Aiur.CompiledToplevel) (useBytecode : Bool)
     (profileOut : Option String)
     (json? : Option (String × String))
-    (maxRamBytes : Nat) (outIxes : Option String) :
+    (maxRamBytes : Nat) (outIxes : Option String)
+    (opts : AuditOptions := {}) :
     IO UInt32 := do
   -- The row's peak-rss needs the process-tree RSS sampler running
   -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
@@ -1004,6 +1090,14 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
     if !(← shardsCover ixonEnv shards) then return 1
+    let selected : Array Nat ← match opts.selection with
+      | none => pure (Array.range shards.size)
+      | some sel =>
+        if let some k := sel.find? (· ≥ shards.size) then
+          IO.eprintln s!"--shards: shard {k} out of range ({shards.size} shards)"
+          return 1
+        pure sel
+    let selectedSet : Std.HashSet Nat := selected.foldl (·.insert ·) {}
     let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
       | .ok h => pure h
@@ -1014,31 +1108,42 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     let checkConstIdx := (compiled.getFuncIdx `check_const).getD 0
     if profileOut.isSome && (compiled.getFuncIdx `check_const).isNone then
       IO.eprintln "--profile: no `check_const` in compiled toplevel"
+    -- The whole run's ownership assignment: one env pass here, and every
+    -- later wave's parts inherit their parent's owned consts via
+    -- `partitionOwned` — no wave ever rescans the env.
+    let ownedAll := ownedConstsPer ixonEnv shards
+    -- Leaves a verified proof already covers stay exactly as they are.
+    let proven : Std.HashMap Nat Address ← match opts.provenGuard with
+      | none => pure {}
+      | some guard => guard ixonEnv shards ownedAll selected
+    if !proven.isEmpty then
+      IO.println s!"[audit] {proven.size} selected leaf/leaves already have a \
+        verified proof — kept unsplit"
     let cutLabeled (origin : Nat) (label : String) (blocks owned : Array Address)
         (p : Nat) : Array (Nat × String × Array Address × Array Address) :=
       let parts := cutBlocks blocks p
       (parts.zip (partitionOwned ixonEnv owned parts)).mapIdx
         fun i (part, po) => (origin, s!"{label}.{i}", part, po)
-    -- One loop over execution waves. Wave 0 is the planned partition;
-    -- with `--ram-budget` every over-budget shard is cut into the peak
-    -- model's suggested part count and the parts re-batched as the next
-    -- wave, until everything fits or is a single block. Without a
-    -- budget the FFI answers 1 part everywhere and the loop is a single
-    -- wave — the plain batch check. Waves after the first never
-    -- profile: wave 0 already carries one row per constant, measured
-    -- under the planned partition — the one schedulers consume.
-    -- The whole run's ownership assignment: one env pass here, and
-    -- every later wave's parts inherit their parent's owned consts via
-    -- `partitionOwned` — no wave ever rescans the env.
+    -- One loop over execution waves. Wave 0 is the selected part of the
+    -- planned partition; with a budget every over-budget leaf is cut into
+    -- the peak model's suggested part count and the parts re-batched as
+    -- the next wave, until everything fits or is a single block. Without
+    -- a budget the FFI answers 1 part everywhere and the loop is a single
+    -- wave — the plain batch check. Waves after the first never profile:
+    -- wave 0 already carries one row per constant, measured under the
+    -- planned partition — the one schedulers consume.
     let mut wave : Array (Nat × String × Array Address × Array Address) :=
-      (shards.zip (ownedConstsPer ixonEnv shards)).mapIdx
-        fun k (b, o) => (k, s!"{k}", b, o)
+      selected.filterMap fun k =>
+        if proven.contains k then none
+        else (shards[k]?).bind fun b => (ownedAll[k]?).map fun o => (k, s!"{k}", b, o)
+    let executed := wave.size
     let mut waveNum := 0
     let mut failed : Array String := #[]
     let mut final : Array (Array Address × Nat) := #[]
-    -- Per source leaf, the parts that ended its cascade (fit, or failed)
-    -- — the refinement the emitted manifest describes.
-    let mut leafParts : Std.HashMap Nat (Array (Array Address × Nat)) := {}
+    -- Per source leaf: its wave-0 peak, and the parts that ended its
+    -- cascade (fit, or failed) — what the manifest and the report describe.
+    let mut leafPeak : Std.HashMap Nat Nat := {}
+    let mut leafParts : Std.HashMap Nat (Array PartReport) := {}
     let mut totalConsts := 0
     let mut elapsedMs := 0
     while wave.size > 0 do
@@ -1065,25 +1170,28 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
         let mut next : Array (Nat × String × Array Address × Array Address) := #[]
         for (r, origin, label, blocks, owned) in rs.zip wave do
           let gib := toGib r.peakBytes
-          let settled := r.error.isEmpty && r.suggestedParts <= 1
-            || !r.error.isEmpty || blocks.size <= 1
+          if waveNum == 0 then leafPeak := leafPeak.insert origin r.peakBytes
+          let mut settled : Option String := none
           if !r.error.isEmpty then
             IO.eprintln s!"[shard {label}] FAILED: {r.error}"
             failed := failed.push s!"shard {label}: {r.error}"
+            settled := some r.error
           else if r.suggestedParts <= 1 then
             IO.println s!"[shard {label}] ok, projected prover peak {gib} GiB"
+            settled := some ""
           else if blocks.size <= 1 then
             IO.eprintln s!"[shard {label}] peak {gib} GiB over budget and a \
               single block — cannot split"
             failed := failed.push s!"shard {label}: single block over budget"
+            settled := some "single block over budget"
           else
             IO.println s!"[shard {label}] peak {gib} GiB over budget — cut \
               into {r.suggestedParts}"
             next := next ++ cutLabeled origin label blocks owned r.suggestedParts
-          if settled then
+          if let some error := settled then
             final := final.push (blocks, r.peakBytes)
-            leafParts := leafParts.insert origin
-              ((leafParts.getD origin #[]).push (blocks, r.peakBytes))
+            leafParts := leafParts.insert origin ((leafParts.getD origin #[]).push
+              { label, blocks, owned, peak := r.peakBytes, error })
         -- Weight rows are appended once, from wave 0: Rust already
         -- reduced each shard's record under its own task, so nothing
         -- here holds a record alive.
@@ -1098,37 +1206,134 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
             h.flush
         wave := next
         waveNum := waveNum + 1
+    let tag := if opts.emitOnFailure then "refine" else "split-audit"
+    let waves := if waveNum == 0 then 0 else waveNum - 1
     if maxRamBytes > 0 then
-      IO.println s!"[split-audit] {final.size} part(s) from {shards.size} \
-        planned shard(s), {waveNum - 1} split wave(s), {failed.size} failure(s)"
-      -- Consolidation is arithmetic, never an execution: the measured
-      -- sum only shrinks as shards get coarser, so this count is a safe
-      -- under-count — and the next run's mandatory executions verify it
-      -- inline. 95%: margin for the model's +1.7% under-projection.
-      let sum := final.foldl (· + ·.2) 0
-      let target := maxRamBytes * 95 / 100
-      let n1 := max 1 ((sum + target - 1) / target)
-      if failed.isEmpty && n1 < final.size then
-        IO.println s!"[split-audit] measured total {toGib sum} GiB — \
-          {n1} shard(s) would fit the budget: re-shard with --shards {n1}"
+      IO.println s!"[{tag}] {final.size} part(s) from {executed} executed \
+        leaf/leaves ({shards.size} in the manifest), {waves} split wave(s), \
+        {failed.size} failure(s)"
+    -- A split leaf's parts in block order, whatever wave settled them.
+    let sortedParts (k : Nat) (parts : Array PartReport) : Array PartReport :=
+      let pos : Std.HashMap Address Nat :=
+        (((shards[k]?).getD #[]).mapIdx fun i a => (a, i)).foldl
+          (fun m (a, i) => m.insert a i) {}
+      let posOf (p : PartReport) : Nat := ((p.blocks[0]?).bind pos.get?).getD 0
+      parts.qsort fun a b => posOf a < posOf b
     -- The refined partition — what this run actually validated — written
     -- as a refinement of the manifest it started from: untouched leaves
-    -- keep their records, ids and tree positions, and a split leaf's parts
-    -- are ordered by their position in the leaf's block list, whatever
-    -- wave settled them.
+    -- keep their records, ids and tree positions; a failed leaf stays as
+    -- in the source.
+    let runs : Array (Nat × Array (Array Address × Nat)) :=
+      (Array.range shards.size).filterMap fun k =>
+        (leafParts.get? k).bind fun ps =>
+          if ps.any (·.error != "") then none
+          else some (k, (sortedParts k ps).map fun p => (p.blocks, p.peak))
+    let mut idTable : Array (Array Nat) := #[]
+    let mut wroteManifest := false
     if let some out := outIxes then
-      let runs : Array (Nat × Array (Array Address × Nat)) :=
-        (Array.range shards.size).filterMap fun k =>
-          (leafParts.get? k).map fun parts =>
-            let pos : Std.HashMap Address Nat :=
-              ((shards[k]!).mapIdx fun i a => (a, i)).foldl
-                (fun m (a, i) => m.insert a i) {}
-            let posOf (part : Array Address × Nat) : Nat :=
-              ((part.1[0]?).bind pos.get?).getD 0
-            (k, parts.qsort fun a b => posOf a < posOf b)
-      let (refinements, measured) := refinementsOfRuns shards.size runs
-      let _ ← emitRefinedManifest "split-audit" envHandle manifestPath out
-        refinements measured failed.size
+      if failed.isEmpty || opts.emitOnFailure then
+        let (refinements, measured) := refinementsOfRuns shards.size runs
+        idTable ← emitRefinedManifest tag envHandle manifestPath out
+          refinements measured 0
+        wroteManifest := true
+      else
+        IO.eprintln s!"--out-ixes {out} skipped: {failed.size} failure(s)"
+    if let some reportPath := opts.report then
+      -- New ids per split leaf, in refinement order (ascending leaf id).
+      let mut newIds : Std.HashMap Nat (Array Nat) := {}
+      for ((k, _), ids) in (runs.filter (·.2.size > 1)).zip idTable do
+        newIds := newIds.insert k ids
+      let digestJson (owned : Array Address) : Lean.Json :=
+        match claimDigestOfOwned ixonEnv owned with
+        | .ok d => Lean.Json.str (toString d)
+        | .error _ => Lean.Json.null
+      let mut leaves : Array Lean.Json := #[]
+      let mut failures : Array Lean.Json := #[]
+      for k in [0:shards.size] do
+        let blocks := (shards[k]?).getD #[]
+        let owned := (ownedAll[k]?).getD #[]
+        let inRun := proven.contains k || selectedSet.contains k
+        let base := [("id", Lean.toJson k), ("blocks", Lean.toJson blocks.size),
+          ("consts", Lean.toJson owned.size),
+          ("claim", if inRun then digestJson owned else Lean.Json.null),
+          ("predicted_peak_bytes", match leafPeak.get? k with
+            | some p => Lean.toJson p | none => Lean.Json.null)]
+        let status (s : String) := Lean.Json.mkObj (base ++ [("status", Lean.Json.str s)])
+        if let some addr := proven.get? k then
+          leaves := leaves.push (Lean.Json.mkObj (base ++
+            [("status", Lean.Json.str "proven-kept"), ("proof", Lean.Json.str (toString addr))]))
+        else if !selectedSet.contains k then
+          leaves := leaves.push (status "unchanged")
+        else match leafParts.get? k with
+          | none => leaves := leaves.push (status "unchanged")
+          | some ps =>
+            let ps := sortedParts k ps
+            let anyFailed := ps.any (·.error != "")
+            for p in ps do
+              if p.error != "" then
+                let names := (p.owned.filterMap fun a =>
+                  (ixonEnv.addrToName.get? a).map toString).extract 0 8
+                failures := failures.push (Lean.Json.mkObj ([("id", Lean.toJson k),
+                  ("label", Lean.Json.str p.label), ("reason", Lean.Json.str p.error),
+                  ("blocks", Lean.toJson p.blocks.size), ("consts", Lean.toJson p.owned.size),
+                  ("predicted_peak_bytes", Lean.toJson p.peak),
+                  ("names", Lean.toJson names)]
+                  ++ (match p.blocks[0]? with
+                      | some b => if p.blocks.size == 1 then [("block", Lean.Json.str (toString b))] else []
+                      | none => [])))
+            if anyFailed then
+              leaves := leaves.push (status "failed")
+            else if ps.size == 1 then
+              leaves := leaves.push (status "measured")
+            else
+              let ids := (newIds.get? k).getD #[]
+              let depth := ps.foldl (fun d p => max d ((p.label.splitOn ".").length - 1)) 0
+              let parts := ps.mapIdx fun i p => Lean.Json.mkObj [
+                ("id", match ids[i]? with | some id => Lean.toJson id | none => Lean.Json.null),
+                ("label", Lean.Json.str p.label), ("blocks", Lean.toJson p.blocks.size),
+                ("consts", Lean.toJson p.owned.size),
+                ("predicted_peak_bytes", Lean.toJson p.peak),
+                ("claim", digestJson p.owned)]
+              leaves := leaves.push (Lean.Json.mkObj (base ++
+                [("status", Lean.Json.str "split"), ("depth", Lean.toJson depth),
+                 ("parts", Lean.Json.arr parts)]))
+      -- Consolidation: the leaf count the measured total says would fit the
+      -- budget — arithmetic from measured peaks, never an execution.
+      let consolidation := if maxRamBytes > 0 then
+          let sum := final.foldl (· + ·.2) 0
+          let target := maxRamBytes * 95 / 100
+          Lean.toJson (max 1 ((sum + target - 1) / target))
+        else Lean.Json.null
+      let sourceDigest ← fileDigest manifestPath
+      let outJson ← match outIxes with
+        | some out =>
+          if wroteManifest then do
+            let d ← fileDigest out
+            let n := shards.size + idTable.foldl (fun acc ids => acc + ids.size - 1) 0
+            pure (fileJson out d (some n))
+          else pure Lean.Json.null
+        | none => pure Lean.Json.null
+      let envBytes ← (do
+        try pure (Lean.toJson (← System.FilePath.metadata ixePath).byteSize.toNat)
+        catch _ => pure Lean.Json.null)
+      let report := Lean.Json.mkObj [
+        ("schema", Lean.Json.str "ix-refine/0"),
+        ("revision", Lean.Json.str (← gitRevision)),
+        ("command", Lean.Json.str opts.command),
+        ("env", Lean.Json.mkObj [("path", Lean.Json.str ixePath), ("bytes", envBytes)]),
+        ("source", fileJson manifestPath sourceDigest (some shards.size)),
+        ("out", outJson),
+        ("budget_bytes", Lean.toJson maxRamBytes),
+        ("budget_source", Lean.Json.str opts.budgetSource),
+        ("jobs", Lean.toJson jobs),
+        ("selected", Lean.toJson selected.size),
+        ("executed", Lean.toJson executed),
+        ("waves", Lean.toJson waves),
+        ("consolidation_shards", consolidation),
+        ("leaves", Lean.Json.arr leaves),
+        ("failures", Lean.Json.arr failures)]
+      IO.FS.writeFile reportPath (report.pretty ++ "\n")
+      IO.println s!"[{tag}] report → {reportPath}"
     -- One env-keyed results row for `ix bench run --backend aiur-sharded-env`:
     -- the measured window is the wave-0 batch FFI call (env load and
     -- blob setup are excluded, matching what the benchmark tracks — the
@@ -1150,9 +1355,13 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       return 0
     IO.eprintln s!"{failed.size} of {final.size} shard(s) FAILED:"
     for f in failed do IO.eprintln s!"  {f}"
-    -- Under `--json` a kernel rejection is the benchmark's `rejected`
-    -- exit (the row is already written), same contract as `check-rs`.
+    -- `ix shard refine` still wrote its manifest (failed leaves unchanged):
+    -- exit 2 tells the operator to read the report. Under `--json` a kernel
+    -- rejection is the benchmark's `rejected` exit (the row is already
+    -- written), same contract as `check-rs`.
+    if opts.emitOnFailure then return 2
     return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
+
 
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
@@ -1276,10 +1485,31 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | .ok c => pure c
       let json? := (p.flag? "json").map fun f =>
         (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "env")
+      -- `--ram-budget G` gates the audit; `--ram-budget 0` detects this
+      -- machine's budget (85% of MemAvailable, fail closed); omitted = the
+      -- plain batch check, no gate.
+      let (maxRamBytes, budgetSource) ← match (p.flag? "ram-budget").map (·.as! Nat) with
+        | none => pure (0, "none")
+        | some g =>
+          if g > 0 then pure (g * gibBytes, "flag")
+          else
+            let b ← Aiur.detectedRamBudgetBytes
+            if b == 0 then
+              IO.eprintln "--ram-budget 0: cannot detect MemAvailable (/proc/meminfo unreadable)"
+              return 1
+            IO.println s!"[split-audit] budget {toGib b} GiB (detected: 85% of MemAvailable)"
+            pure (b, "detected")
+      let selection? ← match (p.flag? "shards").map (·.as! String) with
+        | none => pure none
+        | some s => match parseShardSelection s with
+          | .error e => IO.eprintln s!"error: {e}"; return 1
+          | .ok ids => pure (some ids)
       return (← runShardBatchNative manifest ixe
         ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode profileOut json?
-        (((p.flag? "ram-budget").map (·.as! Nat)).getD 0 * gibBytes)
-        ((p.flag? "out-ixes").map (·.as! String)))
+        maxRamBytes ((p.flag? "out-ixes").map (·.as! String))
+        { selection := selection?, report := (p.flag? "report").map (·.as! String),
+          command := s!"ix check --ixe {ixe} --ixes {manifest}", budgetSource })
+
   | _, _, _ =>
     -- `--jobs N` (N ≠ 1) with an `--ixe` env and no `--claim` takes the
     -- parallel batch path: one FFI call, rayon over the target list,
@@ -1316,7 +1546,9 @@ def checkCmd : Cli.Cmd := `[Cli|
     "json"      : String;   "With --ixes (no --shard): append one env-keyed results row (see Ix.Benchmark.Results) for the batch to this file — check-time, throughput, peak-rss, constants, shards. Used by `ix bench run --backend aiur-sharded-env`."
     "json-name" : String;   "Row key for the --json row (default: `env`)."
     "ram-budget" : Nat;     "The destination prove box's per-shard RAM budget, GiB (with --ixes, no --shard): after the batch, cut every shard whose projected prover peak exceeds the budget into the peak model's suggested part count and re-batch the parts, wave by wave, until everything fits — the exec-only split audit. Under-filled partitions get a printed suggestion (the shard count the measured total says would fit), never an extra execution: re-shard with --shards N and let the next run's mandatory executions verify it inline. Same unit and model as `ix prove --max-ram`, but no auto-detection: the budget describes the prove box the partition is destined for, not the machine running the check. Omit for a plain check."
-    "out-ixes"  : String;   "With --ram-budget: write the recalibrated partition — the block lists the wave loop actually validated, splits included — as a `.ixes` manifest to this path. Skipped if any shard failed. The manifest the next run of this env should start from."
+    "out-ixes"  : String;   "With --ram-budget: write the partition the wave loop actually validated as a refinement of the source manifest — untouched leaves keep their records, ids and aggregation-tree positions, each split leaf becomes a subtree over its parts. Skipped if any shard failed. The manifest the next run of this env should start from."
+    "shards"    : String;   "With --ixes (no --shard): restrict the batch to these leaves — `K`, `a-b`, or a comma list of those. Every other leaf is left untouched (and, with --out-ixes, carried over unchanged)."
+    "report"    : String;   "With --ixes (no --shard): write the provisional JSON audit report (`ix-refine/0`: per-leaf status, predicted peaks, claim digests, split parts with their new ids, failures) to this path."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
