@@ -27,6 +27,19 @@ runs:
           exit 1
         fi
 
+    - uses: ./.github/actions/authenticate-github-fetches
+
+    # Cargo's built-in git fetcher ignores `url.insteadOf`, so it would bypass
+    # the token rewrite above; fetching with the git CLI routes cargo's git
+    # dependencies through it. Set before the caching action below, which
+    # keys on the environment.
+    - name: Fetch cargo git dependencies with the git CLI
+      shell: bash
+      run: |
+        if [[ ! -v CARGO_NET_GIT_FETCH_WITH_CLI ]]; then
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+        fi
+
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ${{ inputs.native-codegen == 'true' && '-Ctarget-cpu=native -Dwarnings' || '-Dwarnings' }}

@@ -27,6 +27,11 @@ jobs:
         with:
           name: argumentcomputer
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      # Covers `builtins.fetchGit` of the Lake manifest's `git+https`
+      # dependencies, which runs at flake eval time as this user;
+      # `install-nix-action`'s github_access_token covers only `github:`
+      # flake inputs, which fetch via the API.
+      - uses: ./.github/actions/authenticate-github-fetches
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#ix -- --help
@@ -47,6 +52,7 @@ jobs:
         with:
           name: argumentcomputer
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: ./.github/actions/authenticate-github-fetches
       # Builds and runs tests using Lake as a Nix package
       - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"
       # Realize the zkVM shells so they're verified and pushed to the cache,

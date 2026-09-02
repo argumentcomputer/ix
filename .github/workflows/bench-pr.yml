@@ -342,6 +342,8 @@ jobs:
           ref: ${{ needs.build.outputs.revision }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
+      # `lake build` below clones this package's Lake dependencies.
+      - uses: ./.github/actions/authenticate-github-fetches
       # Apply the allowlisted KEY=VALUE lines from the !benchmark comment,
       # so IX_COMPILE_* knobs reach the measured compile. Delivered via an
       # env var, not inline `${{ }}` — inlining would risk shell injection.
