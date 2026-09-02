@@ -292,6 +292,25 @@ end AiurSystem
 opaque shardManifestFromPartition : @& EnvHandle →
   @& ByteArray → @& ByteArray → @& String → IO Unit
 
+/-- Refine an existing `.ixes` manifest (`sourcePath`) by cutting some of
+    its leaves into parts and write the result to `outPath`
+    (`ShardManifest::refine`, `crates/kernel/src/shard.rs`). Every other
+    leaf keeps its block list, record, id and place in the aggregation
+    tree; a refined leaf's place becomes a balanced subtree over its
+    parts, part 0 keeps the leaf's id and later parts take fresh ids after
+    the last existing one.
+
+    `refinementsBlob`: `count(u32)`, then per refined leaf `id(u32) ‖
+    nparts(u32)` and per part `nblocks(u32) ‖ 32·nblocks ‖ peak(u64)`.
+    `measuredBlob`: empty, or one `u64` analytic prover peak per SOURCE
+    shard in id order; a nonzero value overrides the peak carried forward
+    for an unsplit leaf. The new partition is validated as an exact,
+    disjoint cover of the env's blocks. Returns the parts' new ids:
+    `count(u32)`, then per refinement `n(u32) ‖ n × id(u32)`. -/
+@[extern "rs_shard_manifest_refine"]
+opaque shardManifestRefine : @& EnvHandle → @& String →
+  @& ByteArray → @& ByteArray → @& String → IO ByteArray
+
 namespace Bytecode.Toplevel
 
 /-- One shard's result from `shardCheckBatchWithEnv`. `weights` is the

@@ -335,6 +335,38 @@ impl AggNode {
     }
   }
 
+  /// A balanced binary tree over `ids`, left to right: the left half takes
+  /// `len / 2` leaves, exactly the shape the Lean consumer builds with
+  /// `AggregationTree.balancedRange` for manifests that carry no tree.
+  /// `None` for an empty slice.
+  pub fn balanced(ids: &[u32]) -> Option<AggNode> {
+    match ids {
+      [] => None,
+      [id] => Some(AggNode::Leaf(*id)),
+      _ => {
+        let (l, r) = ids.split_at(ids.len() / 2);
+        Some(AggNode::Internal(
+          Box::new(AggNode::balanced(l)?),
+          Box::new(AggNode::balanced(r)?),
+        ))
+      },
+    }
+  }
+
+  /// The tree with `Leaf(id)` replaced by a copy of `subtree`. Every other
+  /// node is unchanged, so an untouched sibling subtree still folds to the
+  /// same slot statements — and the same aggregate cache keys — as before.
+  pub fn replace_leaf(&self, id: u32, subtree: &AggNode) -> AggNode {
+    match self {
+      AggNode::Leaf(x) if *x == id => subtree.clone(),
+      AggNode::Leaf(x) => AggNode::Leaf(*x),
+      AggNode::Internal(l, r) => AggNode::Internal(
+        Box::new(l.replace_leaf(id, subtree)),
+        Box::new(r.replace_leaf(id, subtree)),
+      ),
+    }
+  }
+
   /// Preorder serialization: `0u8, id(4)` for a leaf; `1u8, <left>, <right>` for
   /// an internal node.
   fn put(&self, out: &mut Vec<u8>) {
@@ -2064,6 +2096,194 @@ pub fn shard_manifest_explicit(
   Ok(manifest.summary())
 }
 
+/// One leaf of a source manifest cut into parts: the parts' block lists in
+/// order (each a nonempty subset of the leaf's blocks) and, per part, the
+/// measured prover peak (`0` = unmeasured).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeafRefinement {
+  pub id: u32,
+  pub parts: Vec<Vec<Address>>,
+  pub part_peaks: Vec<u64>,
+}
+
+impl ShardManifest {
+  /// Refine this manifest by cutting some of its leaves into parts, leaving
+  /// every other leaf — block list, record, and place in the aggregation
+  /// tree — exactly as it was.
+  ///
+  /// Id policy: part 0 of a refined leaf keeps the leaf's id; the remaining
+  /// parts take fresh ids after the last existing one (ascending by refined
+  /// leaf id, then part order), so ids stay dense and untouched shards keep
+  /// their numbers. Each refined leaf's place in the tree becomes a balanced
+  /// subtree over its parts; a source without a tree first gets the balanced
+  /// tree its Lean consumer would have used. `measured` (empty, or one value
+  /// per source shard) overrides the carried-forward peak of unsplit shards
+  /// where nonzero.
+  ///
+  /// The whole new partition is validated as an exact, disjoint cover of the
+  /// profile's blocks. Returns the refined manifest (unsealed: the caller
+  /// fills assumption roots) and, per refinement, its parts' new ids.
+  pub fn refine(
+    &self,
+    profile: &BlockProfile,
+    refinements: &[LeafRefinement],
+    measured: &[u64],
+  ) -> Result<(ShardManifest, Vec<Vec<u32>>), String> {
+    use rustc_hash::FxHashMap;
+
+    let n = self.shards.len();
+    if n == 0 {
+      return Err("refine: source manifest has no shards".into());
+    }
+    for (i, sh) in self.shards.iter().enumerate() {
+      if sh.id as usize != i {
+        return Err(format!(
+          "refine: source shard ids are not dense (entry {i} has id {})",
+          sh.id
+        ));
+      }
+    }
+    if !measured.is_empty() && measured.len() != n {
+      return Err(format!(
+        "refine: measured peaks: {} values for {n} shards",
+        measured.len()
+      ));
+    }
+    let mut by_id: FxHashMap<u32, usize> = FxHashMap::default();
+    for (i, r) in refinements.iter().enumerate() {
+      if r.id as usize >= n {
+        return Err(format!(
+          "refine: shard {} is out of range ({n} shards)",
+          r.id
+        ));
+      }
+      if r.parts.len() < 2 {
+        return Err(format!(
+          "refine: shard {} needs at least two parts, got {}",
+          r.id,
+          r.parts.len()
+        ));
+      }
+      if r.part_peaks.len() != r.parts.len() {
+        return Err(format!(
+          "refine: shard {}: {} peaks for {} parts",
+          r.id,
+          r.part_peaks.len(),
+          r.parts.len()
+        ));
+      }
+      if let Some(k) = r.parts.iter().position(Vec::is_empty) {
+        return Err(format!("refine: shard {} part {k} is empty", r.id));
+      }
+      if by_id.insert(r.id, i).is_some() {
+        return Err(format!("refine: shard {} listed twice", r.id));
+      }
+    }
+
+    // The new shard list in id order: slots 0..n keep their ids (part 0 of a
+    // refined leaf inherits the leaf's), then the extra parts are appended.
+    let mut new_shards: Vec<(&[Address], u64)> = Vec::with_capacity(n);
+    let mut part_ids: Vec<Vec<u32>> = vec![Vec::new(); refinements.len()];
+    for sh in &self.shards {
+      match by_id.get(&sh.id) {
+        None => {
+          let carried = measured
+            .get(sh.id as usize)
+            .copied()
+            .filter(|&p| p != 0)
+            .unwrap_or(sh.measured_peak_bytes);
+          new_shards.push((&sh.blocks, carried));
+        },
+        Some(&i) => {
+          let r = &refinements[i];
+          new_shards.push((&r.parts[0], r.part_peaks[0]));
+          part_ids[i].push(sh.id);
+        },
+      }
+    }
+    let mut refined_ids: Vec<u32> = by_id.keys().copied().collect();
+    refined_ids.sort_unstable();
+    for id in refined_ids {
+      let i = by_id[&id];
+      let r = &refinements[i];
+      for (part, &peak) in r.parts.iter().zip(&r.part_peaks).skip(1) {
+        let new_id = u32::try_from(new_shards.len())
+          .map_err(|_| "refine: too many shards".to_string())?;
+        new_shards.push((part, peak));
+        part_ids[i].push(new_id);
+      }
+    }
+
+    // Exact cover over the profile's blocks.
+    let block_id: FxHashMap<&Address, u32> = profile
+      .blocks()
+      .iter()
+      .enumerate()
+      .map(|(i, b)| (&b.addr, i as u32))
+      .collect();
+    let mut shard_of = vec![u32::MAX; profile.num_blocks()];
+    for (k, (blocks, _)) in new_shards.iter().enumerate() {
+      for a in *blocks {
+        let Some(&b) = block_id.get(a) else {
+          return Err(format!(
+            "refine: shard {k}: block {} not in the env's block profile",
+            a.hex()
+          ));
+        };
+        if shard_of[b as usize] != u32::MAX {
+          return Err(format!(
+            "refine: block {} appears in shards {} and {k}",
+            a.hex(),
+            shard_of[b as usize]
+          ));
+        }
+        shard_of[b as usize] = k as u32;
+      }
+    }
+    let uncovered = shard_of.iter().filter(|&&s| s == u32::MAX).count();
+    if uncovered > 0 {
+      return Err(format!(
+        "refine: partition covers {} of {} blocks ({uncovered} missing)",
+        profile.num_blocks() - uncovered,
+        profile.num_blocks()
+      ));
+    }
+
+    let mut manifest =
+      ShardManifest::build(profile, &shard_of, new_shards.len());
+    for (sh, (_, peak)) in manifest.shards.iter_mut().zip(&new_shards) {
+      sh.measured_peak_bytes = *peak;
+    }
+    let all_ids: Vec<u32> = (0..n as u32).collect();
+    let mut tree = self
+      .tree
+      .clone()
+      .unwrap_or_else(|| AggNode::balanced(&all_ids).expect("n > 0 leaves"));
+    for (r, ids) in refinements.iter().zip(&part_ids) {
+      let sub = AggNode::balanced(ids).expect("at least two parts");
+      tree = tree.replace_leaf(r.id, &sub);
+    }
+    manifest.tree = Some(tree);
+    Ok((manifest, part_ids))
+  }
+}
+
+/// Refine a source manifest ([`ShardManifest::refine`]), seal the result and
+/// write it to `out_path`. Returns the manifest summary and, per refinement,
+/// its parts' new ids.
+pub fn shard_manifest_refine(
+  profile: &BlockProfile,
+  source: &ShardManifest,
+  refinements: &[LeafRefinement],
+  measured: &[u64],
+  out_path: &str,
+) -> Result<(String, Vec<Vec<u32>>), String> {
+  let (mut manifest, part_ids) =
+    source.refine(profile, refinements, measured)?;
+  seal_and_write(&mut manifest, Some(out_path))?;
+  Ok((manifest.summary(), part_ids))
+}
+
 /// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget
 /// (`max_cycles`) rather than a fixed shard count: grows `N` until the heaviest
 /// splittable shard fits the budget (see [`partition_for_cycle_cap`]). Use
@@ -3178,6 +3398,200 @@ mod tests {
     );
     assert!(q.shards.iter().all(|shard| !shard.blocks.is_empty()));
     assert_eq!(q.tree, Some(node(leaf(0), leaf(1))));
+  }
+
+  fn three_way() -> (BlockProfile, ShardManifest) {
+    let p = two_clusters();
+    let shard_of = vec![0, 0, 1, 1, 2, 2];
+    let tree = node(leaf(0), node(leaf(1), leaf(2)));
+    let mut m = ShardManifest::build(&p, &shard_of, 3).with_tree(tree);
+    for sh in &mut m.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    (p, m)
+  }
+
+  fn halves(blocks: &[Address]) -> Vec<Vec<Address>> {
+    let (a, b) = blocks.split_at(blocks.len() / 2);
+    vec![a.to_vec(), b.to_vec()]
+  }
+
+  #[test]
+  fn balanced_matches_lean_balanced_range() {
+    fn check(t: &AggNode, ids: &[u32]) {
+      let mut leaves = Vec::new();
+      t.collect_leaves(&mut leaves);
+      assert_eq!(leaves, ids);
+      if let AggNode::Internal(l, r) = t {
+        assert_eq!(l.num_leaves(), ids.len() / 2);
+        check(l, &ids[..ids.len() / 2]);
+        check(r, &ids[ids.len() / 2..]);
+      } else {
+        assert_eq!(ids.len(), 1);
+      }
+    }
+    assert_eq!(AggNode::balanced(&[]), None);
+    for n in 1..=9u32 {
+      let ids: Vec<u32> = (10..10 + n).collect();
+      check(&AggNode::balanced(&ids).unwrap(), &ids);
+    }
+  }
+
+  #[test]
+  fn replace_leaf_keeps_siblings() {
+    let t = node(leaf(0), node(leaf(1), leaf(2)));
+    let sub = node(leaf(1), leaf(3));
+    assert_eq!(
+      t.replace_leaf(1, &sub),
+      node(leaf(0), node(node(leaf(1), leaf(3)), leaf(2)))
+    );
+    assert_eq!(t.replace_leaf(7, &sub), t);
+  }
+
+  #[test]
+  fn refine_replaces_one_leaf_keeps_others_identical() {
+    let (p, m) = three_way();
+    let parts = halves(&m.shards[1].blocks);
+    let r = LeafRefinement { id: 1, parts, part_peaks: vec![10, 20] };
+    let (q, ids) = m.refine(&p, &[r], &[]).unwrap();
+    assert_eq!(ids, vec![vec![1, 3]]);
+    assert_eq!(q.num_shards, 4);
+    assert_eq!(q.shards.iter().map(|s| s.id).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    // Untouched leaves: same record, sealed the same way.
+    let mut sealed = q.clone();
+    for sh in &mut sealed.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    assert_eq!(sealed.shards[0], m.shards[0]);
+    assert_eq!(sealed.shards[2], m.shards[2]);
+    // The split leaf: part 0 keeps id 1, part 1 is appended as id 3.
+    assert_eq!(q.shards[1].blocks, m.shards[1].blocks[..1]);
+    assert_eq!(q.shards[3].blocks, m.shards[1].blocks[1..]);
+    assert_eq!(q.shards[1].measured_peak_bytes, 10);
+    assert_eq!(q.shards[3].measured_peak_bytes, 20);
+    assert_eq!(
+      q.tree,
+      Some(node(leaf(0), node(node(leaf(1), leaf(3)), leaf(2))))
+    );
+    // Round trip keeps the tree and the peaks.
+    let back = ShardManifest::from_bytes(&sealed.to_bytes()).unwrap();
+    assert_eq!(back, sealed);
+  }
+
+  #[test]
+  fn refine_id_policy_reuse_then_append() {
+    let (p, m) = three_way();
+    let r0 = LeafRefinement {
+      id: 0,
+      parts: halves(&m.shards[0].blocks),
+      part_peaks: vec![0, 0],
+    };
+    let r2 = LeafRefinement {
+      id: 2,
+      parts: halves(&m.shards[2].blocks),
+      part_peaks: vec![0, 0],
+    };
+    // Order of the refinement list does not matter: fresh ids ascend by
+    // refined leaf id.
+    let (q, ids) = m.refine(&p, &[r2.clone(), r0.clone()], &[]).unwrap();
+    assert_eq!(ids, vec![vec![2, 4], vec![0, 3]]);
+    assert_eq!(q.shards[0].blocks, r0.parts[0]);
+    assert_eq!(q.shards[3].blocks, r0.parts[1]);
+    assert_eq!(q.shards[2].blocks, r2.parts[0]);
+    assert_eq!(q.shards[4].blocks, r2.parts[1]);
+    let mut sealed = q.clone();
+    for sh in &mut sealed.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    assert_eq!(sealed.shards[1], m.shards[1]);
+    assert_eq!(
+      q.tree,
+      Some(node(node(leaf(0), leaf(3)), node(leaf(1), node(leaf(2), leaf(4)))))
+    );
+  }
+
+  #[test]
+  fn refine_empty_is_fixed_point_and_carries_peaks() {
+    let (p, mut m) = three_way();
+    m.shards[1].measured_peak_bytes = 7;
+    let (q, ids) = m.refine(&p, &[], &[]).unwrap();
+    assert!(ids.is_empty());
+    let mut sealed = q;
+    for sh in &mut sealed.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    assert_eq!(sealed.to_bytes(), m.to_bytes());
+    // A nonzero measurement overrides a carried peak; zero keeps it.
+    let (q2, _) = m.refine(&p, &[], &[5, 0, 9]).unwrap();
+    assert_eq!(
+      q2.shards.iter().map(|s| s.measured_peak_bytes).collect::<Vec<_>>(),
+      [5, 7, 9]
+    );
+  }
+
+  #[test]
+  fn refine_without_source_tree_uses_balanced_range() {
+    let (p, mut m) = three_way();
+    m.tree = None;
+    let r = LeafRefinement {
+      id: 2,
+      parts: halves(&m.shards[2].blocks),
+      part_peaks: vec![0, 0],
+    };
+    let (q, _) = m.refine(&p, &[r], &[]).unwrap();
+    // balancedRange 0 3 = node(leaf 0, node(leaf 1, leaf 2)), then leaf 2 →
+    // node(leaf 2, leaf 3).
+    assert_eq!(
+      q.tree,
+      Some(node(leaf(0), node(leaf(1), node(leaf(2), leaf(3)))))
+    );
+  }
+
+  #[test]
+  fn refine_rejects_bad_partitions() {
+    let (p, m) = three_way();
+    let blocks = m.shards[1].blocks.clone();
+    let err = |r: LeafRefinement, measured: &[u64]| {
+      m.refine(&p, &[r], measured).unwrap_err()
+    };
+    let one = LeafRefinement {
+      id: 1,
+      parts: vec![blocks.clone()],
+      part_peaks: vec![0],
+    };
+    assert!(err(one, &[]).contains("at least two parts"));
+    let oor =
+      LeafRefinement { id: 9, parts: halves(&blocks), part_peaks: vec![0, 0] };
+    assert!(err(oor, &[]).contains("out of range"));
+    let foreign = LeafRefinement {
+      id: 1,
+      parts: vec![vec![blocks[0].clone()], vec![addr(200)]],
+      part_peaks: vec![0, 0],
+    };
+    assert!(err(foreign, &[]).contains("not in the env's block profile"));
+    let dup = LeafRefinement {
+      id: 1,
+      parts: vec![vec![blocks[0].clone()], vec![blocks[0].clone()]],
+      part_peaks: vec![0, 0],
+    };
+    assert!(err(dup, &[]).contains("appears in shards"));
+    let missing = LeafRefinement {
+      id: 1,
+      parts: vec![vec![blocks[0].clone()], vec![m.shards[0].blocks[0].clone()]],
+      part_peaks: vec![0, 0],
+    };
+    let e = err(missing, &[]);
+    assert!(e.contains("appears in shards") || e.contains("missing"), "{e}");
+    let peaks =
+      LeafRefinement { id: 1, parts: halves(&blocks), part_peaks: vec![0] };
+    assert!(err(peaks, &[]).contains("peaks for"));
+    let ok =
+      LeafRefinement { id: 1, parts: halves(&blocks), part_peaks: vec![0, 0] };
+    assert!(err(ok, &[1, 2]).contains("measured peaks"));
   }
 
   #[test]

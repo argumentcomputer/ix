@@ -462,6 +462,10 @@ private def ixesU32 : IxesP UInt32 := do
   let a ← ixesU8; let b ← ixesU8; let c ← ixesU8; let d ← ixesU8
   pure (a.toUInt32 ||| (b.toUInt32 <<< 8) ||| (c.toUInt32 <<< 16) ||| (d.toUInt32 <<< 24))
 
+private def ixesU64 : IxesP UInt64 := do
+  let lo ← ixesU32; let hi ← ixesU32
+  pure (lo.toUInt64 ||| (hi.toUInt64 <<< 32))
+
 private def ixesSkip (n : Nat) : IxesP Unit := do
   let (b, p) ← get
   if p + n ≤ b.size then modify (fun _ => (b, p + n)) else throw s!"ixes: truncated (skip {n})"
@@ -534,6 +538,11 @@ structure IxesManifestView where
   /-- Original manifest shard id for each (possibly pruned) dense array slot. -/
   shardIds : Array Nat
   aggregationTree : AggregationTree
+  /-- Per dense slot, the analytic prover peak (bytes) a previous run measured
+  for that shard's executed record — the manifest's trailing measured-peaks
+  section — or `0` when it was never measured (planner output, or a manifest
+  written before the section existed). -/
+  measuredPeakBytes : Array Nat
   deriving BEq, Repr
 
 private partial def ixesAggregationTree : IxesP AggregationTree := do
@@ -564,8 +573,12 @@ serialized `.ixes`
       foreign_blocks(u32 len + 32·len) }.
     The optional trailing tree uses preorder `leaf(0,id:u32)` /
     `node(1,left,right)` encoding. Legacy manifests with no tree (or an explicit
-    zero presence byte) receive a balanced ascending-id fallback. Bounds-checked:
-    a truncated/malformed file yields `.error`, never a panic. -/
+    zero presence byte) receive a balanced ascending-id fallback. After the tree
+    an optional measured-peaks section follows: presence byte, then one `u64`
+    analytic prover peak per shard in id order (`0` = unmeasured); absent on
+    manifests written before it existed. Anything after the last known section
+    is an error. Bounds-checked: a truncated/malformed file yields `.error`,
+    never a panic. -/
 def parseIxesManifest (bytes : ByteArray) : Except String IxesManifestView :=
   let go : IxesP IxesManifestView := do
     let m0 ← ixesU8; let m1 ← ixesU8; let m2 ← ixesU8; let m3 ← ixesU8
@@ -601,9 +614,22 @@ def parseIxesManifest (bytes : ByteArray) : Except String IxesManifestView :=
         | tag => throw s!"ixes: invalid aggregation-tree presence tag {tag.toNat}"
     validateAggregationTree tree n.toNat
     let (buffer, position) ← get
+    let measuredPeakBytes ← if position == buffer.size then
+        pure (Array.replicate n.toNat 0)
+      else
+        match ← ixesU8 with
+        | 0 => pure (Array.replicate n.toNat 0)
+        | 1 => do
+          let mut peaks : Array Nat := #[]
+          for _ in [0:n.toNat] do
+            peaks := peaks.push (← ixesU64).toNat
+          pure peaks
+        | tag => throw s!"ixes: invalid measured-peaks presence tag {tag.toNat}"
+    let (buffer, position) ← get
     if position != buffer.size then
-      throw s!"ixes: {buffer.size - position} trailing bytes after aggregation tree"
-    pure { shards, shardIds := Array.range n.toNat, aggregationTree := tree }
+      throw s!"ixes: {buffer.size - position} trailing bytes after the measured-peaks section"
+    pure { shards, shardIds := Array.range n.toNat, aggregationTree := tree,
+           measuredPeakBytes }
   go.run' (bytes, 0)
 
 /-- Backward-compatible shard-only view used by check/prove/verify paths that
@@ -702,6 +728,7 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
   let mut remap : Array (Option Nat) := Array.replicate view.shards.size none
   let mut shards : Array (Array Address) := #[]
   let mut shardIds : Array Nat := #[]
+  let mut measuredPeakBytes : Array Nat := #[]
   let mut keptCounts : Array Nat := #[]
   for (count, oldIdx) in counts.mapIdx fun oldIdx count => (count, oldIdx) do
     if count != 0 then
@@ -712,10 +739,11 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
       remap := remap.set! oldIdx (some shards.size)
       shards := shards.push blocks
       shardIds := shardIds.push originalId
+      measuredPeakBytes := measuredPeakBytes.push ((view.measuredPeakBytes[oldIdx]?).getD 0)
       keptCounts := keptCounts.push count
   let some aggregationTree := view.aggregationTree.pruneAndRemap remap
     | throw "aggregate: manifest has no shard owning an environment constant"
-  pure ({ shards, shardIds, aggregationTree }, keptCounts)
+  pure ({ shards, shardIds, aggregationTree, measuredPeakBytes }, keptCounts)
 
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the
@@ -874,21 +902,82 @@ def addrListsBlob (lists : Array (Array Address)) : ByteArray :=
   lists.foldl (init := ByteArray.empty) fun blob l =>
     l.foldl (fun b a => b ++ a.hash) (blob ++ l.size.toUInt32.toLEBytes)
 
-/-- Emit the partition a run actually validated as a `.ixes` manifest,
-    measured peaks included — the shared tail of `ix prove --out-ixes`
-    and `ix check --ram-budget --out-ixes`. Skipped with a note when any
-    shard failed: a corrected manifest describes a fully-validated
-    partition. -/
-def emitCorrectedManifest (tag : String) (envHandle : Aiur.EnvHandle)
-    (out : String) (partition : Array (Array Address × Nat))
-    (failures : Nat) : IO Unit := do
+/-- One leaf of a source manifest cut into parts, as the prove and check
+    split loops produce it: the parts' block lists in block order, each
+    with the analytic prover peak measured on its executed record
+    (`0` = unmeasured). -/
+structure LeafRefinement where
+  shard : Nat
+  parts : Array (Array Address × Nat)
+
+/-- Wire encoding of `Aiur.shardManifestRefine`'s refinements argument:
+    `count(u32)`, then per refined leaf `id(u32) ‖ nparts(u32)` and per
+    part `nblocks(u32) ‖ 32·nblocks ‖ peak(u64)`. -/
+def refinementsBlob (rs : Array LeafRefinement) : ByteArray :=
+  rs.foldl (init := rs.size.toUInt32.toLEBytes) fun blob r =>
+    r.parts.foldl
+      (init := blob ++ r.shard.toUInt32.toLEBytes ++ r.parts.size.toUInt32.toLEBytes)
+      fun blob (blocks, peak) =>
+        (blocks.foldl (fun b a => b ++ a.hash) (blob ++ blocks.size.toUInt32.toLEBytes))
+          ++ peak.toUInt64.toLEBytes
+
+/-- Group per-leaf run results `(shard, parts)` over the `n` leaves of a
+    source manifest into the leaves that split (≥ 2 parts) and the
+    measured peaks of the leaves that did not (`0` where a leaf was not
+    run). -/
+def refinementsOfRuns (n : Nat)
+    (runs : Array (Nat × Array (Array Address × Nat))) :
+    Array LeafRefinement × Array Nat :=
+  runs.foldl (init := (#[], Array.replicate n 0)) fun (rs, measured) (k, parts) =>
+    if parts.size > 1 then (rs.push { shard := k, parts }, measured)
+    else match parts[0]? with
+      | some (_, peak) => (rs, if k < measured.size then measured.set! k peak else measured)
+      | none => (rs, measured)
+
+/-- Decode the new-id table `Aiur.shardManifestRefine` returns:
+    `count(u32)`, then per refinement `n(u32) ‖ n × id(u32)`. Malformed
+    input yields the ids decoded so far, never a panic. -/
+def decodeIdTable (bytes : ByteArray) : Array (Array Nat) := Id.run do
+  let u32At (i : Nat) : Option Nat :=
+    if i + 4 ≤ bytes.size then
+      some (bytes[i]!.toNat ||| (bytes[i+1]!.toNat <<< 8)
+        ||| (bytes[i+2]!.toNat <<< 16) ||| (bytes[i+3]!.toNat <<< 24))
+    else none
+  let some count := u32At 0 | return #[]
+  let mut pos := 4
+  let mut table : Array (Array Nat) := #[]
+  for _ in [0:count] do
+    let some n := u32At pos | return table
+    pos := pos + 4
+    let mut ids : Array Nat := #[]
+    for _ in [0:n] do
+      let some id := u32At pos | return table
+      ids := ids.push id
+      pos := pos + 4
+    table := table.push ids
+  return table
+
+/-- Emit the partition a run actually validated as a refinement of the
+    manifest it started from — the shared tail of `ix prove --out-ixes`
+    and `ix check --ram-budget --out-ixes`. Untouched leaves keep their
+    records, ids and tree positions (`Aiur.shardManifestRefine`); a leaf
+    that split becomes a subtree over its parts, part 0 keeping the leaf's
+    id and later parts taking fresh ids after the last existing one.
+    `measured` carries the peaks of the leaves that ran unsplit. Skipped
+    with a note when any shard failed: a refined manifest describes a
+    fully-validated partition. Returns the parts' new ids per refinement. -/
+def emitRefinedManifest (tag : String) (envHandle : Aiur.EnvHandle)
+    (sourcePath out : String) (refinements : Array LeafRefinement)
+    (measured : Array Nat) (failures : Nat) : IO (Array (Array Nat)) := do
   if failures == 0 then
-    Aiur.shardManifestFromPartition envHandle
-      (addrListsBlob (partition.map (·.1)))
-      (peaksBlob (partition.map (·.2))) out
-    IO.println s!"[{tag}] corrected manifest → {out}"
+    let ids ← Aiur.shardManifestRefine envHandle sourcePath
+      (refinementsBlob refinements) (peaksBlob measured) out
+    IO.println s!"[{tag}] refined manifest → {out} \
+      ({refinements.size} leaf/leaves split)"
+    pure (decodeIdTable ids)
   else
     IO.eprintln s!"--out-ixes {out} skipped: {failures} failure(s)"
+    pure #[]
 
 /-- Whole-partition check as ONE Rust rayon batch: work-stealing across
     shards, no chunk barriers (measured 2.3–2.5x faster than the
@@ -925,11 +1014,11 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     let checkConstIdx := (compiled.getFuncIdx `check_const).getD 0
     if profileOut.isSome && (compiled.getFuncIdx `check_const).isNone then
       IO.eprintln "--profile: no `check_const` in compiled toplevel"
-    let cutLabeled (label : String) (blocks owned : Array Address)
-        (p : Nat) : Array (String × Array Address × Array Address) :=
+    let cutLabeled (origin : Nat) (label : String) (blocks owned : Array Address)
+        (p : Nat) : Array (Nat × String × Array Address × Array Address) :=
       let parts := cutBlocks blocks p
       (parts.zip (partitionOwned ixonEnv owned parts)).mapIdx
-        fun i (part, po) => (s!"{label}.{i}", part, po)
+        fun i (part, po) => (origin, s!"{label}.{i}", part, po)
     -- One loop over execution waves. Wave 0 is the planned partition;
     -- with `--ram-budget` every over-budget shard is cut into the peak
     -- model's suggested part count and the parts re-batched as the next
@@ -941,12 +1030,15 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     -- The whole run's ownership assignment: one env pass here, and
     -- every later wave's parts inherit their parent's owned consts via
     -- `partitionOwned` — no wave ever rescans the env.
-    let mut wave : Array (String × Array Address × Array Address) :=
+    let mut wave : Array (Nat × String × Array Address × Array Address) :=
       (shards.zip (ownedConstsPer ixonEnv shards)).mapIdx
-        fun k (b, o) => (s!"{k}", b, o)
+        fun k (b, o) => (k, s!"{k}", b, o)
     let mut waveNum := 0
     let mut failed : Array String := #[]
     let mut final : Array (Array Address × Nat) := #[]
+    -- Per source leaf, the parts that ended its cascade (fit, or failed)
+    -- — the refinement the emitted manifest describes.
+    let mut leafParts : Std.HashMap Nat (Array (Array Address × Nat)) := {}
     let mut totalConsts := 0
     let mut elapsedMs := 0
     while wave.size > 0 do
@@ -956,7 +1048,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       else
         IO.println s!"[wave {waveNum}] re-executing {wave.size} part(s)"
       (← IO.getStdout).flush
-      let ownedPer := wave.map (·.2.2)
+      let ownedPer := wave.map (·.2.2.2)
       let start ← IO.monoMsNow
       match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle
           (addrListsBlob ownedPer) useBytecode jobs
@@ -970,25 +1062,28 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
           -- extras outside the benchmarked engine window.
           elapsedMs := (← IO.monoMsNow) - start
           totalConsts := ownedPer.foldl (· + ·.size) 0
-        let mut next : Array (String × Array Address × Array Address) := #[]
-        for (r, label, blocks, owned) in rs.zip wave do
+        let mut next : Array (Nat × String × Array Address × Array Address) := #[]
+        for (r, origin, label, blocks, owned) in rs.zip wave do
           let gib := toGib r.peakBytes
+          let settled := r.error.isEmpty && r.suggestedParts <= 1
+            || !r.error.isEmpty || blocks.size <= 1
           if !r.error.isEmpty then
             IO.eprintln s!"[shard {label}] FAILED: {r.error}"
             failed := failed.push s!"shard {label}: {r.error}"
-            final := final.push (blocks, r.peakBytes)
           else if r.suggestedParts <= 1 then
             IO.println s!"[shard {label}] ok, projected prover peak {gib} GiB"
-            final := final.push (blocks, r.peakBytes)
           else if blocks.size <= 1 then
             IO.eprintln s!"[shard {label}] peak {gib} GiB over budget and a \
               single block — cannot split"
             failed := failed.push s!"shard {label}: single block over budget"
-            final := final.push (blocks, r.peakBytes)
           else
             IO.println s!"[shard {label}] peak {gib} GiB over budget — cut \
               into {r.suggestedParts}"
-            next := next ++ cutLabeled label blocks owned r.suggestedParts
+            next := next ++ cutLabeled origin label blocks owned r.suggestedParts
+          if settled then
+            final := final.push (blocks, r.peakBytes)
+            leafParts := leafParts.insert origin
+              ((leafParts.getD origin #[]).push (blocks, r.peakBytes))
         -- Weight rows are appended once, from wave 0: Rust already
         -- reduced each shard's record under its own task, so nothing
         -- here holds a record alive.
@@ -1016,10 +1111,24 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       if failed.isEmpty && n1 < final.size then
         IO.println s!"[split-audit] measured total {toGib sum} GiB — \
           {n1} shard(s) would fit the budget: re-shard with --shards {n1}"
-    -- The recalibrated partition — what this run actually validated —
-    -- written as the manifest the next run should start from.
+    -- The refined partition — what this run actually validated — written
+    -- as a refinement of the manifest it started from: untouched leaves
+    -- keep their records, ids and tree positions, and a split leaf's parts
+    -- are ordered by their position in the leaf's block list, whatever
+    -- wave settled them.
     if let some out := outIxes then
-      emitCorrectedManifest "split-audit" envHandle out final failed.size
+      let runs : Array (Nat × Array (Array Address × Nat)) :=
+        (Array.range shards.size).filterMap fun k =>
+          (leafParts.get? k).map fun parts =>
+            let pos : Std.HashMap Address Nat :=
+              ((shards[k]!).mapIdx fun i a => (a, i)).foldl
+                (fun m (a, i) => m.insert a i) {}
+            let posOf (part : Array Address × Nat) : Nat :=
+              ((part.1[0]?).bind pos.get?).getD 0
+            (k, parts.qsort fun a b => posOf a < posOf b)
+      let (refinements, measured) := refinementsOfRuns shards.size runs
+      let _ ← emitRefinedManifest "split-audit" envHandle manifestPath out
+        refinements measured failed.size
     -- One env-keyed results row for `ix bench run --backend aiur-sharded-env`:
     -- the measured window is the wave-0 batch FFI call (env load and
     -- blob setup are excluded, matching what the benchmark tracks — the

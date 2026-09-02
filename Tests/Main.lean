@@ -57,6 +57,7 @@ import Tests.Aggr
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
+import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
@@ -191,6 +192,8 @@ def primaryRunners : List (String × IO UInt32) := [
   -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   ("ix-aggr", Tests.Aggr.convergedSuite),
+  -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
+  ("ixes-manifest", Tests.Ix.Ixes.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/

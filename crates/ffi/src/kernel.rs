@@ -2492,6 +2492,135 @@ pub extern "C" fn rs_shard_manifest_from_partition(
   }
 }
 
+/// Decode `rs_shard_manifest_refine`'s refinements blob: `count(u32)`, then
+/// per refined leaf `id(u32) ‖ nparts(u32)` and per part
+/// `nblocks(u32) ‖ 32·nblocks ‖ peak(u64)`.
+fn decode_refinements(
+  bytes: &[u8],
+) -> Result<Vec<ix_kernel::shard::LeafRefinement>, String> {
+  struct Cur<'a> {
+    b: &'a [u8],
+    p: usize,
+  }
+  impl<'a> Cur<'a> {
+    fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
+      let end = self
+        .p
+        .checked_add(n)
+        .filter(|&end| end <= self.b.len())
+        .ok_or("refinements blob: truncated")?;
+      let s = &self.b[self.p..end];
+      self.p = end;
+      Ok(s)
+    }
+    fn u32(&mut self) -> Result<usize, String> {
+      Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()) as usize)
+    }
+    fn u64(&mut self) -> Result<u64, String> {
+      Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+  }
+  let mut c = Cur { b: bytes, p: 0 };
+  let count = c.u32()?;
+  let mut out = Vec::with_capacity(count);
+  for _ in 0..count {
+    let id = u32::try_from(c.u32()?)
+      .map_err(|e| format!("refinements blob: bad id: {e}"))?;
+    let nparts = c.u32()?;
+    let mut parts = Vec::with_capacity(nparts);
+    let mut part_peaks = Vec::with_capacity(nparts);
+    for _ in 0..nparts {
+      let nblocks = c.u32()?;
+      let raw = c.take(nblocks * 32)?;
+      parts.push(
+        raw
+          .as_chunks::<32>()
+          .0
+          .iter()
+          .map(|chunk| Address::from_slice(chunk).unwrap())
+          .collect(),
+      );
+      part_peaks.push(c.u64()?);
+    }
+    out.push(ix_kernel::shard::LeafRefinement { id, parts, part_peaks });
+  }
+  if c.p != bytes.len() {
+    return Err("refinements blob: trailing bytes".into());
+  }
+  Ok(out)
+}
+
+/// FFI: refine an existing `.ixes` manifest by cutting some of its leaves
+/// into parts (`ShardManifest::refine`): every other leaf keeps its block
+/// list, record, id and place in the aggregation tree; a refined leaf's
+/// place becomes a balanced subtree over its parts, part 0 keeping the
+/// leaf's id and later parts taking fresh ids after the last existing one.
+/// `measured_blob` is empty or one `u64` analytic prover peak per SOURCE
+/// shard in id order (nonzero overrides the peak carried forward for an
+/// unsplit leaf). The new partition is validated as an exact, disjoint
+/// cover of the env's block profile; the manifest summary goes to stderr.
+/// Returns the parts' new ids: `count(u32)`, then per refinement
+/// `n(u32) ‖ n × id(u32)`.
+#[allow(clippy::cast_possible_truncation)] // ids and counts are u32 by construction
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_manifest_refine(
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  source_path: LeanString<LeanBorrowed<'_>>,
+  refinements_blob: LeanByteArray<LeanBorrowed<'_>>,
+  measured_blob: LeanByteArray<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let source_path = source_path.to_string();
+  let out = out_path.to_string();
+  let fail = |e: String| {
+    LeanIOResult::error_string(&format!("rs_shard_manifest_refine: {e}"))
+  };
+  let source = match std::fs::read(&source_path)
+    .map_err(|e| format!("read {source_path}: {e}"))
+    .and_then(|bytes| ix_kernel::shard::ShardManifest::from_bytes(&bytes))
+  {
+    Ok(m) => m,
+    Err(e) => return fail(e),
+  };
+  let refinements = match decode_refinements(refinements_blob.as_bytes()) {
+    Ok(r) => r,
+    Err(e) => return fail(e),
+  };
+  let measured: Vec<u64> = measured_blob
+    .as_bytes()
+    .as_chunks::<8>()
+    .0
+    .iter()
+    .map(|c| u64::from_le_bytes(*c))
+    .collect();
+  let profile = static_block_profile(&env_handle.get().env);
+  match ix_kernel::shard::shard_manifest_refine(
+    &profile,
+    &source,
+    &refinements,
+    &measured,
+    &out,
+  ) {
+    Ok((summary, part_ids)) => {
+      eprintln!("[shard-refine] {out}: {summary}");
+      let mut bytes = Vec::new();
+      bytes.extend_from_slice(&(part_ids.len() as u32).to_le_bytes());
+      for ids in &part_ids {
+        bytes.extend_from_slice(&(ids.len() as u32).to_le_bytes());
+        for id in ids {
+          bytes.extend_from_slice(&id.to_le_bytes());
+        }
+      }
+      let ids: LeanOwned = LeanByteArray::from_bytes(&bytes).into();
+      LeanIOResult::ok(ids)
+    },
+    Err(e) => fail(e),
+  }
+}
+
 /// FFI: dump the static block-level reference graph of a `.ixe` as text —
 /// `block <hex> <bytes> <consts>` per ingress unit (a Muts block or a
 /// standalone constant) and `edge <consumer> <producer>` per deduped

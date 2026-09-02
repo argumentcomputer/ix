@@ -230,13 +230,16 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let execOnly := p.hasFlag "exec-only"
   let outIxes := (p.flag? "out-ixes").map (·.as! String)
   -- Both `--ixes` branches end the same way: the partition the run
-  -- actually proved, written as the manifest to start the next run from.
-  let emitCorrected (envHandle : Aiur.EnvHandle)
-      (partition : Array (Array Address × Nat)) (failures : Nat) :
-      IO Unit := do
+  -- actually proved, written as a refinement of the manifest it started
+  -- from — the one the next run of this env should start from.
+  let emitRefined (envHandle : Aiur.EnvHandle) (sourcePath : String)
+      (numShards : Nat) (runs : Array (Nat × Array (Array Address × Nat)))
+      (failures : Nat) : IO Unit := do
     if let some out := outIxes then
-      Ix.Cli.CheckCmd.emitCorrectedManifest "prove" envHandle out partition
-        failures
+      let (refinements, measured) :=
+        Ix.Cli.CheckCmd.refinementsOfRuns numShards runs
+      let _ ← Ix.Cli.CheckCmd.emitRefinedManifest "prove" envHandle
+        sourcePath out refinements measured failures
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
@@ -266,12 +269,10 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         -- A single-shard run plans exactly one shard, not the whole
         -- partition.
         reportPartition parts 1
-        -- The corrected whole partition: the plan with shard k replaced
-        -- by the parts this run actually proved (other shards stay
-        -- unmeasured — this run never executed them).
-        emitCorrected envHandle
-          ((shards.extract 0 k).map (·, 0) ++ parts
-            ++ (shards.extract (k + 1) shards.size).map (·, 0)) 0
+        -- The refined whole partition: the source manifest with shard k
+        -- replaced by the parts this run actually proved; every other
+        -- leaf is carried over untouched (this run never executed them).
+        emitRefined envHandle manifest shards.size #[(k, parts)] 0
         return 0
   | some ixe, some manifest, none =>
     -- IxVM-native all-shards prove. Same envHandle reused across
@@ -287,13 +288,14 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       -- once at the end rather than rewritten per split. Ownership is
       -- assigned in ONE env pass here; splits inherit it.
       let ownedPer := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
+      let mut runs : Array (Nat × Array (Array Address × Nat)) := #[]
       let mut proven : Array (Array Address × Nat) := #[]
       let mut failed : Array String := #[]
       for k in [0 : shards.size] do
         match ← runShardProveNative envHandle ixonEnv shards ownedPer k
             aiurSystem compiled maxRamBytes execOnly with
         | .error e => IO.eprintln e; failed := failed.push e
-        | .ok parts => proven := proven ++ parts
+        | .ok parts => runs := runs.push (k, parts); proven := proven ++ parts
       if failed.isEmpty then
         reportPartition proven shards.size
         -- Consolidation is arithmetic from the peaks this run already
@@ -311,7 +313,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.eprintln s!"[prove] {failed.size} of {shards.size} shard(s) FAILED:"
         for e in failed do
           IO.eprintln s!"  {e}"
-      emitCorrected envHandle proven failed.size
+      emitRefined envHandle manifest shards.size runs failed.size
       return if failed.isEmpty then 0 else 1
   | _, _, _ =>
     Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
