@@ -592,10 +592,17 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           let claimBytes := MultiStark.serializeClaims #[claim]
           let vkBytes := aiurSystem.vkBytes
           let pubInput := MultiStark.verifierPubInput vkBytes claimBytes
+          -- Native proof bytes use P3's pruned multiproof format. The
+          -- in-circuit verifier consumes equivalent per-query path advice.
+          let adviceBytes ← match aiurSystem.proofToAdviceBytes claim proof with
+            | .ok bytes => pure bytes
+            | .error e =>
+              IO.eprintln s!"  ❌ advice re-encoding for {r.name} FAILED: {e}"
+              continue
           -- Native path: the advice buffer is built in Rust from the raw
           -- byte blobs and execution routes through the codegen'd verifier.
           let (rvRes, rvSec) ← timed fun _ =>
-            vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes
+            vCompiled.bytecode.executeMultiStark vIdx pubInput adviceBytes
               vkBytes claimBytes useInterp
           match rvRes with
           | .error e =>
@@ -621,7 +628,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             (← IO.getStdout).flush
             TracingTexray.resetPeakTreeRss
             let (rvProveRes, rvProveSec) ← timed fun _ =>
-              vSystem.proveMultiStark vIdx pubInput proofBytes vkBytes
+              vSystem.proveMultiStark vIdx pubInput adviceBytes vkBytes
                 claimBytes useInterp
             let (rvClaim, rvProof) ← match rvProveRes with
               | .ok result => pure result

@@ -102,19 +102,21 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
       match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
       | .error e => IO.eprintln s!"proveAddrWithEnv failed: {e}"; return none
       | .ok (claimBytes, proof, _) =>
-        -- `verify_claim`'s public input is the 32-G blake3 digest of the
-        -- serialized `Ix.Claim` (same recipe as `ix verify` / bench-typecheck).
+        -- `verify_claim` takes the packed Blake3 digest used by the
+        -- production typecheck path: eight field elements of four bytes.
         let digest := Address.blake3 claimBytes
-        pure (Aiur.buildClaim funIdx (digest.hash.data.map .ofUInt8) #[], proof)
+        pure (Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[], proof)
   let t1 ← IO.monoNanosNow
-  let proofBytes := proof.toBytes
-  IO.println s!"inner prove: {secs t0 t1} s, proof {proofBytes.size} bytes"
+  IO.println s!"inner prove: {secs t0 t1} s, proof {proof.toBytes.size} bytes"
   -- Sanity: the inner proof must verify out-of-circuit before we chase the
   -- recursive verifier.
   match aiurSystem.verify claim proof with
   | .ok () => IO.println "inner proof verifies out-of-circuit: ok"
   | .error e => IO.eprintln s!"⚠ inner proof FAILS out-of-circuit verify: {e}"
-  return some (proofBytes, aiurSystem.vkBytes, MultiStark.serializeClaims #[claim])
+  match aiurSystem.proofToAdviceBytes claim proof with
+  | .error e => IO.eprintln s!"advice re-encoding failed: {e}"; return none
+  | .ok adviceBytes =>
+    return some (adviceBytes, aiurSystem.vkBytes, MultiStark.serializeClaims #[claim])
 
 def main (args : List String) : IO UInt32 := do
   let ixePath := (argStr args "--ixe").getD "init.ixe"

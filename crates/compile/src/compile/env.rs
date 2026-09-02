@@ -397,7 +397,7 @@ pub fn compile_env_with_options(
   // Use scoped threads to borrow from parent scope. `IX_COMPILE_WORKERS`
   // gives large-env callers a simple peak-memory/speed tradeoff knob.
   let available_threads =
-    thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    thread::available_parallelism().map_or(4, |n| n.get());
   let requested_threads = options.max_workers.or_else(|| {
     std::env::var("IX_COMPILE_WORKERS")
       .ok()

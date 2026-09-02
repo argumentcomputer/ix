@@ -143,6 +143,21 @@ extern "C" fn rs_aiur_system_verify(
   }
 }
 
+/// `AiurSystem.proofToAdviceBytes`: expand a valid pruned FRI multiproof into
+/// the per-query advice transport consumed by the recursive verifier.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_to_advice_bytes(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  claim: LeanArray<LeanBorrowed<'_>>,
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let claim = claim.map(|x| lean_unbox_g(&x));
+  match aiur_system_obj.get().proof_to_advice_bytes(&claim, proof_obj.get()) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&err),
+  }
+}
+
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
 /// `Except String ExecuteResult` (see `Ix/Aiur/Semantics/BytecodeFfi.lean`).
 /// On execution failure (e.g. assertion mismatch from a typechecker
@@ -402,7 +417,9 @@ fn decode_owned_blob(
   }
   Ok(
     bytes
-      .chunks_exact(32)
+      .as_chunks::<32>()
+      .0
+      .iter()
       .map(|c| ix_common::address::Address::from_slice(c).unwrap())
       .collect(),
   )
@@ -685,7 +702,9 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
       }
       shards.push(
         bytes[off..off + n * 32]
-          .chunks_exact(32)
+          .as_chunks::<32>()
+          .0
+          .iter()
           .map(|c| ix_common::address::Address::from_slice(c).unwrap())
           .collect(),
       );

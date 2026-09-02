@@ -443,6 +443,17 @@ impl AiurSystem {
   ) -> Result<(), VerificationError<PcsError>> {
     self.system.verify(claim, proof)
   }
+
+  /// Verify and serialize the native Plonky3 multiproof for the in-circuit
+  /// recursive verifier.
+  pub fn proof_to_advice_bytes(
+    &self,
+    claim: &[G],
+    proof: &AiurProof,
+  ) -> Result<Vec<u8>, String> {
+    self.verify(claim, proof).map_err(|e| format!("{e:?}"))?;
+    proof.to_bytes().map_err(|e| format!("{e:?}"))
+  }
 }
 
 #[cfg(test)]

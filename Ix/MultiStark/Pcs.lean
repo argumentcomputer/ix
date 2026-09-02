@@ -389,6 +389,27 @@ def pcs := ⟦
     }
   }
 
+  -- Rows of matrices at log-height <= `target`, in circuit order. Used to
+  -- cross-check that two frontier queries sharing a parent agree on every
+  -- not-yet-injected (shorter) matrix: only the group lead's rows are hashed
+  -- into the shared frontier, so the others must be pinned to match it
+  -- (Plonky3 `verify_batch_pruned`'s `InconsistentGroupOpening`). Skips
+  -- empty (inactive-circuit) rows exactly as `select_rows`.
+  fn select_rows_le(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> List‹List‹U64›› {
+    match load(rows) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(r, rrest) =>
+        let &ListNode.Cons(lh, lrest) = lhs;
+        match u32_less_than(target, lh) {
+          1 => select_rows_le(rrest, lrest, target),
+          _ => match load(r) {
+            ListNode.Nil => select_rows_le(rrest, lrest, target),
+            _ => store(ListNode.Cons(r, select_rows_le(rrest, lrest, target))),
+          },
+        },
+    }
+  }
+
   -- Pop one canonicalized lane across row boundaries. `got = 0` iff both the
   -- current row and the remaining rows are exhausted (selected rows are
   -- non-empty, so advancing to the next row always yields a lane).
@@ -513,6 +534,144 @@ def pcs := ⟦
       ibits: List‹G›, proof: List‹DigestP›, log_max: G) -> G {
     let (root, capidx) = @mmcs_root(rows, lhs, ibits, proof, log_max);
     eq_zero(ptr_val(list_lookup(cap, capidx)) - ptr_val(root))
+  }
+
+  -- A node in the sorted multiproof frontier. Rows are retained from the
+  -- lead query so shorter matrices can be injected at their native height.
+  enum FrontierNode { Mk(G, List‹G›, List‹List‹U64››, DigestP) }
+
+  fn frontier_merge(xs: List‹FrontierNode›, ys: List‹FrontierNode›) -> List‹FrontierNode› {
+    match load(xs) {
+      ListNode.Nil => ys,
+      ListNode.Cons(x, xrest) => match load(ys) {
+        ListNode.Nil => xs,
+        ListNode.Cons(y, yrest) =>
+          let FrontierNode.Mk(xi, _xb, xr, xd) = x;
+          let FrontierNode.Mk(yi, _yb, yr, yd) = y;
+          match memo_u32_less_than(xi, yi) {
+            1 => store(ListNode.Cons(x, frontier_merge(xrest, ys))),
+            _ => match eq_zero(xi - yi) {
+              1 =>
+                -- Duplicate transcript queries (same index) must open the
+                -- SAME full opened rows, not merely the same tallest-matrix
+                -- leaf digest: their shorter-matrix rows share a reduced index
+                -- too and both feed the FRI arithmetic (Plonky3
+                -- `verify_batch_pruned`'s `InconsistentDuplicateOpenings`).
+                -- Pointer equality is admissible inside `assert_eq!`.
+                assert_eq!(ptr_val(xd), ptr_val(yd));
+                assert_eq!(ptr_val(xr), ptr_val(yr));
+                store(ListNode.Cons(x, frontier_merge(xrest, yrest))),
+              _ => store(ListNode.Cons(y, frontier_merge(xs, yrest))),
+            },
+          },
+      },
+    }
+  }
+
+  -- Deal alternating elements into two half-sized lists. Their internal order
+  -- is irrelevant because each half is recursively sorted before merging.
+  fn frontier_split(xs: List‹FrontierNode›) -> (List‹FrontierNode›, List‹FrontierNode›) {
+    match load(xs) {
+      ListNode.Nil => (store(ListNode.Nil), store(ListNode.Nil)),
+      ListNode.Cons(x, rest) => match load(rest) {
+        ListNode.Nil => (store(ListNode.Cons(x, store(ListNode.Nil))), store(ListNode.Nil)),
+        ListNode.Cons(y, tail) =>
+          let (left, right) = frontier_split(tail);
+          (store(ListNode.Cons(x, left)), store(ListNode.Cons(y, right))),
+      },
+    }
+  }
+
+  fn frontier_sort(xs: List‹FrontierNode›) -> List‹FrontierNode› {
+    match load(xs) {
+      ListNode.Nil => xs,
+      ListNode.Cons(_x, rest) => match load(rest) {
+        ListNode.Nil => xs,
+        ListNode.Cons(_y, _tail) =>
+          let (left, right) = frontier_split(xs);
+          frontier_merge(frontier_sort(left), frontier_sort(right)),
+      },
+    }
+  }
+
+  fn frontier_leaves(indices: List‹List‹G››, rows: List‹List‹List‹U64›››,
+      lhs: List‹G›, log_max: G) -> List‹FrontierNode› {
+    match load(indices) {
+      ListNode.Nil =>
+        assert_eq!(list_length(rows), 0);
+        store(ListNode.Nil),
+      ListNode.Cons(bits, irest) =>
+        let &ListNode.Cons(r, rrest) = rows;
+        let d = leaf_hash_at(r, lhs, log_max);
+        store(ListNode.Cons(FrontierNode.Mk(bits_to_num(bits), bits, r, d),
+          frontier_leaves(irest, rrest, lhs, log_max))),
+    }
+  }
+
+  -- Fold one binary frontier level. Boundary siblings are consumed in the
+  -- exact ascending-parent/ascending-child order used by Plonky3 pruning.
+  fn frontier_level(nodes: List‹FrontierNode›, proof: List‹DigestP›,
+      lhs: List‹G›, next_lh: G) -> (List‹FrontierNode›, List‹DigestP›) {
+    match load(nodes) {
+      ListNode.Nil => (store(ListNode.Nil), proof),
+      ListNode.Cons(a, rest) =>
+        let FrontierNode.Mk(ai, abits, ar, ad) = a;
+        let &ListNode.Cons(abit, aparent_bits) = abits;
+        let aparent = bits_to_num(aparent_bits);
+        match load(rest) {
+          ListNode.Cons(b, brest) =>
+            let FrontierNode.Mk(bi, bbits, br, bd) = b;
+            let &ListNode.Cons(_bbit, bparent_bits) = bbits;
+            match eq_zero(aparent - bits_to_num(bparent_bits)) {
+              1 =>
+                -- Group members sharing a parent are collapsed to the lead
+                -- `a`; only `ar` is injected from here up, so `b` must agree
+                -- with `a` on every not-yet-injected (height <= next_lh)
+                -- matrix. Otherwise `b`'s shorter-matrix opened rows, still
+                -- consumed in its own FRI arithmetic, would go unauthenticated
+                -- (Plonky3 `verify_batch_pruned`'s `InconsistentGroupOpening`;
+                -- pointer equality is admissible inside `assert_eq!` — see
+                -- `IxVM.Core`). Transitive across pairwise merges, so the whole
+                -- group is pinned.
+                assert_eq!(ptr_val(select_rows_le(ar, lhs, next_lh)),
+                           ptr_val(select_rows_le(br, lhs, next_lh)));
+                let parent = inject_maybe(ar, lhs, next_lh, mmcs_compress(ad, bd));
+                let (tail, p2) = frontier_level(brest, proof, lhs, next_lh);
+                (store(ListNode.Cons(FrontierNode.Mk(aparent, aparent_bits, ar, parent), tail)), p2),
+              _ =>
+                let &ListNode.Cons(sib, prest) = proof;
+                let parent = inject_maybe(ar, lhs, next_lh, compress_ordered(abit, ad, sib));
+                let (tail, p2) = frontier_level(rest, prest, lhs, next_lh);
+                (store(ListNode.Cons(FrontierNode.Mk(aparent, aparent_bits, ar, parent), tail)), p2),
+            },
+          ListNode.Nil =>
+            let &ListNode.Cons(sib, prest) = proof;
+            let parent = inject_maybe(ar, lhs, next_lh, compress_ordered(abit, ad, sib));
+            (store(ListNode.Cons(FrontierNode.Mk(aparent, aparent_bits, ar, parent), store(ListNode.Nil))), prest),
+        },
+    }
+  }
+
+  fn frontier_fold(nodes: List‹FrontierNode›, proof: List‹DigestP›,
+      lhs: List‹G›, levels: G) -> (List‹FrontierNode›, List‹DigestP›) {
+    match levels {
+      0 => (nodes, proof),
+      _ =>
+        let (next, p2) = frontier_level(nodes, proof, lhs, levels - 1);
+        frontier_fold(next, p2, lhs, levels - 1),
+    }
+  }
+
+  fn mmcs_verify_multi(cap: MerkleCap, rows: List‹List‹List‹U64›››,
+      lhs: List‹G›, indices: List‹List‹G››, proof: List‹DigestP›, log_max: G) -> G {
+    assert_eq!(eq_zero(list_length(rows) - list_length(indices)), 1);
+    let leaves = frontier_sort(frontier_leaves(indices, rows, lhs, log_max));
+    let (roots, rest) = frontier_fold(leaves, proof, lhs, log_max);
+    assert_eq!(list_length(rest), 0);
+    let &ListNode.Cons(root, no_more) = roots;
+    assert_eq!(list_length(no_more), 0);
+    let FrontierNode.Mk(capidx, _bits, _rows, digest) = root;
+    eq_zero(ptr_val(list_lookup(cap, capidx)) - ptr_val(digest))
   }
 
   -- ==========================================================================
@@ -826,7 +985,7 @@ def pcs := ⟦
     match prep_opt {
       PreprocessedOpt.NoPreprocessed => buckets,
       PreprocessedOpt.SomePreprocessed(prep_round) =>
-        let BatchOpening.Mk(rows_p, proof_p) = list_lookup(input_proof, 3);
+        let BatchOpening.Mk(rows_p) = list_lookup(input_proof, 3);
         -- one opened base row per preprocessed matrix (BatchOpenedValuesCountMismatch)
         assert_eq!(eq_zero(list_length(rows_p) - list_length(prep_round)), 1);
         -- The preprocessed tree's max height is over the PREP circuits only, so
@@ -836,8 +995,6 @@ def pcs := ⟦
         -- of the LSB-first bit list) and verify against the batch's own height.
         let prep_heights = heights_prep(log_degrees, log_blowup, prep_indices, num_circuits, 0);
         let log_pmax = heights_max(prep_heights);
-        assert_eq!(mmcs_verify(prep_commit, rows_p, prep_heights,
-          list_drop(idxbits, log_gmax - log_pmax), proof_p, log_pmax), 1);
         open_prep(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, 0, log_degrees,
                   prep_indices, zeta, rows_p, prep_round, alpha),
     }
@@ -904,7 +1061,7 @@ def pcs := ⟦
   }
   fn verify_query(folded: Ext, betas: List‹Ext›, comms: List‹MerkleCap›,
       openings: List‹CommitPhaseProofStep›, domidx: List‹G›, log_cur: G,
-      ro_rest: List‹Bucket›, log_final: G) -> Ext {
+      ro_rest: List‹Bucket›, log_final: G) -> (Ext, List‹List‹U64››) {
     match load(openings) {
       ListNode.Nil =>
         -- must have folded down to exactly the final domain size, and every
@@ -912,22 +1069,20 @@ def pcs := ⟦
         -- UnconsumedReducedOpenings).
         assert_eq!(eq_zero(log_cur - log_final), 1);
         assert_eq!(list_length(ro_rest), 0);
-        folded,
+        (folded, store(ListNode.Nil)),
       ListNode.Cons(op, op_rest) =>
         let &ListNode.Cons(beta, beta_rest) = betas;
         let &ListNode.Cons(comm, comm_rest) = comms;
-        let CommitPhaseProofStep.Mk(_la, sibs, oproof) = op;
+        let CommitPhaseProofStep.Mk(_la, sibs) = op;
         -- arity 2 ⇒ exactly arity-1 = 1 sibling (SiblingValuesLengthMismatch).
         assert_eq!(list_length(sibs), 1);
         let &ListNode.Cons(ibit, idrest) = domidx;     -- index_in_group = LSB
         let log_folded = log_cur - 1;
         let (e0, e1) = @recon_evals(ibit, folded, list_lookup(sibs, 0));
-        -- authenticate the sibling pair against this round's commitment
-        assert_eq!(mmcs_verify(comm, store(ListNode.Cons(@flatten2(e0, e1), store(ListNode.Nil))),
-          store(ListNode.Cons(log_folded, store(ListNode.Nil))), idrest, oproof, log_folded), 1);
         let folded1 = fri_fold2(idrest, log_folded, beta, e0, e1);
         let (folded2, ro_rest2) = rollin(folded1, log_folded, beta, ro_rest);
-        verify_query(folded2, beta_rest, comm_rest, op_rest, idrest, log_folded, ro_rest2, log_final),
+        let (result, rows) = verify_query(folded2, beta_rest, comm_rest, op_rest, idrest, log_folded, ro_rest2, log_final);
+        (result, store(ListNode.Cons(@flatten2(e0, e1), rows))),
     }
   }
 
@@ -941,7 +1096,7 @@ def pcs := ⟦
       prep_commit: MerkleCap, prep_indices: List‹OptIdx›,
       log_degrees: List‹U8›, zeta: Ext, num_circuits: G, log_blowup: G, log_gmax: G,
       betas: List‹Ext›, commit_phase_commits: List‹MerkleCap›, final_poly: List‹Ext›,
-      num_rounds: G) -> G {
+      num_rounds: G) -> List‹List‹U64›› {
     let QueryProof.Mk(input_proof, commit_phase_openings) = qp;
     -- one commit-phase opening per round (QueryCommitPhaseOpeningsCountMismatch),
     -- one input batch per commitment (InputProofBatchCountMismatch).
@@ -951,19 +1106,16 @@ def pcs := ⟦
     -- one heights list for all three stage batches (memoized anyway; this
     -- also drops two call-output columns per proof)
     let hall = heights_all(log_degrees, log_blowup, num_circuits, 0);
-    let BatchOpening.Mk(rows_s1, proof_s1) = list_lookup(input_proof, 0);
+    let BatchOpening.Mk(rows_s1) = list_lookup(input_proof, 0);
     assert_eq!(eq_zero(list_length(rows_s1) - num_circuits), 1);
-    assert_eq!(mmcs_verify(s1c, rows_s1, hall, idxbits, proof_s1, log_gmax), 1);
     let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s1, stage1, alpha);
-    let BatchOpening.Mk(rows_s2, proof_s2) = list_lookup(input_proof, 1);
+    let BatchOpening.Mk(rows_s2) = list_lookup(input_proof, 1);
     assert_eq!(eq_zero(list_length(rows_s2) - num_circuits), 1);
-    assert_eq!(mmcs_verify(s2c, rows_s2, hall, idxbits, proof_s2, log_gmax), 1);
     let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s2, stage2, alpha);
-    let BatchOpening.Mk(rows_q, proof_q) = list_lookup(input_proof, 2);
+    let BatchOpening.Mk(rows_q) = list_lookup(input_proof, 2);
     -- one wide quotient matrix per circuit, on the trace domain, so the
     -- quotient batch's heights are the same per-circuit heights as the stages
     assert_eq!(eq_zero(list_length(rows_q) - num_circuits), 1);
-    assert_eq!(mmcs_verify(qc, rows_q, hall, idxbits, proof_q, log_gmax), 1);
     let buckets = open_quotient(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_q, q_opened, alpha);
     let buckets = open_prep_batch(buckets, input_proof, prep_commit, prep_opt, prep_indices, log_degrees, num_circuits, idxbits, log_gmax, log_blowup, zeta, alpha);
     -- a height-`log_blowup` (constant-poly) reduced opening must be zero
@@ -973,10 +1125,10 @@ def pcs := ⟦
     let &ListNode.Cons(b0, ro_rest) = buckets;
     let Bucket.Mk(h0, _ap0, folded_start) = b0;
     assert_eq!(eq_zero(h0 - log_gmax), 1);
-    let folded = verify_query(folded_start, betas, commit_phase_commits, commit_phase_openings, idxbits, log_gmax, ro_rest, log_blowup);
+    let (folded, fri_rows) = verify_query(folded_start, betas, commit_phase_commits, commit_phase_openings, idxbits, log_gmax, ro_rest, log_blowup);
     -- final check: with log_final_poly_len = 0, eval = final_poly[0]
     assert_eq!(@eg_eq(list_lookup(final_poly, 0), folded), 1);
-    1
+    fri_rows
   }
 
   -- Loop over all `num_queries` query proofs, sampling one index per query
@@ -987,17 +1139,106 @@ def pcs := ⟦
       prep_commit: MerkleCap, prep_indices: List‹OptIdx›,
       log_degrees: List‹U8›, zeta: Ext, num_circuits: G, log_blowup: G, log_gmax: G,
       betas: List‹Ext›, commit_phase_commits: List‹MerkleCap›, final_poly: List‹Ext›,
-      num_rounds: G) -> G {
+      num_rounds: G) -> List‹List‹List‹U64››› {
     match load(query_proofs) {
-      ListNode.Nil => 1,
+      ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(qp, rest) =>
         let (idxbits, input2, output2) = ch_sample_bits(input, output, log_gmax);
-        let _q = verify_one_query(idxbits, qp, alpha, stage1, stage2, q_opened, prep_opt,
+        let qrows = verify_one_query(idxbits, qp, alpha, stage1, stage2, q_opened, prep_opt,
           s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta, num_circuits,
           log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds);
-        query_loop(input2, output2, rest, alpha, stage1, stage2, q_opened, prep_opt,
+        store(ListNode.Cons(qrows, query_loop(input2, output2, rest, alpha, stage1, stage2, q_opened, prep_opt,
           s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta, num_circuits,
-          log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds),
+          log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds))),
+    }
+  }
+
+  fn sample_query_indices(input: ByteStream, output: ByteStream, n: G,
+      log_gmax: G) -> List‹List‹G›› {
+    match n {
+      0 => store(ListNode.Nil),
+      _ =>
+        let (bits, input2, output2) = ch_sample_bits(input, output, log_gmax);
+        store(ListNode.Cons(bits, sample_query_indices(input2, output2, n - 1, log_gmax))),
+    }
+  }
+
+  fn batch_views_at(bs: List‹BatchMultiOpening›, q: G) -> List‹BatchOpening› {
+    match load(bs) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(b, rest) =>
+        let BatchMultiOpening.Mk(rows, _proof) = b;
+        store(ListNode.Cons(BatchOpening.Mk(list_lookup(rows, q)), batch_views_at(rest, q))),
+    }
+  }
+  fn step_views_at(ss: List‹CommitPhaseMultiStep›, q: G) -> List‹CommitPhaseProofStep› {
+    match load(ss) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(s, rest) =>
+        let CommitPhaseMultiStep.Mk(la, sibs, _proof) = s;
+        store(ListNode.Cons(CommitPhaseProofStep.Mk(la, list_lookup(sibs, q)), step_views_at(rest, q))),
+    }
+  }
+  fn query_views(bs: List‹BatchMultiOpening›, ss: List‹CommitPhaseMultiStep›,
+      q: G, n: G) -> List‹QueryProof› {
+    match n {
+      0 => store(ListNode.Nil),
+      _ => store(ListNode.Cons(QueryProof.Mk(batch_views_at(bs, q), step_views_at(ss, q)),
+             query_views(bs, ss, q + 1, n - 1))),
+    }
+  }
+
+  fn verify_input_multi(bs: List‹BatchMultiOpening›, indices: List‹List‹G››,
+      s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap, prep_commit: MerkleCap,
+      prep_opt: PreprocessedOpt, prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
+      num_circuits: G, log_blowup: G, log_gmax: G) -> G {
+    let hall = heights_all(log_degrees, log_blowup, num_circuits, 0);
+    let BatchMultiOpening.Mk(s1rows, s1proof) = list_lookup(bs, 0);
+    let BatchMultiOpening.Mk(s2rows, s2proof) = list_lookup(bs, 1);
+    let BatchMultiOpening.Mk(qrows, qproof) = list_lookup(bs, 2);
+    assert_eq!(mmcs_verify_multi(s1c, s1rows, hall, indices, s1proof, log_gmax), 1);
+    assert_eq!(mmcs_verify_multi(s2c, s2rows, hall, indices, s2proof, log_gmax), 1);
+    assert_eq!(mmcs_verify_multi(qc, qrows, hall, indices, qproof, log_gmax), 1);
+    match prep_opt {
+      PreprocessedOpt.NoPreprocessed => 1,
+      PreprocessedOpt.SomePreprocessed(_round) =>
+        let BatchMultiOpening.Mk(prows, pproof) = list_lookup(bs, 3);
+        let ph = heights_prep(log_degrees, log_blowup, prep_indices, num_circuits, 0);
+        let lp = heights_max(ph);
+        let pindices = drop_index_bits(indices, log_gmax - lp);
+        mmcs_verify_multi(prep_commit, prows, ph, pindices, pproof, lp),
+    }
+  }
+  fn drop_index_bits(indices: List‹List‹G››, n: G) -> List‹List‹G›› {
+    match load(indices) {
+      ListNode.Nil => indices,
+      ListNode.Cons(bits, rest) =>
+        store(ListNode.Cons(list_drop(bits, n), drop_index_bits(rest, n))),
+    }
+  }
+  fn rows_at_round(rows: List‹List‹List‹U64›››, r: G) -> List‹List‹List‹U64››› {
+    match load(rows) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(qrows, rest) =>
+        store(ListNode.Cons(store(ListNode.Cons(list_lookup(qrows, r), store(ListNode.Nil))),
+          rows_at_round(rest, r))),
+    }
+  }
+  fn verify_commit_multi(steps: List‹CommitPhaseMultiStep›, comms: List‹MerkleCap›,
+      all_rows: List‹List‹List‹U64›››, indices: List‹List‹G››, r: G,
+      log_cur: G) -> G {
+    match load(steps) {
+      ListNode.Nil => eq_zero(list_length(comms)),
+      ListNode.Cons(s, srest) =>
+        let &ListNode.Cons(c, crest) = comms;
+        let CommitPhaseMultiStep.Mk(la, sibs, proof) = s;
+        assert_eq!(to_field(la), 1);
+        assert_eq!(list_length(sibs), list_length(indices));
+        let next_indices = drop_index_bits(indices, 1);
+        let lh = log_cur - 1;
+        assert_eq!(mmcs_verify_multi(c, rows_at_round(all_rows, r),
+          store(ListNode.Cons(lh, store(ListNode.Nil))), next_indices, proof, lh), 1);
+        verify_commit_multi(srest, crest, all_rows, next_indices, r + 1, lh),
     }
   }
 
@@ -1010,12 +1251,14 @@ def pcs := ⟦
       prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
       zeta: Ext, num_circuits: G, log_blowup: G, num_queries: G, commit_pow_bits: G,
       query_pow_bits: G) -> G {
-    let FriProof.Mk(commit_phase_commits, pw, query_proofs, final_poly, qpw) = opening;
+    let FriProof.Mk(commit_phase_commits, pw, input_openings, commit_phase_openings,
+      final_poly, qpw) = opening;
     let num_rounds = list_length(commit_phase_commits);
     -- FRI shape: one PoW witness per round, num_queries query proofs, and (since
     -- log_final_poly_len = 0) a single final-poly coefficient.
     assert_eq!(eq_zero(list_length(pw) - num_rounds), 1);
-    assert_eq!(eq_zero(list_length(query_proofs) - num_queries), 1);
+    assert_eq!(list_length(input_openings), 3 + prep_count(prep_opt));
+    assert_eq!(eq_zero(list_length(commit_phase_openings) - num_rounds), 1);
     assert_eq!(list_length(final_poly), 1);
     -- challenger continuation: observe all opened values (coms_to_verify
     -- order), built as one front-to-back suffix + a single concat (the input
@@ -1041,9 +1284,14 @@ def pcs := ⟦
     -- max height so `two_adic_gen`'s squaring chain (bits ≤ 32) and the
     -- 32-bit query-index decomposition stay within range.
     assert_eq!(u32_less_than(log_gmax, 33), 1);
-    query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
+    let indices = sample_query_indices(input, output, num_queries, log_gmax);
+    assert_eq!(verify_input_multi(input_openings, indices, s1c, s2c, qc,
+      prep_commit, prep_opt, prep_indices, log_degrees, num_circuits, log_blowup, log_gmax), 1);
+    let query_proofs = query_views(input_openings, commit_phase_openings, 0, num_queries);
+    let fri_rows = query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
       prep_opt, s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta,
-      num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)
+      num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds);
+    verify_commit_multi(commit_phase_openings, commit_phase_commits, fri_rows, indices, 0, log_gmax)
   }
 
 ⟧

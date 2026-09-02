@@ -36,7 +36,7 @@ pub extern "C" fn rs_debug_sharing_analysis(
     .collect();
 
   // Sort by usage count descending
-  candidates.sort_by(|a, b| b.1.usage_count.cmp(&a.1.usage_count));
+  candidates.sort_by_key(|entry| std::cmp::Reverse(entry.1.usage_count));
 
   println!("[Rust] Subterms with usage >= 2:");
   for (hash, info, eff_size) in candidates {

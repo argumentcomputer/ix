@@ -1296,7 +1296,7 @@ where
 fn resolve_kernel_check_workers(total: usize, quiet: bool) -> usize {
   let env_workers = std::env::var("IX_KERNEL_CHECK_WORKERS").ok();
   let no_par = std::env::var("IX_NO_PAR").ok().as_deref() == Some("1");
-  let available = thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+  let available = thread::available_parallelism().map_or(1, |n| n.get());
   resolve_kernel_check_workers_from(
     total,
     quiet,
