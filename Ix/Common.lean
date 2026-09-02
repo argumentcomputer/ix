@@ -439,17 +439,24 @@ def Nat.formatMs (ms : Nat) : String :=
   else
     "< 1ms"
 
+/-- Bytes per GiB — the unit of the RAM-budget flags and every
+    prover-peak log line. -/
+def gibBytes : Nat := 1024 * 1024 * 1024
+
+/-- Bytes rendered as GiB for log lines. -/
+def toGib (bytes : Nat) : Float := bytes.toFloat / gibBytes.toFloat
+
 /-- Format a byte count with appropriate unit suffix (B, kB, MB, GB). -/
 def fmtBytes (n : Nat) : String :=
   if n < 1024 then s!"{n} B"
   else if n < 1024 * 1024 then
     let kb := n * 10 / 1024
     s!"{kb / 10}.{kb % 10} kB"
-  else if n < 1024 * 1024 * 1024 then
+  else if n < gibBytes then
     let mb := n * 10 / (1024 * 1024)
     s!"{mb / 10}.{mb % 10} MB"
   else
-    let gb := n * 10 / (1024 * 1024 * 1024)
+    let gb := n * 10 / gibBytes
     s!"{gb / 10}.{gb % 10} GB"
 
 /-- ` · rss X.Y GiB (hwm Z.W)` from `/proc/self/status`; empty where

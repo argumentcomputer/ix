@@ -41,8 +41,8 @@ use lean_ffi::object::LeanNat;
 use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanIOResult, LeanList, LeanOption,
-  LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExternal, LeanIOResult,
+  LeanList, LeanOption, LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::lean::LeanIxCheckError;
@@ -2330,21 +2330,30 @@ fn static_block_profile(env: &IxonEnv) -> BlockProfile {
   builder.finish()
 }
 
-/// FFI: partition a `.ixe` into `num_shards` shards with the STATIC
-/// strategy — no out-of-circuit profiling run. Builds the static block
-/// profile ([`static_block_profile`]), byte-balanced min-cut over the
-/// walk-edge nets, then the predicted-cost rebalance post-pass
+/// FFI: partition a `.ixe` with the STATIC strategy — no out-of-circuit
+/// profiling run. An explicit nonzero `num_shards` fixes the count. Otherwise,
+/// `ram_gib` seeds it from the static block-shape score after the profile is
+/// loaded ([`ix_kernel::shard::static_seed_shards`]). Builds the static block
+/// profile ([`static_block_profile`]), byte-balanced min-cut over the walk-edge
+/// nets, then the predicted-cost rebalance post-pass
 /// (`ix_kernel::shard::shard_static`). Writes a `.ixes` manifest.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
   env_path: LeanString<LeanBorrowed<'_>>,
   num_shards: LeanString<LeanBorrowed<'_>>,
+  ram_gib: LeanString<LeanBorrowed<'_>>,
   balance_pct: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
-  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
+  let requested_shards = num_shards.to_string().parse::<usize>().unwrap_or(0);
+  let ram_gib = ram_gib.to_string().parse::<u64>().unwrap_or(0);
+  if requested_shards == 0 && ram_gib == 0 {
+    return LeanIOResult::error_string(
+      "rs_shard_env_static: pass a positive shard count or RAM budget",
+    );
+  }
   let balance =
     (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
   let out = out_path.to_string();
@@ -2368,12 +2377,118 @@ pub extern "C" fn rs_shard_env_static(
     profile.num_blocks(),
     profile.num_edges()
   );
+  let num_shards = if requested_shards > 0 {
+    requested_shards
+  } else {
+    let score = ix_kernel::shard::static_env_score(&profile);
+    let n = ix_kernel::shard::static_seed_shards(&profile, ram_gib);
+    eprintln!(
+      "[shard] static seed: score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
+      ix_kernel::shard::STATIC_SEED_REFERENCE_SHARDS,
+      ix_kernel::shard::STATIC_SEED_REFERENCE_SCORE,
+      ix_kernel::shard::STATIC_SEED_SCORE_EXPONENT,
+      ix_kernel::shard::STATIC_SEED_REFERENCE_RAM_GIB,
+      ix_kernel::shard::STATIC_SEED_BUDGET_EXPONENT,
+    );
+    n
+  };
   match ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt) {
     Ok(report) => {
       eprintln!("[rs_shard_static]\n{report}");
       LeanIOResult::ok(LeanOwned::box_usize(0))
     },
     Err(e) => LeanIOResult::error_string(&format!("rs_shard_env_static: {e}")),
+  }
+}
+
+/// FFI: write a `.ixes` manifest describing an EXPLICIT partition — the
+/// block lists a prove run actually produced (splits included), so the
+/// emitted manifest is the one `ix verify --ixes` can check the run's
+/// proofs against, and the one that seeds the next run with a
+/// partition that already fits.
+///
+/// `shards_blob` encodes, per shard, a 4-byte LE block count followed
+/// by that many 32-byte block addresses. Every profile block must
+/// appear in EXACTLY one shard: a prove partition covers the env by
+/// construction (splits partition their parent), so a gap or duplicate
+/// here is an input error, not a policy choice.
+///
+/// `peaks_blob`: one 8-byte LE measured prover peak per shard in shard
+/// order — the run's `peak_prove_bytes` measurements, recorded on each
+/// manifest shard for schedulers to bin-pack on.
+///
+/// Takes the caller's live `EnvHandle`: both call sites hold one for
+/// this env already, so the emit costs a profile build, not an env
+/// re-parse.
+#[allow(clippy::cast_possible_truncation)] // block/shard ids are u32 by construction
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_manifest_from_partition(
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  shards_blob: LeanByteArray<LeanBorrowed<'_>>,
+  peaks_blob: LeanByteArray<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let out = out_path.to_string();
+  let profile = static_block_profile(&env_handle.get().env);
+  let block_id: FxHashMap<Address, u32> = profile
+    .blocks()
+    .iter()
+    .enumerate()
+    .map(|(i, b)| (b.addr.clone(), i as u32))
+    .collect();
+  let lists =
+    match crate::aiur::protocol::decode_addr_lists(shards_blob.as_bytes()) {
+      Ok(v) => v,
+      Err(e) => return LeanIOResult::error_string(&e),
+    };
+  let num_shards = lists.len();
+  let mut shard_of = vec![u32::MAX; profile.num_blocks()];
+  for (k, list) in lists.iter().enumerate() {
+    for addr in list {
+      let Some(&b) = block_id.get(addr) else {
+        return LeanIOResult::error_string(&format!(
+          "shard {k}: block {} not in the env's block profile",
+          addr.hex()
+        ));
+      };
+      if shard_of[b as usize] != u32::MAX {
+        return LeanIOResult::error_string(&format!(
+          "block {} appears in shards {} and {k}",
+          addr.hex(),
+          shard_of[b as usize]
+        ));
+      }
+      shard_of[b as usize] = k as u32;
+    }
+  }
+  let uncovered = shard_of.iter().filter(|&&s| s == u32::MAX).count();
+  if uncovered > 0 {
+    return LeanIOResult::error_string(&format!(
+      "partition covers {} of {} blocks ({uncovered} missing)",
+      profile.num_blocks() - uncovered,
+      profile.num_blocks()
+    ));
+  }
+  let peaks: Vec<u64> = peaks_blob
+    .as_bytes()
+    .as_chunks::<8>()
+    .0
+    .iter()
+    .map(|c| u64::from_le_bytes(*c))
+    .collect();
+  match ix_kernel::shard::shard_manifest_explicit(
+    &profile, &shard_of, num_shards, &peaks, &out,
+  ) {
+    Ok(summary) => {
+      eprintln!("[shard-manifest] {out}: {summary}");
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanIOResult::error_string(&format!(
+      "rs_shard_manifest_from_partition: {e}"
+    )),
   }
 }
 

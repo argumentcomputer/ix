@@ -2,15 +2,16 @@
 //! cross-shard delta-unfold ingress (see `plans/sharding.md`). Two driving
 //! modes share the same min-cut machinery:
 //!
-//! - **Fixed count** ([`Hypergraph::partition`], the `--shards N` CLI path):
-//!   recursive *balanced* min-cut bisection into exactly `N` shards — even
-//!   per-shard work, the bisection tree doubling as the aggregation tree.
-//! - **Cap / packing** ([`partition_for_cycle_cap`], the default and
-//!   `--max-cycles`/`--max-ram` paths): **bin-pack to the cap** — the fewest
-//!   shards that each stay under a per-shard cycle (hence prover-RAM) budget,
-//!   each filled as full as the dependency structure allows. This does *not*
-//!   balance: uniformity over-shards (every shard left partly empty), whereas
-//!   packing hits `≈⌈total/cap⌉` shards. It still uses a fine min-cut
+//! - **Fixed count** ([`Hypergraph::partition`], explicit `--shards N` and the
+//!   static strategy's `--max-ram` score seed): recursive *balanced* min-cut
+//!   bisection into exactly `N` shards — even per-shard work, the bisection tree
+//!   doubling as the aggregation tree.
+//! - **Cap / packing** ([`partition_for_cycle_cap`], the profiled strategy's
+//!   default and `--max-cycles`/`--max-ram` paths): **bin-pack to the cap** — the
+//!   fewest shards that each stay under a per-shard cycle (hence prover-RAM)
+//!   budget, each filled as full as the dependency structure allows. This does
+//!   *not* balance: uniformity over-shards (every shard left partly empty),
+//!   whereas packing hits `≈⌈total/cap⌉` shards. It still uses a fine min-cut
 //!   pre-partition for a **cut-coherent order** so dependency overlap packs into
 //!   the same shard (overlap paid once, not re-ingressed per shard).
 //!
@@ -1291,6 +1292,11 @@ pub struct ShardInfo {
   /// root over the foreign part of the shard's static reference closure. `None`
   /// until populated by the env-aware layer (the pure partitioner has no `Env`).
   pub assumption_root: Option<Address>,
+  /// Measured projected prover peak of this shard's executed record
+  /// (`AiurSystem::peak_prove_bytes`), recorded when the manifest was
+  /// emitted from a run that executed the shard; 0 = unmeasured (planner
+  /// output). The scheduling signal: STARK prove wall is ~linear in it.
+  pub measured_peak_bytes: u64,
 }
 
 /// The sharding manifest: the partition plus its cost metrics. Assumption-tree
@@ -1358,6 +1364,7 @@ impl ShardManifest {
         foreign_blocks,
         cross_ingress,
         assumption_root: None,
+        measured_peak_bytes: 0,
       });
     }
     ShardManifest {
@@ -1396,9 +1403,28 @@ impl ShardManifest {
     let empty = self.shards.iter().filter(|s| s.blocks.is_empty()).count();
     let max_cross =
       self.shards.iter().map(|s| s.cross_ingress).max().unwrap_or(0);
+    let peaks: Vec<u64> = self
+      .shards
+      .iter()
+      .map(|s| s.measured_peak_bytes)
+      .filter(|&p| p != 0)
+      .collect();
+    #[allow(clippy::cast_precision_loss)]
+    let measured = if peaks.is_empty() {
+      String::new()
+    } else {
+      let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
+      format!(
+        " measured-peaks[{}/{} shards, min={:.1} max={:.1} GiB]",
+        peaks.len(),
+        self.shards.len(),
+        gib(peaks.iter().copied().min().unwrap_or(0)),
+        gib(peaks.iter().copied().max().unwrap_or(0)),
+      )
+    };
     format!(
       "shards={} (empty={}) heartbeats[min={} mean={} max={}] imbalance={:.2}x \
-       cross_ingress_total={} max_shard_cross={}",
+       cross_ingress_total={} max_shard_cross={}{measured}",
       self.shards.len(),
       empty,
       min,
@@ -1470,6 +1496,18 @@ impl ShardManifest {
       },
       None => out.push(0),
     }
+    // Trailing measured-peaks section (same older-readers-ignore contract
+    // as the tree): presence byte, then one u64 LE per shard in order.
+    // Absent when nothing was measured, so planner manifests stay
+    // byte-identical to the pre-peaks format.
+    if self.shards.iter().any(|s| s.measured_peak_bytes != 0) {
+      out.push(1);
+      for sh in &self.shards {
+        out.extend_from_slice(&sh.measured_peak_bytes.to_le_bytes());
+      }
+    } else {
+      out.push(0);
+    }
     out
   }
 
@@ -1498,6 +1536,7 @@ impl ShardManifest {
         foreign_blocks,
         cross_ingress,
         assumption_root,
+        measured_peak_bytes: 0,
       });
     }
     // Optional trailing tree section. Absent (end-of-input) on pre-tree
@@ -1507,6 +1546,12 @@ impl ShardManifest {
     } else {
       None
     };
+    // Optional trailing measured-peaks section; absent on older manifests.
+    if c.pos < c.buf.len() && c.u8()? == 1 {
+      for sh in &mut shards {
+        sh.measured_peak_bytes = c.u64()?;
+      }
+    }
     // The tree is the aggregation plan: a leaf set that is not exactly the
     // shard id set (each id once) would silently drop or duplicate proven
     // shards in the fold, so a manifest carrying such a tree is invalid.
@@ -1609,10 +1654,71 @@ pub const STATIC_OWNED_SUPERLINEAR: f64 = 681.08;
 /// See [`STATIC_OWNED_PER_BYTE`].
 pub const STATIC_FRONTIER_PER_BYTE: f64 = 38_000.0;
 
+/// Reference point for the profile-free shard-count seed: Mathlib's static
+/// owned-side score under this model. At a 400 GiB prover budget, 233 seed
+/// shards gave the established Mathlib-class behavior (a small number of
+/// heavy-tail splits, corrected by the execution gate).
+pub const STATIC_SEED_REFERENCE_SCORE: f64 = 1.254e14;
+/// Mathlib seed count at [`STATIC_SEED_REFERENCE_RAM_GIB`].
+pub const STATIC_SEED_REFERENCE_SHARDS: f64 = 233.0;
+/// Prover-RAM budget of the reference calibration.
+pub const STATIC_SEED_REFERENCE_RAM_GIB: f64 = 400.0;
+/// Mild superlinear scale correction over the static owned-side score.
+///
+/// A linear score model still over-counted the small environments: cross-shard
+/// duplication and the heavy-tail risk both grow with library scale. The 1.10
+/// exponent preserves the Mathlib reference while fitting the measured knees
+/// at Init (8 shards) and ISLB (23) at the 400 GiB reference budget.
+pub const STATIC_SEED_SCORE_EXPONENT: f64 = 1.10;
+/// Superlinear correction when scaling the seed away from 400 GiB.
+///
+/// Fitted on the 2026-08-28 100 GiB calibration: linear scaling caused broad
+/// correction (Init 32→48 leaves; ISLB 93→123), while 1.20 seeded Init at 43
+/// (42 measured clean) and ISLB at 122 (four initial misses, 128 leaves).
+/// Out-of-sample Batteries seeded 74 with one initial miss and 79 leaves. The
+/// discarded 1.36 candidate over-seeded ISLB at 152→156. Unlike the score
+/// exponent, this changes no reference-budget prediction.
+pub const STATIC_SEED_BUDGET_EXPONENT: f64 = 1.20;
+
 /// Predicted owned-side cost of one block under the static model.
 fn static_owned_weight(size: u32) -> f64 {
   let s = f64::from(size);
   STATIC_OWNED_PER_BYTE * s + STATIC_OWNED_SUPERLINEAR * s * s.sqrt()
+}
+
+/// Whole-environment owned-side score used only to seed a shard count.
+///
+/// There is no frontier when the environment is viewed as one set, so this is
+/// just the sum of [`static_owned_weight`] over blocks. Unlike raw `.ixe` file
+/// bytes, it sees how bytes are packaged: the superlinear term distinguishes a
+/// large reduction-heavy proof body from the same bytes spread over many small
+/// declarations. The actual partition still includes frontier cost and is
+/// always checked by the execution-time prover-RAM gate.
+pub fn static_env_score(profile: &BlockProfile) -> f64 {
+  profile.blocks().iter().map(|b| static_owned_weight(b.serialized_size)).sum()
+}
+
+/// Score/budget model for the profile-free shard-count seed.
+///
+/// This deliberately rounds to the nearest shard instead of always rounding
+/// upward: it is a seed, not a safety boundary, and the prove/check execution
+/// gate measures and splits every over-budget shard before a STARK starts.
+/// Avoiding an unconditional upward bias matters most for small environments.
+fn static_seed_shards_for_score(score: f64, ram_gib: u64) -> usize {
+  let budget = ram_gib.max(1) as f64;
+  let scaled = STATIC_SEED_REFERENCE_SHARDS
+    * (score / STATIC_SEED_REFERENCE_SCORE).powf(STATIC_SEED_SCORE_EXPONENT)
+    * (STATIC_SEED_REFERENCE_RAM_GIB / budget)
+      .powf(STATIC_SEED_BUDGET_EXPONENT);
+  scaled.round().max(1.0) as usize
+}
+
+/// Suggested static seed count for `profile` at a per-shard prover-RAM budget.
+/// The result is capped at one shard per atomic block; finer partitioning could
+/// only create empty shards and cannot make an oversized block splittable.
+pub fn static_seed_shards(profile: &BlockProfile, ram_gib: u64) -> usize {
+  static_seed_shards_for_score(static_env_score(profile), ram_gib)
+    .min(profile.num_blocks().max(1))
 }
 
 /// Greedy global rebalance toward equal predicted per-shard cost under the
@@ -1833,14 +1939,7 @@ pub fn shard_static(
   );
   let mut manifest =
     ShardManifest::build(profile, &shard_of, num_shards).with_tree(tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   let costs = static_predicted_costs(profile, &shard_of, num_shards);
   let (mut lo, mut hi, mut sum) = (f64::INFINITY, 0.0f64, 0.0f64);
   for &c in &costs {
@@ -1885,14 +1984,7 @@ pub fn shard_esp(
   let (shard_of, tree) = h.partition_with_tree(num_shards, balance);
   let mut manifest =
     ShardManifest::build(&profile, &shard_of, num_shards).with_tree(tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   // The largest single block's heartbeats is the *floor* on achievable
   // per-shard balance: a mutual block is atomic and cannot be split, so no
   // partition can drive max-shard heartbeats below it. When the heaviest shard
@@ -1921,6 +2013,57 @@ pub fn shard_esp(
   ))
 }
 
+/// Seal every shard's assumption root (the canonical merkle root over
+/// its foreign blocks) and write the manifest when a path is given.
+/// Shared tail of every manifest-producing entry point.
+fn seal_and_write(
+  manifest: &mut ShardManifest,
+  out_path: Option<&str>,
+) -> Result<(), String> {
+  for shard in &mut manifest.shards {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+  }
+  if let Some(op) = out_path {
+    std::fs::write(op, manifest.to_bytes())
+      .map_err(|e| format!("write {op}: {e}"))?;
+  }
+  Ok(())
+}
+
+/// Write a `.ixes` manifest for an EXPLICIT shard assignment — the
+/// partition a prove run actually produced (splits included) rather
+/// than a planner's output. Same manifest construction as
+/// [`shard_static`]'s tail: [`ShardManifest::build`] recomputes
+/// own sizes, foreign blocks and cross-ingress from the profile, and
+/// each shard's assumption root is the canonical merkle root of its
+/// foreign blocks. No aggregation tree is attached (consumers fall
+/// back to the flat tree-fold); heartbeat figures carry whatever proxy
+/// the profile was built with (serialized size, on the static path).
+/// `peaks` (empty, or one measured prover-peak per shard in order)
+/// fills each shard's `measured_peak_bytes` — the run's measurement
+/// riding along for schedulers to bin-pack on.
+pub fn shard_manifest_explicit(
+  profile: &BlockProfile,
+  shard_of: &[u32],
+  num_shards: usize,
+  peaks: &[u64],
+  out_path: &str,
+) -> Result<String, String> {
+  if peaks.len() != num_shards {
+    return Err(format!(
+      "measured peaks: {} values for {num_shards} shards",
+      peaks.len()
+    ));
+  }
+  let mut manifest = ShardManifest::build(profile, shard_of, num_shards);
+  for (shard, &peak) in manifest.shards.iter_mut().zip(peaks) {
+    shard.measured_peak_bytes = peak;
+  }
+  seal_and_write(&mut manifest, Some(out_path))?;
+  Ok(manifest.summary())
+}
+
 /// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget
 /// (`max_cycles`) rather than a fixed shard count: grows `N` until the heaviest
 /// splittable shard fits the budget (see [`partition_for_cycle_cap`]). Use
@@ -1940,14 +2083,7 @@ pub fn shard_esp_cap(
   let mut manifest =
     ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
       .with_tree(plan.tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   let note = if plan.infeasible_atomic_floor {
     "\n  [INFEASIBLE: a single atomic block exceeds the cap — split it upstream, raise the cap, or use a bigger box]"
   } else {
@@ -2503,6 +2639,62 @@ mod tests {
       again, 0,
       "second pass moved {again} blocks — bookkeeping drift"
     );
+  }
+
+  #[test]
+  fn static_seed_model_scales_by_score_and_budget() {
+    // 400 GiB calibration points from the 2026-08-28 sweep. Init and ISLB
+    // are the small/mid-size knees; Mathlib is the normalization point. FLT
+    // records the large-env extrapolation, not an optimum (its old corrected
+    // leaf count depended on the previous seed). These are scores, not raw
+    // env bytes.
+    assert_eq!(static_seed_shards_for_score(6.010e12, 400), 8); // Init
+    assert_eq!(static_seed_shards_for_score(1.536e13, 400), 23); // ISLB
+    assert_eq!(
+      static_seed_shards_for_score(STATIC_SEED_REFERENCE_SCORE, 400),
+      233
+    );
+    assert_eq!(static_seed_shards_for_score(1.316e14, 400), 246); // FLT
+
+    // The 100 GiB calibration keeps broad split correction out of Init and
+    // ISLB without the 1.36 experiment's over-sharding.
+    assert_eq!(static_seed_shards_for_score(6.010e12, 100), 43); // Init
+    assert_eq!(static_seed_shards_for_score(1.536e13, 100), 122); // ISLB
+    assert_eq!(
+      static_seed_shards_for_score(STATIC_SEED_REFERENCE_SCORE, 100),
+      1230
+    );
+
+    // An empty or vanishingly small score still produces a usable one-shard
+    // seed.
+    assert_eq!(static_seed_shards_for_score(0.0, 400), 1);
+  }
+
+  #[test]
+  fn static_env_score_distinguishes_block_shape() {
+    let mut concentrated = ProfileBuilder::new();
+    concentrated.block(addr(1), 0, 4000, 1, OpCounts::default());
+
+    let mut spread = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      spread.block(addr(i), 0, 1000, 1, OpCounts::default());
+    }
+
+    assert!(
+      static_env_score(&concentrated.finish())
+        > static_env_score(&spread.finish())
+    );
+  }
+
+  #[test]
+  fn static_seed_count_never_exceeds_atomic_blocks() {
+    let mut b = ProfileBuilder::new();
+    for i in 1..=6u8 {
+      // Force the uncapped estimate far above six shards.
+      b.block(addr(i), 0, u32::MAX, 1, OpCounts::default());
+    }
+    let p = b.finish();
+    assert_eq!(static_seed_shards(&p, 1), p.num_blocks());
   }
 
   #[test]

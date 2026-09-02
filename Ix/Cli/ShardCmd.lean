@@ -8,10 +8,12 @@
     static walk-edge nets (the relation that generates each shard's thin
     frontier, i.e. its real ingress), then a global rebalance post-pass
     toward equal predicted Aiur FFT cost (fitted model — constants and
-    provenance in `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). Requires
-    `--shards N`. Measured against the profiled strategy on the 8-shard
-    Init / 24-shard Std harnesses: mean shard FFT −30%, max shard −44/−51%,
-    stddev 17.7%→7.1% / 30.6%→8.9%.
+    provenance in `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). `--shards N`
+    fixes the count; `--max-ram G` seeds it from the same static block-shape
+    score, mildly superlinear in both library scale and inverse RAM budget.
+    Measured against the profiled strategy on the 8-shard Init / 24-shard Std
+    harnesses: mean shard FFT −30%, max shard −44/−51%, stddev 17.7%→7.1% /
+    30.6%→8.9%.
   - **Profiled (`--profile <path.ixprof>`)**: the original pipeline over an
     `ix profile` run, unchanged. Modes (precedence in `runShardCmd`):
     default / `--max-ram G` / `--max-cycles C` **bin-pack to a per-shard
@@ -31,6 +33,7 @@
 -/
 module
 public import Cli
+public import Ix.Common
 public import Ix.KernelCheck
 public import Ix.Cli.ConstsFile
 
@@ -143,40 +146,33 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   | none =>
     -- STATIC strategy (no out-of-circuit profiling): byte-balanced min-cut
     -- over the env's walk-edge nets + predicted-FFT rebalance post-pass.
-    -- Shard count comes from `--shards N`, or NAIVELY from `--max-ram G`:
-    -- without a profile the planner cannot know a shard's real prover
-    -- peak, so it estimates it from serialized env bytes via a measured
-    -- amplification factor and picks N so the estimated per-shard peak
-    -- fits the budget. The projections printed by an executed run
-    -- (`ix check --ixes --batch`) are the ground truth that corrects
-    -- the estimate — over-budget shards re-split, far-under merge.
+    -- `--shards N` fixes the count. Under `--max-ram G`, Rust chooses a
+    -- seed only after building the static block profile: the fitted owned
+    -- score sees both bytes and their per-block shape, unlike `.ixe` file
+    -- size. Boundaries and budget fitting are still measured where execution
+    -- happens anyway (the prove gate splits over-budget shards inline and the
+    -- corrected manifest remembers the leaves).
     if maxCycles.isSome then
       p.printError "error: --max-cycles requires --profile (its budget \
         model is calibrated on profiled op counters)"
       return 1
-    let n ← match shardsFlag, maxRam with
-      | some n, _ => pure n
-      | none, some gib =>
-        if gib == 0 then
-          p.printError "error: --max-ram must be positive"; return 1
-        let envBytes := (← System.FilePath.metadata envPath).byteSize.toNat
-        -- Prover-peak-per-env-byte, measured on init and FLT partitions
-        -- (2026-08-21): analytic prover peaks landed at ~20,000-21,000x
-        -- the shard's serialized bytes. Target ~2/3 of the budget so
-        -- the median sits under it with headroom for the measured
-        -- ~2.5x median-to-max spread across shards of one partition.
-        let amplification := 20000
-        let targetBytes := gib * 1024 * 1024 * 1024 * 2 / 3
-        let n := max 1 ((envBytes * amplification + targetBytes - 1) / targetBytes)
-        IO.println s!"[shard] naive RAM sizing: {envBytes} env bytes × \
-          {amplification} / ({gib} GiB × 2/3) → {n} shard(s)"
-        pure n
-      | none, none =>
-        p.printError "error: the static strategy (no --profile) requires \
-          --shards N or --max-ram G"
-        return 1
-    IO.println s!"Sharding {envPath} into {n} shards (static strategy, balance ±{balancePct}%)"
-    rsShardEnvStaticFFI envPath (toString n) (toString balancePct) outPath
+    match shardsFlag, maxRam with
+    | some n, _ =>
+      if n == 0 then
+        p.printError "error: --shards must be positive"; return 1
+      IO.println s!"Sharding {envPath} into {n} shards \
+        (static strategy, balance ±{balancePct}%)"
+      rsShardEnvStaticFFI envPath (toString n) "0" (toString balancePct) outPath
+    | none, some gib =>
+      if gib == 0 then
+        p.printError "error: --max-ram must be positive"; return 1
+      IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
+        (static block-shape seed, balance ±{balancePct}%)"
+      rsShardEnvStaticFFI envPath "0" (toString gib) (toString balancePct) outPath
+    | none, none =>
+      p.printError "error: the static strategy (no --profile) requires \
+        --shards N or --max-ram G"
+      return 1
   | some espPath =>
     -- Profiled strategy, unchanged: partition the `.ixprof`.
     -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
@@ -208,7 +204,7 @@ def shardCmd : Cli.Cmd := `[Cli|
     profile      : String; "Path to a `.ixprof` from `ix profile`. When given, use the profiled strategy (cap budgeting / balanced min-cut over measured costs); when absent, the static strategy partitions the `.ixe` directly."
     shards       : Nat;    "Fixed number of shards N (static strategy; overrides --max-ram sizing and the profiled default budget sizing)"
     "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
-    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: NAIVE sizing — estimates per-shard prover peak from serialized env bytes (measured ~20,000x amplification) and picks the shard count so the estimate fits ~2/3 of the budget; executed projections then correct it (split/merge). Profiled strategy: budget from measured op counters (default: detected system RAM)."
+    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term), with fitted scale and budget exponents anchored at Mathlib; the execution gate measures and corrects every boundary. Profiled strategy: budget from measured op counters (default: detected system RAM)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
