@@ -389,6 +389,27 @@ def pcs := ⟦
     }
   }
 
+  -- Rows of matrices at log-height <= `target`, in circuit order. Used to
+  -- cross-check that two frontier queries sharing a parent agree on every
+  -- not-yet-injected (shorter) matrix: only the group lead's rows are hashed
+  -- into the shared frontier, so the others must be pinned to match it
+  -- (Plonky3 `verify_batch_pruned`'s `InconsistentGroupOpening`). Skips
+  -- empty (inactive-circuit) rows exactly as `select_rows`.
+  fn select_rows_le(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> List‹List‹U64›› {
+    match load(rows) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(r, rrest) =>
+        let &ListNode.Cons(lh, lrest) = lhs;
+        match u32_less_than(target, lh) {
+          1 => select_rows_le(rrest, lrest, target),
+          _ => match load(r) {
+            ListNode.Nil => select_rows_le(rrest, lrest, target),
+            _ => store(ListNode.Cons(r, select_rows_le(rrest, lrest, target))),
+          },
+        },
+    }
+  }
+
   -- Pop one canonicalized lane across row boundaries. `got = 0` iff both the
   -- current row and the remaining rows are exhausted (selected rows are
   -- non-empty, so advancing to the next row always yields a lane).
@@ -525,16 +546,20 @@ def pcs := ⟦
       ListNode.Cons(x, xrest) => match load(ys) {
         ListNode.Nil => xs,
         ListNode.Cons(y, yrest) =>
-          let FrontierNode.Mk(xi, _xb, _xr, xd) = x;
-          let FrontierNode.Mk(yi, _yb, _yr, yd) = y;
+          let FrontierNode.Mk(xi, _xb, xr, xd) = x;
+          let FrontierNode.Mk(yi, _yb, yr, yd) = y;
           match memo_u32_less_than(xi, yi) {
             1 => store(ListNode.Cons(x, frontier_merge(xrest, ys))),
             _ => match eq_zero(xi - yi) {
               1 =>
-                -- Duplicate transcript queries must open the same leaf. A
-                -- direct pointer assertion is sound here: only equality is
-                -- accepted; non-canonical equal digests can at worst reject.
+                -- Duplicate transcript queries (same index) must open the
+                -- SAME full opened rows, not merely the same tallest-matrix
+                -- leaf digest: their shorter-matrix rows share a reduced index
+                -- too and both feed the FRI arithmetic (Plonky3
+                -- `verify_batch_pruned`'s `InconsistentDuplicateOpenings`).
+                -- Pointer equality is admissible inside `assert_eq!`.
                 assert_eq!(ptr_val(xd), ptr_val(yd));
+                assert_eq!(ptr_val(xr), ptr_val(yr));
                 store(ListNode.Cons(x, frontier_merge(xrest, yrest))),
               _ => store(ListNode.Cons(y, frontier_merge(xs, yrest))),
             },
@@ -595,10 +620,21 @@ def pcs := ⟦
         let aparent = bits_to_num(aparent_bits);
         match load(rest) {
           ListNode.Cons(b, brest) =>
-            let FrontierNode.Mk(bi, bbits, _br, bd) = b;
+            let FrontierNode.Mk(bi, bbits, br, bd) = b;
             let &ListNode.Cons(_bbit, bparent_bits) = bbits;
             match eq_zero(aparent - bits_to_num(bparent_bits)) {
               1 =>
+                -- Group members sharing a parent are collapsed to the lead
+                -- `a`; only `ar` is injected from here up, so `b` must agree
+                -- with `a` on every not-yet-injected (height <= next_lh)
+                -- matrix. Otherwise `b`'s shorter-matrix opened rows, still
+                -- consumed in its own FRI arithmetic, would go unauthenticated
+                -- (Plonky3 `verify_batch_pruned`'s `InconsistentGroupOpening`;
+                -- pointer equality is admissible inside `assert_eq!` — see
+                -- `IxVM.Core`). Transitive across pairwise merges, so the whole
+                -- group is pinned.
+                assert_eq!(ptr_val(select_rows_le(ar, lhs, next_lh)),
+                           ptr_val(select_rows_le(br, lhs, next_lh)));
                 let parent = inject_maybe(ar, lhs, next_lh, mmcs_compress(ad, bd));
                 let (tail, p2) = frontier_level(brest, proof, lhs, next_lh);
                 (store(ListNode.Cons(FrontierNode.Mk(aparent, aparent_bits, ar, parent), tail)), p2),

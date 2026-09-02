@@ -154,7 +154,7 @@ extern "C" fn rs_aiur_proof_to_advice_bytes(
   let claim = claim.map(|x| lean_unbox_g(&x));
   match aiur_system_obj.get().proof_to_advice_bytes(&claim, proof_obj.get()) {
     Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
-    Err(err) => LeanExcept::error_string(&format!("{err:?}")),
+    Err(err) => LeanExcept::error_string(&err),
   }
 }
 
