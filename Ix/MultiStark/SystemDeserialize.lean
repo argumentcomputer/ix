@@ -362,9 +362,9 @@ def systemDeserialize := ⟦
     -- `read_sys_circuits_n` (a let-bound match here tripped the inliner).
     let groups = lookup_groups_count(lcount, 0, k);
     let gslots = groups + eq_zero(groups);
-    let ccl = @count_to_bytes(zcount + gslots + gslots);
-    let s2wl = @count_to_bytes(gslots + gslots);
-    let kl = @count_to_bytes(k);
+    let ccl = count_to_bytes(zcount + gslots + gslots);
+    let s2wl = count_to_bytes(gslots + gslots);
+    let kl = count_to_bytes(k);
     (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k),
      [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }

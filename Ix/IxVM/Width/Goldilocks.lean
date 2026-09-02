@@ -121,6 +121,54 @@ def kernelWidthGoldilocks := ⟦
   }
 ⟧
 
+/-- Verifier-only wire plumbing over the outer field: interpreting raw
+little-endian `u64` wire limbs as outer-field counts, the canonical wire
+decomposition of a count, and digest-limb equality. Lives outside the core
+profile because `count_to_bytes` references the field interface's
+`bytes_lt_modulus`, which only verifier toplevels merge. Goldilocks forms:
+the 8-byte fold is injective enough for counts (`< p` pinned) and digest
+compares are exact on canonical hash outputs. -/
+def widthGoldilocksWire := ⟦
+  -- Interpret a raw little-endian `u64` limb as an OUTER-field element (byte
+  -- recomposition; reduces mod the outer modulus when the limb exceeds it).
+  -- Wire plumbing over the outer field — counts, digest-limb comparisons —
+  -- NOT inner-field ingest: semantic inner values go through
+  -- `val_from_bytes`, which lands in the merged module's representation.
+  inline fn limb_to_field(b: U64) -> G {
+    to_field(b[0])
+      + 0x100 * to_field(b[1])
+      + 0x10000 * to_field(b[2])
+      + 0x1000000 * to_field(b[3])
+      + 0x100000000 * to_field(b[4])
+      + 0x10000000000 * to_field(b[5])
+      + 0x1000000000000 * to_field(b[6])
+      + 0x100000000000000 * to_field(b[7])
+  }
+
+  -- The canonical 8-LE-byte decomposition of an OUTER-field count (a value
+  -- known < 2⁶⁴ by construction: shape words, derived widths). The bytes are
+  -- prover hints; range checks + recomposition + the `< p` check pin the
+  -- unique decomposition (a count `c < 2³² − 1` would also admit the bytes
+  -- of `c + p` — rejected by `bytes_lt_modulus`).
+  fn count_to_bytes(v: G) -> [U8; 8] {
+    let b = unconstrained_g_to_bytes(v);
+    let (c0, c1) = u8_range_check(b[0], b[1]);
+    let (c2, c3) = u8_range_check(b[2], b[3]);
+    let (c4, c5) = u8_range_check(b[4], b[5]);
+    let (c6, c7) = u8_range_check(b[6], b[7]);
+    let r = [c0, c1, c2, c3, c4, c5, c6, c7];
+    assert_eq!(limb_to_field(r), v);
+    assert_eq!(bytes_lt_modulus(r), 1);
+    r
+  }
+
+  -- 1 iff two wire limbs are equal. Folded compare: exact for canonical
+  -- (< 2⁶⁴, hash-output) limbs over a 64-bit field.
+  inline fn wire_limb_eq(a: U64, b: U64) -> G {
+    eq_zero(limb_to_field(a) - limb_to_field(b))
+  }
+⟧
+
 end IxVM
 
 end

@@ -542,13 +542,12 @@ def pcsFri := ⟦
   -- the Rust loop's `next_height_openings_digest` injection.
   -- ==========================================================================
 
-  -- 1 iff two digests are equal (compared as field elements; hash outputs are
-  -- canonical so this is exact).
+  -- 1 iff two digests are equal, limb-wise through the width profile's
+  -- `wire_limb_eq` (folded compare on a 64-bit outer field, byte-wise on a
+  -- narrow one).
   fn digest_eq(a: Digest, b: Digest) -> G {
-    eq_zero(@limb_to_field(a[0]) - @limb_to_field(b[0])) *
-    eq_zero(@limb_to_field(a[1]) - @limb_to_field(b[1])) *
-    eq_zero(@limb_to_field(a[2]) - @limb_to_field(b[2])) *
-    eq_zero(@limb_to_field(a[3]) - @limb_to_field(b[3]))
+    wire_limb_eq(a[0], b[0]) * wire_limb_eq(a[1], b[1]) *
+    wire_limb_eq(a[2], b[2]) * wire_limb_eq(a[3], b[3])
   }
 
   -- Compress (current, sibling) in path order: path bit 0 ⇒ current is the left
