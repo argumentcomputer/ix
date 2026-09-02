@@ -142,6 +142,8 @@ jobs:
           # - { env: FC, cache_pkg: formal_conjectures, mathlib: true }
     steps:
       - uses: actions/checkout@v7
+      # `lake build` below clones this package's Lake dependencies.
+      - uses: ./.github/actions/authenticate-github-fetches
       - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin

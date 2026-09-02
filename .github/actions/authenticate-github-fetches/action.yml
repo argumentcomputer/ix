@@ -1,0 +1,20 @@
+name: Authenticate git fetches of GitHub repos
+description: >-
+  Rewrite github.com URLs so git-CLI fetches carry the job's ephemeral token.
+  GitHub throttles anonymous git HTTPS traffic per source IP, and Warp runners
+  share egress IPs across tenants, so unauthenticated clones of public repos
+  can fail with a 401 ("could not read Username"). The rewrite covers every
+  fetch that goes through the git CLI: Lake dependency clones, Nix's eval-time
+  `builtins.fetchGit`, script clones, and cargo git dependencies when
+  CARGO_NET_GIT_FETCH_WITH_CLI is set.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: >-
+        git config --global
+        url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf
+        "https://github.com/"
