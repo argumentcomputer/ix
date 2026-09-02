@@ -501,9 +501,10 @@ construction and verifying-key serialization in the same worker. Keeping this
 pipeline together lets the independent IxVM and recursion backends build in
 parallel instead of serializing their Rust setup on the controller thread. -/
 private def buildAggregateBackend (label : String)
-    (source : Except Aiur.Global Aiur.Source.Toplevel)
+    (source : Unit → Except Aiur.Global Aiur.Source.Toplevel)
     (commitment : Aiur.CommitmentParameters) (fri : Aiur.FriParameters) :
     IO (Except String AggregateBackend) := do
+  let source ← IO.lazyPure source
   let compiled ← match ← compileToplevel label source with
     | .error e => return .error e
     | .ok compiled => pure compiled
@@ -970,14 +971,14 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
   -- then join every task before selecting a deterministic error to report.
   let parallelStarted ← IO.monoMsNow
   let prepareTask ← IO.asTask (prio := .dedicated) do
-    timed do pure (prepareShards env view.shards view.shardIds)
+    timed (IO.lazyPure fun _ => prepareShards env view.shards view.shardIds)
   let proofsTask ← IO.asTask (prio := .dedicated) do
     timed (loadShardProofs proofHexes)
   let ixvmBackendTask ← IO.asTask (prio := .dedicated) do
-    timed (buildAggregateBackend "IxVM" IxVM.ixVM
+    timed (buildAggregateBackend "IxVM" (fun _ => IxVM.ixVM)
       Aiur.defaultCommitmentParameters Aiur.defaultFriParameters)
   let aggrBackendTask ← IO.asTask (prio := .dedicated) do
-    timed (buildAggregateBackend "ixAggr recursion" Aggr.ixAggr
+    timed (buildAggregateBackend "ixAggr recursion" (fun _ => Aggr.ixAggr)
       recursionParameters.commitment recursionParameters.fri)
 
   let prepareOutcome := prepareTask.get
