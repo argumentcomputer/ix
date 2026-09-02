@@ -46,7 +46,11 @@ impl Memory {
     }
     let width = Self::width(size);
     // pull = negated multiplicity.
-    let lookups = vec![Lookup { multiplicity: -multiplicity, args }];
+    let lookups = vec![Lookup {
+      multiplicity: -multiplicity,
+      args,
+      max_multiplicity: crate::COUNT_COLUMN_BUDGET,
+    }];
 
     // Transition constraints (formerly the `Air::eval` body): the selector is
     // boolean; a real next row implies a real current row; and the pointer

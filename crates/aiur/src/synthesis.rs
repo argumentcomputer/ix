@@ -1,6 +1,6 @@
 use multi_stark::{
   expr::Expr,
-  lookup::Lookup,
+  lookup::{Lookup, WidthBinding},
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
@@ -186,7 +186,11 @@ impl AiurSystem {
       2,
     );
 
-    let config = AiurConfig::new(commitment_parameters, fri_parameters);
+    // Aiur guarantees prefix-free messages by construction (see the channel
+    // constants in `lib.rs`), which is what licenses branch-shared lookup
+    // slots superposing messages of different natural widths.
+    let config = AiurConfig::new(commitment_parameters, fri_parameters)
+      .with_width_binding(WidthBinding::ByConstruction);
     let (system, key) = System::new(config, circuit_inputs);
     AiurSystem {
       system,
@@ -988,5 +992,83 @@ mod tests {
     assert_eq!(shapes[3].preprocessed_height, 256);
     assert_eq!(shapes[4].preprocessed_width, 14);
     assert_eq!(shapes[4].preprocessed_height, 65536);
+  }
+
+  /// Two match branches whose calls target functions of different arity, so
+  /// they share one lookup slot with mismatched message widths.
+  ///
+  /// - `f0(x)`: matches on `x`; branch `0` calls `f1(x)` (message width 4),
+  ///   branch `1` calls `f2(x, x)` (message width 5).
+  /// - Both calls land in lookup slot 1, whose width is the max (5), so the
+  ///   `f1` message is sent zero-padded to 5 while `f1`'s own return slot
+  ///   provides it at width 4.
+  ///
+  /// Zero-padding transparency is what makes the padded send match the
+  /// natural-width provider — the `WidthBinding::ByConstruction`
+  /// declaration in `AiurSystem::build`. Under width-bound fingerprints
+  /// this shape fails to verify with `UnbalancedChannel`.
+  fn mismatched_call_widths_toplevel() -> Toplevel {
+    let branch_narrow = Block {
+      ops: vec![Op::Call(1, vec![0], 1, false)],
+      ctrl: Ctrl::Return(0, vec![1]),
+    };
+    let branch_wide = Block {
+      ops: vec![Op::Call(2, vec![0, 0], 1, false)],
+      ctrl: Ctrl::Return(1, vec![1]),
+    };
+    let cases: crate::FxIndexMap<G, Block> =
+      [(G::ZERO, branch_narrow), (G::ONE, branch_wide)].into_iter().collect();
+    let f0 = Function {
+      body: Block { ops: vec![], ctrl: Ctrl::Match(0, cases, None) },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 2,
+        auxiliaries: 2,
+        lookups: 2,
+      },
+      entry: true,
+      constrained: true,
+    };
+    // f1(a) = a
+    let f1 = Function {
+      body: Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0]) },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 1,
+        auxiliaries: 1,
+        lookups: 1,
+      },
+      entry: false,
+      constrained: true,
+    };
+    // f2(a, b) = a
+    let f2 = Function {
+      body: Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0]) },
+      layout: FunctionLayout {
+        input_size: 2,
+        selectors: 1,
+        auxiliaries: 1,
+        lookups: 1,
+      },
+      entry: false,
+      constrained: true,
+    };
+    Toplevel { functions: vec![f0, f1, f2], memory_sizes: vec![] }
+  }
+
+  #[test]
+  fn prove_verify_mismatched_call_widths() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(mismatched_call_widths_toplevel(), cp, fp);
+
+    // Branch 0: the narrow call, whose slot is padded to the wide width.
+    let mut io_buffer = empty_io_buffer();
+    let (claim, proof) = system.prove(0, &[G::ZERO], &mut io_buffer);
+    system.verify(&claim, &proof).expect("narrow-branch proof must verify");
+
+    // Branch 1: the wide call, whose width already matches its slot.
+    let mut io_buffer = empty_io_buffer();
+    let (claim, proof) = system.prove(0, &[G::ONE], &mut io_buffer);
+    system.verify(&claim, &proof).expect("wide-branch proof must verify");
   }
 }

@@ -139,16 +139,19 @@ impl AiurGadget for Bytes1 {
         byte_bit6,
         byte_bit7,
       ],
+      max_multiplicity: crate::COUNT_COLUMN_BUDGET,
     };
 
     let pull_shift_left = Lookup {
       multiplicity: -shift_left_multiplicity,
       args: vec![shift_left_channel, byte.clone(), byte_left_shifted],
+      max_multiplicity: crate::COUNT_COLUMN_BUDGET,
     };
 
     let pull_shift_right = Lookup {
       multiplicity: -shift_right_multiplicity,
       args: vec![shift_right_channel, byte, byte_right_shifted],
+      max_multiplicity: crate::COUNT_COLUMN_BUDGET,
     };
 
     vec![pull_bit_decomposition, pull_shift_left, pull_shift_right]
