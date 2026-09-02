@@ -25,7 +25,7 @@ private def ms (a b : Nat) : String := s!"{b - a} ms"
 
 def hwm : IO String := do
   let s ← IO.FS.readFile "/proc/self/status"
-  pure <| (((s.splitOn "\n").find? (·.startsWith "VmHWM")).getD "VmHWM: ?").trim
+  pure <| (((s.splitOn "\n").find? (·.startsWith "VmHWM")).getD "VmHWM: ?").trimAscii.toString
 
 /-- Constant under test, from `IX_HB_CONST` (default `Nat.add_comm`). -/
 def envConstName : IO Lean.Name := do
@@ -80,16 +80,18 @@ def benchConst (name : Lean.Name) (backend : String) (env : Lean.Environment) :
     let t5 ← IO.monoMsNow
     let (claimKB, blob) ← IO.ofExcept <| kbSys.prove wKB.input wKB.inputIOBuffer
     let t6 ← IO.monoMsNow
+    -- Report prove results BEFORE verifying: an over-capacity shard proves
+    -- fine and only the verifier rejects it (e.g. the jagged area bound).
+    IO.println "── hypercube (KoalaBear, blowup 1, env-overridable ProverParams)"
+    IO.println s!"  build   {ms t3 t4}"
+    IO.println s!"  prove   {ms t5 t6}"
+    IO.println s!"  blob    {blob.size} bytes (vk + proof)"
+    IO.println s!"  {← hwm} (process peak so far)"
     IO.ofExcept <| Aiur.HypercubeSystem.verify kbSys claimKB blob
     let t7 ← IO.monoMsNow
     let expectedKB := #[Aiur.G.ofNat 0, Aiur.G.ofNat kbIdx] ++ wKB.input
-    IO.println "── hypercube (KoalaBear, blowup 1, default ProverParams)"
-    IO.println s!"  build   {ms t3 t4}"
-    IO.println s!"  prove   {ms t5 t6}"
     IO.println s!"  verify  {ms t6 t7}"
-    IO.println s!"  blob    {blob.size} bytes (vk + proof)"
     IO.println s!"  claim ok: {claimKB == expectedKB}"
-    IO.println s!"  {← hwm} (process peak so far)"
   pure 0
 
 def benchFromEnv (env : Lean.Environment) : IO UInt32 := do
