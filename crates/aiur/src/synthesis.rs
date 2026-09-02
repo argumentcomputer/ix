@@ -38,6 +38,22 @@ pub struct PeakProveBytes {
   pub peak: usize,
 }
 
+// The allocation-schedule model below is deliberately structural, but the
+// process RSS also contains allocator/runtime residency that it does not name.
+// Across the 168 completed Mathlib shard proofs at multi-stark 2892243e,
+// measured RSS / analytic peak had median 1.0678 and maximum under-prediction
+// 1.0714. A 7.5% envelope covers the full sample with a small margin.
+const PROVER_RSS_CALIBRATION_NUMERATOR: usize = 43;
+const PROVER_RSS_CALIBRATION_DENOMINATOR: usize = 40;
+
+fn calibrate_prover_rss(analytic_peak: usize) -> usize {
+  analytic_peak
+    .checked_mul(PROVER_RSS_CALIBRATION_NUMERATOR)
+    .map_or(usize::MAX, |scaled| {
+      scaled.div_ceil(PROVER_RSS_CALIBRATION_DENOMINATOR)
+    })
+}
+
 /// Outcome of a budget-gated prove
 /// ([`AiurSystem::prove_ixvm_within_budget`]). Only the case that ran a
 /// STARK carries a proof; the other two report the measured peak the
@@ -249,10 +265,9 @@ impl AiurSystem {
   /// Predicted peak prover resident bytes for a record, from circuit
   /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
   /// line. Mirrors this system's actual allocation schedule (multi-stark
-  /// rev `be1755e`, the workspace pin; an upstream allocation-schedule
+  /// rev `2892243e`, the workspace pin; an upstream allocation-schedule
   /// change skews every prediction, so re-validate against a measured
-  /// prove when bumping multi-stark — real proves at ~472 GiB measured
-  /// +1.6-1.7% over prediction):
+  /// prove when bumping multi-stark):
   ///
   /// 1. WITNESS phase: the `QueryRecord` plus every circuit's padded main
   ///    trace and base-field lookup witness, built in parallel and all
@@ -265,8 +280,10 @@ impl AiurSystem {
   ///    retained FRI fold layers (geometric in `max_log_arity`), and the
   ///    open-phase buffers — all proportional to `H = blowup · tallest`.
   ///
-  /// The peak is the max of the three plus the preprocessed-gadget
-  /// residency committed at setup. Heights are `next_power_of_two` of the
+  /// The analytic peak is the max of the three plus the
+  /// preprocessed-gadget residency committed at setup. The returned `peak`
+  /// additionally applies [`calibrate_prover_rss`] to cover measured
+  /// allocator/runtime residency. Heights are `next_power_of_two` of the
   /// record's unique queries — the padding the trace actually commits,
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
@@ -327,12 +344,13 @@ impl AiurSystem {
     // Trees (3 rounds) + retained FRI fold layers + open buffers, all ∝ H.
     let fri_layers = (2 * S + 2 * DG) * h * fold / (fold - 1).max(1);
     let phase_open = committed + 3 * 2 * DG * h + fri_layers + 11 * S * h;
+    let analytic_peak = phase_witness.max(phase_stage2).max(phase_open) + prep;
     PeakProveBytes {
       phase_witness,
       phase_stage2,
       phase_open,
       preprocessed: prep,
-      peak: phase_witness.max(phase_stage2).max(phase_open) + prep,
+      peak: calibrate_prover_rss(analytic_peak),
     }
   }
 
@@ -636,6 +654,13 @@ mod tests {
     types::{CommitmentParameters, FriParameters},
   };
   use rustc_hash::FxHashMap;
+
+  #[test]
+  fn prover_rss_calibration_rounds_up_and_saturates() {
+    assert_eq!(calibrate_prover_rss(40), 43);
+    assert_eq!(calibrate_prover_rss(1_000), 1_075);
+    assert_eq!(calibrate_prover_rss(usize::MAX), usize::MAX);
+  }
 
   /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
   /// while still exercising the full FRI pipeline (log_blowup 1, 64 queries,
