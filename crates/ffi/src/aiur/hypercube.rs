@@ -88,6 +88,23 @@ fn bincode_config() -> bincode::config::Configuration {
   bincode::config::standard()
 }
 
+/// `ProverParams`, overridable per process for benchmarks: `IX_HC_LOG_BLOWUP`,
+/// `IX_HC_LOG_STACKING`, `IX_HC_MAX_LOG_ROWS`.
+fn prover_params_from_env() -> ProverParams {
+  let mut p = ProverParams::default();
+  let get = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<u32>().ok());
+  if let Some(v) = get("IX_HC_LOG_BLOWUP") {
+    p.log_blowup = v as usize;
+  }
+  if let Some(v) = get("IX_HC_LOG_STACKING") {
+    p.log_stacking_height = v;
+  }
+  if let Some(v) = get("IX_HC_MAX_LOG_ROWS") {
+    p.max_log_row_count = v as usize;
+  }
+  p
+}
+
 /// `Aiur.Hypercube.build : @& Bytecode.Toplevel → @& Bytecode.FunIdx →
 /// Except String HypercubeSystem`
 #[unsafe(no_mangle)]
@@ -105,7 +122,7 @@ extern "C" fn rs_aiur_hypercube_build(
       },
     };
     let system =
-      HypercubeSystem { toplevel, machine, params: ProverParams::default() };
+      HypercubeSystem { toplevel, machine, params: prover_params_from_env() };
     LeanExcept::ok(LeanExternal::alloc(&HYPERCUBE_SYSTEM_CLASS, system))
   })
 }
