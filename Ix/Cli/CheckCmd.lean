@@ -837,11 +837,8 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
 /-- Cut `blocks` into contiguous, nonempty, roughly equal-count parts
     (`p` clamped to `[2, blocks.size]` — a rejection always needs at
     least two parts, and the block list caps how many a cut can
-    produce). Rows are what the prover-RAM model responds to, and equal
-    block counts are the measured-best proxy for equal rows
-    (equal-vspan cuts lost on parts, depth and executions on every env
-    tried). Shared by the prove split recursion and the check wave
-    loop. -/
+    produce). Equal block counts approximate the prover-row distribution.
+    Shared by the prove split recursion and the check wave loop. -/
 def cutBlocks (blocks : Array Address) (p : Nat) : Array (Array Address) :=
   let p := min (max p 2) blocks.size
   (Array.range p).map fun i =>

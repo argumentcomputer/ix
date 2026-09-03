@@ -113,10 +113,8 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
     projected prover peak exceeds the budget, and recursing on any part
     that still misses.
 
-    Cuts are contiguous equal-block-count runs: rows are what the RAM
-    model responds to, and equal-cumulative-vspan cuts measured worse
-    on every axis (parts, depth, executions) across a synthetic
-    fixture, init, and lean — vspan tracks time, not rows.
+    Cuts are contiguous equal-block-count runs, approximating the prover-row
+    distribution without requiring another per-block cost signal.
 
     A shard is only a plan, never part of a statement: its claim is
     `checkEnv(ownedRoot, asmRoot)`, a pure function of `(env, owned)`

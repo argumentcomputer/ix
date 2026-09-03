@@ -33,48 +33,23 @@ pub struct QueryRecord {
   pub memory_queries: FxIndexMap<usize, QueryMap>,
   pub bytes1_queries: Bytes1Queries,
   pub bytes2_queries: Bytes2Queries,
-  /// Virtual-gas meter: sum of circuit-width-priced constrained query
-  /// touches, with memo hits replaying the callee's recorded span — the
-  /// cost of the execution as if nothing were memoized. Never read
-  /// directly; frame deltas of it become the per-entry spans that
-  /// `QueryMap::finish` records (surfaced via `QueryRecordHandle`).
-  pub virt: u64,
 }
 
 impl QueryRecord {
-  /// `profile` enables per-entry virtual-span recording (readable through
-  /// the `QueryRecordHandle` FFI accessors); plumbed from the execution
-  /// entrypoint.
-  pub fn new(toplevel: &Toplevel, profile: bool) -> Self {
-    // Weight = committed main-trace width, the per-touch price of a row.
-    // Unconstrained functions have no circuit, so their rows are free.
+  pub fn new(toplevel: &Toplevel) -> Self {
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| {
-        let weight = if f.constrained { f.layout.width() as u64 } else { 0 };
-        QueryMap::new(f.layout.input_size, weight, profile)
-      })
+      .map(|f| QueryMap::new(f.layout.input_size))
       .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| {
-        // Memory circuit width: multiplicity, selector, pointer, values.
-        // Memory maps never record spans (their replay cost is the
-        // weight itself), so the profile flag is irrelevant here.
-        (*width, QueryMap::new(*width, (3 + *width) as u64, false))
-      })
+      .map(|width| (*width, QueryMap::new(*width)))
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
-    Self {
-      function_queries,
-      memory_queries,
-      bytes1_queries,
-      bytes2_queries,
-      virt: 0,
-    }
+    Self { function_queries, memory_queries, bytes1_queries, bytes2_queries }
   }
 }
 
@@ -253,19 +228,16 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
 }
 
 impl Toplevel {
-  /// `profile` enables per-entry virtual-span recording on the returned
-  /// `QueryRecord` (see `QueryMap::finish`).
   pub fn execute(
     &self,
     fun_idx: FunIdx,
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
-    profile: bool,
   ) -> Result<(QueryRecord, Vec<G>), ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
-    let mut record = QueryRecord::new(self, profile);
+    let mut record = QueryRecord::new(self);
     let function = &self.functions[fun_idx];
     let output =
       function.execute(fun_idx, args, self, &mut record, io_buffer)?;
@@ -286,9 +258,6 @@ struct CallerState {
   map: Vec<G>,
   unconstrained: bool,
   continuation_depth: usize,
-  /// `record.virt` at callee entry; the callee's `Ctrl::Return` reads it
-  /// to record the frame's virtual span on the registered entry.
-  vsnap: u64,
 }
 
 struct ContinuationState<'a> {
@@ -371,8 +340,7 @@ impl Function {
             let mult = record.function_queries[*callee_idx].mult_at(i);
             if callee_unconstrained || !mult.is_zero() {
               if !callee_unconstrained {
-                let replay = record.function_queries[*callee_idx].replay_at(i);
-                record.virt += replay;
+                record.function_queries[*callee_idx].bump_multiplicity(i);
               }
               cached_output = Some(
                 record.function_queries[*callee_idx].output_at(i).to_vec(),
@@ -388,7 +356,6 @@ impl Function {
               map: saved_map,
               unconstrained,
               continuation_depth: continuation_stack.len(),
-              vsnap: record.virt,
             });
             fun_idx = *callee_idx;
             unconstrained = callee_unconstrained;
@@ -404,7 +371,7 @@ impl Function {
             .ok_or(ExecError::InvalidMemorySize(size))?;
           if let Some(i) = memory_queries.get_index_of(&values) {
             if !unconstrained {
-              record.virt += memory_queries.replay_at(i);
+              memory_queries.bump_multiplicity(i);
             }
             map.extend_from_slice(memory_queries.output_at(i));
           } else {
@@ -414,9 +381,6 @@ impl Function {
               &[ptr],
               G::from_bool(!unconstrained),
             );
-            if !unconstrained {
-              record.virt += memory_queries.weight();
-            }
             map.push(ptr);
           }
         },
@@ -437,7 +401,7 @@ impl Function {
             });
           }
           if !unconstrained {
-            record.virt += memory_queries.replay_at(ptr_usize);
+            memory_queries.bump_multiplicity(ptr_usize);
           }
           let (args, _) =
             memory_queries.get_index(ptr_usize).expect("bounds checked above");
@@ -752,27 +716,18 @@ impl Function {
           push_block_exec_entries!(cont.block);
         },
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
-          // Register the query, pricing the row's own touch and recording
-          // the frame's virtual span (own touch + child work, memo hits
-          // replayed) on the entry.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          if !unconstrained {
-            record.virt += record.function_queries[fun_idx].weight();
-          }
-          let vsnap = callers_states_stack.last().map_or(0, |cs| cs.vsnap);
           record.function_queries[fun_idx].finish(
             &map[..input_size],
             &output,
             !unconstrained,
-            record.virt - vsnap,
           );
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,
             unconstrained: caller_unconstrained,
             continuation_depth,
-            vsnap: _,
           }) = callers_states_stack.pop()
           {
             continuation_stack.truncate(continuation_depth);

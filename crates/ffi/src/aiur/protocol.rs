@@ -203,7 +203,6 @@ extern "C" fn rs_aiur_toplevel_execute(
     fun_idx,
     args.map(|x| lean_unbox_g(&x)),
     &mut io_buffer,
-    false,
   ) {
     Ok(pair) => pair,
     Err(err) => return LeanExcept::error_string(&err.to_string()),
@@ -243,7 +242,6 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
       fun_idx,
       args.map(|x| lean_unbox_g(&x)),
       &mut io_buffer,
-      false,
     ) {
       Ok(pair) => pair,
       Err(err) => return LeanExcept::error_string(&err.to_string()),
@@ -472,11 +470,11 @@ fn dispatch_execute(
   let _g = tracing::info_span!("aiur/execute_ixvm").entered();
   if use_bytecode {
     toplevel
-      .execute(fun_idx, input, io_buffer, false)
+      .execute(fun_idx, input, io_buffer)
       .map_err(|e| format!("execute (bytecode): {e}"))
   } else {
     ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-      toplevel, fun_idx, input, io_buffer, false,
+      toplevel, fun_idx, input, io_buffer,
     )
     .map_err(|e| format!("execute_ixvm: {e}"))
   }
@@ -971,7 +969,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
         &input,
         &mut io_buffer,
         |toplevel, fun_idx, input, io_buffer| {
-          toplevel.execute(fun_idx, input, io_buffer, false)
+          toplevel.execute(fun_idx, input, io_buffer)
         },
       )
     } else {
@@ -980,9 +978,8 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
         &input,
         &mut io_buffer,
         |toplevel, fun_idx, input, io_buffer| {
-          // The prove path never profiles.
           ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-            toplevel, fun_idx, input, io_buffer, false,
+            toplevel, fun_idx, input, io_buffer,
           )
         },
       )
@@ -1060,10 +1057,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       fun_idx,
       &input,
       &mut io_buffer,
-      // The prove path never profiles.
       |toplevel, fun_idx, input, io_buffer| {
         ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-          toplevel, fun_idx, input, io_buffer, false,
+          toplevel, fun_idx, input, io_buffer,
         )
       },
       budget,
@@ -1113,10 +1109,9 @@ extern "C" fn rs_aiur_system_prove_ixvm(
       fun_idx,
       &args,
       &mut io_buffer,
-      // The prove path never profiles.
       |toplevel, fun_idx, input, io_buffer| {
         ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-          toplevel, fun_idx, input, io_buffer, false,
+          toplevel, fun_idx, input, io_buffer,
         )
       },
     );
@@ -1157,7 +1152,7 @@ extern "C" fn rs_aiur_multi_stark_execute(
   // Same execution-phase span as the prove pipeline.
   let _g = tracing::info_span!("aiur/execute_multi_stark").entered();
   let result = if use_bytecode {
-    toplevel.execute(fun_idx, input, &mut io_buffer, false)
+    toplevel.execute(fun_idx, input, &mut io_buffer)
   } else {
     ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
       &toplevel,
@@ -1255,7 +1250,7 @@ extern "C" fn rs_aiur_multi_stark_join_execute(
 
   let _g = tracing::info_span!("aiur/execute_multi_stark_join").entered();
   let result = if use_bytecode {
-    toplevel.execute(fun_idx, input, &mut io_buffer, false)
+    toplevel.execute(fun_idx, input, &mut io_buffer)
   } else {
     ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
       &toplevel,
@@ -1462,7 +1457,7 @@ extern "C" fn rs_aiur_ix_aggr_execute(
 
   let _g = tracing::info_span!("aiur/execute_ix_aggr").entered();
   let result = if use_bytecode {
-    toplevel.execute(fun_idx, input, &mut io_buffer, false)
+    toplevel.execute(fun_idx, input, &mut io_buffer)
   } else {
     ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr(
       &toplevel,
