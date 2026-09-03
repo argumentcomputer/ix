@@ -5877,8 +5877,6 @@ dependencies = [
 [[package]]
 name = "sp1-gpu-jagged-tracegen"
 version = "6.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddf54c1601a43198c400a52633c804b613882eb11cf6b495218eab596c066713"
 dependencies = [
  "futures",
  "itertools 0.14.0",
@@ -6074,8 +6072,6 @@ dependencies = [
 [[package]]
 name = "sp1-gpu-zerocheck"
 version = "6.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "369b64c5c392cc9e600380f78b42224d8a37e7c54fc151c1212a39f6c36b9956"
 dependencies = [
  "itertools 0.14.0",
  "rand 0.8.8",

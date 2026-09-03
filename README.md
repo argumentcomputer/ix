@@ -196,7 +196,28 @@ Rust consumers can instead enable the `cuda` feature on `aiur` or `ix-ffi`.
 The backend requires an NVIDIA GPU and a CUDA toolkit with `nvcc`; build and
 architecture controls are documented in the multi-stark repository. It keeps
 the Goldilocks/BLAKE3 protocol and proof format unchanged, and GPU proofs remain
-verifiable by the CPU implementation. Dated hardware measurements belong in
+verifiable by the CPU implementation.
+
+The same `IX_CUDA=1` build also enables the Hypercube (KoalaBear) backend's GPU
+prover, Succinct's open-source `sp1-gpu`. Set `CUDA_ARCHS` to the target GPU's
+compute capability so its kernels compile once (e.g. `120` for Blackwell,
+`90` for Hopper, `89` for Ada), and route proving through the GPU at runtime
+with `IX_HC_GPU=1`; verification is unchanged and proofs stay interchangeable
+with the CPU prover's:
+
+```sh
+IX_CUDA=1 CUDA_ARCHS=120 lake build IxTests
+IX_HC_GPU=1 IX_HB_BACKEND=kb .lake/build/bin/IxTests --ignored hypercube-nataddcomm
+```
+
+Lean's bundled clang links against its own sysroot, so the lakefile adds the
+host `libstdc++` (by path, with `--allow-shlib-undefined`) and `cudadevrt`
+package-wide when `IX_CUDA` is set — the CUDA runtime itself is bundled
+statically into the Rust library. Two `sp1-gpu` crates are vendored under
+`crates/vendor/` via `[patch.crates-io]` with the fixes Aiur's machines need
+(a column-count bound sized for SP1's RISC-V machine, and a zerocheck layout
+assumption that breaks whenever `max_log_row_count < log_stacking_height`);
+see their READMEs. Dated hardware measurements belong in
 [BENCHMARKS.md](BENCHMARKS.md) and [docs/benchmarking.md](docs/benchmarking.md),
 not this stable overview.
 

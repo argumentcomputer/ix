@@ -20,9 +20,18 @@
 //!
 //! This module type-checks without a GPU, but *building* it compiles
 //! `sp1-gpu-sys`'s kernels and needs the CUDA toolchain (`nvcc`); set
-//! `CUDA_ARCHS` (e.g. `89` for Ada, `90` for Hopper) to avoid compiling
-//! kernels for every architecture. At runtime, `IX_HC_GPU=1` routes
-//! [`crate::prover::prove`] through here.
+//! `CUDA_ARCHS` (e.g. `89` for Ada, `90` for Hopper, `120` for Blackwell)
+//! to avoid compiling kernels for every architecture. At runtime,
+//! `IX_HC_GPU=1` routes [`crate::prover::prove`] through here.
+//!
+//! Two `sp1-gpu` crates are vendored under `crates/vendor/` (workspace
+//! `[patch.crates-io]`) because their upstream releases are sized and
+//! shaped for SP1's RISC-V machine: `sp1-gpu-jagged-tracegen` bounds a
+//! shard's total column count at 2^14 (Aiur's IxVM kernel machine has ~85k),
+//! and `sp1-gpu-zerocheck` assumed a single preprocessed-padding column,
+//! which only holds when `max_log_row_count >= log_stacking_height` — with
+//! Aiur's defaults (20 < 21) every main chip's columns were shifted and the
+//! verifier rejected the proof. See the vendored crates' READMEs.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -77,17 +86,33 @@ pub fn prove(
   records: Vec<AiurRecord>,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
-  // Pinned-buffer capacity: the largest shard's stacked area (preprocessed
-  // or main), which `shape_from_record` reports already rounded to the
-  // stacking height; one extra stacked column of headroom.
+  // Trace-buffer capacity. One dense buffer (and one pinned host buffer)
+  // holds the preprocessed traces followed by a shard's main traces, each
+  // section zero-padded to a multiple of the stacking height, so it must
+  // fit the preprocessed area plus the largest shard's main area. Setup
+  // generates every chip's preprocessed trace regardless of the record, so
+  // that area comes from the machine; the main area comes from
+  // `shape_from_record` (already rounded to the stacking height). One extra
+  // stacked column of headroom.
+  let stacking = 1usize << params.log_stacking_height;
+  let preprocessed_area = machine
+    .machine()
+    .chips()
+    .iter()
+    .map(|chip| {
+      chip.preprocessed_width()
+        * chip.preprocessed_num_rows(&AiurProgram).unwrap_or_default()
+    })
+    .sum::<usize>()
+    .next_multiple_of(stacking);
   let mv = MachineVerifier::new(shard_verifier(machine, params));
-  let capacity = records
+  let main_area = records
     .iter()
     .filter_map(|record| shape_from_record(&mv, record))
-    .map(|shape| shape.main_area.max(shape.preprocessed_area))
+    .map(|shape| shape.main_area)
     .max()
-    .unwrap_or(1)
-    + (1usize << params.log_stacking_height);
+    .unwrap_or(stacking);
+  let capacity = preprocessed_area + main_area + stacking;
   let capacity = std::env::var("IX_HC_GPU_TRACE_CAP")
     .ok()
     .and_then(|v| v.parse().ok())
