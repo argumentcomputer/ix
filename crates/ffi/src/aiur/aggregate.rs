@@ -36,7 +36,7 @@ use ixon::{
     MerklePath, leaf_hash, merkle_root_canonical_sorted, node_hash,
     zero_address,
   },
-  shard_claim::thin_frontier,
+  shard_claim::walk_edges,
 };
 use ixvm_codegen::{
   aiur_ix_aggr_runner::{
@@ -50,6 +50,7 @@ use lean_ffi::object::{
   LeanString,
 };
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::lean_unbox_nat_as_usize;
@@ -450,25 +451,56 @@ fn prepare_run(
     }
   }
 
+  // DashMap iteration is deliberately unordered. Sort first so indexed Rayon
+  // collection and the later sequential fold retain deterministic errors and
+  // output independent of worker scheduling.
+  let mut all_addresses: Vec<Address> =
+    env.consts.iter().map(|entry| entry.key().clone()).collect();
+  all_addresses.par_sort_unstable();
+
+  // Materializing an .ixe constant parses its serialized representation, and
+  // lazy constants intentionally do not cache that representation. Classify
+  // ownership and extract the kernel walk edges in the same parallel pass so
+  // frontier construction does not parse all constants a second time.
+  let classified_results: Vec<Result<(usize, Vec<Address>), String>> =
+    all_addresses
+      .par_iter()
+      .map(|addr| {
+        let constant = env
+          .try_get_const(addr)
+          .ok_or_else(|| {
+            format!("environment constant {} disappeared", addr.hex())
+          })?
+          .map_err(|error| {
+            format!("cannot parse environment constant {}: {error}", addr.hex())
+          })?;
+        let block = projection_block(addr, &constant);
+        let owner = block_to_shard.get(&block).copied().ok_or_else(|| {
+          format!(
+            "environment constant {} (block {}) has no owning manifest shard",
+            addr.hex(),
+            block.hex()
+          )
+        })?;
+        let mut edges = Vec::new();
+        walk_edges(&constant, &mut edges);
+        Ok((owner, edges))
+      })
+      .collect();
+  // Resolve failures in canonical-address order rather than whichever Rayon
+  // worker happens to finish first.
+  let classified: Vec<(usize, Vec<Address>)> =
+    classified_results.into_iter().collect::<Result<_, _>>()?;
+
   let mut owned = vec![Vec::new(); manifest.shards.len()];
-  let mut owner_old = FxHashMap::default();
-  for entry in env.consts.iter() {
-    let addr = entry.key().clone();
-    let constant = entry.value().get().map_err(|error| {
-      format!("cannot parse environment constant {}: {error}", addr.hex())
-    })?;
-    let block = projection_block(&addr, &constant);
-    let owner = block_to_shard.get(&block).copied().ok_or_else(|| {
-      format!(
-        "environment constant {} (block {}) has no owning manifest shard",
-        addr.hex(),
-        block.hex()
-      )
-    })?;
+  let mut walk_edges_by_shard = vec![Vec::new(); manifest.shards.len()];
+  let mut owners_old = Vec::with_capacity(all_addresses.len());
+  for (addr, (owner, edges)) in all_addresses.iter().zip(classified) {
     owned[owner].push(addr.clone());
-    owner_old.insert(addr, owner);
+    walk_edges_by_shard[owner].extend(edges);
+    owners_old.push(owner);
   }
-  if owner_old.len() != env.consts.len() {
+  if owners_old.len() != env.consts.len() {
     return Err(
       "manifest ownership did not cover every environment constant".into(),
     );
@@ -496,33 +528,58 @@ fn prepare_run(
   for (retained, old) in retained_old.iter().copied().enumerate() {
     old_to_retained.insert(old, retained);
   }
-  let owner_by_address: FxHashMap<Address, usize> = owner_old
-    .into_iter()
-    .map(|(address, old)| {
-      let retained = old_to_retained[&old];
-      (address, retained)
-    })
+  let owner_by_address: FxHashMap<Address, usize> = all_addresses
+    .iter()
+    .cloned()
+    .zip(owners_old)
+    .map(|(address, old)| (address, old_to_retained[&old]))
     .collect();
 
-  let mut shards = Vec::with_capacity(retained_old.len());
-  for (retained, old) in retained_old.iter().copied().enumerate() {
-    let mut subjects = std::mem::take(&mut owned[old]);
-    subjects.sort_unstable();
-    subjects.dedup();
-    let frontier = thin_frontier(env, &subjects);
-    let subject_tree = SubjectTree::canonical(
-      subjects,
-      ShardSet::singleton(retained, retained_old.len()),
-    )?;
-    let assumptions = CanonicalTree::from_sorted(frontier)?;
-    let statement = Statement::new(subject_tree, assumptions);
-    shards
-      .push(PreparedShard { original_id: manifest.shards[old].id, statement });
-  }
+  let shard_inputs: Vec<(usize, u32, Vec<Address>, Vec<Address>)> =
+    retained_old
+      .iter()
+      .copied()
+      .enumerate()
+      .map(|(retained, old)| {
+        (
+          retained,
+          manifest.shards[old].id,
+          std::mem::take(&mut owned[old]),
+          std::mem::take(&mut walk_edges_by_shard[old]),
+        )
+      })
+      .collect();
+  let shard_results: Vec<Result<PreparedShard, String>> = shard_inputs
+    .into_par_iter()
+    .map(|(retained, original_id, subjects, candidates)| {
+      // Every environment constant has exactly one retained owner. Thus this
+      // is the thin-frontier predicate without rebuilding a subject hash set:
+      // retain present walk edges owned by another shard, exclude local and
+      // absent (including blob-sentinel) edges.
+      let mut frontier_set = FxHashSet::default();
+      for candidate in candidates {
+        if owner_by_address
+          .get(&candidate)
+          .is_some_and(|owner| *owner != retained)
+        {
+          frontier_set.insert(candidate);
+        }
+      }
+      let mut frontier: Vec<Address> = frontier_set.into_iter().collect();
+      frontier.sort_unstable();
+      let subject_tree = SubjectTree::canonical(
+        subjects,
+        ShardSet::singleton(retained, retained_old.len()),
+      )?;
+      let assumptions = CanonicalTree::from_sorted(frontier)?;
+      let statement = Statement::new(subject_tree, assumptions);
+      Ok(PreparedShard { original_id, statement })
+    })
+    .collect();
+  // Retained-shard order is stable because Vec's parallel iterator is indexed;
+  // resolve any errors in that same order for deterministic diagnostics.
+  let shards = shard_results.into_iter().collect::<Result<Vec<_>, _>>()?;
 
-  let mut all_addresses: Vec<Address> =
-    owner_by_address.keys().cloned().collect();
-  all_addresses.sort_unstable();
   let env_root = merkle_root_canonical_sorted(&all_addresses)
     .ok_or("cannot aggregate an empty environment")?;
   let expected_shards = ShardSet(
@@ -2129,9 +2186,11 @@ mod tests {
       Expr::reference(0, Vec::new()),
       vec![dependency.clone()],
     );
+    let reference_frontier =
+      ixon::shard_claim::thin_frontier(&env, std::slice::from_ref(&consumer));
     let manifest = ShardManifest {
       num_shards: 2,
-      shards: vec![shard(0, consumer), shard(1, dependency.clone())],
+      shards: vec![shard(0, consumer.clone()), shard(1, dependency.clone())],
       total_cross_ingress: 0,
       tree: Some(AggNode::Internal(
         Box::new(AggNode::Leaf(0)),
@@ -2139,6 +2198,16 @@ mod tests {
       )),
     };
     let prepared = prepare_run(&env, &manifest).expect("native preparation");
+    assert_eq!(
+      prepared.shards[0]
+        .statement
+        .assumptions
+        .as_ref()
+        .expect("cross-shard frontier")
+        .leaves
+        .as_ref(),
+      reference_frontier
+    );
     let specs = build_specs(
       &prepared,
       3,
