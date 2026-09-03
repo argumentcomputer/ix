@@ -352,49 +352,6 @@ impl AiurSystem {
     }
   }
 
-  /// Per-circuit raw heights of `record` in system order, with the
-  /// record's retained bytes as the trailing element — the composable
-  /// measurement the shard-planning group bound sums: per-circuit
-  /// unions are bounded by elementwise sums, so summed vectors feed
-  /// [`Self::peak_of_raws`] as a sound upper bound on a merged shard.
-  pub fn raw_heights(&self, record: &QueryRecord) -> Vec<u64> {
-    let f = raw_of(record, 1);
-    let mut v: Vec<u64> = self
-      .circuit_types()
-      .iter()
-      .enumerate()
-      .map(|(i, ct)| f(i, ct) as u64)
-      .collect();
-    v.push(crate::execute::record_retained_bytes(record) as u64);
-    v
-  }
-
-  /// Evaluate the peak model on a raw-height vector from
-  /// [`Self::raw_heights`] — possibly an elementwise SUM of several
-  /// segments' vectors, in which case the result is an upper bound on
-  /// the merged shard's peak. Gadget circuits are re-fixed to their
-  /// constant heights internally, so dumb elementwise summation stays
-  /// valid. `None` on a length mismatch or a value beyond `usize`.
-  pub fn peak_of_raws(&self, raws: &[u64]) -> Option<usize> {
-    let ncirc = self.system.circuits.len();
-    if raws.len() != ncirc + 1 {
-      return None;
-    }
-    let raws: Vec<usize> =
-      raws.iter().map(|&r| usize::try_from(r).ok()).collect::<Option<_>>()?;
-    let peak = self
-      .peak_prove_bytes_by(
-        |i, ct| match ct {
-          CircuitType::Bytes1 => 256,
-          CircuitType::Bytes2 => 65536,
-          _ => raws[i],
-        },
-        raws[ncirc],
-      )
-      .peak;
-    Some(peak)
-  }
-
   /// Smallest power-of-two part count whose projected per-part peak
   /// fits `max_bytes`, assuming the record's rows divide evenly across
   /// parts. The gadget circuits keep their constant heights — they are
@@ -512,7 +469,7 @@ impl AiurSystem {
     // execution error here is a programmer bug, so we unwrap.
     let (query_record, output) = self
       .toplevel
-      .execute(fun_idx, input.to_vec(), io_buffer, false)
+      .execute(fun_idx, input.to_vec(), io_buffer)
       .expect("Aiur execution failed during prove");
     drop(_g);
 

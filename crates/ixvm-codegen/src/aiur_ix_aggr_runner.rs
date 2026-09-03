@@ -216,7 +216,7 @@ pub fn execute_ix_aggr(
   if !toplevel.functions[fun_idx].entry {
     return Err(ExecError::NotEntryFunction(fun_idx));
   }
-  let mut record = QueryRecord::new(toplevel, false);
+  let mut record = QueryRecord::new(toplevel);
   let output = execute_generated(fun_idx, &args, &mut record, io_buffer)?;
   Ok((record, output))
 }

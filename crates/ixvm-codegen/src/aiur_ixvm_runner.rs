@@ -24,23 +24,20 @@ use aiur::execute::{ExecError, IOBuffer, QueryRecord};
 /// Rust kernel. Deep recursion is handled via per-fn
 /// `stacker::maybe_grow` checks in the generated code — no
 /// pre-reserved giant stack on this thread, no scope dance.
-// `args: Vec<G>` mirrors `Toplevel::execute`'s signature so a
-// `|t, f, a, io| execute_ixvm(t, f, a, io, false)` closure satisfies
-// `AiurSystem::prove_ixvm`'s executor bound — a `&[G]` here would
-// break it. `profile` enables per-entry virtual-span recording on the
-// returned `QueryRecord` (see `aiur::querymap::QueryMap::finish`).
+// `args: Vec<G>` mirrors `Toplevel::execute`'s signature so this function
+// satisfies `AiurSystem::prove_ixvm`'s executor bound; a `&[G]` here would
+// break it.
 #[allow(clippy::needless_pass_by_value)]
 pub fn execute_ixvm(
   toplevel: &Toplevel,
   fun_idx: FunIdx,
   args: Vec<G>,
   io_buffer: &mut IOBuffer,
-  profile: bool,
 ) -> Result<(QueryRecord, Vec<G>), ExecError> {
   if !toplevel.functions[fun_idx].entry {
     return Err(ExecError::NotEntryFunction(fun_idx));
   }
-  let mut record = QueryRecord::new(toplevel, profile);
+  let mut record = QueryRecord::new(toplevel);
   let output = execute_generated(fun_idx, &args, &mut record, io_buffer)?;
   Ok((record, output))
 }

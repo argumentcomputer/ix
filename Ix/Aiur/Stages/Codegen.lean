@@ -384,13 +384,11 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   -- always skipped; when opUn = false both expressions collapse to
   -- just `unconstrained`.
   let cuExpr : String := if opUn then "true" else "unconstrained"
-  -- On a constrained hit, `replay_at` bumps the multiplicity and returns
-  -- the entry's virtual-gas replay cost (its recorded standalone span
-  -- when profiling, else the map weight) to add to `record.virt`.
+  -- On a constrained hit, bump the entry's multiplicity.
   let bumpStmt : String :=
     if opUn then ""
     else
-      s!" if !unconstrained \{ let __r = record.function_queries[{callee}].replay_at(__i); record.virt += __r; }"
+      s!" if !unconstrained \{ record.function_queries[{callee}].bump_multiplicity(__i); }"
   -- Skip `try_into().unwrap()` on the cache hit: we statically know
   -- the cached output has exactly `OUT_{callee}` elements (only we
   -- ever insert into this slot via the matching aiur_fn_{callee}
@@ -428,12 +426,12 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
     s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
     s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
-    s!" if !unconstrained \{ let __r = __mq.replay_at(__i); record.virt += __r; }" ++
+    s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
     s!" __mq.output_at(__i)[0]" ++
     s!" } else \{" ++
     s!" let __ptr = G::from_usize(__mq.len());" ++
     s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
-    s!" if !unconstrained \{ record.virt += __mq.weight(); } __ptr } }"
+    s!" __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 /-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
@@ -444,7 +442,7 @@ private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt :=
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
     s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
     s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
-    s!" if !unconstrained \{ let __r = __mq.replay_at(__ptr_usize); record.virt += __r; }" ++
+    s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize); }" ++
     s!" let (__args, _) = __mq.get_index(__ptr_usize).expect(\"bounds checked above\");" ++
     s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
   let mut stmts : Array RustStmt := #[
@@ -829,12 +827,8 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let outArr : RustStmt :=
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
-    -- `finish` inserts / promotes the row, and (when profiling)
-    -- records the frame's virtual span measured against the `__vsnap`
-    -- taken at fn entry. Own-row touch priced before the span is read.
     let insertCall : RustStmt := .exprStmt (.lit <|
-      s!"if !unconstrained \{ record.virt += record.function_queries[{funIdx}].weight(); }" ++
-      s!" record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained, record.virt - __vsnap)")
+      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -949,9 +943,6 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
     s!"  unconstrained: bool,\n" ++
     s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
     s!"  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {lbrace}\n" ++
-    -- Virtual-gas snapshot at frame entry; `Ctrl::Return` records the
-    -- frame's span (`record.virt - __vsnap`) on the registered query.
-    s!"  let __vsnap = record.virt;\n" ++
     bodyText ++
     s!"  {rbrace})\n" ++
     s!"{rbrace}\n\n"
