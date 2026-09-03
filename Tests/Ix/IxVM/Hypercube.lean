@@ -5,6 +5,7 @@ public import Ix.Aiur.Compiler
 public import Ix.Aiur.Statistics
 public import Ix.IxVM.ClaimHarness
 public import Ix.IxVM.Toplevel
+public import Ix.MultiStark
 
 /-!
 Head-to-head: the IxVM kernel proving `Claim.check` for a constant on both
@@ -183,6 +184,94 @@ def vkSizes (_env : Lean.Environment) : IO UInt32 := do
     pure (f.prune [`verify_claim])).mapError toString
   let kbCompiled ← IO.ofExcept kbTop.compile
   stats "koalabear kernel " kbCompiled.bytecode
+  pure 0
+
+/-- 8 little-endian bytes of a `Nat` (taken mod 2^64). -/
+private def u64le (n : Nat) : Array UInt8 :=
+  (Array.range 8).map (fun i => UInt8.ofNat ((n >>> (8 * i)) % 256))
+
+/-- Stage 2 at kernel scale: multi-stark proves the claim over Goldilocks at
+production parameters (stage 1), then the KoalaBear byte verifier checks
+that proof and Hypercube proves the verification — sharded via
+`IX_HC_SHARD_CELLS` etc. The Lean interpreter pass is skipped (the Rust
+executor inside `HypercubeSystem.prove` runs the bytecode); `IX_HB_BLOB`
+persists the stage-2 blob, and an existing blob skips the prove. -/
+def stage2Kernel (env : Lean.Environment) : IO UInt32 := do
+  let name ← envConstName
+  IO.println s!"stage2-kernel: {name}"
+  let ixonEnv ← loadIxonEnv name env
+  let target ← lookupAddr ixonEnv name
+  let claim := Ix.Claim.check target none
+
+  -- ── Stage 1: multi-stark over Goldilocks, production parameters.
+  let goldTop ← IO.ofExcept <| IxVM.ixVM.mapError toString
+  let goldCompiled ← IO.ofExcept goldTop.compile
+  let some goldIdx := goldCompiled.getFuncIdx `verify_claim
+    | IO.eprintln "verify_claim not found (goldilocks)"; return 1
+  let goldSys := Aiur.AiurSystem.build goldCompiled.bytecode
+    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+  let wG ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
+  let t0 ← IO.monoMsNow
+  let (claimG, proofG, _) ← IO.ofExcept <|
+    goldSys.prove goldIdx wG.input wG.inputIOBuffer
+  let t1 ← IO.monoMsNow
+  let proofBytes := proofG.toBytes
+  let vkBytes := goldSys.vkBytes
+  -- The claims wire format the in-circuit `read_claims` expects: u64
+  -- `num_claims`, then per claim a u64 `num_vals` and the `Val`s as
+  -- canonical little-endian u64s.
+  let claimBytes : ByteArray := Id.run do
+    let mut out : Array UInt8 := u64le 1 ++ u64le claimG.size
+    for g in claimG do
+      out := out ++ u64le g.val.toNat
+    return ⟨out⟩
+  IO.println s!"  stage-1 prove {ms t0 t1}: proof {proofBytes.size} bytes, \
+    vk {vkBytes.size} bytes, claim {claimG.size} elements"
+  IO.println s!"  {← hwm} (after stage 1)"
+
+  -- ── Stage 2: the KoalaBear byte verifier, proved by Hypercube.
+  let vTop ← match MultiStark.multiStarkKoalaBear with
+    | .error e => IO.eprintln s!"koalabear verifier merge failed: {e}"; return 1
+    | .ok t => pure t
+  let vCompiled ← IO.ofExcept vTop.compile
+  let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
+    | IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
+  let pubInput := MultiStark.verifierPubInput2 vkBytes claimBytes
+  let toGs (b : ByteArray) : Array Aiur.G := b.data.map .ofUInt8
+  let io := (((default : Aiur.IOBuffer).extend 0 #[Aiur.G.ofNat 0]
+    (toGs proofBytes)).extend 1 #[Aiur.G.ofNat 0] (toGs vkBytes)).extend 2
+    #[Aiur.G.ofNat 0] (toGs claimBytes)
+  let t2 ← IO.monoMsNow
+  let sys ← IO.ofExcept <| Aiur.HypercubeSystem.build vCompiled.bytecode vIdx
+  let t3 ← IO.monoMsNow
+  let blobPath? ← IO.getEnv "IX_HB_BLOB"
+  let expected := #[Aiur.G.ofNat 0, Aiur.G.ofNat vIdx] ++ pubInput
+  let (claimS2, blob) ← do
+    let cached? ← match blobPath? with
+      | some p => do
+        if (← System.FilePath.pathExists p) then
+          let blob ← IO.FS.readBinFile p
+          IO.println s!"  (blob loaded from {p}; prove skipped)"
+          pure (some (expected, blob))
+        else pure none
+      | none => pure none
+    match cached? with
+    | some r => pure r
+    | none => do
+      let r ← IO.ofExcept <| sys.prove pubInput io
+      if let some p := blobPath? then IO.FS.writeBinFile p r.2
+      pure r
+  let t4 ← IO.monoMsNow
+  IO.println "── stage 2 on hypercube (KoalaBear, env-overridable params)"
+  IO.println s!"  build   {ms t2 t3}"
+  IO.println s!"  prove   {ms t3 t4}"
+  IO.println s!"  blob    {blob.size} bytes (vk + proof)"
+  IO.println s!"  {← hwm} (process peak so far)"
+  IO.ofExcept <| Aiur.HypercubeSystem.verify sys claimS2 blob
+  let t5 ← IO.monoMsNow
+  IO.println s!"  verify  {ms t4 t5}"
+  IO.println s!"  claim ok: {claimS2 == expected}"
+  if claimS2 != expected then return 1
   pure 0
 
 end Tests.Ix.IxVM.Hypercube

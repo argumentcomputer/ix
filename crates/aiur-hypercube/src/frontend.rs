@@ -127,6 +127,12 @@ impl ToplevelMachine {
     // The return lookup occupies the entry circuit's first slot; its
     // message is exactly the claim.
     let claim_len = inputs[entry].lookups[0].args.len();
+    let affinity_slots: Vec<usize> = types
+      .iter()
+      .enumerate()
+      .filter(|(_, t)| matches!(t, CircuitType::Memory { .. }))
+      .map(|(i, _)| i)
+      .collect();
     let specs: Vec<CircuitSpec<FF>> = inputs
       .into_iter()
       .zip(types)
@@ -141,7 +147,12 @@ impl ToplevelMachine {
         },
       })
       .collect();
-    let machine = AiurMachine::build(specs, &toplevel.memory_sizes, claim_len)?;
+    let machine = AiurMachine::build_with_affinity(
+      specs,
+      &toplevel.memory_sizes,
+      claim_len,
+      affinity_slots,
+    )?;
     Ok(Self { machine, slot_widths, fun_idx })
   }
 

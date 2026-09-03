@@ -204,6 +204,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("hypercube-bench", Tests.Ix.IxVM.Hypercube.benchFromEnv env),
   ("stage2-hypercube", Tests.MultiStark.stage2HypercubeSuite),
   ("hypercube-shard", Tests.MultiStark.hypercubeShardSuite),
+  ("stage2-kernel", Tests.Ix.IxVM.Hypercube.stage2Kernel env),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

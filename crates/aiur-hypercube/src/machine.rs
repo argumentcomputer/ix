@@ -123,6 +123,10 @@ impl std::error::Error for BuildError {}
 /// the public values (see [`CLAIM_WIDTH`]).
 pub struct AiurMachine {
   machine: Machine<F, AiurAir>,
+  /// Chip slots whose rows have no dependencies of their own (Aiur's memory
+  /// circuits): the partitioner assigns their row blocks to the shard that
+  /// loads them most, instead of by creation epoch.
+  pub(crate) affinity_slots: Vec<usize>,
   /// The interpreted circuits, indexed by chip slot: the synthesis
   /// circuits, the memory boundary, the adapter byte table, the constants
   /// chip. The adapter chips live in `global_classes` between the byte
@@ -152,6 +156,17 @@ impl AiurMachine {
     specs: Vec<CircuitSpec<FF>>,
     memory_sizes: &[usize],
     claim_len: usize,
+  ) -> Result<Self, BuildError> {
+    Self::build_with_affinity(specs, memory_sizes, claim_len, vec![])
+  }
+
+  /// [`Self::build`], naming the slots eligible for load-affinity row
+  /// assignment (see [`crate::shard`]).
+  pub fn build_with_affinity<FF: AiurField + PrimeField64>(
+    specs: Vec<CircuitSpec<FF>>,
+    memory_sizes: &[usize],
+    claim_len: usize,
+    affinity_slots: Vec<usize>,
   ) -> Result<Self, BuildError> {
     // The constants chip guarantees a `CLAIM_WIDTH`-value interaction, so
     // the kind's table arity must not push the verifier past it (see
@@ -231,7 +246,14 @@ impl AiurMachine {
       .collect::<Vec<_>>();
     let shape = MachineShape::all(&chips);
     let machine = Machine::new(chips, NUM_AIUR_PVS, shape);
-    Ok(Self { machine, circuits, global_classes, num_frontend, claim_len })
+    Ok(Self {
+      machine,
+      affinity_slots,
+      circuits,
+      global_classes,
+      num_frontend,
+      claim_len,
+    })
   }
 
   pub fn machine(&self) -> &Machine<F, AiurAir> {

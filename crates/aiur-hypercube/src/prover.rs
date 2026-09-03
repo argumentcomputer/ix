@@ -119,9 +119,10 @@ pub fn prove(
         None => eprintln!("hypercube shard {i} shape: no matching cluster"),
       }
     }
-    if std::env::var_os("IX_HC_PLAN_ONLY").is_some() {
-      panic!("IX_HC_PLAN_ONLY: stopping after shape report");
-    }
+    assert!(
+      std::env::var_os("IX_HC_PLAN_ONLY").is_none(),
+      "IX_HC_PLAN_ONLY: stopping after shape report"
+    );
   }
   let verifier = shard_verifier(machine, params);
   let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
