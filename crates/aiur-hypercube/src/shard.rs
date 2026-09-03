@@ -55,6 +55,10 @@ struct ShardPlan {
   ranges: Vec<std::ops::Range<usize>>,
 }
 
+fn debug_enabled() -> bool {
+  std::env::var_os("IX_HC_DEBUG").is_some()
+}
+
 /// Interprets a field element as a small signed integer (multiplicities are
 /// counts, far below the field's midpoint).
 fn signed(x: F) -> i128 {
@@ -102,301 +106,529 @@ pub fn partition_records(
   let is_atomic =
     |slot: usize| machine.lowered_at(slot).unwrap().preprocessed.is_some();
 
-  // ── Relocatable circuits: a memoized gadget (e.g. `u32_add`) whose rows,
-  // besides their entry provide, only look up per-shard tables can have its
-  // rows *duplicated into the shards that demand them* (with split
-  // multiplicities — LogUp-identical to one provide of the total). That
-  // costs a circuit row per demanding shard instead of a hash-to-curve
-  // adapter pair per crossing entry, and such gadget entries dominate the
-  // cross-epoch boundary (memo hits to earlier epochs are exactly what
-  // memoization creates).
+  // ── Replicable rows: a memoized row whose lookups, besides its entry
+  // provide, only hit the per-shard tables can be *duplicated into the
+  // shards that demand its entry*, splitting its multiplicity (LogUp-
+  // identical to one provide of the total). That costs one circuit row per
+  // demanding shard instead of a hash-to-curve adapter pair per crossing
+  // entry — and cross-epoch demand (memo hits to earlier epochs) is exactly
+  // what memoization creates. Qualification is per row, so gadget circuits
+  // qualify wholesale and mixed circuits partially.
   let table_universe: std::collections::HashSet<Vec<u32>> = (0..num_split)
     .filter(|s| is_atomic(*s))
     .flat_map(|s| table_tuples(machine.lowered_at(s).unwrap()))
     .collect();
-  let relocatable: Vec<Option<ProvideInfo>> = (0..num_split)
-    .into_par_iter()
+  let provides: Vec<Option<ProvideInfo>> = (0..num_split)
     .map(|slot| {
-      if is_atomic(slot) {
+      if is_atomic(slot) || extended[slot].is_none() {
         return None;
       }
-      let circuit = machine.lowered_at(slot).unwrap();
-      let trace = extended[slot].as_ref()?;
-      let info = provide_candidate(circuit)?;
-      relocation_scan(circuit, trace, &info, &table_universe).then_some(info)
+      provide_candidate(machine.lowered_at(slot).unwrap())
     })
     .collect();
 
-  // ── Epoch-sliced row split: every remaining splittable circuit is cut at
-  // the same execution fractions. Witness rows are in creation order and
-  // requires have strong temporal locality (calls resolve into recently
-  // created memo entries), so aligning the cuts across circuits keeps most
-  // lookups intra-shard; filling shards circuit-by-circuit instead
-  // separates providers from their consumers and explodes the boundary.
+  // ── Epoch-sliced row split: every splittable circuit is cut at the same
+  // execution fractions. Witness rows are in creation order and requires
+  // have strong temporal locality (calls resolve into recently created memo
+  // entries), so aligning the cuts across circuits keeps most lookups
+  // intra-shard. The fractions start uniform and are refined adaptively:
+  // shards whose measured area (circuits + duplicates + adapters) exceeds
+  // the jagged bound get their interval split, so boundary-dense regions of
+  // the execution take finer slices while cheap regions stay coarse.
   let split_slots: Vec<usize> = (0..num_split)
-    .filter(|s| {
-      !is_atomic(*s) && relocatable[*s].is_none() && extended[*s].is_some()
-    })
+    .filter(|s| !is_atomic(*s) && extended[*s].is_some())
     .collect();
   let total_cells: usize = split_slots
     .iter()
     .map(|s| extended[*s].as_ref().unwrap().values.len())
     .sum();
-  let mut num_shards = total_cells.div_ceil(params.max_cells.max(1)).max(1);
+  let mut init_shards = total_cells.div_ceil(params.max_cells.max(1)).max(1);
   for slot in &split_slots {
     let height = extended[*slot].as_ref().unwrap().height();
-    num_shards = num_shards.max(height.div_ceil(params.max_rows.max(1)));
+    init_shards = init_shards.max(height.div_ceil(params.max_rows.max(1)));
   }
-  let plans: Vec<ShardPlan> = (0..num_shards)
-    .map(|k| {
-      let ranges = (0..num_split)
-        .map(|slot| {
-          if is_atomic(slot)
-            || relocatable[slot].is_some()
-            || extended[slot].is_none()
-          {
-            return 0..0;
-          }
-          let h = extended[slot].as_ref().unwrap().height();
-          h * k / num_shards..h * (k + 1) / num_shards
-        })
-        .collect();
-      ShardPlan { ranges }
-    })
-    .collect();
+  let mut boundaries: Vec<f64> =
+    (0..=init_shards).map(|k| k as f64 / init_shards as f64).collect();
 
-  // ── Demand pass: what does each shard's epoch slice require? Evaluated
-  // over the non-relocatable splittable chunks only (relocatable rows never
-  // demand each other — the relocation scan restricts them to table
-  // lookups — and the atomic circuits' tuples are not relocatable).
-  let epoch_chunk = |plan: &ShardPlan, slot: usize| {
-    let range = plan.ranges[slot].clone();
-    extended[slot].as_ref().filter(|_| !range.is_empty()).map(|t| {
-      let w = t.width();
-      RowMajorMatrix::new(t.values[range.start * w..range.end * w].to_vec(), w)
-    })
-  };
-  let mut demands: Vec<HashMap<Vec<u32>, i128>> = plans
-    .par_iter()
-    .map(|plan| {
-      let mut demand: HashMap<Vec<u32>, i128> = HashMap::new();
-      for &slot in &split_slots {
-        if let Some(chunk) = epoch_chunk(plan, slot) {
-          let circuit = machine.lowered_at(slot).unwrap();
-          accumulate_balance(circuit, &chunk, &mut demand);
-        }
-      }
-      demand
-    })
-    .collect();
-  // The claim demands the entry function's return tuple in shard 0 (the
-  // entry circuit itself may be relocatable).
-  let claim_tuple =
-    canonical_tuple(claim.iter().map(|v| v.as_canonical_u32()).collect());
-  *demands[0].entry(claim_tuple).or_default() += 1;
-
-  // Index the relocatable provides, then place each demanded row into the
-  // demanding shards with the demanded multiplicity.
-  let provide_index: Vec<Option<HashMap<Vec<u32>, usize>>> = (0..num_split)
-    .into_par_iter()
+  // ── Round-independent indexes.
+  const AFFINITY_BLOCK: usize = 64;
+  let affinity: Vec<bool> = (0..num_split)
     .map(|slot| {
-      let info = relocatable[slot].as_ref()?;
+      machine.affinity_slots.contains(&slot) && extended[slot].is_some()
+    })
+    .collect();
+  // tuple → (slot, block), over every interaction of the affinity circuits.
+  let affinity_index: HashMap<Vec<u32>, (usize, usize)> = (0..num_split)
+    .into_par_iter()
+    .filter(|slot| affinity[*slot])
+    .map(|slot| {
       let circuit = machine.lowered_at(slot).unwrap();
-      let trace = extended[slot].as_ref()?;
-      Some(provide_map(circuit, trace, info))
-    })
-    .collect();
-  let relocated: Vec<Vec<Option<RowMajorMatrix<F>>>> = demands
-    .par_iter()
-    .map(|demand| {
-      (0..num_split)
-        .map(|slot| {
-          let info = relocatable[slot].as_ref()?;
-          let index = provide_index[slot].as_ref()?;
-          let trace = extended[slot].as_ref()?;
-          let width = trace.width();
-          let mut rows: Vec<(usize, i128)> = demand
+      let trace = extended[slot].as_ref().unwrap();
+      let width = trace.width();
+      (0..trace.height())
+        .into_par_iter()
+        .flat_map_iter(|r| {
+          let empty: [F; 0] = [];
+          let main = &trace.values[r * width..(r + 1) * width];
+          circuit
+            .lowered
+            .interactions
             .iter()
-            .filter(|(_, r)| **r > 0)
-            .filter_map(|(tuple, r)| index.get(tuple).map(|row| (*row, *r)))
-            .collect();
-          if rows.is_empty() {
-            return None;
-          }
-          rows.sort_unstable();
-          let mut values = Vec::with_capacity(rows.len() * width);
-          for (row, mult) in rows {
-            let at = values.len();
-            values
-              .extend_from_slice(&trace.values[row * width..(row + 1) * width]);
-            values[at + info.mult_col] = to_field(mult);
-          }
-          Some(RowMajorMatrix::new(values, width))
+            .filter(|i| i.multiplicity.eval_row(&empty, main) != F::zero())
+            .map(|i| {
+              let tuple = canonical_tuple(
+                i.values
+                  .iter()
+                  .map(|v| {
+                    let empty: [F; 0] = [];
+                    v.eval_row(&empty, main).as_canonical_u32()
+                  })
+                  .collect(),
+              );
+              (tuple, (slot, r / AFFINITY_BLOCK))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
         })
-        .collect()
+        .collect::<Vec<_>>()
     })
+    .flatten()
+    .collect::<Vec<_>>()
+    .into_iter()
+    .collect();
+  // Every provide of the candidate circuits, marking which rows qualify for
+  // replication (all other lookups table-provided or inert).
+  let provide_index: HashMap<Vec<u32>, (usize, usize, bool)> = (0..num_split)
+    .into_par_iter()
+    .filter(|slot| provides[*slot].is_some())
+    .map(|slot| {
+      let info = provides[slot].as_ref().unwrap();
+      let circuit = machine.lowered_at(slot).unwrap();
+      let trace = extended[slot].as_ref().unwrap();
+      let width = trace.width();
+      (0..trace.height())
+        .into_par_iter()
+        .map(|r| {
+          let empty: [F; 0] = [];
+          let main = &trace.values[r * width..(r + 1) * width];
+          let interactions = &circuit.lowered.interactions;
+          let qual = interactions.iter().enumerate().all(|(i, interaction)| {
+            i == info.interaction
+              || interaction.multiplicity.eval_row(&empty, main) == F::zero()
+              || table_universe.contains(&canonical_tuple(
+                interaction
+                  .values
+                  .iter()
+                  .map(|v| v.eval_row(&empty, main).as_canonical_u32())
+                  .collect(),
+              ))
+          });
+          let tuple = canonical_tuple(
+            interactions[info.interaction]
+              .values
+              .iter()
+              .map(|v| v.eval_row(&empty, main).as_canonical_u32())
+              .collect(),
+          );
+          (tuple, (slot, r, qual))
+        })
+        .collect::<Vec<_>>()
+    })
+    .flatten()
+    .collect::<Vec<_>>()
+    .into_iter()
     .collect();
 
-  // ── Per-shard chunks and residuals.
-  let per_shard: Vec<(
-    Vec<Option<RowMajorMatrix<F>>>,
-    HashMap<Vec<u32>, i128>,
-  )> = plans
-    .par_iter()
-    .zip(&relocated)
-    .enumerate()
-    .map(|(shard_index, (plan, relocated))| {
-      let is_claim_shard = shard_index == 0;
-      let pv = machine.base_public_values(claim, is_claim_shard);
-      let mut chunks: Vec<Option<RowMajorMatrix<F>>> =
-        Vec::with_capacity(num_split);
-      for slot in 0..num_split {
-        let circuit = machine.lowered_at(slot).unwrap();
-        let chunk = if is_atomic(slot) {
-          let mut full = extended[slot].clone();
-          if let Some(m) = &mut full {
-            refresh_public_columns(circuit, m, &pv);
+  // The binding bound is `log_m <= 29` (`slop-jagged` verifier.rs:
+  // `log_m >= 30 → AreaOutOfBounds`, `log_m` being the log of the round's
+  // stacking-padded area), so the padded area must stay at or below 2^29;
+  // leave headroom for the preprocessed round and the stacking round-up.
+  const AREA_BOUND: usize = (1 << 29) - (32 << 20);
+  const MAX_REFINE_ROUNDS: usize = 6;
+  let debug = debug_enabled();
+
+  for refine_round in 0..=MAX_REFINE_ROUNDS {
+    let num_shards = boundaries.len() - 1;
+    let cut = |h: usize, k: usize| (h as f64 * boundaries[k]) as usize;
+    let plans: Vec<ShardPlan> = (0..num_shards)
+      .map(|k| {
+        let ranges = (0..num_split)
+          .map(|slot| {
+            if is_atomic(slot) || extended[slot].is_none() {
+              return 0..0;
+            }
+            let h = extended[slot].as_ref().unwrap().height();
+            cut(h, k)..cut(h, k + 1)
+          })
+          .collect();
+        ShardPlan { ranges }
+      })
+      .collect();
+
+    // ── Demand pass: what does each shard's epoch slice require?
+    let epoch_chunk = |plan: &ShardPlan, slot: usize| {
+      let range = plan.ranges[slot].clone();
+      extended[slot].as_ref().filter(|_| !range.is_empty()).map(|t| {
+        let w = t.width();
+        RowMajorMatrix::new(
+          t.values[range.start * w..range.end * w].to_vec(),
+          w,
+        )
+      })
+    };
+    let mut demands: Vec<HashMap<Vec<u32>, i128>> = plans
+      .par_iter()
+      .map(|plan| {
+        let mut demand: HashMap<Vec<u32>, i128> = HashMap::new();
+        for &slot in &split_slots {
+          if let Some(chunk) = epoch_chunk(plan, slot) {
+            let circuit = machine.lowered_at(slot).unwrap();
+            accumulate_balance(circuit, &chunk, &mut demand);
           }
-          full
-        } else if relocatable[slot].is_some() {
-          relocated[slot].clone()
-        } else {
-          epoch_chunk(plan, slot)
-        };
-        chunks.push(chunk);
-      }
+        }
+        demand
+      })
+      .collect();
+    // The claim demands the entry function's return tuple in shard 0.
+    let claim_tuple =
+      canonical_tuple(claim.iter().map(|v| v.as_canonical_u32()).collect());
+    *demands[0].entry(claim_tuple).or_default() += 1;
 
-      let mut residual: HashMap<Vec<u32>, i128> = HashMap::new();
-      for (slot, chunk) in chunks.iter().enumerate() {
-        let Some(chunk) = chunk else { continue };
-        let circuit = machine.lowered_at(slot).unwrap();
-        accumulate_balance(circuit, chunk, &mut residual);
-      }
-      if is_claim_shard {
-        // The claim send from the public values is a require of the entry
-        // function's return tuple.
-        let claim_tuple =
-          canonical_tuple(claim.iter().map(|v| v.as_canonical_u32()).collect());
-        *residual.entry(claim_tuple).or_default() += 1;
-      }
-
-      // Absorb what the shard's own tables can provide.
-      for (slot, chunk) in chunks.iter_mut().enumerate() {
-        let Some(chunk) = chunk else { continue };
-        let circuit = machine.lowered_at(slot).unwrap();
-        absorb_into_tables(circuit, chunk, &mut residual);
-      }
-      residual.retain(|_, r| *r != 0);
-
-      (chunks, residual)
-    })
-    .collect();
-  let (shard_chunks, residuals): (Vec<_>, Vec<_>) =
-    per_shard.into_iter().unzip();
-
-  // ── Match residuals into pairwise flows.
-  let mut adapters: Vec<Vec<AdapterRow>> = vec![vec![]; plans.len()];
-  let mut by_tuple: HashMap<&Vec<u32>, Vec<(usize, i128)>> = HashMap::new();
-  for (shard, residual) in residuals.iter().enumerate() {
-    for (tuple, r) in residual {
-      by_tuple.entry(tuple).or_default().push((shard, *r));
-    }
-  }
-  for (tuple, mut entries) in by_tuple {
-    let total: i128 = entries.iter().map(|(_, r)| r).sum();
-    assert_eq!(
-      total, 0,
-      "unbalanced residual for tuple {tuple:?}: the partitioner lost flow"
-    );
-    let field_tuple: Vec<F> =
-      tuple.iter().map(|v| F::from_canonical_u32(*v)).collect();
-    entries.sort_unstable();
-    let (mut needs, mut gives): (Vec<_>, Vec<_>) =
-      entries.into_iter().partition(|(_, r)| *r > 0);
-    let mut give = gives.pop();
-    for (shard, mut need) in needs.drain(..) {
-      while need > 0 {
-        let (giver, avail) = give.as_mut().expect("flow matching exhausted");
-        let amount = need.min(-*avail);
-        let row = |import| AdapterRow {
-          import,
-          amount: to_field(amount),
-          tuple: field_tuple.clone(),
-        };
-        adapters[shard].push(row(true));
-        adapters[*giver].push(row(false));
-        need -= amount;
-        *avail += amount;
-        if *avail == 0 {
-          give = gives.pop();
+    // ── Load-affinity assignment for the dependency-free circuits (Aiur's
+    // memories): their rows are stored at creation time but loaded much
+    // later, so epoch placement makes every load cross. Assign each block
+    // of rows to the shard that demands it most (defaulting to the epoch
+    // shard), at the price of two counter-chain tuples per block run.
+    let mut votes: Vec<Vec<i128>> = (0..num_split)
+      .map(|slot| {
+        if !affinity[slot] {
+          return vec![];
+        }
+        let h = extended[slot].as_ref().unwrap().height();
+        vec![0i128; h.div_ceil(AFFINITY_BLOCK) * num_shards]
+      })
+      .collect();
+    for (shard, demand) in demands.iter().enumerate() {
+      for (tuple, r) in demand {
+        if *r <= 0 {
+          continue;
+        }
+        if let Some((slot, block)) = affinity_index.get(tuple) {
+          votes[*slot][*block * num_shards + shard] += r;
         }
       }
     }
-    assert!(give.is_none() && gives.is_empty(), "flow matching left surplus");
-  }
-
-  // ── Sanity: estimate every shard's main-trace area against the jagged
-  // PCS's hard bound before spending prover time on it, and report the
-  // partition under `IX_HC_DEBUG`. The binding bound is `log_m <= 29`
-  // (`slop-jagged` verifier.rs: `log_m >= 30 → AreaOutOfBounds`, where
-  // `log_m` is the log of the round's stacking-padded area), so the padded
-  // area must stay at or below 2^29; leave headroom for the preprocessed
-  // round and the stacking round-up.
-  const AREA_BOUND: usize = (1 << 29) - (32 << 20);
-  let debug = std::env::var_os("IX_HC_DEBUG").is_some();
-  for (shard, (chunks, rows)) in shard_chunks.iter().zip(&adapters).enumerate()
-  {
-    let chunk_cells: usize = chunks
-      .iter()
-      .flatten()
-      .map(|t| t.height().max(1).next_multiple_of(ROW_ALIGNMENT) * t.width())
-      .sum();
-    let mut class_rows = vec![0usize; machine.global_classes.len()];
-    for row in rows {
-      class_rows[GlobalSpec::class_for(row.tuple.len()) - 1] += 1;
-    }
-    let adapter_cells: usize = machine
-      .global_classes
-      .iter()
-      .zip(&class_rows)
-      .map(|(spec, rows)| {
-        rows.max(&1).next_multiple_of(ROW_ALIGNMENT) * spec.width()
+    let block_home: Vec<Vec<usize>> = (0..num_split)
+      .map(|slot| {
+        if !affinity[slot] {
+          return vec![];
+        }
+        let h = extended[slot].as_ref().unwrap().height();
+        let cuts: Vec<usize> = (0..=num_shards).map(|k| cut(h, k)).collect();
+        (0..h.div_ceil(AFFINITY_BLOCK))
+          .map(|b| {
+            let v = &votes[slot][b * num_shards..(b + 1) * num_shards];
+            let (best, best_votes) =
+              v.iter().enumerate().max_by_key(|(_, n)| **n).unwrap();
+            if *best_votes > 0 {
+              best
+            } else {
+              // Un-demanded block: keep its epoch shard.
+              cuts.partition_point(|c| *c <= b * AFFINITY_BLOCK) - 1
+            }
+          })
+          .collect()
       })
-      .sum();
-    let total = chunk_cells + adapter_cells + 256 + ROW_ALIGNMENT;
+      .collect();
+    drop(votes);
+
+    // ── Duplicate each demanded, qualifying row into its demanding shards;
+    // the home copy's multiplicity is reduced by what the duplicates took.
+    let replicated: Vec<Vec<(usize, usize, i128)>> = demands
+      .par_iter()
+      .map(|demand| {
+        let mut rows: Vec<(usize, usize, i128)> = demand
+          .iter()
+          .filter(|(_, r)| **r > 0)
+          .filter_map(|(tuple, r)| {
+            let (slot, row, qual) = provide_index.get(tuple)?;
+            qual.then_some((*slot, *row, *r))
+          })
+          .collect();
+        rows.sort_unstable();
+        rows
+      })
+      .collect();
+    let mut reductions: Vec<HashMap<usize, i128>> =
+      vec![HashMap::new(); num_split];
+    for rows in &replicated {
+      for (slot, row, r) in rows {
+        *reductions[*slot].entry(*row).or_default() += r;
+      }
+    }
+
+    // ── Per-shard chunks and residuals.
+    let per_shard: Vec<(
+      Vec<Option<RowMajorMatrix<F>>>,
+      HashMap<Vec<u32>, i128>,
+    )> = plans
+      .par_iter()
+      .zip(&replicated)
+      .enumerate()
+      .map(|(shard_index, (plan, replicated))| {
+        let is_claim_shard = shard_index == 0;
+        let pv = machine.base_public_values(claim, is_claim_shard);
+        let mut chunks: Vec<Option<RowMajorMatrix<F>>> =
+          Vec::with_capacity(num_split);
+        for slot in 0..num_split {
+          let circuit = machine.lowered_at(slot).unwrap();
+          let chunk = if is_atomic(slot) {
+            let mut full = extended[slot].clone();
+            if let Some(m) = &mut full {
+              refresh_public_columns(circuit, m, &pv);
+            }
+            full
+          } else if affinity[slot] {
+            let trace = extended[slot].as_ref().unwrap();
+            let (w, h) = (trace.width(), trace.height());
+            let mut values = Vec::new();
+            for (b, home) in block_home[slot].iter().enumerate() {
+              if *home == shard_index {
+                let lo = b * AFFINITY_BLOCK;
+                let hi = ((b + 1) * AFFINITY_BLOCK).min(h);
+                values.extend_from_slice(&trace.values[lo * w..hi * w]);
+              }
+            }
+            (!values.is_empty()).then(|| RowMajorMatrix::new(values, w))
+          } else {
+            // The epoch slice, with home multiplicities reduced by what
+            // the duplicates below took over.
+            let mut chunk = epoch_chunk(plan, slot);
+            if let (Some(chunk), Some(info)) = (&mut chunk, &provides[slot])
+              && !reductions[slot].is_empty()
+            {
+              let w = chunk.width();
+              let start = plan.ranges[slot].start;
+              for r in 0..chunk.height() {
+                if let Some(d) = reductions[slot].get(&(start + r)) {
+                  let at = r * w + info.mult_col;
+                  chunk.values[at] -= to_field(*d);
+                }
+              }
+            }
+            chunk
+          };
+          chunks.push(chunk);
+        }
+        // The duplicated rows, appended to their circuits' chunks with the
+        // demanded multiplicity (`replicated` is sorted by slot).
+        for group in replicated.chunk_by(|(a, _, _), (b, _, _)| a == b) {
+          let slot = group[0].0;
+          let info = provides[slot].as_ref().unwrap();
+          let trace = extended[slot].as_ref().unwrap();
+          let w = trace.width();
+          let mut extra = Vec::new();
+          for (_, row, r) in group {
+            let at = extra.len();
+            extra.extend_from_slice(&trace.values[row * w..(row + 1) * w]);
+            extra[at + info.mult_col] = to_field(*r);
+          }
+          match &mut chunks[slot] {
+            Some(chunk) => chunk.values.extend_from_slice(&extra),
+            none => *none = Some(RowMajorMatrix::new(extra, w)),
+          }
+        }
+
+        let mut residual: HashMap<Vec<u32>, i128> = HashMap::new();
+        for (slot, chunk) in chunks.iter().enumerate() {
+          let Some(chunk) = chunk else { continue };
+          let circuit = machine.lowered_at(slot).unwrap();
+          accumulate_balance(circuit, chunk, &mut residual);
+        }
+        if is_claim_shard {
+          // The claim send from the public values is a require of the
+          // entry function's return tuple.
+          let claim_tuple = canonical_tuple(
+            claim.iter().map(|v| v.as_canonical_u32()).collect(),
+          );
+          *residual.entry(claim_tuple).or_default() += 1;
+        }
+
+        // Absorb what the shard's own tables can provide.
+        for (slot, chunk) in chunks.iter_mut().enumerate() {
+          let Some(chunk) = chunk else { continue };
+          let circuit = machine.lowered_at(slot).unwrap();
+          absorb_into_tables(circuit, chunk, &mut residual);
+        }
+        residual.retain(|_, r| *r != 0);
+
+        (chunks, residual)
+      })
+      .collect();
+    let (shard_chunks, residuals): (Vec<_>, Vec<_>) =
+      per_shard.into_iter().unzip();
+
+    // ── Match residuals into pairwise flows.
+    let mut adapters: Vec<Vec<AdapterRow>> = vec![vec![]; plans.len()];
+    let mut by_tuple: HashMap<&Vec<u32>, Vec<(usize, i128)>> = HashMap::new();
+    for (shard, residual) in residuals.iter().enumerate() {
+      for (tuple, r) in residual {
+        by_tuple.entry(tuple).or_default().push((shard, *r));
+      }
+    }
+    for (tuple, mut entries) in by_tuple {
+      let total: i128 = entries.iter().map(|(_, r)| r).sum();
+      assert_eq!(
+        total, 0,
+        "unbalanced residual for tuple {tuple:?}: the partitioner lost flow"
+      );
+      let field_tuple: Vec<F> =
+        tuple.iter().map(|v| F::from_canonical_u32(*v)).collect();
+      entries.sort_unstable();
+      let (mut needs, mut gives): (Vec<_>, Vec<_>) =
+        entries.into_iter().partition(|(_, r)| *r > 0);
+      let mut give = gives.pop();
+      for (shard, mut need) in needs.drain(..) {
+        while need > 0 {
+          let (giver, avail) = give.as_mut().expect("flow matching exhausted");
+          let amount = need.min(-*avail);
+          let row = |import| AdapterRow {
+            import,
+            amount: to_field(amount),
+            tuple: field_tuple.clone(),
+          };
+          adapters[shard].push(row(true));
+          adapters[*giver].push(row(false));
+          need -= amount;
+          *avail += amount;
+          if *avail == 0 {
+            give = gives.pop();
+          }
+        }
+      }
+      assert!(give.is_none() && gives.is_empty(), "flow matching left surplus");
+    }
+
+    // ── Measure every shard against the area bound; split the intervals of
+    // the shards that do not fit and try again.
+    let totals: Vec<usize> = shard_chunks
+      .iter()
+      .zip(&adapters)
+      .map(|(chunks, rows)| {
+        let chunk_cells: usize = chunks
+          .iter()
+          .flatten()
+          .map(|t| {
+            t.height().max(1).next_multiple_of(ROW_ALIGNMENT) * t.width()
+          })
+          .sum();
+        let mut class_rows = vec![0usize; machine.global_classes.len()];
+        for row in rows {
+          class_rows[GlobalSpec::class_for(row.tuple.len()) - 1] += 1;
+        }
+        let adapter_cells: usize = machine
+          .global_classes
+          .iter()
+          .zip(&class_rows)
+          .map(|(spec, rows)| {
+            rows.max(&1).next_multiple_of(ROW_ALIGNMENT) * spec.width()
+          })
+          .sum();
+        chunk_cells + adapter_cells + 256 + ROW_ALIGNMENT
+      })
+      .collect();
+    let over: Vec<usize> =
+      (0..num_shards).filter(|k| totals[*k] > AREA_BOUND).collect();
+
     if debug {
+      let dup: usize = replicated.iter().map(Vec::len).sum();
+      let crossings: usize = adapters.iter().map(Vec::len).sum();
       eprintln!(
-        "hypercube shard {shard}: {chunk_cells} circuit cells, {} adapter \
-         rows {class_rows:?} ({adapter_cells} cells), {} residual tuples, \
-         ~{total} total cells",
-        rows.len(),
-        residuals[shard].len(),
+        "hypercube refine round {refine_round}: {num_shards} shards, \
+         {dup} duplicated rows, {crossings} adapter rows, peak \
+         ~{} cells, {} shard(s) over the bound",
+        totals.iter().max().unwrap_or(&0),
+        over.len()
       );
     }
-    if total > AREA_BOUND {
-      return Err(BuildError::ShardTooLarge { shard, cells: total });
-    }
-  }
 
-  // ── Assemble.
-  let records: Vec<AiurRecord> = shard_chunks
-    .into_iter()
-    .zip(adapters)
-    .enumerate()
-    .map(|(shard_index, (chunks, rows))| {
-      assemble_shard(machine, chunks, &rows, claim, shard_index == 0)
-    })
-    .collect();
-  if debug {
-    // Simulate the full LogUp balance of every shard — every chip plus
-    // `eval_public_values` — so a partitioner bug fails here, in seconds,
-    // not inside GKR verification after the whole prove.
-    records
-      .par_iter()
-      .enumerate()
-      .for_each(|(shard, record)| debug_check_balance(machine, shard, record));
+    if over.is_empty() {
+      if debug {
+        // Crossing composition: which providers dominate the boundary?
+        let mut by_kind: HashMap<(u32, u32), u64> = HashMap::new();
+        for rows in &adapters {
+          for row in rows {
+            let key = (
+              row.tuple.first().map_or(0, |v| v.as_canonical_u32()),
+              row.tuple.get(1).map_or(0, |v| v.as_canonical_u32()),
+            );
+            *by_kind.entry(key).or_default() += 1;
+          }
+        }
+        let mut top: Vec<_> = by_kind.into_iter().collect();
+        top.sort_unstable_by_key(|(_, n)| std::cmp::Reverse(*n));
+        top.truncate(12);
+        eprintln!(
+          "hypercube crossing composition (channel, second limb) → rows:"
+        );
+        for ((ch, second), n) in top {
+          eprintln!("  ({ch}, {second}): {n}");
+        }
+        for (shard, ((chunks, rows), total)) in
+          shard_chunks.iter().zip(&adapters).zip(&totals).enumerate()
+        {
+          let chunk_cells: usize = chunks
+            .iter()
+            .flatten()
+            .map(|t| {
+              t.height().max(1).next_multiple_of(ROW_ALIGNMENT) * t.width()
+            })
+            .sum();
+          eprintln!(
+            "hypercube shard {shard}: {chunk_cells} circuit cells, {} \
+             adapter rows, {} residual tuples, ~{total} total cells",
+            rows.len(),
+            residuals[shard].len(),
+          );
+        }
+      }
+      // ── Assemble.
+      let records: Vec<AiurRecord> = shard_chunks
+        .into_iter()
+        .zip(adapters)
+        .enumerate()
+        .map(|(shard_index, (chunks, rows))| {
+          assemble_shard(machine, chunks, &rows, claim, shard_index == 0)
+        })
+        .collect();
+      if debug {
+        // Simulate the full LogUp balance of every shard — every chip plus
+        // `eval_public_values` — so a partitioner bug fails here, in
+        // seconds, not inside GKR verification after the whole prove.
+        records.par_iter().enumerate().for_each(|(shard, record)| {
+          debug_check_balance(machine, shard, record)
+        });
+      }
+      return Ok(records);
+    }
+    if refine_round == MAX_REFINE_ROUNDS {
+      let worst = *over.iter().max_by_key(|k| totals[**k]).unwrap();
+      return Err(BuildError::ShardTooLarge {
+        shard: worst,
+        cells: totals[worst],
+      });
+    }
+    let mut refined = Vec::with_capacity(boundaries.len() + over.len());
+    for k in 0..num_shards {
+      refined.push(boundaries[k]);
+      if over.contains(&k) {
+        refined.push((boundaries[k] + boundaries[k + 1]) / 2.0);
+      }
+    }
+    refined.push(1.0);
+    boundaries = refined;
   }
-  Ok(records)
+  unreachable!("refinement loop always returns")
 }
 
 /// Panics if a shard record's interactions do not balance (see the call
@@ -521,60 +753,6 @@ fn provide_candidate(circuit: &LoweredCircuit) -> Option<ProvideInfo> {
               .any(|(c, _)| *c == Col::Main(info.mult_col)))
       });
   col_free.then_some(info)
-}
-
-/// Checks that every row's non-provide lookups hit the replicated tables
-/// (or are inert), so a copy of the row is self-contained in any shard.
-fn relocation_scan(
-  circuit: &LoweredCircuit,
-  trace: &RowMajorMatrix<F>,
-  info: &ProvideInfo,
-  table_universe: &std::collections::HashSet<Vec<u32>>,
-) -> bool {
-  let width = trace.width();
-  (0..trace.height()).into_par_iter().all(|r| {
-    let main = &trace.values[r * width..(r + 1) * width];
-    circuit.lowered.interactions.iter().enumerate().all(|(i, interaction)| {
-      if i == info.interaction
-        || interaction.multiplicity.eval_row(&[], main) == F::zero()
-      {
-        return true;
-      }
-      let tuple = canonical_tuple(
-        interaction
-          .values
-          .iter()
-          .map(|v| v.eval_row(&[], main).as_canonical_u32())
-          .collect(),
-      );
-      table_universe.contains(&tuple)
-    })
-  })
-}
-
-/// Maps each provided tuple to its row.
-fn provide_map(
-  circuit: &LoweredCircuit,
-  trace: &RowMajorMatrix<F>,
-  info: &ProvideInfo,
-) -> HashMap<Vec<u32>, usize> {
-  let width = trace.width();
-  let interaction = &circuit.lowered.interactions[info.interaction];
-  let pairs: Vec<(Vec<u32>, usize)> = (0..trace.height())
-    .into_par_iter()
-    .map(|r| {
-      let main = &trace.values[r * width..(r + 1) * width];
-      let tuple = canonical_tuple(
-        interaction
-          .values
-          .iter()
-          .map(|v| v.eval_row(&[], main).as_canonical_u32())
-          .collect(),
-      );
-      (tuple, r)
-    })
-    .collect();
-  pairs.into_iter().collect()
 }
 
 /// The tuples a table circuit provides (see [`absorb_into_tables`] for the
