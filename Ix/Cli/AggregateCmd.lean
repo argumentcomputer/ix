@@ -928,6 +928,14 @@ private def runAggregateCmdNativeWith
   let jobs := ((p.flag? "jobs").map (·.as! Nat)).getD 0
   let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
     defaultStructuralAbove
+  let reproveSlot? := (p.flag? "reprove-slot").map (·.as! Nat)
+  if reproveSlot?.isSome && p.hasFlag "plan-only" then
+    IO.eprintln "error: --reprove-slot cannot be combined with --plan-only"
+    return 1
+  if reproveSlot?.isSome && p.hasFlag "no-cache" then
+    IO.eprintln "error: --reprove-slot requires aggregate cache reads"
+    return 1
+  let reproveSlotCode := reproveSlot?.map (· + 1) |>.getD 0
   let proofHexes := String.intercalate "\n"
     (p.variableArgsAs! String).toList
 
@@ -965,9 +973,10 @@ private def runAggregateCmdNativeWith
   let nativeResult ← IO.lazyPure fun _ =>
     ixvmBackend.system.aggregateStage2 aggrBackend.system envHandle
       manifestPath proofHexes verifyIdx aggrIdx jobs ramBudgetBytes
-      structuralAbove (p.hasFlag "direct-joins")
+      structuralAbove reproveSlotCode (p.hasFlag "direct-joins")
       (p.hasFlag "plan-only")
-      recursionParameters.cacheFriBytes !(p.hasFlag "no-cache")
+      recursionParameters.cacheFriBytes (!(p.hasFlag "no-cache"))
+      (!(p.hasFlag "no-write"))
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok _ => return 0
@@ -1192,14 +1201,16 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "ixe" : String;  "Path to the serialized environment whose shards were proven."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
     "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."
-    "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted."
+    "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted unless --no-write."
+    "no-write";      "Do not change the proof store or aggregate cache; useful with --reprove-slot for a read-only spot check."
+    "reprove-slot" : Nat; "Recompute exactly Stage 2 slot N from verified cached immediate children, bypassing that slot's cache entry."
     "jobs" : Nat;    "Maximum aggregate slots proving concurrently (default 0: all ready slots, subject to the RAM gate)."
     "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
     "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
 
   ARGS:
-    ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (exactly one per nonempty shard unless --plan-only)."
+    ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (one per nonempty shard, except --plan-only or replay with aggregate children)."
 ]
 
 end

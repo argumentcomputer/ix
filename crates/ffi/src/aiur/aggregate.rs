@@ -25,7 +25,7 @@ use std::{
 
 use aiur::{
   G, function_channel,
-  synthesis::{AiurProof, AiurSystem},
+  synthesis::{AiurProof, AiurSystem, GatedProve},
 };
 use ix_common::address::Address;
 use ix_kernel::shard::{AggNode, ShardManifest};
@@ -55,6 +55,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::lean_unbox_nat_as_usize;
 
 const CACHE_VERSION: u64 = 2;
+const MIB: usize = 1024 * 1024;
 const GIB: usize = 1024 * 1024 * 1024;
 const WRAP_RAM_BYTES: usize = 195 * GIB;
 const STRUCTURAL_RAM_BYTES: usize = 195 * GIB;
@@ -65,6 +66,11 @@ const FLAT_RAM_PER_SUBJECT: usize = 1024 * 1024;
 
 fn format_gib(bytes: usize) -> String {
   let tenths = bytes.saturating_mul(10) / GIB;
+  format!("{}.{:01}", tenths / 10, tenths % 10)
+}
+
+fn format_mib(bytes: usize) -> String {
+  let tenths = bytes.saturating_mul(10) / MIB;
   format!("{}.{:01}", tenths / 10, tenths % 10)
 }
 
@@ -364,7 +370,7 @@ struct Slot {
 struct ProveContext<'a> {
   specs: &'a [SlotSpec],
   prepared: &'a [PreparedShard],
-  proofs: &'a [Arc<IxonProof>],
+  proofs: Option<&'a [Arc<IxonProof>]>,
   owner_by_address: &'a FxHashMap<Address, usize>,
   ixvm_system: &'a AiurSystem,
   aggr_system: &'a AiurSystem,
@@ -375,6 +381,8 @@ struct ProveContext<'a> {
   aggr_idx: usize,
   store_dir: &'a Path,
   cache_dir: Option<&'a Path>,
+  reprove_slot: Option<usize>,
+  write_outputs: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -389,10 +397,12 @@ struct RunConfig<'a> {
   jobs: usize,
   ram_budget_bytes: usize,
   structural_above: usize,
+  reprove_slot: Option<usize>,
   direct_joins: bool,
   plan_only: bool,
   cache_fri_bytes: &'a [u8],
   use_cache: bool,
+  write_outputs: bool,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -931,19 +941,33 @@ fn load_cached(
   Some((proof, address))
 }
 
-fn persist_wrapper(
-  store_dir: &Path,
+fn wrapper_bytes(
   statement: &Statement,
   proof: &AiurProof,
-) -> Result<Address, String> {
-  write_store(store_dir, &statement.claim_bytes)?;
+) -> Result<Vec<u8>, String> {
   let proof_bytes = proof.to_bytes().map_err(|error| {
     format!("aggregate proof serialization failed: {error}")
   })?;
   let wrapper = IxonProof::new(statement.claim.clone(), proof_bytes);
   let mut bytes = Vec::new();
   wrapper.put(&mut bytes);
-  write_store(store_dir, &bytes)
+  Ok(bytes)
+}
+
+fn wrapper_address(
+  statement: &Statement,
+  proof: &AiurProof,
+) -> Result<Address, String> {
+  Ok(Address::hash(&wrapper_bytes(statement, proof)?))
+}
+
+fn persist_wrapper(
+  store_dir: &Path,
+  statement: &Statement,
+  proof: &AiurProof,
+) -> Result<Address, String> {
+  write_store(store_dir, &statement.claim_bytes)?;
+  write_store(store_dir, &wrapper_bytes(statement, proof)?)
 }
 
 fn persist_cached(
@@ -952,6 +976,9 @@ fn persist_cached(
   spec: &SlotSpec,
   proof: &AiurProof,
 ) -> Option<Address> {
+  if !ctx.write_outputs {
+    return None;
+  }
   let cache_dir = ctx.cache_dir?;
   match (|| -> Result<Address, String> {
     let address = persist_wrapper(ctx.store_dir, &spec.statement, proof)?;
@@ -1087,6 +1114,10 @@ fn structural_path_advice(
   Ok(paths)
 }
 
+fn assumption_count(statement: &Statement) -> usize {
+  statement.assumptions.as_ref().map_or(0, |tree| tree.leaves.len())
+}
+
 fn prove_aggregate(
   ctx: ProveContext<'_>,
   spec: &SlotSpec,
@@ -1094,9 +1125,17 @@ fn prove_aggregate(
   right: Option<&Slot>,
   slot_index: usize,
 ) -> Result<(AiurProof, Option<Address>), String> {
-  if let Some((proof, address)) = load_cached(ctx, slot_index, spec) {
-    return Ok((proof, Some(address)));
+  let replaying = ctx.reprove_slot == Some(slot_index);
+  if !replaying {
+    if let Some((proof, address)) = load_cached(ctx, slot_index, spec) {
+      return Ok((proof, Some(address)));
+    }
+  } else {
+    eprintln!(
+      "[aggregate] replay slot {slot_index}: bypassing its cache entry"
+    );
   }
+  let started = Instant::now();
 
   let left_system = match left.kind {
     ChildKind::Ixvm => ctx.ixvm_system,
@@ -1184,16 +1223,60 @@ fn prove_aggregate(
   });
   let mut public_input = packed_digest(ctx.allowed);
   public_input.extend(packed_digest(&spec.statement.claim_bytes));
-  let (outer_claim, proof) = ctx.aggr_system.prove_ixvm(
-    ctx.aggr_idx,
-    &public_input,
-    &mut io,
-    execute_ix_aggr,
-  );
+  let proving_started = Instant::now();
+  let (outer_claim, proof, peak) = match ctx
+    .aggr_system
+    .prove_ixvm_within_budget(
+      ctx.aggr_idx,
+      &public_input,
+      &mut io,
+      execute_ix_aggr,
+      None,
+      false,
+    ) {
+    GatedProve::Proved { claim, proof, peak } => (claim, proof, peak),
+    GatedProve::Split { .. } | GatedProve::Measured { .. } => {
+      return Err("unbudgeted aggregate prove did not produce a proof".into());
+    },
+  };
+  let proved_at = Instant::now();
   if outer_claim != spec.outer_claim {
     return Err("aggregate prover returned an unexpected outer claim".into());
   }
   let address = persist_cached(ctx, slot_index, spec, &proof);
+  if replaying {
+    let tree_bytes: usize =
+      tree_storage.iter().map(|tree| tree.bytes.len()).sum();
+    let path_bytes: usize =
+      path_storage.iter().map(|(_, path)| path.len()).sum();
+    let preimage_bytes: usize =
+      preimage_storage.iter().map(|(_, bytes)| bytes.len()).sum();
+    let right_assumptions =
+      right.map_or(0, |slot| assumption_count(&slot.statement));
+    eprintln!(
+      "[aggregate] replay slot {slot_index}: shape {shape}, {} subjects, assumptions {}/{}/{}, proof advice {}+{} MiB, {} trees/{} MiB, {} paths/{} MiB, preimages {} MiB, query-record peak {} GiB ({} bytes)",
+      spec.subject_count,
+      assumption_count(&left.statement),
+      right_assumptions,
+      assumption_count(&spec.statement),
+      format_mib(left_advice.len()),
+      format_mib(right_advice.len()),
+      tree_storage.len(),
+      format_mib(tree_bytes),
+      path_storage.len(),
+      format_mib(path_bytes),
+      format_mib(preimage_bytes),
+      format_gib(peak),
+      peak,
+    );
+    eprintln!(
+      "[aggregate] replay slot {slot_index}: advice {:.3}s, execute+prove {:.3}s, persistence {:.3}s, total {:.3}s",
+      (proving_started - started).as_secs_f64(),
+      (proved_at - proving_started).as_secs_f64(),
+      proved_at.elapsed().as_secs_f64(),
+      started.elapsed().as_secs_f64(),
+    );
+  }
   Ok((proof, address))
 }
 
@@ -1206,7 +1289,13 @@ fn prove_slot(
   match spec.op {
     PlanOp::Leaf(shard) => {
       let prepared = &ctx.prepared[shard];
-      let wrapper = &ctx.proofs[shard];
+      let wrapper =
+        ctx.proofs.and_then(|proofs| proofs.get(shard)).ok_or_else(|| {
+          format!(
+            "shard {} proof was not loaded for replay",
+            prepared.original_id
+          )
+        })?;
       let proof = AiurProof::from_bytes(&wrapper.proof).map_err(|error| {
         format!("shard {} proof does not decode: {error}", prepared.original_id)
       })?;
@@ -1276,6 +1365,104 @@ fn prove_slot(
       }))
     },
   }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ReplayPlan {
+  children: Vec<usize>,
+  needs_input_proofs: bool,
+}
+
+fn plan_replay(
+  specs: &[SlotSpec],
+  target: usize,
+) -> Result<ReplayPlan, String> {
+  let spec = specs.get(target).ok_or_else(|| {
+    format!(
+      "--reprove-slot {target} is out of range; the plan has slots 0..{}",
+      specs.len().saturating_sub(1)
+    )
+  })?;
+  if spec.kind == ChildKind::Ixvm {
+    return Err(format!(
+      "--reprove-slot {target} selects a raw IxVM leaf, not a Stage 2 proof"
+    ));
+  }
+  let children = match spec.op {
+    PlanOp::Leaf(_) => Vec::new(),
+    PlanOp::Join(left, right) => vec![left, right],
+  };
+  let needs_input_proofs = children.is_empty()
+    || children.iter().any(|index| specs[*index].kind == ChildKind::Ixvm);
+  Ok(ReplayPlan { children, needs_input_proofs })
+}
+
+fn load_replay_child(
+  ctx: ProveContext<'_>,
+  target: usize,
+  child_index: usize,
+) -> Result<Arc<Slot>, String> {
+  let spec = ctx
+    .specs
+    .get(child_index)
+    .ok_or("replay target has a missing child slot")?;
+  if spec.kind == ChildKind::Ixvm {
+    return prove_slot(ctx, child_index, &[]);
+  }
+  let (proof, proof_address) = load_cached(ctx, child_index, spec).ok_or_else(|| {
+    format!(
+      "replay slot {target} requires cached child slot {child_index}; run Stage 2 through that child first"
+    )
+  })?;
+  Ok(Arc::new(Slot {
+    kind: ChildKind::Aggr,
+    statement: spec.statement.clone(),
+    outer_claim: spec.outer_claim.clone(),
+    proof,
+    proof_address: Some(proof_address),
+    claims_bytes: serialize_claims(&[&spec.outer_claim]),
+  }))
+}
+
+fn run_replay(
+  ctx: ProveContext<'_>,
+  target: usize,
+  plan: &ReplayPlan,
+) -> Result<String, String> {
+  let started = Instant::now();
+  eprintln!(
+    "[aggregate] replay slot {target}: loading {} immediate child proof(s)",
+    plan.children.len()
+  );
+  let children: Vec<Arc<Slot>> = plan
+    .children
+    .iter()
+    .map(|child| load_replay_child(ctx, target, *child))
+    .collect::<Result<_, _>>()?;
+  let children_loaded_at = Instant::now();
+  let slot = prove_slot(ctx, target, &children)?;
+  ctx.aggr_system.verify(&slot.outer_claim, &slot.proof).map_err(|error| {
+    format!("replayed slot {target} proof failed verification: {error:?}")
+  })?;
+  let verified_at = Instant::now();
+  let persisted = slot.proof_address.is_some();
+  let address = match slot.proof_address.as_ref() {
+    Some(address) => address.clone(),
+    None => wrapper_address(&slot.statement, &slot.proof)?,
+  };
+  let disposition = if persisted { "persisted" } else { "not persisted" };
+  eprintln!(
+    "[aggregate] replay slot {target}: proof {} ({disposition})",
+    address.hex()
+  );
+  eprintln!(
+    "[aggregate] replay slot {target}: children {:.3}s, target+verify {:.3}s, address {:.3}s, end-to-end {:.3}s",
+    (children_loaded_at - started).as_secs_f64(),
+    (verified_at - children_loaded_at).as_secs_f64(),
+    verified_at.elapsed().as_secs_f64(),
+    started.elapsed().as_secs_f64(),
+  );
+  Ok(address.hex())
 }
 
 fn dependencies_complete(spec: &SlotSpec, completed: &[bool]) -> bool {
@@ -1483,6 +1670,12 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
       config.cache_fri_bytes.len()
     ));
   }
+  if config.plan_only && config.reprove_slot.is_some() {
+    return Err("--plan-only cannot be combined with --reprove-slot".into());
+  }
+  if config.reprove_slot.is_some() && !config.use_cache {
+    return Err("--reprove-slot requires aggregate cache reads".into());
+  }
   let started = Instant::now();
   let manifest_bytes = fs::read(config.manifest_path).map_err(|error| {
     format!("read manifest {}: {error}", config.manifest_path.display())
@@ -1509,6 +1702,10 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     &allowed,
     config.cache_fri_bytes,
   )?;
+  let replay_plan = config
+    .reprove_slot
+    .map(|target| plan_replay(&specs, target))
+    .transpose()?;
   let specs_at = Instant::now();
   print_plan(&specs, &prepared.shards, config.structural_above);
   if config.plan_only {
@@ -1528,14 +1725,34 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   let cache_path = ix_root.join("cache").join("aggregate");
   let cache_dir = config.use_cache.then_some(cache_path.as_path());
   if let Some(dir) = cache_dir {
-    fs::create_dir_all(dir).map_err(|error| {
-      format!("create aggregate cache {}: {error}", dir.display())
-    })?;
+    if config.write_outputs {
+      fs::create_dir_all(dir).map_err(|error| {
+        format!("create aggregate cache {}: {error}", dir.display())
+      })?;
+    } else if config.reprove_slot.is_some() && !dir.is_dir() {
+      return Err(format!(
+        "aggregate replay cache {} does not exist",
+        dir.display()
+      ));
+    }
   } else {
     eprintln!("[aggregate] cache disabled (--no-cache)");
   }
-  let proofs =
-    load_input_proofs(config.proof_hexes, &store_dir, &prepared.shards)?;
+  if !config.write_outputs {
+    eprintln!("[aggregate] output writes disabled (--no-write)");
+  }
+  let needs_input_proofs =
+    replay_plan.as_ref().is_none_or(|plan| plan.needs_input_proofs);
+  let proofs = if needs_input_proofs {
+    Some(load_input_proofs(config.proof_hexes, &store_dir, &prepared.shards)?)
+  } else {
+    let supplied =
+      config.proof_hexes.lines().filter(|line| !line.is_empty()).count();
+    eprintln!(
+      "[aggregate] replay uses cached aggregate children; skipping {supplied} supplied shard proof wrapper(s)"
+    );
+    None
+  };
   let proofs_at = Instant::now();
   eprintln!(
     "[aggregate] Rust startup: manifest {:.3}s, env/claims {:.3}s, plan/statements {:.3}s, proofs {:.3}s; total {:.3}s",
@@ -1545,20 +1762,10 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     (proofs_at - specs_at).as_secs_f64(),
     (proofs_at - started).as_secs_f64(),
   );
-  let jobs_label = if config.jobs == 0 {
-    "all ready slots".to_string()
-  } else {
-    config.jobs.to_string()
-  };
-  eprintln!(
-    "[aggregate] scheduler: jobs={jobs_label}, RAM budget {} GiB; wrap/self 195.0 GiB, direct 390.0 GiB, mixed 340.0 GiB, flat +1 MiB/subject",
-    format_gib(config.ram_budget_bytes)
-  );
-
   let context = ProveContext {
     specs: &specs,
     prepared: &prepared.shards,
-    proofs: &proofs,
+    proofs: proofs.as_deref(),
     owner_by_address: &prepared.owner_by_address,
     ixvm_system: config.ixvm_system,
     aggr_system: config.aggr_system,
@@ -1569,7 +1776,24 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     aggr_idx: config.aggr_idx,
     store_dir: &store_dir,
     cache_dir,
+    reprove_slot: config.reprove_slot,
+    write_outputs: config.write_outputs,
   };
+  if let (Some(target), Some(plan)) =
+    (config.reprove_slot, replay_plan.as_ref())
+  {
+    return run_replay(context, target, plan);
+  }
+
+  let jobs_label = if config.jobs == 0 {
+    "all ready slots".to_string()
+  } else {
+    config.jobs.to_string()
+  };
+  eprintln!(
+    "[aggregate] scheduler: jobs={jobs_label}, RAM budget {} GiB; wrap/self 195.0 GiB, direct 390.0 GiB, mixed 340.0 GiB, flat +1 MiB/subject",
+    format_gib(config.ram_budget_bytes)
+  );
   let slots = run_scheduler(context, config.jobs, config.ram_budget_bytes)?;
   let root = slots.last().ok_or("aggregate plan produced no root slot")?;
   if root.kind != ChildKind::Aggr {
@@ -1603,11 +1827,15 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   config.aggr_system.verify(&root.outer_claim, &root.proof).map_err(
     |error| format!("aggregate root proof failed verification: {error:?}"),
   )?;
-  let address = match &root.proof_address {
-    Some(address) => address.clone(),
-    None => persist_wrapper(&store_dir, &root.statement, &root.proof)?,
+  let (address, persisted) = match &root.proof_address {
+    Some(address) => (address.clone(), true),
+    None if config.write_outputs => {
+      (persist_wrapper(&store_dir, &root.statement, &root.proof)?, true)
+    },
+    None => (wrapper_address(&root.statement, &root.proof)?, false),
   };
-  eprintln!("[aggregate] root proof: {}", address.hex());
+  let disposition = if persisted { "" } else { " (not persisted)" };
+  eprintln!("[aggregate] root proof: {}{disposition}", address.hex());
   Ok(address.hex())
 }
 
@@ -1633,12 +1861,16 @@ extern "C" fn rs_aiur_stage2_aggregate(
   jobs: LeanNat<LeanBorrowed<'_>>,
   ram_budget_bytes: LeanNat<LeanBorrowed<'_>>,
   structural_above: LeanNat<LeanBorrowed<'_>>,
+  reprove_slot_code: LeanNat<LeanBorrowed<'_>>,
   direct_joins: bool,
   plan_only: bool,
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_cache: bool,
+  write_outputs: bool,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let reprove_slot =
+      lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
     run(RunConfig {
       ixvm_system: ixvm_system.get(),
       aggr_system: aggr_system.get(),
@@ -1650,10 +1882,12 @@ extern "C" fn rs_aiur_stage2_aggregate(
       jobs: lean_unbox_nat_as_usize(jobs.inner()),
       ram_budget_bytes: lean_unbox_nat_as_usize(ram_budget_bytes.inner()),
       structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
+      reprove_slot,
       direct_joins,
       plan_only,
       cache_fri_bytes: cache_fri_bytes.as_bytes(),
       use_cache,
+      write_outputs,
     })
   }));
   match result {
@@ -1797,6 +2031,31 @@ mod tests {
     assert!(specs[2].structural);
     assert_eq!(specs[2].subject_count, 2);
     assert!(specs[2].statement.assumptions.is_none());
+    assert_eq!(
+      plan_replay(&specs, 0).unwrap(),
+      ReplayPlan { children: Vec::new(), needs_input_proofs: true }
+    );
+    assert_eq!(
+      plan_replay(&specs, 2).unwrap(),
+      ReplayPlan { children: vec![0, 1], needs_input_proofs: false }
+    );
+    assert!(plan_replay(&specs, 3).unwrap_err().contains("out of range"));
+
+    let direct_specs = build_specs(
+      &prepared,
+      3,
+      5,
+      0,
+      true,
+      b"aggregate-vk",
+      b"allowed",
+      &[0; 40],
+    )
+    .expect("direct native specs");
+    assert!(
+      plan_replay(&direct_specs, 0).unwrap_err().contains("raw IxVM leaf")
+    );
+    assert!(plan_replay(&direct_specs, 2).unwrap().needs_input_proofs);
     let paths = structural_path_advice(
       &specs[0].statement,
       &specs[1].statement,

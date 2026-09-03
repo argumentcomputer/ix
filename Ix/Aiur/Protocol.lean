@@ -201,14 +201,17 @@ has compiled the IxVM and `ix_aggr` systems. Rust owns all data-dependent
 orchestration: manifest/environment binding, shard-claim reconstruction,
 statement folding, cache validation, dependency scheduling, recursive advice,
 proving, and persistence. `proofHexes` is one store address per line;
-`cacheFriBytes` is the stable 40-byte recursion-FRI cache identity. Returns the
-persisted root proof address. -/
+`cacheFriBytes` is the stable 40-byte recursion-FRI cache identity.
+`reproveSlotCode` is zero for a full run and `slot + 1` for a targeted replay;
+the latter loads and verifies only the target's immediate cached children.
+When `writeOutputs` is false, proofs are hashed but neither the store nor cache
+is changed. Returns the root or replayed proof address. -/
 @[extern "rs_aiur_stage2_aggregate"]
 opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
-  (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove : @& Nat)
+  (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
-  (useCache : Bool) :
+  (useCache writeOutputs : Bool) :
     Except String String
 
 @[extern "rs_aiur_system_prove_addr_with_env"]

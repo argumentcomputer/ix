@@ -347,8 +347,8 @@ def semanticSuite : IO UInt32 := do
       | .ok handle =>
         pure <| (ixvmSystem.aggregateStage2 selfSystem handle
           ixesPath.toString "" verifyIdx fakeAggrIdx 1
-          (16 * 1024 * 1024 * 1024) 4096 false true
-          childRecursionParameters.cacheFriBytes false).isOk
+          (16 * 1024 * 1024 * 1024) 4096 0 false true
+          childRecursionParameters.cacheFriBytes false true).isOk
 
   let (pairEnv, pairLeft, pairRight) := pairIxonEnv
   let pairManifest := Ix.Cli.CheckCmd.parseIxesManifest
