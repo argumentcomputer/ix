@@ -46,7 +46,7 @@ def sha256Bench : IO $ Array BenchReport := do
               fun i => Aiur.G.ofUInt8 (i + idx).toUInt8
             ioBuffer.extend 0 #[.ofNat idx] data
         throughput (.ElementsAndBytes numHashes.toUInt64 (dataSize * numHashes).toUInt64 "hashes")
-        bench s!"dataSize={dataSize} numHashes={numHashes}"
+        let _ ← benchStepE s!"dataSize={dataSize} numHashes={numHashes}"
           (aiurSystem.prove funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
 
 def main : IO Unit := do

@@ -1556,39 +1556,41 @@ extern "C" fn rs_aiur_multi_stark_join_prove(
   paths_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let mut io_buffer = match build_multi_stark_join_io_buffer(
-    left_proof_bytes.as_bytes(),
-    right_proof_bytes.as_bytes(),
-    recursion_vk_bytes.as_bytes(),
-    left_claims_bytes.as_bytes(),
-    right_claims_bytes.as_bytes(),
-    output_claim_bytes.as_bytes(),
-    allowed_bytes.as_bytes(),
-    preimages_blob.as_bytes(),
-    trees_blob.as_bytes(),
-    paths_blob.as_bytes(),
-  ) {
-    Ok(io) => io,
-    Err(err) => return LeanExcept::error_string(&err),
-  };
-  let args = pub_input.map(|x| lean_unbox_g(&x));
+  ffi_catch_unwind_except("AiurSystem.proveMultiStarkJoin", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let mut io_buffer = match build_multi_stark_join_io_buffer(
+      left_proof_bytes.as_bytes(),
+      right_proof_bytes.as_bytes(),
+      recursion_vk_bytes.as_bytes(),
+      left_claims_bytes.as_bytes(),
+      right_claims_bytes.as_bytes(),
+      output_claim_bytes.as_bytes(),
+      allowed_bytes.as_bytes(),
+      preimages_blob.as_bytes(),
+      trees_blob.as_bytes(),
+      paths_blob.as_bytes(),
+    ) {
+      Ok(io) => io,
+      Err(err) => return LeanExcept::error_string(&err),
+    };
+    let args = pub_input.map(|x| lean_unbox_g(&x));
 
-  let system = aiur_system_obj.get();
-  let (claim, proof) = if use_bytecode {
-    system.prove(fun_idx, &args, &mut io_buffer)
-  } else {
-    system.prove_ixvm(
-      fun_idx,
-      &args,
-      &mut io_buffer,
-      ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark,
-    )
-  };
+    let system = aiur_system_obj.get();
+    let (claim, proof) = if use_bytecode {
+      system.prove(fun_idx, &args, &mut io_buffer)
+    } else {
+      system.prove_ixvm(
+        fun_idx,
+        &args,
+        &mut io_buffer,
+        ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark,
+      )
+    };
 
-  let lean_proof: LeanOwned =
-    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
-  LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
+    let lean_proof: LeanOwned =
+      LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+    LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
+  })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1720,41 +1722,43 @@ extern "C" fn rs_aiur_ix_aggr_prove(
   paths_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let mut io_buffer = match build_ix_aggr_io_buffer(
-    lean_unbox_nat_as_usize(shape.inner()),
-    left_proof_advice_bytes.as_bytes(),
-    right_proof_advice_bytes.as_bytes(),
-    ixvm_vk_bytes.as_bytes(),
-    self_vk_bytes.as_bytes(),
-    left_claims_bytes.as_bytes(),
-    right_claims_bytes.as_bytes(),
-    output_claim_bytes.as_bytes(),
-    allowed_bytes.as_bytes(),
-    preimages_blob.as_bytes(),
-    trees_blob.as_bytes(),
-    paths_blob.as_bytes(),
-  ) {
-    Ok(io) => io,
-    Err(err) => return LeanExcept::error_string(&err),
-  };
-  let args = pub_input.map(|x| lean_unbox_g(&x));
+  ffi_catch_unwind_except("AiurSystem.proveIxAggr", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let mut io_buffer = match build_ix_aggr_io_buffer(
+      lean_unbox_nat_as_usize(shape.inner()),
+      left_proof_advice_bytes.as_bytes(),
+      right_proof_advice_bytes.as_bytes(),
+      ixvm_vk_bytes.as_bytes(),
+      self_vk_bytes.as_bytes(),
+      left_claims_bytes.as_bytes(),
+      right_claims_bytes.as_bytes(),
+      output_claim_bytes.as_bytes(),
+      allowed_bytes.as_bytes(),
+      preimages_blob.as_bytes(),
+      trees_blob.as_bytes(),
+      paths_blob.as_bytes(),
+    ) {
+      Ok(io) => io,
+      Err(err) => return LeanExcept::error_string(&err),
+    };
+    let args = pub_input.map(|x| lean_unbox_g(&x));
 
-  let system = aiur_system_obj.get();
-  let (claim, proof) = if use_bytecode {
-    system.prove(fun_idx, &args, &mut io_buffer)
-  } else {
-    system.prove_ixvm(
-      fun_idx,
-      &args,
-      &mut io_buffer,
-      ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr,
-    )
-  };
+    let system = aiur_system_obj.get();
+    let (claim, proof) = if use_bytecode {
+      system.prove(fun_idx, &args, &mut io_buffer)
+    } else {
+      system.prove_ixvm(
+        fun_idx,
+        &args,
+        &mut io_buffer,
+        ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr,
+      )
+    };
 
-  let lean_proof: LeanOwned =
-    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
-  LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
+    let lean_proof: LeanOwned =
+      LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+    LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
+  })
 }
 
 // =============================================================================

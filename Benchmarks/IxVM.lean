@@ -39,7 +39,7 @@ def main : IO Unit := do
 
   let _ ← bgroup "IxVM benchmarks" { oneShot := true } do
     throughput (.Elements n.toUInt64 "consts")
-    bench "serde/blake3 Nat.add_comm"
+    let _ ← benchStepE "serde/blake3 Nat.add_comm"
       (aiurSystem.prove funIdx #[.ofNat n])
       ioBuffer
   return
