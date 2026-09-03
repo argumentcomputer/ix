@@ -136,11 +136,13 @@ def workloadOf (testbed : String) : String :=
 /-- The stage qualifiers a pipeline measure may carry ahead of its base
     name — one per pipeline stage, named for what the stage proves
     (`ixvm-`: the IxVM typecheck; `fri-verifier-`: the in-circuit FRI
-    verifier over the previous proof; the KZG stages add their own
-    entries as they land) — plus `pipeline-` for the whole run. Stripped
+    verifier over the previous proof; `join-`: the optional pair-wide
+    aggregate join; the KZG stages add their own entries as they land) —
+    plus `pipeline-` for the whole run. Stripped
     wherever a measure is interpreted by its base name (formatting kind,
     units) or labelled under a heading that already says the stage. -/
-def stagePrefixes : List String := ["ixvm-", "fri-verifier-", "pipeline-"]
+def stagePrefixes : List String :=
+  ["ixvm-", "fri-verifier-", "join-", "pipeline-"]
 
 /-- The stage qualifier `metric` carries, if any. -/
 def stagePrefixOf (metric : String) : Option String :=
@@ -213,7 +215,9 @@ structure BackendSpec where
 
 def backendSpecs : List BackendSpec := [
   -- aiur: the proof-pipeline benchmark (bench-typecheck --recursive) —
-  -- every stage of the pipeline, per constant, plus the total. The ixvm
+  -- every stage of the pipeline, per constant, plus the total. The optional
+  -- `bench-typecheck --join` W0 diagnostic contributes a separate pair row;
+  -- it is not part of the scheduled one-constant CI invocation. The ixvm
   -- stage proves the constant's IxVM typecheck; the fri-verifier stage
   -- executes the in-circuit multi-stark verifier over that fresh proof
   -- and proves THAT execution; the KZG stages will join as stages 3/4
@@ -245,6 +249,9 @@ def backendSpecs : List BackendSpec := [
           "fri-verifier-throughput", "fri-verifier-peak-rss",
           "fri-verifier-proof-size", "fri-verifier-verify-time",
           "fri-verifier-fft-cost"]),
+       ("Aggregate flat join",
+         ["join-execute-time", "join-prove-time", "join-peak-rss",
+          "join-proof-size", "join-verify-time", "join-fft-cost"]),
        ("Pipeline total",
          ["total-time", "pipeline-throughput", "pipeline-peak-rss"])])],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -269,6 +276,12 @@ def backendSpecs : List BackendSpec := [
                    ("fri-verifier-prove-time", "0.10", "_"),
                    ("ixvm-peak-rss", "0.10", "_"),
                    ("fri-verifier-peak-rss", "0.10", "_"),
+                   ("join-execute-time", "0.10", "_"),
+                   ("join-prove-time", "0.10", "_"),
+                   ("join-peak-rss", "0.10", "_"),
+                   ("join-proof-size", "0.05", "_"),
+                   ("join-verify-time", "0.10", "_"),
+                   ("join-fft-cost", "0.25", "_"),
                    ("pipeline-peak-rss", "0.10", "_"),
                    ("ixvm-proof-size", "0.05", "_"),
                    ("fri-verifier-proof-size", "0.05", "_"),
@@ -276,16 +289,18 @@ def backendSpecs : List BackendSpec := [
                    ("fri-verifier-verify-time", "0.10", "_")] },
   -- aiur-sharded-env: whole-env Aiur execution — the sharded feeder pipeline
   -- end-to-end at env scale, one row per env. Shards the `.ixe` for the
-  -- runner's RAM (`ix shard --max-ram 100`: naive sizing → ~3.5 GB
-  -- execution RSS per shard on a 128 GB runner), then one gated
-  -- full-width rayon batch (`ix check --ixe --ixes`) over the whole
-  -- manifest — the byte-weighted RamGate, not a thread cap, bounds peak
-  -- RSS, so the same entry is correct on any runner class. ISLB only
-  -- for now (~10 min/run); add "FLT" / "Mathlib" to `envs` for the
-  -- env-scale tiers (~30-45 min each on the 32x runner) when their
-  -- per-push cost is warranted. `shards` is deterministic per
-  -- (env bytes, budget) and only drops on a real compression win →
-  -- upper-only pin.
+  -- runner's RAM (`ix shard --max-ram 100`: seed sizing), then one gated
+  -- full-width rayon batch with the split audit (`ix check --ram-budget
+  -- 100`): a seed the spread pushes over the budget is cut in place and
+  -- its parts re-measured, so the row describes the LEAF partition the
+  -- run validated. The byte-weighted RamGate, not a thread cap, bounds
+  -- peak RSS, so the same entry is correct on any runner class. The
+  -- measured window (`check-time`) is the wave-0 batch call; split
+  -- waves are audit extras outside it. ISLB only for now (~10 min/run);
+  -- add "FLT" / "Mathlib" to `envs` for the env-scale tiers when their
+  -- per-push cost is warranted. `shards` counts leaves — deterministic
+  -- per (env static block profile, budget), rising only when the seed under-counts →
+  -- upper-only pin, re-pin on a justified seed or split change.
   { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
     envs := some ["ISLB"],
     testbeds := [("execute", "aiur-sharded-env-check-x64-32x")],
@@ -418,6 +433,14 @@ def BackendSpec.envNames (b : BackendSpec) : List String :=
       b.scheduledModes.any fun m =>
         !(selectNames env b.name m).isEmpty
 
+/-- Stable pair rows produced by the opt-in aggregate W0 diagnostic. These are
+    registered for dashboard filtering even though the scheduled aiur cell
+    remains one process per constant and therefore does not produce them. Keep
+    the order synchronized with the documented `bench-typecheck --join`
+    invocation: pair-row identity is deliberately order-sensitive. -/
+def aiurJoinBenchmarkNames : Array String :=
+  #["Nat.add_comm + String.append"]
+
 /-- The benchmark row names this backend uploads — the bencher slugs the
     dashboard plots and compare table key on — from its `inputs`: env-keyed
     backends key one row per compiled env; the per-constant backends select
@@ -433,6 +456,8 @@ def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
     for env in b.envNames do
       if b.inputs == .perConstantWithEnv then ns := ns.push env
       ns := ns ++ (selectNames env b.name mode).map (·.name)
+    if b.name == "aiur" && mode == "prove" then
+      return ns ++ aiurJoinBenchmarkNames
     return ns
 
 /-- Default RAM watchdog ceiling (`--ceiling-gb` overrides): see
@@ -747,23 +772,29 @@ is not a benchmark run"
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur-sharded-env" =>
-    -- Whole-env sharded Aiur execution: shard the env for the runner's
-    -- RAM (naive `--max-ram 100` sizing → ~3.5 GB execution RSS per
-    -- shard), then ONE gated full-width rayon batch over the manifest —
-    -- the RamGate bounds peak RSS, so no `--jobs` is passed. The check
-    -- writes the env-keyed row itself (`--json`): check-time,
-    -- throughput, peak-rss, constants, shards. The shard step is
-    -- deterministic setup, not part of the measured window.
+    -- Whole-env sharded Aiur execution: seed the env for the runner's RAM
+    -- from its static block-shape score (`--max-ram 100`), then ONE gated
+    -- full-width rayon batch over the manifest — the RamGate bounds peak
+    -- RSS, so no `--jobs` is passed. The check writes the env-keyed row
+    -- itself (`--json`): check-time, throughput, peak-rss, constants,
+    -- shards. The shard step is deterministic setup, not part of the
+    -- measured window.
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ix ← resolveBin repo "ix"
     let manifest := s!"{env}-exec.ixes"
+    -- One budget for both stages: the shard step seeds for it, and the
+    -- check's split audit (`--ram-budget`) cuts any seed the spread
+    -- pushes over it in place — the row's `shards` counts the LEAF
+    -- partition the run actually validated. 100 GiB = the 128 GB
+    -- runner class the testbed pins.
+    let budgetGib := "100"
     let exit ← runGuarded watchdog ceilingGb ix
-      #["shard", ixe, "--max-ram", "100", "--out", manifest]
+      #["shard", ixe, "--max-ram", budgetGib, "--out", manifest]
     if exit != 0 then
       IO.eprintln s!"[bench] ix shard failed (exit {exit})"
       return 1
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check", "--ixe", ixe, "--ixes", manifest,
+      #["check", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib,
         "--json", out, "--json-name", info.name]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"

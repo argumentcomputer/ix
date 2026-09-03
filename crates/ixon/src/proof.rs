@@ -144,10 +144,10 @@ pub enum RevealConstantInfo {
 ///   circuit to resolve a leaf from a conditional claim's assumption
 ///   set. Carries no assumptions itself.
 ///
-/// The `assumptions` root may be any merkle tree (canonical sorted+
-/// padded via `merkle_root_canonical`, or free-form via `merkle_join`)
-/// with `Address` leaves. Verifiers recover the leaf set via the
-/// `AssumptionTree` serialization when free-form.
+/// Merkle commitments carried by claims — both `CheckEnv.root` and every
+/// `assumptions` root — may be canonical sorted+padded trees from
+/// `merkle_root_canonical` or free-form trees from `merkle_join`. Verifiers
+/// recover leaves or membership evidence according to the proof protocol.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Claim {
   /// `input` evaluates to `output`, optionally modulo `assumptions`.
@@ -1177,6 +1177,7 @@ impl Proof {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::merkle::{merkle_join, merkle_root_canonical};
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
@@ -1571,6 +1572,18 @@ mod tests {
       assumptions: Some(Address::hash(b"asm")),
     };
     assert!(claim_roundtrip(&claim));
+  }
+
+  #[test]
+  fn test_check_env_claim_accepts_structural_root() {
+    let a = Address::hash(b"structural-a");
+    let b = Address::hash(b"structural-b");
+    let c = Address::hash(b"structural-c");
+    let left = merkle_root_canonical(&[a.clone(), b.clone()]).unwrap();
+    let right = merkle_root_canonical(std::slice::from_ref(&c)).unwrap();
+    let root = merkle_join(&left, &right);
+    assert_ne!(root, merkle_root_canonical(&[a, b, c]).unwrap());
+    assert!(claim_roundtrip(&Claim::CheckEnv { root, assumptions: None }));
   }
 
   #[test]

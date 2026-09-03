@@ -75,14 +75,61 @@ structure QueryCount where
   totalHits : Nat
   deriving Inhabited
 
+-- ===========================================================================
+-- QueryRecordHandle: the execution's Rust-owned `QueryRecord` exposed to
+-- Lean as an opaque handle inside every `ExecuteResult`. Lean inspects
+-- queries with its higher-level knowledge (fn names via `nameMap`,
+-- layouts, addr→name maps) through the accessors below; the record —
+-- the dominant RAM consumer of an execution — frees when Lean drops it.
+-- ===========================================================================
+
+private opaque QueryRecordHandleNonempty : NonemptyType
+def QueryRecordHandle : Type := QueryRecordHandleNonempty.type
+instance : Nonempty QueryRecordHandle := QueryRecordHandleNonempty.property
+
+namespace QueryRecordHandle
+
+/-- Number of query entries registered for function `funIdx`. -/
+@[extern "rs_aiur_qr_fn_len"]
+opaque fnLen : @& QueryRecordHandle → (funIdx : @& Nat) → Nat
+
+/-- Input tuple of entry `i` of function `funIdx` (empty when out of
+    range). Entries are in insertion order; iterate within `fnLen`. -/
+@[extern "rs_aiur_qr_fn_key"]
+opaque fnKey : @& QueryRecordHandle → (funIdx i : @& Nat) → Array G
+
+/-- Multiplicity of entry `i` of function `funIdx`. `0` marks an
+    unconstrained hint row (or an out-of-range index). -/
+@[extern "rs_aiur_qr_fn_mult"]
+opaque fnMult : @& QueryRecordHandle → (funIdx i : @& Nat) → Nat
+
+/-- Recorded virtual-gas span of entry `i` of function `funIdx` — the
+    entry's standalone cost, with memo hits replaying the callee's
+    recorded span. `0` unless the execution ran with `profile := true`
+    (the `Full` execution wrappers' trailing flag). -/
+@[extern "rs_aiur_qr_fn_vspan"]
+opaque fnVspan : @& QueryRecordHandle → (funIdx i : @& Nat) → Nat
+
+/-- Stored values of entry `ptr` in the `memory[size]` map — the deref
+    of an Aiur `&[T; size]` pointer (empty when unbound). E.g. an
+    `Addr = &[U8; 32]` argument derefs to its 32 blake3 bytes via
+    `memKey 32 ptr`. -/
+@[extern "rs_aiur_qr_mem_key"]
+opaque memKey : @& QueryRecordHandle → (size ptr : @& Nat) → Array G
+
+end QueryRecordHandle
+
 /-- Result of an execution FFI call, built directly by Rust
 (`LeanAiurExecuteResult` in `crates/ffi/src/lean.rs`). `ioData`/`ioMap`
-are the flattened `IOBuffer`; see `IOBuffer.ofArrays`. -/
+are the flattened `IOBuffer`; see `IOBuffer.ofArrays`. `record` owns the
+execution's `QueryRecord` — drop the `ExecuteResult` (or project the
+other fields out) before the next heavy execution to release its RAM. -/
 structure ExecuteResult where
   output : Array G
   ioData : Array (G × Array G)
   ioMap : Array ((G × Array G) × IOKeyInfo)
   queryCounts : Array QueryCount
+  record : QueryRecordHandle
 
 -- ===========================================================================
 -- EnvHandle: Rust-owned `ixon::Env` exposed to Lean as an opaque handle.
@@ -122,6 +169,7 @@ private opaque execute' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+  (profile : Bool) →
     Except String ExecuteResult
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
@@ -132,14 +180,24 @@ callers can recover instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Except String (Array G × IOBuffer × Array QueryCount) :=
-  (execute' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+  (execute' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray false).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
+
+/-- `execute` variant returning the full `ExecuteResult`, including the
+    `QueryRecordHandle` for post-run query inspection. `profile` enables
+    per-entry virtual-span recording (`QueryRecordHandle.fnVspan`). -/
+def executeFull (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer)
+  (profile : Bool := false) :
+    Except String ExecuteResult :=
+  execute' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray profile
 
 @[extern "rs_aiur_toplevel_execute_ixvm"]
 private opaque executeIxVM' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+  (profile : Bool) →
     Except String ExecuteResult
 
 /-- IxVM-native execution: same shape as `execute`, but routes the
@@ -153,13 +211,25 @@ private opaque executeIxVM' : @& Bytecode.Toplevel →
 def executeIxVM (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Except String (Array G × IOBuffer × Array QueryCount) :=
-  (executeIxVM' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+  (executeIxVM' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray false).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
+
+/-- `executeIxVM` variant returning the full `ExecuteResult`, including
+    the `QueryRecordHandle` for post-run query inspection. `profile`
+    enables per-entry virtual-span recording
+    (`QueryRecordHandle.fnVspan`). -/
+def executeIxVMFull (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer)
+  (profile : Bool := false) :
+    Except String ExecuteResult :=
+  executeIxVM' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray profile
 
 /-- MultiStark-native execution of `verify_multi_stark_proof`: the IO
     advice buffer (channel 0 = proof, 1 = vk, 2 = claims, key `[0]`
     each) is built natively in Rust from the raw byte blobs — no
     per-byte boxing into Lean `G`s, no buffer marshalling across FFI.
+    `proofAdviceBytes` is the verified native proof transport returned by
+    `AiurSystem.proofToAdviceBytes`.
     `useBytecode` selects the generic Aiur bytecode interpreter over
     the codegen'd verifier (`crates/ixvm-codegen/src/aiur_multi_stark.rs`);
     as with `executeIxVM`, the codegen'd path is only valid when
@@ -171,7 +241,44 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
 @[extern "rs_aiur_multi_stark_execute"]
 opaque executeMultiStark (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+  (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Array QueryCount)
+
+/-- Native execution of either aggregate-first join entrypoint. The two
+child proof-advice blobs (from `AiurSystem.proofToAdviceBytes`), child claims,
+and the fixed vk/output/allowed blobs are passed without
+per-byte Lean field boxing. `preimagesBlob` and `treesBlob` use the compact
+count/key/length framing produced by `MultiStark.joinPreimagesBlob` and
+`MultiStark.joinTreesBlob`; `pathsBlob` carries structural discharge choices.
+Rust expands them directly into IO channels 4–6. As with
+`executeMultiStark`, `useBytecode` selects the generic interpreter over the
+generated production verifier. -/
+@[extern "rs_aiur_multi_stark_join_execute"]
+opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
+  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Array QueryCount)
+
+/-- Native execution of the `ix_aggr` aggregation entrypoint. Serialized child
+proof transport (from `AiurSystem.proofToAdviceBytes`), claims, and the fixed
+vk/output/allowed blobs are passed without
+per-byte Lean field boxing; `preimagesBlob`, `treesBlob`, and `pathsBlob` use the compact
+count/key/length framing produced by `Aggr.preimagesBlob` and
+`Aggr.treesBlob` / `Aggr.pathsBlob`. Rust expands them directly into IO
+channels 0–6 (the shape hint and structural paths share channel 6 with
+disjoint key shapes). Wrap shapes pass empty right-child/path blobs —
+the circuit never reads them. As with `executeMultiStark`, `useBytecode`
+selects the generic interpreter over the generated production aggregator,
+and the codegen'd path is only valid when `toplevel` is the production
+`Aggr.ixAggr` bytecode. -/
+@[extern "rs_aiur_ix_aggr_execute"]
+opaque executeIxAggr (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
+  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
 -- (EnvHandle opaque type + constructors live above `namespace
@@ -181,7 +288,8 @@ opaque executeMultiStark (toplevel : @& Bytecode.Toplevel)
 
 @[extern "rs_aiur_toplevel_check_addr_with_env"]
 private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
+  (useBytecode profile : Bool) →
     Except String ExecuteResult
 
 /-- Per-claim check against a Rust-owned `EnvHandle`. `useBytecode`
@@ -193,7 +301,7 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (addrBytes : ByteArray) (useBytecode : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode).map
+  (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode false).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 @[extern "rs_aiur_toplevel_check_addrs_with_env"]
@@ -207,7 +315,8 @@ private opaque checkAddrsWithEnv' : @& Bytecode.Toplevel →
     through the exact single-claim machinery over task-private data
     (own witness io, own query record), nothing shared between tasks
     but the read-only toplevel and env. Returns the FAILURES as
-    `(addrHex, error)` pairs; empty means all passed. Per-claim
+    `(batch index as a decimal string, error)` pairs, resolving back to
+    the caller's label order; empty means all passed. Per-claim
     outputs/records are not returned — use `checkAddrWithEnv` for a
     single claim's full result. -/
 def checkAddrsWithEnv (toplevel : @& Bytecode.Toplevel)
@@ -216,9 +325,21 @@ def checkAddrsWithEnv (toplevel : @& Bytecode.Toplevel)
   : Except String (Array (String × String)) :=
   checkAddrsWithEnv' toplevel funIdx envHandle addrsBlob useBytecode jobs
 
+/-- `checkAddrWithEnv` variant returning the full `ExecuteResult`,
+    including the `QueryRecordHandle` for post-run query inspection.
+    `profile` enables per-entry virtual-span recording
+    (`QueryRecordHandle.fnVspan`). -/
+def checkAddrWithEnvFull (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (addrBytes : ByteArray) (useBytecode : Bool := false)
+  (profile : Bool := false)
+  : Except String ExecuteResult :=
+  checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode profile
+
 @[extern "rs_aiur_toplevel_shard_check_with_env"]
 private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
+  (useBytecode profile : Bool) →
     Except String ExecuteResult
 
 /-- Per-shard check with the witness shape (wrapper-augmented byte
@@ -228,8 +349,19 @@ def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (useBytecode : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode).map
+  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode false).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
+
+/-- `shardCheckWithEnv` variant returning the full `ExecuteResult`,
+    including the `QueryRecordHandle` for post-run query inspection.
+    `profile` enables per-entry virtual-span recording
+    (`QueryRecordHandle.fnVspan`). -/
+def shardCheckWithEnvFull (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (ownedBlob : ByteArray) (useBytecode : Bool := false)
+  (profile : Bool := false)
+  : Except String ExecuteResult :=
+  shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode profile
 
 end Bytecode.Toplevel
 

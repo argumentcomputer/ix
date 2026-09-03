@@ -97,7 +97,7 @@ def systemDeserialize := ⟦
   -- preprocessed_indices. The transcript limbs are the u64 words the
   -- challenger observes before any commitment — the 7 parameters (bound via
   -- the challenger seed) followed by the system shape (`observe_shape`: the
-  -- circuit count, then 6 metadata words per circuit) — kept as limbs because
+  -- circuit count, then 7 metadata words per circuit) — kept as limbs because
   -- the Fiat-Shamir replay needs their little-endian bytes.
   enum Sys { Mk(SysParams, List‹U64›, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
 

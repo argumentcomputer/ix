@@ -102,8 +102,9 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
       match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
       | .error e => IO.eprintln s!"proveAddrWithEnv failed: {e}"; return none
       | .ok (claimBytes, proof, _) =>
-        -- `verify_claim` takes the packed Blake3 digest used by the
-        -- production typecheck path: eight field elements of four bytes.
+        -- `verify_claim`'s public input is the packed blake3 digest of the
+        -- serialized `Ix.Claim` (same recipe as `ix verify` / bench-typecheck:
+        -- 8 G elements of 4 LE bytes each, `ClaimHarness.packedDigestKey`).
         let digest := Address.blake3 claimBytes
         pure (Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[], proof)
   let t1 ← IO.monoNanosNow
@@ -113,6 +114,7 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
   match aiurSystem.verify claim proof with
   | .ok () => IO.println "inner proof verifies out-of-circuit: ok"
   | .error e => IO.eprintln s!"⚠ inner proof FAILS out-of-circuit verify: {e}"
+  -- Verify the proof before serializing the transport consumed in-circuit.
   match aiurSystem.proofToAdviceBytes claim proof with
   | .error e => IO.eprintln s!"advice re-encoding failed: {e}"; return none
   | .ok adviceBytes =>
@@ -128,6 +130,9 @@ def main (args : List String) : IO UInt32 := do
   let mode := (argStr args "--mode").getD "native"
   let skipDeps := args.contains "--skip-deps"
   let fri := friParams (argNat args "--queries" 100)
+  if fri.numQueries == 0 then
+    IO.eprintln "error: --queries must be positive"
+    return 1
   let depth := argNat args "--depth" 2
   let stackLimit := argNat args "--stack" 40
   IO.FS.createDirAll dir

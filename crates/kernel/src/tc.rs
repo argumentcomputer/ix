@@ -917,7 +917,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     // Sharding profiler: flush the just-finished constant's heartbeats and
     // delta-unfold edges. `delta_targets` is always drained (even when
     // `cur_const` is unset) so producers never leak into the next constant.
-    if let Some(sink) = &mut self.env.profile_sink {
+    if let Some(sink) = self.env.profile_sink.as_mut() {
       let producers = std::mem::take(&mut self.delta_targets);
       // Always drain the op counters (even when `cur_const` is unset) so they
       // never leak into the next constant, mirroring `delta_targets`.

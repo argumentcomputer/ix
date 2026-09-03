@@ -3,6 +3,8 @@
 //! Bridges the `aiur` proving framework with `ixon` / `ix-common`
 //! content-addressed env types.
 
+pub mod aiur_ix_aggr;
+pub mod aiur_ix_aggr_runner;
 pub mod aiur_ixvm;
 pub mod aiur_ixvm_runner;
 pub mod aiur_ixvm_witness;

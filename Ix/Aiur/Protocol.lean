@@ -25,6 +25,11 @@ opaque toBytes : @& Proof → ByteArray
 @[extern "rs_aiur_proof_of_bytes"]
 opaque ofBytes : @& ByteArray → Proof
 
+/-- Decode an untrusted serialized proof without aborting the process. Store
+and network boundaries must use this variant; `ofBytes` remains for callers
+whose bytes were produced in-process or already validated. -/
+@[extern "rs_aiur_proof_of_bytes_checked"]
+opaque ofBytesChecked : @& ByteArray → Except String Proof
 end Proof
 
 structure CommitmentParameters where
@@ -90,6 +95,14 @@ structure ProveEnvResult where
   ioMap : Array ((G × Array G) × IOKeyInfo)
   deriving Nonempty
 
+/-- Manifest-bound aggregate root reconstructed and audited by the native
+Stage 2 controller. `claimBytes` is the exact root `Ix.Claim` wire encoding;
+`constantCount` is the number of environment constants proven to occur once. -/
+structure AggregateExpected where
+  claimBytes : ByteArray
+  constantCount : Nat
+  deriving Nonempty
+
 namespace AiurSystem
 
 @[extern "rs_aiur_system_build"]
@@ -139,8 +152,10 @@ def proveIxVM (system : @& AiurSystem)
   (proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
     fun r => (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
 
-/-- Prove the MultiStark recursive verifier over raw proof/vk/claims
-    byte blobs. The IO advice buffer is built natively in Rust (see
+/-- Prove the MultiStark recursive verifier over proof-advice/vk/claims
+byte blobs. `proofAdviceBytes` must come from
+`AiurSystem.proofToAdviceBytes`, which verifies and serializes the native
+proof transport. The IO advice buffer is built natively in Rust (see
     `Bytecode.Toplevel.executeMultiStark`); the execute step inside
     the prove routes through the codegen'd verifier
     (`crates/ixvm-codegen/src/aiur_multi_stark.rs`) unless
@@ -151,8 +166,68 @@ def proveIxVM (system : @& AiurSystem)
 @[extern "rs_aiur_multi_stark_prove"]
 opaque proveMultiStark (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+  (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)
+
+/-- Prove one flat or structural aggregate-first binary join over child
+proof/claim advice. Both proof blobs must come from
+`AiurSystem.proofToAdviceBytes`. The compact preimage/tree/path blobs are produced by
+`MultiStark.joinPreimagesBlob`, `MultiStark.joinTreesBlob`, and
+`MultiStark.joinPathsBlob`. Malformed
+framing is returned as an error; as with `prove`/`proveMultiStark`, callers
+must supply an accepting execution witness. The final native IO buffer is
+intentionally not marshalled back to Lean. -/
+@[extern "rs_aiur_multi_stark_join_prove"]
+opaque proveMultiStarkJoin (system : @& AiurSystem)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
+  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Proof)
+
+/-- Prove one `ix_aggr` execution — any shape — over raw child proof/claim
+advice. Both proof blobs must come from `AiurSystem.proofToAdviceBytes`;
+the compact preimage/tree/path blobs are produced by `Aggr.preimagesBlob`,
+`Aggr.treesBlob`, and `Aggr.pathsBlob`; wrap and flat shapes pass empty
+right-child blobs. Malformed framing is returned as an error; as with
+`prove`/`proveMultiStark`, callers must supply an accepting execution
+witness. Only valid when `system` was built from the production
+`Aggr.ixAggr` bytecode (unless `useBytecode` is set). The final native IO
+buffer is intentionally not marshalled back to Lean. -/
+@[extern "rs_aiur_ix_aggr_prove"]
+opaque proveIxAggr (system : @& AiurSystem)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
+  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Proof)
+
+/-- Run the production aggregate-first Stage 2 pipeline natively after Lean
+has compiled the IxVM and `ix_aggr` systems. Rust owns all data-dependent
+orchestration: manifest/environment binding, shard-claim reconstruction,
+statement folding, cache validation, dependency scheduling, recursive advice,
+proving, and persistence. `proofHexes` is one store address per line;
+`cacheFriBytes` is the stable 40-byte recursion-FRI cache identity.
+`reproveSlotCode` is zero for a full run and `slot + 1` for a targeted replay;
+the latter loads and verifies only the target's immediate cached children.
+When `writeOutputs` is false, proofs are hashed but neither the store nor cache
+is changed. Returns the root or replayed proof address. -/
+@[extern "rs_aiur_stage2_aggregate"]
+opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
+  (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
+  (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
+  (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
+  (useCache writeOutputs : Bool) :
+    Except String String
+
+/-- Reconstruct and audit the manifest-relative aggregate root entirely in
+Rust, using the same ownership, frontier, pruning, and statement-fold code as
+`aggregateStage2`. This is the native orchestration path for `ix verify` and
+does not construct shard statements or schedule Lean tasks. -/
+@[extern "rs_aiur_aggregate_expected"]
+opaque aggregateExpected (envHandle : @& EnvHandle)
+  (manifestPath : @& String) (structuralAbove : @& Nat) :
+    Except String AggregateExpected
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →
@@ -173,60 +248,189 @@ def proveAddrWithEnv (system : @& AiurSystem)
   (proveAddrWithEnv' system funIdx envHandle addrBytes useBytecode).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
+/-- Result of a per-shard prove: the claim's wire bytes, the proof, the
+    projected prover RAM peak of the record that produced it
+    (`AiurSystem::peak_prove_bytes`), and the part count the peak model
+    projects will fit the budget
+    (`AiurSystem::suggested_split_parts`).
+
+    `proof` is `none` exactly when the peak exceeded the budget — a
+    RESULT rather than an error, since the caller's answer is to cut
+    the shard into `suggestedParts` parts and prove those. The count is
+    computed Rust-side because only there does the executed record
+    still exist to read per-circuit heights from; it is optimistic
+    (parts re-execute dependencies shared across the cut), so each part
+    must still be gated on its own record. `suggestedParts` is 1
+    whenever the prove ran. The claim bytes are filled either way (the
+    claim is known before proving starts).
+
+    The final IO buffer is not returned — it is the shard's whole
+    ingested byte scope and no caller reads it. -/
+structure ShardProveResult where
+  claimBytes : ByteArray
+  proof : Option Proof
+  peakBytes : Nat
+  suggestedParts : Nat
+
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
-    Except String ProveEnvResult
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& Nat → Bool →
+    Except String ShardProveResult
 
-/-- Per-shard prove against a Rust-owned `EnvHandle`. -/
+/-- Per-shard prove against a Rust-owned `EnvHandle`: ONE execution,
+    whose record is proven from directly.
+
+    `maxRamBytes` is a per-shard prover-RAM budget checked against that
+    record's projected peak before the witness phase begins; `0` means
+    detect (85% of `MemAvailable`, the policy the check batch's RAM gate
+    uses), and an unreadable `/proc/meminfo` disables the check rather
+    than guessing. Over budget, the record is dropped and `proof` is
+    `none` — learning that here costs one execution instead of an OOM
+    part-way through an FFT. The peak comes back either way, so a prove
+    run yields the same split/merge signal a check run does.
+
+    `execOnly` stops after execution + measurement (`proof` is `none`
+    either way; `suggestedParts` is 1 exactly when the peak fits): the
+    split loop runs on executions alone, never starting a STARK. -/
 def shardProveWithEnv (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (ownedBlob : ByteArray) :
-    Except String (ByteArray × Proof × IOBuffer) :=
-  (shardProveWithEnv' system funIdx envHandle ownedBlob).map
-    fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (ownedBlob : ByteArray) (maxRamBytes : Nat := 0)
+  (execOnly : Bool := false) :
+    Except String ShardProveResult :=
+  shardProveWithEnv' system funIdx envHandle ownedBlob maxRamBytes execOnly
 
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
-/-- Re-encode a natively valid proof into the per-query Merkle-path advice
-transport consumed by the in-circuit recursive verifier. -/
+/-- Verify and serialize a proof in the transport consumed by the in-circuit
+recursive verifier. -/
 @[extern "rs_aiur_proof_to_advice_bytes"]
 opaque proofToAdviceBytes : @& AiurSystem →
   @& Array G → @& Proof → Except String ByteArray
 
 end AiurSystem
 
+/-- Write a `.ixes` manifest for an EXPLICIT partition — the block lists
+    a run actually produced (splits included) rather than a planner's
+    output. `shardsBlob`: per shard, a 4-byte LE block count followed by
+    that many 32-byte block addresses; every env block must appear in
+    exactly one shard. `peaksBlob`: one 8-byte LE measured prover peak
+    per shard in order, recorded on the manifest for schedulers. Own
+    sizes, foreign blocks, cross-ingress and assumption roots are
+    recomputed from the env's static profile; prints the manifest
+    summary to stderr. -/
+@[extern "rs_shard_manifest_from_partition"]
+opaque shardManifestFromPartition : @& EnvHandle →
+  @& ByteArray → @& ByteArray → @& String → IO Unit
+
+/-- Refine an existing `.ixes` manifest (`sourcePath`) by cutting some of
+    its leaves into parts and write the result to `outPath`
+    (`ShardManifest::refine`, `crates/kernel/src/shard.rs`). Every other
+    leaf keeps its block list, record, id and place in the aggregation
+    tree; a refined leaf's place becomes a balanced subtree over its
+    parts, part 0 keeps the leaf's id and later parts take fresh ids after
+    the last existing one.
+
+    `refinementsBlob`: `count(u32)`, then per refined leaf `id(u32) ‖
+    nparts(u32)` and per part `nblocks(u32) ‖ 32·nblocks ‖ peak(u64)`.
+    `measuredBlob`: empty, or one `u64` analytic prover peak per SOURCE
+    shard in id order; a nonzero value overrides the peak carried forward
+    for an unsplit leaf. The new partition is validated as an exact,
+    disjoint cover of the env's blocks. Returns the parts' new ids:
+    `count(u32)`, then per refinement `n(u32) ‖ n × id(u32)`. -/
+@[extern "rs_shard_manifest_refine"]
+opaque shardManifestRefine : @& EnvHandle → @& String →
+  @& ByteArray → @& ByteArray → @& String → IO ByteArray
+
+@[extern "rs_aiur_detected_ram_budget"]
+private opaque detectedRamBudgetFFI : IO UInt64
+
+/-- The prover/execution RAM budget the Rust side detects on this machine:
+    85 % of `MemAvailable` (`ix_kernel::shard::RAM_USABLE_FRAC`) — the policy
+    the check batch's RAM gate and `ix prove --max-ram 0` use. `0` when
+    `/proc/meminfo` is unreadable; callers that need a budget fail closed
+    on it instead of running ungated. -/
+def detectedRamBudgetBytes : IO Nat := do
+  pure (← detectedRamBudgetFFI).toNat
+
 namespace Bytecode.Toplevel
+
+/-- One shard's result from `shardCheckBatchWithEnv`. `weights` is the
+    shard's per-constant virtual-gas table, packed as 48-byte rows —
+    32-byte address, then `vspan` and `mult` as little-endian `UInt64`s
+    (see `ShardResult.foldWeights`). Empty unless the batch ran with
+    `profile := true`; the record it is read from is reduced to these
+    rows and dropped inside the shard's own task, so a whole partition's
+    weights fit in RAM when its records could not. -/
+structure ShardResult where
+  error : String
+  peakBytes : Nat
+  weights : ByteArray
+  /-- 1 when `peakBytes` fits the batch's `maxRamBytes` (or no budget
+      was given); otherwise the part count the peak model projects will
+      fit (`AiurSystem::suggested_split_parts`, measured on the record
+      in-task). -/
+  suggestedParts : Nat
+  deriving Inhabited
+
+/-- Bytes per packed `weights` row: 32 address + 8 vspan + 8 mult. -/
+def shardWeightRow : Nat := 48
+
+/-- Fold `f` over the packed `(addrBytes, vspan, mult)` rows of `weights`.
+    Trailing bytes that do not complete a row are ignored. -/
+@[inline] def ShardResult.foldWeights {α : Type} (r : ShardResult) (init : α)
+    (f : α → ByteArray → UInt64 → UInt64 → α) : α :=
+  go (r.weights.size / shardWeightRow) 0 init
+where
+  go : Nat → Nat → α → α
+    | 0, _, acc => acc
+    | rows + 1, off, acc =>
+      go rows (off + shardWeightRow) <| f acc
+        (r.weights.extract off (off + 32))
+        (r.weights.extract (off + 32) (off + 40)).toUInt64LE!
+        (r.weights.extract (off + 40) (off + 48)).toUInt64LE!
 
 @[extern "rs_aiur_toplevel_shard_check_batch"]
 private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → @& Nat →
-  @& CommitmentParameters → @& FriParameters →
-    Except String (Array (String × Nat))
+  @& CommitmentParameters → @& FriParameters → Bool → @& Nat → @& Nat →
+    Except String (Array ShardResult)
 
 /-- Check EVERY shard of a partition in one call: rayon over the shard
     list with true work-stealing (no chunk barriers), each shard
     through the exact single-shard machinery over its own private
     record and witness io. `shardsBlob` encodes, per shard, a 4-byte LE
     owned-constant count followed by that many 32-byte addresses.
-    Returns one `(error, peakBytes)` pair per shard in shard order:
-    empty error = clean, and `peakBytes` is the analytic prover RAM
-    peak ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's
-    executed record — the split/merge input (0 on failure).
+    Returns one `ShardResult` per shard in shard order: empty error =
+    clean, and `peakBytes` is the analytic prover RAM peak
+    ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's executed
+    record — the split/merge input (0 on failure). `profile` turns on the
+    virtual-gas meter and fills each result's `weights` with the shard's
+    per-constant cost rows, read off the record inside the shard's own
+    task; `checkConstIdx` names the `check_const` function whose queries
+    those rows come from (ignored when not profiling).
     `jobs = 0` uses rayon's default pool width (all cores): peak RSS
     is bounded by the Rust-side RAM gate (a byte-weighted admission
     semaphore over estimated per-shard execution RSS vs available
     system RAM), not by thread count — pass `jobs` only to narrow
-    CPU use. -/
+    CPU use.
+
+    `maxRamBytes > 0` is a per-shard prover-RAM budget: each result's
+    `suggestedParts` is 1 when its peak fits and the model's projected
+    part count otherwise, so a caller can cut over-budget shards and
+    re-batch the parts — the wave loop that audits a partition's split
+    behavior on executions alone. -/
 def shardCheckBatchWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (shardsBlob : ByteArray) (useBytecode : Bool := false) (jobs : Nat := 0)
   (commitmentParameters : CommitmentParameters := defaultCommitmentParameters)
   (friParameters : FriParameters := defaultFriParameters)
-  : Except String (Array (String × Nat)) :=
+  (profile : Bool := false) (checkConstIdx : Nat := 0)
+  (maxRamBytes : Nat := 0)
+  : Except String (Array ShardResult) :=
   shardCheckBatchWithEnv' toplevel funIdx envHandle shardsBlob useBytecode
-    jobs commitmentParameters friParameters
+    jobs commitmentParameters friParameters profile checkConstIdx maxRamBytes
 
 end Bytecode.Toplevel
 

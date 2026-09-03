@@ -42,8 +42,8 @@ ixon = { path = "crates/ixon" }
 ix-kernel = { path = "crates/kernel" }
 
 # lean-ffi tree (lean-ffi crate + factored-out bignat sub-crate)
-bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "2a9c91eba44ea791978a086a6a19b3a922edfee5" }
-lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "2a9c91eba44ea791978a086a6a19b3a922edfee5" }
+bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "93c7e52952ae94546be08313f4ff3922984c84d5" }
+lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "93c7e52952ae94546be08313f4ff3922984c84d5" }
 
 # External shared deps
 anyhow = "1"

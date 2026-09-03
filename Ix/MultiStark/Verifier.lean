@@ -308,8 +308,9 @@ def verifier := ⟦
   -- Replay the verifier transcript and derive the four challenges
   -- `(lookup, fingerprint, alpha, zeta)`. Mirrors `verify_multiple_claims`'s
   -- challenger sequence exactly:
-  --   seed = tag + protocol parameters; observe_shape (circuit count + 6
-  --   metadata words per circuit) → preprocessed_commit (if any) → stage_1 →
+  --   seed = tag + protocol parameters; observe_shape
+  --   (circuit count + 7 metadata words per circuit) → preprocessed_commit
+  --   (if any) → stage_1 →
   --   log_degrees → length-prefixed claims;
   --   sample lookup, observe it; sample fingerprint, observe it;
   --   observe stage_2; observe the intermediate accumulators; sample α;
