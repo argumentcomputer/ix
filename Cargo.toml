@@ -14,8 +14,23 @@ members = [
 # `zisk/` and `sp1/` are their own Cargo workspaces (guest + host) built via
 # the respective zkVM toolchains; excluded so host workspace ops don't pick
 # them up.
-exclude = ["zisk", "sp1", "multi-stark"]
+# `crates/vendor/*` are patched copies of registry crates (see `[patch]`);
+# excluded so CPU-only workspace builds never compile their CUDA deps.
+exclude = [
+  "zisk",
+  "sp1",
+  "multi-stark",
+  "crates/vendor/sp1-gpu-jagged-tracegen",
+  "crates/vendor/sp1-gpu-zerocheck",
+]
 resolver = "2"
+
+# sp1-gpu-jagged-tracegen 6.6.0 with `MAX_COLS_PER_TRACE` raised from 2^14:
+# it bounds the total column count of a shard, which Aiur's IxVM kernel
+# machine exceeds (the GPU prover panics with a slice-range error otherwise).
+[patch.crates-io]
+sp1-gpu-jagged-tracegen = { path = "crates/vendor/sp1-gpu-jagged-tracegen" }
+sp1-gpu-zerocheck = { path = "crates/vendor/sp1-gpu-zerocheck" }
 
 [profile.dev]
 panic = "abort"

@@ -1,8 +1,49 @@
 import Lake
 open System Lake DSL
 
+/-- Whether `IX_CUDA` opts the Rust library into its `cuda` feature
+(`1`/`true`/`yes`), read once when the lakefile is elaborated. -/
+unsafe def ixCudaEnabledUnsafe : Bool :=
+  match unsafeBaseIO (IO.getEnv "IX_CUDA") with
+  | some "1" | some "true" | some "yes" => true
+  | _ => false
+
+@[implemented_by ixCudaEnabledUnsafe] opaque ixCudaEnabled : Bool
+
+/-- Linker inputs the CUDA-featured Rust static library depends on but cannot
+carry itself: a Rust `staticlib` bundles the *static* native libraries its
+build scripts request (`cudart_static`, `cudadevrt`, sp1-gpu's `sys-cuda`)
+but not the dynamic ones, and Lean's final link does not consult Cargo.
+sp1-gpu-sys's kernels (via sppark) are host-compiled by nvcc/gcc against
+libstdc++, and their error paths reference it.
+
+Lean links with its bundled clang against its own sysroot: `-lstdc++` is
+rewritten to the toolchain's libc++ (which lacks the libstdc++ ABI symbols),
+`libstdc++.a` clashes with that runtime, and the sysroot's glibc stub is
+older than what the host's shared `libstdc++.so` references. So the host
+`gcc`'s `libstdc++.so` is passed by path and `--allow-shlib-undefined` lets
+its newer-glibc references resolve at load time, against the real glibc
+every Lean executable runs on anyway. The CUDA root is `CUDA_PATH` (default
+`/usr/local/cuda`). Applied package-wide so every executable that links the
+Rust library resolves. -/
+unsafe def cudaLinkArgsUnsafe : Array String :=
+  if !ixCudaEnabled then #[] else
+  let cudaRoot := (unsafeBaseIO (IO.getEnv "CUDA_PATH")).getD "/usr/local/cuda"
+  let stdcxx : Array String :=
+    match unsafeBaseIO (EIO.toBaseIO <| IO.Process.output
+        { cmd := "gcc", args := #["-print-file-name=libstdc++.so"] }) with
+    | .ok out =>
+      let path := out.stdout.trimAscii.toString
+      if path.startsWith "/" then #[path, "-Wl,--allow-shlib-undefined"]
+      else #["-lstdc++"]
+    | .error _ => #["-lstdc++"]
+  #[s!"-L{cudaRoot}/lib64", "-lcudadevrt"] ++ stdcxx ++ #["-ldl"]
+
+@[implemented_by cudaLinkArgsUnsafe] opaque cudaLinkArgs : Array String
+
 package ix where
   version := v!"0.1.0"
+  moreLinkArgs := cudaLinkArgs
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
