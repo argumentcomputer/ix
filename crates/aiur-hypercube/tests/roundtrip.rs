@@ -68,7 +68,7 @@ fn function_spec() -> CircuitSpec<FF> {
 }
 
 fn machine() -> AiurMachine {
-  AiurMachine::build(vec![squares_spec(), function_spec()], 4).unwrap()
+  AiurMachine::build(vec![squares_spec(), function_spec()], &[], 4).unwrap()
 }
 
 fn params() -> ProverParams {
@@ -105,11 +105,14 @@ fn run(w: &Witness) -> Result<(), String> {
     5,
   );
   let claim: Vec<FF> = w.claim.iter().map(|&x| f(x)).collect();
+  // The trailing `None` is the (empty) memory-boundary main trace.
   let record = machine
-    .record(vec![Some(squares), Some(function)], &claim)
+    .record(vec![Some(squares), Some(function), None], &claim)
     .map_err(|e| e.to_string())?;
-  let (vk, proof) = prove(&machine, record, params());
-  verify(&machine, params(), &vk, &proof).map_err(|e| format!("{e:?}"))
+  let (vk, proof) = prove(&machine, vec![record], params());
+  verify(&machine, params(), &vk, &proof)
+    .map(|_| ())
+    .map_err(|e| format!("{e:?}"))
 }
 
 #[test]

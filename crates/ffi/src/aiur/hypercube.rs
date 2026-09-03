@@ -21,7 +21,7 @@ use aiur::{
 };
 use aiur_hypercube::{
   AiurProof, AiurVerifyingKey, FrontendField as KB, ProverParams,
-  ToplevelMachine, verify,
+  ShardingParams, ToplevelMachine, verify,
 };
 
 use crate::{
@@ -38,6 +38,7 @@ pub struct HypercubeSystem {
   toplevel: Toplevel<KB>,
   machine: ToplevelMachine,
   params: ProverParams,
+  sharding: ShardingParams,
 }
 
 static HYPERCUBE_SYSTEM_CLASS: LazyLock<ExternalClass> =
@@ -105,6 +106,23 @@ fn prover_params_from_env() -> ProverParams {
   p
 }
 
+/// `ShardingParams` from the environment: `IX_HC_SHARD_CELLS` caps a shard's
+/// splittable main-trace cells (default: everything in one shard), and the
+/// row cap follows `IX_HC_MAX_LOG_ROWS`.
+fn sharding_params_from_env(prover: &ProverParams) -> ShardingParams {
+  let mut s = ShardingParams {
+    max_rows: 1 << prover.max_log_row_count,
+    ..ShardingParams::default()
+  };
+  if let Some(v) = std::env::var("IX_HC_SHARD_CELLS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+  {
+    s.max_cells = v;
+  }
+  s
+}
+
 /// `Aiur.Hypercube.build : @& Bytecode.Toplevel → @& Bytecode.FunIdx →
 /// Except String HypercubeSystem`
 #[unsafe(no_mangle)]
@@ -121,8 +139,9 @@ extern "C" fn rs_aiur_hypercube_build(
         return LeanExcept::error_string(&format!("machine build: {e}"));
       },
     };
-    let system =
-      HypercubeSystem { toplevel, machine, params: prover_params_from_env() };
+    let params = prover_params_from_env();
+    let sharding = sharding_params_from_env(&params);
+    let system = HypercubeSystem { toplevel, machine, params, sharding };
     LeanExcept::ok(LeanExternal::alloc(&HYPERCUBE_SYSTEM_CLASS, system))
   })
 }
@@ -146,10 +165,14 @@ extern "C" fn rs_aiur_hypercube_prove(
       &args,
       &mut io_buffer,
       system.params,
+      system.sharding,
     ) {
       Ok(t) => t,
       Err(e) => return LeanExcept::error_string(&e.to_string()),
     };
+    if std::env::var_os("IX_HC_DEBUG").is_some() {
+      eprintln!("hypercube: proved {} shard(s)", proof.shard_proofs.len());
+    }
     let blob =
       match bincode::serde::encode_to_vec(&(vk, proof), bincode_config()) {
         Ok(b) => b,
@@ -183,24 +206,21 @@ extern "C" fn rs_aiur_hypercube_verify(
           return LeanExcept::error_string(&format!("proof decode: {e}"));
         },
       };
-    // The claim must be the public-value prefix of the (single) shard.
-    let Some(shard) = proof.shard_proofs.first() else {
-      return LeanExcept::error_string("proof has no shards");
-    };
-    let pvs = &shard.public_values;
-    if pvs.len() < claim.len()
-      || !claim
-        .iter()
-        .zip(pvs.iter())
-        .all(|(c, p)| aiur_hypercube::expr::convert_element(*c) == *p)
-    {
-      return LeanExcept::error_string(
-        "claim does not match proof public values",
-      );
-    }
+    // Verification returns the claim-shard's verified claim; it must match
+    // the expected one.
     match verify(system.machine.machine(), system.params, &vk, &proof) {
-      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
-      Err(e) => LeanExcept::error_string(&format!("{e:?}")),
+      Ok(verified) => {
+        let expected: Vec<_> = claim
+          .iter()
+          .map(|c| aiur_hypercube::expr::convert_element(*c))
+          .collect();
+        if verified == expected {
+          LeanExcept::ok(LeanOwned::box_usize(0))
+        } else {
+          LeanExcept::error_string("claim does not match the verified claim")
+        }
+      },
+      Err(e) => LeanExcept::error_string(&format!("{e}")),
     }
   })
 }

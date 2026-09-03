@@ -17,9 +17,11 @@
 pub mod air;
 pub mod expr;
 pub mod frontend;
+pub mod global;
 pub mod machine;
 pub mod prover;
 pub mod record;
+pub mod shard;
 
 /// The Hypercube base field (KoalaBear).
 pub type F = sp1_primitives::SP1Field;
@@ -33,3 +35,4 @@ pub use frontend::ToplevelMachine;
 pub use machine::{AiurMachine, BuildError, CircuitSpec};
 pub use prover::{AiurProof, AiurVerifyingKey, ProverParams, prove, verify};
 pub use record::{AiurProgram, AiurRecord};
+pub use shard::ShardingParams;

@@ -37,12 +37,28 @@ use crate::{F, air::AIUR_INTERACTION_KIND};
 /// same power of two (see `AiurMachine::build`).
 pub const CLAIM_WIDTH: usize = 64;
 
+/// Public-value layout: the zero-padded claim, then the sharding values.
+/// The claim message is sent with the `PV_CLAIM_FLAG` multiplicity, so
+/// exactly the shard carrying the entry function's return row sets the flag
+/// (the top-level verifier checks there is exactly one). `PV_CHAIN_LEN` and
+/// `PV_DIGEST` expose the shard's adapter chain end (see [`crate::global`]);
+/// a shard with no cross-shard boundary exposes length 0 and the start
+/// digest, which cancels the chain-start push below.
+pub const PV_CLAIM_FLAG: usize = CLAIM_WIDTH;
+/// Number of adapter rows in the shard (the accumulator chain's length).
+pub const PV_CHAIN_LEN: usize = CLAIM_WIDTH + 1;
+/// The shard's septic digest, `x` then `y` (14 limbs).
+pub const PV_DIGEST: usize = CLAIM_WIDTH + 2;
+/// Total public values an Aiur shard carries.
+pub const NUM_AIUR_PVS: usize = PV_DIGEST + 14;
+
 /// One shard's worth of traces, indexed like the machine's chips.
 #[derive(Clone, Default, Debug)]
 pub struct AiurRecord {
   /// `traces[i]` is chip `i`'s padded main trace; `None` deactivates it.
   pub traces: Vec<Option<RowMajorMatrix<F>>>,
-  /// The machine's public values (unpadded).
+  /// The machine's public values (unpadded): the zero-padded claim, the
+  /// claim-shard flag, and the adapter chain end (see [`PV_CLAIM_FLAG`]).
   pub public_values: Vec<F>,
 }
 
@@ -87,12 +103,37 @@ impl MachineRecord for AiurRecord {
     pvs
   }
 
-  /// The claim is required from the public values (see [`CLAIM_WIDTH`]).
+  /// The claim is required from the public values (see [`CLAIM_WIDTH`]),
+  /// gated by the claim-shard flag, and the adapter chain's endpoints are
+  /// pushed/pulled from the sharding public values (see [`crate::global`]).
   fn eval_public_values<AB: SP1AirBuilder>(builder: &mut AB) {
-    let values: Vec<AB::Expr> =
-      (0..CLAIM_WIDTH).map(|i| builder.public_values()[i].into()).collect();
+    let pvs: Vec<AB::Expr> =
+      builder.public_values().iter().map(|v| (*v).into()).collect();
+    let pv = |i: usize| -> AB::Expr { pvs[i].clone() };
+    let flag = pv(PV_CLAIM_FLAG);
+    builder.assert_bool(flag.clone());
+    let values: Vec<AB::Expr> = (0..CLAIM_WIDTH).map(pv).collect();
+    builder.send(
+      AirInteraction::new(values, flag, AIUR_INTERACTION_KIND),
+      InteractionScope::Local,
+    );
+
+    let chain_channel =
+      AB::Expr::from_canonical_u32(crate::global::CHAIN_CHANNEL);
+    // Push the chain start `(CHAIN, 0, START)`...
+    let start = SepticDigest::<AB::F>::zero().0;
+    let mut values = vec![chain_channel.clone(), AB::Expr::zero()];
+    values.extend(start.x.0.iter().map(|v| AB::Expr::from(*v)));
+    values.extend(start.y.0.iter().map(|v| AB::Expr::from(*v)));
     builder.send(
       AirInteraction::new(values, AB::Expr::one(), AIUR_INTERACTION_KIND),
+      InteractionScope::Local,
+    );
+    // ...and pull the chain end `(CHAIN, len, digest)` the shard exposes.
+    let mut values = vec![chain_channel, pv(PV_CHAIN_LEN)];
+    values.extend((0..14).map(|k| pv(PV_DIGEST + k)));
+    builder.send(
+      AirInteraction::new(values, -AB::Expr::one(), AIUR_INTERACTION_KIND),
       InteractionScope::Local,
     );
   }

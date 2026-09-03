@@ -78,7 +78,25 @@ def benchConst (name : Lean.Name) (backend : String) (env : Lean.Environment) :
     let wKB ← IO.ofExcept <|
       buildClaimWitness ixonEnv claim {} (profile := koalaBearWitnessProfile)
     let t5 ← IO.monoMsNow
-    let (claimKB, blob) ← IO.ofExcept <| kbSys.prove wKB.input wKB.inputIOBuffer
+    -- `IX_HB_BLOB` persists the proof blob: an existing file skips the
+    -- prove (re-verification loops without hours of reproving), a missing
+    -- one is written after proving.
+    let blobPath? ← IO.getEnv "IX_HB_BLOB"
+    let (claimKB, blob) ← do
+      let cached? ← match blobPath? with
+        | some p => do
+          if (← System.FilePath.pathExists p) then
+            let blob ← IO.FS.readBinFile p
+            IO.println s!"  (blob loaded from {p}; prove skipped)"
+            pure (some (#[Aiur.G.ofNat 0, Aiur.G.ofNat kbIdx] ++ wKB.input, blob))
+          else pure none
+        | none => pure none
+      match cached? with
+      | some r => pure r
+      | none => do
+        let r ← IO.ofExcept <| kbSys.prove wKB.input wKB.inputIOBuffer
+        if let some p := blobPath? then IO.FS.writeBinFile p r.2
+        pure r
     let t6 ← IO.monoMsNow
     -- Report prove results BEFORE verifying: an over-capacity shard proves
     -- fine and only the verifier rejects it (e.g. the jagged area bound).
