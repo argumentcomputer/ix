@@ -340,6 +340,8 @@
               lean
               cargo-deny
               valgrind
+              # Python + matplotlib for Benchmarks/Statistics (model & plot bench data)
+              (python3.withPackages (ps: with ps; [matplotlib]))
             ];
           };
 

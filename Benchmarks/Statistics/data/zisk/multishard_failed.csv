@@ -1,0 +1,3 @@
+name,env,witness,work_items,heartbeats,pred_steps_from_hb,peak_ram_gib,outcome
+initstd-shard1,initStd,10,1,83063,13483482557,90.99,prover_crash_execute (single atomic block too large for one leaf; cannot be sharded)
+initstd-shard2,initStd,10,1,14807,2403354973,235.0,OOM_during_prove (watchdog-killed >235GB; model predicts ~129GB → under-predicts ~2x)
