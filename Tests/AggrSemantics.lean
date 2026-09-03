@@ -73,6 +73,78 @@ private def sharedClosureIxonEnv : Ixon.Env × Array Address × Address :=
     |>.storeConst rightAddress right
   (env, #[leftAddress, rightAddress], sharedAddress)
 
+private def stage2FixtureAddressHex : String :=
+  "c2fdce660eb66899efa303b41d4ca1611a62a688ef20684fdc327739d38bd67f"
+
+private def stage2FixtureRootHex : String :=
+  "3211abb340539c10220990fb095f8763cb3a364e111ebe57fb518992d42d7382"
+
+private def stage2FixturePath : System.FilePath :=
+  "Tests" / "Fixtures" / "Aggregate" / "mathlib-2026-09-03" /
+    s!"{stage2FixtureAddressHex}.ixon-proof"
+
+private def stage2FixtureStorePath (home : System.FilePath) : System.FilePath :=
+  home / ".ix" / "store" / "c2" / "fd" / "ce" /
+    "660eb66899efa303b41d4ca1611a62a688ef20684fdc327739d38bd67f"
+
+/-- Pin a real whole-Mathlib root at the persisted-proof boundary. The 3.33 GB
+environment and 52.5 MB manifest are identified in the adjacent provenance
+record rather than checked in; this gate re-hashes and decodes the exact
+wrapper, pins its unconditional root claim, and drives native cryptographic
+verification through the production CLI/backend. -/
+private def stage2FixtureValid : IO Bool := do
+  try
+    unless (← stage2FixturePath.pathExists) do
+      IO.eprintln s!"Stage 2 fixture missing: {stage2FixturePath}"
+      return false
+    let bytes ← IO.FS.readBinFile stage2FixturePath
+    if bytes.size != 9_813_583 then
+      IO.eprintln s!"Stage 2 fixture is {bytes.size} bytes, expected 9813583"
+      return false
+    let some address := Address.fromString stage2FixtureAddressHex | do
+      IO.eprintln "invalid pinned Stage 2 fixture address"
+      return false
+    let some root := Address.fromString stage2FixtureRootHex | do
+      IO.eprintln "invalid pinned Stage 2 fixture root"
+      return false
+    let wrapper ← match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt address bytes with
+      | .error e => IO.eprintln s!"Stage 2 fixture wrapper rejected: {e}"; return false
+      | .ok wrapper => pure wrapper
+    if wrapper.claim != .checkEnv root none then
+      IO.eprintln s!"Stage 2 fixture claim drifted: {wrapper.claim}"
+      return false
+    let ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
+    unless (← ixExe.pathExists) do
+      IO.eprintln s!"{ixExe} missing — run `lake build IxTests` first"
+      return false
+    let exe ← IO.FS.realPath ixExe
+    let home ← IO.FS.createTempDir
+    try
+      let storePath := stage2FixtureStorePath home
+      let some storeDir := storePath.parent | do
+        IO.eprintln s!"Stage 2 fixture store path has no parent: {storePath}"
+        return false
+      IO.FS.createDirAll storeDir
+      IO.FS.writeBinFile storePath bytes
+      let out ← IO.Process.output {
+        cmd := "env"
+        args := #[s!"HOME={home}", exe.toString, "verify", "--aggregate",
+          stage2FixtureAddressHex] }
+      if out.exitCode != 0 then
+        IO.eprintln s!"Stage 2 fixture verification failed ({out.exitCode}): \
+{out.stderr.take 500}"
+        return false
+      unless out.stdout.contains s!"ok: aggregate proof {stage2FixtureAddressHex} verifies" do
+        IO.eprintln s!"Stage 2 fixture verifier returned no success marker: \
+{out.stdout.takeEnd 500}"
+        return false
+      return true
+    finally
+      IO.FS.removeDirAll home
+  catch e =>
+    IO.eprintln s!"Stage 2 fixture test failed: {e}"
+    return false
+
 def semanticSuite : IO UInt32 := do
   let childCompiled ← match childProgram.compile with
     | .error e => IO.eprintln s!"aggr semantic child compilation failed: {e}"; return 1
@@ -482,6 +554,7 @@ def semanticSuite : IO UInt32 := do
       subjects := canonicalTree auditLeaves
       assumptions := some (canonicalTree #[auditShared])
     })
+  let productionStage2FixtureValid ← stage2FixtureValid
 
   -- Threshold policy and the RAM-gated DAG controller.
   let mixedSchedule := Ix.Cli.AggregateCmd.schedulePlan
@@ -688,6 +761,8 @@ def semanticSuite : IO UInt32 := do
       shardPrepPreservesSemantics,
     test "verified aggregate proof audit certifies every fixture constant"
       aggregateProofAuditsEveryConstant,
+    test "dated Mathlib Stage 2 proof verifies under the production backend"
+      productionStage2FixtureValid,
     test "aggregate constant audit rejects an omitted environment constant"
       missingConstantRejected,
     test "aggregate constant audit rejects a foreign subject"
