@@ -21,9 +21,10 @@ use multi_stark::{
 };
 
 use crate::{
-  machine::{AiurMachine, BuildError, CircuitSpec, ROW_ALIGNMENT},
+  machine::{AiurMachine, BuildError, CircuitSpec},
   prover::{AiurProof, AiurVerifyingKey, ProverParams, prove},
   record::AiurRecord,
+  shard::{ShardingParams, partition_records},
 };
 
 /// Aiur's memory circuit for Hypercube.
@@ -62,39 +63,6 @@ fn memory_spec<FF: AiurField + PrimeField64>(size: usize) -> CircuitSpec<FF> {
       Lookup {
         multiplicity: is_real,
         args: vec![k(memory_counter_channel()), size_k(), ptr + k(FF::ONE)],
-      },
-    ],
-  }
-}
-
-/// The memory boundary circuit: one preprocessed row per memory size
-/// (`[is_real, size]`), whose main column holds that table's row count `N`.
-/// See [`memory_spec`].
-fn boundary_spec<FF: AiurField + PrimeField64>(
-  memory_sizes: &[usize],
-) -> CircuitSpec<FF> {
-  let k = |x: FF| Expr::constant(x);
-  let (is_real, size) = (Expr::preprocessed(0), Expr::preprocessed(1));
-  let n = Expr::main(0);
-  let height = memory_sizes.len().max(1).next_multiple_of(ROW_ALIGNMENT);
-  let mut prep = vec![FF::ZERO; height * 2];
-  for (i, &size) in memory_sizes.iter().enumerate() {
-    prep[2 * i] = FF::ONE;
-    prep[2 * i + 1] = FF::from_usize(size);
-  }
-  CircuitSpec {
-    name: "AiurMemoryBoundary".to_string(),
-    main_width: 1,
-    preprocessed: Some(RowMajorMatrix::new(prep, 2)),
-    constraints: vec![],
-    lookups: vec![
-      Lookup {
-        multiplicity: is_real.clone(),
-        args: vec![k(memory_counter_channel()), size.clone(), k(FF::ZERO)],
-      },
-      Lookup {
-        multiplicity: -is_real,
-        args: vec![k(memory_counter_channel()), size, n],
       },
     ],
   }
@@ -159,7 +127,7 @@ impl ToplevelMachine {
     // The return lookup occupies the entry circuit's first slot; its
     // message is exactly the claim.
     let claim_len = inputs[entry].lookups[0].args.len();
-    let mut specs: Vec<CircuitSpec<FF>> = inputs
+    let specs: Vec<CircuitSpec<FF>> = inputs
       .into_iter()
       .zip(types)
       .map(|(ci, t)| match t {
@@ -173,10 +141,7 @@ impl ToplevelMachine {
         },
       })
       .collect();
-    if !toplevel.memory_sizes.is_empty() {
-      specs.push(boundary_spec(&toplevel.memory_sizes));
-    }
-    let machine = AiurMachine::build(specs, claim_len)?;
+    let machine = AiurMachine::build(specs, &toplevel.memory_sizes, claim_len)?;
     Ok(Self { machine, slot_widths, fun_idx })
   }
 
@@ -212,34 +177,47 @@ impl ToplevelMachine {
   ) -> Result<AiurRecord, BuildError> {
     let witness =
       build_witness(toplevel, query_record, io_buffer, &self.slot_widths);
-    let boundary = (!toplevel.memory_sizes.is_empty())
-      .then(|| boundary_trace(toplevel, &witness));
+    let boundary = boundary_trace(toplevel, &witness);
     let traces = witness
       .into_iter()
       .map(|(trace, _lookups)| Some(trace))
-      .chain(boundary.map(Some))
+      .chain([Some(boundary)])
       .collect();
     self.machine.record(traces, claim)
   }
 
-  /// Executes the entry function on `input` and proves the execution,
-  /// returning the claim, the verifying key and the proof.
+  /// Executes the entry function on `input` and proves the execution —
+  /// split into shards under `sharding` — returning the claim, the
+  /// verifying key and the proof.
   pub fn execute_and_prove<FF: AiurField + PrimeField64>(
     &self,
     toplevel: &Toplevel<FF>,
     input: &[FF],
     io_buffer: &mut IOBuffer<FF>,
     params: ProverParams,
+    sharding: ShardingParams,
   ) -> Result<(Vec<FF>, AiurVerifyingKey, AiurProof), ExecuteProveError> {
     let (query_record, output) = toplevel
       .execute(self.fun_idx, input.to_vec(), io_buffer)
       .map_err(ExecuteProveError::Exec)?;
     let claim = self.claim(input, &output);
-    let record = self
-      .record(toplevel, &query_record, io_buffer, &claim)
-      .map_err(ExecuteProveError::Build)?;
+    let witness =
+      build_witness(toplevel, &query_record, io_buffer, &self.slot_widths);
     drop(query_record);
-    let (vk, proof) = prove(&self.machine, record, params);
+    let boundary = boundary_trace(toplevel, &witness);
+    let traces = witness
+      .into_iter()
+      .map(|(trace, _lookups)| Some(trace))
+      .chain([Some(boundary)])
+      .collect();
+    let claim_backend: Vec<crate::F> =
+      claim.iter().map(|x| crate::expr::convert_element(*x)).collect();
+    let extended =
+      self.machine.extended_traces(traces).map_err(ExecuteProveError::Build)?;
+    let records =
+      partition_records(&self.machine, &extended, &claim_backend, &sharding)
+        .map_err(ExecuteProveError::Build)?;
+    let (vk, proof) = prove(&self.machine, records, params);
     Ok((claim, vk, proof))
   }
 }

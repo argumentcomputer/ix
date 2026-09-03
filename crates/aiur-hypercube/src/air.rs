@@ -12,6 +12,7 @@ use sp1_hypercube::{
 use crate::{
   F,
   expr::Lowered,
+  global::GlobalSpec,
   record::{AiurProgram, AiurRecord},
 };
 
@@ -24,14 +25,21 @@ use crate::{
 /// guarantee (see [`crate::record::CLAIM_WIDTH`]).
 pub const AIUR_INTERACTION_KIND: InteractionKind = InteractionKind::Memory;
 
-/// A chip whose constraints and interactions are interpreted from a
-/// [`Lowered`] circuit rather than written by hand.
+/// What a chip evaluates: most chips interpret a [`Lowered`] circuit, the
+/// cross-shard adapter chips run the hand-written [`GlobalSpec`] AIR.
+#[derive(Debug)]
+pub enum AirKind {
+  Interpreted(Lowered),
+  Global(GlobalSpec),
+}
+
+/// A chip of the Aiur machine, dispatching on [`AirKind`].
 #[derive(Debug)]
 pub struct AiurAir {
   name: &'static str,
   /// Position of this chip's trace in [`AiurRecord::traces`].
   index: usize,
-  lowered: Lowered,
+  kind: AirKind,
   preprocessed: Option<RowMajorMatrix<F>>,
 }
 
@@ -39,21 +47,21 @@ impl AiurAir {
   pub fn new(
     name: String,
     index: usize,
-    lowered: Lowered,
+    kind: AirKind,
     preprocessed: Option<RowMajorMatrix<F>>,
   ) -> Self {
     // `MachineAir::name` wants a `&'static str`; chips are created once per
     // machine, so leaking the handful of names is fine.
     let name: &'static str = Box::leak(name.into_boxed_str());
-    Self { name, index, lowered, preprocessed }
+    Self { name, index, kind, preprocessed }
   }
 
   pub fn index(&self) -> usize {
     self.index
   }
 
-  pub fn lowered(&self) -> &Lowered {
-    &self.lowered
+  pub fn kind(&self) -> &AirKind {
+    &self.kind
   }
 
   pub fn preprocessed(&self) -> Option<&RowMajorMatrix<F>> {
@@ -67,7 +75,10 @@ impl AiurAir {
 
 impl BaseAir<F> for AiurAir {
   fn width(&self) -> usize {
-    self.lowered.main_width
+    match &self.kind {
+      AirKind::Interpreted(lowered) => lowered.main_width,
+      AirKind::Global(spec) => spec.width(),
+    }
   }
 }
 
@@ -90,7 +101,11 @@ impl MachineAir<F> for AiurAir {
     buffer: &mut [MaybeUninit<F>],
   ) {
     let trace = self.trace(input).expect("chip included without a trace");
-    assert_eq!(trace.width(), self.lowered.main_width, "trace width mismatch");
+    assert_eq!(
+      trace.width(),
+      BaseAir::<F>::width(self),
+      "trace width mismatch"
+    );
     assert_eq!(buffer.len(), trace.values.len(), "trace buffer size mismatch");
     for (dst, src) in buffer.iter_mut().zip(&trace.values) {
       dst.write(*src);
@@ -127,6 +142,10 @@ where
   AB: SP1AirBuilder<F = F> + PairBuilder,
 {
   fn eval(&self, builder: &mut AB) {
+    let lowered = match &self.kind {
+      AirKind::Interpreted(lowered) => lowered,
+      AirKind::Global(spec) => return spec.eval(builder),
+    };
     let main = builder.main();
     let main_row = main.row_slice(0);
     let main_row: &[AB::Var] = &main_row;
@@ -137,12 +156,12 @@ where
     let prep_row = prep.as_ref().map(|p| p.row_slice(0));
     let prep_row: &[AB::Var] = prep_row.as_deref().unwrap_or(&[]);
 
-    for constraint in &self.lowered.constraints {
+    for constraint in &lowered.constraints {
       let expr = constraint.eval_air::<AB>(prep_row, main_row, builder);
       builder.assert_zero(expr);
     }
 
-    for interaction in &self.lowered.interactions {
+    for interaction in &lowered.interactions {
       let multiplicity =
         interaction.multiplicity.eval_air::<AB>(prep_row, main_row);
       let values = interaction

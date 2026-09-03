@@ -13,6 +13,8 @@ aiur = { workspace = true }
 multi-stark = { workspace = true }
 # Must match the version `sp1-hypercube` uses in `MachineRecord::stats`.
 hashbrown = "0.14"
+# The partitioner evaluates every interaction of every shard.
+rayon = { workspace = true }
 
 # SP1 Hypercube proof system and its `slop` primitives.
 sp1-hypercube = "=6.5.0"

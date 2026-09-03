@@ -328,10 +328,17 @@ def stage2HypercubeSuite : IO UInt32 := do
     let s ← IO.FS.readFile "/proc/self/status"
     pure <| (((s.splitOn "\n").find? (·.startsWith "VmHWM")).getD "VmHWM: ?").trimAscii.toString
   IO.println "stage2-hypercube (byte verifier over KoalaBear, proved by Hypercube)…"
+  -- Stage 1 at PRODUCTION parameters by default (`defaultFriParameters`:
+  -- 100 queries, 20 PoW bits — identical to `innerFri` except query count);
+  -- `IX_S2_QUERIES` overrides for quick runs.
+  let queries := ((← IO.getEnv "IX_S2_QUERIES").bind (·.toNat?)).getD
+    Aiur.defaultFriParameters.numQueries
+  let s1Fri := { innerFri with numQueries := queries }
+  IO.println s!"  stage-1 FRI queries: {queries}"
   let facCompiled ← match factorialProgram.compile with
     | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
     | .ok c => pure c
-  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
+  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams s1Fri
   let facIdx ← match facCompiled.getFuncIdx `fact_entry with
     | some i => pure i
     | none => IO.eprintln "fact_entry entrypoint not found"; return 1
@@ -383,6 +390,13 @@ def stage2HypercubeSuite : IO UInt32 := do
       Σ width·2^⌈h⌉ = {area}, tallest height {tallest}"
     for c in (live.qsort (fun a b => a.fftCost > b.fftCost)).extract 0 6 do
       IO.println s!"    {c.name}: w {c.width}, h {c.height}, fft {c.fftCost}"
+    -- The jagged PCS bounds each round's area below 2^30 (slop-jagged
+    -- `AreaOutOfBounds`); don't burn minutes proving a shard the verifier
+    -- must reject. `IX_S2_FORCE=1` attempts it anyway.
+    if area ≥ 2 ^ 30 && (← IO.getEnv "IX_S2_FORCE").isNone then
+      IO.println s!"  area {area} ≥ 2^30: single-shard hypercube IMPOSSIBLE \
+        (jagged PCS AreaOutOfBounds); skipping prove — sharding required"
+      return 0
     IO.println s!"  {← hwm} (before hypercube)"
     let t0 ← IO.monoMsNow
     let hSys ← match Aiur.HypercubeSystem.build vCompiled.bytecode vIdx with
@@ -406,6 +420,47 @@ def stage2HypercubeSuite : IO UInt32 := do
     let expected := #[Aiur.G.ofNat 0, Aiur.G.ofNat vIdx] ++ pubInput
     IO.println s!"  claim ok: {hClaim == expected}"
     pure 0
+
+/-- Exercises the Hypercube sharding path: prove factorial and verify,
+also checking that a tampered blob and a wrong claim are rejected. The
+per-shard cell budget comes from the environment (`IX_HC_SHARD_CELLS`,
+read by the FFI at system build); run with a tiny budget to force several
+shards — cutting function memoization, memory pointer chains and byte
+lookups across them, all rebalanced by the septic-digest adapter chips —
+and without one for the degenerate single-shard path. -/
+def hypercubeShardSuite : IO UInt32 := do
+  let cells := (← IO.getEnv "IX_HC_SHARD_CELLS").getD "∞ (single shard)"
+  IO.println s!"hypercube-shard (factorial, shard budget: {cells} cells)…"
+  let facCompiled ← match factorialProgram.compile with
+    | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let facIdx ← match facCompiled.getFuncIdx `fact_entry with
+    | some i => pure i
+    | none => IO.eprintln "fact_entry entrypoint not found"; return 1
+  let sys ← match Aiur.HypercubeSystem.build facCompiled.bytecode facIdx with
+    | .error e => IO.eprintln s!"hypercube build failed: {e}"; return 1
+    | .ok s => pure s
+  let (claim, blob) ← match sys.prove #[Aiur.G.ofNat 5] default with
+    | .error e => IO.eprintln s!"hypercube prove failed: {e}"; return 1
+    | .ok r => pure r
+  match Aiur.HypercubeSystem.verify sys claim blob with
+    | .error e => IO.eprintln s!"hypercube verify failed: {e}"; return 1
+    | .ok _ => IO.println s!"  verified, blob {blob.size} bytes"
+  -- A tampered blob must not verify.
+  let bad := blob.set! 0 (blob.get! 0 + 1)
+  match Aiur.HypercubeSystem.verify sys claim bad with
+    | .ok _ => IO.eprintln "tampered blob was ACCEPTED"; return 1
+    | .error _ => IO.println "  tampered blob rejected"
+  -- A wrong claim must not verify.
+  let wrong := claim.set! 0 (Aiur.G.ofNat 1)
+  match Aiur.HypercubeSystem.verify sys wrong blob with
+    | .ok _ => IO.eprintln "wrong claim was ACCEPTED"; return 1
+    | .error _ => IO.println "  wrong claim rejected"
+  let expected := #[Aiur.G.ofNat 0, Aiur.G.ofNat facIdx, Aiur.G.ofNat 5,
+    Aiur.G.ofNat 120]
+  IO.println s!"  claim ok: {claim == expected}"
+  if claim != expected then return 1
+  pure 0
 
 end Tests.MultiStark
 

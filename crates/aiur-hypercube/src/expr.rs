@@ -172,6 +172,19 @@ impl Ast {
     Ok(ast)
   }
 
+  /// Whether the expression reads a public value (such columns must be
+  /// re-evaluated per shard).
+  pub fn references_public(&self) -> bool {
+    match self {
+      Self::Const(_) | Self::Col(_) => false,
+      Self::Public(_) => true,
+      Self::Add(x, y) | Self::Sub(x, y) | Self::Mul(x, y) => {
+        x.references_public() || y.references_public()
+      },
+      Self::Neg(x) => x.references_public(),
+    }
+  }
+
   /// The polynomial degree of the expression in the trace columns. Public
   /// values are verifier-known and count as constants.
   pub fn degree(&self) -> usize {

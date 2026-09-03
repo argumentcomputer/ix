@@ -6,7 +6,7 @@ use aiur::{
   execute::IOBuffer,
   function_channel,
 };
-use aiur_hypercube::{ProverParams, ToplevelMachine, verify};
+use aiur_hypercube::{ProverParams, ShardingParams, ToplevelMachine, verify};
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use p3_koala_bear::KoalaBear as FF;
 use slop_algebra::AbstractField;
@@ -46,7 +46,13 @@ fn proves_and_verifies_a_toplevel_call() {
   let machine = ToplevelMachine::build(&toplevel, 0).unwrap();
   let (a, b) = (FF::from_u32(3), FF::from_u32(5));
   let (claim, vk, proof) = machine
-    .execute_and_prove(&toplevel, &[a, b], &mut io_buffer(), params())
+    .execute_and_prove(
+      &toplevel,
+      &[a, b],
+      &mut io_buffer(),
+      params(),
+      ShardingParams::default(),
+    )
     .unwrap();
   assert_eq!(
     claim,
@@ -66,7 +72,8 @@ fn rejects_a_tampered_claim() {
   let mut claim = machine.claim(&[a, b], &output);
   *claim.last_mut().unwrap() += FF::ONE;
   let record = machine.record(&toplevel, &query_record, &io, &claim).unwrap();
-  let (vk, proof) = aiur_hypercube::prove(machine.machine(), record, params());
+  let (vk, proof) =
+    aiur_hypercube::prove(machine.machine(), vec![record], params());
   assert!(verify(machine.machine(), params(), &vk, &proof).is_err());
 }
 
@@ -115,7 +122,13 @@ fn proves_calls_and_memory() {
   let machine = ToplevelMachine::build(&toplevel, 0).unwrap();
   let (a, b) = (FF::from_u32(3), FF::from_u32(5));
   let (claim, vk, proof) = machine
-    .execute_and_prove(&toplevel, &[a, b], &mut io_buffer(), params())
+    .execute_and_prove(
+      &toplevel,
+      &[a, b],
+      &mut io_buffer(),
+      params(),
+      ShardingParams::default(),
+    )
     .unwrap();
   assert_eq!(
     claim,
@@ -146,7 +159,8 @@ fn rejects_a_forged_memory_pointer() {
   row[0] = aiur_hypercube::F::from_canonical_u32(0); // multiplicity
   row[3] += aiur_hypercube::F::from_canonical_u32(1); // stored value
   trace.values[width..2 * width].copy_from_slice(&row);
-  let (vk, proof) = aiur_hypercube::prove(machine.machine(), record, params());
+  let (vk, proof) =
+    aiur_hypercube::prove(machine.machine(), vec![record], params());
   assert!(verify(machine.machine(), params(), &vk, &proof).is_err());
 }
 
@@ -162,6 +176,7 @@ fn prints_vk_size() {
       &[FF::from_u32(3), FF::from_u32(5)],
       &mut io_buffer(),
       params(),
+      ShardingParams::default(),
     )
     .unwrap();
   let vk_bytes = bincode::serialize(&vk).unwrap();
