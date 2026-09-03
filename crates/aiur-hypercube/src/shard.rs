@@ -92,6 +92,13 @@ fn canonical_tuple(mut t: Vec<u32>) -> Vec<u32> {
 /// Splits an execution into shard records. `extended` are the outputs of
 /// [`AiurMachine::extended_traces`]; the first shard carries the claim (and
 /// the memory boundary's chain openings).
+// The refinement fractions and row cuts round through `f64`; shard counts
+// and trace heights are far below 2^52, so the casts are exact enough.
+#[allow(
+  clippy::cast_precision_loss,
+  clippy::cast_possible_truncation,
+  clippy::cast_sign_loss
+)]
 pub fn partition_records(
   machine: &AiurMachine,
   extended: &[Option<RowMajorMatrix<F>>],

@@ -49,7 +49,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 [features]
 default = []
 parallel = ["aiur/parallel"]
-cuda = ["aiur/cuda"]
+cuda = ["aiur/cuda", "aiur-hypercube/cuda"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom"]
 

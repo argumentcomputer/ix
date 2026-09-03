@@ -15,6 +15,8 @@
 //!   claim chip.
 
 pub mod air;
+#[cfg(feature = "cuda")]
+pub mod cuda;
 pub mod expr;
 pub mod frontend;
 pub mod global;

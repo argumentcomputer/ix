@@ -17,12 +17,12 @@ hashbrown = "0.14"
 rayon = { workspace = true }
 
 # SP1 Hypercube proof system and its `slop` primitives.
-sp1-hypercube = "=6.5.0"
-sp1-primitives = "=6.5.0"
-slop-air = "=6.5.0"
-slop-algebra = "=6.5.0"
-slop-basefold = "=6.5.0"
-slop-matrix = "=6.5.0"
+sp1-hypercube = "=6.6.0"
+sp1-primitives = "=6.6.0"
+slop-air = "=6.6.0"
+slop-algebra = "=6.6.0"
+slop-basefold = "=6.6.0"
+slop-matrix = "=6.6.0"
 
 # The Hypercube prover is async.
 tokio = { version = "1", features = ["rt-multi-thread"] }
@@ -30,6 +30,31 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 # The concrete frontend field matching the backend (same Plonky3 rev as
 # multi-stark's), re-exported as `FrontendField`.
 p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "e9d75614dd6816f9b5dbb4413c69be63536efd64" }
+
+# The open-source CUDA prover (sp1-gpu). Optional: building these requires
+# the CUDA toolchain (`nvcc`; set `CUDA_ARCHS` to your GPU generation), so
+# they only compile under `--features cuda`.
+sp1-gpu-shard-prover = { version = "=6.6.0", optional = true }
+sp1-gpu-tracegen = { version = "=6.6.0", optional = true }
+sp1-gpu-basefold = { version = "=6.6.0", optional = true }
+sp1-gpu-cudart = { version = "=6.6.0", optional = true }
+sp1-gpu-challenger = { version = "=6.6.0", optional = true }
+sp1-gpu-logup-gkr = { version = "=6.6.0", optional = true }
+sp1-gpu-merkle-tree = { version = "=6.6.0", optional = true }
+slop-futures = { version = "=6.6.0", optional = true }
+
+[features]
+# GPU proving via sp1-gpu's `CudaShardProver`. Requires nvcc at build time.
+cuda = [
+  "dep:sp1-gpu-shard-prover",
+  "dep:sp1-gpu-tracegen",
+  "dep:sp1-gpu-basefold",
+  "dep:sp1-gpu-cudart",
+  "dep:sp1-gpu-challenger",
+  "dep:sp1-gpu-logup-gkr",
+  "dep:sp1-gpu-merkle-tree",
+  "dep:slop-futures",
+]
 
 
 [lints]

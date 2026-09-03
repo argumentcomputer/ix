@@ -85,7 +85,7 @@ impl std::fmt::Display for AiurVerifyError {
 
 impl std::error::Error for AiurVerifyError {}
 
-fn shard_verifier(
+pub(crate) fn shard_verifier(
   machine: &AiurMachine,
   params: ProverParams,
 ) -> ShardVerifier<SP1GlobalContext, sp1_hypercube::InnerSC<AiurAir>> {
@@ -103,11 +103,17 @@ fn shard_verifier(
 }
 
 /// Proves an execution's shards, returning the verifying key and the proof.
+/// With the `cuda` feature, `IX_HC_GPU=1` routes proving through
+/// [`crate::cuda::prove`]; verification is identical either way.
 pub fn prove(
   machine: &AiurMachine,
   records: Vec<AiurRecord>,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
+  #[cfg(feature = "cuda")]
+  if std::env::var_os("IX_HC_GPU").is_some() {
+    return crate::cuda::prove(machine, records, params);
+  }
   if std::env::var_os("IX_HC_DEBUG").is_some() {
     let mv = MachineVerifier::new(shard_verifier(machine, params));
     for (i, record) in records.iter().enumerate() {
