@@ -94,6 +94,58 @@ structure AggregateBackend where
 
 structure ExpectedAggregate where
   claim : Ix.Claim
+  constantCount : Nat
+
+/-- Decode a proof wrapper only after checking that its bytes reproduce the
+content address supplied by the caller. `Store.read` selects a path by address
+but deliberately does not re-hash ordinary store objects. -/
+def decodeAggregateWrapperAt (proofAddr : Address) (bytes : ByteArray) :
+    Except String Ixon.Proof := do
+  let actual := Address.blake3 bytes
+  if actual != proofAddr then
+    throw s!"aggregate proof store object {proofAddr} hashes to {actual}"
+  Ixon.Proof.de bytes
+
+/-- Establish the per-constant interpretation of an aggregate root. A valid
+proof of `CheckEnv(subjects.root, none)` certifies every subject leaf, so this
+single linear audit checks that those leaves are exactly the constants in the
+supplied environment: no omissions, foreign leaves, or duplicates. -/
+def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
+    Except String Nat := do
+  if let some assumptions := statement.assumptions then
+    throw s!"aggregate root retains undischarged assumptions {assumptions.root}"
+  let leaves := statement.subjects.leaves
+  let mut seen : Std.HashSet Address := {}
+  let mut duplicates := 0
+  let mut foreign := 0
+  let mut firstDuplicate : Option Address := none
+  let mut firstForeign : Option Address := none
+  for address in leaves do
+    if seen.contains address then
+      duplicates := duplicates + 1
+      if firstDuplicate.isNone then firstDuplicate := some address
+    else
+      seen := seen.insert address
+    if !env.consts.contains address then
+      foreign := foreign + 1
+      if firstForeign.isNone then firstForeign := some address
+  let mut missing := 0
+  let mut firstMissing : Option Address := none
+  for (address, _) in env.consts do
+    if !seen.contains address then
+      missing := missing + 1
+      if firstMissing.isNone then firstMissing := some address
+  if duplicates != 0 || foreign != 0 || missing != 0 then
+    let sample (address : Option Address) := address.map toString |>.getD "none"
+    throw s!"aggregate constant audit failed: {missing} missing \
+      (first {sample firstMissing}), {foreign} foreign \
+      (first {sample firstForeign}), {duplicates} duplicate occurrence(s) \
+      (first {sample firstDuplicate}); environment has {env.consts.size} constants, \
+      subject tree has {leaves.size} leaves"
+  if leaves.size != env.consts.size then
+    throw s!"aggregate constant audit cardinality mismatch: environment has \
+      {env.consts.size} constants, subject tree has {leaves.size} leaves"
+  pure env.consts.size
 
 /-- Build the two deterministic systems whose identities are committed by an
 aggregate root: the IxVM vk and the single-entrypoint recursion vk. -/
@@ -125,28 +177,30 @@ private def buildAggregateBackend
     allowed
   }
 
-private def shardStatement (env : Ixon.Env) (blocks : Array Address) :
+private def shardStatement (env : Ixon.Env) (owned : Array Address) :
     Except String Aggr.CheckEnvTrees := do
-  let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks env blocks
   let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   Aggr.CheckEnvTrees.ofClaim claim trees
 
 /-- Reproduce the flat/structural statement fold from a coverage-validated
 manifest. Zero-constant leaves are pruned exactly as in `ix aggregate`; no proof
-data is needed. -/
+data is needed. Ownership is assigned for every retained shard in one
+environment pass; verification must not reintroduce the old shard-by-shard
+full-environment scan. -/
 def expectedFromManifest (env : Ixon.Env)
     (view : Ix.Cli.CheckCmd.IxesManifestView) (structuralAbove : Nat) :
     Except String Aggr.CheckEnvTrees := do
   let (view, counts) ← view.pruneEmpty env
+  let owned := Ix.Cli.CheckCmd.ownedConstsPer env view.shards
   let plan ← Ix.Cli.AggregateCmd.schedulePlan view.aggregationTree.foldPlan
     counts structuralAbove
   let mut slots : Array Aggr.CheckEnvTrees := #[]
   for item in plan do
     match item.op with
     | .leaf shard =>
-      let some blocks := view.shards[shard]?
+      let some shardOwned := owned[shard]?
         | throw s!"aggregate plan references missing shard {shard}"
-      slots := slots.push (← shardStatement env blocks)
+      slots := slots.push (← shardStatement env shardOwned)
     | .join left right =>
       let some leftStatement := slots[left]?
         | throw s!"aggregate plan references missing left slot {left}"
@@ -161,7 +215,10 @@ def expectedFromManifest (env : Ixon.Env)
 
 private def verifyAggregateProof (backend : AggregateBackend)
     (expected? : Option ExpectedAggregate) (proofAddr : Address) : IO UInt32 := do
-  let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read proofAddr)))
+  let bytes ← StoreIO.toIO (Store.read proofAddr)
+  let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
+    | .ok wrapper => pure wrapper
+    | .error e => IO.eprintln s!"error: {e}"; return 1
   let .checkEnv _ _ := wrapper.claim | do
     IO.eprintln s!"error: aggregate proof {proofAddr} does not bundle a CheckEnv claim"
     return 1
@@ -181,6 +238,11 @@ private def verifyAggregateProof (backend : AggregateBackend)
   match backend.system.verify outerClaim proof with
   | .ok () =>
     IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
+    if let some expected := expected? then
+      IO.println s!"[verify] aggregate coverage: {expected.constantCount}/\
+        {expected.constantCount} environment constants committed exactly once"
+      IO.println s!"[verify] all {expected.constantCount} included constants \
+        certified well-typed; 0 undischarged assumptions"
     return 0
   | .error e =>
     IO.eprintln s!"error: aggregate verification failed: {e}"
@@ -288,7 +350,14 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
         let some expectedTree := IxVM.ClaimHarness.envCanonicalTree env | do
           IO.eprintln "error: cannot verify an aggregate against an empty environment"
           return 1
-        pure (some { claim := .checkEnv expectedTree.root none })
+        let statement : Aggr.CheckEnvTrees := {
+          subjects := expectedTree
+          assumptions := none
+        }
+        let constantCount ← match auditAggregateConstants env statement with
+          | .error e => IO.eprintln s!"error: {e}"; return 1
+          | .ok count => pure count
+        pure (some { claim := statement.claim, constantCount })
       | some ixePath, some manifestPath =>
         let env ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
           | .error e => IO.eprintln s!"deserialize {ixePath} failed: {e}"; return 1
@@ -301,11 +370,10 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
         let statement ← match expectedFromManifest env view structuralAbove with
           | .error e => IO.eprintln e; return 1
           | .ok expected => pure expected
-        if statement.assumptions.isSome then
-          IO.eprintln s!"error: expected aggregate root retains assumptions \
-            {statement.assumptions.map (·.root)}"
-          return 1
-        pure (some { claim := statement.claim })
+        let constantCount ← match auditAggregateConstants env statement with
+          | .error e => IO.eprintln s!"error: {e}"; return 1
+          | .ok count => pure count
+        pure (some { claim := statement.claim, constantCount })
       | none, some _ => unreachable!
     let backend ← match ← buildAggregateBackend recursionParameters with
       | .error e => IO.eprintln e; return 1
@@ -347,7 +415,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
-    "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, bind the canonical environment claim; add --ixes for the exact manifest-relative hybrid root."
+    "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, audit every environment constant and bind the canonical claim; add --ixes for the exact manifest-relative hybrid root."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it. How already-proved leaves are imported before a refinement."
 

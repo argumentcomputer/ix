@@ -276,6 +276,16 @@ def semanticSuite : IO UInt32 := do
     | .hit address => address == cachedAddress
     | _ => false
   let cachedBytes := Ixon.Proof.ser cachedWrapper
+  let wrapperContentAddressAccepted : Bool :=
+    match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt cachedAddress cachedBytes with
+    | .ok wrapper =>
+      wrapper.claim == cachedWrapper.claim && wrapper.proof == cachedWrapper.proof
+    | .error _ => false
+  let wrapperContentAddressRejected : Bool :=
+    let wrongAddress := Address.blake3 (cachedBytes.push 0xff)
+    match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt wrongAddress cachedBytes with
+    | .error _ => true
+    | .ok _ => false
   let resumed? ← match wrapSpecs with
     | .ok specs =>
       match specs[0]? with
@@ -405,6 +415,63 @@ def semanticSuite : IO UInt32 := do
         treesFull.contains expectedOwned.root &&
         treesFull.contains expectedFrontier.root
     | _, _ => false
+
+  -- A real aggregate-verifier audit fixture: two constants in one shard both
+  -- depend on a constant in the other. The structural fold must discharge the
+  -- frontier, and one verified stand-in aggregate proof then certifies exactly
+  -- the three constants committed by the root statement.
+  let (auditEnv, auditOwned, auditShared) := sharedClosureIxonEnv
+  let auditManifest := Ix.Cli.CheckCmd.parseIxesManifest
+    (minimalIxesFor #[auditOwned, #[auditShared]]
+      (#[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 1))
+  let auditStatement := auditManifest.bind fun view =>
+    Ix.Cli.VerifyCmd.expectedFromManifest auditEnv view 0
+  let aggregateProofAuditsEveryConstant ← match auditStatement with
+    | .error _ => pure false
+    | .ok statement =>
+      let expectedOuter := Ix.Cli.AggregateCmd.aggregateOuterClaim
+        allowed fakeAggrIdx statement.claim
+      match selfSystem.prove fakeAggrIdx
+          (Aggr.pubInput allowed (Ix.Claim.ser statement.claim)) default with
+      | .error _ => pure false
+      | .ok (outer, proof, _) =>
+        let wrapper : Ixon.Proof := { claim := statement.claim, proof := proof.toBytes }
+        let bytes := Ixon.Proof.ser wrapper
+        let address := Address.blake3 bytes
+        let decoded := match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt address bytes with
+          | .ok decoded => decoded.claim == statement.claim && decoded.proof == proof.toBytes
+          | .error _ => false
+        let audited := match Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv statement with
+          | .ok count => count == 3
+          | .error _ => false
+        pure <| decoded && audited && outer == expectedOuter &&
+          (selfSystem.verify expectedOuter proof).isOk
+  let auditLeaves := auditOwned.push auditShared
+  let rejected (result : Except String Nat) : Bool :=
+    match result with
+    | .error _ => true
+    | .ok _ => false
+  let missingConstantRejected :=
+    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+      subjects := canonicalTree auditOwned
+      assumptions := none
+    })
+  let foreignConstantRejected :=
+    let foreign := Address.blake3 "aggregate-audit-foreign".toUTF8
+    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+      subjects := canonicalTree (auditLeaves.push foreign)
+      assumptions := none
+    })
+  let duplicateConstantRejected :=
+    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+      subjects := .node (canonicalTree auditLeaves) (.leaf auditOwned[0]!)
+      assumptions := none
+    })
+  let residualAssumptionRejected :=
+    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+      subjects := canonicalTree auditLeaves
+      assumptions := some (canonicalTree #[auditShared])
+    })
 
   -- Threshold policy and the RAM-gated DAG controller.
   let mixedSchedule := Ix.Cli.AggregateCmd.schedulePlan
@@ -574,6 +641,10 @@ def semanticSuite : IO UInt32 := do
     test "cache atomic update leaves no temporary entry" cacheTempGone,
     test "cache treats a corrupt index as an invalid hint" corruptIndexRejected,
     test "cache atomically replaces a corrupt index" corruptIndexRecovers,
+    test "aggregate verifier accepts a content-addressed proof wrapper"
+      wrapperContentAddressAccepted,
+    test "aggregate verifier rejects a wrapper stored under the wrong address"
+      wrapperContentAddressRejected,
     test "cache resumes a content-addressed verified aggregate wrapper" resumed?.isSome,
     test "cache treats corrupt store content as a miss" corruptStore?.isNone,
     test "flat host fold constructs canonical union/discharge trees" flatHostCorrect,
@@ -603,6 +674,16 @@ def semanticSuite : IO UInt32 := do
       manifestValuesDiffer,
     test "shard prep preserves trees and one-pass closure semantics"
       shardPrepPreservesSemantics,
+    test "verified aggregate proof audit certifies every fixture constant"
+      aggregateProofAuditsEveryConstant,
+    test "aggregate constant audit rejects an omitted environment constant"
+      missingConstantRejected,
+    test "aggregate constant audit rejects a foreign subject"
+      foreignConstantRejected,
+    test "aggregate constant audit rejects a duplicate subject"
+      duplicateConstantRejected,
+    test "aggregate constant audit rejects residual assumptions"
+      residualAssumptionRejected,
     test "threshold scheduling is flat below and structural above monotonically"
       mixedScheduleCorrect,
     test "RAM-gated scheduler admits ready work heaviest-first"
