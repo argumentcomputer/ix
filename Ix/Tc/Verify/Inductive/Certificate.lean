@@ -82,6 +82,32 @@ theorem afterWF {source : VInductDecl} {before after : VEnv}
   refine ⟨.induct source :: decls, hdecls.decl (.induct tx.certificate.wf ?_)⟩
   simpa only [VEnv.addInductCertified_eq_addInductGeneration] using tx.success
 
+/-- The final environment of a certified transaction satisfies the complete
+mixed-generation invariant.  This is the semantic interface used by the
+generated recursor type and rule transports: it is derived from the same
+atomic transaction, not reconstructed by a fixture-specific oracle. -/
+theorem generationEnv {source : VInductDecl} {before after : VEnv}
+    (tx : CertifiedGenerationTransaction source before after) :
+    source.GenerationEnv tx.certificate.generation after := by
+  rcases tx.trace with ⟨trace⟩
+  have ctorLE : trace.typeEnv ≤ trace.ctorEnv :=
+    (VInductDecl.ctorFold_spec
+      tx.certificate.generation.block.sourceType.ctors trace.addCtors).1
+  have recLE : trace.ctorEnv ≤ trace.recEnv :=
+    VEnv.addConst_le trace.addRec
+  have rulesLE : trace.recEnv ≤ after := by
+    simpa only [trace.addRules] using
+      (VInductDecl.rulesFold_spec tx.certificate.generation.generatedRules
+        trace.recEnv).1
+  have typeLE : trace.typeEnv ≤ after :=
+    ctorLE.trans (recLE.trans rulesLE)
+  apply tx.certificate.wf.toGenerationEnv trace.addType trace.le typeLE
+    tx.afterWF.ordered trace.family_lookup
+  intro ctor hctor
+  apply trace.ctor_lookup
+  rw [← tx.certificate.generation.rawCtors_eq]
+  exact List.mem_map.2 ⟨ctor, hctor, rfl⟩
+
 /-- Assemble every stable Theory consequence from the one successful trace.
 No checker-specific provenance is introduced by this projection. -/
 theorem facts {source : VInductDecl} {before after : VEnv}

@@ -100,8 +100,9 @@ fn hash_node(
       buf.extend_from_slice(arg_hash.as_bytes());
       vec![*fun_hash, *arg_hash]
     },
-    Expr::Lam(ty, body) => {
+    Expr::Lam(uses, ty, body) => {
       buf.push(Expr::FLAG_LAM);
+      buf.push(uses.to_bits());
       let ty_ptr = ty.as_ref() as *const Expr;
       let body_ptr = body.as_ref() as *const Expr;
       let ty_hash = child_hashes.get(&ty_ptr).unwrap();
@@ -110,8 +111,9 @@ fn hash_node(
       buf.extend_from_slice(body_hash.as_bytes());
       vec![*ty_hash, *body_hash]
     },
-    Expr::All(ty, body) => {
+    Expr::All(uses, owned, ty, body) => {
       buf.push(Expr::FLAG_ALL);
+      buf.push(uses.to_bits() | (owned.to_bits() << 2));
       let ty_ptr = ty.as_ref() as *const Expr;
       let body_ptr = body.as_ref() as *const Expr;
       let ty_hash = child_hashes.get(&ty_ptr).unwrap();
@@ -178,8 +180,8 @@ fn compute_base_size(expr: &Expr) -> usize {
     Expr::Str(ref_idx) => Tag4::new(Expr::FLAG_STR, *ref_idx).encoded_size(),
     Expr::Nat(ref_idx) => Tag4::new(Expr::FLAG_NAT, *ref_idx).encoded_size(),
     Expr::App(..) => Tag4::new(Expr::FLAG_APP, 1).encoded_size(), // telescope count >= 1
-    Expr::Lam(..) => Tag4::new(Expr::FLAG_LAM, 1).encoded_size(),
-    Expr::All(..) => Tag4::new(Expr::FLAG_ALL, 1).encoded_size(),
+    Expr::Lam(..) => Tag4::new(Expr::FLAG_LAM, 1).encoded_size() + 1,
+    Expr::All(..) => Tag4::new(Expr::FLAG_ALL, 1).encoded_size() + 1,
     Expr::Let(non_dep, ..) => {
       // size=0 for dep, size=1 for non_dep
       Tag4::new(Expr::FLAG_LET, if *non_dep { 1 } else { 0 }).encoded_size()
@@ -202,7 +204,7 @@ fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
     },
     Expr::Prj(_, _, val) => vec![val],
     Expr::App(fun, arg) => vec![fun, arg],
-    Expr::Lam(ty, body) | Expr::All(ty, body) => vec![ty, body],
+    Expr::Lam(_, ty, body) | Expr::All(_, _, ty, body) => vec![ty, body],
     Expr::Let(_, ty, val, body) => vec![ty, val, body],
   }
 }
@@ -749,12 +751,12 @@ fn rewrite_expr(
             stack.push(RewriteFrame::Visit(arg));
             stack.push(RewriteFrame::Visit(fun));
           },
-          Expr::Lam(ty, body) => {
+          Expr::Lam(_, ty, body) => {
             stack.push(RewriteFrame::BuildLam(e));
             stack.push(RewriteFrame::Visit(body));
             stack.push(RewriteFrame::Visit(ty));
           },
-          Expr::All(ty, body) => {
+          Expr::All(_, _, ty, body) => {
             stack.push(RewriteFrame::BuildAll(e));
             stack.push(RewriteFrame::Visit(body));
             stack.push(RewriteFrame::Visit(ty));
@@ -808,8 +810,8 @@ fn rewrite_expr(
         // Pop in reverse order of push: body was pushed last, ty first
         let new_body = results.pop().unwrap();
         let new_ty = results.pop().unwrap();
-        let (orig_ty, orig_body) = match orig.as_ref() {
-          Expr::Lam(t, b) => (t, b),
+        let (uses, orig_ty, orig_body) = match orig.as_ref() {
+          Expr::Lam(uses, t, b) => (*uses, t, b),
           _ => unreachable!(),
         };
         let result = if Arc::ptr_eq(&new_ty, orig_ty)
@@ -817,7 +819,7 @@ fn rewrite_expr(
         {
           orig.clone()
         } else {
-          Expr::lam(new_ty, new_body)
+          Expr::lam_mode(uses, new_ty, new_body)
         };
         let ptr = orig.as_ref() as *const Expr;
         cache.insert(ptr, result.clone());
@@ -828,8 +830,8 @@ fn rewrite_expr(
         // Pop in reverse order of push: body was pushed last, ty first
         let new_body = results.pop().unwrap();
         let new_ty = results.pop().unwrap();
-        let (orig_ty, orig_body) = match orig.as_ref() {
-          Expr::All(t, b) => (t, b),
+        let (uses, owned, orig_ty, orig_body) = match orig.as_ref() {
+          Expr::All(uses, owned, t, b) => (*uses, *owned, t, b),
           _ => unreachable!(),
         };
         let result = if Arc::ptr_eq(&new_ty, orig_ty)
@@ -837,7 +839,7 @@ fn rewrite_expr(
         {
           orig.clone()
         } else {
-          Expr::all(new_ty, new_body)
+          Expr::all_mode(uses, owned, new_ty, new_body)
         };
         let ptr = orig.as_ref() as *const Expr;
         cache.insert(ptr, result.clone());

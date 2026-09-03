@@ -194,7 +194,7 @@ theorem inferWith_wfOn
         exact RecM.WFOn.pure fun hI => by
           have hprovenance := hI.1.caches.hit (.infer hhit)
           have hmeaning := hprovenance.kernelInferMeaningOfMatches
-            .infer hsourceSupport hmatch
+            .infer hsourceSupport hmatch hsource.contextScoped
           exact ⟨hprovenance.supported.2,
             hmeaning.post context.theory hI.2.1.wf hsource⟩
     | none =>
@@ -224,7 +224,7 @@ theorem inferWith_wfOn
                 exact RecM.WFOn.pure fun hI => by
                   have hprovenance := hI.1.caches.hit (.inferOnly hhit)
                   have hmeaning := hprovenance.kernelInferMeaningOfMatches
-                    .inferOnly hsourceSupport hmatch
+                    .inferOnly hsourceSupport hmatch hsource.contextScoped
                   exact ⟨hprovenance.supported.2,
                     hmeaning.post context.theory hI.2.1.wf hsource⟩
             | none =>

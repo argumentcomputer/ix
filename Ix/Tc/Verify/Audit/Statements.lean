@@ -9,10 +9,11 @@ All seven roots are concrete results over the bounded production recursion
 schedule and checker.  The three recursive-method adapters have no `sorryAx`
 dependency; the standalone and atomic-block checker roots retain only the two
 named Lean4Lean typing lemmas through their singleton-definition branch.  The
-E3-S root executes the exact Boolean serial workset and composes those same
-transparent K3/E0 resources with E1 and certificate-backed E2 evidence. This
-module permits no local statement placeholder and forbids both the legacy
-whole-environment route and the unusable all-depth recursive closure.
+E3-S root executes the exact Boolean serial workset and composes its actual
+runtime success gates with E1 and fixed certificate-backed E2 entries. This
+module permits no local statement placeholder and additionally forbids the
+Boolean/serialized roots from reaching oracle construction, restaging, or
+world materialization.
 -/
 
 namespace Ix.Tc.Verify.Audit.Statements
@@ -64,6 +65,25 @@ private def legacyGlobalSuffix : Array Lean.Name := #[
 private def scopedForbidden : Array Lean.Name :=
   forbidden ++ legacyGlobalSuffix
 
+/- The all-block E3-S statement must consume fixed semantic entries and may
+not regain the retired residual-oracle/world-materialization path through an
+adapter refactor. -/
+private def oracleWorldMaterialization : Array Lean.Name := #[
+  ``Ix.Tc.VerifyWorld.admitOracle,
+  ``Ix.Tc.VerifyWorld.le_admitOracle,
+  ``Ix.Tc.OracleBlockCertificate.admit,
+  ``Ix.Tc.OracleBlockCertificate.admitState,
+  ``Ix.Tc.RecM.certifyOracleBackedBlock,
+  ``Ix.Tc.RecM.certifyOracleBackedAdmittedBlock,
+  ``Ix.Tc.SingletonFamilyCatalogLink.oracle,
+  ``Ix.Tc.SingletonRecursorCatalogLink.oracle,
+  ``Ix.Tc.InductiveOracle.reindex,
+  ``Ix.Tc.InductiveOracle.restageMissing
+]
+
+private def certificateBackedForbidden : Array Lean.Name :=
+  scopedForbidden ++ oracleWorldMaterialization
+
 private def runNative : Array Lean.Name := #[
   nativeAxiom `Blake3
     `Blake3.HasherOps.hash._native.native_decide.ax_1,
@@ -114,12 +134,12 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard,
     nativeAxioms := Ix.Tc.Verify.Audit.Completed.booleanDriverNative,
     sorryOrigins := checkerDebt,
-    forbiddenDependencies := scopedForbidden },
+    forbiddenDependencies := certificateBackedForbidden },
   { root := ``Ix.Tc.BooleanSerialized.subjectWF,
     standardAxioms := standard,
     nativeAxioms := Ix.Tc.Verify.Audit.Completed.serializedBooleanNative,
     sorryOrigins := checkerDebt,
-    forbiddenDependencies := scopedForbidden }
+    forbiddenDependencies := certificateBackedForbidden }
 ]
 
 run_cmd Ix.Tc.Verify.Audit.check roots

@@ -11,6 +11,33 @@ receive distinct generated auxiliaries even when they denote equal types.
 
 namespace Ix.Tc
 
+/-- The production specialization key uses structural Boolean equality.  Its
+derived implementation is lawful once raw address equality is known lawful.
+This is deliberately a named theorem rather than a global instance: consumers
+install it only while reasoning about physical deduplication, so unrelated
+Boolean matcher proofs do not silently acquire its classical footprint. -/
+theorem lawfulBEqNestedSpecializationKey :
+    LawfulBEq NestedSpecializationKey where
+  eq_of_beq {a b} h := by
+    cases a with
+    | mk aFamily aUniverses aParameters =>
+      cases b with
+      | mk bFamily bUniverses bParameters =>
+        change (aFamily == bFamily &&
+          (aUniverses == bUniverses && aParameters == bParameters)) = true at h
+        rw [Bool.and_eq_true, Bool.and_eq_true] at h
+        rcases h with ⟨family, universes, parameters⟩
+        cases eq_of_beq family
+        cases eq_of_beq universes
+        cases eq_of_beq parameters
+        rfl
+  rfl {a} := by
+    cases a with
+    | mk family universes parameters =>
+      change (family == family &&
+        (universes == universes && parameters == parameters)) = true
+      simp only [beq_self_eq_true, Bool.true_and]
+
 /-- Exact flat-block identity represented by a nested positivity group and a
 concrete application. -/
 def PositivityFlatIdentity (group : PositivityGroup m) (family : Address)

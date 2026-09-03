@@ -61,6 +61,21 @@ structure FlatBlockMember (m : Mode) where
   occurrenceUs : Array (KUniv m)
   deriving Inhabited
 
+/-- Canonical generated-recursor header for one member at its exact position
+    in the validated flat block.  Block-wide values are supplied once; family
+    address, motive count, and index count are read from the flat block itself. -/
+def FlatBlockMember.generatedRecursorMetadata
+    (member : FlatBlockMember m) (flat : Array (FlatBlockMember m))
+    (recLvls nParams nMinors : UInt64) (blockIsUnsafe : Bool) :
+    GeneratedRecursorMetadata :=
+  { indAddr := member.id.addr
+    lvls := recLvls
+    params := nParams
+    motives := flat.size.toUInt64
+    minors := nMinors
+    indices := member.nIndices
+    isUnsafe := blockIsUnsafe }
+
 /-- One mutually-recursive family active during constructor positivity
     checking. `concreteUs = none` denotes the root declaration's own
     `Param(0), …` universe sequence; nested families retain the concrete
@@ -107,6 +122,11 @@ def nestedApplicationSpecializationKey (family : Address)
     (nParams : Nat) : NestedSpecializationKey :=
   NestedSpecializationKey.ofApplication family universes
     (args.extract 0 nParams)
+
+/-- Queue state used while the flat block grows.  The final component records
+the exact structural specializations already appended. -/
+abbrev FlatBlockQueueState (m : Mode) :=
+  Nat × Array (FlatBlockMember m) × Array NestedSpecializationKey
 
 instance : Inhabited (GeneratedRecursor m) :=
   ⟨⟨default, 0, 0, 0, 0, 0, false, default, #[]⟩⟩
@@ -174,6 +194,71 @@ where
   decreasing_by
     simp [KExpr.treeSize]
     omega
+
+/-- The live telescope accumulated immediately before `buildRecType` closes
+its forall chain. Naming this boundary exposes the actual per-domain
+construction run to the generated-artifact proof. -/
+structure GeneratedRecursorTypeBody (m : Mode) where
+  saved : Nat
+  domains : Array (KExpr m)
+  body : KExpr m
+
+/-- Exact checked inputs passed from block preparation to generated recursor
+type/rule construction.  Keeping this boundary data-bearing lets verification
+retain the production-selected flat block and motive syntax without replaying
+a parallel preprocessor. -/
+structure GeneratedRecursorBuildInputs (m : Mode) where
+  flatIndInfos :
+    Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m)
+  flatIds : Array (KId m)
+  flat : Array (FlatBlockMember m)
+  motiveTypes : Array (KExpr m)
+  univOffset : UInt64
+  recLvls : UInt64
+  nParams : UInt64
+  nMinors : UInt64
+  blockIsUnsafe : Bool
+  isLarge : Bool
+
+/-- Immutable stored-declaration data captured before the recursor-member
+prelude invokes any recursive method callback.  `majorSkip` is the checked
+metadata sum consumed by major-owner discovery; retaining it prevents the
+verification trace from reconstructing wrapping arithmetic independently of
+production. -/
+structure RecursorMemberDeclarationSnapshot (m : Mode) where
+  recBlock : KId m
+  ty : KExpr m
+  declaredK : Bool
+  declaredLvls : UInt64
+  declaredIsUnsafe : Bool
+  params : UInt64
+  motives : UInt64
+  minors : UInt64
+  indices : UInt64
+  storedRules : Array (RecRule m)
+  majorSkip : UInt64
+
+/-- Frozen data passed from the stateful recursor-member prelude to the final
+generated-artifact comparison.  The stored declaration is captured before any
+callback, while `generated` is captured only after block resolution, K-target
+validation, and transactional rule population have completed.  Keeping both
+snapshots in the return value gives verification an exact production boundary
+without replaying the prelude in a shadow model. -/
+structure PreparedRecursorMemberCheck (m : Mode) where
+  recBlock : KId m
+  ty : KExpr m
+  declaredK : Bool
+  declaredLvls : UInt64
+  declaredIsUnsafe : Bool
+  params : UInt64
+  motives : UInt64
+  minors : UInt64
+  indices : UInt64
+  storedRules : Array (RecRule m)
+  indId : KId m
+  resolvedBlock : KId m
+  computedK : Bool
+  generated : Array (GeneratedRecursor m)
 
 mutual
 
@@ -269,28 +354,43 @@ def validateConstWellScoped (c : KConst m) : RecM m Unit := do
 
 -- ### Sort/eliminator analysis
 
-/-- Result sort after peeling `n` foralls (opened with fresh fvars). -/
+/-- Peel a fixed result-sort telescope while retaining every opened binder in
+the legacy local stack.  Naming the recursion exposes the exact temporary
+scope to verification; `expected` and `found` preserve the original error
+message. -/
+def peelResultSortForalls (expected : Nat) :
+    Nat → Nat → KExpr m → RecM m (KExpr m)
+  | 0, _, ty => pure ty
+  | remaining + 1, found, ty => do
+      let w ← whnf ty
+      match w with
+      | .all _ _ dom body _ =>
+        TcM.pushLocal dom
+        peelResultSortForalls expected remaining (found + 1) body
+      | _ =>
+        throw (.other
+          s!"get_result_sort_level: expected {expected} foralls, only found {found}")
+
+/-- Result-sort discovery while its temporary legacy telescope is live.  The
+public wrapper below owns unconditional depth restoration. -/
+def getResultSortLevelBody (ty : KExpr m) (n : Nat) :
+    RecM m (KUniv m) := do
+  let t ← peelResultSortForalls n n 0 ty
+  let w ← whnf t
+  match w with
+  | .sort u _ => pure u
+  | _ => throw (.other "get_result_sort_level: not a sort")
+
+/-- Result sort after peeling `n` foralls.  Each open body remains scoped by
+the legacy local stack, and the caller depth is restored on every success or
+error (including a recursive WHNF failure). -/
 def getResultSortLevel (ty : KExpr m) (n : Nat) :
     RecM m (KUniv m) := do
-  let saved := (← get).lctx.size
-  let mut t := ty
-  for i in [0:n] do
-    let w ← whnf t
-    match w with
-    | .all _ _ dom body _ =>
-      let (open', _) ← TcM.openBinderAnon dom body
-      t := open'
-    | _ =>
-      modify fun s => { s with lctx := s.lctx.truncate saved }
-      throw (.other s!"get_result_sort_level: expected {n} foralls, only found {i}")
-  let w ← whnf t
-  let result ← match w with
-    | .sort u _ => pure u
-    | _ =>
-      modify fun s => { s with lctx := s.lctx.truncate saved }
-      throw (.other "get_result_sort_level: not a sort")
-  modify fun s => { s with lctx := s.lctx.truncate saved }
-  return result
+  let saved ← liftM (TcM.saveDepth (m := m))
+  try
+    getResultSortLevelBody ty n
+  finally
+    liftM (TcM.restoreDepth (m := m) saved)
 
 /-- Large eliminator (can target any universe): non-Prop, or Empty-like
     (0 ctors), or single-ctor Prop whose non-Prop fields all appear among
@@ -394,6 +494,50 @@ def checkParamAgreement (indTy ctorTy : KExpr m) (nParams : Nat) :
       throw (.other "expected forall in param agreement")
   modify fun s => { s with lctx := s.lctx.truncate saved }
 
+/-- Open exactly the shared parameter prefix used by strict positivity.
+`none` retains production's deliberately permissive short-telescope result:
+A1/A2 diagnose that malformed declaration later.  Naming this loop also
+ensures the caller's scope-restoration epilogue is not bypassed by an early
+`return` from inside a `for` loop. -/
+def openPositivityParameters :
+    KExpr m → Nat → Array (KExpr m) →
+      RecM m (Option (KExpr m × Array (KExpr m)))
+  | ty, 0, paramFVars => pure (some (ty, paramFVars))
+  | ty, remaining + 1, paramFVars => do
+      let w ← whnf ty
+      match w with
+      | .all _ _ dom body _ =>
+        let (open', fv, _) ← TcM.openBinderAnonWithFV dom body
+        openPositivityParameters open' remaining (paramFVars.push fv)
+      | _ => pure none
+
+/-- One source-ordered field iteration of constructor positivity.  This is
+the exact step supplied to `runBounded`; exposing it lets the verification
+layer retain the WHNF, domain check, and binder-opening states without adding
+runtime instrumentation. -/
+def checkPositivityFieldStep (groups : Array (PositivityGroup m))
+    (blockAddrs : Array Address) (ty : KExpr m) :
+    RecM m (BoundedStep (KExpr m) Unit) := do
+  let w ← whnf ty
+  match w with
+  | .all _ _ dom body _ =>
+    checkPositivityDomain dom groups blockAddrs
+    let (open', _) ← TcM.openBinderAnon dom body
+    return .next open'
+  | _ => return .done ()
+
+/-- Protected body of strict positivity before restoration of the caller's
+local-context prefix. -/
+def checkPositivityCore (ctorTy : KExpr m) (nParams : Nat)
+    (blockAddrs : Array Address) : RecM m Unit := do
+  match ← openPositivityParameters ctorTy nParams (Array.mkEmpty nParams) with
+  | none => return ()
+  | some (ty, paramFVars) =>
+    let groups : Array (PositivityGroup m) :=
+      #[{ addrs := blockAddrs, params := paramFVars, concreteUs := none }]
+    runBounded (checkPositivityFieldStep groups blockAddrs)
+      maxWhnfFuel.toNat ty
+
 /-- A3: strict positivity — block inductives must not appear in negative
     position in any constructor field. -/
 def checkPositivity (ctorTy : KExpr m) (nParams : Nat)
@@ -401,28 +545,7 @@ def checkPositivity (ctorTy : KExpr m) (nParams : Nat)
   let saved := (← get).lctx.size
   let result ←
     try
-      -- Open the shared parameter binders so recursive applications can be
-      -- compared with stable fvars, including below dependent field binders.
-      let mut ty := ctorTy
-      let mut paramFVars : Array (KExpr m) := Array.mkEmpty nParams
-      for _ in [0:nParams] do
-        let w ← whnf ty
-        match w with
-        | .all _ _ dom body _ =>
-          let (open', fv, _) ← TcM.openBinderAnonWithFV dom body
-          paramFVars := paramFVars.push fv
-          ty := open'
-        | _ => return ()
-      let groups : Array (PositivityGroup m) :=
-        #[{ addrs := blockAddrs, params := paramFVars, concreteUs := none }]
-      runBounded (fun ty => do
-        let w ← whnf ty
-        match w with
-        | .all _ _ dom body _ =>
-          checkPositivityDomain dom groups blockAddrs
-          let (open', _) ← TcM.openBinderAnon dom body
-          return .next open'
-        | _ => return .done ()) maxWhnfFuel.toNat ty
+      checkPositivityCore ctorTy nParams blockAddrs
       pure (Except.ok ())
     catch e => pure (Except.error e)
   modify fun s => { s with lctx := s.lctx.truncate saved }
@@ -532,6 +655,133 @@ def positivityGroupMatches (group : PositivityGroup m) (family : Address)
     group.nestedSpecializationKey? family ==
       some (nestedApplicationSpecializationKey family us args nParams)
 
+/-- Stateless arity guard for an external inductive application reached by
+    nested positivity.  Retaining the original combined condition and error
+    value makes this definition an exact proof-visible presentation of the
+    production branch. -/
+def checkNestedPositivityApplicationPreconditions
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (nParams nIndices lvls : Nat) : Except (TcError m) Unit :=
+  if args.size != nParams + nIndices || us.size != lvls then
+    .error (.other "positivity: malformed nested inductive application")
+  else
+    .ok ()
+
+/-- First exact nested-family specialization already present on the active
+    positivity stack.  Selection is pure: every candidate test is structural,
+    so replacing the source `for`/early-return search with `find?` preserves
+    both its source order and verdict. -/
+def findNestedPositivityGroup? (groups : Array (PositivityGroup m))
+    (family : Address) (us : Array (KUniv m))
+    (args : Array (KExpr m)) (nParams : Nat) : Option (PositivityGroup m) :=
+  groups.find? fun group =>
+    group.addrs.contains family &&
+      positivityGroupMatches group family us args nParams
+
+/-- Whether the parameter prefix of a fully applied external family contains
+    an occurrence of the root block. -/
+def nestedParametersMentionRoot (args : Array (KExpr m)) (nParams : Nat)
+    (rootAddrs : Array Address) : Bool :=
+  (args.extract 0 (min nParams args.size)).any
+    (exprMentionsAnyAddr · rootAddrs)
+
+/-- Validate one constructor of a newly discovered nested specialization:
+    load the concrete constructor type, then recursively check its fields. -/
+def checkNestedConstructorFuel (fuel : Nat) (ctorId : KId m)
+    (nParams : Nat)
+    (paramArgs : Array (KExpr m)) (us : Array (KUniv m))
+    (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) : RecM m Unit := do
+  let ctorTy ← match (← TcM.getConst ctorId) with
+    | .ctor (ty := ty) .. => pure ty
+    | _ => throw (.other "positivity: nested ctor not found")
+  checkNestedCtorFieldsFuel fuel ctorTy nParams paramArgs us groups activeAddrs
+
+/-- Traverse every constructor of a newly discovered nested family in source
+    order. -/
+def checkNestedConstructorsFuel (fuel : Nat) (ctors : Array (KId m))
+    (nParams : Nat) (paramArgs : Array (KExpr m))
+    (us : Array (KUniv m)) (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) : RecM m Unit := do
+  for ctorId in ctors do
+    checkNestedConstructorFuel fuel ctorId nParams paramArgs us groups
+      activeAddrs
+
+/-- Traverse a newly discovered nested-family specialization after exact
+    specialization absence and parameter/index occurrence guards have passed.
+    Block discovery and constructor validation retain their production order. -/
+def checkFreshNestedPositivityApplicationFuel (fuel : Nat)
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (groups : Array (PositivityGroup m)) (activeAddrs : Array Address)
+    (nParams : Nat) (block : KId m) (ctors : Array (KId m)) : RecM m Unit := do
+  -- Augmented address set: block + the external inductive's block.
+  let extBlockInductives ← discoverBlockInductives block
+  let extAddrs := extBlockInductives.map (·.addr)
+  let augmented := activeAddrs ++ extAddrs
+  let paramArgs := args.extract 0 (min nParams args.size)
+  let augmentedGroups := groups.push
+    { addrs := extAddrs, params := paramArgs, concreteUs := some us }
+  checkNestedConstructorsFuel fuel ctors nParams paramArgs us augmentedGroups
+    augmented
+
+/-- Continue nested positivity after the external inductive header and its
+    exact application arities have been validated.  Specialization matching,
+    index independence, block discovery, and constructor traversal retain
+    their production order. -/
+def checkNestedPositivityApplicationCheckedFuel (fuel : Nat) (id : KId m)
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (groups : Array (PositivityGroup m)) (rootAddrs activeAddrs : Array Address)
+    (nParams : Nat) (block : KId m)
+    (ctors : Array (KId m)) : RecM m Unit := do
+  -- Repeated exact specialization closes an already-validated auxiliary
+  -- edge. The same address at a different specialization is a new auxiliary,
+  -- as in the two Array specializations of Lean.Doc.Block.
+  match findNestedPositivityGroup? groups id.addr us args nParams with
+  | some _ =>
+      if !positiveIndicesIndependent args nParams rootAddrs then
+        throw (.other "positivity: recursive occurrence index mentions an active inductive")
+  | none =>
+      if !nestedParametersMentionRoot args nParams rootAddrs then
+        throw (.other "positivity: not a valid inductive app")
+      -- Index args (after params) must not mention block inductives.
+      if !positiveIndicesIndependent args nParams rootAddrs then
+        throw (.other "positivity: index mentions block inductive")
+      checkFreshNestedPositivityApplicationFuel fuel us args groups activeAddrs
+        nParams block ctors
+
+/-- Continue nested positivity after resolving the exact external inductive
+    header.  The stateless arity guard precedes the named checked continuation,
+    while all executable specialization, index, discovery, and constructor
+    checks remain in their original production order. -/
+def checkNestedPositivityApplicationResolvedFuel (fuel : Nat) (id : KId m)
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (groups : Array (PositivityGroup m)) (rootAddrs activeAddrs : Array Address)
+    (nParams nIndices lvls : Nat) (block : KId m)
+    (ctors : Array (KId m)) : RecM m Unit := do
+  match checkNestedPositivityApplicationPreconditions us args nParams nIndices
+      lvls with
+  | .error err => throw err
+  | .ok () =>
+      checkNestedPositivityApplicationCheckedFuel fuel id us args groups
+        rootAddrs activeAddrs nParams block ctors
+
+/-- Validate and recursively traverse an external inductive application whose
+    parameter specialization mentions the root block.  The caller has already
+    reduced the field domain to this constant-headed spine and established
+    that the head is not a root-family address.  Keeping the lookup and
+    resolved continuation as named production actions gives E2c an exact
+    successful-header boundary without changing execution order. -/
+def checkNestedPositivityApplicationFuel (fuel : Nat) (id : KId m)
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (groups : Array (PositivityGroup m)) (rootAddrs activeAddrs : Array Address) :
+    RecM m Unit := do
+  match (← TcM.getConst id) with
+  | .indc (params := params) (indices := indices) (lvls := lvls)
+      (block := block) (ctors := ctors) .. =>
+    checkNestedPositivityApplicationResolvedFuel fuel id us args groups
+      rootAddrs activeAddrs params.toNat indices.toNat lvls.toNat block ctors
+  | _ => throw (.other "positivity: not a valid inductive app")
+
 /-- Field-domain positivity: recurse through foralls (negative-position
     mentions reject), then require either a direct block-inductive
     application or a valid nested-inductive application (recursively
@@ -582,46 +832,8 @@ def checkPositivityDomainFuel :
     | .const id us _ =>
       if rootAddrs.contains id.addr then
         return (← checkPositiveRecursiveApplication id us args groups rootAddrs)
-      -- Nested inductive: external inductive whose params mention the block.
-      let (nParams, nIndices, lvls, block, ctors) ←
-        match (← TcM.getConst id) with
-        | .indc (params := params) (indices := indices) (lvls := lvls)
-            (block := block) (ctors := ctors) .. =>
-          pure (params.toNat, indices.toNat, lvls.toNat, block, ctors)
-        | _ => throw (.other "positivity: not a valid inductive app")
-      if args.size != nParams + nIndices || us.size != lvls then
-        throw (.other "positivity: malformed nested inductive application")
-      -- Repeated exact specialization closes an already-validated auxiliary
-      -- edge. The same address at a different specialization is a new
-      -- auxiliary, as in the two Array specializations of Lean.Doc.Block.
-      for group in groups do
-        if group.addrs.contains id.addr &&
-            positivityGroupMatches group id.addr us args nParams then
-          for index in args.extract nParams args.size do
-            if exprMentionsAnyAddr index rootAddrs then
-              throw (.other "positivity: recursive occurrence index mentions an active inductive")
-          return ()
-      let hasNestedRef := (args.extract 0 (min nParams args.size)).any
-        (exprMentionsAnyAddr · rootAddrs)
-      if !hasNestedRef then
-        throw (.other "positivity: not a valid inductive app")
-      -- Index args (after params) must not mention block inductives.
-      for arg in args.extract nParams args.size do
-        if exprMentionsAnyAddr arg rootAddrs then
-          throw (.other "positivity: index mentions block inductive")
-      -- Augmented address set: block + the external inductive's block.
-      let extBlockInductives ← discoverBlockInductives block
-      let extAddrs := extBlockInductives.map (·.addr)
-      let augmented := activeAddrs ++ extAddrs
-      let paramArgs := args.extract 0 (min nParams args.size)
-      let augmentedGroups := groups.push
-        { addrs := extAddrs, params := paramArgs, concreteUs := some us }
-      for ctorId in ctors do
-        let ctorTy ← match (← TcM.getConst ctorId) with
-          | .ctor (ty := ty) .. => pure ty
-          | _ => throw (.other "positivity: nested ctor not found")
-        checkNestedCtorFieldsFuel fuel ctorTy nParams paramArgs us
-          augmentedGroups augmented
+      checkNestedPositivityApplicationFuel fuel id us args groups rootAddrs
+        activeAddrs
     | _ => throw (.other "positivity: not a valid inductive app")
 
 /-- Nested-inductive field positivity: instantiate universes, strip the
@@ -635,21 +847,31 @@ def checkNestedCtorFields (ctorTy : KExpr m) (nParams : Nat)
   checkNestedCtorFieldsFuel maxWhnfFuel.toNat ctorTy nParams paramArgs us
     groups activeAddrs
 
+/-- Strip exactly the external family's parameter-binder prefix after
+    universe instantiation.  A constructor with fewer binders than its
+    family's declared parameter count is malformed: accepting it as an empty
+    field telescope would skip the nested positivity obligations entirely. -/
+def stripNestedCtorParameters (ty : KExpr m) : Nat → RecM m (KExpr m)
+  | 0 => pure ty
+  | remaining + 1 => do
+      let w ← whnf ty
+      match w with
+      | .all _ _ _ body _ => stripNestedCtorParameters body remaining
+      | _ => throw (.other
+          "positivity: nested constructor has fewer parameter binders than declared")
+
 def checkNestedCtorFieldsFuel :
     Nat → KExpr m → Nat → Array (KExpr m) → Array (KUniv m) →
       Array (PositivityGroup m) → Array Address → RecM m Unit
   | 0, _, _, _, _, _, _ => throw .maxRecDepth
   | fuel + 1, ctorTy, nParams, paramArgs, us, groups, activeAddrs => do
-  let mut ty ← TcM.instantiateUnivParams ctorTy us
-  for _ in [0:nParams] do
-    let w ← whnf ty
-    match w with
-    | .all _ _ _ body _ => ty := body
-    | _ => return ()
+  let instantiated ← TcM.instantiateUnivParams ctorTy us
+  let stripped ← stripNestedCtorParameters instantiated nParams
   -- Var(0) = innermost = LAST param after stripping; simulSubst maps
   -- Var(i) ↦ substs[i], so reverse the param order.
-  ty ← TcM.runIntern (simulSubst ty paramArgs.reverse 0)
-  checkNestedCtorFieldsLoopFuel fuel ty groups activeAddrs
+  let substituted ←
+    TcM.runIntern (simulSubst stripped paramArgs.reverse 0)
+  checkNestedCtorFieldsLoopFuel fuel substituted groups activeAddrs
 
 def checkNestedCtorFieldsLoop (ty : KExpr m)
     (groups : Array (PositivityGroup m))
@@ -795,24 +1017,45 @@ def checkCtorMetadataAgainstParent (ctorId inductId : KId m)
     throw (.other s!"check_inductive: ctor cidx mismatch: expected {expectedCidx}, got {ctorCidx}")
   return (ctorTy, ctorFields)
 
-/-- Validate an inductive and every one of its constructors (S3/S3b peer
-    agreement + A1–A4). The Rust tail (recursor-generation trigger) lands
-    with P9. -/
-def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
-  let (params, indices, lvls, ctors, block, isUnsafe, ty) ←
-    match (← TcM.getConst id) with
-    | .indc (params := params) (indices := indices) (lvls := lvls)
-        (ctors := ctors) (block := block) (isUnsafe := isUnsafe)
-        (ty := ty) .. =>
-      pure (params, indices, lvls, ctors, block, isUnsafe, ty)
-    | _ => throw (.other "check_inductive: not an inductive")
-  let blockInds ← discoverBlockInductives block
-  let blockAddrs := blockInds.map (·.addr)
-  -- Result sort must exist even for ctor-less inductives.
-  let indArity ← checkedMetadataSum "inductive params + indices"
-    #[params, indices]
-  let indLevel ← getResultSortLevel ty indArity.toNat
-  -- S3/S3b, memoized per block (transitive agreement).
+/-- Complete A1–A4 validation of one constructor after its parent inductive
+header and block context have been resolved.  Naming this shared sequence
+keeps member-wide and standalone-constructor checking on the same production
+path and gives E2c one exact seam at which successful positivity can be
+retained before the later universe and return-type checks. -/
+def checkInductiveConstructor (ctorId inductId : KId m)
+    (expectedCidx indParams indIndices : Nat) (indLvls : UInt64)
+    (indIsUnsafe : Bool) (indTy : KExpr m) (indLevel : KUniv m)
+    (blockAddrs : Array Address) : RecM m Unit := do
+  let (ctorTy, ctorFields) ← checkCtorMetadataAgainstParent ctorId inductId
+    expectedCidx indParams indLvls indIsUnsafe
+  checkParamAgreement indTy ctorTy indParams
+  if !indIsUnsafe then
+    checkPositivity ctorTy indParams blockAddrs
+  checkFieldUniverses ctorTy indParams indLevel
+  checkCtorReturnType ctorTy indParams indIndices ctorFields
+    inductId.addr indLvls blockAddrs
+
+/-- Source-ordered constructor traversal for one resolved inductive header.
+The list is exactly `ctors.toList`; the explicit index is the canonical
+constructor index checked by `checkInductiveConstructor`. -/
+def checkInductiveConstructors (inductId : KId m)
+    (indParams indIndices : Nat) (indLvls : UInt64)
+    (indIsUnsafe : Bool) (indTy : KExpr m) (indLevel : KUniv m)
+    (blockAddrs : Array Address) : List (KId m) → Nat → RecM m Unit
+  | [], _ => pure ()
+  | ctorId :: ctorIds, expectedCidx => do
+      checkInductiveConstructor ctorId inductId expectedCidx indParams
+        indIndices indLvls indIsUnsafe indTy indLevel blockAddrs
+      checkInductiveConstructors inductId indParams indIndices indLvls
+        indIsUnsafe indTy indLevel blockAddrs ctorIds (expectedCidx + 1)
+
+/-- S3/S3b agreement for one already-resolved inductive header.  The cache
+gate and peer order are unchanged; the named phase lets verification treat
+peer agreement as the prefix before the complete constructor traversal. -/
+def checkInductivePeerAgreement (id block : KId m)
+    (params lvls : UInt64) (isUnsafe : Bool)
+    (ty : KExpr m) (indLevel : KUniv m)
+    (blockInds : Array (KId m)) : RecM m Unit := do
   if !(← get).env.blockPeerAgreementCache.contains block then
     for peerId in blockInds do
       if peerId.addr == id.addr then
@@ -837,21 +1080,45 @@ def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
       checkParamAgreement ty peerTy params.toNat
     modify fun s => { s with env := { s.env with
       blockPeerAgreementCache := s.env.blockPeerAgreementCache.insert block } }
-  -- Per-constructor A1–A4.
-  for h : expectedCidx in [0:ctors.size] do
-    let ctorId := ctors[expectedCidx]
-    let (ctorTy, ctorFields) ← checkCtorMetadataAgainstParent ctorId id
-      expectedCidx params.toNat lvls isUnsafe
-    checkParamAgreement ty ctorTy params.toNat
-    if !isUnsafe then
-      checkPositivity ctorTy params.toNat blockAddrs
-    checkFieldUniverses ctorTy params.toNat indLevel
-    checkCtorReturnType ctorTy params.toNat indices.toNat ctorFields
-      id.addr lvls blockAddrs
-  -- Recursor generation for the block (fatal — silent failure would let
-  -- an unverifiable recursor slip through).
+
+/-- Populate the canonical recursor cache exactly when the resolved block has
+not already been generated. -/
+def ensureInductiveRecursors (block : KId m) : RecM m Unit := do
   if !(← get).env.recursorCache.contains block then
     generateBlockRecursors block
+
+/-- Validate an already-resolved inductive header: discover its block peers,
+establish the result level and peer agreement, validate every constructor,
+then populate the canonical recursor cache. -/
+def checkResolvedInductiveMember (id : KId m)
+    (params indices lvls : UInt64) (ctors : Array (KId m))
+    (block : KId m) (isUnsafe : Bool) (ty : KExpr m) : RecM m Unit := do
+  let blockInds ← discoverBlockInductives block
+  let blockAddrs := blockInds.map (·.addr)
+  -- Result sort must exist even for ctor-less inductives.
+  let indArity ← checkedMetadataSum "inductive params + indices"
+    #[params, indices]
+  let indLevel ← getResultSortLevel ty indArity.toNat
+  checkInductivePeerAgreement id block params lvls isUnsafe ty
+    indLevel blockInds
+  checkInductiveConstructors id params.toNat indices.toNat lvls isUnsafe ty
+    indLevel blockAddrs ctors.toList 0
+  -- Recursor generation for the block (fatal — silent failure would let
+  -- an unverifiable recursor slip through).
+  ensureInductiveRecursors block
+
+/-- Validate an inductive and every one of its constructors (S3/S3b peer
+    agreement + A1–A4). The Rust tail (recursor-generation trigger) lands
+    with P9. -/
+def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
+  let (params, indices, lvls, ctors, block, isUnsafe, ty) ←
+    match (← TcM.getConst id) with
+    | .indc (params := params) (indices := indices) (lvls := lvls)
+        (ctors := ctors) (block := block) (isUnsafe := isUnsafe)
+        (ty := ty) .. =>
+      pure (params, indices, lvls, ctors, block, isUnsafe, ty)
+    | _ => throw (.other "check_inductive: not an inductive")
+  checkResolvedInductiveMember id params indices lvls ctors block isUnsafe ty
 
 /-- Standalone-constructor validation: the same per-ctor A1–A4 against the
     declared parent. -/
@@ -873,57 +1140,78 @@ def checkCtorAgainstInductiveMemberImpl (ctorId inductId : KId m) :
       expectedCidx? := some idx
   let some expectedCidx := expectedCidx?
     | throw (.other "check_inductive: ctor not listed by parent")
-  let (ctorTy, ctorFields) ← checkCtorMetadataAgainstParent ctorId inductId
-    expectedCidx indParams.toNat indLvls indIsUnsafe
   let blockInds ← discoverBlockInductives indBlock
   let blockAddrs := blockInds.map (·.addr)
   let indArity ← checkedMetadataSum "inductive params + indices"
     #[indParams, indIndices]
   let indLevel ← getResultSortLevel indTy indArity.toNat
-  checkParamAgreement indTy ctorTy indParams.toNat
-  if !indIsUnsafe then
-    checkPositivity ctorTy indParams.toNat blockAddrs
-  checkFieldUniverses ctorTy indParams.toNat indLevel
-  checkCtorReturnType ctorTy indParams.toNat indIndices.toNat ctorFields
-    inductId.addr indLvls blockAddrs
+  checkInductiveConstructor ctorId inductId expectedCidx indParams.toNat
+    indIndices.toNat indLvls indIsUnsafe indTy indLevel blockAddrs
+
+/-- Validate every inductive and constructor of a homogeneous inductive
+block's untouched stored members before consulting any flattened/nested
+representation.  The two returned arrays preserve source order. -/
+def classifyInductiveBlockMembers (block : KId m) :
+    List (KId m) → Array (KId m) → Array (KId m) →
+      RecM m (Array (KId m) × Array (KId m))
+  | [], indIds, ctorIds => pure (indIds, ctorIds)
+  | member :: members, indIds, ctorIds => do
+      TcM.reset (m := m)
+      let c ← TcM.getConst member
+      validateConstWellScoped c
+      match c with
+      | .indc (ty := ty) .. =>
+          let t ← infer ty
+          let _ ← ensureSortDirect t
+          classifyInductiveBlockMembers block members (indIds.push member)
+            ctorIds
+      | .ctor (ty := ty) .. =>
+          let t ← infer ty
+          let _ ← ensureSortDirect t
+          classifyInductiveBlockMembers block members indIds
+            (ctorIds.push member)
+      | _ =>
+          throw (.other s!"check_inductive_block: non-inductive member {member} in block {block}")
+
+/-- Source-ordered validation of the inductive headers discovered by the
+untouched-member classification pass.  Reset remains immediately before each
+member check, exactly as in the original array loop. -/
+def checkInductiveMembers : List (KId m) → RecM m Unit
+  | [] => pure ()
+  | indId :: indIds => do
+      TcM.reset (m := m)
+      checkInductiveMemberImpl indId
+      checkInductiveMembers indIds
+
+/-- Source-ordered standalone validation of the constructors discovered by
+the untouched-member classification pass.  Production intentionally reloads
+the parent before resetting the per-check state; a non-constructor is skipped
+just as by the former loop's `continue`. -/
+def checkInductiveConstructorMembers : List (KId m) → RecM m Unit
+  | [] => pure ()
+  | ctorId :: ctorIds => do
+      match (← TcM.getConst ctorId) with
+      | .ctor (induct := induct) .. =>
+          TcM.reset (m := m)
+          checkCtorAgainstInductiveMemberImpl ctorId induct
+      | _ => pure ()
+      checkInductiveConstructorMembers ctorIds
 
 /-- Validate every inductive and constructor of a homogeneous inductive
     block: per-member well-scopedness + type inference, then the member
     checks. -/
 def checkInductiveBlockImpl (block : KId m) (members : Array (KId m)) :
     RecM m Unit := do
-  let mut indIds : Array (KId m) := #[]
-  let mut ctorIds : Array (KId m) := #[]
   -- SECURITY INVARIANT (Lean #14576): infer each original stored member
   -- type, including every constructor type, before building or consulting
   -- any flattened/nested-inductive representation. A lossy nested rewrite
   -- can erase phantom parameter arguments; checking only that rewritten
   -- form would let an ill-typed argument disappear. Keep this pass in full
   -- inference mode and over the untouched `ty` values.
-  for member in members do
-    TcM.reset (m := m)
-    let c ← TcM.getConst member
-    validateConstWellScoped c
-    match c with
-    | .indc (ty := ty) .. =>
-      let t ← infer ty
-      let _ ← ensureSortDirect t
-      indIds := indIds.push member
-    | .ctor (ty := ty) .. =>
-      let t ← infer ty
-      let _ ← ensureSortDirect t
-      ctorIds := ctorIds.push member
-    | _ =>
-      throw (.other s!"check_inductive_block: non-inductive member {member} in block {block}")
-  for indId in indIds do
-    TcM.reset (m := m)
-    checkInductiveMemberImpl indId
-  for ctorId in ctorIds do
-    let induct ← match (← TcM.getConst ctorId) with
-      | .ctor (induct := induct) .. => pure induct
-      | _ => continue
-    TcM.reset (m := m)
-    checkCtorAgainstInductiveMemberImpl ctorId induct
+  let (indIds, ctorIds) ← classifyInductiveBlockMembers block members.toList
+    #[] #[]
+  checkInductiveMembers indIds.toList
+  checkInductiveConstructorMembers ctorIds.toList
 
 -- ### Recursor generation
 
@@ -937,6 +1225,28 @@ def mkIndUnivs (indLvls offset : UInt64) :
   for i in [0:indLvls.toNat] do
     out := out.push (← TcM.internUniv (m := m) (.mkParam (i.toUInt64 + offset) anonN))
   return out
+
+/-- Reuse or append the exact auxiliary specialization discovered by the
+    flat-block scan.  Keeping this decision as a named production action
+    exposes the shared specialization key to the E2c transport without
+    changing the source-ordered queue traversal around it. -/
+def appendNestedAuxiliary (headId : KId m)
+    (occurrenceUs : Array (KUniv m)) (specParams : Array (KExpr m))
+    (extParams extIndices : UInt64) (extCtors : Array (KId m))
+    (extLvls : UInt64) (flat : Array (FlatBlockMember m))
+    (auxSeen : Array NestedSpecializationKey) (univOffset : UInt64) :
+    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
+  let specialization := NestedSpecializationKey.ofApplication headId.addr
+    occurrenceUs specParams
+  if auxSeen.contains specialization then
+    return (flat, auxSeen)
+  let auxSeen' := auxSeen.push specialization
+  let auxUs ← mkIndUnivs extLvls univOffset
+  let flat' := flat.push
+    { id := headId, isAux := true, specParams,
+      ownParams := extParams, nIndices := extIndices,
+      ctors := extCtors, lvls := extLvls, indUs := auxUs, occurrenceUs }
+  return (flat', auxSeen')
 
 /-- Core of nested-occurrence detection (early-return style; the caller
     restores the lctx). Structural forall peel — NO whnf (a defn head like
@@ -988,17 +1298,8 @@ def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
   let occurrenceUs := match head with
     | .const _ us _ => us
     | _ => #[]
-  let specialization := NestedSpecializationKey.ofApplication headId.addr
-    occurrenceUs specParams
-  if auxSeen.contains specialization then
-    return (flat, auxSeen)
-  let auxSeen' := auxSeen.push specialization
-  let auxUs ← mkIndUnivs extLvls univOffset
-  let flat' := flat.push
-    { id := headId, isAux := true, specParams,
-      ownParams := extParams, nIndices := extIndices,
-      ctors := extCtors, lvls := extLvls, indUs := auxUs, occurrenceUs }
-  return (flat', auxSeen')
+  appendNestedAuxiliary headId occurrenceUs specParams extParams extIndices
+    extCtors extLvls flat auxSeen univOffset
 
 /-- Detect whether `dom` is a nested inductive occurrence; if so append an
     auxiliary entry (dedup by family, universe, and parameter addresses).
@@ -1014,65 +1315,135 @@ def tryDetectNested (dom : KExpr m) (blockAddrs : Array Address)
   modify fun s => { s with lctx := s.lctx.truncate savedLctx }
   return result
 
+/-- Consume the declared parameter prefix of one flat-block constructor.
+The explicit recursion is the source-ordered equivalent of the former range
+loop and exposes its early non-forall stop to verification. -/
+def instantiateFlatConstructorParams (member : FlatBlockMember m)
+    (nRecParams : UInt64) : Nat → Nat → KExpr m → RecM m (KExpr m)
+  | 0, _, cur => pure cur
+  | remaining + 1, j, cur => do
+      let w ← whnf cur
+      match w with
+      | .all _ _ _ body _ =>
+        let p := if j < member.specParams.size then
+            member.specParams[j]!
+          else
+            .mkVar (nRecParams - 1 - j.toUInt64) anonN
+        let cur ← TcM.runIntern (subst body p 0)
+        instantiateFlatConstructorParams member nRecParams remaining (j + 1)
+          cur
+      | _ => pure cur
+
+/-- Scan one constructor's fields in source order, threading the dynamically
+growing flat block and exact deduplication array. -/
+def scanFlatConstructorFields (allBlockAddrs : Array Address)
+    (nRecParams univOffset : UInt64) (paramDepth : Nat) :
+    Nat → KExpr m →
+      (Array (FlatBlockMember m) × Array NestedSpecializationKey) →
+      RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey)
+  | 0, _, pair => pure pair
+  | remaining + 1, cur, pair => do
+      let w ← whnf cur
+      match w with
+      | .all _ _ dom body _ =>
+        let pair ← tryDetectNested dom allBlockAddrs pair.1 pair.2 univOffset
+          paramDepth nRecParams
+        let (open', _) ← TcM.openBinderAnon dom body
+        scanFlatConstructorFields allBlockAddrs nRecParams univOffset
+          paramDepth remaining open' pair
+      | _ => pure pair
+
+/-- Scan one source constructor, including universe instantiation, parameter
+substitution, nested-field discovery, and the production lctx restoration. -/
+def scanFlatConstructor (allBlockAddrs : Array Address)
+    (nRecParams univOffset : UInt64) (member : FlatBlockMember m)
+    (ctorId : KId m)
+    (pair : Array (FlatBlockMember m) × Array NestedSpecializationKey) :
+    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
+  let some (.ctor (fields := ctorFields) (ty := ctorTy) ..) ←
+      TcM.tryGetConst ctorId
+    | return pair
+  let ctorTyInst ← TcM.instantiateUnivParams ctorTy member.occurrenceUs
+  let saved := (← get).lctx.size
+  let cur ← instantiateFlatConstructorParams member nRecParams
+    member.ownParams.toNat 0 ctorTyInst
+  let pair ← scanFlatConstructorFields allBlockAddrs nRecParams univOffset
+    saved ctorFields.toNat cur pair
+  modify fun s => { s with lctx := s.lctx.truncate saved }
+  return pair
+
+/-- Scan a constructor list in source order while retaining the pair returned
+by every successful nested-field detection. -/
+def scanFlatConstructors (allBlockAddrs : Array Address)
+    (nRecParams univOffset : UInt64) (member : FlatBlockMember m) :
+    List (KId m) →
+      (Array (FlatBlockMember m) × Array NestedSpecializationKey) →
+      RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey)
+  | [], pair => pure pair
+  | ctorId :: ctorIds, pair => do
+      let pair ← scanFlatConstructor allBlockAddrs nRecParams univOffset
+        member ctorId pair
+      scanFlatConstructors allBlockAddrs nRecParams univOffset member ctorIds
+        pair
+
+/-- One source-ordered production queue step.  Naming the callback preserves
+the executable traversal while exposing the dynamically growing flat array
+and its deduplication set to E2c proofs. -/
+def buildFlatBlockQueueStep (allBlockAddrs : Array Address)
+    (nRecParams univOffset : UInt64) (state : FlatBlockQueueState m) :
+    RecM m (BoundedStep (FlatBlockQueueState m)
+      (Array (FlatBlockMember m) × Array NestedSpecializationKey)) := do
+  let (qi, flat0, auxSeen0) := state
+  if qi ≥ flat0.size then
+    return .done (flat0, auxSeen0)
+  let member := flat0[qi]!
+  let pair ← scanFlatConstructors allBlockAddrs nRecParams univOffset member
+    member.ctors.toList (flat0, auxSeen0)
+  return .next (qi + 1, pair.1, pair.2)
+
+/-- Exact de Bruijn parameter vector stored on each original flat-block
+member. -/
+def mkFlatBlockSpecParams (nRecParams : UInt64) : Array (KExpr m) :=
+  (Array.range nRecParams.toNat).map fun j =>
+    .mkVar (nRecParams - 1 - j.toUInt64) anonN
+
+/-- Seed original block members in source order before nested auxiliaries are
+discovered.  Naming this recursion exposes that every seeded member is
+non-auxiliary while preserving the production lookup/intern sequence. -/
+def seedFlatBlockMembers (nRecParams univOffset : UInt64) :
+    List (KId m) → Array (FlatBlockMember m) →
+      RecM m (Array (FlatBlockMember m))
+  | [], flat => pure flat
+  | indId :: indIds, flat => do
+      let concrete ← TcM.getConst indId
+      match concrete with
+      | .indc (params := ownParams) (indices := nIndices) (ctors := ctors)
+          (lvls := lvls) .. =>
+        let indUs ← mkIndUnivs lvls univOffset
+        let flat := flat.push
+          { id := indId, isAux := false,
+            specParams := mkFlatBlockSpecParams nRecParams,
+            ownParams, nIndices, ctors, lvls, indUs, occurrenceUs := indUs }
+        seedFlatBlockMembers nRecParams univOffset indIds flat
+      | _ => seedFlatBlockMembers nRecParams univOffset indIds flat
+
+/-- Build the flat block while retaining the exact auxiliary-deduplication set
+for verification.  The public wrapper below projects the original result. -/
+def buildFlatBlockWithAuxSeen (blockInds : Array (KId m))
+    (nRecParams univOffset : UInt64) :
+    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
+  let allBlockAddrs := blockInds.map (·.addr)
+  let flat ← seedFlatBlockMembers nRecParams univOffset blockInds.toList #[]
+  -- Queue-based scan (flat grows while iterating).
+  runBounded (buildFlatBlockQueueStep allBlockAddrs nRecParams univOffset)
+    maxWhnfFuel.toNat (0, flat, #[])
+
 /-- Build the flat block: originals seeded, then a queue pass over every
-    member's ctor fields detecting nested occurrences. -/
+member's constructor fields detecting nested occurrences. -/
 def buildFlatBlock (blockInds : Array (KId m))
     (nRecParams univOffset : UInt64) :
     RecM m (Array (FlatBlockMember m)) := do
-  let allBlockAddrs := blockInds.map (·.addr)
-  let mut flat : Array (FlatBlockMember m) := #[]
-  let mut auxSeen : Array NestedSpecializationKey := #[]
-  for indId in blockInds do
-    match (← TcM.getConst indId) with
-    | .indc (params := ownParams) (indices := nIndices) (ctors := ctors)
-        (lvls := lvls) .. =>
-      let indUs ← mkIndUnivs lvls univOffset
-      let mut specParams : Array (KExpr m) := Array.mkEmpty nRecParams.toNat
-      for j in [0:nRecParams.toNat] do
-        specParams := specParams.push
-          (.mkVar (nRecParams - 1 - j.toUInt64) anonN)
-      flat := flat.push
-        { id := indId, isAux := false, specParams, ownParams, nIndices,
-          ctors, lvls, indUs, occurrenceUs := indUs }
-    | _ => continue
-  -- Queue-based scan (flat grows while iterating).
-  runBounded (fun (qi, flat0, auxSeen0) => do
-    if qi ≥ flat0.size then
-      return .done flat0
-    let member := flat0[qi]!
-    let mut flat := flat0
-    let mut auxSeen := auxSeen0
-    for ctorId in member.ctors do
-      let (ctorFields, ctorTy) ← match (← TcM.tryGetConst ctorId) with
-        | some (.ctor (fields := fields) (ty := ty) ..) => pure (fields, ty)
-        | _ => continue
-      let ctorTyInst ← TcM.instantiateUnivParams ctorTy member.occurrenceUs
-      let saved := (← get).lctx.size
-      let mut cur := ctorTyInst
-      for j in [0:member.ownParams.toNat] do
-        let w ← whnf cur
-        match w with
-        | .all _ _ _ body _ =>
-          let p := if j < member.specParams.size then
-              member.specParams[j]!
-            else
-              .mkVar (nRecParams - 1 - j.toUInt64) anonN
-          cur ← TcM.runIntern (subst body p 0)
-        | _ => break
-      for _ in [0:ctorFields.toNat] do
-        let w ← whnf cur
-        match w with
-        | .all _ _ dom body _ =>
-          let (flat', auxSeen') ← tryDetectNested dom allBlockAddrs flat
-            auxSeen univOffset saved nRecParams
-          flat := flat'
-          auxSeen := auxSeen'
-          let (open', _) ← TcM.openBinderAnon dom body
-          cur := open'
-        | _ => break
-      modify fun s => { s with lctx := s.lctx.truncate saved }
-    return .next (qi + 1, flat, auxSeen)) maxWhnfFuel.toNat
-      (0, flat, auxSeen)
+  return (← buildFlatBlockWithAuxSeen blockInds nRecParams univOffset).1
 
 /-- Rewrite one nested occurrence `Ext spec idx…` to
     `aux blockParams idx…` when the head+params match an aux member. -/
@@ -1392,13 +1763,28 @@ def buildMotiveTypeFlat (member : FlatBlockMember m)
     result ← TcM.intern (.mkAll anonN anonBi indexDoms[nIdx - 1 - i]! result)
   return result
 
+/-- Whether an expression already exposes one of the flattened inductive
+    members at the head of its application spine.  Such a head is irreducible:
+    WHNF cannot turn it into another forall or recursive target. -/
+def hasFlatMemberHead (e : KExpr m) (flat : Array (FlatBlockMember m)) : Bool :=
+  let (head, _) := e.collectSpine
+  match head with
+  | .const id _ _ => flat.any fun member => member.id.addr == id.addr
+  | _ => false
+
 /-- Recursive-field detection: after peeling foralls, `I_k params args`
     matching a flat member. Aux members additionally def-eq the first
     `ownParams` args against spec_params lifted by `specParamsLiftBy`. -/
 def isRecField (dom : KExpr m) (flat : Array (FlatBlockMember m))
     (specParamsLiftBy : UInt64) : RecM m (Option Nat) := do
   runBounded (fun ty => do
-    let w ← whnf ty
+    -- An exposed flat-member spine is already headed by an inductive
+    -- constant, so full WHNF cannot reveal a different recursive target.
+    -- Avoiding that redundant callback is also important for rule building:
+    -- its final lambda positions are represented by loose de Bruijn variables
+    -- which do not inhabit the checker's live local context.  Hidden heads
+    -- and every non-member constant still take the ordinary WHNF path.
+    let w ← if hasFlatMemberHead ty flat then pure ty else whnf ty
     match w with
     | .all _ _ _ body _ => return .next body
     | _ =>
@@ -1587,13 +1973,29 @@ def buildMinorAtDepth (indIdx : Nat) (ctorId : KId m)
   modify fun s => { s with lctx := s.lctx.truncate saved }
   return conclusion
 
-/-- Full recursor type for flat member `di`:
-    `∀ params motives minors indices major, motive indices major`. -/
-def buildRecType (di : Nat)
+/-- Close the generated recursor's domain array from right to left while
+restoring the local context.  The explicit recursion exposes every exact
+intern request to the generated-artifact proof without changing the former
+range-loop order. -/
+def closeGeneratedRecursorForalls (saved : Nat)
+    (domains : Array (KExpr m)) : Nat → KExpr m → RecM m (KExpr m)
+  | 0, body => do
+      modify fun s => { s with lctx := s.lctx.truncate saved }
+      return body
+  | remaining + 1, body => do
+      modify fun s => { s with
+        lctx := s.lctx.truncate (s.lctx.size - 1) }
+      let body ← TcM.intern
+        (.mkAll anonN anonBi domains[remaining]! body)
+      closeGeneratedRecursorForalls saved domains remaining body
+
+/-- Build the parameter, motive, minor, index, and major domains plus the
+return body, leaving every domain open in the local context. -/
+def buildGeneratedRecursorTypeBody (di : Nat)
     (indInfos : Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m))
     (blockInds : Array (KId m)) (flat : Array (FlatBlockMember m))
     (motiveTypes : Array (KExpr m)) (univOffset : UInt64) :
-    RecM m (KExpr m) := do
+    RecM m (GeneratedRecursorTypeBody m) := do
   let saved := (← get).lctx.size
   let nParams := indInfos[0]!.2.1.toNat
   let nMotives := indInfos.size
@@ -1687,13 +2089,19 @@ def buildRecType (di : Nat)
     let ivar ← TcM.intern (m := m) (.mkVar (nIndices - i).toUInt64 anonN)
     ret ← TcM.intern (.mkApp ret ivar)
   ret ← TcM.intern (.mkApp ret (← TcM.intern (m := m) (.mkVar 0 anonN)))
-  -- Fold the forall chain (inside-out; pop locals).
-  for i in [0:domains.size] do
-    modify fun s => { s with lctx := s.lctx.truncate (s.lctx.size - 1) }
-    ret ← TcM.intern
-      (.mkAll anonN anonBi domains[domains.size - 1 - i]! ret)
-  modify fun s => { s with lctx := s.lctx.truncate saved }
-  return ret
+  return { saved, domains, body := ret }
+
+/-- Full recursor type for flat member `di`:
+    `∀ params motives minors indices major, motive indices major`. -/
+def buildRecType (di : Nat)
+    (indInfos : Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m))
+    (blockInds : Array (KId m)) (flat : Array (FlatBlockMember m))
+    (motiveTypes : Array (KExpr m)) (univOffset : UInt64) :
+    RecM m (KExpr m) := do
+  let built ← buildGeneratedRecursorTypeBody di indInfos blockInds flat
+    motiveTypes univOffset
+  closeGeneratedRecursorForalls built.saved built.domains built.domains.size
+    built.body
 
 /-- Extract the major-premise domain whose head is `targetAddr`, after
     skipping `prefixSkip` foralls (scan bounded at 64). -/
@@ -1824,11 +2232,13 @@ def buildRuleIh (fieldIdx nFields totalLams : UInt64)
   let mut recLvls : Array (KUniv m) := Array.mkEmpty peerRecLvls.toNat
   for i in [0:peerRecLvls.toNat] do
     recLvls := recLvls.push (← TcM.internUniv (m := m) (.mkParam i.toUInt64 anonN))
-  -- Peel foralls (stop when the result head is a flat member).
-  let wdom ← whnf dom
+  -- Peel foralls (stop when the result head is a flat member).  Direct
+  -- recursive domains are already in WHNF and may refer to the future rule
+  -- lambda frame rather than the live checker context.
+  let wdom ← if hasFlatMemberHead dom flat then pure dom else whnf dom
   let (forallDoms, inner) := peelRuleIhForalls wdom flat
   let nXs := forallDoms.size.toUInt64
-  let innerW ← whnf inner
+  let innerW ← if hasFlatMemberHead inner flat then pure inner else whnf inner
   let (_, innerArgs) := innerW.collectSpine
   let idxArgs := innerArgs.extract targetNParams innerArgs.size
   let depth ← checkedMetadataSum "generated recursor induction-hypothesis depth"
@@ -1884,6 +2294,11 @@ def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
     | .all _ _ _ body _ => countTy := body
     | _ => break
   let nFields ← runBounded (fun (tmp, nFields) => do
+    -- The constructor result is an exposed application of its flat member.
+    -- It cannot reduce to another field forall, and in rule construction its
+    -- arguments can contain virtual (not live-context) de Bruijn variables.
+    if hasFlatMemberHead tmp flat then
+      return .done nFields
     let w ← whnf tmp
     match w with
     | .all _ _ _ body _ =>
@@ -1923,6 +2338,10 @@ def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
   let recFieldLift := totalLams - min totalLams nRecParams.toUInt64
   let (_, _, bodyAfterFields) ← runBounded
       (fun (fieldTy, fieldIdx, loopBody) => do
+    -- As in the counting pass, stop before sending the exposed inductive
+    -- result (whose arguments are in the future lambda frame) through WHNF.
+    if hasFlatMemberHead fieldTy flat then
+      return .done (fieldTy, fieldIdx, loopBody)
     let w ← whnf fieldTy
     match w with
     | .all _ _ dom body2 _ =>
@@ -1985,14 +2404,178 @@ def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
   modify fun s => { s with lctx := s.lctx.truncate saved }
   return body
 
-/-- Generate recursors for every flat member of an inductive block and
-    cache them (`recursorCache`, `recMajorsCache`). -/
-def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
+/-- Initial cache entry for one exact flat-block member.  Rules are populated
+    only after every peer recursor type has been constructed. -/
+def initialGeneratedRecursor (member : FlatBlockMember m)
+    (flat : Array (FlatBlockMember m)) (recLvls nParams nMinors : UInt64)
+    (blockIsUnsafe : Bool) (recType : KExpr m) : GeneratedRecursor m :=
+  { indAddr := member.id.addr
+    lvls := recLvls
+    params := nParams
+    motives := flat.size.toUInt64
+    minors := nMinors
+    indices := member.nIndices
+    isUnsafe := blockIsUnsafe
+    ty := recType
+    rules := #[] }
+
+/-- Construct generated recursor types in flat-block order.  The explicit fuel
+    is the number of members remaining; `generateBlockRecursors` starts at
+    index zero with exactly `flat.size` steps.  Naming this existing loop makes
+    its positional metadata contract available to the verification layer. -/
+def buildGeneratedRecursorTypes
+    (indInfos :
+      Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m))
+    (blockInds : Array (KId m)) (flat : Array (FlatBlockMember m))
+    (motiveTypes : Array (KExpr m))
+    (univOffset recLvls nParams nMinors : UInt64)
+    (blockIsUnsafe : Bool) (di : Nat) :
+    Nat → Array (GeneratedRecursor m) → RecM m (Array (GeneratedRecursor m))
+  | 0, generated => pure generated
+  | fuel + 1, generated => do
+      if h : di < flat.size then
+        let recType ← buildRecType di indInfos blockInds flat motiveTypes
+          univOffset
+        let generated := generated.push
+          (initialGeneratedRecursor flat[di] flat recLvls nParams nMinors
+            blockIsUnsafe recType)
+        buildGeneratedRecursorTypes indInfos blockInds flat motiveTypes
+          univOffset recLvls nParams nMinors blockIsUnsafe (di + 1) fuel
+          generated
+      else
+        pure generated
+
+/-- Attempt to construct every rule for one generated recursor.  Errors from
+    an individual RHS are retained as `none`, matching the best-effort rule
+    population performed before a co-resident recursor block is available. -/
+def buildOptionalGeneratedRecursorRules (gi : Nat)
+    (member : FlatBlockMember m) (flat : Array (FlatBlockMember m))
+    (peers : Array (KId m)) (recTy : KExpr m) (nParams : Nat)
+    (isLarge : Bool) : RecM m (Array (Option (RecRule m))) := do
+  let mut rules : Array (Option (RecRule m)) := #[]
+  for h : ci in [0:member.ctors.size] do
+    let ctorId := member.ctors[ci]
+    let ctorFields ← match (← TcM.getConst ctorId) with
+      | .ctor (fields := fields) .. => pure fields
+      | _ => throw (.other "generate_block_recursors: ctor not found")
+    let rhs? ← try?
+      (buildRuleRhs gi ci ctorId member flat peers recTy nParams isLarge)
+    match rhs? with
+    | some rhs => rules := rules.push (some ⟨ctorId.name, ctorFields, rhs⟩)
+    | none => rules := rules.push none
+  return rules
+
+/-- Populate best-effort rules in generated-recursors order.  Rule synthesis
+    is stateful, but the only array mutation is `GeneratedRecursor.withRules`,
+    whose metadata projection is definitionally unchanged. -/
+def populateOptionalGeneratedRecursorRules
+    (flat : Array (FlatBlockMember m)) (peers : Array (KId m))
+    (nParams : Nat) (isLarge : Bool) (gi : Nat) :
+    Nat → Array (GeneratedRecursor m) → RecM m (Array (GeneratedRecursor m))
+  | 0, generated => pure generated
+  | fuel + 1, generated => do
+      let member := flat[gi]!
+      let rules ← buildOptionalGeneratedRecursorRules gi member flat peers
+        generated[gi]!.ty nParams isLarge
+      let generated := if rules.all (·.isSome) then
+          generated.modify gi (·.withRules (rules.filterMap id))
+        else generated
+      populateOptionalGeneratedRecursorRules flat peers nParams isLarge
+        (gi + 1) fuel generated
+
+/-- Construct the complete rule array for one generated recursor after the
+    checked recursor block has supplied canonically aligned peers. -/
+def buildCompleteGeneratedRecursorRules (gi : Nat)
+    (member : FlatBlockMember m) (flat : Array (FlatBlockMember m))
+    (peers : Array (KId m)) (recTy : KExpr m) (nParams : Nat)
+    (isLarge : Bool) : RecM m (Array (RecRule m)) := do
+  let mut rules : Array (RecRule m) := Array.mkEmpty member.ctors.size
+  for h : ci in [0:member.ctors.size] do
+    let ctorId := member.ctors[ci]
+    let ctorFields ← match (← TcM.getConst ctorId) with
+      | .ctor (fields := fields) .. => pure fields
+      | _ => throw (.other "populate_recursor_rules_from_block: ctor not found")
+    let rhs ← buildRuleRhs gi ci ctorId member flat peers recTy nParams
+      isLarge
+    rules := rules.push ⟨ctorId.name, ctorFields, rhs⟩
+  return rules
+
+/-- Populate complete rules in flat-block order after canonical peer
+    alignment. -/
+def populateCompleteGeneratedRecursorRules
+    (flat : Array (FlatBlockMember m)) (peers : Array (KId m))
+    (nParams : Nat) (isLarge : Bool) (gi : Nat) :
+    Nat → Array (GeneratedRecursor m) → RecM m (Array (GeneratedRecursor m))
+  | 0, generated => pure generated
+  | fuel + 1, generated => do
+      let member := flat[gi]!
+      let rules ← buildCompleteGeneratedRecursorRules gi member flat peers
+        generated[gi]!.ty nParams isLarge
+      let generated := generated.modify gi (·.withRules rules)
+      populateCompleteGeneratedRecursorRules flat peers nParams isLarge
+        (gi + 1) fuel generated
+
+/-- Transactionally install a locally produced rule batch. The target cache
+    must still contain the ingress batch's exact positional metadata, but its
+    current types and rules are deliberately ignored: stateful callbacks may
+    have replaced either while constructing rules. Every installed header and
+    type comes from the immutable ingress snapshot; only rule arrays come from
+    `generatedWithRules`. -/
+def commitGeneratedRecursorRulesAt (indBlockId : KId m)
+    (expected generatedWithRules : Array (GeneratedRecursor m)) :
+    RecM m Unit := do
+  let some cached := (← get).env.recursorCache[indBlockId]?
+    | throw (.other
+        "populate_recursor_rules_from_block: cache disappeared during rule construction")
+  if cached.size != expected.size then
+    throw (.other s!"populate_recursor_rules_from_block: cache changed length: cached={cached.size} expected={expected.size}")
+  if cached.map GeneratedRecursor.metadata ==
+      expected.map GeneratedRecursor.metadata then
+    pure ()
+  else
+    throw (.other
+      "populate_recursor_rules_from_block: cache header metadata changed during rule construction")
+  if generatedWithRules.size != expected.size then
+    throw (.other s!"populate_recursor_rules_from_block: generated rule batch changed length: generated={generatedWithRules.size} expected={expected.size}")
+  let installed := expected.zipWith
+    (fun header generated => header.withRules generated.rules)
+    generatedWithRules
+  modify fun s => { s with env := { s.env with
+    recursorCache := s.env.recursorCache.insert indBlockId installed } }
+
+/-- Build every generated recursor, opportunistically populate co-resident
+    rules, and insert the resulting batch into both recursor caches.  All
+    inputs have already been checked and the flat block has already been
+    canonicalized by `generateBlockRecursors`. -/
+def buildAndCacheGeneratedRecursors (blockId : KId m)
+    (flatIndInfos :
+      Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m))
+    (flatIds : Array (KId m)) (flat : Array (FlatBlockMember m))
+    (motiveTypes : Array (KExpr m))
+    (univOffset recLvls nParams nMinors : UInt64)
+    (blockIsUnsafe isLarge : Bool) : RecM m Unit := do
+  let generated ← buildGeneratedRecursorTypes flatIndInfos flatIds flat
+    motiveTypes univOffset recLvls nParams nMinors blockIsUnsafe 0 flat.size
+      (Array.mkEmpty flat.size)
+  let peerRecs ← findPeerRecursors blockId flat
+  let generated ← match peerRecs with
+    | some peers =>
+      populateOptionalGeneratedRecursorRules flat peers nParams.toNat isLarge
+        0 generated.size generated
+    | none => pure generated
+  let majorsKey := sortedDedupIds flatIds
+  modify fun s => { s with env := { s.env with
+    recMajorsCache := s.env.recMajorsCache.insert majorsKey blockId,
+    recursorCache := s.env.recursorCache.insert blockId generated } }
+
+/-- Discover, validate, flatten, and build motives for one block using the
+exact production preparation path. `none` is the valid empty-block result;
+errors remain hard failures. -/
+def prepareGeneratedRecursorBuildInputs (blockId : KId m) :
+    RecM m (Option (GeneratedRecursorBuildInputs m)) := do
   let blockInds ← discoverBlockInductives blockId
   if blockInds.isEmpty then
-    modify fun s => { s with env := { s.env with
-      recursorCache := s.env.recursorCache.insert blockId #[] } }
-    return ()
+    return none
   let mut indInfos :
       Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m) := #[]
   let mut nParams : UInt64 := 0
@@ -2055,73 +2638,54 @@ def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
     motiveTypes := motiveTypes.push
       (← buildMotiveTypeFlat mem nParams.toNat elimLevel)
   -- Recursor types for every flat member.
-  let nMotives := flat.size.toUInt64
   let nMinors ← checkedMetadataSum "generated recursor minors"
     (flat.map fun mem => mem.ctors.size.toUInt64)
-  let mut generated : Array (GeneratedRecursor m) := Array.mkEmpty flat.size
-  for di in [0:flat.size] do
-    let recType ← buildRecType di flatIndInfos flatIds flat motiveTypes
-      univOffset
-    generated := generated.push
-      { indAddr := flat[di]!.id.addr
-        lvls := recLvls
-        params := nParams
-        motives := nMotives
-        minors := nMinors
-        indices := flat[di]!.nIndices
-        isUnsafe := blockIsUnsafe
-        ty := recType
-        rules := #[] }
-  -- Rules from co-resident peer recursors (when alignment sanity holds).
-  let peerRecs ← findPeerRecursors blockId flat
-  if let some peers := peerRecs then
-    for h : gi in [0:generated.size] do
-      let member := flat[gi]!
-      let mut rules : Array (Option (RecRule m)) := #[]
-      for h2 : ci in [0:member.ctors.size] do
-        let ctorId := member.ctors[ci]
-        let ctorFields ← match (← TcM.getConst ctorId) with
-          | .ctor (fields := fields) .. => pure fields
-          | _ => throw (.other "generate_block_recursors: ctor not found")
-        let recTy := generated[gi]!.ty
-        let rhs? ← try?
-          (buildRuleRhs gi ci ctorId member flat peers recTy nParams.toNat
-            isLarge)
-        match rhs? with
-        | some rhs =>
-          rules := rules.push (some ⟨ctorId.name, ctorFields, rhs⟩)
-        | none => rules := rules.push none
-      if rules.all (·.isSome) then
-        let done := rules.filterMap id
-        generated := generated.modify gi fun g => { g with rules := done }
-  -- Majors cache: sorted flat-member ids → block.
-  let majorsKey := sortedDedupIds flatIds
-  modify fun s => { s with env := { s.env with
-    recMajorsCache := s.env.recMajorsCache.insert majorsKey blockId,
-    recursorCache := s.env.recursorCache.insert blockId generated } }
+  return some {
+    flatIndInfos
+    flatIds
+    flat
+    motiveTypes
+    univOffset
+    recLvls
+    nParams
+    nMinors
+    blockIsUnsafe
+    isLarge }
 
-/-- Populate canonical rules from the recursor block's peers (block-level
-    recursor checking path). Verifies canonical alignment peer-by-peer via
-    major-domain signatures; a divergence is a hard error. -/
-def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
-    RecM m Unit := do
-  let some generatedSnapshot := (← get).env.recursorCache[indBlockId]?
-    | return ()
-  if generatedSnapshot.isEmpty then
+/-- Generate recursors for every flat member of an inductive block and
+    cache them (`recursorCache`, `recMajorsCache`). -/
+def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
+  let some inputs ← prepareGeneratedRecursorBuildInputs blockId | do
+    modify fun s => { s with env := { s.env with
+      recursorCache := s.env.recursorCache.insert blockId #[] } }
     return ()
-  let some members ← TcM.tryGetBlock recBlockId | return ()
+  buildAndCacheGeneratedRecursors blockId inputs.flatIndInfos inputs.flatIds
+    inputs.flat inputs.motiveTypes inputs.univOffset inputs.recLvls
+    inputs.nParams inputs.nMinors inputs.blockIsUnsafe inputs.isLarge
+
+/-- Internal rule-population body for one already-snapshotted generated batch.
+Every early path returns the immutable ingress batch. The complete path
+returns a locally built batch whose only changes are canonical rule arrays;
+neither path commits callback-mutated cache contents. -/
+def populateRecursorRulesFromBlockCore (indBlockId recBlockId : KId m)
+    (generatedSnapshot : Array (GeneratedRecursor m)) :
+    RecM m (Array (GeneratedRecursor m)) := do
+  if generatedSnapshot.isEmpty then
+    return generatedSnapshot
+  let some members ← TcM.tryGetBlock recBlockId
+    | return generatedSnapshot
   let mut recIds : Array (KId m) := #[]
   for id in members do
     if let some (.recr ..) ← TcM.tryGetConst id then
       recIds := recIds.push id
   if recIds.isEmpty then
-    return ()
+    return generatedSnapshot
   let blockInds ← discoverBlockInductives indBlockId
   if blockInds.isEmpty then
-    return ()
+    return generatedSnapshot
   let nParams64 ← match (← TcM.tryGetConst blockInds[0]!) with
     | some (.indc (params := params) ..) => pure params
-    | _ => return ()
+    | _ => return generatedSnapshot
   let indLvls ← match (← TcM.tryGetConst blockInds[0]!) with
     | some (.indc (lvls := lvls) ..) => pure lvls
     | _ => pure 0
@@ -2149,63 +2713,47 @@ def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
     throw (.other s!"populate_recursor_rules_from_block: flat/generated length mismatch: flat={flat.size} generated={generatedSnapshot.size}")
   if (generatedSnapshot.zip flat).all
       (fun (g, mem) => g.rules.size == mem.ctors.size) then
-    return ()
-  let nMotives := flat.size.toUInt64
-  let nMinors ← checkedMetadataSum "generated recursor minors"
-    (flat.map fun mem => mem.ctors.size.toUInt64)
-  let prefixBase ← checkedMetadataSum
-    "generated recursor params + motives + minors"
-    #[nParams64, nMotives, nMinors]
+    return generatedSnapshot
   if recIds.size != flat.size then
     throw (.other s!"populate_recursor_rules_from_block: rec_ids/flat count mismatch: rec_ids={recIds.size} flat={flat.size}")
-  -- Verify canonical alignment via major-domain signatures.
+  -- Verify canonical alignment on complete closed types and every stored
+  -- header field. Peeling forall bodies here would expose dangling de Bruijn
+  -- variables to stateful WHNF/DefEq callbacks.
   let mut peers : Array (KId m) := Array.mkEmpty flat.size
   for h : gi in [0:generatedSnapshot.size] do
     let genRec := generatedSnapshot[gi]
-    let targetAddr := genRec.indAddr
     let rid := recIds[gi]!
-    let (params, motives, minors, indices, ty) ←
+    let (lvls, isUnsafe, params, motives, minors, indices, ty) ←
       match (← TcM.getConst rid) with
-      | .recr (params := p) (motives := mo) (minors := mi) (indices := ix)
-          (ty := ty) .. => pure (p, mo, mi, ix, ty)
+      | .recr (lvls := lvls) (isUnsafe := isUnsafe) (params := p)
+          (motives := mo) (minors := mi) (indices := ix) (ty := ty) .. =>
+        pure (lvls, isUnsafe, p, mo, mi, ix, ty)
       | _ => throw (.other s!"populate_recursor_rules_from_block: rec_ids[{gi}]={rid} is not a recursor")
-    let genSkip ← checkedMetadataSum "generated recursor major index"
-      #[prefixBase, flat[gi]!.nIndices]
-    let genMajor ← recursorMajorDomainForAddr genRec.ty genSkip targetAddr
-    let storedSkip ← checkedMetadataSum "recursor major index"
-      #[params, motives, minors, indices]
-    let storedMajor ← recursorMajorDomainForAddr ty storedSkip targetAddr
-    let signaturesMatch ← match genMajor, storedMajor with
-      | some g, some s => majorDomainSignatureEq g s
-      | _, _ => pure false
-    if !signaturesMatch then
+    if lvls != genRec.lvls || isUnsafe != genRec.isUnsafe ||
+        params != genRec.params || motives != genRec.motives ||
+        minors != genRec.minors || indices != genRec.indices then
+      throw (.other s!"populate_recursor_rules_from_block: canonical header mismatch at peer {gi}")
+    if !(← isDefEq genRec.ty ty) then
       throw (.other s!"populate_recursor_rules_from_block: canonical-order mismatch at peer {gi}")
     peers := peers.push rid
   let isLarge := univOffset > 0
-  let mut generatedWithRules := generatedSnapshot
-  for h : gi in [0:flat.size] do
-    let member := flat[gi]
-    let recTyForMember := generatedWithRules[gi]!.ty
-    let mut rules : Array (RecRule m) := Array.mkEmpty member.ctors.size
-    for h2 : ci in [0:member.ctors.size] do
-      let ctorId := member.ctors[ci]
-      let ctorFields ← match (← TcM.getConst ctorId) with
-        | .ctor (fields := fields) .. => pure fields
-        | _ => throw (.other "populate_recursor_rules_from_block: ctor not found")
-      let rhs ← buildRuleRhs gi ci ctorId member flat peers recTyForMember
-        nParams64.toNat isLarge
-      rules := rules.push ⟨ctorId.name, ctorFields, rhs⟩
-    generatedWithRules := generatedWithRules.modify gi
-      fun g => { g with rules }
-  -- Store rules back.
-  let some cached := (← get).env.recursorCache[indBlockId]?
+  populateCompleteGeneratedRecursorRules flat peers nParams64.toNat isLarge 0
+    flat.size generatedSnapshot
+
+/-- Populate canonical rules from the recursor block's peers (block-level
+    recursor checking path). Verifies canonical alignment peer-by-peer via
+complete closed types and header metadata; a divergence is a hard error. Every successful run
+with an ingress cache entry transactionally restores its exact headers and
+types, including early returns after stateful lazy lookup, and installs only
+rules returned by the local construction path. -/
+def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
+    RecM m Unit := do
+  let some generatedSnapshot := (← get).env.recursorCache[indBlockId]?
     | return ()
-  if cached.size != generatedWithRules.size then
-    throw (.other s!"populate_recursor_rules_from_block: cache changed length: cached={cached.size} generated={generatedWithRules.size}")
-  let merged := cached.zipWith (fun dst src => { dst with rules := src.rules })
+  let generatedWithRules ←
+    populateRecursorRulesFromBlockCore indBlockId recBlockId generatedSnapshot
+  commitGeneratedRecursorRulesAt indBlockId generatedSnapshot
     generatedWithRules
-  modify fun s => { s with env := { s.env with
-    recursorCache := s.env.recursorCache.insert indBlockId merged } }
 
 -- ### Recursor checking
 
@@ -2235,6 +2783,18 @@ def gatherPeerMajors (recBlock : KId m) : RecM m (Array (KId m)) := do
       majors := majors.push major
   return sortedDedupIds majors
 
+/-- Check, in source order, that every physical block member is an inductive
+    declaration or one of its constructors.  The recursive seam is
+    operationally identical to the corresponding early-exit loop in Rust,
+    including lazy-ingress errors and the first unsupported-member stop. -/
+def inductiveBlockMembersAreSupported : List (KId m) → RecM m Bool
+  | [] => pure true
+  | member :: members => do
+      match (← TcM.tryGetConst member) with
+      | some (.indc ..) | some (.ctor ..) =>
+          inductiveBlockMembersAreSupported members
+      | _ => pure false
+
 /-- Block-coordinated inductive validation (inductive.rs `check_inductive`):
     pure inductive blocks route through `blockCheckResults`; anything else
     falls back to the member check. -/
@@ -2244,10 +2804,8 @@ def checkInductive (id : KId m) : RecM m Unit := do
     | _ => throw (.other "check_inductive: not an inductive")
   let some members ← TcM.tryGetBlock block
     | return (← checkInductiveMemberImpl id)
-  for member in members do
-    match (← TcM.tryGetConst member) with
-    | some (.indc ..) | some (.ctor ..) => pure ()
-    | _ => return (← checkInductiveMemberImpl id)
+  if !(← inductiveBlockMembersAreSupported members.toList) then
+    return (← checkInductiveMemberImpl id)
   if let some result := (← get).env.blockCheckResults[block]? then
     match result with
     | .ok () => return ()
@@ -2264,111 +2822,282 @@ def checkInductive (id : KId m) : RecM m Unit := do
   | .ok () => return ()
   | .error e => throw e
 
-/-- Validate a recursor against the generated canonical form (type def-eq +
-    per-rule field count and RHS def-eq), with signature-based aux
-    disambiguation. Every successful path compares both type and rules. -/
-def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
-  let (recBlock, ty, declaredK, declaredLvls, declaredIsUnsafe, params,
-      motives, minors, indices) ←
-    match (← TcM.getConst id) with
-    | .recr (block := block) (ty := ty) (k := k) (params := p)
-        (lvls := lvls) (isUnsafe := isUnsafe) (motives := mo)
-        (minors := mi) (indices := ix) .. =>
-      pure (block, ty, k, lvls, isUnsafe, p, mo, mi, ix)
-    | _ => throw (.other "check_recursor: not a recursor")
-  let skip ← checkedMetadataSum "recursor major index"
-    #[params, motives, minors, indices]
-  let indId ← getMajorInductiveId ty skip
-  -- Coherence gate: the major inductive must itself pass A1–A4.
-  if let some (.indc ..) ← TcM.tryGetConst indId then
-    checkInductive indId
-  let indBlock ← match (← TcM.tryGetConst indId) with
-    | some (.indc (block := block) ..) => pure (some block)
-    | _ => pure none
-  -- Direct block lookup needs enough motives (aux recursors overflow it).
-  let resolvedBlock? ← match indBlock with
-    | some ib =>
-      match (← get).env.recursorCache[ib]? with
-      | some cached =>
-        if cached.size.toUInt64 ≥ motives then pure (some ib) else pure none
-      | none => pure none
-    | none => pure none
-  let resolvedBlock ← match resolvedBlock? with
-    | some b => pure b
-    | none =>
-      let majorsKey ← gatherPeerMajors recBlock
-      match (← get).env.recMajorsCache[majorsKey]? with
-      | some blockId => pure blockId
-      | none =>
-        -- Generate from each peer major's block, then re-check.
-        for majorId in majorsKey do
-          if let some (.indc (block := block) ..) ← TcM.tryGetConst majorId then
-            if !(← get).env.recursorCache.contains block then
-              let _ ← try? (generateBlockRecursors block)
-        let majorsKey2 ← gatherPeerMajors recBlock
-        match (← get).env.recMajorsCache[majorsKey2]? with
-        | some blockId => pure blockId
-        | none => throw (.other "check_recursor: could not resolve inductive block")
-  -- S1: constructive K verification.
-  let computedK ← computeKTarget indId
-  if declaredK != computedK then
-    throw (.other s!"check_recursor: K-target mismatch: declared k={declaredK}, computed k={computedK}")
-  populateRecursorRulesFromBlock resolvedBlock recBlock
-  let some generated := (← get).env.recursorCache[resolvedBlock]?
-    | throw (.other "check_recursor: no generated recursors")
-  -- Signature-first selection (dedups aux recursors sharing a major head).
+/-- Compare every generated rule against the same-index rule from the frozen
+stored declaration. `fuel` is the remaining suffix length; callers establish
+the array-size equality before entering this loop. -/
+def checkGeneratedRecursorRules (generatedRules storedRules :
+    Array (RecRule m)) (index : Nat) : Nat → RecM m Unit
+  | 0 => pure ()
+  | fuel + 1 => do
+      let generatedRule := generatedRules[index]!
+      let storedRule := storedRules[index]!
+      if generatedRule.fields != storedRule.fields then
+        throw (.other s!"check_recursor: rule {index} field count mismatch: gen={generatedRule.fields} stored={storedRule.fields}")
+      if !(← isDefEq generatedRule.rhs storedRule.rhs) then
+        throw (.other s!"check_recursor: rule {index} RHS mismatch")
+      checkGeneratedRecursorRules generatedRules storedRules (index + 1) fuel
+
+/-- Exhaustively compare one selected generated entry with the complete
+stored recursor snapshot: all header arities, the type, the rule count, every
+field count, and every rule RHS. -/
+def checkGeneratedRecursorCandidate (ty : KExpr m)
+    (declaredLvls : UInt64) (declaredIsUnsafe : Bool)
+    (params motives minors indices : UInt64)
+    (storedRules : Array (RecRule m))
+    (generated : GeneratedRecursor m) : RecM m Unit := do
+  if declaredLvls != generated.lvls then
+    throw (.other s!"check_recursor: universe arity mismatch: stored={declaredLvls}, generated={generated.lvls}")
+  if declaredIsUnsafe != generated.isUnsafe then
+    throw (.other s!"check_recursor: safety mismatch: stored={declaredIsUnsafe}, generated={generated.isUnsafe}")
+  if params != generated.params || motives != generated.motives
+      || minors != generated.minors || indices != generated.indices then
+    throw (.other s!"check_recursor: arity metadata mismatch: stored=(params={params}, motives={motives}, minors={minors}, indices={indices}), generated=(params={generated.params}, motives={generated.motives}, minors={generated.minors}, indices={generated.indices})")
+  if !(← isDefEq generated.ty ty) then
+    throw (.other "check_recursor: type mismatch")
+  let generatedRules := generated.rules
+  if generatedRules.isEmpty && !storedRules.isEmpty then
+    -- C1: cannot verify stored rules against a missing canonical form.
+    throw (.other s!"check_recursor: rule generation failed, cannot verify {storedRules.size} stored rules")
+  else if !generatedRules.isEmpty && storedRules.isEmpty then
+    throw (.other s!"check_recursor: stored recursor has no rules (expected {generatedRules.size})")
+  else if generatedRules.size != storedRules.size then
+    throw (.other s!"check_recursor: rule count mismatch: gen={generatedRules.size} stored={storedRules.size}")
+  checkGeneratedRecursorRules generatedRules storedRules 0
+    generatedRules.size
+
+/-- One auditable full-type selection iteration.  Totalized array lookup makes
+the helper independently reusable by verification; production supplies
+exactly `List.range generated.size`. -/
+def generatedRecursorSelectionStep (ty : KExpr m)
+    (params motives minors : UInt64) (indId : KId m)
+    (generated : Array (GeneratedRecursor m)) (typeMatches : Array Nat)
+    (gi : Nat) : RecM m (Array Nat) := do
+  let some g := generated[gi]?
+    | return typeMatches
+  if g.indAddr != indId.addr || g.params != params ||
+      g.motives != motives || g.minors != minors then
+    return typeMatches
+  if ← isDefEq g.ty ty then
+    return typeMatches.push gi
+  return typeMatches
+
+/-- Compare the generated entry at the canonical stored block position with
+the frozen stored type.  A successful result is still justified by a complete
+closed-type comparison; the position only determines which candidate to try
+first. -/
+def selectGeneratedRecursorAtPosition (storedPos : Option Nat)
+    (ty : KExpr m) (params motives minors : UInt64) (indId : KId m)
+    (generated : Array (GeneratedRecursor m)) : RecM m (Option Nat) := do
+  let some index := storedPos
+    | return none
+  let some selected := generated[index]?
+    | return none
+  if selected.indAddr != indId.addr || selected.params != params ||
+      selected.motives != motives || selected.minors != minors then
+    return none
+  if ← isDefEq selected.ty ty then
+    return some index
+  return none
+
+/-- Collect every remaining metadata-compatible generated entry whose complete
+closed type is definitionally equal to the frozen stored type.  The explicit
+list fold exposes the precise fallback callback order to verification. -/
+def collectGeneratedRecursorTypeMatches (ty : KExpr m)
+    (params motives minors : UInt64) (indId : KId m)
+    (generated : Array (GeneratedRecursor m))
+    (skip : Option Nat) : RecM m (Array Nat) :=
+  ((List.range generated.size).filter fun index => some index != skip).foldlM
+    (generatedRecursorSelectionStep ty params motives minors indId generated)
+    #[]
+
+/-- Select the generated recursor corresponding to one frozen stored
+declaration. Complete recursor types are closed, unlike major domains peeled
+from under forall binders, so the stateful DefEq calls remain inside the
+top-level K2 translation context. Returning the index separately gives
+verification an exact boundary between selection and exhaustive comparison. -/
+def selectGeneratedRecursorIndex (recBlock id : KId m) (ty : KExpr m)
+    (params motives minors : UInt64) (indId : KId m)
+    (generated : Array (GeneratedRecursor m)) : RecM m (Option Nat) := do
+  -- Full-type selection disambiguates auxiliaries sharing a major head.  The
+  -- canonical block position is already established by the surrounding block
+  -- checks, so try it first without weakening the complete-type comparison.
   let storedPos := (← get).env.blocks[recBlock]?.bind
     (·.findIdx? (fun mem => mem == id))
-  let prefixSkip ← checkedMetadataSum "recursor params + motives + minors"
-    #[params, motives, minors]
-  let storedMajor ← recursorMajorDomainForAddr ty prefixSkip indId.addr
-  let mut signatureMatches : Array Nat := #[]
-  if let some storedMajorD := storedMajor then
-    for h : gi in [0:generated.size] do
-      let g := generated[gi]
-      if g.indAddr != indId.addr then
-        continue
-      if let some genMajor ← recursorMajorDomainForAddr g.ty prefixSkip
-          g.indAddr then
-        if ← majorDomainSignatureEq genMajor storedMajorD then
-          signatureMatches := signatureMatches.push gi
-  let selectedIdx :=
-    (storedPos.bind (fun p => signatureMatches.find? (· == p)))
-    <|> signatureMatches[0]?
-    <|> (storedPos.filter (· < generated.size))
-    <|> (generated.findIdx? (·.indAddr == indId.addr))
+  match ← selectGeneratedRecursorAtPosition storedPos ty params motives
+      minors indId generated with
+  | some selected => return some selected
+  | none =>
+    let typeMatches ← collectGeneratedRecursorTypeMatches ty params motives
+      minors indId generated storedPos
+    return typeMatches[0]?
+
+/-- Select from one frozen generated cache snapshot and exhaustively compare
+the selected entry with the complete frozen stored declaration. -/
+def checkGeneratedRecursorFromCache (recBlock id : KId m) (ty : KExpr m)
+    (declaredLvls : UInt64) (declaredIsUnsafe : Bool)
+    (params motives minors indices : UInt64) (indId : KId m)
+    (storedRules : Array (RecRule m))
+    (generated : Array (GeneratedRecursor m)) : RecM m Unit := do
+  let selectedIdx ← selectGeneratedRecursorIndex recBlock id ty params
+    motives minors indId generated
   match selectedIdx.bind (generated[·]?) with
-  | some g =>
-    if declaredLvls != g.lvls then
-      throw (.other s!"check_recursor: universe arity mismatch: stored={declaredLvls}, generated={g.lvls}")
-    if declaredIsUnsafe != g.isUnsafe then
-      throw (.other s!"check_recursor: safety mismatch: stored={declaredIsUnsafe}, generated={g.isUnsafe}")
-    if params != g.params || motives != g.motives || minors != g.minors
-        || indices != g.indices then
-      throw (.other s!"check_recursor: arity metadata mismatch: stored=(params={params}, motives={motives}, minors={minors}, indices={indices}), generated=(params={g.params}, motives={g.motives}, minors={g.minors}, indices={g.indices})")
-    if !(← isDefEq g.ty ty) then
-      throw (.other "check_recursor: type mismatch")
-    let genRules := g.rules
-    let storedRules ← match (← TcM.getConst id) with
-      | .recr (rules := rules) .. => pure rules
-      | _ => pure #[]
-    if genRules.isEmpty && !storedRules.isEmpty then
-      -- C1: cannot verify stored rules against a missing canonical form.
-      throw (.other s!"check_recursor: rule generation failed, cannot verify {storedRules.size} stored rules")
-    else if !genRules.isEmpty && storedRules.isEmpty then
-      throw (.other s!"check_recursor: stored recursor has no rules (expected {genRules.size})")
-    else if genRules.size != storedRules.size then
-      throw (.other s!"check_recursor: rule count mismatch: gen={genRules.size} stored={storedRules.size}")
-    for h : ri in [0:genRules.size] do
-      let genRule := genRules[ri]
-      let storedRule := storedRules[ri]!
-      if genRule.fields != storedRule.fields then
-        throw (.other s!"check_recursor: rule {ri} field count mismatch: gen={genRule.fields} stored={storedRule.fields}")
-      if !(← isDefEq genRule.rhs storedRule.rhs) then
-        throw (.other s!"check_recursor: rule {ri} RHS mismatch")
+  | some selected =>
+    checkGeneratedRecursorCandidate ty declaredLvls declaredIsUnsafe params
+      motives minors indices storedRules selected
   | none =>
     -- C2: no generated recursor — MUST NOT silently pass.
     throw (.other "check_recursor: no generated recursor for major")
+
+/-- Freeze the complete stored recursor declaration and validate the exact
+metadata sum used to locate its major argument.  This stage has no recursive
+method callback. -/
+def snapshotRecursorMemberDeclaration (id : KId m) :
+    RecM m (RecursorMemberDeclarationSnapshot m) := do
+  let (recBlock, ty, declaredK, declaredLvls, declaredIsUnsafe, params,
+      motives, minors, indices, storedRules) ←
+    match (← TcM.getConst id) with
+    | .recr (block := block) (ty := ty) (k := k) (params := p)
+        (lvls := lvls) (isUnsafe := isUnsafe) (motives := mo)
+        (minors := mi) (indices := ix) (rules := rules) .. =>
+      pure (block, ty, k, lvls, isUnsafe, p, mo, mi, ix, rules)
+    | _ => throw (.other "check_recursor: not a recursor")
+  let majorSkip ← checkedMetadataSum "recursor major index"
+    #[params, motives, minors, indices]
+  return {
+    recBlock
+    ty
+    declaredK
+    declaredLvls
+    declaredIsUnsafe
+    params
+    motives
+    minors
+    indices
+    storedRules
+    majorSkip
+  }
+
+/-- Discover the stored recursor's major owner and replay the inductive
+coherence gate before any generated-cache lookup is trusted. -/
+def validateRecursorMemberMajor
+    (snapshot : RecursorMemberDeclarationSnapshot m) : RecM m (KId m) := do
+  let indId ← getMajorInductiveId snapshot.ty snapshot.majorSkip
+  if let some (.indc ..) ← TcM.tryGetConst indId then
+    checkInductive indId
+  return indId
+
+/-- Read-only fast-path query for an already generated block belonging to the
+validated major.  Naming the query keeps its lazy lookup effects separate
+from the peer-major generation fallback. -/
+def findUsableGeneratedRecursorBlock
+    (snapshot : RecursorMemberDeclarationSnapshot m) (indId : KId m) :
+    RecM m (Option (KId m)) := do
+  let indBlock ← match (← TcM.tryGetConst indId) with
+    | some (.indc (block := block) ..) => pure (some block)
+    | _ => pure none
+  match indBlock with
+    | some ib =>
+      match (← get).env.recursorCache[ib]? with
+      | some cached =>
+        if cached.size.toUInt64 ≥ snapshot.motives then
+          pure (some ib)
+        else
+          pure none
+      | none => pure none
+    | none => pure none
+
+/-- Resolve the generated-recursor cache block for the validated major.  The
+fast path consumes an already large-enough cache entry; the fallback preserves
+production's peer-major lookup and on-demand block generation exactly. -/
+def resolveRecursorMemberBlock
+    (snapshot : RecursorMemberDeclarationSnapshot m) (indId : KId m) :
+    RecM m (KId m) := do
+  let resolvedBlock? ← findUsableGeneratedRecursorBlock snapshot indId
+  match resolvedBlock? with
+  | some block => pure block
+  | none =>
+    let majorsKey ← gatherPeerMajors snapshot.recBlock
+    match (← get).env.recMajorsCache[majorsKey]? with
+    | some blockId => pure blockId
+    | none =>
+      for majorId in majorsKey do
+        if let some (.indc (block := block) ..) ← TcM.tryGetConst majorId then
+          if !(← get).env.recursorCache.contains block then
+            let _ ← try? (generateBlockRecursors block)
+      let majorsKey2 ← gatherPeerMajors snapshot.recBlock
+      match (← get).env.recMajorsCache[majorsKey2]? with
+      | some blockId => pure blockId
+      | none =>
+        throw (.other
+          "check_recursor: could not resolve inductive block")
+
+/-- Compute and validate the constructive K flag for the already validated
+major.  Returning the computed bit retains the exact value passed to the
+checker handoff. -/
+def validateRecursorMemberKTarget
+    (snapshot : RecursorMemberDeclarationSnapshot m) (indId : KId m) :
+    RecM m Bool := do
+  let computedK ← computeKTarget indId
+  if snapshot.declaredK != computedK then
+    throw (.other s!"check_recursor: K-target mismatch: declared k={snapshot.declaredK}, computed k={computedK}")
+  return computedK
+
+/-- Freeze the generated batch only after transactional rule population has
+completed.  A missing target is a hard failure; the comparison tail never
+observes a live cache lookup. -/
+def snapshotGeneratedRecursors (resolvedBlock : KId m) :
+    RecM m (Array (GeneratedRecursor m)) := do
+  let some generated := (← get).env.recursorCache[resolvedBlock]?
+    | throw (.other "check_recursor: no generated recursors")
+  return generated
+
+/-- Run the stateful recursor-member prelude and return the exact frozen inputs
+to the final generated-artifact checker.  Successful preparation has already
+validated the major owner, inductive coherence, block resolution, the
+constructive K target, and the transactional generated-rule population. -/
+def prepareRecursorMemberCheck (id : KId m) :
+    RecM m (PreparedRecursorMemberCheck m) := do
+  let snapshot ← snapshotRecursorMemberDeclaration id
+  let indId ← validateRecursorMemberMajor snapshot
+  let resolvedBlock ← resolveRecursorMemberBlock snapshot indId
+  let computedK ← validateRecursorMemberKTarget snapshot indId
+  populateRecursorRulesFromBlock resolvedBlock snapshot.recBlock
+  let generated ← snapshotGeneratedRecursors resolvedBlock
+  return {
+    recBlock := snapshot.recBlock
+    ty := snapshot.ty
+    declaredK := snapshot.declaredK
+    declaredLvls := snapshot.declaredLvls
+    declaredIsUnsafe := snapshot.declaredIsUnsafe
+    params := snapshot.params
+    motives := snapshot.motives
+    minors := snapshot.minors
+    indices := snapshot.indices
+    storedRules := snapshot.storedRules
+    indId
+    resolvedBlock
+    computedK
+    generated
+  }
+
+/-- Consume one frozen preparation result through the exhaustive generated
+candidate checker.  This is deliberately a separate operation so verification
+can state the exact handoff between the stateful prelude and comparison tail. -/
+def checkPreparedRecursorMember (id : KId m)
+    (prepared : PreparedRecursorMemberCheck m) : RecM m Unit :=
+  checkGeneratedRecursorFromCache prepared.recBlock id prepared.ty
+    prepared.declaredLvls prepared.declaredIsUnsafe prepared.params
+    prepared.motives prepared.minors prepared.indices prepared.indId
+    prepared.storedRules prepared.generated
+
+/-- Validate a recursor against the generated canonical form (type def-eq +
+    per-rule field count and RHS def-eq), with full-type aux
+    disambiguation. Every successful path compares both type and rules. The
+    complete stored declaration is snapshotted before any stateful comparison,
+    so a callback cannot replace the rule array between type and rule checks. -/
+def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
+  let prepared ← prepareRecursorMemberCheck id
+  checkPreparedRecursorMember id prepared
 
 /-- Validate every recursor in a homogeneous recursor block. -/
 def checkRecursorBlockImpl (block : KId m)

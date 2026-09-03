@@ -228,8 +228,8 @@ def executeIxVMFull (toplevel : @& Bytecode.Toplevel)
     advice buffer (channel 0 = proof, 1 = vk, 2 = claims, key `[0]`
     each) is built natively in Rust from the raw byte blobs — no
     per-byte boxing into Lean `G`s, no buffer marshalling across FFI.
-    `proofAdviceBytes` is the expanded per-query transport returned by
-    `AiurSystem.proofToAdviceBytes`, not compact `Proof.toBytes` wire data.
+    `proofAdviceBytes` is the verified native proof transport returned by
+    `AiurSystem.proofToAdviceBytes`.
     `useBytecode` selects the generic Aiur bytecode interpreter over
     the codegen'd verifier (`crates/ixvm-codegen/src/aiur_multi_stark.rs`);
     as with `executeIxVM`, the codegen'd path is only valid when
@@ -261,8 +261,8 @@ opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
-/-- Native execution of the `ix_aggr` aggregation entrypoint. Expanded child
-proof advice (from `AiurSystem.proofToAdviceBytes`), claims, and the fixed
+/-- Native execution of the `ix_aggr` aggregation entrypoint. Serialized child
+proof transport (from `AiurSystem.proofToAdviceBytes`), claims, and the fixed
 vk/output/allowed blobs are passed without
 per-byte Lean field boxing; `preimagesBlob`, `treesBlob`, and `pathsBlob` use the compact
 count/key/length framing produced by `Aggr.preimagesBlob` and

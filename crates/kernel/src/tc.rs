@@ -877,7 +877,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       if crate::env_var("IX_REC_FUEL_DUMP").is_ok()
         && self.debug_label_matches_env()
       {
-        log::info!(
+        // The CLI and Lean test executable do not install a `log` backend.
+        // This diagnostic is explicitly opt-in, so send its compact record
+        // directly to stderr (the backtrace below stays behind `log`).
+        eprintln!(
           "[rec fuel] exhausted const={} depth={} def_eq_depth={} infer_only={} native_reduce={} eager_reduce={}",
           self.debug_label.as_deref().unwrap_or("<unknown>"),
           self.depth(),
@@ -1038,9 +1041,9 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
     let mut entries: Vec<_> = self.hot_misses.iter().collect();
     entries.sort_unstable_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    log::info!("[hot misses] top {}:", entries.len().min(25));
+    eprintln!("[hot misses] top {}:", entries.len().min(25));
     for (key, count) in entries.into_iter().take(25) {
-      log::info!("  {count:>8}  {key}");
+      eprintln!("  {count:>8}  {key}");
     }
   }
 }

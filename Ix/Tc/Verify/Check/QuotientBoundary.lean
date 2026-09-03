@@ -1,5 +1,5 @@
 import Ix.Tc.Verify.Check.BlockClassification
-import Ix.Tc.Verify.Check.QuotientAdmission
+import Ix.Tc.Verify.Check.QuotientBridge
 import Ix.Tc.Verify.Check.StandaloneDriver
 
 /-!
@@ -11,8 +11,8 @@ a physical block array, the production classifier rejects it at the exact
 member where it is observed.  The semantic catalog relation likewise has no
 coordinated quotient constructor.
 
-This keeps quotient acceptance as its own future theorem instead of granting
-it inductive-oracle or block-cache authority through E0.
+Quotient acceptance therefore uses the separate four-check atomic bridge; it
+never acquires inductive-oracle or block-cache authority through E0.
 -/
 
 namespace Ix.Tc

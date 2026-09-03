@@ -72,11 +72,21 @@ At revision `e92a44f518addd31e77a68b06ec8f9841c553b83`, validation established:
 The parallel native audit took 2.939 seconds, backend setup 174 milliseconds,
 and proof verification 51 milliseconds (3.23 seconds total wall time).
 
+## Protocol status
+
+This proof was produced with `multi-stark` revision `2892243e` and remains a
+record of the fully validated run above. The 2026-09-03 merge of
+`origin/main` at `76751119` moves Ix to `multi-stark` revision `a8aab731`,
+whose native pruned-multiproof protocol and verifying key are intentionally
+incompatible. The current backend rejects this historical wrapper with
+`InvalidProofShape`; accepting it would be a protocol-separation failure.
+
 The repository test deliberately does not commit the 3.33 GB environment or
-52.5 MB manifest. It pins the wrapper size, content address, decoded claim,
-absence of assumptions, and native verification under the current production
-backend. Repeating the full constant-coverage audit requires input artifacts
-matching the SHA-256 values above.
+52.5 MB manifest. It pins the wrapper size, content address, decoded claim and
+absence of assumptions. While `a8aab731` is current, it also pins rejection at
+the known protocol boundary. Repeating the full constant-coverage audit—or
+obtaining a proof that verifies under the current backend—requires input
+artifacts matching the SHA-256 values above and a new Stage 1 + Stage 2 run.
 
 ## Updating this fixture
 

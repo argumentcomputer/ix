@@ -105,8 +105,8 @@ def aggregateWrapRamBytes : Nat := aggregateLiftRamBytes
 lifts. Keep the conservative lift reserve until the real E2E calibration. -/
 def aggregateStructuralJoinRamBytes : Nat := aggregateLiftRamBytes
 
-/-- Native verification and forwarding of a raw shard proof in direct mode.
-The expensive proof-advice expansion is charged to its consuming pair. -/
+/-- Native verification and serialization of a raw shard proof in direct mode
+is charged to its consuming pair. -/
 def aggregateRawShardRamBytes : Nat := 4 * aggregateGiB
 
 /-- Measured upper envelope for an `IxVM + IxVM` pair (shapes 2/6). -/

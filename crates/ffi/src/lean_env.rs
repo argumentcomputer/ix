@@ -2775,11 +2775,14 @@ extern "C" fn rs_compile_validate_aux(
             expand_shares_expr(fun, sharing),
             expand_shares_expr(arg, sharing),
           ),
-          Expr::Lam(ty, body) => Expr::lam(
+          Expr::Lam(uses, ty, body) => Expr::lam_mode(
+            *uses,
             expand_shares_expr(ty, sharing),
             expand_shares_expr(body, sharing),
           ),
-          Expr::All(ty, body) => Expr::all(
+          Expr::All(uses, owned, ty, body) => Expr::all_mode(
+            *uses,
+            *owned,
             expand_shares_expr(ty, sharing),
             expand_shares_expr(body, sharing),
           ),
@@ -4359,7 +4362,7 @@ fn analyze_const_size(stt: &ix_compile::compile::CompileState, name_str: &str) {
   }
 
   // Sort by total size descending
-  dep_breakdowns.sort_by_key(|(_, b)| std::cmp::Reverse(b.total()));
+  dep_breakdowns.sort_by_key(|entry| std::cmp::Reverse(entry.1.total()));
 
   let total_deps_alpha: usize =
     dep_breakdowns.iter().map(|(_, b)| b.alpha_size).sum();
@@ -4563,7 +4566,7 @@ fn analyze_block_size_stats(stt: &ix_compile::compile::CompileState) {
     .collect();
 
   // Sort by overhead descending (most bloated first)
-  overheads.sort_by_key(|o| std::cmp::Reverse(o.1));
+  overheads.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
   // Compute statistics
   let avg_ratio = if total_hash_consed > 0 {

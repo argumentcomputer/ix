@@ -234,7 +234,7 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
     .map(|(i, m)| (i, m.len(), m.retained_elems()))
     .filter(|(_, n, _)| *n > 0)
     .collect();
-  rows.sort_by_key(|r| std::cmp::Reverse(r.2));
+  rows.sort_by_key(|row| std::cmp::Reverse(row.2));
   let total_entries: usize = rows.iter().map(|r| r.1).sum();
   let total_elems: usize = rows.iter().map(|r| r.2).sum();
   eprintln!(

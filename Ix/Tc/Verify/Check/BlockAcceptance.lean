@@ -10,12 +10,13 @@ be exact: every immutable member is admitted, no unrelated declaration is
 admitted, and the successful cache entry is installed only after temporary
 member authority has become stable trust.
 
-Inductive-family and recursor blocks are admitted here relative to the
-explicit `InductiveOracle`.  That oracle already describes one Theory-level
-block transaction; E2 must derive it from the production inductive checker.
-Definition admission is local, but Lean4Lean currently has no mutual-
-definition `VDecl`, so the constructive definition theorem below is
-deliberately restricted to production's singleton definition blocks.  A
+Legacy ambient inductive-family and recursor blocks may still be admitted
+relative to an explicit `InductiveOracle`. Certificate-backed paths instead
+use `SemanticBlockTransitionCertificate` for an exact Theory-environment
+extension or `ExistingSemanticBlockCertificate` for members already installed
+by that extension. Definition admission is local, but Lean4Lean currently has
+no mutual-definition `VDecl`, so the constructive definition theorem below is
+deliberately restricted to production's singleton definition blocks. A
 multi-definition block is not silently decomposed into independent claims.
 -/
 
@@ -104,6 +105,192 @@ theorem closeCacheSuccess
     h.accepted
 
 end AtomicBlockAdmission
+
+/-! ## Explicit semantic block transitions -/
+
+/-- An exact physical block whose certified semantic transaction advances the
+Theory environment to the explicitly named `afterVEnv` and supplies complete
+consumer-facing provenance for every physical member there.
+
+Unlike `InductiveOracle`, this certificate does not existentially select a
+future world and carries no ambient member predicate: its post-environment and
+member array are fixed by the theorem statement. -/
+structure SemanticBlockTransitionCertificate (trProj : RawProjRel)
+    (world : VerifyWorld) (block : KId .anon)
+    (members : Array (KId .anon)) (kind : CheckBlockKind)
+    (afterVEnv : Lean4Lean.VEnv) : Prop where
+  exactBlock : ExactCheckBlock world block members kind
+  fresh : ∀ ⦃id⦄, id ∈ members → ¬world.trusted id
+  envLE : world.venv ≤ afterVEnv
+  afterWF : afterVEnv.WF
+  entry : ∀ ⦃id⦄, id ∈ members →
+    TrustedCatalogEntry trProj world.catalog world.nameOf afterVEnv id
+
+namespace SemanticBlockTransitionCertificate
+
+/-- Materialize the explicitly indexed semantic block transition while
+preserving all immutable ghost inputs. -/
+def admittedWorld {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind} {afterVEnv : Lean4Lean.VEnv}
+    (certificate : SemanticBlockTransitionCertificate trProj world block
+      members kind afterVEnv) : VerifyWorld where
+  catalog := world.catalog
+  blocks := world.blocks
+  trusted := fun id => id ∈ members ∨ world.trusted id
+  venv := afterVEnv
+  nameOf := world.nameOf
+  venvWF := certificate.afterWF
+  trustedCatalogued := by
+    intro id htrusted
+    change id ∈ members ∨ world.trusted id at htrusted
+    rcases htrusted with hmember | hold
+    · obtain ⟨concrete, _, _, hcatalog, _, _⟩ :=
+        (certificate.entry hmember).lookup
+      exact ⟨concrete, hcatalog⟩
+    · exact world.trustedCatalogued hold
+
+/-- The explicit semantic transaction is a monotone world extension. -/
+theorem le_admittedWorld {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind} {afterVEnv : Lean4Lean.VEnv}
+    (certificate : SemanticBlockTransitionCertificate trProj world block
+      members kind afterVEnv) :
+    world ≤ certificate.admittedWorld :=
+  ⟨rfl, rfl, rfl, fun {_} hold => Or.inr hold, certificate.envLE⟩
+
+/-- Commit the exact physical block using the explicit semantic transition
+and its per-member provenance. -/
+theorem admit {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind} {afterVEnv : Lean4Lean.VEnv}
+    (certificate : SemanticBlockTransitionCertificate trProj world block
+      members kind afterVEnv)
+    (hrel : TrustedCatalogRel trProj world) :
+    AtomicBlockAdmission trProj world certificate.admittedWorld block members
+      kind := by
+  refine ⟨certificate.exactBlock, ?_, ?_⟩
+  · refine ⟨certificate.le_admittedWorld, ?_⟩
+    intro id
+    rfl
+  · exact TrustedCatalogLog.semanticBlock hrel certificate.envLE
+      certificate.afterWF certificate.entry
+
+/-- Rebase an unchanged concrete block state across the explicit ghost
+semantic transition. -/
+theorem admitState {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind} {afterVEnv : Lean4Lean.VEnv}
+    {state : TcState .anon}
+    (certificate : SemanticBlockTransitionCertificate trProj world block
+      members kind afterVEnv)
+    (hstate : BlockStateWF trProj state world) :
+    AtomicBlockAdmission trProj world certificate.admittedWorld block members
+        kind ∧
+      BlockStateWF trProj state certificate.admittedWorld := by
+  let admission := certificate.admit hstate.core.trustedCatalog
+  refine ⟨admission, ?_⟩
+  apply hstate.rebaseWorld admission.promotion.le
+  exact
+    { trustedCatalog := admission.trustedCatalog
+      loaded := (LoadedAgrees.world_iff admission.promotion.le).mp
+        hstate.core.loaded
+      intern := hstate.core.intern }
+
+end SemanticBlockTransitionCertificate
+
+/-! ## Existing semantic blocks -/
+
+/-- A physical block whose complete semantic entries are already installed in
+the current Theory environment.  This is distinct from `InductiveOracle`: it
+does not choose a future environment or assert an ambient block transaction.
+Every exact physical member must instead provide the same per-constant,
+per-rule, and per-pattern provenance consumed by trusted lookups.
+
+The important generated-recursor use case is deliberately two-phase.
+Lean4Lean's certified family transaction has already installed the generated
+recursor and equations in `world.venv`; the separate Ix recursor block remains
+untrusted until its production comparison succeeds. -/
+structure ExistingSemanticBlockCertificate (trProj : RawProjRel)
+    (world : VerifyWorld) (block : KId .anon)
+    (members : Array (KId .anon)) (kind : CheckBlockKind) : Prop where
+  exactBlock : ExactCheckBlock world block members kind
+  fresh : ∀ ⦃id⦄, id ∈ members → ¬world.trusted id
+  entry : ∀ ⦃id⦄, id ∈ members →
+    TrustedCatalogEntry trProj world.catalog world.nameOf world.venv id
+
+namespace ExistingSemanticBlockCertificate
+
+/-- Trust exactly the already-installed semantic members while preserving
+the immutable catalog, block table, naming interpretation, and Theory
+environment. -/
+def admittedWorld {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind}
+    (certificate : ExistingSemanticBlockCertificate trProj world block
+      members kind) : VerifyWorld where
+  catalog := world.catalog
+  blocks := world.blocks
+  trusted := fun id => id ∈ members ∨ world.trusted id
+  venv := world.venv
+  nameOf := world.nameOf
+  venvWF := world.venvWF
+  trustedCatalogued := by
+    intro id htrusted
+    change id ∈ members ∨ world.trusted id at htrusted
+    rcases htrusted with hmember | hold
+    · obtain ⟨concrete, _, _, hcatalog, _, _⟩ :=
+        (certificate.entry hmember).lookup
+      exact ⟨concrete, hcatalog⟩
+    · exact world.trustedCatalogued hold
+
+/-- Admitting an existing semantic block is a world extension with no Theory
+environment growth. -/
+theorem le_admittedWorld {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind}
+    (certificate : ExistingSemanticBlockCertificate trProj world block
+      members kind) :
+    world ≤ certificate.admittedWorld :=
+  ⟨rfl, rfl, rfl, fun {_} hold => Or.inr hold, Lean4Lean.VEnv.LE.rfl⟩
+
+/-- Commit the exact physical block using only its already-installed semantic
+entries.  No `InductiveOracle` is constructed or consumed. -/
+theorem admit {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind}
+    (certificate : ExistingSemanticBlockCertificate trProj world block
+      members kind)
+    (hrel : TrustedCatalogRel trProj world) :
+    AtomicBlockAdmission trProj world certificate.admittedWorld block members
+      kind := by
+  refine ⟨certificate.exactBlock, ?_, ?_⟩
+  · refine ⟨certificate.le_admittedWorld, ?_⟩
+    intro id
+    rfl
+  · exact TrustedCatalogLog.existingBlock hrel certificate.entry
+
+/-- Rebase an unchanged concrete block state across the ghost-only existing
+semantic admission. -/
+theorem admitState {trProj : RawProjRel} {world : VerifyWorld}
+    {block : KId .anon} {members : Array (KId .anon)}
+    {kind : CheckBlockKind} {state : TcState .anon}
+    (certificate : ExistingSemanticBlockCertificate trProj world block
+      members kind)
+    (hstate : BlockStateWF trProj state world) :
+    AtomicBlockAdmission trProj world certificate.admittedWorld block members
+        kind ∧
+      BlockStateWF trProj state certificate.admittedWorld := by
+  let admission := certificate.admit hstate.core.trustedCatalog
+  refine ⟨admission, ?_⟩
+  apply hstate.rebaseWorld admission.promotion.le
+  exact
+    { trustedCatalog := admission.trustedCatalog
+      loaded := (LoadedAgrees.world_iff admission.promotion.le).mp
+        hstate.core.loaded
+      intern := hstate.core.intern }
+
+end ExistingSemanticBlockCertificate
 
 /-! ## Oracle-backed inductive and recursor blocks -/
 

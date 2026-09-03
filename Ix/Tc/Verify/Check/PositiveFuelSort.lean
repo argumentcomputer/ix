@@ -139,7 +139,7 @@ def scopedInitialState : TcState .anon :=
     fuelBudget := 1 }
 
 theorem scopedInitialState_closed : ClosedContextState scopedInitialState := by
-  constructor <;> rfl
+  exact ⟨rfl, rfl, rfl, rfl, LocalContext.WF.empty, rfl⟩
 
 theorem scopedInitialState_core :
     TcStateWF RawProjRel.none scopedInitialState VerifyWorld.empty := by

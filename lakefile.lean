@@ -7,13 +7,15 @@ package ix where
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
 
-/- Blake3's `blake3_rs_shared` target builds `blake3-rs` as a `cdylib`
-alongside the staticlib. `ix_native_decide_dynlib` fetches it to supply the
-BLAKE3 backend to Lean's native evaluator, and that dynlib gates every
-`IxTcVerify` module, so this pin must stay at or after the revision that
-introduced the target. -/
+/- Blake3 precompiles its libraries, so Lake loads their shared objects -- which
+bundle the C and Rust FFI objects -- into any process elaborating a module that
+imports them. That is what supplies the BLAKE3 backend to Lean's native evaluator
+for the `native_decide` proofs in `IxTcVerify`, so this pin must stay at or after
+the revision that turned precompilation on. Before it, Blake3 exposed a
+`blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
+that target no longer exists. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "e6e908bfd3af607ab44fb462fa2276a2c81addba"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "2db8f692ed94f7c4a993527008b8c5231b169709"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
@@ -238,29 +240,20 @@ opaque `@[extern]` it reaches, both symbol layers must be loadable up front:
 * the raw Rust symbol it forwards to, taken from that crate's `cdylib`, recorded
   by absolute path so no `LD_LIBRARY_PATH` is needed.
 
-Covered externs: `Blake3.Rust` hashing (with the `Blake3` base module, which
-holds the `HasherOps.hash` orchestration `Address.blake3` calls) against
-`blake3_rs`, and `Ix.Unsigned.toLEBytes` against `ix-ffi-dyn`. -/
+Covers Ix's own externs only -- currently `Ix.Unsigned.toLEBytes` against
+`ix-ffi-dyn`. Blake3's are not here: that package precompiles its libraries, so
+Lake loads their shared objects into the elaborating process by itself. -/
 target ix_native_decide_dynlib pkg : Dynlib := do
-  let some blake3Base ← findModule? `Blake3
-    | error "module `Blake3` not found; is the Blake3 dependency available?"
-  let some blake3Rust ← findModule? `Blake3.Rust
-    | error "module `Blake3.Rust` not found; is the Blake3 dependency available?"
   let some ixUnsigned ← findModule? `Ix.Unsigned
     | error "module `Ix.Unsigned` not found"
-  -- Raw symbols come from each crate's cdylib, recorded by path, and are built
-  -- by fetching the owning package's target (no direct cargo calls here):
-  -- Blake3 via its `blake3_rs_shared`, Ix via the minimal `ix_ffi_dyn`.
-  let blake3Cdylib := (← blake3Rust.pkg.fetchTargetJob `blake3_rs_shared).map fun _ =>
-    blake3Rust.pkg.dir / "rust" / "target" / "release" / nameToSharedLib "blake3_rs"
+  -- Raw symbols come from the crate's cdylib, recorded by path, and are built
+  -- by fetching the owning target (no direct cargo calls here).
   let ixCdylib ← ix_ffi_dyn.fetch
-  -- Boxed entry points are Lean's own generated objects for the declaring modules.
-  let mut boxedObjs := #[]
-  for mod in #[blake3Base, blake3Rust, ixUnsigned] do
-    boxedObjs := boxedObjs ++ (← (mod.nativeFacets true).mapM (·.fetch mod))
+  -- Boxed entry points are Lean's own generated objects for the declaring module.
+  let boxedObjs ← (ixUnsigned.nativeFacets true).mapM (·.fetch ixUnsigned)
   buildSharedLib "ix_native_decide"
     (pkg.buildDir / nameToSharedLib "ix_native_decide")
-    (boxedObjs.push blake3Cdylib |>.push ixCdylib) #[]
+    (boxedObjs.push ixCdylib) #[]
 
 /- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
 Non-default: `lake build ix` never
@@ -271,7 +264,8 @@ no local `sorry` tokens. Required CI builds it separately without `--wfail`,
 audits the exact local sorry frontier, and checks exact per-root transitive
 axiom plus direct-`sorryAx`-origin manifests. Dev loop:
 `lake build IxTcVerify`; focused trust audit:
-`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements`. -/
+`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional
+Ix.Tc.Verify.Audit.Statements`. -/
 lean_lib IxTcVerify where
   globs := #[.submodules `Ix.Tc.Verify]
   -- `supportInterpreter` is a `lean_exe` option and takes effect only when
@@ -281,6 +275,17 @@ lean_lib IxTcVerify where
   dynlibs := #[ix_native_decide_dynlib]
 
 end IxTcVerify
+
+section IxCompileVerify
+
+/- Formal verification of the Lean-to-Ixon compiler against the same
+Lean4Lean Theory endpoint as `IxTcVerify`.  Kept as a separate non-default
+library so compiler proofs cannot accidentally inherit checker acceptance
+theorems as their specification. -/
+lean_lib IxCompileVerify where
+  globs := #[.submodules `Ix.Compile.Verify]
+
+end IxCompileVerify
 
 section IxApplications
 

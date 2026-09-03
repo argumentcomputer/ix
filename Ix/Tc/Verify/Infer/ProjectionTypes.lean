@@ -113,7 +113,7 @@ def DeclarationOracle (trProj : RawProjRel) (world : VerifyWorld)
       {ctorId : KId .anon} {ctor : KConst .anon},
     world.nameOf structId.addr = some structName →
     TrKExprS world.venv uvars world.nameOf trProj Delta val valV →
-    trProj Delta.toCtx structName field.toNat valV projectedV →
+    trProj uvars Delta.toCtx structName field.toNat valV projectedV →
     world.venv.HasType uvars Delta.toCtx valV valTyV →
     world.venv.IsDefEqU uvars Delta.toCtx valTyV reducedTyV →
     RecM.TrAppSpine world.venv uvars world.nameOf trProj Delta
@@ -144,7 +144,7 @@ def WF (semantics : CacheSemantics) (trProj : RawProjRel)
       {valV projectedV : Lean4Lean.VExpr} {structName : Lean.Name},
     world.nameOf structId.addr = some structName →
     TrKExprS world.venv uvars world.nameOf trProj Delta val valV →
-    trProj Delta.toCtx structName field.toNat valV projectedV →
+    trProj uvars Delta.toCtx structName field.toNat valV projectedV →
     support valTy →
     InferPost trProj world uvars Delta valV valTy →
     RecM.WF .noAccel semantics trProj world support uvars Delta s
@@ -207,7 +207,7 @@ theorem inferProj_wf
       uvars)
     (hname : world.nameOf structId.addr = some structName)
     (hval : TrKExprS world.venv uvars world.nameOf trProj Delta val valV)
-    (hproj : trProj Delta.toCtx structName field.toNat valV projectedV)
+    (hproj : trProj uvars Delta.toCtx structName field.toNat valV projectedV)
     (hvalTySupport : support valTy)
     (hvalTy : InferPost trProj world uvars Delta valV valTy) :
     RecM.WF .noAccel semantics trProj world support uvars Delta s

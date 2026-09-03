@@ -70,8 +70,8 @@ def envA : Ixon.Env × Address := storeConst {} axiomA
 /-- `idA : A → A := fun a => a`, referencing `A` via refs[0]. -/
 def defnIdA (aAddr : Address) : Ixon.Constant :=
   ⟨.defn ⟨.defn, .safe, 0,
-    .all (.ref 0 #[]) (.ref 0 #[]),
-    .lam (.ref 0 #[]) (.var 0)⟩,
+    .leanAll (.ref 0 #[]) (.ref 0 #[]),
+    .leanLam (.ref 0 #[]) (.var 0)⟩,
    #[], #[aAddr], #[]⟩
 
 /-- Environment: `A`, `idA`. -/
@@ -105,7 +105,7 @@ def envShare : Ixon.Env × Address := Id.run do
   let (env, aAddr) := envA
   let c : Ixon.Constant :=
     ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], .app (.share 0) (.share 0)⟩,
-     #[.lam (.ref 0 #[]) (.var 0)], #[aAddr], #[]⟩
+     #[.leanLam (.ref 0 #[]) (.var 0)], #[aAddr], #[]⟩
   let (env, cAddr) := storeConst env c
   return (env, cAddr)
 

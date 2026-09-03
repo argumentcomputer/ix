@@ -137,44 +137,81 @@ inductive Ix.QuotKind where
 
 namespace List
 
-partial def mergeM [Monad μ] (cmp : α → α → μ Ordering) : List α → List α → μ (List α)
-  | as@(a::as'), bs@(b::bs') => do
+def mergeM [Monad μ] (cmp : α → α → μ Ordering) :
+    (as : List α) → (bs : List α) → μ (List α)
+  | a::as, b::bs => do
     if (← cmp a b) == Ordering.gt
-    then List.cons b <$> mergeM cmp as bs'
-    else List.cons a <$> mergeM cmp as' bs
+    then
+      let merged ← mergeM cmp (a::as) bs
+      pure (b :: merged)
+    else
+      let merged ← mergeM cmp as (b::bs)
+      pure (a :: merged)
   | [], bs => return bs
   | as, [] => return as
+termination_by as bs => as.length + bs.length
+decreasing_by all_goals simp_wf
 
 def mergePairsM [Monad μ] (cmp: α → α → μ Ordering) : List (List α) → μ (List (List α))
-  | a::b::xs => List.cons <$> (mergeM cmp a b) <*> mergePairsM cmp xs
+  | a::b::xs => do
+    let merged ← mergeM cmp a b
+    let rest ← mergePairsM cmp xs
+    pure (merged :: rest)
   | xs => return xs
 
-partial def mergeAllM [Monad μ] (cmp: α → α → μ Ordering) : List (List α) → μ (List α)
-  | [x] => return x
-  | xs => mergePairsM cmp xs >>= mergeAllM cmp
+/-- Fuelled merge-round driver. `List.length` rounds are ample for every
+nonempty run list; the zero case also makes the formerly divergent empty
+input total while preserving all elements. -/
+def mergeAllMFuel [Monad μ] (cmp : α → α → μ Ordering) :
+    Nat → List (List α) → μ (List α)
+  | 0, xs => return xs.flatten
+  | _ + 1, [x] => return x
+  | fuel + 1, xs => mergePairsM cmp xs >>= mergeAllMFuel cmp fuel
+
+def mergeAllM [Monad μ] (cmp : α → α → μ Ordering)
+    (xs : List (List α)) : μ (List α) :=
+  mergeAllMFuel cmp xs.length xs
 
 mutual
-  partial def sequencesM [Monad μ] (cmp : α → α → μ Ordering) : List α → μ (List (List α))
+  def sequencesM [Monad μ] (cmp : α → α → μ Ordering) :
+      (xs : List α) → μ (List (List α))
     | a::b::xs => do
       if (← cmp a b) == .gt
       then descendingM cmp b [a] xs
       else ascendingM cmp b (fun ys => a :: ys) xs
     | xs => return [xs]
+  termination_by xs => 2 * xs.length
+  decreasing_by all_goals (simp_wf <;> omega)
 
-  partial def descendingM [Monad μ] (cmp : α → α → μ Ordering) (a : α) (as : List α) : List α → μ (List (List α))
+  def descendingM [Monad μ] (cmp : α → α → μ Ordering)
+      (a : α) (as : List α) :
+      (xs : List α) → μ (List (List α))
     | b::bs => do
       if (← cmp a b) == .gt
       then descendingM cmp b (a::as) bs
-      else List.cons (a::as) <$> sequencesM cmp (b::bs)
-    | [] => List.cons (a::as) <$> sequencesM cmp []
+      else
+        let rest ← sequencesM cmp (b::bs)
+        pure ((a::as) :: rest)
+    | [] => do
+      let rest ← sequencesM cmp []
+      pure ((a::as) :: rest)
+  termination_by xs => 2 * xs.length + 1
+  decreasing_by all_goals (simp_wf <;> omega)
 
-  partial def ascendingM [Monad μ] (cmp : α → α → μ Ordering) (a : α) (as : List α → List α) : List α → μ (List (List α))
+  def ascendingM [Monad μ] (cmp : α → α → μ Ordering)
+      (a : α) (as : List α → List α) :
+      (xs : List α) → μ (List (List α))
     | b::bs => do
       if (← cmp a b) != .gt
       then ascendingM cmp b (fun ys => as (a :: ys)) bs
-      else List.cons (as [a]) <$> sequencesM cmp (b::bs)
-    | [] => List.cons (as [a]) <$> sequencesM cmp []
-
+      else
+        let rest ← sequencesM cmp (b::bs)
+        pure (as [a] :: rest)
+    | [] => do
+      let rest ← sequencesM cmp []
+      pure (as [a] :: rest)
+  termination_by xs => 2 * xs.length + 1
+  decreasing_by all_goals (simp_wf <;> omega)
 end
 
 def sortByM [Monad μ] (xs: List α) (cmp: α -> α -> μ Ordering) : μ (List α) :=

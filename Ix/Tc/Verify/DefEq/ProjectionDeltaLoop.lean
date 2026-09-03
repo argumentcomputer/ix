@@ -58,7 +58,7 @@ def TryProjReduce.WFAt (layer : WhnfLayer) (semantics : CacheSemantics)
     support source →
     TrKExprS world.venv uvars world.nameOf trProj Delta source sourceV →
     world.nameOf id.addr = some structName →
-    trProj Delta.toCtx structName field.toNat sourceV projectedV →
+    trProj uvars Delta.toCtx structName field.toNat sourceV projectedV →
     RecM.WF layer semantics trProj world support uvars Delta state
       (tryProjReduce id field source)
       (fun result _ => match result with

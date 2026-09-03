@@ -165,14 +165,16 @@ raw binder/let context to the `KVLCtx` Theory context.  It is explicit because
 `RawProjRel` is abstract; closure, typing, or uniqueness alone cannot imply
 this representation law. -/
 def SubstCompatible (trProj : RawProjRel) : Prop :=
-  forall {ctx : List VExpr} {Delta : KVLCtx} {sigma : VExpr.Subst}
+  forall {uvars : Nat} {ctx : List VExpr} {Delta : KVLCtx}
+      {sigma : VExpr.Subst}
       {name : Lean.Name} {field : Nat} {value result : VExpr},
     RawCtxInterp ctx Delta sigma ->
-    trProj ctx name field value result ->
-    trProj Delta.toCtx name field (value.subst sigma) (result.subst sigma)
+    trProj uvars ctx name field value result ->
+    trProj uvars Delta.toCtx name field
+      (value.subst sigma) (result.subst sigma)
 
 theorem none_substCompatible : SubstCompatible RawProjRel.none := by
-  intro ctx Delta sigma name field value result hctx hprojection
+  intro uvars ctx Delta sigma name field value result hctx hprojection
   exact False.elim hprojection
 
 end RawProjRel
@@ -198,7 +200,7 @@ theorem toPre_of_scoped_aux
     (hliterals : forall literal, env.ContainsLits literal)
     {ctx : List VExpr} {Delta : KVLCtx} {sigma : VExpr.Subst}
     {depth : UInt64} {source : KExpr .anon} {sourceV : VExpr}
-    (hraw : RawExprRel env nameOf trProj ctx source sourceV)
+    (hraw : RawExprRel (uvars := uvars) env nameOf trProj ctx source sourceV)
     (hctx : RawCtxInterp ctx Delta sigma)
     (hdepth : depth.toNat = ctx.length)
     (hscoped : source.Scoped depth uvars)
@@ -285,7 +287,7 @@ theorem toPre_of_scoped
     (hprojection : trProj.SubstCompatible)
     (hliterals : forall literal, env.ContainsLits literal)
     {source : KExpr .anon} {sourceV : VExpr}
-    (hraw : RawExprRel env nameOf trProj [] source sourceV)
+    (hraw : RawExprRel (uvars := uvars) env nameOf trProj [] source sourceV)
     (hscoped : source.Scoped 0 uvars)
     (hbound : source.size < UInt64.size) :
     PreTrKExprS env uvars nameOf trProj [] source sourceV := by
@@ -300,7 +302,7 @@ theorem toPreBinderCore_of_scoped_aux
     {nameOf : Address -> Option Lean.Name} {trProj : RawProjRel}
     {ctx : List VExpr} {Delta : KVLCtx} {sigma : VExpr.Subst}
     {depth : UInt64} {source : KExpr .anon} {sourceV : VExpr}
-    (hraw : RawExprRel env nameOf trProj ctx source sourceV)
+    (hraw : RawExprRel (uvars := uvars) env nameOf trProj ctx source sourceV)
     (hcore : source.binderCore = true)
     (hctx : RawCtxInterp ctx Delta sigma)
     (hdepth : depth.toNat = ctx.length)
@@ -368,7 +370,7 @@ theorem toPreBinderCore_of_scoped
     {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address -> Option Lean.Name} {trProj : RawProjRel}
     {source : KExpr .anon} {sourceV : VExpr}
-    (hraw : RawExprRel env nameOf trProj [] source sourceV)
+    (hraw : RawExprRel (uvars := uvars) env nameOf trProj [] source sourceV)
     (hcore : source.binderCore = true)
     (hscoped : source.Scoped 0 uvars)
     (hbound : source.size < UInt64.size) :

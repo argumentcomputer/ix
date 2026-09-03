@@ -981,7 +981,7 @@ theorem warmProvenanceNat :
     · have hid := supportExpr_references href
       subst id
       exact nat_trusted
-  · intro source hsource haddr Δ hctx
+  · intro source hsource haddr Δ hctx _hscoped
     change source = supportExpr at hsource
     subst source
     have hΔ : Δ = [] := by
@@ -1179,6 +1179,7 @@ theorem warmHit_whnfMeaning (prims : Primitives .anon) :
     WhnfMeaning RawProjRel.none worldGood 0 [] supportExpr supportExpr := by
   exact ((warmKernelStateWF prims).cacheHit warmEnv_hit).whnfMeaningOfMatches
     .whnf rfl (warmKey_matches prims)
+      (by simp [KExpr.ContextScoped, KExpr.VarsScoped, supportExpr])
 
 /-- Even though the bad declaration is physically loaded, the stable warm
 cache cannot cite it as a semantic dependency. -/
@@ -3646,7 +3647,7 @@ private theorem coreCacheWhnfValid (kind : ExprCacheKind)
       CacheSemantics.blockErrorsOnly (CacheAuthority.stable worldGood)
       coreCacheSupport (.expr kind coreCacheKey betaArg) := by
   rcases hkind with rfl | rfl <;>
-    intro source hsource haddr Δ hctx
+    intro source hsource haddr Δ hctx _hscoped
   all_goals
     change source = betaSource ∨ source = betaArg at hsource
     rcases hsource with rfl | rfl
@@ -3816,7 +3817,8 @@ theorem fullCoreWarmAcceptance (prims : Primitives .anon) :
       (betaTransientFalse (fullCoreWarmState prims))
       (fullCoreWarm_hit prims) (fullCoreWarmStateInv prims) (.inl rfl)
       (coreCacheKey_matches (fullCoreWarmState prims)
-        (fullCoreWarmStateInv prims).2.1))
+        (fullCoreWarmStateInv prims).2.1)
+      structuralBetaSource_tr.contextScoped)
 
 /-- A full-policy entry is intentionally invisible to the cheap policy.  The
 cheap call therefore runs its own trace and inserts into only its partition. -/
@@ -3854,7 +3856,8 @@ theorem cheapCoreWarmAcceptance (prims : Primitives .anon) :
       (betaTransientFalse (bothCoreWarmState prims))
       (bothCoreWarm_cheapHit prims) (bothCoreWarmStateInv prims) (.inl rfl)
       (coreCacheKey_matches (bothCoreWarmState prims)
-        (bothCoreWarmStateInv prims).2.1))
+        (bothCoreWarmStateInv prims).2.1)
+      structuralBetaSource_tr.contextScoped)
 
 /-- Direct adversarial observation of the flag partition after only the full
 call has warmed its map. -/
@@ -4376,7 +4379,7 @@ private theorem driverCacheWhnfValid (kind : ExprCacheKind)
       CacheSemantics.blockErrorsOnly (CacheAuthority.stable worldGood)
       coreCacheSupport (.expr kind coreCacheKey betaArg) := by
   rcases hkind with rfl | rfl | rfl <;>
-    intro source hsource haddr Δ hctx
+    intro source hsource haddr Δ hctx _hscoped
   all_goals
     change source = betaSource ∨ source = betaArg at hsource
     rcases hsource with rfl | rfl
@@ -4474,7 +4477,8 @@ theorem fullNoDeltaWarmAcceptance (prims : Primitives .anon) :
       (betaTransientFalse (fullNoDeltaWarmState prims))
       (fullNoDeltaWarm_hit prims) (fullNoDeltaWarmStateInv prims) (.inl rfl)
       (coreCacheKey_matches (fullNoDeltaWarmState prims)
-        (fullNoDeltaWarmStateInv prims).2.1))
+        (fullNoDeltaWarmStateInv prims).2.1)
+      structuralBetaSource_tr.contextScoped)
 
 theorem noDeltaCachePolicyIsolation (prims : Primitives .anon) :
     (fullNoDeltaWarmState prims).env.whnfNoDeltaCache[coreCacheKey]? =
@@ -4798,7 +4802,8 @@ theorem fullWhnfWarmAcceptance (prims : Primitives .anon) :
       (betaTransientFalse (fullWhnfWarmState prims))
       (fullWhnfWarm_hit prims) (fullWhnfWarmStateInv prims) (.inl rfl)
       (coreCacheKey_matches (fullWhnfWarmState prims)
-        (fullWhnfWarmStateInv prims).2.1))
+        (fullWhnfWarmStateInv prims).2.1)
+      structuralBetaSource_tr.contextScoped)
 
 /-- The cold outer miss consumes exactly one unit; cache insertion and the
 subsequent warm hit consume none. -/
@@ -5139,7 +5144,7 @@ namespace ProjectionFallback
 def projectionName : Lean.Name := `Ix.Tc.Verify.projectionFallback
 
 def projectionRel : RawProjRel :=
-  fun _ _ _ value result => result = value
+  fun _ _ _ _ value result => result = value
 
 theorem projectionRel_ok :
     TrProjOK Lean4Lean.VEnv.empty 0 projectionRel := by
@@ -5149,11 +5154,12 @@ theorem projectionRel_ok :
     wf := ?_
     uniq := ?_
     defeqDFC := ?_
-    instL := ?_ }
+    instL := ?_
+    monoU := ?_ }
   · intro Γ Γ' n k s i e e' hlift hrel
     subst e'
     rfl
-  · intro Γ₀ e₀ A₀ k Γ₁ Γ s i e e' hinst hrel
+  · intro Γ₀ e₀ A₀ k Γ₁ Γ s i e e' htype hinst hrel
     subst e'
     rfl
   · intro Γ s i e e' hrel hwf
@@ -5166,7 +5172,10 @@ theorem projectionRel_ok :
   · intro Γ₁ Γ₂ s i e₁ e₂ e' hctx hdefeq hrel
     subst e'
     exact ⟨e₂, rfl⟩
-  · intro U' ls Γ s i e e' hlevels hrel
+  · intro U U' ls Γ s i e e' hlevels hrel
+    subst e'
+    rfl
+  · intro U U' Γ s i e e' hle hctx hrel
     subst e'
     rfl
 

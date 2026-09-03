@@ -5055,7 +5055,7 @@ mod tests {
     let result =
       compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
     match result.as_ref() {
-      Expr::Lam(ty, body) => {
+      Expr::Lam(ixon::expr::Uses::Many, ty, body) => {
         match ty.as_ref() {
           Expr::Sort(idx) => {
             assert_eq!(*idx, 0);
@@ -5917,7 +5917,7 @@ mod tests {
     // Should have sharing since lam is used twice
     assert!(!sharing.is_empty(), "Expected sharing for repeated subterm");
     // The sharing vector should contain the shared Lam
-    assert!(sharing.iter().any(|e| matches!(e.as_ref(), Expr::Lam(_, _))));
+    assert!(sharing.iter().any(|e| matches!(e.as_ref(), Expr::Lam(_, _, _))));
     // The rewritten expression should have Share references
     assert!(matches!(rewritten[0].as_ref(), Expr::App(_, _)));
   }

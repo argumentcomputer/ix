@@ -163,8 +163,7 @@ def endToEndSuite : IO UInt32 := do
     | .ok result => pure result
     | .error e => IO.eprintln s!"factorial prove failed: {e}"; return 1
   let expectedClaim := buildClaim facIdx input #[Aiur.G.ofNat 120]
-  -- The in-circuit verifier consumes the per-query advice transport, not
-  -- the pruned-multiproof wire format `Proof.toBytes` carries.
+  -- Verify and serialize the proof transport consumed in-circuit.
   let proofBytes ← match facSystem.proofToAdviceBytes claim proof with
     | .ok bytes => pure bytes
     | .error e => IO.eprintln s!"advice re-encoding failed: {e}"; return 1
@@ -217,8 +216,7 @@ def endToEndSuite : IO UInt32 := do
 
   -- ── run the (expensive) checks, then assert ─────────────────────────────────
   IO.println "recursive-verifier (proving + recursive verification, ~1.5 min)…"
-  -- Native wire-format roundtrip; the in-circuit paths below consume the
-  -- per-query advice encoding instead.
+  -- Native wire-format roundtrip before exercising the in-circuit path.
   let innerVerify := facSystem.verify claim (.ofBytes proof.toBytes)
   -- Native path: Rust-built advice buffer + codegen'd verifier
   -- (`crates/ixvm-codegen/src/aiur_multi_stark.rs`).

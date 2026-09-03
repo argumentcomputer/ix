@@ -175,9 +175,8 @@ extern "C" fn rs_aiur_system_verify(
 
 /// `AiurSystem.proofToAdviceBytes : @& AiurSystem → @& Array G → @& Proof → Except String ByteArray`
 ///
-/// The proof re-encoded in the per-query advice transport the in-circuit
-/// verifier consumes (pruned FRI multiproofs expanded to one path per
-/// query); errors if the proof does not verify natively.
+/// Verify and serialize the proof transport consumed by the in-circuit
+/// recursive verifier.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_proof_to_advice_bytes(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -187,7 +186,7 @@ extern "C" fn rs_aiur_proof_to_advice_bytes(
   let claim = claim.map(|x| lean_unbox_g(&x));
   match aiur_system_obj.get().proof_to_advice_bytes(&claim, proof_obj.get()) {
     Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
-    Err(err) => LeanExcept::error_string(&format!("{err:?}")),
+    Err(err) => LeanExcept::error_string(&err),
   }
 }
 
@@ -1345,8 +1344,7 @@ extern "C" fn rs_aiur_system_prove_ixvm(
 
 /// `Bytecode.Toplevel.executeMultiStark`: run the MultiStark recursive
 /// verifier over proof-advice/vk/claims byte blobs. The proof blob is the
-/// expanded per-query transport produced by `proof_to_advice_bytes`, not the
-/// compact persisted `Proof::to_bytes` representation. The IO advice buffer
+/// verified native transport produced by `proof_to_advice_bytes`. The IO advice buffer
 /// (channel 0 = proof, 1 = vk, 2 = claims, key `[0]` each) is built
 /// natively via `verifier_io_buffer` — no per-byte Lean boxing, no
 /// buffer marshalling across FFI. `use_bytecode` selects the executor:
@@ -1430,8 +1428,8 @@ fn build_multi_stark_join_io_buffer(
 }
 
 /// `Bytecode.Toplevel.executeMultiStarkJoin`: execute either join entrypoint over
-/// child proof-advice/claim/tree/path blobs. Each proof is expanded with
-/// `proof_to_advice_bytes` before crossing this boundary. The native builder expands the compact keyed
+/// child proof-advice/claim/tree/path blobs. Each proof is verified and
+/// serialized with `proof_to_advice_bytes` before crossing this boundary. The native builder expands the compact keyed
 /// framing directly into the circuit's seven-channel IO buffer.
 /// As with `rs_aiur_multi_stark_execute`, callers may select either generated
 /// execution or the generic bytecode interpreter.
@@ -1493,9 +1491,8 @@ extern "C" fn rs_aiur_multi_stark_join_execute(
 }
 
 /// `AiurSystem.proveMultiStark`: prove the MultiStark recursive
-/// verifier over proof-advice/vk/claims byte blobs. The proof blob is the
-/// expanded per-query transport, while `Proof::to_bytes` remains the compact
-/// storage/wire representation. Buffer construction
+/// verifier over proof-advice/vk/claims byte blobs. The proof blob uses the
+/// native serialized transport returned by `proof_to_advice_bytes`. Buffer construction
 /// and executor selection as in `rs_aiur_multi_stark_execute`; the
 /// prove itself reuses the executor-generic `AiurSystem::prove_ixvm`.
 /// Returns `(claim, proof)`; the final buffer is not returned.

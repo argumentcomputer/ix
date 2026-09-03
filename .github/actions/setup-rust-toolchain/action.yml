@@ -7,8 +7,8 @@ inputs:
   cache-workspaces:
     description: Cargo workspaces to cache
     required: false
-  native-codegen:
-    description: Enable code generation for the runner's native CPU
+  avx512-codegen:
+    description: Enable AVX-512 code generation for the Warp x64 fleet's common ISA
     required: false
     default: "true"
 
@@ -27,10 +27,46 @@ runs:
           exit 1
         fi
 
+    - uses: ./.github/actions/authenticate-github-fetches
+
+    # Cargo's built-in git fetcher ignores `url.insteadOf`, so it would bypass
+    # the token rewrite above; fetching with the git CLI routes cargo's git
+    # dependencies through it. Set before the caching action below, which
+    # keys on the environment.
+    - name: Fetch cargo git dependencies with the git CLI
+      shell: bash
+      run: |
+        if [[ ! -v CARGO_NET_GIT_FETCH_WITH_CLI ]]; then
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+        fi
+
+    # The fleet mixes Intel Granite Rapids and AMD Zen 5, and a binary may be
+    # built on one and measured on another. Neither vendor's feature set
+    # contains the other's, so `-Ctarget-cpu=native` is not portable across
+    # the fleet: Zen 5 enables SSE4A, which LLVM emits (as INSERTQ, in
+    # witness generation) and Intel traps on with #UD. Pin the measured
+    # intersection instead. x86-64-v4 covers every AVX-512 subset Plonky3
+    # uses; +avx512vbmi2 keeps its VPSHRDQ interleave and +gfni keeps LLVM's
+    # byte-shift lowering. blake3 selects its kernels via CPUID at runtime
+    # and is unaffected. Pinning also makes codegen host-independent, so the
+    # cache key below is sound and main-vs-PR timings stay comparable.
+    - name: Require the fleet's baseline CPU features
+      if: inputs.avx512-codegen == 'true'
+      shell: bash
+      run: |
+        missing=()
+        for f in avx512f avx512bw avx512cd avx512dq avx512vl avx512_vbmi2 gfni; do
+          grep -qw "$f" /proc/cpuinfo || missing+=("$f")
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+          echo "::error::Runner CPU lacks required feature(s): ${missing[*]}. Benchmark binaries are built for x86-64-v4 +avx512vbmi2,+gfni."
+          exit 1
+        fi
+
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        rustflags: ${{ inputs.native-codegen == 'true' && '-Ctarget-cpu=native -Dwarnings' || '-Dwarnings' }}
-        # `target/` may contain host-executed native code. Every caller runs
-        # within the Warp x64 compatibility domain.
+        rustflags: ${{ inputs.avx512-codegen == 'true' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni -Dwarnings' || '-Dwarnings' }}
+        # Codegen is pinned above, so `target/` artifacts are interchangeable
+        # across every Warp x64 host.
         cache-key: warp-x64
         cache-workspaces: ${{ inputs.cache-workspaces }}

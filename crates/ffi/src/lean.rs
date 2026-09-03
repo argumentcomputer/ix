@@ -93,8 +93,8 @@ lean_ffi::lean_inductive! {
     { num_64: 1 },                            // tag 5: str
     { num_64: 1 },                            // tag 6: nat
     { num_obj: 2 },                           // tag 7: app
-    { num_obj: 2 },                           // tag 8: lam
-    { num_obj: 2 },                           // tag 9: all
+    { num_obj: 2, num_8: 1 },                 // tag 8: lam (uses)
+    { num_obj: 2, num_8: 2 },                 // tag 9: all (uses, owned)
     { num_obj: 3, num_8: 1 },                 // tag 10: let
     { num_64: 1 },                            // tag 11: share
   ];

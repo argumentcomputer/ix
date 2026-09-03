@@ -35,7 +35,7 @@
 
     # Blake3 Rust bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean/e6e908bfd3af607ab44fb462fa2276a2c81addba";
+      url = "github:argumentcomputer/Blake3.lean/2db8f692ed94f7c4a993527008b8c5231b169709";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };

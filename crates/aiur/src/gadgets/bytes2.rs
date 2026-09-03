@@ -211,54 +211,45 @@ impl AiurGadget for Bytes2 {
     let xor_split4_hi = Expr::preprocessed(12);
     let xor_split4_lo = Expr::preprocessed(13);
 
-    // pull = negated multiplicity; count columns declare the query budget.
-    let budget = crate::COUNT_COLUMN_BUDGET;
+    // pull = negated multiplicity.
     let pull_xor = Lookup {
       multiplicity: -xor_multiplicity,
       args: vec![xor_channel, i.clone(), j.clone(), xor],
-      max_multiplicity: budget,
     };
 
     let pull_add = Lookup {
       multiplicity: -add_multiplicity,
       args: vec![add_channel, i.clone(), j.clone(), add_r],
-      max_multiplicity: budget,
     };
 
     let pull_sub = Lookup {
       multiplicity: -sub_multiplicity,
       args: vec![sub_channel, i.clone(), j.clone(), sub_r],
-      max_multiplicity: budget,
     };
 
     let pull_and = Lookup {
       multiplicity: -and_multiplicity,
       args: vec![and_channel, i.clone(), j.clone(), and],
-      max_multiplicity: budget,
     };
 
     let pull_or = Lookup {
       multiplicity: -or_multiplicity,
       args: vec![or_channel, i.clone(), j.clone(), or],
-      max_multiplicity: budget,
     };
 
     let pull_less_than = Lookup {
       multiplicity: -less_than_multiplicity,
       args: vec![less_than_channel, i.clone(), j.clone(), less_than],
-      max_multiplicity: budget,
     };
 
     let pull_mul = Lookup {
       multiplicity: -mul_multiplicity,
       args: vec![mul_channel, i.clone(), j.clone(), mul_lo, mul_hi],
-      max_multiplicity: budget,
     };
 
     let pull_range_check = Lookup {
       multiplicity: -range_check_multiplicity,
       args: vec![range_check_channel, i.clone(), j.clone()],
-      max_multiplicity: budget,
     };
 
     let pull_xor_split7 = Lookup {
@@ -270,12 +261,10 @@ impl AiurGadget for Bytes2 {
         xor_split7_hi,
         xor_split7_lo,
       ],
-      max_multiplicity: budget,
     };
     let pull_xor_split4 = Lookup {
       multiplicity: -xor_split4_multiplicity,
       args: vec![xor_split4_channel, i, j, xor_split4_hi, xor_split4_lo],
-      max_multiplicity: budget,
     };
 
     vec![

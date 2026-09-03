@@ -569,8 +569,9 @@ theorem cacheWriteOracle {trProj : RawProjRel} {fallback : CacheSemantics}
           exact .whnf
     have hvalid : ∀ other, support other → other.addr = key.1 →
         ∀ Delta', model.keys.Represents other.lbr key.2 Delta' →
+          other.ContextScoped Delta' →
           WhnfMeaning trProj world model.keys.uvars Delta' other result := by
-      intro other hother haddr Delta' hrepresented
+      intro other hother haddr Delta' hrepresented _hscoped
       have heq : source = other := by
         have herase := hcollision.expr hsource hother
           (hmatch.sourceAddr.trans haddr.symm)

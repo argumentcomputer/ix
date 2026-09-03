@@ -112,7 +112,7 @@ variable arm; the size bound supplies every recursive `depth + 1`. -/
 theorem TrKExprS.closeFVarSpec
     {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {target : KVLCtx} {body : KExpr .anon} {bodyV : VExpr}
     (H : TrKExprS env uvars nameOf trProj target body bodyV)
     (hcon : KExpr.Constructed body) :
@@ -260,7 +260,7 @@ theorem TrKExprS.closeFVarSpec
 theorem TrKExprS.closeFVarZero
     {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {Delta : KVLCtx} {decl : VLocalDecl}
     {body : KExpr .anon} {bodyV : VExpr}
     {fv : FVarId} {deps : List FVarId}
@@ -281,7 +281,7 @@ abstraction specification under its audited bounds. -/
 theorem TrKExprS.closeFVarResult
     {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {Delta : KVLCtx} {decl : VLocalDecl}
     {body : KExpr .anon} {bodyV : VExpr}
     {fv : FVarId} {deps : List FVarId}

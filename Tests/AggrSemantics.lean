@@ -89,10 +89,11 @@ private def stage2FixtureStorePath (home : System.FilePath) : System.FilePath :=
 
 /-- Pin a real whole-Mathlib root at the persisted-proof boundary. The 3.33 GB
 environment and 52.5 MB manifest are identified in the adjacent provenance
-record rather than checked in; this gate re-hashes and decodes the exact
-wrapper, pins its unconditional root claim, and drives native cryptographic
-verification through the production CLI/backend. -/
-private def stage2FixtureValid : IO Bool := do
+record rather than checked in. This proof predates the a8aab731 protocol bump:
+the gate re-hashes and decodes the exact wrapper, pins its unconditional root
+claim, and ensures the current backend rejects it at that protocol boundary
+instead of accidentally accepting an incompatible proof. -/
+private def stage2FixturePinnedAndFenced : IO Bool := do
   try
     unless (← stage2FixturePath.pathExists) do
       IO.eprintln s!"Stage 2 fixture missing: {stage2FixturePath}"
@@ -130,13 +131,13 @@ private def stage2FixtureValid : IO Bool := do
         cmd := "env"
         args := #[s!"HOME={home}", exe.toString, "verify", "--aggregate",
           stage2FixtureAddressHex] }
-      if out.exitCode != 0 then
-        IO.eprintln s!"Stage 2 fixture verification failed ({out.exitCode}): \
-{out.stderr.take 500}"
+      if out.exitCode == 0 then
+        IO.eprintln "obsolete Stage 2 fixture unexpectedly verified under the current protocol"
         return false
-      unless out.stdout.contains s!"ok: aggregate proof {stage2FixtureAddressHex} verifies" do
-        IO.eprintln s!"Stage 2 fixture verifier returned no success marker: \
-{out.stdout.takeEnd 500}"
+      unless out.stderr.contains "InvalidProofShape" ||
+          out.stdout.contains "InvalidProofShape" do
+        IO.eprintln s!"obsolete Stage 2 fixture failed for an unexpected reason \
+({out.exitCode}): {out.stderr.take 500}"
         return false
       return true
     finally
@@ -554,7 +555,7 @@ def semanticSuite : IO UInt32 := do
       subjects := canonicalTree auditLeaves
       assumptions := some (canonicalTree #[auditShared])
     })
-  let productionStage2FixtureValid ← stage2FixtureValid
+  let productionStage2FixturePinnedAndFenced ← stage2FixturePinnedAndFenced
 
   -- Threshold policy and the RAM-gated DAG controller.
   let mixedSchedule := Ix.Cli.AggregateCmd.schedulePlan
@@ -761,8 +762,8 @@ def semanticSuite : IO UInt32 := do
       shardPrepPreservesSemantics,
     test "verified aggregate proof audit certifies every fixture constant"
       aggregateProofAuditsEveryConstant,
-    test "dated Mathlib Stage 2 proof verifies under the production backend"
-      productionStage2FixtureValid,
+    test "dated Mathlib Stage 2 proof is pinned and fenced at its protocol boundary"
+      productionStage2FixturePinnedAndFenced,
     test "aggregate constant audit rejects an omitted environment constant"
       missingConstantRejected,
     test "aggregate constant audit rejects a foreign subject"

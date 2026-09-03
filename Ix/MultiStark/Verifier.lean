@@ -308,8 +308,8 @@ def verifier := ⟦
   -- Replay the verifier transcript and derive the four challenges
   -- `(lookup, fingerprint, alpha, zeta)`. Mirrors `verify_multiple_claims`'s
   -- challenger sequence exactly:
-  --   seed = tag + protocol parameters; observe_shape (width-binding policy
-  --   word, circuit count, 7 metadata words per circuit) → preprocessed_commit
+  --   seed = tag + protocol parameters; observe_shape
+  --   (circuit count + 7 metadata words per circuit) → preprocessed_commit
   --   (if any) → stage_1 →
   --   log_degrees → length-prefixed claims;
   --   sample lookup, observe it; sample fingerprint, observe it;
@@ -603,9 +603,7 @@ def verifier := ⟦
      @eg_add(@eg_mul(a0, b1), @eg_mul(a1, b0)))
   }
 
-  -- fingerprint(γ, args) = Σᵢ argsᵢ·γ^i as a coordinate pair — the plain
-  -- Horner fold of `WidthBinding::ByConstruction`, the policy aiur declares
-  -- (and the transcript replay observes):
+  -- fingerprint(γ, args) = Σᵢ argsᵢ·γ^i as a coordinate pair:
   -- fp(Cons(a, rest)) = (eval a, 0) + γ ⊗ fp(rest); args embed in coord 0.
   fn logup_fingerprint(args: List‹G›, g0: Ext, g1: Ext, nodes: List‹SysNode›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,

@@ -76,31 +76,31 @@ def env : Ixon.Env := IxonEnv.eraseAnonMetadata decoded
 
 private theorem sourceAddressesNative :
     orderedAnonConstAddrs env =
-      #[recursorBlockAddress, trueId.addr, familyBlockAddress,
-        recursorId.addr, falseId.addr, familyId.addr] := by
+      #[recursorId.addr, recursorBlockAddress, trueId.addr,
+        familyBlockAddress, falseId.addr, familyId.addr] := by
   native_decide
 
 theorem sourceAddresses :
     orderedAnonConstAddrs env =
-      #[recursorBlockAddress, trueId.addr, familyBlockAddress,
-        recursorId.addr, falseId.addr, familyId.addr] :=
+      #[recursorId.addr, recursorBlockAddress, trueId.addr,
+        familyBlockAddress, falseId.addr, familyId.addr] :=
   sourceAddressesNative
 
 private theorem sourceKeysNative :
     env.consts.keys =
-      [recursorBlockAddress, falseId.addr, recursorId.addr,
+      [falseId.addr, recursorBlockAddress, recursorId.addr,
         trueId.addr, familyBlockAddress, familyId.addr] := by
   native_decide
 
 theorem sourceKeys :
     env.consts.keys =
-      [recursorBlockAddress, falseId.addr, recursorId.addr,
+      [falseId.addr, recursorBlockAddress, recursorId.addr,
         trueId.addr, familyBlockAddress, familyId.addr] :=
   sourceKeysNative
 
 private theorem sourceAddressesNodupNative :
-    (#[recursorBlockAddress, trueId.addr, familyBlockAddress,
-      recursorId.addr, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
+    (#[recursorId.addr, recursorBlockAddress, trueId.addr,
+      familyBlockAddress, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
   native_decide
 
 private theorem recursorBlockLookupNative :
@@ -218,6 +218,9 @@ private theorem sourceEntryCases {addr : Address} {constant : Ixon.Constant}
   simp at haddr
   rcases haddr with haddr | haddr | haddr | haddr | haddr | haddr
   · subst addr
+    exact .inr (.inr (.inr (.inl ⟨rfl,
+      ExactAnonEntry.constant_unique hentry recursorProjectionEntry⟩)))
+  · subst addr
     exact .inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry recursorBlockEntry⟩
   · subst addr
@@ -226,9 +229,6 @@ private theorem sourceEntryCases {addr : Address} {constant : Ixon.Constant}
   · subst addr
     exact .inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry familyBlockEntry⟩))
-  · subst addr
-    exact .inr (.inr (.inr (.inl ⟨rfl,
-      ExactAnonEntry.constant_unique hentry recursorProjectionEntry⟩)))
   · subst addr
     exact .inr (.inr (.inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry falseProjectionEntry⟩))))
@@ -255,10 +255,10 @@ def sourceWF : AnonWorkEnvWF env where
     rw [sourceAddresses] at haddr
     simp at haddr
     rcases haddr with rfl | rfl | rfl | rfl | rfl | rfl
+    · exact ⟨recursorProjectionConstant, recursorProjectionEntry⟩
     · exact ⟨recursorBlockConstant, recursorBlockEntry⟩
     · exact ⟨trueProjectionConstant, trueProjectionEntry⟩
     · exact ⟨familyBlockConstant, familyBlockEntry⟩
-    · exact ⟨recursorProjectionConstant, recursorProjectionEntry⟩
     · exact ⟨falseProjectionConstant, falseProjectionEntry⟩
     · exact ⟨familyProjectionConstant, familyProjectionEntry⟩
   blocksNonempty := by
@@ -340,13 +340,13 @@ private theorem constAddresses : IxonEnv.ConstAddressIntegrity env := by
   simp at hkey
   rcases hkey with rfl | rfl | rfl | rfl | rfl | rfl
   · have hlazy := Option.some.inj
-      (hlookup.symm.trans recursorBlockLookupNative)
-    subst lazy
-    exact recursorBlockHashNative
-  · have hlazy := Option.some.inj
       (hlookup.symm.trans falseProjectionLookupNative)
     subst lazy
     exact falseProjectionHashNative
+  · have hlazy := Option.some.inj
+      (hlookup.symm.trans recursorBlockLookupNative)
+    subst lazy
+    exact recursorBlockHashNative
   · have hlazy := Option.some.inj
       (hlookup.symm.trans recursorProjectionLookupNative)
     subst lazy
@@ -374,13 +374,13 @@ private theorem constMaterialization :
   simp at hkey
   rcases hkey with rfl | rfl | rfl | rfl | rfl | rfl
   · have hlazy := Option.some.inj
-      (hlookup.symm.trans recursorBlockLookupNative)
-    subst lazy
-    exact ⟨recursorBlockConstant, rfl⟩
-  · have hlazy := Option.some.inj
       (hlookup.symm.trans falseProjectionLookupNative)
     subst lazy
     exact ⟨falseProjectionConstant, rfl⟩
+  · have hlazy := Option.some.inj
+      (hlookup.symm.trans recursorBlockLookupNative)
+    subst lazy
+    exact ⟨recursorBlockConstant, rfl⟩
   · have hlazy := Option.some.inj
       (hlookup.symm.trans recursorProjectionLookupNative)
     subst lazy
@@ -433,11 +433,11 @@ def blockOfIdempotent : IxonEnv.BlockOfIdempotent env := by
       rw [sourceKeys] at hkey
       simp at hkey
       rcases hkey with rfl | rfl | rfl | rfl | rfl | rfl
-      · simp [blockOfAddr, recursorBlockEntry.getConst,
-          recursorBlockConstant]
       · simp [blockOfAddr, falseProjectionEntry.getConst,
           familyBlockEntry.getConst, falseProjectionConstant,
           familyBlockConstant]
+      · simp [blockOfAddr, recursorBlockEntry.getConst,
+          recursorBlockConstant]
       · simp [blockOfAddr, recursorProjectionEntry.getConst,
           recursorBlockEntry.getConst, recursorProjectionConstant,
           recursorBlockConstant]
@@ -907,13 +907,13 @@ private theorem decodedGetConst_of_original {addr : Address}
     subst constant
     exact recursorBlockEntry.getConst
   · have hc := Option.some.inj
-      (hget.symm.trans originalRecursorProjectionLookupNative)
-    subst constant
-    exact recursorProjectionEntry.getConst
-  · have hc := Option.some.inj
       (hget.symm.trans originalFalseProjectionLookupNative)
     subst constant
     exact falseProjectionEntry.getConst
+  · have hc := Option.some.inj
+      (hget.symm.trans originalRecursorProjectionLookupNative)
+    subst constant
+    exact recursorProjectionEntry.getConst
   · have hc := Option.some.inj
       (hget.symm.trans originalTrueProjectionLookupNative)
     subst constant

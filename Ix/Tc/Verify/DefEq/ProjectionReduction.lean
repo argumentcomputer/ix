@@ -33,7 +33,7 @@ structure DirectProjectionReflection (semantics : CacheSemantics)
     support source →
     TrKExprS world.venv uvars world.nameOf trProj Delta source sourceV →
     world.nameOf id.addr = some structName →
-    trProj Delta.toCtx structName field.toNat sourceV projectedV →
+    trProj uvars Delta.toCtx structName field.toNat sourceV projectedV →
     WhnfStateInv .noAccel semantics trProj world support uvars Delta before →
     WhnfStateInv .noAccel semantics trProj world support uvars Delta after →
     (tryProjReduce id field source).run methods before =
@@ -64,7 +64,7 @@ theorem tryProjReduce_direct_wf
       sourceV)
     (hname : world.nameOf id.addr = some structName)
     (hprojection :
-      trProj Delta.toCtx structName field.toNat sourceV projectedV) :
+      trProj uvars Delta.toCtx structName field.toNat sourceV projectedV) :
     RecM.WF .noAccel semantics trProj world support uvars Delta state
       (tryProjReduce id field source)
       (fun result _ => match result with

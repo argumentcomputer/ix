@@ -61,7 +61,7 @@ fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
       out.insert(*i);
       const_idxs_expr(inner, out);
     },
-    Expr::App(a, b) | Expr::Lam(a, b) | Expr::All(a, b) => {
+    Expr::App(a, b) | Expr::Lam(_, a, b) | Expr::All(_, _, a, b) => {
       const_idxs_expr(a, out);
       const_idxs_expr(b, out);
     },

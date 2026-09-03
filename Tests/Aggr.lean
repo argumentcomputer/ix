@@ -56,8 +56,8 @@ def childProgram : Source.Toplevel := ⟦
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!
 
-/-- One child slot: expanded proof advice on channel 0, serialized claims on
-channel 2. Compact proof wire bytes are never an in-circuit input. -/
+/-- One child slot: verified serialized proof transport on channel 0 and
+serialized claims on channel 2. -/
 private structure ChildSlot where
   proofAdviceBytes : ByteArray
   claimsBytes : ByteArray

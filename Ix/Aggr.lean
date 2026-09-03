@@ -187,8 +187,8 @@ def extendPath (io : Aiur.IOBuffer) (candidate : Address)
     (path? : Option Ix.Merkle.MerklePath) : Aiur.IOBuffer :=
   io.extend 6 (byteGs candidate.hash) (byteGs (pathPayload path?))
 
-/-- Channels 0/2 for one child slot: expanded proof advice and serialized
-claims. Compact proof wire bytes are not an in-circuit input. -/
+/-- Channels 0/2 for one child slot: verified serialized proof transport and
+serialized claims. -/
 def extendChild (io : Aiur.IOBuffer) (key : Nat)
     (proofAdviceBytes claimsBytes : ByteArray) : Aiur.IOBuffer :=
   let io := io.extend 0 #[.ofNat key] (byteGs proofAdviceBytes)

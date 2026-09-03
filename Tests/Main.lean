@@ -207,6 +207,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let checkAsm ← claimCheckWithAsm claimEnv
     let revealFields ← claimRevealDefnFields claimEnv
     let revealExpr ← claimRevealDefnExpr claimEnv
+    let revealModes ← claimRevealBinderModes
     let revealCPrj ← claimRevealCPrj claimEnv
     let containsTc ← claimContains
     -- Shared-infrastructure test entrypoints live only in the FULL
@@ -231,7 +232,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env v2Env.compiled
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
-           revealFields, revealExpr, revealCPrj, containsTc]).foldl
+           revealFields, revealExpr, revealModes, revealCPrj, containsTc]).foldl
         (init := .done) fun s tc => s ++ v2Env.runTestCase tc
       -- Codegen parity gate: the generated Rust kernel is emitted from
       -- the toplevel, so this runs the same witnesses through both
@@ -265,8 +266,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_769_529_091, got {actual}"
-              (actual = 6_769_529_091))
+              s!"Shard pipeline FFT matches: expected 6_859_583_032, got {actual}"
+              (actual = 6_859_583_032))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),

@@ -235,13 +235,17 @@ inductive IsInfer : ExprCacheKind → Prop
 end ExprCacheKind
 
 /-- Exact validity of the two inference cache families.  All other entries
-retain the semantics already established by the caller (normally K1 WHNF). -/
+retain the semantics already established by the caller (normally K1 WHNF).
+Persistent entries created under a later-popped local scope are required to
+carry semantic meaning only when their source is structurally in scope in the
+represented context. -/
 def InferCacheValid (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) (authority : CacheAuthority)
     (support : RunSupport) : CacheEntry → Prop
   | .expr .infer key ty | .expr .inferOnly key ty =>
       ∀ source, support source → source.addr = key.1 →
         ∀ Delta, keys.Represents source.lbr key.2 Delta →
+          source.ContextScoped Delta →
           InferMeaning trProj authority.world keys.uvars Delta source ty
   | entry => fallback.Valid authority support entry
 
@@ -256,8 +260,8 @@ theorem mono {keys : WhnfContextKeys} {trProj : RawProjRel}
   | expr kind key value =>
       cases kind with
       | infer | inferOnly =>
-          intro source hsource haddr Delta hctx
-          exact (h source hsource haddr Delta hctx).mono hle.world
+          intro source hsource haddr Delta hctx hscoped
+          exact (h source hsource haddr Delta hctx hscoped).mono hle.world
       | whnf | whnfNoDelta | whnfNoDeltaCheap | whnfCore | whnfCoreCheap =>
           exact fallback.mono hle h
   | defEq | defEqFailure | unfold | natSuccStuck | isProp | isRec |
@@ -272,9 +276,10 @@ theorem expr {keys : WhnfContextKeys} {trProj : RawProjRel}
     (h : InferCacheValid keys trProj fallback authority support
       (.expr kind key ty))
     (hsource : support source) (haddr : source.addr = key.1)
-    {Delta : KVLCtx} (hctx : keys.Represents source.lbr key.2 Delta) :
+    {Delta : KVLCtx} (hctx : keys.Represents source.lbr key.2 Delta)
+    (hscoped : source.ContextScoped Delta) :
     InferMeaning trProj authority.world keys.uvars Delta source ty := by
-  cases hkind <;> exact h source hsource haddr Delta hctx
+  cases hkind <;> exact h source hsource haddr Delta hctx hscoped
 
 end InferCacheValid
 
@@ -306,9 +311,10 @@ theorem inferMeaning {keys : WhnfContextKeys} {trProj : RawProjRel}
       authority support (.expr kind key ty))
     (hkind : kind.IsInfer) (hsource : support source)
     (haddr : source.addr = key.1) {Delta : KVLCtx}
-    (hctx : keys.Represents source.lbr key.2 Delta) :
+    (hctx : keys.Represents source.lbr key.2 Delta)
+    (hscoped : source.ContextScoped Delta) :
     InferMeaning trProj authority.world keys.uvars Delta source ty :=
-  InferCacheValid.expr hkind h.valid hsource haddr hctx
+  InferCacheValid.expr hkind h.valid hsource haddr hctx hscoped
 
 theorem inferMeaningOfMatches {keys : WhnfContextKeys}
     {trProj : RawProjRel} {fallback : CacheSemantics}
@@ -318,9 +324,10 @@ theorem inferMeaningOfMatches {keys : WhnfContextKeys}
     (h : CacheProvenance (inferCacheSemantics keys trProj fallback)
       authority support (.expr kind key ty))
     (hkind : kind.IsInfer) (hsource : support source)
-    (hmatch : keys.Matches trProj authority.world s Delta source key) :
+    (hmatch : keys.Matches trProj authority.world s Delta source key)
+    (hscoped : source.ContextScoped Delta) :
     InferMeaning trProj authority.world keys.uvars Delta source ty :=
-  h.inferMeaning hkind hsource hmatch.sourceAddr hmatch.2.1
+  h.inferMeaning hkind hsource hmatch.sourceAddr hmatch.2.1 hscoped
 
 end CacheProvenance
 
@@ -335,9 +342,10 @@ theorem inferHitOfMatches {keys : WhnfContextKeys} {trProj : RawProjRel}
       authority support env)
     (hhit : env.HasCacheEntry (.expr kind key ty))
     (hkind : kind.IsInfer) (hsource : support source)
-    (hmatch : keys.Matches trProj authority.world s Delta source key) :
+    (hmatch : keys.Matches trProj authority.world s Delta source key)
+    (hscoped : source.ContextScoped Delta) :
     InferMeaning trProj authority.world keys.uvars Delta source ty :=
-  (h.hit hhit).inferMeaningOfMatches hkind hsource hmatch
+  (h.hit hhit).inferMeaningOfMatches hkind hsource hmatch hscoped
 
 end CacheInvariant
 

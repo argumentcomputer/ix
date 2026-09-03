@@ -162,27 +162,27 @@ def constructorIds : Array (KId .anon) := #[falseId, trueId]
 /-- `Bool → Sort u`, encoded against the recursor block's first reference
 (`Bool`) and its sole universe parameter. -/
 def motiveType : Ixon.Expr :=
-  .all (.ref 0 #[]) (.sort 0)
+  .leanAll (.ref 0 #[]) (.sort 0)
 
 /-- The canonical enumeration recursor type
 `∀ motive, motive false → motive true → ∀ value, motive value`. -/
 def recursorType : Ixon.Expr :=
-  .all motiveType
-    (.all (.app (.var 0) (.ref 1 #[]))
-      (.all (.app (.var 1) (.ref 2 #[]))
-        (.all (.ref 0 #[]) (.app (.var 3) (.var 0)))))
+  .leanAll motiveType
+    (.leanAll (.app (.var 0) (.ref 1 #[]))
+      (.leanAll (.app (.var 1) (.ref 2 #[]))
+        (.leanAll (.ref 0 #[]) (.app (.var 3) (.var 0)))))
 
 /-- The `false` equation selects the first minor. -/
 def falseRuleRhs : Ixon.Expr :=
-  .lam motiveType
-    (.lam (.app (.var 0) (.ref 1 #[]))
-      (.lam (.app (.var 1) (.ref 2 #[])) (.var 1)))
+  .leanLam motiveType
+    (.leanLam (.app (.var 0) (.ref 1 #[]))
+      (.leanLam (.app (.var 1) (.ref 2 #[])) (.var 1)))
 
 /-- The `true` equation selects the second minor. -/
 def trueRuleRhs : Ixon.Expr :=
-  .lam motiveType
-    (.lam (.app (.var 0) (.ref 1 #[]))
-      (.lam (.app (.var 1) (.ref 2 #[])) (.var 0)))
+  .leanLam motiveType
+    (.leanLam (.app (.var 0) (.ref 1 #[]))
+      (.leanLam (.app (.var 1) (.ref 2 #[])) (.var 0)))
 
 def recursorIxon : Ixon.Recursor :=
   ⟨false, false, 1, 0, 0, 1, 2, recursorType,
@@ -583,9 +583,9 @@ local instance kExprScopedDecidable (depth : UInt64) (levelBound : Nat)
       h ((scopedExprB_eq_true_iff depth levelBound expression).mpr hscoped)
 
 theorem rawSortOne {nameOf : Address → Option Lean.Name}
-    {expression : KExpr .anon}
+    {uvars : Nat} {expression : KExpr .anon}
     (shape : IsSortOne expression) :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] expression
+    RawExprRel (uvars := uvars) theoryAfter nameOf RawProjRel.none [] expression
       (.sort (.succ .zero)) := by
   cases expression <;> simp [IsSortOne] at shape
   next u _ =>
@@ -643,12 +643,13 @@ theorem nameOf_true : nameOf trueId.addr = some ``Bool.true :=
 /-- Turn the structural reference discriminator into raw translation once
 the corresponding Theory constant and universe arity are known. -/
 theorem rawConstZero {expected : KId .anon} {expression : KExpr .anon}
+    {uvars : Nat}
     (shape : IsConstZero expected expression)
     {name : Lean.Name} {constant : VConstant}
     (hname : nameOf expected.addr = some name)
     (hlookup : theoryAfter.constants name = some constant)
     (hlevels : constant.uvars = 0) :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] expression
+    RawExprRel (uvars := uvars) theoryAfter nameOf RawProjRel.none [] expression
       (.const name []) := by
   cases expression <;> simp [IsConstZero] at shape
   next actual universes _ =>
@@ -688,8 +689,10 @@ def translateCore? : KExpr .anon → Option VExpr
 This theorem lets native evaluation establish only the finite syntax shape;
 the trusted conclusion is assembled constructor by constructor. -/
 theorem translateCore?_raw {ctx : List VExpr} {source : KExpr .anon}
-    {target : VExpr} (success : translateCore? source = some target) :
-    RawExprRel theoryAfter nameOf RawProjRel.none ctx source target := by
+    {uvars : Nat} {target : VExpr}
+    (success : translateCore? source = some target) :
+    RawExprRel (uvars := uvars) theoryAfter nameOf RawProjRel.none ctx source
+      target := by
   induction source generalizing ctx target with
   | var index name info =>
       simp only [translateCore?, Option.some.injEq] at success
@@ -809,35 +812,41 @@ theorem trueNormalizedAt :
   rfl
 
 private theorem recursorTypeRawNative :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] recursorConcrete.ty
+    RawExprRel (uvars := recursorConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] recursorConcrete.ty
       generation.recursor.type := by
   apply translateCore?_raw
   native_decide
 
 theorem recursorTypeRaw :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] recursorConcrete.ty
+    RawExprRel (uvars := recursorConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] recursorConcrete.ty
       generation.recursor.type :=
   recursorTypeRawNative
 
 private theorem falseRuleRawNative :
-    RawExprRel theoryAfter nameOf RawProjRel.none []
+    RawExprRel (uvars := (generation.rule 0 falseNormalized).uvars)
+      theoryAfter nameOf RawProjRel.none []
       (concreteRuleAt 0).rhs (generation.rule 0 falseNormalized).rhs := by
   apply translateCore?_raw
   native_decide
 
 theorem falseRuleRaw :
-    RawExprRel theoryAfter nameOf RawProjRel.none []
+    RawExprRel (uvars := (generation.rule 0 falseNormalized).uvars)
+      theoryAfter nameOf RawProjRel.none []
       (concreteRuleAt 0).rhs (generation.rule 0 falseNormalized).rhs :=
   falseRuleRawNative
 
 private theorem trueRuleRawNative :
-    RawExprRel theoryAfter nameOf RawProjRel.none []
+    RawExprRel (uvars := (generation.rule 1 trueNormalized).uvars)
+      theoryAfter nameOf RawProjRel.none []
       (concreteRuleAt 1).rhs (generation.rule 1 trueNormalized).rhs := by
   apply translateCore?_raw
   native_decide
 
 theorem trueRuleRaw :
-    RawExprRel theoryAfter nameOf RawProjRel.none []
+    RawExprRel (uvars := (generation.rule 1 trueNormalized).uvars)
+      theoryAfter nameOf RawProjRel.none []
       (concreteRuleAt 1).rhs (generation.rule 1 trueNormalized).rhs :=
   trueRuleRawNative
 
@@ -968,13 +977,15 @@ theorem familyShape :
   familyShapeNative
 
 private theorem familyTypeNative :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] familyConcrete.ty
+    RawExprRel (uvars := familyConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] familyConcrete.ty
       generation.block.sourceType.type := by
   apply rawSortOne
   native_decide
 
 theorem familyType :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] familyConcrete.ty
+    RawExprRel (uvars := familyConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] familyConcrete.ty
       generation.block.sourceType.type :=
   familyTypeNative
 
@@ -1035,7 +1046,8 @@ theorem trueShape :
   trueShapeNative
 
 private theorem falseTypeNative :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] falseConcrete.ty
+    RawExprRel (uvars := falseConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] falseConcrete.ty
       falseSource.type := by
   rw [falseSourceType]
   apply rawConstZero (expected := familyId)
@@ -1045,12 +1057,14 @@ private theorem falseTypeNative :
   · native_decide
 
 theorem falseType :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] falseConcrete.ty
+    RawExprRel (uvars := falseConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] falseConcrete.ty
       falseSource.type :=
   falseTypeNative
 
 private theorem trueTypeNative :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] trueConcrete.ty
+    RawExprRel (uvars := trueConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] trueConcrete.ty
       trueSource.type := by
   rw [trueSourceType]
   apply rawConstZero (expected := familyId)
@@ -1060,7 +1074,8 @@ private theorem trueTypeNative :
   · native_decide
 
 theorem trueType :
-    RawExprRel theoryAfter nameOf RawProjRel.none [] trueConcrete.ty
+    RawExprRel (uvars := trueConcrete.lvls.toNat) theoryAfter nameOf
+      RawProjRel.none [] trueConcrete.ty
       trueSource.type :=
   trueTypeNative
 

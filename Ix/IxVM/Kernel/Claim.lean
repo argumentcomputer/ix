@@ -78,8 +78,8 @@ def claim := ⟦
       Expr.Prj(i, _, inner) =>
         store(ListNode.Cons(flatten_u64(i), const_idxs_expr(inner))),
       Expr.App(f, a) => list_concat(const_idxs_expr(f), const_idxs_expr(a)),
-      Expr.Lam(t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
-      Expr.All(t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
+      Expr.Lam(_, t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
+      Expr.All(_, _, t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
       Expr.Let(_, t, v, b) =>
         list_concat(const_idxs_expr(t),
           list_concat(const_idxs_expr(v), const_idxs_expr(b))),

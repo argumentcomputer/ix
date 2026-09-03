@@ -218,6 +218,12 @@ def idDecidableEq : DecidableEq (KId .anon) :=
         cases name
         rfl)
 
+/-- Structural anonymous-expression equality.  This compares the complete
+inductive representation through `Expr`, not only production content
+addresses. -/
+def exprDecidableEq : DecidableEq (KExpr .anon) :=
+  decidableEqOfRoundtrip Expr.ofKernel Expr.toKernel Expr.roundtrip
+
 def constDecidableEq : DecidableEq (KConst .anon) :=
   decidableEqOfRoundtrip Const.ofKernel Const.toKernel Const.roundtrip
 

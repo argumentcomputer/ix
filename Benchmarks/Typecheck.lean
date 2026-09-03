@@ -727,9 +727,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           let innerClaimsBytes := MultiStark.serializeClaims #[claim]
           let vkBytes := aiurSystem.vkBytes
           let pubInput := MultiStark.verifierPubInput vkBytes innerClaimsBytes
-          -- The in-circuit verifier consumes the per-query advice transport;
-          -- `proofBytes` (the pruned-multiproof wire format) stays the
-          -- reported proof size but is not parseable in-circuit.
+          -- Verify and serialize the proof transport consumed in-circuit.
+          -- `proofBytes` remains the raw proof used for reported proof size.
           let adviceBytes ← match aiurSystem.proofToAdviceBytes claim proof with
             | .ok bytes => pure bytes
             | .error e =>

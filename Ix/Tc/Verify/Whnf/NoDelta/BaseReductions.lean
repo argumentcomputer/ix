@@ -1,4 +1,4 @@
-import Ix.Tc.Verify.Whnf.NoDelta.Quotient
+import Ix.Tc.Verify.Whnf.NoDelta.QuotientReflection
 
 /-!
 # Assemble the active no-delta base oracle
@@ -48,8 +48,7 @@ structure NoDeltaBaseContext
   projectionReflection :
     ProjectionDefinitionReflection semantics trProj world support
   quotientCensus : QuotientReductionRequestCensus requests support
-  quotientReflection :
-    QuotientReductionReflection semantics trProj world support
+  quotientLaws : QuotientReductionLaws world.venv
   ingress :
     AnonLazyIngressContext .noAccel semantics trProj world support
 
@@ -87,7 +86,9 @@ theorem oracle
   quot :=
     tryQuotReduce_optional_wf_of_contexts
       context.run context.quotientCensus (context.primitive mode).inputs
-      context.quotientReflection
+      (QuotientReductionReflection.of_laws context.run
+        context.quotientCensus (context.primitive mode) context.theory
+        context.quotientLaws)
 
 end NoDeltaBaseContext
 end RecM

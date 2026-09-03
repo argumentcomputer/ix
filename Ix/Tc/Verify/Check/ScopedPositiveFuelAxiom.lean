@@ -73,7 +73,7 @@ def initialState : TcState .anon :=
     fuelBudget := 1 }
 
 theorem initialState_closed : ClosedContextState initialState := by
-  constructor <;> rfl
+  exact ⟨rfl, rfl, rfl, rfl, LocalContext.WF.empty, rfl⟩
 
 theorem initialState_reset :
     TcM.reset initialState = .ok () initialState := by

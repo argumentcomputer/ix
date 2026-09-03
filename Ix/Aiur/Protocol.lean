@@ -154,8 +154,8 @@ def proveIxVM (system : @& AiurSystem)
 
 /-- Prove the MultiStark recursive verifier over proof-advice/vk/claims
 byte blobs. `proofAdviceBytes` must come from
-`AiurSystem.proofToAdviceBytes`; compact `Proof.toBytes` wire bytes are not
-an in-circuit input. The IO advice buffer is built natively in Rust (see
+`AiurSystem.proofToAdviceBytes`, which verifies and serializes the native
+proof transport. The IO advice buffer is built natively in Rust (see
     `Bytecode.Toplevel.executeMultiStark`); the execute step inside
     the prove routes through the codegen'd verifier
     (`crates/ixvm-codegen/src/aiur_multi_stark.rs`) unless
@@ -171,8 +171,7 @@ opaque proveMultiStark (system : @& AiurSystem)
 
 /-- Prove one flat or structural aggregate-first binary join over child
 proof/claim advice. Both proof blobs must come from
-`AiurSystem.proofToAdviceBytes`; compact child `Proof.toBytes` values remain
-the persisted/cache representation. The compact preimage/tree/path blobs are produced by
+`AiurSystem.proofToAdviceBytes`. The compact preimage/tree/path blobs are produced by
 `MultiStark.joinPreimagesBlob`, `MultiStark.joinTreesBlob`, and
 `MultiStark.joinPathsBlob`. Malformed
 framing is returned as an error; as with `prove`/`proveMultiStark`, callers
@@ -188,8 +187,7 @@ opaque proveMultiStarkJoin (system : @& AiurSystem)
 
 /-- Prove one `ix_aggr` execution — any shape — over raw child proof/claim
 advice. Both proof blobs must come from `AiurSystem.proofToAdviceBytes`;
-compact `Proof.toBytes` values remain the persisted representation. The
-compact preimage/tree/path blobs are produced by `Aggr.preimagesBlob`,
+the compact preimage/tree/path blobs are produced by `Aggr.preimagesBlob`,
 `Aggr.treesBlob`, and `Aggr.pathsBlob`; wrap and flat shapes pass empty
 right-child blobs. Malformed framing is returned as an error; as with
 `prove`/`proveMultiStark`, callers must supply an accepting execution
@@ -305,9 +303,8 @@ def shardProveWithEnv (system : @& AiurSystem)
 opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
-/-- The proof re-encoded in the per-query advice transport the in-circuit
-verifier consumes (pruned FRI multiproofs expanded to one authentication
-path per query); errors if the proof does not verify natively. -/
+/-- Verify and serialize a proof in the transport consumed by the in-circuit
+recursive verifier. -/
 @[extern "rs_aiur_proof_to_advice_bytes"]
 opaque proofToAdviceBytes : @& AiurSystem →
   @& Array G → @& Proof → Except String ByteArray

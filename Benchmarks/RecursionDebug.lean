@@ -114,8 +114,7 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
   match aiurSystem.verify claim proof with
   | .ok () => IO.println "inner proof verifies out-of-circuit: ok"
   | .error e => IO.eprintln s!"⚠ inner proof FAILS out-of-circuit verify: {e}"
-  -- The in-circuit verifier consumes the per-query advice transport, not
-  -- the pruned-multiproof wire format.
+  -- Verify the proof before serializing the transport consumed in-circuit.
   match aiurSystem.proofToAdviceBytes claim proof with
   | .error e => IO.eprintln s!"advice re-encoding failed: {e}"; return none
   | .ok adviceBytes =>

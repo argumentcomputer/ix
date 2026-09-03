@@ -27,7 +27,7 @@ theorem TrKExprS.prj_components
     ∃ structName valueV,
       world.nameOf id.addr = some structName ∧
       TrKExprS world.venv uvars world.nameOf trProj Delta value valueV ∧
-      trProj Delta.toCtx structName idx.toNat valueV projectedV := by
+      trProj uvars Delta.toCtx structName idx.toNat valueV projectedV := by
   cases h with
   | prj hname hvalue hprojection =>
       exact ⟨_, _, hname, hvalue, hprojection⟩
@@ -39,7 +39,7 @@ def EtaExpansionFieldAgreement (trProj : RawProjRel)
     (inductId : KId .anon) (field : Nat) (fieldV baseV : VExpr) : Prop :=
   ∃ structName projectedV,
     world.nameOf inductId.addr = some structName ∧
-      trProj Delta.toCtx structName field baseV projectedV ∧
+      trProj uvars Delta.toCtx structName field baseV projectedV ∧
       world.venv.IsDefEqU uvars Delta.toCtx fieldV projectedV
 
 /-- Semantic result of a common-base scan.  If a seed was supplied, a
@@ -194,7 +194,7 @@ theorem etaExpansionBaseLoop_wf
                         have hvalueResult := hvalueChosen.trans world.venvWF
                           hDelta hchosenResult
                         have hrawProjection' :
-                            trProj Delta.toCtx structName field valueV
+                            trProj uvars Delta.toCtx structName field valueV
                               reducedV := by
                           simpa only [hidx] using hrawProjection
                         obtain ⟨resultProjectedV, hresultProjection⟩ :=
@@ -272,7 +272,7 @@ theorem etaExpansionBaseLoop_wf
                             have hvalueResult := hvalueChosen.trans
                               world.venvWF hDelta hchosenResult
                             have hrawProjection' :
-                                trProj Delta.toCtx structName field valueV
+                                trProj uvars Delta.toCtx structName field valueV
                                   reducedV := by
                               simpa only [hidx] using hrawProjection
                             obtain ⟨resultProjectedV, hresultProjection⟩ :=

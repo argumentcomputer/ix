@@ -127,7 +127,7 @@ theorem instantiatedType
       simpa only [hzero] using htype
     have htypeU :
         TrKExprS world.venv uvars world.nameOf trProj [] c.ty ci.type :=
-      htype0.monoU (Nat.zero_le uvars) (by trivial)
+      htype0.monoU (Nat.zero_le uvars) theory.projections (by trivial)
     have htypeDelta :
         TrKExprS world.venv uvars world.nameOf trProj Delta c.ty ci.type := by
       simpa only [KVLCtx.appendOuter] using

@@ -34,16 +34,20 @@ namespace Ix.Tc
 
 open Lean4Lean (VExpr VLevel VEnv VConstant VConstVal VDefVal VDecl)
 
-/-- The abstract projection component used by raw expression translation.
-It has the same shape as the projection parameter of `TrKExprS`, but carries
-no closure or typing contract at the raw boundary. -/
+/-- The abstract projection component used by expression translation.
+
+Projection semantics are indexed by the ambient universe-parameter count.
+Lean4Lean's concrete `TrProj` changes that index under universe
+instantiation, so erasing it here would make the `instL` law impossible to
+state faithfully.  The raw boundary still carries no closure or typing
+contract; those laws live in `TrProjOK`. -/
 abbrev RawProjRel :=
-  List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop
+  Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop
 
 namespace RawProjRel
 
 /-- A projection relation suitable for fixtures containing no projections. -/
-def none : RawProjRel := fun _ _ _ _ _ => False
+def none : RawProjRel := fun _ _ _ _ _ _ => False
 
 end RawProjRel
 
@@ -58,7 +62,8 @@ There is no `fvar` constructor because Theory `VExpr` has no free-variable
 node.  A valid top-level declaration is closed, while an invalid declaration
 with an `fvar` simply has no raw Theory representation. -/
 inductive RawExprRel (env : VEnv) (nameOf : Address → Option Lean.Name)
-    (trProj : RawProjRel) : List VExpr → KExpr .anon → VExpr → Prop
+    (trProj : RawProjRel) {uvars : Nat} :
+    List VExpr → KExpr .anon → VExpr → Prop
   | var {ctx : List VExpr} {i : UInt64} {nm : Mode.anon.F Name}
       {md : ExprInfo .anon} :
     RawExprRel env nameOf trProj ctx (.var i nm md) (.bvar i.toNat)
@@ -105,7 +110,7 @@ inductive RawExprRel (env : VEnv) (nameOf : Address → Option Lean.Name)
     nameOf id.addr = some name →
     env.constants name = some ci →
     RawExprRel env nameOf trProj ctx val val' →
-    trProj ctx name field.toNat val' out →
+    trProj uvars ctx name field.toNat val' out →
     RawExprRel env nameOf trProj ctx (.prj id field val md) out
   | nat {ctx : List VExpr} {n : Nat} {blob : Address}
       {md : ExprInfo .anon} :
@@ -122,9 +127,10 @@ proof transports only constant-table lookups; it never manufactures typing
 evidence. -/
 theorem mono {env env' : VEnv} (henv : env ≤ env')
     {nameOf : Address → Option Lean.Name} {trProj : RawProjRel}
+    {uvars : Nat}
     {ctx : List VExpr} {e : KExpr .anon} {e' : VExpr}
-    (h : RawExprRel env nameOf trProj ctx e e') :
-    RawExprRel env' nameOf trProj ctx e e' := by
+    (h : RawExprRel (uvars := uvars) env nameOf trProj ctx e e') :
+    RawExprRel (uvars := uvars) env' nameOf trProj ctx e e' := by
   induction h with
   | var => exact .var
   | sort => exact .sort
@@ -136,6 +142,25 @@ theorem mono {env env' : VEnv} (henv : env ≤ env')
   | letE _ _ _ ihty ihval ihbody => exact .letE ihty ihval ihbody
   | prj hname hlookup _ hproj ihval =>
     exact .prj hname (henv.constants hlookup) ihval hproj
+  | nat => exact .nat
+  | str => exact .str
+
+/-- Raw translations without projection nodes are independent of the ambient
+universe-parameter count.  The only `RawExprRel` rule that observes this
+index is projection, and `RawProjRel.none` makes that case uninhabited. -/
+theorem none_reindex {env : VEnv} {nameOf : Address → Option Lean.Name}
+    {before after : Nat} {ctx : List VExpr} {e : KExpr .anon} {e' : VExpr}
+    (h : RawExprRel (uvars := before) env nameOf RawProjRel.none ctx e e') :
+    RawExprRel (uvars := after) env nameOf RawProjRel.none ctx e e' := by
+  induction h with
+  | var => exact .var
+  | sort => exact .sort
+  | const hname hlookup harity => exact .const hname hlookup harity
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam _ _ ihty ihbody => exact .lam ihty ihbody
+  | all _ _ ihty ihbody => exact .all ihty ihbody
+  | letE _ _ _ ihty ihval ihbody => exact .letE ihty ihval ihbody
+  | prj _ _ _ hprojection _ => exact False.elim hprojection
   | nat => exact .nat
   | str => exact .str
 
@@ -155,12 +180,32 @@ def KExpr.References (e : KExpr .anon) (id : KId .anon) : Prop :=
     ty.References id ∨ val.References id ∨ body.References id
   | .prj ref _ val _ => ref = id ∨ val.References id
 
+/-- The finite list of direct constant/projection references occurring in an
+expression.  Multiplicity and traversal order are retained deliberately: this
+is an executable census for concrete run supports, not a quotient set. -/
+def KExpr.referenceIds : KExpr .anon → List (KId .anon)
+  | .var .. | .fvar .. | .sort .. | .nat .. | .str .. => []
+  | .const ref .. => [ref]
+  | .app fn argument _ => fn.referenceIds ++ argument.referenceIds
+  | .lam _ _ type body _ | .all _ _ type body _ =>
+    type.referenceIds ++ body.referenceIds
+  | .letE _ type value body _ _ =>
+    type.referenceIds ++ value.referenceIds ++ body.referenceIds
+  | .prj ref _ value _ => ref :: value.referenceIds
+
+/-- Executable reference enumeration is exact for the logical reference
+predicate used by cache authority and catalog closure. -/
+@[simp] theorem KExpr.mem_referenceIds {e : KExpr .anon} {id : KId .anon} :
+    id ∈ e.referenceIds ↔ e.References id := by
+  induction e <;> simp_all [KExpr.referenceIds, KExpr.References, eq_comm]
+
 /-- Every expression reference admitted by raw translation resolves in the
 current Theory environment.  This is a lookup fact only, not a WF fact. -/
 theorem RawExprRel.reference_resolved
     {env : VEnv} {nameOf : Address → Option Lean.Name}
-    {trProj : RawProjRel} {ctx : List VExpr} {e : KExpr .anon}
-    {e' : VExpr} (h : RawExprRel env nameOf trProj ctx e e')
+    {trProj : RawProjRel} {uvars : Nat} {ctx : List VExpr}
+    {e : KExpr .anon} {e' : VExpr}
+    (h : RawExprRel (uvars := uvars) env nameOf trProj ctx e e')
     {id : KId .anon} (href : e.References id) :
     ∃ name ci, nameOf id.addr = some name ∧
       env.constants name = some ci := by
@@ -196,8 +241,9 @@ theorem RawExprRel.reference_resolved
 absent from the environment. -/
 theorem RawExprRel.not_references_of_absent
     {env : VEnv} {nameOf : Address → Option Lean.Name}
-    {trProj : RawProjRel} {ctx : List VExpr} {e : KExpr .anon}
-    {e' : VExpr} (h : RawExprRel env nameOf trProj ctx e e')
+    {trProj : RawProjRel} {uvars : Nat} {ctx : List VExpr}
+    {e : KExpr .anon} {e' : VExpr}
+    (h : RawExprRel (uvars := uvars) env nameOf trProj ctx e e')
     {id : KId .anon} {name : Lean.Name}
     (hname : nameOf id.addr = some name)
     (habsent : env.constants name = none) :
@@ -262,7 +308,7 @@ inductive RawDeclRel (env : VEnv) (nameOf : Address → Option Lean.Name)
       {isUnsafe : Bool} {lvls : UInt64} {ty : KExpr .anon}
       {name : Lean.Name} {ty' : VExpr} :
     nameOf id.addr = some name →
-    RawExprRel env nameOf trProj [] ty ty' →
+    RawExprRel (uvars := lvls.toNat) env nameOf trProj [] ty ty' →
     RawDeclRel env nameOf trProj id (.axio nm lps isUnsafe lvls ty)
       (.axiom { name, uvars := lvls.toNat, type := ty' })
   | defn {nm : Mode.anon.F Name} {lps : Mode.anon.F (Array Name)}
@@ -272,8 +318,8 @@ inductive RawDeclRel (env : VEnv) (nameOf : Address → Option Lean.Name)
       {block : KId .anon} {name : Lean.Name} {ty' val' : VExpr}
       {d : VDecl} :
     nameOf id.addr = some name →
-    RawExprRel env nameOf trProj [] ty ty' →
-    RawExprRel env nameOf trProj [] val val' →
+    RawExprRel (uvars := lvls.toNat) env nameOf trProj [] ty ty' →
+    RawExprRel (uvars := lvls.toNat) env nameOf trProj [] val val' →
     RawDefKindRel
       { name, uvars := lvls.toNat, type := ty', value := val' } kind d →
     RawDeclRel env nameOf trProj id
