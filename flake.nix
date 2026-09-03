@@ -345,6 +345,11 @@
             ix-tests = pkgs.runCommand "ix-tests" { } ''
               cp -r ${./.} src
               chmod -R u+w src
+              # IxTests depends on the ix target, so its wrapped output already
+              # contains the matching CLI. Recreate Lake's checkout-relative
+              # path for tests that intentionally exercise that CLI.
+              mkdir -p src/.lake/build/bin
+              ln -s ${ixTest}/bin/ix src/.lake/build/bin/ix
               cd src
               ${ixTest}/bin/IxTests
               touch $out
