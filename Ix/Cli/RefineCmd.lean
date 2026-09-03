@@ -89,7 +89,7 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
     ++ (match jobs? with | some j => #["--jobs", toString j] | none => #[])
     ++ (match report? with | some r => #["--report", r] | none => #[])
     ++ (if p.hasFlag "no-index" then #["--no-index"] else #[])).toList
-  Ix.Cli.CheckCmd.runShardBatchNative manifest ixePath jobs? compiled false none none
+  Ix.Cli.CheckCmd.runShardBatchNative manifest ixePath jobs? compiled false none
     maxRamBytes (some out)
     { selection := selection?, provenGuard := guard?, report := report?,
       emitOnFailure := true, command, budgetSource }

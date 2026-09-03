@@ -288,14 +288,14 @@ lean_ffi::lean_inductive! {
   // mainWidth, stage2Width, quotientDegree, preprocessedWidth,
   // preprocessedHeight
   LeanAiurCircuitShape   [ { num_obj: 5 } ];
-  // output, ioData, ioMap, queryCounts, record (QueryRecordHandle)
-  LeanAiurExecuteResult  [ { num_obj: 5 } ];
+  // output, ioData, ioMap, queryCounts
+  LeanAiurExecuteResult  [ { num_obj: 4 } ];
   // claim, proof, ioData, ioMap
   LeanAiurProveResult    [ { num_obj: 4 } ];
   // claimBytes, proof, ioData, ioMap
   LeanAiurProveEnvResult [ { num_obj: 4 } ];
-  // error, peakBytes, weights, suggestedParts
-  LeanAiurShardResult    [ { num_obj: 4 } ];
+  // error, peakBytes, suggestedParts
+  LeanAiurShardResult    [ { num_obj: 3 } ];
   // claimBytes, proof, peakBytes, suggestedParts
   LeanAiurShardProveResult [ { num_obj: 4 } ];
   // claimBytes, constantCount

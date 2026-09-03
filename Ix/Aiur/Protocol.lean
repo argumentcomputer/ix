@@ -356,17 +356,10 @@ def detectedRamBudgetBytes : IO Nat := do
 
 namespace Bytecode.Toplevel
 
-/-- One shard's result from `shardCheckBatchWithEnv`. `weights` is the
-    shard's per-constant virtual-gas table, packed as 48-byte rows —
-    32-byte address, then `vspan` and `mult` as little-endian `UInt64`s
-    (see `ShardResult.foldWeights`). Empty unless the batch ran with
-    `profile := true`; the record it is read from is reduced to these
-    rows and dropped inside the shard's own task, so a whole partition's
-    weights fit in RAM when its records could not. -/
+/-- One shard's result from `shardCheckBatchWithEnv`. -/
 structure ShardResult where
   error : String
   peakBytes : Nat
-  weights : ByteArray
   /-- 1 when `peakBytes` fits the batch's `maxRamBytes` (or no budget
       was given); otherwise the part count the peak model projects will
       fit (`AiurSystem::suggested_split_parts`, measured on the record
@@ -374,27 +367,10 @@ structure ShardResult where
   suggestedParts : Nat
   deriving Inhabited
 
-/-- Bytes per packed `weights` row: 32 address + 8 vspan + 8 mult. -/
-def shardWeightRow : Nat := 48
-
-/-- Fold `f` over the packed `(addrBytes, vspan, mult)` rows of `weights`.
-    Trailing bytes that do not complete a row are ignored. -/
-@[inline] def ShardResult.foldWeights {α : Type} (r : ShardResult) (init : α)
-    (f : α → ByteArray → UInt64 → UInt64 → α) : α :=
-  go (r.weights.size / shardWeightRow) 0 init
-where
-  go : Nat → Nat → α → α
-    | 0, _, acc => acc
-    | rows + 1, off, acc =>
-      go rows (off + shardWeightRow) <| f acc
-        (r.weights.extract off (off + 32))
-        (r.weights.extract (off + 32) (off + 40)).toUInt64LE!
-        (r.weights.extract (off + 40) (off + 48)).toUInt64LE!
-
 @[extern "rs_aiur_toplevel_shard_check_batch"]
 private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → @& Nat →
-  @& CommitmentParameters → @& FriParameters → Bool → @& Nat → @& Nat →
+  @& CommitmentParameters → @& FriParameters → @& Nat →
     Except String (Array ShardResult)
 
 /-- Check EVERY shard of a partition in one call: rayon over the shard
@@ -405,11 +381,7 @@ private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
     Returns one `ShardResult` per shard in shard order: empty error =
     clean, and `peakBytes` is the analytic prover RAM peak
     ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's executed
-    record — the split/merge input (0 on failure). `profile` turns on the
-    virtual-gas meter and fills each result's `weights` with the shard's
-    per-constant cost rows, read off the record inside the shard's own
-    task; `checkConstIdx` names the `check_const` function whose queries
-    those rows come from (ignored when not profiling).
+    record — the split/merge input (0 on failure).
     `jobs = 0` uses rayon's default pool width (all cores): peak RSS
     is bounded by the Rust-side RAM gate (a byte-weighted admission
     semaphore over estimated per-shard execution RSS vs available
@@ -426,11 +398,10 @@ def shardCheckBatchWithEnv (toplevel : @& Bytecode.Toplevel)
   (shardsBlob : ByteArray) (useBytecode : Bool := false) (jobs : Nat := 0)
   (commitmentParameters : CommitmentParameters := defaultCommitmentParameters)
   (friParameters : FriParameters := defaultFriParameters)
-  (profile : Bool := false) (checkConstIdx : Nat := 0)
   (maxRamBytes : Nat := 0)
   : Except String (Array ShardResult) :=
   shardCheckBatchWithEnv' toplevel funIdx envHandle shardsBlob useBytecode
-    jobs commitmentParameters friParameters profile checkConstIdx maxRamBytes
+    jobs commitmentParameters friParameters maxRamBytes
 
 end Bytecode.Toplevel
 
