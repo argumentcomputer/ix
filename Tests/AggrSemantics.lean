@@ -342,23 +342,33 @@ def semanticSuite : IO UInt32 := do
         statement.claim == .checkEnv (canonicalTree #[singleAddr]).root none
       | .error _ => false
     | .error _ => false
-  let nativePlanOnlyFfiWorks ← do
+  let (nativePlanOnlyFfiWorks, nativeVerifyRootMatches) ← do
     let dir ← IO.FS.createTempDir
     let ixePath := dir / "native-plan.ixe"
     let ixesPath := dir / "native-plan.ixes"
     match Ixon.serEnv singleEnv with
-    | .error _ => pure false
+    | .error _ => pure (false, false)
     | .ok envBytes =>
       IO.FS.writeBinFile ixePath envBytes
       IO.FS.writeBinFile ixesPath <| minimalIxesFor #[#[singleAddr]]
         (#[1, 0] ++ u32le4 0 ++ #[0])
       match Aiur.EnvHandle.fromIxe ixePath.toString with
-      | .error _ => pure false
+      | .error _ => pure (false, false)
       | .ok handle =>
-        pure <| (ixvmSystem.aggregateStage2 selfSystem handle
+        let planWorks := (ixvmSystem.aggregateStage2 selfSystem handle
           ixesPath.toString "" verifyIdx fakeAggrIdx 1
           (16 * 1024 * 1024 * 1024) 4096 0 false true
           childRecursionParameters.cacheFriBytes false true).isOk
+        let expectedMatches := match Aiur.AiurSystem.aggregateExpected
+            handle ixesPath.toString 4096 with
+          | .error _ => false
+          | .ok expected =>
+            expected.constantCount == 1 && match
+                Ixon.runGet Ix.Claim.get expected.claimBytes with
+              | .ok claim =>
+                claim == .checkEnv (canonicalTree #[singleAddr]).root none
+              | .error _ => false
+        pure (planWorks, expectedMatches)
 
   let (pairEnv, pairLeft, pairRight) := pairIxonEnv
   let pairManifest := Ix.Cli.CheckCmd.parseIxesManifest
@@ -663,6 +673,8 @@ def semanticSuite : IO UInt32 := do
     test "one retained shard reconstructs one value-based root" singletonValueRoot,
     test "native Stage 2 FFI plans a serialized environment end-to-end"
       nativePlanOnlyFfiWorks,
+    test "native verifier orchestration reproduces the Stage 2 root claim"
+      nativeVerifyRootMatches,
     test "two-shard manifest passes exact environment coverage" pairCoverage,
     test "aggregate startup prepares every shard from one ownership pass"
       batchedShardPreparationCorrect,

@@ -298,6 +298,8 @@ lean_ffi::lean_inductive! {
   LeanAiurShardResult    [ { num_obj: 4 } ];
   // claimBytes, proof, peakBytes, suggestedParts
   LeanAiurShardProveResult [ { num_obj: 4 } ];
+  // claimBytes, constantCount
+  LeanAiurAggregateExpected [ { num_obj: 2 } ];
 
   // --- Block / comparison types ---
 

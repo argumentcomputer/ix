@@ -235,8 +235,10 @@ private def verifyAggregateProof (backend : AggregateBackend)
       return 1
   let outerClaim := Ix.Cli.AggregateCmd.aggregateOuterClaim
     backend.allowed backend.aggrIdx wrapper.claim
+  let verifyStarted ← IO.monoMsNow
   match backend.system.verify outerClaim proof with
   | .ok () =>
+    IO.println s!"[verify] aggregate Aiur proof: {(← IO.monoMsNow) - verifyStarted}ms"
     IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
     if let some expected := expected? then
       IO.println s!"[verify] aggregate coverage: {expected.constantCount}/\
@@ -334,8 +336,8 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
     if proofs.isEmpty then
       p.printError "error: --aggregate requires at least one aggregate proof address"
       return 1
-    let ixePath? := (p.flag? "ixe").map (·.as! String)
-    let manifestPath? := (p.flag? "ixes").map (·.as! String)
+    let ixePath? : Option String := (p.flag? "ixe").map (·.as! String)
+    let manifestPath? : Option String := (p.flag? "ixes").map (·.as! String)
     if manifestPath?.isSome && ixePath?.isNone then
       p.printError "error: aggregate verification with --ixes also requires --ixe"
       return 1
@@ -359,25 +361,33 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
           | .ok count => pure count
         pure (some { claim := statement.claim, constantCount })
       | some ixePath, some manifestPath =>
-        let env ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
-          | .error e => IO.eprintln s!"deserialize {ixePath} failed: {e}"; return 1
-          | .ok env => pure env
-        let view ← match Ix.Cli.CheckCmd.parseIxesManifest
-            (← IO.FS.readBinFile manifestPath) with
-          | .error e => IO.eprintln s!"manifest parse failed: {e}"; return 1
-          | .ok view => pure view
-        if !(← Ix.Cli.CheckCmd.shardsCover env view.shards) then return 1
-        let statement ← match expectedFromManifest env view structuralAbove with
-          | .error e => IO.eprintln e; return 1
+        let started ← IO.monoMsNow
+        let envHandle ← match ← IO.lazyPure fun _ => Aiur.EnvHandle.fromIxe ixePath with
+          | .error e =>
+            IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"
+            return 1
+          | .ok handle => pure handle
+        let native ← match ← IO.lazyPure fun _ =>
+            Aiur.AiurSystem.aggregateExpected envHandle manifestPath structuralAbove with
+          | .error e =>
+            IO.eprintln s!"native aggregate manifest audit failed: {e}"
+            return 1
           | .ok expected => pure expected
-        let constantCount ← match auditAggregateConstants env statement with
-          | .error e => IO.eprintln s!"error: {e}"; return 1
-          | .ok count => pure count
-        pure (some { claim := statement.claim, constantCount })
+        let claim ← match Ixon.runGet Ix.Claim.get native.claimBytes with
+          | .error e =>
+            IO.eprintln s!"native aggregate root claim decode failed: {e}"
+            return 1
+          | .ok claim => pure claim
+        IO.println s!"[verify] native manifest audit: {native.constantCount} constants in \
+          {(← IO.monoMsNow) - started}ms"
+        pure (some { claim, constantCount := native.constantCount })
       | none, some _ => unreachable!
+    let backendStarted ← IO.monoMsNow
     let backend ← match ← buildAggregateBackend recursionParameters with
       | .error e => IO.eprintln e; return 1
       | .ok backend => pure backend
+    IO.println s!"[verify] aggregate backend setup: \
+      {(← IO.monoMsNow) - backendStarted}ms"
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "aggregate proof" hex

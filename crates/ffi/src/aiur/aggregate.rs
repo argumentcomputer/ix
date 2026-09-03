@@ -53,6 +53,7 @@ use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::lean_unbox_nat_as_usize;
+use crate::lean::LeanAiurAggregateExpected;
 
 const CACHE_VERSION: u64 = 2;
 const MIB: usize = 1024 * 1024;
@@ -342,6 +343,14 @@ struct PreparedRun {
 enum PlanOp {
   Leaf(usize),
   Join(usize, usize),
+}
+
+#[derive(Debug)]
+struct StatementSpec {
+  op: PlanOp,
+  statement: Arc<Statement>,
+  subject_count: usize,
+  structural: bool,
 }
 
 #[derive(Debug)]
@@ -692,16 +701,13 @@ fn shape_ram_bytes(shape: u8, subject_count: usize) -> usize {
   }
 }
 
-fn build_specs(
+/// Build the claim-bearing statement at every aggregate slot. This is the
+/// shared source of truth for proving and manifest-bound verification: the
+/// verifier must not reconstruct the same DAG independently in Lean.
+fn build_statement_specs(
   prepared: &PreparedRun,
-  verify_idx: usize,
-  aggr_idx: usize,
   structural_above: usize,
-  direct_joins: bool,
-  aggr_vk: &[u8],
-  allowed: &[u8],
-  cache_fri_bytes: &[u8],
-) -> Result<Vec<SlotSpec>, String> {
+) -> Result<Vec<StatementSpec>, String> {
   let shard_by_id: FxHashMap<u32, usize> = prepared
     .shards
     .iter()
@@ -710,36 +716,16 @@ fn build_specs(
     .collect();
   let mut ops = Vec::new();
   build_plan(&prepared.tree, &shard_by_id, &mut ops)?;
-  let raw_leaves = direct_joins && ops.len() > 1;
-  let mut specs: Vec<SlotSpec> = Vec::with_capacity(ops.len());
+  let mut specs: Vec<StatementSpec> = Vec::with_capacity(ops.len());
   for op in ops {
     match op {
       PlanOp::Leaf(shard) => {
         let prepared_shard = &prepared.shards[shard];
-        let kind = if raw_leaves { ChildKind::Ixvm } else { ChildKind::Aggr };
-        let shape = (!raw_leaves).then_some(shape_code(ChildKind::Ixvm, None));
-        let outer_claim = if raw_leaves {
-          inner_claim(verify_idx, &prepared_shard.statement.claim_bytes)
-        } else {
-          aggregate_outer_claim(
-            aggr_idx,
-            allowed,
-            &prepared_shard.statement.claim_bytes,
-          )
-        };
-        let key = cache_key(aggr_vk, cache_fri_bytes, &outer_claim);
-        specs.push(SlotSpec {
+        specs.push(StatementSpec {
           op,
           statement: prepared_shard.statement.clone(),
           subject_count: prepared_shard.statement.subjects.count,
           structural: false,
-          kind,
-          shape,
-          outer_claim,
-          cache_key: key,
-          ram_bytes: shape.map_or(RAW_SHARD_RAM_BYTES, |value| {
-            shape_ram_bytes(value, prepared_shard.statement.subjects.count)
-          }),
         });
       },
       PlanOp::Join(left_index, right_index) => {
@@ -752,11 +738,6 @@ fn build_specs(
         let subject_count =
           left.subject_count.saturating_add(right.subject_count);
         let structural = subject_count > structural_above;
-        let shape = if structural {
-          structural_shape_code(left.kind, right.kind)
-        } else {
-          shape_code(left.kind, Some(right.kind))
-        };
         let statement = Statement::join(
           &left.statement,
           &right.statement,
@@ -766,6 +747,135 @@ fn build_specs(
         if statement.subjects.count != subject_count {
           return Err("aggregate plan has inconsistent subject counts".into());
         }
+        specs.push(StatementSpec { op, statement, subject_count, structural });
+      },
+    }
+  }
+  Ok(specs)
+}
+
+/// Check the semantic certificate attached to the root statement independently
+/// of any proof: every environment constant occurs exactly once, every retained
+/// shard contributes, the canonicalized subject root is the environment root,
+/// and no assumption survives.
+fn validate_root_statement(
+  prepared: &PreparedRun,
+  root: &Statement,
+) -> Result<(), String> {
+  if root.subjects.count != prepared.env_count {
+    return Err(format!(
+      "aggregate root has {} subjects, environment has {}",
+      root.subjects.count, prepared.env_count
+    ));
+  }
+  if root.subjects.shards != prepared.expected_shards {
+    return Err("aggregate root does not contain every retained shard".into());
+  }
+  let mut root_leaves = Vec::with_capacity(prepared.env_count);
+  root.subjects.collect_leaves(&mut root_leaves);
+  if root_leaves.len() != prepared.env_count {
+    return Err(format!(
+      "aggregate root tree contains {} subject occurrences, environment has {} constants",
+      root_leaves.len(),
+      prepared.env_count
+    ));
+  }
+  root_leaves.sort_unstable();
+  if root_leaves.windows(2).any(|pair| pair[0] == pair[1]) {
+    return Err("aggregate root contains a duplicate subject".into());
+  }
+  if let Some(foreign) = root_leaves
+    .iter()
+    .find(|addr| !prepared.owner_by_address.contains_key(*addr))
+  {
+    return Err(format!(
+      "aggregate root contains foreign subject {}",
+      foreign.hex()
+    ));
+  }
+  let canonical_root = merkle_root_canonical_sorted(&root_leaves)
+    .ok_or("aggregate root has no subject leaves")?;
+  if canonical_root != prepared.env_root {
+    return Err(format!(
+      "aggregate root subjects canonicalize to {}, not environment root {}",
+      canonical_root.hex(),
+      prepared.env_root.hex()
+    ));
+  }
+  if root.assumptions.is_some() {
+    return Err("aggregate root retains undischarged assumptions".into());
+  }
+  Ok(())
+}
+
+fn expected_from_manifest(
+  env: &ixon::Env,
+  manifest: &ShardManifest,
+  structural_above: usize,
+) -> Result<(Arc<Statement>, usize), String> {
+  let prepared = prepare_run(env, manifest)?;
+  let specs = build_statement_specs(&prepared, structural_above)?;
+  let root = specs
+    .last()
+    .ok_or("aggregate manifest produced no root statement")?
+    .statement
+    .clone();
+  validate_root_statement(&prepared, &root)?;
+  Ok((root, prepared.env_count))
+}
+
+fn build_specs(
+  prepared: &PreparedRun,
+  verify_idx: usize,
+  aggr_idx: usize,
+  structural_above: usize,
+  direct_joins: bool,
+  aggr_vk: &[u8],
+  allowed: &[u8],
+  cache_fri_bytes: &[u8],
+) -> Result<Vec<SlotSpec>, String> {
+  let statement_specs = build_statement_specs(prepared, structural_above)?;
+  let raw_leaves = direct_joins && statement_specs.len() > 1;
+  let mut specs: Vec<SlotSpec> = Vec::with_capacity(statement_specs.len());
+  for statement_spec in statement_specs {
+    let StatementSpec { op, statement, subject_count, structural } =
+      statement_spec;
+    match op {
+      PlanOp::Leaf(_) => {
+        let kind = if raw_leaves { ChildKind::Ixvm } else { ChildKind::Aggr };
+        let shape = (!raw_leaves).then_some(shape_code(ChildKind::Ixvm, None));
+        let outer_claim = if raw_leaves {
+          inner_claim(verify_idx, &statement.claim_bytes)
+        } else {
+          aggregate_outer_claim(aggr_idx, allowed, &statement.claim_bytes)
+        };
+        let key = cache_key(aggr_vk, cache_fri_bytes, &outer_claim);
+        specs.push(SlotSpec {
+          op,
+          statement,
+          subject_count,
+          structural,
+          kind,
+          shape,
+          outer_claim,
+          cache_key: key,
+          ram_bytes: shape.map_or(RAW_SHARD_RAM_BYTES, |value| {
+            shape_ram_bytes(value, subject_count)
+          }),
+        });
+      },
+      PlanOp::Join(left_index, right_index) => {
+        let left = specs
+          .get(left_index)
+          .ok_or("aggregate plan has a missing left child")?;
+        let right = specs
+          .get(right_index)
+          .ok_or("aggregate plan has a missing right child")?;
+        let shape = if structural {
+          structural_shape_code(left.kind, right.kind)
+        } else {
+          shape_code(left.kind, Some(right.kind))
+        };
         let outer_claim =
           aggregate_outer_claim(aggr_idx, allowed, &statement.claim_bytes);
         let key = cache_key(aggr_vk, cache_fri_bytes, &outer_claim);
@@ -1799,31 +1909,7 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   if root.kind != ChildKind::Aggr {
     return Err("aggregate plan produced a raw IxVM root".into());
   }
-  if root.statement.subjects.count != prepared.env_count {
-    return Err(format!(
-      "aggregate root has {} subjects, environment has {}",
-      root.statement.subjects.count, prepared.env_count
-    ));
-  }
-  if root.statement.subjects.shards != prepared.expected_shards {
-    return Err("aggregate root does not contain every retained shard".into());
-  }
-  let mut root_leaves = Vec::with_capacity(prepared.env_count);
-  root.statement.subjects.collect_leaves(&mut root_leaves);
-  root_leaves.sort_unstable();
-  root_leaves.dedup();
-  let canonical_root = merkle_root_canonical_sorted(&root_leaves)
-    .ok_or("aggregate root has no subject leaves")?;
-  if canonical_root != prepared.env_root {
-    return Err(format!(
-      "aggregate root subjects canonicalize to {}, not environment root {}",
-      canonical_root.hex(),
-      prepared.env_root.hex()
-    ));
-  }
-  if root.statement.assumptions.is_some() {
-    return Err("aggregate root retains undischarged assumptions".into());
-  }
+  validate_root_statement(&prepared, &root.statement)?;
   config.aggr_system.verify(&root.outer_claim, &root.proof).map_err(
     |error| format!("aggregate root proof failed verification: {error:?}"),
   )?;
@@ -1845,6 +1931,43 @@ fn panic_text(payload: &Box<dyn std::any::Any + Send>) -> &str {
     .copied()
     .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
     .unwrap_or("unknown Rust panic")
+}
+
+/// Native manifest/environment binding for `ix verify --aggregate --ixes`.
+/// The returned claim comes from the exact statement builder used by Stage 2,
+/// after a full constant/shard/assumption audit.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_aggregate_expected(
+  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  structural_above: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let manifest_bytes =
+      fs::read(Path::new(manifest_path.as_str())).map_err(|error| {
+        format!("read manifest {}: {error}", manifest_path.as_str())
+      })?;
+    let manifest = ShardManifest::from_bytes(&manifest_bytes)
+      .map_err(|error| format!("manifest parse failed: {error}"))?;
+    expected_from_manifest(
+      &env_handle.get().env,
+      &manifest,
+      lean_unbox_nat_as_usize(structural_above.inner()),
+    )
+  }));
+  match result {
+    Ok(Ok((statement, constant_count))) => {
+      let expected = LeanAiurAggregateExpected::alloc(0);
+      expected.set_obj(0, LeanByteArray::from_bytes(&statement.claim_bytes));
+      expected.set_obj(1, LeanOwned::box_usize(constant_count));
+      LeanExcept::ok(expected)
+    },
+    Ok(Err(error)) => LeanExcept::error_string(&error),
+    Err(payload) => LeanExcept::error_string(&format!(
+      "native aggregate verification setup panicked: {}",
+      panic_text(&payload)
+    )),
+  }
 }
 
 /// Production FFI called once after Lean has compiled the IxVM and ixAggr
@@ -2031,6 +2154,14 @@ mod tests {
     assert!(specs[2].structural);
     assert_eq!(specs[2].subject_count, 2);
     assert!(specs[2].statement.assumptions.is_none());
+    let (expected, constant_count) =
+      expected_from_manifest(&env, &manifest, 0).expect("native expected root");
+    assert_eq!(constant_count, 2);
+    assert_eq!(expected.claim, specs[2].statement.claim);
+    let (flat_expected, flat_count) =
+      expected_from_manifest(&env, &manifest, 8).expect("flat expected root");
+    assert_eq!(flat_count, 2);
+    assert_ne!(flat_expected.claim, expected.claim);
     assert_eq!(
       plan_replay(&specs, 0).unwrap(),
       ReplayPlan { children: Vec::new(), needs_input_proofs: true }

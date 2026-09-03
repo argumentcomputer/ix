@@ -95,6 +95,14 @@ structure ProveEnvResult where
   ioMap : Array ((G × Array G) × IOKeyInfo)
   deriving Nonempty
 
+/-- Manifest-bound aggregate root reconstructed and audited by the native
+Stage 2 controller. `claimBytes` is the exact root `Ix.Claim` wire encoding;
+`constantCount` is the number of environment constants proven to occur once. -/
+structure AggregateExpected where
+  claimBytes : ByteArray
+  constantCount : Nat
+  deriving Nonempty
+
 namespace AiurSystem
 
 @[extern "rs_aiur_system_build"]
@@ -213,6 +221,15 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs : Bool) :
     Except String String
+
+/-- Reconstruct and audit the manifest-relative aggregate root entirely in
+Rust, using the same ownership, frontier, pruning, and statement-fold code as
+`aggregateStage2`. This is the native orchestration path for `ix verify` and
+does not construct shard statements or schedule Lean tasks. -/
+@[extern "rs_aiur_aggregate_expected"]
+opaque aggregateExpected (envHandle : @& EnvHandle)
+  (manifestPath : @& String) (structuralAbove : @& Nat) :
+    Except String AggregateExpected
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →
