@@ -664,11 +664,17 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           match aiurSystem.shardProveWithEnv funIdx envHandle
               (singletonOwnedBlob addr) with
           | .error e => .error e
-          | .ok (claimBytes, proof, ioBuf) =>
-            let digest := Address.blake3 claimBytes
-            let claim :=
-              Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
-            .ok (claim, proof, ioBuf, some claimBytes)
+          | .ok result => match result.proof with
+            | none =>
+              .error s!"projected prover peak {result.peakBytes} bytes exceeds \
+                the budget; suggested {result.suggestedParts} parts"
+            | some proof =>
+              let digest := Address.blake3 result.claimBytes
+              let claim :=
+                Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
+              -- Shard proving no longer returns its whole ingested IO scope;
+              -- this benchmark never reads it after the proof is produced.
+              .ok (claim, proof, default, some result.claimBytes)
         else
           match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp with
           | .error e => .error e
