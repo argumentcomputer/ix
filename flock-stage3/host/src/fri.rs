@@ -3975,7 +3975,7 @@ fn stage3_linchecks() -> &'static Stage3Linchecks {
       field_sample,
       split,
       window,
-    ] = circuits.try_into().ok().expect("eleven Stage 3 lincheck circuits");
+    ] = circuits.try_into().expect("eleven Stage 3 lincheck circuits");
     Stage3Linchecks {
       blake3,
       order,
@@ -5703,7 +5703,7 @@ mod tests {
   use ix_terminal::validate_and_expand_root_inputs;
   use multi_stark::{
     expr::Expr,
-    lookup::{Lookup, WidthBinding},
+    lookup::Lookup,
     p3_matrix::dense::RowMajorMatrix,
     system::{CircuitInputs, System, SystemWitness},
     types::{CommitmentParameters, GoldilocksBlake3Config},
@@ -5745,8 +5745,7 @@ mod tests {
       Expr::IsFirstRow * (Expr::main(0) - Expr::constant(Val::from_u64(7)));
     let short_transition = Expr::IsTransition
       * (Expr::main_next(0) - Expr::main(0) - Expr::constant(Val::from_u64(9)));
-    let config = GoldilocksBlake3Config::new(commitment, fri)
-      .with_width_binding(WidthBinding::ByConstruction);
+    let config = GoldilocksBlake3Config::new(commitment, fri);
     let (system, key) = System::new(
       config,
       [

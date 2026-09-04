@@ -17,7 +17,7 @@ use ix_terminal::{
 use multi_stark::{
   expr::{RowOffset, Source},
   graph::Node,
-  lookup::{Lookup, WidthBinding},
+  lookup::Lookup,
   p3_field::{BasedVectorSpace, Field, PrimeCharacteristicRing, PrimeField64},
   types::{ExtVal, FriParameters, Val},
 };
@@ -56,7 +56,6 @@ pub struct Stage2AirProgramV1 {
   pub activation_bindings: Vec<Stage2TranscriptByteBindingV1>,
   pub active_circuits: Vec<Stage2ActiveAirCircuitV1>,
   pub claim_bindings: Vec<Stage2TranscriptByteBindingV1>,
-  pub width_binding: WidthBinding,
   pub statement_prefix: [u8; STAGE2_STATEMENT_PREFIX_BYTES],
   pub statement_digest: [u8; 32],
 }
@@ -166,24 +165,6 @@ impl Stage2AirProgramV1 {
       })
       .collect::<Vec<_>>();
 
-    let height_weight =
-      active_circuits.iter().try_fold(1u128, |total, circuit| {
-        let per_row: u128 = circuit
-          .metadata
-          .graph
-          .lookups
-          .iter()
-          .map(|lookup| u128::from(lookup.max_multiplicity))
-          .sum();
-        let height = 1u128 << circuit.log_degree;
-        total
-          .checked_add(per_row.saturating_mul(height))
-          .ok_or_else(|| anyhow::anyhow!("AIR multiplicity bound overflow"))
-      })?;
-    if height_weight >= u128::from(GOLDILOCKS_MODULUS) {
-      bail!("AIR multiplicity height bound exceeds Goldilocks");
-    }
-
     let statement_bytes = prepared.statement().to_bytes();
     if statement_bytes.len() != STAGE2_ROOT_STATEMENT_BYTES {
       bail!("Stage 2 statement has the wrong length");
@@ -197,7 +178,6 @@ impl Stage2AirProgramV1 {
       activation_bindings,
       active_circuits,
       claim_bindings,
-      width_binding: key.width_binding(),
       statement_prefix,
       statement_digest: prepared.statement().digest(),
     })
@@ -532,7 +512,6 @@ pub(crate) fn constrain_stage2_air(
       one,
       &circuit.metadata.graph.lookups,
       circuit.metadata.lookup_group_size,
-      program.width_binding,
       &node_values,
       &openings.stage2[0],
       &openings.stage2[1],
@@ -821,7 +800,6 @@ fn constrain_logup(
   one: Wire,
   lookups: &[Lookup<multi_stark::graph::NodeId>],
   group_size: usize,
-  width_binding: WidthBinding,
   node_values: &[Wire],
   stage2: &[Wire],
   stage2_next: &[Wire],
@@ -872,12 +850,8 @@ fn constrain_logup(
     let messages: Vec<_> = chunk
       .iter()
       .map(|lookup| {
-        let seed = match width_binding {
-          WidthBinding::Fingerprint => lookup.args.len() as u64,
-          WidthBinding::ByConstruction => 0,
-        };
         let seed =
-          record_fixed(builder, inputs, public_inputs, F128::new(seed, 0));
+          record_fixed(builder, inputs, public_inputs, F128::new(0, 0));
         let mut fingerprint = [seed, zero];
         for &argument in lookup.args.iter().rev() {
           fingerprint =

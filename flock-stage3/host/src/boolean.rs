@@ -321,6 +321,7 @@ pub(crate) fn generate_boolean_witness_into<T: Sync>(
 
 /// Low-level form of [`generate_boolean_witness_into`] for Boolean tables
 /// whose matrices and row filler predate [`BooleanR1csPlan`].
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_boolean_rows_into<T: Sync>(
   k_log: usize,
   useful_bits: usize,

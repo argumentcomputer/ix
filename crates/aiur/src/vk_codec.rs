@@ -667,15 +667,20 @@ impl AiurVerifyingKey {
     self.system.verify(claim, proof)
   }
 
-  /// Verify and serialize the native pruned multiproof consumed by terminal
-  /// circuit verifiers.
-  pub fn proof_to_advice_bytes(
+  /// Verify and expand the native pruned multiproof into per-query advice.
+  pub fn proof_to_per_query_advice_bytes(
     &self,
     claim: &[Val],
     proof: &crate::synthesis::AiurProof,
   ) -> Result<Vec<u8>, String> {
-    self.verify(claim, proof).map_err(|error| format!("{error:?}"))?;
-    proof.to_bytes().map_err(|error| format!("{error:?}"))
+    multi_stark::advice::proof_to_advice_bytes(
+      &self.system,
+      self.commitment_parameters,
+      self.fri_parameters,
+      &[claim],
+      proof,
+    )
+    .map_err(|error| format!("{error:?}"))
   }
 }
 #[cfg(test)]

@@ -590,8 +590,25 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<Vec<u8>, String> {
-    self.verify(claim, proof).map_err(|e| format!("{e:?}"))?;
-    proof.to_bytes().map_err(|e| format!("{e:?}"))
+    self.verify(claim, proof).map_err(|error| format!("{error:?}"))?;
+    proof.to_bytes().map_err(|error| format!("{error:?}"))
+  }
+
+  /// Verify and expand the native multiproof for a per-query terminal
+  /// verifier such as Flock Stage 3.
+  pub fn proof_to_per_query_advice_bytes(
+    &self,
+    claim: &[G],
+    proof: &AiurProof,
+  ) -> Result<Vec<u8>, String> {
+    multi_stark::advice::proof_to_advice_bytes(
+      &self.system,
+      self.commitment_parameters,
+      self.fri_parameters,
+      &[claim],
+      proof,
+    )
+    .map_err(|error| format!("{error:?}"))
   }
 }
 
@@ -719,7 +736,7 @@ mod tests {
     assert_eq!(vk.to_bytes(), vk_bytes, "verifier key is canonical");
     vk.verify(&claim, &proof).expect("decoded verifier key must verify");
     let advice = vk
-      .proof_to_advice_bytes(&claim, &proof)
+      .proof_to_per_query_advice_bytes(&claim, &proof)
       .expect("decoded verifier key must serialize valid proof advice");
     assert!(!advice.is_empty(), "serialized verifier advice must not be empty");
 
@@ -730,7 +747,7 @@ mod tests {
       "decoded verifier key must bind the outer claim"
     );
     assert!(
-      vk.proof_to_advice_bytes(&tampered_claim, &proof).is_err(),
+      vk.proof_to_per_query_advice_bytes(&tampered_claim, &proof).is_err(),
       "advice serialization must verify and bind the outer claim"
     );
   }

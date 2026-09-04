@@ -42,7 +42,7 @@ pub struct Stage2RootStatementV1 {
 }
 
 /// Shape census of the verified, per-query proof transport consumed by the
-/// recursive verifier. This is diagnostic input to the Flock capacity model;
+/// Flock verifier. This is diagnostic input to the Flock capacity model;
 /// it is not itself a proof or a substitute for in-relation shape checks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stage2AdviceProfileV1 {
@@ -61,7 +61,7 @@ pub struct Stage2AdviceProfileV1 {
 }
 
 impl Stage2AdviceProfileV1 {
-  /// Parse the canonical recursive-verifier advice and census its fixed and
+  /// Parse the canonical Flock-verifier advice and census its fixed and
   /// capacity-driving dimensions. The parser requires exact byte consumption.
   pub fn from_advice_bytes(bytes: &[u8], fri: &FriParameters) -> Result<Self> {
     profile_advice(bytes, fri)
@@ -96,9 +96,9 @@ impl Stage2AdviceProfileV1 {
   }
 }
 
-/// A compact proof that has been verified and expanded to the exact advice
-/// layout used by `Ix.MultiStark`. The verifying key is retained for compiling
-/// a specialised typed verifier witness; the claims remain the private words
+/// A compact proof that has been verified and expanded to the per-query advice
+/// layout used by Flock Stage 3. The verifying key is retained for compiling a
+/// specialised typed verifier witness; the claims remain the private words
 /// bound by the Stage 2 statement inside that relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedStage2RootV1 {
@@ -322,7 +322,7 @@ pub fn validate_root_inputs(
 }
 
 /// Verify a compact Stage 2 root and expand its pruned Merkle multiproofs into
-/// the per-query advice layout already consumed by the recursive Lean verifier.
+/// the per-query advice layout consumed by the Flock Stage 3 verifier.
 /// No host-derived acceptance bit crosses the boundary: Stage 3 must parse and
 /// re-check these retained vk, claim, and advice bytes inside its relation.
 pub fn validate_and_expand_root_inputs(
@@ -334,7 +334,7 @@ pub fn validate_and_expand_root_inputs(
   let decoded = decode_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
   let advice_bytes = decoded
     .verifying_key
-    .proof_to_advice_bytes(&decoded.claim, &decoded.proof)
+    .proof_to_per_query_advice_bytes(&decoded.claim, &decoded.proof)
     .map_err(|error| anyhow::anyhow!("expand verified Aiur proof: {error}"))?;
   let advice_profile =
     Stage2AdviceProfileV1::from_advice_bytes(&advice_bytes, fri)?;
