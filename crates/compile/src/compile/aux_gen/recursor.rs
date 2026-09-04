@@ -2914,7 +2914,15 @@ mod tests {
         cnst: ConstantVal {
           name: rec_name.clone(),
           level_params: vec![],
-          typ: LeanExpr::sort(Level::zero()),
+          // Keep the source recursor dependent on its inductive, as a real
+          // recursor's major premise would. A bare Sort makes the stub an
+          // independent scheduler root that can compile before aux_gen
+          // replaces it with the canonical recursor.
+          typ: epi(
+            n("major"),
+            LeanExpr::cnst(ind.clone(), vec![]),
+            LeanExpr::sort(Level::zero()),
+          ),
         },
         all: all.to_vec(),
         num_params: Nat::from(0u64),
@@ -3993,8 +4001,8 @@ mod tests {
     // one (gate: `lean_env.get(rec_name).is_some()`). The minimal
     // `build_alpha_collapse_env` doesn't add the auxiliary constants Lean
     // would normally generate, so insert stub `.rec` entries here. Note: the
-    // stubs only have to exist for the gate; aux_gen replaces their contents
-    // with the regenerated value.
+    // stubs retain the inductive dependency so the scheduler runs aux_gen
+    // before compiling them; aux_gen replaces their contents.
     let all = vec![a.clone(), b.clone()];
     let _ = insert_aux_stub_rec(&mut env, &all, &a);
     let _ = insert_aux_stub_rec(&mut env, &all, &b);
