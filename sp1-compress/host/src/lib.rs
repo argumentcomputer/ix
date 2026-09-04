@@ -157,6 +157,11 @@ pub async fn run_sp1(
     proof_bytes.len(),
     vk_bytes.len()
   );
+  println!(
+    "SP1 guest ELF: {} bytes, blake3 {}",
+    GUEST_ELF.len(),
+    blake3::hash(&GUEST_ELF).to_hex()
+  );
 
   let mut stdin = SP1Stdin::new();
   stdin.write_vec(vk_bytes.clone());
@@ -174,6 +179,13 @@ pub async fn run_sp1(
     }
     println!("SP1 execute accepted the root");
     println!("total cycles: {}", report.total_instruction_count());
+    let mut phases = report.cycle_tracker.iter().collect::<Vec<_>>();
+    phases.sort_unstable_by_key(|(name, _)| name.as_str());
+    for (name, cycles) in phases {
+      let invocations =
+        report.invocation_tracker.get(name).copied().unwrap_or(0);
+      println!("profile {name}: {cycles} cycles ({invocations} invocation(s))");
+    }
     println!("{report}");
     return Ok(());
   }

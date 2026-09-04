@@ -371,6 +371,25 @@
                 valgrind
               ];
             };
+
+            # SP1 shell for `sp1/` and `sp1-compress/`: host Rust plus the
+            # Lean/Lake CLI and Succinct compiler from sp1.nix. `sp1-build`
+            # invokes Cargo directly, so the cargo-prove CLI is not required
+            # here. `rustup-shim` dispatches `rustc` to the Succinct compiler
+            # when `RUSTUP_TOOLCHAIN=succinct`; the plain host compiler does
+            # not know the zkVM target. `sp1-prover-types` also needs `protoc`.
+            sp1 = pkgs.mkShell {
+              name = "sp1";
+              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              packages = with pkgs; [
+                pkg-config
+                openssl
+                protobuf
+                clang
+                lean
+                (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
+              ];
+            };
           }
           // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
             # CUDA stays separate so CPU development does not fetch NVIDIA's
@@ -421,24 +440,6 @@
           # between zisk.nix's and this flake's nixpkgs, which breaks bindgen on
           # `lean.h`.
           # devShells.zisk = zisk.devShells.${system}.default;
-
-          # SP1 shell for `sp1/` and `sp1-compress/`: host Rust plus the
-          # Succinct compiler from sp1.nix. `sp1-build` invokes Cargo directly, so the
-          # cargo-prove CLI is not required here. `rustup-shim` dispatches
-          # `rustc` to the Succinct compiler when `RUSTUP_TOOLCHAIN=succinct`;
-          # the plain host compiler does not know the zkVM target.
-          # `sp1-prover-types`'s build script also needs `protoc`.
-          devShells.sp1 = pkgs.mkShell {
-            name = "sp1";
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-            packages = with pkgs; [
-              pkg-config
-              openssl
-              protobuf
-              clang
-              (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
-            ];
-          };
 
           # The treefmt wrapper around `nixfmt`, so `nix fmt .` can take a
           # directory; bare `nixfmt` only accepts individual files.

@@ -725,6 +725,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "curve25519-dalek"
+version = "4.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "curve25519-dalek-derive",
+ "fiat-crypto",
+ "group",
+ "rand_core 0.6.4",
+ "rustc_version",
+ "subtle",
+]
+
+[[package]]
+name = "curve25519-dalek-derive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "dashu"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -842,12 +869,6 @@ dependencies = [
  "pem-rfc7468",
  "zeroize",
 ]
-
-[[package]]
-name = "deranged"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
 name = "derive-where"
@@ -1080,6 +1101,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "fd-lock"
+version = "4.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
+dependencies = [
+ "cfg-if",
+ "rustix",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1106,6 +1138,12 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "fiat-crypto"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "find-msvc-tools"
@@ -2009,10 +2047,9 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=2892243e674f9a0b3aca9004a8d00c79a23beec1#2892243e674f9a0b3aca9004a8d00c79a23beec1"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3#a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3"
 dependencies = [
  "bincode 2.0.1",
- "num-bigint 0.5.1",
  "p3-air 0.6.0",
  "p3-blake3",
  "p3-challenger 0.6.0",
@@ -2118,12 +2155,6 @@ checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
  "num-traits",
 ]
-
-[[package]]
-name = "num-conv"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
 name = "num-integer"
@@ -2288,7 +2319,7 @@ dependencies = [
 [[package]]
 name = "p3-air"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-matrix 0.6.0",
@@ -2316,7 +2347,7 @@ dependencies = [
 [[package]]
 name = "p3-blake3"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "blake3",
  "p3-symmetric 0.6.0",
@@ -2355,7 +2386,7 @@ dependencies = [
 [[package]]
 name = "p3-challenger"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-maybe-rayon 0.6.0",
@@ -2381,9 +2412,10 @@ dependencies = [
 [[package]]
 name = "p3-commit"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
+ "p3-dft 0.6.0",
  "p3-field 0.6.0",
  "p3-matrix 0.6.0",
  "p3-multilinear-util",
@@ -2407,7 +2439,7 @@ dependencies = [
 [[package]]
 name = "p3-dft"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -2435,7 +2467,7 @@ dependencies = [
 [[package]]
 name = "p3-field"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "num-bigint 0.5.1",
@@ -2469,7 +2501,7 @@ dependencies = [
 [[package]]
 name = "p3-fri"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-challenger 0.6.0",
@@ -2490,7 +2522,7 @@ dependencies = [
 [[package]]
 name = "p3-goldilocks"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "num-bigint 0.5.1",
  "p3-dft 0.6.0",
@@ -2520,7 +2552,7 @@ dependencies = [
 [[package]]
 name = "p3-keccak"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-symmetric 0.6.0",
  "p3-util 0.6.0",
@@ -2576,7 +2608,7 @@ dependencies = [
 [[package]]
 name = "p3-matrix"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -2599,7 +2631,7 @@ dependencies = [
 [[package]]
 name = "p3-maybe-rayon"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "rayon",
 ]
@@ -2622,7 +2654,7 @@ dependencies = [
 [[package]]
 name = "p3-mds"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-dft 0.6.0",
  "p3-field 0.6.0",
@@ -2651,7 +2683,7 @@ dependencies = [
 [[package]]
 name = "p3-merkle-tree"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-commit 0.6.0",
@@ -2670,7 +2702,7 @@ dependencies = [
 [[package]]
 name = "p3-multilinear-util"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -2685,7 +2717,7 @@ dependencies = [
 [[package]]
 name = "p3-poseidon1"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-mds 0.6.0",
@@ -2710,7 +2742,7 @@ dependencies = [
 [[package]]
 name = "p3-poseidon2"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-mds 0.6.0",
@@ -2722,7 +2754,7 @@ dependencies = [
 [[package]]
 name = "p3-security"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "libm",
  "p3-air 0.6.0",
@@ -2745,7 +2777,7 @@ dependencies = [
 [[package]]
 name = "p3-symmetric"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -2784,7 +2816,7 @@ dependencies = [
 [[package]]
 name = "p3-util"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-maybe-rayon 0.6.0",
  "serde",
@@ -2926,12 +2958,6 @@ checksum = "d83eb9bc6d8e5cf568e7a1101d60ee05e81ed50ea106026f3d18deeb046d7661"
 dependencies = [
  "zerovec",
 ]
-
-[[package]]
-name = "powerfmt"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "ppv-lite86"
@@ -3694,16 +3720,16 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slop-air"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-air 0.4.3-succinct",
 ]
 
 [[package]]
 name = "slop-algebra"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "itertools 0.14.0",
  "p3-field 0.4.3-succinct",
@@ -3712,8 +3738,8 @@ dependencies = [
 
 [[package]]
 name = "slop-alloc"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "serde",
  "slop-algebra",
@@ -3722,8 +3748,8 @@ dependencies = [
 
 [[package]]
 name = "slop-baby-bear"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "lazy_static",
  "p3-baby-bear",
@@ -3736,8 +3762,8 @@ dependencies = [
 
 [[package]]
 name = "slop-basefold"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "derive-where",
  "itertools 0.14.0",
@@ -3758,8 +3784,8 @@ dependencies = [
 
 [[package]]
 name = "slop-basefold-prover"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "derive-where",
  "itertools 0.14.0",
@@ -3769,7 +3795,6 @@ dependencies = [
  "slop-alloc",
  "slop-baby-bear",
  "slop-basefold",
- "slop-bn254",
  "slop-challenger",
  "slop-commit",
  "slop-dft",
@@ -3784,8 +3809,8 @@ dependencies = [
 
 [[package]]
 name = "slop-bn254"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "ff",
  "p3-bn254-fr",
@@ -3798,10 +3823,9 @@ dependencies = [
 
 [[package]]
 name = "slop-challenger"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
- "futures",
  "p3-challenger 0.4.3-succinct",
  "serde",
  "slop-algebra",
@@ -3810,8 +3834,8 @@ dependencies = [
 
 [[package]]
 name = "slop-commit"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-commit 0.4.3-succinct",
  "serde",
@@ -3820,8 +3844,8 @@ dependencies = [
 
 [[package]]
 name = "slop-dft"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-dft 0.4.3-succinct",
  "serde",
@@ -3833,16 +3857,16 @@ dependencies = [
 
 [[package]]
 name = "slop-fri"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-fri 0.4.3-succinct",
 ]
 
 [[package]]
 name = "slop-futures"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "crossbeam",
  "futures",
@@ -3855,11 +3879,9 @@ dependencies = [
 
 [[package]]
 name = "slop-jagged"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
- "derive-where",
- "futures",
  "itertools 0.14.0",
  "num_cpus",
  "rand 0.8.8",
@@ -3873,7 +3895,6 @@ dependencies = [
  "slop-bn254",
  "slop-challenger",
  "slop-commit",
- "slop-futures",
  "slop-koala-bear",
  "slop-merkle-tree",
  "slop-multilinear",
@@ -3888,16 +3909,16 @@ dependencies = [
 
 [[package]]
 name = "slop-keccak-air"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-keccak-air",
 ]
 
 [[package]]
 name = "slop-koala-bear"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "lazy_static",
  "p3-koala-bear",
@@ -3910,26 +3931,25 @@ dependencies = [
 
 [[package]]
 name = "slop-matrix"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-matrix 0.4.3-succinct",
 ]
 
 [[package]]
 name = "slop-maybe-rayon"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-maybe-rayon 0.4.3-succinct",
 ]
 
 [[package]]
 name = "slop-merkle-tree"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
- "derive-where",
  "itertools 0.14.0",
  "p3-merkle-tree 0.4.3-succinct",
  "serde",
@@ -3942,7 +3962,6 @@ dependencies = [
  "slop-futures",
  "slop-koala-bear",
  "slop-matrix",
- "slop-poseidon2",
  "slop-symmetric",
  "slop-tensor",
  "slop-utils",
@@ -3951,11 +3970,10 @@ dependencies = [
 
 [[package]]
 name = "slop-multilinear"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "derive-where",
- "futures",
  "num_cpus",
  "rand 0.8.8",
  "rayon",
@@ -3964,34 +3982,29 @@ dependencies = [
  "slop-alloc",
  "slop-challenger",
  "slop-commit",
- "slop-futures",
  "slop-matrix",
  "slop-tensor",
 ]
 
 [[package]]
 name = "slop-poseidon2"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-poseidon2 0.4.3-succinct",
 ]
 
 [[package]]
 name = "slop-primitives"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
-dependencies = [
- "slop-algebra",
-]
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 
 [[package]]
 name = "slop-stacked"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "derive-where",
- "futures",
  "itertools 0.14.0",
  "serde",
  "slop-algebra",
@@ -4000,7 +4013,6 @@ dependencies = [
  "slop-basefold-prover",
  "slop-challenger",
  "slop-commit",
- "slop-futures",
  "slop-merkle-tree",
  "slop-multilinear",
  "slop-tensor",
@@ -4009,10 +4021,9 @@ dependencies = [
 
 [[package]]
 name = "slop-sumcheck"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
- "futures",
  "itertools 0.14.0",
  "rayon",
  "serde",
@@ -4026,16 +4037,16 @@ dependencies = [
 
 [[package]]
 name = "slop-symmetric"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-symmetric 0.4.3-succinct",
 ]
 
 [[package]]
 name = "slop-tensor"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "arrayvec",
  "derive-where",
@@ -4045,7 +4056,6 @@ dependencies = [
  "serde",
  "slop-algebra",
  "slop-alloc",
- "slop-futures",
  "slop-matrix",
  "thiserror 1.0.69",
  "transpose",
@@ -4053,16 +4063,16 @@ dependencies = [
 
 [[package]]
 name = "slop-uni-stark"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-uni-stark",
 ]
 
 [[package]]
 name = "slop-utils"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-util 0.4.3-succinct",
  "tracing-forest",
@@ -4071,11 +4081,10 @@ dependencies = [
 
 [[package]]
 name = "slop-whir"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "derive-where",
- "futures",
  "itertools 0.14.0",
  "rand 0.8.8",
  "rayon",
@@ -4083,7 +4092,6 @@ dependencies = [
  "slop-algebra",
  "slop-alloc",
  "slop-baby-bear",
- "slop-basefold",
  "slop-challenger",
  "slop-commit",
  "slop-dft",
@@ -4092,7 +4100,6 @@ dependencies = [
  "slop-matrix",
  "slop-merkle-tree",
  "slop-multilinear",
- "slop-stacked",
  "slop-tensor",
  "slop-utils",
  "thiserror 1.0.69",
@@ -4139,8 +4146,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-build"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -4167,20 +4174,17 @@ dependencies = [
 
 [[package]]
 name = "sp1-core-executor"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
- "bytemuck",
  "cfg-if",
- "clap",
  "deepsize2",
  "elf",
  "enum-map",
  "eyre",
  "gecko_profile",
  "hashbrown 0.14.5",
- "hex",
  "indicatif",
  "itertools 0.14.0",
  "memmap2",
@@ -4203,15 +4207,15 @@ dependencies = [
  "subenum",
  "thiserror 1.0.69",
  "tiny-keccak",
+ "tokio",
  "tracing",
  "typenum",
- "vec_map",
 ]
 
 [[package]]
 name = "sp1-core-executor-runner"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "base64",
  "bincode 1.3.3",
@@ -4231,8 +4235,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-core-executor-runner-binary"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "crash-handler",
@@ -4245,13 +4249,11 @@ dependencies = [
 
 [[package]]
 name = "sp1-core-machine"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "cfg-if",
- "enum-map",
- "futures",
  "generic-array 1.1.0",
  "hashbrown 0.14.5",
  "itertools 0.14.0",
@@ -4265,12 +4267,10 @@ dependencies = [
  "slop-air",
  "slop-algebra",
  "slop-challenger",
- "slop-futures",
  "slop-keccak-air",
  "slop-matrix",
  "slop-maybe-rayon",
  "slop-uni-stark",
- "snowbridge-amcl",
  "sp1-core-executor",
  "sp1-core-executor-runner",
  "sp1-curves",
@@ -4282,7 +4282,6 @@ dependencies = [
  "struct-reflection",
  "strum",
  "sysinfo",
- "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -4293,14 +4292,13 @@ dependencies = [
 
 [[package]]
 name = "sp1-cuda"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "bytes",
  "reqwest",
  "serde",
- "serde_json",
  "sp1-core-executor",
  "sp1-core-machine",
  "sp1-hypercube",
@@ -4314,13 +4312,15 @@ dependencies = [
 
 [[package]]
 name = "sp1-curves"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "cfg-if",
+ "curve25519-dalek",
  "dashu",
  "elliptic-curve",
  "generic-array 1.1.0",
+ "group",
  "itertools 0.14.0",
  "k256",
  "num",
@@ -4334,8 +4334,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-derive"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4344,13 +4344,12 @@ dependencies = [
 
 [[package]]
 name = "sp1-hypercube"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "arrayref",
  "deepsize2",
  "derive-where",
- "futures",
  "hashbrown 0.14.5",
  "itertools 0.14.0",
  "num-bigint 0.4.8",
@@ -4363,7 +4362,6 @@ dependencies = [
  "slop-algebra",
  "slop-alloc",
  "slop-basefold",
- "slop-basefold-prover",
  "slop-bn254",
  "slop-challenger",
  "slop-commit",
@@ -4392,8 +4390,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-jit"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "dynasmrt",
  "hashbrown 0.14.5",
@@ -4408,8 +4406,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-primitives"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "blake3",
@@ -4431,16 +4429,16 @@ dependencies = [
 
 [[package]]
 name = "sp1-prover"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
  "clap",
  "dirs",
  "either",
- "enum-map",
  "eyre",
+ "fd-lock",
  "futures",
  "hashbrown 0.14.5",
  "hex",
@@ -4450,7 +4448,6 @@ dependencies = [
  "mti",
  "num-bigint 0.4.8",
  "opentelemetry",
- "pin-project",
  "rand 0.8.8",
  "reqwest",
  "serde",
@@ -4463,14 +4460,10 @@ dependencies = [
  "slop-bn254",
  "slop-challenger",
  "slop-futures",
- "slop-jagged",
- "slop-multilinear",
- "slop-stacked",
  "slop-symmetric",
  "sp1-core-executor",
  "sp1-core-executor-runner",
  "sp1-core-machine",
- "sp1-derive",
  "sp1-hypercube",
  "sp1-jit",
  "sp1-primitives",
@@ -4482,20 +4475,18 @@ dependencies = [
  "sp1-recursion-machine",
  "sp1-verifier",
  "static_assertions",
- "sysinfo",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tonic",
  "tracing",
- "tracing-appender",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "sp1-prover-types"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "anyhow",
  "async-scoped",
@@ -4517,8 +4508,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-circuit"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "itertools 0.14.0",
@@ -4556,8 +4547,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-compiler"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "backtrace",
  "cfg-if",
@@ -4576,8 +4567,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-executor"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "backtrace",
  "cfg-if",
@@ -4599,13 +4590,12 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-gnark-ffi"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
  "cfg-if",
- "hex",
  "num-bigint 0.4.8",
  "serde",
  "serde_json",
@@ -4622,8 +4612,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-machine"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "itertools 0.14.0",
  "rand 0.8.8",
@@ -4643,23 +4633,20 @@ dependencies = [
 
 [[package]]
 name = "sp1-sdk"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "anyhow",
  "async-trait",
  "bincode 1.3.3",
  "cfg-if",
- "dirs",
  "eventsource-stream",
  "futures",
  "hex",
- "indicatif",
  "itertools 0.14.0",
  "k256",
  "num-bigint 0.4.8",
  "serde",
- "sha2",
  "sp1-build",
  "sp1-core-executor",
  "sp1-core-executor-runner",
@@ -4671,7 +4658,6 @@ dependencies = [
  "sp1-prover-types",
  "sp1-recursion-executor",
  "sp1-verifier",
- "strum",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -4680,13 +4666,12 @@ dependencies = [
 
 [[package]]
 name = "sp1-verifier"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "blake3",
  "cfg-if",
- "dirs",
  "hex",
  "lazy_static",
  "serde",
@@ -4827,12 +4812,6 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
-
-[[package]]
-name = "symlink"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7973cce6668464ea31f176d85b13c7ab3bba2cb3b77a2ed26abd7801688010a"
 
 [[package]]
 name = "syn"
@@ -4984,36 +4963,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "time"
-version = "0.3.55"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
-dependencies = [
- "deranged",
- "num-conv",
- "powerfmt",
- "serde_core",
- "time-core",
- "time-macros",
-]
-
-[[package]]
-name = "time-core"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
-
-[[package]]
-name = "time-macros"
-version = "0.2.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85"
-dependencies = [
- "num-conv",
- "time-core",
 ]
 
 [[package]]
@@ -5282,19 +5231,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-appender"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "050686193eb999b4bb3bc2acfa891a13da00f79734704c4b8b4ef1a10b368a3c"
-dependencies = [
- "crossbeam-channel",
- "symlink",
- "thiserror 2.0.20",
- "time",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "tracing-attributes"
 version = "0.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5491,9 +5427,6 @@ name = "vec_map"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "version_check"

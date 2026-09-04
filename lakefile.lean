@@ -90,8 +90,26 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")
   ]
+  let sp1SourceDirs := Job.collectArray #[
+    ← inputDir (pkg.dir / "sp1-compress" / "host" / "src") true fun path =>
+      path.extension == some "rs",
+    ← inputDir (pkg.dir / "sp1-compress" / "guest" / "src") true fun path =>
+      path.extension == some "rs"
+  ]
+  let sp1Manifests := Job.collectArray #[
+    ← inputTextFile (pkg.dir / "sp1-compress" / "host" / "Cargo.toml"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "host" / "build.rs"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "guest" / "Cargo.toml"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "guest" / "Cargo.lock"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "Cargo.toml"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "Cargo.lock")
+  ]
   let deps := sources.zipWith (fun sourceFiles manifestFiles =>
     (sourceFiles, manifestFiles)) manifests
+  let deps := deps.zipWith (fun rustSources sp1Files =>
+    (rustSources, sp1Files)) sp1SourceDirs
+  let deps := deps.zipWith (fun rustSources sp1Files =>
+    (rustSources, sp1Files)) sp1Manifests
   let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
   buildFileAfterDep output deps (fun _ => do
     proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)

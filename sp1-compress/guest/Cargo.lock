@@ -311,94 +311,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
-name = "futures"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a31d2a3fbaaeb2af2368bbdd904aa8e812d3c04a1ee10d3171f52d556e5d0a3"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-executor",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
-]
-
-[[package]]
-name = "futures-channel"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
-dependencies = [
- "futures-core",
- "futures-sink",
-]
-
-[[package]]
-name = "futures-core"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
-
-[[package]]
-name = "futures-executor"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "031b47cf1a3c6cc8bc2fc76cd437f521619387907d469316e7c0bc278f1f5432"
-dependencies = [
- "futures-core",
- "futures-task",
- "futures-util",
-]
-
-[[package]]
-name = "futures-io"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed"
-
-[[package]]
-name = "futures-macro"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.4",
-]
-
-[[package]]
-name = "futures-sink"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1944426bf7d03f1d14f708785e4b33efd750b36d48a157b836b3efc15ede8e1d"
-
-[[package]]
-name = "futures-task"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
-
-[[package]]
-name = "futures-util"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-io",
- "futures-macro",
- "futures-sink",
- "futures-task",
- "memchr",
- "pin-project-lite",
- "slab",
-]
-
-[[package]]
 name = "gcd"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -531,18 +443,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "memchr"
-version = "2.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
-
-[[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=2892243e674f9a0b3aca9004a8d00c79a23beec1#2892243e674f9a0b3aca9004a8d00c79a23beec1"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3#a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3"
 dependencies = [
  "bincode 2.0.1",
- "num-bigint 0.5.1",
  "p3-air",
  "p3-blake3",
  "p3-challenger 0.6.0",
@@ -619,7 +524,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "p3-air"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-matrix 0.6.0",
@@ -630,7 +535,7 @@ dependencies = [
 [[package]]
 name = "p3-blake3"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "blake3",
  "p3-symmetric 0.6.0",
@@ -669,7 +574,7 @@ dependencies = [
 [[package]]
 name = "p3-challenger"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-maybe-rayon 0.6.0",
@@ -681,9 +586,10 @@ dependencies = [
 [[package]]
 name = "p3-commit"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
+ "p3-dft 0.6.0",
  "p3-field 0.6.0",
  "p3-matrix 0.6.0",
  "p3-multilinear-util",
@@ -707,7 +613,7 @@ dependencies = [
 [[package]]
 name = "p3-dft"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -735,7 +641,7 @@ dependencies = [
 [[package]]
 name = "p3-field"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "num-bigint 0.5.1",
@@ -750,7 +656,7 @@ dependencies = [
 [[package]]
 name = "p3-fri"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-challenger 0.6.0",
@@ -771,7 +677,7 @@ dependencies = [
 [[package]]
 name = "p3-goldilocks"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "num-bigint 0.5.1",
  "p3-dft 0.6.0",
@@ -790,7 +696,7 @@ dependencies = [
 [[package]]
 name = "p3-keccak"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-symmetric 0.6.0",
  "p3-util 0.6.0",
@@ -832,7 +738,7 @@ dependencies = [
 [[package]]
 name = "p3-matrix"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -852,7 +758,7 @@ checksum = "e0641952b42da45e1dfa2d4a2a3163e330f944ad9740942f35026c0a71a605f1"
 [[package]]
 name = "p3-maybe-rayon"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 
 [[package]]
 name = "p3-mds"
@@ -872,7 +778,7 @@ dependencies = [
 [[package]]
 name = "p3-mds"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-dft 0.6.0",
  "p3-field 0.6.0",
@@ -884,7 +790,7 @@ dependencies = [
 [[package]]
 name = "p3-merkle-tree"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-commit",
@@ -903,7 +809,7 @@ dependencies = [
 [[package]]
 name = "p3-multilinear-util"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -918,7 +824,7 @@ dependencies = [
 [[package]]
 name = "p3-poseidon1"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-mds 0.6.0",
@@ -943,7 +849,7 @@ dependencies = [
 [[package]]
 name = "p3-poseidon2"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-field 0.6.0",
  "p3-mds 0.6.0",
@@ -955,7 +861,7 @@ dependencies = [
 [[package]]
 name = "p3-security"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "libm",
  "p3-air",
@@ -978,7 +884,7 @@ dependencies = [
 [[package]]
 name = "p3-symmetric"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "itertools 0.15.0",
  "p3-field 0.6.0",
@@ -998,7 +904,7 @@ dependencies = [
 [[package]]
 name = "p3-util"
 version = "0.6.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=3c84c158c0939345a3becba60a387643935593d2#3c84c158c0939345a3becba60a387643935593d2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
 dependencies = [
  "p3-maybe-rayon 0.6.0",
  "serde",
@@ -1214,15 +1120,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
-name = "slab"
-version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
-
-[[package]]
 name = "slop-algebra"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "itertools 0.14.0",
  "p3-field 0.4.3-succinct",
@@ -1231,8 +1131,8 @@ dependencies = [
 
 [[package]]
 name = "slop-bn254"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "ff",
  "p3-bn254-fr",
@@ -1245,10 +1145,9 @@ dependencies = [
 
 [[package]]
 name = "slop-challenger"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
- "futures",
  "p3-challenger 0.4.3-succinct",
  "serde",
  "slop-algebra",
@@ -1257,8 +1156,8 @@ dependencies = [
 
 [[package]]
 name = "slop-koala-bear"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "lazy_static",
  "p3-koala-bear",
@@ -1271,24 +1170,21 @@ dependencies = [
 
 [[package]]
 name = "slop-poseidon2"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-poseidon2 0.4.3-succinct",
 ]
 
 [[package]]
 name = "slop-primitives"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
-dependencies = [
- "slop-algebra",
-]
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 
 [[package]]
 name = "slop-symmetric"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "p3-symmetric 0.4.3-succinct",
 ]
@@ -1305,8 +1201,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-lib"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "serde",
@@ -1315,8 +1211,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-primitives"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "bincode 1.3.3",
  "blake3",
@@ -1338,15 +1234,14 @@ dependencies = [
 
 [[package]]
 name = "sp1-zkvm"
-version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?rev=261741a90e6e5e637a4dae7c00a501d63b90349c#261741a90e6e5e637a4dae7c00a501d63b90349c"
+version = "6.6.0"
+source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
 dependencies = [
  "cfg-if",
  "critical-section",
  "embedded-alloc",
  "getrandom 0.2.17",
  "getrandom 0.3.4",
- "lazy_static",
  "libm",
  "rand 0.8.8",
  "sha2",

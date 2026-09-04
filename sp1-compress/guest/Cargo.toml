@@ -1,5 +1,9 @@
 [workspace]
 
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
 [package]
 name = "sp1-compress-guest"
 version = "0.1.0"
@@ -11,11 +15,11 @@ license = "MIT OR Apache-2.0"
 aiur = { path = "../../crates/aiur", default-features = false }
 # Proof and verifying-key wire formats are revision-sensitive. Keep this pin
 # byte-identical to the root workspace.
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2892243e674f9a0b3aca9004a8d00c79a23beec1" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3" }
 blake3 = "1"
 # The current Aiur PCS uses Blake3. This fork supplies SP1's Blake3 compression
 # precompile, matching the existing `sp1/` kernel guest.
-sp1-zkvm = { git = "https://github.com/argumentcomputer/sp1", rev = "261741a90e6e5e637a4dae7c00a501d63b90349c" }
+sp1-zkvm = { git = "https://github.com/argumentcomputer/sp1", rev = "7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a" }
 
 [patch.crates-io]
 blake3 = { git = "https://github.com/argumentcomputer/BLAKE3", rev = "d36366f7badbff9be8e2522868dddd14561638f3" }

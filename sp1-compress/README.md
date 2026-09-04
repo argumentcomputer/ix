@@ -58,7 +58,8 @@ larger production `ix_aggr` verifier key and proof.
 
 The `sp1-compress/guest` and root Cargo dependencies deliberately pin the same
 `multi-stark` revision, and the SP1 crates are pinned to fork commit
-`261741a90e6e5e637a4dae7c00a501d63b90349c`. The guest's SP1-aware Blake3 is
+`7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a` (SP1 v6.6 plus the Blake3
+precompile). The guest's SP1-aware Blake3 is
 likewise pinned at `d36366f7badbff9be8e2522868dddd14561638f3`. Proof and
 verifying-key encodings are revision-sensitive; do not update one without the
 others.
