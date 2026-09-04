@@ -33,7 +33,7 @@ jobs:
       # exact cache when bench-main has finished its build, else the newest
       # available (prefix match) — whose compiled-in registry may then lag
       # the checkout.
-      - uses: actions/cache/restore@v6
+      - uses: WarpBuilds/cache/restore@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}

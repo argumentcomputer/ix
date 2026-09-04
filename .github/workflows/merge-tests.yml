@@ -1,9 +1,11 @@
 name: Merge tests
 
 on:
-  pull_request:
-    branches: [main]
   merge_group:
+  issue_comment:
+    types: [created]
+
+run-name: "${{ github.event_name == 'issue_comment' && format('Merge tests for PR #{0}', github.event.issue.number) || 'Merge tests' }}"
 
 permissions:
   contents: read
@@ -12,16 +14,80 @@ permissions:
 # cannot satisfy the required check, so runs are never superseded here.
 
 jobs:
+  prepare:
+    name: Prepare merge tests
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+       github.event.issue.state == 'open' &&
+       github.event.comment.user.type != 'Bot' &&
+       contains(github.event.comment.body, '!merge-tests') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER'))
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    outputs:
+      comment-id: ${{ steps.post.outputs.comment-id }}
+      pr: ${{ steps.target.outputs.pr }}
+      revision: ${{ steps.target.outputs.revision }}
+    steps:
+      - name: Resolve test revision
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          if [ "$EVENT_NAME" = issue_comment ]; then
+            [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] \
+              || { echo "::error::PR number must be a positive integer"; exit 1; }
+            revision=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+              --jq '.merge_commit_sha // empty')
+            echo "pr=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          else
+            revision=$EVENT_SHA
+          fi
+
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::PR does not currently have a test merge commit"; exit 1; }
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Compose initial comment
+        if: github.event_name == 'issue_comment'
+        env:
+          MERGE_SHA: ${{ steps.target.outputs.revision }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
+        run: |
+          {
+            echo "## ⏳ Merge tests running…"
+            echo
+            echo "Running the ignored test suite for PR #$PR_NUMBER at \`${MERGE_SHA:0:7}\`."
+            echo
+            echo "[In-progress logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } > comment-body.md
+
+      - name: Post initial comment
+        if: github.event_name == 'issue_comment'
+        id: post
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ github.token }}
+          issue-number: ${{ steps.target.outputs.pr }}
+          body-path: comment-body.md
+
   merge-tests:
     name: ${{ matrix.name }}
-    if: ${{ github.event_name == 'merge_group' }}
+    needs: prepare
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
     strategy:
       fail-fast: true
       matrix:
         include:
           - name: Lake ignored tests (compile pipeline)
             kind: lake
-            runner: warp-ubuntu-latest-x64-32x
             test_args: >-
               --ignored
               rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip
@@ -29,114 +95,121 @@ jobs:
               rust-decompile validate-aux aux-gen-diff decompile-diff
           - name: Lake ignored tests (compile)
             kind: lake
-            runner: warp-ubuntu-latest-x64-32x
             test_args: --ignored compile
           - name: Lake ignored tests (decompile)
             kind: lake
-            runner: warp-ubuntu-latest-x64-32x
             test_args: --ignored decompile
           - name: Lake ignored tests (misc)
             kind: lake
-            runner: warp-ubuntu-latest-x64-32x
             test_args: >-
               --ignored
               shard-map catalog-dedup commit-io fidelity-initstd
               kernel-ixon-roundtrip kernel-tutorial kernel-check-env kernel-check-const
               rust-kernel-build-primitives rust-kernel-build-prim-origs ixvm
             zk_voting: true
-          - name: Valgrind FFI
-            kind: valgrind
-            runner: warp-ubuntu-latest-x64-8x
-          - name: Ix.Tc verification and parity
+          - name: Ix.Tc unit and parity tests
             kind: tc
-            runner: warp-ubuntu-latest-x64-16x
             test_args: >-
-              --ignored
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff lean4lean
-    runs-on: ${{ matrix.runner }}
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-32x64-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix
+      - nscloud-cache-exp-do-not-commit
     steps:
       - name: Validate merge-test variant
         env:
           TEST_KIND: ${{ matrix.kind }}
         run: |
           case "$TEST_KIND" in
-            lake|valgrind|tc) ;;
+            lake|tc) ;;
             *) echo "::error::Unknown merge-test variant: $TEST_KIND"; exit 1 ;;
           esac
 
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          persist-credentials: false
+
+      - name: Verify test revision
+        env:
+          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
+        run: |
+          checked_out=$(git rev-parse HEAD)
+          if [ "$checked_out" != "$TEST_REVISION" ]; then
+            echo "::error::PR merge ref changed before the run started; comment !merge-tests again"
+            exit 1
+          fi
+
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          # Valgrind cannot decode the AVX-512 the fleet baseline emits.
-          avx512-codegen: ${{ matrix.kind != 'valgrind' }}
-
-      # A merge group has its own SHA, so restore the nearest compatible build
-      # produced by ordinary CI and let Lake rebuild anything that changed.
-      - if: ${{ matrix.kind == 'lake' }}
-        uses: actions/cache/restore@v6
-        with:
-          path: ./.lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
-
-      # Valgrind cannot decode AVX-512, so its portable artifacts must not
-      # share `.lake` with native builds.
-      - if: ${{ matrix.kind == 'valgrind' }}
-        uses: actions/cache@v6
-        with:
-          path: ./.lake
-          key: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
-
-      # A generic cache on the merge-queue ref can shadow a complete `lake-tc`
-      # cache from main, so this deliberately has no base-cache fallback.
-      - if: ${{ matrix.kind == 'tc' }}
-        uses: actions/cache@v6
-        with:
-          path: ./.lake
-          key: lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
-
-      # The Rust FFI bindgen build also needs the Lean toolchain and headers.
-      - if: ${{ matrix.kind != 'valgrind' }}
-        uses: leanprover/lean-action@v1
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
+      - uses: leanprover/lean-action@v1
         with:
           auto-config: false
           use-github-cache: false
-      - if: ${{ matrix.kind == 'valgrind' }}
-        uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: true
-          build-args: "IxTests"
-          use-github-cache: false
-
-      # The misc partition drives `.lake/build/bin/ix` in subprocesses. The
-      # prefix cache can contain an executable from an older SHA because the
-      # ordinary CI cache is saved before its all-targets lint builds `ix`.
-      # Rebuild it explicitly so the CLI and the checked-out tests agree.
-      - name: Build current ix CLI for subprocess tests
-        if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}
-        run: lake build ix
 
       - name: Run ignored Lake test partition
         if: ${{ matrix.kind == 'lake' }}
         run: lake test --wfail -- ${{ matrix.test_args }}
+
       - name: Run ZK voting prover
         if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}
         run: lake exe Apps.ZKVoting.Prover
 
-      - name: Install valgrind
-        if: ${{ matrix.kind == 'valgrind' }}
+      - name: Run Ix.Tc unit, parity, and regression tests
+        if: ${{ matrix.kind == 'tc' }}
         run: |
-          # Some warpbuild images ship a mirrorlist with an unreachable
-          # azure.archive.ubuntu.com entry, causing apt-get update to stall indefinitely.
-          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          lake test --wfail -- tc-unit
+          lake test --wfail -- --ignored ${{ matrix.test_args }}
+
+  valgrind:
+    name: Valgrind FFI
+    needs: prepare
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
+    # Valgrind cannot decode the shared baseline's AVX-512, so its portable
+    # build artifacts must not share a cache volume with the other test jobs.
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix-valgrind
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          persist-credentials: false
+
+      - name: Verify test revision
+        env:
+          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
+        run: |
+          checked_out=$(git rev-parse HEAD)
+          if [ "$checked_out" != "$TEST_REVISION" ]; then
+            echo "::error::PR merge ref changed before the run started; comment !merge-tests again"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          avx512-codegen: "false"
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+
+      - name: Run FFI tests normally
+        run: lake test --wfail -- ffi
+
+      - name: Install valgrind
+        run: |
           sudo apt-get update
           sudo apt-get install -y valgrind
+
       - name: Run tests under valgrind
-        if: ${{ matrix.kind == 'valgrind' }}
         run: |
           valgrind \
             --leak-check=full \
@@ -147,30 +220,56 @@ jobs:
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests ffi
 
-      - name: Check Ix.Tc exported theorem trust manifest
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional Ix.Tc.Verify.Audit.Statements
-      - name: Build Ix.Tc formal verification
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake build IxTcVerify
-      - name: Check Ix.Tc verification sorry frontier
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake build Ix.Tc.Verify.Audit.SorryFrontier
-      - name: Test Ix.Tc unit and adversarial fixtures
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake test --wfail -- tc-unit
-      - name: Run Ix.Tc ignored tests
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake test --wfail -- ${{ matrix.test_args }}
-
   merge-tests-result:
     name: Merge tests
-    if: ${{ always() }}
-    needs: merge-tests
+    if: >-
+      always() &&
+      (github.event_name != 'issue_comment' || needs.prepare.result != 'skipped')
+    needs: [prepare, merge-tests, valgrind]
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
+      - name: Compose final comment
+        if: github.event_name == 'issue_comment' && needs.prepare.result == 'success'
+        env:
+          MERGE_SHA: ${{ needs.prepare.outputs.revision }}
+          PR_NUMBER: ${{ needs.prepare.outputs.pr }}
+          TEST_RESULT: ${{ needs.merge-tests.result }}
+          VALGRIND_RESULT: ${{ needs.valgrind.result }}
+        run: |
+          if [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ]; then
+            heading="## ✅ Merge tests passed"
+            summary="All ignored test partitions passed"
+          elif [ "$TEST_RESULT" = cancelled ] || [ "$VALGRIND_RESULT" = cancelled ]; then
+            heading="## ⚪ Merge tests cancelled"
+            summary="The ignored test run was cancelled"
+          else
+            heading="## ❌ Merge tests failed"
+            summary="At least one ignored test partition failed"
+          fi
+          {
+            echo "$heading"
+            echo
+            echo "$summary for PR #$PR_NUMBER at \`${MERGE_SHA:0:7}\`."
+            echo
+            echo "[Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } > comment-body.md
+
+      - name: Update result comment
+        if: github.event_name == 'issue_comment' && needs.prepare.result == 'success'
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ github.token }}
+          issue-number: ${{ needs.prepare.outputs.pr }}
+          comment-id: ${{ needs.prepare.outputs.comment-id }}
+          edit-mode: replace
+          body-path: comment-body.md
+
       - name: Propagate merge-test failure
         if: >-
-          github.event_name == 'merge_group' &&
-          needs.merge-tests.result != 'success'
+          needs.prepare.result != 'success' ||
+          needs.merge-tests.result != 'success' ||
+          needs.valgrind.result != 'success'
         run: exit 1

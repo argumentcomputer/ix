@@ -8,9 +8,8 @@
 # The gates are job-level `if`s rather than workflow-level `on.paths`
 # (or a dynamically-built matrix) deliberately: a required check that
 # never triggers sticks at "Expected", while a skipped job satisfies it.
-# When the rust analysis does run, it runs on a warp host (CodeQL scales
-# with cores; default setup pins it to a stock 4-core runner) with the
-# dependency extraction cached between runs.
+# Rust analysis runs only when Rust inputs change, with dependency extraction
+# cached between runs.
 name: CodeQL
 
 on:

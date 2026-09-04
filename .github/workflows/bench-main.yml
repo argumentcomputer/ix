@@ -13,8 +13,7 @@ name: Benchmark main
 #   2. compile   — compiles each Lean env to a `.ixe` file (this IS the
 #                  compile benchmark) and caches the file for stage 3.
 #   3. benchmark — one job per remaining entry: restore the `.ixe` and
-#                  run the entry's backend over it (aiur, zisk, ooc,
-#                  decompile).
+#                  run the entry's backend over it (aiur, ooc, decompile).
 #
 # Each entry uploads to its own bencher testbed/workload, so a threshold
 # reset for one workload never touches another. When the kernel REJECTS a
@@ -40,36 +39,40 @@ env:
 jobs:
   # Build the `ix` and `bench-typecheck` binaries once and cache them;
   # every later job restores them instead of rebuilding. They are built
-  # with -Ctarget-cpu=native, so every job that runs them must use the
-  # same warp runner class.
+  # for the fleet's fixed AVX-512 baseline. Measured jobs stay on Warp so
+  # the benchmark testbed remains consistent.
   build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v7
-      # Native codegen fixes the available instructions at build time. Carry
-      # this report with the binaries so every later measurement records both
-      # the build host and its own run host.
+      - name: Mount Lake build cache
+        uses: WarpBuilds/cache@v2
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
       - name: Log build CPU
         uses: ./.github/actions/log-cpu
         with:
           label: Benchmark binary build CPU
-          output-file: ${{ runner.temp }}/benchmark-build-cpu.txt
       # Rust toolchain + cargo cache, so the cargo step inside `lake build`
       # does not recompile the Plonky3/multi-stark dependencies every run.
       - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-provider: warpbuild
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
           build: true
           build-args: "ix --wfail -v"
+          use-github-cache: false
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
           lake build bench-typecheck
           cp .lake/build/bin/bench-typecheck ~/.local/bin/
-          cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
           chmod +x ~/.local/bin/bench-typecheck
-      - uses: actions/cache/save@v6
+      - uses: WarpBuilds/cache/save@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -88,7 +91,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/cache/restore@v6
+      - uses: WarpBuilds/cache/restore@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -142,7 +145,7 @@ jobs:
       - uses: actions/checkout@v7
       # `lake build` below clones this package's Lake dependencies.
       - uses: ./.github/actions/authenticate-github-fetches
-      - uses: actions/cache/restore@v6
+      - uses: WarpBuilds/cache/restore@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -150,7 +153,6 @@ jobs:
         uses: ./.github/actions/log-cpu
         with:
           label: Compile measurement CPU
-          provenance-file: ~/.local/bin/benchmark-build-cpu.txt
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Install the Lean toolchain. The mathlib olean cache is fetched only
       # for envs that import Mathlib (Mathlib, FLT) — the shared
@@ -164,7 +166,7 @@ jobs:
           use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
       # FLT takes a few minutes to rebuild, so cache its build artifacts.
       - if: matrix.cache_pkg
-        uses: actions/cache@v6
+        uses: WarpBuilds/cache@v2
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
@@ -180,12 +182,10 @@ jobs:
           ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
           ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
-      # Ask the registry three things about this env (instead of keeping
+      # Ask the registry for this env's metadata (instead of keeping
       # hand-written env lists here):
       #   consumed — does any benchmark entry restore this env's `.ixe`?
       #              If yes, cache it below.
-      #   zkvm     — does a zkVM entry execute this env? If yes, pre-cut
-      #              its closure shards below.
       #   testbed / workload / thresholds — the upload metadata for this
       #              env's own compile benchmark.
       - id: gates
@@ -194,39 +194,21 @@ jobs:
           ix bench ci matrix > matrix.json
           gate() { jq --arg env "${{ matrix.env }}" "[.[] | select($1).env] | index(\$env) >= 0" matrix.json; }
           echo "consumed=$(gate '.backend == "compile" | not')" >> "$GITHUB_OUTPUT"
-          echo "zkvm=$(gate '.backend == "zisk" or .backend == "sp1"')" >> "$GITHUB_OUTPUT"
           meta() { jq -r --arg env "${{ matrix.env }}" "first(.[] | select(.backend == \"compile\" and .env == \$env)).$1" matrix.json; }
           echo "testbed=$(meta testbed)" >> "$GITHUB_OUTPUT"
           echo "workload=$(meta workload)" >> "$GITHUB_OUTPUT"
           { echo "thresholds<<EOF"; meta thresholds; echo "EOF"; } >> "$GITHUB_OUTPUT"
-      # Pre-cut the closure-shard artifacts for this env's zisk constants
-      # (extract → profile → shard; the planner's RAM budget decides each
-      # constant's shard count). The zisk runs can cut these lazily
-      # themselves, but doing it here — right next to the fresh `.ixe`,
-      # with the toolchain already installed — means they just restore a
-      # directory.
-      - if: steps.gates.outputs.zkvm == 'true'
-        name: Cut closure shards for zisk constants
-        run: ix bench shard --env ${{ matrix.env }} --ixe ${{ matrix.env }}.ixe
       # Cache the `.ixe` for the benchmark job. IMPORTANT: every restore of
-      # this key must list the same paths — actions/cache versions the
+      # this key must list the same paths — cache versions include the
       # entry by its path list, so a mismatched list is unreachable
       # whatever the key. Keeping this entry to one path lets bench-pr's
       # base-side restore fall back to that workflow's compile-job key (a
       # stacked PR's base is a PR head, which never passes through here).
       - if: steps.gates.outputs.consumed == 'true'
-        uses: actions/cache/save@v6
+        uses: WarpBuilds/cache/save@v2
         with:
           path: ${{ matrix.env }}.ixe
           key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
-      # Shards get their own entry rather than riding the `.ixe`: only the
-      # zkVM envs have any, so bundling them would put a directory that
-      # usually doesn't exist into every `.ixe` restore's path list.
-      - if: steps.gates.outputs.zkvm == 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: zkshards-${{ matrix.env }}
-          key: bench-shards-${{ github.sha }}-${{ matrix.env }}
       # Upload the compile metrics. Testbed, workload, and threshold flags
       # all come from the registry (the reasoning behind each bound lives
       # next to `thresholds` in Ix/Cli/BenchCmd.lean).
@@ -241,9 +223,8 @@ jobs:
 
   # One job per remaining matrix entry, all sharing this one step list
   # (same shape as bench-pr.yml's benchmark job). Each entry brings its
-  # own label, testbed, workload, and threshold flags, so the only
-  # backend-specific steps are the zkVM toolchain installs. Every entry
-  # restores the compile job's cached `.ixe` — nothing recompiles here.
+  # own label, testbed, workload, and threshold flags. Every entry restores
+  # the compile job's cached `.ixe` — nothing recompiles here.
   #
   # What each backend measures:
   #   - aiur: the proof pipeline — per constant, every stage plus the
@@ -252,11 +233,6 @@ jobs:
   #     (stage 2); the KZG stages will fold in as they land. One
   #     subprocess per constant under the RAM watchdog; a too-large
   #     prove is killed and recorded as a `status: oom` row.
-  #   - zisk: executes the same constants in the zkVM (deterministic
-  #     cycle counts; proving would need a GPU, so execute-only). Each
-  #     constant runs as the shard partition the planner's RAM budget
-  #     sized for it (one shard when it fits), reusing the pre-cut
-  #     zkshards-<env>/ dirs; builds its Rust host in-job.
   #   - ooc: the same kernel run out-of-circuit and in parallel (much
   #     faster). One whole-env row plus one row per constant.
   #   - decompile: the inverse of compile. Roundtrip correctness is
@@ -276,7 +252,7 @@ jobs:
         params: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/cache/restore@v6
+      - uses: WarpBuilds/cache/restore@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -284,19 +260,6 @@ jobs:
         uses: ./.github/actions/log-cpu
         with:
           label: Benchmark measurement CPU
-          provenance-file: ~/.local/bin/benchmark-build-cpu.txt
-      # The zkVM runs build their Rust host in-run; the rest run staged
-      # binaries only. (Restore an install-sp1 step here when sp1 is
-      # re-enabled in the registry.)
-      - if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
-        uses: ./.github/actions/setup-rust-toolchain
-        with:
-          cache-workspaces: ${{ matrix.params.backend }}
-      - name: Install Zisk
-        if: matrix.params.backend == 'zisk'
-        uses: ./.github/actions/install-zisk
-        with:
-          proving-key: false
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so the staged binaries find libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and
@@ -308,33 +271,19 @@ jobs:
           use-github-cache: false
       # Pull the `.ixe` the compile job built — do NOT recompile here.
       # (The path list must match the compile job's save exactly.)
-      - uses: actions/cache/restore@v6
+      - uses: WarpBuilds/cache/restore@v2
         with:
           path: ${{ matrix.params.env }}.ixe
           key: bench-ixe-${{ github.sha }}-${{ matrix.params.env }}
           fail-on-cache-miss: true
-      # The pre-cut closure shards, for the backends that have any. Not
-      # fail-on-cache-miss: cutting them in the compile job is an
-      # optimisation, and `ix bench run` still cuts lazily without them.
-      - if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
-        uses: actions/cache/restore@v6
-        with:
-          path: zkshards-${{ matrix.params.env }}
-          key: bench-shards-${{ github.sha }}-${{ matrix.params.env }}
       # If the kernel rejects a constant, `ix bench run` exits 3 and this
       # step fails — that is a correctness regression, not a benchmark
       # blip. The completed rows are already on disk for the upload below.
       - name: Run ${{ matrix.params.label }} benchmark
-        run: |
-          # ZisK's ASM microservices mmap with MAP_LOCKED: raise the memlock
-          # hard limit in this shell so the tools `ix bench run` spawns
-          # inherit it.
-          if [ "${{ matrix.params.backend }}" = zisk ]; then
-            sudo prlimit --pid $$ --memlock=unlimited:unlimited
-          fi
-          ix bench run --backend ${{ matrix.params.backend }} \
-            --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }} \
-            --ixe ${{ matrix.params.env }}.ixe --out bench.json
+        run: >-
+          ix bench run --backend ${{ matrix.params.backend }}
+          --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }}
+          --ixe ${{ matrix.params.env }}.ixe --out bench.json
       # The ooc run writes a per-constant attribution CSV next to its
       # results file. Bencher stores metric rows only, so cache the CSV by
       # (SHA, cell) — bench-pr restores it to render the per-constant
@@ -344,7 +293,7 @@ jobs:
       - name: Cache per-constant attribution CSV
         if: ${{ !cancelled() && matrix.params.backend == 'ooc' }}
         continue-on-error: true
-        uses: actions/cache/save@v6
+        uses: WarpBuilds/cache/save@v2
         with:
           path: bench.json.perconst.csv
           key: bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
