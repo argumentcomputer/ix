@@ -205,22 +205,6 @@ def unitTests : List TestSeq := [fixtureTests, negativeTests]
 
 /-! ### Rust-compiled closures (`tc-roundtrip`, ignored) -/
 
-/-- Compile a seed closure through the Rust compiler and roundtrip every
-    constant of the resulting env. -/
-def roundtripOnSeeds (leanEnv : Lean.Environment) (label : String)
-    (seeds : List Lean.Name) : IO (Nat × Option String) := do
-  let consts := Tests.Tc.AnonDiff.closureOf leanEnv seeds
-  if consts.isEmpty then
-    return (0, some s!"empty closure for {seeds}")
-  let dir ← IO.FS.createTempDir
-  let path := dir / s!"tc-roundtrip-{label}.ixe"
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
-  let bytes ← IO.FS.readBinFile path
-  IO.FS.removeDirAll dir
-  match Ixon.deEnvAnon bytes with
-  | .error e => return (0, some s!"deEnvAnon failed: {e}")
-  | .ok ixonEnv => return roundtripAll ixonEnv
-
 def seedSets : List (String × List Lean.Name) :=
   Tests.Tc.AnonDiff.seedSets ++
   [ ("inductives-recursors",
@@ -250,35 +234,6 @@ def seedSets : List (String × List Lean.Name) :=
        `Tests.Ix.Compile.LevelSpellings.wfTwo,
        `Tests.Ix.Compile.LevelSpellings.wfTwoEqDef]) ]
 
-def closureSuite : TestSeq := Id.run do
-  let mut ts : TestSeq := .done
-  for (label, seeds) in seedSets do
-    ts := ts ++ .individualIO s!"roundtrip closure: {label}" none (do
-      let env ← Tests.Tc.Roundtrip.fixtureEnv
-      let (rows, err?) ← roundtripOnSeeds env label seeds
-      return (err?.isNone, rows, 0, err?)) .done
-  return ts
-
-/-- Whole-environment roundtrip: compile the ENTIRE current Lean env through
-    the Rust compiler and roundtrip every constant of the result — the
-    direct analog of the Rust `kernel-ixon-roundtrip`'s input scope. For
-    external `.ixe` files (e.g. `compilemathlib.ixe`), use
-    `ix roundtrip-tc <path>` instead. -/
-def wholeEnvSuite : TestSeq :=
-  .individualIO "roundtrip whole get_env environment" none (do
-    let leanEnv ← Tests.Tc.Roundtrip.fixtureEnv
-    let consts := leanEnv.constants.toList
-    let dir ← IO.FS.createTempDir
-    let path := dir / "tc-roundtrip-whole-env.ixe"
-    let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
-    let bytes ← IO.FS.readBinFile path
-    IO.FS.removeDirAll dir
-    match Ixon.deEnvAnon bytes with
-    | .error e => return (false, 0, 0, some s!"deEnvAnon failed: {e}")
-    | .ok ixonEnv =>
-      let (rows, err?) := roundtripAll ixonEnv
-      return (err?.isNone, rows, 0, err?)) .done
-
 /-! ### Meta roundtrip (kernel → Lean, `compare_envs` semantics)
 
 The full-fidelity half: pure-parse the Rust-compiled env, meta-ingress the
@@ -292,55 +247,77 @@ names are informational `notFound`; aux-rewritten entries
 (`original.isSome`) are skipped with a count (their anon-structural
 fidelity is covered by the anon roundtrip above). -/
 
-/-- Compile `consts` through the Rust compiler and run the shared meta
-    roundtrip driver (`Ix.Tc.metaRoundtripEnv`) against `leanEnv`. -/
-def metaRoundtripOn (leanEnv : Lean.Environment) (label : String)
+/-- Run both roundtrip modes over one Rust compilation.  Anon and meta parsing
+    consume the same immutable bytes, so compiling each fixture twice cannot
+    add coverage. -/
+def roundtripOn (leanEnv : Lean.Environment) (label : String)
     (consts : List (Lean.Name × Lean.ConstantInfo)) :
-    IO (Ix.Tc.MetaRoundtripReport × Option String) := do
+    IO (Nat × Ix.Tc.MetaRoundtripReport × Option String) := do
+  if consts.isEmpty then
+    return (0, {}, some "empty constant closure")
   let dir ← IO.FS.createTempDir
-  let path := dir / s!"tc-meta-roundtrip-{label}.ixe"
+  let path := dir / s!"tc-roundtrip-{label}.ixe"
   let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
   let bytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
-  let ixonEnv ← match Ixon.deEnv bytes with
-    | .ok env => pure env
-    | .error e => return ({}, some s!"pure deEnv failed: {e}")
-  match metaRoundtripEnv leanEnv ixonEnv with
-  | .error e => return ({}, some e)
-  | .ok report =>
-    if report.errorCount == 0 then
-      return (report, none)
-    else
-      let shown := report.errors.toSubarray 0 (min 5 report.errors.size)
-        |>.toArray
-      let msgs := shown.map fun (n, m) => s!"{n}: {m}"
-      return (report,
-        some s!"{report.errorCount} comparison error(s); first: \
-                {String.intercalate " | " msgs.toList}")
+  let (anonRows, anonErr?) :=
+    match Ixon.deEnvAnon bytes with
+    | .error e => (0, some s!"deEnvAnon failed: {e}")
+    | .ok ixonEnv => roundtripAll ixonEnv
+  let (metaReport, metaErr?) :=
+    match Ixon.deEnv bytes with
+    | .error e => (({} : Ix.Tc.MetaRoundtripReport), some s!"pure deEnv failed: {e}")
+    | .ok ixonEnv =>
+      match metaRoundtripEnv leanEnv ixonEnv with
+      | .error e => (({} : Ix.Tc.MetaRoundtripReport), some e)
+      | .ok report =>
+        if report.errorCount == 0 then
+          (report, none)
+        else
+          let shown : Array (Ix.Name × String) :=
+            report.errors.toSubarray 0 (min 5 report.errors.size) |>.toArray
+          let msgs := shown.map fun (error : Ix.Name × String) =>
+            s!"{error.1}: {error.2}"
+          (report, some s!"{report.errorCount} comparison error(s); first: \
+            {String.intercalate " | " msgs.toList}")
+  let err? := match anonErr?, metaErr? with
+    | none, none => none
+    | some e, none => some s!"anon: {e}"
+    | none, some e => some s!"meta: {e}"
+    | some anon, some metaErr => some s!"anon: {anon}; meta: {metaErr}"
+  return (anonRows, metaReport, err?)
 
-def metaClosureSuite : TestSeq := Id.run do
-  let mut ts : TestSeq := .done
-  for (label, seeds) in seedSets do
-    ts := ts ++ .individualIO s!"meta roundtrip closure: {label}" none (do
-      let env ← Tests.Tc.Roundtrip.fixtureEnv
-      let consts := Tests.Tc.AnonDiff.closureOf env seeds
-      let (report, err?) ← metaRoundtripOn env label consts
-      return (err?.isNone, report.checked, 0, err?)) .done
-  return ts
-
-/-- The centerpiece: meta roundtrip of the WHOLE current Lean env. -/
-def metaWholeEnvSuite : TestSeq :=
-  .individualIO "meta roundtrip whole get_env environment" none (do
+/-- Load the fixture environment once, then check every focused closure and
+    the whole environment.  Loading the same olean graph separately for each
+    closure is pure setup duplication.  External `.ixe` files use
+    `ix roundtrip-tc <path>`. -/
+def integrationSuite : TestSeq :=
+  .individualIO "anon/meta roundtrip closures and whole environment" none (do
     let leanEnv ← Tests.Tc.Roundtrip.fixtureEnv
-    let (report, err?) ←
-      metaRoundtripOn leanEnv "whole-env" leanEnv.constants.toList
-    IO.println s!"[tc-meta-roundtrip] checked {report.checked}, \
-                  notFound {report.notFound}, skippedAux {report.skippedAux}, \
-                  skippedSurgery {report.skippedSurgery}"
-    return (err?.isNone, report.checked, 0, err?)) .done
+    let mut checked := 0
+    let mut errors : Array String := #[]
+    for (label, seeds) in seedSets do
+      let consts := Tests.Tc.AnonDiff.closureOf leanEnv seeds
+      let (anonRows, metaReport, err?) ← roundtripOn leanEnv label consts
+      checked := checked + anonRows + metaReport.checked
+      match err? with
+      | some e => errors := errors.push s!"{label}: {e}"
+      | none =>
+        IO.println s!"[tc-roundtrip] {label}: anon {anonRows}, meta {metaReport.checked}"
+    let (anonRows, metaReport, err?) ←
+      roundtripOn leanEnv "whole-env" leanEnv.constants.toList
+    checked := checked + anonRows + metaReport.checked
+    if let some e := err? then
+      errors := errors.push s!"whole-env: {e}"
+    IO.println s!"[tc-meta-roundtrip] checked {metaReport.checked}, \
+                  notFound {metaReport.notFound}, skippedAux {metaReport.skippedAux}, \
+                  skippedSurgery {metaReport.skippedSurgery}"
+    let msg := if errors.isEmpty then none
+      else some (String.intercalate "\n" errors.toList)
+    return (errors.isEmpty, checked, 0, msg)) .done
 
 public def suite : List TestSeq :=
-  [closureSuite, wholeEnvSuite, metaClosureSuite, metaWholeEnvSuite]
+  [integrationSuite]
 
 end
 
