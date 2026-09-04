@@ -278,18 +278,21 @@ matching plots are kept, stale ones replaced, hand-pinned ones untouched.
 The sync also asserts every measure's canonical units (bencher
 auto-creates measures with placeholder units on first upload).
 
-**bench-pr.yml**: `setup` (authorize the comment, resolve base/head SHAs) →
-`build` (select or build the PR binaries, publish a run-scoped artifact,
-then `ix bench ci parse`) → `compile` (one measured `ix compile` per env,
-publishing a run-scoped `.ixe` + row artifact) → `benchmark` matrix (per cell:
-download only those run artifacts; run the PR side; fetch main's numbers,
-with a base-checkout run covering what bencher lacked (including every
-non-`main` base, whose `.ixe` can be restored from its earlier PR run);
-`ix bench compare` → table artifact) → `assemble` (`ix bench report` builds
-the comment body, unprivileged) → `comment` (posts it — the only job with a
-write token, running no PR code). Normal runs may seed the run artifacts from
-persistent head/base-SHA caches. `fresh` bypasses those caches and rebuilds
-the measured products while retaining dependency caches. Benchmark runners use
+**bench-pr.yml**: `dispatch` (authorize the comment, resolve base/head SHAs,
+then start the cache-writing run) → `build` (select or build the PR binaries,
+publish a run-scoped artifact, then `ix bench ci parse`). `announce` posts the
+initial running/error comment while `compile` runs one measured `ix compile`
+per env and publishes a run-scoped `.ixe` + row artifact. The `benchmark`
+matrix downloads only those run artifacts, runs the PR side, and fetches
+main's numbers, with a base-checkout run covering what bencher lacked
+(including every non-`main`
+base, whose `.ixe` can be restored from its earlier PR run); `ix bench compare`
+then publishes a table artifact. `assemble` runs `ix bench report` without
+write privileges, and `comment` replaces the initial comment. Only `announce`
+and `comment` hold write tokens, and neither checks out or runs PR code. Normal
+runs may seed the run artifacts from persistent head/base-SHA caches. `fresh`
+bypasses those caches and rebuilds the measured products while retaining
+dependency caches. Benchmark runners use the fixed AVX-512 baseline and
 WarpCache for both workflow products and Cargo build artifacts.
 
 Every job that creates a timing row logs its CPU model, instruction set,

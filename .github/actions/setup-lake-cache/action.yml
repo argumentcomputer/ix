@@ -1,18 +1,20 @@
 name: Set up Namespace build cache
-description: Mount the shared Namespace cache for Lake, Cargo, and optional tool caches
+description: >-
+  Mount .lake, Namespace's built-in cache presets, and optional build
+  directories on the shared cache volume.
 
 inputs:
   cache-modes:
-    description: Namespace cache modes to enable
+    description: Built-in Namespace cache presets to mount (for example, rust or nix)
     required: false
     default: rust
   additional-paths:
-    description: Additional paths to mount on the Namespace cache volume
+    description: Paths to mount in addition to the repository's .lake directory
     required: false
 
 outputs:
   cache-hit:
-    description: Whether Namespace restored the build cache
+    description: Whether Namespace restored a prior cache volume
     value: ${{ steps.cache.outputs.cache-hit }}
 
 runs:

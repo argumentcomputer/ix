@@ -3,16 +3,17 @@ name: Benchmark main
 # Benchmarks every push to main and uploads the results to bencher.dev.
 # Each measurement is one `ix bench run` with a (backend, env, mode)
 # parameter combination — the same command you can run locally, and the
-# same one the !benchmark PR workflow uses. Three stages:
+# same one the !benchmark PR workflow uses. Four job roles:
 #
-#   1. plan      — `ix bench ci matrix` prints the list of parameter
+#   1. build     — compiles and caches `ix` and `bench-typecheck` once.
+#   2. plan      — `ix bench ci matrix` prints the list of parameter
 #                  combinations to run. The list comes from the registry
 #                  (Ix/Cli/BenchCmd.lean) and each entry already carries
 #                  its bencher testbed, workload, and threshold flags, so
 #                  this file hardcodes none of that.
-#   2. compile   — compiles each Lean env to a `.ixe` file (this IS the
-#                  compile benchmark) and caches the file for stage 3.
-#   3. benchmark — one job per remaining entry: restore the `.ixe` and
+#   3. compile   — compiles each Lean env to a `.ixe` file (this IS the
+#                  compile benchmark) and caches the file for `benchmark`.
+#   4. benchmark — one job per remaining entry: restore the `.ixe` and
 #                  run the entry's backend over it (aiur, ooc, decompile).
 #
 # Each entry uploads to its own bencher testbed/workload, so a threshold
@@ -84,8 +85,8 @@ jobs:
   # job; only the benchmark job waits on it.
   plan:
     needs: build
-    # Native target features may occur anywhere in `ix`, including this
-    # registry-only subcommand, so keep it on the Warp x64 runner fleet.
+    # The restored `ix` targets the fleet's fixed AVX-512 baseline, so keep
+    # even this registry-only invocation on compatible Warp x64 hardware.
     runs-on: warp-ubuntu-latest-x64-8x
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}

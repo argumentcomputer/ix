@@ -13,7 +13,7 @@ inputs:
     description: Bencher testbed slug.
     required: true
   workload:
-    description: Workload key for the `refs/bencher/<workload>` anchor (the backend testbed minus its runner-arch suffix, e.g. zisk-check-execute).
+    description: Workload key for the `refs/bencher/<workload>` anchor (the backend testbed minus its runner-arch suffix, e.g. ooc-check).
     required: true
   file:
     description: Bencher Metric Format JSON file to upload.
