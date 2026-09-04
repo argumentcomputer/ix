@@ -27,6 +27,9 @@ name = "CompileRedStep"
 name = "CompileFLT"
 
 [[lean_lib]]
+name = "CompileAnthropicFLT"
+
+[[lean_lib]]
 name = "CompileMutualFixtures"
 
 [[lean_lib]]
@@ -40,6 +43,11 @@ path = "../.."
 name = "flt"
 git = "https://github.com/ImperialCollegeLondon/FLT"
 rev = "v4.33.0"
+
+[[require]]
+name = "flt_e2e"
+git = "https://github.com/anthropics/fermats-last-theorem"
+rev = "aa2d8b34692b16c70f699536de0d8e75b9a3e9ef"
 
 [[require]]
 name = "CompPoly"
