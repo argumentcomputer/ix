@@ -78,33 +78,48 @@ private def directConstants : ConstantInfo → Array Name
 
 namespace DependencyAudit
 
+structure Cache where
+  dependencies : NameMap (Array Name) := {}
+
 structure State where
+  cache : Cache := {}
   visited : NameSet := {}
-  names : Array Name := #[]
   origins : Array Name := #[]
+  pendingDependency? : Option Name := none
 
 abbrev M := ReaderT Environment (StateM State)
+
+/-- Cache direct references across manifest roots, which commonly share large
+proof subgraphs. -/
+private def dependencies (declName : Name) : M (Array Name) := do
+  let state ← get
+  if let some dependencies := state.cache.dependencies.find? declName then
+    return dependencies
+  let env ← read
+  let dependencies := match env.checked.get.find? declName with
+    | none => #[]
+    | some info => directConstants info
+  modify fun s =>
+    { s with cache := { dependencies := s.cache.dependencies.insert declName dependencies } }
+  return dependencies
 
 /-- Traverse the checked kernel environment and record each reachable
 declaration whose type or value directly mentions `sorryAx`. -/
 partial def visit (declName : Name) : M Unit := do
   let state ← get
   unless state.visited.contains declName do
-    modify fun s =>
-      { s with
-        visited := s.visited.insert declName
-        names := s.names.push declName }
-    let env ← read
-    match env.checked.get.find? declName with
-    | none => pure ()
-    | some info =>
-      let dependencies := directConstants info
-      if declName != ``sorryAx && dependencies.contains ``sorryAx then
-        modify fun s => { s with origins := s.origins.push declName }
-      dependencies.forM visit
+    modify fun s => { s with visited := s.visited.insert declName }
+    if state.pendingDependency?.isNone &&
+        declName.toString.startsWith "Ix.Tc.Upstream.Pending." then
+      modify fun s => { s with pendingDependency? := some declName }
+    let dependencies ← dependencies declName
+    if declName != ``sorryAx && dependencies.contains ``sorryAx then
+      modify fun s => { s with origins := s.origins.push declName }
+    dependencies.forM visit
 
-def collect (env : Environment) (root : Name) : State :=
-  let (_, state) := ((visit root).run env).run {}
+def collect (env : Environment) (root : Name) (cache : Cache) : State :=
+  let initial : State := { cache := cache }
+  let (_, state) := ((visit root).run env).run initial
   state
 
 end DependencyAudit
@@ -144,7 +159,8 @@ private def expectedAxioms (allowance : RootAllowance) : Array Lean.Name :=
   sortNames <| if allowance.sorryOrigins.isEmpty then expected
     else expected.push ``sorryAx
 
-private def checkOne (allowance : RootAllowance) : CommandElabM Unit := do
+private def checkOne (dependencyCache : DependencyAudit.Cache)
+    (allowance : RootAllowance) : CommandElabM DependencyAudit.Cache := do
   validateCategories allowance
   let env ← getEnv
   unless env.contains allowance.root do
@@ -164,7 +180,7 @@ private def checkOne (allowance : RootAllowance) : CommandElabM Unit := do
   -- Origin and architectural-quarantine checks consume the same transitive
   -- dependency graph. Keep one exact traversal per root: large generated
   -- recursor proofs make two independent walks unnecessarily expensive.
-  let dependencyAudit := DependencyAudit.collect env allowance.root
+  let dependencyAudit := DependencyAudit.collect env allowance.root dependencyCache
   let actualOrigins := sortNames dependencyAudit.origins
   let expectedOrigins := sortNames allowance.sorryOrigins
   unless actualOrigins == expectedOrigins do
@@ -177,23 +193,24 @@ private def checkOne (allowance : RootAllowance) : CommandElabM Unit := do
   -- helper definitions from the quarantine module: otherwise replacing a
   -- pending witness could silently change the completed proof surface.
   if allowance.pendingAxioms.isEmpty then
-    for dependency in dependencyAudit.names do
-      if dependency.toString.startsWith "Ix.Tc.Upstream.Pending." then
-        throwError m!"{allowance.root}: unconditional root reaches quarantined dependency {dependency}"
+    if let some dependency := dependencyAudit.pendingDependency? then
+      throwError m!"{allowance.root}: unconditional root reaches quarantined dependency {dependency}"
 
   for forbidden in allowance.forbiddenDependencies do
-    if dependencyAudit.names.contains forbidden then
+    if dependencyAudit.visited.contains forbidden then
       throwError m!"{allowance.root}: forbidden transitive dependency {forbidden}"
+  return dependencyAudit.cache
 
 /-- Check a complete executable trust manifest.  Duplicate roots are rejected
 instead of being silently audited twice. -/
 def check (allowances : Array RootAllowance) : CommandElabM Unit := do
   let mut roots : NameSet := {}
+  let mut dependencyCache : DependencyAudit.Cache := {}
   for allowance in allowances do
     if roots.contains allowance.root then
       throwError m!"duplicate axiom-audit root: {allowance.root}"
     roots := roots.insert allowance.root
-    checkOne allowance
+    dependencyCache ← checkOne dependencyCache allowance
   logInfo m!"Ix.Tc verification trust audit passed for {allowances.size} theorem roots"
 
 end Ix.Tc.Verify.Audit

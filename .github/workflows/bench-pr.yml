@@ -3,9 +3,7 @@
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
 #
-#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] | all) [execute]
-#     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
-#      with a note in the config summary)
+#   !benchmark ([aiur] [ooc] [compile] [decompile] | all) [execute]
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
@@ -41,7 +39,7 @@
 #     token switches it to the fast Phase-1-only mode (witness
 #     generation; no bencher baseline exists for that, so the base side
 #     comes from a base-SHA run).
-#   - zisk / sp1 / ooc: `execute`.
+#   - ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
 # The bare `fresh` token skips the bencher fetch and prevents persistent
@@ -64,10 +62,10 @@
 # access (anti-poisoning; no token permission can override it), so cache
 # saves would all fail. The issue_comment run therefore only checks the
 # commenter is an org MEMBER/OWNER and re-dispatches this same file as
-# workflow_dispatch, which is allowed to save caches. The relay rejects fork
-# PRs before dispatch so only repository writers can supply code to that cache
-# scope. Manual dispatch already requires repo write access and may
-# intentionally compare loose commits.
+# workflow_dispatch, which is allowed to save caches. The MEMBER/OWNER command
+# explicitly authorizes that PR head to run in the cache-writing context.
+# Manual dispatch already requires repo write access and may intentionally
+# compare loose commits.
 name: Benchmark pull requests
 
 on:
@@ -126,11 +124,6 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
-          head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
-          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
-            echo "::error::Comment-triggered benchmarks require a same-repository PR head"
-            exit 1
-          fi
           gh workflow run bench-pr.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "${{ github.event.repository.default_branch }}" \
@@ -145,12 +138,11 @@ jobs:
   # artifact for every later job. Normal runs may select a persistent
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
   # replaces the full bundle before it is published to benchmark jobs.
-  # Built on a warp runner like bench-main's binaries, so both sides share
-  # the same instruction set (AVX-512) — and every job that runs these
-  # binaries must be a warp host too, or a plain GitHub host crashes with
-  # an illegal instruction. The job ends by parsing the !benchmark command
-  # with the selected `ix bench ci parse`: the registry lives in Lean, so
-  # the matrix can only be computed after a binary is available.
+  # Built on a Warp runner like bench-main's binaries, so both sides use the
+  # same fixed AVX-512 baseline and benchmark testbed. The job ends by parsing
+  # the !benchmark command with the selected `ix bench ci parse`: the registry
+  # lives in Lean, so the matrix can only be computed after a binary is
+  # available.
   build:
     if: github.event_name == 'workflow_dispatch'
     runs-on: warp-ubuntu-latest-x64-32x
@@ -161,11 +153,12 @@ jobs:
       fresh: ${{ steps.parse.outputs.fresh }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
+      hardware-summary: ${{ steps.cpu.outputs.summary }}
       # Set (with the step failing) when the !benchmark command was
       # rejected; the failure comment quotes it.
       parse-error: ${{ steps.parse.outputs.parse-error }}
     steps:
-      # The relay admits only same-repository heads; manual dispatch requires
+      # Comment dispatch requires an org MEMBER/OWNER; manual dispatch requires
       # repo write access. Emit the validated full SHA once for every checkout.
       - name: Validate SHAs
         id: target
@@ -182,7 +175,7 @@ jobs:
           # The job builds and runs PR code; never leave the token in .git.
           persist-credentials: false
       - id: bins
-        uses: actions/cache/restore@v6
+        uses: WarpBuilds/cache/restore@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ steps.target.outputs.revision }}
@@ -190,6 +183,8 @@ jobs:
       # remaining binaries are built after parsing, when `fresh` is known.
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-provider: warpbuild
       # A persistent hit still needs the matching toolchain for libleanshared.
       - uses: leanprover/lean-action@v1
         with:
@@ -214,40 +209,28 @@ jobs:
       # run replaces it before the bundle can reach any measured job.
       - if: steps.parse.outputs.fresh == '1' && steps.bins.outputs.cache-hit == 'true'
         uses: ./.github/actions/setup-rust-toolchain
-      # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
-      # benchmark shift can be traced to the host that selected the native
-      # instruction set. The report travels with the binaries below.
-      - name: Log build CPU
-        if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
+        with:
+          cache-provider: warpbuild
+      - name: Log benchmark runner CPU
+        id: cpu
         uses: ./.github/actions/log-cpu
         with:
-          label: Benchmark binary build CPU
-          output-file: ${{ runner.temp }}/benchmark-build-cpu.txt
+          label: Benchmark runner CPU
       - name: Build benchmark binaries
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
         run: |
           lake build ix bench-typecheck
           cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
-          cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
           chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
-      # Cache entries are immutable and may lack optional provenance. Keep the
-      # run artifact's shape stable and state explicitly when its build host is
-      # unknown.
-      - name: Ensure build CPU provenance
-        run: |
-          if [ ! -s "$HOME/.local/bin/benchmark-build-cpu.txt" ]; then
-            echo "Benchmark binary build CPU unavailable: cache predates CPU provenance." \
-              > "$HOME/.local/bin/benchmark-build-cpu.txt"
-          fi
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: WarpBuilds/cache/save@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ steps.target.outputs.revision }}
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix bench-typecheck benchmark-build-cpu.txt
+          ix bench-typecheck
       - name: Upload run binaries
         uses: actions/upload-artifact@v7
         with:
@@ -280,6 +263,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
           SUMMARY: ${{ needs.build.outputs.config-summary }}
+          HARDWARE: ${{ needs.build.outputs.hardware-summary }}
           HEAD_SHA: ${{ needs.build.outputs.revision }}
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -299,8 +283,11 @@ jobs:
               echo
               if [ -n "$SUMMARY" ]; then
                 echo "> $SUMMARY"
-                echo
               fi
+              if [ -n "$HARDWARE" ]; then
+                echo "> $HARDWARE"
+              fi
+              echo
               echo "Benchmarking \`${HEAD_SHA:0:7}\` — this comment will be replaced with the results when the run finishes."
               echo
               echo "[Watch progress]($RUN_URL)"
@@ -356,9 +343,9 @@ jobs:
       - name: Restore published .ixe
         if: needs.build.outputs.fresh != '1'
         id: pr-ixe
-        uses: actions/cache/restore@v6
+        uses: WarpBuilds/cache/restore@v2
         with:
-          # actions/cache derives an entry's version from its path list, so
+          # The cache derives an entry's version from its path list, so
           # the list is effectively part of the key: this one path matches
           # bench-main's compile-job save, which lets a stacked PR's base
           # run reach either producer's entry from one restore.
@@ -367,11 +354,9 @@ jobs:
       - name: Restore published compile row
         if: needs.build.outputs.fresh != '1'
         id: pr-row
-        uses: actions/cache/restore@v6
+        uses: WarpBuilds/cache/restore@v2
         with:
-          path: |
-            compile.json
-            compile-cpu-warnings.md
+          path: compile.json
           key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Select compile source
         id: compile-source
@@ -390,7 +375,6 @@ jobs:
       - name: Unpack run binaries
         if: steps.compile-source.outputs.rebuild == 'true'
         run: |
-          rm -f compile-cpu-warnings.md
           mkdir -p "$HOME/.local/bin"
           tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -399,9 +383,6 @@ jobs:
         uses: ./.github/actions/log-cpu
         with:
           label: Compile measurement CPU
-          provenance-file: ~/.local/bin/benchmark-build-cpu.txt
-          provenance-label: PR benchmark binaries during compile
-          warning-file: compile-cpu-warnings.md
       # Pointed at the Benchmarks/Compile subpackage (same toolchain as
       # the root): mathlib is a dependency only there, so the mathlib
       # cache fetch has to run from that directory.
@@ -426,7 +407,7 @@ jobs:
         run: ix bench run --backend compile --env ${{ matrix.env }} --out compile.json
       - name: Publish .ixe
         if: needs.build.outputs.fresh != '1' && steps.pr-ixe.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: WarpBuilds/cache/save@v2
         with:
           # Path lists are version-significant — keep this identical to the
           # restore above and to bench-main's save.
@@ -436,11 +417,9 @@ jobs:
       # reuses it as its PR side (same runner class, binaries, command).
       - name: Publish compile row
         if: needs.build.outputs.fresh != '1' && steps.pr-row.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: WarpBuilds/cache/save@v2
         with:
-          path: |
-            compile.json
-            compile-cpu-warnings.md
+          path: compile.json
           key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Upload run environment
         uses: actions/upload-artifact@v7
@@ -449,7 +428,6 @@ jobs:
           path: |
             ${{ matrix.env }}.ixe
             compile.json
-            compile-cpu-warnings.md
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -517,9 +495,6 @@ jobs:
         uses: ./.github/actions/log-cpu
         with:
           label: Benchmark job CPU
-          provenance-file: .lake/build/bin/benchmark-build-cpu.txt
-          provenance-label: PR benchmark binaries in this job
-          warning-file: cpu-warnings.md
       # Toolchain only (no package build, no mathlib cache): the restored
       # binaries need the toolchain's libleanshared to run. This job never
       # compiles an env — the `.ixe` and compile row come from the compile
@@ -535,24 +510,6 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: benchmark-env-${{ matrix.params.env }}
-      # zkVM runs additionally need the Rust toolchain + the backend's toolchain
-      # and system deps (the shared composite install actions).
-      - name: Set up zkVM Rust toolchain
-        if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
-        uses: ./.github/actions/setup-rust-toolchain
-        with:
-          cache-workspaces: ${{ matrix.params.backend }}
-      # sp1 is disabled in the registry (execute too slow for CI);
-      # re-enable it there and uncomment this install step to restore it.
-      # - name: Install SP1
-      #   if: matrix.params.backend == 'sp1'
-      #   uses: ./.github/actions/install-sp1
-      - name: Install Zisk
-        if: matrix.params.backend == 'zisk'
-        uses: ./.github/actions/install-zisk
-        with:
-          proving-key: false
-
       # ---------- PR side ----------
       # The PR side runs first: `ix bench run` selects its constants from
       # the shared set (Ix/BenchConstants.lean), and pr.json's row names
@@ -566,11 +523,6 @@ jobs:
         # the job, after the table upload.
         continue-on-error: true
         run: |
-          if [ "$BACKEND" = zisk ]; then
-            # ZisK's ASM microservices mmap with MAP_LOCKED: raise the memlock
-            # hard limit in this shell so the spawned tools inherit it.
-            sudo prlimit --pid $$ --memlock=unlimited:unlimited
-          fi
           if [ "$BACKEND" = compile ]; then
             # The compile job already measured this env's compile (same
             # runner class, binaries, and command) — reuse its row instead
@@ -638,7 +590,7 @@ jobs:
         id: perconst
         if: matrix.params.backend == 'ooc' && env.FRESH != '1'
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: WarpBuilds/cache/restore@v2
         with:
           path: bench.json.perconst.csv
           key: bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
@@ -675,35 +627,25 @@ jobs:
       - name: Restore base binaries (bench-bins cache)
         if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-bins
-        uses: actions/cache/restore@v6
+        uses: WarpBuilds/cache/restore@v2
         with:
           path: ~/.local/bin
           key: bench-bins-${{ env.BASE_SHA }}
       # Two producers compile the env at a given SHA: bench-main for main
       # commits, this workflow's compile job for PR heads. A stacked PR's
       # base is the latter, so both keys are tried from one step. This works
-      # because both producers save the same single path; actions/cache
-      # versions an entry by its paths. restore-keys matches by prefix, so
+      # because both producers save the same single path; the cache versions
+      # an entry by its paths. restore-keys matches by prefix, so
       # no registry env name may be a prefix of another.
       - name: Restore base .ixe (bench-main or bench-pr compile cache)
         if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-ixe
-        uses: actions/cache/restore@v6
+        uses: WarpBuilds/cache/restore@v2
         with:
           path: ${{ matrix.params.env }}.ixe
           key: bench-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
           restore-keys: |
             bench-pr-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
-      # Shards live in their own entry and only exist for the zkVM
-      # backends; without them `ix bench run` cuts them itself.
-      - name: Restore base closure shards
-        if: >-
-          steps.decide.outputs.run-base == 'true' && env.FRESH != '1' &&
-          (matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1')
-        uses: actions/cache/restore@v6
-        with:
-          path: zkshards-${{ matrix.params.env }}
-          key: bench-shards-${{ env.BASE_SHA }}-${{ matrix.params.env }}
       # Cached base binaries are only usable when both `lean-toolchain`
       # files match, and — for Mathlib — only when the `.ixe` also
       # restored (otherwise the base side would need mathlib oleans that
@@ -727,7 +669,6 @@ jobs:
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
               mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
-              mv ~/.local/bin/benchmark-build-cpu.txt base/.lake/build/bin/ 2>/dev/null || true
               [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] \
                 && cached=true
             fi
@@ -735,20 +676,18 @@ jobs:
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
           echo "base .ixe: $([ "$ixe" = true ] && echo restored from cache || echo compiling in the base run)"
           echo "base binaries: $([ "$cached" = true ] && echo restored from cache || echo building from source)"
-      - name: Log cached base binary build CPU
-        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached == 'true'
-        uses: ./.github/actions/log-cpu
-        with:
-          log-current: "false"
-          provenance-file: base/.lake/build/bin/benchmark-build-cpu.txt
-          provenance-label: Cached base benchmark binaries
-          warning-file: cpu-warnings.md
+      - name: Set up changed base Rust toolchain
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        working-directory: base
+        run: |
+          if ! cmp -s rust-toolchain.toml ../rust-toolchain.toml; then
+            rustup show active-toolchain || rustup toolchain install
+          fi
       - name: Log base build CPU
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: ./.github/actions/log-cpu
         with:
           label: Base benchmark binary build CPU
-          output-file: base/.lake/build/bin/benchmark-build-cpu.txt
       - name: Build base (ix, bench-typecheck)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
@@ -789,12 +728,6 @@ jobs:
         run: |
           if [ "${{ steps.base-src.outputs.ixe }}" = true ]; then
             mv "${{ matrix.params.env }}.ixe" "base/${{ matrix.params.env }}.ixe"
-            # Shards, when restored above: in place, `ix bench run` skips
-            # re-cutting them for the base tree.
-            mv "zkshards-${{ matrix.params.env }}" "base/zkshards-${{ matrix.params.env }}" 2>/dev/null || true
-          fi
-          if [ "$BACKEND" = zisk ]; then
-            sudo prlimit --pid $$ --memlock=unlimited:unlimited
           fi
           flags=""
           if [ -n "$CONSTS" ]; then
@@ -848,15 +781,11 @@ jobs:
       - name: Build comparison table
         run: |
           mkdir -p out
-          if [ "$BACKEND" = compile ] && [ -s compile-cpu-warnings.md ]; then
-            cat compile-cpu-warnings.md >> cpu-warnings.md
-          fi
           ix bench compare \
             --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --base "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
             --base-source "${{ steps.decide.outputs.source }}" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
-            --warning-file "$GITHUB_WORKSPACE/cpu-warnings.md" \
             --out "out/table-$LABEL.md"
           cat "out/table-$LABEL.md"
 
@@ -919,13 +848,21 @@ jobs:
       - name: Build comment body
         env:
           SUMMARY: ${{ needs.build.outputs.config-summary }}
+          HARDWARE: ${{ needs.build.outputs.hardware-summary }}
           HEAD_SHA: ${{ needs.build.outputs.revision }}
           BASE_SHA: ${{ inputs.base-sha }}
           BASE_REF: ${{ inputs.base-ref }}
         run: |
           mkdir -p tables   # absent when no run uploaded a table
+          summary="$SUMMARY"
+          if [ -n "$HARDWARE" ]; then
+            if [ -n "$summary" ]; then
+              summary="$summary"$'\n\n'
+            fi
+            summary="$summary$HARDWARE"
+          fi
           ix bench report \
-            --tables tables --summary "$SUMMARY" \
+            --tables tables --summary "$summary" \
             --head "$HEAD_SHA" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \

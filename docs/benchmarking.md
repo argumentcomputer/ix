@@ -1,8 +1,8 @@
 # Benchmarking
 
 One orchestrator — `ix bench` — runs every benchmark cell, locally and in CI.
-A **cell** is `(backend, env, mode)`, e.g. `zisk-InitStd-execute`. CI is a
-thin wrapper: the same `ix bench run` you type in a terminal is what both
+A **cell** is `(backend, env, mode)`, e.g. `ooc-InitStd-execute`. For backends
+scheduled in CI, the same `ix bench run` you type in a terminal is what both
 workflows execute, so every CI number is reproducible on your machine.
 
 - **`!benchmark` PR comment** (`.github/workflows/bench-pr.yml`) — on demand,
@@ -101,8 +101,8 @@ a PR tree and compare them — exactly what the PR workflow does.
 | backend | what it measures | tool |
 |---|---|---|
 | `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; it remains unscheduled until a runner can carry W0. | `bench-typecheck --recursive` |
-| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (the runtime-planned partition size; 1 when the closure fits) | `zisk-host` |
-| `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
+| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (the runtime-planned partition size; 1 when the closure fits). Available locally; benchmark CI is disabled. | `zisk-host` |
+| `sp1`     | SP1 VM execute. Available locally; benchmark CI is disabled. | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `lean4lean` | the reference Lean4-in-Lean4 kernel ([digama0/lean4lean](https://github.com/digama0/lean4lean), required by the lakefile at a pinned rev) — the external yardstick for the Ix kernels on the same libraries. Olean-driven (no `.ixe`): the whole-library row replays every module in the env's import closure through lean4lean, module-parallel (check-time, constants, throughput, peak-rss; tune parallelism with `LEAN_NUM_THREADS`), plus one full-closure row per constant (the name's transitive closure into a fresh kernel env), mirroring ooc's row shape. Registry-disabled for CI (no bencher testbed yet); `ix bench run --backend lean4lean` works locally regardless | `bench-lean4lean` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
@@ -174,14 +174,14 @@ approach the ceiling, and a kill there means missing rows and a red cell.
 There are **no per-constant timeouts**; the job-level `timeout-minutes` is
 the only clock.
 
-Every zisk constant runs as a closure-shard partition sized at bench
+Every local zisk benchmark constant runs as a closure-shard partition sized at
 runtime: `ix shard extract` → `ix profile` → `ix shard` cut a manifest
 whose shard count comes from the planner's RAM budget (a closure that
 fits gets a one-shard plan), and one `--shard-plan` host run executes the
 shards sequentially, emitting the constant's row with per-shard
-breakdowns. bench-main's compile job pre-cuts these artifacts
-(`ix bench shard`) and ships them via cache; a zisk run cuts lazily when
-they're absent, and falls back to the whole closure if the cut fails.
+breakdowns. `ix bench shard` can pre-cut these artifacts; a zisk run cuts
+lazily when they're absent and falls back to the whole closure if the cut
+fails.
 
 ## Registry and constant set
 
@@ -208,7 +208,7 @@ they're absent, and falls back to the whole closure if the cut fails.
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] | all)
+!benchmark ([aiur] [ooc] [compile] [decompile] | all)
            [execute] [fresh] [KEY=VALUE …]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
                                # compile-only request may name any registry
@@ -258,9 +258,8 @@ untouched.
 
 **bench-main.yml**: `build` (compile `ix` + `bench-typecheck` once, cache by
 SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
-`ix bench run --backend compile`, cache the `.ixe` and pre-cut zisk shards
-separately) →
-one `benchmark` job per remaining cell — aiur / zisk / ooc / decompile —
+`ix bench run --backend compile`, cache the `.ixe`) →
+one `benchmark` job per remaining cell — aiur / ooc / decompile —
 (each: restore caches, one `ix bench run … --ixe`, `ix bench bmf`,
 upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
@@ -290,18 +289,14 @@ non-`main` base, whose `.ixe` can be restored from its earlier PR run);
 the comment body, unprivileged) → `comment` (posts it — the only job with a
 write token, running no PR code). Normal runs may seed the run artifacts from
 persistent head/base-SHA caches. `fresh` bypasses those caches and rebuilds
-the measured products while retaining dependency caches.
+the measured products while retaining dependency caches. Benchmark runners use
+WarpCache for both workflow products and Cargo build artifacts.
 
 Every job that creates a timing row logs its CPU model, instruction set,
-effective CPU count, affinity, and cgroup allocation. Because the benchmark
-binaries use native codegen, their build jobs also record the build CPU and
-carry that report inside the binary cache or run artifact; measurement jobs
-print it next to their own host report. A cache entry created before this
-provenance was introduced remains usable and is reported as having an unknown
-build CPU. The exact `lscpu` model name is compared; a difference (or missing
-build provenance) is rendered as a warning in that cell's PR comment table.
-This is diagnostic only: the CPU model does not participate in cache keys, and
-only an explicit `fresh` request bypasses the measured-product caches.
+effective CPU count, affinity, and cgroup allocation directly in the Actions
+logs. The `!benchmark` comment also includes a compact CPU model, effective
+vCPU count, and total RAM summary. This is diagnostic only: CPU information
+does not participate in cache keys or benchmark results.
 
 ## Palomar compatibility corpus
 
@@ -350,10 +345,10 @@ the same artifacts.
 
 ## Not yet covered
 
-- **zkVM prove** — the hosts prove, but CI has no GPU runner; cells are
-  execute-only.
-- **sp1** — disabled in the registry (execute too slow per push);
-  re-enable it there and it returns to the matrices and the parser.
+- **Zisk and SP1 benchmark cells** — intentionally disabled in benchmark CI;
+  regular CI retains their build and keyless-execution integration jobs.
+- **zkVM prove** — the hosts prove, but local proving requires suitable GPU
+  infrastructure.
 - **aiur prove numbers for the biggest closures** — every constant in the
   shared set runs the full pipeline, but the largest ones exceed the CI
   host's RAM ceiling and land as honest `oom` rows, which never upload

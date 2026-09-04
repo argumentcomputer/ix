@@ -117,9 +117,9 @@ runs:
     # reuse a stale key. `aws s3 cp` (multipart, no creds — public bucket)
     # holds throughput steady where a single-stream `curl` swings by an
     # order of magnitude; `curl` is the fallback for hosts without the AWS
-    # CLI. Deliberately NOT actions/cache'd: the runner fleet is AWS-hosted,
-    # so multipart S3 outruns the Actions cache service — and the tarball
-    # would crowd the repo's cache quota besides.
+    # CLI. Deliberately NOT actions/cache'd: the multi-GB tarball would crowd
+    # the repo's cache quota, while its public S3 source supports multipart
+    # downloads directly.
     - name: Fetch proving key from S3, extract, regenerate const-trees
       if: inputs.proving-key == 'true'
       shell: bash

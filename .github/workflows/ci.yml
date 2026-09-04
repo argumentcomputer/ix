@@ -13,29 +13,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Build Ix once and cache `.lake` under lean-action's per-sha key. That cache
-  # holds the base Ix build — lean-action saves it right after building the
-  # default lib, before the all-targets lint below — and the parallel lean-test
-  # job and merge-tests.yml's Lake jobs restore it instead of recompiling the
-  # base. `test: false` keeps this job build-only; those jobs run the tests. It
-  # also compiles and publishes the small `nataddcomm.ixe` fixture the zkVM
-  # execution gates (sp1-build/zisk-build) run their guests over: they need this
-  # exact `ix` build, so they consume it as an artifact and gate on this job
-  # succeeding.
+  merge-tests:
+    name: Merge tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Defer tests to merge queue
+        run: echo "Merge tests run against the merge group's synthetic commit."
+
+  # Build every regular Lake target before the test fan-out. The Namespace
+  # volume is committed only after this job succeeds, so every saved build
+  # cache contains the complete build rather than one parallel job's subset.
+  # The small `nataddcomm.ixe` fixture is passed separately to the zkVM jobs.
   build:
-    runs-on: warp-ubuntu-latest-x64-16x
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-16x32-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
           test: false
+          use-github-cache: false
       # build-all lint driver compiles every lib/exe target with --wfail, so a
       # warning in any target (exes, benchmarks, Apps) — not just the default lib
       # lean-action builds above — fails CI.
       - name: Build all targets
         run: lake lint -- --wfail -v
+      - name: Build Ix.Tc formal verification
+        run: lake build IxTcVerify
       - name: Check codegen'd IxVM kernel is up to date
         run: lake exe ix codegen --check
       - name: Check Lean versions match for Ix and compiler bench
@@ -54,31 +66,21 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The primary test tier, plus the two extras, over the base build the
-  # `build` job cached. Restores `.lake` read-only (exact per-sha key the
-  # `build` job wrote, prefix fallback otherwise); lean-action runs the whole
-  # primary tier as a bare `lake test` against that restored build (no
-  # build/cache of its own). No `--wfail` there: `test-args` is declared but
-  # unwired in the released `v1`, so it would be silently ignored, and the
-  # `build` job already compiles every lib and exe -- `Tests` and `IxTests`
-  # included -- under `lake lint -- --wfail -v`. The CLI step covers the one
-  # primary runner that is special-cased ahead of suite dispatch in
-  # `Tests/Main.lean`; ignored suites run only in `merge-tests.yml`.
+  # The primary test tier consumes the complete cache but cannot commit its
+  # local changes. The build job remains the sole shared-cache writer.
   lean-test:
     needs: build
-    runs-on: warp-ubuntu-latest-x64-16x
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-16x32-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix
+      - nscloud-cache-exp-do-not-commit
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
-      # `./.lake`, not `.lake`: the cache path is hashed into the entry's
-      # version, and lean-action saves under `./.lake`, so a bare `.lake` here
-      # computes a different version and the restore misses despite the key
-      # matching.
-      - uses: actions/cache/restore@v6
         with:
-          path: ./.lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -87,11 +89,24 @@ jobs:
       - name: Test Ix CLI
         run: lake test --wfail -- cli
 
+  # Lake and root Cargo builds both use the repository's target directory, so
+  # these two writers share a volume in dependency order. Namespace volumes
+  # are last-write-wins; parallel zkVM writers use dedicated tags, while CUDA
+  # consumes the primary cache without committing its feature-specific output.
+  # Namespace's remote sccache could share compatible compilation units across
+  # the zkVM volumes without serializing the jobs.
   rust-test:
-    runs-on: warp-ubuntu-latest-x64-8x
+    needs: build
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
       - uses: taiki-e/install-action@nextest
       # Install Lean for rust-bindgen step
       - uses: leanprover/lean-action@v1
@@ -117,8 +132,19 @@ jobs:
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
   cuda-compile:
-    runs-on: warp-ubuntu-latest-x64-8x
-    container: nvidia/cuda:12.8.1-devel-ubuntu24.04
+    needs: build
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix
+      - nscloud-cache-exp-do-not-commit
+    container:
+      image: nvidia/cuda:13.3.1-devel-ubuntu26.04
+      env:
+        NSC_CACHE_PATH: ${{ env.NSC_CACHE_PATH }}
+      volumes:
+        - /cache:/cache
+      options: --cap-add=SYS_ADMIN
     env:
       # This job validates feature plumbing and the Rust-staticlib-to-Lean
       # link without paying for a GPU runner. Multi-stark CI compiles the
@@ -131,8 +157,11 @@ jobs:
         run: |
           apt-get update
           apt-get install --yes --no-install-recommends \
-            build-essential ca-certificates curl git libclang-dev
+            build-essential ca-certificates curl git libclang-dev sudo
       - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -144,13 +173,11 @@ jobs:
 
   # zkVM host build + execute gate: do the Zisk/SP1 hosts (and their guest
   # ELFs, via each workspace's build.rs) still compile AND run? rust-test
-  # doesn't build these workspaces (special toolchains), and bench-main.yml's
-  # zkVM runs — which also run real executions — tolerate per-constant
-  # failures by design (dropped rows, OOM sentinels), so they never turn red
-  # on a breakage. These jobs are the red-X signal: each builds its host, then
-  # runs the guest in the VM over `nataddcomm.ixe` (a ~40-constant closure the
-  # `build` job publishes as an artifact). They run in parallel with the test
-  # jobs and with each other after `build` succeeds. Both hosts exit
+  # doesn't build these workspaces because they need special toolchains. These
+  # jobs are the red-X signal: each builds its host, then runs the guest in the
+  # VM over `nataddcomm.ixe` (a ~40-constant closure the `build` job publishes
+  # as an artifact). They run in parallel with the test jobs and with each
+  # other after `build` succeeds. Both hosts exit
   # non-zero when the kernel rejects a constant (sp1: EXIT_REJECTED; zisk:
   # `reject_failures`), so a guest that compiles but panics / faults / rejects
   # fails the job. Both execute paths are keyless: Zisk uses its SDK's
@@ -160,12 +187,20 @@ jobs:
   sp1-build:
     name: SP1 host build
     needs: build
-    runs-on: warp-ubuntu-latest-x64-16x
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix-sp1
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-workspaces: sp1
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
+        with:
+          additional-paths: |
+            ${{ github.workspace }}/sp1/target
+            ${{ github.workspace }}/sp1/guest/target
       - uses: ./.github/actions/install-sp1
       # The precompile-aware SP1 runner-binary is auto-built from the fork git
       # dep by `sp1-core-executor-runner`'s build script — no manual override.
@@ -199,12 +234,21 @@ jobs:
   zisk-build:
     name: Zisk host build
     needs: build
-    runs-on: warp-ubuntu-latest-x64-16x
+    runs-on:
+      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
+      - nscloud-cache-size-50gb
+      - nscloud-cache-tag-argumentcomputer-ix-zisk
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-workspaces: zisk
+          use-github-cache: "false"
+      - uses: ./.github/actions/setup-lake-cache
+        with:
+          additional-paths: |
+            ${{ github.workspace }}/zisk/target
+            ${{ github.workspace }}/zisk/guest/target
+            ${{ github.workspace }}/zisk/agg-guest/target
       - uses: ./.github/actions/install-zisk
         with:
           proving-key: false
