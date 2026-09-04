@@ -66,8 +66,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The primary test tier consumes the complete cache but cannot commit its
-  # local changes. The build job remains the sole shared-cache writer.
+  # The primary Lean test tier consumes the completed build cache read-only.
+  # Within this workflow, build and rust-test are the only ordered writers.
   lean-test:
     needs: build
     runs-on:
@@ -90,7 +90,7 @@ jobs:
         run: lake test --wfail -- cli
 
   # Lake and root Cargo builds both use the repository's target directory, so
-  # these two writers share a volume in dependency order. Namespace volumes
+  # build and rust-test share a volume in dependency order. Namespace volumes
   # are last-write-wins; parallel zkVM writers use dedicated tags, while CUDA
   # consumes the primary cache without committing its feature-specific output.
   # Namespace's remote sccache could share compatible compilation units across
