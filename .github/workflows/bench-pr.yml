@@ -651,7 +651,7 @@ jobs:
       # restored (otherwise the base side would need mathlib oleans that
       # only a full build fetches). Usable binaries go into
       # base/.lake/build/bin, where `ix bench run --repo base` finds them;
-      # a from-scratch base build puts them there natively.
+      # a from-scratch base build puts them there directly.
       - name: Resolve base binaries
         if: steps.decide.outputs.run-base == 'true'
         id: base-src
@@ -814,8 +814,8 @@ jobs:
     # Assemble even when benchmark runs failed — the tables carry the ❌
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
-    # The report command uses the build job's native `ix`, so keep it on the
-    # Warp x64 runner fleet; report assembly does not need benchmark-scale RAM.
+    # The report command uses the build job's fixed-AVX-512 `ix`, so keep it on
+    # compatible Warp x64 hardware; report assembly needs little RAM.
     runs-on: warp-ubuntu-latest-x64-8x
     permissions:
       contents: read

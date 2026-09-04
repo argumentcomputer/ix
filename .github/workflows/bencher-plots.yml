@@ -24,8 +24,8 @@ permissions:
 
 jobs:
   sync-plots:
-    # The restored `ix` uses native target features selected on the benchmark
-    # build runner, even though this subcommand itself is pure Lean.
+    # The restored `ix` targets the benchmark fleet's fixed AVX-512 baseline,
+    # so even this pure-Lean subcommand needs compatible Warp x64 hardware.
     runs-on: warp-ubuntu-latest-x64-8x
     steps:
       - uses: actions/checkout@v7

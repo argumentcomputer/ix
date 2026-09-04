@@ -8,7 +8,7 @@ inputs:
     description: Cargo workspaces to cache
     required: false
   use-github-cache:
-    description: Enable the setup action's Cargo cache
+    description: Enable Cargo artifact caching through the selected provider
     required: false
     default: "true"
   cache-provider:
@@ -54,11 +54,11 @@ runs:
     # feature set contains the other's, so `-Ctarget-cpu=native` is not
     # portable across the fleet: Zen 5 enables SSE4A, which LLVM emits (as
     # INSERTQ, in witness generation) and Intel traps on with #UD. Pin the
-    # measured intersection instead. x86-64-v4 covers every AVX-512 subset Plonky3
-    # uses; +avx512vbmi2 keeps its VPSHRDQ interleave and +gfni keeps LLVM's
-    # byte-shift lowering. blake3 selects its kernels via CPUID at runtime
-    # and is unaffected. Pinning also makes codegen host-independent, so the
-    # cache key below is sound and main-vs-PR timings stay comparable.
+    # measured intersection instead. x86-64-v4 covers every AVX-512 subset
+    # Plonky3 uses; +avx512vbmi2 keeps its VPSHRDQ interleave and +gfni keeps
+    # LLVM's byte-shift lowering. blake3 selects its kernels via CPUID at
+    # runtime and is unaffected. Pinning also makes codegen host-independent,
+    # so the cache key below is sound and main-vs-PR timings stay comparable.
     - name: Require the fleet's baseline CPU features
       if: inputs.avx512-codegen == 'true'
       shell: bash
