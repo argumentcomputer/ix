@@ -9,6 +9,7 @@ use multi_stark::{
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   types::FriParameters,
 };
+use sha2::{Digest, Sha256};
 #[cfg(not(clippy))]
 use sp1_sdk::include_elf;
 use sp1_sdk::{
@@ -16,14 +17,41 @@ use sp1_sdk::{
 };
 
 #[cfg(not(clippy))]
-pub const GUEST_ELF: Elf = include_elf!("sp1-compress-guest");
+pub const CURRENT_GUEST_ELF: Elf = include_elf!("sp1-compress-guest");
+#[cfg(not(clippy))]
+pub const MATHLIB_2026_09_03_GUEST_ELF: Elf =
+  include_elf!("sp1-compress-guest-mathlib-2026-09-03");
 // `sp1-build` intentionally skips guest compilation under clippy. Keep host
 // API linting available on clean checkouts; this value is never executed by
 // clippy itself.
 #[cfg(clippy)]
-pub const GUEST_ELF: Elf = Elf::Static(&[]);
+pub const CURRENT_GUEST_ELF: Elf = Elf::Static(&[]);
+#[cfg(clippy)]
+pub const MATHLIB_2026_09_03_GUEST_ELF: Elf = Elf::Static(&[]);
 pub const PUBLIC_VALUES_DOMAIN: &[u8; 8] = b"IXROOT01";
 pub const OUTER_CLAIM_ELEMENTS: usize = 18;
+
+pub const MATHLIB_2026_09_03_VK_BYTES: &[u8] = include_bytes!(concat!(
+  env!("CARGO_MANIFEST_DIR"),
+  "/../../Tests/Fixtures/Aggregate/mathlib-2026-09-03/aiur-vk.bin"
+));
+pub const MATHLIB_2026_09_03_CLAIM_BYTES: &[u8] = include_bytes!(concat!(
+  env!("CARGO_MANIFEST_DIR"),
+  "/../../Tests/Fixtures/Aggregate/mathlib-2026-09-03/outer-claim.bin"
+));
+pub const MATHLIB_2026_09_03_FRI_BYTES: &[u8] = include_bytes!(concat!(
+  env!("CARGO_MANIFEST_DIR"),
+  "/../../Tests/Fixtures/Aggregate/mathlib-2026-09-03/fri-parameters.bin"
+));
+pub const MATHLIB_2026_09_03_PROOF_BYTES: usize = 9_813_545;
+const MATHLIB_2026_09_03_VK_SHA256: &str =
+  "c3f5aeb6e984b71513158f3c006a5d53b44a0930a0837aa3bc670f6e3d86f336";
+const MATHLIB_2026_09_03_CLAIM_SHA256: &str =
+  "45423c0d1e587c0a201d3220aa26065ac41bb5c8dfd8c1801af368c92c248dbe";
+const MATHLIB_2026_09_03_FRI_SHA256: &str =
+  "6e632ea87df3ca2f0bfa9cf7cdeba3006c8acc81038f6566cc0e964d9567c5df";
+const MATHLIB_2026_09_03_PROOF_SHA256: &str =
+  "8810a775f8f5dee1aee109e86f0507d4fa79f025d26dbbff8c83c187f2ad3deb";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -32,6 +60,15 @@ pub enum Mode {
   Compressed,
   Groth16,
   Plonk,
+}
+
+struct GuestInputs {
+  guest_elf: Elf,
+  protocol: &'static str,
+  vk_bytes: Vec<u8>,
+  claim_bytes: Vec<u8>,
+  proof_bytes: Vec<u8>,
+  fri_bytes: Vec<u8>,
 }
 
 impl FromStr for Mode {
@@ -125,55 +162,115 @@ pub fn expected_public_values(
   claim_bytes: &[u8],
   fri: &FriParameters,
 ) -> Result<Vec<u8>> {
+  expected_public_values_bytes(
+    vk_bytes,
+    claim_bytes,
+    &fri_parameters_to_bytes(fri),
+  )
+}
+
+fn expected_public_values_bytes(
+  vk_bytes: &[u8],
+  claim_bytes: &[u8],
+  fri_bytes: &[u8],
+) -> Result<Vec<u8>> {
+  if fri_bytes.len() != 5 * 8 {
+    bail!(
+      "recursion FRI parameters are {} bytes; expected 40",
+      fri_bytes.len()
+    );
+  }
   let claim = decode_claim(claim_bytes)?;
   let mut expected = Vec::with_capacity(8 + 32 + 40 + OUTER_CLAIM_ELEMENTS * 8);
   expected.extend_from_slice(PUBLIC_VALUES_DOMAIN);
   expected.extend_from_slice(blake3::hash(vk_bytes).as_bytes());
-  expected.extend_from_slice(&fri_parameters_to_bytes(fri));
+  expected.extend_from_slice(fri_bytes);
   for value in claim {
     expected.extend_from_slice(&value.as_canonical_u64().to_le_bytes());
   }
   Ok(expected)
 }
 
+fn sha256_hex(bytes: &[u8]) -> String {
+  hex::encode(Sha256::digest(bytes))
+}
+
+fn validate_mathlib_2026_09_03_inputs(proof_bytes: &[u8]) -> Result<()> {
+  for (label, bytes, expected_len, expected_sha256) in [
+    (
+      "Aiur verifying key",
+      MATHLIB_2026_09_03_VK_BYTES,
+      193_473,
+      MATHLIB_2026_09_03_VK_SHA256,
+    ),
+    (
+      "outer claim",
+      MATHLIB_2026_09_03_CLAIM_BYTES,
+      144,
+      MATHLIB_2026_09_03_CLAIM_SHA256,
+    ),
+    (
+      "FRI parameters",
+      MATHLIB_2026_09_03_FRI_BYTES,
+      40,
+      MATHLIB_2026_09_03_FRI_SHA256,
+    ),
+  ] {
+    if bytes.len() != expected_len || sha256_hex(bytes) != expected_sha256 {
+      bail!("embedded Mathlib 2026-09-03 {label} failed its identity check");
+    }
+  }
+  if proof_bytes.len() != MATHLIB_2026_09_03_PROOF_BYTES
+    || sha256_hex(proof_bytes) != MATHLIB_2026_09_03_PROOF_SHA256
+  {
+    bail!("proof bytes do not match the pinned Mathlib 2026-09-03 root");
+  }
+  expected_public_values_bytes(
+    MATHLIB_2026_09_03_VK_BYTES,
+    MATHLIB_2026_09_03_CLAIM_BYTES,
+    MATHLIB_2026_09_03_FRI_BYTES,
+  )?;
+  Ok(())
+}
+
 /// Execute or prove the SP1 terminal. `output` receives the SDK's verified
 /// proof container. For Groth16/Plonk, `onchain_output` receives the raw proof
 /// bytes consumed by an onchain verifier.
-pub async fn run_sp1(
-  vk_bytes: Vec<u8>,
-  claim_bytes: Vec<u8>,
-  proof_bytes: Vec<u8>,
-  fri: &FriParameters,
+async fn run_sp1_program(
+  inputs: GuestInputs,
   mode: Mode,
   output: Option<&Path>,
   onchain_output: Option<&Path>,
 ) -> Result<()> {
+  let GuestInputs {
+    guest_elf,
+    protocol,
+    vk_bytes,
+    claim_bytes,
+    proof_bytes,
+    fri_bytes,
+  } = inputs;
   if onchain_output.is_some() && !matches!(mode, Mode::Groth16 | Mode::Plonk) {
     bail!("--onchain-output requires --mode groth16 or --mode plonk");
   }
-  validate_root_inputs(&vk_bytes, &claim_bytes, &proof_bytes, fri)?;
   println!(
-    "native preflight: aggregate root verifies (proof={} bytes, vk={} bytes)",
-    proof_bytes.len(),
-    vk_bytes.len()
-  );
-  println!(
-    "SP1 guest ELF: {} bytes, blake3 {}",
-    GUEST_ELF.len(),
-    blake3::hash(&GUEST_ELF).to_hex()
+    "SP1 guest ({protocol}): {} bytes, blake3 {}",
+    guest_elf.len(),
+    blake3::hash(&guest_elf).to_hex()
   );
 
   let mut stdin = SP1Stdin::new();
   stdin.write_vec(vk_bytes.clone());
-  stdin.write_vec(fri_parameters_to_bytes(fri));
+  stdin.write_vec(fri_bytes.clone());
   stdin.write_vec(claim_bytes.clone());
   stdin.write_vec(proof_bytes);
 
-  let expected = expected_public_values(&vk_bytes, &claim_bytes, fri)?;
+  let expected =
+    expected_public_values_bytes(&vk_bytes, &claim_bytes, &fri_bytes)?;
   let client = ProverClient::from_env().await;
   if mode == Mode::Execute {
     let (public_values, report) =
-      client.execute(GUEST_ELF, stdin).await.context("SP1 execution failed")?;
+      client.execute(guest_elf, stdin).await.context("SP1 execution failed")?;
     if public_values.as_slice() != expected.as_slice() {
       bail!("SP1 guest public values do not match the host reconstruction");
     }
@@ -190,7 +287,7 @@ pub async fn run_sp1(
     return Ok(());
   }
 
-  let pk = client.setup(GUEST_ELF).await.context("SP1 setup failed")?;
+  let pk = client.setup(guest_elf).await.context("SP1 setup failed")?;
   let request = client.prove(&pk, stdin);
   let proof: SP1ProofWithPublicValues = match mode {
     Mode::Execute => unreachable!(),
@@ -234,6 +331,68 @@ pub async fn run_sp1(
   Ok(())
 }
 
+pub async fn run_sp1(
+  vk_bytes: Vec<u8>,
+  claim_bytes: Vec<u8>,
+  proof_bytes: Vec<u8>,
+  fri: &FriParameters,
+  mode: Mode,
+  output: Option<&Path>,
+  onchain_output: Option<&Path>,
+) -> Result<()> {
+  validate_root_inputs(&vk_bytes, &claim_bytes, &proof_bytes, fri)?;
+  println!(
+    "native preflight: aggregate root verifies (proof={} bytes, vk={} bytes)",
+    proof_bytes.len(),
+    vk_bytes.len()
+  );
+  run_sp1_program(
+    GuestInputs {
+      guest_elf: CURRENT_GUEST_ELF,
+      protocol: "current",
+      vk_bytes,
+      claim_bytes,
+      proof_bytes,
+      fri_bytes: fri_parameters_to_bytes(fri),
+    },
+    mode,
+    output,
+    onchain_output,
+  )
+  .await
+}
+
+/// Compress the one fully audited Mathlib root produced on 2026-09-03. Its
+/// verifier inputs and guest are immutable protocol fixtures; this function
+/// never falls back from or changes the current-protocol verifier.
+pub async fn run_sp1_mathlib_2026_09_03(
+  proof_bytes: Vec<u8>,
+  mode: Mode,
+  output: Option<&Path>,
+  onchain_output: Option<&Path>,
+) -> Result<()> {
+  validate_mathlib_2026_09_03_inputs(&proof_bytes)?;
+  println!(
+    "historical preflight: pinned Mathlib 2026-09-03 inputs match (proof={} bytes, vk={} bytes)",
+    proof_bytes.len(),
+    MATHLIB_2026_09_03_VK_BYTES.len()
+  );
+  run_sp1_program(
+    GuestInputs {
+      guest_elf: MATHLIB_2026_09_03_GUEST_ELF,
+      protocol: "mathlib-2026-09-03",
+      vk_bytes: MATHLIB_2026_09_03_VK_BYTES.to_vec(),
+      claim_bytes: MATHLIB_2026_09_03_CLAIM_BYTES.to_vec(),
+      proof_bytes,
+      fri_bytes: MATHLIB_2026_09_03_FRI_BYTES.to_vec(),
+    },
+    mode,
+    output,
+    onchain_output,
+  )
+  .await
+}
+
 pub fn run_sp1_blocking(
   vk_bytes: Vec<u8>,
   claim_bytes: Vec<u8>,
@@ -252,6 +411,17 @@ pub fn run_sp1_blocking(
     output,
     onchain_output,
   ))
+}
+
+pub fn run_sp1_mathlib_2026_09_03_blocking(
+  proof_bytes: Vec<u8>,
+  mode: Mode,
+  output: Option<&Path>,
+  onchain_output: Option<&Path>,
+) -> Result<()> {
+  tokio::runtime::Runtime::new().context("tokio runtime")?.block_on(
+    run_sp1_mathlib_2026_09_03(proof_bytes, mode, output, onchain_output),
+  )
 }
 
 #[cfg(test)]
@@ -296,5 +466,37 @@ mod tests {
   fn mode_parser_is_closed() {
     assert_eq!("groth16".parse(), Ok(Mode::Groth16));
     assert!("final-ish".parse::<Mode>().is_err());
+  }
+
+  #[test]
+  fn historical_mathlib_inputs_are_pinned_as_one_protocol_fixture() {
+    assert_eq!(MATHLIB_2026_09_03_VK_BYTES.len(), 193_473);
+    assert_eq!(MATHLIB_2026_09_03_CLAIM_BYTES.len(), 144);
+    assert_eq!(MATHLIB_2026_09_03_FRI_BYTES.len(), 40);
+    assert_eq!(
+      sha256_hex(MATHLIB_2026_09_03_VK_BYTES),
+      MATHLIB_2026_09_03_VK_SHA256
+    );
+    assert_eq!(
+      sha256_hex(MATHLIB_2026_09_03_CLAIM_BYTES),
+      MATHLIB_2026_09_03_CLAIM_SHA256
+    );
+    assert_eq!(
+      sha256_hex(MATHLIB_2026_09_03_FRI_BYTES),
+      MATHLIB_2026_09_03_FRI_SHA256
+    );
+    assert_eq!(
+      blake3::hash(MATHLIB_2026_09_03_VK_BYTES).to_hex().to_string(),
+      "be6f790a7a978336ab513cb77c9e208a606df72f9167e4a264778da641749768"
+    );
+    let public = expected_public_values_bytes(
+      MATHLIB_2026_09_03_VK_BYTES,
+      MATHLIB_2026_09_03_CLAIM_BYTES,
+      MATHLIB_2026_09_03_FRI_BYTES,
+    )
+    .expect("historical public values");
+    assert_eq!(public.len(), 224);
+    assert_eq!(&public[..8], PUBLIC_VALUES_DOMAIN);
+    assert!(validate_mathlib_2026_09_03_inputs(&[]).is_err());
   }
 }

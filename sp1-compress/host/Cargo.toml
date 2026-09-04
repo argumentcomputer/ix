@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 anyhow = "1"
 bincode = "1.3"
 hex = "0.4"
+sha2 = "0.10"
 
 [build-dependencies]
 sp1-build = { git = "https://github.com/argumentcomputer/sp1", rev = "7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a" }

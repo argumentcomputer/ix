@@ -1739,3 +1739,46 @@ extern "C" fn rs_sp1_compress_aggregate_root(
     )
   }
 }
+
+/// Explicit compatibility terminal for the audited 2026-09-03 Mathlib root.
+/// Its historical verifier inputs and guest are pinned by `sp1-compress-host`;
+/// this symbol cannot be reached as a fallback from the current protocol.
+#[unsafe(no_mangle)]
+extern "C" fn rs_sp1_compress_mathlib_2026_09_03(
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+  onchain_output: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "sp1")]
+  {
+    let mode = match mode.as_str().parse::<sp1_compress_host::Mode>() {
+      Ok(mode) => mode,
+      Err(error) => return LeanExcept::error_string(&error),
+    };
+    let output = match output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    let onchain_output = match onchain_output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    match sp1_compress_host::run_sp1_mathlib_2026_09_03_blocking(
+      proof_bytes.as_bytes().to_vec(),
+      mode,
+      output.as_deref(),
+      onchain_output.as_deref(),
+    ) {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+    }
+  }
+  #[cfg(not(feature = "sp1"))]
+  {
+    let _ = (&proof_bytes, &mode, &output, &onchain_output);
+    LeanExcept::error_string(
+      "ix was built without SP1 compression; rebuild with IX_SP1=1",
+    )
+  }
+}

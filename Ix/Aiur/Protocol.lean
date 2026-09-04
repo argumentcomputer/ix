@@ -428,6 +428,15 @@ descriptive error while remaining linkable. -/
 opaque sp1CompressAggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
   @& FriParameters → @& String → @& String → @& String → Except String Unit
 
+/-- Verify and compress the fully audited 2026-09-03 Mathlib aggregate root
+with its version-pinned Aiur-FRI verifier guest. The historical verifying key,
+outer claim, and FRI parameters are compiled into the host; only the exact
+dated proof payload is accepted. This is an explicit compatibility entrypoint,
+never a fallback from `sp1CompressAggregateRoot`. -/
+@[extern "rs_sp1_compress_mathlib_2026_09_03"]
+opaque sp1CompressMathlib20260903 : @& ByteArray → @& String → @& String →
+  @& String → Except String Unit
+
 end Aiur
 
 end

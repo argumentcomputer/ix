@@ -550,6 +550,21 @@ def smokeSuite : IO UInt32 := do
     test "final compression rejects non-CheckEnv claims"
       (!(Ix.Cli.CompressRootCmd.validateBundledClaim
         (.check a none) "execute" false).isOk),
+    test "historical compression protocol is selected explicitly"
+      ((Ix.Cli.CompressRootCmd.parseProtocol "mathlib-2026-09-03").isOk),
+    test "unknown compression protocols are rejected"
+      (!(Ix.Cli.CompressRootCmd.parseProtocol "legacy-ish").isOk),
+    test "historical protocol accepts its exact dated root and claim"
+      ((Ix.Cli.CompressRootCmd.validateProtocolRoot .mathlib20260903
+        Ix.Cli.CompressRootCmd.mathlib20260903AggregateAddress
+        (.checkEnv Ix.Cli.CompressRootCmd.mathlib20260903RootAddress none)).isOk),
+    test "historical protocol rejects another wrapper address"
+      (!(Ix.Cli.CompressRootCmd.validateProtocolRoot .mathlib20260903 a
+        (.checkEnv Ix.Cli.CompressRootCmd.mathlib20260903RootAddress none)).isOk),
+    test "historical protocol rejects another bundled claim"
+      (!(Ix.Cli.CompressRootCmd.validateProtocolRoot .mathlib20260903
+        Ix.Cli.CompressRootCmd.mathlib20260903AggregateAddress
+        (.checkEnv a none)).isOk),
     expectOk "wrap of an IxVM child accepts" wrapIxvm,
     expectOk "wrap of a self child accepts" wrapSelf,
     expectOk "pair (IxVM, IxVM) accepts" pairII,

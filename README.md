@@ -339,6 +339,39 @@ the [SP1 docs](https://docs.succinct.xyz/docs/sp1/getting-started/install).
    with progressive backoff. It is a pass-through no-op when `SP1_PROVER` is not
    `cuda`.
 
+#### Compressing an Aiur aggregate root
+
+`ix compress-root` verifies a closed Stage 2 Aiur-FRI root inside a dedicated
+SP1 guest and can run SP1's recursion tail through a Groth16 or Plonk proof.
+Build the connector explicitly, then name the root object already present in
+the Ix store:
+
+```console
+IX_SP1=1 lake build ix
+lake exe ix compress-root ROOT_ADDRESS --mode execute
+WITHOUT_VK_VERIFICATION=1 lake exe ix compress-root ROOT_ADDRESS --mode groth16 \
+  --output root.sp1 --onchain-output root.groth16
+```
+
+The default `--protocol current` deterministically rebuilds the current
+`ix_aggr` verifying key and checks the proof natively before entering SP1.
+Modes are `execute`, `core`, `compressed`, `groth16`, and `plonk`.
+
+The fully audited Mathlib root produced on 2026-09-03 predates the current
+Multi-STARK wire protocol. It has a deliberately separate compatibility guest:
+
+```console
+lake exe ix compress-root \
+  c2fdce660eb66899efa303b41d4ca1611a62a688ef20684fdc327739d38bd67f \
+  --protocol mathlib-2026-09-03 --mode execute
+```
+
+That protocol accepts only the dated wrapper address, closed claim, proof
+digest, Aiur verifying key, and FRI parameters recorded in
+`Tests/Fixtures/Aggregate/mathlib-2026-09-03/PROVENANCE.md`. It is never an
+automatic fallback: omitting `--protocol` continues to use—and reject an old
+proof under—the current verifier.
+
 ### Proving under Zisk
 
 The Ix kernel typechecker also has a Zisk guest at `zisk/guest/` driven by a
