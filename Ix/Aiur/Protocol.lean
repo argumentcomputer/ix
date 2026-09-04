@@ -418,6 +418,25 @@ abbrev functionChannel : G := .ofNat 0
 def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
   #[functionChannel, .ofNat funIdx] ++ input ++ output
 
+/-- Verify one Aiur recursion proof inside the SP1 aggregate-root guest and
+run the selected SP1 terminal stage. The public statement is the
+domain-separated recursion-vk digest, FRI parameters, and exact 18-word outer
+claim. `output` receives the SDK proof container; `onchainOutput` receives raw
+Groth16/Plonk bytes. Without the Cargo `sp1` feature this binding returns a
+descriptive error while remaining linkable. -/
+@[extern "rs_sp1_compress_aggregate_root"]
+opaque sp1CompressAggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
+  @& FriParameters → @& String → @& String → @& String → Except String Unit
+
+/-- Verify and compress the fully audited 2026-09-03 Mathlib aggregate root
+with its version-pinned Aiur-FRI verifier guest. The historical verifying key,
+outer claim, and FRI parameters are compiled into the host; only the exact
+dated proof payload is accepted. This is an explicit compatibility entrypoint,
+never a fallback from `sp1CompressAggregateRoot`. -/
+@[extern "rs_sp1_compress_mathlib_2026_09_03"]
+opaque sp1CompressMathlib20260903 : @& ByteArray → @& String → @& String →
+  @& String → Except String Unit
+
 end Aiur
 
 end

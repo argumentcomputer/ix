@@ -1,0 +1,6 @@
+[workspace]
+members = ["host"]
+# The guest is compiled by sp1-build for the Succinct zkVM target and has its
+# own workspace so Cargo never tries to build it with the host toolchain.
+exclude = ["guest", "guest-mathlib-2026-09-03"]
+resolver = "2"

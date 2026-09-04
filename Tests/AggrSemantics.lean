@@ -92,7 +92,8 @@ environment and 52.5 MB manifest are identified in the adjacent provenance
 record rather than checked in. This proof predates the a8aab731 protocol bump:
 the gate re-hashes and decodes the exact wrapper, pins its unconditional root
 claim, and ensures the current backend rejects it at that protocol boundary
-instead of accidentally accepting an incompatible proof. -/
+instead of accidentally accepting an incompatible proof. The separately
+selected SP1 compatibility guest is tested by the connector package. -/
 private def stage2FixturePinnedAndFenced : IO Bool := do
   try
     unless (← stage2FixturePath.pathExists) do
@@ -132,7 +133,7 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
         args := #[s!"HOME={home}", exe.toString, "verify", "--aggregate",
           stage2FixtureAddressHex] }
       if out.exitCode == 0 then
-        IO.eprintln "obsolete Stage 2 fixture unexpectedly verified under the current protocol"
+        IO.eprintln "historical Stage 2 fixture unexpectedly verified under the current protocol"
         return false
       unless out.stderr.contains "InvalidProofShape" ||
           out.stdout.contains "InvalidProofShape" do
@@ -762,7 +763,7 @@ def semanticSuite : IO UInt32 := do
       shardPrepPreservesSemantics,
     test "verified aggregate proof audit certifies every fixture constant"
       aggregateProofAuditsEveryConstant,
-    test "dated Mathlib Stage 2 proof is pinned and fenced at its protocol boundary"
+    test "dated Mathlib Stage 2 proof is pinned and rejected by the current protocol"
       productionStage2FixturePinnedAndFenced,
     test "aggregate constant audit rejects an omitted environment constant"
       missingConstantRejected,

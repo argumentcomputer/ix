@@ -11,6 +11,7 @@ import Ix.Cli.ValidateLeanCmd
 import Ix.Cli.ClaimCmd
 import Ix.Cli.CatalogCmd
 import Ix.Cli.CompileCmd
+import Ix.Cli.CompressRootCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
 import Ix.Cli.IngressCmd
@@ -52,6 +53,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     treeCmd;
     profileCmd;
     proveCmd;
+    compressRootCmd;
     shardCmd;
     codegenCmd;
     verifyCmd;
