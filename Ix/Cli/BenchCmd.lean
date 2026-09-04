@@ -103,7 +103,9 @@ def envSpecs : List EnvSpec := [
   -- carries Init and Std).
   { name := "ISLB",    module := "Benchmarks/Compile/CompileISLB.lean" },
   { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" },
-  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean" }
+  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean" },
+  { name := "AnthropicFLT",
+    module := "Benchmarks/Compile/CompileAnthropicFLT.lean" }
 ]
 
 def findEnv (token : String) : Option EnvSpec :=
@@ -334,7 +336,11 @@ def backendSpecs : List BackendSpec := [
     testbeds := [("execute", "lean4lean-check-x64-32x")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss",
                              "constants"])] },
+  -- AnthropicFLT remains on-demand: its from-scratch upstream build needs
+  -- substantially more than the per-push workflow's one-hour budget. An
+  -- explicit `--env AnthropicFLT` or `BENCH_ENVS=AnthropicFLT` still runs it.
   { name := "compile", defaultMode := "execute", inputs := .perEnv,
+    envs := some ["InitStd", "Lean", "ISLB", "Mathlib", "FLT"],
     testbeds := [("execute", "ix-compile-x64-32x")],
     metrics := [("execute", ["compile-time", "throughput", "peak-rss",
                              "file-size", "constants"])],
