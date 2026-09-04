@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Build locally when a binary cache is temporarily unavailable.
+env:
+  NIX_CONFIG: |
+    fallback = true
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -34,7 +39,7 @@ jobs:
       - uses: ./.github/actions/authenticate-github-fetches
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
-      - run: nix run .#ix -- --help
+      - run: nix run --accept-flake-config .#ix -- --help
       # A single invocation lets Nix schedule independent checks concurrently.
       - run: nix flake check --print-build-logs --accept-flake-config
 
