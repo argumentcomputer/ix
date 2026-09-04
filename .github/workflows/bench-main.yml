@@ -29,7 +29,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
 
 # No concurrency group on purpose: every merged commit gets benchmarked,
 # and a later merge must never cancel or queue behind an in-flight run.
@@ -123,6 +122,9 @@ jobs:
     name: compile-${{ matrix.env }}
     needs: build
     runs-on: warp-ubuntu-latest-x64-32x
+    permissions:
+      contents: read
+      checks: write
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -219,7 +221,7 @@ jobs:
           workload: ${{ steps.gates.outputs.workload }}
           file: benchmark.json
           key: ${{ secrets.BENCHER_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           thresholds: ${{ steps.gates.outputs.thresholds }}
 
   # One job per remaining matrix entry, all sharing this one step list
@@ -243,6 +245,9 @@ jobs:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
+    permissions:
+      contents: read
+      checks: write
     # `ix bench run` persists completed rows incrementally, so even a
     # job-level timeout keeps them on disk, but the bencher upload needs
     # the job alive.
@@ -326,5 +331,5 @@ jobs:
           workload: ${{ matrix.params.workload }}
           file: bench-bmf.json
           key: ${{ secrets.BENCHER_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           thresholds: ${{ matrix.params.thresholds }}

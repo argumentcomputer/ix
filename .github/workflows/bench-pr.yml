@@ -96,8 +96,6 @@ run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR 
 
 permissions:
   contents: read
-  issues: read
-  pull-requests: read
 
 jobs:
   dispatch:
@@ -244,13 +242,16 @@ jobs:
   # error message if the parse/build failed, otherwise a "running…"
   # placeholder so the commenter gets immediate feedback. The `comment`
   # job at the end edits this same comment in place with the results
-  # (this job's output is the comment id). Holds the App token, so — like
-  # `comment` — it never checks out or runs PR code; it only reads
+  # (this job's output is the comment id). This job has write permissions,
+  # so — like `comment` — it never checks out or runs PR code; it only reads
   # build's string outputs.
   announce:
     needs: build
     if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     outputs:
       comment-id: ${{ steps.post.outputs.comment-id }}
     steps:
@@ -293,17 +294,11 @@ jobs:
               echo "[Watch progress]($RUN_URL)"
             } > comment-body.md
           fi
-      - name: Generate token to write PR comment
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.TOKEN_APP_ID }}
-          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
       - name: Post initial comment
         id: post
         uses: peter-evans/create-or-update-comment@v5
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ github.token }}
           issue-number: ${{ inputs.pr }}
           body-path: comment-body.md
 
@@ -807,7 +802,7 @@ jobs:
 
   # Assemble the comment body from the per-run tables. Deliberately
   # UNPRIVILEGED: this job runs PR-built code (`ix bench report`), so it
-  # must never hold the App token. The posting job below only downloads
+  # must never receive write permissions. The posting job below only downloads
   # the finished body and never touches PR code.
   assemble:
     needs: [build, benchmark]
@@ -875,12 +870,15 @@ jobs:
   # Replace the announce comment with the assembled results — or with an
   # error note when a stage failed: a rejected command or broken run must
   # never end in silence on the PR. This job and `announce` are the only
-  # two with the App token, and neither checks out or runs repo code —
-  # just an artifact download and two actions.
+  # two with write permissions, and neither checks out or runs repo code —
+  # just an artifact download and the comment action.
   comment:
     needs: [build, compile, benchmark, assemble, announce]
     if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - name: Download comment body
         if: needs.assemble.result == 'success'
@@ -918,21 +916,13 @@ jobs:
               echo "[Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
             } > comment-body.md
           fi
-      - name: Generate token to write PR comment
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          # `client-id` accepts the numeric App ID too (the JWT issuer claim
-          # takes either), so the existing secret works unchanged.
-          client-id: ${{ secrets.TOKEN_APP_ID }}
-          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
       # `comment-id` targets the announce comment; if announce never
       # posted one (empty id), `issue-number` makes this create a fresh
       # comment instead. `replace` overwrites the "running…" placeholder.
       - name: Post / update comment
         uses: peter-evans/create-or-update-comment@v5
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ github.token }}
           issue-number: ${{ inputs.pr }}
           comment-id: ${{ needs.announce.outputs.comment-id }}
           edit-mode: replace
