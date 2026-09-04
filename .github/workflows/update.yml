@@ -31,4 +31,4 @@ jobs:
           lake_package_directory: ". Benchmarks/**"
           bump_mode: pinned-tags
           pr: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ github.token }}
