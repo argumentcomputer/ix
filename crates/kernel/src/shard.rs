@@ -2,15 +2,16 @@
 //! cross-shard delta-unfold ingress (see `plans/sharding.md`). Two driving
 //! modes share the same min-cut machinery:
 //!
-//! - **Fixed count** ([`Hypergraph::partition`], the `--shards N` CLI path):
-//!   recursive *balanced* min-cut bisection into exactly `N` shards — even
-//!   per-shard work, the bisection tree doubling as the aggregation tree.
-//! - **Cap / packing** ([`partition_for_cycle_cap`], the default and
-//!   `--max-cycles`/`--max-ram` paths): **bin-pack to the cap** — the fewest
-//!   shards that each stay under a per-shard cycle (hence prover-RAM) budget,
-//!   each filled as full as the dependency structure allows. This does *not*
-//!   balance: uniformity over-shards (every shard left partly empty), whereas
-//!   packing hits `≈⌈total/cap⌉` shards. It still uses a fine min-cut
+//! - **Fixed count** ([`Hypergraph::partition`], explicit `--shards N` and the
+//!   static strategy's `--max-ram` score seed): recursive *balanced* min-cut
+//!   bisection into exactly `N` shards — even per-shard work, the bisection tree
+//!   doubling as the aggregation tree.
+//! - **Cap / packing** ([`partition_for_cycle_cap`], the profiled strategy's
+//!   default and `--max-cycles`/`--max-ram` paths): **bin-pack to the cap** — the
+//!   fewest shards that each stay under a per-shard cycle (hence prover-RAM)
+//!   budget, each filled as full as the dependency structure allows. This does
+//!   *not* balance: uniformity over-shards (every shard left partly empty),
+//!   whereas packing hits `≈⌈total/cap⌉` shards. It still uses a fine min-cut
 //!   pre-partition for a **cut-coherent order** so dependency overlap packs into
 //!   the same shard (overlap paid once, not re-ingressed per shard).
 //!
@@ -311,13 +312,58 @@ impl AggNode {
   /// `None` when nothing remains. Lets a prover fold along the tree even when
   /// only a subset of shards was proven (empty shards, `--only-shard`).
   pub fn prune(&self, keep: &impl Fn(u32) -> bool) -> Option<AggNode> {
+    self.filter_map_leaves(&|id| keep(id).then_some(id))
+  }
+
+  /// Generalized pruning used when a manifest writer drops empty shards and
+  /// densely renumbers the retained leaves.
+  fn filter_map_leaves(
+    &self,
+    map: &impl Fn(u32) -> Option<u32>,
+  ) -> Option<AggNode> {
     match self {
-      AggNode::Leaf(id) => keep(*id).then_some(AggNode::Leaf(*id)),
-      AggNode::Internal(l, r) => match (l.prune(keep), r.prune(keep)) {
-        (Some(a), Some(b)) => Some(AggNode::Internal(Box::new(a), Box::new(b))),
-        (Some(a), None) | (None, Some(a)) => Some(a),
-        (None, None) => None,
+      AggNode::Leaf(id) => map(*id).map(AggNode::Leaf),
+      AggNode::Internal(l, r) => {
+        match (l.filter_map_leaves(map), r.filter_map_leaves(map)) {
+          (Some(a), Some(b)) => {
+            Some(AggNode::Internal(Box::new(a), Box::new(b)))
+          },
+          (Some(a), None) | (None, Some(a)) => Some(a),
+          (None, None) => None,
+        }
       },
+    }
+  }
+
+  /// A balanced binary tree over `ids`, left to right: the left half takes
+  /// `len / 2` leaves, exactly the shape the Lean consumer builds with
+  /// `AggregationTree.balancedRange` for manifests that carry no tree.
+  /// `None` for an empty slice.
+  pub fn balanced(ids: &[u32]) -> Option<AggNode> {
+    match ids {
+      [] => None,
+      [id] => Some(AggNode::Leaf(*id)),
+      _ => {
+        let (l, r) = ids.split_at(ids.len() / 2);
+        Some(AggNode::Internal(
+          Box::new(AggNode::balanced(l)?),
+          Box::new(AggNode::balanced(r)?),
+        ))
+      },
+    }
+  }
+
+  /// The tree with `Leaf(id)` replaced by a copy of `subtree`. Every other
+  /// node is unchanged, so an untouched sibling subtree still folds to the
+  /// same slot statements — and the same aggregate cache keys — as before.
+  pub fn replace_leaf(&self, id: u32, subtree: &AggNode) -> AggNode {
+    match self {
+      AggNode::Leaf(x) if *x == id => subtree.clone(),
+      AggNode::Leaf(x) => AggNode::Leaf(*x),
+      AggNode::Internal(l, r) => AggNode::Internal(
+        Box::new(l.replace_leaf(id, subtree)),
+        Box::new(r.replace_leaf(id, subtree)),
+      ),
     }
   }
 
@@ -1278,6 +1324,11 @@ pub struct ShardInfo {
   /// root over the foreign part of the shard's static reference closure. `None`
   /// until populated by the env-aware layer (the pure partitioner has no `Env`).
   pub assumption_root: Option<Address>,
+  /// Measured projected prover peak of this shard's executed record
+  /// (`AiurSystem::peak_prove_bytes`), recorded when the manifest was
+  /// emitted from a run that executed the shard; 0 = unmeasured (planner
+  /// output). The scheduling signal: STARK prove wall is ~linear in it.
+  pub measured_peak_bytes: u64,
 }
 
 /// The sharding manifest: the partition plus its cost metrics. Assumption-tree
@@ -1345,6 +1396,7 @@ impl ShardManifest {
         foreign_blocks,
         cross_ingress,
         assumption_root: None,
+        measured_peak_bytes: 0,
       });
     }
     ShardManifest {
@@ -1383,9 +1435,28 @@ impl ShardManifest {
     let empty = self.shards.iter().filter(|s| s.blocks.is_empty()).count();
     let max_cross =
       self.shards.iter().map(|s| s.cross_ingress).max().unwrap_or(0);
+    let peaks: Vec<u64> = self
+      .shards
+      .iter()
+      .map(|s| s.measured_peak_bytes)
+      .filter(|&p| p != 0)
+      .collect();
+    #[allow(clippy::cast_precision_loss)]
+    let measured = if peaks.is_empty() {
+      String::new()
+    } else {
+      let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
+      format!(
+        " measured-peaks[{}/{} shards, min={:.1} max={:.1} GiB]",
+        peaks.len(),
+        self.shards.len(),
+        gib(peaks.iter().copied().min().unwrap_or(0)),
+        gib(peaks.iter().copied().max().unwrap_or(0)),
+      )
+    };
     format!(
       "shards={} (empty={}) heartbeats[min={} mean={} max={}] imbalance={:.2}x \
-       cross_ingress_total={} max_shard_cross={}",
+       cross_ingress_total={} max_shard_cross={}{measured}",
       self.shards.len(),
       empty,
       min,
@@ -1399,18 +1470,41 @@ impl ShardManifest {
 
   /// Serialize to the `.ixes` binary format.
   pub fn to_bytes(&self) -> Vec<u8> {
+    use rustc_hash::FxHashMap;
+
+    // Older/fixed-count planners can leave block-empty shard records when the
+    // requested count exceeds the realizable partition. Never persist those
+    // leaves: omit them, contract the aggregation tree, and densely renumber
+    // the survivors. The Lean consumer additionally prunes zero-*constant*
+    // legacy leaves after validating them against the environment.
+    let retained: Vec<&ShardInfo> =
+      self.shards.iter().filter(|shard| !shard.blocks.is_empty()).collect();
+    let remap: FxHashMap<u32, u32> = retained
+      .iter()
+      .enumerate()
+      .map(|(new_id, shard)| (shard.id, new_id as u32))
+      .collect();
+    let tree = self
+      .tree
+      .as_ref()
+      .and_then(|tree| tree.filter_map_leaves(&|id| remap.get(&id).copied()));
+    let total_cross_ingress = retained
+      .iter()
+      .map(|shard| u128::from(shard.cross_ingress))
+      .sum::<u128>();
+
     let mut out = Vec::new();
     out.extend_from_slice(SHARD_MAGIC);
-    out.extend_from_slice(&self.total_cross_ingress.to_le_bytes());
-    out.extend_from_slice(&(self.shards.len() as u32).to_le_bytes());
+    out.extend_from_slice(&total_cross_ingress.to_le_bytes());
+    out.extend_from_slice(&(retained.len() as u32).to_le_bytes());
     let put_addrs = |out: &mut Vec<u8>, addrs: &[Address]| {
       out.extend_from_slice(&(addrs.len() as u32).to_le_bytes());
       for a in addrs {
         out.extend_from_slice(a.as_bytes());
       }
     };
-    for sh in &self.shards {
-      out.extend_from_slice(&sh.id.to_le_bytes());
+    for (new_id, sh) in retained.iter().enumerate() {
+      out.extend_from_slice(&(new_id as u32).to_le_bytes());
       out.extend_from_slice(&sh.heartbeats.to_le_bytes());
       out.extend_from_slice(&sh.own_size.to_le_bytes());
       out.extend_from_slice(&sh.cross_ingress.to_le_bytes());
@@ -1427,12 +1521,24 @@ impl ShardManifest {
     // Trailing optional bisection-tree section: presence byte then preorder
     // tree. Appended after the shards so older readers that stop at the shard
     // count simply ignore it, and `from_bytes` treats end-of-input as `None`.
-    match &self.tree {
+    match &tree {
       Some(t) => {
         out.push(1);
         t.put(&mut out);
       },
       None => out.push(0),
+    }
+    // Trailing measured-peaks section (same older-readers-ignore contract
+    // as the tree): presence byte, then one u64 LE per shard in order.
+    // Absent when nothing was measured, so planner manifests stay
+    // byte-identical to the pre-peaks format.
+    if self.shards.iter().any(|s| s.measured_peak_bytes != 0) {
+      out.push(1);
+      for sh in &self.shards {
+        out.extend_from_slice(&sh.measured_peak_bytes.to_le_bytes());
+      }
+    } else {
+      out.push(0);
     }
     out
   }
@@ -1462,6 +1568,7 @@ impl ShardManifest {
         foreign_blocks,
         cross_ingress,
         assumption_root,
+        measured_peak_bytes: 0,
       });
     }
     // Optional trailing tree section. Absent (end-of-input) on pre-tree
@@ -1471,6 +1578,12 @@ impl ShardManifest {
     } else {
       None
     };
+    // Optional trailing measured-peaks section; absent on older manifests.
+    if c.pos < c.buf.len() && c.u8()? == 1 {
+      for sh in &mut shards {
+        sh.measured_peak_bytes = c.u64()?;
+      }
+    }
     // The tree is the aggregation plan: a leaf set that is not exactly the
     // shard id set (each id once) would silently drop or duplicate proven
     // shards in the fold, so a manifest carrying such a tree is invalid.
@@ -1573,10 +1686,71 @@ pub const STATIC_OWNED_SUPERLINEAR: f64 = 681.08;
 /// See [`STATIC_OWNED_PER_BYTE`].
 pub const STATIC_FRONTIER_PER_BYTE: f64 = 38_000.0;
 
+/// Reference point for the profile-free shard-count seed: Mathlib's static
+/// owned-side score under this model. At a 400 GiB prover budget, 233 seed
+/// shards gave the established Mathlib-class behavior (a small number of
+/// heavy-tail splits, corrected by the execution gate).
+pub const STATIC_SEED_REFERENCE_SCORE: f64 = 1.254e14;
+/// Mathlib seed count at [`STATIC_SEED_REFERENCE_RAM_GIB`].
+pub const STATIC_SEED_REFERENCE_SHARDS: f64 = 233.0;
+/// Prover-RAM budget of the reference calibration.
+pub const STATIC_SEED_REFERENCE_RAM_GIB: f64 = 400.0;
+/// Mild superlinear scale correction over the static owned-side score.
+///
+/// A linear score model still over-counted the small environments: cross-shard
+/// duplication and the heavy-tail risk both grow with library scale. The 1.10
+/// exponent preserves the Mathlib reference while fitting the measured knees
+/// at Init (8 shards) and ISLB (23) at the 400 GiB reference budget.
+pub const STATIC_SEED_SCORE_EXPONENT: f64 = 1.10;
+/// Superlinear correction when scaling the seed away from 400 GiB.
+///
+/// Fitted on the 2026-08-28 100 GiB calibration: linear scaling caused broad
+/// correction (Init 32→48 leaves; ISLB 93→123), while 1.20 seeded Init at 43
+/// (42 measured clean) and ISLB at 122 (four initial misses, 128 leaves).
+/// Out-of-sample Batteries seeded 74 with one initial miss and 79 leaves. The
+/// discarded 1.36 candidate over-seeded ISLB at 152→156. Unlike the score
+/// exponent, this changes no reference-budget prediction.
+pub const STATIC_SEED_BUDGET_EXPONENT: f64 = 1.20;
+
 /// Predicted owned-side cost of one block under the static model.
 fn static_owned_weight(size: u32) -> f64 {
   let s = f64::from(size);
   STATIC_OWNED_PER_BYTE * s + STATIC_OWNED_SUPERLINEAR * s * s.sqrt()
+}
+
+/// Whole-environment owned-side score used only to seed a shard count.
+///
+/// There is no frontier when the environment is viewed as one set, so this is
+/// just the sum of [`static_owned_weight`] over blocks. Unlike raw `.ixe` file
+/// bytes, it sees how bytes are packaged: the superlinear term distinguishes a
+/// large reduction-heavy proof body from the same bytes spread over many small
+/// declarations. The actual partition still includes frontier cost and is
+/// always checked by the execution-time prover-RAM gate.
+pub fn static_env_score(profile: &BlockProfile) -> f64 {
+  profile.blocks().iter().map(|b| static_owned_weight(b.serialized_size)).sum()
+}
+
+/// Score/budget model for the profile-free shard-count seed.
+///
+/// This deliberately rounds to the nearest shard instead of always rounding
+/// upward: it is a seed, not a safety boundary, and the prove/check execution
+/// gate measures and splits every over-budget shard before a STARK starts.
+/// Avoiding an unconditional upward bias matters most for small environments.
+fn static_seed_shards_for_score(score: f64, ram_gib: u64) -> usize {
+  let budget = ram_gib.max(1) as f64;
+  let scaled = STATIC_SEED_REFERENCE_SHARDS
+    * (score / STATIC_SEED_REFERENCE_SCORE).powf(STATIC_SEED_SCORE_EXPONENT)
+    * (STATIC_SEED_REFERENCE_RAM_GIB / budget)
+      .powf(STATIC_SEED_BUDGET_EXPONENT);
+  scaled.round().max(1.0) as usize
+}
+
+/// Suggested static seed count for `profile` at a per-shard prover-RAM budget.
+/// The result is capped at one shard per atomic block; finer partitioning could
+/// only create empty shards and cannot make an oversized block splittable.
+pub fn static_seed_shards(profile: &BlockProfile, ram_gib: u64) -> usize {
+  static_seed_shards_for_score(static_env_score(profile), ram_gib)
+    .min(profile.num_blocks().max(1))
 }
 
 /// Greedy global rebalance toward equal predicted per-shard cost under the
@@ -1797,14 +1971,7 @@ pub fn shard_static(
   );
   let mut manifest =
     ShardManifest::build(profile, &shard_of, num_shards).with_tree(tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   let costs = static_predicted_costs(profile, &shard_of, num_shards);
   let (mut lo, mut hi, mut sum) = (f64::INFINITY, 0.0f64, 0.0f64);
   for &c in &costs {
@@ -1849,14 +2016,7 @@ pub fn shard_esp(
   let (shard_of, tree) = h.partition_with_tree(num_shards, balance);
   let mut manifest =
     ShardManifest::build(&profile, &shard_of, num_shards).with_tree(tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   // The largest single block's heartbeats is the *floor* on achievable
   // per-shard balance: a mutual block is atomic and cannot be split, so no
   // partition can drive max-shard heartbeats below it. When the heaviest shard
@@ -1885,6 +2045,245 @@ pub fn shard_esp(
   ))
 }
 
+/// Seal every shard's assumption root (the canonical merkle root over
+/// its foreign blocks) and write the manifest when a path is given.
+/// Shared tail of every manifest-producing entry point.
+fn seal_and_write(
+  manifest: &mut ShardManifest,
+  out_path: Option<&str>,
+) -> Result<(), String> {
+  for shard in &mut manifest.shards {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+  }
+  if let Some(op) = out_path {
+    std::fs::write(op, manifest.to_bytes())
+      .map_err(|e| format!("write {op}: {e}"))?;
+  }
+  Ok(())
+}
+
+/// Write a `.ixes` manifest for an EXPLICIT shard assignment — the
+/// partition a prove run actually produced (splits included) rather
+/// than a planner's output. Same manifest construction as
+/// [`shard_static`]'s tail: [`ShardManifest::build`] recomputes
+/// own sizes, foreign blocks and cross-ingress from the profile, and
+/// each shard's assumption root is the canonical merkle root of its
+/// foreign blocks. No aggregation tree is attached (consumers fall
+/// back to the flat tree-fold); heartbeat figures carry whatever proxy
+/// the profile was built with (serialized size, on the static path).
+/// `peaks` (empty, or one measured prover-peak per shard in order)
+/// fills each shard's `measured_peak_bytes` — the run's measurement
+/// riding along for schedulers to bin-pack on.
+pub fn shard_manifest_explicit(
+  profile: &BlockProfile,
+  shard_of: &[u32],
+  num_shards: usize,
+  peaks: &[u64],
+  out_path: &str,
+) -> Result<String, String> {
+  if peaks.len() != num_shards {
+    return Err(format!(
+      "measured peaks: {} values for {num_shards} shards",
+      peaks.len()
+    ));
+  }
+  let mut manifest = ShardManifest::build(profile, shard_of, num_shards);
+  for (shard, &peak) in manifest.shards.iter_mut().zip(peaks) {
+    shard.measured_peak_bytes = peak;
+  }
+  seal_and_write(&mut manifest, Some(out_path))?;
+  Ok(manifest.summary())
+}
+
+/// One leaf of a source manifest cut into parts: the parts' block lists in
+/// order (each a nonempty subset of the leaf's blocks) and, per part, the
+/// measured prover peak (`0` = unmeasured).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeafRefinement {
+  pub id: u32,
+  pub parts: Vec<Vec<Address>>,
+  pub part_peaks: Vec<u64>,
+}
+
+impl ShardManifest {
+  /// Refine this manifest by cutting some of its leaves into parts, leaving
+  /// every other leaf — block list, record, and place in the aggregation
+  /// tree — exactly as it was.
+  ///
+  /// Id policy: part 0 of a refined leaf keeps the leaf's id; the remaining
+  /// parts take fresh ids after the last existing one (ascending by refined
+  /// leaf id, then part order), so ids stay dense and untouched shards keep
+  /// their numbers. Each refined leaf's place in the tree becomes a balanced
+  /// subtree over its parts; a source without a tree first gets the balanced
+  /// tree its Lean consumer would have used. `measured` (empty, or one value
+  /// per source shard) overrides the carried-forward peak of unsplit shards
+  /// where nonzero.
+  ///
+  /// The whole new partition is validated as an exact, disjoint cover of the
+  /// profile's blocks. Returns the refined manifest (unsealed: the caller
+  /// fills assumption roots) and, per refinement, its parts' new ids.
+  pub fn refine(
+    &self,
+    profile: &BlockProfile,
+    refinements: &[LeafRefinement],
+    measured: &[u64],
+  ) -> Result<(ShardManifest, Vec<Vec<u32>>), String> {
+    use rustc_hash::FxHashMap;
+
+    let n = self.shards.len();
+    if n == 0 {
+      return Err("refine: source manifest has no shards".into());
+    }
+    for (i, sh) in self.shards.iter().enumerate() {
+      if sh.id as usize != i {
+        return Err(format!(
+          "refine: source shard ids are not dense (entry {i} has id {})",
+          sh.id
+        ));
+      }
+    }
+    if !measured.is_empty() && measured.len() != n {
+      return Err(format!(
+        "refine: measured peaks: {} values for {n} shards",
+        measured.len()
+      ));
+    }
+    let mut by_id: FxHashMap<u32, usize> = FxHashMap::default();
+    for (i, r) in refinements.iter().enumerate() {
+      if r.id as usize >= n {
+        return Err(format!(
+          "refine: shard {} is out of range ({n} shards)",
+          r.id
+        ));
+      }
+      if r.parts.len() < 2 {
+        return Err(format!(
+          "refine: shard {} needs at least two parts, got {}",
+          r.id,
+          r.parts.len()
+        ));
+      }
+      if r.part_peaks.len() != r.parts.len() {
+        return Err(format!(
+          "refine: shard {}: {} peaks for {} parts",
+          r.id,
+          r.part_peaks.len(),
+          r.parts.len()
+        ));
+      }
+      if let Some(k) = r.parts.iter().position(Vec::is_empty) {
+        return Err(format!("refine: shard {} part {k} is empty", r.id));
+      }
+      if by_id.insert(r.id, i).is_some() {
+        return Err(format!("refine: shard {} listed twice", r.id));
+      }
+    }
+
+    // The new shard list in id order: slots 0..n keep their ids (part 0 of a
+    // refined leaf inherits the leaf's), then the extra parts are appended.
+    let mut new_shards: Vec<(&[Address], u64)> = Vec::with_capacity(n);
+    let mut part_ids: Vec<Vec<u32>> = vec![Vec::new(); refinements.len()];
+    for sh in &self.shards {
+      match by_id.get(&sh.id) {
+        None => {
+          let carried = measured
+            .get(sh.id as usize)
+            .copied()
+            .filter(|&p| p != 0)
+            .unwrap_or(sh.measured_peak_bytes);
+          new_shards.push((&sh.blocks, carried));
+        },
+        Some(&i) => {
+          let r = &refinements[i];
+          new_shards.push((&r.parts[0], r.part_peaks[0]));
+          part_ids[i].push(sh.id);
+        },
+      }
+    }
+    let mut refined_ids: Vec<u32> = by_id.keys().copied().collect();
+    refined_ids.sort_unstable();
+    for id in refined_ids {
+      let i = by_id[&id];
+      let r = &refinements[i];
+      for (part, &peak) in r.parts.iter().zip(&r.part_peaks).skip(1) {
+        let new_id = u32::try_from(new_shards.len())
+          .map_err(|_| "refine: too many shards".to_string())?;
+        new_shards.push((part, peak));
+        part_ids[i].push(new_id);
+      }
+    }
+
+    // Exact cover over the profile's blocks.
+    let block_id: FxHashMap<&Address, u32> = profile
+      .blocks()
+      .iter()
+      .enumerate()
+      .map(|(i, b)| (&b.addr, i as u32))
+      .collect();
+    let mut shard_of = vec![u32::MAX; profile.num_blocks()];
+    for (k, (blocks, _)) in new_shards.iter().enumerate() {
+      for a in *blocks {
+        let Some(&b) = block_id.get(a) else {
+          return Err(format!(
+            "refine: shard {k}: block {} not in the env's block profile",
+            a.hex()
+          ));
+        };
+        if shard_of[b as usize] != u32::MAX {
+          return Err(format!(
+            "refine: block {} appears in shards {} and {k}",
+            a.hex(),
+            shard_of[b as usize]
+          ));
+        }
+        shard_of[b as usize] = k as u32;
+      }
+    }
+    let uncovered = shard_of.iter().filter(|&&s| s == u32::MAX).count();
+    if uncovered > 0 {
+      return Err(format!(
+        "refine: partition covers {} of {} blocks ({uncovered} missing)",
+        profile.num_blocks() - uncovered,
+        profile.num_blocks()
+      ));
+    }
+
+    let mut manifest =
+      ShardManifest::build(profile, &shard_of, new_shards.len());
+    for (sh, (_, peak)) in manifest.shards.iter_mut().zip(&new_shards) {
+      sh.measured_peak_bytes = *peak;
+    }
+    let all_ids: Vec<u32> = (0..n as u32).collect();
+    let mut tree = self
+      .tree
+      .clone()
+      .unwrap_or_else(|| AggNode::balanced(&all_ids).expect("n > 0 leaves"));
+    for (r, ids) in refinements.iter().zip(&part_ids) {
+      let sub = AggNode::balanced(ids).expect("at least two parts");
+      tree = tree.replace_leaf(r.id, &sub);
+    }
+    manifest.tree = Some(tree);
+    Ok((manifest, part_ids))
+  }
+}
+
+/// Refine a source manifest ([`ShardManifest::refine`]), seal the result and
+/// write it to `out_path`. Returns the manifest summary and, per refinement,
+/// its parts' new ids.
+pub fn shard_manifest_refine(
+  profile: &BlockProfile,
+  source: &ShardManifest,
+  refinements: &[LeafRefinement],
+  measured: &[u64],
+  out_path: &str,
+) -> Result<(String, Vec<Vec<u32>>), String> {
+  let (mut manifest, part_ids) =
+    source.refine(profile, refinements, measured)?;
+  seal_and_write(&mut manifest, Some(out_path))?;
+  Ok((manifest.summary(), part_ids))
+}
+
 /// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget
 /// (`max_cycles`) rather than a fixed shard count: grows `N` until the heaviest
 /// splittable shard fits the budget (see [`partition_for_cycle_cap`]). Use
@@ -1904,14 +2303,7 @@ pub fn shard_esp_cap(
   let mut manifest =
     ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
       .with_tree(plan.tree);
-  for shard in &mut manifest.shards {
-    shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
-  }
-  if let Some(op) = out_path {
-    std::fs::write(op, manifest.to_bytes())
-      .map_err(|e| format!("write {op}: {e}"))?;
-  }
+  seal_and_write(&mut manifest, out_path)?;
   let note = if plan.infeasible_atomic_floor {
     "\n  [INFEASIBLE: a single atomic block exceeds the cap — split it upstream, raise the cap, or use a bigger box]"
   } else {
@@ -2470,6 +2862,62 @@ mod tests {
   }
 
   #[test]
+  fn static_seed_model_scales_by_score_and_budget() {
+    // 400 GiB calibration points from the 2026-08-28 sweep. Init and ISLB
+    // are the small/mid-size knees; Mathlib is the normalization point. FLT
+    // records the large-env extrapolation, not an optimum (its old corrected
+    // leaf count depended on the previous seed). These are scores, not raw
+    // env bytes.
+    assert_eq!(static_seed_shards_for_score(6.010e12, 400), 8); // Init
+    assert_eq!(static_seed_shards_for_score(1.536e13, 400), 23); // ISLB
+    assert_eq!(
+      static_seed_shards_for_score(STATIC_SEED_REFERENCE_SCORE, 400),
+      233
+    );
+    assert_eq!(static_seed_shards_for_score(1.316e14, 400), 246); // FLT
+
+    // The 100 GiB calibration keeps broad split correction out of Init and
+    // ISLB without the 1.36 experiment's over-sharding.
+    assert_eq!(static_seed_shards_for_score(6.010e12, 100), 43); // Init
+    assert_eq!(static_seed_shards_for_score(1.536e13, 100), 122); // ISLB
+    assert_eq!(
+      static_seed_shards_for_score(STATIC_SEED_REFERENCE_SCORE, 100),
+      1230
+    );
+
+    // An empty or vanishingly small score still produces a usable one-shard
+    // seed.
+    assert_eq!(static_seed_shards_for_score(0.0, 400), 1);
+  }
+
+  #[test]
+  fn static_env_score_distinguishes_block_shape() {
+    let mut concentrated = ProfileBuilder::new();
+    concentrated.block(addr(1), 0, 4000, 1, OpCounts::default());
+
+    let mut spread = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      spread.block(addr(i), 0, 1000, 1, OpCounts::default());
+    }
+
+    assert!(
+      static_env_score(&concentrated.finish())
+        > static_env_score(&spread.finish())
+    );
+  }
+
+  #[test]
+  fn static_seed_count_never_exceeds_atomic_blocks() {
+    let mut b = ProfileBuilder::new();
+    for i in 1..=6u8 {
+      // Force the uncapped estimate far above six shards.
+      b.block(addr(i), 0, u32::MAX, 1, OpCounts::default());
+    }
+    let p = b.finish();
+    assert_eq!(static_seed_shards(&p, 1), p.num_blocks());
+  }
+
+  #[test]
   fn objective_matches_manifest_cross_ingress() {
     let p = two_clusters();
     let h = Hypergraph::from_profile(&p);
@@ -2929,6 +3377,221 @@ mod tests {
     let m0 = ShardManifest::build(&p, &shard_of, 2);
     let q0 = ShardManifest::from_bytes(&m0.to_bytes()).unwrap();
     assert_eq!(q0.tree, None);
+  }
+
+  #[test]
+  fn manifest_writer_prunes_empty_shards_and_contracts_tree() {
+    let p = two_clusters();
+    // Keep the two clusters in old shards 0 and 2, deliberately leaving shard
+    // 1 empty. Serialization must emit dense ids 0/1 and contract leaf 1.
+    let shard_of = vec![0, 0, 0, 2, 2, 2];
+    let tree = node(leaf(0), node(leaf(1), leaf(2)));
+    let m = ShardManifest::build(&p, &shard_of, 3).with_tree(tree);
+    assert!(m.shards[1].blocks.is_empty());
+
+    let q = ShardManifest::from_bytes(&m.to_bytes()).unwrap();
+    assert_eq!(q.num_shards, 2);
+    assert_eq!(q.shards.len(), 2);
+    assert_eq!(
+      q.shards.iter().map(|shard| shard.id).collect::<Vec<_>>(),
+      vec![0, 1]
+    );
+    assert!(q.shards.iter().all(|shard| !shard.blocks.is_empty()));
+    assert_eq!(q.tree, Some(node(leaf(0), leaf(1))));
+  }
+
+  fn three_way() -> (BlockProfile, ShardManifest) {
+    let p = two_clusters();
+    let shard_of = vec![0, 0, 1, 1, 2, 2];
+    let tree = node(leaf(0), node(leaf(1), leaf(2)));
+    let mut m = ShardManifest::build(&p, &shard_of, 3).with_tree(tree);
+    for sh in &mut m.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    (p, m)
+  }
+
+  fn halves(blocks: &[Address]) -> Vec<Vec<Address>> {
+    let (a, b) = blocks.split_at(blocks.len() / 2);
+    vec![a.to_vec(), b.to_vec()]
+  }
+
+  #[test]
+  fn balanced_matches_lean_balanced_range() {
+    fn check(t: &AggNode, ids: &[u32]) {
+      let mut leaves = Vec::new();
+      t.collect_leaves(&mut leaves);
+      assert_eq!(leaves, ids);
+      if let AggNode::Internal(l, r) = t {
+        assert_eq!(l.num_leaves(), ids.len() / 2);
+        check(l, &ids[..ids.len() / 2]);
+        check(r, &ids[ids.len() / 2..]);
+      } else {
+        assert_eq!(ids.len(), 1);
+      }
+    }
+    assert_eq!(AggNode::balanced(&[]), None);
+    for n in 1..=9u32 {
+      let ids: Vec<u32> = (10..10 + n).collect();
+      check(&AggNode::balanced(&ids).unwrap(), &ids);
+    }
+  }
+
+  #[test]
+  fn replace_leaf_keeps_siblings() {
+    let t = node(leaf(0), node(leaf(1), leaf(2)));
+    let sub = node(leaf(1), leaf(3));
+    assert_eq!(
+      t.replace_leaf(1, &sub),
+      node(leaf(0), node(node(leaf(1), leaf(3)), leaf(2)))
+    );
+    assert_eq!(t.replace_leaf(7, &sub), t);
+  }
+
+  #[test]
+  fn refine_replaces_one_leaf_keeps_others_identical() {
+    let (p, m) = three_way();
+    let parts = halves(&m.shards[1].blocks);
+    let r = LeafRefinement { id: 1, parts, part_peaks: vec![10, 20] };
+    let (q, ids) = m.refine(&p, &[r], &[]).unwrap();
+    assert_eq!(ids, vec![vec![1, 3]]);
+    assert_eq!(q.num_shards, 4);
+    assert_eq!(q.shards.iter().map(|s| s.id).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    // Untouched leaves: same record, sealed the same way.
+    let mut sealed = q.clone();
+    for sh in &mut sealed.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    assert_eq!(sealed.shards[0], m.shards[0]);
+    assert_eq!(sealed.shards[2], m.shards[2]);
+    // The split leaf: part 0 keeps id 1, part 1 is appended as id 3.
+    assert_eq!(q.shards[1].blocks, m.shards[1].blocks[..1]);
+    assert_eq!(q.shards[3].blocks, m.shards[1].blocks[1..]);
+    assert_eq!(q.shards[1].measured_peak_bytes, 10);
+    assert_eq!(q.shards[3].measured_peak_bytes, 20);
+    assert_eq!(
+      q.tree,
+      Some(node(leaf(0), node(node(leaf(1), leaf(3)), leaf(2))))
+    );
+    // Round trip keeps the tree and the peaks.
+    let back = ShardManifest::from_bytes(&sealed.to_bytes()).unwrap();
+    assert_eq!(back, sealed);
+  }
+
+  #[test]
+  fn refine_id_policy_reuse_then_append() {
+    let (p, m) = three_way();
+    let r0 = LeafRefinement {
+      id: 0,
+      parts: halves(&m.shards[0].blocks),
+      part_peaks: vec![0, 0],
+    };
+    let r2 = LeafRefinement {
+      id: 2,
+      parts: halves(&m.shards[2].blocks),
+      part_peaks: vec![0, 0],
+    };
+    // Order of the refinement list does not matter: fresh ids ascend by
+    // refined leaf id.
+    let (q, ids) = m.refine(&p, &[r2.clone(), r0.clone()], &[]).unwrap();
+    assert_eq!(ids, vec![vec![2, 4], vec![0, 3]]);
+    assert_eq!(q.shards[0].blocks, r0.parts[0]);
+    assert_eq!(q.shards[3].blocks, r0.parts[1]);
+    assert_eq!(q.shards[2].blocks, r2.parts[0]);
+    assert_eq!(q.shards[4].blocks, r2.parts[1]);
+    let mut sealed = q.clone();
+    for sh in &mut sealed.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    assert_eq!(sealed.shards[1], m.shards[1]);
+    assert_eq!(
+      q.tree,
+      Some(node(node(leaf(0), leaf(3)), node(leaf(1), node(leaf(2), leaf(4)))))
+    );
+  }
+
+  #[test]
+  fn refine_empty_is_fixed_point_and_carries_peaks() {
+    let (p, mut m) = three_way();
+    m.shards[1].measured_peak_bytes = 7;
+    let (q, ids) = m.refine(&p, &[], &[]).unwrap();
+    assert!(ids.is_empty());
+    let mut sealed = q;
+    for sh in &mut sealed.shards {
+      sh.assumption_root =
+        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+    }
+    assert_eq!(sealed.to_bytes(), m.to_bytes());
+    // A nonzero measurement overrides a carried peak; zero keeps it.
+    let (q2, _) = m.refine(&p, &[], &[5, 0, 9]).unwrap();
+    assert_eq!(
+      q2.shards.iter().map(|s| s.measured_peak_bytes).collect::<Vec<_>>(),
+      [5, 7, 9]
+    );
+  }
+
+  #[test]
+  fn refine_without_source_tree_uses_balanced_range() {
+    let (p, mut m) = three_way();
+    m.tree = None;
+    let r = LeafRefinement {
+      id: 2,
+      parts: halves(&m.shards[2].blocks),
+      part_peaks: vec![0, 0],
+    };
+    let (q, _) = m.refine(&p, &[r], &[]).unwrap();
+    // balancedRange 0 3 = node(leaf 0, node(leaf 1, leaf 2)), then leaf 2 →
+    // node(leaf 2, leaf 3).
+    assert_eq!(
+      q.tree,
+      Some(node(leaf(0), node(leaf(1), node(leaf(2), leaf(3)))))
+    );
+  }
+
+  #[test]
+  fn refine_rejects_bad_partitions() {
+    let (p, m) = three_way();
+    let blocks = m.shards[1].blocks.clone();
+    let err = |r: LeafRefinement, measured: &[u64]| {
+      m.refine(&p, &[r], measured).unwrap_err()
+    };
+    let one = LeafRefinement {
+      id: 1,
+      parts: vec![blocks.clone()],
+      part_peaks: vec![0],
+    };
+    assert!(err(one, &[]).contains("at least two parts"));
+    let oor =
+      LeafRefinement { id: 9, parts: halves(&blocks), part_peaks: vec![0, 0] };
+    assert!(err(oor, &[]).contains("out of range"));
+    let foreign = LeafRefinement {
+      id: 1,
+      parts: vec![vec![blocks[0].clone()], vec![addr(200)]],
+      part_peaks: vec![0, 0],
+    };
+    assert!(err(foreign, &[]).contains("not in the env's block profile"));
+    let dup = LeafRefinement {
+      id: 1,
+      parts: vec![vec![blocks[0].clone()], vec![blocks[0].clone()]],
+      part_peaks: vec![0, 0],
+    };
+    assert!(err(dup, &[]).contains("appears in shards"));
+    let missing = LeafRefinement {
+      id: 1,
+      parts: vec![vec![blocks[0].clone()], vec![m.shards[0].blocks[0].clone()]],
+      part_peaks: vec![0, 0],
+    };
+    let e = err(missing, &[]);
+    assert!(e.contains("appears in shards") || e.contains("missing"), "{e}");
+    let peaks =
+      LeafRefinement { id: 1, parts: halves(&blocks), part_peaks: vec![0] };
+    assert!(err(peaks, &[]).contains("peaks for"));
+    let ok =
+      LeafRefinement { id: 1, parts: halves(&blocks), part_peaks: vec![0, 0] };
+    assert!(err(ok, &[1, 2]).contains("measured peaks"));
   }
 
   #[test]

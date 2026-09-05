@@ -191,7 +191,7 @@ pub fn generate_cases_on(
       let mut non_ih_fvars: Vec<LeanExpr> = Vec::new();
       let mut wrapper_decls: Vec<LocalDecl> = Vec::new(); // all fields for the rec lambda
 
-      for (decl, fvar) in field_decls.into_iter().zip(field_fvars.into_iter()) {
+      for (decl, fvar) in field_decls.into_iter().zip(field_fvars) {
         let motive_idx = find_motive_fvar(&decl.domain, &motive_fvars);
         if let Some(idx) = motive_idx {
           if idx == target_idx {

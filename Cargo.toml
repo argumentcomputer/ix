@@ -42,8 +42,8 @@ ixon = { path = "crates/ixon" }
 ix-kernel = { path = "crates/kernel" }
 
 # lean-ffi tree (lean-ffi crate + factored-out bignat sub-crate)
-bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "2a9c91eba44ea791978a086a6a19b3a922edfee5" }
-lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "2a9c91eba44ea791978a086a6a19b3a922edfee5" }
+bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "93c7e52952ae94546be08313f4ff3922984c84d5" }
+lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "93c7e52952ae94546be08313f4ff3922984c84d5" }
 
 # External shared deps
 anyhow = "1"
@@ -56,7 +56,7 @@ libc = "0.2"
 log = "0.4"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "e43201522a95775d1495b4467fbab69fbf7a1ae8" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"
@@ -98,7 +98,6 @@ filter_map_next = "warn"
 flat_map_option = "warn"
 fn_to_numeric_cast = "warn"
 fn_to_numeric_cast_with_truncation = "warn"
-from_iter_instead_of_collect = "warn"
 implicit_clone = "warn"
 inefficient_to_string = "warn"
 invalid_upcast_comparisons = "warn"

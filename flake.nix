@@ -14,6 +14,10 @@
     # System packages, follows lean4-nix so we stay in sync
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
+    # CUDA-only packages, independently pinned so the ordinary build graph
+    # can retain lean4-nix's older Nixpkgs revision.
+    cuda-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
     # Lean 4 & Lake
     lean4-nix.url = "github:argumentcomputer/lean4-nix";
 
@@ -31,7 +35,7 @@
 
     # Blake3 Rust bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean/1b0fbd2bd78b2b873e14264037af8c8b1536b9e9";
+      url = "github:argumentcomputer/Blake3.lean/2db8f692ed94f7c4a993527008b8c5231b169709";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };
@@ -73,13 +77,34 @@
           ...
         }:
         let
+          # CUDA is opt-in and unfree. Its dedicated package set locks CUDA
+          # 13.2 without changing the default shell or ordinary package/check
+          # graph.
+          cudaPkgs = import inputs.cuda-nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+          };
+          cudaToolkit = cudaPkgs.symlinkJoin {
+            name = "ix-cuda-13.2-toolkit";
+            paths = [
+              cudaPkgs.cudaPackages_13_2.cccl
+              cudaPkgs.cudaPackages_13_2.cuda_crt
+              cudaPkgs.cudaPackages_13_2.cuda_cudart
+              cudaPkgs.cudaPackages_13_2.cuda_nvcc
+              cudaPkgs.cudaPackages_13_2.libnvvm
+            ];
+            postBuild = ''
+              ln -s lib "$out/lib64"
+            '';
+          };
+
           # Pins the Lean toolchain; a plain derivation, no overlay involved
           lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
 
           # Pins the Rust toolchain
           rustToolchain = fenix.packages.${system}.fromToolchainFile {
             file = ./rust-toolchain.toml;
-            sha256 = "sha256-sqSWJDUxc+zaz1nBWMAJKTAGBuGWP25GCftIOlCEAtA=";
+            sha256 = "sha256-P30Tm3O7vQAE725YtDCDHGjNrSsfZO4us11UwJGZSJo=";
           };
 
           # Rust package
@@ -163,9 +188,7 @@
               ./lean-toolchain
               ./Cargo.toml
               ./Cargo.lock
-              (pkgs.lib.fileset.fileFilter
-                (f: f.hasExt "rs" || f.hasExt "toml")
-                ./crates)
+              (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./crates)
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
             ];
           };
@@ -322,25 +345,74 @@
             ix-tests = pkgs.runCommand "ix-tests" { } ''
               cp -r ${./.} src
               chmod -R u+w src
+              # IxTests depends on the ix target, so its wrapped output already
+              # contains the matching CLI. Recreate Lake's checkout-relative
+              # path for tests that intentionally exercise that CLI.
+              mkdir -p src/.lake/build/bin
+              ln -s ${ixTest}/bin/ix src/.lake/build/bin/ix
               cd src
               ${ixTest}/bin/IxTests
               touch $out
             '';
           };
 
-          # Lean + Rust shell for host development (`cargo build`, `lake build`).
-          devShells.default = pkgs.mkShell {
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-            packages = with pkgs; [
-              pkg-config
-              openssl
-              clang
-              rustToolchain
-              rust-analyzer
-              lean
-              cargo-deny
-              valgrind
-            ];
+          devShells = {
+            # Lean + Rust shell for host development (`cargo build`, `lake build`).
+            default = pkgs.mkShell {
+              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              packages = with pkgs; [
+                pkg-config
+                openssl
+                clang
+                rustToolchain
+                rust-analyzer
+                lean
+                cargo-deny
+                valgrind
+              ];
+            };
+          }
+          // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+            # CUDA stays separate so CPU development does not fetch NVIDIA's
+            # toolkit. Pinning NVCC/CUDA_HOME prevents a host-level
+            # `/usr/local/cuda` from silently selecting an incompatible
+            # compiler or runtime.
+            cuda = pkgs.mkShell {
+              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              NVCC = "${cudaToolkit}/bin/nvcc";
+              CUDA_HOME = "${cudaToolkit}";
+              CUDA_PATH = "${cudaToolkit}";
+              MULTI_STARK_CUDA_ARCHS = "120";
+              packages =
+                (with pkgs; [
+                  pkg-config
+                  openssl
+                  clang
+                  rustToolchain
+                  rust-analyzer
+                  lean
+                  cargo-deny
+                  valgrind
+                ])
+                ++ [ cudaToolkit ];
+              shellHook = ''
+                export PATH="${cudaToolkit}/bin:$PATH"
+                export LD_LIBRARY_PATH="${cudaToolkit}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+                # Nix's dynamic loader does not search the host driver's
+                # library directory. Preload only libcuda to avoid mixing libc.
+                for ixCudaDriverLib in \
+                  /run/opengl-driver/lib/libcuda.so.1 \
+                  /usr/lib/x86_64-linux-gnu/libcuda.so.1 \
+                  /usr/lib64/libcuda.so.1; do
+                  if [ -e "$ixCudaDriverLib" ]; then
+                    export LD_PRELOAD="$ixCudaDriverLib''${LD_PRELOAD:+:$LD_PRELOAD}"
+                    break
+                  fi
+                done
+                unset ixCudaDriverLib
+              '';
+            };
           };
 
           # TODO: Re-enable the zkVM shells once they build in CI.

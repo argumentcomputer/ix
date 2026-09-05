@@ -304,7 +304,9 @@ impl AiurGadget for Bytes2 {
     let xor_split4_channel = u8_xor_split4_channel();
 
     rows
-      .chunks_exact_mut(TRACE_WIDTH)
+      .as_chunks_mut::<TRACE_WIDTH>()
+      .0
+      .iter_mut()
       .enumerate()
       .zip(&record.bytes2_queries.0)
       .zip(row_writers.iter_mut())

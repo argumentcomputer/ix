@@ -160,6 +160,8 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
     advice buffer (channel 0 = proof, 1 = vk, 2 = claims, key `[0]`
     each) is built natively in Rust from the raw byte blobs — no
     per-byte boxing into Lean `G`s, no buffer marshalling across FFI.
+    `proofAdviceBytes` is the verified native proof transport returned by
+    `AiurSystem.proofToAdviceBytes`.
     `useBytecode` selects the generic Aiur bytecode interpreter over
     the codegen'd verifier (`crates/ixvm-codegen/src/aiur_multi_stark.rs`);
     as with `executeIxVM`, the codegen'd path is only valid when
@@ -171,7 +173,44 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
 @[extern "rs_aiur_multi_stark_execute"]
 opaque executeMultiStark (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+  (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Array QueryCount)
+
+/-- Native execution of either aggregate-first join entrypoint. The two
+child proof-advice blobs (from `AiurSystem.proofToAdviceBytes`), child claims,
+and the fixed vk/output/allowed blobs are passed without
+per-byte Lean field boxing. `preimagesBlob` and `treesBlob` use the compact
+count/key/length framing produced by `MultiStark.joinPreimagesBlob` and
+`MultiStark.joinTreesBlob`; `pathsBlob` carries structural discharge choices.
+Rust expands them directly into IO channels 4–6. As with
+`executeMultiStark`, `useBytecode` selects the generic interpreter over the
+generated production verifier. -/
+@[extern "rs_aiur_multi_stark_join_execute"]
+opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
+  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
+    Except String (Array G × Array QueryCount)
+
+/-- Native execution of the `ix_aggr` aggregation entrypoint. Serialized child
+proof transport (from `AiurSystem.proofToAdviceBytes`), claims, and the fixed
+vk/output/allowed blobs are passed without
+per-byte Lean field boxing; `preimagesBlob`, `treesBlob`, and `pathsBlob` use the compact
+count/key/length framing produced by `Aggr.preimagesBlob` and
+`Aggr.treesBlob` / `Aggr.pathsBlob`. Rust expands them directly into IO
+channels 0–6 (the shape hint and structural paths share channel 6 with
+disjoint key shapes). Wrap shapes pass empty right-child/path blobs —
+the circuit never reads them. As with `executeMultiStark`, `useBytecode`
+selects the generic interpreter over the generated production aggregator,
+and the codegen'd path is only valid when `toplevel` is the production
+`Aggr.ixAggr` bytecode. -/
+@[extern "rs_aiur_ix_aggr_execute"]
+opaque executeIxAggr (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
+  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
 -- (EnvHandle opaque type + constructors live above `namespace
@@ -207,7 +246,8 @@ private opaque checkAddrsWithEnv' : @& Bytecode.Toplevel →
     through the exact single-claim machinery over task-private data
     (own witness io, own query record), nothing shared between tasks
     but the read-only toplevel and env. Returns the FAILURES as
-    `(addrHex, error)` pairs; empty means all passed. Per-claim
+    `(batch index as a decimal string, error)` pairs, resolving back to
+    the caller's label order; empty means all passed. Per-claim
     outputs/records are not returned — use `checkAddrWithEnv` for a
     single claim's full result. -/
 def checkAddrsWithEnv (toplevel : @& Bytecode.Toplevel)

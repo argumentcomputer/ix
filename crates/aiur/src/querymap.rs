@@ -1,4 +1,4 @@
-use multi_stark::p3_field::PrimeField64;
+use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use crate::G;
 
@@ -196,16 +196,16 @@ impl SegStore {
   }
 }
 
-/// Segmented store of per-entry key hashes. Kept so hash-table growth can
-/// re-insert from stored hashes instead of re-hashing every key from the
-/// keys arena — table doubling on a multi-GB map used to be a full
-/// sequential re-hash pass over the arena, log-many times.
-struct SegHashes {
+/// Segmented store of per-entry `u64` key hashes. Keeping the hashes lets
+/// hash-table growth re-insert entries without re-hashing every key from the
+/// keys arena; table doubling on a multi-GB map used to be a full sequential
+/// re-hash pass over the arena, log-many times.
+struct SegU64s {
   segs: Vec<HugeVec<u64>>,
   entries: usize,
 }
 
-impl SegHashes {
+impl SegU64s {
   fn new() -> Self {
     Self { segs: Vec::new(), entries: 0 }
   }
@@ -250,7 +250,7 @@ pub struct QueryMap {
   keys: SegStore,
   outs: SegStore,
   mults: SegStore,
-  hashes: SegHashes,
+  hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
 }
 
@@ -261,7 +261,7 @@ impl QueryMap {
       keys: SegStore::new(key_stride),
       outs: SegStore::new(0),
       mults: SegStore::new(1),
-      hashes: SegHashes::new(),
+      hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
     }
   }
@@ -305,6 +305,39 @@ impl QueryMap {
       output: self.outs.at(i),
       multiplicity: &mut self.mults.at_mut(i)[0],
     })
+  }
+
+  /// Multiplicity of entry `i`.
+  #[inline]
+  pub fn mult_at(&self, i: usize) -> G {
+    self.mults.at(i)[0]
+  }
+
+  /// Output slice of entry `i`.
+  #[inline]
+  pub fn output_at(&self, i: usize) -> &[G] {
+    self.outs.at(i)
+  }
+
+  /// Record a constrained memo hit on entry `i`.
+  #[inline]
+  pub fn bump_multiplicity(&mut self, i: usize) {
+    self.mults.at_mut(i)[0] += G::ONE;
+  }
+
+  /// Register a function query at `Ctrl::Return`: insert on first
+  /// registration and bump on constrained promotion of a cached hint row.
+  pub fn finish(&mut self, key: &[G], output: &[G], constrained: bool) {
+    if let Some(i) = self.get_index_of(key) {
+      // The only ordinary way to execute an already cached function is
+      // constrained promotion of an unconstrained hint entry.
+      debug_assert_eq!(self.outs.at(i), output);
+      if constrained {
+        self.bump_multiplicity(i);
+      }
+    } else {
+      self.insert(key, output, G::from_bool(constrained));
+    }
   }
 
   /// Append a new entry. The key must not already be present: call sites

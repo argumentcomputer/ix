@@ -33,17 +33,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1787415051,
-        "narHash": "sha256-14ziKcXwmJ/ZihFpp3Cg6FLVPM8kCUVzR6t0iyae1hE=",
+        "lastModified": 1788353452,
+        "narHash": "sha256-R08Yd5y8PMyrwxTMUFDDzdbf9057+f52bz9Y/e/poiY=",
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "1b0fbd2bd78b2b873e14264037af8c8b1536b9e9",
+        "rev": "2db8f692ed94f7c4a993527008b8c5231b169709",
         "type": "github"
       },
       "original": {
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "1b0fbd2bd78b2b873e14264037af8c8b1536b9e9",
+        "rev": "2db8f692ed94f7c4a993527008b8c5231b169709",
         "type": "github"
       }
     },
@@ -89,6 +89,22 @@
       "original": {
         "owner": "ipetkov",
         "repo": "crane",
+        "type": "github"
+      }
+    },
+    "cuda-nixpkgs": {
+      "locked": {
+        "lastModified": 1787964612,
+        "narHash": "sha256-0N9nghg3nwzX6b6qc77EzjR9cu/Z+UR66FlfsCqiURs=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e8be7818e19ada32105a8af937a6a473b38167ca",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
         "type": "github"
       }
     },
@@ -379,6 +395,7 @@
       "inputs": {
         "blake3-lean": "blake3-lean",
         "crane": "crane_2",
+        "cuda-nixpkgs": "cuda-nixpkgs",
         "fenix": "fenix_2",
         "flake-parts": "flake-parts_2",
         "lean4-nix": "lean4-nix",

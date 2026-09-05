@@ -38,6 +38,40 @@ pub struct PeakProveBytes {
   pub peak: usize,
 }
 
+// The allocation-schedule model below is deliberately structural, but the
+// process RSS also contains allocator/runtime residency that it does not name.
+// Across the 168 completed Mathlib shard proofs at multi-stark 2892243e,
+// measured RSS / analytic peak had median 1.0678 and maximum under-prediction
+// 1.0714. A 7.5% envelope covers the full sample with a small margin. The
+// workspace now pins a8aab731; retain this historical guard, but re-calibrate
+// before treating it as a full-scale safety bound for the new prover.
+const PROVER_RSS_CALIBRATION_NUMERATOR: usize = 43;
+const PROVER_RSS_CALIBRATION_DENOMINATOR: usize = 40;
+
+fn calibrate_prover_rss(analytic_peak: usize) -> usize {
+  analytic_peak
+    .checked_mul(PROVER_RSS_CALIBRATION_NUMERATOR)
+    .map_or(usize::MAX, |scaled| {
+      scaled.div_ceil(PROVER_RSS_CALIBRATION_DENOMINATOR)
+    })
+}
+
+/// Outcome of a budget-gated prove
+/// ([`AiurSystem::prove_ixvm_within_budget`]). Only the case that ran a
+/// STARK carries a proof; the other two report the measured peak the
+/// caller decides with.
+// One short-lived value per prove; the variant size gap is irrelevant.
+#[allow(clippy::large_enum_variant)]
+pub enum GatedProve {
+  /// Fit the budget; proven from the gating record.
+  Proved { claim: Vec<G>, proof: AiurProof, peak: usize },
+  /// Over budget: the record was dropped, and `parts` is the count
+  /// [`AiurSystem::suggested_split_parts`] projects will fit.
+  Split { peak: usize, parts: usize },
+  /// `exec_only` with a fitting peak: measured, nothing left to do.
+  Measured { peak: usize },
+}
+
 pub struct AiurSystem {
   toplevel: Toplevel,
   // perhaps remove the key from the system in verifier only mode?
@@ -71,6 +105,27 @@ pub struct CircuitShape {
   pub quotient_degree: usize,
   pub preprocessed_width: usize,
   pub preprocessed_height: usize,
+}
+
+/// Raw row count of a circuit under `record`, ceil-divided into `parts`
+/// even shares — `parts = 1` is the record's exact heights. The byte
+/// gadgets keep their fixed heights: they are the same size in every
+/// shard and are most of the peak model's floor, which dividing cannot
+/// shrink.
+fn raw_of(
+  record: &QueryRecord,
+  parts: usize,
+) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+  move |_, ct| match ct {
+    CircuitType::Function { idx } => {
+      record.function_queries[*idx].len().div_ceil(parts)
+    },
+    CircuitType::Memory { width } => {
+      record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
+    },
+    CircuitType::Bytes1 => 256,
+    CircuitType::Bytes2 => 65536,
+  }
 }
 
 impl AiurSystem {
@@ -207,11 +262,10 @@ impl AiurSystem {
 
   /// Predicted peak prover resident bytes for a record, from circuit
   /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
-  /// line. Mirrors this system's actual allocation schedule (multi-stark
-  /// rev `be1755e`, the workspace pin; an upstream allocation-schedule
-  /// change skews every prediction, so re-validate against a measured
-  /// prove when bumping multi-stark — real proves at ~472 GiB measured
-  /// +1.6-1.7% over prediction):
+  /// line. The terms mirror the allocation schedule originally calibrated at
+  /// multi-stark rev `2892243e`. The workspace now pins `a8aab731`, so the
+  /// model remains useful for relative shard sizing but needs a measured
+  /// full-scale re-calibration before its absolute bound is relied upon:
   ///
   /// 1. WITNESS phase: the `QueryRecord` plus every circuit's padded main
   ///    trace and base-field lookup witness, built in parallel and all
@@ -224,20 +278,15 @@ impl AiurSystem {
   ///    retained FRI fold layers (geometric in `max_log_arity`), and the
   ///    open-phase buffers — all proportional to `H = blowup · tallest`.
   ///
-  /// The peak is the max of the three plus the preprocessed-gadget
-  /// residency committed at setup. Heights are `next_power_of_two` of the
+  /// The analytic peak is the max of the three plus the
+  /// preprocessed-gadget residency committed at setup. The returned `peak`
+  /// additionally applies [`calibrate_prover_rss`] to cover measured
+  /// allocator/runtime residency. Heights are `next_power_of_two` of the
   /// record's unique queries — the padding the trace actually commits,
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      |_, ct| match ct {
-        CircuitType::Function { idx } => record.function_queries[*idx].len(),
-        CircuitType::Memory { width } => {
-          record.memory_queries.get(width).map_or(0, |m| m.len())
-        },
-        CircuitType::Bytes1 => 256,
-        CircuitType::Bytes2 => 65536,
-      },
+      raw_of(record, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -293,35 +342,77 @@ impl AiurSystem {
     // Trees (3 rounds) + retained FRI fold layers + open buffers, all ∝ H.
     let fri_layers = (2 * S + 2 * DG) * h * fold / (fold - 1).max(1);
     let phase_open = committed + 3 * 2 * DG * h + fri_layers + 11 * S * h;
+    let analytic_peak = phase_witness.max(phase_stage2).max(phase_open) + prep;
     PeakProveBytes {
       phase_witness,
       phase_stage2,
       phase_open,
       preprocessed: prep,
-      peak: phase_witness.max(phase_stage2).max(phase_open) + prep,
+      peak: calibrate_prover_rss(analytic_peak),
     }
   }
 
-  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
-  pub fn prove(
+  /// Smallest power-of-two part count whose projected per-part peak
+  /// fits `max_bytes`, assuming the record's rows divide evenly across
+  /// parts. The gadget circuits keep their constant heights — they are
+  /// the same size in every shard and are most of the model's fixed
+  /// floor, which dividing cannot shrink.
+  ///
+  /// The estimate is optimistic: a part re-executes dependencies shared
+  /// across the cut, so its real rows exceed its 1/n share. A caller
+  /// splitting on this number must still gate each part on its own
+  /// executed record and re-split the ones that miss. Optimism is the
+  /// right bias — an under-split costs one cheap re-execution, while an
+  /// over-split pays the per-proof floor on every extra part forever.
+  ///
+  /// Returns 1 when the record already fits.
+  pub fn suggested_split_parts(
+    &self,
+    record: &QueryRecord,
+    max_bytes: usize,
+  ) -> usize {
+    let record_bytes = crate::execute::record_retained_bytes(record);
+    let mut parts = 1usize;
+    // A shard still over budget at 2^20 parts is not splittable by row
+    // count; stop rather than search forever.
+    while parts < (1 << 20) {
+      let peak = self
+        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
+        .peak;
+      if peak <= max_bytes {
+        break;
+      }
+      parts *= 2;
+    }
+    parts
+  }
+
+  /// Prove an execution that has ALREADY happened: everything from the
+  /// witness phase on, over a record the caller hands across.
+  ///
+  /// Taking `query_record` by value is the point. The record is the
+  /// witness phase's dominant residency, and it is dropped here the
+  /// instant the traces exist — before the LDE/commit/FRI phases that
+  /// actually set the prover's peak (see [`Self::peak_prove_bytes`]).
+  /// A caller that keeps its own copy alive past this call pays that
+  /// peak *on top of* the record, which at shard scale is the
+  /// difference between fitting in RAM and not.
+  ///
+  /// `input`, `io_buffer` and `output` must be the ones the execution
+  /// ran on: they reconstruct the claim the proof commits to, and the
+  /// witness reads the buffer the execution left behind.
+  ///
+  /// Deliberately not `#[tracing::instrument]`ed — the `aiur/witness`
+  /// span below stays directly under the caller's `aiur/prove*` span,
+  /// so the stage-scoped measurements keep their existing shape.
+  pub fn prove_from_execution(
     &self,
     fun_idx: FunIdx,
     input: &[G],
-    io_buffer: &mut IOBuffer,
+    io_buffer: &IOBuffer,
+    query_record: QueryRecord,
+    output: &[G],
   ) -> (Vec<G>, AiurProof) {
-    tracing_texray::examine_current();
-
-    // Execute the Aiur bytecode.
-    let _g = tracing::info_span!("aiur/execute").entered();
-    // Execute the Aiur bytecode. The prover assumes inputs are valid; any
-    // execution error here is a programmer bug, so we unwrap.
-    let (query_record, output) = self
-      .toplevel
-      .execute(fun_idx, input.to_vec(), io_buffer)
-      .expect("Aiur execution failed during prove");
-    drop(_g);
-
-    // Build the `SystemWitness`
     let _g = tracing::info_span!("aiur/witness").entered();
     let circuit_types = self.circuit_types();
     let witness_data = circuit_types
@@ -363,6 +454,28 @@ impl AiurSystem {
     (claim, proof)
   }
 
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
+  pub fn prove(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &mut IOBuffer,
+  ) -> (Vec<G>, AiurProof) {
+    tracing_texray::examine_current();
+
+    // Execute the Aiur bytecode.
+    let _g = tracing::info_span!("aiur/execute").entered();
+    // Execute the Aiur bytecode. The prover assumes inputs are valid; any
+    // execution error here is a programmer bug, so we unwrap.
+    let (query_record, output) = self
+      .toplevel
+      .execute(fun_idx, input.to_vec(), io_buffer)
+      .expect("Aiur execution failed during prove");
+    drop(_g);
+
+    self.prove_from_execution(fun_idx, input, io_buffer, query_record, &output)
+  }
+
   /// IxVM-native prove: identical to `prove` except the execute step
   /// is provided by the caller as `executor` (a closure that runs
   /// the codegen'd Rust kernel `ix::aiur_ixvm_runner::execute_ixvm`
@@ -389,6 +502,51 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
+    match self.prove_ixvm_within_budget(
+      fun_idx, input, io_buffer, executor, None, false,
+    ) {
+      GatedProve::Proved { claim, proof, .. } => (claim, proof),
+      _ => unreachable!("an unbudgeted prove always proves"),
+    }
+  }
+
+  /// `prove_ixvm`, but the record's projected prover peak has to fit
+  /// `max_bytes` before any proving starts (`None` skips the check),
+  /// and `exec_only` stops after execution + measurement — the split
+  /// loop runs on executions alone, no STARK started.
+  ///
+  /// The peak is measured on the REAL record ([`Self::peak_prove_bytes`]),
+  /// not estimated from serialized bytes, so an over-budget shard is
+  /// caught in the gap between execution and the witness phase — before
+  /// the LDE/commit/FRI phases that would actually exhaust the box: the
+  /// record is dropped and [`GatedProve::Split`] carries the part count
+  /// [`Self::suggested_split_parts`] projects will fit, computed here
+  /// because this is the last moment the record exists to read counts
+  /// from. Every outcome carries the measured peak: proving a shard
+  /// measures it for free, so a prove run yields the same split/merge
+  /// signal a check run does without a second execution.
+  #[tracing::instrument(
+    level = "info",
+    skip_all,
+    name = "aiur/prove_ixvm_within_budget"
+  )]
+  pub fn prove_ixvm_within_budget<F>(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &mut IOBuffer,
+    executor: F,
+    max_bytes: Option<usize>,
+    exec_only: bool,
+  ) -> GatedProve
+  where
+    F: FnOnce(
+      &Toplevel,
+      FunIdx,
+      Vec<G>,
+      &mut IOBuffer,
+    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
+  {
     tracing_texray::examine_current();
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
     let (query_record, output) =
@@ -396,43 +554,24 @@ impl AiurSystem {
         .expect("IxVM-native Aiur execution failed during prove_ixvm");
     drop(_g);
 
-    let _g = tracing::info_span!("aiur/witness").entered();
-    let circuit_types = self.circuit_types();
-    let witness_data = circuit_types
-      .into_par_iter()
-      .enumerate()
-      .map(|(circuit_idx, circuit_type)| {
-        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
-        match circuit_type {
-          CircuitType::Function { idx } => self.toplevel.witness_data(
-            idx,
-            &query_record,
-            io_buffer,
-            &slot_arg_widths,
-          ),
-          CircuitType::Memory { width } => {
-            Memory::witness_data(width, &query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes1 => {
-            Bytes1.witness_data(&query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes2 => {
-            Bytes2.witness_data(&query_record, &slot_arg_widths)
-          },
-        }
-      })
-      .collect::<Vec<_>>();
-    drop(query_record);
-    let (traces, lookups) = witness_data.into_iter().unzip();
-    let witness = SystemWitness { traces, lookups };
-    drop(_g);
-
-    let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
-    claim.extend(input);
-    claim.extend(output);
-
-    let proof = self.system.prove(&self.key, &claim, witness);
-    (claim, proof)
+    let peak = self.peak_prove_bytes(&query_record).peak;
+    if let Some(max) = max_bytes
+      && peak > max
+    {
+      let parts = self.suggested_split_parts(&query_record, max);
+      return GatedProve::Split { peak, parts };
+    }
+    if exec_only {
+      return GatedProve::Measured { peak };
+    }
+    let (claim, proof) = self.prove_from_execution(
+      fun_idx,
+      input,
+      io_buffer,
+      query_record,
+      &output,
+    );
+    GatedProve::Proved { claim, proof, peak }
   }
 
   #[inline]
@@ -442,6 +581,17 @@ impl AiurSystem {
     proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
     self.system.verify(claim, proof)
+  }
+
+  /// Verify and serialize the native Plonky3 multiproof for the in-circuit
+  /// recursive verifier.
+  pub fn proof_to_advice_bytes(
+    &self,
+    claim: &[G],
+    proof: &AiurProof,
+  ) -> Result<Vec<u8>, String> {
+    self.verify(claim, proof).map_err(|e| format!("{e:?}"))?;
+    proof.to_bytes().map_err(|e| format!("{e:?}"))
   }
 }
 
@@ -457,6 +607,13 @@ mod tests {
     types::{CommitmentParameters, FriParameters},
   };
   use rustc_hash::FxHashMap;
+
+  #[test]
+  fn prover_rss_calibration_rounds_up_and_saturates() {
+    assert_eq!(calibrate_prover_rss(40), 43);
+    assert_eq!(calibrate_prover_rss(1_000), 1_075);
+    assert_eq!(calibrate_prover_rss(usize::MAX), usize::MAX);
+  }
 
   /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
   /// while still exercising the full FRI pipeline (log_blowup 1, 64 queries,

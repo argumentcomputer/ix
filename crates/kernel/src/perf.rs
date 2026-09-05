@@ -291,7 +291,7 @@ impl PerfCounters {
     let peak = self.peak_rec_fuel_used.load(Ordering::Relaxed);
     let total = self.total_rec_fuel_used.load(Ordering::Relaxed);
     let n = self.constants_checked.load(Ordering::Relaxed);
-    let avg = if n > 0 { total / n } else { 0 };
+    let avg = total.checked_div(n).unwrap_or(0);
     writeln!(out, "[ix-perf] rec_fuel:")?;
     writeln!(
       out,

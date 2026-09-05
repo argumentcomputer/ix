@@ -209,7 +209,7 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
     .map(|(i, m)| (i, m.len(), m.retained_elems()))
     .filter(|(_, n, _)| *n > 0)
     .collect();
-  rows.sort_by(|a, b| b.2.cmp(&a.2));
+  rows.sort_by_key(|row| std::cmp::Reverse(row.2));
   let total_entries: usize = rows.iter().map(|r| r.1).sum();
   let total_elems: usize = rows.iter().map(|r| r.2).sum();
   eprintln!(
@@ -328,23 +328,25 @@ impl Function {
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
           let callee_unconstrained = unconstrained || *op_unconstrained;
-          let cached_output = record.function_queries[*callee_idx]
-            .get_mut(&args)
-            .and_then(|result| {
-              // A zero-multiplicity entry was computed only as an
-              // unconstrained hint.  Promoting just this row would omit all
-              // of the callee's child lookups and unbalance their channels;
-              // replay the body constrained so promotion recurses through
-              // the whole dependency tree.
-              if !callee_unconstrained && result.multiplicity.is_zero() {
-                None
-              } else {
-                if !callee_unconstrained {
-                  *result.multiplicity += G::ONE;
-                }
-                Some(result.output.to_vec())
+          let mut cached_output = None;
+          if let Some(i) =
+            record.function_queries[*callee_idx].get_index_of(&args)
+          {
+            // A zero-multiplicity entry was computed only as an
+            // unconstrained hint.  Promoting just this row would omit all
+            // of the callee's child lookups and unbalance their channels;
+            // replay the body constrained so promotion recurses through
+            // the whole dependency tree.
+            let mult = record.function_queries[*callee_idx].mult_at(i);
+            if callee_unconstrained || !mult.is_zero() {
+              if !callee_unconstrained {
+                record.function_queries[*callee_idx].bump_multiplicity(i);
               }
-            });
+              cached_output = Some(
+                record.function_queries[*callee_idx].output_at(i).to_vec(),
+              );
+            }
+          }
           if let Some(output) = cached_output {
             map.extend(output);
           } else {
@@ -367,11 +369,11 @@ impl Function {
             .memory_queries
             .get_mut(&size)
             .ok_or(ExecError::InvalidMemorySize(size))?;
-          if let Some(result) = memory_queries.get_mut(&values) {
+          if let Some(i) = memory_queries.get_index_of(&values) {
             if !unconstrained {
-              *result.multiplicity += G::ONE;
+              memory_queries.bump_multiplicity(i);
             }
-            map.extend_from_slice(result.output);
+            map.extend_from_slice(memory_queries.output_at(i));
           } else {
             let ptr = G::from_usize(memory_queries.len());
             memory_queries.insert(
@@ -392,12 +394,17 @@ impl Function {
           let ptr_usize = usize::try_from(ptr_u64)
             .ok()
             .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
-          let (args, multiplicity) = memory_queries
-            .get_index_mut(ptr_usize)
-            .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
-          if !unconstrained {
-            *multiplicity += G::ONE;
+          if ptr_usize >= memory_queries.len() {
+            return Err(ExecError::UnboundPointer {
+              ptr: ptr_u64,
+              size: *size,
+            });
           }
+          if !unconstrained {
+            memory_queries.bump_multiplicity(ptr_usize);
+          }
+          let (args, _) =
+            memory_queries.get_index(ptr_usize).expect("bounds checked above");
           map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
@@ -709,25 +716,13 @@ impl Function {
           push_block_exec_entries!(cont.block);
         },
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
-          // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          if let Some(result) =
-            record.function_queries[fun_idx].get_mut(&map[..input_size])
-          {
-            // The only ordinary way to execute an already cached function
-            // is constrained promotion of an unconstrained hint entry.
-            debug_assert_eq!(result.output, output);
-            if !unconstrained {
-              *result.multiplicity += G::ONE;
-            }
-          } else {
-            record.function_queries[fun_idx].insert(
-              &map[..input_size],
-              &output,
-              G::from_bool(!unconstrained),
-            );
-          }
+          record.function_queries[fun_idx].finish(
+            &map[..input_size],
+            &output,
+            !unconstrained,
+          );
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,
@@ -1052,14 +1047,7 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
   while !bytes.len().is_multiple_of(8) {
     bytes.push(0);
   }
-  bytes
-    .chunks_exact(8)
-    .map(|c| {
-      let mut a = [0u8; 8];
-      a.copy_from_slice(c);
-      u64::from_le_bytes(a)
-    })
-    .collect()
+  bytes.as_chunks::<8>().0.iter().map(|c| u64::from_le_bytes(*c)).collect()
 }
 
 /// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)

@@ -102,19 +102,23 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
       match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
       | .error e => IO.eprintln s!"proveAddrWithEnv failed: {e}"; return none
       | .ok (claimBytes, proof, _) =>
-        -- `verify_claim`'s public input is the 32-G blake3 digest of the
-        -- serialized `Ix.Claim` (same recipe as `ix verify` / bench-typecheck).
+        -- `verify_claim`'s public input is the packed blake3 digest of the
+        -- serialized `Ix.Claim` (same recipe as `ix verify` / bench-typecheck:
+        -- 8 G elements of 4 LE bytes each, `ClaimHarness.packedDigestKey`).
         let digest := Address.blake3 claimBytes
-        pure (Aiur.buildClaim funIdx (digest.hash.data.map .ofUInt8) #[], proof)
+        pure (Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[], proof)
   let t1 ← IO.monoNanosNow
-  let proofBytes := proof.toBytes
-  IO.println s!"inner prove: {secs t0 t1} s, proof {proofBytes.size} bytes"
+  IO.println s!"inner prove: {secs t0 t1} s, proof {proof.toBytes.size} bytes"
   -- Sanity: the inner proof must verify out-of-circuit before we chase the
   -- recursive verifier.
   match aiurSystem.verify claim proof with
   | .ok () => IO.println "inner proof verifies out-of-circuit: ok"
   | .error e => IO.eprintln s!"⚠ inner proof FAILS out-of-circuit verify: {e}"
-  return some (proofBytes, aiurSystem.vkBytes, MultiStark.serializeClaims #[claim])
+  -- Verify the proof before serializing the transport consumed in-circuit.
+  match aiurSystem.proofToAdviceBytes claim proof with
+  | .error e => IO.eprintln s!"advice re-encoding failed: {e}"; return none
+  | .ok adviceBytes =>
+    return some (adviceBytes, aiurSystem.vkBytes, MultiStark.serializeClaims #[claim])
 
 def main (args : List String) : IO UInt32 := do
   let ixePath := (argStr args "--ixe").getD "init.ixe"
@@ -126,6 +130,9 @@ def main (args : List String) : IO UInt32 := do
   let mode := (argStr args "--mode").getD "native"
   let skipDeps := args.contains "--skip-deps"
   let fri := friParams (argNat args "--queries" 100)
+  if fri.numQueries == 0 then
+    IO.eprintln "error: --queries must be positive"
+    return 1
   let depth := argNat args "--depth" 2
   let stackLimit := argNat args "--stack" 40
   IO.FS.createDirAll dir

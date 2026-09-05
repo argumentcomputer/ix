@@ -3868,13 +3868,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
     let univ_offset = match rec_ids.first() {
       Some(rid) => match self.try_get_const(rid)? {
-        Some(KConst::Recr { lvls, .. }) => {
-          if lvls > ind_lvls {
-            1u64
-          } else {
-            0u64
-          }
-        },
+        Some(KConst::Recr { lvls, .. }) if lvls > ind_lvls => 1u64,
         _ => 0,
       },
       None => 0,

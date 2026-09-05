@@ -24,9 +24,9 @@ use aiur::execute::{ExecError, IOBuffer, QueryRecord};
 /// Rust kernel. Deep recursion is handled via per-fn
 /// `stacker::maybe_grow` checks in the generated code — no
 /// pre-reserved giant stack on this thread, no scope dance.
-// `args: Vec<G>` mirrors `Toplevel::execute`'s signature so this fn
-// can be used as an `impl Fn(&Toplevel, _, Vec<G>, _) -> _` in
-// `AiurSystem::prove_ixvm` — a `&[G]` here would break that bound.
+// `args: Vec<G>` mirrors `Toplevel::execute`'s signature so this function
+// satisfies `AiurSystem::prove_ixvm`'s executor bound; a `&[G]` here would
+// break it.
 #[allow(clippy::needless_pass_by_value)]
 pub fn execute_ixvm(
   toplevel: &Toplevel,
