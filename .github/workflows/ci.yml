@@ -114,6 +114,48 @@ jobs:
         with:
           rust-version: ${{ env.RUST_VERSION }}
 
+  # flock-stage3 is intentionally an isolated Cargo workspace, so the root
+  # workspace jobs above do not discover it. Keep both its no-prove relation
+  # and native/circuit differential suite and its real proof vectors on every
+  # pull request. The proof vectors run serially to bound peak memory while
+  # exercising heterogeneous relation shapes against Flock's recycled buffers.
+  flock-stage3-test:
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-workspaces: flock-stage3
+      - name: Check Stage 3 Rustfmt style
+        run: cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
+      - name: Check Stage 3 clippy warnings
+        run: cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Test Stage 3 relation and differential checks
+        run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --lib
+      - name: Test Stage 3 cryptographic proof vectors
+        run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml -p flock-stage3-host --lib -- --ignored --test-threads=1
+
+  # The isolated host job cannot catch drift in the Lean extern signature or
+  # failures that appear only when the CLI combines its net and flock features.
+  # Reuse the base Lake/Cargo work from `build` and link that exact opt-in path.
+  flock-stage3-link:
+    needs: [build, flock-stage3-test]
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: actions/cache/restore@v6
+        with:
+          path: ./.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Link Flock-enabled ix CLI
+        run: IX_FLOCK=1 lake build ix
+
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
   cuda-compile:

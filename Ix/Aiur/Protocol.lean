@@ -418,13 +418,13 @@ abbrev functionChannel : G := .ofNat 0
 def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
   #[functionChannel, .ofNat funIdx] ++ input ++ output
 
-/-- Compile/evaluate (preflight) or prove the complete no-RISC-V Flock Stage 3
-relation for one Aiur aggregate root. Proving requires an output path and
-atomically installs the verified artifact. Without the Cargo flock feature,
-this binding returns a descriptive error while remaining linkable. -/
+/-- Compile/evaluate (preflight), prove, or independently verify the complete
+no-RISC-V Flock Stage 3 relation for one Aiur aggregate root. Proving requires
+an output path; verification requires an artifact path. Without the Cargo flock
+feature, this binding returns a descriptive error while remaining linkable. -/
 @[extern "rs_flock_stage3_aggregate_root"]
 opaque flockStage3AggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
-  @& FriParameters → @& String → @& String → Except String Unit
+  @& FriParameters → @& String → @& String → @& String → Except String Unit
 
 end Aiur
 

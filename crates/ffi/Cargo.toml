@@ -49,12 +49,31 @@ getrandom = { version = "0.3", optional = true }
 bincode = { version = "2.0.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
+# iroh 0.97 pins ed25519-dalek 3.0.0-pre.1, whose permissive prerelease
+# requirements otherwise resolve to incompatible final releases. Keep the
+# known-good companion API versions explicit until iroh updates dalek.
+ed25519-compat-pin = { package = "ed25519", version = "=3.0.0-rc.4", optional = true }
+pkcs8-compat-pin = { package = "pkcs8", version = "=0.11.0-rc.11", optional = true }
+signature-compat-pin = { package = "signature", version = "=3.0.0-rc.10", optional = true }
+
 [features]
 default = []
 parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
 test-ffi = []
-net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
+net = [
+  "bytes",
+  "tokio",
+  "iroh",
+  "iroh-base",
+  "n0-error",
+  "getrandom",
+  "bincode",
+  "serde",
+  "dep:ed25519-compat-pin",
+  "dep:pkcs8-compat-pin",
+  "dep:signature-compat-pin",
+]
 flock = ["dep:flock-stage3-host"]
 
 [lints]

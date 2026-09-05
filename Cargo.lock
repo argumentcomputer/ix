@@ -164,12 +164,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "base16ct"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd307490d624467aa6f74b0eabb77633d1f758a7b25f12bceb0b22e08d9726f6"
-
-[[package]]
 name = "base32"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -749,12 +743,12 @@ dependencies = [
 
 [[package]]
 name = "ed25519"
-version = "3.0.0"
+version = "3.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29fcf32e6c73d1079f83ab4d782de2d81620346a5f38c6237a86a22f8368980a"
+checksum = "c6e914c7c52decb085cea910552e24c63ac019e3ab8bf001ff736da9a9d9d890"
 dependencies = [
  "pkcs8",
- "serdect",
+ "serde",
  "signature",
 ]
 
@@ -1839,6 +1833,7 @@ dependencies = [
  "blake3",
  "bytes",
  "dashmap",
+ "ed25519",
  "flock-stage3-host",
  "getrandom 0.3.4",
  "indexmap",
@@ -1857,11 +1852,13 @@ dependencies = [
  "multi-stark",
  "n0-error",
  "num-bigint 0.4.8",
+ "pkcs8",
  "rayon",
  "rustc-hash",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "signature",
  "tiny-keccak",
  "tokio",
  "tracing",
@@ -2933,9 +2930,9 @@ dependencies = [
 
 [[package]]
 name = "pkcs8"
-version = "0.11.0"
+version = "0.11.0-rc.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "451913da69c775a56034ea8d9003d27ee8948e12443eae7c038ba100a4f21cb7"
+checksum = "12922b6296c06eb741b02d7b5161e3aaa22864af38dfa025a1a3ba3f68c84577"
 dependencies = [
  "der",
  "spki",
@@ -3561,16 +3558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serdect"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66cf8fedced2fcf12406bcb34223dffb92eaf34908ede12fed414c82b7f00b3e"
-dependencies = [
- "base16ct",
- "serde",
-]
-
-[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3635,9 +3622,9 @@ dependencies = [
 
 [[package]]
 name = "signature"
-version = "3.0.0"
+version = "3.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d567dcbaf0049cb8ac2608a76cd95ff9e4412e1899d389ee400918ca7537f5"
+checksum = "7f1880df446116126965eeec169136b2e0251dba37c6223bcc819569550edea3"
 
 [[package]]
 name = "simdutf8"

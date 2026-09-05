@@ -315,10 +315,14 @@ pub fn validate_root_inputs(
   fri: &FriParameters,
 ) -> Result<Stage2RootStatementV1> {
   let decoded = decode_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
+  verify_decoded_root_inputs(&decoded)?;
+  Ok(decoded.statement)
+}
+
+fn verify_decoded_root_inputs(decoded: &DecodedRootInputs) -> Result<()> {
   decoded.verifying_key.verify(&decoded.claim, &decoded.proof).map_err(
     |error| anyhow::anyhow!("aggregate root does not verify: {error:?}"),
-  )?;
-  Ok(decoded.statement)
+  )
 }
 
 /// Verify a compact Stage 2 root and expand its pruned Merkle multiproofs into
@@ -332,6 +336,7 @@ pub fn validate_and_expand_root_inputs(
   fri: &FriParameters,
 ) -> Result<ValidatedStage2RootV1> {
   let decoded = decode_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
+  verify_decoded_root_inputs(&decoded)?;
   let advice_bytes = decoded
     .verifying_key
     .proof_to_per_query_advice_bytes(&decoded.claim, &decoded.proof)

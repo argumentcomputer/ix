@@ -123,12 +123,12 @@ impl Stage3LoweringStatusV1 {
   }
 }
 
-/// Fixed capacity of one compiled Stage 3 verifier relation.
+/// Exact transport and advice shape of one compiled Stage 3 verifier relation.
 ///
-/// `for_prepared` seeds every maximum from one measured root. That is useful
-/// while developing the lowering, but it is not a production capacity study:
-/// the final values must cover the intended corpus before the relation program
-/// digest is frozen.
+/// The current relation has no padding/activation layer that would make these
+/// values reusable maxima. Every word therefore identifies the exact witness
+/// shape used to compile the relation. A future capacity-based relation needs a
+/// new manifest version and explicit in-circuit padding constraints.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stage3RelationBoundsV1 {
   pub verifying_key_bytes: u64,
@@ -167,73 +167,37 @@ impl Stage3RelationBoundsV1 {
     ]
   }
 
-  fn ensure_accommodates(
-    &self,
-    prepared: &ValidatedStage2RootV1,
-  ) -> Result<()> {
+  fn ensure_matches(&self, prepared: &ValidatedStage2RootV1) -> Result<()> {
     let observed = Self::for_prepared(prepared)?;
-    if observed.verifying_key_bytes != self.verifying_key_bytes {
-      bail!("Stage 2 verifying-key byte length differs from relation shape");
-    }
-    if observed.claims_bytes != self.claims_bytes {
-      bail!("Stage 2 claims byte length differs from relation shape");
-    }
-    if observed.advice.total_circuits != self.advice.total_circuits {
-      bail!("Stage 2 circuit count differs from relation shape");
-    }
-    if observed.advice.queries != self.advice.queries {
-      bail!("Stage 2 query count differs from relation shape");
-    }
+    self.ensure_same_shape(&observed)
+  }
 
-    let maxima = [
-      (observed.advice.advice_bytes, self.advice.advice_bytes, "advice bytes"),
-      (
-        observed.advice.active_circuits,
-        self.advice.active_circuits,
-        "active circuits",
-      ),
-      (observed.advice.fri_rounds, self.advice.fri_rounds, "FRI rounds"),
-      (
-        observed.advice.input_rounds_per_query,
-        self.advice.input_rounds_per_query,
-        "input rounds per query",
-      ),
-      (
-        observed.advice.commitment_cap_digests,
-        self.advice.commitment_cap_digests,
-        "commitment cap digests",
-      ),
-      (
-        observed.advice.input_merkle_siblings,
-        self.advice.input_merkle_siblings,
-        "input Merkle siblings",
-      ),
-      (
-        observed.advice.fri_merkle_siblings,
-        self.advice.fri_merkle_siblings,
-        "FRI Merkle siblings",
-      ),
-      (
-        observed.advice.opened_base_values,
-        self.advice.opened_base_values,
-        "opened base values",
-      ),
-      (
-        observed.advice.fri_sibling_extension_values,
-        self.advice.fri_sibling_extension_values,
-        "FRI sibling extension values",
-      ),
-      (
-        observed.advice.other_extension_values,
-        self.advice.other_extension_values,
-        "other extension values",
-      ),
+  fn ensure_same_shape(&self, observed: &Self) -> Result<()> {
+    let labels = [
+      "verifying-key bytes",
+      "claims bytes",
+      "advice bytes",
+      "total circuits",
+      "active circuits",
+      "queries",
+      "FRI rounds",
+      "input rounds per query",
+      "commitment cap digests",
+      "input Merkle siblings",
+      "FRI Merkle siblings",
+      "opened base values",
+      "FRI sibling extension values",
+      "other extension values",
     ];
-    if let Some((observed, maximum, label)) =
-      maxima.into_iter().find(|(observed, maximum, _)| observed > maximum)
+    let expected_words = self.canonical_words();
+    let observed_words = observed.canonical_words();
+    if let Some((label, (expected, observed))) = labels
+      .into_iter()
+      .zip(expected_words.into_iter().zip(observed_words))
+      .find(|(_, (expected, observed))| expected != observed)
     {
       bail!(
-        "Stage 2 {label} ({observed}) exceeds relation capacity ({maximum})"
+        "Stage 2 {label} differs from the exact relation shape: expected {expected}, observed {observed}"
       );
     }
     Ok(())
@@ -244,7 +208,7 @@ impl Stage3RelationBoundsV1 {
 ///
 /// The constructor compiles the relation and installs its circuit digest.
 /// `relation_digest` additionally binds the Flock configuration, specialised
-/// Stage 2 key, witness layout, phase mask, and exact measured capacity.
+/// Stage 2 key, witness layout, phase mask, and exact measured shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stage3RelationManifestV1 {
   stage2_verifying_key_digest: [u8; 32],
@@ -294,20 +258,40 @@ impl Stage3RelationManifestV1 {
     self.lowering_status
   }
 
-  pub fn ensure_accommodates(
-    &self,
-    prepared: &ValidatedStage2RootV1,
-  ) -> Result<()> {
+  pub fn ensure_matches(&self, prepared: &ValidatedStage2RootV1) -> Result<()> {
     if prepared.statement().verifying_key_digest()
       != &self.stage2_verifying_key_digest
     {
       bail!("Stage 2 verifying key differs from the specialised relation");
     }
-    self.bounds.ensure_accommodates(prepared)
+    self.bounds.ensure_matches(prepared)?;
+
+    let fri = statement_fri_parameters(prepared)?;
+    let observed_layout =
+      Stage3TypedProofWitnessV1::from_prepared(prepared, &fri)?.layout_digest();
+    self.ensure_layout_digest(observed_layout)
+  }
+
+  /// Compatibility spelling retained for callers written against the earlier
+  /// capacity terminology. The check is exact, not a less-than-or-equal test.
+  pub fn ensure_accommodates(
+    &self,
+    prepared: &ValidatedStage2RootV1,
+  ) -> Result<()> {
+    self.ensure_matches(prepared)
+  }
+
+  fn ensure_layout_digest(&self, observed: [u8; 32]) -> Result<()> {
+    if observed != self.typed_witness_layout_digest {
+      bail!(
+        "Stage 2 typed witness layout differs from the exact relation shape"
+      );
+    }
+    Ok(())
   }
 
   /// Return the digest used in `Stage3StatementV1` for the complete,
-  /// content-addressed relation program and its exact capacity.
+  /// content-addressed relation program and its exact witness shape.
   pub fn relation_digest(&self) -> Result<[u8; 32]> {
     self.lowering_status.ensure_complete()?;
     if self.relation_program_digest.is_none() {
@@ -365,6 +349,27 @@ fn as_u64(value: usize, label: &str) -> Result<u64> {
 mod tests {
   use super::*;
 
+  fn relation_shape() -> Stage3RelationBoundsV1 {
+    Stage3RelationBoundsV1 {
+      verifying_key_bytes: 10,
+      claims_bytes: 160,
+      advice: Stage2AdviceProfileV1 {
+        advice_bytes: 1_000,
+        total_circuits: 8,
+        active_circuits: 3,
+        queries: 100,
+        fri_rounds: 20,
+        input_rounds_per_query: 4,
+        commitment_cap_digests: 23,
+        input_merkle_siblings: 2_400,
+        fri_merkle_siblings: 19_000,
+        opened_base_values: 12_000,
+        fri_sibling_extension_values: 2_000,
+        other_extension_values: 900,
+      },
+    }
+  }
+
   #[test]
   fn phase_registry_is_complete_and_unique() {
     let status = Stage3LoweringStatusV1::current();
@@ -373,5 +378,36 @@ mod tests {
     assert!(status.is_complete());
     assert!(status.missing_phases().is_empty());
     status.ensure_complete().unwrap();
+  }
+
+  #[test]
+  fn relation_shape_is_exact_instead_of_a_maximum() {
+    let expected = relation_shape();
+    assert!(expected.ensure_same_shape(&expected).is_ok());
+
+    let mut smaller = expected.clone();
+    smaller.advice.active_circuits -= 1;
+    let error = expected.ensure_same_shape(&smaller).unwrap_err().to_string();
+    assert!(error.contains("active circuits"));
+    assert!(error.contains("expected 3, observed 2"));
+
+    let mut larger = expected.clone();
+    larger.advice.fri_merkle_siblings += 1;
+    let error = expected.ensure_same_shape(&larger).unwrap_err().to_string();
+    assert!(error.contains("FRI Merkle siblings"));
+    assert!(error.contains("expected 19000, observed 19001"));
+  }
+
+  #[test]
+  fn manifest_rejects_a_different_nested_layout_digest() {
+    let manifest = Stage3RelationManifestV1 {
+      stage2_verifying_key_digest: [0; 32],
+      typed_witness_layout_digest: [1; 32],
+      relation_program_digest: Some([2; 32]),
+      bounds: relation_shape(),
+      lowering_status: Stage3LoweringStatusV1::current(),
+    };
+    assert!(manifest.ensure_layout_digest([1; 32]).is_ok());
+    assert!(manifest.ensure_layout_digest([3; 32]).is_err());
   }
 }

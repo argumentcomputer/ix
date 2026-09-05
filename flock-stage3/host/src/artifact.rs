@@ -2,6 +2,13 @@ use anyhow::{Context, Result, bail};
 use bincode::Options;
 use ix_terminal::Stage2RootStatementV1;
 use serde::{Deserialize, Serialize};
+use std::{
+  ffi::OsString,
+  fs::{self, File, OpenOptions},
+  io::{ErrorKind, Read, Write},
+  path::{Path, PathBuf},
+  sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::config::FlockConfigV1;
 
@@ -10,9 +17,12 @@ pub const STAGE3_STATEMENT_BYTES: usize = 8 + 32 + 32 + 32;
 const ARTIFACT_MAGIC: &[u8; 8] = b"IXFLOCK3";
 const ARTIFACT_VERSION: u16 = 1;
 const ARTIFACT_HEADER_BYTES: usize = 8 + 2 + 4 + 8;
-const MAX_PROOF_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_STAGE3_PROOF_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_STAGE3_ARTIFACT_BYTES: usize =
+  ARTIFACT_HEADER_BYTES + STAGE3_STATEMENT_BYTES + MAX_STAGE3_PROOF_BYTES;
 const PRODUCTION_PAYLOAD_MAGIC: [u8; 8] = *b"IXFLK3P1";
 const PRODUCTION_PAYLOAD_VERSION: u16 = 1;
+static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
 /// Public input to the complete Flock Stage 3 relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,8 +110,8 @@ impl Stage3ArtifactV1 {
     if proof.is_empty() {
       bail!("Stage 3 proof is empty");
     }
-    if proof.len() > MAX_PROOF_BYTES {
-      bail!("Stage 3 proof exceeds {MAX_PROOF_BYTES} bytes");
+    if proof.len() > MAX_STAGE3_PROOF_BYTES {
+      bail!("Stage 3 proof exceeds {MAX_STAGE3_PROOF_BYTES} bytes");
     }
     Ok(Self { statement, proof })
   }
@@ -147,8 +157,8 @@ impl Stage3ArtifactV1 {
     if proof_len == 0 {
       bail!("Stage 3 proof is empty");
     }
-    if proof_len > MAX_PROOF_BYTES {
-      bail!("Stage 3 proof exceeds {MAX_PROOF_BYTES} bytes");
+    if proof_len > MAX_STAGE3_PROOF_BYTES {
+      bail!("Stage 3 proof exceeds {MAX_STAGE3_PROOF_BYTES} bytes");
     }
     let expected_len = ARTIFACT_HEADER_BYTES
       .checked_add(statement_len)
@@ -181,6 +191,121 @@ impl Stage3ArtifactV1 {
   pub fn proof_bytes(&self) -> &[u8] {
     &self.proof
   }
+
+  /// Read a strictly bounded artifact without first allocating according to
+  /// an untrusted file size.
+  pub fn read_from_path(path: impl AsRef<Path>) -> Result<Self> {
+    let path = path.as_ref();
+    let file = File::open(path)
+      .with_context(|| format!("open Stage 3 artifact {}", path.display()))?;
+    let declared_len = file
+      .metadata()
+      .with_context(|| format!("stat Stage 3 artifact {}", path.display()))?
+      .len();
+    let maximum = u64::try_from(MAX_STAGE3_ARTIFACT_BYTES)
+      .expect("Stage 3 artifact limit fits u64");
+    if declared_len > maximum {
+      bail!(
+        "Stage 3 artifact {} is {declared_len} bytes; maximum is {maximum}",
+        path.display()
+      );
+    }
+
+    let mut bytes = Vec::with_capacity(
+      usize::try_from(declared_len).context("Stage 3 artifact size")?,
+    );
+    file
+      .take(maximum + 1)
+      .read_to_end(&mut bytes)
+      .with_context(|| format!("read Stage 3 artifact {}", path.display()))?;
+    if bytes.len() > MAX_STAGE3_ARTIFACT_BYTES {
+      bail!(
+        "Stage 3 artifact {} grew beyond {MAX_STAGE3_ARTIFACT_BYTES} bytes while being read",
+        path.display()
+      );
+    }
+    Self::from_bytes(&bytes)
+      .with_context(|| format!("decode Stage 3 artifact {}", path.display()))
+  }
+
+  /// Durably install an artifact in the destination directory. Temporary
+  /// files are created exclusively, and an existing destination is never
+  /// overwritten.
+  pub fn write_atomic(&self, path: impl AsRef<Path>) -> Result<()> {
+    write_bytes_atomic(path.as_ref(), &self.to_bytes())
+  }
+}
+
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+  if path.file_name().is_none() {
+    bail!("Stage 3 artifact path has no file name: {}", path.display());
+  }
+  if bytes.len() > MAX_STAGE3_ARTIFACT_BYTES {
+    bail!(
+      "encoded Stage 3 artifact is {} bytes; maximum is {MAX_STAGE3_ARTIFACT_BYTES}",
+      bytes.len()
+    );
+  }
+  let parent = path
+    .parent()
+    .filter(|parent| !parent.as_os_str().is_empty())
+    .unwrap_or_else(|| Path::new("."));
+
+  let (temporary, mut file) = create_temporary(parent)?;
+  let install = (|| -> Result<()> {
+    file.write_all(bytes).with_context(|| {
+      format!("write temporary artifact {}", temporary.display())
+    })?;
+    file.sync_all().with_context(|| {
+      format!("sync temporary artifact {}", temporary.display())
+    })?;
+    drop(file);
+
+    fs::hard_link(&temporary, path).with_context(|| {
+      if path.exists() {
+        format!("refusing to overwrite Stage 3 artifact {}", path.display())
+      } else {
+        format!("install Stage 3 artifact {}", path.display())
+      }
+    })?;
+    fs::remove_file(&temporary).with_context(|| {
+      format!("remove temporary artifact {}", temporary.display())
+    })?;
+    File::open(parent)
+      .and_then(|directory| directory.sync_all())
+      .with_context(|| {
+        format!("sync artifact directory {}", parent.display())
+      })?;
+    Ok(())
+  })();
+  if install.is_err() {
+    let _ = fs::remove_file(&temporary);
+  }
+  install
+}
+
+fn create_temporary(parent: &Path) -> Result<(PathBuf, File)> {
+  for _ in 0..1_024 {
+    let nonce = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
+    let temporary_name = OsString::from(format!(
+      ".ix-flock-stage3-{}-{nonce}.tmp",
+      std::process::id()
+    ));
+    let temporary = parent.join(temporary_name);
+    match OpenOptions::new().write(true).create_new(true).open(&temporary) {
+      Ok(file) => return Ok((temporary, file)),
+      Err(error) if error.kind() == ErrorKind::AlreadyExists => {},
+      Err(error) => {
+        return Err(error).with_context(|| {
+          format!("create temporary artifact {}", temporary.display())
+        });
+      },
+    }
+  }
+  bail!(
+    "could not reserve a unique temporary Stage 3 artifact in {}",
+    parent.display()
+  )
 }
 
 /// Canonical host transport needed to reconstruct the Flock public input.
@@ -230,8 +355,10 @@ impl Stage3ProductionPayloadV1 {
       .with_fixint_encoding()
       .serialize(self)
       .context("encode Stage 3 production payload")?;
-    if bytes.len() > MAX_PROOF_BYTES {
-      bail!("Stage 3 production payload exceeds {MAX_PROOF_BYTES} bytes");
+    if bytes.len() > MAX_STAGE3_PROOF_BYTES {
+      bail!(
+        "Stage 3 production payload exceeds {MAX_STAGE3_PROOF_BYTES} bytes"
+      );
     }
     Ok(bytes)
   }
@@ -239,7 +366,7 @@ impl Stage3ProductionPayloadV1 {
   pub(crate) fn decode(bytes: &[u8]) -> Result<Self> {
     let payload: Self = bincode::DefaultOptions::new()
       .with_fixint_encoding()
-      .with_limit(MAX_PROOF_BYTES as u64)
+      .with_limit(MAX_STAGE3_PROOF_BYTES as u64)
       .reject_trailing_bytes()
       .deserialize(bytes)
       .context("invalid Stage 3 production payload")?;
@@ -377,5 +504,50 @@ mod tests {
     let mut wrong_config = payload;
     wrong_config.config_digest[0] ^= 1;
     assert!(wrong_config.encode().is_err());
+  }
+
+  #[test]
+  fn artifact_file_io_is_bounded_atomic_and_no_clobber() {
+    let nonce = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
+    let directory = std::env::temp_dir().join(format!(
+      "ix-flock-stage3-artifact-test-{}-{nonce}",
+      std::process::id()
+    ));
+    fs::create_dir(&directory).unwrap();
+    let path = directory.join("root.stage3.flock");
+
+    let artifact = Stage3ArtifactV1::new(statement(), vec![1, 2, 3]).unwrap();
+    artifact.write_atomic(&path).unwrap();
+    assert_eq!(Stage3ArtifactV1::read_from_path(&path).unwrap(), artifact);
+
+    let replacement = Stage3ArtifactV1::new(statement(), vec![4, 5]).unwrap();
+    let error = replacement.write_atomic(&path).unwrap_err().to_string();
+    assert!(error.contains("refusing to overwrite"));
+    assert_eq!(Stage3ArtifactV1::read_from_path(&path).unwrap(), artifact);
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+
+    fs::remove_file(&path).unwrap();
+    let concurrent_path =
+      std::sync::Arc::new(directory.join("concurrent.flock"));
+    let contenders = [artifact.clone(), replacement.clone()].map(|artifact| {
+      let path = std::sync::Arc::clone(&concurrent_path);
+      std::thread::spawn(move || artifact.write_atomic(path.as_path()))
+    });
+    let outcomes = contenders.map(|thread| thread.join().unwrap());
+    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
+    let installed =
+      Stage3ArtifactV1::read_from_path(concurrent_path.as_path()).unwrap();
+    assert!(installed == artifact || installed == replacement);
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+    fs::remove_file(concurrent_path.as_path()).unwrap();
+
+    let oversized = directory.join("oversized.stage3.flock");
+    File::create(&oversized)
+      .unwrap()
+      .set_len(u64::try_from(MAX_STAGE3_ARTIFACT_BYTES).unwrap() + 1)
+      .unwrap();
+    assert!(Stage3ArtifactV1::read_from_path(&oversized).is_err());
+    fs::remove_file(oversized).unwrap();
+    fs::remove_dir(directory).unwrap();
   }
 }

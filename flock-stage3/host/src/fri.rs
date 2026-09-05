@@ -28,7 +28,7 @@ use flock_prover::{
   prover::{self, UnionSlotProverInput},
   r1cs::BlockR1cs,
   r1cs_hashes::blake3 as flock_blake3,
-  union::UnionInstance,
+  union::{SlotWitnessDest, UnionInstance},
   verifier,
 };
 use ix_terminal::{
@@ -3992,6 +3992,39 @@ fn stage3_linchecks() -> &'static Stage3Linchecks {
   })
 }
 
+/// Keep every committed slot word deterministic even when Flock lends this
+/// relation a dirty recycled buffer.  Flock's merged prover can advertise
+/// padding as unread, but the heterogeneous Stage 3 conformance suite has
+/// exposed zerocheck reads of those words across relation shapes.  Clearing
+/// the slot storage here preserves the documented witness contract and
+/// prevents allocator contents from affecting proofs; generators may still
+/// elide their redundant padding writes and lincheck-stripe initialization.
+fn initialize_slot_padding(dst: SlotWitnessDest<'_>) -> SlotWitnessDest<'_> {
+  const ZERO_CHUNK_WORDS: usize = 1 << 16;
+  let z = &mut *dst.z;
+  let a = &mut *dst.a;
+  let b = &mut *dst.b;
+  rayon::join(
+    || {
+      z.par_chunks_mut(ZERO_CHUNK_WORDS)
+        .for_each(|chunk| chunk.fill(F128::ZERO));
+    },
+    || {
+      rayon::join(
+        || {
+          a.par_chunks_mut(ZERO_CHUNK_WORDS)
+            .for_each(|chunk| chunk.fill(F128::ZERO));
+        },
+        || {
+          b.par_chunks_mut(ZERO_CHUNK_WORDS)
+            .for_each(|chunk| chunk.fill(F128::ZERO));
+        },
+      );
+    },
+  );
+  dst
+}
+
 #[allow(clippy::too_many_arguments)]
 fn prove_fri_circuit(
   shape: &CircuitShape,
@@ -4062,7 +4095,7 @@ fn prove_fri_circuit(
           flock_blake3::generate_witness_batch_major_partial_into(
             blake3_rows,
             nu,
-            dst,
+            initialize_slot_padding(dst),
           )
         },
         blake3_lincheck,
@@ -4071,28 +4104,52 @@ fn prove_fri_circuit(
     (
       shape.registry_slot(slots.order),
       UnionSlotProverInput::in_place(
-        move |dst| generate_digest_order_witness_into(order_rows, nu, dst),
+        move |dst| {
+          generate_digest_order_witness_into(
+            order_rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         order_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.add),
       UnionSlotProverInput::in_place(
-        move |dst| generate_goldilocks_add_witness_into(add_rows, nu, dst),
+        move |dst| {
+          generate_goldilocks_add_witness_into(
+            add_rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         add_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.mul),
       UnionSlotProverInput::in_place(
-        move |dst| generate_goldilocks_mul_witness_into(mul_rows, nu, dst),
+        move |dst| {
+          generate_goldilocks_mul_witness_into(
+            mul_rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         mul_lincheck,
       ),
     ),
     (
       shape.registry_slot(slots.repack),
       UnionSlotProverInput::in_place(
-        move |dst| generate_lane_repack_witness_into(repack_rows, nu, dst),
+        move |dst| {
+          generate_lane_repack_witness_into(
+            repack_rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         repack_lincheck,
       ),
     ),
@@ -4100,7 +4157,11 @@ fn prove_fri_circuit(
       shape.registry_slot(slots.canonical),
       UnionSlotProverInput::in_place(
         move |dst| {
-          generate_canonical_pair_witness_into(canonical_rows, nu, dst)
+          generate_canonical_pair_witness_into(
+            canonical_rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
         },
         canonical_lincheck,
       ),
@@ -4108,7 +4169,13 @@ fn prove_fri_circuit(
     (
       shape.registry_slot(slots.equality),
       UnionSlotProverInput::in_place(
-        move |dst| generate_f128_equality_witness_into(equality_rows, nu, dst),
+        move |dst| {
+          generate_f128_equality_witness_into(
+            equality_rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         equality_lincheck,
       ),
     ),
@@ -4117,7 +4184,13 @@ fn prove_fri_circuit(
     slot_inputs.push((
       shape.registry_slot(slot),
       UnionSlotProverInput::in_place(
-        move |dst| generate_hash_sample_witness_into(rows, nu, dst),
+        move |dst| {
+          generate_hash_sample_witness_into(
+            rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         sample_lincheck,
       ),
     ));
@@ -4126,7 +4199,13 @@ fn prove_fri_circuit(
     slot_inputs.push((
       shape.registry_slot(slot),
       UnionSlotProverInput::in_place(
-        move |dst| generate_goldilocks_sample_witness_into(rows, nu, dst),
+        move |dst| {
+          generate_goldilocks_sample_witness_into(
+            rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         field_sample_lincheck,
       ),
     ));
@@ -4135,7 +4214,13 @@ fn prove_fri_circuit(
     slot_inputs.push((
       shape.registry_slot(slot),
       UnionSlotProverInput::in_place(
-        move |dst| generate_u64_split_witness_into(rows, nu, dst),
+        move |dst| {
+          generate_u64_split_witness_into(
+            rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         split_lincheck,
       ),
     ));
@@ -4144,7 +4229,13 @@ fn prove_fri_circuit(
     slot_inputs.push((
       shape.registry_slot(slot),
       UnionSlotProverInput::in_place(
-        move |dst| generate_byte_window_witness_into(rows, nu, dst),
+        move |dst| {
+          generate_byte_window_witness_into(
+            rows,
+            nu,
+            initialize_slot_padding(dst),
+          )
+        },
         window_lincheck,
       ),
     ));
@@ -5713,11 +5804,6 @@ mod tests {
 
   fn prepared_stage2_pcs_fixture()
   -> (ValidatedStage2RootV1, FriParameters, Vec<u8>, Vec<u8>, Vec<u8>) {
-    const CLAIM_WORDS: usize = 18;
-    const CLAIM_CIRCUIT_WIDTH: usize = CLAIM_WORDS + 2;
-    const TALL_HEIGHT: usize = 8;
-    const SHORT_HEIGHT: usize = 4;
-
     let commitment = CommitmentParameters { log_blowup: 1, cap_height: 0 };
     let fri = FriParameters {
       log_final_poly_len: 0,
@@ -5726,6 +5812,18 @@ mod tests {
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     };
+    prepared_stage2_pcs_fixture_with(commitment, fri)
+  }
+
+  fn prepared_stage2_pcs_fixture_with(
+    commitment: CommitmentParameters,
+    fri: FriParameters,
+  ) -> (ValidatedStage2RootV1, FriParameters, Vec<u8>, Vec<u8>, Vec<u8>) {
+    const CLAIM_WORDS: usize = 18;
+    const CLAIM_CIRCUIT_WIDTH: usize = CLAIM_WORDS + 2;
+    const TALL_HEIGHT: usize = 8;
+    const SHORT_HEIGHT: usize = 4;
+
     let claim: Vec<_> = (0..CLAIM_WORDS)
       .map(|word| Val::from_u64(0x100 + u64::try_from(word).unwrap()))
       .collect();
@@ -6288,6 +6386,23 @@ mod tests {
   }
 
   #[test]
+  fn recycled_slot_storage_is_zero_initialized() {
+    let poison = F128::new(0xdead_beef_dead_beef, 0xa5a5_a5a5_a5a5_a5a5);
+    let (mut z, mut a, mut b) =
+      (vec![poison; 257], vec![poison; 257], vec![poison; 257]);
+    let dst = initialize_slot_padding(SlotWitnessDest {
+      z: &mut z,
+      a: &mut a,
+      b: &mut b,
+      elide_padding_writes: true,
+    });
+    assert!(dst.z.iter().all(|word| *word == F128::ZERO));
+    assert!(dst.a.iter().all(|word| *word == F128::ZERO));
+    assert!(dst.b.iter().all(|word| *word == F128::ZERO));
+    assert!(dst.elide_padding_writes);
+  }
+
+  #[test]
   fn native_fold_satisfies_denominator_free_identity() {
     for query_index in [0, 1, 0b1_0110, 0b1_1111] {
       let mut query = fixture();
@@ -6687,6 +6802,34 @@ mod tests {
     assert_eq!(report.stage2_root_digest, prepared.statement().digest());
     assert!(report.to_string().contains("gate rows: blake3="));
 
+    let expected = crate::Stage3StatementV1::new(
+      prepared.statement(),
+      report.relation_digest,
+    );
+    let mismatched_payload = crate::artifact::Stage3ProductionPayloadV1::new(
+      &vk_bytes,
+      &claim_bytes,
+      b"different compact proof",
+      report.relation.circuit_digest,
+      b"unused proof bundle",
+    )
+    .unwrap()
+    .encode()
+    .unwrap();
+    let mismatched_artifact =
+      crate::Stage3ArtifactV1::new(expected, mismatched_payload).unwrap();
+    let error = crate::FlockStage3Backend
+      .verify_stage2_for_root(
+        &mismatched_artifact,
+        &vk_bytes,
+        &claim_bytes,
+        &proof_bytes,
+        &fri,
+      )
+      .unwrap_err()
+      .to_string();
+    assert!(error.contains("different Stage 2 compact proof transport"));
+
     let mut wrong_row = lowered.queries;
     wrong_row[0].pcs.batch_openings[0].opened_rows[0][0] ^= 1;
     assert!(
@@ -6703,8 +6846,29 @@ mod tests {
   }
 
   #[test]
-  #[ignore = "real production Flock proof of a complete Stage 2 verifier"]
-  fn real_stage2_production_artifact_round_trip() {
+  fn production_parameters_generate_and_lower_canonical_stage2_transport() {
+    let commitment = CommitmentParameters { log_blowup: 2, cap_height: 0 };
+    let fri = FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 100,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 20,
+    };
+    let (prepared, fri, _, _, _) =
+      prepared_stage2_pcs_fixture_with(commitment, fri);
+    let witness = Stage2AirPcsFriWitnessV1::from_prepared(&prepared, &fri)
+      .expect("lower production-parameter Stage 2 transport");
+
+    assert_eq!(prepared.advice_profile().queries, 100);
+    assert_eq!(witness.pcs_fri.queries.len(), 100);
+    assert_eq!(witness.pcs_fri.fri_transcript.query_pow_bits, 20);
+    assert_eq!(witness.pcs_fri.pcs_instance.log_blowup, 2);
+  }
+
+  #[test]
+  #[ignore = "real Flock proof of the complete Stage 2 integration fixture"]
+  fn real_stage2_integration_artifact_round_trip() {
     let total_started = std::time::Instant::now();
 
     let fixture_started = std::time::Instant::now();
@@ -6714,16 +6878,10 @@ mod tests {
 
     let backend = crate::FlockStage3Backend;
 
-    let preflight_started = std::time::Instant::now();
-    let preflight = backend
-      .preflight_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
-      .expect("preflight complete Stage 3 relation");
-    let preflight_elapsed = preflight_started.elapsed();
-
     let prove_started = std::time::Instant::now();
-    let artifact = backend
-      .prove_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
-      .expect("prove complete Stage 3 relation");
+    let (preflight, artifact) = backend
+      .preflight_and_prove_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
+      .expect("preflight and prove complete Stage 3 relation");
     let prove_elapsed = prove_started.elapsed();
     assert_eq!(
       artifact.statement().stage2_root_digest(),
@@ -6753,8 +6911,14 @@ mod tests {
 
     let valid_verify_started = std::time::Instant::now();
     backend
-      .verify_stage2(&decoded, decoded.statement())
-      .expect("verify complete Stage 3 relation");
+      .verify_stage2_for_root(
+        &decoded,
+        &vk_bytes,
+        &claim_bytes,
+        &proof_bytes,
+        &fri,
+      )
+      .expect("verify complete Stage 3 relation against its aggregate root");
     let valid_verify_elapsed = valid_verify_started.elapsed();
 
     let wrong_relation =
@@ -6781,11 +6945,10 @@ mod tests {
       concat!(
         "Flock complete Stage 3 timings (seconds):\n",
         "  fixture setup:                    {:>10.3}\n",
-        "  relation preflight/setup:         {:>10.3}\n",
-        "  proof generation:                 {:>10.3}\n",
+        "  preflight + self-verifying proof: {:>10.3}\n",
         "  artifact encode:                  {:>10.3}\n",
         "  artifact decode:                  {:>10.3}\n",
-        "  valid cryptographic verification: {:>10.3}\n",
+        "  valid external-root verification: {:>10.3}\n",
         "  reject wrong relation statement:  {:>10.6}\n",
         "  corrupt and decode artifact:       {:>10.3}\n",
         "  reject corrupted proof:           {:>10.3}\n",
@@ -6793,7 +6956,6 @@ mod tests {
         "  total:                             {:>10.3}",
       ),
       fixture_elapsed.as_secs_f64(),
-      preflight_elapsed.as_secs_f64(),
       prove_elapsed.as_secs_f64(),
       encode_elapsed.as_secs_f64(),
       decode_elapsed.as_secs_f64(),
