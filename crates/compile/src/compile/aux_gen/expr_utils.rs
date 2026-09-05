@@ -9,7 +9,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
+use crate::compile::nat_conv::nat_to_u64;
 use bignat::Nat;
 use ix_common::address::Address;
 use ix_common::env::{
@@ -521,71 +521,14 @@ pub(super) fn batch_abstract(
   scope_depth: usize,
   internal_depth: u64,
 ) -> LeanExpr {
-  // Fast path: no binders to abstract.
-  if scope_depth == 0 {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Fvar(name, _) => {
-      if let Some(&pos) = fvar_map.get(name) {
-        if pos < scope_depth {
-          let idx = (scope_depth - 1 - pos) as u64 + internal_depth;
-          LeanExpr::bvar(Nat::from(idx))
-        } else {
-          // FVar not yet in scope (e.g., a forward reference in a domain
-          // to a binder declared later). Leave as-is.
-          expr.clone()
-        }
-      } else {
-        // FVar not in our telescope — leave as-is.
-        expr.clone()
-      }
-    },
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_u64(idx);
-      if i >= internal_depth {
-        // Free BVar: shift up by scope_depth to make room for our binders.
-        LeanExpr::bvar(Nat::from(i + scope_depth as u64))
-      } else {
-        // Bound by an expression-internal binder — unchanged.
-        expr.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      batch_abstract(f, fvar_map, scope_depth, internal_depth),
-      batch_abstract(a, fvar_map, scope_depth, internal_depth),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(v, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
-      n.clone(),
-      i.clone(),
-      batch_abstract(e, fvar_map, scope_depth, internal_depth),
-    ),
-    ExprData::Mdata(kvs, e, _) => LeanExpr::mdata(
-      kvs.clone(),
-      batch_abstract(e, fvar_map, scope_depth, internal_depth),
-    ),
-    // Sort, Const, MVar, Lit — no FVars or BVars to process.
-    _ => expr.clone(),
-  }
+  super::checked_expr::batch_abstract_at(
+    expr,
+    fvar_map,
+    scope_depth,
+    internal_depth,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 // =========================================================================
@@ -607,50 +550,13 @@ pub(super) fn instantiate1_at(
   replacement: &LeanExpr,
   depth: u64,
 ) -> LeanExpr {
-  match body.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_u64(idx);
-      if i == depth {
-        replacement.clone()
-      } else if i > depth {
-        LeanExpr::bvar(Nat::from(i - 1))
-      } else {
-        body.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      instantiate1_at(f, replacement, depth),
-      instantiate1_at(a, replacement, depth),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      instantiate1_at(t, replacement, depth),
-      instantiate1_at(b, replacement, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      instantiate1_at(t, replacement, depth),
-      instantiate1_at(b, replacement, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      instantiate1_at(t, replacement, depth),
-      instantiate1_at(v, replacement, depth),
-      instantiate1_at(b, replacement, depth + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
-      n.clone(),
-      i.clone(),
-      instantiate1_at(e, replacement, depth),
-    ),
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), instantiate1_at(e, replacement, depth))
-    },
-    _ => body.clone(),
-  }
+  super::checked_expr::instantiate1_at(
+    body,
+    replacement,
+    depth,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 /// Multi-argument reverse instantiation: replace BVar(0)..BVar(n-1) with
@@ -665,69 +571,8 @@ pub(super) fn instantiate1_at(
 /// argument may reference the caller's telescope (e.g. call-site surgery
 /// on an application under binders, as in `.brecOn_N.go` bodies).
 pub fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
-  if args.is_empty() {
-    return body.clone();
-  }
-  instantiate_rev_at(body, args, 0)
-}
-
-fn instantiate_rev_at(
-  body: &LeanExpr,
-  args: &[LeanExpr],
-  depth: u64,
-) -> LeanExpr {
-  let n = args.len() as u64;
-  match body.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_u64(idx);
-      if i >= depth {
-        let ridx = i - depth;
-        if ridx < n {
-          // Replace with args[ridx], shifted up by depth for the binders we're under.
-          shift_vars(&args[ridx as usize], depth as usize, 0)
-        } else {
-          // Free BVar past our substitution range: decrement by n.
-          LeanExpr::bvar(Nat::from(i - n))
-        }
-      } else {
-        // Bound by an expression-internal binder — unchanged.
-        body.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      instantiate_rev_at(f, args, depth),
-      instantiate_rev_at(a, args, depth),
-    ),
-    ExprData::Lam(name, t, b, bi, _) => LeanExpr::lam(
-      name.clone(),
-      instantiate_rev_at(t, args, depth),
-      instantiate_rev_at(b, args, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(name, t, b, bi, _) => LeanExpr::all(
-      name.clone(),
-      instantiate_rev_at(t, args, depth),
-      instantiate_rev_at(b, args, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(name, t, v, b, nd, _) => LeanExpr::letE(
-      name.clone(),
-      instantiate_rev_at(t, args, depth),
-      instantiate_rev_at(v, args, depth),
-      instantiate_rev_at(b, args, depth + 1),
-      *nd,
-    ),
-    ExprData::Proj(name, i, e, _) => LeanExpr::proj(
-      name.clone(),
-      i.clone(),
-      instantiate_rev_at(e, args, depth),
-    ),
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), instantiate_rev_at(e, args, depth))
-    },
-    // Sort, Const, Lit, FVar, MVar — no BVars to substitute.
-    _ => body.clone(),
-  }
+  super::checked_expr::instantiate_rev(body, args, &Default::default())
+    .expect("disabled cancellation checkpoint")
 }
 
 /// Peel `n` forall binders and substitute their variables with `args`.
@@ -804,56 +649,21 @@ pub(super) fn instantiate_spec_with_fvars(
 
 /// Shift BVars UP by `amount` for BVars >= cutoff.
 ///
-/// Used internally by `instantiate_rev_at` when substituting args under
+/// Used when substituting args under
 /// inner binders (each args element is re-shifted by the current depth).
 pub(crate) fn shift_vars(
   expr: &LeanExpr,
   amount: usize,
   cutoff: usize,
 ) -> LeanExpr {
-  if amount == 0 {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_usize(idx);
-      if i >= cutoff {
-        LeanExpr::bvar(Nat::from((i + amount) as u64))
-      } else {
-        expr.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      shift_vars(f, amount, cutoff),
-      shift_vars(a, amount, cutoff),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      shift_vars(t, amount, cutoff),
-      shift_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      shift_vars(t, amount, cutoff),
-      shift_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      shift_vars(t, amount, cutoff),
-      shift_vars(v, amount, cutoff),
-      shift_vars(b, amount, cutoff + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), shift_vars(e, amount, cutoff))
-    },
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), shift_vars(e, amount, cutoff))
-    },
-    _ => expr.clone(),
-  }
+  super::checked_expr::shift_vars(
+    expr,
+    amount,
+    cutoff,
+    false,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 /// Inverse of [`shift_vars`] for an expression known to have been lifted by
@@ -864,49 +674,14 @@ pub(crate) fn lower_vars(
   amount: usize,
   cutoff: usize,
 ) -> LeanExpr {
-  if amount == 0 {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_usize(idx);
-      if i >= cutoff + amount {
-        LeanExpr::bvar(Nat::from((i - amount) as u64))
-      } else {
-        expr.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      lower_vars(f, amount, cutoff),
-      lower_vars(a, amount, cutoff),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      lower_vars(t, amount, cutoff),
-      lower_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      lower_vars(t, amount, cutoff),
-      lower_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      lower_vars(t, amount, cutoff),
-      lower_vars(v, amount, cutoff),
-      lower_vars(b, amount, cutoff + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), lower_vars(e, amount, cutoff))
-    },
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), lower_vars(e, amount, cutoff))
-    },
-    _ => expr.clone(),
-  }
+  super::checked_expr::shift_vars(
+    expr,
+    amount,
+    cutoff,
+    true,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 // =========================================================================
@@ -919,84 +694,8 @@ pub fn subst_levels(
   params: &[Name],
   univs: &[Level],
 ) -> LeanExpr {
-  if params.is_empty() || univs.is_empty() {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Sort(lvl, _) => LeanExpr::sort(subst_level(lvl, params, univs)),
-    ExprData::Const(name, us, _) => LeanExpr::cnst(
-      name.clone(),
-      us.iter().map(|u| subst_level(u, params, univs)).collect(),
-    ),
-    ExprData::App(f, a, _) => LeanExpr::app(
-      subst_levels(f, params, univs),
-      subst_levels(a, params, univs),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      subst_levels(t, params, univs),
-      subst_levels(b, params, univs),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      subst_levels(t, params, univs),
-      subst_levels(b, params, univs),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      subst_levels(t, params, univs),
-      subst_levels(v, params, univs),
-      subst_levels(b, params, univs),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), subst_levels(e, params, univs))
-    },
-    ExprData::Mdata(md, e, _) => {
-      LeanExpr::mdata(md.clone(), subst_levels(e, params, univs))
-    },
-    _ => expr.clone(),
-  }
-}
-
-/// Substitute universe parameters in a level.
-///
-/// Uses the smart constructors `Level::max_smart` and `Level::imax_smart` so
-/// that substituting away parameters produces the same canonical form the
-/// kernel sees post-ingress (`KUniv::max` does the same simplifications at
-/// kernel-side construction time). Without this normalization, `Max(Succ Param u,
-/// Succ Param v)` substituted to `Max(Succ Zero, Succ Zero)` stays as a `Max`
-/// node compile-side while the kernel collapses it to `Succ Zero` —
-/// `sort_aux_by_partition_refinement` would then disagree with the kernel's
-/// `canonical_aux_order` on whether two structurally-different aux types
-/// (e.g. `Sort 1` vs `Sort (max 1 1)`) are equivalent.
-pub(super) fn subst_level(
-  lvl: &Level,
-  params: &[Name],
-  univs: &[Level],
-) -> Level {
-  match lvl.as_data() {
-    LevelData::Zero(_) | LevelData::Mvar(_, _) => lvl.clone(),
-    LevelData::Succ(l, _) => Level::succ(subst_level(l, params, univs)),
-    LevelData::Max(a, b, _) => Level::max_smart(
-      subst_level(a, params, univs),
-      subst_level(b, params, univs),
-    ),
-    LevelData::Imax(a, b, _) => Level::imax_smart(
-      subst_level(a, params, univs),
-      subst_level(b, params, univs),
-    ),
-    LevelData::Param(name, _) => {
-      for (i, p) in params.iter().enumerate() {
-        if p == name && i < univs.len() {
-          return univs[i].clone();
-        }
-      }
-      lvl.clone()
-    },
-  }
+  super::checked_expr::subst_levels(expr, params, univs, &Default::default())
+    .expect("disabled cancellation checkpoint")
 }
 
 // =========================================================================
@@ -1626,44 +1325,11 @@ pub(super) fn mk_app_n(f: LeanExpr, args: &[LeanExpr]) -> LeanExpr {
 /// that shouldn't appear in the final output.
 pub(super) fn subst_fvar(
   expr: &LeanExpr,
-  fvar_name: &Name,
-  replacement: &LeanExpr,
+  name: &Name,
+  value: &LeanExpr,
 ) -> LeanExpr {
-  match expr.as_data() {
-    ExprData::Fvar(n, _) if n == fvar_name => replacement.clone(),
-    ExprData::App(f, a, _) => LeanExpr::app(
-      subst_fvar(f, fvar_name, replacement),
-      subst_fvar(a, fvar_name, replacement),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      subst_fvar(t, fvar_name, replacement),
-      subst_fvar(b, fvar_name, replacement),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      subst_fvar(t, fvar_name, replacement),
-      subst_fvar(b, fvar_name, replacement),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      subst_fvar(t, fvar_name, replacement),
-      subst_fvar(v, fvar_name, replacement),
-      subst_fvar(b, fvar_name, replacement),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
-      n.clone(),
-      i.clone(),
-      subst_fvar(e, fvar_name, replacement),
-    ),
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), subst_fvar(e, fvar_name, replacement))
-    },
-    _ => expr.clone(),
-  }
+  super::checked_expr::subst_fvar(expr, name, value, &Default::default())
+    .expect("disabled cancellation checkpoint")
 }
 
 /// Replace constant names throughout an expression according to a name map.

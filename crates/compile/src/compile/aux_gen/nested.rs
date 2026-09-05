@@ -16,14 +16,17 @@
 
 use bignat::Nat;
 use blake3::Hash;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::LazyLock;
+use std::time::Instant;
 
+use super::checked_expr;
 use super::expr_utils::{
-  LocalDecl, batch_abstract, decompose_apps, forall_telescope,
-  instantiate_pi_params, instantiate1, mk_forall, subst_levels,
+  LocalDecl, batch_abstract, decompose_apps, forall_telescope, instantiate1,
+  subst_levels,
 };
 use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
+use crate::compile::validation::{self, AttemptError, Cancelled, Checkpoint};
 use ix_common::env::{
   ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData, Level, Name,
 };
@@ -138,6 +141,7 @@ struct ExpandCtx<'a> {
   block_param_decls: Vec<LocalDecl>,
   block_param_fvar_names: Vec<Name>,
   lean_env: &'a LeanEnv,
+  control: &'a Checkpoint,
   n_params: usize,
 }
 
@@ -171,55 +175,62 @@ impl<'a> ExpandCtx<'a> {
     as_fvars: &[LeanExpr],
     source_owner: &Name,
     cache: &mut FxHashMap<Hash, LeanExpr>,
-  ) -> LeanExpr {
+  ) -> Result<LeanExpr, Cancelled> {
+    self.control.visit()?;
     let key = *e.get_hash();
     if let Some(cached) = cache.get(&key) {
-      return cached.clone();
+      return Ok(cached.clone());
     }
 
     // Try top-level replacement first.
-    if let Some(replaced) = self.replace_if_nested(e, as_fvars, source_owner) {
+    if let Some(replaced) = self.replace_if_nested(e, as_fvars, source_owner)? {
       cache.insert(key, replaced.clone());
-      return replaced;
+      return Ok(replaced);
     }
     // No match — recurse into sub-expressions.
     let result = match e.as_data() {
       ExprData::App(f, a, _) => LeanExpr::app(
-        self.replace_all_nested(f, as_fvars, source_owner, cache),
-        self.replace_all_nested(a, as_fvars, source_owner, cache),
+        self.replace_all_nested(f, as_fvars, source_owner, cache)?,
+        self.replace_all_nested(a, as_fvars, source_owner, cache)?,
       ),
       ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
         n.clone(),
-        self.replace_all_nested(t, as_fvars, source_owner, cache),
-        self.replace_all_nested(b, as_fvars, source_owner, cache),
+        self.replace_all_nested(t, as_fvars, source_owner, cache)?,
+        self.replace_all_nested(b, as_fvars, source_owner, cache)?,
         bi.clone(),
       ),
       ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
         n.clone(),
-        self.replace_all_nested(t, as_fvars, source_owner, cache),
-        self.replace_all_nested(b, as_fvars, source_owner, cache),
+        self.replace_all_nested(t, as_fvars, source_owner, cache)?,
+        self.replace_all_nested(b, as_fvars, source_owner, cache)?,
         bi.clone(),
       ),
       ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
         n.clone(),
-        self.replace_all_nested(t, as_fvars, source_owner, cache),
-        self.replace_all_nested(v, as_fvars, source_owner, cache),
-        self.replace_all_nested(b, as_fvars, source_owner, cache),
+        self.replace_all_nested(t, as_fvars, source_owner, cache)?,
+        self.replace_all_nested(v, as_fvars, source_owner, cache)?,
+        self.replace_all_nested(b, as_fvars, source_owner, cache)?,
         *nd,
       ),
       ExprData::Proj(n, i, val, _) => LeanExpr::proj(
         n.clone(),
         i.clone(),
-        self.replace_all_nested(val, as_fvars, source_owner, cache),
+        self.replace_all_nested(val, as_fvars, source_owner, cache)?,
       ),
       ExprData::Mdata(md, inner, _) => LeanExpr::mdata(
         md.clone(),
-        self.replace_all_nested(inner, as_fvars, source_owner, cache),
+        self.replace_all_nested(inner, as_fvars, source_owner, cache)?,
       ),
       _ => e.clone(),
     };
+    let result =
+      if result.get_hash() == e.get_hash() { e.clone() } else { result };
     cache.insert(key, result.clone());
-    result
+    self.control.scratch(
+      cache.capacity()
+        * (size_of::<(Hash, LeanExpr)>() + size_of::<ExprData>()),
+    );
+    Ok(result)
   }
 
   /// Check if `e` is a nested inductive application and, if so, create
@@ -231,41 +242,50 @@ impl<'a> ExpandCtx<'a> {
     e: &LeanExpr,
     as_fvars: &[LeanExpr],
     source_owner: &Name,
-  ) -> Option<LeanExpr> {
+  ) -> Result<Option<LeanExpr>, Cancelled> {
+    self.control.visit()?;
     let (head, args) = decompose_apps(e);
     let (head_name, head_levels) = match head.as_data() {
       ExprData::Const(name, levels, _) => (name.clone(), levels.clone()),
-      _ => return None,
+      _ => return Ok(None),
     };
 
     // Skip if head is in the block (direct recursive, not nested). The
     // `type_name_set` mirrors `self.types` names and is maintained
     // incrementally by `push_type`, so this is O(1) rather than O(n_types).
     if self.type_name_set.contains(&head_name) {
-      return None;
+      return Ok(None);
     }
 
     // Verify head is an external inductive.
     let ext_ind_ref = self.lean_env.get(&head_name);
     let ext_ind = match ext_ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
-      _ => return None,
+      _ => return Ok(None),
     };
     let ext_n_params = nat_to_usize(&ext_ind.num_params);
 
     if args.len() < ext_n_params {
-      return None;
+      return Ok(None);
     }
 
     // Check if any parameter arg mentions a block/flat-block member.
     // `expr_mentions_any_name` takes the incremental set directly so each
     // Const check is O(1) instead of a linear Vec scan.
-    if !args
-      .iter()
-      .take(ext_n_params)
-      .any(|a| expr_mentions_any_name(a, &self.type_name_set))
-    {
-      return None;
+    let mut mentions = false;
+    for arg in args.iter().take(ext_n_params) {
+      if checked_expr::any(arg, self.control, |e, _| match e.as_data() {
+        ExprData::Const(n, _, _) | ExprData::Proj(n, _, _, _) => {
+          self.type_name_set.contains(n)
+        },
+        _ => false,
+      })? {
+        mentions = true;
+        break;
+      }
+    }
+    if !mentions {
+      return Ok(None);
     }
 
     // Extract spec_params, normalizing constructor-local parameter FVars to
@@ -275,11 +295,22 @@ impl<'a> ExpandCtx<'a> {
     // auxiliary identity must be expressed in the shared block-param space.
     let spec_params: Vec<LeanExpr> = args[..ext_n_params]
       .iter()
-      .map(|sp| replace_params_expr(sp, as_fvars, &self.block_param_fvars))
-      .collect();
+      .map(|sp| {
+        checked_expr::replace_params(
+          sp,
+          as_fvars,
+          &self.block_param_fvars,
+          self.control,
+        )
+      })
+      .collect::<Result<_, _>>()?;
     for sp in &spec_params {
-      if has_invalid_spec_ref(sp, &self.block_param_fvar_names) {
-        return None;
+      if checked_expr::any(sp, self.control, |e, depth| match e.as_data() {
+        ExprData::Bvar(i, _) => nat_to_u64(i) >= depth,
+        ExprData::Fvar(n, _) => !self.block_param_fvar_names.contains(n),
+        _ => false,
+      })? {
+        return Ok(None);
       }
     }
 
@@ -303,7 +334,7 @@ impl<'a> ExpandCtx<'a> {
       for idx_arg in args.iter().skip(ext_n_params) {
         result = LeanExpr::app(result, idx_arg.clone());
       }
-      return Some(result);
+      return Ok(Some(result));
     }
 
     // New nested occurrence — create auxiliary types for all members of
@@ -312,6 +343,7 @@ impl<'a> ExpandCtx<'a> {
     let mut result: Option<LeanExpr> = None;
 
     for j_name in &ext_all {
+      self.control.visit()?;
       let j_info_ref = self.lean_env.get(j_name);
       let j_info = match j_info_ref.as_deref() {
         Some(ConstantInfo::InductInfo(v)) => v,
@@ -344,35 +376,58 @@ impl<'a> ExpandCtx<'a> {
       // 1. subst_levels(J.type, J.level_params, I_lvls)
       // 2. instantiate_pi_params(result, ext_n_params, spec_params)
       // 3. mk_forall(block_params, result)
-      let j_type_inst =
-        subst_levels(&j_info.cnst.typ, &j_info.cnst.level_params, &head_levels);
-      let j_type_peeled =
-        instantiate_pi_params(&j_type_inst, ext_n_params, &spec_params);
-      let j_type_block =
-        replace_params_expr(&j_type_peeled, as_fvars, &self.block_param_fvars);
-      let aux_type = mk_forall(j_type_block, &self.block_param_decls);
+      let j_type_inst = checked_expr::subst_levels(
+        &j_info.cnst.typ,
+        &j_info.cnst.level_params,
+        &head_levels,
+        self.control,
+      )?;
+      let j_type_peeled = checked_expr::instantiate_pi_params(
+        &j_type_inst,
+        ext_n_params,
+        &spec_params,
+        self.control,
+      )?;
+      let j_type_block = checked_expr::replace_params(
+        &j_type_peeled,
+        as_fvars,
+        &self.block_param_fvars,
+        self.control,
+      )?;
+      let aux_type = checked_expr::mk_forall(
+        j_type_block,
+        &self.block_param_decls,
+        self.control,
+      )?;
 
       // Build auxiliary constructors.
       let mut aux_ctors: Vec<ExpandedCtor> = Vec::new();
       for j_ctor_name in &j_info.ctors {
+        self.control.visit()?;
         let j_ctor_ref = self.lean_env.get(j_ctor_name);
         let j_ctor = match j_ctor_ref.as_deref() {
           Some(ConstantInfo::CtorInfo(c)) => c,
           _ => continue,
         };
         let aux_ctor_name = name_replace_prefix(j_ctor_name, j_name, &aux_name);
-        let ctor_type_inst = subst_levels(
+        let ctor_type_inst = checked_expr::subst_levels(
           &j_ctor.cnst.typ,
           &j_info.cnst.level_params,
           &head_levels,
-        );
-        let ctor_type_peeled =
-          instantiate_pi_params(&ctor_type_inst, ext_n_params, &spec_params);
-        let ctor_type_block = replace_params_expr(
+          self.control,
+        )?;
+        let ctor_type_peeled = checked_expr::instantiate_pi_params(
+          &ctor_type_inst,
+          ext_n_params,
+          &spec_params,
+          self.control,
+        )?;
+        let ctor_type_block = checked_expr::replace_params(
           &ctor_type_peeled,
           as_fvars,
           &self.block_param_fvars,
-        );
+          self.control,
+        )?;
         let ctor_type_block = replace_ctor_result_head_with_aux(
           &ctor_type_block,
           j_name,
@@ -380,8 +435,13 @@ impl<'a> ExpandCtx<'a> {
           ext_n_params,
           &self.block_levels,
           &self.block_param_fvars,
-        );
-        let aux_ctor_type = mk_forall(ctor_type_block, &self.block_param_decls);
+          self.control,
+        )?;
+        let aux_ctor_type = checked_expr::mk_forall(
+          ctor_type_block,
+          &self.block_param_decls,
+          self.control,
+        )?;
 
         self.aux_ctor_map.insert(
           aux_ctor_name.clone(),
@@ -416,7 +476,7 @@ impl<'a> ExpandCtx<'a> {
       });
     }
 
-    result
+    Ok(result)
   }
 }
 
@@ -430,6 +490,22 @@ pub fn expand_nested_block(
   lean_env: &LeanEnv,
   alias_to_rep: &FxHashMap<Name, Name>,
 ) -> Result<ExpandedBlock, CompileError> {
+  expand_nested_block_checked(
+    ordered_originals,
+    lean_env,
+    alias_to_rep,
+    &Checkpoint::default(),
+  )
+  .map_err(AttemptError::into_compile)
+}
+
+fn expand_nested_block_checked(
+  ordered_originals: &[Name],
+  lean_env: &LeanEnv,
+  alias_to_rep: &FxHashMap<Name, Name>,
+  control: &Checkpoint,
+) -> Result<ExpandedBlock, AttemptError> {
+  control.visit()?;
   let first_name = ordered_originals.first().ok_or_else(|| {
     CompileError::InvalidMutualBlock {
       reason: "expand_nested_block: empty ordered_originals".into(),
@@ -439,10 +515,13 @@ pub fn expand_nested_block(
   let first_ind = match first_ind_ref.as_deref() {
     Some(ConstantInfo::InductInfo(v)) => v,
     _ => {
-      return Err(CompileError::MissingConstant {
-        name: first_name.pretty(),
-        caller: "expand_nested_block: first original not an inductive".into(),
-      });
+      return Err(
+        CompileError::MissingConstant {
+          name: first_name.pretty(),
+          caller: "expand_nested_block: first original not an inductive".into(),
+        }
+        .into(),
+      );
     },
   };
 
@@ -452,7 +531,13 @@ pub fn expand_nested_block(
     level_params.iter().map(|lp| Level::param(lp.clone())).collect();
 
   let (block_param_fvars, block_param_decls, _) =
-    forall_telescope(&first_ind.cnst.typ, n_params, "bp", 0);
+    checked_expr::forall_telescope(
+      &first_ind.cnst.typ,
+      n_params,
+      "bp",
+      0,
+      control,
+    )?;
   let block_param_fvar_names: Vec<Name> =
     block_param_decls.iter().map(|d| d.fvar_name.clone()).collect();
 
@@ -475,19 +560,24 @@ pub fn expand_nested_block(
     block_param_decls: block_param_decls.clone(),
     block_param_fvar_names,
     lean_env,
+    control,
     n_params,
   };
 
   // Seed with original inductives.
   for name in ordered_originals {
+    control.visit()?;
     let ind_ref = lean_env.get(name);
     let ind = match ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
-        return Err(CompileError::MissingConstant {
-          name: name.pretty(),
-          caller: "expand_nested_block: original not an inductive".into(),
-        });
+        return Err(
+          CompileError::MissingConstant {
+            name: name.pretty(),
+            caller: "expand_nested_block: original not an inductive".into(),
+          }
+          .into(),
+        );
       },
     };
     let ctors: Vec<ExpandedCtor> = ind
@@ -543,14 +633,20 @@ pub fn expand_nested_block(
   // the cache turns DAG traversal from O(shared × nodes) into O(nodes).
   let mut qi = 0;
   while qi < ctx.types.len() {
+    control.visit()?;
     let n_ctors = ctx.types[qi].ctors.len();
     let source_owner = ctx.types[qi].source_owner.clone();
     for ci in 0..n_ctors {
       let ctor_type = ctx.types[qi].ctors[ci].typ.clone();
 
       // Peel params, re-creating FVars per constructor for binding info.
-      let (as_fvars, as_decls, peeled) =
-        forall_telescope(&ctor_type, n_params, "cp", qi * 100 + ci);
+      let (as_fvars, as_decls, peeled) = checked_expr::forall_telescope(
+        &ctor_type,
+        n_params,
+        "cp",
+        qi * 100 + ci,
+        control,
+      )?;
 
       // Replace all nested occurrences in the peeled body.
       let mut walk_cache: FxHashMap<Hash, LeanExpr> = FxHashMap::default();
@@ -559,10 +655,11 @@ pub fn expand_nested_block(
         &as_fvars,
         &source_owner,
         &mut walk_cache,
-      );
+      )?;
 
       // Re-wrap with constructor-local params.
-      let new_ctor_type = mk_forall(replaced, &as_decls);
+      let new_ctor_type =
+        checked_expr::mk_forall(replaced, &as_decls, control)?;
       ctx.types[qi].ctors[ci].typ = new_ctor_type;
     }
     qi += 1;
@@ -1937,8 +2034,10 @@ fn replace_ctor_result_head_with_aux(
   original_n_params: usize,
   block_levels: &[Level],
   block_param_fvars: &[LeanExpr],
-) -> LeanExpr {
-  match e.as_data() {
+  control: &Checkpoint,
+) -> Result<LeanExpr, Cancelled> {
+  control.visit()?;
+  Ok(match e.as_data() {
     ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
       n.clone(),
       t.clone(),
@@ -1949,7 +2048,8 @@ fn replace_ctor_result_head_with_aux(
         original_n_params,
         block_levels,
         block_param_fvars,
-      ),
+        control,
+      )?,
       bi.clone(),
     ),
     ExprData::Mdata(md, inner, _) => LeanExpr::mdata(
@@ -1961,15 +2061,16 @@ fn replace_ctor_result_head_with_aux(
         original_n_params,
         block_levels,
         block_param_fvars,
-      ),
+        control,
+      )?,
     ),
     _ => {
       let (head, args) = decompose_apps(e);
       let ExprData::Const(head_name, _, _) = head.as_data() else {
-        return e.clone();
+        return Ok(e.clone());
       };
       if head_name != original_ind || args.len() < original_n_params {
-        return e.clone();
+        return Ok(e.clone());
       }
 
       let mut result = LeanExpr::cnst(aux_name.clone(), block_levels.to_vec());
@@ -1981,7 +2082,7 @@ fn replace_ctor_result_head_with_aux(
       }
       result
     },
-  }
+  })
 }
 
 // =========================================================================
@@ -2464,7 +2565,17 @@ pub fn compute_lean_ind_flags(
   all: &[Name],
   lean_env: &LeanEnv,
 ) -> Result<LeanIndFlags, CompileError> {
-  let expanded = expand_nested_block(all, lean_env, &FxHashMap::default())?;
+  compute_lean_ind_flags_checked(all, lean_env, &Checkpoint::default())
+    .map_err(AttemptError::into_compile)
+}
+
+fn compute_lean_ind_flags_checked(
+  all: &[Name],
+  lean_env: &LeanEnv,
+  control: &Checkpoint,
+) -> Result<LeanIndFlags, AttemptError> {
+  let expanded =
+    expand_nested_block_checked(all, lean_env, &FxHashMap::default(), control)?;
   let num_nested = (expanded.types.len() - expanded.n_originals) as u64;
   let block_names: FxHashSet<&Name> =
     expanded.types.iter().map(|m| &m.name).collect();
@@ -2476,7 +2587,8 @@ pub fn compute_lean_ind_flags(
     for ctor in &member.ctors {
       let mut ty = &ctor.typ;
       while let ExprData::ForallE(_, dom, body, _, _) = ty.as_data() {
-        if has_ind_occ(dom, &block_names, &mut occ_cache) {
+        control.visit()?;
+        if has_ind_occ(dom, &block_names, &mut occ_cache, control)? {
           is_rec = true;
           if matches!(dom.as_data(), ExprData::ForallE(..)) {
             is_reflexive = true;
@@ -2503,38 +2615,75 @@ pub fn validate_lean_ind_flags(lean_env: &LeanEnv) -> Result<(), CompileError> {
   validate_ind_groups(&groups, lean_env)
 }
 
+static LOG_IND_GROUPS: LazyLock<bool> =
+  LazyLock::new(|| std::env::var_os("IX_LOG_IND_GROUPS").is_some());
+
 /// Per-group half of [`validate_lean_ind_flags`], for callers that
 /// already hold the inductive groups from a wider env pass.
+/// `IX_LOG_IND_GROUPS=1` logs group entry/exit for allocation-failure diagnosis.
 pub fn validate_ind_groups(
   groups: &FxHashMap<Name, Vec<Name>>,
   lean_env: &LeanEnv,
 ) -> Result<(), CompileError> {
-  groups.par_iter().try_for_each(|(_, all)| {
-    for member in all.iter() {
-      let entry = lean_env.get(member);
-      let Some(ConstantInfo::InductInfo(v)) = entry.as_deref() else {
-        return Ok(());
+  // Stable IDs make cancellations/retries identifiable in progress logs.
+  let mut entries: Vec<_> = groups.iter().collect();
+  entries.sort_unstable_by(|(a, _), (b, _)| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+  let entries: Vec<_> = entries.into_iter().enumerate().collect();
+  validation::run(&entries, |(id, (leader, all)), control| {
+    let start = Instant::now();
+    if *LOG_IND_GROUPS {
+      eprintln!("[validate_ind_flags] BEGIN {} (group #{id})", leader.pretty());
+    }
+    let result = validate_one_group(all, lean_env, control);
+    if *LOG_IND_GROUPS {
+      let status = match &result {
+        Ok(()) => "END",
+        Err(AttemptError::Cancelled) => "CANCEL",
+        Err(AttemptError::Compile(_)) => "ERROR",
       };
-      for cn in &v.ctors {
-        if !matches!(
-          lean_env.get(cn).as_deref(),
-          Some(ConstantInfo::CtorInfo(_))
-        ) {
-          return Ok(());
-        }
+      eprintln!(
+        "[validate_ind_flags] {status} {} (group #{id}, {:.2}s)",
+        leader.pretty(),
+        start.elapsed().as_secs_f32()
+      );
+    }
+    result
+  })
+}
+
+fn validate_one_group(
+  all: &[Name],
+  lean_env: &LeanEnv,
+  control: &Checkpoint,
+) -> Result<(), AttemptError> {
+  for member in all.iter() {
+    control.visit()?;
+    let entry = lean_env.get(member);
+    let Some(ConstantInfo::InductInfo(v)) = entry.as_deref() else {
+      return Ok(());
+    };
+    for cn in &v.ctors {
+      control.visit()?;
+      if !matches!(lean_env.get(cn).as_deref(), Some(ConstantInfo::CtorInfo(_)))
+      {
+        return Ok(());
       }
     }
-    let flags = compute_lean_ind_flags(all, lean_env)?;
-    for member in all.iter() {
-      let entry = lean_env.get(member);
-      let Some(ConstantInfo::InductInfo(v)) = entry.as_deref() else {
-        continue; // unreachable
-      };
-      if v.is_rec != flags.is_rec
-        || v.is_reflexive != flags.is_reflexive
-        || v.num_nested != Nat::from(flags.num_nested)
-      {
-        return Err(CompileError::InvalidMutualBlock {
+  }
+  let flags = compute_lean_ind_flags_checked(all, lean_env, control)?;
+  for member in all.iter() {
+    let entry = lean_env.get(member);
+    let Some(ConstantInfo::InductInfo(v)) = entry.as_deref() else {
+      continue; // unreachable
+    };
+    if v.is_rec != flags.is_rec
+      || v.is_reflexive != flags.is_reflexive
+      || v.num_nested != Nat::from(flags.num_nested)
+    {
+      return Err(
+        CompileError::InvalidMutualBlock {
           reason: format!(
             "non-canonical inductive flags for '{}': \
                stored isRec={}isReflexive={} numNested={}, \
@@ -2547,11 +2696,12 @@ pub fn validate_ind_groups(
             flags.is_reflexive,
             flags.num_nested,
           ),
-        });
-      }
+        }
+        .into(),
+      );
     }
-    Ok(())
-  })
+  }
+  Ok(())
 }
 
 // does `expr` mention any block type by name anywhere?
@@ -2560,31 +2710,36 @@ fn has_ind_occ(
   expr: &LeanExpr,
   names: &FxHashSet<&Name>,
   cache: &mut FxHashMap<Hash, bool>,
-) -> bool {
+  control: &Checkpoint,
+) -> Result<bool, Cancelled> {
+  control.visit()?;
   let key = *expr.get_hash();
   if let Some(&cached) = cache.get(&key) {
-    return cached;
+    return Ok(cached);
   }
   let result = match expr.as_data() {
     ExprData::Const(name, _, _) => names.contains(name),
     ExprData::App(f, a, _) => {
-      has_ind_occ(f, names, cache) || has_ind_occ(a, names, cache)
+      has_ind_occ(f, names, cache, control)?
+        || has_ind_occ(a, names, cache, control)?
     },
     ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      has_ind_occ(t, names, cache) || has_ind_occ(b, names, cache)
+      has_ind_occ(t, names, cache, control)?
+        || has_ind_occ(b, names, cache, control)?
     },
     ExprData::LetE(_, t, v, b, _, _) => {
-      has_ind_occ(t, names, cache)
-        || has_ind_occ(v, names, cache)
-        || has_ind_occ(b, names, cache)
+      has_ind_occ(t, names, cache, control)?
+        || has_ind_occ(v, names, cache, control)?
+        || has_ind_occ(b, names, cache, control)?
     },
     ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
-      has_ind_occ(e, names, cache)
+      has_ind_occ(e, names, cache, control)?
     },
     _ => false,
   };
   cache.insert(key, result);
-  result
+  control.scratch(cache.capacity() * size_of::<(Hash, bool)>());
+  Ok(result)
 }
 
 #[cfg(test)]

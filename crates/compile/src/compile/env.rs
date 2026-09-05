@@ -18,8 +18,9 @@
 //! `.ixe`.
 //!
 //! Three knobs:
-//! - `IX_COMPILE_WORKERS=N` — scheduler worker count (default: all
-//!   cores). Scales the per-worker transients.
+//! - `IX_COMPILE_WORKERS=N` — scheduler worker ceiling (default: all
+//!   cores). Adaptive admission controls the active count under memory
+//!   pressure; set `IX_COMPILE_ADAPTIVE=0` for fixed parallelism.
 //! - `IX_COMPILE_DEMOTE=0` — keep materialized caches next to the
 //!   accumulator's bytes instead of demoting to bytes-only. Spends
 //!   RAM to make post-compile structural reads free, which only pays
@@ -43,6 +44,7 @@ use dashmap::DashMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
+use super::admission::Admission;
 use crate::compile::{
   BlockCache, CompileOptions, CompileState,
   aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
@@ -62,7 +64,7 @@ use ixon::CompileError;
 /// per-phase timings and scheduler progress. `IX_COMPILE_DBG=1` (the
 /// Lean driver's phase-attribution knob) is accepted as an alias so one
 /// flag lights up both sides of the pipeline.
-static IX_VERBOSE: LazyLock<bool> = LazyLock::new(|| {
+pub(super) static IX_VERBOSE: LazyLock<bool> = LazyLock::new(|| {
   std::env::var("IX_VERBOSE").is_ok() || std::env::var("IX_COMPILE_DBG").is_ok()
 });
 
@@ -144,6 +146,7 @@ pub fn compile_env_with_options(
   lean_env: &Arc<LeanEnv>,
   options: CompileOptions,
 ) -> Result<CompileState, CompileError> {
+  let _memory_sampler = crate::diag::memory_sampler("compile_env");
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
   // groups in one decode per constant — the env decodes lazily, so
@@ -240,11 +243,20 @@ pub fn compile_env_with_options(
   // flags. Groups come from the fused scan; only inductive families are
   // re-read here.
   let phase_start = Instant::now();
+  if *IX_VERBOSE {
+    eprintln!(
+      "[compile_env] setup 4/7 validate_ind_flags BEGIN ({} groups, {} Rayon threads){}",
+      scan.ind_groups.len(),
+      rayon::current_num_threads(),
+      crate::diag::rss_log_suffix(),
+    );
+  }
   validate_ind_groups(&scan.ind_groups, lean_env.as_ref())?;
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 4/7 validate_ind_flags: {:.2}s",
-      phase_start.elapsed().as_secs_f32()
+      "[compile_env] setup 4/7 validate_ind_flags: {:.2}s{}",
+      phase_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
     );
   }
 
@@ -408,6 +420,7 @@ pub fn compile_env_with_options(
     .unwrap_or(available_threads)
     .min(available_threads)
     .max(1);
+  let admission = Admission::new(num_threads)?;
 
   // Progress tracking. `active` holds currently-compiling blocks per worker
   // so the reporter thread can show blocks that are still in-flight (useful
@@ -435,6 +448,7 @@ pub fn compile_env_with_options(
   let condvar_ref = &work_available;
   let active_ref = &active;
   let stop_progress_ref = &stop_progress;
+  let admission_ref = &admission;
 
   thread::scope(|s| {
     // Periodic progress reporter. Wakes every IX_PROGRESS_MS to print
@@ -459,6 +473,7 @@ pub fn compile_env_with_options(
       s.spawn(move || {
         let mut last_completed = 0usize;
         let mut last_print = Instant::now();
+        let mut last_progress = Instant::now();
         while !stop_p.load(AtomicOrdering::Relaxed) {
           thread::sleep(check_interval);
           if stop_p.load(AtomicOrdering::Relaxed) {
@@ -469,11 +484,14 @@ pub fn compile_env_with_options(
           if last_print.elapsed() < interval {
             continue;
           }
+          let print_interval = last_print.elapsed().as_secs_f64();
           last_print = Instant::now();
           let done = completed_p.load(AtomicOrdering::SeqCst);
-          // Skip if no change and we're not in the first tick — reduces
-          // noise when the scheduler is blocked on a single slow block.
+          // No new completion is not a deadlock signal: report how long
+          // current blocks have been running, with their active count.
           let changed = done != last_completed;
+          let delta = done.saturating_sub(last_completed);
+          if changed { last_progress = Instant::now(); }
           last_completed = done;
           let pct = if total == 0 {
             100.0
@@ -481,28 +499,21 @@ pub fn compile_env_with_options(
             (done as f64 / total as f64) * 100.0
           };
           let elapsed = start.elapsed().as_secs_f64();
-          let rate =
-            if elapsed > 0.0 { done as f64 / elapsed } else { 0.0 };
-          let eta = if rate > 0.0 && done < total {
-            let remaining = (total - done) as f64 / rate;
-            format!(" eta {:.0}s", remaining)
-          } else {
-            String::new()
-          };
 
           // Oldest in-flight blocks (up to 3) for visibility into
           // slow/stuck compilations. Sort by start time ascending.
-          let in_flight: Vec<String> = {
+          let (active_count, in_flight): (usize, Vec<String>) = {
             let mut entries: Vec<(Name, Instant)> =
               active_p.lock().unwrap().clone();
             entries.sort_by_key(|(_, t)| *t);
-            entries
+            let names = entries
               .iter()
               .take(3)
               .map(|(n, t)| {
                 format!("{} ({:.0}s)", n.pretty(), t.elapsed().as_secs_f64())
               })
-              .collect()
+              .collect();
+            (entries.len(), names)
           };
           let suffix = if in_flight.is_empty() {
             String::new()
@@ -510,16 +521,17 @@ pub fn compile_env_with_options(
             format!(" · in-flight: {}", in_flight.join(", "))
           };
 
-          // Always print the first tick and any tick with progress;
-          // print "stalled" ticks less often so the log doesn't churn.
+          // A lifetime-average ETA is misleading when a fast prefix is
+          // followed by a handful of expensive blocks. Show recent work.
           if changed || done == 0 {
             eprintln!(
-              "[compile_env] {done}/{total} ({pct:.1}%) · {elapsed:.0}s{eta}{suffix}{}",
+              "[compile_env] {done}/{total} ({pct:.1}%) · {elapsed:.0}s · +{delta} blocks/{print_interval:.1}s · active={active_count}{suffix}{}",
               crate::diag::rss_log_suffix(),
             );
           } else {
             eprintln!(
-              "[compile_env] {done}/{total} ({pct:.1}%) · STALLED{suffix}"
+              "[compile_env] {done}/{total} ({pct:.1}%) · waiting: no completed blocks for {:.0}s · active={active_count}{suffix}",
+              last_progress.elapsed().as_secs_f64(),
             );
           }
         }
@@ -542,6 +554,17 @@ pub fn compile_env_with_options(
     for _ in 0..num_threads {
       s.spawn(move || {
         loop {
+          // Wait without holding a ready-queue lock or any block scratch.
+          // A permit covers compilation, publication, and dependency release.
+          let permit = match admission_ref.acquire() {
+            Ok(Some(permit)) => permit,
+            Ok(None) => return,
+            Err(failure) => {
+              error_ref.lock().unwrap().get_or_insert(failure);
+              condvar_ref.notify_all();
+              return;
+            },
+          };
           // Try to get work from the ready queue
           let work = {
             let mut queue = ready_queue_ref.lock().unwrap();
@@ -899,9 +922,11 @@ pub fn compile_env_with_options(
               } else {
                 condvar_ref.notify_one();
               }
+              permit.complete();
 
             },
             None => {
+              drop(permit);
               // No work available - check if we're done
               if completed_ref.load(AtomicOrdering::SeqCst) == total_blocks {
                 return;
@@ -937,10 +962,16 @@ pub fn compile_env_with_options(
     while completed_ref.load(AtomicOrdering::SeqCst) < total_blocks
       && error_ref.lock().unwrap().is_none()
     {
+      if let Err(failure) = admission_ref.check() {
+        error_ref.lock().unwrap().get_or_insert(failure);
+        break;
+      }
       thread::sleep(Duration::from_millis(25));
     }
+    admission_ref.stop();
     stop_progress_ref.store(true, AtomicOrdering::Relaxed);
   });
+  admission.check()?;
 
   if *IX_VERBOSE {
     let scheduler_elapsed = compile_start.elapsed().as_secs_f64();

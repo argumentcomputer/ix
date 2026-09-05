@@ -77,6 +77,9 @@
 pub mod below;
 pub mod brecon;
 pub mod cases_on;
+mod checked_expr;
+#[cfg(test)]
+mod expr_reference;
 pub mod expr_utils;
 pub mod nested;
 pub mod rec_on;

@@ -1491,13 +1491,14 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
 impl LeanIxCompileError<LeanOwned> {
   /// Build a Lean CompileError from a Rust CompileError.
   ///
-  /// Tags 0–5:
+  /// Tags 0–6:
   ///   0: missingConstant (name : String) → 1 obj
   ///   1: missingAddress (addr : Address) → 1 obj
   ///   2: invalidMutualBlock (reason : String) → 1 obj
   ///   3: unsupportedExpr (desc : String) → 1 obj
   ///   4: unknownUnivParam (curr param : String) → 2 obj
   ///   5: serializeError (msg : String) → 1 obj
+  ///   6: resourceLimit (reason : String) → 1 obj
   pub fn build(err: &CompileError) -> Self {
     match err {
       CompileError::MissingConstant { name, .. } => {
@@ -1529,6 +1530,11 @@ impl LeanIxCompileError<LeanOwned> {
       CompileError::Serialize(se) => {
         let ctor = LeanIxCompileError::alloc(5);
         ctor.set_obj(0, LeanIxSerializeError::build(se));
+        ctor
+      },
+      CompileError::ResourceLimit { reason } => {
+        let ctor = LeanIxCompileError::alloc(6);
+        ctor.set_obj(0, build_lean_string(reason));
         ctor
       },
     }
@@ -1564,6 +1570,9 @@ impl<R: LeanRef> LeanIxCompileError<R> {
       },
       5 => {
         CompileError::Serialize(LeanIxSerializeError(self.get_obj(0)).decode())
+      },
+      6 => CompileError::ResourceLimit {
+        reason: self.get_obj(0).as_string().to_string(),
       },
       tag => unreachable!("Invalid CompileError tag: {tag}"),
     }
