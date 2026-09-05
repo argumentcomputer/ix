@@ -439,6 +439,9 @@ version = "0.1.0"
 dependencies = [
  "aiur",
  "anyhow",
+ "ark-bls12-381",
+ "ark-ec",
+ "ark-ff",
  "bincode 1.3.3",
  "blake3",
  "flock-prover",

@@ -14,6 +14,7 @@ mod merged_pcs;
 mod multipoint;
 mod public_inputs;
 mod r1cs;
+mod relation;
 mod statement;
 mod structure_fold;
 mod transcript;
@@ -74,6 +75,11 @@ pub use public_inputs::{
 pub use r1cs::{
   CanonicalR1csV1, Constraint, ConstraintPhase, LinearCombination, R1csBuilder,
   R1csCensusV1, R1csError, R1csProjectionV1, Variable, Witness,
+};
+pub use relation::{
+  Stage4RelationCircuitOutputV1, Stage4RelationError,
+  Stage4RelationPublicInputsV1, Stage4RelationWitnessV1, Stage4TraceWitnessV1,
+  Stage4TranscriptWitnessV1, constrain_stage4_relation,
 };
 pub use statement::{
   F128StatementCircuitError, F128StatementCircuitInputsV1,

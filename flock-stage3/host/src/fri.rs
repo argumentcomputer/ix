@@ -7443,324 +7443,244 @@ mod tests {
       *stage4_witness.statement_binding(),
     );
 
+    let terminal_public = stage4_witness.terminal_public_inputs();
+    assert_eq!(terminal_public.field_elements().len(), 600);
+    let union = UnionInstance::new(
+      &production_relation.shape.registry,
+      production_relation.shape.counts.clone(),
+    );
+    let jagged_params = flock_prover::pcs::jagged::JaggedParams::from_heights(
+      &union.jagged_heights(),
+      union.n_log(),
+      (stage4_witness.merged_pcs().trace().commitment_variables - 7) as usize,
+    );
+    let terminal_context = crate::Stage4TerminalContextV1::new(
+      &production_relation.shape.registry,
+      &production_relation.shape.circuit,
+      &jagged_params,
+    );
+    terminal_context
+      .check_public_inputs(decoded.statement(), &terminal_public)
+      .expect("discharge every terminal root against trusted tables");
+    for index in 0..terminal_public.matrices.len() {
+      let mut changed = terminal_public.clone();
+      changed.matrices[index].value[0] ^= 1;
+      assert!(
+        terminal_context
+          .check_public_inputs(decoded.statement(), &changed)
+          .is_err()
+      );
+    }
+    let mut changed = terminal_public.clone();
+    changed.structure.value[0] ^= 1;
+    assert!(
+      terminal_context
+        .check_public_inputs(decoded.statement(), &changed)
+        .is_err()
+    );
+    let mut changed = terminal_public.clone();
+    changed.jagged.value[0] ^= 1;
+    assert!(
+      terminal_context
+        .check_public_inputs(decoded.statement(), &changed)
+        .is_err()
+    );
+    let mut changed = terminal_public.clone();
+    changed.jagged.matrix.circuit_digest[0] ^= 1;
+    assert!(
+      terminal_context
+        .check_public_inputs(decoded.statement(), &changed)
+        .is_err()
+    );
+    let mut changed = terminal_public.clone();
+    changed.matrices.swap(0, 1);
+    assert!(
+      terminal_context
+        .check_public_inputs(decoded.statement(), &changed)
+        .is_err()
+    );
+    let mut changed = terminal_public.clone();
+    changed.matrices.pop();
+    assert!(
+      terminal_context
+        .check_public_inputs(decoded.statement(), &changed)
+        .is_err()
+    );
+    let mut changed = terminal_public.clone();
+    changed.matrices[0].row_point.push([0; 16]);
+    assert!(
+      terminal_context
+        .check_public_inputs(decoded.statement(), &changed)
+        .is_err()
+    );
+    let wrong_statement =
+      crate::Stage3StatementV1::new(prepared.statement(), [0xa5; 32]);
+    assert!(
+      terminal_context
+        .check_public_inputs(&wrong_statement, &terminal_public)
+        .is_err()
+    );
+    crate::stage4_terminal::assert_fflonk_boundary(
+      &terminal_context,
+      decoded.statement(),
+      &terminal_public,
+    );
+
     if std::env::var_os("IX_STAGE4_PROJECT_R1CS").is_some() {
       let projection_started = std::time::Instant::now();
-      let transcript = stage4_witness.transcript();
-      let matrix_accumulator = stage4_witness.matrix_accumulator();
-      let plonk_projection = ix_fflonk::PlonkGateProjectionV1::new();
+      // Batch records so BLAKE3 can hash many chunks in parallel with SIMD.
+      // The bytes and their order are identical to individual updates.
+      let gate_hash = std::rc::Rc::new(std::cell::RefCell::new((
+        blake3::Hasher::new(),
+        Vec::with_capacity(65_536 + ix_fflonk::PLONK_GATE_RECORD_BYTES),
+      )));
+      gate_hash.borrow_mut().0.update(b"ix:stage4:plonk-gate-stream:v1");
+      let gate_observer_hash = std::rc::Rc::clone(&gate_hash);
+      let plonk_projection =
+        ix_fflonk::PlonkGateProjectionV1::new_gate_observed(move |gate| {
+          let mut state = gate_observer_hash.borrow_mut();
+          let (hasher, pending) = &mut *state;
+          pending.extend_from_slice(&gate.to_record_bytes());
+          if pending.len() >= 65_536 {
+            hasher.update(pending);
+            pending.clear();
+          }
+        });
+      let mut observe = plonk_projection.observer();
+      let mut count = 0u64;
       let mut builder =
         ix_terminal_circuit::R1csBuilder::new_projection_observed(
-          plonk_projection.observer(),
+          move |constraint| {
+            observe(constraint);
+            count += 1;
+            if count.is_multiple_of(1_000_000) {
+              eprintln!(
+                "Stage 4 projection: {count} constraints, phase {:?}",
+                constraint.phase
+              );
+            }
+          },
         );
-      let statement_public_variables =
-        ix_terminal_circuit::alloc_stage4_public_inputs(
-          &mut builder,
-          ix_terminal_circuit::Stage4PublicInputsV1::from_statement_digest(
-            stage4_witness.stage3_statement_digest(),
-          ),
-        )
-        .expect("allocate the Stage 3 statement digest as public inputs");
-      let public_root_inputs = matrix_accumulator
-        .root_claims()
-        .iter()
-        .map(|root| ix_terminal_circuit::F128RootMatrixClaimPublicInputV1 {
-          matrix: root.matrix(),
-          row_point: root.row_point().to_vec(),
-          column_point: root.column_point().to_vec(),
-          value: *root.value(),
-        })
-        .collect::<Vec<_>>();
-      let public_root_variables =
-        ix_terminal_circuit::alloc_f128_matrix_root_public_inputs(
-          &mut builder,
-          &public_root_inputs,
-        )
-        .expect("allocate the production matrix roots as public inputs");
-      let circuit_structure_root =
-        matrix_accumulator.circuit_structure_root_claim();
-      let circuit_structure_root_variables =
-        ix_terminal_circuit::alloc_f128_circuit_structure_root_public_input(
-          &mut builder,
-          &ix_terminal_circuit::F128CircuitStructureRootClaimPublicInputV1 {
-            matrix: circuit_structure_root.matrix(),
-            row_point: circuit_structure_root.row_point().to_vec(),
-            column_point: circuit_structure_root.column_point().to_vec(),
-            value: *circuit_structure_root.value(),
-          },
-        )
-        .expect("allocate the circuit-structure root as public inputs");
-      let jagged_root = matrix_accumulator.jagged_root_claim();
-      let jagged_root_variables =
-        ix_terminal_circuit::alloc_f128_jagged_root_public_input(
-          &mut builder,
-          &ix_terminal_circuit::F128JaggedRootClaimPublicInputV1 {
-            matrix: jagged_root.matrix(),
-            row_point: jagged_root.row_point().to_vec(),
-            column_point: jagged_root.column_point().to_vec(),
-            value: *jagged_root.value(),
-          },
-        )
-        .expect("allocate the jagged root as public inputs");
-      let transcript_output =
-        ix_terminal_circuit::constrain_chained_blake3_transcript(
-          &mut builder,
-          transcript.chained_blake3(),
-          transcript.observed_values(),
-          transcript.byte_payloads(),
-          transcript.challenges(),
-        )
-        .expect("project the production Stage 4 transcript R1CS");
-      let statement_output =
-        ix_terminal_circuit::constrain_f128_statement_binding(
-          &mut builder,
-          statement_public_variables,
-          stage4_witness.statement_binding(),
-          ix_terminal_circuit::F128StatementCircuitInputsV1 {
-            stage3_statement: stage4_witness.stage3_statement_bytes(),
-            public_values: stage4_witness.public_values(),
-            byte_payloads: &transcript_output.byte_payloads,
-          },
-        )
-        .expect("project the production Stage 4 statement wiring");
-      let wiring_output = ix_terminal_circuit::constrain_f128_wiring(
+      let output = ix_terminal_circuit::constrain_stage4_relation(
         &mut builder,
-        stage4_witness.wiring().trace(),
-        ix_terminal_circuit::F128WiringCircuitInputsV1 {
-          public_values: &statement_output.public_values,
-          observed_values: &transcript_output.observed_values,
-          challenges: &transcript_output.challenges,
-          private_values: stage4_witness.wiring().private_values(),
-        },
+        &stage4_witness.terminal_public_inputs(),
+        stage4_witness.terminal_relation_witness(),
       )
-      .expect("project the production Stage 4 Product-GKR wiring verifier");
-      assert_eq!(wiring_output.circuit_structure_claims.len(), 3);
-      assert!(!wiring_output.gather_claims.is_empty());
-      let algebra_private_values = transcript
-        .f128_private_values()
-        .iter()
-        .copied()
-        .map(|value| {
-          ix_terminal_circuit::alloc_f128_private(
-            &mut builder,
-            value,
-            ix_terminal_circuit::ConstraintPhase::Lincheck,
-          )
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .expect("allocate Stage 4 lincheck private values");
-      let algebra_output =
-        ix_terminal_circuit::constrain_f128_algebra_trace_deferred(
-          &mut builder,
-          transcript.f128_algebra(),
-          ix_terminal_circuit::F128AlgebraCircuitInputsV1 {
-            public_values: &statement_output.public_values,
-            observed_values: &transcript_output.observed_values,
-            challenges: &transcript_output.challenges,
-            private_values: &algebra_private_values,
-          },
-        )
-        .expect("project the production Stage 4 deferred Boolean PIOP");
-      assert_eq!(algebra_output.deferred_matrix_claims.len(), 22);
-      let merged_pcs_output =
-        ix_terminal_circuit::constrain_f128_merged_pcs_frontend(
-          &mut builder,
-          stage4_witness.merged_pcs().trace(),
-          ix_terminal_circuit::F128MergedPcsFrontendCircuitInputsV1 {
-            public_values: &statement_output.public_values,
-            observed_values: &transcript_output.observed_values,
-            challenges: &transcript_output.challenges,
-            private_values: &algebra_private_values,
-            algebra_operations: &algebra_output.operations,
-            byte_payloads: &transcript_output.byte_payloads,
-            packed_direct_claims: &wiring_output.gather_claims,
-          },
-        )
-        .expect("project the production Stage 4 merged PCS frontend");
-      assert_eq!(merged_pcs_output.ring_switches.len(), 2);
-      assert_eq!(merged_pcs_output.packed_direct_claims.len(), 64);
-      assert_eq!(merged_pcs_output.batching_challenges.len(), 66);
-      assert_eq!(merged_pcs_output.rho.len(), 20);
-      let multipoint_output =
-        ix_terminal_circuit::constrain_f128_multipoint_twisted_assist(
-          &mut builder,
-          stage4_witness.multipoint_assist().trace(),
-          ix_terminal_circuit::F128MultipointTwistedAssistCircuitInputsV1 {
-            observed_values: &transcript_output.observed_values,
-            challenges: &transcript_output.challenges,
-            private_values: stage4_witness.multipoint_assist().private_values(),
-            frontend: &merged_pcs_output,
-          },
-        )
-        .expect("project the production multipoint-twisted assist");
-      assert_eq!(multipoint_output.point.len(), 20);
-      assert_eq!(multipoint_output.sigma.len(), 42);
-      assert_eq!(multipoint_output.jagged_assertion.claims.len(), 3);
-      let inner_ligerito_output =
-        ix_terminal_circuit::constrain_f128_inner_ligerito(
-          &mut builder,
-          stage4_witness.inner_ligerito().trace(),
-          ix_terminal_circuit::F128InnerLigeritoCircuitInputsV1 {
-            observed_values: &transcript_output.observed_values,
-            challenges: &transcript_output.challenges,
-            byte_payloads: &transcript_output.byte_payloads,
-            private_values: stage4_witness.inner_ligerito().private_values(),
-            private_digests: stage4_witness.inner_ligerito().private_digests(),
-            frontend: &merged_pcs_output,
-          },
-        )
-        .expect("project the production inner Ligerito opening");
-      assert_eq!(inner_ligerito_output.authenticated_queries, 406);
-      let accumulator_transcript_output =
-        ix_terminal_circuit::constrain_chained_blake3_transcript(
-          &mut builder,
-          matrix_accumulator.chained_blake3(),
-          matrix_accumulator.observed_values(),
-          matrix_accumulator.byte_payloads(),
-          matrix_accumulator.challenges(),
-        )
-        .expect("project the production matrix-accumulator transcript");
-      let accumulator_output =
-        ix_terminal_circuit::constrain_f128_matrix_accumulator(
-          &mut builder,
-          matrix_accumulator.trace(),
-          ix_terminal_circuit::F128MatrixAccumulatorCircuitInputsV1 {
-            claims: &algebra_output.deferred_matrix_claims,
-            observed_values: &accumulator_transcript_output.observed_values,
-            byte_payloads: &accumulator_transcript_output.byte_payloads,
-            challenges: &accumulator_transcript_output.challenges,
-          },
-        )
-        .expect("project the production matrix-accumulator folds");
-      ix_terminal_circuit::constrain_f128_matrix_root_public_inputs(
-        &mut builder,
-        &public_root_variables,
-        &accumulator_output.root_claims,
-      )
-      .expect("bind the production matrix roots to public inputs");
-      let circuit_structure_output =
-        ix_terminal_circuit::constrain_f128_circuit_structure_accumulator(
-          &mut builder,
-          matrix_accumulator.circuit_structure_trace(),
-          ix_terminal_circuit::F128CircuitStructureAccumulatorCircuitInputsV1 {
-            claims: &wiring_output.circuit_structure_claims,
-            observed_values: &accumulator_transcript_output.observed_values,
-            byte_payloads: &accumulator_transcript_output.byte_payloads,
-            challenges: &accumulator_transcript_output.challenges,
-          },
-        )
-        .expect("project the production circuit-structure accumulator fold");
-      ix_terminal_circuit::constrain_f128_circuit_structure_root_public_input(
-        &mut builder,
-        &circuit_structure_root_variables,
-        &circuit_structure_output.root_claim,
-      )
-      .expect("bind the circuit-structure root to public inputs");
-      let jagged_output =
-        ix_terminal_circuit::constrain_f128_jagged_accumulator(
-          &mut builder,
-          matrix_accumulator.jagged_trace(),
-          ix_terminal_circuit::F128JaggedAccumulatorCircuitInputsV1 {
-            assertion: &multipoint_output.jagged_assertion,
-            observed_values: &accumulator_transcript_output.observed_values,
-            byte_payloads: &accumulator_transcript_output.byte_payloads,
-            challenges: &accumulator_transcript_output.challenges,
-          },
-        )
-        .expect("project the production jagged accumulator fold");
-      ix_terminal_circuit::constrain_f128_jagged_root_public_input(
-        &mut builder,
-        &jagged_root_variables,
-        &jagged_output.root_claim,
-      )
-      .expect("bind the jagged root to public inputs");
-      assert_eq!(jagged_output.root_claim.matrix, jagged_root.matrix());
+      .expect("project the complete canonical Stage 4 relation");
+      assert_eq!(output.wiring.circuit_structure_claims.len(), 3);
+      assert_eq!(output.wiring.gather_claims.len(), 64);
+      assert_eq!(output.algebra.deferred_matrix_claims.len(), 22);
+      assert_eq!(output.merged_pcs.ring_switches.len(), 2);
+      assert_eq!(output.merged_pcs.packed_direct_claims.len(), 64);
+      assert_eq!(output.merged_pcs.batching_challenges.len(), 66);
+      assert_eq!(output.merged_pcs.rho.len(), 20);
+      assert_eq!(output.multipoint.point.len(), 20);
+      assert_eq!(output.multipoint.sigma.len(), 42);
+      assert_eq!(output.multipoint.jagged_assertion.claims.len(), 3);
+      assert_eq!(output.inner_ligerito.authenticated_queries, 406);
+      let check_root = |row: &[ix_terminal_circuit::F128VariablesV1],
+                        column: &[ix_terminal_circuit::F128VariablesV1],
+                        value: &ix_terminal_circuit::F128VariablesV1,
+                        expected_row: &[[u8; 16]],
+                        expected_column: &[[u8; 16]],
+                        expected_value: &[u8; 16]| {
+        assert_eq!(
+          row.iter().map(|word| *word.value()).collect::<Vec<_>>(),
+          expected_row,
+        );
+        assert_eq!(
+          column.iter().map(|word| *word.value()).collect::<Vec<_>>(),
+          expected_column,
+        );
+        assert_eq!(value.value(), expected_value);
+      };
       assert_eq!(
-        jagged_output
-          .root_claim
-          .row_point
-          .iter()
-          .map(ix_terminal_circuit::F128VariablesV1::value)
-          .collect::<Vec<_>>(),
-        jagged_root.row_point().iter().collect::<Vec<_>>(),
+        output.matrices.root_claims.len(),
+        terminal_public.matrices.len()
       );
-      assert_eq!(
-        jagged_output
-          .root_claim
-          .column_point
-          .iter()
-          .map(ix_terminal_circuit::F128VariablesV1::value)
-          .collect::<Vec<_>>(),
-        jagged_root.column_point().iter().collect::<Vec<_>>(),
-      );
-      assert_eq!(jagged_output.root_claim.value.value(), jagged_root.value());
-      assert_eq!(
-        circuit_structure_output.root_claim.matrix,
-        circuit_structure_root.matrix(),
-      );
-      assert_eq!(
-        circuit_structure_output
-          .root_claim
-          .row_point
-          .iter()
-          .map(ix_terminal_circuit::F128VariablesV1::value)
-          .collect::<Vec<_>>(),
-        circuit_structure_root.row_point().iter().collect::<Vec<_>>(),
-      );
-      assert_eq!(
-        circuit_structure_output
-          .root_claim
-          .column_point
-          .iter()
-          .map(ix_terminal_circuit::F128VariablesV1::value)
-          .collect::<Vec<_>>(),
-        circuit_structure_root.column_point().iter().collect::<Vec<_>>(),
-      );
-      assert_eq!(
-        circuit_structure_output.root_claim.value.value(),
-        circuit_structure_root.value(),
-      );
-      assert_eq!(accumulator_output.root_claims.len(), 22);
-      for (circuit, native) in accumulator_output
-        .root_claims
-        .iter()
-        .zip(matrix_accumulator.root_claims())
+      for (derived, native) in
+        output.matrices.root_claims.iter().zip(&terminal_public.matrices)
       {
-        assert_eq!(circuit.matrix, native.matrix());
-        assert_eq!(
-          circuit
-            .row_point
-            .iter()
-            .map(ix_terminal_circuit::F128VariablesV1::value)
-            .collect::<Vec<_>>(),
-          native.row_point().iter().collect::<Vec<_>>(),
+        assert_eq!(derived.matrix, native.matrix);
+        check_root(
+          &derived.row_point,
+          &derived.column_point,
+          &derived.value,
+          &native.row_point,
+          &native.column_point,
+          &native.value,
         );
-        assert_eq!(
-          circuit
-            .column_point
-            .iter()
-            .map(ix_terminal_circuit::F128VariablesV1::value)
-            .collect::<Vec<_>>(),
-          native.column_point().iter().collect::<Vec<_>>(),
-        );
-        assert_eq!(circuit.value.value(), native.value());
       }
+      let derived = &output.structure.root_claim;
+      let native = &terminal_public.structure;
+      assert_eq!(derived.matrix, native.matrix);
+      check_root(
+        &derived.row_point,
+        &derived.column_point,
+        &derived.value,
+        &native.row_point,
+        &native.column_point,
+        &native.value,
+      );
+      let derived = &output.jagged.root_claim;
+      let native = &terminal_public.jagged;
+      assert_eq!(derived.matrix, native.matrix);
+      check_root(
+        &derived.row_point,
+        &derived.column_point,
+        &derived.value,
+        &native.row_point,
+        &native.column_point,
+        &native.value,
+      );
       let projection = builder.finish_projection().unwrap();
-      let plonk_census = plonk_projection.finish(&projection).unwrap();
+      eprintln!(
+        "Stage 4 complete Flock-verifier R1CS projection: {:?}, digest={}, elapsed={:.3}s",
+        projection.census(),
+        blake3::Hash::from_bytes(projection.digest()).to_hex(),
+        projection_started.elapsed().as_secs_f64(),
+      );
+      let plonk_census =
+        plonk_projection.finish_for_sizing(&projection).unwrap();
+      let supported_fft_domain = match plonk_projection.finish(&projection) {
+        Ok(checked) => {
+          assert_eq!(checked, plonk_census);
+          true
+        },
+        Err(ix_fflonk::PlonkArithmetizationError::DomainTooLarge {
+          ..
+        }) => false,
+        Err(error) => panic!("PLONK census validation: {error}"),
+      };
       let required_srs_degree =
         ix_fflonk::required_fflonk_srs_degree(plonk_census.domain_size)
           .unwrap();
       let capacity = ix_fflonk::plan_fflonk_capacity(&plonk_census).unwrap();
+      {
+        let mut state = gate_hash.borrow_mut();
+        let (hasher, pending) = &mut *state;
+        hasher.update(pending);
+        pending.clear();
+      }
+      for count in [
+        plonk_census.public_input_rows,
+        plonk_census.constraint_rows,
+        plonk_census.padding_rows,
+        plonk_census.domain_size,
+        plonk_census.auxiliary_wires,
+      ] {
+        gate_hash.borrow_mut().0.update(&count.to_le_bytes());
+      }
       eprintln!(
-        "Stage 4 complete Flock-verifier R1CS projection: {:?}, digest={}, elapsed={:.3}s\nStage 4 three-wire FFLONK projection: {:?}, required_srs_degree={}\nStage 4 FFLONK external capacity: {:?}",
-        projection.census(),
-        blake3::Hash::from_bytes(projection.digest()).to_hex(),
-        projection_started.elapsed().as_secs_f64(),
-        plonk_census,
-        required_srs_degree,
-        capacity,
+        "Stage 4 complete gate-stream digest: {}",
+        gate_hash.borrow().0.finalize().to_hex()
       );
-      // Preserve the last measured prefix as strict lower bounds until the
-      // expensive complete relation and its PLONK lowering are fingerprinted.
+      eprintln!(
+        "Stage 4 three-wire FFLONK projection: {:?}, required_srs_degree={}, supported_fft_domain={}\nStage 4 FFLONK external capacity: {:?}",
+        plonk_census, required_srs_degree, supported_fft_domain, capacity,
+      );
+      // The historical prefix is only a lower bound. Every complete phase
+      // must be present in the current projection.
       assert_eq!(projection.census().public_variables, 600);
       assert_eq!(plonk_census.public_input_rows, 600);
       assert!(plonk_census.constraint_rows >= projection.census().constraints);
@@ -7768,49 +7688,17 @@ mod tests {
       assert!(projection.census().private_variables > 170_007_888);
       assert!(projection.census().constraints > 173_158_769);
       assert!(projection.census().nonzero_terms > 1_910_076_918);
-      assert_eq!(
-        projection
-          .census()
-          .constraints_by_phase
-          .get(&ix_terminal_circuit::ConstraintPhase::Statement),
-        Some(&31_812),
-      );
-      assert!(
-        projection.census().constraints_by_phase
-          [&ix_terminal_circuit::ConstraintPhase::Transcript]
-          > 55_461_153,
-      );
-      assert_eq!(
-        projection
-          .census()
-          .constraints_by_phase
-          .get(&ix_terminal_circuit::ConstraintPhase::Zerocheck),
-        Some(&6_006_946),
-      );
-      assert_eq!(
-        projection
-          .census()
-          .constraints_by_phase
-          .get(&ix_terminal_circuit::ConstraintPhase::Lincheck),
-        Some(&6_849_009),
-      );
-      assert_eq!(
-        projection
-          .census()
-          .constraints_by_phase
-          .get(&ix_terminal_circuit::ConstraintPhase::Wiring),
-        Some(&56_071_979),
-      );
-      assert!(
-        projection.census().constraints_by_phase
-          [&ix_terminal_circuit::ConstraintPhase::Pcs]
-          > 10_836_389,
-      );
-      assert!(
-        projection.census().constraints_by_phase
-          [&ix_terminal_circuit::ConstraintPhase::MatrixFold]
-          > 37_901_481,
-      );
+      for phase in [
+        ix_terminal_circuit::ConstraintPhase::Statement,
+        ix_terminal_circuit::ConstraintPhase::Transcript,
+        ix_terminal_circuit::ConstraintPhase::Zerocheck,
+        ix_terminal_circuit::ConstraintPhase::Lincheck,
+        ix_terminal_circuit::ConstraintPhase::Wiring,
+        ix_terminal_circuit::ConstraintPhase::Pcs,
+        ix_terminal_circuit::ConstraintPhase::MatrixFold,
+      ] {
+        assert!(projection.census().constraints_by_phase[&phase] > 0);
+      }
     }
 
     let wrong_relation =

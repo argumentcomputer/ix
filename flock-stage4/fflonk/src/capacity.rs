@@ -17,6 +17,8 @@ pub const BLS12_381_G1_EIP2537_BYTES: u64 = 128;
 /// sort/FFT scratch space, checksums, and implementation buffering are not
 /// included. Public and padding gate rows are deterministic and therefore the
 /// gate stream stores constraint rows only.
+/// A sizing census may describe a domain above the field's FFT limit; these
+/// payload sizes alone do not establish that the backend can use that domain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FflonkCapacityPlanV1 {
   pub domain_size: u64,

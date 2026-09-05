@@ -8,15 +8,22 @@ Flock Stage 3 proof
   -> universal-setup KZG-FFLONK proof
 ```
 
+The complete integration fixture currently requires a domain of **2^34**,
+exceeding the backend's **2^32** FFT limit. The current backend cannot
+preprocess or prove this fixture. See the
+[complete census](census/stage2-integration-v1.md) for the measured gate count,
+fixture scope, and capacity estimates.
+
 The `ix-terminal-circuit` crate owns the backend-independent R1CS. Its first
 landed slice fixes the two-limb public-input encoding for the 256-bit Stage 3
 statement digest and emits a deterministic circuit digest plus a constraint
 census. The `ix-fflonk` crate fixes the v1 proof transport at four EIP-2537 G1
 points plus fifteen canonical BLS12-381 scalar-field values: exactly 992
 bytes. It strictly checks field encodings, curve membership, and subgroup
-membership while decoding. It now also validates universal powers-of-tau
-material, lowers canonical R1CS constraints to three-wire PLONK rows, computes
-selector and copy-permutation preprocessing, commits and opens polynomials with
+membership while decoding. Universal powers-of-tau validation checks every
+G1 power and tau-G2 point for curve and subgroup membership before the batched
+pairing check. The backend lowers canonical R1CS constraints to three-wire
+PLONK rows, computes selector and copy-permutation preprocessing, commits and opens polynomials with
 KZG, generates blinded C1/C2/W1/W2 proofs, replays the five-round Keccak
 transcript, and checks the complete native FFLONK interpolation and two-pairing
 equation. A nonzero-blinded end-to-end vector round-trips through the fixed
@@ -28,6 +35,13 @@ the accepted proof bundle, public F128 values, exact transcript-operation tree,
 observations, byte payloads, and challenges. The production regression fixture
 currently records 2,281 transcript operations and 1,120 challenges; a rejected
 proof yields no export.
+
+The replay counts on this page refer to the complete
+`real_stage2_integration_artifact_round_trip` fixture. Its Stage 2 transport
+uses two FRI queries, log blowup 1, cap height 0, binary folds, and no Stage 2
+proof of work. Flock itself uses the pinned native proving path. The separate
+100-query Stage 2 production profile needs its own Stage 4 census; these
+fixture counts do not size every production layout.
 
 The next landed slice normalizes that tape into a backend-neutral trace and
 compiles it into BLS12-381 Fr R1CS. The trace pins stream-word provenance,
@@ -120,15 +134,44 @@ root adds 27, and the jagged root adds 53. Together with the two statement
 limbs, the current relation therefore has 600 public variables. Each
 `GF(2^128)` value uses one injective little-endian field embedding, and the
 circuit constrains every derived bit decomposition to its public field.
+At 32 bytes per scalar these public values occupy 19,200 bytes, in addition
+to the 992-byte proof; terminal root verification remains part of acceptance.
 
-The last fully fingerprinted prefix ended before the multipoint and jagged
-slices. It projected to 547 public variables, 170,007,888 private variables,
-173,158,769 constraints, and 1,910,076,918 nonzero terms, with fingerprint
-`9c6da80e1705ae17bdea0af18013902c09b908706b692fc6591287ee40f16cb7`.
-Those numbers are retained as a historical baseline, not as current pins. A
-fresh private-variable, constraint, nonzero, and digest census is still needed
-for the complete relation; the inner Merkle replay makes that projection
-materially more expensive than the historical roughly 90-minute prefix.
+`constrain_stage4_relation` is the shared composition API for every phase,
+including inner Ligerito and all three accumulators. It accepts a fresh
+`R1csBuilder`, `Stage4RelationPublicInputsV1`, and a borrowed
+`Stage4RelationWitnessV1`. A materialized builder and an observed projection
+therefore compile the same relation in the same order. The public encoder is
+checked against circuit allocation order, including the maximum F128 value.
+The returned `Stage4RelationCircuitOutputV1` retains phase outputs so the full
+projection can compare every derived root with the native exporter.
+
+Enable the Stage 3 host's `stage4` feature to use
+`Stage4FlockVerifierWitnessV1::terminal_public_inputs`,
+`terminal_relation_witness`, and `verify_stage4_terminal`. The terminal
+verifier takes an externally expected Stage 3 statement, the trusted FFLONK
+key, and a `Stage4TerminalContextV1` containing the registry, circuit, and
+jagged parameters from that same setup. It checks the statement digest,
+the exact root identities, order, dimensions, and table evaluations, then
+verifies FFLONK over the shared public encoding. Those tables and the key
+are verifier configuration, not data selected by the proof.
+
+The production fixture exercises all 600 public fields and rejects altered,
+reordered, omitted, and malformed roots and a different expected statement.
+A small public-binding proof over that real root vector tests the complete
+terminal acceptance wrapper, including corrupted FFLONK proofs and changed
+roots whose table evaluations are still correct. It also rejects a valid
+public-binding proof whose root evaluation is incorrect. These tests do not
+generate a proof of the full Flock relation.
+
+The complete relation projects to 969,365,103 private variables,
+988,096,814 R1CS constraints, and 12,367,726,634 nonzero terms.
+Its three-wire lowering emits **10,374,565,573 constraint rows**.
+After public inputs and blinding rows, the required power-of-two domain is
+17,179,869,184. At least 58.60% of the constraint rows must be removed to fit
+the existing field-domain limit. The [census report](census/stage2-integration-v1.md)
+records the full relation and hypothetical payload sizes at that unsupported
+domain; it supersedes the earlier partial-relation sizing baselines.
 
 The Flock replay now closes the inner Ligerito opening against the
 transcript-bound CAP. The production trace has four recursive levels and 406
@@ -151,10 +194,15 @@ stable auxiliary-wire identifiers. A checked capacity model converts the final
 census into gate-stream, field-column, preprocessing, packed-polynomial, and
 compressed/uncompressed SRS payload sizes.
 
-The remaining production boundary is to finish the complete relation/gate
-fingerprint, connect the canonical stream to external FFT, permutation-sort,
-and MSM stages, and measure prover cost. Every backend must consume the
-canonical relation rather than define another one.
+`PlonkGateProjectionV1::finish_for_sizing` reports the required domain even
+above the field limit. The normal projection finalizer, materialized lowering,
+and preprocessing retain their domain checks.
+
+The next production step is to reduce the lowering cost or revisit the
+backend so the complete relation fits a supported domain. Only then can the
+canonical stream be connected to external FFT, permutation-sort, and MSM
+stages to measure prover cost. Every backend must consume the canonical
+relation rather than define another one.
 
 The proof width follows the [FFLONK paper](https://eprint.iacr.org/2021/1167)
 and uses [EIP-2537](https://eips.ethereum.org/EIPS/eip-2537) for G1 transport.
@@ -165,8 +213,23 @@ two-pair, 768-byte pairing check. Their consensus-priced precompile floor is
 156,900 gas. A deployable EVM implementation of the Keccak and scalar-field
 portion, plus measured whole-verifier gas, remains to be completed.
 
-Run the focused suite with:
+Run the focused suite and the native terminal integration vector with:
 
 ```sh
-cargo test --manifest-path flock-stage4/Cargo.toml
+cargo test --release --locked --manifest-path flock-stage4/Cargo.toml --workspace
+cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --all-features \
+  real_stage2_integration_artifact_round_trip -- --ignored --nocapture
+```
+
+Both isolated workspaces have CI jobs for formatting, Clippy, and tests; the
+Stage 3 job also runs all cryptographic vectors serially. Lake tracks Stage 4
+Rust sources and manifests when rebuilding the Rust archive, and Nix includes
+the same inputs in its Lake source set.
+
+The complete streaming census is opt-in because of its runtime:
+
+```sh
+IX_STAGE4_PROJECT_R1CS=1 cargo test --release --locked \
+  --manifest-path flock-stage3/Cargo.toml --all-features \
+  real_stage2_integration_artifact_round_trip -- --ignored --nocapture
 ```

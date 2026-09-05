@@ -1,5 +1,5 @@
 use ark_bls12_381::Fr;
-use ark_ff::{BigInteger, FftField, Field, One, PrimeField, Zero};
+use ark_ff::{FftField, Field, One, PrimeField, Zero};
 use ix_terminal_circuit::{
   CanonicalR1csV1, Constraint, ConstraintPhase, LinearCombination, R1csError,
   R1csProjectionV1, Variable, Witness,
@@ -222,8 +222,20 @@ fn decode_phase(
 
 fn encode_fr_le(value: &Fr, output: &mut [u8]) {
   output.fill(0);
-  let bytes = value.into_bigint().to_bytes_le();
-  output[..bytes.len()].copy_from_slice(&bytes);
+  // Gate selectors are usually zero or one. Avoid both Montgomery
+  // conversion for those values and a heap allocation for every scalar.
+  if value.is_zero() {
+    return;
+  }
+  if value.is_one() {
+    output[0] = 1;
+    return;
+  }
+  for (chunk, limb) in
+    output.as_chunks_mut::<8>().0.iter_mut().zip(value.into_bigint().as_ref())
+  {
+    chunk.copy_from_slice(&limb.to_le_bytes());
+  }
 }
 
 fn decode_fr_le(encoded: &[u8]) -> Option<Fr> {
@@ -339,6 +351,18 @@ impl PlonkGateProjectionV1 {
     &self,
     projection: &R1csProjectionV1,
   ) -> Result<PlonkGateCensusV1, PlonkArithmetizationError> {
+    let census = self.finish_for_sizing(projection)?;
+    validate_domain(&census)?;
+    Ok(census)
+  }
+
+  /// Report the required domain even when it exceeds the scalar field's FFT
+  /// limit. This is for capacity diagnostics; [`Self::finish`] still rejects
+  /// domains that cannot be used by the backend.
+  pub fn finish_for_sizing(
+    &self,
+    projection: &R1csProjectionV1,
+  ) -> Result<PlonkGateCensusV1, PlonkArithmetizationError> {
     let state = self.state.borrow();
     if state.constraints != projection.census().constraints {
       return Err(PlonkArithmetizationError::ProjectionConstraintMismatch {
@@ -349,7 +373,7 @@ impl PlonkGateProjectionV1 {
     if state.overflowed {
       return Err(PlonkArithmetizationError::CountOverflow);
     }
-    finish_census(
+    size_census(
       u64::from(projection.public_variables()),
       state.rows,
       state.auxiliary_wires,
@@ -896,6 +920,22 @@ fn finish_census(
   auxiliary_wires: u64,
   rows_by_phase: BTreeMap<ConstraintPhase, u64>,
 ) -> Result<PlonkGateCensusV1, PlonkArithmetizationError> {
+  let census = size_census(
+    public_input_rows,
+    constraint_rows,
+    auxiliary_wires,
+    rows_by_phase,
+  )?;
+  validate_domain(&census)?;
+  Ok(census)
+}
+
+fn size_census(
+  public_input_rows: u64,
+  constraint_rows: u64,
+  auxiliary_wires: u64,
+  rows_by_phase: BTreeMap<ConstraintPhase, u64>,
+) -> Result<PlonkGateCensusV1, PlonkArithmetizationError> {
   let active_rows = public_input_rows
     .checked_add(constraint_rows)
     .ok_or(PlonkArithmetizationError::CountOverflow)?;
@@ -906,13 +946,6 @@ fn finish_census(
   let domain_size = required_rows
     .checked_next_power_of_two()
     .ok_or(PlonkArithmetizationError::CountOverflow)?;
-  let maximum_domain = 1_u64 << Fr::TWO_ADICITY;
-  if domain_size > maximum_domain {
-    return Err(PlonkArithmetizationError::DomainTooLarge {
-      required_rows,
-      maximum_domain,
-    });
-  }
   Ok(PlonkGateCensusV1 {
     public_input_rows,
     constraint_rows,
@@ -921,6 +954,23 @@ fn finish_census(
     auxiliary_wires,
     rows_by_phase,
   })
+}
+
+fn validate_domain(
+  census: &PlonkGateCensusV1,
+) -> Result<(), PlonkArithmetizationError> {
+  let maximum_domain = 1_u64 << Fr::TWO_ADICITY;
+  if census.domain_size > maximum_domain {
+    return Err(PlonkArithmetizationError::DomainTooLarge {
+      required_rows: census
+        .active_rows()
+        .checked_add(FFLONK_BLINDING_ROWS)
+        .ok_or(PlonkArithmetizationError::CountOverflow)?
+        .max(8),
+      maximum_domain,
+    });
+  }
+  Ok(())
 }
 
 fn build_copy_permutation(
@@ -984,7 +1034,30 @@ fn validate_copy_values(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ark_ff::BigInteger;
   use ix_terminal_circuit::R1csBuilder;
+
+  #[test]
+  fn gate_scalars_keep_the_canonical_encoding() {
+    let mut values = vec![
+      Fr::zero(),
+      Fr::ONE,
+      -Fr::ONE,
+      Fr::from(2u64),
+      -Fr::from(2u64),
+      Fr::from(u128::MAX),
+    ];
+    let mut value = Fr::GENERATOR;
+    for _ in 0..32 {
+      value = value.square() + Fr::ONE;
+      values.push(value);
+    }
+    for value in values {
+      let mut encoded = [0xa5u8; 32];
+      encode_fr_le(&value, &mut encoded);
+      assert_eq!(encoded.as_slice(), value.into_bigint().to_bytes_le());
+    }
+  }
 
   fn build_fixture(builder: &mut R1csBuilder) -> Vec<Variable> {
     let x1 = builder.alloc_public(Fr::from(1_u64)).unwrap();
@@ -1043,12 +1116,40 @@ mod tests {
     build_fixture(&mut builder);
     let r1cs_projection = builder.finish_projection().unwrap();
     let projected = plonk_projection.finish(&r1cs_projection).unwrap();
+    assert_eq!(
+      plonk_projection.finish_for_sizing(&r1cs_projection).unwrap(),
+      projected,
+    );
 
     let mut materialized = R1csBuilder::new();
     build_fixture(&mut materialized);
     let (r1cs, _) = materialized.finish().unwrap();
     let compiled = arithmetize_r1cs(&r1cs).unwrap();
     assert_eq!(&projected, compiled.census());
+  }
+
+  #[test]
+  fn oversized_domain_remains_measurable_but_cannot_be_compiled() {
+    let maximum_domain = 1u64 << Fr::TWO_ADICITY;
+    let census = size_census(600, maximum_domain, 0, BTreeMap::new()).unwrap();
+    assert_eq!(census.domain_size, 2 * maximum_domain);
+    assert_eq!(census.padding_rows, maximum_domain - 600);
+    assert_eq!(
+      finish_census(600, maximum_domain, 0, BTreeMap::new()),
+      Err(PlonkArithmetizationError::DomainTooLarge {
+        required_rows: maximum_domain + 600 + FFLONK_BLINDING_ROWS,
+        maximum_domain,
+      }),
+    );
+    let boundary = finish_census(
+      600,
+      maximum_domain - 600 - FFLONK_BLINDING_ROWS,
+      0,
+      BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(boundary.domain_size, maximum_domain);
+    assert_eq!(boundary.padding_rows, FFLONK_BLINDING_ROWS);
   }
 
   #[test]

@@ -17,6 +17,8 @@ mod merkle;
 mod multiplication;
 mod relation;
 mod stage4;
+#[cfg(any(test, feature = "stage4"))]
+mod stage4_terminal;
 mod transcript;
 mod typed_witness;
 mod window;
@@ -123,6 +125,8 @@ pub use stage4::{
   Stage4FlockVerifierCensusV1, Stage4FlockVerifierWitnessV1,
   Stage4FlockWiringWitnessV1, Stage4TranscriptOpV1,
 };
+#[cfg(any(test, feature = "stage4"))]
+pub use stage4_terminal::{Stage4TerminalContextV1, verify_stage4_terminal};
 pub use transcript::{
   STAGE2_TRANSCRIPT_CONFORMANCE_ARTIFACT_MAGIC,
   Stage2FriTranscriptChallengesV1, Stage2FriTranscriptReplayV1,

@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+stage4 = ["dep:ix-terminal-circuit", "dep:ix-fflonk"]
+
 [dependencies]
 anyhow = { workspace = true }
 aiur = { workspace = true }
@@ -12,6 +15,8 @@ blake3 = { workspace = true }
 flock-prover = { workspace = true }
 ix-terminal = { workspace = true }
 ix-stage4-trace = { workspace = true }
+ix-terminal-circuit = { workspace = true, optional = true }
+ix-fflonk = { workspace = true, optional = true }
 multi-stark = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
@@ -20,5 +25,8 @@ serde = { workspace = true }
 workspace = true
 
 [dev-dependencies]
+ark-bls12-381 = { version = "0.5.0", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.5.0", default-features = false, features = ["std"] }
+ark-ff = { version = "0.5.0", default-features = false, features = ["std"] }
 ix-fflonk = { workspace = true }
 ix-terminal-circuit = { workspace = true }
