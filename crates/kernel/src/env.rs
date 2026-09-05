@@ -128,6 +128,25 @@ pub struct InternTable<M: KernelMode> {
   pub(crate) clo_scratch_pool: Vec<FxHashMap<(Addr, u64), KExpr<M>>>,
 }
 
+/// Original input allocation -> completed canonical result, for ONE public
+/// interning call. The caller retains its input root, and recursive helpers
+/// borrow only descendants of that root, so these pointer keys cannot be reused
+/// while the memo is alive. Rebuilt temporaries must never become input keys.
+///
+/// Exact pointers (not semantic uids) distinguish metadata-bearing occurrences.
+/// Only changed nodes need entries: unchanged nodes hit the canonical-uid sets.
+/// Dropping the memo on return also avoids retaining a second DAG across calls.
+struct InternMemo<M: KernelMode> {
+  exprs: FxHashMap<usize, KExpr<M>>,
+  univs: FxHashMap<usize, KUniv<M>>,
+}
+
+impl<M: KernelMode> Default for InternMemo<M> {
+  fn default() -> Self {
+    Self { exprs: FxHashMap::default(), univs: FxHashMap::default() }
+  }
+}
+
 impl<M: KernelMode> Default for InternTable<M> {
   fn default() -> Self {
     Self::new()
@@ -203,48 +222,79 @@ impl<M: KernelMode> InternTable<M> {
   /// identity, recursively canonicalizing children as needed so the
   /// shallow key is meaningful.
   pub fn intern_univ(&mut self, u: KUniv<M>) -> KUniv<M> {
-    use super::level::UnivData;
     crate::profile::bump_intern_nodes();
     if self.canon_univs.contains(u.addr()) {
       return u;
     }
+    // The root cannot recur below itself. Only descendants need memo entries.
+    self.intern_univ_node(&u, &mut InternMemo::default())
+  }
+
+  #[inline]
+  fn intern_univ_cached(
+    &mut self,
+    input: &KUniv<M>,
+    memo: &mut InternMemo<M>,
+  ) -> KUniv<M> {
+    crate::profile::bump_intern_nodes();
+    if self.canon_univs.contains(input.addr()) {
+      return input.clone();
+    }
+    let ptr = std::ptr::from_ref(input.data()).addr();
+    if let Some(canonical) = memo.univs.get(&ptr) {
+      return canonical.clone();
+    }
+    let canonical = self.intern_univ_node(input, memo);
+    if !canonical.ptr_eq(input) {
+      memo.univs.insert(ptr, canonical.clone());
+    }
+    canonical
+  }
+
+  fn intern_univ_node(
+    &mut self,
+    input: &KUniv<M>,
+    memo: &mut InternMemo<M>,
+  ) -> KUniv<M> {
+    use super::level::UnivData;
     // Canonicalize children first; rebuild only if any child changed.
-    let u = match u.data() {
+    let u = match input.data() {
       UnivData::Succ(inner, _) => {
-        let ci = self.intern_univ(inner.clone());
+        let ci = self.intern_univ_cached(inner, memo);
         if ci.ptr_eq(inner) {
-          u
+          input.clone()
         } else {
           KUniv::new(UnivData::Succ(ci, super::expr::fresh_uid()))
         }
       },
       UnivData::Max(a, b, _) => {
-        let ca = self.intern_univ(a.clone());
-        let cb = self.intern_univ(b.clone());
+        let ca = self.intern_univ_cached(a, memo);
+        let cb = self.intern_univ_cached(b, memo);
         if ca.ptr_eq(a) && cb.ptr_eq(b) {
-          u
+          input.clone()
         } else {
           KUniv::new(UnivData::Max(ca, cb, super::expr::fresh_uid()))
         }
       },
       UnivData::IMax(a, b, _) => {
-        let ca = self.intern_univ(a.clone());
-        let cb = self.intern_univ(b.clone());
+        let ca = self.intern_univ_cached(a, memo);
+        let cb = self.intern_univ_cached(b, memo);
         if ca.ptr_eq(a) && cb.ptr_eq(b) {
-          u
+          input.clone()
         } else {
           KUniv::new(UnivData::IMax(ca, cb, super::expr::fresh_uid()))
         }
       },
-      UnivData::Zero(_) | UnivData::Param(..) => u,
+      UnivData::Zero(_) | UnivData::Param(..) => input.clone(),
     };
     let key = univ_key(&u);
     if let Some(existing) = self.univs.get(&key) {
-      return existing.clone();
+      existing.clone()
+    } else {
+      self.canon_univs.insert(*u.addr());
+      self.univs.insert(key, u.clone());
+      u
     }
-    self.canon_univs.insert(*u.addr());
-    self.univs.insert(key, u.clone());
-    u
   }
 
   /// Intern an expression: returns the canonical value for its structural
@@ -253,85 +303,125 @@ impl<M: KernelMode> InternTable<M> {
   /// make the shallow key meaningless), preserving the historical
   /// content-hash interning semantics.
   pub fn intern_expr(&mut self, e: KExpr<M>) -> KExpr<M> {
-    use super::expr::ExprData;
     crate::profile::bump_intern_nodes();
     if self.canon_exprs.contains(e.addr()) {
       return e;
     }
-    let e = match e.data() {
+    // Retain the entire input DAG until this call-local pointer memo is gone.
+    // Do not memoize the root: this avoids allocating for the common case of
+    // a new node whose children are already canonical.
+    self.intern_expr_node(&e, &mut InternMemo::default())
+  }
+
+  #[inline]
+  fn intern_expr_cached(
+    &mut self,
+    input: &KExpr<M>,
+    memo: &mut InternMemo<M>,
+  ) -> KExpr<M> {
+    crate::profile::bump_intern_nodes();
+    // Keep this before the pointer memo: already-canonical uids retain the
+    // historical fast path, including their occurrence metadata.
+    if self.canon_exprs.contains(input.addr()) {
+      return input.clone();
+    }
+    let ptr = std::ptr::from_ref(input.data()).addr();
+    if let Some(canonical) = memo.exprs.get(&ptr) {
+      return canonical.clone();
+    }
+    let canonical = self.intern_expr_node(input, memo);
+    // Do not mark the original uid canonical when it was replaced. Future
+    // edges to this input must return the actual canonical OUTPUT, not input.
+    if !canonical.ptr_eq(input) {
+      memo.exprs.insert(ptr, canonical.clone());
+    }
+    canonical
+  }
+
+  fn intern_expr_node(
+    &mut self,
+    input: &KExpr<M>,
+    memo: &mut InternMemo<M>,
+  ) -> KExpr<M> {
+    use super::expr::ExprData;
+    let e = match input.data() {
       ExprData::Sort(un, _) => {
-        let cu = self.intern_univ(un.clone());
+        let cu = self.intern_univ_cached(un, memo);
         if cu.ptr_eq(un) {
-          e
+          input.clone()
         } else {
           // Child canonicalization only — same semantic level, same
           // occurrence: the spelling decoration rides along.
-          KExpr::sort_full(cu, e.mdata().clone(), e.univ_decor().clone())
+          KExpr::sort_full(
+            cu,
+            input.mdata().clone(),
+            input.univ_decor().clone(),
+          )
         }
       },
       ExprData::Const(id, us, _) => {
         let cus: Box<[KUniv<M>]> =
-          us.iter().map(|un| self.intern_univ(un.clone())).collect();
+          us.iter().map(|un| self.intern_univ_cached(un, memo)).collect();
         if cus.iter().zip(us.iter()).all(|(a, b)| a.ptr_eq(b)) {
-          e
+          input.clone()
         } else {
           KExpr::cnst_full(
             id.clone(),
             cus,
-            e.mdata().clone(),
-            e.univ_decor().clone(),
+            input.mdata().clone(),
+            input.univ_decor().clone(),
           )
         }
       },
       ExprData::App(f, a, _) => {
-        let cf = self.intern_expr(f.clone());
-        let ca = self.intern_expr(a.clone());
+        let cf = self.intern_expr_cached(f, memo);
+        let ca = self.intern_expr_cached(a, memo);
         if cf.ptr_eq(f) && ca.ptr_eq(a) {
-          e
+          input.clone()
         } else {
-          KExpr::app_mdata(cf, ca, e.mdata().clone())
+          KExpr::app_mdata(cf, ca, input.mdata().clone())
         }
       },
       ExprData::Lam(n, bi, t, b, _) => {
-        let ct = self.intern_expr(t.clone());
-        let cb = self.intern_expr(b.clone());
+        let ct = self.intern_expr_cached(t, memo);
+        let cb = self.intern_expr_cached(b, memo);
         if ct.ptr_eq(t) && cb.ptr_eq(b) {
-          e
+          input.clone()
         } else {
-          KExpr::lam_mdata(n.clone(), bi.clone(), ct, cb, e.mdata().clone())
+          KExpr::lam_mdata(n.clone(), bi.clone(), ct, cb, input.mdata().clone())
         }
       },
       ExprData::All(n, bi, t, b, _) => {
-        let ct = self.intern_expr(t.clone());
-        let cb = self.intern_expr(b.clone());
+        let ct = self.intern_expr_cached(t, memo);
+        let cb = self.intern_expr_cached(b, memo);
         if ct.ptr_eq(t) && cb.ptr_eq(b) {
-          e
+          input.clone()
         } else {
-          KExpr::all_mdata(n.clone(), bi.clone(), ct, cb, e.mdata().clone())
+          KExpr::all_mdata(n.clone(), bi.clone(), ct, cb, input.mdata().clone())
         }
       },
       ExprData::Let(n, t, v, b, nd, _) => {
-        let ct = self.intern_expr(t.clone());
-        let cv = self.intern_expr(v.clone());
-        let cb = self.intern_expr(b.clone());
+        let ct = self.intern_expr_cached(t, memo);
+        let cv = self.intern_expr_cached(v, memo);
+        let cb = self.intern_expr_cached(b, memo);
         if ct.ptr_eq(t) && cv.ptr_eq(v) && cb.ptr_eq(b) {
-          e
+          input.clone()
         } else {
-          KExpr::let_mdata(n.clone(), ct, cv, cb, *nd, e.mdata().clone())
+          KExpr::let_mdata(n.clone(), ct, cv, cb, *nd, input.mdata().clone())
         }
       },
       ExprData::Prj(id, f, v, _) => {
-        let cv = self.intern_expr(v.clone());
+        let cv = self.intern_expr_cached(v, memo);
         if cv.ptr_eq(v) {
-          e
+          input.clone()
         } else {
-          KExpr::prj_mdata(id.clone(), *f, cv, e.mdata().clone())
+          KExpr::prj_mdata(id.clone(), *f, cv, input.mdata().clone())
         }
       },
       ExprData::Var(..)
       | ExprData::FVar(..)
       | ExprData::Nat(..)
-      | ExprData::Str(..) => e,
+      | ExprData::Str(..) => input.clone(),
     };
     let key = expr_key(&e);
     if let Some(existing) = self.exprs.get(&key) {
@@ -341,13 +431,22 @@ impl<M: KernelMode> InternTable<M> {
       // debug builds; a violation here would be an interning bug, not
       // an input an adversary can craft (uids are assigned, not hashed).
       debug_assert!(existing == &e, "intern hit is not structurally equal");
-      return existing.clone();
+      existing.clone()
+    } else {
+      self.canon_exprs.insert(*e.addr());
+      self.exprs.insert(key, e.clone());
+      e
     }
-    self.canon_exprs.insert(*e.addr());
-    self.exprs.insert(key, e.clone());
-    e
   }
 }
+
+#[cfg(test)]
+#[path = "intern_reference.rs"]
+mod intern_reference;
+
+#[cfg(test)]
+#[path = "intern_tests.rs"]
+mod intern_tests;
 
 /// Generated recursor, cached after inductive validation.
 #[derive(Clone, Debug)]
