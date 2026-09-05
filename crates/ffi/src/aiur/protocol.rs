@@ -109,6 +109,21 @@ extern "C" fn rs_aiur_system_build(
   LeanExternal::alloc(&AIUR_SYSTEM_CLASS, system)
 }
 
+/// Explicit experimental key profile; default construction is unchanged.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_build_min_opening_width(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+) -> LeanExternal<AiurSystem, LeanOwned> {
+  let system = AiurSystem::build_min_opening_width(
+    decode_toplevel(&toplevel),
+    decode_commitment_parameters(&commitment_parameters),
+    decode_fri_parameters(&fri_parameters),
+  );
+  LeanExternal::alloc(&AIUR_SYSTEM_CLASS, system)
+}
+
 /// Helper: encode `CircuitShape`s as a Lean `Array CircuitShape`. Field
 /// order must match `Aiur.CircuitShape` in `Ix/Aiur/Protocol.lean`.
 fn build_circuit_shapes_array(shapes: &[CircuitShape]) -> LeanArray<LeanOwned> {
@@ -1684,7 +1699,9 @@ fn decode_io_buffer_map(
 
 /// Compile/evaluate, prove, or independently verify the complete no-RISC-V
 /// Flock relation for one canonical ix_aggr root. Default builds retain a
-/// checked feature-disabled stub so the Lean CLI remains linkable.
+/// checked feature-disabled stub so the Lean CLI remains linkable. The IO
+/// payload is `Except String String`: Lean constructs any `IO.Error`, avoiding
+/// the pinned lean-ffi helper's toolchain-dependent IO.Error constructor tag.
 #[unsafe(no_mangle)]
 extern "C" fn rs_flock_stage3_aggregate_root(
   vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
@@ -1694,99 +1711,101 @@ extern "C" fn rs_flock_stage3_aggregate_root(
   mode: LeanString<LeanBorrowed<'_>>,
   artifact_path: LeanString<LeanBorrowed<'_>>,
   output: LeanString<LeanBorrowed<'_>>,
-) -> LeanExcept<LeanOwned> {
+  limits_json: LeanString<LeanBorrowed<'_>>,
+) -> lean_ffi::object::LeanIOResult<LeanOwned> {
   #[cfg(feature = "flock")]
   {
     let fri = decode_fri_parameters(&fri_parameters);
     let backend = flock_stage3_host::FlockStage3Backend;
-    let result = match mode.as_str().to_ascii_lowercase().as_str() {
-      "preflight" => {
-        if !artifact_path.as_str().is_empty() || !output.as_str().is_empty() {
-          Err(anyhow::anyhow!(
-            "--artifact and --output are not valid with --mode preflight"
-          ))
-        } else {
-          backend
-            .preflight_stage2(
-              vk_bytes.as_bytes(),
-              claim_bytes.as_bytes(),
-              proof_bytes.as_bytes(),
-              &fri,
-            )
-            .map(|report| println!("{report}"))
-        }
-      },
-      "prove" => {
-        if !artifact_path.as_str().is_empty() {
-          Err(anyhow::anyhow!("--artifact is only valid with --mode verify"))
-        } else if output.as_str().is_empty() {
-          Err(anyhow::anyhow!(
-            "Flock proving requires --output so the expensive artifact is retained"
-          ))
-        } else {
-          (|| {
-            println!("running Flock Stage 3 preflight, prover, and verifier");
-            let (report, artifact) = backend.preflight_and_prove_stage2(
-              vk_bytes.as_bytes(),
-              claim_bytes.as_bytes(),
-              proof_bytes.as_bytes(),
-              &fri,
-            )?;
-            println!("{report}");
-            if artifact.statement().stage2_root_digest()
-              != &report.stage2_root_digest
-              || artifact.statement().relation_digest()
-                != &report.relation_digest
-              || artifact.statement().digest() != report.stage3_statement_digest
-            {
-              return Err(anyhow::anyhow!(
-                "Flock prover rebuilt a statement different from preflight"
-              ));
-            }
-            let encoded = artifact.to_bytes();
-            let output_path = std::path::Path::new(output.as_str());
-            artifact.write_atomic(output_path)?;
-            println!(
-              "Flock Stage 3 proof verified; artifact={} bytes; saved to {}",
-              encoded.len(),
-              output_path.display(),
+    let result = (|| -> anyhow::Result<String> {
+      use flock_stage3_host::{
+        Stage3ArtifactV1, Stage3ArtifactWriterV1, Stage3ResourceLimitsV1,
+      };
+      use serde_json::json;
+      let elapsed_us = |start: std::time::Instant| {
+        u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
+      };
+      let limits: Stage3ResourceLimitsV1 =
+        serde_json::from_str(limits_json.as_str())?;
+      let started = std::time::Instant::now();
+      let mode = mode.as_str();
+      match mode {
+        "preflight" => {
+          if !artifact_path.as_str().is_empty() || !output.as_str().is_empty() {
+            anyhow::bail!(
+              "--artifact and --output are not valid with --mode preflight"
             );
-            Ok(())
-          })()
-        }
-      },
-      "verify" => {
-        if artifact_path.as_str().is_empty() {
-          Err(anyhow::anyhow!("Flock verification requires --artifact"))
-        } else if !output.as_str().is_empty() {
-          Err(anyhow::anyhow!("--output is only valid with --mode prove"))
-        } else {
-          (|| {
-            let path = std::path::Path::new(artifact_path.as_str());
-            let artifact =
-              flock_stage3_host::Stage3ArtifactV1::read_from_path(path)?;
-            backend.verify_stage2_for_root(
-              &artifact,
-              vk_bytes.as_bytes(),
-              claim_bytes.as_bytes(),
-              proof_bytes.as_bytes(),
-              &fri,
-            )?;
-            println!(
-              "Flock Stage 3 artifact verified against aggregate root: {}",
-              path.display()
+          }
+        },
+        "prove" => {
+          if !artifact_path.as_str().is_empty() || output.as_str().is_empty() {
+            anyhow::bail!(
+              "Flock proving requires --output and forbids --artifact"
             );
-            Ok(())
-          })()
-        }
-      },
-      other => Err(anyhow::anyhow!(
-        "unknown Flock mode '{other}' (expected preflight|prove|verify)"
-      )),
-    };
+          }
+        },
+        "verify" => {
+          if artifact_path.as_str().is_empty() || !output.as_str().is_empty() {
+            anyhow::bail!(
+              "Flock verification requires --artifact and forbids --output"
+            );
+          }
+        },
+        other => anyhow::bail!(
+          "unknown Flock mode '{other}' (expected preflight|prove|verify)"
+        ),
+      }
+      // Check file operations before native validation or circuit compilation.
+      let writer = if mode == "prove" {
+        Some(Stage3ArtifactWriterV1::reserve(output.as_str())?)
+      } else {
+        None
+      };
+      let artifact = if mode == "verify" {
+        Some(Stage3ArtifactV1::read_from_path(artifact_path.as_str())?)
+      } else {
+        None
+      };
+      let prepared = backend.prepare_stage2_with_limits(
+        vk_bytes.as_bytes(),
+        claim_bytes.as_bytes(),
+        proof_bytes.as_bytes(),
+        &fri,
+        limits,
+      )?;
+      // Keep stdout exclusively for the Lean caller's text/JSONL records, and
+      // expose a successful preflight even if subsequent proving fails.
+      eprintln!("{}", prepared.report());
+      let mut result = json!({"preflight": prepared.report().to_json_value()});
+      if let Some(writer) = writer {
+        eprintln!("Flock Stage 3 preflight passed; starting prover");
+        let (artifact, timings) = prepared.prove_with_timings()?;
+        let write_started = std::time::Instant::now();
+        writer.write(&artifact)?;
+        result["artifact_bytes"] = json!(artifact.encoded_len());
+        result["artifact_path"] = json!(output.as_str());
+        result["proof_timings"] = json!(timings);
+        result["artifact_write_us"] = json!(elapsed_us(write_started));
+      }
+      if let Some(artifact) = artifact {
+        let verify_started = std::time::Instant::now();
+        prepared.verify(&artifact)?;
+        result["verify_us"] = json!(elapsed_us(verify_started));
+        result["artifact_bytes"] = json!(artifact.encoded_len());
+        result["artifact_path"] = json!(artifact_path.as_str());
+      }
+      result["operation_total_us"] = json!(elapsed_us(started));
+      result["process_peak_rss_bytes"] =
+        json!(flock_stage3_host::stage3_process_peak_rss_bytes());
+      Ok(result.to_string())
+    })();
     match result {
-      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
-      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+      Ok(report) => lean_ffi::object::LeanIOResult::ok(LeanExcept::ok(
+        LeanString::new(&report),
+      )),
+      Err(error) => lean_ffi::object::LeanIOResult::ok(
+        LeanExcept::error_string(&format!("{error:#}")),
+      ),
     }
   }
   #[cfg(not(feature = "flock"))]
@@ -1799,9 +1818,10 @@ extern "C" fn rs_flock_stage3_aggregate_root(
       &mode,
       &artifact_path,
       &output,
+      &limits_json,
     );
-    LeanExcept::error_string(
+    lean_ffi::object::LeanIOResult::ok(LeanExcept::error_string(
       "ix was built without Flock Stage 3; rebuild with IX_FLOCK=1",
-    )
+    ))
   }
 }

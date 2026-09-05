@@ -8,7 +8,7 @@
 use aiur::vk_codec::{AiurAirCircuitMetadata, AiurVerifyingKey};
 use anyhow::{Result, bail};
 use flock_prover::{
-  circuit::builder::{ShapeBuilder, SlotId, Wire},
+  circuit::builder::{SlotId, Wire},
   field::F128,
 };
 use ix_terminal::{
@@ -32,6 +32,7 @@ use crate::{
     record_fixed,
   },
   goldilocks::GOLDILOCKS_MODULUS,
+  sizing::CircuitEmitter,
   transcript::TranscriptConstraintRegion,
   transcript::{constrain_hash, hash_trace},
 };
@@ -182,32 +183,6 @@ impl Stage2AirProgramV1 {
       statement_digest: prepared.statement().digest(),
     })
   }
-
-  pub(crate) fn row_budget(&self) -> usize {
-    let graph_rows = self
-      .active_circuits
-      .iter()
-      .map(|circuit| {
-        let nodes = circuit.metadata.graph.nodes.len();
-        let constraints = circuit.metadata.graph.zeros.len()
-          + circuit
-            .metadata
-            .graph
-            .lookups
-            .len()
-            .div_ceil(circuit.metadata.lookup_group_size)
-            * EXTENSION_DEGREE;
-        nodes
-          .saturating_mul(96)
-          .saturating_add(constraints.saturating_mul(192))
-          .saturating_add(circuit.metadata.quotient_degree * 96)
-          .saturating_add(2048)
-      })
-      .sum::<usize>();
-    graph_rows
-      .saturating_add(self.claim_bindings.len().saturating_mul(128))
-      .max(1)
-  }
 }
 
 fn validate_pcs_geometry(
@@ -245,7 +220,7 @@ fn validate_pcs_geometry(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn constrain_stage2_air(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   blake3: SlotId,
   equality: SlotId,
@@ -546,7 +521,7 @@ pub(crate) fn constrain_stage2_air(
 
 #[allow(clippy::too_many_arguments)]
 fn constrain_stage2_statement(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   blake3: SlotId,
   data_zero: Wire,
@@ -611,7 +586,7 @@ struct BoundAirOpenings {
 
 #[allow(clippy::too_many_arguments)]
 fn bind_air_openings(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   window: SlotId,
   data_zero: Wire,
   inputs: &mut Vec<F128>,
@@ -686,7 +661,7 @@ fn bind_air_openings(
 
 #[allow(clippy::too_many_arguments)]
 fn bind_matrix(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   window: SlotId,
   data_zero: Wire,
   inputs: &mut Vec<F128>,
@@ -725,7 +700,7 @@ fn bind_matrix(
 
 #[allow(clippy::too_many_arguments)]
 fn constrain_graph(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   neg_one: Wire,
   inputs: &mut Vec<F128>,
@@ -792,7 +767,7 @@ fn constrain_graph(
 
 #[allow(clippy::too_many_arguments)]
 fn constrain_logup(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   neg_one: Wire,
   seven: Wire,
@@ -898,7 +873,7 @@ fn constrain_logup(
 }
 
 fn coord_mul(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   seven: Wire,
   left: [Wire; 2],
@@ -916,7 +891,7 @@ fn coord_mul(
 }
 
 fn ext_sub(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   neg_one: Wire,
   left: Wire,
@@ -928,7 +903,7 @@ fn ext_sub(
 
 #[allow(clippy::too_many_arguments)]
 fn bound_low_word(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   window: SlotId,
   data_zero: Wire,
@@ -951,7 +926,7 @@ fn bound_low_word(
 }
 
 fn record_private(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   inputs: &mut Vec<F128>,
   value: F128,
 ) -> Wire {

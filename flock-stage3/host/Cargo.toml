@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Production-parameter census/proof experiments are opt-in, separate from
+# both the fast suite and the routine serial cryptographic vectors. Run the
+# high-memory proof separately; the census itself never invokes a prover.
+production-measurements = []
+
 [dependencies]
 anyhow = { workspace = true }
 aiur = { workspace = true }
@@ -14,6 +20,7 @@ ix-terminal = { workspace = true }
 multi-stark = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,8 +1,8 @@
 //! Boolean R1CS gadgets for Goldilocks values carried as little-endian u64s.
 //!
-//! Flock's circuit wiring moves one `F128` word at a time. One gate therefore
-//! checks two Goldilocks representatives at once and exposes a 128-bit
-//! violation word. The circuit connects that output to a fixed zero wire.
+//! Each canonicality row checks two `F128` words (four Goldilocks limbs)
+//! and exposes all 128 violation bits. Packing the independent checks uses
+//! 508 of the same 512 Boolean columns as the former two-limb row.
 
 use std::sync::OnceLock;
 
@@ -26,10 +26,10 @@ const K_LOG: usize = 9;
 const K: usize = 1 << K_LOG;
 const K_SKIP: usize = 6;
 const INPUT_BASE: usize = 0;
-const VIOLATION_BASE: usize = 128;
-const FIRST_CHAIN_BASE: usize = 256;
-const SECOND_CHAIN_BASE: usize = FIRST_CHAIN_BASE + 31;
-const USEFUL_BITS: usize = SECOND_CHAIN_BASE + 31;
+const VIOLATION_BASE: usize = 256;
+const FIRST_CHAIN_BASE: usize = 384;
+const LIMBS: usize = 4;
+const USEFUL_BITS: usize = FIRST_CHAIN_BASE + LIMBS * 31;
 
 const ADD_K_LOG: usize = 11;
 const ADD_LEFT_BASE: usize = 0;
@@ -39,28 +39,32 @@ const ADD_VIOLATION_BASE: usize = 384;
 const ADD_TOP_VIOLATION_BASE: usize = 512;
 const ADD_RESERVED_COLUMNS: usize = 640;
 
-/// One R1CS row record for a pair of little-endian Goldilocks candidates.
+/// One R1CS row record for four little-endian Goldilocks candidates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct CanonicalGoldilocksPairRow(F128);
+pub(crate) struct CanonicalGoldilocksQuadRow([F128; 2]);
 
-/// A word-aligned Boolean gate that checks two canonical Goldilocks values.
+/// A word-aligned Boolean gate that checks four canonical Goldilocks values.
 ///
-/// Its sole output is zero exactly when both input u64 limbs are below
+/// Its sole output is zero exactly when all four input u64 limbs are below
 /// `2^64 - 2^32 + 1`. Callers must connect that output to a fixed zero wire;
 /// the table alone intentionally exposes, rather than silently pins, the
 /// violation bits.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct CanonicalGoldilocksPairGate {
+pub(crate) struct CanonicalGoldilocksQuadGate {
   pub(crate) nu: usize,
 }
 
-impl GateType for CanonicalGoldilocksPairGate {
-  type Row = CanonicalGoldilocksPairRow;
+impl GateType for CanonicalGoldilocksQuadGate {
+  type Row = CanonicalGoldilocksQuadRow;
   type Hint = ();
 
   fn table(&self) -> TableType {
-    crate::boolean::table_from_block_r1cs(build_canonical_pair_r1cs(self.nu))
-      .with_io_schema(vec![IoWord::input(0), IoWord::output(1)])
+    crate::boolean::table_from_block_r1cs(build_canonical_quad_r1cs(self.nu))
+      .with_io_schema(vec![
+        IoWord::input(0),
+        IoWord::input(1),
+        IoWord::output(2),
+      ])
   }
 
   fn eval(
@@ -69,9 +73,9 @@ impl GateType for CanonicalGoldilocksPairGate {
     _hint: &(),
     outputs: &mut Vec<F128>,
   ) -> Self::Row {
-    let value = inputs[0];
+    let value = [inputs[0], inputs[1]];
     outputs.push(violation_word(value));
-    CanonicalGoldilocksPairRow(value)
+    CanonicalGoldilocksQuadRow(value)
   }
 
   fn witness(&self, _rows: &[Self::Row], _nu: usize) -> SlotWitness {
@@ -79,32 +83,37 @@ impl GateType for CanonicalGoldilocksPairGate {
   }
 }
 
-/// Build the Boolean relation used by [`CanonicalGoldilocksPairGate`].
-pub(crate) fn build_canonical_pair_r1cs(nu: usize) -> BlockR1cs {
+/// Build the Boolean relation used by [`CanonicalGoldilocksQuadGate`].
+pub(crate) fn build_canonical_quad_r1cs(nu: usize) -> BlockR1cs {
   assert!(nu >= 3, "Flock lincheck requires at least eight rows");
 
   let mut a_rows = vec![Vec::new(); K];
   let mut b_rows = vec![Vec::new(); K];
 
   // Input bits are free Boolean values: x * x = x over GF(2).
-  for bit in 0..128 {
+  for bit in 0..256 {
     a_rows[INPUT_BASE + bit].push(INPUT_BASE + bit);
     b_rows[INPUT_BASE + bit].push(INPUT_BASE + bit);
   }
 
   // Fold each limb's high 32 bits to one `high_is_all_ones` bit.
-  add_and_chain(&mut a_rows, &mut b_rows, 32, FIRST_CHAIN_BASE);
-  add_and_chain(&mut a_rows, &mut b_rows, 96, SECOND_CHAIN_BASE);
+  for limb in 0..LIMBS {
+    add_and_chain(
+      &mut a_rows,
+      &mut b_rows,
+      limb * 64 + 32,
+      FIRST_CHAIN_BASE + limb * 31,
+    );
+  }
 
   // x >= p iff its high 32 bits are all one and at least one low bit is one.
   // Materialize all 32 products. Wiring pins the complete output word to zero.
-  let first_high_all = FIRST_CHAIN_BASE + 30;
-  let second_high_all = SECOND_CHAIN_BASE + 30;
-  for low_bit in 0..32 {
-    a_rows[VIOLATION_BASE + low_bit].push(first_high_all);
-    b_rows[VIOLATION_BASE + low_bit].push(low_bit);
-    a_rows[VIOLATION_BASE + 32 + low_bit].push(second_high_all);
-    b_rows[VIOLATION_BASE + 32 + low_bit].push(64 + low_bit);
+  for limb in 0..LIMBS {
+    let high_all = FIRST_CHAIN_BASE + limb * 31 + 30;
+    for low_bit in 0..32 {
+      a_rows[VIOLATION_BASE + limb * 32 + low_bit].push(high_all);
+      b_rows[VIOLATION_BASE + limb * 32 + low_bit].push(limb * 64 + low_bit);
+    }
   }
 
   let identity_rows = (0..K).map(|row| vec![row]).collect();
@@ -124,13 +133,13 @@ pub(crate) fn build_canonical_pair_r1cs(nu: usize) -> BlockR1cs {
 }
 
 /// Produce Flock's batch-major `(z, A z, B z, lincheck stripe)` tuple.
-pub(crate) fn generate_canonical_pair_witness(
-  rows: &[CanonicalGoldilocksPairRow],
+pub(crate) fn generate_canonical_quad_witness(
+  rows: &[CanonicalGoldilocksQuadRow],
   nu: usize,
 ) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
   let capacity = 1usize << nu;
   assert!(rows.len() <= capacity);
-  let r1cs = build_canonical_pair_r1cs(nu);
+  let r1cs = build_canonical_quad_r1cs(nu);
   let mut z = vec![false; r1cs.n()];
   for (outer, row) in rows.iter().enumerate() {
     let range = outer * K..(outer + 1) * K;
@@ -153,12 +162,12 @@ pub(crate) fn generate_canonical_pair_witness(
   )
 }
 
-pub(crate) fn generate_canonical_pair_witness_into(
-  rows: &[CanonicalGoldilocksPairRow],
+pub(crate) fn generate_canonical_quad_witness_into(
+  rows: &[CanonicalGoldilocksQuadRow],
   nu: usize,
   dst: SlotWitnessDest<'_>,
 ) -> Vec<u8> {
-  let r1cs = build_canonical_pair_r1cs(nu);
+  let r1cs = build_canonical_quad_r1cs(nu);
   generate_boolean_rows_into(
     r1cs.k_log,
     r1cs.useful_bits,
@@ -182,7 +191,7 @@ pub(crate) struct GoldilocksAddPairRow {
 ///
 /// The gate exposes the result plus two zero-valued equation-residual words.
 /// Callers connect both residuals to a fixed zero wire and pass every input
-/// and result through [`CanonicalGoldilocksPairGate`]. Keeping canonicality a
+/// and result through [`CanonicalGoldilocksQuadGate`]. Keeping canonicality a
 /// shared table avoids duplicating its constraints in every arithmetic table.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GoldilocksAddPairGate {
@@ -377,12 +386,16 @@ fn sparse_matrix(rows: Vec<Vec<usize>>) -> SparseBinaryMatrix {
   SparseBinaryMatrix { num_rows: K, num_cols: K, rows }
 }
 
-fn fill_logical_row(bits: &mut [bool], value: F128) {
+fn fill_logical_row(bits: &mut [bool], value: [F128; 2]) {
   assert_eq!(bits.len(), K);
-  write_f128(bits, INPUT_BASE, value);
+  write_f128(bits, INPUT_BASE, value[0]);
+  write_f128(bits, INPUT_BASE + 128, value[1]);
   write_f128(bits, VIOLATION_BASE, violation_word(value));
-  fill_and_chain(bits, value.lo, FIRST_CHAIN_BASE);
-  fill_and_chain(bits, value.hi, SECOND_CHAIN_BASE);
+  for (limb, value) in
+    [value[0].lo, value[0].hi, value[1].lo, value[1].hi].into_iter().enumerate()
+  {
+    fill_and_chain(bits, value, FIRST_CHAIN_BASE + limb * 31);
+  }
 }
 
 fn fill_and_chain(bits: &mut [bool], limb: u64, chain_base: usize) {
@@ -393,10 +406,12 @@ fn fill_and_chain(bits: &mut [bool], limb: u64, chain_base: usize) {
   }
 }
 
-fn violation_word(value: F128) -> F128 {
-  let first = limb_violation_bits(value.lo) as u64;
-  let second = limb_violation_bits(value.hi) as u64;
-  F128::new(first | (second << 32), 0)
+fn violation_word(value: [F128; 2]) -> F128 {
+  let packed = value.map(|word| {
+    u64::from(limb_violation_bits(word.lo))
+      | (u64::from(limb_violation_bits(word.hi)) << 32)
+  });
+  F128::new(packed[0], packed[1])
 }
 
 fn limb_violation_bits(value: u64) -> u32 {
@@ -449,30 +464,39 @@ mod tests {
   #[test]
   fn canonicality_boundary_matches_goldilocks_modulus() {
     for value in [0, 1, GOLDILOCKS_MODULUS - 1] {
-      assert_eq!(violation_word(F128::new(value, value)), F128::ZERO);
+      assert_eq!(violation_word([F128::new(value, value); 2]), F128::ZERO);
     }
-    assert_ne!(violation_word(F128::new(GOLDILOCKS_MODULUS, 0)), F128::ZERO);
-    assert_ne!(violation_word(F128::new(0, GOLDILOCKS_MODULUS)), F128::ZERO);
-    assert_ne!(violation_word(F128::new(u64::MAX, 0)), F128::ZERO);
+    for limb in 0..LIMBS {
+      for bad in [GOLDILOCKS_MODULUS, GOLDILOCKS_MODULUS + 1, u64::MAX] {
+        let mut values = [0; LIMBS];
+        values[limb] = bad;
+        assert_ne!(violation_word(pack_limbs(values)), F128::ZERO);
+      }
+    }
+  }
+
+  fn pack_limbs(values: [u64; LIMBS]) -> [F128; 2] {
+    [F128::new(values[0], values[1]), F128::new(values[2], values[3])]
   }
 
   #[test]
   fn r1cs_recomputes_every_violation_bit() {
-    let r1cs = build_canonical_pair_r1cs(3);
-    for value in [
-      F128::new(0, GOLDILOCKS_MODULUS - 1),
-      F128::new(GOLDILOCKS_MODULUS, u64::MAX),
-    ] {
+    let r1cs = build_canonical_quad_r1cs(3);
+    assert_eq!(r1cs.k_log, 9);
+    assert_eq!(r1cs.useful_bits, 508);
+    for violation_bit in 0..128 {
+      let mut limbs = [GOLDILOCKS_MODULUS - 1; LIMBS];
+      limbs[violation_bit / 32] |= 1 << (violation_bit % 32);
+      let value = pack_limbs(limbs);
       let mut row = vec![false; K];
       fill_logical_row(&mut row, value);
       let mut witness = vec![false; r1cs.n()];
       witness[..K].copy_from_slice(&row);
       assert!(r1cs.satisfies(&witness));
 
-      if violation_word(value) != F128::ZERO {
-        witness[VIOLATION_BASE..VIOLATION_BASE + 128].fill(false);
-        assert!(!r1cs.satisfies(&witness));
-      }
+      assert!(witness[VIOLATION_BASE + violation_bit]);
+      witness[VIOLATION_BASE + violation_bit] = false;
+      assert!(!r1cs.satisfies(&witness), "violation bit {violation_bit}");
     }
   }
 
@@ -480,27 +504,40 @@ mod tests {
   fn circuit_wiring_pins_violation_output_to_zero() {
     let nu = 3;
     let mut builder = ShapeBuilder::new(nu);
-    let slot = builder.slot(CanonicalGoldilocksPairGate { nu });
-    let candidate = builder.input();
+    let slot = builder.slot(CanonicalGoldilocksQuadGate { nu });
+    let candidates = [builder.input(), builder.input()];
     let zero = builder.fixed_public_input(F128::ZERO);
-    let violation = builder.gate(slot, &[candidate])[0];
+    let violation = builder.gate(slot, &candidates)[0];
     builder.connect(violation, zero);
     let shape = builder.finish().unwrap();
 
-    shape.run(&[F128::new(GOLDILOCKS_MODULUS - 1, 0), F128::ZERO], &[]);
-    let invalid = catch_unwind(AssertUnwindSafe(|| {
-      shape.run(&[F128::new(GOLDILOCKS_MODULUS, 0), F128::ZERO], &[])
-    }));
-    assert!(invalid.is_err());
+    for value in [0, 1, (1 << 32) - 1, 1 << 32, GOLDILOCKS_MODULUS - 1] {
+      let values = pack_limbs([value; LIMBS]);
+      shape.run(&[values[0], values[1], F128::ZERO], &[]);
+    }
+    for limb in 0..LIMBS {
+      for bad in [GOLDILOCKS_MODULUS, GOLDILOCKS_MODULUS + 1, u64::MAX] {
+        let mut values = [17; LIMBS];
+        values[limb] = bad;
+        let values = pack_limbs(values);
+        assert!(
+          catch_unwind(AssertUnwindSafe(|| {
+            shape.run(&[values[0], values[1], F128::ZERO], &[])
+          }))
+          .is_err(),
+          "limb {limb}: {bad}"
+        );
+      }
+    }
   }
 
   #[test]
   fn batch_major_witness_has_zero_dummy_rows() {
     let rows = [
-      CanonicalGoldilocksPairRow(F128::new(1, 2)),
-      CanonicalGoldilocksPairRow(F128::new(3, 4)),
+      CanonicalGoldilocksQuadRow([F128::new(1, 2), F128::new(3, 4)]),
+      CanonicalGoldilocksQuadRow([F128::new(5, 6), F128::new(7, 8)]),
     ];
-    let (z, a, b, stripe) = generate_canonical_pair_witness(&rows, 3);
+    let (z, a, b, stripe) = generate_canonical_quad_witness(&rows, 3);
     assert_eq!(z.len(), 32);
     assert_eq!(a.len(), z.len());
     assert_eq!(b.len(), z.len());

@@ -1,0 +1,304 @@
+{
+  "schema": "ix.flock-stage3.sizing-experiment",
+  "version": 1,
+  "date": "2026-09-05",
+  "source_base_commit": "40cf786ac789",
+  "source_note": "Uncommitted shared-PCS and exact weighted-quotient follow-up on the exact-emission compiler. Circuit, public layout and relation digests change; dependency/configuration pins and admission defaults do not. Census and proof were separate standalone processes.",
+  "baseline_measurement": "production-parameters-exact-2026-09-05.json",
+  "fixture": "Three native multi-STARK circuits: one inactive, active heights 8 and 4, preprocessing and an 18-word claim lookup. This is not a persisted ix_aggr corpus root.",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "multi_stark_revision": "6ad074c1f2983ecdd7a56984d333441d6b38186a",
+  "config_digest": "1897ad7e36bc1a11a9dc4170552b1b48f5689b8f04ecc3c3825ce0273ecfaffc",
+  "commitment": {
+    "log_blowup": 2,
+    "cap_height": 0
+  },
+  "fri_parameter_words": [
+    0,
+    1,
+    100,
+    0,
+    20
+  ],
+  "circuit_digest": "d2a1e42a479137b93c23d396268ef922611f39eea3e5f7317e487487b421c4c1",
+  "relation_digest": "e50dbebd84beae420c84176417a0d62b5c6b347298516a933af0a86f3c6eb7f3",
+  "stage2_root_digest": "9773a5442674c6679b2551d15dce94702964f25402094831d930fe010182320f",
+  "stage3_statement_digest": "c4964881763e86c4e3f119588133ac2e508e86c77d1958c0a41ef2899f7d2ea7",
+  "rayon_threads": 8,
+  "census_address_space_limit_bytes": 17179869184,
+  "proof_address_space_limit_bytes": 68719476736,
+  "test_total_seconds": 2.01,
+  "census_phase_ms": {
+    "count_and_admit": 4.44,
+    "declare_slots": 769.23,
+    "shared_pcs_constraints": 0.42,
+    "pcs_query_constraints": 39.21,
+    "fri_query_constraints": 9.77,
+    "finish_builder": 1022.95
+  },
+  "census_admission_boundary": {
+    "max_table_capacity": 131072,
+    "max_union_witness_bytes": 6442450944,
+    "rejected_one_row_or_byte_below": true
+  },
+  "proved": true,
+  "two_query_cross_check": {
+    "fri_parameter_words": [
+      0,
+      1,
+      2,
+      0,
+      0
+    ],
+    "relation": {
+      "blake3_rows": 119,
+      "byte_window_rows": 153,
+      "canonical_goldilocks_rows": 4633,
+      "circuit_digest": "3a8bda222284035196bf7fba73fbf673878bd35cbdf47dc692224192dcbd5029",
+      "digest_order_rows": 112,
+      "equality_rows": 123,
+      "field_sample_rows": 8,
+      "goldilocks_add_rows": 2519,
+      "goldilocks_mul_rows": 946,
+      "hash_sample_rows": 2,
+      "lane_repack_rows": 1482,
+      "nu": 13,
+      "public_values": 680,
+      "relation_inputs": 669,
+      "table_capacity": 8192,
+      "u64_split_rows": 8
+    },
+    "resources": {
+      "committed_union_log": 26,
+      "dense_witness_bytes": 6200960,
+      "padded_union_witness_bytes": 402653184,
+      "pcs_codeword_bytes": 12582912,
+      "pcs_lanes": 48,
+      "pcs_log_batch_size": 6,
+      "pcs_log_inverse_rate": 1,
+      "pcs_message_bytes": 6291456,
+      "tables": [
+        {
+          "boolean_columns": 65536,
+          "padded_witness_bytes": 201326592,
+          "registry_slot": 0,
+          "rows": 946,
+          "useful_boolean_columns": 42357
+        },
+        {
+          "boolean_columns": 16384,
+          "padded_witness_bytes": 50331648,
+          "registry_slot": 1,
+          "rows": 119,
+          "useful_boolean_columns": 11707
+        },
+        {
+          "boolean_columns": 16384,
+          "padded_witness_bytes": 50331648,
+          "registry_slot": 2,
+          "rows": 8,
+          "useful_boolean_columns": 5482
+        },
+        {
+          "boolean_columns": 4096,
+          "padded_witness_bytes": 12582912,
+          "registry_slot": 3,
+          "rows": 153,
+          "useful_boolean_columns": 2561
+        },
+        {
+          "boolean_columns": 2048,
+          "padded_witness_bytes": 6291456,
+          "registry_slot": 4,
+          "rows": 2519,
+          "useful_boolean_columns": 1725
+        },
+        {
+          "boolean_columns": 2048,
+          "padded_witness_bytes": 6291456,
+          "registry_slot": 5,
+          "rows": 112,
+          "useful_boolean_columns": 1409
+        },
+        {
+          "boolean_columns": 1024,
+          "padded_witness_bytes": 3145728,
+          "registry_slot": 6,
+          "rows": 1482,
+          "useful_boolean_columns": 768
+        },
+        {
+          "boolean_columns": 512,
+          "padded_witness_bytes": 1572864,
+          "registry_slot": 7,
+          "rows": 4633,
+          "useful_boolean_columns": 318
+        },
+        {
+          "boolean_columns": 512,
+          "padded_witness_bytes": 1572864,
+          "registry_slot": 8,
+          "rows": 123,
+          "useful_boolean_columns": 385
+        },
+        {
+          "boolean_columns": 512,
+          "padded_witness_bytes": 1572864,
+          "registry_slot": 9,
+          "rows": 2,
+          "useful_boolean_columns": 256
+        },
+        {
+          "boolean_columns": 512,
+          "padded_witness_bytes": 1572864,
+          "registry_slot": 10,
+          "rows": 8,
+          "useful_boolean_columns": 385
+        }
+      ],
+      "virtual_union_log": 30
+    },
+    "prepare_us": 1532128,
+    "prove_us": 1121261,
+    "self_verify_us": 11691,
+    "artifact_bytes": 368163,
+    "payload_bytes": 368037,
+    "post_proof_process_peak_rss_bytes": 1883480064,
+    "explicit_reuse_verify_seconds": 0.011,
+    "fresh_relation_warm_tables_verify_seconds": 1.245,
+    "fresh_process_verify_seconds": 2.462,
+    "test_total_seconds": 7.75,
+    "address_space_limit_bytes": 17179869184,
+    "note": "Two-query integration test passed persistence, fresh-process verification and negative artifact checks. Capacity remains nu=13 / 384 MiB; artifact grew from 323267 bytes despite fewer rows because PCS geometry changed."
+  },
+  "proof_run": {
+    "prepare_us": 1854401,
+    "compile_us": 1838683,
+    "evaluate_us": 12617,
+    "prove_us": 3178037,
+    "self_verify_us": 18596,
+    "package_us": 309,
+    "proof_operation_us": 3196942,
+    "artifact_bytes": 461635,
+    "payload_bytes": 461509,
+    "preflight_process_peak_rss_bytes": 1154314240,
+    "post_proof_process_peak_rss_bytes": 9046319104,
+    "explicit_reuse_verify_seconds": 0.018,
+    "fresh_relation_warm_tables_verify_seconds": 1.726,
+    "fresh_process_verify_seconds": 2.861,
+    "artifact_persisted_and_cold_verified": true,
+    "rejected_wrong_relation_and_corrupt_proof": true,
+    "test_total_seconds": 11.6,
+    "artifact_retention": "Test persisted and fresh-process verified its artifact and separate trusted root transport, then removed both temporary files."
+  },
+  "relation": {
+    "blake3_rows": 4470,
+    "byte_window_rows": 153,
+    "canonical_goldilocks_rows": 103160,
+    "circuit_digest": "d2a1e42a479137b93c23d396268ef922611f39eea3e5f7317e487487b421c4c1",
+    "digest_order_rows": 7300,
+    "equality_rows": 5415,
+    "field_sample_rows": 8,
+    "goldilocks_add_rows": 54461,
+    "goldilocks_mul_rows": 21958,
+    "hash_sample_rows": 52,
+    "lane_repack_rows": 33198,
+    "nu": 17,
+    "public_values": 19179,
+    "relation_inputs": 18676,
+    "table_capacity": 131072,
+    "u64_split_rows": 520
+  },
+  "resources": {
+    "committed_union_log": 31,
+    "dense_witness_bytes": 145047376,
+    "padded_union_witness_bytes": 6442450944,
+    "pcs_codeword_bytes": 293601280,
+    "pcs_lanes": 35,
+    "pcs_log_batch_size": 6,
+    "pcs_log_inverse_rate": 1,
+    "pcs_message_bytes": 146800640,
+    "tables": [
+      {
+        "boolean_columns": 65536,
+        "padded_witness_bytes": 3221225472,
+        "registry_slot": 0,
+        "rows": 21958,
+        "useful_boolean_columns": 42357
+      },
+      {
+        "boolean_columns": 16384,
+        "padded_witness_bytes": 805306368,
+        "registry_slot": 1,
+        "rows": 4470,
+        "useful_boolean_columns": 11707
+      },
+      {
+        "boolean_columns": 16384,
+        "padded_witness_bytes": 805306368,
+        "registry_slot": 2,
+        "rows": 8,
+        "useful_boolean_columns": 5482
+      },
+      {
+        "boolean_columns": 4096,
+        "padded_witness_bytes": 201326592,
+        "registry_slot": 3,
+        "rows": 153,
+        "useful_boolean_columns": 2561
+      },
+      {
+        "boolean_columns": 2048,
+        "padded_witness_bytes": 100663296,
+        "registry_slot": 4,
+        "rows": 54461,
+        "useful_boolean_columns": 1725
+      },
+      {
+        "boolean_columns": 2048,
+        "padded_witness_bytes": 100663296,
+        "registry_slot": 5,
+        "rows": 7300,
+        "useful_boolean_columns": 1409
+      },
+      {
+        "boolean_columns": 1024,
+        "padded_witness_bytes": 50331648,
+        "registry_slot": 6,
+        "rows": 33198,
+        "useful_boolean_columns": 768
+      },
+      {
+        "boolean_columns": 512,
+        "padded_witness_bytes": 25165824,
+        "registry_slot": 7,
+        "rows": 103160,
+        "useful_boolean_columns": 318
+      },
+      {
+        "boolean_columns": 512,
+        "padded_witness_bytes": 25165824,
+        "registry_slot": 8,
+        "rows": 5415,
+        "useful_boolean_columns": 385
+      },
+      {
+        "boolean_columns": 512,
+        "padded_witness_bytes": 25165824,
+        "registry_slot": 9,
+        "rows": 52,
+        "useful_boolean_columns": 256
+      },
+      {
+        "boolean_columns": 512,
+        "padded_witness_bytes": 25165824,
+        "registry_slot": 10,
+        "rows": 520,
+        "useful_boolean_columns": 385
+      }
+    ],
+    "virtual_union_log": 34
+  },
+  "memory_note": "Padded z/a/b geometry is not a total RSS bound. Compiler, lincheck, PCS and allocator scratch are additional. RSS is the proving process lifetime high-water mark, not the child verifier's. The native real ix_aggr singleton still fails admission at 768 GiB padded z/a/b.",
+  "validation_note": "72 fast tests and 13 serial cryptographic vectors pass. Added columnwise-versus-grouped algebra vectors across heights/offsets and alpha edge cases, plus compiled-gate rejection of modified/noncanonical D, inverse and Q and a coordinated zero-denominator attack. These checks are not an independent security audit."
+}

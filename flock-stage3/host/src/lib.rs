@@ -15,15 +15,22 @@ mod goldilocks;
 mod limits;
 mod merkle;
 mod multiplication;
+mod prepared;
 mod relation;
+mod report;
+mod sizing;
 mod transcript;
 mod typed_witness;
 mod window;
 
+#[cfg(test)]
+mod test_support;
+
 use aiur::vk_codec::AiurVerifyingKey;
 use anyhow::{Result, bail};
 use ix_terminal::{
-  Stage2AdviceProfileV1, ValidatedStage2RootV1, validate_and_expand_root_inputs,
+  Stage2AdviceProfileV1, ValidatedStage2RootV1,
+  validate_and_expand_root_inputs_bounded,
 };
 use multi_stark::types::FriParameters;
 use std::fmt;
@@ -37,7 +44,8 @@ pub use arithmetic::{
 use artifact::Stage3ProductionPayloadV1;
 pub use artifact::{
   MAX_STAGE3_ARTIFACT_BYTES, MAX_STAGE3_PROOF_BYTES, STAGE3_STATEMENT_BYTES,
-  STAGE3_STATEMENT_DOMAIN, Stage3ArtifactV1, Stage3StatementV1,
+  STAGE3_STATEMENT_DOMAIN, Stage3ArtifactV1, Stage3ArtifactWriterV1,
+  Stage3StatementV1,
 };
 pub use binding::{
   STAGE3_BINDING_ARTIFACT_MAGIC, Stage3BindingArtifactV1,
@@ -89,19 +97,20 @@ pub use fri::{
   verify_transcript_bound_pcs_fri_queries_conformance,
   verify_transcript_bound_pcs_reduction_conformance,
 };
-use fri::{
-  preflight_stage2_air_pcs_fri, prove_stage2_air_pcs_fri_production,
-  stage2_air_pcs_fri_circuit_digest, verify_stage2_air_pcs_fri_production,
-};
 pub use limits::Stage3ResourceLimitsV1;
 pub use merkle::{
   MERKLE_CONFORMANCE_ARTIFACT_MAGIC, MerkleConformanceArtifactV1, MerklePathV1,
   prove_merkle_conformance, verify_merkle_conformance,
 };
+pub use prepared::{Stage3PreparedRootV1, Stage3ProofTimingsV1};
 pub use relation::{
   STAGE3_RELATION_MANIFEST_DOMAIN, STAGE3_VERIFIER_PHASES_V1,
   Stage3LoweringStatusV1, Stage3RelationBoundsV1, Stage3RelationManifestV1,
   Stage3VerifierPhaseV1,
+};
+pub use report::{
+  Stage3PreflightTimingsV1, Stage3ResourceReportV1, Stage3TableReportV1,
+  process_peak_rss_bytes as stage3_process_peak_rss_bytes,
 };
 pub use transcript::{
   STAGE2_TRANSCRIPT_CONFORMANCE_ARTIFACT_MAGIC,
@@ -126,11 +135,21 @@ pub struct Stage3PreflightReportV1 {
   pub stage2_root_digest: [u8; 32],
   pub relation_digest: [u8; 32],
   pub stage3_statement_digest: [u8; 32],
+  pub verifying_key_digest: [u8; 32],
+  pub compact_proof_digest: [u8; 32],
+  pub typed_witness_layout_digest: [u8; 32],
+  pub activation: Vec<bool>,
+  pub log_degrees: Vec<u8>,
+  pub fri_parameter_words: [u64; 5],
   pub verifying_key_bytes: u64,
   pub claim_bytes: u64,
   pub compact_proof_bytes: u64,
   pub advice: Stage2AdviceProfileV1,
   pub relation: Stage3RelationCensusV1,
+  pub resources: Stage3ResourceReportV1,
+  pub limits: Stage3ResourceLimitsV1,
+  pub timings: Stage3PreflightTimingsV1,
+  pub process_peak_rss_bytes: Option<u64>,
 }
 
 impl fmt::Display for Stage3PreflightReportV1 {
@@ -179,7 +198,7 @@ impl fmt::Display for Stage3PreflightReportV1 {
       self.relation.public_values,
       self.relation.total_rows(),
     )?;
-    write!(
+    writeln!(
       formatter,
       "  gate rows: blake3={}, order={}, add={}, mul={}, repack={}, canonical={}, equality={}, hash-sample={}, field-sample={}, split={}, window={}",
       self.relation.blake3_rows,
@@ -193,6 +212,36 @@ impl fmt::Display for Stage3PreflightReportV1 {
       self.relation.field_sample_rows,
       self.relation.u64_split_rows,
       self.relation.byte_window_rows,
+    )?;
+    writeln!(
+      formatter,
+      "  union: virtual log={}, committed log={}, dense={} B, padded z/a/b={} B",
+      self.resources.virtual_union_log,
+      self.resources.committed_union_log,
+      self.resources.dense_witness_bytes,
+      self.resources.padded_union_witness_bytes,
+    )?;
+    writeln!(
+      formatter,
+      "  PCS: message={} B, codeword={} B, lanes={}, log inverse rate={}",
+      self.resources.pcs_message_bytes,
+      self.resources.pcs_codeword_bytes,
+      self.resources.pcs_lanes,
+      self.resources.pcs_log_inverse_rate,
+    )?;
+    writeln!(
+      formatter,
+      "  fresh preparation (us): native={}, lowering={}, compile={}, evaluate={}, total={}",
+      self.timings.native_prepare_us,
+      self.timings.lowering_us,
+      self.timings.compile_us,
+      self.timings.evaluate_us,
+      self.timings.total_us,
+    )?;
+    write!(
+      formatter,
+      "  memory: process lifetime peak={:?} B; PCS/compiler scratch is additional to padded witness",
+      self.process_peak_rss_bytes,
     )
   }
 }
@@ -212,16 +261,68 @@ impl FlockStage3Backend {
     proof_bytes: &[u8],
     fri: &FriParameters,
   ) -> Result<ValidatedStage2RootV1> {
-    let limits = Stage3ResourceLimitsV1::default();
+    self.prepare_witness_with_limits(
+      vk_bytes,
+      claim_bytes,
+      proof_bytes,
+      fri,
+      Stage3ResourceLimitsV1::default(),
+    )
+  }
+
+  pub fn prepare_witness_with_limits(
+    self,
+    vk_bytes: &[u8],
+    claim_bytes: &[u8],
+    proof_bytes: &[u8],
+    fri: &FriParameters,
+    limits: Stage3ResourceLimitsV1,
+  ) -> Result<ValidatedStage2RootV1> {
     limits.ensure_transport(vk_bytes, claim_bytes, proof_bytes, fri)?;
     // Fail before relation construction on an invalid compact root. The Flock
     // relation repeats verification; this native validation/expansion pass is
     // the inexpensive guard needed before allocating a production-scale
     // circuit.
-    let prepared =
-      validate_and_expand_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
+    let prepared = validate_and_expand_root_inputs_bounded(
+      vk_bytes,
+      claim_bytes,
+      proof_bytes,
+      fri,
+      limits.max_advice_bytes,
+    )?;
     limits.ensure_prepared(&prepared)?;
     Ok(prepared)
+  }
+
+  /// Admit, compile, and evaluate once. The caller owns the relation and may
+  /// explicitly reuse it for proving or verification; no root is retained in
+  /// a process-global cache by the production workflow.
+  pub fn prepare_stage2(
+    self,
+    vk_bytes: &[u8],
+    claim_bytes: &[u8],
+    proof_bytes: &[u8],
+    fri: &FriParameters,
+  ) -> Result<Stage3PreparedRootV1> {
+    self.prepare_stage2_with_limits(
+      vk_bytes,
+      claim_bytes,
+      proof_bytes,
+      fri,
+      Stage3ResourceLimitsV1::default(),
+    )
+  }
+
+  pub fn prepare_stage2_with_limits(
+    self,
+    vk_bytes: &[u8],
+    claim_bytes: &[u8],
+    proof_bytes: &[u8],
+    fri: &FriParameters,
+    limits: Stage3ResourceLimitsV1,
+  ) -> Result<Stage3PreparedRootV1> {
+    Stage3LoweringStatusV1::current().ensure_complete()?;
+    Stage3PreparedRootV1::new(vk_bytes, claim_bytes, proof_bytes, fri, limits)
   }
 
   /// Validate a compact aggregate root, compile the complete specialised
@@ -233,49 +334,12 @@ impl FlockStage3Backend {
     proof_bytes: &[u8],
     fri: &FriParameters,
   ) -> Result<Stage3PreflightReportV1> {
-    Stage3LoweringStatusV1::current().ensure_complete()?;
-    let prepared =
-      self.prepare_witness(vk_bytes, claim_bytes, proof_bytes, fri)?;
-    let witness = Stage2AirPcsFriWitnessV1::from_prepared(&prepared, fri)?;
-    self.preflight_prepared(
-      &prepared,
-      &witness,
-      vk_bytes.len(),
-      claim_bytes.len(),
-      proof_bytes.len(),
+    Ok(
+      self
+        .prepare_stage2(vk_bytes, claim_bytes, proof_bytes, fri)?
+        .report()
+        .clone(),
     )
-  }
-
-  fn preflight_prepared(
-    self,
-    prepared: &ValidatedStage2RootV1,
-    witness: &Stage2AirPcsFriWitnessV1,
-    verifying_key_bytes: usize,
-    claim_bytes: usize,
-    compact_proof_bytes: usize,
-  ) -> Result<Stage3PreflightReportV1> {
-    let relation = preflight_stage2_air_pcs_fri(witness)?;
-    let manifest = Stage3RelationManifestV1::for_prepared_and_program_digest(
-      prepared,
-      relation.circuit_digest,
-    )?;
-    let statement = self.prepare_statement(prepared, &manifest)?;
-    Ok(Stage3PreflightReportV1 {
-      stage2_root_digest: prepared.statement().digest(),
-      relation_digest: manifest.relation_digest()?,
-      stage3_statement_digest: statement.digest(),
-      verifying_key_bytes: u64::try_from(verifying_key_bytes).map_err(
-        |error| anyhow::anyhow!("verifying-key length exceeds u64: {error}"),
-      )?,
-      claim_bytes: u64::try_from(claim_bytes).map_err(|error| {
-        anyhow::anyhow!("claim length exceeds u64: {error}")
-      })?,
-      compact_proof_bytes: u64::try_from(compact_proof_bytes).map_err(
-        |error| anyhow::anyhow!("compact-proof length exceeds u64: {error}"),
-      )?,
-      advice: prepared.advice_profile().clone(),
-      relation,
-    })
   }
 
   /// Compile and content-address the complete relation for a prepared root.
@@ -321,42 +385,12 @@ impl FlockStage3Backend {
     proof_bytes: &[u8],
     fri: &FriParameters,
   ) -> Result<Stage3ArtifactV1> {
-    Stage3LoweringStatusV1::current().ensure_complete()?;
-    let prepared =
-      self.prepare_witness(vk_bytes, claim_bytes, proof_bytes, fri)?;
-    let witness = Stage2AirPcsFriWitnessV1::from_prepared(&prepared, fri)?;
-    self.prove_prepared(&prepared, &witness, vk_bytes, claim_bytes, proof_bytes)
-  }
-
-  fn prove_prepared(
-    self,
-    prepared: &ValidatedStage2RootV1,
-    witness: &Stage2AirPcsFriWitnessV1,
-    vk_bytes: &[u8],
-    claim_bytes: &[u8],
-    proof_bytes: &[u8],
-  ) -> Result<Stage3ArtifactV1> {
-    let flock_artifact = prove_stage2_air_pcs_fri_production(witness)?;
-    verify_stage2_air_pcs_fri_production(&flock_artifact)?;
-    let manifest = Stage3RelationManifestV1::for_prepared_and_program_digest(
-      prepared,
-      *flock_artifact.circuit_digest(),
-    )?;
-    let statement = self.prepare_statement(prepared, &manifest)?;
-    let payload = Stage3ProductionPayloadV1::new(
-      vk_bytes,
-      claim_bytes,
-      proof_bytes,
-      *flock_artifact.circuit_digest(),
-      flock_artifact.proof_bundle_bytes(),
-    )?
-    .encode()?;
-    Stage3ArtifactV1::new(statement, payload)
+    self.prepare_stage2(vk_bytes, claim_bytes, proof_bytes, fri)?.prove()
   }
 
   /// Run the mandatory no-prove gate and then prove using the same validated
-  /// root, typed witness, and cached relation. The returned artifact has also
-  /// passed the production Flock verifier.
+  /// root, typed witness, and explicitly owned relation. The returned artifact
+  /// has also passed the production Flock verifier.
   pub fn preflight_and_prove_stage2(
     self,
     vk_bytes: &[u8],
@@ -364,24 +398,10 @@ impl FlockStage3Backend {
     proof_bytes: &[u8],
     fri: &FriParameters,
   ) -> Result<(Stage3PreflightReportV1, Stage3ArtifactV1)> {
-    Stage3LoweringStatusV1::current().ensure_complete()?;
     let prepared =
-      self.prepare_witness(vk_bytes, claim_bytes, proof_bytes, fri)?;
-    let witness = Stage2AirPcsFriWitnessV1::from_prepared(&prepared, fri)?;
-    let report = self.preflight_prepared(
-      &prepared,
-      &witness,
-      vk_bytes.len(),
-      claim_bytes.len(),
-      proof_bytes.len(),
-    )?;
-    let artifact = self.prove_prepared(
-      &prepared,
-      &witness,
-      vk_bytes,
-      claim_bytes,
-      proof_bytes,
-    )?;
+      self.prepare_stage2(vk_bytes, claim_bytes, proof_bytes, fri)?;
+    let report = prepared.report().clone();
+    let artifact = prepared.prove()?;
     Ok((report, artifact))
   }
 
@@ -395,32 +415,24 @@ impl FlockStage3Backend {
   ) -> Result<()> {
     artifact.ensure_statement(expected)?;
     let payload = Stage3ProductionPayloadV1::decode(artifact.proof_bytes())?;
+    Stage3ResourceLimitsV1::default().ensure_raw_transport(
+      payload.vk_bytes(),
+      payload.claim_bytes(),
+      payload.stage2_proof_bytes(),
+    )?;
     let key = AiurVerifyingKey::from_bytes(payload.vk_bytes())
       .map_err(|error| anyhow::anyhow!("decode Stage 3 Aiur key: {error}"))?;
     let fri = key.fri_parameters();
-    let prepared = self.prepare_witness(
+    let prepared = self.prepare_stage2(
       payload.vk_bytes(),
       payload.claim_bytes(),
       payload.stage2_proof_bytes(),
       &fri,
     )?;
-    if prepared.statement().digest() != *expected.stage2_root_digest() {
-      bail!("Stage 3 proof targets a different Stage 2 root");
-    }
-    let witness = Stage2AirPcsFriWitnessV1::from_prepared(&prepared, &fri)?;
-    let manifest = Stage3RelationManifestV1::for_prepared_and_program_digest(
-      &prepared,
-      payload.circuit_digest(),
-    )?;
-    if manifest.relation_digest()? != *expected.relation_digest() {
+    if prepared.statement() != expected {
       bail!("Stage 3 relation manifest does not match the expected relation");
     }
-    let flock_artifact = Stage2AirPcsFriArtifactV1::from_parts(
-      witness,
-      payload.circuit_digest(),
-      payload.flock_proof_bundle_bytes().to_vec(),
-    )?;
-    verify_stage2_air_pcs_fri_production(&flock_artifact)
+    prepared.verify(artifact)
   }
 
   /// Verify an artifact against the exact canonical aggregate-root transport
@@ -438,9 +450,6 @@ impl FlockStage3Backend {
     proof_bytes: &[u8],
     fri: &FriParameters,
   ) -> Result<()> {
-    Stage3LoweringStatusV1::current().ensure_complete()?;
-    let prepared =
-      self.prepare_witness(vk_bytes, claim_bytes, proof_bytes, fri)?;
     let payload = Stage3ProductionPayloadV1::decode(artifact.proof_bytes())?;
     for (observed, external, label) in [
       (payload.vk_bytes(), vk_bytes, "verifying key"),
@@ -452,21 +461,9 @@ impl FlockStage3Backend {
       }
     }
 
-    let witness = Stage2AirPcsFriWitnessV1::from_prepared(&prepared, fri)?;
-    let relation_program_digest = stage2_air_pcs_fri_circuit_digest(&witness)?;
-    let manifest = Stage3RelationManifestV1::for_prepared_and_program_digest(
-      &prepared,
-      relation_program_digest,
-    )?;
-    let expected = self.prepare_statement(&prepared, &manifest)?;
-    artifact.ensure_statement(&expected)?;
-
-    let flock_artifact = Stage2AirPcsFriArtifactV1::from_parts(
-      witness,
-      payload.circuit_digest(),
-      payload.flock_proof_bundle_bytes().to_vec(),
-    )?;
-    verify_stage2_air_pcs_fri_production(&flock_artifact)
+    self
+      .prepare_stage2(vk_bytes, claim_bytes, proof_bytes, fri)?
+      .verify(artifact)
   }
 }
 

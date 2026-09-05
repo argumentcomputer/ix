@@ -103,11 +103,9 @@ def selfTestSuite : IO UInt32 := do
 -- ════════════════════════════════════════════════════════════════════════════
 
 /-- A tiny Aiur program: a BRANCHLESS entrypoint (single selector, no match)
-that routes its argument through store/load before calling `factorial`. Its
-circuit has 4 lookups (return, store, load, call) with raw degree-1
-arguments, so synthesis groups them 2 per chained-accumulator step
-(`lookup_group_size = 2`) — the recursive verifier's grouped logUp fold is
-exercised end-to-end alongside the k = 1 branching/memory circuits. -/
+with enough degree-1 lookups to benefit from the opt-in four-message packing.
+The recursive verifier exercises k = 4 alongside the k = 1 branching/memory
+and k = 2 gadget circuits, with the same commitment/FRI parameters. -/
 def factorialProgram : Source.Toplevel := ⟦
   pub fn factorial(n: G) -> G {
     match n {
@@ -117,7 +115,13 @@ def factorialProgram : Source.Toplevel := ⟦
   }
 
   pub fn fact_entry(n: G) -> G {
-    factorial(load(store(n)))
+    let v = load(store(n));
+    assert_eq!(load(store(n + 1)), n + 1);
+    assert_eq!(load(store(n + 2)), n + 2);
+    assert_eq!(load(store(n + 3)), n + 3);
+    assert_eq!(load(store(n + 4)), n + 4);
+    assert_eq!(load(store(n + 5)), n + 5);
+    factorial(v)
   }
 ⟧
 
@@ -152,7 +156,8 @@ def endToEndSuite : IO UInt32 := do
   let facCompiled ← match factorialProgram.compile with
     | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
     | .ok c => pure c
-  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
+  let baselineSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
+  let facSystem := AiurSystem.buildMinOpeningWidth facCompiled.bytecode recCommitParams innerFri
   let facIdx ← match facCompiled.getFuncIdx `fact_entry with
     | some i => pure i
     | none => IO.eprintln "fact_entry entrypoint not found"; return 1
@@ -237,7 +242,12 @@ def endToEndSuite : IO UInt32 := do
     vCompiled.bytecode.executeMultiStark vIdx badClaimInput proofBytes vkBytes badClaimBytes
   lspecIO (.ofList [("recursive-verifier", [
     test "factorial(5) claim = #[functionChannel, facIdx, 5, 120]" (claim == expectedClaim),
+    test "lookup packing changes the key and reduces total opening width"
+      (facSystem.vkBytes != baselineSystem.vkBytes &&
+        (facSystem.circuitShapes.foldl (fun n s => n + s.committedWidth) 0) <
+        (baselineSystem.circuitShapes.foldl (fun n s => n + s.committedWidth) 0)),
     expectOk "inner factorial proof verifies" innerVerify,
+    expectErr "baseline key rejects the regrouped proof" (baselineSystem.verify claim proof),
     expectOk "verifier accepts honest proof (vk digest bound + OOD + FRI)" honest,
     test "codegen'd verifier matches interpreter (output + query counts)" parity,
     expectErr "tampered proof advice rejected (verification checks)" tamperedProof,

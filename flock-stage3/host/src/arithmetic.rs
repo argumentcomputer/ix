@@ -27,9 +27,9 @@ use crate::{
     generate_lane_repack_witness, goldilocks_ext2_mul,
   },
   goldilocks::{
-    CanonicalGoldilocksPairGate, GOLDILOCKS_MODULUS, GoldilocksAddPairGate,
-    build_canonical_pair_r1cs, build_goldilocks_add_r1cs,
-    generate_canonical_pair_witness, generate_goldilocks_add_witness,
+    CanonicalGoldilocksQuadGate, GOLDILOCKS_MODULUS, GoldilocksAddPairGate,
+    build_canonical_quad_r1cs, build_goldilocks_add_r1cs,
+    generate_canonical_quad_witness, generate_goldilocks_add_witness,
   },
   multiplication::{
     GoldilocksMulPairGate, build_goldilocks_mul_r1cs,
@@ -279,14 +279,14 @@ pub fn prove_arithmetic_conformance(
   let repack_rows =
     witness.rows::<GoldilocksLaneRepackGate>(relation.repack_slot);
   let canonical_rows =
-    witness.rows::<CanonicalGoldilocksPairGate>(relation.canonical_slot);
+    witness.rows::<CanonicalGoldilocksQuadGate>(relation.canonical_slot);
   let add_r1cs = build_goldilocks_add_r1cs(relation.nu);
   let add_lincheck = add_r1cs.csc_lincheck_circuit();
   let mul_r1cs = build_goldilocks_mul_r1cs(relation.nu);
   let mul_lincheck = mul_r1cs.csc_lincheck_circuit();
   let repack_r1cs = build_lane_repack_r1cs(relation.nu);
   let repack_lincheck = repack_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(relation.nu);
+  let canonical_r1cs = build_canonical_quad_r1cs(relation.nu);
   let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
   let union =
     UnionInstance::new(&relation.shape.registry, relation.shape.counts.clone());
@@ -312,7 +312,7 @@ pub fn prove_arithmetic_conformance(
         repack_lincheck,
       ),
       UnionSlotProverInput::new(
-        generate_canonical_pair_witness(canonical_rows, relation.nu),
+        generate_canonical_quad_witness(canonical_rows, relation.nu),
         canonical_lincheck,
       ),
     ],
@@ -366,7 +366,7 @@ pub fn verify_arithmetic_conformance(
   let mul_lincheck = mul_r1cs.csc_lincheck_circuit();
   let repack_r1cs = build_lane_repack_r1cs(relation.nu);
   let repack_lincheck = repack_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(relation.nu);
+  let canonical_r1cs = build_canonical_quad_r1cs(relation.nu);
   let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
   let linchecks: [&dyn flock_prover::lincheck::LincheckCircuit; 4] =
     [mul_lincheck, add_lincheck, repack_lincheck, canonical_lincheck];
@@ -451,6 +451,7 @@ impl ArithmeticRelation {
       let result = slots.ext2_mul(&mut builder, left, right);
       builder.publish(result);
     }
+    slots.finish_canonical(&mut builder);
     let shape = builder.finish().map_err(|error| {
       anyhow::anyhow!("build Flock arithmetic conformance circuit: {error:?}")
     })?;

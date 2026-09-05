@@ -335,12 +335,41 @@ pub fn validate_and_expand_root_inputs(
   proof_bytes: &[u8],
   fri: &FriParameters,
 ) -> Result<ValidatedStage2RootV1> {
+  validate_and_expand_root_inputs_bounded(
+    vk_bytes,
+    claim_bytes,
+    proof_bytes,
+    fri,
+    u64::MAX,
+  )
+}
+
+/// Bound the expanded transport before native verification/path expansion.
+/// This limits serialized advice, not the verifier's total working memory.
+pub fn validate_and_expand_root_inputs_bounded(
+  vk_bytes: &[u8],
+  claim_bytes: &[u8],
+  proof_bytes: &[u8],
+  fri: &FriParameters,
+  max_advice_bytes: u64,
+) -> Result<ValidatedStage2RootV1> {
   let decoded = decode_root_inputs(vk_bytes, claim_bytes, proof_bytes, fri)?;
-  verify_decoded_root_inputs(&decoded)?;
+  let upper_bound =
+    expanded_advice_upper_bound(&decoded.proof, proof_bytes.len(), fri)?;
+  if upper_bound > max_advice_bytes {
+    bail!(
+      "expanded Stage 2 advice upper bound {upper_bound} bytes exceeds admission limit {max_advice_bytes}"
+    );
+  }
+  // The pinned expansion API verifies the complete proof before expanding
+  // its paths. Do not repeat that native verification here.
   let advice_bytes = decoded
     .verifying_key
     .proof_to_per_query_advice_bytes(&decoded.claim, &decoded.proof)
     .map_err(|error| anyhow::anyhow!("expand verified Aiur proof: {error}"))?;
+  if advice_bytes.len() as u64 > max_advice_bytes {
+    bail!("expanded Stage 2 advice exceeds admission limit {max_advice_bytes}");
+  }
   let advice_profile =
     Stage2AdviceProfileV1::from_advice_bytes(&advice_bytes, fri)?;
   Ok(ValidatedStage2RootV1 {
@@ -350,6 +379,30 @@ pub fn validate_and_expand_root_inputs(
     advice_bytes,
     advice_profile,
   })
+}
+
+fn expanded_advice_upper_bound(
+  proof: &AiurProof,
+  compact_bytes: usize,
+  fri: &FriParameters,
+) -> Result<u64> {
+  // The pinned multiproof already carries every query's opened rows and FRI
+  // siblings. Expansion retains them, adding full binary MMCS paths and
+  // vector framing. Goldilocks has at most 32 binary tree levels; reserve
+  // twice that many digests to also cover every possible height injection.
+  // The compact framing remains in this bound, so no subtraction can make
+  // the estimate too small when queries or matrices share paths.
+  const PATH_AND_FRAMING_BYTES: u64 = 64 * 32 + 64;
+  let batches = proof.opening_proof.input_openings.len() as u64;
+  let rounds = proof.opening_proof.commit_phase_openings.len() as u64;
+  batches
+    .checked_add(rounds)
+    .and_then(|paths| paths.checked_mul(PATH_AND_FRAMING_BYTES))
+    .and_then(|per_query| per_query.checked_add(16))
+    .and_then(|per_query| per_query.checked_mul(fri.num_queries as u64))
+    .and_then(|extra| extra.checked_add(16))
+    .and_then(|extra| extra.checked_add(compact_bytes as u64))
+    .ok_or_else(|| anyhow::anyhow!("expanded Stage 2 advice size overflow"))
 }
 
 fn profile_advice(
@@ -605,6 +658,13 @@ mod tests {
     let proof = system.prove_multiple_claims(&key, &[], witness);
     let advice = proof_to_advice_bytes(&system, commitment, fri, &[], &proof)
       .expect("expand proof advice");
+    let bound = expanded_advice_upper_bound(
+      &proof,
+      proof.to_bytes().unwrap().len(),
+      &fri,
+    )
+    .unwrap();
+    assert!(advice.len() as u64 <= bound);
 
     let profile = Stage2AdviceProfileV1::from_advice_bytes(&advice, &fri)
       .expect("profile canonical advice");

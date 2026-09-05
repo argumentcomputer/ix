@@ -153,8 +153,16 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
-      - name: Link Flock-enabled ix CLI
-        run: IX_FLOCK=1 lake build ix
+      - name: Link Flock-enabled ix CLI and fixture harness
+        run: IX_FLOCK=1 lake build ix bench-flock-root-fixture
+      - name: Verify persisted current-protocol aggregate fixture
+        run: |
+          .lake/build/bin/bench-flock-root-fixture --verify Tests/Fixtures/Aggregate/singleton-2026-09-05
+          .lake/build/bin/bench-flock-root-fixture --min-opening-width --verify Tests/Fixtures/Aggregate/singleton-min-opening-2026-09-05
+      - name: Test Flock CLI JSONL and artifact safety
+        run: |
+          ulimit -v 16777216
+          lake env lean --run Tests/FlockRootCli.lean
 
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.

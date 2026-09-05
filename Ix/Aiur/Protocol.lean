@@ -108,6 +108,14 @@ namespace AiurSystem
 @[extern "rs_aiur_system_build"]
 opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → @&FriParameters → AiurSystem
 
+/-- Experimental, opt-in key profile minimizing lookup-accumulator plus
+quotient opening width within the existing blowup. FRI parameters and user
+constraints are unchanged, but the verifying key changes. Larger quotients
+may make native proving slower; this is not the deployment default. -/
+@[extern "rs_aiur_system_build_min_opening_width"]
+opaque buildMinOpeningWidth :
+  @&Bytecode.Toplevel → @&CommitmentParameters → @&FriParameters → AiurSystem
+
 /-- Serialize the verifying key (`System<AiurCircuit>`) to bytes. -/
 @[extern "rs_aiur_system_vk_bytes"]
 opaque vkBytes : @& AiurSystem → ByteArray
@@ -418,13 +426,23 @@ abbrev functionChannel : G := .ofNat 0
 def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
   #[functionChannel, .ofNat funIdx] ++ input ++ output
 
+-- Keep the operation effectful, but transport backend failures as Except.
+-- The pinned Rust lean-ffi helper hardcodes an IO.Error constructor tag that
+-- does not match this Lean toolchain; let Lean construct IO.userError instead.
+@[extern "rs_flock_stage3_aggregate_root"]
+private opaque flockStage3AggregateRootRaw : @& ByteArray → @& ByteArray → @& ByteArray →
+  @& FriParameters → @& String → @& String → @& String → @& String → IO (Except String String)
+
 /-- Compile/evaluate (preflight), prove, or independently verify the complete
 no-RISC-V Flock Stage 3 relation for one Aiur aggregate root. Proving requires
 an output path; verification requires an artifact path. Without the Cargo flock
-feature, this binding returns a descriptive error while remaining linkable. -/
-@[extern "rs_flock_stage3_aggregate_root"]
-opaque flockStage3AggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
-  @& FriParameters → @& String → @& String → @& String → Except String Unit
+feature, this binding returns a descriptive error while remaining linkable.
+The final argument is a JSON object of host resource-limit overrides. The
+result is a JSON diagnostic object; progress is written only to stderr. -/
+def flockStage3AggregateRoot (vkBytes claimBytes proofBytes : ByteArray)
+    (friParameters : FriParameters) (mode artifactPath output limitsJson : String) : IO String := do
+  IO.ofExcept (← flockStage3AggregateRootRaw vkBytes claimBytes proofBytes
+    friParameters mode artifactPath output limitsJson)
 
 end Aiur
 

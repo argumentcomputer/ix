@@ -915,6 +915,7 @@ dependencies = [
  "multi-stark",
  "rayon",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

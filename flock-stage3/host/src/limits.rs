@@ -4,6 +4,7 @@ use ix_terminal::{
   ValidatedStage2RootV1,
 };
 use multi_stark::types::FriParameters;
+use serde::{Deserialize, Serialize};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -13,7 +14,8 @@ const MIB: u64 = 1024 * 1024;
 /// not a claim that every admitted proof will fit a particular machine. The
 /// exact relation census printed by preflight remains the operator's sizing
 /// input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Stage3ResourceLimitsV1 {
   pub max_verifying_key_bytes: u64,
   pub max_compact_proof_bytes: u64,
@@ -22,6 +24,11 @@ pub struct Stage3ResourceLimitsV1 {
   pub max_fri_queries: u64,
   pub max_fri_rounds: u64,
   pub max_profile_items: u64,
+  /// Capacity guard checked before building the circuit's wiring.
+  pub max_table_capacity: u64,
+  /// Combined size of the three padded union buffers, excluding PCS and
+  /// compiler scratch space. This is not a total process RSS limit.
+  pub max_union_witness_bytes: u64,
 }
 
 impl Default for Stage3ResourceLimitsV1 {
@@ -34,11 +41,35 @@ impl Default for Stage3ResourceLimitsV1 {
       max_fri_queries: 1_024,
       max_fri_rounds: 32,
       max_profile_items: 1 << 24,
+      max_table_capacity: 1 << 22,
+      max_union_witness_bytes: 32 * 1024 * MIB,
     }
   }
 }
 
 impl Stage3ResourceLimitsV1 {
+  pub(crate) fn ensure_table_capacity(self, nu: usize) -> Result<()> {
+    let capacity = 1u64
+      .checked_shl(u32::try_from(nu)?)
+      .ok_or_else(|| anyhow::anyhow!("Stage 3 table capacity overflows u64"))?;
+    if capacity > self.max_table_capacity {
+      bail!(
+        "Stage 3 table capacity {capacity} (nu={nu}) exceeds admission limit {}",
+        self.max_table_capacity
+      );
+    }
+    Ok(())
+  }
+
+  pub(crate) fn ensure_union_witness(self, bytes: u64) -> Result<()> {
+    if bytes > self.max_union_witness_bytes {
+      bail!(
+        "Stage 3 padded union witness requires {bytes} bytes; admission limit is {} (PCS/compiler scratch is additional)",
+        self.max_union_witness_bytes
+      );
+    }
+    Ok(())
+  }
   /// Reject impossible or oversized raw inputs before decoding/verifying them.
   pub fn ensure_transport(
     self,
@@ -46,6 +77,16 @@ impl Stage3ResourceLimitsV1 {
     claim_bytes: &[u8],
     proof_bytes: &[u8],
     fri: &FriParameters,
+  ) -> Result<()> {
+    self.ensure_raw_transport(vk_bytes, claim_bytes, proof_bytes)?;
+    self.ensure_fri(fri)
+  }
+
+  pub(crate) fn ensure_raw_transport(
+    self,
+    vk_bytes: &[u8],
+    claim_bytes: &[u8],
+    proof_bytes: &[u8],
   ) -> Result<()> {
     ensure_nonempty_bounded(
       vk_bytes.len(),
@@ -63,8 +104,12 @@ impl Stage3ResourceLimitsV1 {
       self.max_compact_proof_bytes,
       "compact Stage 2 proof",
     )?;
-    if fri.log_final_poly_len > 31 {
-      bail!("Stage 3 final-polynomial log exceeds 31");
+    Ok(())
+  }
+
+  fn ensure_fri(self, fri: &FriParameters) -> Result<()> {
+    if fri.log_final_poly_len != 0 {
+      bail!("Stage 3 currently requires a constant final FRI polynomial");
     }
     if fri.max_log_arity != 1 {
       bail!("Stage 3 currently requires binary FRI (maximum log arity 1)");
@@ -229,6 +274,12 @@ mod tests {
       limits.ensure_transport(b"ok", &claim, b"ok", &non_binary).is_err()
     );
 
+    let mut non_constant = production_fri();
+    non_constant.log_final_poly_len = 1;
+    assert!(
+      limits.ensure_transport(b"ok", &claim, b"ok", &non_constant).is_err()
+    );
+
     let mut too_many_queries = production_fri();
     too_many_queries.num_queries = 1_025;
     assert!(
@@ -240,5 +291,26 @@ mod tests {
     assert!(
       limits.ensure_transport(b"ok", &claim, b"ok", &invalid_pow).is_err()
     );
+  }
+
+  #[test]
+  fn resource_limits_are_strict_configurable_and_checked_at_boundaries() {
+    let defaults = Stage3ResourceLimitsV1::default();
+    assert_eq!(
+      serde_json::from_str::<Stage3ResourceLimitsV1>("{}").unwrap(),
+      defaults
+    );
+    let limits: Stage3ResourceLimitsV1 = serde_json::from_str(
+      r#"{"max_table_capacity":1024,"max_union_witness_bytes":2048}"#,
+    )
+    .unwrap();
+    assert!(limits.ensure_table_capacity(10).is_ok());
+    assert!(limits.ensure_table_capacity(11).is_err());
+    assert!(limits.ensure_table_capacity(64).is_err());
+    assert!(limits.ensure_union_witness(2048).is_ok());
+    assert!(limits.ensure_union_witness(2049).is_err());
+    for json in [r#"{"max_witness_bytes":1}"#, r#"{"max_advice_bytes":-1}"#] {
+      assert!(serde_json::from_str::<Stage3ResourceLimitsV1>(json).is_err());
+    }
   }
 }

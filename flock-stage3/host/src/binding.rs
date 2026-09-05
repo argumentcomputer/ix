@@ -30,8 +30,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
   FlockConfigV1, STAGE3_TRANSCRIPT_DOMAIN,
   goldilocks::{
-    CanonicalGoldilocksPairGate, build_canonical_pair_r1cs,
-    generate_canonical_pair_witness,
+    CanonicalGoldilocksQuadGate, build_canonical_quad_r1cs,
+    generate_canonical_quad_witness,
   },
 };
 
@@ -195,11 +195,11 @@ pub fn prove_stage3_statement_binding(
 
   let rows = witness.rows::<Blake3Gate>(relation.blake3_slot);
   let canonical_rows = witness
-    .rows::<CanonicalGoldilocksPairGate>(relation.canonical_goldilocks_slot);
+    .rows::<CanonicalGoldilocksQuadGate>(relation.canonical_goldilocks_slot);
   relation.ensure_registry_order()?;
   let blake3_r1cs = blake3::build_block_r1cs(BLAKE3_CAPACITY_LOG);
   let blake3_lincheck = blake3_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(BLAKE3_CAPACITY_LOG);
+  let canonical_r1cs = build_canonical_quad_r1cs(BLAKE3_CAPACITY_LOG);
   let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
   let union =
     UnionInstance::new(&relation.shape.registry, relation.shape.counts.clone());
@@ -217,7 +217,7 @@ pub fn prove_stage3_statement_binding(
         blake3_lincheck,
       ),
       UnionSlotProverInput::new(
-        generate_canonical_pair_witness(canonical_rows, BLAKE3_CAPACITY_LOG),
+        generate_canonical_quad_witness(canonical_rows, BLAKE3_CAPACITY_LOG),
         canonical_lincheck,
       ),
     ],
@@ -260,7 +260,7 @@ pub fn verify_stage3_statement_binding(
   let pcs_params = pcs_params(&union);
   let blake3_r1cs = blake3::build_block_r1cs(BLAKE3_CAPACITY_LOG);
   let blake3_lincheck = blake3_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(BLAKE3_CAPACITY_LOG);
+  let canonical_r1cs = build_canonical_quad_r1cs(BLAKE3_CAPACITY_LOG);
   let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
   let linchecks: [&dyn flock_prover::lincheck::LincheckCircuit; 2] =
     [blake3_lincheck, canonical_lincheck];
@@ -316,7 +316,7 @@ impl StatementHashRelation {
     let mut builder = ShapeBuilder::new(BLAKE3_CAPACITY_LOG);
     let blake3_slot = builder.slot(Blake3Gate { nu: BLAKE3_CAPACITY_LOG });
     let canonical_goldilocks_slot =
-      builder.slot(CanonicalGoldilocksPairGate { nu: BLAKE3_CAPACITY_LOG });
+      builder.slot(CanonicalGoldilocksQuadGate { nu: BLAKE3_CAPACITY_LOG });
     let packed_iv = pack8(&IV);
     let initial_cv = [
       builder.fixed_public_input(packed_iv[0]),
@@ -339,7 +339,10 @@ impl StatementHashRelation {
 
     for word in FIRST_CLAIM_WORD..FIRST_CLAIM_WORD + CLAIM_WORDS {
       let message = messages[word / 4][word % 4];
-      let violation = builder.gate(canonical_goldilocks_slot, &[message])[0];
+      // This small conformance relation keeps one row per claim word;
+      // duplicating its input exercises the same four-limb production table.
+      let violation =
+        builder.gate(canonical_goldilocks_slot, &[message, message])[0];
       builder.connect(violation, canonical_zero);
     }
 
@@ -609,7 +612,7 @@ mod tests {
     assert_eq!(witness.rows::<Blake3Gate>(relation.blake3_slot).len(), 4);
     assert_eq!(
       witness
-        .rows::<CanonicalGoldilocksPairGate>(relation.canonical_goldilocks_slot)
+        .rows::<CanonicalGoldilocksQuadGate>(relation.canonical_goldilocks_slot)
         .len(),
       CLAIM_WORDS
     );

@@ -46,6 +46,8 @@ use ix_terminal::{ValidatedStage2RootV1, fri_parameter_words};
 use multi_stark::types::FriParameters;
 use serde::{Deserialize, Serialize};
 
+use crate::sizing::CircuitEmitter;
+
 use crate::{
   FlockConfigV1, STAGE2_TRANSCRIPT_CONFORMANCE_TRANSCRIPT_DOMAIN,
   binding::{Blake3Gate, IV, pack_bytes, pack_params, pack8, pcs_params},
@@ -54,8 +56,8 @@ use crate::{
     generate_boolean_witness_into, write_f128,
   },
   goldilocks::{
-    CanonicalGoldilocksPairGate, GOLDILOCKS_MODULUS, build_canonical_pair_r1cs,
-    generate_canonical_pair_witness,
+    CanonicalGoldilocksQuadGate, GOLDILOCKS_MODULUS, build_canonical_quad_r1cs,
+    generate_canonical_quad_witness,
   },
   typed_witness::{Stage3OpenedRoundV1, Stage3TypedProofWitnessV1},
 };
@@ -1188,7 +1190,7 @@ impl TranscriptRelation {
     let slots = TranscriptCircuitSlots {
       blake3: builder.slot(Blake3Gate { nu }),
       sample: builder.slot(GoldilocksSampleGate { nu }),
-      canonical: builder.slot(CanonicalGoldilocksPairGate { nu }),
+      canonical: builder.slot(CanonicalGoldilocksQuadGate { nu }),
     };
     let region = constrain_stage2_transcript(&mut builder, slots, replay, nu)?;
     for challenge in region.challenges.all() {
@@ -1224,7 +1226,7 @@ pub(crate) fn transcript_nu(
 }
 
 pub(crate) fn constrain_stage2_transcript(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   slots: TranscriptCircuitSlots,
   replay: &Stage2TranscriptReplayV1,
   nu: usize,
@@ -1428,7 +1430,7 @@ pub(crate) struct FriTranscriptConstraintRegion {
 /// challenge and query draw. The returned beta/index wires are intended to be
 /// consumed directly by the PCS/FRI verifier relation.
 pub(crate) fn constrain_stage2_fri_transcript(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   slots: FriTranscriptCircuitSlots,
   replay: &Stage2FriTranscriptReplayV1,
   initial_digest: [Wire; 2],
@@ -1596,7 +1598,7 @@ pub(crate) fn constrain_stage2_fri_transcript(
 }
 
 fn declare_public_segment(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   inputs: &mut Vec<F128>,
   bytes: &[u8],
 ) -> Vec<Wire> {
@@ -1607,7 +1609,7 @@ fn declare_public_segment(
 }
 
 fn declare_public_word(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   inputs: &mut Vec<F128>,
   value: F128,
 ) -> Wire {
@@ -1616,7 +1618,7 @@ fn declare_public_word(
 }
 
 fn declare_trace_parameters(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   inputs: &mut Vec<F128>,
   trace: &FsChainTrace,
 ) -> Vec<Wire> {
@@ -1630,7 +1632,7 @@ fn declare_trace_parameters(
 }
 
 fn split_sample_lanes(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   repack_slot: SlotId,
   zero: Wire,
   samples: Wire,
@@ -1643,7 +1645,7 @@ fn split_sample_lanes(
 }
 
 fn split_low_bits(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   split_slot: SlotId,
   mut value: Wire,
   bits: u8,
@@ -1658,19 +1660,19 @@ fn split_low_bits(
 }
 
 fn constrain_low_zero_bits(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   split_slot: SlotId,
   zero: Wire,
   value: Wire,
   bits: u8,
 ) {
   for bit in split_low_bits(builder, split_slot, value, bits) {
-    builder.connect(bit, zero);
+    builder.connect(zero, bit);
   }
 }
 
 fn fixed(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   fixed_inputs: &mut Vec<F128>,
   value: F128,
 ) -> Wire {
@@ -1686,7 +1688,7 @@ struct ConstrainedFieldSample {
 
 #[allow(clippy::too_many_arguments)]
 fn constrain_field_sample(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   blake3: SlotId,
   sample: SlotId,
   canonical: SlotId,
@@ -1715,14 +1717,14 @@ fn constrain_field_sample(
   } else {
     (sampled[0], sampled[1], [sampled[5], sampled[6]])
   };
-  builder.connect(failure, zero);
-  let violation = builder.gate(canonical, &[challenge])[0];
-  builder.connect(violation, zero);
+  builder.connect(zero, failure);
+  let violation = builder.gate(canonical, &[challenge, data_zero])[0];
+  builder.connect(zero, violation);
   Ok(ConstrainedFieldSample { value: challenge, raw_first: sampled[2], state })
 }
 
 pub(crate) fn constrain_hash(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   slot: SlotId,
   trace: &FsChainTrace,
   parameters: &[Wire],
@@ -1841,13 +1843,13 @@ fn prove_relation(
   let blake3_rows = witness.rows::<Blake3Gate>(relation.slots.blake3);
   let sample_rows = witness.rows::<GoldilocksSampleGate>(relation.slots.sample);
   let canonical_rows =
-    witness.rows::<CanonicalGoldilocksPairGate>(relation.slots.canonical);
+    witness.rows::<CanonicalGoldilocksQuadGate>(relation.slots.canonical);
 
   let blake3_r1cs = flock_blake3::build_block_r1cs(relation.nu);
   let blake3_lincheck = blake3_r1cs.csc_lincheck_circuit();
   let sample_r1cs = build_goldilocks_sample_r1cs(relation.nu);
   let sample_lincheck = sample_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(relation.nu);
+  let canonical_r1cs = build_canonical_quad_r1cs(relation.nu);
   let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
 
   let mut slots = vec![
@@ -1871,7 +1873,7 @@ fn prove_relation(
     (
       relation.shape.registry_slot(relation.slots.canonical),
       UnionSlotProverInput::new(
-        generate_canonical_pair_witness(canonical_rows, relation.nu),
+        generate_canonical_quad_witness(canonical_rows, relation.nu),
         canonical_lincheck,
       ),
     ),
@@ -1911,7 +1913,7 @@ fn verify_relation(
   let blake3_lincheck = blake3_r1cs.csc_lincheck_circuit();
   let sample_r1cs = build_goldilocks_sample_r1cs(relation.nu);
   let sample_lincheck = sample_r1cs.csc_lincheck_circuit();
-  let canonical_r1cs = build_canonical_pair_r1cs(relation.nu);
+  let canonical_r1cs = build_canonical_quad_r1cs(relation.nu);
   let canonical_lincheck = canonical_r1cs.csc_lincheck_circuit();
   let mut linchecks: Vec<(usize, &dyn LincheckCircuit)> = vec![
     (relation.shape.registry_slot(relation.slots.blake3), blake3_lincheck),
@@ -2712,7 +2714,7 @@ mod tests {
     let blake3 = builder.slot(Blake3Gate { nu });
     let sample = builder.slot(HashSampleGate { nu });
     let field_sample = builder.slot(GoldilocksSampleGate { nu });
-    let canonical = builder.slot(CanonicalGoldilocksPairGate { nu });
+    let canonical = builder.slot(CanonicalGoldilocksQuadGate { nu });
     let repack =
       builder.slot(crate::extension::GoldilocksLaneRepackGate { nu });
     let split = builder.slot(U64SplitGate { nu });

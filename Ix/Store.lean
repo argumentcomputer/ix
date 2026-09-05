@@ -48,18 +48,24 @@ def cacheDir (namespace' : String) : StoreIO FilePath := do
     IO.toEIO .ioError (IO.FS.createDirAll path)
   return path
 
-def storePath (addr: Address): StoreIO FilePath := do
-  let store <- storeDir
+/-- Resolve an object path without creating directories. Read-only consumers
+can use this before bounded reads, including when the address is missing. -/
+def existingPath (addr : Address) : StoreIO FilePath := do
+  let store := (← getHomeDir) / ".ix" / "store"
   let hex := hexOfBytes addr.hash
   let s := hex.toSlice
   let dir1 := (s.take 2).toString
   let dir2 := (s.drop 2 |>.take 2).toString
   let dir3 := (s.drop 4 |>.take 2).toString
   let file := (s.drop 6).toString
-  let path := store / dir1 / dir2 / dir3
-  if !(<- path.pathExists) then
-    IO.toEIO .ioError (IO.FS.createDirAll path)
-  return path / file
+  return store / dir1 / dir2 / dir3 / file
+
+def storePath (addr: Address): StoreIO FilePath := do
+  let path ← existingPath addr
+  let parent := path.parent.getD path
+  if !(← parent.pathExists) then
+    IO.toEIO .ioError (IO.FS.createDirAll parent)
+  return path
 
 def write (bytes: ByteArray) : StoreIO Address := do
   let addr  := Address.blake3 bytes

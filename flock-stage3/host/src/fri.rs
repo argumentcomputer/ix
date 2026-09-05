@@ -35,11 +35,13 @@ use ix_terminal::{
   Stage2RootStatementV1, ValidatedStage2RootV1, fri_parameter_words,
 };
 use multi_stark::{
-  p3_field::{BasedVectorSpace, PrimeCharacteristicRing, PrimeField64},
+  p3_field::{BasedVectorSpace, Field, PrimeCharacteristicRing, PrimeField64},
   types::{ExtVal, FriParameters, Val},
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+
+use crate::sizing::{CircuitEmitter, CountingEmitter};
 use std::{
   collections::BTreeMap,
   sync::{Arc, Mutex, OnceLock},
@@ -68,9 +70,9 @@ use crate::{
     generate_lane_repack_witness_into,
   },
   goldilocks::{
-    CanonicalGoldilocksPairGate, GOLDILOCKS_MODULUS, GoldilocksAddPairGate,
-    build_canonical_pair_r1cs, build_goldilocks_add_r1cs,
-    generate_canonical_pair_witness_into, generate_goldilocks_add_witness_into,
+    CanonicalGoldilocksQuadGate, GOLDILOCKS_MODULUS, GoldilocksAddPairGate,
+    build_canonical_quad_r1cs, build_goldilocks_add_r1cs,
+    generate_canonical_quad_witness_into, generate_goldilocks_add_witness_into,
   },
   merkle::{
     DigestOrderGate, build_digest_order_r1cs,
@@ -87,8 +89,7 @@ use crate::{
     Stage2TranscriptSegmentV1, TranscriptCircuitSlots, U64SplitGate,
     build_goldilocks_sample_r1cs, build_hash_sample_r1cs, build_u64_split_r1cs,
     constrain_hash, constrain_stage2_fri_transcript,
-    constrain_stage2_transcript, fri_transcript_blake3_rows,
-    fri_transcript_split_rows, generate_goldilocks_sample_witness_into,
+    constrain_stage2_transcript, generate_goldilocks_sample_witness_into,
     generate_hash_sample_witness_into, generate_u64_split_witness_into,
     hash_trace, transcript_challenge_words, transcript_nu,
   },
@@ -226,7 +227,7 @@ impl PcsReducedOpeningV1 {
 /// `zeta * g`, while quotient matrices are opened only at `zeta`. Keeping the
 /// point derivation in the relation prevents the prover from supplying a
 /// second, unbound point.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Stage2PcsOpeningPointV1 {
   Zeta,
   ZetaNext { log_degree: u8 },
@@ -327,13 +328,21 @@ impl Stage2AirPcsFriWitnessV1 {
     fri: &FriParameters,
   ) -> Result<Self> {
     let typed = Stage3TypedProofWitnessV1::from_prepared(prepared, fri)?;
+    Self::from_prepared_and_typed(prepared, fri, &typed)
+  }
+
+  pub(crate) fn from_prepared_and_typed(
+    prepared: &ValidatedStage2RootV1,
+    fri: &FriParameters,
+    typed: &Stage3TypedProofWitnessV1,
+  ) -> Result<Self> {
     let pcs_fri =
-      Stage2PcsFriWitnessV1::from_prepared_and_typed(prepared, fri, &typed)?;
+      Stage2PcsFriWitnessV1::from_prepared_and_typed(prepared, fri, typed)?;
     let air = Stage2AirProgramV1::from_prepared_and_typed(
       prepared,
       fri,
       &pcs_fri.pcs_instance,
-      &typed,
+      typed,
     )?;
     Ok(Self { pcs_fri, air })
   }
@@ -344,8 +353,9 @@ impl Stage2AirPcsFriWitnessV1 {
 /// Counts are witness rows before Flock pads each table to `2^nu`. Keeping
 /// them named makes production-root growth visible without exposing Flock's
 /// internal slot identifiers as part of the Ix API.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Stage3RelationCensusV1 {
+  #[serde(serialize_with = "crate::report::serialize_digest")]
   pub circuit_digest: [u8; 32],
   pub nu: u64,
   pub table_capacity: u64,
@@ -1636,12 +1646,6 @@ pub fn prove_stage2_air_pcs_fri_conformance(
   )
 }
 
-pub(crate) fn prove_stage2_air_pcs_fri_production(
-  witness: &Stage2AirPcsFriWitnessV1,
-) -> Result<Stage2AirPcsFriArtifactV1> {
-  prove_stage2_air_pcs_fri_with_domain(witness, crate::STAGE3_TRANSCRIPT_DOMAIN)
-}
-
 fn prove_stage2_air_pcs_fri_with_domain(
   witness: &Stage2AirPcsFriWitnessV1,
   transcript_domain: &[u8],
@@ -1697,6 +1701,13 @@ fn prove_stage2_air_pcs_fri_with_domain(
 fn build_stage2_air_pcs_fri_relation(
   witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<TranscriptBoundFriCommitPhaseRelation> {
+  build_stage2_air_pcs_fri_relation_with_limits(witness, None)
+}
+
+fn build_stage2_air_pcs_fri_relation_with_limits(
+  witness: &Stage2AirPcsFriWitnessV1,
+  limits: Option<crate::Stage3ResourceLimitsV1>,
+) -> Result<TranscriptBoundFriCommitPhaseRelation> {
   let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
   let total_started = std::time::Instant::now();
   let pcs_fri = &witness.pcs_fri;
@@ -1736,6 +1747,7 @@ fn build_stage2_air_pcs_fri_relation(
       &pcs_fri.queries,
       &fri_computations,
       &pcs_computations,
+      limits,
     )?;
   if trace {
     eprintln!(
@@ -1753,8 +1765,9 @@ fn build_stage2_air_pcs_fri_relation(
 /// Retain only the most recently used complete relation. The circuit shape is
 /// immutable and value-independent once built, while the input/public vectors
 /// in this relation are specific to one witness. Comparing the full witness
-/// (rather than a digest) makes an exact hit safe for preflight, proving, and
-/// post-hoc verification without introducing a cache-collision assumption.
+/// (rather than a digest) makes an exact hit safe for the conformance and
+/// standalone manifest helpers. Production operations use explicit ownership
+/// instead, so batch processing never leaves a root in this cache.
 fn cached_stage2_air_pcs_fri_relation(
   witness: &Stage2AirPcsFriWitnessV1,
 ) -> Result<Arc<TranscriptBoundFriCommitPhaseRelation>> {
@@ -1788,21 +1801,134 @@ pub(crate) fn stage2_air_pcs_fri_circuit_digest(
   Ok(cached_stage2_air_pcs_fri_relation(witness)?.shape.circuit.digest())
 }
 
-pub(crate) fn preflight_stage2_air_pcs_fri(
-  stage2_witness: &Stage2AirPcsFriWitnessV1,
-) -> Result<Stage3RelationCensusV1> {
-  let (relation, _) = rayon::join(
-    || cached_stage2_air_pcs_fri_relation(stage2_witness),
-    || {
-      stage3_linchecks();
-    },
-  );
-  let relation = relation?;
-  let evaluated = relation.shape.run(&relation.inputs, &[]);
-  if evaluated.public != relation.public {
-    bail!("Flock Stage 3 preflight disagrees with native verifier semantics");
+/// A production relation with explicit ownership. It never enters the
+/// conformance helpers' process-global exact-witness cache.
+pub(crate) struct CompiledStage3Relation {
+  relation: TranscriptBoundFriCommitPhaseRelation,
+}
+
+impl CompiledStage3Relation {
+  pub(crate) fn build(
+    witness: &Stage2AirPcsFriWitnessV1,
+    limits: crate::Stage3ResourceLimitsV1,
+  ) -> Result<Self> {
+    let relation =
+      build_stage2_air_pcs_fri_relation_with_limits(witness, Some(limits))?;
+    Ok(Self { relation })
   }
 
+  pub(crate) fn census(&self) -> Result<Stage3RelationCensusV1> {
+    relation_census(&self.relation)
+  }
+
+  pub(crate) fn resources(&self) -> Result<crate::Stage3ResourceReportV1> {
+    let relation = &self.relation;
+    let union = UnionInstance::new(
+      &relation.shape.registry,
+      relation.shape.counts.clone(),
+    );
+    let params = pcs_params(&union);
+    params.ligerito_prover_config().map_err(|error| {
+      anyhow::anyhow!(
+        "Stage 3 PCS prover configuration is unsupported: {error}"
+      )
+    })?;
+    params.ligerito_verifier_config().map_err(|error| {
+      anyhow::anyhow!(
+        "Stage 3 PCS verifier configuration is unsupported: {error}"
+      )
+    })?;
+    let bytes = |words: usize, copies: u64| -> Result<u64> {
+      u64::try_from(words)?
+        .checked_mul(16)
+        .and_then(|n| n.checked_mul(copies))
+        .ok_or_else(|| anyhow::anyhow!("Stage 3 buffer size overflow"))
+    };
+    if bytes(union.packed_len(), 3)?
+      != production_padded_witness_bytes(relation.nu)?
+    {
+      bail!(
+        "Stage 3 table schemas changed: update the pre-compilation resource bound"
+      );
+    }
+    let tables = relation
+      .shape
+      .registry
+      .types()
+      .iter()
+      .enumerate()
+      .map(|(slot, table)| {
+        Ok(crate::Stage3TableReportV1 {
+          registry_slot: slot as u64,
+          rows: relation.shape.counts[slot] as u64,
+          boolean_columns: 1u64 << table.k_log,
+          useful_boolean_columns: table.useful_bits as u64,
+          padded_witness_bytes: bytes(
+            1usize << (relation.nu + table.k_log - 7),
+            3,
+          )?,
+        })
+      })
+      .collect::<Result<Vec<_>>>()?;
+    Ok(crate::Stage3ResourceReportV1 {
+      virtual_union_log: union.m_total() as u64,
+      committed_union_log: union.dense_m() as u64,
+      dense_witness_bytes: bytes(union.dense_words(), 1)?,
+      padded_union_witness_bytes: bytes(union.packed_len(), 3)?,
+      pcs_message_bytes: bytes(params.msg_len_f128(), 1)?,
+      pcs_codeword_bytes: bytes(params.codeword_len_f128(), 1)?,
+      pcs_log_batch_size: params.log_batch_size as u64,
+      pcs_lanes: params.num_ntts() as u64,
+      pcs_log_inverse_rate: params.log_inv_rate as u64,
+      tables,
+    })
+  }
+
+  pub(crate) fn evaluate(&self) -> Result<()> {
+    let relation = &self.relation;
+    if relation.shape.run(&relation.inputs, &[]).public != relation.public {
+      bail!("Flock Stage 3 preflight disagrees with native verifier semantics");
+    }
+    Ok(())
+  }
+
+  pub(crate) fn prove(&self) -> Result<Vec<u8>> {
+    let r = &self.relation;
+    prove_fri_circuit(
+      &r.shape,
+      r.slots,
+      Some(r.sample_slot),
+      Some(r.split_slot),
+      r.window_slot,
+      r.nu,
+      &r.inputs,
+      &r.public,
+      crate::STAGE3_TRANSCRIPT_DOMAIN,
+    )
+  }
+
+  pub(crate) fn verify(&self, digest: [u8; 32], proof: &[u8]) -> Result<()> {
+    let r = &self.relation;
+    if digest != r.shape.circuit.digest() {
+      bail!("Stage 2 AIR/PCS/FRI circuit digest mismatch");
+    }
+    verify_fri_circuit(
+      &r.shape,
+      r.slots,
+      Some(r.sample_slot),
+      Some(r.split_slot),
+      r.window_slot,
+      r.nu,
+      &r.public,
+      proof,
+      crate::STAGE3_TRANSCRIPT_DOMAIN,
+    )
+  }
+}
+
+fn relation_census(
+  relation: &TranscriptBoundFriCommitPhaseRelation,
+) -> Result<Stage3RelationCensusV1> {
   let count = |value: usize, label: &str| {
     u64::try_from(value)
       .map_err(|error| anyhow::anyhow!("{label} exceeds u64: {error}"))
@@ -1814,13 +1940,14 @@ pub(crate) fn preflight_stage2_air_pcs_fri(
   let table_capacity = 1u64.checked_shl(shift).ok_or_else(|| {
     anyhow::anyhow!("Flock table logarithm {nu} exceeds the preflight report")
   })?;
-  let field_sample_rows = relation
-    .slots
-    .field_sample
-    .map_or(0, |slot| evaluated.rows::<GoldilocksSampleGate>(slot).len());
-  let byte_window_rows = relation
-    .window_slot
-    .map_or(0, |slot| evaluated.rows::<ByteWindowGate>(slot).len());
+  let field_sample_rows = relation.slots.field_sample.map_or(0, |slot| {
+    relation.shape.counts[relation.shape.registry_slot(slot)]
+  });
+  let byte_window_rows = relation.window_slot.map_or(0, |slot| {
+    relation.shape.counts[relation.shape.registry_slot(slot)]
+  });
+
+  let rows = |slot| relation.shape.counts[relation.shape.registry_slot(slot)];
 
   Ok(Stage3RelationCensusV1 {
     circuit_digest: relation.shape.circuit.digest(),
@@ -1828,45 +1955,34 @@ pub(crate) fn preflight_stage2_air_pcs_fri(
     table_capacity,
     relation_inputs: count(relation.inputs.len(), "relation input count")?,
     public_values: count(relation.public.len(), "public-value count")?,
-    blake3_rows: count(
-      evaluated.rows::<Blake3Gate>(relation.slots.blake3).len(),
-      "BLAKE3 row count",
-    )?,
+    blake3_rows: count(rows(relation.slots.blake3), "BLAKE3 row count")?,
     digest_order_rows: count(
-      evaluated.rows::<DigestOrderGate>(relation.slots.order).len(),
+      rows(relation.slots.order),
       "digest-order row count",
     )?,
     goldilocks_add_rows: count(
-      evaluated.rows::<GoldilocksAddPairGate>(relation.slots.add).len(),
+      rows(relation.slots.add),
       "Goldilocks-add row count",
     )?,
     goldilocks_mul_rows: count(
-      evaluated.rows::<GoldilocksMulPairGate>(relation.slots.mul).len(),
+      rows(relation.slots.mul),
       "Goldilocks-mul row count",
     )?,
     lane_repack_rows: count(
-      evaluated.rows::<GoldilocksLaneRepackGate>(relation.slots.repack).len(),
+      rows(relation.slots.repack),
       "lane-repack row count",
     )?,
     canonical_goldilocks_rows: count(
-      evaluated
-        .rows::<CanonicalGoldilocksPairGate>(relation.slots.canonical)
-        .len(),
+      rows(relation.slots.canonical),
       "canonical-Goldilocks row count",
     )?,
-    equality_rows: count(
-      evaluated.rows::<F128EqualityGate>(relation.slots.equality).len(),
-      "equality row count",
-    )?,
+    equality_rows: count(rows(relation.slots.equality), "equality row count")?,
     hash_sample_rows: count(
-      evaluated.rows::<HashSampleGate>(relation.sample_slot).len(),
+      rows(relation.sample_slot),
       "hash-sample row count",
     )?,
     field_sample_rows: count(field_sample_rows, "field-sample row count")?,
-    u64_split_rows: count(
-      evaluated.rows::<U64SplitGate>(relation.split_slot).len(),
-      "u64-split row count",
-    )?,
+    u64_split_rows: count(rows(relation.split_slot), "u64-split row count")?,
     byte_window_rows: count(byte_window_rows, "byte-window row count")?,
   })
 }
@@ -1877,15 +1993,6 @@ pub fn verify_stage2_air_pcs_fri_conformance(
   verify_stage2_air_pcs_fri_with_domain(
     artifact,
     STAGE2_AIR_PCS_FRI_CONFORMANCE_TRANSCRIPT_DOMAIN,
-  )
-}
-
-pub(crate) fn verify_stage2_air_pcs_fri_production(
-  artifact: &Stage2AirPcsFriArtifactV1,
-) -> Result<()> {
-  verify_stage2_air_pcs_fri_with_domain(
-    artifact,
-    crate::STAGE3_TRANSCRIPT_DOMAIN,
   )
 }
 
@@ -2155,6 +2262,7 @@ impl FriFoldRelation {
 
     builder.publish(root[0]);
     builder.publish(root[1]);
+    arithmetic.finish_canonical(&mut builder);
     let shape = builder.finish().map_err(|error| {
       anyhow::anyhow!("build Flock authenticated FRI-fold circuit: {error:?}")
     })?;
@@ -2303,8 +2411,9 @@ impl FriCommitPhaseRelation {
       };
     }
     let final_residual = builder.gate(equality, &[folded, final_polynomial])[0];
-    builder.connect(final_residual, equality_zero);
+    builder.connect(equality_zero, final_residual);
 
+    arithmetic.finish_canonical(&mut builder);
     let shape = builder.finish().map_err(|error| {
       anyhow::anyhow!("build Flock FRI commit-phase circuit: {error:?}")
     })?;
@@ -2405,7 +2514,7 @@ impl PcsReductionRelation {
       } else {
         let high = builder.gate(arithmetic.repack, &[lanes[1], data_zero])[3];
         let padding_residual = builder.gate(equality, &[high, data_zero])[0];
-        builder.connect(padding_residual, equality_zero);
+        builder.connect(equality_zero, padding_residual);
       }
     }
 
@@ -2418,7 +2527,7 @@ impl PcsReductionRelation {
     let denominator_check = arithmetic.add(&mut builder, denominator, x);
     let denominator_residual =
       builder.gate(equality, &[denominator_check, zeta])[0];
-    builder.connect(denominator_residual, equality_zero);
+    builder.connect(equality_zero, denominator_residual);
 
     let mut accumulator = initial_accumulator;
     let mut alpha_power = initial_alpha_power;
@@ -2429,17 +2538,17 @@ impl PcsReductionRelation {
         arithmetic.ext2_mul(&mut builder, denominator, *quotient);
       let reconstructed = arithmetic.add(&mut builder, quotient_product, *px);
       let quotient_residual = builder.gate(equality, &[reconstructed, *pz])[0];
-      builder.connect(quotient_residual, equality_zero);
+      builder.connect(equality_zero, quotient_residual);
       let term = arithmetic.ext2_mul(&mut builder, alpha_power, *quotient);
       accumulator = arithmetic.add(&mut builder, accumulator, term);
       alpha_power = arithmetic.ext2_mul(&mut builder, alpha_power, alpha);
     }
     let accumulator_residual =
       builder.gate(equality, &[accumulator, reduced_accumulator])[0];
-    builder.connect(accumulator_residual, equality_zero);
+    builder.connect(equality_zero, accumulator_residual);
     let alpha_power_residual =
       builder.gate(equality, &[alpha_power, next_alpha_power])[0];
-    builder.connect(alpha_power_residual, equality_zero);
+    builder.connect(equality_zero, alpha_power_residual);
 
     let mut current = constrain_hash(
       &mut builder,
@@ -2471,6 +2580,7 @@ impl PcsReductionRelation {
     }
     builder.publish(current[0]);
     builder.publish(current[1]);
+    arithmetic.finish_canonical(&mut builder);
     let shape = builder.finish().map_err(|error| {
       anyhow::anyhow!("build Flock PCS-reduction circuit: {error:?}")
     })?;
@@ -2700,7 +2810,7 @@ impl TranscriptBoundPcsReductionRelation {
       } else {
         let high = builder.gate(arithmetic.repack, &[lanes[1], data_zero])[3];
         let padding_residual = builder.gate(equality, &[high, data_zero])[0];
-        builder.connect(padding_residual, equality_zero);
+        builder.connect(equality_zero, padding_residual);
       }
     }
 
@@ -2713,7 +2823,7 @@ impl TranscriptBoundPcsReductionRelation {
     let denominator_check = arithmetic.add(&mut builder, denominator, x);
     let denominator_residual =
       builder.gate(equality, &[denominator_check, zeta])[0];
-    builder.connect(denominator_residual, equality_zero);
+    builder.connect(equality_zero, denominator_residual);
 
     let mut accumulator = initial_accumulator;
     let mut alpha_power = initial_alpha_power;
@@ -2724,17 +2834,17 @@ impl TranscriptBoundPcsReductionRelation {
         arithmetic.ext2_mul(&mut builder, denominator, *quotient);
       let reconstructed = arithmetic.add(&mut builder, quotient_product, *px);
       let quotient_residual = builder.gate(equality, &[reconstructed, *pz])[0];
-      builder.connect(quotient_residual, equality_zero);
+      builder.connect(equality_zero, quotient_residual);
       let term = arithmetic.ext2_mul(&mut builder, alpha_power, *quotient);
       accumulator = arithmetic.add(&mut builder, accumulator, term);
       alpha_power = arithmetic.ext2_mul(&mut builder, alpha_power, alpha);
     }
     let accumulator_residual =
       builder.gate(equality, &[accumulator, reduced_accumulator])[0];
-    builder.connect(accumulator_residual, equality_zero);
+    builder.connect(equality_zero, accumulator_residual);
     let alpha_power_residual =
       builder.gate(equality, &[alpha_power, next_alpha_power])[0];
-    builder.connect(alpha_power_residual, equality_zero);
+    builder.connect(equality_zero, alpha_power_residual);
 
     let mut current = constrain_hash(
       &mut builder,
@@ -2768,6 +2878,7 @@ impl TranscriptBoundPcsReductionRelation {
     builder.publish(current[1]);
     public.extend_from_slice(&pack_digest(&computation.root));
 
+    arithmetic.finish_canonical(&mut builder);
     let shape = builder.finish().map_err(|error| {
       anyhow::anyhow!("build transcript-bound PCS circuit: {error:?}")
     })?;
@@ -2782,6 +2893,15 @@ struct TranscriptBoundFriCommitPhaseRelation {
   split_slot: SlotId,
   window_slot: Option<SlotId>,
   nu: usize,
+  inputs: Vec<F128>,
+  public: Vec<F128>,
+}
+
+struct EmittedFriRelation {
+  slots: FriTableSlots,
+  sample_slot: SlotId,
+  split_slot: SlotId,
+  window_slot: Option<SlotId>,
   inputs: Vec<F128>,
   public: Vec<F128>,
 }
@@ -2818,6 +2938,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       }],
       None,
       None,
+      None,
     )
   }
 
@@ -2848,6 +2969,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       fri_transcript,
       challenges,
       &selected,
+      None,
       None,
       None,
     )
@@ -2889,6 +3011,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       &selected,
       Some(pcs_instance),
       None,
+      None,
     )
   }
 
@@ -2902,6 +3025,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
     queries: &[TranscriptBoundPcsFriQueryV1],
     fri_computations: &[FriCommitPhaseComputation],
     pcs_computations: &[Stage2PcsQueryComputation],
+    limits: Option<crate::Stage3ResourceLimitsV1>,
   ) -> Result<Self> {
     if queries.len() != fri_computations.len()
       || queries.len() != pcs_computations.len()
@@ -2930,6 +3054,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       &selected,
       Some(pcs_instance),
       Some(air),
+      limits,
     )
   }
 
@@ -2940,6 +3065,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
     selected: &[SelectedFriQuery<'_>],
     pcs_instance: Option<&Stage2PcsInstanceV1>,
     air: Option<&Stage2AirProgramV1>,
+    limits: Option<crate::Stage3ResourceLimitsV1>,
   ) -> Result<Self> {
     let trace = std::env::var_os("IX_FLOCK_TIMING").is_some();
     let total_started = std::time::Instant::now();
@@ -2971,15 +3097,101 @@ impl TranscriptBoundFriCommitPhaseRelation {
       );
     }
     let phase_started = std::time::Instant::now();
-    let nu = transcript_bound_fri_nu(
+    let mut counted = CountingEmitter::new();
+    Self::emit_selected(
+      &mut counted,
       prefix,
       fri_transcript,
+      challenges,
       selected,
       pcs_instance,
       air,
+      CountingEmitter::COUNT_NU,
+      false,
     )?;
+    let nu = counted.required_nu(NU)?;
+    if trace {
+      // Admission failures are useful corpus measurements too. Emit only
+      // the count-only result, before either limit can reject the root;
+      // this is not a compiled/evaluated relation or a proof-ready report.
+      eprintln!(
+        "{}",
+        serde_json::json!({
+          "schema": "ix.flock-stage3.shape-count", "version": 1,
+          "compiled": false, "nu": nu,
+          "table_capacity": 1u64.checked_shl(u32::try_from(nu)?),
+          "padded_union_witness_bytes": production_padded_witness_bytes(nu)?,
+          "tables": counted.table_rows().map(|(gate, rows)| {
+            serde_json::json!({"gate": gate, "rows": rows})
+          }).collect::<Vec<_>>(),
+          "count_us": crate::report::elapsed_us(phase_started),
+          "process_peak_rss_bytes": crate::report::process_peak_rss_bytes(),
+        }),
+      );
+    }
+    if let Some(limits) = limits {
+      limits.ensure_table_capacity(nu)?;
+      limits.ensure_union_witness(production_padded_witness_bytes(nu)?)?;
+    }
+    if trace {
+      eprintln!(
+        "      [stage3-shape] count + admit (nu={nu}): {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
     let mut builder = ShapeBuilder::new(nu);
-    let arithmetic = GoldilocksCircuitSlots::declare(&mut builder, nu);
+    let emitted = Self::emit_selected(
+      &mut builder,
+      prefix,
+      fri_transcript,
+      challenges,
+      selected,
+      pcs_instance,
+      air,
+      nu,
+      trace,
+    )?;
+    let phase_started = std::time::Instant::now();
+    let shape = builder.finish().map_err(|error| {
+      anyhow::anyhow!("build transcript-bound FRI circuit: {error:?}")
+    })?;
+    counted.ensure_matches(&shape)?;
+    if trace {
+      eprintln!(
+        "      [stage3-shape] finish builder: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+      eprintln!(
+        "      [stage3-shape] total: {:.2} ms",
+        total_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
+    Ok(Self {
+      shape,
+      slots: emitted.slots,
+      sample_slot: emitted.sample_slot,
+      split_slot: emitted.split_slot,
+      window_slot: emitted.window_slot,
+      nu,
+      inputs: emitted.inputs,
+      public: emitted.public,
+    })
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn emit_selected(
+    builder: &mut impl CircuitEmitter,
+    prefix: &Stage2TranscriptReplayV1,
+    fri_transcript: &Stage2FriTranscriptReplayV1,
+    challenges: &Stage2FriTranscriptChallengesV1,
+    selected: &[SelectedFriQuery<'_>],
+    pcs_instance: Option<&Stage2PcsInstanceV1>,
+    air: Option<&Stage2AirProgramV1>,
+    nu: usize,
+    trace: bool,
+  ) -> Result<EmittedFriRelation> {
+    let phase_started = std::time::Instant::now();
+    let arithmetic = GoldilocksCircuitSlots::declare(builder, nu);
     let blake3 = builder.slot(Blake3Gate { nu });
     let order = builder.slot(DigestOrderGate { nu });
     let equality = builder.slot(F128EqualityGate { nu });
@@ -2999,7 +3211,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
     };
     if trace {
       eprintln!(
-        "      [stage3-shape] size + declare slots: {:.2} ms",
+        "      [stage3-shape] declare slots: {:.2} ms",
         phase_started.elapsed().as_secs_f64() * 1e3,
       );
     }
@@ -3009,7 +3221,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
     let mut public = vec![F128::ZERO];
     let phase_started = std::time::Instant::now();
     let prefix_region = constrain_stage2_transcript(
-      &mut builder,
+      builder,
       TranscriptCircuitSlots {
         blake3,
         sample: field_sample_slot,
@@ -3033,7 +3245,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
 
     let phase_started = std::time::Instant::now();
     let fri_region = constrain_stage2_fri_transcript(
-      &mut builder,
+      builder,
       FriTranscriptCircuitSlots {
         blake3,
         sample: sample_slot,
@@ -3071,29 +3283,27 @@ impl TranscriptBoundFriCommitPhaseRelation {
     }
 
     let phase_started = std::time::Instant::now();
-    let data_zero =
-      record_fixed(&mut builder, &mut inputs, &mut public, F128::ZERO);
+    let data_zero = record_fixed(builder, &mut inputs, &mut public, F128::ZERO);
     let equality_zero =
-      record_fixed(&mut builder, &mut inputs, &mut public, F128::ZERO);
+      record_fixed(builder, &mut inputs, &mut public, F128::ZERO);
     let packed_iv = pack8(&IV);
     let iv = [
-      record_fixed(&mut builder, &mut inputs, &mut public, packed_iv[0]),
-      record_fixed(&mut builder, &mut inputs, &mut public, packed_iv[1]),
+      record_fixed(builder, &mut inputs, &mut public, packed_iv[0]),
+      record_fixed(builder, &mut inputs, &mut public, packed_iv[1]),
     ];
     let leaf_params = record_fixed(
-      &mut builder,
+      builder,
       &mut inputs,
       &mut public,
       pack_params(0, 32, CHUNK_START | CHUNK_END | ROOT),
     );
     let node_params = record_fixed(
-      &mut builder,
+      builder,
       &mut inputs,
       &mut public,
       pack_params(0, 64, CHUNK_START | CHUNK_END | ROOT),
     );
-    let one =
-      record_fixed(&mut builder, &mut inputs, &mut public, F128::new(1, 0));
+    let one = record_fixed(builder, &mut inputs, &mut public, F128::new(1, 0));
     let fixed = TranscriptBoundFriFixedWires {
       blake3,
       order,
@@ -3114,7 +3324,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
     let phase_started = std::time::Instant::now();
     if let Some(air) = air {
       constrain_stage2_air(
-        &mut builder,
+        builder,
         &arithmetic,
         blake3,
         equality,
@@ -3137,21 +3347,42 @@ impl TranscriptBoundFriCommitPhaseRelation {
         phase_started.elapsed().as_secs_f64() * 1e3,
       );
     }
+    let phase_started = std::time::Instant::now();
+    let shared_pcs = pcs_instance
+      .map(|instance| {
+        constrain_stage2_pcs_shared(
+          builder,
+          &arithmetic,
+          fixed,
+          &mut inputs,
+          &mut public,
+          &prefix_region,
+          prefix,
+          window_slot.expect("PCS byte-window slot declared above"),
+          instance,
+        )
+      })
+      .transpose()?;
+    if trace {
+      eprintln!(
+        "      [stage3-shape] shared PCS constraints: {:.2} ms",
+        phase_started.elapsed().as_secs_f64() * 1e3,
+      );
+    }
     let mut pcs_elapsed = std::time::Duration::ZERO;
     let mut fri_elapsed = std::time::Duration::ZERO;
     for item in selected {
       let phase_started = std::time::Instant::now();
       let reduced_openings = if let Some(instance) = pcs_instance {
         Some(constrain_stage2_pcs_query(
-          &mut builder,
+          builder,
           &arithmetic,
           fixed,
           &mut inputs,
           &mut public,
-          &prefix_region,
           &fri_region,
-          window_slot.expect("PCS byte-window slot declared above"),
           instance,
+          shared_pcs.as_ref().expect("shared PCS wires declared above"),
           item.query_number,
           item.pcs_query.expect("PCS query presence checked above"),
           item.pcs_computation.expect("PCS computation presence checked above"),
@@ -3162,7 +3393,7 @@ impl TranscriptBoundFriCommitPhaseRelation {
       pcs_elapsed += phase_started.elapsed();
       let phase_started = std::time::Instant::now();
       constrain_transcript_bound_fri_query(
-        &mut builder,
+        builder,
         &arithmetic,
         fixed,
         &mut inputs,
@@ -3186,33 +3417,33 @@ impl TranscriptBoundFriCommitPhaseRelation {
       );
     }
 
-    let phase_started = std::time::Instant::now();
-    let shape = builder.finish().map_err(|error| {
-      anyhow::anyhow!("build transcript-bound FRI circuit: {error:?}")
-    })?;
-    if trace {
-      eprintln!(
-        "      [stage3-shape] finish builder: {:.2} ms",
-        phase_started.elapsed().as_secs_f64() * 1e3,
-      );
-      eprintln!(
-        "      [stage3-shape] total: {:.2} ms",
-        total_started.elapsed().as_secs_f64() * 1e3,
-      );
-    }
-    Ok(Self {
-      shape,
+    arithmetic.finish_canonical(builder);
+    Ok(EmittedFriRelation {
       slots,
       sample_slot,
       split_slot,
       window_slot,
-      nu,
       inputs,
       public,
     })
   }
 }
 
+/// The eleven production Boolean tables occupy 2^17 padded column bits in
+/// the pinned registry. This is independent of row counts and available before
+/// expensive wiring compilation. `resources()` checks it against the actual
+/// finished registry, so changing a table schema cannot silently stale it.
+fn production_padded_witness_bytes(nu: usize) -> Result<u64> {
+  const UNION_COLUMN_LOG: u32 = 17;
+  let log_words =
+    u32::try_from(nu)?.checked_add(UNION_COLUMN_LOG - 7).ok_or_else(|| {
+      anyhow::anyhow!("Stage 3 padded witness logarithm overflow")
+    })?;
+  1u64
+    .checked_shl(log_words)
+    .and_then(|words| words.checked_mul(3 * 16))
+    .ok_or_else(|| anyhow::anyhow!("Stage 3 padded witness size overflow"))
+}
 #[derive(Clone, Copy)]
 struct TranscriptBoundFriFixedWires {
   blake3: SlotId,
@@ -3228,7 +3459,7 @@ struct TranscriptBoundFriFixedWires {
 
 #[allow(clippy::too_many_arguments)]
 fn constrain_transcript_bound_fri_query(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   fixed: TranscriptBoundFriFixedWires,
   inputs: &mut Vec<F128>,
@@ -3337,7 +3568,7 @@ fn constrain_transcript_bound_fri_query(
     for lane in 0..2 {
       let residual =
         builder.gate(fixed.equality, &[root[lane], cap_root[lane]])[0];
-      builder.connect(residual, fixed.equality_zero);
+      builder.connect(fixed.equality_zero, residual);
     }
     folded = if let Some(reduced_opening) = wires.reduced_opening {
       let beta_squared = arithmetic.ext2_mul(builder, wires.beta, wires.beta);
@@ -3349,51 +3580,346 @@ fn constrain_transcript_bound_fri_query(
   }
   let final_residual =
     builder.gate(fixed.equality, &[folded, fri_region.final_polynomial[0]])[0];
-  builder.connect(final_residual, fixed.equality_zero);
+  builder.connect(fixed.equality_zero, final_residual);
 }
 
 struct Stage2PcsRowWires {
   lanes: Vec<Wire>,
-  base_extensions: Vec<Wire>,
+}
+
+struct Stage2PcsPointWires {
+  point: Wire,
+  alpha_offset: Wire,
+  opened_sum: Wire,
+}
+
+struct Stage2PcsBatchWires {
+  commitment: [Wire; 2],
+  matrices: Vec<Vec<Stage2PcsPointWires>>,
+}
+
+/// Query-independent expressions, emitted once and then shared by explicit
+/// matrix/point indices. Never deduplicate by Wire identity: the count-only
+/// emitter deliberately uses one placeholder for every wire.
+struct Stage2PcsSharedWires {
+  alpha: ExtVal,
+  alpha_powers: Vec<Wire>,
+  query_point_basis: PcsQueryPointBasis,
+  batches: Vec<Stage2PcsBatchWires>,
+}
+
+/// Fixed base-field factors for each matrix height used by an opening.
+/// The cache key is protocol metadata, never a witness value or Wire ID.
+struct PcsQueryPointBasis {
+  coset_shift: Wire,
+  factors: BTreeMap<u8, Vec<Wire>>,
+}
+
+impl PcsQueryPointBasis {
+  fn declare(
+    builder: &mut impl CircuitEmitter,
+    inputs: &mut Vec<F128>,
+    public: &mut Vec<F128>,
+    heights: impl IntoIterator<Item = u8>,
+  ) -> Self {
+    let coset_shift = record_fixed(builder, inputs, public, F128::new(7, 0));
+    let mut factors = BTreeMap::new();
+    for height in heights {
+      factors.entry(height).or_insert_with(|| {
+        pcs_x_factors(height)
+          .into_iter()
+          .map(|factor| {
+            record_fixed(builder, inputs, public, F128::new(factor, 0))
+          })
+          .collect()
+      });
+    }
+    Self { coset_shift, factors }
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn constrain_query(
+    &self,
+    builder: &mut impl CircuitEmitter,
+    arithmetic: &GoldilocksCircuitSlots,
+    order: SlotId,
+    one: Wire,
+    zero: Wire,
+    log_global_height: u8,
+    index_bits: &[Wire],
+  ) -> Result<BTreeMap<u8, Wire>> {
+    if index_bits.len() != usize::from(log_global_height) {
+      bail!("PCS query-point bit width differs from the global height");
+    }
+    let mut points = BTreeMap::new();
+    for (&height, factors) in &self.factors {
+      let bit_offset =
+        log_global_height.checked_sub(height).ok_or_else(|| {
+          anyhow::anyhow!("PCS query-point height exceeds the global height")
+        })?;
+      let mut x = self.coset_shift;
+      for (&bit, &factor) in
+        index_bits[usize::from(bit_offset)..].iter().zip(factors)
+      {
+        let selected = builder.gate(order, &[bit, one, zero, factor, zero])[0];
+        // Both operands are [base, 0]: the fixed factors and the selector
+        // constrain the upper lane to zero, as does each multiplication.
+        // A lane-wise multiply is exactly their extension-field product.
+        // Keep the arithmetic residual and output-canonicality constraints.
+        x = arithmetic.mul(builder, x, selected);
+      }
+      points.insert(height, x);
+    }
+    Ok(points)
+  }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn constrain_stage2_pcs_query(
-  builder: &mut ShapeBuilder,
+fn constrain_stage2_pcs_shared(
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   fixed: TranscriptBoundFriFixedWires,
   inputs: &mut Vec<F128>,
   public: &mut Vec<F128>,
   prefix_region: &crate::transcript::TranscriptConstraintRegion,
-  fri_region: &crate::transcript::FriTranscriptConstraintRegion,
+  prefix: &Stage2TranscriptReplayV1,
   window: SlotId,
   instance: &Stage2PcsInstanceV1,
+) -> Result<Stage2PcsSharedWires> {
+  let alpha = prefix_region.challenges.pcs_alpha;
+  let zeta = prefix_region.challenges.zeta;
+  arithmetic.assert_canonical(builder, alpha);
+  arithmetic.assert_canonical(builder, zeta);
+
+  // The native PCS maintains an independent exponent counter per height,
+  // traversing batches, matrices, points, then columns. All counters use
+  // the SAME alpha, so one power table suffices for every height and query.
+  let mut sizes = BTreeMap::<u8, usize>::new();
+  for matrix in instance.batches.iter().flat_map(|batch| &batch.matrices) {
+    let size = matrix
+      .width
+      .checked_mul(matrix.opening_points.len())
+      .ok_or_else(|| anyhow::anyhow!("PCS alpha-power count overflow"))?;
+    let count = sizes.entry(matrix.log_height).or_default();
+    *count = count
+      .checked_add(size)
+      .ok_or_else(|| anyhow::anyhow!("PCS alpha-power count overflow"))?;
+  }
+  let maximum = sizes.values().copied().max().unwrap_or(0);
+  let mut alpha_powers = vec![fixed.one];
+  // Include alpha^maximum for a zero-width point at a bucket's end.
+  for _ in 0..maximum {
+    alpha_powers.push(arithmetic.ext2_mul(
+      builder,
+      *alpha_powers.last().unwrap(),
+      alpha,
+    ));
+  }
+  let mut offsets = BTreeMap::<u8, usize>::new();
+  let mut next_points = BTreeMap::new();
+  let query_point_basis = PcsQueryPointBasis::declare(
+    builder,
+    inputs,
+    public,
+    instance.batches.iter().flat_map(|batch| {
+      batch
+        .matrices
+        .iter()
+        .filter(|matrix| !matrix.opening_points.is_empty())
+        .map(|matrix| matrix.log_height)
+    }),
+  );
+  let mut batches = Vec::with_capacity(instance.batches.len());
+  for batch in &instance.batches {
+    let commitment = bound_transcript_digest(
+      builder,
+      window,
+      fixed.data_zero,
+      inputs,
+      public,
+      prefix_region,
+      batch.commitment,
+    );
+    let mut matrices = Vec::with_capacity(batch.matrices.len());
+    for matrix in &batch.matrices {
+      let mut points = Vec::with_capacity(matrix.opening_points.len());
+      for (point_index, point_kind) in matrix.opening_points.iter().enumerate()
+      {
+        let point = match *point_kind {
+          Stage2PcsOpeningPointV1::Zeta => zeta,
+          Stage2PcsOpeningPointV1::ZetaNext { log_degree } => {
+            *next_points.entry(log_degree).or_insert_with(|| {
+              let generator = Val::TWO_ADIC_GENERATORS[usize::from(log_degree)]
+                .as_canonical_u64();
+              let generator =
+                record_fixed(builder, inputs, public, F128::new(generator, 0));
+              arithmetic.ext2_mul(builder, zeta, generator)
+            })
+          },
+        };
+        // Horner's rule computes sum_j alpha^j p_j(point), with every p_j
+        // still bound to its exact transcript bytes and canonicality check.
+        let mut opened_sum = None;
+        for column in (0..matrix.width).rev() {
+          let value = bound_transcript_extension(
+            builder,
+            window,
+            fixed.data_zero,
+            inputs,
+            public,
+            prefix_region,
+            matrix.opened_values,
+            point_index * matrix.width + column,
+          );
+          arithmetic.assert_canonical(builder, value);
+          opened_sum = Some(match opened_sum {
+            None => value,
+            Some(sum) => {
+              let scaled = arithmetic.ext2_mul(builder, sum, alpha);
+              arithmetic.add(builder, scaled, value)
+            },
+          });
+        }
+        let offset = offsets.entry(matrix.log_height).or_default();
+        points.push(Stage2PcsPointWires {
+          point,
+          alpha_offset: alpha_powers[*offset],
+          opened_sum: opened_sum.unwrap_or(fixed.data_zero),
+        });
+        *offset += matrix.width; // bounded by the checked bucket size above
+      }
+      matrices.push(points);
+    }
+    batches.push(Stage2PcsBatchWires { commitment, matrices });
+  }
+  Ok(Stage2PcsSharedWires {
+    alpha: native_extension(prefix.challenges()?.pcs_alpha),
+    alpha_powers,
+    query_point_basis,
+    batches,
+  })
+}
+
+fn weighted_quotient(quotients: &[[u64; 2]], alpha: ExtVal) -> ExtVal {
+  quotients.iter().rev().fold(ExtVal::ZERO, |sum, &quotient| {
+    sum * alpha + native_extension(quotient)
+  })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn constrain_stage2_pcs_denominator(
+  builder: &mut impl CircuitEmitter,
+  arithmetic: &GoldilocksCircuitSlots,
+  equality: SlotId,
+  equality_zero: Wire,
+  one: Wire,
+  inputs: &mut Vec<F128>,
+  public: &mut Vec<F128>,
+  x: Wire,
+  point: Wire,
+  denominator_value: [u64; 2],
+) -> Result<Wire> {
+  let denominator =
+    record_public(builder, inputs, public, pack_extension(denominator_value));
+  arithmetic.assert_canonical(builder, denominator);
+  let denominator_check = arithmetic.add(builder, denominator, x);
+  assert_f128_equal(builder, equality, equality_zero, denominator_check, point);
+  // Enforce a nonzero denominator, including for empty column sets.
+  // For D != 0, Q = sum_j alpha^j (p_j(z)-p_j(x))/D is uniquely
+  // equivalent to D*Q + sum_j alpha^j p_j(x) = sum_j alpha^j p_j(z).
+  // This eliminates auxiliary per-column quotients, not a PCS check.
+  let inverse_value = native_extension(denominator_value)
+    .try_inverse()
+    .ok_or_else(|| anyhow::anyhow!("PCS denominator is zero"))?;
+  let inverse = record_public(
+    builder,
+    inputs,
+    public,
+    pack_extension(extension_words(inverse_value)),
+  );
+  arithmetic.assert_canonical(builder, inverse);
+  let inverse_check = arithmetic.ext2_mul(builder, denominator, inverse);
+  assert_f128_equal(builder, equality, equality_zero, inverse_check, one);
+  Ok(denominator)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn constrain_stage2_pcs_point(
+  builder: &mut impl CircuitEmitter,
+  arithmetic: &GoldilocksCircuitSlots,
+  equality: SlotId,
+  equality_zero: Wire,
+  inputs: &mut Vec<F128>,
+  public: &mut Vec<F128>,
+  denominator: Wire,
+  row_sum: Wire,
+  computation: &Stage2PcsPointComputation,
+  point: &Stage2PcsPointWires,
+  alpha: ExtVal,
+) -> Wire {
+  let quotient = record_public(
+    builder,
+    inputs,
+    public,
+    pack_extension(extension_words(weighted_quotient(
+      &computation.quotients,
+      alpha,
+    ))),
+  );
+  arithmetic.assert_canonical(builder, quotient);
+  let product = arithmetic.ext2_mul(builder, denominator, quotient);
+  let reconstructed = arithmetic.add(builder, product, row_sum);
+  assert_f128_equal(
+    builder,
+    equality,
+    equality_zero,
+    reconstructed,
+    point.opened_sum,
+  );
+  arithmetic.ext2_mul(builder, point.alpha_offset, quotient)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn constrain_stage2_pcs_query(
+  builder: &mut impl CircuitEmitter,
+  arithmetic: &GoldilocksCircuitSlots,
+  fixed: TranscriptBoundFriFixedWires,
+  inputs: &mut Vec<F128>,
+  public: &mut Vec<F128>,
+  fri_region: &crate::transcript::FriTranscriptConstraintRegion,
+  instance: &Stage2PcsInstanceV1,
+  shared: &Stage2PcsSharedWires,
   query_number: usize,
   query: &Stage2PcsQueryV1,
   computation: &Stage2PcsQueryComputation,
 ) -> Result<BTreeMap<u8, Wire>> {
   let index_bits = &fri_region.query_index_bits[query_number];
-  let alpha = prefix_region.challenges.pcs_alpha;
-  let zeta = prefix_region.challenges.zeta;
-  arithmetic.assert_canonical(builder, alpha);
-  arithmetic.assert_canonical(builder, zeta);
+  let query_points = shared.query_point_basis.constrain_query(
+    builder,
+    arithmetic,
+    fixed.order,
+    fixed.one,
+    fixed.data_zero,
+    instance.log_global_height,
+    index_bits,
+  )?;
 
   let mut all_rows = Vec::with_capacity(instance.batches.len());
   for (batch, opening) in instance.batches.iter().zip(&query.batch_openings) {
     let mut batch_rows = Vec::with_capacity(batch.matrices.len());
     for row in &opening.opened_rows {
       let mut lanes = Vec::with_capacity(row.len());
-      let mut base_extensions = Vec::with_capacity(row.len());
       for &value in row {
         let lane =
           record_public(builder, inputs, public, F128::new(value, value));
         arithmetic.assert_canonical(builder, lane);
-        let extension =
-          builder.gate(arithmetic.repack, &[lane, fixed.data_zero])[3];
-        lanes.push(lane);
-        base_extensions.push(extension);
+        // Both hashing and scalar multiplication use [x,x] derived from
+        // one lane by the repack constraints, not an assumed host duplicate.
+        let duplicated =
+          builder.gate(arithmetic.repack, &[lane, fixed.data_zero])[0];
+        lanes.push(duplicated);
       }
-      batch_rows.push(Stage2PcsRowWires { lanes, base_extensions });
+      batch_rows.push(Stage2PcsRowWires { lanes });
     }
     all_rows.push(batch_rows);
   }
@@ -3401,12 +3927,13 @@ fn constrain_stage2_pcs_query(
   // Authenticate every multi-height batch. Rows sharing a height are
   // concatenated in matrix order before hashing; shorter-height leaves are
   // injected on the right after the corresponding path compression.
-  for (((batch, opening), batch_computation), rows) in instance
+  for ((((batch, opening), batch_computation), rows), shared_batch) in instance
     .batches
     .iter()
     .zip(&query.batch_openings)
     .zip(&computation.batches)
     .zip(&all_rows)
+    .zip(&shared.batches)
   {
     let log_batch_height =
       batch.matrices.iter().map(|matrix| matrix.log_height).max().unwrap();
@@ -3506,146 +4033,113 @@ fn constrain_stage2_pcs_query(
         current = [parent[0], parent[1]];
       }
     }
-    let expected = bound_transcript_digest(
-      builder,
-      window,
-      fixed.data_zero,
-      inputs,
-      public,
-      prefix_region,
-      batch.commitment,
-    );
+    let expected = shared_batch.commitment;
     for lane in 0..2 {
       let residual =
         builder.gate(fixed.equality, &[current[lane], expected[lane]])[0];
-      builder.connect(residual, fixed.equality_zero);
+      builder.connect(fixed.equality_zero, residual);
     }
     let _ = batch_computation.root;
   }
 
-  let mut buckets: BTreeMap<u8, (Wire, Wire)> = instance
+  let mut buckets: BTreeMap<u8, Wire> = instance
     .batches
     .iter()
     .flat_map(|batch| batch.matrices.iter().map(|matrix| matrix.log_height))
-    .map(|height| (height, (fixed.one, fixed.data_zero)))
+    .map(|height| (height, fixed.data_zero))
     .collect();
-  let coset_shift = record_fixed(builder, inputs, public, F128::new(7, 0));
-
-  for (((batch, opening), batch_computation), rows) in instance
+  // A denominator depends on the query, matrix HEIGHT, and semantic opening
+  // point (including its next-row generator), not the matrix/batch itself.
+  // Keep the cache local to this query, and never key it by wire/value equality.
+  let mut denominators = BTreeMap::new();
+  for ((((batch, opening), batch_computation), rows), shared_batch) in instance
     .batches
     .iter()
     .zip(&query.batch_openings)
     .zip(&computation.batches)
     .zip(&all_rows)
+    .zip(&shared.batches)
   {
-    for (((matrix, _row_values), matrix_computation), row) in batch
-      .matrices
-      .iter()
-      .zip(&opening.opened_rows)
-      .zip(&batch_computation.matrices)
-      .zip(rows)
-    {
-      let bit_offset =
-        usize::from(instance.log_global_height - matrix.log_height);
-      let mut x = coset_shift;
-      for (bit, factor) in index_bits[bit_offset..]
+    for ((((matrix, _row_values), matrix_computation), row), shared_points) in
+      batch
+        .matrices
         .iter()
-        .take(usize::from(matrix.log_height))
-        .zip(pcs_x_factors(matrix.log_height))
-      {
-        let factor =
-          record_fixed(builder, inputs, public, F128::new(factor, 0));
-        let selected = builder.gate(
-          fixed.order,
-          &[*bit, fixed.one, fixed.data_zero, factor, fixed.data_zero],
-        )[0];
-        x = arithmetic.ext2_mul(builder, x, selected);
+        .zip(&opening.opened_rows)
+        .zip(&batch_computation.matrices)
+        .zip(rows)
+        .zip(&shared_batch.matrices)
+    {
+      // Inactive preprocessed matrices still participate in authentication,
+      // but contribute no opening quotient to their height bucket.
+      if shared_points.is_empty() {
+        continue;
       }
+      let x = query_points[&matrix.log_height];
 
-      for (point_index, (point_kind, point_computation)) in
-        matrix.opening_points.iter().zip(&matrix_computation.points).enumerate()
+      // Sum_j alpha^j p_j(x) once per matrix/query, shared by its opening
+      // points. p_j(x) is a BASE-field scalar: [x,x] * [a,b] is exactly the
+      // extension product [x,0] * [a,b], using one lane-wise multiply.
+      let mut row_sum = None;
+      for (&lane, &power) in row.lanes.iter().zip(&shared.alpha_powers) {
+        let term = arithmetic.mul(builder, lane, power);
+        row_sum = Some(match row_sum {
+          None => term,
+          Some(sum) => arithmetic.add(builder, sum, term),
+        });
+      }
+      let row_sum = row_sum.unwrap_or(fixed.data_zero);
+
+      for ((point_kind, point_computation), shared_point) in matrix
+        .opening_points
+        .iter()
+        .zip(&matrix_computation.points)
+        .zip(shared_points)
       {
-        let point = match *point_kind {
-          Stage2PcsOpeningPointV1::Zeta => zeta,
-          Stage2PcsOpeningPointV1::ZetaNext { log_degree } => {
-            let generator = Val::TWO_ADIC_GENERATORS[usize::from(log_degree)]
-              .as_canonical_u64();
-            let generator =
-              record_fixed(builder, inputs, public, F128::new(generator, 0));
-            arithmetic.ext2_mul(builder, zeta, generator)
-          },
-        };
-        let denominator = record_public(
-          builder,
-          inputs,
-          public,
-          pack_extension(point_computation.denominator),
-        );
-        arithmetic.assert_canonical(builder, denominator);
-        let denominator_check = arithmetic.add(builder, denominator, x);
-        assert_f128_equal(
-          builder,
-          fixed.equality,
-          fixed.equality_zero,
-          denominator_check,
-          point,
-        );
-
-        let (mut alpha_power, mut accumulator) = buckets[&matrix.log_height];
-        for (column, (&p_at_x, &quotient_value)) in row
-          .base_extensions
-          .iter()
-          .zip(&point_computation.quotients)
-          .enumerate()
-        {
-          let p_at_z = bound_transcript_extension(
+        let key = (matrix.log_height, *point_kind);
+        let denominator = if let Some(&denominator) = denominators.get(&key) {
+          denominator
+        } else {
+          let denominator = constrain_stage2_pcs_denominator(
             builder,
-            window,
-            fixed.data_zero,
-            inputs,
-            public,
-            prefix_region,
-            matrix.opened_values,
-            point_index * matrix.width + column,
-          );
-          arithmetic.assert_canonical(builder, p_at_z);
-          let quotient = record_public(
-            builder,
-            inputs,
-            public,
-            pack_extension(quotient_value),
-          );
-          arithmetic.assert_canonical(builder, quotient);
-          let quotient_product =
-            arithmetic.ext2_mul(builder, denominator, quotient);
-          let reconstructed = arithmetic.add(builder, quotient_product, p_at_x);
-          assert_f128_equal(
-            builder,
+            arithmetic,
             fixed.equality,
             fixed.equality_zero,
-            reconstructed,
-            p_at_z,
-          );
-          let term = arithmetic.ext2_mul(builder, alpha_power, quotient);
-          accumulator = arithmetic.add(builder, accumulator, term);
-          alpha_power = arithmetic.ext2_mul(builder, alpha_power, alpha);
-        }
-        buckets.insert(matrix.log_height, (alpha_power, accumulator));
+            fixed.one,
+            inputs,
+            public,
+            x,
+            shared_point.point,
+            point_computation.denominator,
+          )?;
+          denominators.insert(key, denominator);
+          denominator
+        };
+        let term = constrain_stage2_pcs_point(
+          builder,
+          arithmetic,
+          fixed.equality,
+          fixed.equality_zero,
+          inputs,
+          public,
+          denominator,
+          row_sum,
+          point_computation,
+          shared_point,
+          shared.alpha,
+        );
+        let accumulator =
+          arithmetic.add(builder, buckets[&matrix.log_height], term);
+        buckets.insert(matrix.log_height, accumulator);
       }
     }
   }
 
-  Ok(
-    buckets
-      .into_iter()
-      .map(|(height, (_, accumulator))| (height, accumulator))
-      .collect(),
-  )
+  Ok(buckets)
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bound_transcript_extension(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   window: SlotId,
   data_zero: Wire,
   inputs: &mut Vec<F128>,
@@ -3667,7 +4161,7 @@ pub(crate) fn bound_transcript_extension(
 }
 
 fn bound_transcript_digest(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   window: SlotId,
   data_zero: Wire,
   inputs: &mut Vec<F128>,
@@ -3687,7 +4181,7 @@ fn bound_transcript_digest(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bound_transcript_window(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   window: SlotId,
   data_zero: Wire,
   inputs: &mut Vec<F128>,
@@ -3708,115 +4202,18 @@ pub(crate) fn bound_transcript_window(
 }
 
 pub(crate) fn assert_f128_equal(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   equality: SlotId,
   equality_zero: Wire,
   left: Wire,
   right: Wire,
 ) {
   let residual = builder.gate(equality, &[left, right])[0];
-  builder.connect(residual, equality_zero);
-}
-
-fn transcript_bound_fri_nu(
-  prefix: &Stage2TranscriptReplayV1,
-  fri_transcript: &Stage2FriTranscriptReplayV1,
-  selected: &[SelectedFriQuery<'_>],
-  pcs_instance: Option<&Stage2PcsInstanceV1>,
-  air: Option<&Stage2AirProgramV1>,
-) -> Result<usize> {
-  let prefix_capacity = 1usize << transcript_nu(prefix)?;
-  let commit_capacity = selected.iter().try_fold(0usize, |rows, item| {
-    rows.checked_add(1usize << commit_phase_nu(item.query)).ok_or_else(|| {
-      anyhow::anyhow!("transcript-bound FRI query row budget overflow")
-    })
-  })?;
-  let fri_blake3_rows = fri_transcript_blake3_rows(fri_transcript)?;
-  let fri_split_rows = fri_transcript_split_rows(fri_transcript)?;
-  let pcs_capacity = if let Some(instance) = pcs_instance {
-    selected.iter().try_fold(0usize, |rows, item| {
-      let query = item
-        .pcs_query
-        .ok_or_else(|| anyhow::anyhow!("missing PCS query row budget"))?;
-      rows
-        .checked_add(1usize << stage2_pcs_query_nu(instance, query))
-        .ok_or_else(|| anyhow::anyhow!("PCS query row budget overflow"))
-    })?
-  } else {
-    0
-  };
-  let row_budget = prefix_capacity
-    .checked_add(commit_capacity)
-    .and_then(|rows| rows.checked_add(fri_blake3_rows))
-    .and_then(|rows| rows.checked_add(fri_split_rows))
-    .and_then(|rows| rows.checked_add(pcs_capacity))
-    .and_then(|rows| {
-      rows.checked_add(air.map_or(0, Stage2AirProgramV1::row_budget))
-    })
-    .ok_or_else(|| {
-      anyhow::anyhow!("transcript-bound FRI row budget overflow")
-    })?;
-  Ok(
-    usize::try_from(row_budget.max(1).next_power_of_two().ilog2())
-      .expect("FRI row logarithm fits usize")
-      .max(NU),
-  )
-}
-
-fn stage2_pcs_query_nu(
-  instance: &Stage2PcsInstanceV1,
-  query: &Stage2PcsQueryV1,
-) -> usize {
-  let values = query
-    .batch_openings
-    .iter()
-    .flat_map(|batch| &batch.opened_rows)
-    .map(Vec::len)
-    .sum::<usize>();
-  let points = instance
-    .batches
-    .iter()
-    .flat_map(|batch| &batch.matrices)
-    .map(|matrix| matrix.opening_points.len())
-    .sum::<usize>();
-  let path_nodes = query
-    .batch_openings
-    .iter()
-    .map(|batch| batch.opening_proof.len())
-    .sum::<usize>();
-  let leaf_rows = instance
-    .batches
-    .iter()
-    .zip(&query.batch_openings)
-    .map(|(batch, opening)| {
-      (0..=batch.matrices.iter().map(|matrix| matrix.log_height).max().unwrap())
-        .filter(|height| {
-          batch.matrices.iter().any(|matrix| matrix.log_height == *height)
-        })
-        .map(|height| {
-          let width = batch
-            .matrices
-            .iter()
-            .zip(&opening.opened_rows)
-            .filter(|(matrix, _)| matrix.log_height == height)
-            .map(|(_, row)| row.len())
-            .sum::<usize>();
-          hash_trace(width * 8).rows.len()
-        })
-        .sum::<usize>()
-    })
-    .sum::<usize>();
-  let row_bound = values
-    .saturating_mul(256)
-    .saturating_add(points.saturating_mul(128))
-    .saturating_add(path_nodes.saturating_mul(64))
-    .saturating_add(leaf_rows)
-    .max(1);
-  usize::try_from(row_bound.next_power_of_two().ilog2()).unwrap().max(NU)
+  builder.connect(equality_zero, residual);
 }
 
 pub(crate) fn record_fixed(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   inputs: &mut Vec<F128>,
   public: &mut Vec<F128>,
   value: F128,
@@ -3827,7 +4224,7 @@ pub(crate) fn record_fixed(
 }
 
 fn record_public(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   inputs: &mut Vec<F128>,
   public: &mut Vec<F128>,
   value: F128,
@@ -3839,7 +4236,7 @@ fn record_public(
 
 #[allow(clippy::too_many_arguments)]
 fn constrain_authenticated_fold(
-  builder: &mut ShapeBuilder,
+  builder: &mut impl CircuitEmitter,
   arithmetic: &GoldilocksCircuitSlots,
   blake3_slot: SlotId,
   order_slot: SlotId,
@@ -3918,7 +4315,7 @@ fn constrain_authenticated_fold(
   let rhs_beta = arithmetic.ext2_mul(builder, beta, e0);
   let rhs = arithmetic.add(builder, rhs_sum, rhs_beta);
   let equality_residual = builder.gate(equality_slot, &[lhs, rhs])[0];
-  builder.connect(equality_residual, equality_zero);
+  builder.connect(equality_zero, equality_residual);
   current
 }
 
@@ -3948,7 +4345,7 @@ fn stage3_linchecks() -> &'static Stage3Linchecks {
       build_goldilocks_add_r1cs,
       build_goldilocks_mul_r1cs,
       build_lane_repack_r1cs,
-      build_canonical_pair_r1cs,
+      build_canonical_quad_r1cs,
       build_f128_equality_r1cs,
       build_hash_sample_r1cs,
       build_goldilocks_sample_r1cs,
@@ -4056,7 +4453,7 @@ fn prove_fri_circuit(
   let mul_rows = witness.rows::<GoldilocksMulPairGate>(slots.mul);
   let repack_rows = witness.rows::<GoldilocksLaneRepackGate>(slots.repack);
   let canonical_rows =
-    witness.rows::<CanonicalGoldilocksPairGate>(slots.canonical);
+    witness.rows::<CanonicalGoldilocksQuadGate>(slots.canonical);
   let equality_rows = witness.rows::<F128EqualityGate>(slots.equality);
   let sample_rows =
     sample_slot.map(|slot| witness.rows::<HashSampleGate>(slot));
@@ -4157,7 +4554,7 @@ fn prove_fri_circuit(
       shape.registry_slot(slots.canonical),
       UnionSlotProverInput::in_place(
         move |dst| {
-          generate_canonical_pair_witness_into(
+          generate_canonical_quad_witness_into(
             canonical_rows,
             nu,
             initialize_slot_padding(dst),
@@ -5819,6 +6216,14 @@ mod tests {
     commitment: CommitmentParameters,
     fri: FriParameters,
   ) -> (ValidatedStage2RootV1, FriParameters, Vec<u8>, Vec<u8>, Vec<u8>) {
+    prepared_stage2_pcs_fixture_with_lookup_group(commitment, fri, 1)
+  }
+
+  fn prepared_stage2_pcs_fixture_with_lookup_group(
+    commitment: CommitmentParameters,
+    fri: FriParameters,
+    lookup_group_size: usize,
+  ) -> (ValidatedStage2RootV1, FriParameters, Vec<u8>, Vec<u8>, Vec<u8>) {
     const CLAIM_WORDS: usize = 18;
     const CLAIM_CIRCUIT_WIDTH: usize = CLAIM_WORDS + 2;
     const TALL_HEIGHT: usize = 8;
@@ -5827,8 +6232,11 @@ mod tests {
     let claim: Vec<_> = (0..CLAIM_WORDS)
       .map(|word| Val::from_u64(0x100 + u64::try_from(word).unwrap()))
       .collect();
+    // Split the same claim multiplicity across one whole lookup group.
+    // The default size-one fixture and its transport remain unchanged.
     let claim_lookup = Lookup::pull(
-      Expr::main(0),
+      Expr::main(0)
+        * Expr::constant(Val::from_usize(lookup_group_size).inverse()),
       (1..=CLAIM_WORDS)
         .map(|column| Expr::main(u32::try_from(column).unwrap()))
         .collect(),
@@ -5857,7 +6265,8 @@ mod tests {
             1,
           )),
           constraints: vec![multiplicity_is_boolean, preprocessed_matches],
-          lookups: vec![claim_lookup],
+          lookups: vec![claim_lookup; lookup_group_size],
+          lookup_group_size,
           ..Default::default()
         },
         CircuitInputs {
@@ -6403,6 +6812,117 @@ mod tests {
   }
 
   #[test]
+  fn every_production_generator_tolerates_poisoned_storage_and_shape_changes() {
+    fn check<T>(
+      rows: &[T],
+      k_log: usize,
+      generate: impl Fn(&[T], usize, SlotWitnessDest<'_>) -> Vec<u8>,
+    ) {
+      for (nu, count) in [(8, 3), (9, 1), (8, 0)] {
+        let rows = &rows[..count.min(rows.len())];
+        let words = 1usize << (nu + k_log - 7);
+        let poison = F128::new(0xdead_beef_0123_4567, 0xa5a5_5a5a_dead_beef);
+        let mut clean = [
+          vec![F128::ZERO; words],
+          vec![F128::ZERO; words],
+          vec![F128::ZERO; words],
+        ];
+        let mut dirty =
+          [vec![poison; words], vec![poison; words], vec![poison; words]];
+        let [z, a, b] = &mut clean;
+        let expected_stripes = generate(
+          rows,
+          nu,
+          SlotWitnessDest { z, a, b, elide_padding_writes: true },
+        );
+        let [z, a, b] = &mut dirty;
+        let stripes = generate(
+          rows,
+          nu,
+          initialize_slot_padding(SlotWitnessDest {
+            z,
+            a,
+            b,
+            elide_padding_writes: true,
+          }),
+        );
+        assert_eq!(stripes, expected_stripes);
+        assert_eq!(dirty, clean, "nu={nu}, count={count}, k_log={k_log}");
+      }
+    }
+    let (prepared, fri, _, _, _) = prepared_stage2_pcs_fixture();
+    let witness =
+      Stage2AirPcsFriWitnessV1::from_prepared(&prepared, &fri).unwrap();
+    let compiled =
+      CompiledStage3Relation::build(&witness, Default::default()).unwrap();
+    let relation = &compiled.relation;
+    let evaluated = relation.shape.run(&relation.inputs, &[]);
+    macro_rules! check_slot {
+      ($slot:expr, $gate:ty, $generate:path) => {{
+        let slot = $slot;
+        let table =
+          &relation.shape.registry.types()[relation.shape.registry_slot(slot)];
+        check(evaluated.rows::<$gate>(slot), table.k_log, $generate);
+      }};
+    }
+    check_slot!(
+      relation.slots.blake3,
+      Blake3Gate,
+      flock_blake3::generate_witness_batch_major_partial_into
+    );
+    check_slot!(
+      relation.slots.order,
+      DigestOrderGate,
+      generate_digest_order_witness_into
+    );
+    check_slot!(
+      relation.slots.add,
+      GoldilocksAddPairGate,
+      generate_goldilocks_add_witness_into
+    );
+    check_slot!(
+      relation.slots.mul,
+      GoldilocksMulPairGate,
+      generate_goldilocks_mul_witness_into
+    );
+    check_slot!(
+      relation.slots.repack,
+      GoldilocksLaneRepackGate,
+      generate_lane_repack_witness_into
+    );
+    check_slot!(
+      relation.slots.canonical,
+      CanonicalGoldilocksQuadGate,
+      generate_canonical_quad_witness_into
+    );
+    check_slot!(
+      relation.slots.equality,
+      F128EqualityGate,
+      generate_f128_equality_witness_into
+    );
+    check_slot!(
+      relation.sample_slot,
+      HashSampleGate,
+      generate_hash_sample_witness_into
+    );
+    check_slot!(
+      relation.slots.field_sample.unwrap(),
+      GoldilocksSampleGate,
+      generate_goldilocks_sample_witness_into
+    );
+    check_slot!(
+      relation.split_slot,
+      U64SplitGate,
+      generate_u64_split_witness_into
+    );
+    check_slot!(
+      relation.window_slot.unwrap(),
+      ByteWindowGate,
+      generate_byte_window_witness_into
+    );
+  }
+
+  #[test]
   fn native_fold_satisfies_denominator_free_identity() {
     for query_index in [0, 1, 0b1_0110, 0b1_1111] {
       let mut query = fixture();
@@ -6795,12 +7315,67 @@ mod tests {
       .preflight_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
       .unwrap();
     let census = &report.relation;
-    assert!(census.nu >= u64::try_from(NU).unwrap());
+    assert_eq!(census.nu, 12);
+    let busiest =
+      report.resources.tables.iter().map(|table| table.rows).max().unwrap();
+    assert_eq!(census.table_capacity, busiest.next_power_of_two());
+    assert_eq!(report.resources.padded_union_witness_bytes, 192 * 1024 * 1024);
     assert!(census.blake3_rows > 0);
     assert!(census.total_rows() > census.blake3_rows);
     assert_eq!(report.advice.queries, u64::try_from(fri.num_queries).unwrap());
     assert_eq!(report.stage2_root_digest, prepared.statement().digest());
     assert!(report.to_string().contains("gate rows: blake3="));
+    assert_eq!(
+      report.resources.tables.iter().map(|table| table.rows).sum::<u64>(),
+      census.total_rows()
+    );
+    assert!(
+      report.resources.pcs_codeword_bytes >= report.resources.pcs_message_bytes
+    );
+    assert!(
+      report.resources.padded_union_witness_bytes
+        >= report.resources.dense_witness_bytes * 3
+    );
+    assert_eq!(
+      report.resources.padded_union_witness_bytes,
+      production_padded_witness_bytes(census.nu as usize).unwrap()
+    );
+    assert!(
+      report
+        .resources
+        .tables
+        .iter()
+        .map(|table| table.padded_witness_bytes)
+        .sum::<u64>()
+        <= report.resources.padded_union_witness_bytes
+    );
+    let json = report.to_json_value();
+    assert_eq!(json["schema"], "ix.flock-stage3.preflight");
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["relation_cache"], "none");
+    assert_eq!(
+      json["specialization"]["activation"],
+      serde_json::json!([false, true, true])
+    );
+    assert_eq!(
+      json["specialization"]["active_log_degrees"],
+      serde_json::json!([3, 2])
+    );
+    assert_eq!(
+      json["config_digest"],
+      crate::report::hex(FlockConfigV1.digest())
+    );
+    assert_eq!(
+      json["transport"]["compact_proof_digest"],
+      crate::report::hex(*blake3::hash(&proof_bytes).as_bytes())
+    );
+    // Measurements are diagnostic only: changing them cannot change a
+    // cryptographic root or relation identity.
+    let mut changed = report.clone();
+    changed.timings.total_us += 1;
+    changed.process_peak_rss_bytes = None;
+    assert_eq!(changed.stage3_statement_digest, report.stage3_statement_digest);
+    assert_ne!(changed.to_json_value(), json);
 
     let expected = crate::Stage3StatementV1::new(
       prepared.statement(),
@@ -6846,6 +7421,446 @@ mod tests {
   }
 
   #[test]
+  fn four_message_stage2_lookups_lower_to_the_flock_relation() {
+    let (prepared, fri, vk, _, _) =
+      prepared_stage2_pcs_fixture_with_lookup_group(
+        CommitmentParameters { log_blowup: 2, cap_height: 0 },
+        FriParameters {
+          log_final_poly_len: 0,
+          max_log_arity: 1,
+          num_queries: 2,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 0,
+        },
+        4,
+      );
+    let metadata =
+      AiurVerifyingKey::from_bytes(&vk).unwrap().air_circuit_metadata();
+    assert_eq!(metadata[1].lookup_group_size, 4);
+    assert_eq!(metadata[1].quotient_degree, 4);
+    let witness =
+      Stage2AirPcsFriWitnessV1::from_prepared(&prepared, &fri).unwrap();
+    let compiled =
+      CompiledStage3Relation::build(&witness, Default::default()).unwrap();
+    compiled.evaluate().unwrap();
+  }
+
+  #[test]
+  fn prepared_root_rejects_work_at_each_admission_boundary() {
+    let (_, fri, vk, claim, proof) = prepared_stage2_pcs_fixture();
+    for (limits, label) in [
+      (
+        crate::Stage3ResourceLimitsV1 {
+          max_advice_bytes: 1,
+          ..Default::default()
+        },
+        "advice upper bound",
+      ),
+      (
+        crate::Stage3ResourceLimitsV1 {
+          max_table_capacity: 1,
+          ..Default::default()
+        },
+        "table capacity",
+      ),
+      (
+        crate::Stage3ResourceLimitsV1 {
+          max_union_witness_bytes: 1,
+          ..Default::default()
+        },
+        "padded union witness",
+      ),
+    ] {
+      let error = crate::FlockStage3Backend
+        .prepare_stage2_with_limits(&vk, &claim, &proof, &fri, limits)
+        .err()
+        .expect("reject oversized work before proving")
+        .to_string();
+      assert!(error.contains(label), "{error}");
+    }
+    // A canonical-looking but invalid native proof still fails expansion
+    // after removal of the redundant outer native verifier call.
+    let mut wrong_claim = claim;
+    wrong_claim[0] ^= 1;
+    assert!(
+      crate::FlockStage3Backend
+        .prepare_witness(&vk, &wrong_claim, &proof, &fri)
+        .is_err()
+    );
+  }
+
+  #[test]
+  fn grouped_pcs_quotients_match_columnwise_height_buckets() {
+    for alpha in [[0, 0], [1, 0], [17, 29], [GOLDILOCKS_MODULUS - 1, 2]] {
+      let alpha = native_extension(alpha);
+      let mut reference = BTreeMap::<u8, (ExtVal, ExtVal)>::new();
+      let mut grouped = BTreeMap::<u8, (u64, ExtVal)>::new();
+      for batch in 0..3u64 {
+        // Interleaved heights, repeated matrices and two opening points
+        // exercise the per-height exponent counter, including empty sets.
+        for (height, width) in [(5, 0), (3, 1), (5, 2), (3, 3), (5, 7), (3, 31)]
+        {
+          for point in 0..2u64 {
+            let denominator = native_extension([4 + batch, 2 + point]);
+            let rows: Vec<_> = (0..width)
+              .map(|column| {
+                native_extension([GOLDILOCKS_MODULUS - 1 - column, 0])
+              })
+              .collect();
+            let opened: Vec<_> = (0..width)
+              .map(|column| native_extension([column + batch, column + point]))
+              .collect();
+            let quotients: Vec<_> = opened
+              .iter()
+              .zip(&rows)
+              .map(|(&at_z, &at_x)| {
+                extension_words((at_z - at_x) / denominator)
+              })
+              .collect();
+            let (power, accumulator) =
+              reference.entry(height).or_insert((ExtVal::ONE, ExtVal::ZERO));
+            for &quotient in &quotients {
+              *accumulator += *power * native_extension(quotient);
+              *power *= alpha;
+            }
+            let row_sum = rows
+              .iter()
+              .rev()
+              .fold(ExtVal::ZERO, |sum, &value| sum * alpha + value);
+            let opened_sum = opened
+              .iter()
+              .rev()
+              .fold(ExtVal::ZERO, |sum, &value| sum * alpha + value);
+            let quotient = weighted_quotient(&quotients, alpha);
+            assert_eq!(denominator * quotient + row_sum, opened_sum);
+            let (offset, accumulator) =
+              grouped.entry(height).or_insert((0, ExtVal::ZERO));
+            *accumulator += alpha.exp_u64(*offset) * quotient;
+            *offset += width;
+          }
+        }
+      }
+      for (height, (power, accumulator)) in reference {
+        let (offset, grouped_accumulator) = grouped[&height];
+        assert_eq!(power, alpha.exp_u64(offset));
+        assert_eq!(accumulator, grouped_accumulator);
+      }
+    }
+  }
+
+  #[test]
+  fn shared_pcs_query_points_match_bit_reversed_domains_and_reject_mutations() {
+    const NU: usize = 10;
+    const GLOBAL_HEIGHT: u8 = 32;
+    // Repeated, interleaved heights must declare factors only once. Include
+    // both the empty exponent and Goldilocks' maximum two-adic subgroup.
+    const HEIGHTS: [u8; 9] = [32, 0, 1, 9, 32, 16, 2, 16, 31];
+    struct Positions {
+      bits: Vec<usize>,
+      points: Vec<(u8, usize)>,
+    }
+    fn emit(
+      builder: &mut impl CircuitEmitter,
+      nu: usize,
+    ) -> (Vec<F128>, Vec<Positions>) {
+      let arithmetic = GoldilocksCircuitSlots::declare(builder, nu);
+      let order = builder.slot(DigestOrderGate { nu });
+      let equality = builder.slot(F128EqualityGate { nu });
+      let mut inputs = vec![F128::ZERO];
+      let mut public = inputs.clone();
+      let zero = record_fixed(builder, &mut inputs, &mut public, F128::ZERO);
+      let equality_zero =
+        record_fixed(builder, &mut inputs, &mut public, F128::ZERO);
+      let one =
+        record_fixed(builder, &mut inputs, &mut public, F128::new(1, 0));
+      let basis =
+        PcsQueryPointBasis::declare(builder, &mut inputs, &mut public, HEIGHTS);
+      assert_eq!(basis.factors.len(), 7);
+      assert_eq!(basis.factors.values().map(Vec::len).sum::<usize>(), 91);
+      let mut positions = Vec::new();
+      for _ in 0..2 {
+        let bits = (0..GLOBAL_HEIGHT)
+          .map(|_| {
+            let index = inputs.len();
+            let wire =
+              record_public(builder, &mut inputs, &mut public, F128::ZERO);
+            (wire, index)
+          })
+          .collect::<Vec<_>>();
+        let bit_wires: Vec<_> = bits.iter().map(|&(wire, _)| wire).collect();
+        assert!(
+          basis
+            .constrain_query(
+              builder,
+              &arithmetic,
+              order,
+              one,
+              zero,
+              GLOBAL_HEIGHT,
+              &bit_wires[..31],
+            )
+            .is_err()
+        );
+        let points = basis
+          .constrain_query(
+            builder,
+            &arithmetic,
+            order,
+            one,
+            zero,
+            GLOBAL_HEIGHT,
+            &bit_wires,
+          )
+          .unwrap();
+        let points = points
+          .into_iter()
+          .map(|(height, actual)| {
+            let index = inputs.len();
+            let expected =
+              record_public(builder, &mut inputs, &mut public, F128::new(7, 0));
+            assert_f128_equal(
+              builder,
+              equality,
+              equality_zero,
+              actual,
+              expected,
+            );
+            (height, index)
+          })
+          .collect();
+        positions.push(Positions {
+          bits: bits.into_iter().map(|(_, index)| index).collect(),
+          points,
+        });
+      }
+      arithmetic.finish_canonical(builder);
+      (inputs, positions)
+    }
+
+    let mut count = CountingEmitter::new();
+    emit(&mut count, CountingEmitter::COUNT_NU);
+    // With all counting wires identical, the count still reflects two
+    // distinct queries and one multiplication per UNIQUE-height factor.
+    assert_eq!(
+      count.table_rows().find(|&(name, _)| name == "GoldilocksMulPairGate"),
+      Some(("GoldilocksMulPairGate", 182)),
+    );
+    let mut builder = ShapeBuilder::new(NU);
+    let (template, positions) = emit(&mut builder, NU);
+    let shape = builder.finish().unwrap();
+    count.ensure_matches(&shape).unwrap();
+
+    for indices in [
+      [0u32, u32::MAX],
+      [1, 2],
+      [0xaaaa_5555, 0x5555_aaaa],
+      [0x8000_0000, 0x7fff_ffff],
+    ] {
+      let mut inputs = template.clone();
+      for (&query_index, positions) in indices.iter().zip(&positions) {
+        for (bit, &index) in positions.bits.iter().enumerate() {
+          inputs[index] = F128::new(u64::from((query_index >> bit) & 1), 0);
+        }
+        for &(height, index) in &positions.points {
+          let local = u64::from(query_index) >> (GLOBAL_HEIGHT - height);
+          let exponent =
+            if height == 0 { 0 } else { local.reverse_bits() >> (64 - height) };
+          // Independent exponentiation oracle, not pcs_x_factors or its
+          // native fold. Truncation must happen BEFORE bit reversal.
+          let expected = Val::from_u8(7)
+            * Val::TWO_ADIC_GENERATORS[usize::from(height)].exp_u64(exponent);
+          inputs[index] = F128::new(expected.as_canonical_u64(), 0);
+        }
+      }
+      shape.run(&inputs, &[]);
+      let rejects = |mutated: Vec<F128>| {
+        // No native PCS validation or public-vector comparison: equality,
+        // selector and arithmetic checks are in the compiled relation.
+        assert!(
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            shape.run(&mutated, &[])
+          }))
+          .is_err()
+        );
+      };
+      for positions in &positions {
+        for bit in [0, 1, 15, 31] {
+          let mut changed = inputs.clone();
+          changed[positions.bits[bit]].lo ^= 1;
+          rejects(changed);
+        }
+        for &(height, index) in &positions.points {
+          let mut changed = inputs.clone();
+          changed[index].lo ^= 1;
+          rejects(changed);
+          if height > 0 {
+            let mut upper_lane = inputs.clone();
+            upper_lane[index].hi = 1;
+            rejects(upper_lane);
+          }
+        }
+        for invalid_bit in [F128::new(2, 0), F128::new(0, 1)] {
+          let mut changed = inputs.clone();
+          changed[positions.bits[0]] = invalid_bit;
+          rejects(changed);
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn compiled_pcs_point_rejects_auxiliary_and_zero_denominator_mutations() {
+    for quotients in [vec![], vec![[11, 13], [23, 31], [41, 47]]] {
+      const NU: usize = 10;
+      let mut builder = ShapeBuilder::new(NU);
+      let arithmetic = GoldilocksCircuitSlots::declare(&mut builder, NU);
+      let equality = builder.slot(F128EqualityGate { nu: NU });
+      let mut inputs = vec![F128::ZERO];
+      let mut public = inputs.clone();
+      let equality_zero =
+        record_fixed(&mut builder, &mut inputs, &mut public, F128::ZERO);
+      let one =
+        record_fixed(&mut builder, &mut inputs, &mut public, F128::new(1, 0));
+      let alpha = native_extension([17, 19]);
+      let quotient = weighted_quotient(&quotients, alpha);
+      let denominator = native_extension([4, 2]);
+      let row_value = if quotients.is_empty() {
+        ExtVal::ZERO
+      } else {
+        native_extension([9, 4])
+      };
+      let point_index = inputs.len();
+      let point =
+        record_public(&mut builder, &mut inputs, &mut public, F128::new(7, 2));
+      let opened_index = inputs.len();
+      let opened_sum = record_public(
+        &mut builder,
+        &mut inputs,
+        &mut public,
+        pack_extension(extension_words(denominator * quotient + row_value)),
+      );
+      let alpha_offset = record_fixed(
+        &mut builder,
+        &mut inputs,
+        &mut public,
+        pack_extension(extension_words(alpha.exp_u64(7))),
+      );
+      let x =
+        record_fixed(&mut builder, &mut inputs, &mut public, F128::new(3, 0));
+      let row_sum = record_fixed(
+        &mut builder,
+        &mut inputs,
+        &mut public,
+        pack_extension(extension_words(row_value)),
+      );
+      let auxiliary_start = inputs.len();
+      let denominator_wire = constrain_stage2_pcs_denominator(
+        &mut builder,
+        &arithmetic,
+        equality,
+        equality_zero,
+        one,
+        &mut inputs,
+        &mut public,
+        x,
+        point,
+        extension_words(denominator),
+      )
+      .unwrap();
+      let term = constrain_stage2_pcs_point(
+        &mut builder,
+        &arithmetic,
+        equality,
+        equality_zero,
+        &mut inputs,
+        &mut public,
+        denominator_wire,
+        row_sum,
+        &Stage2PcsPointComputation {
+          denominator: extension_words(denominator),
+          quotients,
+        },
+        &Stage2PcsPointWires { point, alpha_offset, opened_sum },
+        alpha,
+      );
+      // These exact indices identify D, 1/D and Q, without guessing by value.
+      assert_eq!(inputs.len() - auxiliary_start, 3);
+      builder.publish(term);
+      public.push(pack_extension(extension_words(alpha.exp_u64(7) * quotient)));
+      arithmetic.finish_canonical(&mut builder);
+      let shape = builder.finish().unwrap();
+      assert_eq!(shape.run(&inputs, &[]).public, public);
+      let rejects = |mutated: Vec<F128>| {
+        // No native verifier, native recomputation or public-vector comparison:
+        // failure must come from the compiled gates and connected wires.
+        assert!(
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            shape.run(&mutated, &[])
+          }))
+          .is_err()
+        );
+      };
+      for index in auxiliary_start..auxiliary_start + 3 {
+        let mut altered = inputs.clone();
+        altered[index].lo ^= 1;
+        rejects(altered);
+        for bad in
+          [F128::new(GOLDILOCKS_MODULUS, 0), F128::new(0, GOLDILOCKS_MODULUS)]
+        {
+          let mut noncanonical = inputs.clone();
+          noncanonical[index] = bad;
+          rejects(noncanonical);
+        }
+      }
+      let mut zero_denominator = inputs;
+      zero_denominator[auxiliary_start] = F128::ZERO;
+      zero_denominator[point_index] = F128::new(3, 0);
+      zero_denominator[opened_index] =
+        pack_extension(extension_words(row_value));
+      // D+x=z and D*Q+row_sum=opened_sum both hold in this attack. Only
+      // the compiled inverse constraint excludes the degenerate denominator.
+      rejects(zero_denominator);
+    }
+  }
+
+  #[test]
+  fn compiled_relation_rejects_mutations_without_native_prevalidation() {
+    let (prepared, fri, _, _, _) = prepared_stage2_pcs_fixture();
+    let witness =
+      Stage2AirPcsFriWitnessV1::from_prepared(&prepared, &fri).unwrap();
+    let compiled =
+      CompiledStage3Relation::build(&witness, Default::default()).unwrap();
+    compiled.evaluate().unwrap();
+    let relation = &compiled.relation;
+    let query = &witness.pcs_fri.queries[0];
+    let cases = [
+      (
+        "PCS Merkle sibling",
+        pack_digest(&query.pcs.batch_openings[0].opening_proof[0])[0],
+      ),
+      ("FRI evaluation", pack_extension(query.fri.rounds[0].sibling)),
+      (
+        "FRI Merkle sibling",
+        pack_digest(&query.fri.rounds[0].opening_proof[0])[0],
+      ),
+    ];
+    for (label, word) in cases {
+      let index =
+        relation.inputs.iter().position(|input| *input == word).expect(label);
+      let mut mutated = relation.inputs.clone();
+      mutated[index].lo ^= 1;
+      // run() asserts connected-wire consistency. We do not compare the
+      // public vector or call a native verifier here: rejection must come
+      // from the already compiled relation's gates and wiring.
+      let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          relation.shape.run(&mutated, &[])
+        }));
+      assert!(result.is_err(), "compiled relation accepted mutated {label}");
+    }
+  }
+
+  #[test]
   fn production_parameters_generate_and_lower_canonical_stage2_transport() {
     let commitment = CommitmentParameters { log_blowup: 2, cap_height: 0 };
     let fri = FriParameters {
@@ -6864,24 +7879,170 @@ mod tests {
     assert_eq!(witness.pcs_fri.queries.len(), 100);
     assert_eq!(witness.pcs_fri.fri_transcript.query_pow_bits, 20);
     assert_eq!(witness.pcs_fri.pcs_instance.log_blowup, 2);
+    let error = CompiledStage3Relation::build(
+      &witness,
+      crate::Stage3ResourceLimitsV1 {
+        max_union_witness_bytes: 1,
+        ..Default::default()
+      },
+    )
+    .err()
+    .expect("reject oversized union before wiring compilation")
+    .to_string();
+    assert!(error.contains("padded union witness"), "{error}");
+    assert!(error.contains("3221225472"), "{error}");
+    eprintln!("Production-parameter early sizing: {error}");
+  }
+
+  #[cfg(feature = "production-measurements")]
+  #[test]
+  #[ignore = "expensive 100-query relation compilation; no prover is run"]
+  fn production_parameter_relation_census() {
+    let (prepared, fri, _, _, _) = prepared_stage2_pcs_fixture_with(
+      CommitmentParameters { log_blowup: 2, cap_height: 0 },
+      FriParameters {
+        log_final_poly_len: 0,
+        max_log_arity: 1,
+        num_queries: 100,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 20,
+      },
+    );
+    let witness =
+      Stage2AirPcsFriWitnessV1::from_prepared(&prepared, &fri).unwrap();
+    // The exact row count admits this fixture at 3 GiB, with no limit
+    // increase. No prover buffers are allocated by this experiment.
+    let limits = crate::Stage3ResourceLimitsV1 {
+      max_table_capacity: 1 << 16,
+      max_union_witness_bytes: 3 * 1024 * 1024 * 1024,
+      ..Default::default()
+    };
+    let compiled = CompiledStage3Relation::build(&witness, limits).unwrap();
+    compiled.evaluate().unwrap();
+    let resources = compiled.resources().unwrap();
+    assert_eq!(compiled.census().unwrap().nu, 16);
+    assert_eq!(
+      resources.padded_union_witness_bytes,
+      limits.max_union_witness_bytes
+    );
+    for rejected_limits in [
+      crate::Stage3ResourceLimitsV1 {
+        max_table_capacity: limits.max_table_capacity - 1,
+        ..limits
+      },
+      crate::Stage3ResourceLimitsV1 {
+        max_union_witness_bytes: limits.max_union_witness_bytes - 1,
+        ..limits
+      },
+    ] {
+      assert!(
+        CompiledStage3Relation::build(&witness, rejected_limits).is_err()
+      );
+    }
+    eprintln!(
+      "Production-parameter census: {}",
+      serde_json::to_string(&compiled.census().unwrap()).unwrap()
+    );
+    eprintln!(
+      "Production-parameter resources: {}",
+      serde_json::to_string(&resources).unwrap()
+    );
+    assert_eq!(
+      resources.tables.iter().map(|table| table.rows).sum::<u64>(),
+      compiled.census().unwrap().total_rows()
+    );
+    assert_eq!(
+      resources.padded_union_witness_bytes,
+      production_padded_witness_bytes(compiled.census().unwrap().nu as usize)
+        .unwrap()
+    );
   }
 
   #[test]
   #[ignore = "real Flock proof of the complete Stage 2 integration fixture"]
   fn real_stage2_integration_artifact_round_trip() {
+    stage2_integration_artifact_round_trip(false);
+  }
+
+  #[cfg(feature = "production-measurements")]
+  #[test]
+  #[ignore = "100-query proof with 3 GiB padded buffers; run separately"]
+  fn production_parameter_artifact_round_trip() {
+    stage2_integration_artifact_round_trip(true);
+  }
+
+  fn stage2_integration_artifact_round_trip(production_parameters: bool) {
+    let test_name = if production_parameters {
+      "fri::tests::production_parameter_artifact_round_trip"
+    } else {
+      "fri::tests::real_stage2_integration_artifact_round_trip"
+    };
+    if let Some(directory) = std::env::var_os("IX_FLOCK_STAGE3_VERIFY_CHILD") {
+      let directory = std::path::PathBuf::from(directory);
+      let (vk, claim, proof): (Vec<u8>, Vec<u8>, Vec<u8>) =
+        bincode::deserialize(
+          &std::fs::read(directory.join("root.transport")).unwrap(),
+        )
+        .unwrap();
+      let fri = AiurVerifyingKey::from_bytes(&vk).unwrap().fri_parameters();
+      let artifact =
+        crate::Stage3ArtifactV1::read_from_path(directory.join("root.flock"))
+          .unwrap();
+      let started = std::time::Instant::now();
+      crate::FlockStage3Backend
+        .verify_stage2_for_root(&artifact, &vk, &claim, &proof, &fri)
+        .expect("fresh-process verification against external root transport");
+      eprintln!(
+        "Flock fresh-process external-root verification: {:.3} seconds",
+        started.elapsed().as_secs_f64()
+      );
+      return;
+    }
     let total_started = std::time::Instant::now();
 
     let fixture_started = std::time::Instant::now();
     let (prepared, fri, vk_bytes, claim_bytes, proof_bytes) =
-      prepared_stage2_pcs_fixture();
+      if production_parameters {
+        prepared_stage2_pcs_fixture_with(
+          CommitmentParameters { log_blowup: 2, cap_height: 0 },
+          FriParameters {
+            log_final_poly_len: 0,
+            max_log_arity: 1,
+            num_queries: 100,
+            commit_proof_of_work_bits: 0,
+            query_proof_of_work_bits: 20,
+          },
+        )
+      } else {
+        prepared_stage2_pcs_fixture()
+      };
     let fixture_elapsed = fixture_started.elapsed();
 
     let backend = crate::FlockStage3Backend;
 
     let prove_started = std::time::Instant::now();
-    let (preflight, artifact) = backend
-      .preflight_and_prove_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
-      .expect("preflight and prove complete Stage 3 relation");
+    let handle = backend
+      .prepare_stage2(&vk_bytes, &claim_bytes, &proof_bytes, &fri)
+      .expect("preflight complete Stage 3 relation");
+    let preflight = handle.report().clone();
+    eprintln!("{}", preflight.to_json_value());
+    let (artifact, timings) =
+      handle.prove_with_timings().expect("prove complete Stage 3 relation");
+    eprintln!(
+      "Flock post-proof process peak RSS: {:?} bytes",
+      crate::stage3_process_peak_rss_bytes()
+    );
+    eprintln!(
+      "Flock proof timings (us): {}",
+      serde_json::to_string(&timings).unwrap()
+    );
+    let reused_started = std::time::Instant::now();
+    handle.verify(&artifact).expect("verify with explicit relation reuse");
+    eprintln!(
+      "Flock explicitly reused verifier: {:.3} seconds",
+      reused_started.elapsed().as_secs_f64()
+    );
+    drop(handle);
     let prove_elapsed = prove_started.elapsed();
     assert_eq!(
       artifact.statement().stage2_root_digest(),
@@ -6908,6 +8069,36 @@ mod tests {
     let decode_started = std::time::Instant::now();
     let decoded = crate::Stage3ArtifactV1::from_bytes(&encoded).unwrap();
     let decode_elapsed = decode_started.elapsed();
+
+    // A separate process has no relation or lincheck cache from proving.
+    // External inputs live in a separate trusted test file, not the artifact.
+    let directory = std::env::temp_dir().join(format!(
+      "ix-flock-stage3-cold-{}-{production_parameters}",
+      std::process::id()
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let artifact_path = directory.join("root.flock");
+    let transport_path = directory.join("root.transport");
+    artifact.write_atomic(&artifact_path).unwrap();
+    std::fs::write(
+      &transport_path,
+      bincode::serialize(&(&vk_bytes, &claim_bytes, &proof_bytes)).unwrap(),
+    )
+    .unwrap();
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+      .args(["--exact", test_name, "--ignored", "--nocapture"])
+      .env("IX_FLOCK_STAGE3_VERIFY_CHILD", &directory)
+      .output()
+      .unwrap();
+    eprint!("{}", String::from_utf8_lossy(&child.stderr));
+    std::fs::remove_file(artifact_path).unwrap();
+    std::fs::remove_file(transport_path).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+    assert!(
+      child.status.success(),
+      "{}",
+      String::from_utf8_lossy(&child.stdout)
+    );
 
     let valid_verify_started = std::time::Instant::now();
     backend

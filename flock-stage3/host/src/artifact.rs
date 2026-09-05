@@ -117,21 +117,22 @@ impl Stage3ArtifactV1 {
   }
 
   pub fn to_bytes(&self) -> Vec<u8> {
-    let statement = self.statement.to_bytes();
-    let mut bytes = Vec::with_capacity(
-      ARTIFACT_HEADER_BYTES + statement.len() + self.proof.len(),
-    );
-    bytes.extend_from_slice(ARTIFACT_MAGIC);
-    bytes.extend_from_slice(&ARTIFACT_VERSION.to_le_bytes());
-    bytes.extend_from_slice(
-      &u32::try_from(statement.len()).expect("statement length").to_le_bytes(),
-    );
-    bytes.extend_from_slice(
-      &u64::try_from(self.proof.len()).expect("proof length").to_le_bytes(),
-    );
-    bytes.extend_from_slice(&statement);
-    bytes.extend_from_slice(&self.proof);
+    let mut bytes = Vec::with_capacity(self.encoded_len());
+    self.write_encoded(&mut bytes).expect("write artifact to Vec");
     bytes
+  }
+
+  pub fn encoded_len(&self) -> usize {
+    ARTIFACT_HEADER_BYTES + STAGE3_STATEMENT_BYTES + self.proof.len()
+  }
+
+  fn write_encoded(&self, writer: &mut impl Write) -> std::io::Result<()> {
+    writer.write_all(ARTIFACT_MAGIC)?;
+    writer.write_all(&ARTIFACT_VERSION.to_le_bytes())?;
+    writer.write_all(&(STAGE3_STATEMENT_BYTES as u32).to_le_bytes())?;
+    writer.write_all(&(self.proof.len() as u64).to_le_bytes())?;
+    writer.write_all(&self.statement.to_bytes())?;
+    writer.write_all(&self.proof)
   }
 
   pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -232,56 +233,97 @@ impl Stage3ArtifactV1 {
   /// files are created exclusively, and an existing destination is never
   /// overwritten.
   pub fn write_atomic(&self, path: impl AsRef<Path>) -> Result<()> {
-    write_bytes_atomic(path.as_ref(), &self.to_bytes())
+    Stage3ArtifactWriterV1::reserve(path)?.write(self)
   }
 }
 
-fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-  if path.file_name().is_none() {
-    bail!("Stage 3 artifact path has no file name: {}", path.display());
-  }
-  if bytes.len() > MAX_STAGE3_ARTIFACT_BYTES {
-    bail!(
-      "encoded Stage 3 artifact is {} bytes; maximum is {MAX_STAGE3_ARTIFACT_BYTES}",
-      bytes.len()
-    );
-  }
-  let parent = path
-    .parent()
-    .filter(|parent| !parent.as_os_str().is_empty())
-    .unwrap_or_else(|| Path::new("."));
+/// Reserve an exclusive temporary file before doing expensive proving work.
+/// This checks destination existence, directory writability and hard-link
+/// support, but does not promise free disk space or lock the final name.
+/// Installation still atomically refuses a concurrent writer's destination.
+pub struct Stage3ArtifactWriterV1 {
+  destination: PathBuf,
+  temporary: PathBuf,
+  file: File,
+}
 
-  let (temporary, mut file) = create_temporary(parent)?;
-  let install = (|| -> Result<()> {
-    file.write_all(bytes).with_context(|| {
-      format!("write temporary artifact {}", temporary.display())
+impl Stage3ArtifactWriterV1 {
+  pub fn reserve(path: impl AsRef<Path>) -> Result<Self> {
+    let path = path.as_ref();
+    if path.file_name().is_none() {
+      bail!("Stage 3 artifact path has no file name: {}", path.display());
+    }
+    match fs::symlink_metadata(path) {
+      Ok(_) => {
+        bail!("refusing to overwrite Stage 3 artifact {}", path.display())
+      },
+      Err(error) if error.kind() == ErrorKind::NotFound => {},
+      Err(error) => {
+        return Err(error).with_context(|| {
+          format!("stat artifact destination {}", path.display())
+        });
+      },
+    }
+    let parent = artifact_parent(path);
+    let (temporary, file) = create_temporary(parent)?;
+    let reservation = Self { destination: path.to_owned(), temporary, file };
+    // A predictable but exclusively created scratch name is safe here: a
+    // competing entry fails closed and is never removed by this reservation.
+    let probe = reservation.temporary.with_extension("link-probe");
+    fs::hard_link(&reservation.temporary, &probe).with_context(|| {
+      format!("check atomic artifact installation in {}", parent.display())
     })?;
-    file.sync_all().with_context(|| {
-      format!("sync temporary artifact {}", temporary.display())
+    fs::remove_file(&probe).with_context(|| {
+      format!("remove artifact link probe {}", probe.display())
     })?;
-    drop(file);
+    Ok(reservation)
+  }
 
-    fs::hard_link(&temporary, path).with_context(|| {
-      if path.exists() {
-        format!("refusing to overwrite Stage 3 artifact {}", path.display())
+  pub fn write(mut self, artifact: &Stage3ArtifactV1) -> Result<()> {
+    artifact.write_encoded(&mut self.file).with_context(|| {
+      format!("write temporary artifact {}", self.temporary.display())
+    })?;
+    self.file.sync_all().with_context(|| {
+      format!("sync temporary artifact {}", self.temporary.display())
+    })?;
+
+    fs::hard_link(&self.temporary, &self.destination).with_context(|| {
+      if fs::symlink_metadata(&self.destination).is_ok() {
+        format!(
+          "refusing to overwrite Stage 3 artifact {}",
+          self.destination.display()
+        )
       } else {
-        format!("install Stage 3 artifact {}", path.display())
+        format!("install Stage 3 artifact {}", self.destination.display())
       }
     })?;
-    fs::remove_file(&temporary).with_context(|| {
-      format!("remove temporary artifact {}", temporary.display())
+    fs::remove_file(&self.temporary).with_context(|| {
+      format!("remove temporary artifact {}", self.temporary.display())
     })?;
+    let parent = artifact_parent(&self.destination);
     File::open(parent)
       .and_then(|directory| directory.sync_all())
       .with_context(|| {
-        format!("sync artifact directory {}", parent.display())
+        format!(
+          "artifact installed at {} but directory sync failed",
+          self.destination.display()
+        )
       })?;
     Ok(())
-  })();
-  if install.is_err() {
-    let _ = fs::remove_file(&temporary);
   }
-  install
+}
+
+impl Drop for Stage3ArtifactWriterV1 {
+  fn drop(&mut self) {
+    let _ = fs::remove_file(&self.temporary);
+  }
+}
+
+fn artifact_parent(path: &Path) -> &Path {
+  path
+    .parent()
+    .filter(|parent| !parent.as_os_str().is_empty())
+    .unwrap_or_else(|| Path::new("."))
 }
 
 fn create_temporary(parent: &Path) -> Result<(PathBuf, File)> {
@@ -456,6 +498,7 @@ mod tests {
       "9f8062ce1801b29ed755cfb394fe888d5d82af77fe1ba2e5f539567e14e8b00d"
     );
     let bytes = artifact.to_bytes();
+    assert_eq!(artifact.encoded_len(), bytes.len());
     assert_eq!(Stage3ArtifactV1::from_bytes(&bytes).unwrap(), artifact);
 
     let mut extended = bytes.clone();
@@ -517,6 +560,18 @@ mod tests {
     let path = directory.join("root.stage3.flock");
 
     let artifact = Stage3ArtifactV1::new(statement(), vec![1, 2, 3]).unwrap();
+    // An abandoned reservation removes only its own scratch file and never
+    // creates the final destination, including after a failed preflight.
+    let reservation = Stage3ArtifactWriterV1::reserve(&path).unwrap();
+    assert!(!path.exists());
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+    drop(reservation);
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), 0);
+    assert!(
+      Stage3ArtifactWriterV1::reserve(directory.join("missing/root.flock"))
+        .is_err()
+    );
+
     artifact.write_atomic(&path).unwrap();
     assert_eq!(Stage3ArtifactV1::read_from_path(&path).unwrap(), artifact);
 

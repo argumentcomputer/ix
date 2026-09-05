@@ -213,6 +213,10 @@ impl Stage3RelationBoundsV1 {
 pub struct Stage3RelationManifestV1 {
   stage2_verifying_key_digest: [u8; 32],
   typed_witness_layout_digest: [u8; 32],
+  // These values are already bound by the compiled circuit digest. Retain
+  // them here as well so reuse checks cover specialization, not just lengths.
+  activation: Vec<bool>,
+  log_degrees: Vec<u8>,
   relation_program_digest: Option<[u8; 32]>,
   bounds: Stage3RelationBoundsV1,
   lowering_status: Stage3LoweringStatusV1,
@@ -233,9 +237,24 @@ impl Stage3RelationManifestV1 {
     let fri = statement_fri_parameters(prepared)?;
     let typed_witness =
       Stage3TypedProofWitnessV1::from_prepared(prepared, &fri)?;
+    Self::for_prepared_and_typed(
+      prepared,
+      &typed_witness,
+      relation_program_digest,
+    )
+  }
+
+  pub(crate) fn for_prepared_and_typed(
+    prepared: &ValidatedStage2RootV1,
+    typed_witness: &Stage3TypedProofWitnessV1,
+    relation_program_digest: [u8; 32],
+  ) -> Result<Self> {
+    typed_witness.ensure_profile(prepared.advice_profile())?;
     Ok(Self {
       stage2_verifying_key_digest: *prepared.statement().verifying_key_digest(),
       typed_witness_layout_digest: typed_witness.layout_digest(),
+      activation: typed_witness.active.clone(),
+      log_degrees: typed_witness.log_degrees.clone(),
       relation_program_digest: Some(relation_program_digest),
       bounds: Stage3RelationBoundsV1::for_prepared(prepared)?,
       lowering_status: Stage3LoweringStatusV1::current(),
@@ -267,9 +286,17 @@ impl Stage3RelationManifestV1 {
     self.bounds.ensure_matches(prepared)?;
 
     let fri = statement_fri_parameters(prepared)?;
-    let observed_layout =
-      Stage3TypedProofWitnessV1::from_prepared(prepared, &fri)?.layout_digest();
-    self.ensure_layout_digest(observed_layout)
+    let observed = Stage3TypedProofWitnessV1::from_prepared(prepared, &fri)?;
+    self.ensure_layout_digest(observed.layout_digest())?;
+    if observed.active != self.activation {
+      bail!("Stage 2 activation pattern differs from the specialised relation");
+    }
+    if observed.log_degrees != self.log_degrees {
+      bail!(
+        "Stage 2 active trace heights differ from the specialised relation"
+      );
+    }
+    Ok(())
   }
 
   /// Compatibility spelling retained for callers written against the earlier
@@ -348,6 +375,55 @@ fn as_u64(value: usize, label: &str) -> Result<u64> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::test_support::interchangeable_root;
+
+  #[test]
+  fn manifest_reuse_checks_specialization_even_when_layout_matches() {
+    for (first, second, message) in [
+      ([4, 0], [0, 4], "activation pattern"),
+      ([8, 4], [4, 8], "active trace heights"),
+    ] {
+      let first = interchangeable_root(first, 256);
+      let second = interchangeable_root(second, 256);
+      assert_eq!(first.advice_profile(), second.advice_profile());
+      let manifest = Stage3RelationManifestV1::for_prepared(&first).unwrap();
+      let fri = statement_fri_parameters(&second).unwrap();
+      let typed =
+        Stage3TypedProofWitnessV1::from_prepared(&second, &fri).unwrap();
+      assert_eq!(
+        manifest.typed_witness_layout_digest(),
+        &typed.layout_digest()
+      );
+      assert!(
+        manifest
+          .ensure_matches(&second)
+          .unwrap_err()
+          .to_string()
+          .contains(message)
+      );
+      assert!(
+        crate::FlockStage3Backend
+          .prepare_statement(&second, &manifest)
+          .is_err()
+      );
+    }
+  }
+
+  #[test]
+  fn different_claims_preserve_the_same_specialized_relation() {
+    let first = interchangeable_root([4, 0], 256);
+    let second = interchangeable_root([4, 0], 512);
+    let first_manifest =
+      Stage3RelationManifestV1::for_prepared(&first).unwrap();
+    let second_manifest =
+      Stage3RelationManifestV1::for_prepared(&second).unwrap();
+    assert_ne!(first.statement(), second.statement());
+    first_manifest.ensure_matches(&second).unwrap();
+    assert_eq!(
+      first_manifest.relation_digest().unwrap(),
+      second_manifest.relation_digest().unwrap()
+    );
+  }
 
   fn relation_shape() -> Stage3RelationBoundsV1 {
     Stage3RelationBoundsV1 {
@@ -403,6 +479,8 @@ mod tests {
     let manifest = Stage3RelationManifestV1 {
       stage2_verifying_key_digest: [0; 32],
       typed_witness_layout_digest: [1; 32],
+      activation: vec![],
+      log_degrees: vec![],
       relation_program_digest: Some([2; 32]),
       bounds: relation_shape(),
       lowering_status: Stage3LoweringStatusV1::current(),

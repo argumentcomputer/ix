@@ -17,6 +17,7 @@ ix-terminal = { path = "../crates/terminal" }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "6ad074c1f2983ecdd7a56984d333441d6b38186a" }
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [workspace.lints.rust]
 invalid_reference_casting = "warn"

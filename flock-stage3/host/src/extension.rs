@@ -6,8 +6,10 @@
 //! multiplication relations rather than introducing another large monolithic
 //! arithmetic table.
 
+use std::cell::Cell;
+
 use flock_prover::{
-  circuit::builder::{GateType, ShapeBuilder, SlotId, SlotWitness, Wire},
+  circuit::builder::{GateType, SlotId, SlotWitness, Wire},
   field::F128,
   r1cs::BlockR1cs,
   schedule::{IoWord, TableType},
@@ -19,8 +21,9 @@ use crate::{
     BooleanR1csBuilder, BooleanR1csPlan, generate_boolean_witness,
     generate_boolean_witness_into, write_f128,
   },
-  goldilocks::{CanonicalGoldilocksPairGate, GoldilocksAddPairGate},
+  goldilocks::{CanonicalGoldilocksQuadGate, GoldilocksAddPairGate},
   multiplication::{GoldilocksMulPairGate, goldilocks_mul},
+  sizing::CircuitEmitter,
 };
 
 const REPACK_K_LOG: usize = 10;
@@ -152,42 +155,88 @@ fn build_lane_repack_plan() -> BooleanR1csPlan {
 }
 
 /// The four table slots and fixed zero wire needed by Goldilocks arithmetic.
+/// Call `finish_canonical` before finishing the emission, including a census.
 pub(crate) struct GoldilocksCircuitSlots {
   pub(crate) add: SlotId,
   pub(crate) mul: SlotId,
   pub(crate) canonical: SlotId,
   pub(crate) repack: SlotId,
   zero: Wire,
+  assertion_group: Cell<Option<(Wire, usize)>>,
+  pending_canonical: Cell<Option<Wire>>,
 }
 
 impl GoldilocksCircuitSlots {
-  pub(crate) fn declare(builder: &mut ShapeBuilder, nu: usize) -> Self {
+  pub(crate) fn declare(builder: &mut impl CircuitEmitter, nu: usize) -> Self {
     let add = builder.slot(GoldilocksAddPairGate { nu });
     let mul = builder.slot(GoldilocksMulPairGate { nu });
-    let canonical = builder.slot(CanonicalGoldilocksPairGate { nu });
+    let canonical = builder.slot(CanonicalGoldilocksQuadGate { nu });
     let repack = builder.slot(GoldilocksLaneRepackGate { nu });
     let zero = builder.fixed_public_input(F128::ZERO);
-    Self { add, mul, canonical, repack, zero }
+    Self {
+      add,
+      mul,
+      canonical,
+      repack,
+      zero,
+      assertion_group: Cell::new(None),
+      pending_canonical: Cell::new(None),
+    }
+  }
+
+  fn assert_zero(&self, builder: &mut impl CircuitEmitter, residual: Wire) {
+    // Keep data zero input-only. Connecting residual outputs to that same
+    // class creates producer -> consumer cycles. The pinned builder also
+    // appends later gate inputs to the original wire, not its union-find
+    // root, so merging data zero away could silently split its circuit cells.
+    //
+    // Each assertion class instead has its own canonical(0) output, which
+    // the existing table constrains to zero. No member is used as data.
+    // Bound the class size because the pinned dataflow checker scans every
+    // class cell for every producer, even when there are no consumers.
+    const GROUP_SIZE: usize = 256;
+    let (zero, used) = match self.assertion_group.get() {
+      Some((zero, used)) if used < GROUP_SIZE => (zero, used),
+      _ => (builder.gate(self.canonical, &[self.zero, self.zero])[0], 0),
+    };
+    // connect moves the second class into the first; keep this anchor stable.
+    builder.connect(zero, residual);
+    self.assertion_group.set(Some((zero, used + 1)));
   }
 
   pub(crate) fn assert_canonical(
     &self,
-    builder: &mut ShapeBuilder,
+    builder: &mut impl CircuitEmitter,
     value: Wire,
   ) {
-    let violation = builder.gate(self.canonical, &[value])[0];
-    builder.connect(violation, self.zero);
+    // Batch by emission order, never by wire identity: counting wires are
+    // all the same opaque placeholder. Each requested check is retained.
+    if let Some(first) = self.pending_canonical.take() {
+      let violation = builder.gate(self.canonical, &[first, value])[0];
+      self.assert_zero(builder, violation);
+    } else {
+      self.pending_canonical.set(Some(value));
+    }
+  }
+
+  /// Flush an odd final check before finishing either a census or a circuit.
+  /// The unused word is the fixed, input-only zero, not an assertion output.
+  pub(crate) fn finish_canonical(&self, builder: &mut impl CircuitEmitter) {
+    if let Some(value) = self.pending_canonical.take() {
+      let violation = builder.gate(self.canonical, &[value, self.zero])[0];
+      self.assert_zero(builder, violation);
+    }
   }
 
   pub(crate) fn add(
     &self,
-    builder: &mut ShapeBuilder,
+    builder: &mut impl CircuitEmitter,
     left: Wire,
     right: Wire,
   ) -> Wire {
     let outputs = builder.gate(self.add, &[left, right]);
     for &residual in &outputs[1..] {
-      builder.connect(residual, self.zero);
+      self.assert_zero(builder, residual);
     }
     self.assert_canonical(builder, outputs[0]);
     outputs[0]
@@ -195,13 +244,13 @@ impl GoldilocksCircuitSlots {
 
   pub(crate) fn mul(
     &self,
-    builder: &mut ShapeBuilder,
+    builder: &mut impl CircuitEmitter,
     left: Wire,
     right: Wire,
   ) -> Wire {
     let outputs = builder.gate(self.mul, &[left, right]);
     for &residual in &outputs[1..] {
-      builder.connect(residual, self.zero);
+      self.assert_zero(builder, residual);
     }
     self.assert_canonical(builder, outputs[0]);
     outputs[0]
@@ -210,7 +259,7 @@ impl GoldilocksCircuitSlots {
   /// Multiply two packed extension values in `Goldilocks[X]/(X^2 - 7)`.
   pub(crate) fn ext2_mul(
     &self,
-    builder: &mut ShapeBuilder,
+    builder: &mut impl CircuitEmitter,
     left: Wire,
     right: Wire,
   ) -> Wire {
@@ -234,7 +283,7 @@ impl GoldilocksCircuitSlots {
   /// Embed the low `u64` lane as the constant-coordinate element `[lo, 0]`.
   pub(crate) fn embed_low_lane(
     &self,
-    builder: &mut ShapeBuilder,
+    builder: &mut impl CircuitEmitter,
     value: Wire,
   ) -> Wire {
     builder.gate(self.repack, &[value, self.zero])[3]
@@ -244,7 +293,7 @@ impl GoldilocksCircuitSlots {
   /// and `[c1, 0]` used by the coordinate-expanded AIR constraints.
   pub(crate) fn ext2_coordinates(
     &self,
-    builder: &mut ShapeBuilder,
+    builder: &mut impl CircuitEmitter,
     value: Wire,
   ) -> [Wire; 2] {
     let lanes = builder.gate(self.repack, &[value, self.zero]);
@@ -270,6 +319,10 @@ pub(crate) fn goldilocks_ext2_mul(left: F128, right: F128) -> F128 {
 
 #[cfg(test)]
 mod tests {
+  use flock_prover::{
+    circuit::{Cell as CircuitCell, CellSlot, builder::ShapeBuilder},
+    schedule::IoDirection,
+  };
   use multi_stark::{
     p3_field::{
       BasedVectorSpace, PrimeCharacteristicRing, PrimeField64,
@@ -280,6 +333,136 @@ mod tests {
 
   use super::*;
   use crate::goldilocks::GOLDILOCKS_MODULUS;
+
+  #[test]
+  fn packed_canonical_checks_preserve_odd_tails_and_counting_parity() {
+    use crate::sizing::CountingEmitter;
+    fn emit(builder: &mut impl CircuitEmitter, nu: usize, checks: usize) {
+      let slots = GoldilocksCircuitSlots::declare(builder, nu);
+      for _ in 0..checks {
+        let value = builder.input();
+        slots.assert_canonical(builder, value);
+      }
+      slots.finish_canonical(builder);
+      // Finalization is idempotent; no check is duplicated on a second call.
+      slots.finish_canonical(builder);
+    }
+    for checks in [0usize, 1, 2, 3, 511, 512, 513] {
+      let mut count = CountingEmitter::new();
+      emit(&mut count, CountingEmitter::COUNT_NU, checks);
+      let packed = checks.div_ceil(2);
+      assert_eq!(
+        count
+          .table_rows()
+          .find(|&(name, _)| name == "CanonicalGoldilocksQuadGate"),
+        Some(("CanonicalGoldilocksQuadGate", packed + packed.div_ceil(256))),
+      );
+      let mut builder = ShapeBuilder::new(10);
+      emit(&mut builder, 10, checks);
+      let shape = builder.finish().unwrap();
+      count.ensure_matches(&shape).unwrap();
+      let mut inputs = vec![F128::new(17, GOLDILOCKS_MODULUS - 1); checks + 1];
+      inputs[0] = F128::ZERO;
+      shape.run(&inputs, &[]);
+      for index in 1..=checks {
+        for invalid in
+          [F128::new(GOLDILOCKS_MODULUS, 0), F128::new(0, u64::MAX)]
+        {
+          let mut mutated = inputs.clone();
+          mutated[index] = invalid;
+          assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+              shape.run(&mutated, &[])
+            }))
+            .is_err(),
+            "check {index} of {checks}"
+          );
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn assertion_groups_preserve_every_later_data_zero_cell() {
+    const NU: usize = 10;
+    const ROWS: usize = 600;
+    let mut builder = ShapeBuilder::new(NU);
+    let slots = GoldilocksCircuitSlots::declare(&mut builder, NU);
+    let value = builder.public_input();
+    let mut result = value;
+    for _ in 0..ROWS {
+      slots.assert_canonical(&mut builder, value);
+      // The data-zero input is consumed AFTER residuals have been connected.
+      result = slots.embed_low_lane(&mut builder, value);
+    }
+    builder.publish(result);
+    slots.finish_canonical(&mut builder);
+    let shape = builder.finish().unwrap();
+    let inputs = [F128::ZERO, F128::new(17, 23)];
+    let witness = shape.run(&inputs, &[]);
+    assert_eq!(witness.public, [inputs[0], inputs[1], F128::new(17, 0)]);
+
+    // Inspect the actual sigma classes, not just the native runner: the
+    // pinned builder can resolve online inputs correctly while losing cells
+    // appended to a wire that was previously merged into another root.
+    let cells = shape.circuit.cells();
+    let public_zero =
+      cells.cell_index(CircuitCell::new(cells.num_gate_slots(), 0));
+    let zero_class = shape
+      .circuit
+      .wires()
+      .iter()
+      .find(|class| class.contains(&public_zero))
+      .expect("fixed data zero belongs to a wiring class");
+    let repack = shape.registry_slot(slots.repack);
+    let second_input = cells
+      .slots()
+      .iter()
+      .position(|slot| {
+        matches!(slot, CellSlot::Gate { ty, word }
+          if *ty == repack && word.word_col == 1 && word.dir == IoDirection::In)
+      })
+      .unwrap();
+    for row in 0..ROWS {
+      assert!(
+        zero_class
+          .contains(&cells.cell_index(CircuitCell::new(second_input, row,)))
+      );
+    }
+    assert!(zero_class.iter().all(|index| {
+      !matches!(cells.slots()[index >> NU], CellSlot::Gate { word, .. }
+        if word.dir == IoDirection::Out)
+    }));
+
+    let canonical = shape.registry_slot(slots.canonical);
+    let assertion_classes: Vec<_> = shape
+      .circuit
+      .wires()
+      .iter()
+      .filter(|class| {
+        class.iter().any(|index| {
+          matches!(cells.slots()[index >> NU], CellSlot::Gate { ty, word }
+            if ty == canonical && word.dir == IoDirection::Out)
+        })
+      })
+      .collect();
+    assert_eq!(assertion_classes.len(), ROWS.div_ceil(2).div_ceil(256));
+    for class in assertion_classes {
+      assert!(class.len() <= 257);
+      assert!(class.iter().all(|index| {
+        matches!(cells.slots()[index >> NU], CellSlot::Gate { word, .. }
+          if word.dir == IoDirection::Out)
+      }));
+    }
+    for bad in [F128::new(GOLDILOCKS_MODULUS, 0), F128::new(0, u64::MAX)] {
+      assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          shape.run(&[F128::ZERO, bad], &[])
+        }))
+        .is_err()
+      );
+    }
+  }
 
   #[test]
   fn native_ext2_mul_matches_plonky3() {

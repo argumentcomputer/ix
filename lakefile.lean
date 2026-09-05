@@ -204,6 +204,11 @@ lean_exe «bench-aggregate-policy» where
   -- symbols are then resolved from ix_ffi and not pulled twice.
   moreLinkObjs := #[ix_rs]
 
+lean_exe «bench-flock-root-fixture» where
+  root := `Benchmarks.FlockRootFixture
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /- The lean4lean replay machinery as an importable lib: the
 `bench-lean4lean` exe root and the ignored `lean4lean` test runner both
 import `Benchmarks.Lean4Lean`, and modules under `Benchmarks/` belong to
