@@ -284,6 +284,23 @@
         "type": "github"
       }
     },
+    "lspec": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1787413499,
+        "narHash": "sha256-EPGav84gN1Ki96SzVnH+TGjMAI1IGk4qsQVIaYsr4VM=",
+        "owner": "argumentcomputer",
+        "repo": "LSpec",
+        "rev": "ab4d5eb461941837f48eb891be755c8c73e89fdd",
+        "type": "github"
+      },
+      "original": {
+        "owner": "argumentcomputer",
+        "repo": "LSpec",
+        "rev": "ab4d5eb461941837f48eb891be755c8c73e89fdd",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1765779637,
@@ -399,6 +416,7 @@
         "fenix": "fenix_2",
         "flake-parts": "flake-parts_2",
         "lean4-nix": "lean4-nix",
+        "lspec": "lspec",
         "nixpkgs": [
           "lean4-nix",
           "nixpkgs"

@@ -109,6 +109,21 @@ extern "C" fn rs_aiur_system_build(
   LeanExternal::alloc(&AIUR_SYSTEM_CLASS, system)
 }
 
+/// Explicit experimental key profile; default construction is unchanged.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_build_min_opening_width(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+) -> LeanExternal<AiurSystem, LeanOwned> {
+  let system = AiurSystem::build_min_opening_width(
+    decode_toplevel(&toplevel),
+    decode_commitment_parameters(&commitment_parameters),
+    decode_fri_parameters(&fri_parameters),
+  );
+  LeanExternal::alloc(&AIUR_SYSTEM_CLASS, system)
+}
+
 /// Helper: encode `CircuitShape`s as a Lean `Array CircuitShape`. Field
 /// order must match `Aiur.CircuitShape` in `Ix/Aiur/Protocol.lean`.
 fn build_circuit_shapes_array(shapes: &[CircuitShape]) -> LeanArray<LeanOwned> {
@@ -1676,4 +1691,137 @@ fn decode_io_buffer_map(
     map.insert((channel, key), info);
   }
   map
+}
+
+// =============================================================================
+// Flock aggregate-root Stage 3 (feature flock)
+// =============================================================================
+
+/// Compile/evaluate, prove, or independently verify the complete no-RISC-V
+/// Flock relation for one canonical ix_aggr root. Default builds retain a
+/// checked feature-disabled stub so the Lean CLI remains linkable. The IO
+/// payload is `Except String String`: Lean constructs any `IO.Error`, avoiding
+/// the pinned lean-ffi helper's toolchain-dependent IO.Error constructor tag.
+#[unsafe(no_mangle)]
+extern "C" fn rs_flock_stage3_aggregate_root(
+  vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  artifact_path: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+  limits_json: LeanString<LeanBorrowed<'_>>,
+) -> lean_ffi::object::LeanIOResult<LeanOwned> {
+  #[cfg(feature = "flock")]
+  {
+    let fri = decode_fri_parameters(&fri_parameters);
+    let backend = flock_stage3_host::FlockStage3Backend;
+    let result = (|| -> anyhow::Result<String> {
+      use flock_stage3_host::{
+        Stage3ArtifactV1, Stage3ArtifactWriterV1, Stage3ResourceLimitsV1,
+      };
+      use serde_json::json;
+      let elapsed_us = |start: std::time::Instant| {
+        u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
+      };
+      let limits: Stage3ResourceLimitsV1 =
+        serde_json::from_str(limits_json.as_str())?;
+      let started = std::time::Instant::now();
+      let mode = mode.as_str();
+      match mode {
+        "preflight" => {
+          if !artifact_path.as_str().is_empty() || !output.as_str().is_empty() {
+            anyhow::bail!(
+              "--artifact and --output are not valid with --mode preflight"
+            );
+          }
+        },
+        "prove" => {
+          if !artifact_path.as_str().is_empty() || output.as_str().is_empty() {
+            anyhow::bail!(
+              "Flock proving requires --output and forbids --artifact"
+            );
+          }
+        },
+        "verify" => {
+          if artifact_path.as_str().is_empty() || !output.as_str().is_empty() {
+            anyhow::bail!(
+              "Flock verification requires --artifact and forbids --output"
+            );
+          }
+        },
+        other => anyhow::bail!(
+          "unknown Flock mode '{other}' (expected preflight|prove|verify)"
+        ),
+      }
+      // Check file operations before native validation or circuit compilation.
+      let writer = if mode == "prove" {
+        Some(Stage3ArtifactWriterV1::reserve(output.as_str())?)
+      } else {
+        None
+      };
+      let artifact = if mode == "verify" {
+        Some(Stage3ArtifactV1::read_from_path(artifact_path.as_str())?)
+      } else {
+        None
+      };
+      let prepared = backend.prepare_stage2_with_limits(
+        vk_bytes.as_bytes(),
+        claim_bytes.as_bytes(),
+        proof_bytes.as_bytes(),
+        &fri,
+        limits,
+      )?;
+      // Keep stdout exclusively for the Lean caller's text/JSONL records, and
+      // expose a successful preflight even if subsequent proving fails.
+      eprintln!("{}", prepared.report());
+      let mut result = json!({"preflight": prepared.report().to_json_value()});
+      if let Some(writer) = writer {
+        eprintln!("Flock Stage 3 preflight passed; starting prover");
+        let (artifact, timings) = prepared.prove_with_timings()?;
+        let write_started = std::time::Instant::now();
+        writer.write(&artifact)?;
+        result["artifact_bytes"] = json!(artifact.encoded_len());
+        result["artifact_path"] = json!(output.as_str());
+        result["proof_timings"] = json!(timings);
+        result["artifact_write_us"] = json!(elapsed_us(write_started));
+      }
+      if let Some(artifact) = artifact {
+        let verify_started = std::time::Instant::now();
+        prepared.verify(&artifact)?;
+        result["verify_us"] = json!(elapsed_us(verify_started));
+        result["artifact_bytes"] = json!(artifact.encoded_len());
+        result["artifact_path"] = json!(artifact_path.as_str());
+      }
+      result["operation_total_us"] = json!(elapsed_us(started));
+      result["process_peak_rss_bytes"] =
+        json!(flock_stage3_host::stage3_process_peak_rss_bytes());
+      Ok(result.to_string())
+    })();
+    match result {
+      Ok(report) => lean_ffi::object::LeanIOResult::ok(LeanExcept::ok(
+        LeanString::new(&report),
+      )),
+      Err(error) => lean_ffi::object::LeanIOResult::ok(
+        LeanExcept::error_string(&format!("{error:#}")),
+      ),
+    }
+  }
+  #[cfg(not(feature = "flock"))]
+  {
+    let _ = (
+      &vk_bytes,
+      &claim_bytes,
+      &proof_bytes,
+      &fri_parameters,
+      &mode,
+      &artifact_path,
+      &output,
+      &limits_json,
+    );
+    lean_ffi::object::LeanIOResult::ok(LeanExcept::error_string(
+      "ix was built without Flock Stage 3; rebuild with IX_FLOCK=1",
+    ))
+  }
 }

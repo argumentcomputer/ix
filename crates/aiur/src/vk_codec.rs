@@ -28,12 +28,11 @@
 //!                log_final_poly_len, max_log_arity, num_queries,
 //!                commit_proof_of_work_bits, query_proof_of_work_bits)
 //!   u16          circuit count
-//! PER-CIRCUIT RECORDS (circuit count times; each is `u32 LE len` + `len` bytes
-//!                      so a record is a contiguous byte range)
+//! PER-CIRCUIT RECORDS (circuit count times; no record-length prefix)
 //!   u16 main_width, u16 preprocessed_width, u32 preprocessed_height,
 //!   u16 max_constraint_degree (combined user + logUp),
 //!   u8 lookup_group_size (k: lookups per chained accumulator step)
-//!   node_count nodes, each a u8 tag then payload:
+//!   u16 node_count, then nodes, each a u8 tag then payload:
 //!     0  ConstSmall: u16 LE canonical value
 //!     1  ConstBig:   u64 LE canonical value
 //!     2  Public:     u8 index
@@ -42,8 +41,8 @@
 //!     9  Neg: u16 LE child node id
 //!     10..=15  Var (tag = 10 + 2*source + offset; source 0 Preprocessed
 //!              1 Main 2 Stage2, offset 0 current 1 next): u16 LE column
-//!   u32 zero_count, then zero_count x u16 LE constraint-root node ids
-//!   u32 lookup_count, then per lookup:
+//!   u16 zero_count, then zero_count x u16 LE constraint-root node ids
+//!   u16 lookup_count, then per lookup:
 //!     u16 LE multiplicity node id
 //!     u16 LE arg count, then arg_count x u16 LE arg node ids
 //! TRAILER
@@ -56,7 +55,7 @@
 //! IsTransition = 0, Var/IsFirstRow/IsLastRow = 1, Add/Sub = max of children,
 //! Mul = sum, Neg = child) and recomputed on decode in node order (children
 //! precede parents in the compiled vector). Goldilocks constants are written
-//! canonically and reduced on read.
+//! canonically; non-canonical values are rejected on read.
 
 // The codec is exercised by tests and wired to the FFI / Aiur port.
 #![allow(dead_code)]
@@ -65,9 +64,11 @@ use multi_stark::{
   expr::{ColRef, RowOffset, Source},
   graph::{ConstraintGraph, Node, NodeId},
   lookup::Lookup,
-  p3_field::{PrimeCharacteristicRing, PrimeField64},
+  p3_field::{PrimeCharacteristicRing, PrimeField64, TwoAdicField},
   system::{Circuit, System},
-  types::{Commitment, CommitmentParameters, FriParameters, Val},
+  types::{
+    Commitment, CommitmentParameters, ExtVal, FriParameters, PcsError, Val,
+  },
 };
 
 use crate::synthesis::{AiurConfig, AiurSystem};
@@ -239,6 +240,20 @@ pub(crate) fn to_bytes(
   buf
 }
 
+/// Serialize a verifier key for a custom [`AiurConfig`] circuit system.
+///
+/// Most callers should use [`aiur_system_to_bytes`]. This lower-level entry
+/// point exists for custom frontends which build the same concrete Aiur STARK
+/// configuration without going through [`AiurSystem`]. The supplied protocol
+/// parameters must be the ones used to construct `system.config`.
+pub fn aiur_config_system_to_bytes(
+  system: &System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  fri_parameters: FriParameters,
+) -> Vec<u8> {
+  to_bytes(system, commitment_parameters, fri_parameters)
+}
+
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
 pub fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
   Ok(to_bytes(&sys.system, sys.commitment_parameters, sys.fri_parameters))
@@ -294,7 +309,14 @@ impl<'a> Seg<'a> {
 fn decode_node(seg: &mut Seg<'_>) -> Result<Node<Val>, String> {
   Ok(match seg.u8()? {
     0 => Node::Const(Val::from_u16(seg.u16()?)),
-    1 => Node::Const(Val::from_u64(seg.u64()?)),
+    1 => {
+      let word = seg.u64()?;
+      let value = Val::from_u64(word);
+      if value.as_canonical_u64() != word {
+        return Err("non-canonical Goldilocks constant in vk graph".into());
+      }
+      Node::Const(value)
+    },
     2 => Node::Public(u32::from(seg.u8()?)),
     3 => Node::IsFirstRow,
     4 => Node::IsLastRow,
@@ -321,21 +343,26 @@ fn decode_node(seg: &mut Seg<'_>) -> Result<Node<Val>, String> {
 
 /// Recompute per-node degree multiples in node order (children precede parents
 /// in the compiled vector).
-fn recompute_degrees(nodes: &[Node<Val>]) -> Vec<u32> {
+fn recompute_degrees(nodes: &[Node<Val>]) -> Result<Vec<u32>, String> {
   let mut degrees: Vec<u32> = Vec::with_capacity(nodes.len());
-  for node in nodes {
+  for (index, node) in nodes.iter().enumerate() {
+    let degree = |id: NodeId| {
+      degrees.get(id.index()).copied().ok_or_else(|| {
+        format!("vk graph node {index} references non-preceding node {}", id.0)
+      })
+    };
     let d = match *node {
       Node::Const(_) | Node::Public(_) | Node::IsTransition => 0,
       Node::Var(_) | Node::IsFirstRow | Node::IsLastRow => 1,
-      Node::Add(a, b) | Node::Sub(a, b) => {
-        degrees[a.0 as usize].max(degrees[b.0 as usize])
-      },
-      Node::Mul(a, b) => degrees[a.0 as usize] + degrees[b.0 as usize],
-      Node::Neg(a) => degrees[a.0 as usize],
+      Node::Add(a, b) | Node::Sub(a, b) => degree(a)?.max(degree(b)?),
+      Node::Mul(a, b) => degree(a)?
+        .checked_add(degree(b)?)
+        .ok_or_else(|| format!("vk graph node {index} degree exceeds u32"))?,
+      Node::Neg(a) => degree(a)?,
     };
     degrees.push(d);
   }
-  degrees
+  Ok(degrees)
 }
 
 fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
@@ -369,14 +396,49 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     lookups.push(Lookup { multiplicity, args });
   }
 
-  let degrees = recompute_degrees(&nodes);
+  let degrees = recompute_degrees(&nodes)?;
+  for id in zeros.iter().copied().chain(lookups.iter().flat_map(|lookup| {
+    std::iter::once(lookup.multiplicity).chain(lookup.args.iter().copied())
+  })) {
+    if id.index() >= nodes.len() {
+      return Err(format!(
+        "vk constraint/lookup references missing node {}",
+        id.0
+      ));
+    }
+  }
+  let ext_degree =
+    <ExtVal as multi_stark::p3_field::BasedVectorSpace<Val>>::DIMENSION;
+  let stage_2_width = multi_stark::lookup::stage2_width(
+    lookups.len(),
+    lookup_group_size,
+    ext_degree,
+  );
+  let num_publics = multi_stark::lookup::num_publics(ext_degree);
+  for node in &nodes {
+    let (index, width, label) = match node {
+      Node::Var(column) => (
+        column.index as usize,
+        match column.source {
+          Source::Main => main_width,
+          Source::Preprocessed => preprocessed_width,
+          Source::Stage2 => stage_2_width,
+        },
+        "column",
+      ),
+      Node::Public(index) => (*index as usize, num_publics, "public"),
+      _ => continue,
+    };
+    if index >= width {
+      return Err(format!(
+        "vk graph {label} index {index} exceeds width {width}"
+      ));
+    }
+  }
   // The graph's own max degree covers only the user roots (the serialized
   // `max_constraint_degree` is the combined user + analytic-logUp value).
-  let user_max_degree = zeros
-    .iter()
-    .map(|z| degrees[usize::try_from(z.0).expect("node id")])
-    .max()
-    .unwrap_or(0);
+  let user_max_degree =
+    zeros.iter().map(|z| degrees[z.index()]).max().unwrap_or(0);
   // The lookup prefix is exactly the nodes interned while compiling the
   // lookup expressions, all of which are reachable from (and bounded by)
   // the lookup roots — children always precede parents.
@@ -394,11 +456,37 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     lookup_prefix_len,
     max_constraint_degree: user_max_degree,
   };
+  // Compute the analytic logUp degree in u64: a malformed graph can have
+  // individually valid u32 degrees whose grouped product overflows u32.
+  let mut logup_degree = 1u64;
+  for group in graph.lookups.chunks(lookup_group_size) {
+    let message_degrees: Vec<_> = group
+      .iter()
+      .map(|lookup| {
+        lookup
+          .args
+          .iter()
+          .map(|id| u64::from(graph.degrees[id.index()]))
+          .max()
+          .unwrap_or(0)
+      })
+      .collect();
+    let sum: u64 = message_degrees.iter().sum();
+    logup_degree = logup_degree.max(sum + 1);
+    for (lookup, message_degree) in group.iter().zip(message_degrees) {
+      logup_degree = logup_degree.max(
+        u64::from(graph.degrees[lookup.multiplicity.index()]) + sum
+          - message_degree,
+      );
+    }
+  }
+  let observed_degree = u64::from(user_max_degree).max(logup_degree);
+  if observed_degree != max_constraint_degree as u64 {
+    return Err(format!(
+      "vk constraint degree is {max_constraint_degree}; graph requires {observed_degree}"
+    ));
+  }
   let num_lookups = graph.lookups.len();
-  let ext_degree =
-    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
-      Val,
-    >>::DIMENSION;
   Ok(Circuit {
     graph,
     main_width,
@@ -406,12 +494,8 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     preprocessed_width,
     preprocessed_height,
     num_lookups,
-    stage_2_width: multi_stark::lookup::stage2_width(
-      num_lookups,
-      lookup_group_size,
-      ext_degree,
-    ),
-    num_publics: multi_stark::lookup::num_publics(ext_degree),
+    stage_2_width,
+    num_publics,
     lookup_group_size,
     constraint_count: zeros_plus_logup(
       zero_count,
@@ -453,6 +537,24 @@ pub(crate) fn from_bytes(
     commit_proof_of_work_bits: r.u16()? as usize,
     query_proof_of_work_bits: r.u16()? as usize,
   };
+  if commitment_parameters.log_blowup > Val::TWO_ADICITY
+    || commitment_parameters.cap_height > Val::TWO_ADICITY
+    || fri_parameters.log_final_poly_len > Val::TWO_ADICITY
+    || fri_parameters.max_log_arity == 0
+    || fri_parameters.max_log_arity > Val::TWO_ADICITY
+    || fri_parameters.num_queries == 0
+    || fri_parameters.commit_proof_of_work_bits >= 64
+    || fri_parameters.query_proof_of_work_bits >= 64
+  {
+    return Err(
+      "vk commitment/FRI parameters exceed the Goldilocks domain".into(),
+    );
+  }
+  #[cfg(feature = "cuda")]
+  if commitment_parameters.cap_height != 0 || fri_parameters.max_log_arity != 1
+  {
+    return Err("vk parameters are unsupported by the CUDA backend".into());
+  }
   let n_circuits = r.u16()? as usize;
   let mut circuits = Vec::with_capacity(n_circuits);
   for _ in 0..n_circuits {
@@ -462,6 +564,11 @@ pub(crate) fn from_bytes(
     0 => None,
     1 => {
       let n = r.u16()? as usize;
+      if !n.is_power_of_two() {
+        return Err(
+          "vk preprocessed cap must have a nonzero power-of-two length".into(),
+        );
+      }
       let mut caps = Vec::with_capacity(n.min(1 << 16));
       for _ in 0..n {
         let mut d = [0u8; 32];
@@ -482,6 +589,35 @@ pub(crate) fn from_bytes(
     });
   }
   r.done("vk")?;
+  let mut preprocessed_count = 0usize;
+  for (circuit, &index) in circuits.iter().zip(&preprocessed_indices) {
+    if circuit.quotient_degree() as u64
+      > 1u64 << commitment_parameters.log_blowup
+    {
+      return Err("vk constraint degree exceeds the PCS blowup".into());
+    }
+    if circuit.preprocessed_width == 0 {
+      if circuit.preprocessed_height != 0 || index.is_some() {
+        return Err("vk has preprocessed metadata for an empty matrix".into());
+      }
+    } else {
+      if !circuit.preprocessed_height.is_power_of_two()
+        || circuit.preprocessed_height.ilog2() as usize
+          > Val::TWO_ADICITY - commitment_parameters.log_blowup
+        || index != Some(preprocessed_count)
+      {
+        return Err(
+          "vk has invalid preprocessed height or matrix index".into(),
+        );
+      }
+      preprocessed_count += 1;
+    }
+  }
+  if (preprocessed_count != 0) != preprocessed_commit.is_some() {
+    return Err(
+      "vk preprocessed commitment disagrees with matrix metadata".into(),
+    );
+  }
   let system = System {
     config: AiurConfig::new(commitment_parameters, fri_parameters),
     circuits,
@@ -491,11 +627,308 @@ pub(crate) fn from_bytes(
   Ok((system, commitment_parameters, fri_parameters))
 }
 
+/// A verifier-only Aiur key decoded from [`aiur_system_to_bytes`].
+///
+/// This is the narrow surface used by zkVM guests: unlike [`AiurSystem`], it
+/// carries neither bytecode nor a prover key, but it can verify a serialized
+/// proof under the exact commitment and FRI parameters embedded in the key.
+pub struct AiurVerifyingKey {
+  system: System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  fri_parameters: FriParameters,
+}
+
+/// Verifier-known matrix geometry needed to specialise the terminal PCS
+/// relation without carrying the full constraint graph into that relation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AiurPcsCircuitMetadata {
+  pub main_width: usize,
+  pub stage_2_width: usize,
+  pub quotient_width: usize,
+  pub preprocessed_width: usize,
+  pub preprocessed_height: usize,
+  pub preprocessed_slot: Option<usize>,
+}
+
+/// Constraint program and geometry needed to specialise the terminal AIR
+/// evaluation relation for one circuit.
+///
+/// This is deliberately a clone of the verifier-owned compiled graph. Stage 3
+/// treats the graph as fixed circuit data, never as proof witness data.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiurAirCircuitMetadata {
+  pub graph: ConstraintGraph<Val>,
+  pub main_width: usize,
+  pub stage_2_width: usize,
+  pub quotient_degree: usize,
+  pub preprocessed_width: usize,
+  pub preprocessed_slot: Option<usize>,
+  pub lookup_group_size: usize,
+}
+
+impl AiurVerifyingKey {
+  /// Decode a verifying key and require full input consumption.
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    from_bytes(bytes).map(|(system, commitment_parameters, fri_parameters)| {
+      Self { system, commitment_parameters, fri_parameters }
+    })
+  }
+
+  /// Re-encode to the canonical Aiur verifying-key wire format.
+  pub fn to_bytes(&self) -> Vec<u8> {
+    to_bytes(&self.system, self.commitment_parameters, self.fri_parameters)
+  }
+
+  pub const fn commitment_parameters(&self) -> CommitmentParameters {
+    self.commitment_parameters
+  }
+
+  pub const fn fri_parameters(&self) -> FriParameters {
+    self.fri_parameters
+  }
+
+  pub fn num_circuits(&self) -> usize {
+    self.system.circuits.len()
+  }
+
+  /// Canonical PCS matrix widths and preprocessed slots in circuit order.
+  pub fn pcs_circuit_metadata(&self) -> Vec<AiurPcsCircuitMetadata> {
+    let extension_degree =
+      <ExtVal as multi_stark::p3_field::BasedVectorSpace<Val>>::DIMENSION;
+    self
+      .system
+      .circuits
+      .iter()
+      .zip(&self.system.preprocessed_indices)
+      .map(|(circuit, &preprocessed_slot)| AiurPcsCircuitMetadata {
+        main_width: circuit.main_width,
+        stage_2_width: circuit.stage_2_width,
+        quotient_width: circuit.quotient_degree() * extension_degree,
+        preprocessed_width: circuit.preprocessed_width,
+        preprocessed_height: circuit.preprocessed_height,
+        preprocessed_slot,
+      })
+      .collect()
+  }
+
+  /// Fixed compiled AIR programs in canonical circuit order.
+  pub fn air_circuit_metadata(&self) -> Vec<AiurAirCircuitMetadata> {
+    self
+      .system
+      .circuits
+      .iter()
+      .zip(&self.system.preprocessed_indices)
+      .map(|(circuit, &preprocessed_slot)| AiurAirCircuitMetadata {
+        graph: circuit.graph.clone(),
+        main_width: circuit.main_width,
+        stage_2_width: circuit.stage_2_width,
+        quotient_degree: circuit.quotient_degree(),
+        preprocessed_width: circuit.preprocessed_width,
+        preprocessed_slot,
+        lookup_group_size: circuit.lookup_group_size,
+      })
+      .collect()
+  }
+
+  /// Exact challenger seed followed by the `System::observe_shape` words,
+  /// serialized as the Goldilocks byte challenger observes them.
+  ///
+  /// Terminal verifier circuits use this instead of duplicating the shape
+  /// derivation from the compact verifying-key codec.
+  pub fn transcript_seed_and_shape_bytes(&self) -> Vec<u8> {
+    let mut bytes = b"multi-stark/v0".to_vec();
+    for parameter in [
+      self.commitment_parameters.log_blowup,
+      self.commitment_parameters.cap_height,
+      self.fri_parameters.log_final_poly_len,
+      self.fri_parameters.max_log_arity,
+      self.fri_parameters.num_queries,
+      self.fri_parameters.commit_proof_of_work_bits,
+      self.fri_parameters.query_proof_of_work_bits,
+    ] {
+      bytes.extend_from_slice(
+        &u64::try_from(parameter)
+          .expect("protocol parameter fits u64")
+          .to_le_bytes(),
+      );
+    }
+    let mut observe = |value: usize| {
+      bytes.extend_from_slice(
+        &u64::try_from(value)
+          .expect("system shape value fits u64")
+          .to_le_bytes(),
+      );
+    };
+    observe(self.system.circuits.len());
+    for circuit in &self.system.circuits {
+      observe(circuit.constraint_count());
+      observe(circuit.max_constraint_degree());
+      observe(circuit.preprocessed_height);
+      observe(circuit.preprocessed_width);
+      observe(circuit.main_width);
+      observe(circuit.stage_2_width);
+      observe(circuit.lookup_group_size);
+    }
+    bytes
+  }
+
+  /// Roots observed for the optional preprocessed commitment, in cap order.
+  pub fn preprocessed_commitment_roots(&self) -> Option<Vec<[u8; 32]>> {
+    self
+      .system
+      .preprocessed_commit
+      .as_ref()
+      .map(|commitment| commitment.roots().to_vec())
+  }
+
+  pub fn verify(
+    &self,
+    claim: &[Val],
+    proof: &crate::synthesis::AiurProof,
+  ) -> Result<(), multi_stark::verifier::VerificationError<PcsError>> {
+    self.system.verify(claim, proof)
+  }
+
+  /// Verify and expand the native pruned multiproof into per-query advice.
+  pub fn proof_to_per_query_advice_bytes(
+    &self,
+    claim: &[Val],
+    proof: &crate::synthesis::AiurProof,
+  ) -> Result<Vec<u8>, String> {
+    multi_stark::advice::proof_to_advice_bytes(
+      &self.system,
+      self.commitment_parameters,
+      self.fri_parameters,
+      &[claim],
+      proof,
+    )
+    .map_err(|error| format!("{error:?}"))
+  }
+}
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2};
   use multi_stark::system::CircuitInputs;
+
+  fn graph_key(
+    nodes: &[Node<Val>],
+    zeros: &[NodeId],
+    lookups: &[Lookup<NodeId>],
+  ) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for word in [1, 0, 0, 1, 2, 0, 0, 1, 1, 0] {
+      push_u16(&mut bytes, word);
+    }
+    push_u32(&mut bytes, 0); // Preprocessed height.
+    push_u16(&mut bytes, 1); // Combined constraint degree.
+    bytes.push(1); // Lookup group size.
+    push_u16(&mut bytes, nodes.len());
+    for node in nodes {
+      push_node(&mut bytes, node);
+    }
+    push_u16(&mut bytes, zeros.len());
+    for &root in zeros {
+      push_node_id(&mut bytes, root);
+    }
+    push_u16(&mut bytes, lookups.len());
+    for lookup in lookups {
+      push_node_id(&mut bytes, lookup.multiplicity);
+      push_u16(&mut bytes, lookup.args.len());
+      for &argument in &lookup.args {
+        push_node_id(&mut bytes, argument);
+      }
+    }
+    bytes.push(0);
+    bytes.extend_from_slice(&NO_PREP_INDEX.to_le_bytes());
+    bytes
+  }
+
+  #[test]
+  fn malformed_graph_references_and_degrees_return_errors() {
+    let leaf = Node::Var(ColRef {
+      source: Source::Main,
+      offset: RowOffset::Current,
+      index: 0,
+    });
+    let valid = graph_key(&[leaf], &[NodeId(0)], &[]);
+    AiurVerifyingKey::from_bytes(&valid).expect("valid small key");
+    for node in [
+      Node::Neg(NodeId(0)),
+      Node::Add(NodeId(0), NodeId(1)),
+      Node::Mul(NodeId(u32::from(u16::MAX)), NodeId(0)),
+      Node::Public(8),
+      Node::Var(ColRef {
+        source: Source::Main,
+        offset: RowOffset::Current,
+        index: 1,
+      }),
+      Node::Var(ColRef {
+        source: Source::Preprocessed,
+        offset: RowOffset::Current,
+        index: 0,
+      }),
+      Node::Var(ColRef {
+        source: Source::Stage2,
+        offset: RowOffset::Current,
+        index: 2,
+      }),
+    ] {
+      assert!(
+        AiurVerifyingKey::from_bytes(&graph_key(&[node], &[], &[])).is_err()
+      );
+    }
+    assert!(
+      AiurVerifyingKey::from_bytes(&graph_key(&[], &[NodeId(0)], &[])).is_err()
+    );
+    for lookup in [
+      Lookup { multiplicity: NodeId(1), args: vec![NodeId(0)] },
+      Lookup { multiplicity: NodeId(0), args: vec![NodeId(1)] },
+    ] {
+      assert!(
+        AiurVerifyingKey::from_bytes(&graph_key(&[leaf], &[], &[lookup]))
+          .is_err()
+      );
+    }
+    let mut nodes = vec![leaf];
+    for index in 0..32 {
+      nodes.push(Node::Mul(NodeId(index), NodeId(index)));
+    }
+    assert!(
+      AiurVerifyingKey::from_bytes(&graph_key(&nodes, &[], &[])).is_err()
+    );
+
+    for offset in (0..14).step_by(2) {
+      let mut malformed = valid.clone();
+      let invalid = if offset == 8 { 0u16 } else { u16::MAX };
+      malformed[offset..offset + 2].copy_from_slice(&invalid.to_le_bytes());
+      assert!(
+        AiurVerifyingKey::from_bytes(&malformed).is_err(),
+        "header offset {offset}"
+      );
+    }
+    let mut wrong_degree = valid.clone();
+    wrong_degree[24..26].copy_from_slice(&0u16.to_le_bytes());
+    assert!(AiurVerifyingKey::from_bytes(&wrong_degree).is_err());
+  }
+
+  #[test]
+  fn key_decode_mutation_smoke_and_noncanonical_constant() {
+    let valid = graph_key(&[Node::Const(Val::from_u64(65_536))], &[], &[]);
+    AiurVerifyingKey::from_bytes(&valid).unwrap();
+    for index in 0..valid.len() {
+      for bit in 0..8 {
+        let mut mutated = valid.clone();
+        mutated[index] ^= 1 << bit;
+        // A mutation may remain valid, but decoding must never panic.
+        let _ = AiurVerifyingKey::from_bytes(&mutated);
+      }
+    }
+    let mut noncanonical = valid;
+    assert_eq!(noncanonical[29], 1); // Big constant tag after node count.
+    noncanonical[30..38].copy_from_slice(&u64::MAX.to_le_bytes());
+    assert!(AiurVerifyingKey::from_bytes(&noncanonical).is_err());
+  }
 
   fn test_parameters() -> (CommitmentParameters, FriParameters) {
     let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
@@ -561,6 +994,47 @@ mod tests {
       assert_eq!(a.preprocessed_width, b.preprocessed_width);
       assert_eq!(a.preprocessed_height, b.preprocessed_height);
     }
+  }
+
+  #[test]
+  fn transcript_seed_and_shape_bytes_match_observe_shape_order() {
+    let (system, cp, fp) = test_system();
+    let key = AiurVerifyingKey {
+      system,
+      commitment_parameters: cp,
+      fri_parameters: fp,
+    };
+    let mut expected = b"multi-stark/v0".to_vec();
+    for value in [
+      cp.log_blowup,
+      cp.cap_height,
+      fp.log_final_poly_len,
+      fp.max_log_arity,
+      fp.num_queries,
+      fp.commit_proof_of_work_bits,
+      fp.query_proof_of_work_bits,
+      key.system.circuits.len(),
+    ] {
+      expected.extend_from_slice(&(value as u64).to_le_bytes());
+    }
+    for circuit in &key.system.circuits {
+      for value in [
+        circuit.constraint_count(),
+        circuit.max_constraint_degree(),
+        circuit.preprocessed_height,
+        circuit.preprocessed_width,
+        circuit.main_width,
+        circuit.stage_2_width,
+        circuit.lookup_group_size,
+      ] {
+        expected.extend_from_slice(&(value as u64).to_le_bytes());
+      }
+    }
+    assert_eq!(key.transcript_seed_and_shape_bytes(), expected);
+    assert_eq!(
+      key.preprocessed_commitment_roots().is_some(),
+      key.system.preprocessed_commit.is_some()
+    );
   }
 
   #[test]

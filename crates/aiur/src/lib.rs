@@ -2,6 +2,7 @@ pub mod bytecode;
 pub mod constraints;
 pub mod execute;
 pub mod gadgets;
+mod lookup_grouping;
 pub mod memory;
 pub mod querymap;
 pub mod synthesis;

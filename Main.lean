@@ -13,6 +13,7 @@ import Ix.Cli.CatalogCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
+import Ix.Cli.FlockRootCmd
 import Ix.Cli.IngressCmd
 import Ix.Cli.MergeCmd
 import Ix.Cli.NameOfCmd
@@ -52,6 +53,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     treeCmd;
     profileCmd;
     proveCmd;
+    flockRootCmd;
     shardCmd;
     codegenCmd;
     verifyCmd;

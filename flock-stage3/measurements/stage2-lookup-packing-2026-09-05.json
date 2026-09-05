@@ -1,0 +1,694 @@
+{
+  "schema": "ix.flock-stage3.stage2-lookup-packing-measurement",
+  "version": 1,
+  "date": "2026-09-05",
+  "source_commit": "40cf786ac78990108701ac2f1ec5e3b5867f4410",
+  "source_worktree_dirty": true,
+  "fixture_kind": "ix_aggr shape-0 wrap of one well-formed axiom declaration; same IxVM child, CheckEnv claim and circuit heights",
+  "baseline_fixture": "Tests/Fixtures/Aggregate/singleton-2026-09-05/fixture.json",
+  "experimental_fixture": "Tests/Fixtures/Aggregate/singleton-min-opening-2026-09-05/fixture.json",
+  "baseline_stage3_measurement": "persisted-singleton-pcs-2026-09-05.json",
+  "profile": {
+    "name": "min-opening-width-v1",
+    "opt_in": true,
+    "production_default_changed": false,
+    "method": "Choose circuit-local lookup group size k=1..8 minimizing stage_2_width + extension_degree * quotient_degree, with quotient degree at most 2^log_blowup. Strict improvements only; retain the old key on ties; among improvements prefer lower degree then smaller groups.",
+    "changed_circuits": 55,
+    "changed_circuit_group_size_histogram": {
+      "2": 48,
+      "4": 7
+    },
+    "user_constraint_graph_changed": false,
+    "lookup_order_changed": false,
+    "main_trace_layout_changed": false,
+    "preprocessed_commitment_changed": false,
+    "aggregate_verifying_key_changed": true,
+    "outer_allowed_key_digest_and_claim_changed": true,
+    "commitment_parameters_changed": false,
+    "fri_parameters_changed": false
+  },
+  "protocol": {
+    "lean_toolchain": "4.33.1",
+    "multi_stark_revision": "6ad074c1f2983ecdd7a56984d333441d6b38186a",
+    "plonky3_revision": "3152b14a89067c83775a8076cc262ffc48a1fd7c",
+    "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+    "flock_config_digest": "1897ad7e36bc1a11a9dc4170552b1b48f5689b8f04ecc3c3825ce0273ecfaffc",
+    "commitment": {
+      "log_blowup": 2,
+      "cap_height": 0
+    },
+    "fri": {
+      "query_pow_bits": 20,
+      "num_queries": 100,
+      "max_log_arity": 1,
+      "log_final_poly_len": 0,
+      "log_blowup": 2,
+      "commit_pow_bits": 0
+    }
+  },
+  "host": {
+    "cpu": "AMD Ryzen 9 7950X3D",
+    "mem_total_bytes": 134128111616,
+    "rayon_threads": 8,
+    "native_generation_address_space_limit_bytes": 68719476736,
+    "stage3_count_address_space_limit_bytes": 17179869184,
+    "native_process_tree_rss_sample_interval_ms": 10,
+    "timing_sample_count_per_profile": 1
+  },
+  "unchanged_child": {
+    "file": "ixvm.ixon-proof",
+    "bytes": 4485008,
+    "blake3": "9381b528d31fdb23e8af24c6131bb3a3dd898f446848d295e4f8b0da24c7a618"
+  },
+  "unchanged_inputs": [
+    {
+      "file": "environment.ixe",
+      "bytes": 116,
+      "blake3": "bed282f9db4dee56f1746870478aad7223ce2a325f7e6baf24dacde3aa06e0e8"
+    },
+    {
+      "file": "check-env.claim",
+      "bytes": 34,
+      "blake3": "ddef67870a4517be2f996e2eeb6f7fdcd3871ba527190f17d45b93308a40825f"
+    },
+    {
+      "file": "subjects.tree",
+      "bytes": 34,
+      "blake3": "9014207ff8cef20d1f8f64934fef14d4114e8afe43f7a35f930dfcb70175d67e"
+    },
+    {
+      "file": "ixvm.vk",
+      "bytes": 709741,
+      "blake3": "e3b0aff0da508c305da9048b113e586502d35e75dadc4f7647d89efb320fbc78"
+    }
+  ],
+  "baseline": {
+    "lookup_policy": "legacy",
+    "root_wrapper": {
+      "file": "root.ixon-proof",
+      "bytes": 8565030,
+      "blake3": "254dcab734b79f1714d6c9b372ccdf8fcbad69e01fb90b51b0007f8cb6841406"
+    },
+    "aggregate_vk": {
+      "file": "aggr.vk",
+      "bytes": 181630,
+      "blake3": "75452941bc0dbe4a861c88c792067f34d7864f0460f305858a0a004ec409406e"
+    },
+    "outer_claim": {
+      "file": "outer-claim.bin",
+      "bytes": 144,
+      "blake3": "6f872178af386cef9c799c1417035682c120756b3bbec883f09b1c31c703c713"
+    },
+    "native_aggregate_verified": true,
+    "active_circuits": 175,
+    "all_circuits": 203,
+    "active_committed_width": 9025,
+    "all_circuit_committed_width": 10408,
+    "aggregate_execute_us": 1652316,
+    "aggregate_prove_us": 75812960,
+    "aggregate_verify_us": 121037,
+    "aggregate_prove_sampled_peak_rss_bytes": 27118215168,
+    "ixvm_predicted_peak_bytes": 228450779,
+    "shape_count": {
+      "compiled": false,
+      "count_us": 342903,
+      "nu": 24,
+      "padded_union_witness_bytes": 824633720832,
+      "process_peak_rss_bytes": 446173184,
+      "schema": "ix.flock-stage3.shape-count",
+      "table_capacity": 16777216,
+      "tables": [
+        {
+          "gate": "GoldilocksAddPairGate",
+          "rows": 6408875
+        },
+        {
+          "gate": "GoldilocksMulPairGate",
+          "rows": 2983568
+        },
+        {
+          "gate": "CanonicalGoldilocksPairGate",
+          "rows": 12792346
+        },
+        {
+          "gate": "GoldilocksLaneRepackGate",
+          "rows": 4477770
+        },
+        {
+          "gate": "Blake3Gate",
+          "rows": 167996
+        },
+        {
+          "gate": "DigestOrderGate",
+          "rows": 668500
+        },
+        {
+          "gate": "F128EqualityGate",
+          "rows": 271980
+        },
+        {
+          "gate": "HashSampleGate",
+          "rows": 52
+        },
+        {
+          "gate": "GoldilocksSampleGate",
+          "rows": 26
+        },
+        {
+          "gate": "U64SplitGate",
+          "rows": 2320
+        },
+        {
+          "gate": "ByteWindowGate",
+          "rows": 35391
+        }
+      ],
+      "version": 1
+    }
+  },
+  "experimental": {
+    "lookup_policy": "min-opening-width-v1",
+    "root_wrapper": {
+      "file": "root.ixon-proof",
+      "bytes": 8002662,
+      "blake3": "635c8f79af8cf1a913cb9291fbd1aa1a3f2c4ff221e6ec1339795989c649910f"
+    },
+    "aggregate_vk": {
+      "file": "aggr.vk",
+      "bytes": 181630,
+      "blake3": "3c740f5b7645b1f7cdf361b7de3e20628c18ea3bf9cfafd1bd8aac4aca2bf7ba"
+    },
+    "outer_claim": {
+      "file": "outer-claim.bin",
+      "bytes": 144,
+      "blake3": "72e37e5dda38c176b1caaa377ea779ca285d8e614ca268aeb9130812fdc2216d"
+    },
+    "native_aggregate_verified": true,
+    "active_circuits": 175,
+    "all_circuits": 203,
+    "active_committed_width": 8367,
+    "all_circuit_committed_width": 9706,
+    "aggregate_execute_us": 1443624,
+    "aggregate_prove_us": 75386250,
+    "aggregate_verify_us": 228214,
+    "aggregate_prove_sampled_peak_rss_bytes": 24276983808,
+    "ixvm_predicted_peak_bytes": 237549820,
+    "shape_count": {
+      "compiled": false,
+      "count_us": 332532,
+      "nu": 24,
+      "padded_union_witness_bytes": 824633720832,
+      "process_peak_rss_bytes": 408211456,
+      "schema": "ix.flock-stage3.shape-count",
+      "table_capacity": 16777216,
+      "tables": [
+        {
+          "gate": "GoldilocksAddPairGate",
+          "rows": 6336142
+        },
+        {
+          "gate": "GoldilocksMulPairGate",
+          "rows": 2916038
+        },
+        {
+          "gate": "CanonicalGoldilocksPairGate",
+          "rows": 12580880
+        },
+        {
+          "gate": "GoldilocksLaneRepackGate",
+          "rows": 4376475
+        },
+        {
+          "gate": "Blake3Gate",
+          "rows": 158899
+        },
+        {
+          "gate": "DigestOrderGate",
+          "rows": 668500
+        },
+        {
+          "gate": "F128EqualityGate",
+          "rows": 271980
+        },
+        {
+          "gate": "HashSampleGate",
+          "rows": 52
+        },
+        {
+          "gate": "GoldilocksSampleGate",
+          "rows": 26
+        },
+        {
+          "gate": "U64SplitGate",
+          "rows": 2320
+        },
+        {
+          "gate": "ByteWindowGate",
+          "rows": 32399
+        }
+      ],
+      "version": 1
+    }
+  },
+  "reductions": {
+    "active_committed_columns": 658,
+    "active_committed_columns_percent": 7.290859,
+    "native_root_wrapper_bytes": 562368,
+    "native_root_wrapper_bytes_percent": 6.565861,
+    "native_prove_sampled_peak_rss_bytes": 2841231360,
+    "native_prove_sampled_peak_rss_percent": 10.477206,
+    "stage3_canonicality_rows": 211466,
+    "stage3_canonicality_rows_percent": 1.653067,
+    "stage3_padded_union_witness_bytes": 0,
+    "per_gate_rows": [
+      {
+        "gate": "GoldilocksAddPairGate",
+        "rows_before": 6408875,
+        "rows_after": 6336142,
+        "rows_removed": 72733
+      },
+      {
+        "gate": "GoldilocksMulPairGate",
+        "rows_before": 2983568,
+        "rows_after": 2916038,
+        "rows_removed": 67530
+      },
+      {
+        "gate": "CanonicalGoldilocksPairGate",
+        "rows_before": 12792346,
+        "rows_after": 12580880,
+        "rows_removed": 211466
+      },
+      {
+        "gate": "GoldilocksLaneRepackGate",
+        "rows_before": 4477770,
+        "rows_after": 4376475,
+        "rows_removed": 101295
+      },
+      {
+        "gate": "Blake3Gate",
+        "rows_before": 167996,
+        "rows_after": 158899,
+        "rows_removed": 9097
+      },
+      {
+        "gate": "DigestOrderGate",
+        "rows_before": 668500,
+        "rows_after": 668500,
+        "rows_removed": 0
+      },
+      {
+        "gate": "F128EqualityGate",
+        "rows_before": 271980,
+        "rows_after": 271980,
+        "rows_removed": 0
+      },
+      {
+        "gate": "HashSampleGate",
+        "rows_before": 52,
+        "rows_after": 52,
+        "rows_removed": 0
+      },
+      {
+        "gate": "GoldilocksSampleGate",
+        "rows_before": 26,
+        "rows_after": 26,
+        "rows_removed": 0
+      },
+      {
+        "gate": "U64SplitGate",
+        "rows_before": 2320,
+        "rows_after": 2320,
+        "rows_removed": 0
+      },
+      {
+        "gate": "ByteWindowGate",
+        "rows_before": 35391,
+        "rows_after": 32399,
+        "rows_removed": 2992
+      }
+    ]
+  },
+  "changed_circuit_widths": [
+    {
+      "name": "blake3_compress",
+      "height": 332248,
+      "committed_width_before": 925,
+      "committed_width_after": 735
+    },
+    {
+      "name": "aggr_verify_child",
+      "height": 1,
+      "committed_width_before": 500,
+      "committed_width_after": 394
+    },
+    {
+      "name": "ood_loop",
+      "height": 78,
+      "committed_width_before": 251,
+      "committed_width_after": 211
+    },
+    {
+      "name": "read_sys_circuits_n",
+      "height": 765,
+      "committed_width_before": 185,
+      "committed_width_after": 155
+    },
+    {
+      "name": "bytes_to_block",
+      "height": 13089,
+      "committed_width_before": 265,
+      "committed_width_after": 237
+    },
+    {
+      "name": "ix_aggr",
+      "height": 1,
+      "committed_width_before": 202,
+      "committed_width_after": 174
+    },
+    {
+      "name": "verify_query",
+      "height": 1231,
+      "committed_width_before": 170,
+      "committed_width_after": 142
+    },
+    {
+      "name": "aggr_load_sys",
+      "height": 1,
+      "committed_width_before": 227,
+      "committed_width_after": 201
+    },
+    {
+      "name": "ch_sample8",
+      "height": 143,
+      "committed_width_before": 138,
+      "committed_width_after": 116
+    },
+    {
+      "name": "b3_rows_chunks",
+      "height": 13889,
+      "committed_width_before": 282,
+      "committed_width_after": 264
+    },
+    {
+      "name": "aggr_put_address",
+      "height": 0,
+      "committed_width_before": 106,
+      "committed_width_after": 94
+    },
+    {
+      "name": "aggr_read_address",
+      "height": 2,
+      "committed_width_before": 138,
+      "committed_width_after": 126
+    },
+    {
+      "name": "blake3_compress_block",
+      "height": 14209,
+      "committed_width_before": 211,
+      "committed_width_after": 201
+    },
+    {
+      "name": "logup_steps_fold",
+      "height": 678,
+      "committed_width_before": 126,
+      "committed_width_after": 116
+    },
+    {
+      "name": "accs_onto",
+      "height": 9679,
+      "committed_width_before": 68,
+      "committed_width_after": 60
+    },
+    {
+      "name": "frontier_level",
+      "height": 10798,
+      "committed_width_before": 70,
+      "committed_width_after": 62
+    },
+    {
+      "name": "select_rows_le",
+      "height": 48377,
+      "committed_width_before": 68,
+      "committed_width_after": 60
+    },
+    {
+      "name": "verify_input_multi",
+      "height": 1,
+      "committed_width_before": 62,
+      "committed_width_after": 54
+    },
+    {
+      "name": "aggr_child_check_env_digest",
+      "height": 1,
+      "committed_width_before": 89,
+      "committed_width_after": 83
+    },
+    {
+      "name": "aggr_discharge_choice",
+      "height": 0,
+      "committed_width_before": 78,
+      "committed_width_after": 72
+    },
+    {
+      "name": "aggr_pair",
+      "height": 0,
+      "committed_width_before": 137,
+      "committed_width_after": 131
+    },
+    {
+      "name": "aggr_pair_structural",
+      "height": 0,
+      "committed_width_before": 134,
+      "committed_width_after": 128
+    },
+    {
+      "name": "verify_commit_multi",
+      "height": 17,
+      "committed_width_before": 51,
+      "committed_width_after": 45
+    },
+    {
+      "name": "verify_one_query",
+      "height": 100,
+      "committed_width_before": 96,
+      "committed_width_after": 90
+    },
+    {
+      "name": "aggr_address_order",
+      "height": 0,
+      "committed_width_before": 120,
+      "committed_width_after": 116
+    },
+    {
+      "name": "blake3_finish",
+      "height": 49,
+      "committed_width_before": 190,
+      "committed_width_after": 186
+    },
+    {
+      "name": "cap_onto",
+      "height": 23,
+      "committed_width_before": 65,
+      "committed_width_after": 61
+    },
+    {
+      "name": "heights_max",
+      "height": 3,
+      "committed_width_before": 44,
+      "committed_width_after": 40
+    },
+    {
+      "name": "pcs_betas",
+      "height": 17,
+      "committed_width_before": 64,
+      "committed_width_after": 60
+    },
+    {
+      "name": "read_vk_cap_n",
+      "height": 2,
+      "committed_width_before": 66,
+      "committed_width_after": 62
+    },
+    {
+      "name": "aggr_assert_difference",
+      "height": 0,
+      "committed_width_before": 35,
+      "committed_width_after": 33
+    },
+    {
+      "name": "aggr_assert_structural_difference",
+      "height": 0,
+      "committed_width_before": 34,
+      "committed_width_after": 32
+    },
+    {
+      "name": "aggr_assert_union",
+      "height": 0,
+      "committed_width_before": 40,
+      "committed_width_after": 38
+    },
+    {
+      "name": "aggr_fold_path",
+      "height": 0,
+      "committed_width_before": 35,
+      "committed_width_after": 33
+    },
+    {
+      "name": "aggr_pair_hashes",
+      "height": 0,
+      "committed_width_before": 33,
+      "committed_width_after": 31
+    },
+    {
+      "name": "blake3_compress_layer",
+      "height": 3257,
+      "committed_width_before": 157,
+      "committed_width_after": 155
+    },
+    {
+      "name": "blake3_next_layer",
+      "height": 3191,
+      "committed_width_before": 191,
+      "committed_width_after": 189
+    },
+    {
+      "name": "ch_sample_bits",
+      "height": 101,
+      "committed_width_before": 69,
+      "committed_width_after": 67
+    },
+    {
+      "name": "frontier_leaves",
+      "height": 2018,
+      "committed_width_before": 35,
+      "committed_width_after": 33
+    },
+    {
+      "name": "frontier_merge",
+      "height": 10686,
+      "committed_width_before": 43,
+      "committed_width_after": 41
+    },
+    {
+      "name": "frontier_sort",
+      "height": 3465,
+      "committed_width_before": 40,
+      "committed_width_after": 38
+    },
+    {
+      "name": "frontier_split",
+      "height": 6774,
+      "committed_width_before": 37,
+      "committed_width_after": 35
+    },
+    {
+      "name": "open_batch_2pt",
+      "height": 15600,
+      "committed_width_before": 38,
+      "committed_width_after": 36
+    },
+    {
+      "name": "open_prep",
+      "height": 7800,
+      "committed_width_before": 45,
+      "committed_width_after": 43
+    },
+    {
+      "name": "open_prep_batch",
+      "height": 100,
+      "committed_width_before": 44,
+      "committed_width_after": 42
+    },
+    {
+      "name": "open_quotient",
+      "height": 7800,
+      "committed_width_before": 41,
+      "committed_width_after": 39
+    },
+    {
+      "name": "query_loop",
+      "height": 101,
+      "committed_width_before": 54,
+      "committed_width_after": 52
+    },
+    {
+      "name": "read_batch_opening_vec_n",
+      "height": 5,
+      "committed_width_before": 31,
+      "committed_width_after": 29
+    },
+    {
+      "name": "read_commit_phase_step_vec_n",
+      "height": 17,
+      "committed_width_before": 33,
+      "committed_width_after": 31
+    },
+    {
+      "name": "read_nodes_n",
+      "height": 124768,
+      "committed_width_before": 59,
+      "committed_width_after": 57
+    },
+    {
+      "name": "read_sys_lookups_n",
+      "height": 5866,
+      "committed_width_before": 31,
+      "committed_width_after": 29
+    },
+    {
+      "name": "reconstruct_ext_row",
+      "height": 46,
+      "committed_width_before": 32,
+      "committed_width_after": 30
+    },
+    {
+      "name": "rows_at_round",
+      "height": 1616,
+      "committed_width_before": 31,
+      "committed_width_after": 29
+    },
+    {
+      "name": "rows_pop",
+      "height": 103656,
+      "committed_width_before": 46,
+      "committed_width_after": 44
+    },
+    {
+      "name": "select_rows",
+      "height": 111490,
+      "committed_width_before": 46,
+      "committed_width_after": 44
+    }
+  ],
+  "stage3_compiled": false,
+  "stage3_evaluated": false,
+  "stage3_proven": false,
+  "count_only_limits": {
+    "max_table_capacity": 4294967296,
+    "max_union_witness_bytes": 1
+  },
+  "count_only_admission_error": "Stage 3 padded union witness requires 824633720832 bytes; admission limit is 1 (PCS/compiler scratch is additional)",
+  "count_only_command": "(ulimit -v 16777216; IX_FLOCK_TIMING=1 RAYON_NUM_THREADS=8 .lake/build/bin/bench-flock-root-fixture --min-opening-width --count Tests/Fixtures/Aggregate/singleton-min-opening-2026-09-05)",
+  "validation": {
+    "native_fixture_fresh_process_verification": "both legacy and explicitly selected experimental fixtures passed",
+    "default_cli_rejects_experimental_key": true,
+    "harness_rejects_implicit_profile_selection": true,
+    "grouped_native_proof_serialized_key_and_wrong_key_claim_tests": "passed",
+    "recursive_verifier_interpreter_codegen_and_mutation_tests": 8,
+    "stage3_fast_tests": 73,
+    "stage3_standard_serial_cryptographic_tests": 13,
+    "grouped_four_message_stage3_compiled_relation_evaluated": true,
+    "default_100_query_stage3_census_unchanged": true,
+    "default_100_query_stage3_circuit_digest": "d2a1e42a479137b93c23d396268ef922611f39eea3e5f7317e487487b421c4c1"
+  },
+  "notes": [
+    "Active committed width is the sum of circuit widths with nonzero heights (main + lookup accumulator + quotient columns); it is not a height-weighted witness size or a prediction of Stage 3 cost.",
+    "The aggregate root/key/outer claim intentionally differ; the IxVM child, environment, CheckEnv claim, subject tree and active circuit heights are byte-identical or unchanged. Original fixtures and measurements remain untouched.",
+    "Stage 3 counted 211466 fewer canonicality rows (1.653067%), but both roots still require nu=24 and 768 GiB of padded z/a/b alone. Neither real aggregate relation was wired, evaluated, or proven with Flock.",
+    "The one-byte witness guard deliberately stops the diagnostic before wiring compilation; count-only mode exits zero only after this expected refusal. Production admission defaults are unchanged.",
+    "Native proving was approximately flat in these single runs (75.813 vs 75.386 s); native verification was slower (0.121 vs 0.228 s). Timings/RSS are local diagnostics, not confidence intervals or guarantees.",
+    "The native RSS model now takes extension degree 2 from the field instead of inferring it from grouped column width; this changes the child model prediction but not the child key or proof. The historical model remains approximate and the OS cap remains required.",
+    "Broader corpus measurements and independent soundness review remain necessary. This experiment is not automatic adoption of a new key/profile; adoption also requires deliberate relation/pin regeneration."
+  ]
+}

@@ -1,12 +1,13 @@
 use multi_stark::{
   expr::Expr,
   lookup::Lookup,
-  p3_field::PrimeCharacteristicRing,
+  p3_field::{BasedVectorSpace, PrimeCharacteristicRing},
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{CircuitInputs, ProverKey, System, SystemWitness},
   types::{
-    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
+    CommitmentParameters, ExtVal, FriParameters, GoldilocksBlake3Config,
+    PcsError,
   },
   verifier::VerificationError,
 };
@@ -216,6 +217,45 @@ impl AiurSystem {
     }
   }
 
+  /// Experimental, explicit alternative to `build`: choose circuit-local
+  /// lookup groups minimizing accumulator + quotient opening width within
+  /// the SAME PCS blowup. This changes the verifying key, not the bytecode,
+  /// constraints, lookup order or FRI parameters. It is not a runtime/memory
+  /// optimum: higher-degree quotients can cost more to prove. Default system
+  /// construction and deployment keys deliberately remain unchanged.
+  pub fn build_min_opening_width(
+    toplevel: Toplevel,
+    commitment_parameters: CommitmentParameters,
+    fri_parameters: FriParameters,
+  ) -> Self {
+    let mut system =
+      Self::build(toplevel, commitment_parameters, fri_parameters);
+    let max_quotient_degree = 1usize << commitment_parameters.log_blowup;
+    for circuit in &mut system.system.circuits {
+      let Some(plan) = crate::lookup_grouping::smaller_opening_packing(
+        circuit,
+        max_quotient_degree,
+      ) else {
+        continue;
+      };
+      // Aiur's user graph references only the original main/preprocessed
+      // traces and selectors. Grouping changes the protocol-owned logUp
+      // layout, not that graph or the preprocessed data/commitment/prover key.
+      assert!(circuit.graph.nodes.iter().all(|node| {
+        !matches!(node, multi_stark::graph::Node::Var(column)
+          if column.source == multi_stark::expr::Source::Stage2)
+      }));
+      circuit.lookup_group_size = plan.group_size;
+      circuit.stage_2_width = plan.stage2_width;
+      circuit.max_constraint_degree = plan.max_constraint_degree;
+      // Both counts are one base-coordinate constraint per committed
+      // accumulator coordinate, including the lookup-free pass-through.
+      circuit.constraint_count = circuit.graph.zeros.len() + plan.stage2_width;
+      assert_eq!(circuit.quotient_degree(), plan.quotient_degree);
+    }
+    system
+  }
+
   /// The circuit list in system order: constrained functions (ascending
   /// index), then memories, then `Bytes1`, then `Bytes2`. This matches the
   /// order the circuits were chained in [`AiurSystem::build`], so index `i`
@@ -323,7 +363,9 @@ impl AiurSystem {
       }
       let n = raw.next_power_of_two();
       let c = &self.system.circuits[i];
-      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      // Extension degree is a FIELD property, not inferable from the packed
+      // lookup-column count. Grouping can make that old quotient even zero.
+      let d = <ExtVal as BasedVectorSpace<G>>::DIMENSION;
       let args: usize = self.slot_widths[i].iter().sum();
       let q = c.quotient_degree();
       witness +=
@@ -590,8 +632,25 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<Vec<u8>, String> {
-    self.verify(claim, proof).map_err(|e| format!("{e:?}"))?;
-    proof.to_bytes().map_err(|e| format!("{e:?}"))
+    self.verify(claim, proof).map_err(|error| format!("{error:?}"))?;
+    proof.to_bytes().map_err(|error| format!("{error:?}"))
+  }
+
+  /// Verify and expand the native multiproof for a per-query terminal
+  /// verifier such as Flock Stage 3.
+  pub fn proof_to_per_query_advice_bytes(
+    &self,
+    claim: &[G],
+    proof: &AiurProof,
+  ) -> Result<Vec<u8>, String> {
+    multi_stark::advice::proof_to_advice_bytes(
+      &self.system,
+      self.commitment_parameters,
+      self.fri_parameters,
+      &[claim],
+      proof,
+    )
+    .map_err(|error| format!("{error:?}"))
   }
 }
 
@@ -685,6 +744,83 @@ mod tests {
   }
 
   #[test]
+  fn min_opening_width_profile_proves_and_is_key_bound() {
+    let toplevel = || {
+      let mut top = xor_splits_toplevel();
+      let function = &mut top.functions[0];
+      function.body.ops = (0..12)
+        .map(|i| {
+          if i % 2 == 0 { Op::U8XorSplit7(0, 1) } else { Op::U8XorSplit4(0, 1) }
+        })
+        .collect();
+      function.body.ctrl = Ctrl::Return(0, vec![24, 25]);
+      function.layout.auxiliaries = 25;
+      function.layout.lookups = 13;
+      top
+    };
+    let (mut cp, fp) = test_parameters();
+    cp.log_blowup = 2;
+    let baseline = AiurSystem::build(toplevel(), cp, fp);
+    let compact = AiurSystem::build_min_opening_width(toplevel(), cp, fp);
+    let old = &baseline.system.circuits[0];
+    let new = &compact.system.circuits[0];
+    assert_eq!(old.lookup_group_size, 2);
+    assert_eq!(new.lookup_group_size, 4);
+    assert_eq!(old.quotient_degree(), 2);
+    assert_eq!(new.quotient_degree(), 4);
+    assert!(
+      new.stage_2_width + 2 * new.quotient_degree()
+        < old.stage_2_width + 2 * old.quotient_degree()
+    );
+    assert_eq!(new.graph, old.graph, "user constraints/lookup order unchanged");
+    assert_eq!(new.main_width, old.main_width);
+    assert_eq!(
+      compact.system.preprocessed_commit,
+      baseline.system.preprocessed_commit,
+    );
+    for system in [&baseline, &compact] {
+      let circuit = &system.system.circuits[0];
+      let height = 8;
+      let blowup = 1 << cp.log_blowup;
+      let args: usize = system.slot_widths[0].iter().sum();
+      let expected_stage2 = 8 * blowup * height * circuit.main_width
+        + 2 * 32 * blowup * height
+        + 8 * height * (circuit.num_lookups + args)
+        + 2 * 8 * 2 * height * circuit.num_lookups
+        + 8 * height * circuit.stage_2_width;
+      assert_eq!(
+        system
+          .peak_prove_bytes_by(
+            |index, _| if index == 0 { height } else { 0 },
+            0
+          )
+          .phase_stage2,
+        expected_stage2,
+        "RAM model must use extension degree 2 regardless of lookup packing"
+      );
+    }
+    let input = [G::from_u8(0xd3), G::from_u8(0x69)];
+    let (claim, proof) = compact.prove(0, &input, &mut empty_io_buffer());
+    compact.verify(&claim, &proof).unwrap();
+    let bytes = crate::vk_codec::aiur_system_to_bytes(&compact).unwrap();
+    let vk = crate::vk_codec::AiurVerifyingKey::from_bytes(&bytes).unwrap();
+    assert_eq!(vk.to_bytes(), bytes);
+    let baseline_bytes =
+      crate::vk_codec::aiur_system_to_bytes(&baseline).unwrap();
+    // The first 14 bytes encode ALL seven commitment/FRI parameters.
+    assert_eq!(&bytes[..14], &baseline_bytes[..14]);
+    assert_ne!(bytes, baseline_bytes);
+    vk.verify(&claim, &proof).unwrap();
+    assert!(baseline.verify(&claim, &proof).is_err());
+    assert!(
+      vk.proof_to_per_query_advice_bytes(&claim, &proof).unwrap().len() > 100
+    );
+    let mut wrong_claim = claim;
+    *wrong_claim.last_mut().unwrap() += G::ONE;
+    assert!(vk.verify(&wrong_claim, &proof).is_err());
+  }
+
+  #[test]
   fn prove_verify_xor_splits() {
     let (cp, fp) = test_parameters();
     let system = AiurSystem::build(xor_splits_toplevel(), cp, fp);
@@ -708,6 +844,31 @@ mod tests {
       ]
     );
     system.verify(&claim, &proof).expect("xor split outputs must verify");
+
+    // The terminal prover receives only the serialized verifier key, not the
+    // prover-side `AiurSystem`. Exercise that exact path against a real proof
+    // so codec round trips alone cannot mask a transcript/config mismatch.
+    let vk_bytes = crate::vk_codec::aiur_system_to_bytes(&system)
+      .expect("encode verifier key");
+    let vk = crate::vk_codec::AiurVerifyingKey::from_bytes(&vk_bytes)
+      .expect("decode verifier key");
+    assert_eq!(vk.to_bytes(), vk_bytes, "verifier key is canonical");
+    vk.verify(&claim, &proof).expect("decoded verifier key must verify");
+    let advice = vk
+      .proof_to_per_query_advice_bytes(&claim, &proof)
+      .expect("decoded verifier key must serialize valid proof advice");
+    assert!(!advice.is_empty(), "serialized verifier advice must not be empty");
+
+    let mut tampered_claim = claim.clone();
+    tampered_claim[2] += G::ONE;
+    assert!(
+      vk.verify(&tampered_claim, &proof).is_err(),
+      "decoded verifier key must bind the outer claim"
+    );
+    assert!(
+      vk.proof_to_per_query_advice_bytes(&tampered_claim, &proof).is_err(),
+      "advice serialization must verify and bind the outer claim"
+    );
   }
 
   /// Hand-build a toplevel exercising the two migrated integration paths that

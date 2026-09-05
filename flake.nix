@@ -40,6 +40,13 @@
       inputs.lean4-nix.follows = "lean4-nix";
     };
 
+    # Fetch LSpec through the flake input machinery instead of lake2nix's
+    # unauthenticated builtins.fetchGit evaluation path.
+    lspec = {
+      url = "github:argumentcomputer/LSpec/ab4d5eb461941837f48eb891be755c8c73e89fdd";
+      flake = false;
+    };
+
     # Zisk dev shell (cargo-zisk, ziskemu, RISC-V toolchain) for `zisk-guest`.
     zisk.url = "github:argumentcomputer/zisk.nix/blake3-precompile";
 
@@ -57,6 +64,7 @@
       fenix,
       crane,
       blake3-lean,
+      lspec,
       zisk,
       sp1,
       ...
@@ -189,6 +197,8 @@
               ./Cargo.toml
               ./Cargo.lock
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./crates)
+              ./flock-stage3/Cargo.lock
+              (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./flock-stage3)
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
             ];
           };
@@ -212,6 +222,15 @@
             };
             depOverrideDeriv = {
               Blake3 = blake3-lean.packages.${system}.rust;
+              # Keep the root manifest authoritative for LSpec's inherited
+              # plausible dependency while sourcing LSpec from its locked,
+              # content-addressed flake input.
+              LSpec = lake2nix.mkLakeDerivation {
+                name = "LSpec";
+                src = lspec;
+                deps = { inherit (lakeDeps) plausible; };
+                buildLibrary = true;
+              };
             };
           };
           # Shared Lake build args: patches out the Cargo build (Crane handles it)

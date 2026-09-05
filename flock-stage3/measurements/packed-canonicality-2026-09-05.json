@@ -1,0 +1,1259 @@
+{
+  "schema": "ix.flock-stage3.packed-canonical-measurement",
+  "version": 1,
+  "date": "2026-09-05",
+  "source_commit": "40cf786ac78990108701ac2f1ec5e3b5867f4410",
+  "source_worktree_dirty": true,
+  "source_note": "Pack two 128-bit canonicality requests per Boolean row, retaining independent per-limb checks. No Stage 2 keys, root transports, FRI parameters, dependency/configuration pins or admission defaults changed. Canonicality table schema, compiled circuits and relation identities change.",
+  "baseline_measurements": [
+    "pcs-query-sharing-2026-09-05.json"
+  ],
+  "protocol": {
+    "lean_toolchain": "4.33.1",
+    "multi_stark_revision": "6ad074c1f2983ecdd7a56984d333441d6b38186a",
+    "plonky3_revision": "3152b14a89067c83775a8076cc262ffc48a1fd7c",
+    "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+    "flock_config_digest": "1897ad7e36bc1a11a9dc4170552b1b48f5689b8f04ecc3c3825ce0273ecfaffc",
+    "commitment": {
+      "log_blowup": 2,
+      "cap_height": 0
+    },
+    "fri": {
+      "query_pow_bits": 20,
+      "num_queries": 100,
+      "max_log_arity": 1,
+      "log_final_poly_len": 0,
+      "log_blowup": 2,
+      "commit_pow_bits": 0
+    }
+  },
+  "host": {
+    "cpu": "AMD Ryzen 9 7950X3D",
+    "mem_total_bytes": 134128111616,
+    "rayon_threads": 8,
+    "census_address_space_limit_bytes": 17179869184,
+    "production_parameter_proof_address_space_limit_bytes": 68719476736,
+    "two_query_proof_address_space_limit_bytes": 17179869184,
+    "timing_sample_count_per_fixture": 1
+  },
+  "canonicality_table": {
+    "before": {
+      "gate": "CanonicalGoldilocksPairGate",
+      "input_words": 1,
+      "input_limbs": 2,
+      "active_violation_bits": 64,
+      "useful_boolean_columns": 318,
+      "boolean_columns": 512
+    },
+    "after": {
+      "gate": "CanonicalGoldilocksQuadGate",
+      "input_words": 2,
+      "input_limbs": 4,
+      "active_violation_bits": 128,
+      "useful_boolean_columns": 508,
+      "boolean_columns": 512
+    },
+    "batching": "Pair requests in emission order; flush an odd tail against fixed data zero before either count or compiled emission finishes. No wire-identity or witness-value deduplication.",
+    "zero_anchors": "Separate canonical(0,0) output anchors for at most 256 residuals; data zero remains input-only.",
+    "omitted_constraints": false,
+    "union_column_log_unchanged": 17
+  },
+  "real_aggregate_roots": [
+    {
+      "profile": "legacy",
+      "fixture": "Tests/Fixtures/Aggregate/singleton-2026-09-05/fixture.json",
+      "root_wrapper": {
+        "file": "root.ixon-proof",
+        "bytes": 8565030,
+        "blake3": "254dcab734b79f1714d6c9b372ccdf8fcbad69e01fb90b51b0007f8cb6841406"
+      },
+      "aggregate_vk": {
+        "file": "aggr.vk",
+        "bytes": 181630,
+        "blake3": "75452941bc0dbe4a861c88c792067f34d7864f0460f305858a0a004ec409406e"
+      },
+      "outer_claim": {
+        "file": "outer-claim.bin",
+        "bytes": 144,
+        "blake3": "6f872178af386cef9c799c1417035682c120756b3bbec883f09b1c31c703c713"
+      },
+      "after": {
+        "compiled": false,
+        "count_us": 155457,
+        "nu": 22,
+        "padded_union_witness_bytes": 206158430208,
+        "process_peak_rss_bytes": 366616576,
+        "schema": "ix.flock-stage3.shape-count",
+        "table_capacity": 4194304,
+        "tables": [
+          {
+            "gate": "GoldilocksAddPairGate",
+            "rows": 2871375
+          },
+          {
+            "gate": "GoldilocksMulPairGate",
+            "rows": 1629468
+          },
+          {
+            "gate": "CanonicalGoldilocksQuadGate",
+            "rows": 3162519
+          },
+          {
+            "gate": "GoldilocksLaneRepackGate",
+            "rows": 2405370
+          },
+          {
+            "gate": "Blake3Gate",
+            "rows": 167996
+          },
+          {
+            "gate": "DigestOrderGate",
+            "rows": 88700
+          },
+          {
+            "gate": "F128EqualityGate",
+            "rows": 104980
+          },
+          {
+            "gate": "HashSampleGate",
+            "rows": 52
+          },
+          {
+            "gate": "GoldilocksSampleGate",
+            "rows": 26
+          },
+          {
+            "gate": "U64SplitGate",
+            "rows": 2320
+          },
+          {
+            "gate": "ByteWindowGate",
+            "rows": 35391
+          }
+        ],
+        "version": 1
+      },
+      "before": {
+        "compiled": false,
+        "count_us": 175956,
+        "nu": 23,
+        "padded_union_witness_bytes": 412316860416,
+        "process_peak_rss_bytes": 366891008,
+        "schema": "ix.flock-stage3.shape-count",
+        "table_capacity": 8388608,
+        "tables": [
+          {
+            "gate": "GoldilocksAddPairGate",
+            "rows": 2871375
+          },
+          {
+            "gate": "GoldilocksMulPairGate",
+            "rows": 1629468
+          },
+          {
+            "gate": "CanonicalGoldilocksPairGate",
+            "rows": 6283484
+          },
+          {
+            "gate": "GoldilocksLaneRepackGate",
+            "rows": 2405370
+          },
+          {
+            "gate": "Blake3Gate",
+            "rows": 167996
+          },
+          {
+            "gate": "DigestOrderGate",
+            "rows": 88700
+          },
+          {
+            "gate": "F128EqualityGate",
+            "rows": 104980
+          },
+          {
+            "gate": "HashSampleGate",
+            "rows": 52
+          },
+          {
+            "gate": "GoldilocksSampleGate",
+            "rows": 26
+          },
+          {
+            "gate": "U64SplitGate",
+            "rows": 2320
+          },
+          {
+            "gate": "ByteWindowGate",
+            "rows": 35391
+          }
+        ],
+        "version": 1
+      },
+      "canonical_rows_removed": 3120965,
+      "canonical_row_reduction_percent": 49.669339493822214,
+      "padded_witness_reduction_factor": 2,
+      "native_root_key_claim_bytes_unchanged": true,
+      "native_proofs_fresh_process_verified": true,
+      "compiled": false,
+      "evaluated": false,
+      "proved": false,
+      "admission": {
+        "admission_error": "Stage 3 padded union witness requires 206158430208 bytes; admission limit is 1 (PCS/compiler scratch is additional)",
+        "aggregate_lookup_policy": "legacy",
+        "compiled": false,
+        "schema": "ix.flock-stage3.fixture-count",
+        "version": 1
+      }
+    },
+    {
+      "profile": "min-opening-width-v1",
+      "fixture": "Tests/Fixtures/Aggregate/singleton-min-opening-2026-09-05/fixture.json",
+      "root_wrapper": {
+        "file": "root.ixon-proof",
+        "bytes": 8002662,
+        "blake3": "635c8f79af8cf1a913cb9291fbd1aa1a3f2c4ff221e6ec1339795989c649910f"
+      },
+      "aggregate_vk": {
+        "file": "aggr.vk",
+        "bytes": 181630,
+        "blake3": "3c740f5b7645b1f7cdf361b7de3e20628c18ea3bf9cfafd1bd8aac4aca2bf7ba"
+      },
+      "outer_claim": {
+        "file": "outer-claim.bin",
+        "bytes": 144,
+        "blake3": "72e37e5dda38c176b1caaa377ea779ca285d8e614ca268aeb9130812fdc2216d"
+      },
+      "after": {
+        "compiled": false,
+        "count_us": 149295,
+        "nu": 22,
+        "padded_union_witness_bytes": 206158430208,
+        "process_peak_rss_bytes": 363384832,
+        "schema": "ix.flock-stage3.shape-count",
+        "table_capacity": 4194304,
+        "tables": [
+          {
+            "gate": "GoldilocksAddPairGate",
+            "rows": 2798642
+          },
+          {
+            "gate": "GoldilocksMulPairGate",
+            "rows": 1561938
+          },
+          {
+            "gate": "CanonicalGoldilocksQuadGate",
+            "rows": 3056107
+          },
+          {
+            "gate": "GoldilocksLaneRepackGate",
+            "rows": 2304075
+          },
+          {
+            "gate": "Blake3Gate",
+            "rows": 158899
+          },
+          {
+            "gate": "DigestOrderGate",
+            "rows": 88700
+          },
+          {
+            "gate": "F128EqualityGate",
+            "rows": 104980
+          },
+          {
+            "gate": "HashSampleGate",
+            "rows": 52
+          },
+          {
+            "gate": "GoldilocksSampleGate",
+            "rows": 26
+          },
+          {
+            "gate": "U64SplitGate",
+            "rows": 2320
+          },
+          {
+            "gate": "ByteWindowGate",
+            "rows": 32399
+          }
+        ],
+        "version": 1
+      },
+      "before": {
+        "compiled": false,
+        "count_us": 168385,
+        "nu": 23,
+        "padded_union_witness_bytes": 412316860416,
+        "process_peak_rss_bytes": 364548096,
+        "schema": "ix.flock-stage3.shape-count",
+        "table_capacity": 8388608,
+        "tables": [
+          {
+            "gate": "GoldilocksAddPairGate",
+            "rows": 2798642
+          },
+          {
+            "gate": "GoldilocksMulPairGate",
+            "rows": 1561938
+          },
+          {
+            "gate": "CanonicalGoldilocksPairGate",
+            "rows": 6072018
+          },
+          {
+            "gate": "GoldilocksLaneRepackGate",
+            "rows": 2304075
+          },
+          {
+            "gate": "Blake3Gate",
+            "rows": 158899
+          },
+          {
+            "gate": "DigestOrderGate",
+            "rows": 88700
+          },
+          {
+            "gate": "F128EqualityGate",
+            "rows": 104980
+          },
+          {
+            "gate": "HashSampleGate",
+            "rows": 52
+          },
+          {
+            "gate": "GoldilocksSampleGate",
+            "rows": 26
+          },
+          {
+            "gate": "U64SplitGate",
+            "rows": 2320
+          },
+          {
+            "gate": "ByteWindowGate",
+            "rows": 32399
+          }
+        ],
+        "version": 1
+      },
+      "canonical_rows_removed": 3015911,
+      "canonical_row_reduction_percent": 49.66900625129899,
+      "padded_witness_reduction_factor": 2,
+      "native_root_key_claim_bytes_unchanged": true,
+      "native_proofs_fresh_process_verified": true,
+      "compiled": false,
+      "evaluated": false,
+      "proved": false,
+      "admission": {
+        "admission_error": "Stage 3 padded union witness requires 206158430208 bytes; admission limit is 1 (PCS/compiler scratch is additional)",
+        "aggregate_lookup_policy": "min-opening-width-v1",
+        "compiled": false,
+        "schema": "ix.flock-stage3.fixture-count",
+        "version": 1
+      }
+    }
+  ],
+  "production_admission_defaults": {
+    "max_advice_bytes": 268435456,
+    "max_compact_proof_bytes": 67108864,
+    "max_fri_queries": 1024,
+    "max_fri_rounds": 32,
+    "max_profile_items": 16777216,
+    "max_table_capacity": 4194304,
+    "max_total_circuits": 65536,
+    "max_union_witness_bytes": 34359738368,
+    "max_verifying_key_bytes": 16777216
+  },
+  "count_only_limits": {
+    "max_table_capacity": 4294967296,
+    "max_union_witness_bytes": 1
+  },
+  "default_cli_admission_errors": [
+    "Stage 3 padded union witness requires 206158430208 bytes; admission limit is 34359738368 (PCS/compiler scratch is additional)",
+    "Stage 3 table capacity 4194304 (nu=22) exceeds admission limit 2097152"
+  ],
+  "production_parameter_toy": {
+    "fixture": "Small native three-circuit fixture, one inactive and two active heights 8/4; 18-word claim, 100 FRI queries and 20-bit query PoW. Not an ix_aggr corpus root.",
+    "before": {
+      "fixture": "Three native multi-STARK circuits: one inactive, active heights 8 and 4, preprocessing and an 18-word claim lookup. Not an ix_aggr corpus root.",
+      "stage2_root_unchanged_from_baseline": true,
+      "census": {
+        "count_us": 2891,
+        "test_total_seconds": 1.84,
+        "circuit_digest": "4a436f834faaeb4a4bcf80b7e310ea6ceee69dc45902a0800a186a54bdb3e231",
+        "phase_ms": {
+          "count_and_admit": 3.08,
+          "declare_slots": 755.96,
+          "shared_pcs_constraints": 0.24,
+          "pcs_query_constraints": 19.07,
+          "fri_query_constraints": 8.74,
+          "finish_builder": 934.58,
+          "compile_relation": 1724
+        },
+        "admission_limits": {
+          "max_table_capacity": 65536,
+          "max_union_witness_bytes": 3221225472
+        },
+        "rejected_one_row_or_byte_below": true
+      },
+      "proved": true,
+      "report": {
+        "advice": {
+          "active_circuits": 2,
+          "advice_bytes": 143426,
+          "commitment_cap_digests": 6,
+          "fri_merkle_siblings": 900,
+          "fri_rounds": 3,
+          "fri_sibling_extension_values": 300,
+          "input_merkle_siblings": 2000,
+          "input_rounds_per_query": 4,
+          "opened_base_values": 3200,
+          "other_extension_values": 63,
+          "queries": 100,
+          "total_circuits": 3
+        },
+        "config_digest": "1897ad7e36bc1a11a9dc4170552b1b48f5689b8f04ecc3c3825ce0273ecfaffc",
+        "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+        "limits": {
+          "max_advice_bytes": 268435456,
+          "max_compact_proof_bytes": 67108864,
+          "max_fri_queries": 1024,
+          "max_fri_rounds": 32,
+          "max_profile_items": 16777216,
+          "max_table_capacity": 4194304,
+          "max_total_circuits": 65536,
+          "max_union_witness_bytes": 34359738368,
+          "max_verifying_key_bytes": 16777216
+        },
+        "memory_note": "Padded witness covers z/a/b; compiler, lincheck, PCS and allocator scratch are additional. RSS is the process lifetime high-water mark, not a per-root peak.",
+        "merkle_hash": "blake3",
+        "process_peak_rss_bytes": 999923712,
+        "profile": "fast128",
+        "relation": {
+          "blake3_rows": 4470,
+          "byte_window_rows": 153,
+          "canonical_goldilocks_rows": 65268,
+          "circuit_digest": "4a436f834faaeb4a4bcf80b7e310ea6ceee69dc45902a0800a186a54bdb3e231",
+          "digest_order_rows": 5000,
+          "equality_rows": 3815,
+          "field_sample_rows": 8,
+          "goldilocks_add_rows": 33661,
+          "goldilocks_mul_rows": 14858,
+          "hash_sample_rows": 52,
+          "lane_repack_rows": 21198,
+          "nu": 16,
+          "public_values": 14289,
+          "relation_inputs": 13786,
+          "table_capacity": 65536,
+          "u64_split_rows": 520
+        },
+        "relation_cache": "none",
+        "relation_digest": "84e51adf14fe15746142b64ab5f2db9648a9529612ed4e4a125b7523539a03bf",
+        "resources": {
+          "committed_union_log": 30,
+          "dense_witness_bytes": 99271760,
+          "padded_union_witness_bytes": 3221225472,
+          "pcs_codeword_bytes": 201326592,
+          "pcs_lanes": 48,
+          "pcs_log_batch_size": 6,
+          "pcs_log_inverse_rate": 1,
+          "pcs_message_bytes": 100663296,
+          "tables": [
+            {
+              "boolean_columns": 65536,
+              "padded_witness_bytes": 1610612736,
+              "registry_slot": 0,
+              "rows": 14858,
+              "useful_boolean_columns": 42357
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 402653184,
+              "registry_slot": 1,
+              "rows": 4470,
+              "useful_boolean_columns": 11707
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 402653184,
+              "registry_slot": 2,
+              "rows": 8,
+              "useful_boolean_columns": 5482
+            },
+            {
+              "boolean_columns": 4096,
+              "padded_witness_bytes": 100663296,
+              "registry_slot": 3,
+              "rows": 153,
+              "useful_boolean_columns": 2561
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 50331648,
+              "registry_slot": 4,
+              "rows": 33661,
+              "useful_boolean_columns": 1725
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 50331648,
+              "registry_slot": 5,
+              "rows": 5000,
+              "useful_boolean_columns": 1409
+            },
+            {
+              "boolean_columns": 1024,
+              "padded_witness_bytes": 25165824,
+              "registry_slot": 6,
+              "rows": 21198,
+              "useful_boolean_columns": 768
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 7,
+              "rows": 65268,
+              "useful_boolean_columns": 318
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 8,
+              "rows": 3815,
+              "useful_boolean_columns": 385
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 9,
+              "rows": 52,
+              "useful_boolean_columns": 256
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 10,
+              "rows": 520,
+              "useful_boolean_columns": 385
+            }
+          ],
+          "virtual_union_log": 33
+        },
+        "schema": "ix.flock-stage3.preflight",
+        "specialization": {
+          "activation": [
+            false,
+            true,
+            true
+          ],
+          "active_log_degrees": [
+            3,
+            2
+          ],
+          "fri_parameter_words": [
+            0,
+            1,
+            100,
+            0,
+            20
+          ],
+          "typed_witness_layout_digest": "82fba0be5f9777bf92835a742a02e153ffb288dd53f1a2618ac82f8841cb5cfb"
+        },
+        "stage2_root_digest": "9773a5442674c6679b2551d15dce94702964f25402094831d930fe010182320f",
+        "stage3_statement_digest": "dd65d7c9be6669e1501888dadf8d11c1d485c67ad1494cf68dbcf596a5d51ce2",
+        "timings": {
+          "compile_us": 1738175,
+          "evaluate_us": 10313,
+          "lowering_us": 1611,
+          "native_prepare_us": 1649,
+          "total_us": 1751791
+        },
+        "transcript": "chained-blake3",
+        "transcript_domain": "ix:flock-stage3:fri-verifier:v1",
+        "transport": {
+          "claim_bytes": 144,
+          "compact_proof_bytes": 43249,
+          "compact_proof_digest": "a553b3ec29ceb843daff22b36f7996e128082bb4de0b24fa034858e0cbfad053",
+          "verifying_key_bytes": 279,
+          "verifying_key_digest": "afa90f0a22bfaf47cf2d5b9fa47f466b46ae1eba7c5e9fbe63b6ce47e5402302"
+        },
+        "version": 1
+      },
+      "proof_run": {
+        "prove_us": 2234030,
+        "self_verify_us": 16449,
+        "package_us": 272,
+        "total_us": 2250751,
+        "artifact_bytes": 481987,
+        "payload_bytes": 481861,
+        "post_proof_process_peak_rss_bytes": 5509857280,
+        "explicit_reuse_verify_seconds": 0.017,
+        "fresh_process_verify_seconds": 2.7,
+        "fresh_relation_warm_tables_verify_seconds": 1.609,
+        "test_total_seconds": 10.059,
+        "temporary_artifact_persisted_and_cold_verified": true,
+        "rejected_wrong_relation_and_corrupt_proof": true,
+        "temporary_artifact_removed_after_test": true
+      }
+    },
+    "after": {
+      "proved": true,
+      "report": {
+        "advice": {
+          "active_circuits": 2,
+          "advice_bytes": 143426,
+          "commitment_cap_digests": 6,
+          "fri_merkle_siblings": 900,
+          "fri_rounds": 3,
+          "fri_sibling_extension_values": 300,
+          "input_merkle_siblings": 2000,
+          "input_rounds_per_query": 4,
+          "opened_base_values": 3200,
+          "other_extension_values": 63,
+          "queries": 100,
+          "total_circuits": 3
+        },
+        "config_digest": "1897ad7e36bc1a11a9dc4170552b1b48f5689b8f04ecc3c3825ce0273ecfaffc",
+        "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+        "limits": {
+          "max_advice_bytes": 268435456,
+          "max_compact_proof_bytes": 67108864,
+          "max_fri_queries": 1024,
+          "max_fri_rounds": 32,
+          "max_profile_items": 16777216,
+          "max_table_capacity": 4194304,
+          "max_total_circuits": 65536,
+          "max_union_witness_bytes": 34359738368,
+          "max_verifying_key_bytes": 16777216
+        },
+        "memory_note": "Padded witness covers z/a/b; compiler, lincheck, PCS and allocator scratch are additional. RSS is the process lifetime high-water mark, not a per-root peak.",
+        "merkle_hash": "blake3",
+        "process_peak_rss_bytes": 991858688,
+        "profile": "fast128",
+        "relation": {
+          "blake3_rows": 4470,
+          "byte_window_rows": 153,
+          "canonical_goldilocks_rows": 32857,
+          "circuit_digest": "e0f904688d96a1acddffe34e35330553d21e96866042bfd71ec45fbd039bd42c",
+          "digest_order_rows": 5000,
+          "equality_rows": 3815,
+          "field_sample_rows": 8,
+          "goldilocks_add_rows": 33661,
+          "goldilocks_mul_rows": 14858,
+          "hash_sample_rows": 52,
+          "lane_repack_rows": 21198,
+          "nu": 16,
+          "public_values": 14289,
+          "relation_inputs": 13786,
+          "table_capacity": 65536,
+          "u64_split_rows": 520
+        },
+        "relation_cache": "none",
+        "relation_digest": "2a59cdc3bfd3ba2917655b4f7219bf9ae02153a000f67d14d62d94edd5effded",
+        "resources": {
+          "committed_union_log": 30,
+          "dense_witness_bytes": 98241744,
+          "padded_union_witness_bytes": 3221225472,
+          "pcs_codeword_bytes": 197132288,
+          "pcs_lanes": 47,
+          "pcs_log_batch_size": 6,
+          "pcs_log_inverse_rate": 1,
+          "pcs_message_bytes": 98566144,
+          "tables": [
+            {
+              "boolean_columns": 65536,
+              "padded_witness_bytes": 1610612736,
+              "registry_slot": 0,
+              "rows": 14858,
+              "useful_boolean_columns": 42357
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 402653184,
+              "registry_slot": 1,
+              "rows": 4470,
+              "useful_boolean_columns": 11707
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 402653184,
+              "registry_slot": 2,
+              "rows": 8,
+              "useful_boolean_columns": 5482
+            },
+            {
+              "boolean_columns": 4096,
+              "padded_witness_bytes": 100663296,
+              "registry_slot": 3,
+              "rows": 153,
+              "useful_boolean_columns": 2561
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 50331648,
+              "registry_slot": 4,
+              "rows": 33661,
+              "useful_boolean_columns": 1725
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 50331648,
+              "registry_slot": 5,
+              "rows": 5000,
+              "useful_boolean_columns": 1409
+            },
+            {
+              "boolean_columns": 1024,
+              "padded_witness_bytes": 25165824,
+              "registry_slot": 6,
+              "rows": 21198,
+              "useful_boolean_columns": 768
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 7,
+              "rows": 32857,
+              "useful_boolean_columns": 508
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 8,
+              "rows": 3815,
+              "useful_boolean_columns": 385
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 9,
+              "rows": 52,
+              "useful_boolean_columns": 256
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 12582912,
+              "registry_slot": 10,
+              "rows": 520,
+              "useful_boolean_columns": 385
+            }
+          ],
+          "virtual_union_log": 33
+        },
+        "schema": "ix.flock-stage3.preflight",
+        "specialization": {
+          "activation": [
+            false,
+            true,
+            true
+          ],
+          "active_log_degrees": [
+            3,
+            2
+          ],
+          "fri_parameter_words": [
+            0,
+            1,
+            100,
+            0,
+            20
+          ],
+          "typed_witness_layout_digest": "82fba0be5f9777bf92835a742a02e153ffb288dd53f1a2618ac82f8841cb5cfb"
+        },
+        "stage2_root_digest": "9773a5442674c6679b2551d15dce94702964f25402094831d930fe010182320f",
+        "stage3_statement_digest": "d7efcda602529e0f8bacea4e4323817679d9d873b5e7f07838f51f0d3dccea8c",
+        "timings": {
+          "compile_us": 1668684,
+          "evaluate_us": 10200,
+          "lowering_us": 1547,
+          "native_prepare_us": 1582,
+          "total_us": 1682066
+        },
+        "transcript": "chained-blake3",
+        "transcript_domain": "ix:flock-stage3:fri-verifier:v1",
+        "transport": {
+          "claim_bytes": 144,
+          "compact_proof_bytes": 43633,
+          "compact_proof_digest": "0fcce50f76c964a46e39d22c25b97297540549a5b6a299e7cc179c418fc46524",
+          "verifying_key_bytes": 279,
+          "verifying_key_digest": "afa90f0a22bfaf47cf2d5b9fa47f466b46ae1eba7c5e9fbe63b6ce47e5402302"
+        },
+        "version": 1
+      },
+      "proof_run": {
+        "proof_timings_us": {
+          "prove_us": 2262482,
+          "self_verify_us": 18453,
+          "package_us": 242,
+          "total_us": 2281178
+        },
+        "post_prove_process_peak_rss_bytes": 5501505536,
+        "artifact_bytes": 478483,
+        "production_payload_bytes": 478357,
+        "explicit_verifier_reuse_s": 0.018,
+        "fresh_process_external_root_verification_s": 2.605,
+        "warm_invariant_tables_fresh_relation_verification_s": 1.435,
+        "full_test_s": 9.6,
+        "artifact_persisted_for_child_verification": true,
+        "separate_trusted_transport_persisted_for_child_verification": true,
+        "temporary_artifact_and_transport_removed": true,
+        "timing_sample_count": 1
+      }
+    },
+    "census": {
+      "passed": true,
+      "elapsed_s": 1.8,
+      "count_us": 2531,
+      "slot_declaration_ms": 787.59,
+      "pcs_query_emission_ms": 14.73,
+      "fri_query_emission_ms": 9.06,
+      "builder_finish_ms": 873.06,
+      "exact_capacity_and_witness_limits_accepted": true,
+      "one_row_or_byte_below_rejected": true
+    },
+    "note": "Padded witness remains 3 GiB: 33,661 addition rows now set nu=16, even though canonicality rows fall from 65,268 to 32,857. The standalone proof peak remains about 5.1 GiB RSS."
+  },
+  "two_query_cross_check": {
+    "before": {
+      "proved": true,
+      "report": {
+        "advice": {
+          "active_circuits": 2,
+          "advice_bytes": 3916,
+          "commitment_cap_digests": 6,
+          "fri_merkle_siblings": 12,
+          "fri_rounds": 3,
+          "fri_sibling_extension_values": 6,
+          "input_merkle_siblings": 32,
+          "input_rounds_per_query": 4,
+          "opened_base_values": 64,
+          "other_extension_values": 63,
+          "queries": 2,
+          "total_circuits": 3
+        },
+        "config_digest": "1897ad7e36bc1a11a9dc4170552b1b48f5689b8f04ecc3c3825ce0273ecfaffc",
+        "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+        "limits": {
+          "max_advice_bytes": 268435456,
+          "max_compact_proof_bytes": 67108864,
+          "max_fri_queries": 1024,
+          "max_fri_rounds": 32,
+          "max_profile_items": 16777216,
+          "max_table_capacity": 4194304,
+          "max_total_circuits": 65536,
+          "max_union_witness_bytes": 34359738368,
+          "max_verifying_key_bytes": 16777216
+        },
+        "memory_note": "Padded witness covers z/a/b; compiler, lincheck, PCS and allocator scratch are additional. RSS is the process lifetime high-water mark, not a per-root peak.",
+        "merkle_hash": "blake3",
+        "process_peak_rss_bytes": 819068928,
+        "profile": "fast128",
+        "relation": {
+          "blake3_rows": 119,
+          "byte_window_rows": 153,
+          "canonical_goldilocks_rows": 3999,
+          "circuit_digest": "be8bbe53f1af8a04277b704875f7d3965048d7d653fc311aa23b00ec9e54b23d",
+          "digest_order_rows": 76,
+          "equality_rows": 91,
+          "field_sample_rows": 8,
+          "goldilocks_add_rows": 2173,
+          "goldilocks_mul_rows": 828,
+          "hash_sample_rows": 2,
+          "lane_repack_rows": 1284,
+          "nu": 12,
+          "public_values": 604,
+          "relation_inputs": 593,
+          "table_capacity": 4096,
+          "u64_split_rows": 8
+        },
+        "relation_cache": "none",
+        "relation_digest": "b6df063431ff94bf4d4b2fa7ae3ccd8f1cf18a79148f7af5daba4d10419010a2",
+        "resources": {
+          "committed_union_log": 26,
+          "dense_witness_bytes": 5440128,
+          "padded_union_witness_bytes": 201326592,
+          "pcs_codeword_bytes": 11010048,
+          "pcs_lanes": 42,
+          "pcs_log_batch_size": 6,
+          "pcs_log_inverse_rate": 1,
+          "pcs_message_bytes": 5505024,
+          "tables": [
+            {
+              "boolean_columns": 65536,
+              "padded_witness_bytes": 100663296,
+              "registry_slot": 0,
+              "rows": 828,
+              "useful_boolean_columns": 42357
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 25165824,
+              "registry_slot": 1,
+              "rows": 119,
+              "useful_boolean_columns": 11707
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 25165824,
+              "registry_slot": 2,
+              "rows": 8,
+              "useful_boolean_columns": 5482
+            },
+            {
+              "boolean_columns": 4096,
+              "padded_witness_bytes": 6291456,
+              "registry_slot": 3,
+              "rows": 153,
+              "useful_boolean_columns": 2561
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 3145728,
+              "registry_slot": 4,
+              "rows": 2173,
+              "useful_boolean_columns": 1725
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 3145728,
+              "registry_slot": 5,
+              "rows": 76,
+              "useful_boolean_columns": 1409
+            },
+            {
+              "boolean_columns": 1024,
+              "padded_witness_bytes": 1572864,
+              "registry_slot": 6,
+              "rows": 1284,
+              "useful_boolean_columns": 768
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 7,
+              "rows": 3999,
+              "useful_boolean_columns": 318
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 8,
+              "rows": 91,
+              "useful_boolean_columns": 385
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 9,
+              "rows": 2,
+              "useful_boolean_columns": 256
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 10,
+              "rows": 8,
+              "useful_boolean_columns": 385
+            }
+          ],
+          "virtual_union_log": 29
+        },
+        "schema": "ix.flock-stage3.preflight",
+        "specialization": {
+          "activation": [
+            false,
+            true,
+            true
+          ],
+          "active_log_degrees": [
+            3,
+            2
+          ],
+          "fri_parameter_words": [
+            0,
+            1,
+            2,
+            0,
+            0
+          ],
+          "typed_witness_layout_digest": "f25d2a4c87b411eac37f49c4479fada0e628c6d7f57a2c303e55af4f0e83d772"
+        },
+        "stage2_root_digest": "e4d635cb35dee195f87c29653c58b7313d4da0ce8468b20d97d93d9bf32fff54",
+        "stage3_statement_digest": "c254fb22705d7e3653804d17422e8a96de9ad09e619c134b5c106882b763cf53",
+        "timings": {
+          "compile_us": 1466998,
+          "evaluate_us": 235,
+          "lowering_us": 80,
+          "native_prepare_us": 99,
+          "total_us": 1467418
+        },
+        "transcript": "chained-blake3",
+        "transcript_domain": "ix:flock-stage3:fri-verifier:v1",
+        "transport": {
+          "claim_bytes": 144,
+          "compact_proof_bytes": 3441,
+          "compact_proof_digest": "a513eb6ca3f53f0437d5e81cbb910f735e7deb1520c7ba3ebcf85e6b7ca296f2",
+          "verifying_key_bytes": 279,
+          "verifying_key_digest": "c6c140a56ee9662394c92a6ca6edfa131c523254f958b3f94de3d0f75eb7d37d"
+        },
+        "version": 1
+      },
+      "proof_run": {
+        "prove_us": 1102599,
+        "self_verify_us": 13126,
+        "package_us": 171,
+        "total_us": 1115897,
+        "artifact_bytes": 343851,
+        "payload_bytes": 343725,
+        "post_proof_process_peak_rss_bytes": 1701462016,
+        "explicit_reuse_verify_seconds": 0.012,
+        "fresh_process_verify_seconds": 2.422,
+        "fresh_relation_warm_tables_verify_seconds": 1.237,
+        "test_total_seconds": 7.6,
+        "temporary_artifact_persisted_and_cold_verified": true,
+        "rejected_wrong_relation_and_corrupt_proof": true,
+        "temporary_artifact_removed_after_test": true
+      }
+    },
+    "after": {
+      "proved": true,
+      "report": {
+        "advice": {
+          "active_circuits": 2,
+          "advice_bytes": 3916,
+          "commitment_cap_digests": 6,
+          "fri_merkle_siblings": 12,
+          "fri_rounds": 3,
+          "fri_sibling_extension_values": 6,
+          "input_merkle_siblings": 32,
+          "input_rounds_per_query": 4,
+          "opened_base_values": 64,
+          "other_extension_values": 63,
+          "queries": 2,
+          "total_circuits": 3
+        },
+        "config_digest": "1897ad7e36bc1a11a9dc4170552b1b48f5689b8f04ecc3c3825ce0273ecfaffc",
+        "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+        "limits": {
+          "max_advice_bytes": 268435456,
+          "max_compact_proof_bytes": 67108864,
+          "max_fri_queries": 1024,
+          "max_fri_rounds": 32,
+          "max_profile_items": 16777216,
+          "max_table_capacity": 4194304,
+          "max_total_circuits": 65536,
+          "max_union_witness_bytes": 34359738368,
+          "max_verifying_key_bytes": 16777216
+        },
+        "memory_note": "Padded witness covers z/a/b; compiler, lincheck, PCS and allocator scratch are additional. RSS is the process lifetime high-water mark, not a per-root peak.",
+        "merkle_hash": "blake3",
+        "process_peak_rss_bytes": 818257920,
+        "profile": "fast128",
+        "relation": {
+          "blake3_rows": 119,
+          "byte_window_rows": 153,
+          "canonical_goldilocks_rows": 2017,
+          "circuit_digest": "420b5a821b55b859fe04d30f2a796f1002536e85765a23d81ea3676557f908cb",
+          "digest_order_rows": 76,
+          "equality_rows": 91,
+          "field_sample_rows": 8,
+          "goldilocks_add_rows": 2173,
+          "goldilocks_mul_rows": 828,
+          "hash_sample_rows": 2,
+          "lane_repack_rows": 1284,
+          "nu": 12,
+          "public_values": 604,
+          "relation_inputs": 593,
+          "table_capacity": 4096,
+          "u64_split_rows": 8
+        },
+        "relation_cache": "none",
+        "relation_digest": "0d5124f504868d673825f808ecdfc32a58804834139bf4fa865d4653125ced80",
+        "resources": {
+          "committed_union_log": 26,
+          "dense_witness_bytes": 5377264,
+          "padded_union_witness_bytes": 201326592,
+          "pcs_codeword_bytes": 11010048,
+          "pcs_lanes": 42,
+          "pcs_log_batch_size": 6,
+          "pcs_log_inverse_rate": 1,
+          "pcs_message_bytes": 5505024,
+          "tables": [
+            {
+              "boolean_columns": 65536,
+              "padded_witness_bytes": 100663296,
+              "registry_slot": 0,
+              "rows": 828,
+              "useful_boolean_columns": 42357
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 25165824,
+              "registry_slot": 1,
+              "rows": 119,
+              "useful_boolean_columns": 11707
+            },
+            {
+              "boolean_columns": 16384,
+              "padded_witness_bytes": 25165824,
+              "registry_slot": 2,
+              "rows": 8,
+              "useful_boolean_columns": 5482
+            },
+            {
+              "boolean_columns": 4096,
+              "padded_witness_bytes": 6291456,
+              "registry_slot": 3,
+              "rows": 153,
+              "useful_boolean_columns": 2561
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 3145728,
+              "registry_slot": 4,
+              "rows": 2173,
+              "useful_boolean_columns": 1725
+            },
+            {
+              "boolean_columns": 2048,
+              "padded_witness_bytes": 3145728,
+              "registry_slot": 5,
+              "rows": 76,
+              "useful_boolean_columns": 1409
+            },
+            {
+              "boolean_columns": 1024,
+              "padded_witness_bytes": 1572864,
+              "registry_slot": 6,
+              "rows": 1284,
+              "useful_boolean_columns": 768
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 7,
+              "rows": 2017,
+              "useful_boolean_columns": 508
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 8,
+              "rows": 91,
+              "useful_boolean_columns": 385
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 9,
+              "rows": 2,
+              "useful_boolean_columns": 256
+            },
+            {
+              "boolean_columns": 512,
+              "padded_witness_bytes": 786432,
+              "registry_slot": 10,
+              "rows": 8,
+              "useful_boolean_columns": 385
+            }
+          ],
+          "virtual_union_log": 29
+        },
+        "schema": "ix.flock-stage3.preflight",
+        "specialization": {
+          "activation": [
+            false,
+            true,
+            true
+          ],
+          "active_log_degrees": [
+            3,
+            2
+          ],
+          "fri_parameter_words": [
+            0,
+            1,
+            2,
+            0,
+            0
+          ],
+          "typed_witness_layout_digest": "f25d2a4c87b411eac37f49c4479fada0e628c6d7f57a2c303e55af4f0e83d772"
+        },
+        "stage2_root_digest": "e4d635cb35dee195f87c29653c58b7313d4da0ce8468b20d97d93d9bf32fff54",
+        "stage3_statement_digest": "b8d6aec8c989ddfddd6040afd83d30610585a89fb43d306404f9321bc03bd990",
+        "timings": {
+          "compile_us": 1463455,
+          "evaluate_us": 203,
+          "lowering_us": 94,
+          "native_prepare_us": 136,
+          "total_us": 1463895
+        },
+        "transcript": "chained-blake3",
+        "transcript_domain": "ix:flock-stage3:fri-verifier:v1",
+        "transport": {
+          "claim_bytes": 144,
+          "compact_proof_bytes": 3441,
+          "compact_proof_digest": "a513eb6ca3f53f0437d5e81cbb910f735e7deb1520c7ba3ebcf85e6b7ca296f2",
+          "verifying_key_bytes": 279,
+          "verifying_key_digest": "c6c140a56ee9662394c92a6ca6edfa131c523254f958b3f94de3d0f75eb7d37d"
+        },
+        "version": 1
+      },
+      "proof_run": {
+        "proof_timings_us": {
+          "prove_us": 1117621,
+          "self_verify_us": 12357,
+          "package_us": 256,
+          "total_us": 1130235
+        },
+        "post_prove_process_peak_rss_bytes": 1695559680,
+        "artifact_bytes": 343867,
+        "production_payload_bytes": 343741,
+        "explicit_verifier_reuse_s": 0.011,
+        "fresh_process_external_root_verification_s": 2.485,
+        "warm_invariant_tables_fresh_relation_verification_s": 1.208,
+        "full_test_s": 7.65,
+        "artifact_persisted_for_child_verification": true,
+        "separate_trusted_transport_persisted_for_child_verification": true,
+        "temporary_artifact_and_transport_removed": true,
+        "timing_sample_count": 1
+      }
+    }
+  },
+  "validation": {
+    "fast_tests": {
+      "passed": 75,
+      "failed": 0,
+      "ignored": 13,
+      "elapsed_s": 5.42
+    },
+    "serial_cryptographic_vectors": {
+      "passed": 13,
+      "failed": 0,
+      "elapsed_s": 73.92
+    },
+    "all_four_input_lanes_reject_noncanonical_boundaries": true,
+    "all_128_violation_bits_recomputed_by_boolean_r1cs": true,
+    "odd_final_requests_and_group_boundary_mutations_rejected": true,
+    "count_compiled_arity_and_row_parity": true,
+    "data_zero_and_bounded_assertion_wiring_classes_checked": true,
+    "poisoned_recycled_storage_vectors_passed": true,
+    "production_parameter_full_proof_and_fresh_process_verification": true,
+    "separate_two_query_full_proof_and_fresh_process_verification": true,
+    "real_native_fixtures_fresh_verified": true,
+    "flock_enabled_cli_build_and_regressions": true,
+    "isolated_release_clippy_all_targets_all_features": true,
+    "root_ix_ffi_release_clippy_parallel_net_flock_all_targets": true,
+    "root_ix_ffi_no_default_features_check": true,
+    "both_workspaces_format_check": true,
+    "git_diff_check": true
+  },
+  "notes": [
+    "Real aggregate results are count-only, before wiring compilation. 192 GiB is padded z/a/b, not a total resident-memory prediction. Compiler, PCS, lincheck, allocator scratch and OS headroom remain additional.",
+    "Real-root counts were collected in separate fresh processes, sequentially, with 8 Rayon threads and 16 GiB address-space caps.",
+    "Toy 100-query and two-query proof measurements are separate standalone processes. Timings are single-run diagnostics, not throughput or memory guarantees.",
+    "Toy native transports, typed-witness layouts and public/input counts remain unchanged; compiled circuit and relation/Stage 3 statement digests change.",
+    "Canonicality row count includes zero-output anchors and unbatched transcript samples, so total rows are slightly more than half the preceding table count.",
+    "The experimental Stage 2 profile remains explicit opt-in. No fixture or old measurement JSON was rewritten.",
+    "No independent soundness audit or production-root Flock proof has been completed."
+  ]
+}
