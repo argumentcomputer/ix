@@ -129,11 +129,27 @@ jobs:
       - name: Check Stage 3 Rustfmt style
         run: cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
       - name: Check Stage 3 clippy warnings
-        run: cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
+        run: cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets --all-features -- -D warnings
       - name: Test Stage 3 relation and differential checks
-        run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --lib
+        run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-features --lib
       - name: Test Stage 3 cryptographic proof vectors
-        run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml -p flock-stage3-host --lib -- --ignored --test-threads=1
+        run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml -p flock-stage3-host --all-features --lib -- --ignored --test-threads=1
+
+  # Stage 4 is also isolated. Testing Stage 3 only compiles these path
+  # dependencies; it does not run their circuit, transport, or backend tests.
+  flock-stage4-test:
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-workspaces: flock-stage4
+      - name: Check Stage 4 Rustfmt style
+        run: cargo fmt --manifest-path flock-stage4/Cargo.toml --all -- --check
+      - name: Check Stage 4 clippy warnings
+        run: cargo clippy --release --locked --manifest-path flock-stage4/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Test Stage 4 circuits and FFLONK backend
+        run: cargo test --release --locked --manifest-path flock-stage4/Cargo.toml --workspace
 
   # The isolated host job cannot catch drift in the Lean extern signature or
   # failures that appear only when the CLI combines its net and flock features.

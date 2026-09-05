@@ -199,6 +199,8 @@
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./crates)
               ./flock-stage3/Cargo.lock
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./flock-stage3)
+              ./flock-stage4/Cargo.lock
+              (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./flock-stage4)
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
             ];
           };

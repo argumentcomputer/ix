@@ -83,11 +83,15 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
   let coreSources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.fileName == "Cargo.toml"
-  -- Trace the optional path dependency so feature changes cannot reuse a stale
-  -- static archive.
+  -- Trace the optional Flock path dependencies, including the Stage 4 trace
+  -- exporter used by the host, so source changes invalidate the static archive.
   let flockSources ← inputDir (pkg.dir / "flock-stage3") true fun path =>
     path.extension == some "rs" || path.fileName == "Cargo.toml" ||
       path.fileName == "Cargo.lock"
+  let stage4Sources ← inputDir (pkg.dir / "flock-stage4") true fun path =>
+    path.extension == some "rs" || path.fileName == "Cargo.toml" ||
+      path.fileName == "Cargo.lock"
+  let flockSources := flockSources.zipWith (fun stage3 stage4 => stage3 ++ stage4) stage4Sources
   let sources := coreSources.zipWith (fun core flock => core ++ flock) flockSources
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),

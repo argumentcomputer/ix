@@ -11,9 +11,9 @@ const SRS_BATCH_CHALLENGE_DOMAIN: &[u8] =
 /// Universal BLS12-381 powers-of-tau material used by the Stage 4 backend.
 ///
 /// `powers_of_g1[i] = tau^i G1`, while `tau_g2 = tau G2`. Construction
-/// verifies a Fiat--Shamir batched pairing relation across every consecutive
-/// G1 power and pins both degree-zero generators to Arkworks' canonical curve
-/// generators.
+/// checks curve and prime-order subgroup membership before verifying a
+/// Fiat--Shamir batched pairing relation across every consecutive G1 power.
+/// Both degree-zero generators are pinned to Arkworks' canonical generators.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KzgUniversalSrsV1 {
   powers_of_g1: Vec<G1Affine>,
@@ -39,6 +39,18 @@ impl KzgUniversalSrsV1 {
     }
     if powers_of_g1.iter().any(AffineRepr::is_zero) || tau_g2.is_zero() {
       return Err(KzgError::IdentityInSrs);
+    }
+    for (index, point) in powers_of_g1.iter().enumerate() {
+      if !point.is_on_curve()
+        || !point.is_in_correct_subgroup_assuming_on_curve()
+      {
+        return Err(KzgError::InvalidG1Power { index });
+      }
+    }
+    if !tau_g2.is_on_curve()
+      || !tau_g2.is_in_correct_subgroup_assuming_on_curve()
+    {
+      return Err(KzgError::InvalidTauG2);
     }
     let digest = srs_digest(&powers_of_g1, &g2, &tau_g2)?;
     let challenge = srs_batch_challenge(digest);
@@ -115,6 +127,8 @@ pub enum KzgError {
   DegreeTooLarge { degree: usize, max_degree: usize },
   NonCanonicalGenerator,
   IdentityInSrs,
+  InvalidG1Power { index: usize },
+  InvalidTauG2,
   InconsistentPowers,
   Serialization,
   InternalShape,
@@ -137,6 +151,12 @@ impl fmt::Display for KzgError {
       Self::IdentityInSrs => {
         formatter.write_str("KZG SRS contains an identity power")
       },
+      Self::InvalidG1Power { index } => write!(
+        formatter,
+        "KZG SRS power {index} is not a valid BLS12-381 G1 subgroup point",
+      ),
+      Self::InvalidTauG2 => formatter
+        .write_str("KZG SRS tau G2 is not a valid BLS12-381 G2 subgroup point"),
       Self::InconsistentPowers => {
         formatter.write_str("KZG SRS powers fail batched pairing consistency")
       },
@@ -281,6 +301,7 @@ fn hash_point<P: CanonicalSerialize>(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ark_bls12_381::{Fq, Fq2};
 
   fn test_srs(max_degree: usize, tau: Fr) -> KzgUniversalSrsV1 {
     let mut scalar = Fr::one();
@@ -331,6 +352,58 @@ mod tests {
     assert_eq!(
       KzgUniversalSrsV1::new(powers, srs.g2, srs.tau_g2),
       Err(KzgError::InconsistentPowers),
+    );
+  }
+
+  #[test]
+  fn rejects_torsion_in_an_otherwise_pairing_consistent_srs() {
+    let srs = test_srs(1, Fr::from(13u64));
+    let torsion = G1Affine::new_unchecked(Fq::from(0u64), Fq::from(2u64));
+    assert!(torsion.is_on_curve());
+    let mut powers = srs.powers_of_g1.clone();
+    powers[1] = (powers[1].into_group() + torsion.into_group()).into_affine();
+    assert!(!powers[1].is_in_correct_subgroup_assuming_on_curve());
+    // A pairing consistency check alone does not detect this torsion point.
+    assert_eq!(
+      Bls12_381::pairing(powers[0], srs.tau_g2),
+      Bls12_381::pairing(powers[1], srs.g2),
+    );
+    assert_eq!(
+      KzgUniversalSrsV1::new(powers, srs.g2, srs.tau_g2),
+      Err(KzgError::InvalidG1Power { index: 1 }),
+    );
+  }
+
+  #[test]
+  fn rejects_unchecked_off_curve_srs_points() {
+    let srs = test_srs(2, Fr::from(13u64));
+    let mut powers = srs.powers_of_g1.clone();
+    powers[2] = G1Affine::new_unchecked(Fq::zero(), Fq::one());
+    assert!(!powers[2].is_on_curve());
+    assert_eq!(
+      KzgUniversalSrsV1::new(powers, srs.g2, srs.tau_g2),
+      Err(KzgError::InvalidG1Power { index: 2 }),
+    );
+    let tau_g2 = G2Affine::new_unchecked(Fq2::zero(), Fq2::one());
+    assert!(!tau_g2.is_on_curve());
+    assert_eq!(
+      KzgUniversalSrsV1::new(srs.powers_of_g1, srs.g2, tau_g2),
+      Err(KzgError::InvalidTauG2),
+    );
+  }
+
+  #[test]
+  fn rejects_tau_g2_outside_the_prime_order_subgroup() {
+    let srs = test_srs(2, Fr::from(13u64));
+    let tau_g2 = (0u64..)
+      .find_map(|x| {
+        G2Affine::get_point_from_x_unchecked(Fq2::from(x), false)
+          .filter(|point| !point.is_in_correct_subgroup_assuming_on_curve())
+      })
+      .expect("BLS12-381 G2 has a nontrivial cofactor");
+    assert_eq!(
+      KzgUniversalSrsV1::new(srs.powers_of_g1, srs.g2, tau_g2),
+      Err(KzgError::InvalidTauG2),
     );
   }
 
