@@ -45,6 +45,13 @@ static IX_DEF_EQ_COUNT_LOG: crate::EnvFlag =
 static IX_DEF_EQ_MAX_DUMP: crate::EnvString =
   crate::EnvString::new(|| crate::env_var("IX_DEF_EQ_MAX_DUMP").ok());
 
+/// Print at most 96 cache-missing pairs near the depth guard. Identity and
+/// mode/context fields distinguish a repeated state from a long descent.
+static IX_DEF_EQ_NEAR_GUARD: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_DEF_EQ_NEAR_GUARD").is_ok());
+static NEAR_GUARD_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
+
 static IX_ETA_TRACE: crate::EnvString =
   crate::EnvString::new(|| crate::env_var("IX_ETA_TRACE").ok());
 
@@ -59,6 +66,10 @@ static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
 /// delta reduction gets its turn.
 const SAME_HEAD_SPECULATION_ATTEMPT_FUEL: u64 = 4_096;
 const SAME_HEAD_SPECULATION_START_FUEL: u64 = 16_384;
+
+/// Try comparing the requested fields before comparing whole records, without
+/// letting an unsuccessful probe starve the ordinary conversion algorithm.
+const PROJECTION_PROBE_FUEL: u64 = 4_096;
 
 /// Step journal (`IX_STEP_TRACE=1`): one `[deq] <fuel> <a8> ~ <b8>` line
 /// per `is_def_eq` entry (plus `[whnf+]` lines in whnf.rs), mirroring the
@@ -215,6 +226,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.env.perf.record_def_eq_miss();
     self.record_hot_def_eq_miss(a, b);
 
+    if *IX_DEF_EQ_NEAR_GUARD
+      && self.def_eq_depth >= MAX_DEF_EQ_DEPTH.saturating_sub(32)
+      && self.debug_label_matches_env()
+      && NEAR_GUARD_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        < 96
+    {
+      eprintln!(
+        "[deq near guard] depth={} local={} ctx={} cheap={} infer_only={} eager={} a={} {} b={} {}",
+        self.def_eq_depth,
+        self.depth(),
+        eq_ctx,
+        self.cheap_recursion_depth,
+        self.infer_only,
+        self.eager_reduce,
+        a.hash_key(),
+        compact_def_eq_expr(a),
+        b.hash_key(),
+        compact_def_eq_expr(b),
+      );
+    }
+
     // Charge recursive fuel only after the O(1) exits above. Large proof
     // terms can perform hundreds of thousands of pointer/equiv/cache hits;
     // those should not consume the same budget as an actual comparison.
@@ -228,6 +260,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       self.def_eq_peak = self.def_eq_depth;
     }
     if self.def_eq_depth > MAX_DEF_EQ_DEPTH {
+      self.dump_guard_stack("def-eq-depth");
       self.def_eq_depth -= 1;
       self.dump_def_eq_max("depth", a, b, None, None);
       return Err(TcError::MaxRecDepth);
@@ -237,6 +270,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.def_eq_depth -= 1;
 
     let ok = result?;
+    // Some optional reducers treat an inner error as a miss. Do not let an
+    // exhausted speculative slice escape that way as a cached inequality.
+    if !ok && self.rec_fuel == 0 {
+      return Err(TcError::MaxRecFuel);
+    }
     if trace_active {
       log::info!(
         "[deq] depth={} -> {} ({})",
@@ -362,6 +400,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let mut fuel = MAX_WHNF_FUEL;
     loop {
       if fuel == 0 {
+        self.dump_guard_stack("def-eq-lazy-delta-fuel");
         self.dump_def_eq_max("fuel", a, b, Some(&wa), Some(&wb));
         return Err(TcError::MaxRecDepth);
       }
@@ -893,9 +932,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ///
   /// On a hit this is one `FxHashMap` probe; on a miss it pays the
   /// existing `infer ∘ whnf` chain and stores the result. Errors from
-  /// the inner chain are propagated as `Ok(false)` (treating ill-typed
-  /// metadata as non-prop), matching the previous behaviour of
-  /// `try_proof_irrel`.
+  /// the inner chain are treated as a miss, but are NOT cached: in particular,
+  /// exhausting a speculative fuel slice must not permanently classify a
+  /// proposition as non-propositional.
   pub(crate) fn is_prop_type(&mut self, ty: &KExpr<M>) -> bool {
     let cache_key = (ty.hash_key(), self.ctx_addr_for_lbr(ty.lbr()));
     if let Some(&cached) = self.env.is_prop_cache.get(&cache_key) {
@@ -914,9 +953,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           ExprData::Sort(u, _) => u.is_semantic_zero(),
           _ => false,
         },
-        Err(_) => false,
+        Err(_) => return false,
       },
-      Err(_) => false,
+      Err(_) => return false,
     };
     self.env.is_prop_cache.insert(cache_key, result);
     result
@@ -1491,11 +1530,47 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if id1.addr != id2.addr || f1 != f2 {
           return Ok(false);
         }
+        if self.try_projected_def_eq(a, b)? {
+          return Ok(true);
+        }
         let mut v1 = v1.clone();
         let mut v2 = v2.clone();
         self.lazy_delta_proj_reduction(id1, *f1, &mut v1, &mut v2)
       },
       _ => Ok(false),
+    }
+  }
+
+  /// A positive-only shortcut: compare reduced fields before traversing the
+  /// other fields/arguments of their records. Failure (including local budget
+  /// exhaustion) leaves the ORIGINAL record-congruence path available. Never
+  /// turn an interrupted record comparison into a negative conversion result.
+  fn try_projected_def_eq(
+    &mut self,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+  ) -> Result<bool, TcError<M>> {
+    if self.in_projection_probe {
+      return Ok(false);
+    }
+    let saved_fuel = self.rec_fuel;
+    let local_fuel = saved_fuel.min(PROJECTION_PROBE_FUEL);
+    self.rec_fuel = local_fuel;
+    self.in_projection_probe = true;
+    let result = (|| {
+      let pa = self.whnf_core(a)?;
+      let pb = self.whnf_core(b)?;
+      if pa.hash_key() == a.hash_key() && pb.hash_key() == b.hash_key() {
+        return Ok(false);
+      }
+      self.is_def_eq(&pa, &pb)
+    })();
+    self.in_projection_probe = false;
+    let consumed = local_fuel.saturating_sub(self.rec_fuel);
+    self.rec_fuel = saved_fuel.saturating_sub(consumed);
+    match result {
+      Err(TcError::MaxRecDepth | TcError::MaxRecFuel) => Ok(false),
+      other => other,
     }
   }
 
@@ -1509,6 +1584,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let mut fuel = MAX_WHNF_FUEL;
     loop {
       if fuel == 0 {
+        self.dump_guard_stack("def-eq-projection-delta-fuel");
         self.dump_def_eq_max("proj-delta-fuel", a, b, None, None);
         return Err(TcError::MaxRecDepth);
       }
@@ -1884,6 +1960,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     );
   }
 }
+
+#[cfg(test)]
+#[path = "def_eq/projection_tests.rs"]
+mod projection_tests;
 
 #[cfg(test)]
 mod tests {

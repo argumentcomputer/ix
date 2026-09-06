@@ -3,24 +3,107 @@
 //! work item of `ix check-rs --anon`. This is NOT corpus/closure verification.
 //!
 //! cargo run --release -p ix-ffi --example check_anon_subject -- FILE.ixe HEX
+//! cargo run --release -p ix-ffi --example check_anon_subject -- --resolve FILE.ixe HEX...
+//!
+//! `--resolve` only enumerates work: map target addresses (including non-primary
+//! block members) to their primary, without checking anything or loading names.
 //!
 //! Run under an external timeout/memory limit. IX_MAX_REC_FUEL and the existing
 //! kernel diagnostic variables are honored. A fresh process gives a fresh
 //! KEnv and avoids carrying worker-history caches between samples.
 
 use std::{
-  path::Path, process::ExitCode, sync::atomic::Ordering, time::Instant,
+  collections::{HashMap, HashSet},
+  path::Path,
+  process::ExitCode,
+  sync::atomic::Ordering,
+  time::Instant,
 };
 
 use ix_common::address::Address;
 use ix_kernel::{
-  anon_work::build_anon_work, env::KEnv, id::KId, mode::Anon, tc::TypeChecker,
+  anon_work::{AnonWorkItem, build_anon_work},
+  env::KEnv,
+  id::KId,
+  mode::Anon,
+  tc::TypeChecker,
 };
 use ixon::env::Env;
 
 // Match the native ix executable, without calling its Lean FFI entrypoints.
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[derive(Debug, PartialEq, Eq)]
+struct ResolvedSubject {
+  requested: Address,
+  primary: Address,
+  targets: usize,
+}
+
+fn resolve_subjects(
+  work: &[AnonWorkItem],
+  requested: &[Address],
+) -> Result<Vec<ResolvedSubject>, String> {
+  let wanted: HashSet<_> = requested.iter().cloned().collect();
+  let mut found = HashMap::new();
+  for item in work {
+    for target in item.targets() {
+      if wanted.contains(target) {
+        found.insert(target.clone(), (item.primary(), item.targets().len()));
+      }
+    }
+  }
+  requested
+    .iter()
+    .map(|addr| {
+      let (primary, targets) = found.get(addr).ok_or_else(|| {
+        format!("{} is not a kernel-checkable target address", addr.hex())
+      })?;
+      Ok(ResolvedSubject {
+        requested: addr.clone(),
+        primary: (*primary).clone(),
+        targets: *targets,
+      })
+    })
+    .collect()
+}
+
+fn run(args: &[String]) -> Result<bool, String> {
+  if args.first().is_some_and(|arg| arg == "--resolve") && args.len() >= 3 {
+    let requested: Vec<_> = args[2..]
+      .iter()
+      .map(|arg| {
+        Address::from_hex(arg).ok_or_else(|| format!("invalid address: {arg}"))
+      })
+      .collect::<Result<_, _>>()?;
+    let env = Env::get_anon_mmap(Path::new(&args[1]))?;
+    let work = build_anon_work(&env)?;
+    let resolved = resolve_subjects(&work, &requested)?;
+    let rows: Vec<_> = resolved
+      .iter()
+      .map(|row| {
+        serde_json::json!({
+          "requested": row.requested.hex(), "primary": row.primary.hex(),
+          "targets": row.targets,
+        })
+      })
+      .collect();
+    println!(
+      "{}",
+      serde_json::json!({
+        "scope": "index-only", "resolutions": rows,
+      })
+    );
+    return Ok(true);
+  }
+  if args.len() != 2 || args[0] == "--resolve" {
+    return Err("usage: check_anon_subject FILE.ixe PRIMARY_HEX\n       check_anon_subject --resolve FILE.ixe TARGET_HEX...\nSubject-only profiling: dependencies are trusted, not checked.".to_owned());
+  }
+  let primary = Address::from_hex(&args[1])
+    .ok_or_else(|| format!("invalid primary address: {}", args[1]))?;
+  check(&args[0], &primary)
+}
 
 fn check(path: &str, primary: &Address) -> Result<bool, String> {
   let start = Instant::now();
@@ -71,21 +154,11 @@ fn check(path: &str, primary: &Address) -> Result<bool, String> {
 
 fn main() -> ExitCode {
   let args: Vec<_> = std::env::args().skip(1).collect();
-  if args.len() != 2 {
-    eprintln!(
-      "usage: check_anon_subject FILE.ixe PRIMARY_HEX\nSubject-only profiling: dependencies are trusted, not checked."
-    );
-    return ExitCode::from(2);
-  }
-  let Some(primary) = Address::from_hex(&args[1]) else {
-    eprintln!("invalid primary address: {}", args[1]);
-    return ExitCode::from(2);
-  };
   // Match the CLI's dedicated worker stack, not the process main stack.
   let worker = std::thread::Builder::new()
     .name("ix-kernel-subject".to_owned())
     .stack_size(256 * 1024 * 1024)
-    .spawn(move || check(&args[0], &primary));
+    .spawn(move || run(&args));
   match worker {
     Ok(worker) => match worker.join() {
       Ok(Ok(true)) => ExitCode::SUCCESS,
@@ -103,5 +176,42 @@ fn main() -> ExitCode {
       eprintln!("cannot start subject worker: {error}");
       ExitCode::from(2)
     },
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn resolves_members_to_primary_preserving_request_order() {
+    let a = Address::hash(b"standalone");
+    let b = Address::hash(b"primary");
+    let c = Address::hash(b"member");
+    let work = vec![
+      AnonWorkItem::Standalone { addr: a.clone() },
+      AnonWorkItem::Block {
+        block_addr: Address::hash(b"block"),
+        primary: b.clone(),
+        targets: vec![b.clone(), c.clone()],
+      },
+    ];
+    let rows =
+      resolve_subjects(&work, &[c.clone(), a.clone(), b.clone()]).unwrap();
+    assert_eq!(
+      rows,
+      vec![
+        ResolvedSubject { requested: c, primary: b.clone(), targets: 2 },
+        ResolvedSubject { requested: a.clone(), primary: a, targets: 1 },
+        ResolvedSubject { requested: b.clone(), primary: b, targets: 2 },
+      ]
+    );
+  }
+
+  #[test]
+  fn missing_address_is_an_error_not_a_partial_success() {
+    let a = Address::hash(b"present");
+    let work = vec![AnonWorkItem::Standalone { addr: a.clone() }];
+    assert!(resolve_subjects(&work, &[a, Address::hash(b"absent")]).is_err());
   }
 }

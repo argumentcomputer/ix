@@ -1,0 +1,950 @@
+{
+  "schema": 1,
+  "description": "Anonymous subject-only FLT performance regressions; dependencies are trusted, not certified.",
+  "baseline_kernel_commit": "28fc22702964058cd7cfe4eb012baf23b3af6e3a",
+  "artifact": {
+    "filename": "flt-after-source-hints-1.ixe",
+    "bytes": 30113168066,
+    "sha256": "5251edf00c0050d766702cd32d777b30889c167f4e0021b5ba89496abbb2f4d8"
+  },
+  "source": "check-flt-28fc2270-40m-1.log and .failures.txt; stopped 2026-09-06 with 5 unfinished work items and 124 failed target addresses.",
+  "defaults": {
+    "fuel": 40000000,
+    "timeout_seconds": 120,
+    "memory_gib": 96,
+    "workers": 1
+  },
+  "cases": [
+    {
+      "id": "tail-04e32656609b",
+      "address": "04e32656609b0e31aed0fa6707304432c5f27d3b6105267fd9389f8ea6cf0e93",
+      "category": "tail",
+      "core": true,
+      "observed": "unfinished when full run was stopped",
+      "observed_inflight_seconds": 2104
+    },
+    {
+      "id": "control-0139effa7dd4",
+      "address": "0139effa7dd49f683e998e3e5f2201878fb7c7cd4ddc7d7a76808bb7de66add4",
+      "category": "control",
+      "core": true,
+      "observed": "passed in full 40M run; 7.0s under 64-worker contention"
+    },
+    {
+      "id": "depth-0dc6387b2eda",
+      "address": "0dc6387b2eda18aaefad0eda80bc5bd7a62aa8db4c2e1226de871e839dd9b631",
+      "category": "depth",
+      "core": true,
+      "observed": "max recursion depth exceeded"
+    },
+    {
+      "id": "fuel-0072dda8396f",
+      "address": "0072dda8396f92d5cc944230c618d0168d168e66f6fece01862f455c3bfa3ea0",
+      "category": "fuel",
+      "core": true,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "tail-083005c8704e",
+      "address": "083005c8704eb6b9890471b8af71fbe24d18a8af6dc18473b7d4078a1db44ab4",
+      "category": "tail",
+      "core": true,
+      "observed": "unfinished when full run was stopped",
+      "observed_inflight_seconds": 2092
+    },
+    {
+      "id": "control-00023a804270",
+      "address": "00023a804270e12c13a5f6dca9b717950d6836803716bcd8baeafd69b72f56ec",
+      "category": "control",
+      "core": true,
+      "fuel": 20000000,
+      "observed": "passed subject-only at 20M and 40M, using 17107271 fuel"
+    },
+    {
+      "id": "depth-10e4f6ca8c39",
+      "address": "10e4f6ca8c396e268a791a3f598b25e7a9116964d328638a5dab7c600081d995",
+      "category": "depth",
+      "core": true,
+      "observed": "max recursion depth exceeded"
+    },
+    {
+      "id": "fuel-00f8aa1e8ed4",
+      "address": "00f8aa1e8ed4865d7c1a8755e4e36259d425f42edd618b89d348fe38635bb79e",
+      "category": "fuel",
+      "core": true,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "tail-0cb53e4ef3d4",
+      "address": "0cb53e4ef3d416681b5e41654ec3cac73179d3a0a75b1fcc5cdc71011cb28b85",
+      "category": "tail",
+      "core": true,
+      "observed": "unfinished when full run was stopped",
+      "observed_inflight_seconds": 2074
+    },
+    {
+      "id": "depth-088d4f086b58",
+      "address": "088d4f086b588e4aa54ac66d1d0407fbc44686a8c162749549ec97d62487d85d",
+      "category": "depth",
+      "core": true,
+      "observed": "max recursion depth exceeded"
+    },
+    {
+      "id": "fuel-07956a57e7f0",
+      "address": "07956a57e7f0386045ebdc88c4288d8b8a911657b2f34001973faf8c8868b113",
+      "category": "fuel",
+      "core": true,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "tail-b6d12915d27e",
+      "address": "b6d12915d27e8d6663ae3839afaa68eb760427d66966936b5ae9068a59f5f177",
+      "category": "tail",
+      "core": true,
+      "observed": "unfinished when full run was stopped",
+      "observed_inflight_seconds": 1217
+    },
+    {
+      "id": "depth-73c0037a49a3",
+      "address": "73c0037a49a3aa23b52e0604ebb59d96e829b600ebb334c036507ce7bbc7a5e7",
+      "category": "depth",
+      "core": true,
+      "observed": "max recursion depth exceeded"
+    },
+    {
+      "id": "fuel-03a6d7ba729b",
+      "address": "03a6d7ba729bb97c8c88eb53403bc52de6e236585ecb4276140be4830daf80d9",
+      "category": "fuel",
+      "core": true,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "tail-dfce3bf04cff",
+      "address": "dfce3bf04cffd1877f6d43b0749c845d1531ac879aef5d5157c4fd9ece8aaae0",
+      "category": "tail",
+      "core": true,
+      "observed": "unfinished when full run was stopped",
+      "observed_inflight_seconds": 987
+    },
+    {
+      "id": "control-f5e005d2f057",
+      "address": "f5e005d2f0578605572f5e516761d5b8621445062908398d1ef1db060ec83a32",
+      "category": "control",
+      "core": false,
+      "timeout_seconds": 600,
+      "observed": "passed in full 40M run after 558s; extended slow positive control"
+    },
+    {
+      "id": "fuel-07d8b8833a08",
+      "address": "07d8b8833a087877199dec944d0844b177914c1041d0ce86d82e3099a3254c40",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-0bdaebb92c97",
+      "address": "0bdaebb92c97340d9d2a21b487d7194e19ee7c7f55cf6afc0ec786bf66c1a490",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-0c37e3af2549",
+      "address": "0c37e3af25492275f5c24d3fd79807ad3b1d48abd1cad4d67fcf56cc46bd9406",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-0e85ce4d19c8",
+      "address": "0e85ce4d19c8adf95d112d4d0a9d4a8bd866125574e1d7356a79cbf30d122d5d",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-0ec7030808af",
+      "address": "0ec7030808af282501c58304828723230d91aa110ed679e7b0c06ece4b6a14c0",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-0f70ae355991",
+      "address": "0f70ae3559914dbb6808e42969ad2c663348f8601ff0abf1d2fc86458c02ec38",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-11a4ac392437",
+      "address": "11a4ac39243731c5c45772ba2871cbe58adbd30890c9398b967b2cd85fb62d8e",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-1405b7494f3b",
+      "address": "1405b7494f3b77d89fb7b3b46f6b6851958a63172afb0cae019b1b25bdd3f067",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-15026274ccb6",
+      "address": "15026274ccb6ca020522bf2627b0dc5785e5dfc513fcb78e0308e9885872587d",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-16942012be6f",
+      "address": "16942012be6f4115066ed234661a5f07b30c6d9e2860afe1d13e73818eb285bb",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-17dc3c88aedf",
+      "address": "17dc3c88aedfae687f6c7cab4a85f674f55d64f50082d58ab6def21fab8113c4",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-1c917fd2e840",
+      "address": "1c917fd2e840101dadcf6ca57bc03632abc50864351224842c2d9119758f05de",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-1e1a9a86ce35",
+      "address": "1e1a9a86ce351b16a35be7214bdb8e37889ce935f2ba6b04233daaf1be0f0e3d",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-1e21710daa90",
+      "address": "1e21710daa9064806b8edc43348aa9e6f7106709f4398b4ace8a9b8e6165625c",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-20a4bd9db684",
+      "address": "20a4bd9db684fd46437e608e30ceb2777aff674a902cb54ca1a98eee71062be8",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-243116eed67e",
+      "address": "243116eed67e812348fe49f8e1a2abfee6ca789fbd826e7c7cee72c9108a9a85",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-248d9675e38f",
+      "address": "248d9675e38fc1f2c391bb9e14f36196b2b5c1ebff2ba16440d357800fd1ee2d",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-26b361908968",
+      "address": "26b3619089682cc2dce6ec3f40b52de4263a799c27d79fa4dda8f487bfff5c9b",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-28b243bcb6be",
+      "address": "28b243bcb6be053fa0bcd90924189c586ee7c27abf65ea19b84d84dd2f9259d8",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-2d1b0b1de8a7",
+      "address": "2d1b0b1de8a7aa2b8c30ea06a26522343c458292d80d3f9b7d88877abfe8d7f0",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-37c291146040",
+      "address": "37c2911460409e226f182dd2b31d980417b8267844a19e6475cdf29892b7ddd1",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-37d7aafd083d",
+      "address": "37d7aafd083d02b5884816f3ec04d0d3be6f1655c058471495d8dc026c8354c9",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-3884666acc2b",
+      "address": "3884666acc2b49fdbe37cd74663040047a74cfa1fe18a3211f2d965cfd2b9860",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-392e414d3364",
+      "address": "392e414d336442a07fecae22c8f9c65bea3569704a50921ebd75669ec5f2ee96",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-3bb38796c801",
+      "address": "3bb38796c80106cb5dfafce7149672e141e50819f7040491981532056aa3255f",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-3d76157b6b06",
+      "address": "3d76157b6b0694ec1413d12ff7a884a1eeee4c45f39a1c2f51336d53ee2be581",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-3fe3373f9792",
+      "address": "3fe3373f97925d6c1b569f4c4baaab57630b94499d7ef67d60ef90f314f9d758",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-453f9a7935ad",
+      "address": "453f9a7935ad2940d51f011e8339c4f71137d99c4053f36010af17e26588d321",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-4658e560668d",
+      "address": "4658e560668d97ca7faa7b0478a1646cdf8f7d1dce5938535a6ba8752a5d224a",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-47a2fc199316",
+      "address": "47a2fc19931658e010269db4cba32b23e168a2d1d90cbad452a89eb17388a66a",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-4a457de5c3f1",
+      "address": "4a457de5c3f1d92ed84179931d9870b89b1d3c0b5b66f4857a842479ce669ec6",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-4abd2603d23f",
+      "address": "4abd2603d23fae7a5428a320d0b5bf62a4ba696e3eeb5319ecfc491744e8d7ee",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-4c85963c570b",
+      "address": "4c85963c570be2aa1aaf8bb9d1680d327152ad9a1b9793230d1bca25573df4f1",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-4d91369fe012",
+      "address": "4d91369fe01213d6a64bf38dc9205844d320c46bda8a422f783cd983e87d2fb0",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-52ea9de8ec4a",
+      "address": "52ea9de8ec4a256a841956b5705d4444168ce75c72375f1f7b4e032ff824031b",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-56d43a04e16e",
+      "address": "56d43a04e16e99938570317e0f989070515b45ca433fa59b81b22fb0bba7f161",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-57a8b257a0ed",
+      "address": "57a8b257a0ed572a86ceb2b943c92af6d397aa6787b68da716ac4924bc41b8dc",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-5a43f3a65af9",
+      "address": "5a43f3a65af97d7f371afdd531fcbf62ce84aa63a98010c5cf63917eb8f9e895",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-5b251facf177",
+      "address": "5b251facf177fe81ac3c27e07ecf1181c4ad827b87b60f06458ebdaca2a53a79",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-5e22bfd63817",
+      "address": "5e22bfd638178e11079e7aa119e096f14fa268380e84d34584f99c556afeebe2",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-5efa2221cc6e",
+      "address": "5efa2221cc6e94ad8220303a881f7745934f8d9d836c553bd6b56ca25a7dfd5c",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-6c43f78d96e1",
+      "address": "6c43f78d96e1efe2574d5f0527de3fef23c9f67aba636f3d790a48dff29b0ab1",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-6efa80cf44b0",
+      "address": "6efa80cf44b037aa38a11589943536e38ef13582425244e364ebb45aaa517602",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-6f1c9f571133",
+      "address": "6f1c9f5711330a6225278338ffba7a63f16d17ac7103189a23097dc204589251",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-70f279c028f0",
+      "address": "70f279c028f0fc3838e3e0267a937d5b79cb4a61c619775d5a42731cc2100f22",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-717e97820f76",
+      "address": "717e97820f764d281a0b9c30b8f667e18cc372cd8cc4b42ee22e3c5c0ea0dd15",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-734d1b55e5d0",
+      "address": "734d1b55e5d01ea828c6d44c40fd0036d8fd923e7e64ed7a7524bb0b051ec9b7",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-738204d710b0",
+      "address": "738204d710b03c925845249ac22a2b669fa7185b7c8edda1c99dfa6c8b0852a7",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-77df39414404",
+      "address": "77df39414404f98008a7342510e3638a00ad8486205abb8b3183c566b8f16f37",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-7a5d012eeef0",
+      "address": "7a5d012eeef0d74fb5bf95f2463e8c1626d485572d6d849578426f539e0e2e60",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-7c9c03fb378a",
+      "address": "7c9c03fb378a53f57857293be7586763788ccf0f66c95dd3ae2c688d3711a89e",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-7d8fbfacce07",
+      "address": "7d8fbfacce07d6f465c705757ef061659cec8d21c23f9246a194582963a10e25",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-7d9bdd35ac9c",
+      "address": "7d9bdd35ac9caffa4b19487377fcdaee54f5003d60a954149b00cb9a7c3268d8",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-7fc267727e58",
+      "address": "7fc267727e58541f8e2935f7e27a5f52d405b9aed7f760440f3dbee047dd6524",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-856bccdf8bf9",
+      "address": "856bccdf8bf98f658cd238e815add6624690a1b01806097321b14f0f81855d89",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-86d58c2a911b",
+      "address": "86d58c2a911bb4aa6b034082fab6fa98392051818aeb132ec1bdfd19bcc3bb06",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-87a00bd519e8",
+      "address": "87a00bd519e84e5ea2f19836f98d810075bdbe37656c67ea69d9cf487af1d246",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-87f6482adf99",
+      "address": "87f6482adf9941d77c8da9548daa8bc48a43d1411cbf9ee7b2109089a193ecee",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-883aee507aa5",
+      "address": "883aee507aa5ea8c126534ef13bac5d17429a38392db67a71d78c248ac8bef7c",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-8c3e8f09907a",
+      "address": "8c3e8f09907a174e824b957b6f0c1fcd90882edc5e72d5b0ca765a96dda54787",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-8fd965d4f9e4",
+      "address": "8fd965d4f9e4fa39e5895b687dfdc7d7908c230950d7da82a52d739a6e2fceca",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-907a79fe0ff5",
+      "address": "907a79fe0ff545e9d723dda9451096d92b4eea775ff985e672e623a34323cd8f",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-913fac06f1a7",
+      "address": "913fac06f1a72a97dc2fe180ea166dc62051d0db9e5703be937109846d9e13b6",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-921c16fe1fde",
+      "address": "921c16fe1fde3397dd9ccdbfedcfd1626cb7dce2342db902fada4b2048a7ec0b",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-98347e9eb5a8",
+      "address": "98347e9eb5a88f1860b3ce1f72050f30fffb19c0e49b4c386cd098b9147df46f",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-98fb758e8747",
+      "address": "98fb758e874764e23e78a3ff25cc75341a67ad3ba5eaf299344b380d9c6d495a",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-99ef9a2634d2",
+      "address": "99ef9a2634d2cbf28eb48c58cae257ddb47a4b9da44cd615c52f15019c1bf9b2",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-9a23b89995c7",
+      "address": "9a23b89995c7da21c805e6faf2ae6b410cfce5aa8babc34d2a769c0fa6165898",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-a2dd4adb20e5",
+      "address": "a2dd4adb20e564d0acccda9d646a013a38cd02d4e1265188cf11fb22e41b6af8",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-a6f35da719fc",
+      "address": "a6f35da719fc4751c751dceb2484cb08e9e3af4846713d3e1e37ec3e6c5e4eec",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-acac0fa9cc2c",
+      "address": "acac0fa9cc2cd1a0fcf47bcd95426859efecd68ef84a3024443ee00a6d615230",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-b277b4a39efd",
+      "address": "b277b4a39efdb13d15a0f73a014b19bfdc6e81be49f72dab2365937aa3a60b37",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-b306d39e0a70",
+      "address": "b306d39e0a70ce7c6bfb5e1d8d7084104d343b89ab73b4d854bb436dbdf26745",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-b369a9877935",
+      "address": "b369a9877935484b475deea6f3f49ff92be4d572dd095a898355b93bacbecf8a",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-b5f3069e3f7d",
+      "address": "b5f3069e3f7db33398d175498749e56c4058a34228ae46780c28cb2e5692a45a",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-b73e6f6e6d67",
+      "address": "b73e6f6e6d6718fdd6a83997bdcebb4394674c5ef674ce8b13901d366ac3f220",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-b7cc5cd0d80d",
+      "address": "b7cc5cd0d80d4ad134759092f05307917dab7de800bd4a3dc39fed0511bb7031",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-b9a7a817fca6",
+      "address": "b9a7a817fca69204b12da527e7a432601baec892b8bcaa74a512df8b9d600fd5",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-bc2e15748fee",
+      "address": "bc2e15748fee9feb1620d6dc28bfa5697404f274301e8aca0243085fb18e090f",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-bcd0b945831a",
+      "address": "bcd0b945831ac045a5b4fa612eb073f58f8ad46d06fa3692f83617cd05f0b35b",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-be270b7de1ca",
+      "address": "be270b7de1ca444e256a5fd397f31ea5b5b1ca8f5f371204ae59bf3c128cd00d",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-be9f592e20d8",
+      "address": "be9f592e20d8fdf5ac96782d99ca2376da2f220c6fe036745e7ea27c448bc870",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-bf72b0f4b4a0",
+      "address": "bf72b0f4b4a0816dec00259582e0dff373bc17f8a22f295996ecab4c9a06d7de",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-bf8dcd15bed0",
+      "address": "bf8dcd15bed075968122aa241cc695a2a60467b06115afad08fae8ec1833cd03",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-bffa13764333",
+      "address": "bffa13764333d0982f132565b2ae6600ea18576061f68c03c1615474db38466b",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c102cb3dfae3",
+      "address": "c102cb3dfae3cf8a444d661b9658653966a8cfd2cffc36b78b00ab32290ed807",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c17f4952807b",
+      "address": "c17f4952807bbb9c2beca9b5e207437e5153e39a0ddc63e5627faad79f5ae8be",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c39f0bbaa298",
+      "address": "c39f0bbaa298f541cffe9e1496e0f776a86ae91c34dc6296db906f3023fef1d7",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c4d4d0e1afa2",
+      "address": "c4d4d0e1afa2a965dc6f1244f305a62a5284bcc73688debfd8e4edaff3c06b01",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c4ebf48fe5f1",
+      "address": "c4ebf48fe5f1415c82b1377f75f314eb9f65ef774a29da1fe25669b9577d3fd6",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c5b89e205dc3",
+      "address": "c5b89e205dc30526a5befae5a9fd673ef6eb7ed96a190ed45ab20f80383c4605",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c5bd67268ffa",
+      "address": "c5bd67268ffa182281d6b66b01dc406bf503132b424ceeed62f52213d9fd95b3",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-c94b74124c02",
+      "address": "c94b74124c0237baf5f51a073b1c6c94e4911bd9a9ac9b1e67a4d058b7d5a200",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-cbb8b729f984",
+      "address": "cbb8b729f984e651985790e8e4b5a6d1969e91841f7ae02701320e818ca5975b",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-cdef51c9c404",
+      "address": "cdef51c9c404cf0c29491b78758cac611faeef2915500a5b30a7a2f133d6e075",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-ce7e4b9cb918",
+      "address": "ce7e4b9cb918acf0314bf48ab879bd8bc258b46a5a139c2f6983dab519092d15",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-d03bdbdfaa1e",
+      "address": "d03bdbdfaa1eca2764a8a02bc5bf22f4c4f7b3b2254d98597968113f0c2b6158",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-d14e5a6274aa",
+      "address": "d14e5a6274aac1ce5f670b2c8428e1eca620ade0ca32ba624ee15cb53a0b914e",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-d22080b5eac3",
+      "address": "d22080b5eac3f3bdf10e4871b20781b828317a55ee1e863ba426761cc0cb349d",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-db7259a54167",
+      "address": "db7259a54167e37b31dd4f7909a768efbb4c610849063e6674ded5ba6a315d9b",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-de82bec0e810",
+      "address": "de82bec0e81006cbb6eef366a9cd5dcd00b79d1ebd7f094654da0a149a860266",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-df49324dbaeb",
+      "address": "df49324dbaeb64f97e0fd0ced5634de9b9eb761429db3143a7c356f313299cd0",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-dfc612609ef2",
+      "address": "dfc612609ef2a6dceecc24644fd4bce9a9c77ef31ba6fff7a6cf023f3cec3214",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-e05a4fb88aa2",
+      "address": "e05a4fb88aa2c277b7b1581da3c62edcab966dbb45b6f1bed0642b66f70aa121",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-e6afc96bd8b0",
+      "address": "e6afc96bd8b0a02f61e146e57d8d10ca143932f7bd1ca1bd6672c48e390c9ef0",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-eb3ed3c3c64a",
+      "address": "eb3ed3c3c64a507f29f7c118248a4346498f6bb383c4f40f4a9497a1bc514be9",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-eb60cc653dd9",
+      "address": "eb60cc653dd9521239cd73cdcaef716ce105b23e1ecfb0e2d85ef7e0be39e2c5",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-ed39b646a289",
+      "address": "ed39b646a2898600c75bc12cfe211c7773abd8e7f981e69f7de5bed2a9979acb",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-f1d5f1580e9c",
+      "address": "f1d5f1580e9cccb6b8db85fa60e974afb149895208906a205ae473a130d72e69",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-f38456f556fd",
+      "address": "f38456f556fd08a454d52efe87123261bc2bf1e4b3e09d0fa4fe8d2df8f848bb",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-f59ec053d54b",
+      "address": "f59ec053d54bc8c62d12c892740dfb505a94ff9be46db030f95aaebccbd825d6",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-f5ebaf348a49",
+      "address": "f5ebaf348a49a196753e9731393d8e1d31af6ba40d0454cefd5f823e37948776",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-fa1b74facf9a",
+      "address": "fa1b74facf9a8d3381d44139e410c2c51b60c76032c1a4ac7f26e74505c0b376",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-faf080f4c6dc",
+      "address": "faf080f4c6dc7b3b3faf00b93ec6c5e3b6271984c852708b5cce1e51900f5e7f",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-fbba56420b6b",
+      "address": "fbba56420b6b657e435567ce3b557fa6b20b8cd1143c55daec90c19854abde32",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    },
+    {
+      "id": "fuel-fdfcfa70a9e8",
+      "address": "fdfcfa70a9e8645e8a03a0ab5034886bf0b328b796c88a11e3818a44d374741f",
+      "category": "fuel",
+      "core": false,
+      "observed": "recursive fuel exhausted"
+    }
+  ]
+}

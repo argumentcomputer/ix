@@ -64,6 +64,13 @@ static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
 static IX_HOT_MISSES: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_HOT_MISSES").is_ok());
 
+/// Opt-in, bounded native call stacks at resource guards. Useful with the
+/// one-subject helper: ordinary CLI runs do not install a `log` subscriber.
+static IX_GUARD_STACKS: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_GUARD_STACKS").is_ok());
+static GUARD_STACK_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
+
 static IX_HOT_MISS_CTX: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_HOT_MISS_CTX").is_ok());
 
@@ -151,6 +158,8 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// cache while projected values are reduced structurally instead of through
   /// full WHNF.
   pub cheap_recursion_depth: u32,
+  /// Avoid recursively starting speculative projection-first comparisons.
+  pub(crate) in_projection_probe: bool,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
   pub eager_reduce: bool,
   /// Current def-eq recursion depth.
@@ -215,6 +224,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       infer_only: false,
       in_native_reduce: false,
       cheap_recursion_depth: 0,
+      in_projection_probe: false,
       eager_reduce: false,
       def_eq_depth: 0,
       def_eq_trace_depth: 0,
@@ -840,6 +850,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.infer_only = false;
     self.in_native_reduce = false;
     self.cheap_recursion_depth = 0;
+    self.in_projection_probe = false;
     self.eager_reduce = false;
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;
@@ -879,6 +890,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   #[inline]
   pub fn tick(&mut self) -> Result<(), TcError<M>> {
     if self.rec_fuel == 0 {
+      self.dump_guard_stack("recursive-fuel");
       if crate::env_var("IX_REC_FUEL_DUMP").is_ok()
         && self.debug_label_matches_env()
       {
@@ -901,6 +913,30 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
     self.rec_fuel -= 1;
     Ok(())
+  }
+
+  /// Diagnostics only: at most four stacks per process, 100 lines each.
+  /// Capture only at a guard, never on the checking hot path; do not retain
+  /// expressions, change limits, or turn an exhausted check into a verdict.
+  pub(crate) fn dump_guard_stack(&self, guard: &str) {
+    if !*IX_GUARD_STACKS || !self.debug_label_matches_env() {
+      return;
+    }
+    if GUARD_STACK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 4
+    {
+      return;
+    }
+    eprintln!(
+      "[guard stack] {guard} const={} local_depth={} def_eq_depth={} fuel_used={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.depth(),
+      self.def_eq_depth,
+      self.fuel_used(),
+    );
+    let trace = std::backtrace::Backtrace::force_capture().to_string();
+    for line in trace.lines().take(100) {
+      eprintln!("[guard stack] {line}");
+    }
   }
 
   /// Starting fuel for the current check. Used by diagnostics that want
