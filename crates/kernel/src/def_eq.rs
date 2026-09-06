@@ -19,7 +19,7 @@ use super::level::{KUniv, univ_eq};
 use super::mode::KernelMode;
 use super::subst::{instantiate_rev, lift};
 use super::tc::{
-  MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, collect_app_spine,
+  MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, app_head, collect_app_spine,
 };
 use super::whnf::PrimFamily;
 
@@ -937,7 +937,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(w) => w,
       Err(_) => return Ok(false),
     };
-    let (a_head, _) = collect_app_spine(&a_ty_w);
+    let a_head = app_head(&a_ty_w);
     let a_ind = match a_head.data() {
       ExprData::Const(id, _, _) => id.clone(),
       _ => return Ok(false),
@@ -1670,7 +1670,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    let (head, _) = collect_app_spine(e);
+    let head = app_head(e);
     if !matches!(head.data(), ExprData::Prj(..)) {
       return Ok(None);
     }
@@ -1778,7 +1778,7 @@ fn head_const_id<M: KernelMode>(e: &KExpr<M>) -> Option<KId<M>> {
   match e.data() {
     ExprData::Const(id, _, _) => Some(id.clone()),
     ExprData::App(..) => {
-      let (head, _) = collect_app_spine(e);
+      let head = app_head(e);
       match head.data() {
         ExprData::Const(id, _, _) => Some(id.clone()),
         _ => None,

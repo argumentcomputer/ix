@@ -78,7 +78,9 @@ use super::mode::KernelMode;
 use super::subst::{
   Clo, MEnv, clo_readback, clo_subst, subst, subst_no_intern,
 };
-use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
+use super::tc::{
+  IotaInfo, MAX_WHNF_FUEL, TypeChecker, app_head, collect_app_spine,
+};
 
 use bignat::Nat;
 
@@ -2303,7 +2305,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let w = self.whnf(&ty)?;
         match w.data() {
           ExprData::All(_, _, dom, body, _) => {
-            let (head, _) = collect_app_spine(dom);
+            let head = app_head(dom);
             if let ExprData::Const(id, _, _) = head.data() {
               // Only accept if the head resolves to an inductive.
               if matches!(self.try_get_const(id)?, Some(KConst::Indc { .. })) {
@@ -2866,7 +2868,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   fn is_stuck_nat_predicate_probe(&self, e: &KExpr<M>) -> bool {
-    let (head, _) = collect_app_spine(e);
+    let head = app_head(e);
     match head.data() {
       ExprData::Const(id, _, _) => {
         self.is_nat_bin_pred_addr(&id.addr)
@@ -2876,7 +2878,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if id.addr == self.prims.fin.addr {
           return true;
         }
-        let (val_head, _) = collect_app_spine(val);
+        let val_head = app_head(val);
         matches!(
           val_head.data(),
           ExprData::Const(val_id, _, _)
@@ -3406,7 +3408,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // constant function 1, but its body recurses on an open unit variable.
       // Reduce this primitive singleton case directly.
       if id.addr == self.prims.size_of_size_of.addr && args.len() == 3 {
-        let (ty_head, _) = collect_app_spine(&args[0]);
+        let ty_head = app_head(&args[0]);
         if let ExprData::Const(ty_id, _, _) = ty_head.data()
           && (ty_id.addr == self.prims.unit.addr
             || ty_id.addr == self.prims.punit.addr)

@@ -746,7 +746,9 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       ExprData::App(f, a, _) => {
         let f2 = self.inst_univ_inner(f, us, cache)?;
         let a2 = self.inst_univ_inner(a, us, cache)?;
-        KExpr::app(f2, a2)
+        let r = self.env.intern.intern_app(&f2, &a2);
+        cache.insert(key, r.clone());
+        return Ok(r);
       },
 
       ExprData::Lam(name, bi, ty, body, _) => {
@@ -758,7 +760,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       ExprData::All(name, bi, ty, body, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::all(name.clone(), bi.clone(), ty2, body2)
+        let r =
+          self.env.intern.intern_all(name.clone(), bi.clone(), &ty2, &body2);
+        cache.insert(key, r.clone());
+        return Ok(r);
       },
 
       ExprData::Let(name, ty, val, body, nd, _) => {
@@ -982,14 +987,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
 
   /// Check if expression is of the form `eagerReduce _ _` (2 args applied to the eagerReduce const).
   pub fn is_eager_reduce(&self, e: &KExpr<M>) -> bool {
-    let (head, args) = collect_app_spine(e);
-    if args.len() != 2 {
-      return false;
-    }
-    match head.data() {
-      ExprData::Const(id, _, _) => id.addr == self.prims.eager_reduce.addr,
-      _ => false,
-    }
+    let ExprData::App(f, _, _) = e.data() else { return false };
+    let ExprData::App(head, _, _) = f.data() else { return false };
+    matches!(head.data(), ExprData::Const(id, _, _)
+      if id.addr == self.prims.eager_reduce.addr)
   }
 
   /// Intern an expression through the mutable intern environment.
@@ -1088,11 +1089,50 @@ impl<'a> TypeChecker<'a, super::mode::Anon> {
 /// Check whether an expression mentions a constant with the given address.
 /// Iterative (stack-based) — immune to stack overflow on deeply nested input.
 pub fn expr_mentions_addr<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
+  expr_mentions_any_addr(e, std::slice::from_ref(addr))
+}
+
+/// Check syntactic occurrences in one traversal for the entire address set.
+/// No unfolding, context-dependent memoization or dependency traversal.
+pub fn expr_mentions_any_addr<M: KernelMode>(
+  e: &KExpr<M>,
+  addrs: &[Address],
+) -> bool {
+  expr_mentions_any_addr_impl(e, addrs, || {})
+}
+
+// Small trees are cheaper to inspect directly than to allocate a visited set.
+// This is a fixed prefix budget, not an input-dependent heuristic: after it
+// is spent the remaining walk is DAG-aware, so worst-case work stays linear
+// in unique nodes/edges plus this constant prefix and its pending edges.
+const OCCURRENCE_TREE_BUDGET: usize = 32;
+
+fn expr_mentions_any_addr_impl<M: KernelMode>(
+  e: &KExpr<M>,
+  addrs: &[Address],
+  mut on_visit: impl FnMut(),
+) -> bool {
+  if addrs.is_empty() {
+    return false;
+  }
+  // Exact allocation identity, scoped to one fixed target set. Borrowing
+  // the root keeps every descendant alive, so pointer reuse is impossible.
+  // A shared subtree has the same occurrences at every binder depth.
+  let mut seen = FxHashSet::default();
+  let mut tree_budget = OCCURRENCE_TREE_BUDGET;
   let mut stack: Vec<&KExpr<M>> = vec![e];
   while let Some(e) = stack.pop() {
+    // Zero-cost callback in production; tests bound attempted node visits
+    // so a regression cannot hang on an exponentially expanded diamond.
+    on_visit();
+    if tree_budget > 0 {
+      tree_budget -= 1;
+    } else if !seen.insert(std::ptr::from_ref(e.data()).addr()) {
+      continue;
+    }
     match e.data() {
       ExprData::Const(id, _, _) => {
-        if id.addr == *addr {
+        if addrs.contains(&id.addr) {
           return true;
         }
       },
@@ -1110,7 +1150,7 @@ pub fn expr_mentions_addr<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
         stack.push(body);
       },
       ExprData::Prj(id, _, val, _) => {
-        if id.addr == *addr {
+        if addrs.contains(&id.addr) {
           return true;
         }
         stack.push(val);
@@ -1125,12 +1165,13 @@ pub fn expr_mentions_addr<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
   false
 }
 
-/// Check whether an expression mentions any constant from a set of addresses.
-pub fn expr_mentions_any_addr<M: KernelMode>(
-  e: &KExpr<M>,
-  addrs: &[Address],
-) -> bool {
-  addrs.iter().any(|a| expr_mentions_addr(e, a))
+/// Borrow the head of an application spine without collecting arguments or
+/// cloning any Arcs. Does not reduce the expression.
+pub(crate) fn app_head<M: KernelMode>(mut e: &KExpr<M>) -> &KExpr<M> {
+  while let ExprData::App(f, _, _) = e.data() {
+    e = f;
+  }
+  e
 }
 
 /// Collect the application spine: `App(App(f, a1), a2)` → `(f, [a1, a2])`.
@@ -1190,6 +1231,9 @@ fn short_addr(addr: &Addr) -> String {
 fn short_ctx_addr(addr: &CtxAddr) -> String {
   addr.to_hex().chars().take(12).collect()
 }
+
+#[cfg(test)]
+mod scan_tests;
 
 #[cfg(test)]
 mod tests {

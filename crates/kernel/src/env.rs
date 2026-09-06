@@ -7,11 +7,13 @@
 //! and move parallelism above the kernel state boundary.
 
 use std::collections::BTreeSet;
+use std::collections::hash_map::Entry;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::OnceCell;
 
 use ix_common::address::Address;
+use ix_common::env::{BinderInfo, Name};
 
 use super::constant::{KConst, RecRule};
 use super::error::TcError;
@@ -218,6 +220,56 @@ impl<M: KernelMode> InternTable<M> {
     self.exprs.get(key).cloned()
   }
 
+  /// Construct an application only if its canonical parent is absent.
+  /// Equivalent to `intern_expr(KExpr::app(f, a))`, including child traversal
+  /// order and first-insert-wins metadata. Inputs need not be canonical.
+  pub(crate) fn intern_app(&mut self, f: &KExpr<M>, a: &KExpr<M>) -> KExpr<M> {
+    crate::profile::bump_intern_nodes();
+    let mut memo = InternMemo::default();
+    // Keep both input roots alive until the call-local pointer memo is gone.
+    let cf = self.intern_expr_cached(f, &mut memo);
+    let ca = self.intern_expr_cached(a, &mut memo);
+    self.intern_expr_with(ExprKey::App(*cf.addr(), *ca.addr()), || {
+      KExpr::app(cf, ca)
+    })
+  }
+
+  /// Allocate-on-miss counterpart of `intern_expr(KExpr::all(...))`.
+  pub(crate) fn intern_all(
+    &mut self,
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    ty: &KExpr<M>,
+    body: &KExpr<M>,
+  ) -> KExpr<M> {
+    crate::profile::bump_intern_nodes();
+    let mut memo = InternMemo::default();
+    let ct = self.intern_expr_cached(ty, &mut memo);
+    let cb = self.intern_expr_cached(body, &mut memo);
+    self.intern_expr_with(ExprKey::All(*ct.addr(), *cb.addr()), || {
+      KExpr::all(name, bi, ct, cb)
+    })
+  }
+
+  /// Private constructor gate: `key` MUST describe `make()` exactly, with
+  /// children already canonical in this table. Never expose arbitrary keys
+  /// to callers. Entry lookup avoids a second parent probe on misses.
+  fn intern_expr_with(
+    &mut self,
+    key: ExprKey,
+    make: impl FnOnce() -> KExpr<M>,
+  ) -> KExpr<M> {
+    match self.exprs.entry(key) {
+      Entry::Occupied(entry) => entry.get().clone(),
+      Entry::Vacant(entry) => {
+        let e = make();
+        debug_assert_eq!(entry.key(), &expr_key(&e));
+        self.canon_exprs.insert(*e.addr());
+        entry.insert(e).clone()
+      },
+    }
+  }
+
   /// Intern a universe: returns the canonical value for its structural
   /// identity, recursively canonicalizing children as needed so the
   /// shallow key is meaningful.
@@ -360,17 +412,30 @@ impl<M: KernelMode> InternTable<M> {
         }
       },
       ExprData::Const(id, us, _) => {
-        let cus: Box<[KUniv<M>]> =
-          us.iter().map(|un| self.intern_univ_cached(un, memo)).collect();
-        if cus.iter().zip(us.iter()).all(|(a, b)| a.ptr_eq(b)) {
-          input.clone()
-        } else {
+        // Most generated constants already have canonical levels. Delay the
+        // replacement buffer until the first changed child, without changing
+        // traversal order or re-interning the unchanged prefix.
+        let mut changed: Option<Vec<KUniv<M>>> = None;
+        for (i, un) in us.iter().enumerate() {
+          let cu = self.intern_univ_cached(un, memo);
+          if let Some(cus) = &mut changed {
+            cus.push(cu);
+          } else if !cu.ptr_eq(un) {
+            let mut cus = Vec::with_capacity(us.len());
+            cus.extend(us[..i].iter().cloned());
+            cus.push(cu);
+            changed = Some(cus);
+          }
+        }
+        if let Some(cus) = changed {
           KExpr::cnst_full(
             id.clone(),
-            cus,
+            cus.into_boxed_slice(),
             input.mdata().clone(),
             input.univ_decor().clone(),
           )
+        } else {
+          input.clone()
         }
       },
       ExprData::App(f, a, _) => {

@@ -185,7 +185,9 @@ fn subst_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = subst_cached(env, f, arg, depth, cache);
       let x2 = subst_cached(env, x, arg, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -197,7 +199,9 @@ fn subst_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = subst_cached(env, ty, arg, depth, cache);
       let inner2 = subst_cached(env, inner, arg, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -296,7 +300,9 @@ fn simul_subst_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = simul_subst_cached(env, f, substs, depth, cache);
       let x2 = simul_subst_cached(env, x, substs, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -308,7 +314,9 @@ fn simul_subst_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = simul_subst_cached(env, ty, substs, depth, cache);
       let inner2 = simul_subst_cached(env, inner, substs, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -451,7 +459,9 @@ fn lift_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = lift_cached(env, f, shift, cutoff, cache);
       let x2 = lift_cached(env, x, shift, cutoff, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, body, _) => {
@@ -463,7 +473,9 @@ fn lift_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, body, _) => {
       let ty2 = lift_cached(env, ty, shift, cutoff, cache);
       let body2 = lift_cached(env, body, shift, cutoff + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, body2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &body2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, body, nd, _) => {
@@ -705,7 +717,9 @@ fn clo_subst_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = clo_subst_cached(intern, f, env, depth, cache);
       let x2 = clo_subst_cached(intern, x, env, depth, cache);
-      KExpr::app(f2, x2)
+      let r = intern.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -717,7 +731,9 @@ fn clo_subst_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
       let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = intern.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -822,7 +838,7 @@ pub fn cheap_beta_reduce<M: KernelMode>(
   if head.lbr() == 0 {
     let mut result = head;
     for arg in &args[i..] {
-      result = env.intern_expr(KExpr::app(result, arg.clone()));
+      result = env.intern_app(&result, arg);
     }
     return result;
   }
@@ -838,7 +854,7 @@ pub fn cheap_beta_reduce<M: KernelMode>(
       let chosen_idx = i - (k as usize) - 1;
       let mut result = args[chosen_idx].clone();
       for arg in &args[i..] {
-        result = env.intern_expr(KExpr::app(result, arg.clone()));
+        result = env.intern_app(&result, arg);
       }
       return result;
     }
@@ -936,7 +952,9 @@ fn instantiate_rev_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = instantiate_rev_cached(env, f, fvars, depth, cache);
       let x2 = instantiate_rev_cached(env, x, fvars, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -948,7 +966,9 @@ fn instantiate_rev_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
       let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -1071,7 +1091,9 @@ fn abstract_fvars_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = abstract_fvars_cached(env, f, pos, n, depth, cache);
       let x2 = abstract_fvars_cached(env, x, pos, n, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -1083,7 +1105,9 @@ fn abstract_fvars_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
       let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
