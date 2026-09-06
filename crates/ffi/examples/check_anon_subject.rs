@@ -11,6 +11,14 @@
 //! Run under an external timeout/memory limit. IX_MAX_REC_FUEL and the existing
 //! kernel diagnostic variables are honored. A fresh process gives a fresh
 //! KEnv and avoids carrying worker-history caches between samples.
+//!
+//! Diagnostic-only runs: `IX_PERF_COUNTERS=1` prints cache hit rates;
+//! `IX_REDUCE_HISTO=1` prints the top 20 delta/iota addresses and totals.
+//! `IX_SAME_HEAD_PROFILE=1` reports actual same-head attempts and their fuel.
+//! `IX_HOT_MISSES=1` prints miss shapes once at completion; optional
+//! `IX_HOT_MISS_CTX=1` includes their context identities.
+//! Reports go to stderr after checking; stdout's subject JSON is unchanged.
+//! Leave these flags unset for paired benchmark timings.
 
 use std::{
   collections::{HashMap, HashSet},
@@ -124,12 +132,18 @@ fn check(path: &str, primary: &Address) -> Result<bool, String> {
   );
   let mut kenv = KEnv::<Anon>::new();
   let _ = ix_kernel::profile::take_op_counts();
+  ix_kernel::perf::same_head::reset();
   let start = Instant::now();
-  let (result, last_member_fuel, peak_def_eq_depth) = {
+  let (result, last_member_fuel, peak_def_eq_depth, hot_misses) = {
     let mut tc = TypeChecker::new_with_lazy_anon(&mut kenv, &env);
     tc.set_debug_label(format!("#{}", primary.hex()));
     let result = tc.check_const(&KId::new(primary.clone(), ()));
-    (result, tc.fuel_used(), tc.def_eq_peak)
+    let fuel = tc.fuel_used();
+    let peak = tc.def_eq_peak;
+    // TypeChecker has no Drop accounting. Flush the final member explicitly,
+    // after capturing its allowance and before discarding the checker.
+    tc.finish_constant_accounting();
+    (result, fuel, peak, tc.hot_miss_summary())
   };
   let check_secs = start.elapsed().as_secs_f64();
   let ops = ix_kernel::profile::take_op_counts();
@@ -149,7 +163,57 @@ fn check(path: &str, primary: &Address) -> Result<bool, String> {
     "nat_arith": ops.nat_arith,
   });
   println!("{report}");
+  eprint!("{hot_misses}");
+  eprint!("{}", ix_kernel::perf::same_head::summary());
+  if ix_kernel::perf::enabled() {
+    // The example does not install a log backend, so KEnv's log::info!
+    // drop summary would otherwise be invisible. No checker work is rerun.
+    eprint!("{}", kenv.perf.summary());
+  }
+  if ix_kernel::perf::reduce_histo_enabled() {
+    print_reductions(
+      "delta",
+      ix_kernel::perf::DELTA_HISTO
+        .iter()
+        .map(|entry| (entry.key().clone(), *entry.value()))
+        .collect(),
+    );
+    print_reductions(
+      "iota",
+      ix_kernel::perf::IOTA_HISTO
+        .iter()
+        .map(|entry| (entry.key().clone(), *entry.value()))
+        .collect(),
+    );
+    eprintln!(
+      "[reduce-histo] nat_succ_peels={}",
+      ix_kernel::perf::NAT_SUCC_PEELS.load(Ordering::Relaxed)
+    );
+  }
   Ok(result.is_ok())
+}
+
+const REDUCTION_REPORT_LIMIT: usize = 20;
+
+fn top_reductions(
+  mut entries: Vec<(Address, u64)>,
+) -> (u128, usize, Vec<(Address, u64)>) {
+  let total = entries.iter().map(|(_, n)| u128::from(*n)).sum();
+  let distinct = entries.len();
+  entries.sort_unstable_by(|(a, x), (b, y)| y.cmp(x).then_with(|| a.cmp(b)));
+  entries.truncate(REDUCTION_REPORT_LIMIT);
+  (total, distinct, entries)
+}
+
+fn print_reductions(label: &str, entries: Vec<(Address, u64)>) {
+  let (total, distinct, top) = top_reductions(entries);
+  eprintln!(
+    "[reduce-histo] {label}: {total} reductions across {distinct} addresses; top {}",
+    top.len()
+  );
+  for (addr, count) in top {
+    eprintln!("[reduce-histo] {label} {count} #{}", addr.hex());
+  }
 }
 
 fn main() -> ExitCode {
@@ -182,6 +246,31 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn reduction_report_bounds_rows_but_preserves_complete_totals() {
+    let entries: Vec<_> =
+      (0..25u64).map(|n| (Address::hash(&n.to_le_bytes()), n + 1)).collect();
+    let (total, distinct, top) = top_reductions(entries);
+    assert_eq!(total, 325);
+    assert_eq!(distinct, 25);
+    assert_eq!(top.len(), REDUCTION_REPORT_LIMIT);
+    assert_eq!(top.first().unwrap().1, 25);
+    assert_eq!(top.last().unwrap().1, 6);
+  }
+
+  #[test]
+  fn reduction_report_handles_ties_empty_input_and_wide_totals() {
+    assert_eq!(top_reductions(Vec::new()), (0, 0, Vec::new()));
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let (total, distinct, top) =
+      top_reductions(vec![(b.clone(), u64::MAX), (a.clone(), u64::MAX)]);
+    assert_eq!(total, 2 * u128::from(u64::MAX));
+    assert_eq!(distinct, 2);
+    assert!(top[0].0 < top[1].0);
+    assert_eq!(top_reductions(vec![(a, u64::MAX), (b, u64::MAX)]).2, top);
+  }
 
   #[test]
   fn resolves_members_to_primary_preserving_request_order() {

@@ -12,6 +12,46 @@ for paired timings. Guard fuel counters inside a speculative comparison
 describe its temporary slice; the final helper report accounts for the
 actual total work charged to the subject.
 
+For separate cache/reduction diagnostics, the subject helper prints cache
+hit rates to stderr with `IX_PERF_COUNTERS=1`, and the top 20 delta/iota
+addresses with `IX_REDUCE_HISTO=1`. Histogram totals include addresses beyond
+the displayed top 20. These counters measure reduction events, not proof
+size or unique allocations. Diagnostics leave the subject JSON unchanged;
+keep both flags unset for paired timings.
+
+`IX_SAME_HEAD_PROFILE=1` reports actual same-head comparisons by outcome
+and definition head. Inclusive fuel overlaps across nested attempts;
+exclusive and root fuel do not double-count it. Window skips and rejected-
+probe cache hits are separate from attempts. Failed-attempt fuel is not
+necessarily all avoidable: attempts may also populate useful caches.
+Per-head attribution is bounded and holds no expression graphs. Leave this
+flag unset for clean paired timing runs; subject JSON stays unchanged.
+
+The same-head report also ranks roots separately and prints at most 32
+expensive root-pair snapshots (at least 65,536 fuel) per thread/check.
+These carry expression uids, the legacy context identity, and compact shapes;
+they do not canonicalize free variables or claim alpha-equivalence.
+`IX_HOT_MISSES=1` prints the final member's top 25 miss shapes once when the
+subject helper finishes; add `IX_HOT_MISS_CTX=1` for context keys. It does
+not require the much noisier per-guard `IX_REC_FUEL_DUMP`.
+The existing hot-miss collection itself is unbounded and can add substantial
+memory/time overhead; use a memory-limited isolated subject, not a full sweep.
+
+Same-head congruence probes use a 131,072-fuel slice for Regular definitions
+and 4,096 for other hints. Nested probes inherit the remaining allowance.
+Exhaustion resumes ordinary unfolding with consumed work charged to the
+check; it does not establish inequality. Regular root probes back off after
+33,554,432 fuel in unsuccessful attempts across the declaration. This is an
+admission threshold: the last admitted attempt can cross it by up to its
+allowance. There is no per-head blacklist. Successful roots do not charge
+the history;
+nested work is charged only as part of its unsuccessful root. Skips resume
+ordinary unfolding, and `skipped_backoff` is reported separately from actual
+attempts. This constant-space history resets per member; it is not a
+semantic cache.
+Non-Regular probes retain their startup window, measured in actual work
+rather than temporarily withheld fuel. The per-constant fuel cap is unchanged.
+
 To resolve anonymous addresses to names without decoding expression
 metadata, use the `resolve_anon_names` Rust example with `FILE.ixe` followed
 by hex prefixes (8–64 digits). It prints all aliases, not a single guessed
@@ -19,15 +59,33 @@ name. This separate diagnostic reads the full file into RAM: apply an
 appropriate memory limit for large artifacts. Name lookup is not checking.
 
 `cases.json` pins the exact existing `.ixe` by SHA-256 and byte length. It
-tracks 132 target addresses: 120 fuel failures, four depth failures, five
-unfinished tails, and three positive controls. The default **15-case core**
-contains all five tails, all four depth cases, four measured fuel failures,
-and two reasonably fast positive controls. The positive control that needed
-558 seconds in the original full sweep belongs to the extended suite.
+tracks 138 target addresses: 120 fuel failures, four depth failures, five
+unfinished tails, and nine passing-baseline controls. The default **25-case core**
+contains all five original tails, all four depth cases, ten fuel failures,
+and six positive controls. Five fuel cases were promoted
+from the existing extended inventory after they formed the final tail of
+the completed 100M full FLT run; no addresses were duplicated. The positive
+control that needed 558 seconds in the original full sweep belongs to the
+extended suite. The remaining V3 failure `fuel-6c43f78d96e1` is also promoted
+with 100M fuel and a 300-second timeout, without adding a duplicate address.
 
-Observations came from the stopped `28fc2270` full FLT run at 40M fuel and
-64 workers, plus the earlier bounded single-subject trials. They are not
-expected kernel rejections: fuel/depth limits leave checking unresolved.
+Six controls were added after early backoff V5 regressed the full FLT sweep.
+The three new failures (`50cb089d71a0`, `6234fd409441`, `7bf34ca3444c`) and
+V3's highest-fuel passing subject (`6303d6c017f7`, 28.385M) are in the core.
+Two near-cap V5 passes (`bfeba60bbbc6`, `eac5f4ec9db3`) are extended controls.
+All six have explicit 100M/300-second budgets. Their recorded observations
+are full-sweep results under contention, not isolated benchmark timings.
+
+Initial observations came from the stopped `28fc2270` full FLT run at 40M
+fuel and 64 workers, plus the earlier bounded single-subject trials. The
+five new core cases are `fuel-f38456f556fd`, `fuel-f5ebaf348a49`,
+`fuel-fa1b74facf9a`, `fuel-fbba56420b6b`, and `fuel-fdfcfa70a9e8`. Each
+exhausted 100M fuel in `check-flt-fuel100m-v1-1` (September 6, 2026).
+Their recorded full-run times are under 64-worker contention, not isolated
+benchmark results. Resolved names/aliases in the manifest are descriptive
+only: execution remains anonymous and addresses are authoritative. Resource
+failures are not expected kernel rejections: fuel/depth limits leave checking
+unresolved.
 “Unfinished” does not establish a deadlock. Addresses identify declarations
 in this pinned artifact; do not substitute a rebuilt corpus silently.
 
@@ -65,7 +123,13 @@ Members of the same mutual block are deduplicated for matching fuel budgets.
 Each timed invocation has a fresh process/KEnv, one checker worker, the
 manifest's fixed fuel cap, 96 GiB MemoryMax, and zero MemorySwapMax. Defaults
 are 40M fuel and 120 seconds per process; the 17.1M-fuel passing control uses
-20M, and the extended slow positive control gets 600 seconds. Pair order
+20M, and the extended slow positive control gets 600 seconds. The five
+newly promoted tail cases explicitly use **100M fuel and 300 seconds per
+process**, still one worker and 96 GiB/no swap. The original 15 cases keep
+their old budgets for comparable performance regressions; the additional
+V3 failure and the six backoff controls also have explicit 100M/300-second
+budgets. Raising the
+kernel default does not override the manifest. Pair order
 alternates across cases and rounds. Hot-miss/perf/step diagnostics are off.
 
 ## Results and interpretation

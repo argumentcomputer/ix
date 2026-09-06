@@ -7,7 +7,7 @@
     "bytes": 30113168066,
     "sha256": "5251edf00c0050d766702cd32d777b30889c167f4e0021b5ba89496abbb2f4d8"
   },
-  "source": "check-flt-28fc2270-40m-1.log and .failures.txt; stopped 2026-09-06 with 5 unfinished work items and 124 failed target addresses.",
+  "source": "Initial inventory: check-flt-28fc2270-40m-1.log and .failures.txt, stopped 2026-09-06 with 5 unfinished work items and 124 failed target addresses. Five existing fuel cases promoted to the core from the final tail of check-flt-fuel100m-v1-1 on 2026-09-06; that full run completed with 50 fuel failures and no depth failures. Six passing V3 controls added after full-flt-same-head-backoff-v5-1 exposed three new failures and two near-cap passes, alongside V3's highest-fuel passing control.",
   "defaults": {
     "fuel": 40000000,
     "timeout_seconds": 120,
@@ -15,6 +15,72 @@
     "workers": 1
   },
   "cases": [
+    {
+      "id": "control-50cb089d71a0",
+      "address": "50cb089d71a05918fd793b026249f998556b8e16010becf5498e1501de6f092c",
+      "category": "control",
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "V3 passed at 3748333 fuel / 8.372s; early backoff V5 exhausted 100M / 207.450s in the full sweep",
+      "observed_run": "full-flt-same-head-backoff-v5-1",
+      "observed_workers": 64
+    },
+    {
+      "id": "control-6234fd409441",
+      "address": "6234fd409441faeed33e68b7609594f9e7984907f421026fcc39eed4e2abf78f",
+      "category": "control",
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "V3 passed at 3773953 fuel / 8.669s; early backoff V5 exhausted 100M / 221.590s in the full sweep",
+      "observed_run": "full-flt-same-head-backoff-v5-1",
+      "observed_workers": 64
+    },
+    {
+      "id": "control-7bf34ca3444c",
+      "address": "7bf34ca3444c8fc5baa18e74fea3ba57610cd79951470802f31a4e1edef4249b",
+      "category": "control",
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "V3 passed at 2374766 fuel / 8.426s; early backoff V5 exhausted 100M / 301.760s in the full sweep",
+      "observed_run": "full-flt-same-head-backoff-v5-1",
+      "observed_workers": 64
+    },
+    {
+      "id": "control-6303d6c017f7",
+      "address": "6303d6c017f7b93869c735dcf4b49268aa2138d8e8b668e243d5034919081001",
+      "category": "control",
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "Highest-fuel passing V3 work item: 28384918 fuel / 69.216s in the full sweep",
+      "observed_run": "full-flt-same-head-v3-1",
+      "observed_workers": 64
+    },
+    {
+      "id": "control-bfeba60bbbc6",
+      "address": "bfeba60bbbc6897cb90ecbff9143e211ee0bcde5ce67f164482d2eb78592ba22",
+      "category": "control",
+      "core": false,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "V3 passed at 27023380 fuel / 157.405s; early backoff V5 passed near the cap at 99998101 fuel / 198.240s",
+      "observed_run": "full-flt-same-head-backoff-v5-1",
+      "observed_workers": 64
+    },
+    {
+      "id": "control-eac5f4ec9db3",
+      "address": "eac5f4ec9db39307726e86dbdedb8c1c89d69918ce92c971ae7233f950031d44",
+      "category": "control",
+      "core": false,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "V3 passed at 1742241 fuel / 5.950s; early backoff V5 passed near the cap at 99999478 fuel / 158.042s",
+      "observed_run": "full-flt-same-head-backoff-v5-1",
+      "observed_workers": 64
+    },
     {
       "id": "tail-04e32656609b",
       "address": "04e32656609b0e31aed0fa6707304432c5f27d3b6105267fd9389f8ea6cf0e93",
@@ -425,8 +491,16 @@
       "id": "fuel-6c43f78d96e1",
       "address": "6c43f78d96e1efe2574d5f0527de3fef23c9f67aba636f3d790a48dff29b0ab1",
       "category": "fuel",
-      "core": false,
-      "observed": "recursive fuel exhausted"
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "sole remaining recursive fuel exhaustion at 100M",
+      "observed_run": "full-flt-same-head-v3-1",
+      "observed_workers": 64,
+      "observed_check_seconds": 237.671428457,
+      "names": [
+        "P2MW.S_AutomorphicForm_exists_elliptic_family_coupled_inf_twistedCentralizer_conjAe_of_neg.HA.main"
+      ]
     },
     {
       "id": "fuel-6efa80cf44b0",
@@ -901,8 +975,18 @@
       "id": "fuel-f38456f556fd",
       "address": "f38456f556fd08a454d52efe87123261bc2bf1e4b3e09d0fa4fe8d2df8f848bb",
       "category": "fuel",
-      "core": false,
-      "observed": "recursive fuel exhausted"
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "recursive fuel exhausted at 100M; one of the final five work items",
+      "observed_run": "check-flt-fuel100m-v1-1",
+      "observed_workers": 64,
+      "observed_check_seconds": 136.3,
+      "names": [
+        "P2MW.S_ModularCurve_FullLevel_exists_mem_igusaNodes_over_of_levelAut_transport_linear_nodes_iff_of_eq_two_of_dvd.IgusaNodesE133.exists_transcendental_finiteDimensional_modularFunctionFieldC",
+        "P2MW.S_ModularCurve_FullLevel_exists_mem_igusaNodes_over_of_levelAut_transport_linear_nodes_iff_of_eq_three_of_dvd.IgusaNodesE133.exists_transcendental_finiteDimensional_modularFunctionFieldC",
+        "P2MW.S_ModularCurve_FullLevel_exists_mem_igusaNodes_over_of_levelAut_transport_linear_nodes_iff.IgusaNodesE133.exists_transcendental_finiteDimensional_modularFunctionFieldC"
+      ]
     },
     {
       "id": "fuel-f59ec053d54b",
@@ -915,15 +999,31 @@
       "id": "fuel-f5ebaf348a49",
       "address": "f5ebaf348a49a196753e9731393d8e1d31af6ba40d0454cefd5f823e37948776",
       "category": "fuel",
-      "core": false,
-      "observed": "recursive fuel exhausted"
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "recursive fuel exhausted at 100M; one of the final five work items",
+      "observed_run": "check-flt-fuel100m-v1-1",
+      "observed_workers": 64,
+      "observed_check_seconds": 139.9,
+      "names": [
+        "CerednikDrinfeld.FormalODModule.endAct_varpiEnd_endAct_varpiEnd"
+      ]
     },
     {
       "id": "fuel-fa1b74facf9a",
       "address": "fa1b74facf9a8d3381d44139e410c2c51b60c76032c1a4ac7f26e74505c0b376",
       "category": "fuel",
-      "core": false,
-      "observed": "recursive fuel exhausted"
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "recursive fuel exhausted at 100M; one of the final five work items",
+      "observed_run": "check-flt-fuel100m-v1-1",
+      "observed_workers": 64,
+      "observed_check_seconds": 107.9,
+      "names": [
+        "_private.P2M.Sol.S_AutomorphicForm_isAutomorphicFnAt_pseudoEisenstein_slab.0.P2MW.S_AutomorphicForm_isAutomorphicFnAt_pseudoEisenstein_slab.AutomorphicForm.PseudoEisensteinAutomorphy.finite_and_ncard_setOf_bruhatRep_mul_le"
+      ]
     },
     {
       "id": "fuel-faf080f4c6dc",
@@ -936,15 +1036,33 @@
       "id": "fuel-fbba56420b6b",
       "address": "fbba56420b6b657e435567ce3b557fa6b20b8cd1143c55daec90c19854abde32",
       "category": "fuel",
-      "core": false,
-      "observed": "recursive fuel exhausted"
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "recursive fuel exhausted at 100M; one of the final five work items",
+      "observed_run": "check-flt-fuel100m-v1-1",
+      "observed_workers": 64,
+      "observed_check_seconds": 125.6,
+      "names": [
+        "P2MW.S_CerednikDrinfeld_SpecialFormalODModule_exists_fin_two_endAct_varpiEnd_eq_verschiebung_of_isAlgClosed.P2mKcUnitRootLattice.pi_pi",
+        "P2MW.S_CerednikDrinfeld_SpecialFormalODModule_exists_fin_two_mem_invariants_forall_existsUnique_eq_sum_smul_of_isCritical.P2mKcCritFibre.pi_pi",
+        "P2MW.S_CerednikDrinfeld_SpecialFormalODModule_exists_addMonoidHom_cartierModule_injective_of_isAlgClosed.P2mKcBC52Module.pi_pi"
+      ]
     },
     {
       "id": "fuel-fdfcfa70a9e8",
       "address": "fdfcfa70a9e8645e8a03a0ab5034886bf0b328b796c88a11e3818a44d374741f",
       "category": "fuel",
-      "core": false,
-      "observed": "recursive fuel exhausted"
+      "core": true,
+      "fuel": 100000000,
+      "timeout_seconds": 300,
+      "observed": "recursive fuel exhausted at 100M; last work item to finish",
+      "observed_run": "check-flt-fuel100m-v1-1",
+      "observed_workers": 64,
+      "observed_check_seconds": 146.8,
+      "names": [
+        "P2MW.S_ModularCurve_exists_injective_heckeEquivariant_addMonoidHom_jZero_pic0_complex.ModularCurve.K1BC.restrictAlong_liftPlace"
+      ]
     }
   ]
 }

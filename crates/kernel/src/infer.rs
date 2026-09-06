@@ -10,7 +10,9 @@ use super::mode::KernelMode;
 use super::subst::{abstract_fvars, cheap_beta_reduce, instantiate_rev, subst};
 use super::tc::{TypeChecker, collect_app_spine};
 
+mod application;
 mod binders;
+pub(crate) mod summary;
 
 /// Emit detailed `[app diff]` trace when `infer`'s App path rejects an
 /// argument via `AppTypeMismatch`. Off by default — every rejection in a
@@ -109,6 +111,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         self.instantiate_univ_params(&ty, &us_vec)?
       },
 
+      ExprData::App(f, _, _) if matches!(f.data(), ExprData::App(..)) => {
+        self.infer_app_spine(e)?
+      },
+
       ExprData::App(f, a, _) => {
         let f_ty = self.infer(f)?;
         let (dom, cod) = self.ensure_forall(&f_ty).inspect_err(|_err| {
@@ -137,65 +143,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             }
           }
         })?;
-        if !infer_only {
-          let a_ty = self.infer(a)?;
-          let is_eager = self.is_eager_reduce(a);
-          if is_eager {
-            self.eager_reduce = true;
-          }
-          let eq = self.is_def_eq(&a_ty, &dom)?;
-          if is_eager {
-            self.eager_reduce = false;
-          }
-          if !eq {
-            if *IX_APP_DIFF && self.debug_label_matches_env() {
-              // WHNF both sides so we can see where reduction actually
-              // terminates. The raw `a_ty` / `dom` are already in the
-              // error — what's useful here is the post-whnf forms and
-              // whether they converge under `is_def_eq`'s lazy unfold
-              // strategy.
-              //
-              // stderr, not the log facade: no log backend is installed
-              // in the CLI or test binaries, so `log::info!` dumps are
-              // silently dropped (same fix as the inductive.rs
-              // canonicity dumps).
-              let a_whnf = self.whnf(&a_ty);
-              let d_whnf = self.whnf(&dom);
-              let depth = crate::env_var("IX_APP_DIFF_DEPTH")
-                .ok()
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(2);
-              eprintln!(
-                "[app diff] AppTypeMismatch at depth={} in {}",
-                self.ctx.len(),
-                self.debug_label.as_deref().unwrap_or("<unknown>")
-              );
-              eprintln!("  f:          {}", compact_expr(f));
-              eprintln!("  a:          {}", compact_expr(a));
-              eprintln!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
-              eprintln!("  dom:        {}", compact_expr_deep(&dom, depth));
-              eprintln!("  a_ty data:  {:?}", a_ty.data());
-              eprintln!("  dom data:   {:?}", dom.data());
-              match &a_whnf {
-                Ok(w) => {
-                  eprintln!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
-                },
-                Err(e) => eprintln!("  a_ty whnf:  ERR {e}"),
-              }
-              match &d_whnf {
-                Ok(w) => {
-                  eprintln!("  dom  whnf:  {}", compact_expr_deep(w, depth))
-                },
-                Err(e) => eprintln!("  dom  whnf:  ERR {e}"),
-              }
-            }
-            return Err(TcError::AppTypeMismatch {
-              a_ty,
-              dom,
-              depth: self.ctx.len(),
-            });
-          }
-        }
+        self.check_app_argument(f, a, &dom)?;
         subst(&mut self.env.intern, &cod, a, 0)
       },
 

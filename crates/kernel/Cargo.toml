@@ -15,6 +15,7 @@ itertools = { workspace = true }
 log = { workspace = true }
 num-bigint = { workspace = true }
 rustc-hash = { workspace = true }
+smallvec = { workspace = true }
 
 [target.'cfg(not(target_arch = "riscv64"))'.dependencies]
 dashmap = { workspace = true, features = ["rayon"] }

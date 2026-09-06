@@ -569,6 +569,7 @@ pub struct KEnvCacheSizes {
   pub unfold: usize,
   pub ingress: usize,
   pub is_prop: usize,
+  pub decl_summary: usize,
   pub is_rec: usize,
   pub recursor: usize,
   pub rec_majors: usize,
@@ -599,6 +600,7 @@ impl KEnvCacheSizes {
       self.unfold,
       self.ingress,
       self.is_prop,
+      self.decl_summary,
       self.is_rec,
       self.recursor,
       self.rec_majors,
@@ -615,7 +617,7 @@ impl std::fmt::Display for KEnvCacheSizes {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(
       f,
-      "consts={} intern_exprs={} intern_univs={} whnf={}/{}/{}/{}/{} infer={}/{} def_eq={}/{}/{} unfold={} ingress={} is_prop={}",
+      "consts={} intern_exprs={} intern_univs={} whnf={}/{}/{}/{}/{} infer={}/{} def_eq={}/{}/{} unfold={} ingress={} is_prop={} decl_summary={}",
       self.consts,
       self.intern_exprs,
       self.intern_univs,
@@ -632,6 +634,7 @@ impl std::fmt::Display for KEnvCacheSizes {
       self.unfold,
       self.ingress,
       self.is_prop,
+      self.decl_summary,
     )
   }
 }
@@ -739,6 +742,14 @@ pub struct KEnv<M: KernelMode> {
   /// is the dominant cost on mathlib proof-heavy blocks, where the same
   /// propositions are tested for equality thousands of times.
   pub is_prop_cache: FxHashMap<(Addr, CtxAddr), bool>,
+  /// Conservative proof-eligibility summaries keyed by the exact Const
+  /// expression UID (including its instantiated universes). Types in this
+  /// declaration environment are the same assumptions ordinary inference
+  /// consults; no argument or declaration validation is replaced by a hit.
+  /// Clear on environment resets and declaration replacement, including
+  /// replacements of dependencies consulted while constructing a summary.
+  pub(crate) decl_summary_cache:
+    FxHashMap<Addr, super::infer::summary::DeclarationSummary>,
   /// Computed `is_rec` per inductive, keyed by content address
   pub is_rec_cache: FxHashMap<Address, bool>,
   /// Generated recursors, keyed by inductive Muts block id.
@@ -832,6 +843,7 @@ impl<M: KernelMode> KEnv<M> {
       nat_succ_stuck: FxHashSet::default(),
       ingress_cache: FxHashMap::default(),
       is_prop_cache: FxHashMap::default(),
+      decl_summary_cache: FxHashMap::default(),
       is_rec_cache: FxHashMap::default(),
       recursor_cache: FxHashMap::default(),
       recursor_aux_order,
@@ -892,7 +904,9 @@ impl<M: KernelMode> KEnv<M> {
         id.addr.hex()
       );
     }
-    self.consts.insert(id, c);
+    if self.consts.insert(id, c).is_some() {
+      self.decl_summary_cache.clear();
+    }
   }
 
   pub fn len(&self) -> usize {
@@ -952,6 +966,7 @@ impl<M: KernelMode> KEnv<M> {
     self.nat_succ_stuck.clear();
     self.ingress_cache.clear();
     self.is_prop_cache.clear();
+    self.decl_summary_cache.clear();
     self.recursor_cache.clear();
     self.rec_majors_cache.clear();
     self.block_peer_agreement_cache.clear();
@@ -982,6 +997,7 @@ impl<M: KernelMode> KEnv<M> {
       unfold: self.unfold_cache.len(),
       ingress: self.ingress_cache.len(),
       is_prop: self.is_prop_cache.len(),
+      decl_summary: self.decl_summary_cache.len(),
       is_rec: self.is_rec_cache.len(),
       recursor: self.recursor_cache.len(),
       rec_majors: self.rec_majors_cache.len(),
@@ -1016,6 +1032,7 @@ impl<M: KernelMode> KEnv<M> {
     self.nat_succ_stuck = FxHashSet::default();
     self.ingress_cache = FxHashMap::default();
     self.is_prop_cache = FxHashMap::default();
+    self.decl_summary_cache = FxHashMap::default();
     self.recursor_cache = FxHashMap::default();
     self.rec_majors_cache = FxHashMap::default();
     self.block_peer_agreement_cache = FxHashSet::default();
@@ -1069,6 +1086,7 @@ impl<M: KernelMode> KEnv<M> {
       self.nat_succ_stuck,
       self.ingress_cache,
       self.is_prop_cache,
+      self.decl_summary_cache,
       self.recursor_cache,
       self.rec_majors_cache,
       self.block_peer_agreement_cache,
@@ -1087,6 +1105,7 @@ impl<M: KernelMode> KEnv<M> {
   /// the in-circuit cost, which has no cross-constant memoization. Clearing a
   /// pure memo never affects correctness — only performance.
   pub fn clear_reduction_caches(&mut self) {
+    self.decl_summary_cache.clear();
     self.whnf_cache.clear();
     self.whnf_no_delta_cache.clear();
     self.whnf_no_delta_cheap_cache.clear();

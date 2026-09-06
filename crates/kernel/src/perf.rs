@@ -1,6 +1,7 @@
 //! Performance counters for cache hit-rate and fuel-consumption analysis.
 //!
-//! All counters are gated behind the `IX_PERF_COUNTERS=1` environment variable.
+//! The environment counters below use `IX_PERF_COUNTERS=1`; the separate
+//! [`same_head`] diagnostic uses `IX_SAME_HEAD_PROFILE=1`.
 //! When the variable is unset (production default), every recording call is a
 //! single inlined branch on a `LazyLock<bool>` and skips the atomic increment
 //! entirely. When set, the counters track:
@@ -28,6 +29,8 @@
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+pub mod same_head;
 
 static PERF_ENABLED: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var_os("IX_PERF_COUNTERS").is_some());
@@ -70,6 +73,11 @@ pub struct PerfCounters {
   // -- isProp cache (propositional-type detection for proof irrelevance) --
   pub is_prop_cache_hits: AtomicU64,
   pub is_prop_cache_misses: AtomicU64,
+
+  // -- Conservative declaration summaries --
+  pub decl_summary_hits: AtomicU64,
+  pub decl_summary_misses: AtomicU64,
+  pub non_proof_skips: AtomicU64,
 
   // -- Recursive fuel --
   /// Running max of fuel actually consumed by any single constant check.
@@ -183,6 +191,16 @@ impl PerfCounters {
     bump(&self.is_prop_cache_misses);
   }
 
+  pub fn record_decl_summary_hit(&self) {
+    bump(&self.decl_summary_hits);
+  }
+  pub fn record_decl_summary_miss(&self) {
+    bump(&self.decl_summary_misses);
+  }
+  pub fn record_non_proof_skip(&self) {
+    bump(&self.non_proof_skips);
+  }
+
   // -----------------------------------------------------------------------
   // Recursive fuel
   // -----------------------------------------------------------------------
@@ -282,6 +300,17 @@ impl PerfCounters {
     )?;
 
     let fail_hits = self.def_eq_failure_hits.load(Ordering::Relaxed);
+    write_rate(
+      out,
+      "  decl_summary       ",
+      &self.decl_summary_hits,
+      &self.decl_summary_misses,
+    )?;
+    writeln!(
+      out,
+      "  non_proof_skips     {}",
+      self.non_proof_skips.load(Ordering::Relaxed)
+    )?;
     let fail_inserts = self.def_eq_failure_inserts.load(Ordering::Relaxed);
     writeln!(
       out,

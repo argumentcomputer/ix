@@ -81,7 +81,7 @@ def validate (m : Manifest) : Except String Unit := do
     unless #["tail", "depth", "fuel", "control"].contains c.category do throw "unknown category"
     let fuel := c.fuel.getD m.defaults.fuel
     let timeout := c.timeout_seconds.getD m.defaults.timeout_seconds
-    unless 0 < fuel && fuel ≤ 40000000 do throw "invalid fuel budget"
+    unless 0 < fuel && fuel ≤ 100000000 do throw "invalid fuel budget"
     unless 0 < timeout && timeout ≤ 600 do throw "invalid time budget"
     ids := ids.push c.id
     addresses := addresses.push c.address
@@ -288,13 +288,29 @@ def ensure (condition : Bool) (message : String) : IO Unit :=
 
 def selfTest (m : Manifest) : IO Unit := do
   need (validate m)
-  ensure (m.cases.size == 132) "inventory size"
+  ensure (m.cases.size == 138) "inventory size"
   let core := m.cases.filter (·.core)
-  ensure (core.size == 15) "core size"
-  for (category, count) in #[("tail", 5), ("depth", 4), ("fuel", 4), ("control", 2)] do
+  ensure (core.size == 25) "core size"
+  for (category, count) in #[("tail", 5), ("depth", 4), ("fuel", 10), ("control", 6)] do
     ensure ((core.filter (·.category == category)).size == count) s!"core {category}"
   ensure ((m.cases.filter (·.category == "fuel")).size == 120) "extended fuel count"
+  let lateTail := #["fuel-6c43f78d96e1", "fuel-f38456f556fd", "fuel-f5ebaf348a49", "fuel-fa1b74facf9a",
+                    "fuel-fbba56420b6b", "fuel-fdfcfa70a9e8"]
+  for id in lateTail do
+    let some c := core.find? (·.id == id) | throw (IO.userError s!"missing late tail {id}")
+    ensure (c.category == "fuel" && c.fuel == some 100000000 &&
+      c.timeout_seconds == some 300) s!"late-tail budget {id}"
+  let backoffControls := #["control-50cb089d71a0", "control-6234fd409441",
+    "control-7bf34ca3444c", "control-6303d6c017f7", "control-bfeba60bbbc6",
+    "control-eac5f4ec9db3"]
+  for id in backoffControls do
+    let some c := m.cases.find? (·.id == id) | throw (IO.userError s!"missing backoff control {id}")
+    ensure (c.category == "control" && c.fuel == some 100000000 &&
+      c.timeout_seconds == some 300) s!"backoff-control budget {id}"
+  for c in core.filter (fun c => !lateTail.contains c.id && !backoffControls.contains c.id) do
+    ensure (c.fuel.getD m.defaults.fuel ≤ 40000000) s!"original core budget {c.id}"
   for c in #[{ m.cases[0]! with fuel := some 0 },
+             { m.cases[0]! with fuel := some 100000001 },
              { m.cases[0]! with timeout_seconds := some 601 },
              { m.cases[0]! with id := "../bad" }] do
     ensure ((validate { m with cases := #[c] }).toOption.isNone) "manifest guard"
@@ -385,9 +401,23 @@ def run (opts : Options) : IO UInt32 := do
     "crates/kernel/src/subst.rs", "crates/kernel/src/subst/scratch_tests.rs",
     "crates/kernel/src/infer.rs", "crates/kernel/src/infer/binders.rs",
     "crates/kernel/src/infer/binders/tests.rs",
+    "crates/kernel/src/infer/application.rs",
+    "crates/kernel/src/infer/application/tests.rs",
+    "crates/kernel/src/infer/summary.rs",
+    "crates/kernel/src/infer/summary/tests.rs", "crates/kernel/src/perf.rs",
+    "crates/kernel/src/perf/same_head.rs",
     "crates/kernel/src/def_eq.rs", "crates/kernel/src/tc.rs",
+    "crates/kernel/src/tc/spine_tests.rs", "crates/kernel/src/whnf.rs",
     "crates/kernel/src/def_eq/projection_tests.rs",
-    "crates/ffi/examples/check_anon_subject.rs", "Cargo.lock", "rust-toolchain.toml",
+    "crates/kernel/src/def_eq/application.rs",
+    "crates/kernel/src/def_eq/application/tests.rs",
+    "crates/kernel/src/def_eq/same_head_tests.rs",
+    "crates/kernel/src/def_eq/speculation.rs",
+    "crates/kernel/src/def_eq/binders.rs",
+    "crates/kernel/src/def_eq/binders/tests.rs",
+    "crates/ffi/examples/check_anon_subject.rs", "Cargo.toml", "Cargo.lock",
+    "crates/kernel/Cargo.toml", "rust-toolchain.toml", "lean-toolchain",
+    "flake.nix", "flake.lock",
     ".cargo/config.toml", "Benchmarks/Kernel/AnthropicFLT/RunSuite.lean"] do
     let src : FilePath := relative
     if ← src.pathExists then

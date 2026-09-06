@@ -44,18 +44,16 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 
 /// Shared recursive fuel budget, consumed by recursive whnf/infer/isDefEq
 /// entries and by productive structural-WHNF beta/zeta/iota transitions.
-/// lean4lean uses 10,000 with step-indexed recursion; the lean4 C++ kernel
-/// uses ~200,000 heartbeats. We use a higher budget than both because this
-/// kernel lacks compiled native reduction and checks some large proof terms
-/// by interpreting their full expression trees. In particular, BVDecide's
-/// generated mutual proofs can legitimately exceed one million recursive
-/// kernel steps even after cache hits stop consuming fuel.
+/// This is cumulative work per declaration, not a recursion-depth limit;
+/// its units are not directly comparable to lean4lean's step-indexed depth
+/// allowance or the Lean C++ kernel's heartbeats.
 ///
-/// Mathlib-scale category/algebra proof terms also exceed the old 1.5M budget
-/// without hitting the actual `MAX_DEF_EQ_DEPTH` guard. Keep this high enough
-/// for legitimate large proofs while retaining the `IX_MAX_REC_FUEL` override
-/// for bisecting suspected loops.
-pub const MAX_REC_FUEL: u64 = 10_000_000;
+/// Large FLT proofs can finish successfully after roughly 54M counted steps
+/// with shallow def-eq recursion. Leave headroom for these finite checks;
+/// retain the independent depth/WHNF guards and the `IX_MAX_REC_FUEL`
+/// override for bounded experiments and bisecting suspected loops. This
+/// budget does not replace external time or memory limits.
+pub const MAX_REC_FUEL: u64 = 100_000_000;
 
 static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
   crate::env_var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
@@ -160,6 +158,12 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub cheap_recursion_depth: u32,
   /// Avoid recursively starting speculative projection-first comparisons.
   pub(crate) in_projection_probe: bool,
+  /// Leaf conversion inside an application worklist must not start another
+  /// worklist. The original conversion algorithm remains its fallback.
+  pub(crate) in_app_congruence: bool,
+  /// Disable nested binder-batch probes, including throughout a failed
+  /// probe's ordinary recursive fallback.
+  pub(crate) in_binder_batch: bool,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
   pub eager_reduce: bool,
   /// Current def-eq recursion depth.
@@ -171,6 +175,12 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub def_eq_peak: u32,
   /// Shared recursive fuel remaining for this constant check.
   pub rec_fuel: u64,
+  /// Unspent outer fuel temporarily withheld by same-head probes. Only used
+  /// to preserve the non-Regular startup window inside a larger Regular
+  /// slice; it never increases the fuel available to a nested computation.
+  pub(crate) same_head_fuel_reserve: u64,
+  /// Per-declaration admission history, not cached conversion facts.
+  pub(crate) same_head_backoff: super::def_eq::SameHeadBackoff,
   /// Optional diagnostic label for the current top-level constant.
   pub debug_label: Option<String>,
 
@@ -225,11 +235,15 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       in_native_reduce: false,
       cheap_recursion_depth: 0,
       in_projection_probe: false,
+      in_app_congruence: false,
+      in_binder_batch: false,
       eager_reduce: false,
       def_eq_depth: 0,
       def_eq_trace_depth: 0,
       def_eq_peak: 0,
       rec_fuel: max_rec_fuel(),
+      same_head_fuel_reserve: 0,
+      same_head_backoff: Default::default(),
       debug_label: None,
       cur_const: None,
       delta_targets: FxHashSet::default(),
@@ -851,6 +865,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.in_native_reduce = false;
     self.cheap_recursion_depth = 0;
     self.in_projection_probe = false;
+    self.in_app_congruence = false;
+    self.in_binder_batch = false;
     self.eager_reduce = false;
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;
@@ -864,6 +880,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       self.env.clear_reduction_caches();
     }
     self.rec_fuel = max_rec_fuel();
+    self.same_head_fuel_reserve = 0;
+    self.same_head_backoff = Default::default();
     self.hot_misses.clear();
     // Reset the local context (it must always be empty between constants).
     // The fvar id counter lives on KEnv and is intentionally not reset here:
@@ -1073,15 +1091,28 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   }
 
   fn dump_hot_misses(&self) {
+    eprint!("{}", self.hot_miss_summary());
+  }
+
+  /// Snapshot opt-in miss counters without rerunning work or retaining terms.
+  /// The subject helper can report once at completion instead of dumping at
+  /// every exhausted speculative slice via `IX_REC_FUEL_DUMP`.
+  pub fn hot_miss_summary(&self) -> String {
     if !*IX_HOT_MISSES || self.hot_misses.is_empty() {
-      return;
+      return String::new();
     }
+    use std::fmt::Write;
     let mut entries: Vec<_> = self.hot_misses.iter().collect();
     entries.sort_unstable_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    eprintln!("[hot misses] top {}:", entries.len().min(25));
+    let mut out = format!(
+      "[hot misses] {} distinct shapes; top {}:\n",
+      entries.len(),
+      entries.len().min(25)
+    );
     for (key, count) in entries.into_iter().take(25) {
-      eprintln!("  {count:>8}  {key}");
+      let _ = writeln!(out, "  {count:>8}  {key}");
     }
+    out
   }
 }
 
@@ -1210,6 +1241,21 @@ pub(crate) fn app_head<M: KernelMode>(mut e: &KExpr<M>) -> &KExpr<M> {
   e
 }
 
+/// Borrow an application head and its arguments in source application order.
+/// The caller-held root owns every returned node; nothing is borrowed from a
+/// mutable interner/cache. Short spines need neither allocation nor Arc clones.
+pub(crate) fn borrow_app_spine<M: KernelMode>(
+  mut e: &KExpr<M>,
+) -> (&KExpr<M>, smallvec::SmallVec<[&KExpr<M>; 8]>) {
+  let mut args = smallvec::SmallVec::new();
+  while let ExprData::App(f, a, _) = e.data() {
+    args.push(a);
+    e = f;
+  }
+  args.reverse();
+  (e, args)
+}
+
 /// Collect the application spine: `App(App(f, a1), a2)` → `(f, [a1, a2])`.
 ///
 /// Counts args first so the result `Vec` is allocated exactly once with
@@ -1233,14 +1279,17 @@ pub fn collect_app_spine<M: KernelMode>(
     return (e.clone(), Vec::new());
   }
   let mut args = Vec::with_capacity(count);
-  let mut cur = e.clone();
+  let mut cur = e;
   while let ExprData::App(f, a, _) = cur.data() {
     args.push(a.clone());
-    cur = f.clone();
+    cur = f;
   }
   args.reverse();
-  (cur, args)
+  (cur.clone(), args)
 }
+
+#[cfg(test)]
+mod spine_tests;
 
 fn hot_expr_shape<M: KernelMode>(e: &KExpr<M>) -> String {
   let (head, args) = collect_app_spine(e);
@@ -1607,6 +1656,25 @@ mod tests {
   }
 
   // ---- tick / fuel ----
+
+  #[test]
+  fn configured_fuel_initializes_and_resets_checks() {
+    assert_eq!(MAX_REC_FUEL, 100_000_000);
+    let expected = crate::env_var("IX_MAX_REC_FUEL")
+      .ok()
+      .and_then(|s| s.parse::<u64>().ok())
+      .unwrap_or(MAX_REC_FUEL);
+    assert_eq!(max_rec_fuel(), expected);
+
+    let mut tc = new_tc();
+    assert_eq!(tc.rec_fuel, expected);
+    tc.rec_fuel = 0;
+    tc.reset();
+    assert_eq!(tc.rec_fuel, expected);
+    tc.rec_fuel = 0;
+    tc.finish_constant_accounting();
+    assert_eq!(tc.rec_fuel, expected);
+  }
 
   #[test]
   fn tick_consumes_fuel() {
