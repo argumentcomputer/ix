@@ -15,7 +15,7 @@ the revision that turned precompilation on. Before it, Blake3 exposed a
 `blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
 that target no longer exists. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "2db8f692ed94f7c4a993527008b8c5231b169709"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "78f5bc4b22de1172af8a5d91e7039128084fad3a"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"

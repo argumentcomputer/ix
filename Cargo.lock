@@ -2104,7 +2104,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3#a8aab731af8d2a5e15f390cd2ef14af4fc42d7d3"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=c683c69ccb0499fc4528ece39f292f53b8c71609#c683c69ccb0499fc4528ece39f292f53b8c71609"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
@@ -2122,6 +2122,7 @@ dependencies = [
  "p3-merkle-tree",
  "p3-symmetric",
  "p3-util",
+ "rayon",
  "serde",
  "tracing",
 ]
