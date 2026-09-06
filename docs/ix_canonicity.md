@@ -1384,12 +1384,18 @@ scheduler, on the work-stealing schedule itself. Both compilers must
 run aux synthesis in kernel contexts scoped to the block, and on
 egress restore source spellings structurally
 (`restore_source_names_same_content` and the source-name hint maps in
-`expr_utils.rs`; `restoreSourceNamesSameContent` and mirrors in
-`Ix/AuxGen/Kernel.lean`). The restoration heuristics — hint candidacy
-restricted to `App`/`Proj` subterms, first-insert-wins hint slots —
+`expr_utils.rs` / `source_name_hints.rs`; `restoreSourceNamesSameContent`
+and mirrors in `Ix/AuxGen/Kernel.lean`). The restoration heuristics —
+hint candidacy restricted to `App`/`Proj` subterms, first-insert-wins hint slots —
 are part of the specified behavior: they must remain mirrored
 hole-for-hole, since a restoration difference is a parity break even
 with block-scoped contexts (§17.8).
+
+The Rust hint pass uses exact, shallow structural keys over canonical child
+identities, not a lossy digest as evidence of equality. Its conversion and
+restoration memos are scoped to one pass with a fixed view of referenced
+name resolutions; first-wins collection precedes restoration against the
+completed hint map. These temporary identities never enter serialized output.
 
 **Positions in scope.** The rule governs the metadata positions that
 record a *reference to another constant*:
@@ -2295,7 +2301,7 @@ Phase 2 paths already were). Remaining audit items:
 
 - **Restoration-heuristic mirror parity.** The kernel-egress
   restoration passes are heuristic: hint candidacy is `App`/`Proj`
-  only (`source_name_hint_candidate` in `expr_utils.rs` — a bare
+  only (`Pass::candidate` in `source_name_hints.rs` — a bare
   aliased `Const` surviving a genuinely-reducing WHNF is not
   restored), and hint slots are first-insert-wins (two same-address
   source subterms take the traversal-first spelling). The Lean
@@ -2308,11 +2314,13 @@ Phase 2 paths already were). Remaining audit items:
   is an intern-assigned uid, fresh for every un-interned
   `to_kexpr_static` construction — so no restore-time key ever
   matched a collect-time key and the Rust hint pass restored nothing.
-  Fixed by `kexpr_content_key` (a pure name-erased structural digest
-  mirroring the `ExprKey`/`Ix.Tc` equivalence) and by making the
-  WHNF no-op test structural (`==`) rather than uid equality. Any
-  future keying change must preserve that both sides induce the
-  identical equivalence.
+  Originally fixed by `kexpr_content_key` (a pure name-erased structural
+  digest mirroring the `ExprKey`/`Ix.Tc` equivalence) and by making the
+  WHNF no-op test structural (`==`) rather than uid equality. The hint
+  pass now uses exact, pass-local structural identities instead of that
+  digest, with full shallow-key equality on hash collisions. Any future
+  keying change must preserve that both sides induce the identical
+  equivalence.
 - **Lean `nameForAddr` fallback.** `TcScopeSt.nameForAddr`
   (`Ix/AuxGen/Kernel.lean`) resolves a provisional kernel address by
   a linear scan of `cenv.nameToNamed` in `HashMap` iteration order —

@@ -250,7 +250,7 @@ structure BlockEnv where
 
 /-! ## Compilation Error -/
 
-/-- Compilation error type. Variant order matches Rust CompileError (tags 0–5). -/
+/-- Compilation error type. Variant order matches Rust CompileError (tags 0–6). -/
 inductive CompileError where
   | missingConstant (name : String)
   | missingAddress (addr : Address)
@@ -258,6 +258,7 @@ inductive CompileError where
   | unsupportedExpr (desc : String)
   | unknownUnivParam (curr param : String)
   | serializeError (err : Ixon.SerializeError)
+  | resourceLimit (reason : String)
   deriving Repr, BEq
 
 instance : ToString CompileError where
@@ -268,6 +269,7 @@ instance : ToString CompileError where
   | .unsupportedExpr desc => s!"unsupportedExpr: {desc}"
   | .unknownUnivParam curr param => s!"unknownUnivParam: compiling {curr}, param {param}"
   | .serializeError err => s!"serializeError: {err}"
+  | .resourceLimit reason => s!"resourceLimit: {reason}"
 
 abbrev CompileM := ReaderT (CompileEnv × BlockEnv) (ExceptT CompileError (StateT BlockState Id))
 

@@ -49,7 +49,7 @@ impl std::error::Error for SerializeError {}
 
 /// Errors during compilation (Lean → Ixon).
 ///
-/// Variant order matches Lean constructor tags (0–5).
+/// Variant order matches Lean constructor tags (0–6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompileError {
   /// Referenced constant not found (tag 0).
@@ -65,6 +65,8 @@ pub enum CompileError {
   UnknownUnivParam { curr: String, param: String },
   /// Serialization error during compilation (tag 5)
   Serialize(SerializeError),
+  /// Compilation could not stay within its resource budget (tag 6).
+  ResourceLimit { reason: String },
 }
 
 impl std::fmt::Display for CompileError {
@@ -84,6 +86,7 @@ impl std::fmt::Display for CompileError {
         write!(f, "unknown universe parameter: compiling {curr}, param {param}")
       },
       Self::Serialize(e) => write!(f, "serialization error: {e}"),
+      Self::ResourceLimit { reason } => write!(f, "resource limit: {reason}"),
     }
   }
 }

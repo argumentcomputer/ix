@@ -9,7 +9,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
+use crate::compile::nat_conv::nat_to_u64;
 use bignat::Nat;
 use ix_common::address::Address;
 use ix_common::env::{
@@ -17,6 +17,13 @@ use ix_common::env::{
 };
 use ix_kernel::ingress::{lean_level_to_kuniv, resolve_lean_name_addr};
 use ix_kernel::mode::Meta;
+
+#[path = "source_name_hints.rs"]
+mod source_name_hints;
+
+#[cfg(test)]
+#[path = "source_name_hints_reference.rs"]
+mod source_name_hints_reference;
 
 // =========================================================================
 // FVar infrastructure
@@ -521,71 +528,14 @@ pub(super) fn batch_abstract(
   scope_depth: usize,
   internal_depth: u64,
 ) -> LeanExpr {
-  // Fast path: no binders to abstract.
-  if scope_depth == 0 {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Fvar(name, _) => {
-      if let Some(&pos) = fvar_map.get(name) {
-        if pos < scope_depth {
-          let idx = (scope_depth - 1 - pos) as u64 + internal_depth;
-          LeanExpr::bvar(Nat::from(idx))
-        } else {
-          // FVar not yet in scope (e.g., a forward reference in a domain
-          // to a binder declared later). Leave as-is.
-          expr.clone()
-        }
-      } else {
-        // FVar not in our telescope — leave as-is.
-        expr.clone()
-      }
-    },
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_u64(idx);
-      if i >= internal_depth {
-        // Free BVar: shift up by scope_depth to make room for our binders.
-        LeanExpr::bvar(Nat::from(i + scope_depth as u64))
-      } else {
-        // Bound by an expression-internal binder — unchanged.
-        expr.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      batch_abstract(f, fvar_map, scope_depth, internal_depth),
-      batch_abstract(a, fvar_map, scope_depth, internal_depth),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(v, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
-      n.clone(),
-      i.clone(),
-      batch_abstract(e, fvar_map, scope_depth, internal_depth),
-    ),
-    ExprData::Mdata(kvs, e, _) => LeanExpr::mdata(
-      kvs.clone(),
-      batch_abstract(e, fvar_map, scope_depth, internal_depth),
-    ),
-    // Sort, Const, MVar, Lit — no FVars or BVars to process.
-    _ => expr.clone(),
-  }
+  super::checked_expr::batch_abstract_at(
+    expr,
+    fvar_map,
+    scope_depth,
+    internal_depth,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 // =========================================================================
@@ -607,50 +557,13 @@ pub(super) fn instantiate1_at(
   replacement: &LeanExpr,
   depth: u64,
 ) -> LeanExpr {
-  match body.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_u64(idx);
-      if i == depth {
-        replacement.clone()
-      } else if i > depth {
-        LeanExpr::bvar(Nat::from(i - 1))
-      } else {
-        body.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      instantiate1_at(f, replacement, depth),
-      instantiate1_at(a, replacement, depth),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      instantiate1_at(t, replacement, depth),
-      instantiate1_at(b, replacement, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      instantiate1_at(t, replacement, depth),
-      instantiate1_at(b, replacement, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      instantiate1_at(t, replacement, depth),
-      instantiate1_at(v, replacement, depth),
-      instantiate1_at(b, replacement, depth + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
-      n.clone(),
-      i.clone(),
-      instantiate1_at(e, replacement, depth),
-    ),
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), instantiate1_at(e, replacement, depth))
-    },
-    _ => body.clone(),
-  }
+  super::checked_expr::instantiate1_at(
+    body,
+    replacement,
+    depth,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 /// Multi-argument reverse instantiation: replace BVar(0)..BVar(n-1) with
@@ -665,69 +578,8 @@ pub(super) fn instantiate1_at(
 /// argument may reference the caller's telescope (e.g. call-site surgery
 /// on an application under binders, as in `.brecOn_N.go` bodies).
 pub fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
-  if args.is_empty() {
-    return body.clone();
-  }
-  instantiate_rev_at(body, args, 0)
-}
-
-fn instantiate_rev_at(
-  body: &LeanExpr,
-  args: &[LeanExpr],
-  depth: u64,
-) -> LeanExpr {
-  let n = args.len() as u64;
-  match body.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_u64(idx);
-      if i >= depth {
-        let ridx = i - depth;
-        if ridx < n {
-          // Replace with args[ridx], shifted up by depth for the binders we're under.
-          shift_vars(&args[ridx as usize], depth as usize, 0)
-        } else {
-          // Free BVar past our substitution range: decrement by n.
-          LeanExpr::bvar(Nat::from(i - n))
-        }
-      } else {
-        // Bound by an expression-internal binder — unchanged.
-        body.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      instantiate_rev_at(f, args, depth),
-      instantiate_rev_at(a, args, depth),
-    ),
-    ExprData::Lam(name, t, b, bi, _) => LeanExpr::lam(
-      name.clone(),
-      instantiate_rev_at(t, args, depth),
-      instantiate_rev_at(b, args, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(name, t, b, bi, _) => LeanExpr::all(
-      name.clone(),
-      instantiate_rev_at(t, args, depth),
-      instantiate_rev_at(b, args, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(name, t, v, b, nd, _) => LeanExpr::letE(
-      name.clone(),
-      instantiate_rev_at(t, args, depth),
-      instantiate_rev_at(v, args, depth),
-      instantiate_rev_at(b, args, depth + 1),
-      *nd,
-    ),
-    ExprData::Proj(name, i, e, _) => LeanExpr::proj(
-      name.clone(),
-      i.clone(),
-      instantiate_rev_at(e, args, depth),
-    ),
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), instantiate_rev_at(e, args, depth))
-    },
-    // Sort, Const, Lit, FVar, MVar — no BVars to substitute.
-    _ => body.clone(),
-  }
+  super::checked_expr::instantiate_rev(body, args, &Default::default())
+    .expect("disabled cancellation checkpoint")
 }
 
 /// Peel `n` forall binders and substitute their variables with `args`.
@@ -804,56 +656,21 @@ pub(super) fn instantiate_spec_with_fvars(
 
 /// Shift BVars UP by `amount` for BVars >= cutoff.
 ///
-/// Used internally by `instantiate_rev_at` when substituting args under
+/// Used when substituting args under
 /// inner binders (each args element is re-shifted by the current depth).
 pub(crate) fn shift_vars(
   expr: &LeanExpr,
   amount: usize,
   cutoff: usize,
 ) -> LeanExpr {
-  if amount == 0 {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_usize(idx);
-      if i >= cutoff {
-        LeanExpr::bvar(Nat::from((i + amount) as u64))
-      } else {
-        expr.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      shift_vars(f, amount, cutoff),
-      shift_vars(a, amount, cutoff),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      shift_vars(t, amount, cutoff),
-      shift_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      shift_vars(t, amount, cutoff),
-      shift_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      shift_vars(t, amount, cutoff),
-      shift_vars(v, amount, cutoff),
-      shift_vars(b, amount, cutoff + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), shift_vars(e, amount, cutoff))
-    },
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), shift_vars(e, amount, cutoff))
-    },
-    _ => expr.clone(),
-  }
+  super::checked_expr::shift_vars(
+    expr,
+    amount,
+    cutoff,
+    false,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 /// Inverse of [`shift_vars`] for an expression known to have been lifted by
@@ -864,49 +681,14 @@ pub(crate) fn lower_vars(
   amount: usize,
   cutoff: usize,
 ) -> LeanExpr {
-  if amount == 0 {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let i = nat_to_usize(idx);
-      if i >= cutoff + amount {
-        LeanExpr::bvar(Nat::from((i - amount) as u64))
-      } else {
-        expr.clone()
-      }
-    },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      lower_vars(f, amount, cutoff),
-      lower_vars(a, amount, cutoff),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      lower_vars(t, amount, cutoff),
-      lower_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      lower_vars(t, amount, cutoff),
-      lower_vars(b, amount, cutoff + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      lower_vars(t, amount, cutoff),
-      lower_vars(v, amount, cutoff),
-      lower_vars(b, amount, cutoff + 1),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), lower_vars(e, amount, cutoff))
-    },
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), lower_vars(e, amount, cutoff))
-    },
-    _ => expr.clone(),
-  }
+  super::checked_expr::shift_vars(
+    expr,
+    amount,
+    cutoff,
+    true,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
 }
 
 // =========================================================================
@@ -919,84 +701,8 @@ pub fn subst_levels(
   params: &[Name],
   univs: &[Level],
 ) -> LeanExpr {
-  if params.is_empty() || univs.is_empty() {
-    return expr.clone();
-  }
-  match expr.as_data() {
-    ExprData::Sort(lvl, _) => LeanExpr::sort(subst_level(lvl, params, univs)),
-    ExprData::Const(name, us, _) => LeanExpr::cnst(
-      name.clone(),
-      us.iter().map(|u| subst_level(u, params, univs)).collect(),
-    ),
-    ExprData::App(f, a, _) => LeanExpr::app(
-      subst_levels(f, params, univs),
-      subst_levels(a, params, univs),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      subst_levels(t, params, univs),
-      subst_levels(b, params, univs),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      subst_levels(t, params, univs),
-      subst_levels(b, params, univs),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      subst_levels(t, params, univs),
-      subst_levels(v, params, univs),
-      subst_levels(b, params, univs),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), subst_levels(e, params, univs))
-    },
-    ExprData::Mdata(md, e, _) => {
-      LeanExpr::mdata(md.clone(), subst_levels(e, params, univs))
-    },
-    _ => expr.clone(),
-  }
-}
-
-/// Substitute universe parameters in a level.
-///
-/// Uses the smart constructors `Level::max_smart` and `Level::imax_smart` so
-/// that substituting away parameters produces the same canonical form the
-/// kernel sees post-ingress (`KUniv::max` does the same simplifications at
-/// kernel-side construction time). Without this normalization, `Max(Succ Param u,
-/// Succ Param v)` substituted to `Max(Succ Zero, Succ Zero)` stays as a `Max`
-/// node compile-side while the kernel collapses it to `Succ Zero` —
-/// `sort_aux_by_partition_refinement` would then disagree with the kernel's
-/// `canonical_aux_order` on whether two structurally-different aux types
-/// (e.g. `Sort 1` vs `Sort (max 1 1)`) are equivalent.
-pub(super) fn subst_level(
-  lvl: &Level,
-  params: &[Name],
-  univs: &[Level],
-) -> Level {
-  match lvl.as_data() {
-    LevelData::Zero(_) | LevelData::Mvar(_, _) => lvl.clone(),
-    LevelData::Succ(l, _) => Level::succ(subst_level(l, params, univs)),
-    LevelData::Max(a, b, _) => Level::max_smart(
-      subst_level(a, params, univs),
-      subst_level(b, params, univs),
-    ),
-    LevelData::Imax(a, b, _) => Level::imax_smart(
-      subst_level(a, params, univs),
-      subst_level(b, params, univs),
-    ),
-    LevelData::Param(name, _) => {
-      for (i, p) in params.iter().enumerate() {
-        if p == name && i < univs.len() {
-          return univs[i].clone();
-        }
-      }
-      lvl.clone()
-    },
-  }
+  super::checked_expr::subst_levels(expr, params, univs, &Default::default())
+    .expect("disabled cancellation checkpoint")
 }
 
 // =========================================================================
@@ -1626,44 +1332,11 @@ pub(super) fn mk_app_n(f: LeanExpr, args: &[LeanExpr]) -> LeanExpr {
 /// that shouldn't appear in the final output.
 pub(super) fn subst_fvar(
   expr: &LeanExpr,
-  fvar_name: &Name,
-  replacement: &LeanExpr,
+  name: &Name,
+  value: &LeanExpr,
 ) -> LeanExpr {
-  match expr.as_data() {
-    ExprData::Fvar(n, _) if n == fvar_name => replacement.clone(),
-    ExprData::App(f, a, _) => LeanExpr::app(
-      subst_fvar(f, fvar_name, replacement),
-      subst_fvar(a, fvar_name, replacement),
-    ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      subst_fvar(t, fvar_name, replacement),
-      subst_fvar(b, fvar_name, replacement),
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      subst_fvar(t, fvar_name, replacement),
-      subst_fvar(b, fvar_name, replacement),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      subst_fvar(t, fvar_name, replacement),
-      subst_fvar(v, fvar_name, replacement),
-      subst_fvar(b, fvar_name, replacement),
-      *nd,
-    ),
-    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
-      n.clone(),
-      i.clone(),
-      subst_fvar(e, fvar_name, replacement),
-    ),
-    ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), subst_fvar(e, fvar_name, replacement))
-    },
-    _ => expr.clone(),
-  }
+  super::checked_expr::subst_fvar(expr, name, value, &Default::default())
+    .expect("disabled cancellation checkpoint")
 }
 
 /// Replace constant names throughout an expression according to a name map.
@@ -2739,22 +2412,13 @@ impl<'a> TcScope<'a> {
     if whnfed == kexpr {
       restore_source_names_same_content(&out, ty, self.stt)
     } else {
-      let mut source_name_hints = FxHashMap::default();
-      collect_lean_source_name_hints(
+      source_name_hints::restore(
+        &out,
         ty,
         &self.fvar_levels,
         depth,
         self.param_names,
         self.stt,
-        &mut source_name_hints,
-      );
-      restore_lean_source_name_hints(
-        &out,
-        &self.fvar_levels,
-        depth,
-        self.param_names,
-        self.stt,
-        &source_name_hints,
       )
     }
   }
@@ -2817,6 +2481,8 @@ impl<'a> TcScope<'a> {
 ///
 /// `Mdata` layers carried by the kernel expression are re-wrapped around
 /// the result in original order — matching `egress_expr`.
+/// Memoization preserves shared subexpressions at each binder depth instead
+/// of expanding the input DAG into a tree. The cache lives for one call only.
 pub(super) fn kexpr_to_lean(
   expr: &ix_kernel::expr::KExpr<Meta>,
   outer_depth: usize,
@@ -2824,7 +2490,32 @@ pub(super) fn kexpr_to_lean(
   local_depth: usize,
   param_names: &[Name],
 ) -> LeanExpr {
+  kexpr_to_lean_cached(
+    expr,
+    outer_depth,
+    fvar_levels,
+    local_depth,
+    param_names,
+    &mut FxHashMap::default(),
+  )
+}
+
+fn kexpr_to_lean_cached(
+  expr: &ix_kernel::expr::KExpr<Meta>,
+  outer_depth: usize,
+  fvar_levels: &FxHashMap<Name, usize>,
+  local_depth: usize,
+  param_names: &[Name],
+  cache: &mut FxHashMap<(usize, usize), LeanExpr>,
+) -> LeanExpr {
   use ix_kernel::expr::ExprData as KED;
+
+  // Input nodes stay alive for this call. Intern uids are NOT sufficient:
+  // distinct metadata-bearing nodes can have the same name-erased identity.
+  let key = (std::ptr::from_ref(expr.data()).addr(), local_depth);
+  if let Some(result) = cache.get(&key) {
+    return result.clone();
+  }
 
   // Reverse `fvar_levels` lazily via linear search — the FVar context is
   // small in practice (a handful of param/motive/minor/index binders),
@@ -2875,38 +2566,102 @@ pub(super) fn kexpr_to_lean(
       LeanExpr::cnst(kid.name.clone(), levels)
     },
     KED::App(f, a, _) => LeanExpr::app(
-      kexpr_to_lean(f, outer_depth, fvar_levels, local_depth, param_names),
-      kexpr_to_lean(a, outer_depth, fvar_levels, local_depth, param_names),
+      kexpr_to_lean_cached(
+        f,
+        outer_depth,
+        fvar_levels,
+        local_depth,
+        param_names,
+        cache,
+      ),
+      kexpr_to_lean_cached(
+        a,
+        outer_depth,
+        fvar_levels,
+        local_depth,
+        param_names,
+        cache,
+      ),
     ),
     KED::All(name, bi, d, b, _) => LeanExpr::all(
       name.clone(),
-      kexpr_to_lean(d, outer_depth, fvar_levels, local_depth, param_names),
-      kexpr_to_lean(b, outer_depth, fvar_levels, local_depth + 1, param_names),
+      kexpr_to_lean_cached(
+        d,
+        outer_depth,
+        fvar_levels,
+        local_depth,
+        param_names,
+        cache,
+      ),
+      kexpr_to_lean_cached(
+        b,
+        outer_depth,
+        fvar_levels,
+        local_depth + 1,
+        param_names,
+        cache,
+      ),
       bi.clone(),
     ),
     KED::Lam(name, bi, d, b, _) => LeanExpr::lam(
       name.clone(),
-      kexpr_to_lean(d, outer_depth, fvar_levels, local_depth, param_names),
-      kexpr_to_lean(b, outer_depth, fvar_levels, local_depth + 1, param_names),
+      kexpr_to_lean_cached(
+        d,
+        outer_depth,
+        fvar_levels,
+        local_depth,
+        param_names,
+        cache,
+      ),
+      kexpr_to_lean_cached(
+        b,
+        outer_depth,
+        fvar_levels,
+        local_depth + 1,
+        param_names,
+        cache,
+      ),
       bi.clone(),
     ),
     KED::Let(name, ty, val, body, nd, _) => LeanExpr::letE(
       name.clone(),
-      kexpr_to_lean(ty, outer_depth, fvar_levels, local_depth, param_names),
-      kexpr_to_lean(val, outer_depth, fvar_levels, local_depth, param_names),
-      kexpr_to_lean(
+      kexpr_to_lean_cached(
+        ty,
+        outer_depth,
+        fvar_levels,
+        local_depth,
+        param_names,
+        cache,
+      ),
+      kexpr_to_lean_cached(
+        val,
+        outer_depth,
+        fvar_levels,
+        local_depth,
+        param_names,
+        cache,
+      ),
+      kexpr_to_lean_cached(
         body,
         outer_depth,
         fvar_levels,
         local_depth + 1,
         param_names,
+        cache,
       ),
       *nd,
     ),
     KED::Prj(kid, field, val, _) => LeanExpr::proj(
       kid.name.clone(),
       Nat::from(*field),
-      kexpr_to_lean(val, outer_depth, fvar_levels, local_depth, param_names),
+      kexpr_to_lean_cached(
+        val,
+        outer_depth,
+        fvar_levels,
+        local_depth,
+        param_names,
+        cache,
+      ),
     ),
     KED::Nat(n, _, _) => {
       use ix_common::env::Literal;
@@ -2919,399 +2674,13 @@ pub(super) fn kexpr_to_lean(
   };
 
   // Re-wrap mdata layers, outermost first (matching egress_expr's order).
-  expr
+  let result = expr
     .mdata()
     .iter()
     .rev()
-    .fold(inner, |acc, kvs| LeanExpr::mdata(kvs.clone(), acc))
-}
-
-fn source_name_hint_candidate(expr: &LeanExpr) -> bool {
-  matches!(expr.as_data(), ExprData::App(..) | ExprData::Proj(..))
-}
-
-/// Name-erased structural content key for the source-name hint map.
-///
-/// Mirrors the equivalence of the Lean pipeline's `Ix.Tc.KExpr` content
-/// addresses (`toKexprStatic ... |>.addr` in `Ix/AuxGen/Kernel.lean`) and
-/// of the kernel's `ExprKey`/`structural_eq`: display names, binder
-/// names, binder infos, and mdata are excluded; `Const`/`Prj` contribute
-/// their resolved content address, universes their index structure. Two
-/// spellings of one alias pair (`Paths V` / `Symmetrify V`) therefore
-/// agree on this key — which is the whole point of the hint map.
-///
-/// `KExpr::hash_key()` is NOT usable here: it is the intern-assigned uid,
-/// fresh for every un-interned construction, and `to_kexpr_static` does
-/// not intern — so the collect-time and restore-time keys of two
-/// content-equal subterms never matched, and the hint map restored
-/// nothing (the Mathlib `Quiver.FreeGroupoid.redStep` metadata
-/// divergence, canonicity §10.5).
-fn kexpr_content_key(e: &ix_kernel::expr::KExpr<Meta>) -> u64 {
-  use std::hash::Hasher;
-  let mut h = rustc_hash::FxHasher::default();
-  kexpr_content_hash(e, &mut h);
-  h.finish()
-}
-
-fn kuniv_content_hash(
-  u: &ix_kernel::level::KUniv<Meta>,
-  h: &mut rustc_hash::FxHasher,
-) {
-  use ix_kernel::level::UnivData as UD;
-  use std::hash::Hasher;
-  match u.data() {
-    UD::Zero(_) => h.write_u8(0),
-    UD::Succ(a, _) => {
-      h.write_u8(1);
-      kuniv_content_hash(a, h);
-    },
-    UD::Max(a, b, _) => {
-      h.write_u8(2);
-      kuniv_content_hash(a, h);
-      kuniv_content_hash(b, h);
-    },
-    UD::IMax(a, b, _) => {
-      h.write_u8(3);
-      kuniv_content_hash(a, h);
-      kuniv_content_hash(b, h);
-    },
-    UD::Param(idx, _, _) => {
-      h.write_u8(4);
-      h.write_u64(*idx);
-    },
-  }
-}
-
-fn kexpr_content_hash(
-  e: &ix_kernel::expr::KExpr<Meta>,
-  h: &mut rustc_hash::FxHasher,
-) {
-  use ix_kernel::expr::ExprData as KED;
-  use std::hash::Hasher;
-  match e.data() {
-    KED::Var(i, _, _) => {
-      h.write_u8(0);
-      h.write_u64(*i);
-    },
-    KED::FVar(id, _, _) => {
-      h.write_u8(1);
-      h.write_u64(id.0);
-    },
-    KED::Sort(u, _) => {
-      h.write_u8(2);
-      kuniv_content_hash(u, h);
-    },
-    KED::Const(id, us, _) => {
-      h.write_u8(3);
-      h.write(id.addr.as_bytes());
-      h.write_u64(us.len() as u64);
-      for u in us.iter() {
-        kuniv_content_hash(u, h);
-      }
-    },
-    KED::App(f, a, _) => {
-      h.write_u8(4);
-      kexpr_content_hash(f, h);
-      kexpr_content_hash(a, h);
-    },
-    KED::Lam(_, _, t, b, _) => {
-      h.write_u8(5);
-      kexpr_content_hash(t, h);
-      kexpr_content_hash(b, h);
-    },
-    KED::All(_, _, t, b, _) => {
-      h.write_u8(6);
-      kexpr_content_hash(t, h);
-      kexpr_content_hash(b, h);
-    },
-    KED::Let(_, t, v, b, nd, _) => {
-      h.write_u8(7);
-      h.write_u8(u8::from(*nd));
-      kexpr_content_hash(t, h);
-      kexpr_content_hash(v, h);
-      kexpr_content_hash(b, h);
-    },
-    KED::Prj(id, f, v, _) => {
-      h.write_u8(8);
-      h.write(id.addr.as_bytes());
-      h.write_u64(*f);
-      kexpr_content_hash(v, h);
-    },
-    KED::Nat(_, ba, _) => {
-      h.write_u8(9);
-      h.write(ba.as_bytes());
-    },
-    KED::Str(_, ba, _) => {
-      h.write_u8(10);
-      h.write(ba.as_bytes());
-    },
-  }
-}
-
-/// Collect source-shaped subterms that WHNF may copy into a reduct.
-///
-/// Keys use the kernel content hash so alpha-collapsed aliases like
-/// `CategoryTheory.Paths V` and `Quiver.Symmetrify V` line up, while values
-/// keep the Lean display names from the caller. We skip BVar-containing terms:
-/// WHNF may lift copied arguments under freshly-exposed binders, so matching
-/// those by raw de Bruijn indices would be unstable.
-fn collect_lean_source_name_hints(
-  source: &LeanExpr,
-  fvar_levels: &FxHashMap<Name, usize>,
-  depth: usize,
-  param_names: &[Name],
-  stt: &crate::compile::CompileState,
-  out: &mut FxHashMap<ix_kernel::env::Addr, LeanExpr>,
-) {
-  if source_name_hint_candidate(source) && !expr_has_bvar(source) {
-    let key = kexpr_content_key(&to_kexpr_static(
-      source,
-      fvar_levels,
-      depth,
-      param_names,
-      stt,
-    ));
-    out.entry(key).or_insert_with(|| source.clone());
-  }
-
-  match source.as_data() {
-    ExprData::Mdata(_, inner, _) => collect_lean_source_name_hints(
-      inner,
-      fvar_levels,
-      depth,
-      param_names,
-      stt,
-      out,
-    ),
-    ExprData::App(f, a, _) => {
-      collect_lean_source_name_hints(
-        f,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        out,
-      );
-      collect_lean_source_name_hints(
-        a,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        out,
-      );
-    },
-    ExprData::ForallE(_, d, b, _, _) | ExprData::Lam(_, d, b, _, _) => {
-      collect_lean_source_name_hints(
-        d,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        out,
-      );
-      collect_lean_source_name_hints(
-        b,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        out,
-      );
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      collect_lean_source_name_hints(
-        t,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        out,
-      );
-      collect_lean_source_name_hints(
-        v,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        out,
-      );
-      collect_lean_source_name_hints(
-        b,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        out,
-      );
-    },
-    ExprData::Proj(_, _, v, _) => collect_lean_source_name_hints(
-      v,
-      fvar_levels,
-      depth,
-      param_names,
-      stt,
-      out,
-    ),
-    _ => {},
-  }
-}
-
-/// Restore source spellings for copied subterms after a real WHNF reduction.
-///
-/// This is intentionally subterm-based rather than whole-expression based:
-/// unfolding a reducible alias such as `HomRel (Paths (Symmetrify V))` should
-/// keep the expanded `∀` telescope, but the repeated argument subterms inside
-/// that telescope should retain the caller's `Symmetrify` spelling instead of
-/// whichever same-address alias the kernel cache/intern table already held.
-fn restore_lean_source_name_hints(
-  generated: &LeanExpr,
-  fvar_levels: &FxHashMap<Name, usize>,
-  depth: usize,
-  param_names: &[Name],
-  stt: &crate::compile::CompileState,
-  hints: &FxHashMap<ix_kernel::env::Addr, LeanExpr>,
-) -> LeanExpr {
-  if source_name_hint_candidate(generated) && !expr_has_bvar(generated) {
-    let key = kexpr_content_key(&to_kexpr_static(
-      generated,
-      fvar_levels,
-      depth,
-      param_names,
-      stt,
-    ));
-    if let Some(source) = hints.get(&key) {
-      return source.clone();
-    }
-  }
-
-  match generated.as_data() {
-    ExprData::App(f, a, _) => LeanExpr::app(
-      restore_lean_source_name_hints(
-        f,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      restore_lean_source_name_hints(
-        a,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-    ),
-    ExprData::ForallE(n, d, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      restore_lean_source_name_hints(
-        d,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      restore_lean_source_name_hints(
-        b,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      bi.clone(),
-    ),
-    ExprData::Lam(n, d, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      restore_lean_source_name_hints(
-        d,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      restore_lean_source_name_hints(
-        b,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      restore_lean_source_name_hints(
-        t,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      restore_lean_source_name_hints(
-        v,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      restore_lean_source_name_hints(
-        b,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-      *nd,
-    ),
-    ExprData::Proj(n, i, v, _) => LeanExpr::proj(
-      n.clone(),
-      i.clone(),
-      restore_lean_source_name_hints(
-        v,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-    ),
-    ExprData::Mdata(kvs, v, _) => LeanExpr::mdata(
-      kvs.clone(),
-      restore_lean_source_name_hints(
-        v,
-        fvar_levels,
-        depth,
-        param_names,
-        stt,
-        hints,
-      ),
-    ),
-    _ => generated.clone(),
-  }
-}
-
-fn expr_has_bvar(expr: &LeanExpr) -> bool {
-  match expr.as_data() {
-    ExprData::Bvar(..) => true,
-    ExprData::App(f, a, _) => expr_has_bvar(f) || expr_has_bvar(a),
-    ExprData::ForallE(_, d, b, _, _) | ExprData::Lam(_, d, b, _, _) => {
-      expr_has_bvar(d) || expr_has_bvar(b)
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      expr_has_bvar(t) || expr_has_bvar(v) || expr_has_bvar(b)
-    },
-    ExprData::Proj(_, _, v, _) | ExprData::Mdata(_, v, _) => expr_has_bvar(v),
-    _ => false,
-  }
+    .fold(inner, |acc, kvs| LeanExpr::mdata(kvs.clone(), acc));
+  cache.insert(key, result.clone());
+  result
 }
 
 /// Restore source-side display names after a WHNF roundtrip that did not
@@ -3323,26 +2692,53 @@ fn expr_has_bvar(expr: &LeanExpr) -> bool {
 /// output are equal as kernel content we prefer the caller's Lean names while
 /// keeping the output's reduced levels/subterms. Real reductions are filtered
 /// by the caller's top-level content-hash check before this function is used.
+/// Cache by both full Lean identities so sharing is preserved without merging
+/// distinct source spellings of the same name-erased kernel expression.
 fn restore_source_names_same_content(
   generated: &LeanExpr,
   source: &LeanExpr,
   stt: &crate::compile::CompileState,
 ) -> LeanExpr {
-  let source = strip_mdata_ref(source);
+  restore_source_names_cached(generated, source, stt, &mut FxHashMap::default())
+}
 
-  match generated.as_data() {
+fn restore_source_names_cached(
+  generated: &LeanExpr,
+  source: &LeanExpr,
+  stt: &crate::compile::CompileState,
+  cache: &mut FxHashMap<(blake3::Hash, blake3::Hash), LeanExpr>,
+) -> LeanExpr {
+  let source = strip_mdata_ref(source);
+  if generated.get_hash() == source.get_hash() {
+    return generated.clone();
+  }
+  // One generated node can inherit different aliases at different source
+  // occurrences, so both source and generated identity belong in the key.
+  let key = (*generated.get_hash(), *source.get_hash());
+  if let Some(result) = cache.get(&key) {
+    return result.clone();
+  }
+  let result = match generated.as_data() {
     ExprData::Mdata(kvs, inner, _) => LeanExpr::mdata(
       kvs.clone(),
-      restore_source_names_same_content(inner, source, stt),
+      restore_source_names_cached(inner, source, stt, cache),
     ),
-    _ => restore_source_names_same_content_inner(generated, source, stt),
-  }
+    _ => restore_source_names_same_content_inner(generated, source, stt, cache),
+  };
+  let result = if result.get_hash() == generated.get_hash() {
+    generated.clone()
+  } else {
+    result
+  };
+  cache.insert(key, result.clone());
+  result
 }
 
 fn restore_source_names_same_content_inner(
   generated: &LeanExpr,
   source: &LeanExpr,
   stt: &crate::compile::CompileState,
+  cache: &mut FxHashMap<(blake3::Hash, blake3::Hash), LeanExpr>,
 ) -> LeanExpr {
   match (generated.as_data(), source.as_data()) {
     (
@@ -3353,8 +2749,8 @@ fn restore_source_names_same_content_inner(
     },
     (ExprData::App(gen_f, gen_a, _), ExprData::App(source_f, source_a, _)) => {
       LeanExpr::app(
-        restore_source_names_same_content(gen_f, source_f, stt),
-        restore_source_names_same_content(gen_a, source_a, stt),
+        restore_source_names_cached(gen_f, source_f, stt, cache),
+        restore_source_names_cached(gen_a, source_a, stt, cache),
       )
     },
     (
@@ -3362,8 +2758,8 @@ fn restore_source_names_same_content_inner(
       ExprData::ForallE(source_name, source_dom, source_body, _, _),
     ) => LeanExpr::all(
       source_name.clone(),
-      restore_source_names_same_content(gen_dom, source_dom, stt),
-      restore_source_names_same_content(gen_body, source_body, stt),
+      restore_source_names_cached(gen_dom, source_dom, stt, cache),
+      restore_source_names_cached(gen_body, source_body, stt, cache),
       gen_bi.clone(),
     ),
     (
@@ -3371,8 +2767,8 @@ fn restore_source_names_same_content_inner(
       ExprData::Lam(source_name, source_dom, source_body, _, _),
     ) => LeanExpr::lam(
       source_name.clone(),
-      restore_source_names_same_content(gen_dom, source_dom, stt),
-      restore_source_names_same_content(gen_body, source_body, stt),
+      restore_source_names_cached(gen_dom, source_dom, stt, cache),
+      restore_source_names_cached(gen_body, source_body, stt, cache),
       gen_bi.clone(),
     ),
     (
@@ -3380,9 +2776,9 @@ fn restore_source_names_same_content_inner(
       ExprData::LetE(source_name, source_ty, source_val, source_body, _, _),
     ) => LeanExpr::letE(
       source_name.clone(),
-      restore_source_names_same_content(gen_ty, source_ty, stt),
-      restore_source_names_same_content(gen_val, source_val, stt),
-      restore_source_names_same_content(gen_body, source_body, stt),
+      restore_source_names_cached(gen_ty, source_ty, stt, cache),
+      restore_source_names_cached(gen_val, source_val, stt, cache),
+      restore_source_names_cached(gen_body, source_body, stt, cache),
       *gen_nd,
     ),
     (
@@ -3394,7 +2790,7 @@ fn restore_source_names_same_content_inner(
       LeanExpr::proj(
         source_name.clone(),
         gen_field.clone(),
-        restore_source_names_same_content(gen_val, source_val, stt),
+        restore_source_names_cached(gen_val, source_val, stt, cache),
       )
     },
     _ => generated.clone(),
@@ -3422,11 +2818,10 @@ fn same_resolved_name_addr(
     == resolve_lean_name_addr(b, n2a, aux_n2a)
 }
 
-/// Static version of `to_kexpr` that takes borrowed references.
-///
-/// Identical to the closure-based `to_kexpr` in `get_level`, but as a
-/// standalone function so it can be called from both `PreparedTC::new`
-/// and `get_level_with_tc`.
+/// Convert a Lean expression in the current FVar context into kernel syntax.
+/// Memoize by full Lean identity and binder depth to preserve the input DAG.
+/// The cache is scoped to this call: FVar/universe bindings and resolved
+/// constant addresses can change between calls, even within one block.
 fn to_kexpr_static(
   expr: &LeanExpr,
   fvar_levels: &FxHashMap<Name, usize>,
@@ -3434,13 +2829,38 @@ fn to_kexpr_static(
   param_names: &[Name],
   stt: &crate::compile::CompileState,
 ) -> ix_kernel::expr::KExpr<Meta> {
+  to_kexpr_cached(
+    expr,
+    fvar_levels,
+    ctx_depth,
+    param_names,
+    stt,
+    &mut FxHashMap::default(),
+  )
+}
+
+fn to_kexpr_cached(
+  expr: &LeanExpr,
+  fvar_levels: &FxHashMap<Name, usize>,
+  ctx_depth: usize,
+  param_names: &[Name],
+  stt: &crate::compile::CompileState,
+  cache: &mut FxHashMap<(blake3::Hash, usize), ix_kernel::expr::KExpr<Meta>>,
+) -> ix_kernel::expr::KExpr<Meta> {
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
   use ix_kernel::expr::KExpr;
   use ix_kernel::id::KId;
   use ix_kernel::level::KUniv;
 
-  match expr.as_data() {
+  // The FVar/universe/address context is fixed for this conversion call.
+  // Lean's digest includes source names and metadata; binder depth is
+  // additionally needed because FVars map to different de Bruijn indices.
+  let key = (*expr.get_hash(), ctx_depth);
+  if let Some(result) = cache.get(&key) {
+    return result.clone();
+  }
+  let result = match expr.as_data() {
     ExprData::Fvar(fname, _) => {
       if let Some(&level) = fvar_levels.get(fname) {
         KExpr::var((ctx_depth - level - 1) as u64, Name::anon())
@@ -3460,33 +2880,58 @@ fn to_kexpr_static(
       KExpr::cnst(zid, zus)
     },
     ExprData::App(f, a, _) => {
-      let kf = to_kexpr_static(f, fvar_levels, ctx_depth, param_names, stt);
-      let ka = to_kexpr_static(a, fvar_levels, ctx_depth, param_names, stt);
+      let kf =
+        to_kexpr_cached(f, fvar_levels, ctx_depth, param_names, stt, cache);
+      let ka =
+        to_kexpr_cached(a, fvar_levels, ctx_depth, param_names, stt, cache);
       KExpr::app(kf, ka)
     },
     ExprData::ForallE(binder_name, dom, body, bi, _) => {
-      let kd = to_kexpr_static(dom, fvar_levels, ctx_depth, param_names, stt);
-      let kb =
-        to_kexpr_static(body, fvar_levels, ctx_depth + 1, param_names, stt);
+      let kd =
+        to_kexpr_cached(dom, fvar_levels, ctx_depth, param_names, stt, cache);
+      let kb = to_kexpr_cached(
+        body,
+        fvar_levels,
+        ctx_depth + 1,
+        param_names,
+        stt,
+        cache,
+      );
       KExpr::all(binder_name.clone(), bi.clone(), kd, kb)
     },
     ExprData::Lam(binder_name, dom, body, bi, _) => {
-      let kd = to_kexpr_static(dom, fvar_levels, ctx_depth, param_names, stt);
-      let kb =
-        to_kexpr_static(body, fvar_levels, ctx_depth + 1, param_names, stt);
+      let kd =
+        to_kexpr_cached(dom, fvar_levels, ctx_depth, param_names, stt, cache);
+      let kb = to_kexpr_cached(
+        body,
+        fvar_levels,
+        ctx_depth + 1,
+        param_names,
+        stt,
+        cache,
+      );
       KExpr::lam(binder_name.clone(), bi.clone(), kd, kb)
     },
     ExprData::LetE(binder_name, ty, val, body, nd, _) => {
-      let kt = to_kexpr_static(ty, fvar_levels, ctx_depth, param_names, stt);
-      let kv = to_kexpr_static(val, fvar_levels, ctx_depth, param_names, stt);
-      let kb =
-        to_kexpr_static(body, fvar_levels, ctx_depth + 1, param_names, stt);
+      let kt =
+        to_kexpr_cached(ty, fvar_levels, ctx_depth, param_names, stt, cache);
+      let kv =
+        to_kexpr_cached(val, fvar_levels, ctx_depth, param_names, stt, cache);
+      let kb = to_kexpr_cached(
+        body,
+        fvar_levels,
+        ctx_depth + 1,
+        param_names,
+        stt,
+        cache,
+      );
       KExpr::let_(binder_name.clone(), kt, kv, kb, *nd)
     },
     ExprData::Proj(pname, idx, e, _) => {
       let addr = resolve_lean_name_addr(pname, n2a, aux_n2a);
       let zid = KId::new(addr, pname.clone());
-      let ke = to_kexpr_static(e, fvar_levels, ctx_depth, param_names, stt);
+      let ke =
+        to_kexpr_cached(e, fvar_levels, ctx_depth, param_names, stt, cache);
       KExpr::prj(zid, nat_to_u64(idx), ke)
     },
     ExprData::Lit(lit, _) => {
@@ -3503,15 +2948,21 @@ fn to_kexpr_static(
       }
     },
     ExprData::Mdata(_, inner, _) => {
-      to_kexpr_static(inner, fvar_levels, ctx_depth, param_names, stt)
+      to_kexpr_cached(inner, fvar_levels, ctx_depth, param_names, stt, cache)
     },
     _ => KExpr::sort(KUniv::zero()),
-  }
+  };
+  cache.insert(key, result.clone());
+  result
 }
 
 fn collect_lean_const_refs(expr: &LeanExpr, out: &mut FxHashSet<Name>) {
+  let mut visited = FxHashSet::default();
   let mut stack = vec![expr];
   while let Some(expr) = stack.pop() {
+    if !visited.insert(*expr.get_hash()) {
+      continue;
+    }
     match expr.as_data() {
       ExprData::Const(name, _, _) => {
         out.insert(name.clone());
@@ -3538,6 +2989,10 @@ fn collect_lean_const_refs(expr: &LeanExpr, out: &mut FxHashSet<Name>) {
     }
   }
 }
+
+#[cfg(test)]
+#[path = "kernel_bridge_tests.rs"]
+mod kernel_bridge_tests;
 
 #[cfg(test)]
 mod tests {

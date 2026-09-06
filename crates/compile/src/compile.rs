@@ -86,8 +86,8 @@ pub static IX_SURGERY_APPLY_DEBUG: std::sync::LazyLock<bool> =
 /// Options controlling whole-environment compilation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CompileOptions {
-  /// Override scheduler worker count. `None` uses available parallelism or
-  /// the `IX_COMPILE_WORKERS` environment variable if set.
+  /// Override the scheduler worker ceiling. `None` uses available parallelism
+  /// or `IX_COMPILE_WORKERS`; adaptive admission may run fewer active blocks.
   pub max_workers: Option<usize>,
 }
 
@@ -4894,11 +4894,14 @@ fn compile_mutual(
     .map(|r| r.clone())
 }
 
+mod admission;
 pub mod aux_gen;
 mod env;
+mod memory;
 pub mod mutual;
 pub mod nat_conv;
 pub mod surgery;
+pub(crate) mod validation;
 pub use env::{compile_env, compile_env_with_options};
 
 #[cfg(test)]
@@ -5658,6 +5661,85 @@ mod tests {
     assert!(stt.name_to_addr.contains_key(&axiom_name));
     assert!(stt.name_to_addr.contains_key(&def_name));
     assert_eq!(stt.env.const_count(), 2);
+  }
+
+  #[test]
+  fn test_compile_env_worker_limits_preserve_serialized_dependency_graph() {
+    use ix_common::env::{
+      AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal,
+    };
+    let base = Name::str(Name::anon(), "Base".into());
+    let typ = LeanExpr::sort(Level::succ(Level::zero()));
+    let mut source = LeanEnv::default();
+    source.insert(
+      base.clone(),
+      LeanConstantInfo::AxiomInfo(AxiomVal {
+        cnst: ConstantVal {
+          name: base.clone(),
+          level_params: vec![],
+          typ: typ.clone(),
+        },
+        is_unsafe: false,
+      }),
+    );
+    let mut previous = vec![base; 8];
+    for layer in 0..5 {
+      for (column, prior) in previous.iter_mut().enumerate() {
+        let name = Name::str(Name::anon(), format!("alias_{layer}_{column}"));
+        source.insert(
+          name.clone(),
+          LeanConstantInfo::DefnInfo(DefinitionVal {
+            cnst: ConstantVal {
+              name: name.clone(),
+              level_params: vec![],
+              typ: typ.clone(),
+            },
+            value: LeanExpr::cnst(prior.clone(), vec![]),
+            hints: ReducibilityHints::Abbrev,
+            safety: DefinitionSafety::Safe,
+            all: vec![name.clone()],
+          }),
+        );
+        *prior = name;
+      }
+    }
+    // A final block depends on every branch, testing dependency publication
+    // as well as byte-identical metadata for alpha-equivalent aliases.
+    let join = Name::str(Name::anon(), "Join".into());
+    let mut value = LeanExpr::sort(Level::zero());
+    for name in previous {
+      value = LeanExpr::all(
+        Name::anon(),
+        LeanExpr::cnst(name, vec![]),
+        value,
+        BinderInfo::Default,
+      );
+    }
+    source.insert(
+      join.clone(),
+      LeanConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal { name: join.clone(), level_params: vec![], typ },
+        value,
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![join],
+      }),
+    );
+    let source = Arc::new(source);
+    let mut outputs = Vec::new();
+    for max_workers in [1, 4] {
+      let compiled = compile_env_with_options(
+        &source,
+        CompileOptions { max_workers: Some(max_workers) },
+      )
+      .unwrap();
+      assert!(compiled.ungrounded.is_empty());
+      assert_eq!(compiled.name_to_addr.len(), 42);
+      let mut bytes = Vec::new();
+      compiled.env.put(&mut bytes).unwrap();
+      outputs.push(bytes);
+    }
+    assert_eq!(outputs[0], outputs[1]);
   }
 
   /// Test that alpha-equivalent mutual definitions produce correct projection

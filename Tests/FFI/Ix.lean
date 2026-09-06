@@ -250,7 +250,8 @@ def compileErrorTests : TestSeq :=
   test "CompileError.invalidMutualBlock" (roundtripCompileError (.invalidMutualBlock "empty") == .invalidMutualBlock "empty") ++
   test "CompileError.unsupportedExpr" (roundtripCompileError (.unsupportedExpr "mvar") == .unsupportedExpr "mvar") ++
   test "CompileError.unknownUnivParam" (roundtripCompileError (.unknownUnivParam "Nat" "u") == .unknownUnivParam "Nat" "u") ++
-  test "CompileError.serializeError" (roundtripCompileError (.serializeError se) == .serializeError se)
+  test "CompileError.serializeError" (roundtripCompileError (.serializeError se) == .serializeError se) ++
+  test "CompileError.resourceLimit" (roundtripCompileError (.resourceLimit "memory reserve") == .resourceLimit "memory reserve")
 
 /-! ## Test Suite -/
 

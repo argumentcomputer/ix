@@ -33,7 +33,10 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let outPath : String :=
     (p.flag? "out").map (·.as! String) |>.getD (defaultOutPathFor pathStr)
 
-  buildFile pathStr
+  -- Reuse existing imports when retrying the Ix compiler. The frontend still
+  -- elaborates the input file; only Lake's dependency build/cache step is skipped.
+  unless p.hasFlag "no-build" do
+    buildFile pathStr
   let fe ← getFileEnvCore pathStr
   let leanEnv := fe.env
 
@@ -241,6 +244,7 @@ def compileCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
+    "no-build";               "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
     "consts-file"  : String; "Additionally read seed constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."

@@ -77,7 +77,12 @@
 pub mod below;
 pub mod brecon;
 pub mod cases_on;
+mod checked_expr;
+#[cfg(test)]
+mod expr_reference;
 pub mod expr_utils;
+#[cfg(test)]
+mod kernel_bridge_reference;
 pub mod nested;
 pub mod rec_on;
 pub mod recursor;

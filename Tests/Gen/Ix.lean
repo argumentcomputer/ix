@@ -665,7 +665,8 @@ def genCompileError : Gen Ix.CompileM.CompileError := do
     (1, pure (.invalidMutualBlock s)),
     (1, pure (.unsupportedExpr s)),
     (1, do let s2 ← genIxString; pure (.unknownUnivParam s s2)),
-    (1, pure (.serializeError se))
+    (1, pure (.serializeError se)),
+    (1, pure (.resourceLimit s))
   ] (pure default)
 
 instance : Shrinkable Ix.CompileM.CompileError where

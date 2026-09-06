@@ -345,6 +345,7 @@ lean_ffi::lean_inductive! {
     { num_obj: 1 },                           // tag 3: unsupportedExpr
     { num_obj: 2 },                           // tag 4: unknownUnivParam
     { num_obj: 1 },                           // tag 5: serialize
+    { num_obj: 1 },                           // tag 6: resourceLimit
   ];
 
   // Defined in `Ix/KernelCheck.lean`.
