@@ -17,7 +17,8 @@ use std::time::{Duration, Instant};
 use ixon::CompileError;
 
 use super::memory::{
-  GIB, MIB, Memory, MemoryReader, Pressure, pressure, resource_error,
+  GIB, MIB, Memory, MemoryReader, Pressure, pressure, reclaiming,
+  resource_error,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,7 +184,6 @@ where
     read().ok_or_else(|| resource_error("memory telemetry unavailable"))?;
   let mut sampled = Instant::now();
   let mut ramped = sampled;
-  let mut pressured_at = None;
   let mut idle_since = None;
   let mut logged = sampled;
   let mut completed = 0;
@@ -191,20 +191,31 @@ where
   // Apply limits before the first allocation-heavy job, not only on tick 1.
   let mut state =
     pressure(previous, previous, options.tick, options.process_budget);
+  let mut blocked = previous.headroom(options.process_budget)
+    < previous.reserve(options.process_budget);
+  let mut pressured_at = blocked.then_some(sampled);
+  if state != Pressure::Healthy {
+    limit = 1;
+  }
 
   loop {
     let now = Instant::now();
     if now.duration_since(sampled) >= options.tick {
       let previous_state = state;
       if let Some(memory) = read() {
+        blocked = memory.headroom(options.process_budget)
+          < memory.reserve(options.process_budget)
+          || reclaiming(memory, previous, now.duration_since(sampled));
         state = pressure(
           memory,
           previous,
           now.duration_since(sampled),
           options.process_budget,
         );
-        if matches!(state, Pressure::Backoff | Pressure::Critical) {
+        if blocked {
           pressured_at = Some(now);
+        }
+        if matches!(state, Pressure::Backoff | Pressure::Critical) {
           let running = active
             .iter()
             .filter(|j| !j.signals.cancel.load(Ordering::Relaxed))
@@ -224,6 +235,8 @@ where
               memory.process as f64 / GIB as f64
             )));
           }
+        } else if state == Pressure::Hold {
+          limit = 1;
         } else if state == Pressure::Healthy
           && pressured_at
             .is_none_or(|t| now.duration_since(t) >= options.recovery)
@@ -276,10 +289,13 @@ where
       pressured_at.is_some_and(|t| now.duration_since(t) < options.recovery);
     let draining =
       active.iter().any(|j| j.signals.cancel.load(Ordering::Relaxed));
-    let can_admit =
-      error.is_none() && !recovering && !draining && state == Pressure::Healthy;
+    // Retained environments can keep headroom below Healthy after every
+    // attempt has drained. With a reserve and no active reclaim pressure,
+    // continue serially rather than waiting for retained data to disappear.
+    let can_admit = error.is_none() && !recovering && !draining && !blocked;
+    let admission_limit = if state == Pressure::Healthy { limit } else { 1 };
     if can_admit && !active.iter().any(|j| j.solo) {
-      while active.len() < limit {
+      while active.len() < admission_limit {
         let next = if !ready.is_empty() {
           ready.pop_front().map(|id| (id, false))
         } else if active.is_empty() {
@@ -318,8 +334,10 @@ where
       let start = *idle_since.get_or_insert(now);
       if now.duration_since(start) >= options.idle_timeout {
         return Err(resource_error(format!(
-          "not enough available memory to admit an inductive validation job; no progress for {:.1} seconds",
-          options.idle_timeout.as_secs_f64()
+          "not enough available memory to admit an inductive validation job; no progress for {:.1} seconds (headroom {:.1} GiB, reserve {:.1} GiB, pressure {state:?})",
+          options.idle_timeout.as_secs_f64(),
+          previous.headroom(options.process_budget) as f64 / GIB as f64,
+          previous.reserve(options.process_budget) as f64 / GIB as f64,
         )));
       }
     } else {
@@ -623,6 +641,46 @@ mod tests {
   }
 
   #[test]
+  fn retained_memory_allows_serial_progress_below_healthy_headroom() {
+    for headroom in [30 * GIB, 20 * GIB] {
+      for budget in [None, Some(100 * GIB)] {
+        let memory = Memory {
+          capacity: if budget.is_some() { 200 * GIB } else { 100 * GIB },
+          available: if budget.is_some() { 100 * GIB } else { headroom },
+          process: 100 * GIB - headroom,
+          ..healthy()
+        };
+        let live = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let calls: Vec<_> = (0..8).map(|_| AtomicUsize::new(0)).collect();
+        let opt =
+          Options { initial_workers: 4, process_budget: budget, ..options(4) };
+        pool(4)
+          .install(|| {
+            run_with(
+              &calls,
+              &|calls: &AtomicUsize, c: &Checkpoint| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                let n = live.fetch_add(1, Ordering::SeqCst) + 1;
+                let _scratch = Scratch { live: &live, dropping: None };
+                peak.fetch_max(n, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(10));
+                c.visit()?;
+                Ok(())
+              },
+              opt,
+              || Some(memory),
+            )
+          })
+          .unwrap();
+        assert_eq!(peak.load(Ordering::SeqCst), 1);
+        assert!(calls.iter().all(|n| n.load(Ordering::SeqCst) == 1));
+        assert_eq!(live.load(Ordering::SeqCst), 0);
+      }
+    }
+  }
+
+  #[test]
   fn cancellation_drops_scratch_before_admitting_and_retries_once_alone() {
     let live = AtomicUsize::new(0);
     let dropping = AtomicUsize::new(0);
@@ -665,11 +723,17 @@ mod tests {
           },
           opt,
           || {
-            Some(if live.load(Ordering::SeqCst) >= 2 {
-              Memory { available: 20 * GIB, ..healthy() }
-            } else {
-              healthy()
-            })
+            // Retained data keeps headroom below Healthy even after the
+            // cancelled attempt releases its scratch. Retries must still run.
+            Some(
+              if live.load(Ordering::SeqCst) >= 2
+                || cancelled.load(Ordering::SeqCst)
+              {
+                Memory { available: 20 * GIB, ..healthy() }
+              } else {
+                healthy()
+              },
+            )
           },
         )
       })
@@ -766,6 +830,41 @@ mod tests {
     });
     assert!(matches!(result, Err(CompileError::ResourceLimit { .. })));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
+  }
+
+  #[test]
+  fn serial_admission_preserves_the_reserve_and_waits_out_reclaim_pressure() {
+    for reclaiming in [false, true] {
+      let calls = AtomicUsize::new(0);
+      let mut reads = 0;
+      let result = pool(1).install(|| {
+        run_with(
+          &[()],
+          &|_: &(), _: &Checkpoint| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+          },
+          options(1),
+          || {
+            reads += 1;
+            Some(Memory {
+              // Start below the admission reserve but above Critical.
+              // Later samples can have room for serial work but must not
+              // admit it while the system continues swapping.
+              available: if reclaiming && reads > 1 {
+                20 * GIB
+              } else {
+                8 * GIB
+              },
+              swap_used: if reclaiming { reads * 9 * MIB } else { 0 },
+              ..healthy()
+            })
+          },
+        )
+      });
+      assert!(matches!(result, Err(CompileError::ResourceLimit { .. })));
+      assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
   }
 
   #[test]

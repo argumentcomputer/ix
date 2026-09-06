@@ -54,6 +54,19 @@ pub(super) struct Memory {
   pub(super) stall_us: u64,
 }
 
+impl Memory {
+  pub(super) fn headroom(self, budget: Option<u64>) -> u64 {
+    budget.map_or(self.available, |b| {
+      self.available.min(b.saturating_sub(self.process))
+    })
+  }
+
+  pub(super) fn reserve(self, budget: Option<u64>) -> u64 {
+    let capacity = budget.map_or(self.capacity, |b| b.min(self.capacity));
+    (capacity / 8).max(64 * MIB).min(capacity / 2)
+  }
+}
+
 pub(super) fn field(text: &str, key: &str) -> Option<u64> {
   text.lines().find_map(|line| {
     line.strip_prefix(key)?.split_whitespace().next()?.parse().ok()
@@ -198,11 +211,8 @@ pub(super) fn pressure(
   elapsed: Duration,
   budget: Option<u64>,
 ) -> Pressure {
-  let capacity = budget.map_or(now.capacity, |b| b.min(now.capacity));
-  let reserve = (capacity / 8).max(64 * MIB).min(capacity / 2);
-  let available = budget.map_or(now.available, |b| {
-    now.available.min(b.saturating_sub(now.process))
-  });
+  let reserve = now.reserve(budget);
+  let available = now.headroom(budget);
   if available < reserve / 2 {
     return Pressure::Critical;
   }

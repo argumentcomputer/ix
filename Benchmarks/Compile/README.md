@@ -47,6 +47,9 @@ active jobs and ramps up while memory is healthy. The controller samples
 stall pressure every 250 ms. It stops admissions and cancels excess attempts
 under pressure; those attempts return normally, drop their scratch data, and
 retry once alone after other work finishes. Completed validations are retained.
+When retained data leaves limited headroom, validation continues one job at a
+time while the safety reserve is available and the system is not reclaiming
+memory. Low headroom alone does not keep resetting the recovery delay.
 Expression walks preserve DAG sharing and check cancellation within the walk.
 
 This is a soft safety mechanism, not a hard allocation limit: an individual

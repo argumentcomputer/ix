@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::memory::{
-  GIB, MIB, Memory, MemoryReader, Pressure, budget_from_env, pressure,
+  GIB, Memory, MemoryReader, Pressure, budget_from_env, pressure,
   resource_error,
 };
 use ixon::CompileError;
@@ -97,13 +97,8 @@ impl Policy {
       growth.max(self.growth_per_second.saturating_mul(3) / 4);
     self.projected_growth =
       self.growth_per_second.saturating_mul(options.lookahead.as_secs());
-    let capacity = options
-      .process_budget
-      .map_or(memory.capacity, |b| b.min(memory.capacity));
-    let reserve = (capacity / 8).max(64 * MIB).min(capacity / 2);
-    let headroom = options.process_budget.map_or(memory.available, |b| {
-      memory.available.min(b.saturating_sub(memory.process))
-    });
+    let reserve = memory.reserve(options.process_budget);
+    let headroom = memory.headroom(options.process_budget);
     self.pressure =
       pressure(memory, self.previous, elapsed, options.process_budget);
     let forecast_tight =
@@ -349,6 +344,7 @@ impl Drop for Admission {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::compile::memory::MIB;
   use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
   fn memory() -> Memory {
