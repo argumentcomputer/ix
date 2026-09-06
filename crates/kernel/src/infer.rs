@@ -10,6 +10,8 @@ use super::mode::KernelMode;
 use super::subst::{abstract_fvars, cheap_beta_reduce, instantiate_rev, subst};
 use super::tc::{TypeChecker, collect_app_spine};
 
+mod binders;
+
 /// Emit detailed `[app diff]` trace when `infer`'s App path rejects an
 /// argument via `AppTypeMismatch`. Off by default — every rejection in a
 /// kernel-check pass would print multiple whnf dumps per failing constant,
@@ -195,6 +197,20 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           }
         }
         subst(&mut self.env.intern, &cod, a, 0)
+      },
+
+      // Avoid telescope-vector allocation on the existing single-binder
+      // path. Telescopes can open their terminal body once per batch.
+      ExprData::Lam(_, _, _, body, _)
+        if matches!(body.data(), ExprData::Lam(..)) =>
+      {
+        self.infer_lambda_telescope(e)?
+      },
+
+      ExprData::All(_, _, _, body, _)
+        if matches!(body.data(), ExprData::All(..)) =>
+      {
+        self.infer_forall_telescope(e)?
       },
 
       ExprData::Lam(name, bi, ty, body, _) => {
