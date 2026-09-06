@@ -23,6 +23,9 @@ use super::mode::KernelMode;
 #[cfg(test)]
 mod menv_tests;
 
+#[cfg(test)]
+mod scratch_tests;
+
 /// When set, log every 100K `subst` (top-level) entries. Substitution is
 /// called once per `App` in `infer` (plus other sites in whnf / def_eq),
 /// and each call recursively rebuilds the body; a check that spends
@@ -43,8 +46,9 @@ static SUBST_COUNT: std::sync::atomic::AtomicUsize =
 /// shared sub-expressions within `body` are walked once per depth.
 ///
 /// Memoization scratch is borrowed from `env.subst_scratch` to avoid
-/// allocating a fresh `FxHashMap` per call. We `mem::take` it out
-/// (replacing with an empty placeholder) so the borrow checker lets us
+/// allocating a fresh `FxHashMap` per call. `take_for_call` clears entries
+/// and adaptively releases persistently sparse, oversized allocations. It
+/// leaves an empty placeholder so the borrow checker lets us
 /// thread `&mut env` and `&mut scratch` separately into `subst_cached`,
 /// then put it back on the way out. `subst_cached` does not call back
 /// into `subst`, so there is no risk of recursive scratch use.
@@ -65,10 +69,9 @@ pub fn subst<M: KernelMode>(
   if body.lbr() <= depth {
     return body.clone();
   }
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let result = subst_cached(env, body, arg, depth, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 
@@ -251,13 +254,12 @@ pub fn simul_subst<M: KernelMode>(
   if body.lbr() <= depth {
     return body.clone();
   }
-  // See `subst` for the mem::take/restore pattern. `simul_subst_cached`
+  // See `subst` for the take/restore pattern. `simul_subst_cached`
   // does not call into `subst`/`simul_subst`, so it is safe to share the
   // single `subst_scratch` between them.
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let result = simul_subst_cached(env, body, substs, depth, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 
@@ -366,10 +368,9 @@ pub fn lift<M: KernelMode>(
   // buffer keeps both available simultaneously. `lift_cached` does not
   // call back into `lift`/`subst`/`simul_subst`, so the scratch is safe
   // to share across calls without nested-borrow risk.
-  let mut cache = std::mem::take(&mut env.lift_scratch);
-  cache.clear();
+  let mut cache = env.lift_scratch.take_for_call();
   let result = lift_cached(env, e, shift, cutoff, &mut cache);
-  env.lift_scratch = cache;
+  env.lift_scratch.restore_after_call(cache);
   result
 }
 
@@ -895,10 +896,9 @@ pub fn instantiate_rev<M: KernelMode>(
   // `subst`/`simul_subst`). `instantiate_rev_cached` does not call back
   // into subst/simul_subst/lift, so the scratch is safe to share across
   // top-level calls without nested-borrow risk.
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let result = instantiate_rev_cached(env, body, fvars, 0, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 
@@ -1031,11 +1031,10 @@ pub fn abstract_fvars<M: KernelMode>(
     pos.insert(*fv, (fvars.len() - 1 - i) as u64);
   }
 
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let n = fvars.len() as u64;
   let result = abstract_fvars_cached(env, body, &pos, n, 0, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 

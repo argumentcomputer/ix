@@ -24,6 +24,9 @@ use super::mode::KernelMode;
 use super::perf::PerfCounters;
 use super::primitive::Primitives;
 
+mod scratch;
+use scratch::ScratchMap;
+
 /// Canonical identity of an expression or universe node: the
 /// intern-assigned uid. Plain `u64`, allocated from a process-global
 /// counter (`expr.rs::fresh_uid`) and NEVER reused, so uid equality
@@ -111,15 +114,15 @@ pub struct InternTable<M: KernelMode> {
   /// meaningful.
   pub(crate) canon_exprs: FxHashSet<Addr>,
   pub(crate) canon_univs: FxHashSet<Addr>,
-  /// Scratch buffer for `subst` / `simul_subst` per-call memoization,
-  /// keyed by `(addr, depth)`. Cleared on entry. Owned here so the
-  /// allocation persists across calls.
-  pub(crate) subst_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
+  /// Scratch buffer for `subst` / `simul_subst` / binder opening and closing,
+  /// keyed by `(addr, depth)`. Cleared on entry; retained allocation adapts
+  /// to recent occupancy without sharing logical entries between calls.
+  pub(crate) subst_scratch: ScratchMap<(Addr, u64), KExpr<M>>,
   /// Scratch buffer for `lift` per-call memoization, keyed by
   /// `(addr, cutoff)`. Cleared on entry. Separate from `subst_scratch`
   /// because `lift` is invoked from inside `subst_cached`, and the two
   /// caches have different semantics, so they must not share entries.
-  pub(crate) lift_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
+  pub(crate) lift_scratch: ScratchMap<(Addr, u64), KExpr<M>>,
   /// Pool of scratch maps for `clo_subst` per-call memoization, keyed by
   /// `(addr, depth)`. A pool rather than a single buffer because
   /// `clo_subst` re-enters itself through `clo_readback` of environment
@@ -200,8 +203,8 @@ impl<M: KernelMode> InternTable<M> {
       exprs: FxHashMap::default(),
       canon_exprs: FxHashSet::default(),
       canon_univs: FxHashSet::default(),
-      subst_scratch: FxHashMap::default(),
-      lift_scratch: FxHashMap::default(),
+      subst_scratch: ScratchMap::default(),
+      lift_scratch: ScratchMap::default(),
       clo_scratch_pool: Vec::new(),
     }
   }
@@ -1178,8 +1181,14 @@ mod tests {
     env.infer_only_cache.insert(key, old.clone());
     env.def_eq_cache.insert((key.0, key.0, ctx), true);
     env.block_check_results.insert(id.clone(), Ok(()));
-    env.intern.subst_scratch.insert((key.0, 0), old.clone());
-    env.intern.lift_scratch.insert((key.0, 0), old.clone());
+    env
+      .intern
+      .subst_scratch
+      .restore_after_call(FxHashMap::from_iter([((key.0, 0), old.clone())]));
+    env
+      .intern
+      .lift_scratch
+      .restore_after_call(FxHashMap::from_iter([((key.0, 0), old.clone())]));
     env
       .intern
       .clo_scratch_pool
@@ -1220,7 +1229,9 @@ mod tests {
     env.intern.exprs.reserve(256);
     env.intern.canon_exprs.reserve(256);
     env.whnf_cache.reserve(256);
-    env.intern.subst_scratch.reserve(256);
+    let mut scratch = env.intern.subst_scratch.take_for_call();
+    scratch.reserve(256);
+    env.intern.subst_scratch.restore_after_call(scratch);
     env.intern.clo_scratch_pool.reserve(256);
     env.infer_cache.reserve(16);
     let small_capacity = env.infer_cache.capacity();
