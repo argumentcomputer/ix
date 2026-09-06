@@ -1519,6 +1519,34 @@ mod tests {
     assert_eq!(tc.def_eq_peak, 0);
   }
 
+  #[test]
+  fn bounded_capacity_reset_matches_release_across_success_and_failure() {
+    for capacity in [0, 16, 4_096] {
+      let mut retained = KEnv::<Anon>::new();
+      let mut released = KEnv::<Anon>::new();
+      // Reuse the same fixture names after both successful and failed checks.
+      // Reset must not turn either a cached success or a cached error into the
+      // next check's result, including when empty bucket storage survives.
+      for name in ["id", "wrong", "Nat", "nonexistent", "wrong", "id"] {
+        retained.clear_with_capacity_limit(capacity);
+        released.clear_releasing_memory();
+        for env in [&mut retained, &mut released] {
+          for (id, c) in test_env().iter() {
+            env.insert(id.clone(), c.clone());
+          }
+        }
+        let run = |env: &mut KEnv<Anon>| {
+          let mut tc = TypeChecker::new(env);
+          let result = tc.check_const(&mk_id(name)).map_err(|e| e.to_string());
+          (result, tc.fuel_used())
+        };
+        let expected = run(&mut released);
+        assert_eq!(expected.0.is_ok(), matches!(name, "id" | "Nat"));
+        assert_eq!(run(&mut retained), expected);
+      }
+    }
+  }
+
   // =========================================================================
   // Theorem must land in Prop
   // =========================================================================

@@ -1409,6 +1409,14 @@ fn run_anon_checks_parallel(
   eprintln!(
     "[rs_kernel_check_anon] checking {work_total} work item(s) for {total} consts with {worker_count} worker(s)..."
   );
+  // Opt-in native throughput experiment: reuse bucket capacity, never
+  // logical cache entries. Zero preserves the existing release policy.
+  let retain_capacity = env_usize("IX_KERNEL_CHECK_RETAIN_CAPACITY", 0);
+  if retain_capacity > 0 {
+    eprintln!(
+      "[rs_kernel_check_anon] cache reset: retaining at most {retain_capacity} entries of empty capacity per cleared table"
+    );
+  }
   // Per-work-item attribution entries (addr-keyed CSV; the CLI joins
   // Lean names afterwards). An entry measures checking THAT item alone —
   // one constant, or one whole Muts block — NOT re-checking its
@@ -1463,7 +1471,11 @@ fn run_anon_checks_parallel(
           }
           let item = &work[work_idx];
           if checks_since_clear >= clear_every {
-            kenv.clear_releasing_memory();
+            if retain_capacity == 0 {
+              kenv.clear_releasing_memory();
+            } else {
+              kenv.clear_with_capacity_limit(retain_capacity);
+            }
             checks_since_clear = 0;
           }
           let (primary_addr, result_idxs): (Address, Vec<usize>) = match item {

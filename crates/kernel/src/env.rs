@@ -956,6 +956,59 @@ impl<M: KernelMode> KEnv<M> {
     self.next_fvar_id = 0;
   }
 
+  /// Clear the same logical state as [`Self::clear`], retaining only modest
+  /// backing tables for the next scheduled check.
+  ///
+  /// `max_capacity` is an entry-capacity bound on EACH cleared collection,
+  /// not a byte budget for the environment or process. Oversized allocations
+  /// are discarded, not shrunk/reallocated. Expression references, canonical
+  /// uid sets, scope-sensitive memo entries and block results are all cleared
+  /// before free-variable ids can be reused. The existing address-keyed
+  /// `is_rec_cache`, profile sink and configuration survive just as they do
+  /// with `clear` and `clear_releasing_memory`.
+  pub fn clear_with_capacity_limit(&mut self, max_capacity: usize) {
+    // Keep logical reset centralized: capacity reuse must never accidentally
+    // retain an entry when the ordinary reset gains another cache.
+    self.clear();
+    macro_rules! release_oversized {
+      ($($table:expr),+ $(,)?) => {
+        $(if $table.capacity() > max_capacity {
+          $table = Default::default();
+        })+
+      };
+    }
+    release_oversized!(
+      self.consts,
+      self.blocks,
+      self.intern.univs,
+      self.intern.exprs,
+      self.intern.canon_exprs,
+      self.intern.canon_univs,
+      self.intern.subst_scratch,
+      self.intern.lift_scratch,
+      self.intern.clo_scratch_pool,
+      self.whnf_cache,
+      self.whnf_no_delta_cache,
+      self.whnf_no_delta_cheap_cache,
+      self.whnf_core_cache,
+      self.whnf_core_cheap_cache,
+      self.infer_cache,
+      self.infer_only_cache,
+      self.def_eq_cache,
+      self.def_eq_cheap_cache,
+      self.def_eq_failure,
+      self.unfold_cache,
+      self.nat_succ_stuck,
+      self.ingress_cache,
+      self.is_prop_cache,
+      self.recursor_cache,
+      self.rec_majors_cache,
+      self.block_peer_agreement_cache,
+      self.block_check_results,
+      self.prim_family_cache,
+    );
+  }
+
   /// Clear only the reduction-memo caches (whnf / infer / def-eq / unfold /
   /// is-prop). Structural caches (`consts`, `blocks`, `intern`, recursor
   /// caches, `block_check_results`) and the profile sink are preserved.
@@ -1044,6 +1097,81 @@ mod tests {
   fn get_missing_returns_none() {
     let env = KEnv::<Anon>::new();
     assert!(env.get(&mk_id("missing")).is_none());
+  }
+
+  #[test]
+  fn bounded_clear_reuses_small_tables_but_not_logical_entries() {
+    let mut env = KEnv::<Anon>::new();
+    let id = mk_id("old");
+    let ctx = blake3::hash(b"old context");
+    let old = env.intern.intern_expr(KExpr::var(0, ()));
+    let key = (old.hash_key(), ctx);
+    env.insert(id.clone(), mk_axio("old"));
+    env.blocks.insert(id.clone(), vec![id.clone()]);
+    env.whnf_cache.insert(key, old.clone());
+    env.infer_cache.insert(key, old.clone());
+    env.infer_only_cache.insert(key, old.clone());
+    env.def_eq_cache.insert((key.0, key.0, ctx), true);
+    env.block_check_results.insert(id.clone(), Ok(()));
+    env.intern.subst_scratch.insert((key.0, 0), old.clone());
+    env.intern.lift_scratch.insert((key.0, 0), old.clone());
+    env
+      .intern
+      .clo_scratch_pool
+      .push(FxHashMap::from_iter([((key.0, 0), old.clone())]));
+    assert_eq!(env.fresh_fvar_id(), FVarId(0));
+    assert_eq!(env.fresh_fvar_id(), FVarId(1));
+    let capacities = (
+      env.consts.capacity(),
+      env.intern.exprs.capacity(),
+      env.whnf_cache.capacity(),
+    );
+
+    env.clear_with_capacity_limit(128);
+
+    assert_eq!(env.cache_sizes().max(), 0);
+    assert!(env.intern.canon_exprs.is_empty());
+    assert!(env.intern.canon_univs.is_empty());
+    assert!(env.intern.subst_scratch.is_empty());
+    assert!(env.intern.lift_scratch.is_empty());
+    assert!(env.intern.clo_scratch_pool.is_empty());
+    assert_eq!(env.fresh_fvar_id(), FVarId(0));
+    assert_eq!(
+      capacities,
+      (
+        env.consts.capacity(),
+        env.intern.exprs.capacity(),
+        env.whnf_cache.capacity(),
+      )
+    );
+    let new = env.intern.intern_expr(KExpr::var(0, ()));
+    assert!(!old.ptr_eq(&new), "reset must release the old canonical entry");
+  }
+
+  #[test]
+  fn bounded_clear_discards_oversized_allocations() {
+    let mut env = KEnv::<Anon>::new();
+    env.consts.reserve(256);
+    env.intern.exprs.reserve(256);
+    env.intern.canon_exprs.reserve(256);
+    env.whnf_cache.reserve(256);
+    env.intern.subst_scratch.reserve(256);
+    env.intern.clo_scratch_pool.reserve(256);
+    env.infer_cache.reserve(16);
+    let small_capacity = env.infer_cache.capacity();
+
+    env.clear_with_capacity_limit(128);
+
+    assert_eq!(env.consts.capacity(), 0);
+    assert_eq!(env.intern.exprs.capacity(), 0);
+    assert_eq!(env.intern.canon_exprs.capacity(), 0);
+    assert_eq!(env.whnf_cache.capacity(), 0);
+    assert_eq!(env.intern.subst_scratch.capacity(), 0);
+    assert_eq!(env.intern.clo_scratch_pool.capacity(), 0);
+    assert_eq!(env.infer_cache.capacity(), small_capacity);
+
+    env.clear_with_capacity_limit(0);
+    assert_eq!(env.infer_cache.capacity(), 0);
   }
 
   #[test]
