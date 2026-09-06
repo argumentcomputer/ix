@@ -20,6 +20,9 @@ use super::env::{Addr, InternTable};
 use super::expr::{ExprData, FVarId, KExpr};
 use super::mode::KernelMode;
 
+#[cfg(test)]
+mod menv_tests;
+
 /// When set, log every 100K `subst` (top-level) entries. Substitution is
 /// called once per `App` in `infer` (plus other sites in whnf / def_eq),
 /// and each call recursively rebuilds the body; a check that spends
@@ -526,13 +529,27 @@ impl<M: KernelMode> Clo<M> {
 
 struct MEnvNode<M: KernelMode> {
   head: Arc<Clo<M>>,
-  tail: MEnv<M>,
+  tail: Option<Arc<MEnvNode<M>>>,
+  /// The ancestor `jump_len` ordinary tail steps away, or `None` when
+  /// those steps reach the empty environment. Spans have size 2^k - 1.
+  jump: Option<Arc<MEnvNode<M>>>,
+  jump_len: u64,
 }
 
-/// Persistent cons-list environment: O(1) push with structural sharing
-/// across the closures captured at each binder. `len` is carried on the
-/// handle — recomputing it per suffix was a measured cost on the IxVM
-/// port of this machine.
+/// Persistent skew-binary random-access environment: O(1) push and
+/// O(log n) lookup, with the most recent binding still O(1).
+///
+/// Ordinary tails retain the original cons-list meaning. A jump skips a
+/// complete preorder block of size 2^k - 1; following jumps partitions the
+/// list into increasing blocks, with only the first two allowed equal.
+/// Prepending merges two equal first blocks with the new head, or adds a
+/// singleton block. Both cases need one node and constant work, even when
+/// branching from an old snapshot. Lookup skips whole blocks or takes an
+/// ordinary tail to descend into one, without materializing any closures.
+///
+/// `len` lives on the handle, not on each tail. Compared with the original
+/// cons node this adds one pointer-sized field on 64-bit hosts, rather than
+/// a separate allocation or a logarithmic jump table at every binder.
 pub(crate) struct MEnv<M: KernelMode> {
   node: Option<Arc<MEnvNode<M>>>,
   len: u64,
@@ -555,20 +572,50 @@ impl<M: KernelMode> MEnv<M> {
   }
 
   pub(crate) fn push(&self, c: Arc<Clo<M>>) -> Self {
+    let len = self.len.checked_add(1).expect("MEnv length overflow");
+    let (jump, jump_len) = if let Some(first) = &self.node
+      && let Some(second) = &first.jump
+      && first.jump_len == second.jump_len
+    {
+      // New head + two equal blocks. The span cannot overflow: both
+      // blocks belong to `self`, whose length was checked above.
+      (second.jump.clone(), 1 + 2 * first.jump_len)
+    } else {
+      (self.node.clone(), 1)
+    };
     MEnv {
-      node: Some(Arc::new(MEnvNode { head: c, tail: self.clone() })),
-      len: self.len + 1,
+      node: Some(Arc::new(MEnvNode {
+        head: c,
+        tail: self.node.clone(),
+        jump,
+        jump_len,
+      })),
+      len,
     }
   }
 
-  /// O(i) cons-list walk; `i` must be `< self.len()`. Machine variable
-  /// lookups are typically near the front (recently pushed args).
+  /// Return the same closure as `i` ordinary tail steps, in O(log n).
+  /// `i` must be `< self.len()`; no closure is forced or copied here.
   pub(crate) fn get(&self, i: u64) -> &Arc<Clo<M>> {
     let mut node = self.node.as_ref().expect("MEnv::get out of range");
+    if i == 0 {
+      return &node.head;
+    }
     let mut i = i;
+    // Recent bindings are common. Once the remaining offset is tiny,
+    // ordinary tails avoid a jump-size branch at every visited node.
+    while i >= 8 {
+      if node.jump_len <= i {
+        i -= node.jump_len;
+        node = node.jump.as_ref().expect("MEnv::get out of range");
+      } else {
+        i -= 1;
+        node = node.tail.as_ref().expect("MEnv::get out of range");
+      }
+    }
     while i > 0 {
-      node = node.tail.node.as_ref().expect("MEnv::get out of range");
       i -= 1;
+      node = node.tail.as_ref().expect("MEnv::get out of range");
     }
     &node.head
   }
