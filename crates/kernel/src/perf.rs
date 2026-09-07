@@ -30,6 +30,7 @@
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+pub(crate) mod hot_misses;
 pub mod same_head;
 
 static PERF_ENABLED: crate::EnvFlag =
@@ -59,6 +60,8 @@ pub struct PerfCounters {
   pub infer_cache_misses: AtomicU64,
   pub infer_only_cache_hits: AtomicU64,
   pub infer_only_cache_misses: AtomicU64,
+  /// Selectively materialized dependent application-prefix types.
+  pub dependent_prefix_inserts: AtomicU64,
 
   // -- Def-eq caches --
   pub def_eq_cache_hits: AtomicU64,
@@ -145,6 +148,10 @@ impl PerfCounters {
 
   pub fn record_infer_only_miss(&self) {
     bump(&self.infer_only_cache_misses);
+  }
+
+  pub fn record_dependent_prefix_insert(&self) {
+    bump(&self.dependent_prefix_inserts);
   }
 
   // -----------------------------------------------------------------------
@@ -279,6 +286,11 @@ impl PerfCounters {
       "  infer_only_cache   ",
       &self.infer_only_cache_hits,
       &self.infer_only_cache_misses,
+    )?;
+    writeln!(
+      out,
+      "  dependent_prefix_inserts={}",
+      self.dependent_prefix_inserts.load(Ordering::Relaxed)
     )?;
     write_rate(
       out,

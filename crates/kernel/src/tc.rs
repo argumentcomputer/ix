@@ -25,6 +25,7 @@ use super::ingress::{
 use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData};
 use super::mode::KernelMode;
+use super::perf::hot_misses::{HotMisses, MissKey};
 use super::primitive::Primitives;
 use super::subst::{instantiate_rev, lift};
 
@@ -181,6 +182,8 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub(crate) same_head_fuel_reserve: u64,
   /// Per-declaration admission history, not cached conversion facts.
   pub(crate) same_head_backoff: super::def_eq::SameHeadBackoff,
+  /// Bounded non-semantic history for selective dependent-prefix caching.
+  pub(crate) prefix_admission: super::infer::PrefixAdmission,
   /// Optional diagnostic label for the current top-level constant.
   pub debug_label: Option<String>,
 
@@ -192,9 +195,9 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// Addresses of constants whose bodies were delta-unfolded during the current
   /// constant's check. Drained per constant by `record_current_fuel_used`.
   pub(crate) delta_targets: FxHashSet<Address>,
-  /// Gated miss sampler for fuel-exhaustion diagnostics. Populated only when
-  /// `IX_HOT_MISSES=1`, keyed by a compact phase/head/lbr shape.
-  hot_misses: FxHashMap<String, u64>,
+  /// Gated, bounded heavy-hitter sampler for fuel-exhaustion diagnostics.
+  /// Populated only when `IX_HOT_MISSES=1`; never retains expressions.
+  hot_misses: HotMisses,
 
   /// Memoization cache for [`Self::ctx_addr_for_lbr`].
   ///
@@ -244,10 +247,11 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       rec_fuel: max_rec_fuel(),
       same_head_fuel_reserve: 0,
       same_head_backoff: Default::default(),
+      prefix_admission: Default::default(),
       debug_label: None,
       cur_const: None,
       delta_targets: FxHashSet::default(),
-      hot_misses: FxHashMap::default(),
+      hot_misses: HotMisses::default(),
       ctx_addr_cache: FxHashMap::default(),
       lctx: super::lctx::LocalContext::new(),
     }
@@ -882,6 +886,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.rec_fuel = max_rec_fuel();
     self.same_head_fuel_reserve = 0;
     self.same_head_backoff = Default::default();
+    self.prefix_admission = Default::default();
     self.hot_misses.clear();
     // Reset the local context (it must always be empty between constants).
     // The fvar id counter lives on KEnv and is intentionally not reset here:
@@ -1061,33 +1066,33 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     if !*IX_HOT_MISSES {
       return;
     }
-    let mut key = format!("{} {}", phase, hot_expr_shape(e));
-    if *IX_HOT_MISS_CTX {
-      let ctx = self.ctx_addr_for_lbr(e.lbr());
-      key.push_str(&format!(
-        " ctx={} depth={}",
-        short_ctx_addr(&ctx),
-        self.depth()
-      ));
-    }
-    *self.hot_misses.entry(key).or_insert(0) += 1;
+    let context = (*IX_HOT_MISS_CTX)
+      .then(|| (self.ctx_addr_for_lbr(e.lbr()), self.depth()));
+    let key = MissKey { phase, a: *e.addr(), b: None, context };
+    self.hot_misses.record(key, |out| {
+      use std::fmt::Write;
+      write!(out, "{phase} ")?;
+      write_hot_expr_shape(out, e)?;
+      write_hot_context(out, context)
+    });
   }
 
   pub fn record_hot_def_eq_miss(&mut self, a: &KExpr<M>, b: &KExpr<M>) {
     if !*IX_HOT_MISSES {
       return;
     }
-    let mut key =
-      format!("defeq {} =?= {}", hot_expr_shape(a), hot_expr_shape(b));
-    if *IX_HOT_MISS_CTX {
-      let ctx = self.def_eq_ctx_key(a, b);
-      key.push_str(&format!(
-        " ctx={} depth={}",
-        short_ctx_addr(&ctx),
-        self.depth()
-      ));
-    }
-    *self.hot_misses.entry(key).or_insert(0) += 1;
+    let context =
+      (*IX_HOT_MISS_CTX).then(|| (self.def_eq_ctx_key(a, b), self.depth()));
+    let key =
+      MissKey { phase: "defeq", a: *a.addr(), b: Some(*b.addr()), context };
+    self.hot_misses.record(key, |out| {
+      use std::fmt::Write;
+      write!(out, "defeq ")?;
+      write_hot_expr_shape(out, a)?;
+      write!(out, " =?= ")?;
+      write_hot_expr_shape(out, b)?;
+      write_hot_context(out, context)
+    });
   }
 
   fn dump_hot_misses(&self) {
@@ -1098,21 +1103,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// The subject helper can report once at completion instead of dumping at
   /// every exhausted speculative slice via `IX_REC_FUEL_DUMP`.
   pub fn hot_miss_summary(&self) -> String {
-    if !*IX_HOT_MISSES || self.hot_misses.is_empty() {
+    if !*IX_HOT_MISSES {
       return String::new();
     }
-    use std::fmt::Write;
-    let mut entries: Vec<_> = self.hot_misses.iter().collect();
-    entries.sort_unstable_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    let mut out = format!(
-      "[hot misses] {} distinct shapes; top {}:\n",
-      entries.len(),
-      entries.len().min(25)
-    );
-    for (key, count) in entries.into_iter().take(25) {
-      let _ = writeln!(out, "  {count:>8}  {key}");
-    }
-    out
+    self.hot_misses.summary()
   }
 }
 
@@ -1291,30 +1285,80 @@ pub fn collect_app_spine<M: KernelMode>(
 #[cfg(test)]
 mod spine_tests;
 
-fn hot_expr_shape<M: KernelMode>(e: &KExpr<M>) -> String {
-  let (head, args) = collect_app_spine(e);
-  let head = match head.data() {
-    ExprData::Var(i, _, _) => format!("#{i}"),
-    ExprData::FVar(id, _, _) => format!("{id}"),
-    ExprData::Sort(u, _) => format!("Sort({u})"),
-    ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
-    ExprData::App(..) => "app".to_string(),
-    ExprData::Lam(..) => "lam".to_string(),
-    ExprData::All(..) => "forall".to_string(),
-    ExprData::Let(..) => "let".to_string(),
-    ExprData::Prj(id, field, _, _) => format!("Prj({id}.{field})"),
-    ExprData::Nat(v, _, _) => format!("Nat({})", v.0),
-    ExprData::Str(v, _, _) => format!("Str(len={})", v.len()),
-  };
-  format!("{head}/{} lbr={} @{}", args.len(), e.lbr(), short_addr(e.addr()))
+fn write_hot_expr_shape<M: KernelMode>(
+  out: &mut impl std::fmt::Write,
+  e: &KExpr<M>,
+) -> std::fmt::Result {
+  let mut head = e;
+  let mut arity = 0usize;
+  while let ExprData::App(f, _, _) = head.data() {
+    head = f;
+    arity += 1;
+  }
+  match head.data() {
+    ExprData::Var(i, _, _) => write!(out, "#{i}"),
+    ExprData::FVar(id, _, _) => write!(out, "{id}"),
+    // Do not render an arbitrarily large universe DAG or Nat literal.
+    ExprData::Sort(u, _) => write!(out, "Sort(uid{})", u.addr()),
+    ExprData::Const(id, us, _) => {
+      write_hot_id(out, id)?;
+      write!(out, ".{{{}}}", us.len())
+    },
+    ExprData::App(..) => unreachable!("peeled all applications"),
+    ExprData::Lam(..) => write!(out, "lam"),
+    ExprData::All(..) => write!(out, "forall"),
+    ExprData::Let(..) => write!(out, "let"),
+    ExprData::Prj(id, field, _, _) => {
+      write!(out, "Prj(")?;
+      write_hot_id(out, id)?;
+      write!(out, ".{field})")
+    },
+    ExprData::Nat(..) => write!(out, "Nat(uid{})", head.addr()),
+    ExprData::Str(v, _, _) => write!(out, "Str(len={})", v.len()),
+  }?;
+  write!(out, "/{arity} lbr={} @uid{}", e.lbr(), e.addr())
 }
 
-fn short_addr(addr: &Addr) -> String {
-  format!("uid{addr}")
+fn write_hot_id<M: KernelMode>(
+  out: &mut impl std::fmt::Write,
+  id: &KId<M>,
+) -> std::fmt::Result {
+  // Name::Display builds its whole `pretty()` string before passing it to
+  // the writer. A bounded output writer alone cannot limit that temporary.
+  // Check at most 64 borrowed components/256 bytes before invoking Display;
+  // oversized names fall back to their fixed-size declaration address.
+  let compact = M::meta_get(&id.name).is_none_or(|name| {
+    use ix_common::env::NameData;
+    let mut name = name;
+    let mut bytes = 256usize;
+    for _ in 0..64 {
+      let (parent, cost) = match name.as_data() {
+        NameData::Anonymous(_) => return true,
+        NameData::Str(parent, s, _) => (parent, s.len().saturating_add(1)),
+        NameData::Num(parent, n, _) => {
+          if n.to_u64().is_none() {
+            return false;
+          }
+          (parent, 21)
+        },
+      };
+      let Some(remaining) = bytes.checked_sub(cost) else { return false };
+      bytes = remaining;
+      name = parent;
+    }
+    false
+  });
+  if compact { write!(out, "{id}") } else { write!(out, "#{}", id.addr.hex()) }
 }
 
-fn short_ctx_addr(addr: &CtxAddr) -> String {
-  addr.to_hex().chars().take(12).collect()
+fn write_hot_context(
+  out: &mut impl std::fmt::Write,
+  context: Option<(CtxAddr, u64)>,
+) -> std::fmt::Result {
+  if let Some((ctx, depth)) = context {
+    write!(out, " ctx={} depth={depth}", &ctx.to_hex()[..12])?;
+  }
+  Ok(())
 }
 
 #[cfg(test)]
@@ -1332,6 +1376,24 @@ mod tests {
   fn new_tc() -> TypeChecker<'static, Meta> {
     let env = Box::leak(Box::new(KEnv::<Meta>::new()));
     TypeChecker::new(env)
+  }
+
+  #[test]
+  fn hot_miss_labels_do_not_pretty_print_unbounded_names() {
+    use ix_common::env::Name;
+    for name in [
+      Name::str(Name::anon(), "λ".repeat(100_000)),
+      (0..128).fold(Name::anon(), |n, _| Name::str(n, "x".to_owned())),
+    ] {
+      let id = KId::<Meta>::new(Address::hash(b"large-name"), name);
+      let mut out = String::new();
+      write_hot_id(&mut out, &id).unwrap();
+      assert_eq!(out, format!("#{}", id.addr.hex()));
+    }
+    let id = mk_id("List.below");
+    let mut out = String::new();
+    write_hot_id(&mut out, &id).unwrap();
+    assert_eq!(out, format!("{id}"));
   }
 
   // ---- Context push/pop ----

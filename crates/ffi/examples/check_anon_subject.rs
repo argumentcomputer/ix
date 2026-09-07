@@ -17,6 +17,8 @@
 //! `IX_SAME_HEAD_PROFILE=1` reports actual same-head attempts and their fuel.
 //! `IX_HOT_MISSES=1` prints miss shapes once at completion; optional
 //! `IX_HOT_MISS_CTX=1` includes their context identities.
+//! Collection is bounded to 4,096 keys; reported counts are intervals after
+//! low-frequency entries are replaced, not exact per-key totals.
 //! Reports go to stderr after checking; stdout's subject JSON is unchanged.
 //! Leave these flags unset for paired benchmark timings.
 

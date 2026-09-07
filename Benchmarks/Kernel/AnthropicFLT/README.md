@@ -34,8 +34,22 @@ they do not canonicalize free variables or claim alpha-equivalence.
 `IX_HOT_MISSES=1` prints the final member's top 25 miss shapes once when the
 subject helper finishes; add `IX_HOT_MISS_CTX=1` for context keys. It does
 not require the much noisier per-guard `IX_REC_FUEL_DUMP`.
-The existing hot-miss collection itself is unbounded and can add substantial
-memory/time overhead; use a memory-limited isolated subject, not a full sweep.
+The hot-miss collector retains at most 4,096 keys, with labels capped at
+512 UTF-8 bytes. Its Space-Saving summary can discover late hotspots by
+replacing low-frequency entries. Printed counts are lower/upper bounds
+(exact before replacement); the number of retained keys is **not** the
+total number of distinct misses. Exact expression/context identities, not
+truncated labels, distinguish keys. No expression graphs are retained, and
+the collector resets per member. Leave it off for clean timings.
+
+Application inference selectively caches repeated dependent prefixes using
+the existing exact context-sensitive keys and separate full/infer-only result
+caches. Only successful inference publishes a prefix type; a bounded two-touch
+fingerprint filter merely nominates work and never supplies a type or a
+validity judgment. Each spine materializes at most one extra dependent suffix
+for caching, leaving the remaining telescope substitution batched. The
+admission history resets per member and retains at most 32 KiB of slots. With
+`IX_PERF_COUNTERS=1`, `dependent_prefix_inserts` counts these materializations.
 
 Same-head congruence probes use a 131,072-fuel slice for Regular definitions
 and 4,096 for other hints. Nested probes inherit the remaining allowance.

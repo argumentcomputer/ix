@@ -11,6 +11,7 @@ use super::subst::{abstract_fvars, cheap_beta_reduce, instantiate_rev, subst};
 use super::tc::{TypeChecker, collect_app_spine};
 
 mod application;
+pub(crate) use application::PrefixAdmission;
 mod binders;
 pub(crate) mod summary;
 

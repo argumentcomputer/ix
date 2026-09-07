@@ -2,8 +2,9 @@
 //!
 //! At each step, `ty` under `pending` denotes exactly the type obtained by
 //! sequential App inference. Check the next instantiated domain, then peel
-//! its raw Pi body. Materialize the residual type only at a non-Pi boundary
-//! or at the end. Arguments live in the caller's context, NOT under the
+//! its raw Pi body. Materialize the residual type at a non-Pi boundary or at
+//! the end, plus at most one repeated prefix selected for caching. Arguments
+//! live in the caller's context, NOT under the
 //! peeled binders, so simultaneous substitution must lift them under nested
 //! binders; `instantiate_rev`'s FVar-only shortcut is not appropriate here.
 
@@ -11,6 +12,9 @@ use smallvec::SmallVec;
 
 use super::*;
 use crate::subst::simul_subst;
+
+mod prefix;
+pub(crate) use prefix::PrefixAdmission;
 
 impl<M: KernelMode> TypeChecker<'_, M> {
   pub(super) fn infer_app_spine(
@@ -21,6 +25,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Stop at the nearest cached prefix in the caller's inference mode.
     let mut prefixes: SmallVec<[&KExpr<M>; 8]> = SmallVec::new();
     let mut args: SmallVec<[KExpr<M>; 8]> = SmallVec::new();
+    let mut hot_prefix = None;
     let mut head = e;
     let cached = loop {
       let ExprData::App(f, a, _) = head.data() else { break None };
@@ -42,6 +47,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           self.record_hot_miss("infer-only", head);
         } else {
           self.record_hot_miss("infer", head);
+        }
+        // Prefer the longest repeated prefix. At most ONE dependent suffix
+        // may be materialized solely for caching in this spine inference.
+        // Merely observing a miss never publishes a type or validates a term.
+        if self.prefix_admission.observe(key, self.infer_only)
+          && hot_prefix.is_none()
+        {
+          hot_prefix = Some(prefixes.len());
         }
       }
       prefixes.push(head);
@@ -86,17 +99,28 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       self.check_app_argument(f, &args[i], &dom)?;
       ty = cod;
 
-      // Preserve cheap prefix results. Do not build a dependent Pi suffix
-      // solely to cache it: that would reintroduce the quadratic traversal.
-      // Existing dependent-prefix entries were already honored above.
-      if i > 0 && ty.lbr() == 0 {
+      // Every preceding argument has now succeeded in the caller's mode.
+      // Preserve cheap results and, for ONE repeated prefix, materialize the
+      // residual type with the SAME ambient-context substitution as the final
+      // result. Store it only under the existing exact key/mode contract.
+      // Keep `ty` and `end` delayed for dependent results: caching must not
+      // turn the rest of the spine back into sequential suffix substitution.
+      if i > 0 && (ty.lbr() == 0 || hot_prefix == Some(i)) {
+        let cached_ty = if ty.lbr() == 0 {
+          ty.clone()
+        } else {
+          self.env.perf.record_dependent_prefix_insert();
+          instantiate_pending(&mut self.env.intern, &ty, &args[i..end])
+        };
         let key = self.infer_key(prefixes[i]);
         if self.infer_only {
-          self.env.infer_only_cache.insert(key, ty.clone());
+          self.env.infer_only_cache.insert(key, cached_ty);
         } else {
-          self.env.infer_cache.insert(key, ty.clone());
+          self.env.infer_cache.insert(key, cached_ty);
         }
-        end = i;
+        if ty.lbr() == 0 {
+          end = i;
+        }
       }
     }
     Ok(instantiate_pending(&mut self.env.intern, &ty, &args[..end]))

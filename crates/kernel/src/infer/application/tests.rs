@@ -370,7 +370,20 @@ fn fvar_arguments<M: KernelMode>() {
       tc.env.clear_reduction_caches();
       let expected = reference(tc, &e)?;
       tc.env.clear_reduction_caches();
-      same_type(expected, tc.infer(&e)?);
+      tc.prefix_admission = Default::default();
+      let root = tc.infer_key(&e);
+      let ExprData::App(prefix, _, _) = e.data() else { unreachable!() };
+      let key = tc.infer_key(prefix);
+      for _ in 0..2 {
+        tc.env.infer_cache.remove(&root);
+        tc.env.infer_only_cache.remove(&root);
+        tc.prefix_admission.observe(key, infer_only);
+        same_type(expected.clone(), tc.infer(&e)?);
+      }
+      assert!(
+        tc.env.infer_cache.contains_key(&key)
+          || tc.env.infer_only_cache.contains_key(&key)
+      );
     }
     Ok::<(), TcError<M>>(())
   })
@@ -458,4 +471,254 @@ fn long_telescope_avoids_quadratic_codomain_construction() {
   eprintln!("application work: sequential={old:?}, batched={new:?}");
   assert!(new.intern_nodes * 4 < old.intern_nodes);
   same_type(actual, expected);
+}
+
+fn hot_prefixes<M: KernelMode>() {
+  for infer_only in [false, true] {
+    let mut env = KEnv::<M>::new();
+    let (f, args) = fixture(&mut env);
+    let result = app(args[1].clone(), args[2].clone());
+    let y2 = axiom(&mut env, "anotherY", result.clone());
+    let y3 = axiom(&mut env, "thirdY", result.clone());
+    let prefix =
+      app(app(app(f, args[0].clone()), args[1].clone()), args[2].clone());
+    let first = app(prefix.clone(), args[3].clone());
+    let mut reference_env = KEnv::<M>::new();
+    for (id, declaration) in env.iter() {
+      reference_env.insert(id, declaration);
+    }
+    let mut reference_tc = TypeChecker::new(&mut reference_env);
+    reference_tc.infer_only = infer_only;
+    let expected = reference(&mut reference_tc, &first).unwrap();
+    let expected_prefix = reference(&mut reference_tc, &prefix).unwrap();
+    let mut tc = TypeChecker::new(&mut env);
+    tc.infer_only = infer_only;
+    let key = tc.infer_key(&prefix);
+    same_type(tc.infer(&first).unwrap(), expected.clone());
+    assert!(!tc.env.infer_cache.contains_key(&key));
+    assert!(!tc.env.infer_only_cache.contains_key(&key));
+    // The bounded filter is allowed to forget intervening collisions. Seed
+    // this nomination immediately so the cache-contract test is UID-order
+    // independent, including under parallel unit-test scheduling.
+    tc.prefix_admission.observe(key, infer_only);
+    same_type(tc.infer(&app(prefix.clone(), y2)).unwrap(), expected.clone());
+    let cache =
+      if infer_only { &tc.env.infer_only_cache } else { &tc.env.infer_cache };
+    same_type(cache[&key].clone(), expected_prefix);
+    // A third use needs no synthesis of earlier prefixes or the head.
+    tc.env.infer_cache.retain(|k, _| k == &key);
+    tc.env.infer_only_cache.retain(|k, _| k == &key);
+    same_type(tc.infer(&app(prefix, y3)).unwrap(), expected);
+    if infer_only {
+      assert!(tc.env.infer_cache.is_empty());
+    }
+  }
+}
+
+#[test]
+fn repeated_dependent_prefixes_are_published_in_the_correct_mode() {
+  hot_prefixes::<Anon>();
+  hot_prefixes::<Meta>();
+}
+
+fn invalid_hot_prefixes<M: KernelMode>() {
+  for bad_index in 0..4 {
+    let mut env = KEnv::<M>::new();
+    let (mut f, mut args) = fixture(&mut env);
+    args[bad_index] = sort(4);
+    let mut prefixes = vec![];
+    for arg in args {
+      f = app(f, arg);
+      prefixes.push(f.clone());
+    }
+    let mut tc = TypeChecker::new(&mut env);
+    // Warm unchecked results/admission history first. They must never grant
+    // full-mode validity, even when the same UID is seen repeatedly.
+    for _ in 0..3 {
+      let root = tc.infer_key(&f);
+      tc.env.infer_only_cache.remove(&root);
+      let _ = tc.with_infer_only(|tc| tc.infer(&f));
+    }
+    for _ in 0..3 {
+      assert!(matches!(tc.infer(&f), Err(TcError::AppTypeMismatch { .. })));
+      for invalid in &prefixes[bad_index..] {
+        let key = tc.infer_key(invalid);
+        assert!(!tc.env.infer_cache.contains_key(&key));
+      }
+    }
+  }
+}
+
+#[test]
+fn repeated_invalid_prefixes_and_infer_only_results_never_validate_arguments() {
+  invalid_hot_prefixes::<Anon>();
+  invalid_hot_prefixes::<Meta>();
+}
+
+fn warm_open_prefix<M: KernelMode>() {
+  for infer_only in [false, true] {
+    let mut env = KEnv::<M>::new();
+    let a = axiom(&mut env, "A", sort(1));
+    let b = axiom(&mut env, "B", sort(1));
+    let x = axiom(&mut env, "x", a.clone());
+    let f =
+      axiom(&mut env, "openId", all(sort(1), all(var(0), all(var(1), var(2)))));
+    let prefix = app(f, var(1));
+    let e = app(prefix.clone(), var(0));
+    let mut tc = TypeChecker::new(&mut env);
+    tc.infer_only = infer_only;
+    tc.push_let(sort(1), a.clone());
+    tc.push_let(a.clone(), x.clone());
+    let root = tc.infer_key(&e);
+    let key_a = tc.infer_key(&prefix);
+    let expected = reference(&mut tc, &e).unwrap();
+    let expected_prefix = reference(&mut tc, &prefix).unwrap();
+    tc.env.clear_reduction_caches();
+    for _ in 0..2 {
+      tc.env.infer_cache.remove(&root);
+      tc.env.infer_only_cache.remove(&root);
+      tc.prefix_admission.observe(key_a, infer_only);
+      same_type(tc.infer(&e).unwrap(), expected.clone());
+    }
+    // The cached residual binder contains correctly lifted ambient Vars.
+    let cache =
+      if infer_only { &tc.env.infer_only_cache } else { &tc.env.infer_cache };
+    same_type(cache[&key_a].clone(), expected_prefix);
+    tc.pop_local();
+    tc.pop_local();
+    tc.push_let(sort(1), b);
+    tc.push_let(a, x);
+    let key_b = tc.infer_key(&prefix);
+    assert_ne!(key_a, key_b);
+    assert!(!tc.env.infer_cache.contains_key(&key_b));
+    assert!(!tc.env.infer_only_cache.contains_key(&key_b));
+    if !infer_only {
+      assert!(matches!(tc.infer(&e), Err(TcError::AppTypeMismatch { .. })));
+    }
+  }
+}
+
+#[test]
+fn warmed_dependent_prefixes_lift_ambient_vars_and_respect_let_contexts() {
+  warm_open_prefix::<Anon>();
+  warm_open_prefix::<Meta>();
+}
+
+#[test]
+fn hot_long_telescope_materializes_at_most_one_dependent_suffix() {
+  let mut env = KEnv::new();
+  let e = long_application(&mut env, 96);
+  let mut tc = TypeChecker::new(&mut env);
+  // Warm every prefix's admission history WITHOUT precomputing types. This
+  // is the adversarial case for accidentally restoring quadratic batching.
+  let mut prefixes = vec![];
+  let ExprData::App(p, _, _) = e.data() else { unreachable!() };
+  let mut p = p;
+  while let ExprData::App(f, _, _) = p.data() {
+    let key = tc.infer_key(p);
+    tc.prefix_admission.observe(key, false);
+    prefixes.push(p);
+    p = f;
+  }
+  let longest = tc.infer_key(prefixes[0]);
+  tc.prefix_admission.observe(longest, false);
+  take_op_counts();
+  let expected = tc.infer(&e).unwrap();
+  let work = take_op_counts();
+  let published = prefixes
+    .iter()
+    .filter(|p| {
+      let key = tc.infer_key(p);
+      tc.env.infer_cache.contains_key(&key)
+    })
+    .count();
+  assert_eq!(published, 1);
+  assert!(work.intern_nodes < 2000, "suffixes must stay batched: {work:?}");
+  tc.env.clear_reduction_caches();
+  tc.prefix_admission = Default::default();
+  same_type(tc.infer(&e).unwrap(), expected);
+}
+
+#[test]
+fn reset_forgets_admission_and_full_prefixes_remain_usable_by_infer_only() {
+  let mut env = KEnv::<Anon>::new();
+  let (f, args) = fixture(&mut env);
+  let prefix =
+    app(app(app(f, args[0].clone()), args[1].clone()), args[2].clone());
+  let e = app(prefix.clone(), args[3].clone());
+  let mut tc = TypeChecker::new(&mut env);
+  let key = tc.infer_key(&prefix);
+  assert!(!tc.prefix_admission.observe(key, false));
+  tc.reset();
+  assert!(!tc.prefix_admission.observe(key, false));
+  let expected = tc.infer(&e).unwrap();
+  assert!(tc.env.infer_cache.contains_key(&key));
+  let root = tc.infer_key(&e);
+  tc.env.infer_cache.remove(&root);
+  tc.env.infer_only_cache.clear();
+  tc.env.infer_cache.retain(|k, _| k == &key);
+  same_type(tc.with_infer_only(|tc| tc.infer(&e)).unwrap(), expected);
+  assert!(tc.env.infer_only_cache.contains_key(&root));
+  assert!(!tc.env.infer_only_cache.contains_key(&key));
+  tc.env.clear_reduction_caches();
+  assert!(!tc.env.infer_cache.contains_key(&key));
+  assert!(!tc.env.infer_only_cache.contains_key(&key));
+}
+
+#[test]
+fn warm_hidden_pi_boundaries_still_flush_pending_arguments() {
+  for infer_only in [false, true] {
+    let mut env = KEnv::<Anon>::new();
+    let ty = all(sort(1), var(0));
+    let f = axiom(&mut env, "hiddenPrefix", ty);
+    let p = axiom(&mut env, "P", sort(0));
+    let h = app(f, all(sort(0), all(sort(0), sort(0))));
+    let e = app(app(h, p.clone()), p);
+    let mut tc = TypeChecker::new(&mut env);
+    tc.infer_only = infer_only;
+    let expected = reference(&mut tc, &e).unwrap();
+    tc.env.clear_reduction_caches();
+    let root = tc.infer_key(&e);
+    for _ in 0..3 {
+      tc.env.infer_cache.remove(&root);
+      tc.env.infer_only_cache.remove(&root);
+      same_type(tc.infer(&e).unwrap(), expected.clone());
+    }
+  }
+}
+
+#[test]
+fn hot_prefix_reuse_reduces_checked_argument_work() {
+  let run = |admit: bool| {
+    let mut env = KEnv::<Anon>::new();
+    let application = long_application(&mut env, 32);
+    let ExprData::App(prefix, _, _) = application.data() else {
+      unreachable!()
+    };
+    let tails: Vec<_> = (0..32)
+      .map(|i| {
+        let arg = axiom(&mut env, &format!("tailType{i}"), sort(1));
+        app(prefix.clone(), arg)
+      })
+      .collect();
+    let mut tc = TypeChecker::new(&mut env);
+    let key = tc.infer_key(prefix);
+    take_op_counts();
+    for tail in tails {
+      if !admit {
+        // A cold two-touch filter never nominates a prefix, reproducing the
+        // previous batched result-cache policy without a production toggle.
+        tc.prefix_admission = Default::default();
+      } else {
+        tc.prefix_admission.observe(key, false);
+      }
+      tc.infer(&tail).unwrap();
+    }
+    take_op_counts()
+  };
+  let cold = run(false);
+  let hot = run(true);
+  eprintln!("reused prefix work: cold={cold:?}, hot={hot:?}");
+  assert!(hot.def_eq_calls * 4 < cold.def_eq_calls);
+  assert!(hot.intern_nodes * 2 < cold.intern_nodes);
 }
