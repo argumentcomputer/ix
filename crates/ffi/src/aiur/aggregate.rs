@@ -1402,6 +1402,9 @@ fn prove_aggregate(
       false,
     ) {
     GatedProve::Proved { claim, proof, peak } => (claim, proof, peak),
+    GatedProve::ExecutionFailed(error) => {
+      return Err(format!("aggregate execution failed: {error}"));
+    },
     GatedProve::Split { .. } | GatedProve::Measured { .. } => {
       return Err("unbudgeted aggregate prove did not produce a proof".into());
     },

@@ -6,9 +6,12 @@ use multi_stark::{
 };
 
 use crate::{
-  G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_and_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  G,
+  execute::{ExecError, QueryRecord},
+  gadgets::AiurGadget,
+  u8_add_channel, u8_and_channel, u8_less_than_channel, u8_mul_channel,
+  u8_or_channel, u8_range_check_channel, u8_sub_channel, u8_xor_channel,
+  u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
@@ -122,52 +125,52 @@ impl AiurGadget for Bytes2 {
     op: &Bytes2Op,
     input: &[G],
     record: &mut QueryRecord,
-  ) -> Vec<G> {
+  ) -> Result<Vec<G>, ExecError> {
     let i = &input[0];
     let j = &input[1];
-    match op {
+    Ok(match op {
       Bytes2Op::Xor => {
-        record.bytes2_queries.bump_xor(i, j);
+        record.bytes2_queries.bump_xor(i, j)?;
         vec![Self::xor(i, j)]
       },
       Bytes2Op::Add => {
-        record.bytes2_queries.bump_add(i, j);
+        record.bytes2_queries.bump_add(i, j)?;
         let (r, _o) = Self::add(i, j);
         vec![r]
       },
       Bytes2Op::Mul => {
-        record.bytes2_queries.bump_mul(i, j);
+        record.bytes2_queries.bump_mul(i, j)?;
         let (lo, hi) = Self::mul(i, j);
         vec![lo, hi]
       },
       Bytes2Op::Sub => {
-        record.bytes2_queries.bump_sub(i, j);
+        record.bytes2_queries.bump_sub(i, j)?;
         let (r, _u) = Self::sub(i, j);
         vec![r]
       },
       Bytes2Op::And => {
-        record.bytes2_queries.bump_and(i, j);
+        record.bytes2_queries.bump_and(i, j)?;
         vec![Self::and(i, j)]
       },
       Bytes2Op::Or => {
-        record.bytes2_queries.bump_or(i, j);
+        record.bytes2_queries.bump_or(i, j)?;
         vec![Self::or(i, j)]
       },
       Bytes2Op::LessThan => {
-        record.bytes2_queries.bump_less_than(i, j);
+        record.bytes2_queries.bump_less_than(i, j)?;
         vec![Self::less_than(i, j)]
       },
       Bytes2Op::XorSplit7 => {
-        record.bytes2_queries.bump_xor_split7(i, j);
+        record.bytes2_queries.bump_xor_split7(i, j)?;
         let (hi, lo) = Self::xor_split7(i, j);
         vec![hi, lo]
       },
       Bytes2Op::XorSplit4 => {
-        record.bytes2_queries.bump_xor_split4(i, j);
+        record.bytes2_queries.bump_xor_split4(i, j)?;
         let (hi, lo) = Self::xor_split4(i, j);
         vec![hi, lo]
       },
-    }
+    })
   }
 
   fn lookups(&self) -> Vec<Lookup<Expr<G>>> {
@@ -396,55 +399,87 @@ impl Bytes2Queries {
     Self(vec![[G::ZERO; TRACE_WIDTH]; 256 * 256].into_boxed_slice())
   }
 
-  pub(crate) fn bump_xor(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor(&mut self, i: &G, j: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 0)
   }
 
-  pub(crate) fn bump_add(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_add(&mut self, i: &G, j: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 1)
   }
 
-  pub(crate) fn bump_sub(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_sub(&mut self, i: &G, j: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 2)
   }
 
-  pub(crate) fn bump_and(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_and(&mut self, i: &G, j: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 3)
   }
 
-  pub(crate) fn bump_or(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_or(&mut self, i: &G, j: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 4)
   }
 
-  pub(crate) fn bump_less_than(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_less_than(
+    &mut self,
+    i: &G,
+    j: &G,
+  ) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 5)
   }
 
-  pub fn bump_range_check(&mut self, i: &G, j: &G) {
+  pub fn bump_range_check(&mut self, i: &G, j: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 6)
   }
 
-  pub(crate) fn bump_mul(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_mul(&mut self, i: &G, j: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 7)
   }
 
-  pub(crate) fn bump_xor_split7(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split7(
+    &mut self,
+    i: &G,
+    j: &G,
+  ) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 8)
   }
 
-  pub(crate) fn bump_xor_split4(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split4(
+    &mut self,
+    i: &G,
+    j: &G,
+  ) -> Result<(), ExecError> {
     self.bump_multiplicity_for(i, j, 9)
   }
 
-  pub(crate) fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
-    let i = usize::try_from(i.as_canonical_u64()).unwrap();
-    let j = usize::try_from(j.as_canonical_u64()).unwrap();
-    let row = 256 * i + j;
-    self.0[row][col] += G::ONE;
+  pub(crate) fn bump_multiplicity_for(
+    &mut self,
+    i: &G,
+    j: &G,
+    col: usize,
+  ) -> Result<(), ExecError> {
+    // Check each digit before mutation: (0, 256) must not alias (1, 0).
+    Bytes2::validate_inputs(i, j)?;
+    let i = usize::try_from(i.as_canonical_u64()).expect("validated byte");
+    let j = usize::try_from(j.as_canonical_u64()).expect("validated byte");
+    self.0[256 * i + j][col] += G::ONE;
+    Ok(())
   }
 }
 
 impl Bytes2 {
+  /// Pure arithmetic below also populates already-validated witness rows.
+  /// Execution checks inputs first, including unconstrained calls that
+  /// previously panicked on failed byte conversion.
+  #[inline]
+  pub fn validate_inputs(i: &G, j: &G) -> Result<(), ExecError> {
+    for value in [i.as_canonical_u64(), j.as_canonical_u64()] {
+      if value > u64::from(u8::MAX) {
+        return Err(ExecError::U8RangeCheckFailed(value));
+      }
+    }
+    Ok(())
+  }
+
   #[inline]
   pub fn xor(i: &G, j: &G) -> G {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();

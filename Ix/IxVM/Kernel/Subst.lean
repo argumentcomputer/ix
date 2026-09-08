@@ -527,15 +527,68 @@ def subst := ⟦
     let n = list_length(substs);
     match n {
       0 => e,
-      _ =>
-        let l = expr_lbr(e);
-        match memo_u32_less_than(depth, l) {
-          0 => e,
-          1 =>
-            match has_bvar_in_range(e, depth, depth + n) {
-              1 => expr_inst_many_walk(e, substs, depth),
-              _ => expr_lower(e, n, depth + n),
-            },
+      _ => expr_inst_many_projected(e, substs, n, depth),
+    }
+  }
+
+  -- One plus the highest REFERENCED offset in [lo, hi), or zero. The
+  -- summary depends on the expression/window, never substitution values.
+  -- If all loose variables lie below hi, expr_lbr gives the exact answer
+  -- without another expression walk. A high variable outside the window
+  -- must not prevent dropping an irrelevant substitution tail.
+  fn expr_inst_prefix_len(e: KExpr, lo: G, hi: G) -> G {
+    let l = expr_lbr(e);
+    match memo_u32_less_than(lo, l) {
+      0 => 0,
+      1 => match memo_u32_less_than(hi, l) {
+        0 => l - lo,
+        1 => expr_inst_prefix_walk(e, lo, hi),
+      },
+    }
+  }
+
+  fn expr_inst_prefix_walk(e: KExpr, lo: G, hi: G) -> G {
+    match load(e) {
+      KExprNode.BVar(i) => match memo_u32_less_than(i, lo) {
+        1 => 0,
+        0 => match memo_u32_less_than(i, hi) {
+          1 => i - lo + 1,
+          0 => 0,
+        },
+      },
+      KExprNode.App(f, a) =>
+        lbr_max(expr_inst_prefix_len(f, lo, hi), expr_inst_prefix_len(a, lo, hi)),
+      KExprNode.Lam(ty, body) =>
+        lbr_max(expr_inst_prefix_len(ty, lo, hi), expr_inst_prefix_len(body, lo + 1, hi + 1)),
+      KExprNode.Forall(ty, body) =>
+        lbr_max(expr_inst_prefix_len(ty, lo, hi), expr_inst_prefix_len(body, lo + 1, hi + 1)),
+      KExprNode.Let(ty, val, body) => expr_inst_prefix_let(ty, val, body, lo, hi),
+      KExprNode.Proj(_, _, inner) => expr_inst_prefix_len(inner, lo, hi),
+      _ => 0,
+    }
+  }
+
+  fn expr_inst_prefix_let(ty: KExpr, val: KExpr, body: KExpr, lo: G, hi: G) -> G {
+    lbr_max(lbr_max(expr_inst_prefix_len(ty, lo, hi), expr_inst_prefix_len(val, lo, hi)),
+      expr_inst_prefix_len(body, lo + 1, hi + 1))
+  }
+
+  -- substs can be an already projected prefix. n is ALWAYS the original
+  -- number of binders removed, not list_length(substs). This is essential:
+  -- higher variables still lower by n, and depth still prevents capture.
+  -- Every recursive child uses only offsets present in its parent's prefix.
+  fn expr_inst_many_projected(e: KExpr, substs: List‹KExpr›, n: G, depth: G) -> KExpr {
+    let l = expr_lbr(e);
+    match memo_u32_less_than(depth, l) {
+      0 => e,
+      1 =>
+        let needed = expr_inst_prefix_len(e, depth, depth + n);
+        match needed {
+          0 => expr_lower(e, n, depth + n),
+          _ => match n - needed {
+            0 => expr_inst_many_walk(e, substs, n, depth),
+            _ => expr_inst_many_walk(e, list_take(substs, needed), n, depth),
+          },
         },
     }
   }
@@ -549,8 +602,7 @@ def subst := ⟦
   -- `i ≥ depth`, so the window test reduces to one comparison on the
   -- offset. A sub-`depth` index (invariant violation) wraps in the field
   -- and fails the u32 range decomposition — no silent path.
-  fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
-    let n = list_length(substs);
+  fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, n: G, depth: G) -> KExpr {
     let ofs = i - depth;
     match memo_u32_less_than(ofs, n) {
       1 => expr_lift(list_lookup(substs, ofs), depth, 0),
@@ -558,38 +610,38 @@ def subst := ⟦
     }
   }
 
-  fn expr_inst_many_walk(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
+  fn expr_inst_many_walk(e: KExpr, substs: List‹KExpr›, n: G, depth: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => expr_inst_many_bvar(i, substs, depth),
+      KExprNode.BVar(i) => expr_inst_many_bvar(i, substs, n, depth),
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>
         store(KExprNode.App(
-          expr_inst_many(f, substs, depth),
-          expr_inst_many(a, substs, depth))),
+          expr_inst_many_projected(f, substs, n, depth),
+          expr_inst_many_projected(a, substs, n, depth))),
       KExprNode.Lam(ty, body) =>
         store(KExprNode.Lam(
-          expr_inst_many(ty, substs, depth),
-          expr_inst_many(body, substs, depth + 1))),
+          expr_inst_many_projected(ty, substs, n, depth),
+          expr_inst_many_projected(body, substs, n, depth + 1))),
       KExprNode.Forall(ty, body) =>
         store(KExprNode.Forall(
-          expr_inst_many(ty, substs, depth),
-          expr_inst_many(body, substs, depth + 1))),
+          expr_inst_many_projected(ty, substs, n, depth),
+          expr_inst_many_projected(body, substs, n, depth + 1))),
       KExprNode.Let(ty, val, body) =>
-        expr_inst_many_let(ty, val, body, substs, depth),
+        expr_inst_many_let(ty, val, body, substs, n, depth),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
-        store(KExprNode.Proj(tidx, fidx, expr_inst_many(e1, substs, depth))),
+        store(KExprNode.Proj(tidx, fidx, expr_inst_many_projected(e1, substs, n, depth))),
     }
   }
 
   -- Cold-extracted Let arm (same pattern as `expr_lbr_let`).
   fn expr_inst_many_let(ty: KExpr, val: KExpr, body: KExpr,
-      substs: List‹KExpr›, depth: G) -> KExpr {
+      substs: List‹KExpr›, n: G, depth: G) -> KExpr {
     store(KExprNode.Let(
-      expr_inst_many(ty, substs, depth),
-      expr_inst_many(val, substs, depth),
-      expr_inst_many(body, substs, depth + 1)))
+      expr_inst_many_projected(ty, substs, n, depth),
+      expr_inst_many_projected(val, substs, n, depth),
+      expr_inst_many_projected(body, substs, n, depth + 1)))
   }
 ⟧
 

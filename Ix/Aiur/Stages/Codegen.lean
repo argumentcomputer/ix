@@ -388,13 +388,12 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   let bumpStmt : String :=
     if opUn then ""
     else
-      s!" if !unconstrained \{ record.function_queries[{callee}].bump_multiplicity(__i); }"
-  -- Skip `try_into().unwrap()` on the cache hit: we statically know
-  -- the cached output has exactly `OUT_{callee}` elements (only we
-  -- ever insert into this slot via the matching aiur_fn_{callee}
-  -- `Ctrl::Return`). An unchecked array copy is sound.
+      s!" if !unconstrained \{ record.function_queries[{callee}].bump_multiplicity(__i)?; }"
+  -- Decode directly into the fixed-size return array. The query store may
+  -- retain canonical bytes rather than full G values; never reinterpret
+  -- its storage as a G pointer. Full-width rows still use an array copy.
   let retExpr : String :=
-    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(record.function_queries[{callee}].output_at(__i).as_ptr() as *const [G; OUT_{callee}]) }; __ret"
+    s!" record.function_queries[{callee}].output_at(__i).to_array::<OUT_{callee}>()"
   -- A zero-multiplicity entry was computed only as an unconstrained
   -- hint; a constrained caller replays the body (constrained: `__cu` is
   -- false on that path) so promotion recurses through the whole
@@ -405,11 +404,12 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
       s!"__cu || record.function_queries[{callee}].mult_at(__i) != G::ZERO"
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
+    s!" let __key = QueryKey::new(__args);" ++
     s!" let __cu = {cuExpr};" ++
-    s!" let __hit = record.function_queries[{callee}].get_index_of(&__args[..]);" ++
+    s!" let __hit = record.function_queries[{callee}].get_prehashed(&__key);" ++
     s!" match __hit \{ Some(__i) if {hitGuard} => \{" ++
     bumpStmt ++ retExpr ++ " }," ++
-    s!" _ => aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
+    s!" _ => aiur_fn_{callee}(__key, record, io_buffer, __cu)? } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
   ]
@@ -424,13 +424,14 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
   let valsStr : String := (argsAsArray values).toStr
   let blockExpr : String :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
+    s!" let __key = QueryKey::new(__values);" ++
     s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
-    s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
-    s!" __mq.output_at(__i)[0]" ++
+    s!" if let Some(__i) = __mq.get_prehashed(&__key) \{" ++
+    s!" if !unconstrained \{ __mq.bump_multiplicity(__i)?; }" ++
+    s!" __mq.output_at(__i).at(0)" ++
     s!" } else \{" ++
     s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
+    s!" __mq.insert_prehashed(&__key, &[__ptr], G::from_bool(!unconstrained))?;" ++
     s!" __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
@@ -442,9 +443,9 @@ private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt :=
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
     s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
     s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize); }" ++
+    s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize)?; }" ++
     s!" let (__args, _) = __mq.get_index(__ptr_usize).expect(\"bounds checked above\");" ++
-    s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
+    s!" __args.to_array::<{size}>() }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)
   ]
@@ -547,7 +548,7 @@ private def emitU8Bytes1 (out : Nat) (valueHelper : String)
   if outCount == 1 then
     let blockExpr : String :=
       s!"if unconstrained \{ {unconShortcut}(&__v_{byte}) }" ++
-      s!" else \{ {valueHelper}(__v_{byte}, record) }"
+      s!" else \{ {valueHelper}(__v_{byte}, record)? }"
     return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
   else
     -- BitDecomposition returns [G; 8]; the unconstrained shortcut
@@ -555,7 +556,7 @@ private def emitU8Bytes1 (out : Nat) (valueHelper : String)
     -- Coerce its result into [G; outCount] for unified handling.
     let blockExpr : String :=
       s!"if unconstrained \{ let __v: Vec<G> = {unconShortcut}(&__v_{byte}); let __a: [G; {outCount}] = __v.try_into().unwrap(); __a }" ++
-      s!" else \{ {valueHelper}(__v_{byte}, record) }"
+      s!" else \{ {valueHelper}(__v_{byte}, record)? }"
     let mut stmts : Array RustStmt := #[
       .letStmt false "__b1_out" (some s!"[G; {outCount}]") (.lit blockExpr)
     ]
@@ -569,14 +570,14 @@ private def emitU8Bytes2 (out : Nat) (valueHelper : String)
     Array RustStmt := Id.run do
   if outCount == 1 then
     let blockExpr : String :=
-      s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
-      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
+      s!"if unconstrained \{ Bytes2::validate_inputs(&__v_{i}, &__v_{j})?; Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
+      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record)? }"
     return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
   else
     -- Multi-output byte operations.
     let blockExpr : String :=
-      s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
-      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
+      s!"if unconstrained \{ Bytes2::validate_inputs(&__v_{i}, &__v_{j})?; Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
+      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record)? }"
     let tupTy : String :=
       "(" ++ (String.intercalate ", " (List.replicate outCount "G")) ++ ")"
     let mut stmts : Array RustStmt := #[
@@ -588,12 +589,11 @@ private def emitU8Bytes2 (out : Nat) (valueHelper : String)
 
 /-- `Op::U8Add`: gadget bumps `bytes2_queries.add` and returns
     `(low, carry)`. Codegen now calls `bytes2_add_value` ONCE in
-    the constrained branch (vs the interpreter's two `Bytes2::add`
-    calls). -/
+    the constrained branch, matching the interpreter. -/
 private def emitU8Add (out : Nat) (i j : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
-    s!"if unconstrained \{ Bytes2::add(&__v_{i}, &__v_{j}) }" ++
-    s!" else \{ bytes2_add_value(__v_{i}, __v_{j}, record) }"
+    s!"if unconstrained \{ Bytes2::validate_inputs(&__v_{i}, &__v_{j})?; Bytes2::add(&__v_{i}, &__v_{j}) }" ++
+    s!" else \{ bytes2_add_value(__v_{i}, __v_{j}, record)? }"
   #[
     .letStmt false "__b2_add" (some "(G, G)") (.lit blockExpr),
     declVal out (.field (.var "__b2_add") "0"),
@@ -603,8 +603,8 @@ private def emitU8Add (out : Nat) (i j : ValIdx) : Array RustStmt :=
 /-- `Op::U8Sub`: symmetric to U8Add. -/
 private def emitU8Sub (out : Nat) (i j : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
-    s!"if unconstrained \{ Bytes2::sub(&__v_{i}, &__v_{j}) }" ++
-    s!" else \{ bytes2_sub_value(__v_{i}, __v_{j}, record) }"
+    s!"if unconstrained \{ Bytes2::validate_inputs(&__v_{i}, &__v_{j})?; Bytes2::sub(&__v_{i}, &__v_{j}) }" ++
+    s!" else \{ bytes2_sub_value(__v_{i}, __v_{j}, record)? }"
   #[
     .letStmt false "__b2_sub" (some "(G, G)") (.lit blockExpr),
     declVal out (.field (.var "__b2_sub") "0"),
@@ -626,12 +626,12 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" let __z_bytes = __b_u32.to_le_bytes();" ++
     s!" let __c_u32 = __b_u32.wrapping_sub(__a_u32).wrapping_sub(1);" ++
     s!" let __y_bytes = __c_u32.to_le_bytes();" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[0]), &G::from_u8(__x_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[2]), &G::from_u8(__x_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[0]), &G::from_u8(__y_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[2]), &G::from_u8(__y_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[0]), &G::from_u8(__z_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[2]), &G::from_u8(__z_bytes[3]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[0]), &G::from_u8(__x_bytes[1]))?;" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[2]), &G::from_u8(__x_bytes[3]))?;" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[0]), &G::from_u8(__y_bytes[1]))?;" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[2]), &G::from_u8(__y_bytes[3]))?;" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[0]), &G::from_u8(__z_bytes[1]))?;" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[2]), &G::from_u8(__z_bytes[3]))?;" ++
     s!" } __result }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
@@ -658,10 +658,7 @@ private def emitU8RangeCheck (i j : ValIdx) : Array RustStmt :=
   let stmt : String :=
     s!"if !unconstrained \{" ++
     s!" let __vi = __v_{i}; let __vj = __v_{j};" ++
-    s!" let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64();" ++
-    s!" if __bi >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bi)); }" ++
-    s!" if __bj >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bj)); }" ++
-    s!" record.bytes2_queries.bump_range_check(&__vi, &__vj);" ++
+    s!" record.bytes2_queries.bump_range_check(&__vi, &__vj)?;" ++
     s!" }"
   #[.exprStmt (.lit stmt)]
 
@@ -828,7 +825,7 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
     let insertCall : RustStmt := .exprStmt (.lit <|
-      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)")
+      s!"record.function_queries[{funIdx}].finish_prehashed(&inp, &__ret[..], !unconstrained)?")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -921,7 +918,8 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
   let mut bindInputs : Array RustStmt := #[]
   for i in [0 : inSize] do
     bindInputs := bindInputs.push
-      (.letStmt false s!"__v_{i}" (some "G") (.index (.var "inp") (.lit (toString i))))
+      (.letStmt false s!"__v_{i}" (some "G")
+        (.index (.call (.field (.var "inp") "values") #[]) (.lit (toString i))))
   -- nextVal starts at inSize (the next free ValIdx after the inputs).
   let initState : EmitState := { nextVal := inSize, nextLabel := 0 }
   let (bodyStmts, _) := (emitBlock funIdx none f.body).run initState
@@ -937,12 +935,13 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
   let bodyText : String := stmtsToStr 2 body
   let fnText : String :=
     s!"fn aiur_fn_{funIdx}(\n" ++
-    s!"  inp: [G; IN_{funIdx}],\n" ++
+    s!"  inp: QueryKey<IN_{funIdx}>,\n" ++
     s!"  record: &mut QueryRecord,\n" ++
     s!"  io_buffer: &mut IOBuffer,\n" ++
     s!"  unconstrained: bool,\n" ++
     s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
     s!"  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {lbrace}\n" ++
+    s!"    record.checkpoint({funIdx});\n" ++
     bodyText ++
     s!"  {rbrace})\n" ++
     s!"{rbrace}\n\n"
@@ -968,7 +967,8 @@ def emitPreludeHeader : String :=
    )]\n\
    \n\
    use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\
-   use aiur::G;\n"
+   use aiur::G;\n\
+   use aiur::querymap::QueryKey;\n"
 
 /-- The set of optional `aiur::execute` items the codegen
     might emit references to. Each pair is `(rust_path, search_token)`
@@ -1019,7 +1019,7 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
       .letStmt false "__inp" (some s!"[G; IN_{funIdx}]")
         (.lit "args.try_into().expect(\"input size mismatch\")"),
       .letStmt false "__out" none
-        (.lit s!"aiur_fn_{funIdx}(__inp, record, io_buffer, false)?"),
+        (.lit s!"aiur_fn_{funIdx}(QueryKey::new(__inp), record, io_buffer, false)?"),
       .returnStmt (.call (.var "Ok")
         #[.call (.field (.var "__out") "to_vec") #[]])
     ]

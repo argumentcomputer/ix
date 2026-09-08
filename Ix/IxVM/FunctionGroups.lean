@@ -20,6 +20,9 @@ namespace IxVM
 -- workload), capped at 16 members and 40 selectors per group, within an
 -- average 2% (max 4%) cost increase per workload. 83 groups over 656 of
 -- 743 groupable circuits: 744 -> 171 circuits.
+-- These measurements describe the original grouping. The FLT arithmetic
+-- changes remove list_snoc.U8_8 and add helpers that retain singleton circuits;
+-- preserve surviving groups, but remeasure costs for the combined kernel.
 def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_00", #[
     "memo_u32_less_than",
@@ -364,8 +367,7 @@ def functionGroups : Array (String × Array String) := #[
     "lazy_delta_b_const_a_proj"
   ]),
   ("ixvm_group_29", #[
-    "get_address_list",
-    "list_snoc.U8_8"
+    "get_address_list"
   ]),
   ("ixvm_group_30", #[
     "unpack_def_kind_safety",

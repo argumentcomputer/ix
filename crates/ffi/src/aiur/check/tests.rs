@@ -2,7 +2,7 @@ use super::*;
 use ix_kernel::shard::{AggNode, ShardInfo};
 use ixon::{Constant, constant::Axiom, expr::Expr};
 
-fn store(env: &Env, constant: &Constant) -> Address {
+pub(super) fn store(env: &Env, constant: &Constant) -> Address {
   let mut bytes = Vec::new();
   constant.put(&mut bytes);
   let addr = Address::hash(&bytes);
@@ -11,7 +11,7 @@ fn store(env: &Env, constant: &Constant) -> Address {
   addr
 }
 
-fn axiom(env: &Env, level: u64) -> Address {
+pub(super) fn axiom(env: &Env, level: u64) -> Address {
   store(
     env,
     &Constant {
@@ -27,7 +27,7 @@ fn axiom(env: &Env, level: u64) -> Address {
   )
 }
 
-fn manifest(lists: Vec<Vec<Address>>) -> ShardManifest {
+pub(super) fn manifest(lists: Vec<Vec<Address>>) -> ShardManifest {
   ShardManifest {
     num_shards: u32::try_from(lists.len()).unwrap(),
     shards: lists
@@ -159,17 +159,38 @@ fn native_ownership_and_error_order_are_deterministic_across_pool_widths() {
   let mut addresses: Vec<_> = (0..40).map(|i| axiom(&env, i)).collect();
   addresses.sort_unstable();
   let m = manifest(vec![addresses.iter().cloned().rev().collect()]);
-  let run = |width, manifest: &ShardManifest| {
-    rayon::ThreadPoolBuilder::new()
-      .num_threads(width)
-      .build()
-      .unwrap()
-      .install(|| prepare_owned(&env, manifest))
-  };
+  let run =
+    |width, manifest: &ShardManifest| prepare_with_pool(&env, manifest, width);
   assert_eq!(run(1, &m).unwrap(), run(4, &m).unwrap());
   assert_eq!(run(4, &m).unwrap()[0], addresses);
   let missing = manifest(vec![vec![]]);
   assert_eq!(run(1, &missing).unwrap_err(), run(4, &missing).unwrap_err());
+}
+
+#[test]
+fn setup_width_is_bounded_by_default_and_explicit_settings_are_validated() {
+  for (available, expected) in [(0, 1), (1, 1), (4, 4), (64, 8), (256, 8)] {
+    assert_eq!(setup_pool_size(None, available).unwrap(), expected);
+  }
+  for (setting, expected) in [("1", 1), ("2", 2), ("16", 16)] {
+    assert_eq!(setup_pool_size(Some(setting), 64).unwrap(), expected);
+  }
+  for bad in ["", "0", "-1", "eight", "2.0", " 2", "184467440737095516160"] {
+    assert!(setup_pool_size(Some(bad), 64).is_err(), "{bad}");
+  }
+}
+
+#[test]
+fn separate_setup_pool_does_not_widen_single_worker_execution() {
+  let env = Env::new();
+  let addresses = (0..40).map(|i| axiom(&env, i)).collect::<Vec<_>>();
+  let m = manifest(vec![addresses]);
+  let owned = prepare_with_pool(&env, &m, 4).unwrap();
+  assert_eq!(owned[0].len(), 40);
+  let execution =
+    rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+  assert_eq!(execution.install(rayon::current_num_threads), 1);
+  assert_eq!(execution.install(|| prepare_owned(&env, &m)).unwrap(), owned);
 }
 
 #[test]
@@ -226,6 +247,7 @@ fn native_report_keeps_claim_identity_and_rejected_leaf_details() {
     revision: "test",
     command: "ix check",
     budget_source: "none",
+    selection: None,
   };
   let loaded = LoadedEnv {
     env,
@@ -234,12 +256,13 @@ fn native_report_keeps_claim_identity_and_rejected_leaf_details() {
       .collect(),
     bytes: 42,
   };
-  let results = [ShardCheckResult {
+  let results = [Some(ShardCheckResult {
     error: "expected rejection".into(),
     peak_bytes: 0,
     suggested_parts: 1,
+    resource_status: 0,
     claim: Some(digest.clone()),
-  }];
+  })];
   let report =
     audit_report(&config, &loaded, &m, &m.to_bytes(), &owned, &results);
   assert_eq!(report["leaves"][0]["claim"], digest.hex());
@@ -248,6 +271,60 @@ fn native_report_keeps_claim_identity_and_rejected_leaf_details() {
   assert_eq!(report["failures"][0]["names"][0], "Fixture.marker");
   assert_eq!(report["selected"], 1);
   assert_eq!(report["executed"], 1);
+}
+
+#[test]
+fn selections_are_explicit_bounded_sorted_and_deduplicated() {
+  assert_eq!(select_shards(4, None).unwrap(), vec![0, 1, 2, 3]);
+  assert_eq!(select_shards(4, Some(&[3, 1, 3])).unwrap(), vec![1, 3]);
+  assert!(select_shards(4, Some(&[])).unwrap_err().contains("empty selection"));
+  assert!(select_shards(4, Some(&[4])).unwrap_err().contains("out of range"));
+  assert!(select_shards(4, Some(&[usize::MAX])).is_err());
+}
+
+#[test]
+fn selected_report_does_not_claim_untouched_shards_were_checked() {
+  let env = Env::new();
+  let m = manifest((0..4).map(|i| vec![axiom(&env, i)]).collect());
+  let owned = prepare_owned(&env, &m).unwrap();
+  let config = RunConfig {
+    ixe: Path::new("fixture.ixe"),
+    manifest: Path::new("fixture.ixes"),
+    jobs: 2,
+    use_bytecode: false,
+    report: "report.json",
+    revision: "test",
+    command: "ix check --shards 3",
+    budget_source: "none",
+    selection: Some(&[3]),
+  };
+  let loaded = LoadedEnv { env, names: FxHashMap::default(), bytes: 42 };
+  let results = vec![
+    None,
+    None,
+    None,
+    Some(ShardCheckResult {
+      error: "expected selected rejection".into(),
+      peak_bytes: 0,
+      suggested_parts: 1,
+      resource_status: 0,
+      claim: None,
+    }),
+  ];
+  let report =
+    audit_report(&config, &loaded, &m, &m.to_bytes(), &owned, &results);
+  for id in 0..3 {
+    assert_eq!(report["leaves"][id]["id"], id);
+    assert_eq!(report["leaves"][id]["status"], "unchanged");
+    assert!(report["leaves"][id]["claim"].is_null());
+    assert!(report["leaves"][id]["predicted_peak_bytes"].is_null());
+  }
+  assert_eq!(report["source"]["shards"], 4);
+  assert_eq!(report["selected"], 1);
+  assert_eq!(report["executed"], 1);
+  assert_eq!(report["leaves"][3]["status"], "failed");
+  assert_eq!(report["failures"][0]["id"], 3);
+  assert_eq!(report["failures"].as_array().unwrap().len(), 1);
 }
 
 /// Release-mode setup benchmark for external corpora. Deliberately does not
