@@ -14,7 +14,7 @@ pub const FFLONK_FIELD_STORAGE_BYTES: u64 = 32;
 pub const BLS12_381_G1_COMPRESSED_BYTES: u64 = 48;
 /// EIP-2537 uncompressed width of one BLS12-381 G1 point.
 pub const BLS12_381_G1_EIP2537_BYTES: u64 = 128;
-/// The materialized prover multiplies three degree-(n-1) wire polynomials
+/// The prover multiplies three degree-(n-1) wire polynomials
 /// and degree-(n+2) blinded Z, requiring a size-4n polynomial FFT.
 pub const FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER: u64 = 4;
 
@@ -68,6 +68,22 @@ pub struct FflonkCapacityPlanV1 {
   /// Uses the same exclusions as `file_srs_and_key_minimum_bytes`, also
   /// excluding polynomial reader state, read buffers, and filesystem cache.
   pub file_srs_and_file_key_minimum_bytes: u64,
+  /// Single largest transform array used by the file prover workspace (4*n
+  /// native Fr values). The second operand's evaluations live on disk.
+  pub file_workspace_fft_buffer_bytes: u64,
+  /// Bounded native-Fr roots cache for the largest file-workspace FFT.
+  pub file_workspace_fft_roots_bytes: u64,
+  /// Largest rolling quotient buffer (n native Fr values), used separately
+  /// from the FFT array. Does not include I/O buffers or authentication data.
+  pub file_workspace_quotient_ring_bytes: u64,
+  /// Three native-Fr wire columns and the auxiliary-value cache still
+  /// materialized during witness lowering. Excludes the original witness.
+  pub file_workspace_witness_lowering_bytes: u64,
+  /// Retained file-SRS/file-key minimum plus the largest transform array and
+  /// bounded roots cache. Excludes R1CS, original witness, workspace indexes,
+  /// I/O/MSM buffers, spare capacity, allocator and OS memory. This is not a
+  /// peak-RAM estimate or evidence that a complete proof fits a RAM target.
+  pub file_srs_key_and_fft_minimum_bytes: u64,
 }
 
 /// Why capacity arithmetic could not represent a proposed census.
@@ -173,6 +189,28 @@ pub fn plan_fflonk_capacity(
       .checked_add(file_srs_authentication_bytes)
       .and_then(|total| total.checked_add(file_key_authentication_bytes))
       .ok_or(FflonkCapacityError::CountOverflow)?;
+  let native_field_bytes = u64::try_from(size_of::<Fr>())
+    .map_err(|_| FflonkCapacityError::CountOverflow)?;
+  let file_workspace_fft_buffer_bytes =
+    bytes(polynomial_fft_domain_size, native_field_bytes)?;
+  let file_workspace_fft_roots_bytes = bytes(
+    (polynomial_fft_domain_size / 2).min(FFLONK_POLYNOMIAL_CHUNK_FIELDS as u64),
+    native_field_bytes,
+  )?;
+  let file_workspace_quotient_ring_bytes =
+    bytes(census.domain_size, native_field_bytes)?;
+  let file_workspace_witness_lowering_bytes =
+    bytes(bytes(census.domain_size, 3)?, native_field_bytes)?
+      .checked_add(bytes(
+        census.auxiliary_wires,
+        u64::try_from(size_of::<Option<Fr>>())
+          .map_err(|_| FflonkCapacityError::CountOverflow)?,
+      )?)
+      .ok_or(FflonkCapacityError::CountOverflow)?;
+  let file_srs_key_and_fft_minimum_bytes = file_srs_and_file_key_minimum_bytes
+    .checked_add(file_workspace_fft_buffer_bytes)
+    .and_then(|total| total.checked_add(file_workspace_fft_roots_bytes))
+    .ok_or(FflonkCapacityError::CountOverflow)?;
 
   Ok(FflonkCapacityPlanV1 {
     domain_size: census.domain_size,
@@ -206,6 +244,11 @@ pub fn plan_fflonk_capacity(
     file_key_polynomial_bytes: bytes(field_column_bytes, 19)?,
     file_key_authentication_bytes,
     file_srs_and_file_key_minimum_bytes,
+    file_workspace_fft_buffer_bytes,
+    file_workspace_fft_roots_bytes,
+    file_workspace_quotient_ring_bytes,
+    file_workspace_witness_lowering_bytes,
+    file_srs_key_and_fft_minimum_bytes,
   })
 }
 
@@ -249,6 +292,22 @@ mod tests {
     assert_eq!(plan.file_key_authentication_bytes, 384);
     assert_eq!(plan.polynomial_fft_domain_size, 32);
     assert!(plan.supported_polynomial_fft_domain);
+    assert_eq!(
+      plan.file_workspace_fft_buffer_bytes,
+      32 * size_of::<Fr>() as u64
+    );
+    assert_eq!(
+      plan.file_workspace_fft_roots_bytes,
+      16 * size_of::<Fr>() as u64
+    );
+    assert_eq!(
+      plan.file_workspace_quotient_ring_bytes,
+      8 * size_of::<Fr>() as u64
+    );
+    assert_eq!(
+      plan.file_workspace_witness_lowering_bytes,
+      (24 * size_of::<Fr>() + 2 * size_of::<Option<Fr>>()) as u64
+    );
   }
 
   #[test]
@@ -268,6 +327,20 @@ mod tests {
     assert!(plan.file_srs_and_key_minimum_bytes > 512_000_000_000);
     assert_eq!(plan.file_key_polynomial_bytes, 652_835_028_992);
     assert_eq!(plan.file_key_authentication_bytes, 9_961_472);
+    assert_eq!(
+      plan.file_workspace_fft_buffer_bytes,
+      (1u64 << 32) * size_of::<Fr>() as u64
+    );
+    assert_eq!(
+      plan.file_workspace_fft_roots_bytes,
+      65_536 * size_of::<Fr>() as u64
+    );
+    assert_eq!(
+      plan.file_srs_key_and_fft_minimum_bytes,
+      plan.file_srs_and_file_key_minimum_bytes
+        + plan.file_workspace_fft_buffer_bytes
+        + plan.file_workspace_fft_roots_bytes
+    );
     let arithmetization_bytes = (1u64 << 30)
       * u64::try_from(size_of::<PlonkGateV1>() + 3 * size_of::<PlonkCellV1>())
         .unwrap();

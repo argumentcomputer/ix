@@ -1,20 +1,21 @@
 use crate::polynomial_storage::{
-  evaluate_polynomial_source, for_each_polynomial_chunk, load_polynomial,
+  evaluate_polynomial_source, for_each_polynomial_chunk,
 };
+use crate::prover_workspace::{ProverPolynomial, ProverWorkspace};
 use crate::{
   FFLONK_COMMITMENTS, FFLONK_EVALUATIONS, FFLONK_POLYNOMIAL_CHUNK_FIELDS,
   FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER, FflonkEvaluationRootsV1,
   FflonkFixedPolynomialV1, FflonkPolynomialSourceV1, FflonkProofV1,
   FflonkProvingKeyV1, FflonkStorageError, FflonkTranscriptError,
   KzgCommitmentSourceV1, KzgError, PlonkArithmetizationError,
-  commit_polynomial, derive_fflonk_challenges, evaluate_polynomial,
-  lower_plonk_witness,
+  derive_fflonk_challenges, evaluate_polynomial, lower_plonk_witness,
 };
 use ark_bls12_381::{Fr, G1Affine};
 use ark_ff::{FftField, Field, One, Zero, batch_inversion};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ix_terminal_circuit::{CanonicalR1csV1, Witness};
 use std::fmt;
+use std::io::{Read, Seek, Write};
 
 /// Explicit zero-knowledge randomness consumed by one FFLONK proof.
 ///
@@ -122,6 +123,49 @@ pub fn prove_fflonk(
   witness: &Witness,
   blinding: FflonkBlindingV1,
 ) -> Result<FflonkProverOutputV1, FflonkProverError> {
+  prove_in_workspace(
+    srs,
+    preprocessed,
+    r1cs,
+    witness,
+    blinding,
+    &ProverWorkspace::<std::fs::File>::Memory,
+  )
+}
+
+/// Proves with authenticated file storage for wire values and temporary
+/// polynomials. The storage must be empty, readable, writable, and seekable.
+///
+/// With `R = std::fs::File`, polynomial payloads live on disk. The caller owns
+/// file protection and cleanup: the scratch data includes private witness
+/// values, and failures can leave a partial file. Live regions are recycled
+/// when their polynomials are dropped. The file is never truncated.
+///
+/// Arithmetic uses one resident FFT array (at most 4*n fields), bounded roots
+/// and I/O buffers, and at most n fields for quotient division. Witness
+/// lowering still materializes three columns. The relation, original witness,
+/// proving key, SRS, allocator, and OS cache have additional memory costs;
+/// this function does not enforce an aggregate RAM budget.
+pub fn prove_fflonk_with_file_workspace<R: Read + Write + Seek>(
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
+  preprocessed: &(impl FflonkProvingKeyV1 + ?Sized),
+  r1cs: &CanonicalR1csV1,
+  witness: &Witness,
+  blinding: FflonkBlindingV1,
+  storage: R,
+) -> Result<FflonkProverOutputV1, FflonkProverError> {
+  let workspace = ProverWorkspace::file(storage)?;
+  prove_in_workspace(srs, preprocessed, r1cs, witness, blinding, &workspace)
+}
+
+fn prove_in_workspace<R: Read + Write + Seek>(
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
+  preprocessed: &(impl FflonkProvingKeyV1 + ?Sized),
+  r1cs: &CanonicalR1csV1,
+  witness: &Witness,
+  blinding: FflonkBlindingV1,
+  ws: &ProverWorkspace<R>,
+) -> Result<FflonkProverOutputV1, FflonkProverError> {
   let verification_key = preprocessed.verification_key();
   if srs.digest() != verification_key.kzg().srs_digest {
     return Err(FflonkProverError::SrsMismatch);
@@ -159,49 +203,52 @@ pub fn prove_fflonk(
     values[blind_row0] = blinding.wire_evaluations[2 * column];
     values[blind_row1] = blinding.wire_evaluations[2 * column + 1];
   }
-  let a = domain.ifft(&wire_evaluations[0]);
-  let b = domain.ifft(&wire_evaluations[1]);
-  let c = domain.ifft(&wire_evaluations[2]);
+  let [wa, wb, wc] = wire_evaluations;
+  let wire_evaluations = [
+    ws.store_vec(wa, false)?,
+    ws.store_vec(wb, false)?,
+    ws.store_vec(wc, false)?,
+  ];
+  let a = ws.ifft(&wire_evaluations[0], &domain)?;
+  let b = ws.ifft(&wire_evaluations[1], &domain)?;
+  let c = ws.ifft(&wire_evaluations[2], &domain)?;
   let mut public_input_evaluations = vec![Fr::zero(); domain_size];
   for (row, input) in public_inputs.iter().enumerate() {
     public_input_evaluations[row] = -*input;
   }
-  let public_input_polynomial = domain.ifft(&public_input_evaluations);
-  drop(public_input_evaluations);
+  let public_input_polynomial =
+    ws.ifft_vec(public_input_evaluations, &domain, None)?;
 
-  let mut t0_numerator = poly_mul_source(
-    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Ql),
-    &a,
+  let mut t0_numerator =
+    ws.mul(&preprocessed.coefficient_source(FflonkFixedPolynomialV1::Ql), &a)?;
+  ws.add_assign(
+    &mut t0_numerator,
+    &ws
+      .mul(&preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qr), &b)?,
+    Fr::one(),
   )?;
-  poly_add_assign(
+  ws.add_assign(
     &mut t0_numerator,
-    &poly_mul_source(
-      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qr),
-      &b,
-    )?,
-  );
-  poly_add_assign(
-    &mut t0_numerator,
-    &poly_mul_source(
+    &ws.mul(
       &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qm),
-      &poly_mul(&a, &b),
+      &ws.mul(&a, &b)?,
     )?,
-  );
-  poly_add_assign(
+    Fr::one(),
+  )?;
+  ws.add_assign(
     &mut t0_numerator,
-    &poly_mul_source(
-      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qo),
-      &c,
-    )?,
-  );
-  poly_add_scaled_source(
+    &ws
+      .mul(&preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qo), &c)?,
+    Fr::one(),
+  )?;
+  ws.add_assign(
     &mut t0_numerator,
     &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qc),
     Fr::one(),
   )?;
-  poly_add_assign(&mut t0_numerator, &public_input_polynomial);
-  let t0 = divide_by_xn_minus(t0_numerator, domain_size, Fr::one(), "Z_H(X)")?;
-  let c1 = pack_polynomials(4, [&a, &b, &c, &t0])?;
+  ws.add_assign(&mut t0_numerator, &public_input_polynomial, Fr::one())?;
+  let t0 = ws.divide(t0_numerator, domain_size, Fr::one(), "Z_H(X)")?;
+  let c1 = ws.pack([&a, &b, &c, &t0])?;
   drop(t0);
   drop(public_input_polynomial);
 
@@ -209,13 +256,14 @@ pub fn prove_fflonk(
     commitments: [G1Affine::identity(); FFLONK_COMMITMENTS],
     evaluations: [Fr::zero(); FFLONK_EVALUATIONS],
   };
-  proof.commitments[0] = commit_polynomial(srs, &c1)?.0;
+  proof.commitments[0] = ws.commit(srs, &c1)?;
   let (round1, _) =
     derive_fflonk_challenges(&verification_key, &proof, &public_inputs)?;
 
-  let mut z = permutation_grand_product(
+  let z_evaluations = permutation_grand_product_in_workspace(
+    ws,
     &domain,
-    &wire_evaluations,
+    [&wire_evaluations[0], &wire_evaluations[1], &wire_evaluations[2]],
     preprocessed.sigma_sources(),
     round1.beta,
     round1.gamma,
@@ -223,72 +271,83 @@ pub fn prove_fflonk(
     verification_key.k2(),
   )?;
   drop(wire_evaluations);
-  domain.ifft_in_place(&mut z);
-  blind_z(&mut z, blinding.z_coefficients, domain_size)?;
+  let z = ws.ifft_owned(z_evaluations, &domain, blinding.z_coefficients)?;
 
   // L_1(X) = Z_H(X)/(n*(X-1)); cancel Z_H before multiplication.
-  let mut t1 = divide_by_xn_minus(
-    poly_sub_constant(&z, Fr::one()),
-    1,
-    Fr::one(),
-    "X - 1 in T1",
+  let t1 = ws.scale(
+    ws.divide(
+      ws.sum(&[(&z, Fr::one()), (&[Fr::one()].as_slice(), -Fr::one())])?,
+      1,
+      Fr::one(),
+      "X - 1 in T1",
+    )?,
+    domain.size_inv(),
   )?;
-  for coefficient in &mut t1 {
-    *coefficient *= domain.size_inv();
-  }
 
-  let identity_a =
-    poly_add_scaled_x_and_constant(&a, round1.beta, round1.gamma);
-  let identity_b = poly_add_scaled_x_and_constant(
-    &b,
-    round1.beta * verification_key.k1(),
-    round1.gamma,
-  );
-  let identity_c = poly_add_scaled_x_and_constant(
-    &c,
-    round1.beta * verification_key.k2(),
-    round1.gamma,
-  );
+  let identity_a = ws.sum(&[
+    (&a, Fr::one()),
+    (&[round1.gamma, round1.beta].as_slice(), Fr::one()),
+  ])?;
+  let identity_b = ws.sum(&[
+    (&b, Fr::one()),
+    (
+      &[round1.gamma, round1.beta * verification_key.k1()].as_slice(),
+      Fr::one(),
+    ),
+  ])?;
+  let identity_c = ws.sum(&[
+    (&c, Fr::one()),
+    (
+      &[round1.gamma, round1.beta * verification_key.k2()].as_slice(),
+      Fr::one(),
+    ),
+  ])?;
   let identity_product =
-    poly_mul(&poly_mul(&poly_mul(&identity_a, &identity_b), &identity_c), &z);
+    ws.mul(&ws.mul(&ws.mul(&identity_a, &identity_b)?, &identity_c)?, &z)?;
   drop(identity_a);
   drop(identity_b);
   drop(identity_c);
-  let copy_a = copy_factor(
-    &a,
-    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma1),
-    round1.beta,
-    round1.gamma,
-  )?;
-  let copy_b = copy_factor(
-    &b,
-    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma2),
-    round1.beta,
-    round1.gamma,
-  )?;
-  let copy_c = copy_factor(
-    &c,
-    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma3),
-    round1.beta,
-    round1.gamma,
-  )?;
-  let z_shifted = shift_argument(&z, verification_key.omega());
+  let copy_a = ws.sum(&[
+    (&a, Fr::one()),
+    (
+      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma1),
+      round1.beta,
+    ),
+    (&[round1.gamma].as_slice(), Fr::one()),
+  ])?;
+  let copy_b = ws.sum(&[
+    (&b, Fr::one()),
+    (
+      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma2),
+      round1.beta,
+    ),
+    (&[round1.gamma].as_slice(), Fr::one()),
+  ])?;
+  let copy_c = ws.sum(&[
+    (&c, Fr::one()),
+    (
+      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma3),
+      round1.beta,
+    ),
+    (&[round1.gamma].as_slice(), Fr::one()),
+  ])?;
+  let z_shifted = ws.shift(&z, verification_key.omega())?;
   let copy_product =
-    poly_mul(&poly_mul(&poly_mul(&copy_a, &copy_b), &copy_c), &z_shifted);
+    ws.mul(&ws.mul(&ws.mul(&copy_a, &copy_b)?, &copy_c)?, &z_shifted)?;
   drop(copy_a);
   drop(copy_b);
   drop(copy_c);
   drop(z_shifted);
-  let t2 = divide_by_xn_minus(
-    poly_sub(&identity_product, &copy_product),
+  let t2 = ws.divide(
+    ws.sum(&[(&identity_product, Fr::one()), (&copy_product, -Fr::one())])?,
     domain_size,
     Fr::one(),
     "Z_H(X) in T2",
   )?;
   drop(identity_product);
   drop(copy_product);
-  let c2 = pack_polynomials(3, [&z, &t1, &t2])?;
-  proof.commitments[1] = commit_polynomial(srs, &c2)?.0;
+  let c2 = ws.pack([&z, &t1, &t2])?;
+  proof.commitments[1] = ws.commit(srs, &c2)?;
 
   let (round3, roots) =
     derive_fflonk_challenges(&verification_key, &proof, &public_inputs)?;
@@ -299,13 +358,13 @@ pub fn prove_fflonk(
     )?[0];
   }
   proof.evaluations[8..].copy_from_slice(&[
-    evaluate_polynomial(&a, round3.xi),
-    evaluate_polynomial(&b, round3.xi),
-    evaluate_polynomial(&c, round3.xi),
-    evaluate_polynomial(&z, round3.xi),
-    evaluate_polynomial(&z, round3.xi_omega),
-    evaluate_polynomial(&t1, round3.xi_omega),
-    evaluate_polynomial(&t2, round3.xi_omega),
+    evaluate_polynomial_source(&a, &[round3.xi])?[0],
+    evaluate_polynomial_source(&b, &[round3.xi])?[0],
+    evaluate_polynomial_source(&c, &[round3.xi])?[0],
+    evaluate_polynomial_source(&z, &[round3.xi])?[0],
+    evaluate_polynomial_source(&z, &[round3.xi_omega])?[0],
+    evaluate_polynomial_source(&t1, &[round3.xi_omega])?[0],
+    evaluate_polynomial_source(&t2, &[round3.xi_omega])?[0],
   ]);
   drop(a);
   drop(b);
@@ -322,28 +381,41 @@ pub fn prove_fflonk(
     &roots.h0_omega8,
     &evaluate_polynomial_source(&c0_source, &roots.h0_omega8)?,
   )?;
-  let r1 = interpolate_from_polynomial(&roots.h1_omega4, &c1)?;
+  let r1 = interpolate(
+    &roots.h1_omega4,
+    &evaluate_polynomial_source(&c1, &roots.h1_omega4)?,
+  )?;
   let r2_roots = combined_r2_roots(&roots);
-  let r2 = interpolate_from_polynomial(&r2_roots, &c2)?;
-  let mut f_source =
-    Vec::with_capacity(c0_source.len().max(c1.len()).max(c2.len()));
-  for_each_polynomial_chunk(&c0_source, |_, values| {
-    f_source.extend_from_slice(values)
-  })?;
-  poly_sub_assign(&mut f_source, &r0);
-  let mut f = divide_by_xn_minus(f_source, 8, round4.xi, "X^8 - xi")?;
-  let f1 = divide_by_xn_minus(poly_sub(&c1, &r1), 4, round4.xi, "X^4 - xi")?;
-  poly_add_scaled_assign(&mut f, &f1, round4.alpha);
+  let r2 =
+    interpolate(&r2_roots, &evaluate_polynomial_source(&c2, &r2_roots)?)?;
+  let mut f = ws.divide(
+    ws.sum(&[(&c0_source, Fr::one()), (&r0.as_slice(), -Fr::one())])?,
+    8,
+    round4.xi,
+    "X^8 - xi",
+  )?;
+  let f1 = ws.divide(
+    ws.sum(&[(&c1, Fr::one()), (&r1.as_slice(), -Fr::one())])?,
+    4,
+    round4.xi,
+    "X^4 - xi",
+  )?;
+  ws.add_assign(&mut f, &f1, round4.alpha)?;
   drop(f1);
-  let f2 = divide_by_xn_minus(
-    divide_by_xn_minus(poly_sub(&c2, &r2), 3, round4.xi, "X^3 - xi")?,
+  let f2 = ws.divide(
+    ws.divide(
+      ws.sum(&[(&c2, Fr::one()), (&r2.as_slice(), -Fr::one())])?,
+      3,
+      round4.xi,
+      "X^3 - xi",
+    )?,
     3,
     round4.xi_omega,
     "X^3 - xi*omega",
   )?;
-  poly_add_scaled_assign(&mut f, &f2, round4.alpha.square());
+  ws.add_assign(&mut f, &f2, round4.alpha.square())?;
   drop(f2);
-  proof.commitments[2] = commit_polynomial(srs, &f)?.0;
+  proof.commitments[2] = ws.commit(srs, &f)?;
 
   let (round5, roots_after_w1) =
     derive_fflonk_challenges(&verification_key, &proof, &public_inputs)?;
@@ -358,45 +430,108 @@ pub fn prove_fflonk(
   let pre1 = round5.alpha * z0_at_y * z2_at_y;
   let pre2 = round5.alpha.square() * z0_at_y * z1_at_y;
   let zt = poly_mul(&poly_mul(&z0, &z1), &z2);
-  // W2 can consume C1, C2, and F. Reuse the largest allocation for their
-  // linear combination, avoiding another full packed-polynomial buffer.
-  let mut parts =
-    [(c1, pre1), (c2, pre2), (f, -evaluate_polynomial(&zt, round5.y))];
-  let largest = parts
-    .iter()
-    .enumerate()
-    .max_by_key(|(_, (poly, _))| poly.capacity())
-    .map(|(index, _)| index)
-    .expect("three polynomial buffers");
-  parts.swap(0, largest);
-  let mut parts = parts.into_iter();
-  let (mut l, scale) = parts.next().expect("three polynomial buffers");
-  for coefficient in &mut l {
-    *coefficient *= scale;
-  }
-  for (polynomial, scale) in parts {
-    poly_add_scaled_assign(&mut l, &polynomial, scale);
-  }
-  poly_add_scaled_source(&mut l, &c0_source, pre0)?;
-  l.resize(l.len().max(1), Fr::zero());
-  l[0] -= evaluate_polynomial(&r0, round5.y) * pre0
+  let constant = evaluate_polynomial(&r0, round5.y) * pre0
     + evaluate_polynomial(&r1, round5.y) * pre1
     + evaluate_polynomial(&r2, round5.y) * pre2;
   let zts2_at_y = evaluate_polynomial(&poly_mul(&z1, &z2), round5.y);
   let zts2_inverse = zts2_at_y
     .inverse()
     .ok_or(FflonkProverError::SingularChallenge("Z_1(y) * Z_2(y)"))?;
-  for coefficient in &mut l {
-    *coefficient *= zts2_inverse;
-  }
-  let w2 = divide_by_xn_minus(l, 1, round5.y, "X - y")?;
-  proof.commitments[3] = commit_polynomial(srs, &w2)?.0;
+  let l = ws.opening_combination(
+    [(c1, pre1), (c2, pre2), (f, -evaluate_polynomial(&zt, round5.y))],
+    &c0_source,
+    pre0,
+    constant,
+    zts2_inverse,
+  )?;
+  let w2 = ws.divide(l, 1, round5.y, "X - y")?;
+  proof.commitments[3] = ws.commit(srs, &w2)?;
 
   Ok(FflonkProverOutputV1 { proof, public_inputs })
 }
 
 const PERMUTATION_BATCH_ROWS: usize = 16_384;
 
+#[allow(clippy::too_many_arguments)]
+fn permutation_grand_product_in_workspace<R: Read + Write + Seek>(
+  ws: &ProverWorkspace<R>,
+  domain: &Radix2EvaluationDomain<Fr>,
+  wires: [&dyn FflonkPolynomialSourceV1; 3],
+  sigma: [impl FflonkPolynomialSourceV1; 3],
+  beta: Fr,
+  gamma: Fr,
+  k1: Fr,
+  k2: Fr,
+) -> Result<ProverPolynomial<R>, FflonkProverError> {
+  let size = domain.size();
+  if wires.iter().any(|column| column.len() != size)
+    || sigma.iter().any(|column| column.len() != size)
+  {
+    return Err(FflonkProverError::Shape("permutation column length"));
+  }
+  let sources = [wires[0], wires[1], wires[2], &sigma[0], &sigma[1], &sigma[2]];
+  let chunk_rows = FFLONK_POLYNOMIAL_CHUNK_FIELDS.min(size);
+  let mut buffers: [Vec<Fr>; 6] = core::array::from_fn(|index| {
+    if sources[index].as_slice().is_some() {
+      Vec::new()
+    } else {
+      vec![Fr::zero(); chunk_rows]
+    }
+  });
+  let mut numerators = Vec::with_capacity(PERMUTATION_BATCH_ROWS.min(size));
+  let mut denominators = Vec::with_capacity(PERMUTATION_BATCH_ROWS.min(size));
+  let mut current = Fr::one();
+  let mut x = Fr::one();
+  let evaluations = ws.generate(size, false, |start, output| {
+    let mut columns = [&[][..]; 6];
+    for (index, (source, buffer)) in
+      sources.iter().zip(&mut buffers).enumerate()
+    {
+      columns[index] = if let Some(values) = source.as_slice() {
+        &values[start..start + output.len()]
+      } else {
+        source.read_fields(start, &mut buffer[..output.len()])?;
+        &buffer[..output.len()]
+      };
+    }
+    for first in (0..output.len()).step_by(PERMUTATION_BATCH_ROWS) {
+      let end = (first + PERMUTATION_BATCH_ROWS).min(output.len());
+      numerators.clear();
+      denominators.clear();
+      for (row, &a) in columns[0].iter().enumerate().take(end).skip(first) {
+        numerators.push(
+          (a + beta * x + gamma)
+            * (columns[1][row] + beta * k1 * x + gamma)
+            * (columns[2][row] + beta * k2 * x + gamma),
+        );
+        let denominator = (a + beta * columns[3][row] + gamma)
+          * (columns[1][row] + beta * columns[4][row] + gamma)
+          * (columns[2][row] + beta * columns[5][row] + gamma);
+        if denominator.is_zero() {
+          return Err(FflonkProverError::SingularChallenge(
+            "the permutation denominator",
+          ));
+        }
+        denominators.push(denominator);
+        x *= domain.group_gen();
+      }
+      batch_inversion(&mut denominators);
+      for ((value, numerator), inverse) in
+        output[first..end].iter_mut().zip(&numerators).zip(&denominators)
+      {
+        *value = current;
+        current *= *numerator * inverse;
+      }
+    }
+    Ok(())
+  })?;
+  if current != Fr::one() {
+    return Err(FflonkProverError::CopyPermutationDoesNotClose);
+  }
+  Ok(evaluations)
+}
+
+#[cfg(test)]
 fn permutation_grand_product(
   domain: &Radix2EvaluationDomain<Fr>,
   wires: &[Vec<Fr>; 3],
@@ -406,84 +541,17 @@ fn permutation_grand_product(
   k1: Fr,
   k2: Fr,
 ) -> Result<Vec<Fr>, FflonkProverError> {
-  let size = domain.size();
-  if wires.iter().any(|column| column.len() != size)
-    || sigma.iter().any(|column| column.len() != size)
-  {
-    return Err(FflonkProverError::Shape("permutation column length"));
-  }
-  let batch_rows = PERMUTATION_BATCH_ROWS.min(size);
-  // Cache one authenticated chunk per file-backed sigma column across the
-  // smaller inversion batches, avoiding repeated reads of the same bytes.
-  debug_assert!(
-    FFLONK_POLYNOMIAL_CHUNK_FIELDS.is_multiple_of(PERMUTATION_BATCH_ROWS)
-  );
-  let chunk_rows = FFLONK_POLYNOMIAL_CHUNK_FIELDS.min(size);
-  let mut sigma_buffers: [Vec<Fr>; 3] = core::array::from_fn(|index| {
-    if sigma[index].as_slice().is_some() {
-      Vec::new()
-    } else {
-      vec![Fr::zero(); chunk_rows]
-    }
-  });
-  let mut numerators = Vec::with_capacity(batch_rows);
-  let mut denominators = Vec::with_capacity(batch_rows);
-  let mut evaluations = Vec::with_capacity(size);
-  evaluations.push(Fr::one());
-  let mut current = Fr::one();
-  let mut x = Fr::one();
-  for start in (0..size).step_by(batch_rows) {
-    let chunk_start = start / chunk_rows * chunk_rows;
-    let chunk_end = (chunk_start + chunk_rows).min(size);
-    let mut sigma_chunk = [&[][..]; 3];
-    for (index, (source, buffer)) in
-      sigma.iter().zip(&mut sigma_buffers).enumerate()
-    {
-      sigma_chunk[index] = if let Some(values) = source.as_slice() {
-        &values[chunk_start..chunk_end]
-      } else {
-        if start == chunk_start {
-          source
-            .read_fields(chunk_start, &mut buffer[..chunk_end - chunk_start])?;
-        }
-        &buffer[..chunk_end - chunk_start]
-      };
-    }
-    numerators.clear();
-    denominators.clear();
-    let end = (start + batch_rows).min(size);
-    for row in start..end {
-      numerators.push(
-        (wires[0][row] + beta * x + gamma)
-          * (wires[1][row] + beta * k1 * x + gamma)
-          * (wires[2][row] + beta * k2 * x + gamma),
-      );
-      let denominator =
-        (wires[0][row] + beta * sigma_chunk[0][row - chunk_start] + gamma)
-          * (wires[1][row] + beta * sigma_chunk[1][row - chunk_start] + gamma)
-          * (wires[2][row] + beta * sigma_chunk[2][row - chunk_start] + gamma);
-      if denominator.is_zero() {
-        return Err(FflonkProverError::SingularChallenge(
-          "the permutation denominator",
-        ));
-      }
-      denominators.push(denominator);
-      x *= domain.group_gen();
-    }
-    batch_inversion(&mut denominators);
-    for (offset, (&numerator, &inverse)) in
-      numerators.iter().zip(&denominators).enumerate()
-    {
-      current *= numerator * inverse;
-      if start + offset + 1 < size {
-        evaluations.push(current);
-      }
-    }
-  }
-  if current != Fr::one() {
-    return Err(FflonkProverError::CopyPermutationDoesNotClose);
-  }
-  Ok(evaluations)
+  let result = permutation_grand_product_in_workspace(
+    &ProverWorkspace::<std::fs::File>::Memory,
+    domain,
+    [&wires[0].as_slice(), &wires[1].as_slice(), &wires[2].as_slice()],
+    sigma,
+    beta,
+    gamma,
+    k1,
+    k2,
+  )?;
+  Ok(crate::polynomial_storage::load_polynomial(&result)?.into_owned())
 }
 
 fn combined_r2_roots(roots: &FflonkEvaluationRootsV1) -> [Fr; 6] {
@@ -497,7 +565,7 @@ fn combined_r2_roots(roots: &FflonkEvaluationRootsV1) -> [Fr; 6] {
   ]
 }
 
-fn blind_z(
+pub(crate) fn blind_z(
   polynomial: &mut Vec<Fr>,
   factors: [Fr; 3],
   domain_size: usize,
@@ -512,16 +580,6 @@ fn blind_z(
   }
   trim(polynomial);
   Ok(())
-}
-
-fn interpolate_from_polynomial<const N: usize>(
-  points: &[Fr; N],
-  polynomial: &[Fr],
-) -> Result<Vec<Fr>, FflonkProverError> {
-  let values = core::array::from_fn(|index| {
-    evaluate_polynomial(polynomial, points[index])
-  });
-  interpolate(points, &values)
 }
 
 fn interpolate<const N: usize>(
@@ -552,50 +610,9 @@ fn vanishing_polynomial<const N: usize>(points: &[Fr; N]) -> Vec<Fr> {
   })
 }
 
-fn pack_polynomials<const N: usize>(
-  stride: usize,
-  polynomials: [&[Fr]; N],
-) -> Result<Vec<Fr>, FflonkProverError> {
-  if stride != N {
-    return Err(FflonkProverError::Shape("packed polynomial stride"));
-  }
-  let max_len =
-    polynomials.iter().map(|polynomial| polynomial.len()).max().unwrap_or(0);
-  let packed_len = max_len
-    .checked_mul(stride)
-    .ok_or(FflonkProverError::Shape("packed polynomial length overflow"))?;
-  let mut packed = vec![Fr::zero(); packed_len];
-  for (offset, polynomial) in polynomials.into_iter().enumerate() {
-    for (degree, coefficient) in polynomial.iter().enumerate() {
-      packed[stride * degree + offset] = *coefficient;
-    }
-  }
-  trim(&mut packed);
-  Ok(packed)
-}
-
-fn poly_mul_source(
-  source: &impl FflonkPolynomialSourceV1,
-  right: &[Fr],
-) -> Result<Vec<Fr>, FflonkStorageError> {
-  Ok(poly_mul(&load_polynomial(source)?, right))
-}
-
-fn copy_factor(
-  wire: &[Fr],
-  sigma: &impl FflonkPolynomialSourceV1,
-  beta: Fr,
-  gamma: Fr,
-) -> Result<Vec<Fr>, FflonkStorageError> {
-  let mut output = wire.to_vec();
-  poly_add_scaled_source(&mut output, sigma, beta)?;
-  poly_add_assign(&mut output, &[gamma]);
-  Ok(output)
-}
-
-fn poly_add_scaled_source(
+pub(crate) fn poly_add_scaled_source(
   output: &mut Vec<Fr>,
-  source: &impl FflonkPolynomialSourceV1,
+  source: &(impl FflonkPolynomialSourceV1 + ?Sized),
   scalar: Fr,
 ) -> Result<(), FflonkStorageError> {
   if scalar.is_zero() {
@@ -614,7 +631,7 @@ fn poly_add_scaled_source(
   Ok(())
 }
 
-fn poly_mul(left: &[Fr], right: &[Fr]) -> Vec<Fr> {
+pub(crate) fn poly_mul(left: &[Fr], right: &[Fr]) -> Vec<Fr> {
   let live_len = |polynomial: &[Fr]| {
     polynomial
       .iter()
@@ -654,7 +671,7 @@ fn validate_polynomial_domain(
     (1_u64 << Fr::TWO_ADICITY) / FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER;
   if domain_size as u64 > maximum {
     return Err(FflonkProverError::Shape(
-      "materialized polynomial products require a supported 4*n FFT domain",
+      "polynomial products require a supported 4*n FFT domain",
     ));
   }
   Ok(())
@@ -669,33 +686,7 @@ fn poly_add_assign(output: &mut Vec<Fr>, addend: &[Fr]) {
   trim(output);
 }
 
-fn poly_add_scaled_assign(output: &mut Vec<Fr>, addend: &[Fr], scalar: Fr) {
-  if scalar.is_zero() {
-    return;
-  }
-  output.reserve_exact(addend.len().saturating_sub(output.len()));
-  output.resize(output.len().max(addend.len()), Fr::zero());
-  for (target, coefficient) in output.iter_mut().zip(addend) {
-    *target += *coefficient * scalar;
-  }
-  trim(output);
-}
-
-fn poly_sub(left: &[Fr], right: &[Fr]) -> Vec<Fr> {
-  let mut output = left.to_vec();
-  poly_sub_assign(&mut output, right);
-  output
-}
-
-fn poly_sub_assign(output: &mut Vec<Fr>, subtrahend: &[Fr]) {
-  output.reserve_exact(subtrahend.len().saturating_sub(output.len()));
-  output.resize(output.len().max(subtrahend.len()), Fr::zero());
-  for (target, value) in output.iter_mut().zip(subtrahend) {
-    *target -= value;
-  }
-  trim(output);
-}
-
+#[cfg(test)]
 fn poly_sub_constant(polynomial: &[Fr], constant: Fr) -> Vec<Fr> {
   let mut output = polynomial.to_vec();
   if output.is_empty() {
@@ -719,31 +710,7 @@ fn poly_scale(polynomial: &[Fr], scalar: Fr) -> Vec<Fr> {
   output
 }
 
-fn poly_add_scaled_x_and_constant(
-  polynomial: &[Fr],
-  x_coefficient: Fr,
-  constant: Fr,
-) -> Vec<Fr> {
-  let mut output = polynomial.to_vec();
-  output.resize(output.len().max(2), Fr::zero());
-  output[0] += constant;
-  output[1] += x_coefficient;
-  trim(&mut output);
-  output
-}
-
-fn shift_argument(polynomial: &[Fr], factor: Fr) -> Vec<Fr> {
-  let mut power = Fr::one();
-  let mut output = Vec::with_capacity(polynomial.len());
-  for coefficient in polynomial {
-    output.push(*coefficient * power);
-    power *= factor;
-  }
-  trim(&mut output);
-  output
-}
-
-fn divide_by_xn_minus(
+pub(crate) fn divide_by_xn_minus(
   polynomial: Vec<Fr>,
   n: usize,
   beta: Fr,
@@ -777,7 +744,7 @@ fn divide_by_xn_minus(
   Ok(polynomial)
 }
 
-fn trim(polynomial: &mut Vec<Fr>) {
+pub(crate) fn trim(polynomial: &mut Vec<Fr>) {
   while polynomial.last().is_some_and(Zero::is_zero) {
     polynomial.pop();
   }
@@ -865,6 +832,115 @@ mod tests {
       ),
       Ok(false),
     );
+  }
+
+  #[test]
+  fn file_workspace_propagates_corruption_and_read_failures_through_proof_rounds()
+   {
+    use std::cell::Cell;
+    use std::io::{self, Cursor, SeekFrom};
+    struct FaultyStorage<'a> {
+      bytes: Cursor<Vec<u8>>,
+      reads: &'a Cell<usize>,
+      fail_at: Option<usize>,
+      corrupt: bool,
+    }
+    impl Read for FaultyStorage<'_> {
+      fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        let index = self.reads.get();
+        self.reads.set(index + 1);
+        let fail = self.fail_at == Some(index);
+        if fail && !self.corrupt {
+          return Err(io::ErrorKind::BrokenPipe.into());
+        }
+        let count = self.bytes.read(output)?;
+        if fail && count != 0 {
+          output[0] ^= 1;
+        }
+        Ok(count)
+      }
+    }
+    impl Write for FaultyStorage<'_> {
+      fn write(&mut self, input: &[u8]) -> io::Result<usize> {
+        self.bytes.write(input)
+      }
+      fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+      }
+    }
+    impl Seek for FaultyStorage<'_> {
+      fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.bytes.seek(position)
+      }
+    }
+    let (r1cs, witness) = fixture();
+    let arithmetization = arithmetize_r1cs(&r1cs).unwrap();
+    let degree = usize::try_from(
+      required_fflonk_srs_degree(arithmetization.census().domain_size).unwrap(),
+    )
+    .unwrap();
+    let srs = test_srs(degree, Fr::from(29u64));
+    let key = preprocess_fflonk(&srs, arithmetization).unwrap();
+    let reads = Cell::new(0);
+    let output = prove_fflonk_with_file_workspace(
+      &srs,
+      &key,
+      &r1cs,
+      &witness,
+      FflonkBlindingV1::default(),
+      FaultyStorage {
+        bytes: Cursor::new(Vec::new()),
+        reads: &reads,
+        fail_at: None,
+        corrupt: false,
+      },
+    )
+    .unwrap();
+    assert_eq!(
+      verify_fflonk(
+        &key.verification_key(),
+        &output.proof,
+        &output.public_inputs
+      ),
+      Ok(true)
+    );
+    let total_reads = reads.get();
+    assert!(total_reads > 2);
+    for fail_at in [0, total_reads / 2, total_reads - 1] {
+      for corrupt in [false, true] {
+        reads.set(0);
+        let error = prove_fflonk_with_file_workspace(
+          &srs,
+          &key,
+          &r1cs,
+          &witness,
+          FflonkBlindingV1::default(),
+          FaultyStorage {
+            bytes: Cursor::new(Vec::new()),
+            reads: &reads,
+            fail_at: Some(fail_at),
+            corrupt,
+          },
+        )
+        .unwrap_err();
+        let storage = match error {
+          FflonkProverError::Storage(storage)
+          | FflonkProverError::Kzg(KzgError::PolynomialStorage(storage)) => {
+            storage
+          },
+          other => panic!("expected storage error, got {other}"),
+        };
+        if corrupt {
+          assert!(matches!(storage, FflonkStorageError::ChunkChanged { .. }));
+        } else {
+          assert_eq!(
+            storage,
+            FflonkStorageError::Io(io::ErrorKind::BrokenPipe)
+          );
+        }
+        assert_eq!(reads.get(), fail_at + 1);
+      }
+    }
   }
 
   #[test]
@@ -1024,6 +1100,42 @@ mod tests {
         .unwrap(),
         evaluations
       );
+      let ws = ProverWorkspace::file(std::io::Cursor::new(Vec::new())).unwrap();
+      let disk_wires = wires
+        .each_ref()
+        .map(|values| ws.store_vec(values.clone(), false).unwrap());
+      let disk_result = permutation_grand_product_in_workspace(
+        &ws,
+        &domain,
+        [&disk_wires[0], &disk_wires[1], &disk_wires[2]],
+        stored.each_ref().map(|stored| file.source(stored)),
+        beta,
+        gamma,
+        k1,
+        k2,
+      )
+      .unwrap();
+      assert_eq!(
+        crate::polynomial_storage::load_polynomial(&disk_result)
+          .unwrap()
+          .as_ref(),
+        evaluations
+      );
+      let bad_sigma =
+        [vec![Fr::zero(); size], sigma[1].clone(), sigma[2].clone()];
+      assert!(matches!(
+        permutation_grand_product_in_workspace(
+          &ws,
+          &domain,
+          [&disk_wires[0], &disk_wires[1], &disk_wires[2]],
+          bad_sigma.each_ref().map(Vec::as_slice),
+          beta,
+          gamma,
+          k1,
+          k2
+        ),
+        Err(FflonkProverError::CopyPermutationDoesNotClose)
+      ));
       for row in 0..size {
         let numerator = (0..3).fold(Fr::one(), |product, column| {
           product * (wires[column][row] + beta * labels[column][row] + gamma)
@@ -1051,6 +1163,21 @@ mod tests {
           "the permutation denominator"
         ))
       );
+      assert!(matches!(
+        permutation_grand_product_in_workspace(
+          &ws,
+          &domain,
+          [&disk_wires[0], &disk_wires[1], &disk_wires[2]],
+          stored.each_ref().map(|stored| file.source(stored)),
+          beta,
+          bad_gamma,
+          k1,
+          k2
+        ),
+        Err(FflonkProverError::SingularChallenge(
+          "the permutation denominator"
+        ))
+      ));
     }
   }
 }

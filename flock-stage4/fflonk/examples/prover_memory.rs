@@ -10,6 +10,9 @@
 //! argument to trade decompression work for a smaller archive.
 //! An optional fourth argument names a new, empty polynomial scratch file.
 //! That mode preprocesses and proves with an authenticated file-backed key.
+//! An optional fifth argument names a new scratch file for witness and
+//! temporary prover polynomials. It contains private witness values; the
+//! caller controls file protection and cleanup.
 
 use ark_bls12_381::{Fr, G1Affine, G2Affine};
 use ark_ec::{AffineRepr, CurveGroup};
@@ -18,8 +21,8 @@ use ix_fflonk::{
   FflonkBlindingV1, FflonkProvingKeyV1, KzgCommitmentSourceV1, KzgFileSrsV1,
   KzgSrsFileEncodingV1, KzgUniversalSrsV1, PlonkArithmetizationV1,
   arithmetize_r1cs, plan_fflonk_capacity, preprocess_fflonk,
-  preprocess_fflonk_to_file, prove_fflonk, required_fflonk_srs_degree,
-  verify_fflonk, write_kzg_srs_file,
+  preprocess_fflonk_to_file, prove_fflonk, prove_fflonk_with_file_workspace,
+  required_fflonk_srs_degree, verify_fflonk, write_kzg_srs_file,
 };
 use ix_terminal_circuit::{
   CanonicalR1csV1, ConstraintPhase, LinearCombination, R1csBuilder, Witness,
@@ -119,6 +122,13 @@ fn main() {
   let size = 1usize << log_size;
   let size_u64 = u64::try_from(size).unwrap();
   println!("Synthetic multiplication fixture; public test-only tau; n={size}");
+  println!(
+    "resident_type_bytes: field={} optional_field={} r1cs_constraint={} r1cs_term={}",
+    size_of::<Fr>(),
+    size_of::<Option<Fr>>(),
+    size_of::<ix_terminal_circuit::Constraint>(),
+    size_of::<(ix_terminal_circuit::Variable, Fr)>(),
+  );
   let (r1cs, witness) = fixture(size);
   let arithmetization = arithmetize_r1cs(&r1cs).unwrap();
   assert_eq!(arithmetization.census().domain_size, size_u64);
@@ -236,9 +246,29 @@ fn profile_key(
   let retained = LIVE.load(Relaxed);
   PEAK.store(retained, Relaxed);
   let start = Instant::now();
-  let output = prove_fflonk(srs, key, r1cs, witness, blinding).unwrap();
+  let workspace_path = std::env::args_os().nth(5);
+  let output = if let Some(path) = &workspace_path {
+    let storage = std::fs::OpenOptions::new()
+      .read(true)
+      .write(true)
+      .create_new(true)
+      .open(path)
+      .expect("create new prover workspace file");
+    prove_fflonk_with_file_workspace(srs, key, r1cs, witness, blinding, storage)
+      .unwrap()
+  } else {
+    prove_fflonk(srs, key, r1cs, witness, blinding).unwrap()
+  };
   let elapsed = start.elapsed();
   let peak = PEAK.load(Relaxed);
+  if let Some(path) = &workspace_path {
+    println!(
+      "workspace_backend=file workspace_storage_bytes={}",
+      std::fs::metadata(path).unwrap().len()
+    );
+  } else {
+    println!("workspace_backend=memory");
+  }
   println!(
     "retained_bytes={retained} peak_bytes={peak} incremental_peak_bytes={} prove_seconds={:.6}",
     peak - retained,

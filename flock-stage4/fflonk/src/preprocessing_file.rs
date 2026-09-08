@@ -388,6 +388,27 @@ mod tests {
           prove_fflonk(&srs, &file, &r1cs, &witness, blinding).unwrap();
         assert_eq!(actual.proof.to_bytes(), expected.proof.to_bytes());
         assert_eq!(actual.public_inputs, expected.public_inputs);
+        let disk_workspace = crate::prove_fflonk_with_file_workspace(
+          &srs,
+          &file,
+          &r1cs,
+          &witness,
+          blinding,
+          Cursor::new(Vec::new()),
+        )
+        .unwrap();
+        assert_eq!(disk_workspace, expected);
+        let memory_key_disk_workspace =
+          crate::prove_fflonk_with_file_workspace(
+            &srs,
+            &memory,
+            &r1cs,
+            &witness,
+            blinding,
+            Cursor::new(Vec::new()),
+          )
+          .unwrap();
+        assert_eq!(memory_key_disk_workspace, expected);
         assert_eq!(
           verify_fflonk(
             &file.verification_key(),

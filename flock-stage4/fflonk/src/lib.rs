@@ -1,10 +1,11 @@
 //! KZG-FFLONK backend and proof transport for Ix Stage 4.
 //!
 //! The backend consumes the canonical R1CS owned by `ix-terminal-circuit`.
-//! It provides constant-memory gate projection, materialized development
-//! preprocessing/proving with in-memory or authenticated file SRS and fixed
-//! polynomial sources (witnesses and temporary proof polynomials remain resident),
-//! native verification, and the fixed EIP-2537 proof wire boundary.
+//! It provides constant-memory gate projection, preprocessing/proving with
+//! in-memory or authenticated file SRS, fixed polynomials, and temporary prover
+//! workspaces, native verification, and the fixed EIP-2537 proof wire boundary.
+//! The file workspace retains one FFT array with bounded roots/I/O buffers;
+//! relation storage and witness lowering remain materialized.
 
 mod arithmetization;
 mod capacity;
@@ -16,6 +17,7 @@ mod preprocessing;
 mod preprocessing_file;
 mod proof;
 mod prover;
+mod prover_workspace;
 mod transcript;
 mod verifier;
 mod verifier_key;
@@ -69,6 +71,7 @@ pub use proof::{
 };
 pub use prover::{
   FflonkBlindingV1, FflonkProverError, FflonkProverOutputV1, prove_fflonk,
+  prove_fflonk_with_file_workspace,
 };
 pub use transcript::{
   FflonkChallengesV1, FflonkEvaluationRootsV1, FflonkTranscriptError,

@@ -1038,6 +1038,18 @@ mod tests {
       prove_fflonk(&file, &disk_key, &r1cs, &witness, blinding).unwrap();
     assert_eq!(disk_output.proof.to_bytes(), expected.proof.to_bytes());
     assert_eq!(disk_output.public_inputs, expected.public_inputs);
+    let (workspace_path, storage) = TestFile::new();
+    drop(storage);
+    let storage = std::fs::OpenOptions::new()
+      .read(true)
+      .write(true)
+      .open(&workspace_path.0)
+      .unwrap();
+    let disk_workspace_output = crate::prove_fflonk_with_file_workspace(
+      &file, &disk_key, &r1cs, &witness, blinding, storage,
+    )
+    .unwrap();
+    assert_eq!(disk_workspace_output, expected);
     assert_eq!(
       verify_fflonk(
         &file_key.verification_key(),
