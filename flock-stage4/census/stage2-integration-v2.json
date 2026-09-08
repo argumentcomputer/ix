@@ -1,0 +1,117 @@
+{
+  "schema": "ix:stage4:complete-census:v2",
+  "measured_at_utc": "2026-09-08",
+  "baseline_revision": "e09f48253f3a",
+  "circuit_revision": "a29aaefa5a9e9c8cdcd7cdeddb36322591dd726c",
+  "fixture": "real_stage2_integration_artifact_round_trip",
+  "stage2_fri_queries": 2,
+  "native_flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "full_census_and_native_root_checks_passed": true,
+  "full_fflonk_proof_generated": false,
+  "r1cs": {
+    "public_variables": 600,
+    "private_variables": 803337595,
+    "constraints": 809681727,
+    "nonzero_terms": 3810984144,
+    "projection_digest": "5ae6408ed0124aa8afb7d6fff3b6bd257771e9891edf688ba717828d1fdd00bd"
+  },
+  "plonk": {
+    "constraint_rows": 1330644479,
+    "public_input_rows": 600,
+    "padding_rows": 816838569,
+    "domain_size": 2147483648,
+    "auxiliary_wires": 520962752,
+    "gate_stream_digest": "fb492055e8b8af6bd91d84d74bdeee4e55481a6f93c671d1e091cc00d42b2d5c"
+  },
+  "phases": {
+    "Statement": {
+      "r1cs_constraints": 32734,
+      "plonk_rows": 61990
+    },
+    "Transcript": {
+      "r1cs_constraints": 60569360,
+      "plonk_rows": 113924625
+    },
+    "Zerocheck": {
+      "r1cs_constraints": 4494754,
+      "plonk_rows": 7268284
+    },
+    "Lincheck": {
+      "r1cs_constraints": 5127937,
+      "plonk_rows": 8287638
+    },
+    "Wiring": {
+      "r1cs_constraints": 42699548,
+      "plonk_rows": 70231896
+    },
+    "Pcs": {
+      "r1cs_constraints": 662325707,
+      "plonk_rows": 1074728062
+    },
+    "MatrixFold": {
+      "r1cs_constraints": 34431687,
+      "plonk_rows": 56141984
+    }
+  },
+  "fft": {
+    "field_maximum_domain": 4294967296,
+    "base_domain_supported": true,
+    "materialized_polynomial_domain": 8589934592,
+    "materialized_polynomial_domain_supported": false
+  },
+  "required_srs_degree": 19327352849,
+  "memory_target": {
+    "ram_bytes": 512000000000,
+    "proposed_reserve_bytes": 68719476736,
+    "materialized_srs_and_key_fit": false,
+    "disk_backed_backend_implemented": false
+  },
+  "projection_seconds": 1640.84,
+  "prover_heap_comparison": {
+    "metric": "requested live allocation bytes; excludes allocator overhead and RSS",
+    "fixture": "synthetic multiplication constraints; public test tau 29",
+    "baseline_revision": "e09f48253f3a",
+    "samples": [
+      {
+        "domain_size": 16384,
+        "retained_bytes": 36571972,
+        "baseline_incremental_peak": 99880688,
+        "optimized_incremental_peak": 61082160,
+        "proof_digest": "65d7ed465f8a91fa6b057ed6c61a2eec853537147788847473f38152d3fc86c5"
+      },
+      {
+        "domain_size": 65536,
+        "retained_bytes": 146279236,
+        "baseline_incremental_peak": 378015184,
+        "optimized_incremental_peak": 222824720,
+        "proof_digest": "c23b58fa94b8f4d88508a376323850fce2837e949262155b58b7e458eb683ff7"
+      }
+    ],
+    "both_versions_verified": true,
+    "proofs_byte_identical": true
+  },
+  "storage_payload_bytes": {
+    "constraint_gate_stream": 255483739968,
+    "field_column": 68719476736,
+    "three_witness_columns": 206158430208,
+    "retained_preprocessing_polynomials": 1099511627776,
+    "packed_c0": 549755813888,
+    "largest_packed_polynomial_bound": 618475291200,
+    "compressed_g1_srs": 927712936800,
+    "eip2537_g1_srs": 2473901164800
+  },
+  "resident_lower_bound_bytes": {
+    "g1_srs": 2010044696400,
+    "srs_and_key": 4226247821136,
+    "r1cs_without_witness": 217213903920,
+    "r1cs_witness": 25706822272
+  },
+  "target_type_bytes": {
+    "Fr": 32,
+    "G1Affine": 104,
+    "PlonkGateV1": 216,
+    "PlonkCellV1": 16,
+    "Constraint": 80,
+    "SparseTerm": 40
+  }
+}

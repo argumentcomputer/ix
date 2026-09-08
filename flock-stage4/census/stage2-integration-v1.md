@@ -1,9 +1,12 @@
 # Complete Stage 2 integration fixture census
 
-The three-wire FFLONK lowering exceeds the BLS12-381 scalar field's FFT
-domain limit for this fixture. The required domain is **2^34**, while the
-backend supports at most **2^32**. The current backend cannot preprocess or
-prove this complete fixture.
+This is the historical baseline at revision `e09f48253f3a`. The
+[optimized census](stage2-integration-v2.md) supersedes it.
+
+The original three-wire FFLONK lowering exceeded the BLS12-381 scalar field's
+FFT domain limit for this fixture. It required a domain of **2^34**, while
+the field supports at most **2^32**. That backend could not preprocess or
+prove the complete fixture.
 
 The measured gate stream has **10,374,565,573 constraint rows**.
 Together with 600 public-input rows and two mandatory blinding rows, it needs

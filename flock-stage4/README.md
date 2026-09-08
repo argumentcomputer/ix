@@ -8,11 +8,13 @@ Flock Stage 3 proof
   -> universal-setup KZG-FFLONK proof
 ```
 
-The complete integration fixture currently requires a domain of **2^34**,
-exceeding the backend's **2^32** FFT limit. The current backend cannot
-preprocess or prove this fixture. See the
-[complete census](census/stage2-integration-v1.md) for the measured gate count,
-fixture scope, and capacity estimates.
+The optimized integration fixture has **1,330,644,479 PLONK constraint rows**,
+down **87.17%**, and requires a domain of **2^31**. Its base domain fits the
+field, but the current materialized prover still cannot run this fixture on
+512 GB RAM: its SRS and proving key alone require at least **3.84 TiB**.
+Its polynomial products also need a size-2^33 FFT, above the field's 2^32
+limit. See the [optimized census and RAM assessment](census/stage2-integration-v2.md)
+for measurements and the remaining disk-backed prover requirements.
 
 The `ix-terminal-circuit` crate owns the backend-independent R1CS. Its first
 landed slice fixes the two-limb public-input encoding for the 256-bit Stage 3
@@ -47,20 +49,20 @@ The next landed slice normalizes that tape into a backend-neutral trace and
 compiles it into BLS12-381 Fr R1CS. The trace pins stream-word provenance,
 compression parameters and chaining links, squeeze sources, fork seed/digest
 links, and fused-PoW predicates. A raw BLAKE3 compression currently costs
-15,824 private variables and 16,160 constraints. The production verifier has
+16,292 private variables, 16,628 R1CS constraints, and 31,112 PLONK rows.
+Packed 32-bit words are bound once and reused across additions. The production verifier has
 1,608 compression rows across three chains and 455 fused-PoW predicates. Its
-streaming R1CS projection has 24,569,216 private variables, 25,111,575
-constraints, and 136,194,848 nonzero terms. The projector retains no assignment
-or constraint matrices.
+streaming projector retains no assignment or constraint matrices.
 
 The next slice bridges Flock's GHASH-basis `GF(2^128)` arithmetic into Fr.
-One general field multiplication uses a cached, flattened Karatsuba tensor and
-costs 7,921 constraints including two fresh 128-bit inputs. The production
+One general field multiplication uses three Karatsuba levels and 27 packed
+16-bit polynomial products. Boolean radix-32 digits recover the exact binary
+convolution without scalar-field wraparound. It costs 5,952 R1CS constraints
+and 9,516 PLONK rows including two fresh 128-bit inputs; the original lowering
+used 92,510 PLONK rows. Constant multiplication and Frobenius maps share a
+deterministic network of XORs. The production
 zerocheck exports a value-free DAG of 1,416 operations whose leaves name exact
-transcript observation or challenge indices. Transcript plus zerocheck projects
-to 30,477,568 private variables, 31,118,521 constraints, and 219,481,186
-nonzero terms, with fingerprint
-`f6898705fa3a4bdb886743302bd535b29c6c7e94f4c10e26cdef4d89d230300f`.
+transcript observation or challenge indices.
 
 The production union lincheck is replayed through its challenge-bound sumcheck
 and reported-evaluation equation. The combined Boolean-PIOP DAG has 2,960
@@ -164,14 +166,14 @@ roots whose table evaluations are still correct. It also rejects a valid
 public-binding proof whose root evaluation is incorrect. These tests do not
 generate a proof of the full Flock relation.
 
-The complete relation projects to 969,365,103 private variables,
-988,096,814 R1CS constraints, and 12,367,726,634 nonzero terms.
-Its three-wire lowering emits **10,374,565,573 constraint rows**.
+The complete relation projects to 803,337,595 private variables,
+809,681,727 R1CS constraints, and 3,810,984,144 nonzero terms.
+Its three-wire lowering emits **1,330,644,479 constraint rows**.
 After public inputs and blinding rows, the required power-of-two domain is
-17,179,869,184. At least 58.60% of the constraint rows must be removed to fit
-the existing field-domain limit. The [census report](census/stage2-integration-v1.md)
-records the full relation and hypothetical payload sizes at that unsupported
-domain; it supersedes the earlier partial-relation sizing baselines.
+2,147,483,648, eight times smaller than the
+[original baseline](census/stage2-integration-v1.md).
+The [optimized census](census/stage2-integration-v2.md) records every phase,
+both fingerprints, storage sizes, and the 512 GB RAM assessment.
 
 The Flock replay now closes the inner Ligerito opening against the
 transcript-bound CAP. The production trace has four recursive levels and 406
@@ -187,7 +189,8 @@ The R1CS projection mode now accepts a streaming backend observer. The
 production regression attaches the FFLONK lowering to the same canonical pass,
 so one matrix-free replay reports the exact gate count, power-of-two domain,
 auxiliary-wire count, and required universal-SRS degree. Affine rank-one
-constraints remain one PLONK row; wide linear combinations introduce only the
+constraints remain one PLONK row, including XOR relations whose right-hand
+side contains the multiplication inputs; wide linear combinations introduce only the
 deterministic accumulator rows they require. The same lowering can stream every
 constraint gate as a canonically validated, versioned 192-byte record with
 stable auxiliary-wire identifiers. A checked capacity model converts the final
@@ -198,10 +201,20 @@ compressed/uncompressed SRS payload sizes.
 above the field limit. The normal projection finalizer, materialized lowering,
 and preprocessing retain their domain checks.
 
-The next production step is to reduce the lowering cost or revisit the
-backend so the complete relation fits a supported domain. Only then can the
-canonical stream be connected to external FFT, permutation-sort, and MSM
-stages to measure prover cost. Every backend must consume the canonical
+The development prover now moves witness columns, batches permutation
+inversions, reuses polynomial buffers, and cancels the boundary quotient
+algebraically. A synthetic 16,384-row proof uses 39% fewer additional heap
+bytes at peak and is byte-identical to the original prover with the same key,
+witness, and randomness. This measures the development backend on a small
+circuit; the full Flock proof remains unmeasured.
+
+The next production step is a disk-backed polynomial store, external FFT and
+copy-permutation construction, and streamed SRS/MSM processing. Polynomial
+products must use blocks within the field's FFT limit or reduce the circuit
+by at least another 19.31% to reach a size-2^30 base domain. The capacity model
+reports the separate polynomial FFT requirement and a lower bound for the
+resident materialized SRS/key. The prover checks that FFT requirement before
+allocating its witness columns. Every backend must consume the canonical
 relation rather than define another one.
 
 The proof width follows the [FFLONK paper](https://eprint.iacr.org/2021/1167)
@@ -233,3 +246,14 @@ IX_STAGE4_PROJECT_R1CS=1 cargo test --release --locked \
   --manifest-path flock-stage3/Cargo.toml --all-features \
   real_stage2_integration_artifact_round_trip -- --ignored --nocapture
 ```
+
+Profile requested heap allocations for a verified synthetic proof with:
+
+```sh
+cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
+  -p ix-fflonk --example prover_memory -- 14
+```
+
+The argument is the base-two domain logarithm. This example uses a public
+test-only SRS and reports retained and additional peak heap bytes separately;
+it does not measure allocator overhead or process RSS.

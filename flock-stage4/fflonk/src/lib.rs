@@ -24,8 +24,8 @@ pub use arithmetization::{
 };
 pub use capacity::{
   BLS12_381_G1_COMPRESSED_BYTES, BLS12_381_G1_EIP2537_BYTES,
-  FFLONK_FIELD_STORAGE_BYTES, FflonkCapacityError, FflonkCapacityPlanV1,
-  plan_fflonk_capacity,
+  FFLONK_FIELD_STORAGE_BYTES, FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER,
+  FflonkCapacityError, FflonkCapacityPlanV1, plan_fflonk_capacity,
 };
 pub use eip2537::{
   EIP2537_G1_MSM_ADDRESS, EIP2537_G1_MSM_TERM_BYTES, EIP2537_PAIRING_ADDRESS,

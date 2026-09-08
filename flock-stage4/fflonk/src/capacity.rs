@@ -1,7 +1,9 @@
 use crate::{
   FFLONK_SRS_DEGREE_OVERHEAD, FFLONK_SRS_DOMAIN_MULTIPLIER,
-  PLONK_GATE_RECORD_BYTES, PlonkGateCensusV1,
+  PLONK_GATE_RECORD_BYTES, PlonkCellV1, PlonkGateCensusV1, PlonkGateV1,
 };
+use ark_bls12_381::{Fr, G1Affine};
+use ark_ff::FftField;
 use core::fmt;
 
 /// Canonical byte width of one BLS12-381 scalar-field element on disk.
@@ -10,18 +12,25 @@ pub const FFLONK_FIELD_STORAGE_BYTES: u64 = 32;
 pub const BLS12_381_G1_COMPRESSED_BYTES: u64 = 48;
 /// EIP-2537 uncompressed width of one BLS12-381 G1 point.
 pub const BLS12_381_G1_EIP2537_BYTES: u64 = 128;
+/// The materialized prover multiplies three degree-(n-1) wire polynomials
+/// and degree-(n+2) blinded Z, requiring a size-4n polynomial FFT.
+pub const FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER: u64 = 4;
 
 /// Checked production-storage census for one Stage 4 FFLONK domain.
 ///
-/// These are payload bytes, not a peak-RSS promise: filesystem metadata,
+/// Storage fields are payload bytes, not a peak-RSS promise: filesystem metadata,
 /// sort/FFT scratch space, checksums, and implementation buffering are not
 /// included. Public and padding gate rows are deterministic and therefore the
 /// gate stream stores constraint rows only.
 /// A sizing census may describe a domain above the field's FFT limit; these
 /// payload sizes alone do not establish that the backend can use that domain.
+/// The polynomial-FFT requirement and target-specific resident SRS/key lower
+/// bound are reported separately from canonical storage widths.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FflonkCapacityPlanV1 {
   pub domain_size: u64,
+  pub polynomial_fft_domain_size: u64,
+  pub supported_polynomial_fft_domain: bool,
   pub required_srs_degree: u64,
   pub required_srs_g1_points: u64,
   pub constraint_gate_stream_bytes: u64,
@@ -32,6 +41,11 @@ pub struct FflonkCapacityPlanV1 {
   pub largest_packed_polynomial_bytes: u64,
   pub compressed_srs_g1_bytes: u64,
   pub eip2537_srs_g1_bytes: u64,
+  /// Lower bound for the resident SRS and materialized proving key on this
+  /// target architecture. Includes typed gates, copy cells, retained
+  /// polynomials, and affine G1 points. Excludes R1CS, witness, temporary
+  /// buffers, spare Vec capacity, allocator overhead, and process memory.
+  pub materialized_srs_and_key_minimum_bytes: u64,
 }
 
 /// Why capacity arithmetic could not represent a proposed census.
@@ -86,9 +100,26 @@ pub fn plan_fflonk_capacity(
     bytes(census.domain_size, FFLONK_FIELD_STORAGE_BYTES)?;
   let largest_packed_polynomial_bytes =
     bytes(required_srs_g1_points, FFLONK_FIELD_STORAGE_BYTES)?;
+  let polynomial_fft_domain_size =
+    bytes(census.domain_size, FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER)?;
+  let retained_key_bytes_per_row = u64::try_from(
+    size_of::<PlonkGateV1>()
+      + 3 * size_of::<PlonkCellV1>()
+      + 24 * size_of::<Fr>(),
+  )
+  .map_err(|_| FflonkCapacityError::CountOverflow)?;
+  let srs_point_bytes = u64::try_from(size_of::<G1Affine>())
+    .map_err(|_| FflonkCapacityError::CountOverflow)?;
+  let materialized_srs_and_key_minimum_bytes =
+    bytes(census.domain_size, retained_key_bytes_per_row)?
+      .checked_add(bytes(required_srs_g1_points, srs_point_bytes)?)
+      .ok_or(FflonkCapacityError::CountOverflow)?;
 
   Ok(FflonkCapacityPlanV1 {
     domain_size: census.domain_size,
+    polynomial_fft_domain_size,
+    supported_polynomial_fft_domain: polynomial_fft_domain_size
+      <= (1_u64 << Fr::TWO_ADICITY),
     required_srs_degree,
     required_srs_g1_points,
     constraint_gate_stream_bytes: bytes(
@@ -111,6 +142,7 @@ pub fn plan_fflonk_capacity(
       required_srs_g1_points,
       BLS12_381_G1_EIP2537_BYTES,
     )?,
+    materialized_srs_and_key_minimum_bytes,
   })
 }
 
@@ -147,6 +179,24 @@ mod tests {
     assert_eq!(plan.largest_packed_polynomial_bytes, 2_880);
     assert_eq!(plan.compressed_srs_g1_bytes, 4_320);
     assert_eq!(plan.eip2537_srs_g1_bytes, 11_520);
+    assert_eq!(plan.polynomial_fft_domain_size, 32);
+    assert!(plan.supported_polynomial_fft_domain);
+  }
+
+  #[test]
+  fn base_domain_support_does_not_imply_a_prover_or_ram_fit() {
+    let mut large = census();
+    large.domain_size = 1u64 << 31;
+    large.padding_rows = large.domain_size - large.active_rows();
+    let plan = plan_fflonk_capacity(&large).unwrap();
+    assert_eq!(plan.polynomial_fft_domain_size, 1u64 << 33);
+    assert!(!plan.supported_polynomial_fft_domain);
+    assert!(plan.materialized_srs_and_key_minimum_bytes > 512_000_000_000);
+    large.domain_size >>= 1;
+    large.padding_rows = large.domain_size - large.active_rows();
+    assert!(
+      plan_fflonk_capacity(&large).unwrap().supported_polynomial_fft_domain
+    );
   }
 
   #[test]
