@@ -7,6 +7,9 @@ use core::fmt;
 const SRS_DIGEST_DOMAIN: &[u8] = b"ix:stage4:kzg-srs:bls12-381:v1";
 const SRS_BATCH_CHALLENGE_DOMAIN: &[u8] =
   b"ix:stage4:kzg-srs-batch-challenge:bls12-381:v1";
+// Arkworks expands scalars into window digits. Bound that workspace even
+// when a polynomial or universal SRS contains billions of coefficients.
+const MSM_BATCH_POINTS: usize = 65_536;
 
 /// Universal BLS12-381 powers-of-tau material used by the Stage 4 backend.
 ///
@@ -54,11 +57,7 @@ impl KzgUniversalSrsV1 {
     }
     let digest = srs_digest(&powers_of_g1, &g2, &tau_g2)?;
     let challenge = srs_batch_challenge(digest);
-    let powers = challenge_powers(challenge, powers_of_g1.len() - 1);
-    let left = G1Projective::msm(&powers_of_g1[..powers.len()], &powers)
-      .map_err(|_| KzgError::InternalShape)?;
-    let right = G1Projective::msm(&powers_of_g1[1..], &powers)
-      .map_err(|_| KzgError::InternalShape)?;
+    let (left, right) = srs_consistency_commitments(&powers_of_g1, challenge)?;
     if Bls12_381::pairing(left.into_affine(), tau_g2)
       != Bls12_381::pairing(right.into_affine(), g2)
     {
@@ -184,8 +183,7 @@ pub fn commit_polynomial(
   }
   srs.ensure_degree(live_len - 1)?;
   let commitment =
-    G1Projective::msm(&srs.powers_of_g1[..live_len], &coefficients[..live_len])
-      .map_err(|_| KzgError::InternalShape)?;
+    bounded_msm(&srs.powers_of_g1[..live_len], &coefficients[..live_len])?;
   Ok(KzgCommitmentV1(commitment.into_affine()))
 }
 
@@ -239,15 +237,43 @@ fn quotient_by_linear(coefficients: &[Fr], point: Fr, value: Fr) -> Vec<Fr> {
   quotient
 }
 
-fn challenge_powers(challenge: Fr, count: usize) -> Vec<Fr> {
+fn bounded_msm(
+  bases: &[G1Affine],
+  scalars: &[Fr],
+) -> Result<G1Projective, KzgError> {
+  if bases.len() != scalars.len() {
+    return Err(KzgError::InternalShape);
+  }
+  let mut commitment = G1Projective::zero();
+  for (bases, scalars) in
+    bases.chunks(MSM_BATCH_POINTS).zip(scalars.chunks(MSM_BATCH_POINTS))
+  {
+    commitment +=
+      G1Projective::msm(bases, scalars).map_err(|_| KzgError::InternalShape)?;
+  }
+  Ok(commitment)
+}
+
+fn srs_consistency_commitments(
+  points: &[G1Affine],
+  challenge: Fr,
+) -> Result<(G1Projective, G1Projective), KzgError> {
+  let count = points.len().checked_sub(1).ok_or(KzgError::InternalShape)?;
+  let mut left = G1Projective::zero();
+  let mut right = G1Projective::zero();
+  let mut scalars = Vec::with_capacity(MSM_BATCH_POINTS.min(count));
   let mut current = Fr::one();
-  (0..count)
-    .map(|_| {
-      let output = current;
+  for start in (0..count).step_by(MSM_BATCH_POINTS) {
+    let end = (start + MSM_BATCH_POINTS).min(count);
+    scalars.clear();
+    for _ in start..end {
+      scalars.push(current);
       current *= challenge;
-      output
-    })
-    .collect()
+    }
+    left += bounded_msm(&points[start..end], &scalars)?;
+    right += bounded_msm(&points[start + 1..end + 1], &scalars)?;
+  }
+  Ok((left, right))
 }
 
 fn srs_batch_challenge(digest: [u8; 32]) -> Fr {
@@ -315,6 +341,69 @@ mod tests {
     let tau_g2 =
       G2Affine::generator().mul_bigint(tau.into_bigint()).into_affine();
     KzgUniversalSrsV1::new(powers, G2Affine::generator(), tau_g2).unwrap()
+  }
+
+  #[test]
+  fn bounded_msm_keeps_every_term_across_the_batch_boundary() {
+    let generators: [G1Affine; 7] = core::array::from_fn(|index| {
+      G1Affine::generator()
+        .mul_bigint(Fr::from(index as u64 + 1).into_bigint())
+        .into_affine()
+    });
+    let count = MSM_BATCH_POINTS + 5;
+    let bases =
+      (0..count).map(|index| generators[index % 7]).collect::<Vec<_>>();
+    let mut power = Fr::one();
+    let scalars = (0..count)
+      .map(|index| {
+        power *= Fr::from(23u64);
+        if index % 13 == 0 { Fr::zero() } else { power }
+      })
+      .collect::<Vec<_>>();
+    let expected_scalar =
+      scalars.iter().enumerate().fold(Fr::zero(), |sum, (index, value)| {
+        sum + *value * Fr::from((index % 7) as u64 + 1)
+      });
+    assert_eq!(
+      bounded_msm(&bases, &scalars).unwrap(),
+      G1Affine::generator().mul_bigint(expected_scalar.into_bigint())
+    );
+    assert_eq!(bounded_msm(&[], &[]), Ok(G1Projective::zero()));
+    assert_eq!(
+      bounded_msm(&bases, &scalars[..count - 1]),
+      Err(KzgError::InternalShape)
+    );
+  }
+
+  #[test]
+  fn streamed_srs_challenges_keep_global_exponents_and_adjacent_powers() {
+    let generators: [G1Affine; 7] = core::array::from_fn(|index| {
+      G1Affine::generator()
+        .mul_bigint(Fr::from(index as u64 + 1).into_bigint())
+        .into_affine()
+    });
+    let points = (0..MSM_BATCH_POINTS + 6)
+      .map(|index| generators[index % 7])
+      .collect::<Vec<_>>();
+    let challenge = Fr::from(11u64);
+    let (actual_left, actual_right) =
+      srs_consistency_commitments(&points, challenge).unwrap();
+    let mut power = Fr::one();
+    let mut left = Fr::zero();
+    let mut right = Fr::zero();
+    for index in 0..points.len() - 1 {
+      left += power * Fr::from((index % 7) as u64 + 1);
+      right += power * Fr::from(((index + 1) % 7) as u64 + 1);
+      power *= challenge;
+    }
+    assert_eq!(
+      actual_left,
+      G1Affine::generator().mul_bigint(left.into_bigint())
+    );
+    assert_eq!(
+      actual_right,
+      G1Affine::generator().mul_bigint(right.into_bigint())
+    );
   }
 
   #[test]

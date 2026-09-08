@@ -1,7 +1,8 @@
 # Complete Stage 2 integration fixture census
 
 This is the historical baseline at revision `e09f48253f3a`. The
-[optimized census](stage2-integration-v2.md) supersedes it.
+[latest optimized census](stage2-integration-v3.md) supersedes it; the
+[first optimization pass](stage2-integration-v2.md) is also retained.
 
 The original three-wire FFLONK lowering exceeded the BLS12-381 scalar field's
 FFT domain limit for this fixture. It required a domain of **2^34**, while

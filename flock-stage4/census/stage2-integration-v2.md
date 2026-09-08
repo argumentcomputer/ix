@@ -1,5 +1,10 @@
 # Optimized complete census and 512 GB RAM assessment
 
+This is the historical first optimization pass, retained at revision
+`ceb41f265778`. The [second optimization pass](stage2-integration-v3.md)
+supersedes these measurements and resolves the polynomial FFT domain limit
+for this fixture.
+
 The complete fixture now uses **1,330,644,479 PLONK constraint rows**, an
 **87.17% reduction** from [the original baseline](stage2-integration-v1.md).
 Its base domain fell from **2^34 to 2^31**. The full circuit projection and
