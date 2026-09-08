@@ -3,7 +3,8 @@ use crate::{
   Variable, Witness,
 };
 use ark_bls12_381::Fr;
-use ark_ff::{AdditiveGroup, Field};
+use ark_ff::Field;
+use std::sync::{Arc, OnceLock};
 
 const WORD_BITS: usize = 32;
 const ROUNDS: usize = 7;
@@ -112,6 +113,7 @@ impl BitWire {
 pub(crate) struct Word32 {
   pub(crate) value: u32,
   bits: [BitWire; WORD_BITS],
+  packed_variable: Arc<OnceLock<Variable>>,
 }
 
 impl Word32 {
@@ -121,6 +123,7 @@ impl Word32 {
       bits: core::array::from_fn(|bit| {
         BitWire::constant((value >> bit) & 1 == 1)
       }),
+      packed_variable: Arc::default(),
     }
   }
 
@@ -136,6 +139,7 @@ impl Word32 {
         variable: Some(variable),
         constant: false,
       }),
+      packed_variable: Arc::default(),
     }
     .with_variable_values()
   }
@@ -153,6 +157,7 @@ impl Word32 {
         constant: expressions[bit].terms().is_empty()
           || expressions[bit].terms() == [(Variable::ONE, Fr::ONE)],
       }),
+      packed_variable: Arc::default(),
     }
   }
 
@@ -171,17 +176,43 @@ impl Word32 {
       bits: core::array::from_fn(|bit| {
         self.bits[(bit + distance) % WORD_BITS].clone()
       }),
+      // Rotation changes the integer packing while preserving the bit wires.
+      packed_variable: Arc::default(),
     }
   }
 
-  fn packed(&self) -> LinearCombination {
-    let mut packed = LinearCombination::zero();
-    let mut coefficient = Fr::ONE;
-    for bit in &self.bits {
-      packed = packed.plus(&bit.expression.clone().scale(coefficient));
-      coefficient.double_in_place();
+  fn packed_expression(&self) -> LinearCombination {
+    LinearCombination::from_terms(self.bits.iter().enumerate().flat_map(
+      |(index, bit)| {
+        let place = Fr::from(1u64 << index);
+        bit
+          .expression
+          .terms()
+          .iter()
+          .map(move |&(variable, coefficient)| (variable, coefficient * place))
+      },
+    ))
+  }
+
+  /// Bind one packed word once and share it across later additions. Its
+  /// Boolean bits still feed XORs, rotations, and transcript bindings.
+  fn packed(
+    &self,
+    builder: &mut R1csBuilder,
+    phase: ConstraintPhase,
+  ) -> Result<LinearCombination, R1csError> {
+    if self.bits.iter().all(|bit| bit.constant) {
+      return Ok(self.packed_expression());
     }
-    packed
+    if let Some(&variable) = self.packed_variable.get() {
+      return Ok(LinearCombination::from_variable(variable));
+    }
+    let variable = builder.alloc_private(Fr::from(self.value))?;
+    let packed = LinearCombination::from_variable(variable);
+    builder
+      .enforce_zero(phase, packed.clone().minus(&self.packed_expression()));
+    self.packed_variable.set(variable).expect("fresh word packing");
+    Ok(packed)
   }
 
   pub(crate) fn variables(&self) -> [Variable; WORD_BITS] {
@@ -258,6 +289,7 @@ pub(crate) fn select_word_in_phase(
   Ok(Word32 {
     value: if selector_value { true_word.value } else { false_word.value },
     bits,
+    packed_variable: Arc::default(),
   })
 }
 
@@ -323,7 +355,7 @@ pub(crate) fn alloc_word_prefix_in_phase(
     .collect::<Result<Vec<_>, _>>()?
     .try_into()
     .map_err(|_| R1csError::InternalShape)?;
-  Ok(Word32 { value, bits })
+  Ok(Word32 { value, bits, packed_variable: Arc::default() })
 }
 
 fn alloc_checked_bit(
@@ -398,7 +430,11 @@ fn xor_word(
     .collect::<Result<Vec<_>, _>>()?
     .try_into()
     .map_err(|_| R1csError::InternalShape)?;
-  Ok(Word32 { value: left.value ^ right.value, bits })
+  Ok(Word32 {
+    value: left.value ^ right.value,
+    bits,
+    packed_variable: Arc::default(),
+  })
 }
 
 fn add_two(
@@ -411,9 +447,9 @@ fn add_two(
   let sum = alloc_word_in_phase(builder, low_u32(total), phase)?;
   let overflow = alloc_checked_bit(builder, total >> WORD_BITS != 0, phase)?;
   let equation = left
-    .packed()
-    .plus(&right.packed())
-    .minus(&sum.packed())
+    .packed(builder, phase)?
+    .plus(&right.packed(builder, phase)?)
+    .minus(&sum.packed(builder, phase)?)
     .minus(&overflow.expression.clone().scale(Fr::from(1_u64 << WORD_BITS)));
   builder.enforce_zero(phase, equation);
   Ok(sum)
@@ -446,10 +482,10 @@ fn add_three(
     .plus(&overflow_high.expression.clone().scale(Fr::from(2_u64)))
     .scale(Fr::from(1_u64 << WORD_BITS));
   let equation = first
-    .packed()
-    .plus(&second.packed())
-    .plus(&third.packed())
-    .minus(&sum.packed())
+    .packed(builder, phase)?
+    .plus(&second.packed(builder, phase)?)
+    .plus(&third.packed(builder, phase)?)
+    .minus(&sum.packed(builder, phase)?)
     .minus(&overflow);
   builder.enforce_zero(phase, equation);
   Ok(sum)
@@ -604,18 +640,61 @@ mod tests {
 
   #[test]
   fn compression_matches_reference_blake3() {
-    for message in [b"".as_slice(), b"abc".as_slice()] {
+    let messages =
+      [vec![], b"abc".to_vec(), vec![0xff; 64], (0u8..64).collect()];
+    for message in messages {
       let (r1cs, witness, output) =
-        build_blake3_compression_r1cs(hash_input(message)).unwrap();
+        build_blake3_compression_r1cs(hash_input(&message)).unwrap();
       r1cs.check(&witness).unwrap();
-      assert_eq!(r1cs.private_variables(), 15_824);
-      assert_eq!(r1cs.census().constraints, 16_160);
-      assert_eq!(output_digest(&output), *blake3::hash(message).as_bytes());
+      assert_eq!(r1cs.private_variables(), 16_292);
+      assert_eq!(r1cs.census().constraints, 16_628);
+      assert_eq!(output_digest(&output), *blake3::hash(&message).as_bytes());
+      let mut actual = [0u8; 32];
+      for (word, bits) in output.bit_variables[..8].iter().enumerate() {
+        for (index, variable) in bits.iter().enumerate() {
+          let bit = witness.assignment()[variable.index() as usize];
+          assert!(bit == Fr::from(0u64) || bit == Fr::ONE);
+          actual[4 * word + index / 8] |=
+            u8::from(bit == Fr::ONE) << (index % 8);
+        }
+      }
+      assert_eq!(actual, *blake3::hash(&message).as_bytes());
       assert_eq!(
         r1cs.census().constraints_by_phase.get(&ConstraintPhase::Transcript),
         Some(&r1cs.census().constraints),
       );
     }
+  }
+
+  #[test]
+  fn word_packing_is_shared_but_rotations_bind_a_new_value() {
+    let mut builder = R1csBuilder::new();
+    let word = alloc_word_in_phase(
+      &mut builder,
+      0x8000_0001,
+      ConstraintPhase::Transcript,
+    )
+    .unwrap();
+    let packed =
+      word.packed(&mut builder, ConstraintPhase::Transcript).unwrap();
+    let cloned = word.clone();
+    assert_eq!(
+      packed,
+      cloned.packed(&mut builder, ConstraintPhase::Transcript).unwrap()
+    );
+    let rotated = word.rotate_right(7);
+    let rotated_packed =
+      rotated.packed(&mut builder, ConstraintPhase::Transcript).unwrap();
+    assert_ne!(packed, rotated_packed);
+    builder.enforce_zero(
+      ConstraintPhase::Transcript,
+      rotated_packed
+        .minus(&LinearCombination::from_constant(Fr::from(0x0300_0000u32))),
+    );
+    let (r1cs, mut witness) = builder.finish().unwrap();
+    r1cs.check(&witness).unwrap();
+    witness.set(packed.terms()[0].0, Fr::from(0u64)).unwrap();
+    assert!(r1cs.check(&witness).is_err());
   }
 
   #[test]

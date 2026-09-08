@@ -7679,15 +7679,16 @@ mod tests {
         "Stage 4 three-wire FFLONK projection: {:?}, required_srs_degree={}, supported_fft_domain={}\nStage 4 FFLONK external capacity: {:?}",
         plonk_census, required_srs_degree, supported_fft_domain, capacity,
       );
-      // The historical prefix is only a lower bound. Every complete phase
-      // must be present in the current projection.
+      // Arithmetic optimization changes the historical size baselines.
+      // Every complete phase and terminal public input must still be present.
       assert_eq!(projection.census().public_variables, 600);
       assert_eq!(plonk_census.public_input_rows, 600);
       assert!(plonk_census.constraint_rows >= projection.census().constraints);
       assert!(plonk_census.padding_rows >= ix_fflonk::FFLONK_BLINDING_ROWS);
-      assert!(projection.census().private_variables > 170_007_888);
-      assert!(projection.census().constraints > 173_158_769);
-      assert!(projection.census().nonzero_terms > 1_910_076_918);
+      assert!(
+        supported_fft_domain,
+        "the optimized relation must fit the field FFT domain"
+      );
       for phase in [
         ix_terminal_circuit::ConstraintPhase::Statement,
         ix_terminal_circuit::ConstraintPhase::Transcript,

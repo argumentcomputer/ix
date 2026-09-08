@@ -308,6 +308,10 @@ impl PlonkWitnessV1 {
   pub fn columns(&self) -> &[Vec<Fr>; 3] {
     &self.columns
   }
+
+  pub fn into_columns(self) -> [Vec<Fr>; 3] {
+    self.columns
+  }
 }
 
 /// Shared constant-memory PLONK census attached to an R1CS projection builder.
@@ -741,10 +745,50 @@ fn lower_constraint<S: GateSink>(
     let linear = constraint.a.clone().scale(scale).minus(&constraint.c);
     return emit_linear_constraint(sink, constraint.phase, &linear);
   }
+  if let Some(gate) = single_gate_product(constraint) {
+    return sink.push(gate);
+  }
   let a = lower_affine(sink, constraint.phase, &constraint.a)?;
   let b = lower_affine(sink, constraint.phase, &constraint.b)?;
   let c = lower_affine(sink, constraint.phase, &constraint.c)?;
   emit_affine_product(sink, constraint.phase, a, b, c)
+}
+
+/// A three-wire gate can absorb linear occurrences of either product input
+/// in the right-hand side. In particular, XOR `a*b = (a+b-c)/2` needs one
+/// gate without materializing its three-term right-hand side.
+fn single_gate_product(constraint: &Constraint) -> Option<PlonkGateV1> {
+  let a = affine_wire(&constraint.a)?;
+  let b = affine_wire(&constraint.b)?;
+  let (a_wire, a_scale) = a.term?;
+  let (b_wire, b_scale) = b.term?;
+  let mut gate = PlonkGateV1 {
+    phase: Some(constraint.phase),
+    wires: [Some(a_wire), Some(b_wire), None],
+    ql: a_scale * b.constant,
+    qr: b_scale * a.constant,
+    qm: a_scale * b_scale,
+    qo: Fr::zero(),
+    qc: a.constant * b.constant,
+  };
+  for &(variable, coefficient) in constraint.c.terms() {
+    if variable == Variable::ONE {
+      gate.qc -= coefficient;
+    } else {
+      let wire = PlonkWireV1::R1cs(variable);
+      if wire == a_wire {
+        gate.ql -= coefficient;
+      } else if wire == b_wire {
+        gate.qr -= coefficient;
+      } else if gate.wires[2].is_none() {
+        gate.wires[2] = Some(wire);
+        gate.qo = -coefficient;
+      } else {
+        return None;
+      }
+    }
+  }
+  Some(gate)
 }
 
 fn lower_affine<S: GateSink>(
@@ -1106,6 +1150,74 @@ mod tests {
     let plonk_witness =
       lower_plonk_witness(&arithmetization, &r1cs, &witness).unwrap();
     assert_eq!(plonk_witness.columns()[0].len(), 8);
+  }
+
+  #[test]
+  fn product_input_terms_fit_one_gate_including_aliased_inputs() {
+    for alias in [false, true] {
+      let mut builder = R1csBuilder::new();
+      let x_value = Fr::from(7u64);
+      let y_value = if alias { x_value } else { Fr::from(11u64) };
+      let x = builder.alloc_public(x_value).unwrap();
+      let y = if alias { x } else { builder.alloc_private(y_value).unwrap() };
+      let z_value = ((Fr::from(2u64) * x_value + Fr::from(3u64))
+        * (Fr::from(5u64) * y_value + Fr::from(7u64))
+        - Fr::from(11u64) * x_value
+        - Fr::from(13u64) * y_value
+        - Fr::from(19u64))
+        * Fr::from(17u64).inverse().unwrap();
+      let z = builder.alloc_private(z_value).unwrap();
+      builder.enforce(
+        ConstraintPhase::Pcs,
+        LinearCombination::from_terms([
+          (x, Fr::from(2u64)),
+          (Variable::ONE, Fr::from(3u64)),
+        ]),
+        LinearCombination::from_terms([
+          (y, Fr::from(5u64)),
+          (Variable::ONE, Fr::from(7u64)),
+        ]),
+        LinearCombination::from_terms([
+          (x, Fr::from(11u64)),
+          (y, Fr::from(13u64)),
+          (z, Fr::from(17u64)),
+          (Variable::ONE, Fr::from(19u64)),
+        ]),
+      );
+      let (r1cs, witness) = builder.finish().unwrap();
+      let arithmetization = arithmetize_r1cs(&r1cs).unwrap();
+      assert_eq!(arithmetization.census().constraint_rows, 1);
+      assert_eq!(arithmetization.census().auxiliary_wires, 0);
+      lower_plonk_witness(&arithmetization, &r1cs, &witness).unwrap();
+      let gate = &arithmetization.gates()[1];
+      let mut assignment = witness.assignment().to_vec();
+      for seed in 0..16u64 {
+        assignment[x.index() as usize] = Fr::from(13 * seed) - Fr::from(2u64);
+        assignment[y.index() as usize] = -Fr::from(7 * seed + 1);
+        assignment[z.index() as usize] = Fr::from(5 * seed + 3);
+        let [a, b, c] = gate.wires.map(|wire| match wire {
+          Some(PlonkWireV1::R1cs(variable)) => {
+            assignment[variable.index() as usize]
+          },
+          None => Fr::zero(),
+          Some(PlonkWireV1::Auxiliary(_)) => {
+            panic!("unexpected auxiliary wire")
+          },
+        });
+        let actual =
+          gate.qm * a * b + gate.ql * a + gate.qr * b + gate.qo * c + gate.qc;
+        let x = assignment[x.index() as usize];
+        let y = assignment[y.index() as usize];
+        let z = assignment[z.index() as usize];
+        let expected = (Fr::from(2u64) * x + Fr::from(3u64))
+          * (Fr::from(5u64) * y + Fr::from(7u64))
+          - Fr::from(11u64) * x
+          - Fr::from(13u64) * y
+          - Fr::from(17u64) * z
+          - Fr::from(19u64);
+        assert_eq!(actual, expected);
+      }
+    }
   }
 
   #[test]
