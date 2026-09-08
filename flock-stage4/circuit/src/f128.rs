@@ -17,6 +17,9 @@ pub const F128_BITS: usize = 128;
 pub struct F128VariablesV1 {
   value: [u8; 16],
   bit_variables: [Variable; F128_BITS],
+  // Set only for shape-time constants or values derived entirely from them.
+  // A private witness equal to zero or one is never marked constant.
+  constant: bool,
 }
 
 impl F128VariablesV1 {
@@ -32,7 +35,7 @@ impl F128VariablesV1 {
     value: [u8; 16],
     bit_variables: [Variable; F128_BITS],
   ) -> Self {
-    Self { value, bit_variables }
+    Self { value, bit_variables, constant: false }
   }
 }
 
@@ -68,8 +71,9 @@ pub(crate) fn alloc_f128_constant(
   value: [u8; 16],
   phase: ConstraintPhase,
 ) -> Result<F128VariablesV1, R1csError> {
-  let variables = alloc_f128_private(builder, value, phase)?;
+  let mut variables = alloc_f128_private(builder, value, phase)?;
   enforce_f128_equal_constant(builder, &variables, value, phase);
+  variables.constant = true;
   Ok(variables)
 }
 
@@ -129,6 +133,21 @@ pub fn constrain_f128_multiply(
   right: &F128VariablesV1,
   phase: ConstraintPhase,
 ) -> Result<F128VariablesV1, R1csError> {
+  if left.constant {
+    if left.value == [0; 16] {
+      return Ok(left.clone());
+    }
+    return constrain_f128_multiply_constant(builder, right, left.value, phase);
+  }
+  if right.constant {
+    if right.value == [0; 16] {
+      return Ok(right.clone());
+    }
+    return constrain_f128_multiply_constant(builder, left, right.value, phase);
+  }
+  if left.bit_variables == right.bit_variables {
+    return constrain_f128_frobenius(builder, left, 1, phase);
+  }
   let left_bits = import_variables(left);
   let right_bits = import_variables(right);
   let mut coefficients =
@@ -321,6 +340,9 @@ fn xor2(
   }
   if right.constant {
     return Ok(if right.value { left.not() } else { left.clone() });
+  }
+  if left.expression == right.expression {
+    return Ok(BitWire::constant(false));
   }
   let output = alloc_derived_bit(builder, left.value ^ right.value)?;
   let inverse_two = Fr::from(2u64).inverse().expect("two is invertible in Fr");
@@ -629,9 +651,13 @@ fn import_variables(value: &F128VariablesV1) -> [BitWire; F128_BITS] {
   let bits = value_bits(&value.value);
   core::array::from_fn(|index| BitWire {
     value: bits[index],
-    expression: LinearCombination::from_variable(value.bit_variables[index]),
+    expression: if value.constant {
+      LinearCombination::from_constant(Fr::from(u64::from(bits[index])))
+    } else {
+      LinearCombination::from_variable(value.bit_variables[index])
+    },
     variable: Some(value.bit_variables[index]),
-    constant: false,
+    constant: value.constant,
   })
 }
 
@@ -643,6 +669,7 @@ fn export_variables(
 ) -> Result<F128VariablesV1, R1csError> {
   let bits: [BitWire; F128_BITS] =
     bits.try_into().map_err(|_| R1csError::InternalShape)?;
+  let constant = bits.iter().all(|bit| bit.constant);
   let bit_variables = bits
     .iter()
     .map(|bit| materialize_bit(builder, bit, phase))
@@ -652,7 +679,7 @@ fn export_variables(
     .collect::<Result<Vec<_>, _>>()?
     .try_into()
     .map_err(|_| R1csError::InternalShape)?;
-  Ok(F128VariablesV1::from_constrained_bits(value, bit_variables))
+  Ok(F128VariablesV1 { value, bit_variables, constant })
 }
 
 fn value_bits(value: &[u8; 16]) -> [bool; F128_BITS] {
@@ -909,6 +936,85 @@ mod tests {
       assert!(factored_cost <= original_cost);
       assert_eq!(*network, shared_xor_network(&plan.output_inputs));
     }
+  }
+
+  #[test]
+  fn constants_and_squares_keep_private_witnesses_constrained() {
+    for input in [[0; 16], [0xff; 16], [0x69; 16]] {
+      let mut builder = R1csBuilder::new();
+      let value =
+        alloc_f128_private(&mut builder, input, ConstraintPhase::Pcs).unwrap();
+      let zero =
+        alloc_f128_constant(&mut builder, [0; 16], ConstraintPhase::Pcs)
+          .unwrap();
+      let one =
+        alloc_f128_constant(&mut builder, one_value(), ConstraintPhase::Pcs)
+          .unwrap();
+      let product_zero = constrain_f128_multiply(
+        &mut builder,
+        &value,
+        &zero,
+        ConstraintPhase::Pcs,
+      )
+      .unwrap();
+      let product_one = constrain_f128_multiply(
+        &mut builder,
+        &one,
+        &value,
+        ConstraintPhase::Pcs,
+      )
+      .unwrap();
+      let square = constrain_f128_multiply(
+        &mut builder,
+        &value,
+        &value,
+        ConstraintPhase::Pcs,
+      )
+      .unwrap();
+      let cancelled =
+        constrain_f128_add(&mut builder, &value, &value, ConstraintPhase::Pcs)
+          .unwrap();
+      assert_eq!(product_zero.bit_variables(), zero.bit_variables());
+      assert_eq!(product_one.bit_variables(), value.bit_variables());
+      assert!(cancelled.constant);
+      assert!(!value.constant);
+      let (r1cs, mut witness) = builder.finish().unwrap();
+      assert_eq!(
+        witness_word(&witness, &square),
+        polynomial_oracle(input, input)
+      );
+      assert_eq!(witness_word(&witness, &cancelled), [0; 16]);
+      assert!(r1cs.census().constraints < 2_000);
+      let bit = square.bit_variables()[0];
+      witness
+        .set(bit, Fr::ONE - witness.assignment()[bit.index() as usize])
+        .unwrap();
+      assert!(r1cs.check(&witness).is_err());
+    }
+  }
+
+  #[test]
+  fn private_zero_and_one_do_not_change_the_circuit_layout() {
+    let project = |left, right| {
+      let mut builder = R1csBuilder::new_projection();
+      let left =
+        alloc_f128_private(&mut builder, left, ConstraintPhase::Pcs).unwrap();
+      let right =
+        alloc_f128_private(&mut builder, right, ConstraintPhase::Pcs).unwrap();
+      let output = constrain_f128_multiply(
+        &mut builder,
+        &left,
+        &right,
+        ConstraintPhase::Pcs,
+      )
+      .unwrap();
+      assert!(!output.constant);
+      builder.finish_projection().unwrap()
+    };
+    let zero = project([0; 16], [0; 16]);
+    let one = project(one_value(), [0x75; 16]);
+    assert_eq!(zero.census(), one.census());
+    assert_eq!(zero.digest(), one.digest());
   }
 
   #[test]

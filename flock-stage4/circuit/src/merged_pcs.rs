@@ -318,14 +318,16 @@ pub(crate) fn constrain_eq_table(
 ) -> Result<Vec<F128VariablesV1>, R1csError> {
   let mut table = vec![one.clone()];
   for coordinate in point {
-    let zero_factor = constrain_f128_add(builder, one, coordinate, PHASE)?;
+    let high = table
+      .iter()
+      .map(|weight| constrain_f128_multiply(builder, weight, coordinate, PHASE))
+      .collect::<Result<Vec<_>, _>>()?;
     let mut next = Vec::with_capacity(2 * table.len());
-    for weight in &table {
-      next.push(constrain_f128_multiply(builder, weight, &zero_factor, PHASE)?);
+    // In characteristic two, weight*(1+x) = weight + weight*x.
+    for (weight, product) in table.iter().zip(&high) {
+      next.push(constrain_f128_add(builder, weight, product, PHASE)?);
     }
-    for weight in &table {
-      next.push(constrain_f128_multiply(builder, weight, coordinate, PHASE)?);
-    }
+    next.extend(high);
     table = next;
   }
   Ok(table)

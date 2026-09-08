@@ -389,6 +389,26 @@ pub fn constrain_f128_inner_ligerito(
     ));
   }
 
+  let final_words = get_many(
+    inputs.observed_values,
+    &trace.final_yr_observations,
+    "final residual word",
+  )?;
+  if final_words.len() != 2 * checked_pow2(extension_log)? {
+    return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
+      "final split basis",
+    ));
+  }
+  // The old split pairing is sum_j residual_j * (word_2j + u*word_(2j+1)).
+  // Contract each residual contribution with these F256 coefficients before
+  // scaling it, avoiding a full extension-field vector for every query.
+  let final_coefficients = final_words
+    .as_chunks::<2>()
+    .0
+    .iter()
+    .map(|pair| F256Variables { c0: pair[0].clone(), c1: pair[1].clone() })
+    .collect::<Vec<_>>();
+
   let mut rho = inputs.frontend.rho.clone();
   if lane_major {
     rho.rotate_left(log_n - initial_challenges.len());
@@ -397,13 +417,13 @@ pub fn constrain_f128_inner_ligerito(
     coordinate_scale(builder, &recursive_challenges, 0, &zero, &one)?;
   let packed_scale =
     f256_multiply_base(builder, &initial_coordinate_scale, &gamma)?;
-  let mut residual = constrain_eq_residual(
+  let mut final_claim = constrain_eq_residual_evaluation(
     builder,
     &rho,
     &original_challenges,
     extension_log,
     &packed_scale,
-    &zero,
+    &final_coefficients,
     &one,
   )?;
 
@@ -428,16 +448,16 @@ pub fn constrain_f128_inner_ligerito(
       &one,
     )?;
     let scale = f256_multiply_base(builder, &coordinate_scale, &context.beta)?;
-    let contribution = constrain_eq_residual(
+    let contribution = constrain_eq_residual_evaluation(
       builder,
       &context.point,
       &fixed,
       extension_log,
       &scale,
-      &zero,
+      &final_coefficients,
       &one,
     )?;
-    add_residual(builder, &mut residual, &contribution)?;
+    final_claim = f256_add(builder, &final_claim, &contribution)?;
   }
 
   for context in &consistency_contexts {
@@ -454,7 +474,7 @@ pub fn constrain_f128_inner_ligerito(
       &one,
     )?;
     let scale = f256_multiply_base(builder, &coordinate_scale, &context.beta)?;
-    let contribution = constrain_induced_basis_at_residual(
+    let contribution = constrain_induced_residual_evaluation(
       builder,
       context.log_columns,
       &context.queries,
@@ -462,31 +482,11 @@ pub fn constrain_f128_inner_ligerito(
       &fixed,
       extension_log,
       &scale,
+      &final_coefficients,
       &zero,
       &one,
     )?;
-    add_residual(builder, &mut residual, &contribution)?;
-  }
-
-  let final_words = get_many(
-    inputs.observed_values,
-    &trace.final_yr_observations,
-    "final residual word",
-  )?;
-  let mut final_claim = f256_zero(&zero);
-  let mut split_basis = Vec::with_capacity(2 * residual.len());
-  for value in &residual {
-    split_basis.push(value.clone());
-    split_basis.push(f256_multiply_u(builder, value)?);
-  }
-  if split_basis.len() != final_words.len() {
-    return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
-      "final split basis",
-    ));
-  }
-  for (word, weight) in final_words.iter().zip(&split_basis) {
-    let term = f256_multiply_base(builder, weight, word)?;
-    final_claim = f256_add(builder, &final_claim, &term)?;
+    final_claim = f256_add(builder, &final_claim, &contribution)?;
   }
   enforce_f128_equal(builder, &final_claim.c0, &claim.c0, PHASE);
   enforce_f128_equal(builder, &final_claim.c1, &claim.c1, PHASE);
@@ -929,20 +929,25 @@ fn constrain_enforced_sum(
     &f256_zero(zero),
     &f256_one(zero, one),
   )?;
-  let mut total = f256_zero(zero);
+  let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+  if columns > lane_weights.len() {
+    return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
+      "opened row exceeds lane equality table",
+    ));
+  }
+  // First combine rows in F128, then apply each F256 lane weight once.
+  // Distributivity avoids two base-field products for every opened word.
+  let mut combined = vec![zero.clone(); columns];
   for (row, row_weight) in rows.iter().zip(row_weights) {
-    if row.len() > lane_weights.len() {
-      return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
-        "opened row exceeds lane equality table",
-      ));
+    for (output, word) in combined.iter_mut().zip(row) {
+      let term = constrain_f128_multiply(builder, row_weight, word, PHASE)?;
+      *output = constrain_f128_add(builder, output, &term, PHASE)?;
     }
-    let mut evaluated = f256_zero(zero);
-    for (word, weight) in row.iter().zip(&lane_weights) {
-      let term = f256_multiply_base(builder, weight, word)?;
-      evaluated = f256_add(builder, &evaluated, &term)?;
-    }
-    evaluated = f256_multiply_base(builder, &evaluated, row_weight)?;
-    total = f256_add(builder, &total, &evaluated)?;
+  }
+  let mut total = f256_zero(zero);
+  for (weight, column) in lane_weights.iter().zip(&combined) {
+    let term = f256_multiply_base(builder, weight, column)?;
+    total = f256_add(builder, &total, &term)?;
   }
   Ok(total)
 }
@@ -1053,15 +1058,15 @@ impl RoundQuadVariables {
   }
 }
 
-fn constrain_eq_residual(
+fn constrain_eq_residual_evaluation(
   builder: &mut R1csBuilder,
   point: &[F128VariablesV1],
   fixed: &[F256Variables],
   residual_log: usize,
   scale: &F256Variables,
-  zero: &F128VariablesV1,
+  coefficients: &[F256Variables],
   one: &F128VariablesV1,
-) -> Result<Vec<F256Variables>, F128InnerLigeritoCircuitError> {
+) -> Result<F256Variables, F128InnerLigeritoCircuitError> {
   if fixed.len() + residual_log != point.len() {
     return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
       "equality residual dimension",
@@ -1082,16 +1087,17 @@ fn constrain_eq_residual(
     };
     prefix = f256_multiply(builder, &prefix, &factor)?;
   }
-  let suffix = constrain_eq_table(builder, &point[fixed.len()..], zero, one)?;
-  suffix
-    .iter()
-    .map(|weight| f256_multiply_base(builder, &prefix, weight))
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(Into::into)
+  let evaluation = evaluate_tensor_polynomial(
+    builder,
+    coefficients,
+    &point[fixed.len()..],
+    TensorBasis::Equality,
+  )?;
+  Ok(f256_multiply(builder, &prefix, &evaluation)?)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn constrain_induced_basis_at_residual(
+fn constrain_induced_residual_evaluation(
   builder: &mut R1csBuilder,
   log_columns: usize,
   queries: &[QueryVariables],
@@ -1099,19 +1105,20 @@ fn constrain_induced_basis_at_residual(
   fixed: &[F256Variables],
   residual_log: usize,
   scale: &F256Variables,
+  coefficients: &[F256Variables],
   zero: &F128VariablesV1,
   one: &F128VariablesV1,
-) -> Result<Vec<F256Variables>, F128InnerLigeritoCircuitError> {
+) -> Result<F256Variables, F128InnerLigeritoCircuitError> {
   if fixed.len() + residual_log != log_columns
     || queries.len() != query_weights.len()
+    || coefficients.len() != checked_pow2(residual_log)?
   {
     return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
       "induced residual dimension",
     ));
   }
   let (sks_vks, inverse_sks_vks) = novel_basis_constants(log_columns)?;
-  let residual_len = checked_pow2(residual_log)?;
-  let mut result = vec![f256_zero(zero); residual_len];
+  let mut result = f256_zero(zero);
   for (query, row_weight) in queries.iter().zip(query_weights) {
     let mut raw = Vec::with_capacity(log_columns);
     if log_columns != 0 {
@@ -1143,28 +1150,52 @@ fn constrain_induced_basis_at_residual(
       let factor = f256_add(builder, &f256_one(zero, one), &product)?;
       prefix = f256_multiply(builder, &prefix, &factor)?;
     }
-    prefix = f256_multiply(builder, &prefix, scale)?;
-    prefix = f256_multiply_base(builder, &prefix, row_weight)?;
-
-    let mut suffix = vec![one.clone()];
-    for weight in &normalized[fixed.len()..] {
-      let products = suffix
-        .iter()
-        .map(|value| constrain_f128_multiply(builder, value, weight, PHASE))
-        .collect::<Result<Vec<_>, _>>()?;
-      suffix.extend(products);
-    }
-    if suffix.len() != residual_len {
-      return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
-        "induced suffix table",
-      ));
-    }
-    for (output, suffix) in result.iter_mut().zip(&suffix) {
-      let contribution = f256_multiply_base(builder, &prefix, suffix)?;
-      *output = f256_add(builder, output, &contribution)?;
-    }
+    let evaluation = evaluate_tensor_polynomial(
+      builder,
+      coefficients,
+      &normalized[fixed.len()..],
+      TensorBasis::Monomial,
+    )?;
+    let contribution = f256_multiply(builder, &prefix, &evaluation)?;
+    let contribution = f256_multiply_base(builder, &contribution, row_weight)?;
+    result = f256_add(builder, &result, &contribution)?;
   }
-  Ok(result)
+  Ok(f256_multiply(builder, &result, scale)?)
+}
+
+#[derive(Clone, Copy)]
+enum TensorBasis {
+  Equality,
+  Monomial,
+}
+
+/// Coordinates are least-significant-bit first, matching both tensor tables.
+/// Equality folding is low + x*(low+high); monomial folding is low + x*high.
+fn evaluate_tensor_polynomial(
+  builder: &mut R1csBuilder,
+  coefficients: &[F256Variables],
+  point: &[F128VariablesV1],
+  basis: TensorBasis,
+) -> Result<F256Variables, F128InnerLigeritoCircuitError> {
+  if coefficients.len() != checked_pow2(point.len())? {
+    return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
+      "tensor evaluation dimension",
+    ));
+  }
+  let mut layer = coefficients.to_vec();
+  for coordinate in point {
+    let mut next = Vec::with_capacity(layer.len() / 2);
+    for [low, high] in layer.as_chunks::<2>().0 {
+      let slope = match basis {
+        TensorBasis::Equality => f256_add(builder, low, high)?,
+        TensorBasis::Monomial => high.clone(),
+      };
+      let product = f256_multiply_base(builder, &slope, coordinate)?;
+      next.push(f256_add(builder, low, &product)?);
+    }
+    layer = next;
+  }
+  Ok(layer.pop().expect("nonempty tensor evaluation"))
 }
 
 fn novel_basis_constants(
@@ -1268,22 +1299,6 @@ fn residual_original_challenges(
   output
 }
 
-fn add_residual(
-  builder: &mut R1csBuilder,
-  target: &mut [F256Variables],
-  source: &[F256Variables],
-) -> Result<(), F128InnerLigeritoCircuitError> {
-  if target.len() != source.len() {
-    return Err(F128InnerLigeritoCircuitError::UnsupportedShape(
-      "residual vector length",
-    ));
-  }
-  for (target, source) in target.iter_mut().zip(source) {
-    *target = f256_add(builder, target, source)?;
-  }
-  Ok(())
-}
-
 fn constrain_f256_eq_table(
   builder: &mut R1csBuilder,
   point: &[F256Variables],
@@ -1292,14 +1307,15 @@ fn constrain_f256_eq_table(
 ) -> Result<Vec<F256Variables>, R1csError> {
   let mut table = vec![one.clone()];
   for coordinate in point {
-    let zero_factor = f256_add(builder, one, coordinate)?;
+    let high = table
+      .iter()
+      .map(|weight| f256_multiply(builder, weight, coordinate))
+      .collect::<Result<Vec<_>, _>>()?;
     let mut next = Vec::with_capacity(2 * table.len());
-    for weight in &table {
-      next.push(f256_multiply(builder, weight, &zero_factor)?);
+    for (weight, product) in table.iter().zip(&high) {
+      next.push(f256_add(builder, weight, product)?);
     }
-    for weight in &table {
-      next.push(f256_multiply(builder, weight, coordinate)?);
-    }
+    next.extend(high);
     table = next;
   }
   Ok(table)
@@ -1382,21 +1398,6 @@ fn f256_square(
   })
 }
 
-fn f256_multiply_u(
-  builder: &mut R1csBuilder,
-  value: &F256Variables,
-) -> Result<F256Variables, R1csError> {
-  Ok(F256Variables {
-    c0: constrain_f128_multiply_constant(
-      builder,
-      &value.c1,
-      QUADRATIC_NONRESIDUE,
-      PHASE,
-    )?,
-    c1: constrain_f128_add(builder, &value.c0, &value.c1, PHASE)?,
-  })
-}
-
 fn resolve_message(
   message: F256LigeritoMessageV1,
   observed_values: &[F128VariablesV1],
@@ -1461,7 +1462,321 @@ fn checked_pow2(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ark_bls12_381::Fr;
   use blake3::hazmat::{HasherExt, Mode, merge_subtrees_non_root};
+
+  type NativeExtension = [[u8; 16]; 2];
+
+  fn sample(state: &mut u128) -> [u8; 16] {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    state.to_le_bytes()
+  }
+
+  fn native_add(
+    left: NativeExtension,
+    right: NativeExtension,
+  ) -> NativeExtension {
+    core::array::from_fn(|i| native_f128_add(left[i], right[i]))
+  }
+
+  fn native_multiply(
+    left: NativeExtension,
+    right: NativeExtension,
+  ) -> NativeExtension {
+    let p00 = native_f128_multiply(left[0], right[0]);
+    let p01 = native_f128_multiply(left[0], right[1]);
+    let p10 = native_f128_multiply(left[1], right[0]);
+    let p11 = native_f128_multiply(left[1], right[1]);
+    [
+      native_f128_add(p00, native_f128_multiply(p11, QUADRATIC_NONRESIDUE)),
+      native_f128_add(native_f128_add(p01, p10), p11),
+    ]
+  }
+
+  fn native_scale(value: NativeExtension, scalar: [u8; 16]) -> NativeExtension {
+    value.map(|part| native_f128_multiply(part, scalar))
+  }
+
+  fn base_one() -> [u8; 16] {
+    1u128.to_le_bytes()
+  }
+
+  // Literal basis expansion, independent of the circuit's Horner folding.
+  fn tensor_oracle(
+    coefficients: &[NativeExtension],
+    point: &[[u8; 16]],
+    equality: bool,
+  ) -> NativeExtension {
+    coefficients.iter().enumerate().fold(
+      [[0; 16]; 2],
+      |sum, (index, &coefficient)| {
+        let weight = point.iter().enumerate().fold(
+          base_one(),
+          |weight, (bit, &coordinate)| {
+            let factor = if (index >> bit) & 1 == 1 {
+              coordinate
+            } else if equality {
+              native_f128_add(base_one(), coordinate)
+            } else {
+              base_one()
+            };
+            native_f128_multiply(weight, factor)
+          },
+        );
+        native_add(sum, native_scale(coefficient, weight))
+      },
+    )
+  }
+
+  fn allocate_extension(
+    builder: &mut R1csBuilder,
+    value: NativeExtension,
+  ) -> F256Variables {
+    F256Variables {
+      c0: alloc_f128_private(builder, value[0], PHASE).unwrap(),
+      c1: alloc_f128_private(builder, value[1], PHASE).unwrap(),
+    }
+  }
+
+  fn check_extension(
+    builder: R1csBuilder,
+    output: &F256Variables,
+    expected: NativeExtension,
+    derived_output: bool,
+  ) {
+    let (r1cs, mut witness) = builder.finish().unwrap();
+    for (part, expected) in [&output.c0, &output.c1].into_iter().zip(expected) {
+      let mut actual = [0u8; 16];
+      for (index, bit) in part.bit_variables().iter().enumerate() {
+        let value = witness.assignment()[bit.index() as usize];
+        assert!(value == Fr::from(0u64) || value == Fr::from(1u64));
+        actual[index / 8] |= u8::from(value == Fr::from(1u64)) << (index % 8);
+      }
+      assert_eq!(actual, expected);
+      assert_eq!(*part.value(), expected);
+    }
+    // At dimension zero, tensor evaluation is the input coefficient itself;
+    // changing that input is a different valid witness, not output tampering.
+    if derived_output {
+      let bit = output.c0.bit_variables()[0];
+      witness
+        .set(bit, Fr::from(1u64) - witness.assignment()[bit.index() as usize])
+        .unwrap();
+      assert!(r1cs.check(&witness).is_err());
+    }
+  }
+
+  #[test]
+  fn tensor_folding_matches_literal_bases_including_empty_points() {
+    let mut state = 0x9671_23df_6a85_900b_710c_ef12_45ab_683du128;
+    for log_size in [0, 1, 3] {
+      for equality in [false, true] {
+        let point =
+          (0..log_size).map(|_| sample(&mut state)).collect::<Vec<_>>();
+        let coefficients = (0..1usize << log_size)
+          .map(|_| [sample(&mut state), sample(&mut state)])
+          .collect::<Vec<_>>();
+        let mut builder = R1csBuilder::new();
+        let point_variables = allocate_values(&mut builder, &point);
+        let variables = coefficients
+          .iter()
+          .map(|&v| allocate_extension(&mut builder, v))
+          .collect::<Vec<_>>();
+        let basis =
+          if equality { TensorBasis::Equality } else { TensorBasis::Monomial };
+        let output = evaluate_tensor_polynomial(
+          &mut builder,
+          &variables,
+          &point_variables,
+          basis,
+        )
+        .unwrap();
+        check_extension(
+          builder,
+          &output,
+          tensor_oracle(&coefficients, &point, equality),
+          log_size != 0,
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn transposed_opened_rows_match_the_literal_weighted_sum() {
+    let mut state = 0x9173_4506_a2eb_41c5_6fa3_4879_bacd_312eu128;
+    let lanes = [
+      [sample(&mut state), sample(&mut state)],
+      [sample(&mut state), sample(&mut state)],
+    ];
+    let rows = [4, 3, 1]
+      .map(|len| (0..len).map(|_| sample(&mut state)).collect::<Vec<_>>());
+    let weights =
+      (0..rows.len()).map(|_| sample(&mut state)).collect::<Vec<_>>();
+    let mut expected = [[0; 16]; 2];
+    for (row, &weight) in rows.iter().zip(&weights) {
+      for (column, &word) in row.iter().enumerate() {
+        let lane_weight = lanes.iter().enumerate().fold(
+          [base_one(), [0; 16]],
+          |product, (bit, &coordinate)| {
+            let factor = if (column >> bit) & 1 == 1 {
+              coordinate
+            } else {
+              native_add([base_one(), [0; 16]], coordinate)
+            };
+            native_multiply(product, factor)
+          },
+        );
+        expected = native_add(
+          expected,
+          native_scale(lane_weight, native_f128_multiply(word, weight)),
+        );
+      }
+    }
+    let mut builder = R1csBuilder::new();
+    let rows = rows
+      .iter()
+      .map(|row| allocate_values(&mut builder, row))
+      .collect::<Vec<_>>();
+    let weights = allocate_values(&mut builder, &weights);
+    let lanes = lanes.map(|v| allocate_extension(&mut builder, v));
+    let zero = alloc_f128_constant(&mut builder, [0; 16], PHASE).unwrap();
+    let one = alloc_f128_constant(&mut builder, base_one(), PHASE).unwrap();
+    let output = constrain_enforced_sum(
+      &mut builder,
+      &rows,
+      &lanes,
+      &weights,
+      &zero,
+      &one,
+    )
+    .unwrap();
+    check_extension(builder, &output, expected, true);
+  }
+
+  #[test]
+  fn contracted_residuals_match_literal_extension_vectors() {
+    let mut state = 0x9671_a31d_e984_4568_9123_561b_6fc7_1a98u128;
+    for (fixed_len, residual_log) in [(0, 0), (2, 1), (1, 3)] {
+      let point = (0..fixed_len + residual_log)
+        .map(|_| sample(&mut state))
+        .collect::<Vec<_>>();
+      let fixed = (0..fixed_len)
+        .map(|_| [sample(&mut state), sample(&mut state)])
+        .collect::<Vec<_>>();
+      let scale = [sample(&mut state), sample(&mut state)];
+      let coefficients = (0..1usize << residual_log)
+        .map(|_| [sample(&mut state), sample(&mut state)])
+        .collect::<Vec<_>>();
+      let mut prefix = scale;
+      for (&coordinate, &challenge) in point.iter().zip(&fixed) {
+        let factor = native_add(
+          [native_f128_add(base_one(), coordinate), [0; 16]],
+          challenge,
+        );
+        prefix = native_multiply(prefix, factor);
+      }
+      let expected = native_multiply(
+        prefix,
+        tensor_oracle(&coefficients, &point[fixed_len..], true),
+      );
+      let mut builder = R1csBuilder::new();
+      let point_variables = allocate_values(&mut builder, &point);
+      let fixed_variables = fixed
+        .iter()
+        .map(|&v| allocate_extension(&mut builder, v))
+        .collect::<Vec<_>>();
+      let scale_variables = allocate_extension(&mut builder, scale);
+      let coefficient_variables = coefficients
+        .iter()
+        .map(|&v| allocate_extension(&mut builder, v))
+        .collect::<Vec<_>>();
+      let one = alloc_f128_constant(&mut builder, base_one(), PHASE).unwrap();
+      let output = constrain_eq_residual_evaluation(
+        &mut builder,
+        &point_variables,
+        &fixed_variables,
+        residual_log,
+        &scale_variables,
+        &coefficient_variables,
+        &one,
+      )
+      .unwrap();
+      check_extension(builder, &output, expected, true);
+
+      let queries = [sample(&mut state), sample(&mut state)];
+      let row_weights = [sample(&mut state), sample(&mut state)];
+      let log_columns = fixed_len + residual_log;
+      let (sks, inverses) = novel_basis_constants(log_columns).unwrap();
+      let mut expected = [[0; 16]; 2];
+      for (&query, &row_weight) in queries.iter().zip(&row_weights) {
+        let mut raw = query;
+        let normalized = (0..log_columns)
+          .map(|column| {
+            let normalized = native_f128_multiply(raw, inverses[column]);
+            raw = native_f128_add(
+              native_f128_multiply(raw, raw),
+              native_f128_multiply(raw, sks[column]),
+            );
+            normalized
+          })
+          .collect::<Vec<_>>();
+        let prefix = fixed.iter().zip(&normalized).fold(
+          scale,
+          |prefix, (&challenge, &weight)| {
+            let factor = native_add(
+              [base_one(), [0; 16]],
+              native_scale(challenge, native_f128_add(base_one(), weight)),
+            );
+            native_multiply(prefix, factor)
+          },
+        );
+        let evaluation =
+          tensor_oracle(&coefficients, &normalized[fixed_len..], false);
+        expected = native_add(
+          expected,
+          native_scale(native_multiply(prefix, evaluation), row_weight),
+        );
+      }
+      let mut builder = R1csBuilder::new();
+      let query_variables = allocate_values(&mut builder, &queries)
+        .into_iter()
+        .map(|field| QueryVariables {
+          field,
+          bits: Vec::new(),
+          stratum_depth: 0,
+          stratum: 0,
+        })
+        .collect::<Vec<_>>();
+      let row_variables = allocate_values(&mut builder, &row_weights);
+      let fixed_variables = fixed
+        .iter()
+        .map(|&v| allocate_extension(&mut builder, v))
+        .collect::<Vec<_>>();
+      let scale_variables = allocate_extension(&mut builder, scale);
+      let coefficient_variables = coefficients
+        .iter()
+        .map(|&v| allocate_extension(&mut builder, v))
+        .collect::<Vec<_>>();
+      let zero = alloc_f128_constant(&mut builder, [0; 16], PHASE).unwrap();
+      let one = alloc_f128_constant(&mut builder, base_one(), PHASE).unwrap();
+      let output = constrain_induced_residual_evaluation(
+        &mut builder,
+        log_columns,
+        &query_variables,
+        &row_variables,
+        &fixed_variables,
+        residual_log,
+        &scale_variables,
+        &coefficient_variables,
+        &zero,
+        &one,
+      )
+      .unwrap();
+      check_extension(builder, &output, expected, true);
+    }
+  }
 
   fn pair(start: u64) -> F256IndexPairV1 {
     F256IndexPairV1 { c0: start, c1: start + 1 }
