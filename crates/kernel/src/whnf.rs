@@ -78,7 +78,9 @@ use super::mode::KernelMode;
 use super::subst::{
   Clo, MEnv, clo_readback, clo_subst, subst, subst_no_intern,
 };
-use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
+use super::tc::{
+  IotaInfo, MAX_WHNF_FUEL, TypeChecker, app_head, collect_app_spine,
+};
 
 use bignat::Nat;
 
@@ -701,8 +703,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // App: collect spine, whnf_core head, try beta/iota
-      let (f0, args) = collect_app_spine(&cur);
-      let f = self.whnf_core_with_flags(&f0, flags)?;
+      let (f0, args) = super::tc::borrow_app_spine(&cur);
+      let f = self.whnf_core_with_flags(f0, flags)?;
 
       // Beta: enter the environment machine. Subsequent betas/zetas are
       // O(1) environment pushes; substitution materializes only at the
@@ -712,16 +714,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // beta firing — Const-headed terms (e.g. literal recursor loops)
       // never pay the closure-wrap + readback overhead.
       if matches!(f.data(), ExprData::Lam(..)) {
-        cur = self.machine_whnf(f, &args, flags)?;
+        let reduced = self.machine_whnf(f, &args, flags)?;
+        drop(args);
+        cur = reduced;
         continue;
       }
 
       // If head reduced, rebuild and try iota
-      if !f.ptr_eq(&f0) {
+      if !f.ptr_eq(f0) {
         let mut rebuilt = f;
         for arg in &args {
-          rebuilt = self.intern(KExpr::app(rebuilt, arg.clone()));
+          rebuilt = self.intern(KExpr::app(rebuilt, (*arg).clone()));
         }
+        drop(args);
         if let Some(reduced) = self.try_iota_with_flags(&rebuilt, flags)? {
           cur = reduced;
           continue;
@@ -730,6 +735,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // Try iota on original
+      drop(args);
       if let Some(reduced) = self.try_iota_with_flags(&cur, flags)? {
         cur = reduced;
         continue;
@@ -773,13 +779,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   fn machine_whnf(
     &mut self,
     head: KExpr<M>,
-    args: &[KExpr<M>],
+    args: &[&KExpr<M>],
     flags: WhnfFlags,
   ) -> Result<KExpr<M>, TcError<M>> {
     let mut head = head;
     let mut env: MEnv<M> = MEnv::empty();
     let mut spine: Vec<Arc<Clo<M>>> =
-      args.iter().rev().map(|a| Arc::new(Clo::closed(a.clone()))).collect();
+      args.iter().rev().map(|a| Arc::new(Clo::closed((*a).clone()))).collect();
 
     loop {
       match head.data() {
@@ -1328,7 +1334,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e: &KExpr<M>,
     flags: WhnfFlags,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    let (head, spine) = collect_app_spine(e);
+    let (head, spine) = super::tc::borrow_app_spine(e);
 
     let (rec_id, rec_us) = match head.data() {
       ExprData::Const(id, us, _) => (id.clone(), us.clone()),
@@ -1365,6 +1371,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
       _ => return Ok(None),
     };
+
+    // Only an actual recursor needs ownership for reduction/reconstruction.
+    // The common non-recursor rejection above only inspected borrowed nodes.
+    let spine: Vec<_> = spine.into_iter().cloned().collect();
 
     // K-like recursor: try to synthesize a nullary constructor before WHNF.
     // This handles cases like `Eq.rec motive minor major` where major isn't
@@ -2303,7 +2313,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let w = self.whnf(&ty)?;
         match w.data() {
           ExprData::All(_, _, dom, body, _) => {
-            let (head, _) = collect_app_spine(dom);
+            let head = app_head(dom);
             if let ExprData::Const(id, _, _) = head.data() {
               // Only accept if the head resolves to an inductive.
               if matches!(self.try_get_const(id)?, Some(KConst::Indc { .. })) {
@@ -2866,7 +2876,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   fn is_stuck_nat_predicate_probe(&self, e: &KExpr<M>) -> bool {
-    let (head, _) = collect_app_spine(e);
+    let head = app_head(e);
     match head.data() {
       ExprData::Const(id, _, _) => {
         self.is_nat_bin_pred_addr(&id.addr)
@@ -2876,7 +2886,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if id.addr == self.prims.fin.addr {
           return true;
         }
-        let (val_head, _) = collect_app_spine(val);
+        let val_head = app_head(val);
         matches!(
           val_head.data(),
           ExprData::Const(val_id, _, _)
@@ -3406,7 +3416,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // constant function 1, but its body recurses on an open unit variable.
       // Reduce this primitive singleton case directly.
       if id.addr == self.prims.size_of_size_of.addr && args.len() == 3 {
-        let (ty_head, _) = collect_app_spine(&args[0]);
+        let ty_head = app_head(&args[0]);
         if let ExprData::Const(ty_id, _, _) = ty_head.data()
           && (ty_id.addr == self.prims.unit.addr
             || ty_id.addr == self.prims.punit.addr)
@@ -5635,7 +5645,7 @@ mod tests {
   // The shared per-constant budget guards against unbounded expansion of Nat
   // literals into Nat.succ chains when the same recursor peels consecutive
   // predecessors for thousands of steps. Give this adversarial unit a small
-  // explicit budget: production's 10M allowance is intentionally large for
+  // explicit budget: production's 100M allowance is intentionally large for
   // real certificate computations and would make the termination test slow.
   // =========================================================================
 

@@ -1864,6 +1864,7 @@ dependencies = [
  "quickcheck_macros",
  "rayon",
  "rustc-hash",
+ "smallvec",
 ]
 
 [[package]]

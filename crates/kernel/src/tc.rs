@@ -25,6 +25,7 @@ use super::ingress::{
 use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData};
 use super::mode::KernelMode;
+use super::perf::hot_misses::{HotMisses, MissKey};
 use super::primitive::Primitives;
 use super::subst::{instantiate_rev, lift};
 
@@ -44,18 +45,16 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 
 /// Shared recursive fuel budget, consumed by recursive whnf/infer/isDefEq
 /// entries and by productive structural-WHNF beta/zeta/iota transitions.
-/// lean4lean uses 10,000 with step-indexed recursion; the lean4 C++ kernel
-/// uses ~200,000 heartbeats. We use a higher budget than both because this
-/// kernel lacks compiled native reduction and checks some large proof terms
-/// by interpreting their full expression trees. In particular, BVDecide's
-/// generated mutual proofs can legitimately exceed one million recursive
-/// kernel steps even after cache hits stop consuming fuel.
+/// This is cumulative work per declaration, not a recursion-depth limit;
+/// its units are not directly comparable to lean4lean's step-indexed depth
+/// allowance or the Lean C++ kernel's heartbeats.
 ///
-/// Mathlib-scale category/algebra proof terms also exceed the old 1.5M budget
-/// without hitting the actual `MAX_DEF_EQ_DEPTH` guard. Keep this high enough
-/// for legitimate large proofs while retaining the `IX_MAX_REC_FUEL` override
-/// for bisecting suspected loops.
-pub const MAX_REC_FUEL: u64 = 10_000_000;
+/// Large FLT proofs can finish successfully after roughly 54M counted steps
+/// with shallow def-eq recursion. Leave headroom for these finite checks;
+/// retain the independent depth/WHNF guards and the `IX_MAX_REC_FUEL`
+/// override for bounded experiments and bisecting suspected loops. This
+/// budget does not replace external time or memory limits.
+pub const MAX_REC_FUEL: u64 = 100_000_000;
 
 static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
   crate::env_var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
@@ -63,6 +62,13 @@ static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
 
 static IX_HOT_MISSES: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_HOT_MISSES").is_ok());
+
+/// Opt-in, bounded native call stacks at resource guards. Useful with the
+/// one-subject helper: ordinary CLI runs do not install a `log` subscriber.
+static IX_GUARD_STACKS: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_GUARD_STACKS").is_ok());
+static GUARD_STACK_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
 
 static IX_HOT_MISS_CTX: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_HOT_MISS_CTX").is_ok());
@@ -151,6 +157,14 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// cache while projected values are reduced structurally instead of through
   /// full WHNF.
   pub cheap_recursion_depth: u32,
+  /// Avoid recursively starting speculative projection-first comparisons.
+  pub(crate) in_projection_probe: bool,
+  /// Leaf conversion inside an application worklist must not start another
+  /// worklist. The original conversion algorithm remains its fallback.
+  pub(crate) in_app_congruence: bool,
+  /// Disable nested binder-batch probes, including throughout a failed
+  /// probe's ordinary recursive fallback.
+  pub(crate) in_binder_batch: bool,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
   pub eager_reduce: bool,
   /// Current def-eq recursion depth.
@@ -162,6 +176,14 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub def_eq_peak: u32,
   /// Shared recursive fuel remaining for this constant check.
   pub rec_fuel: u64,
+  /// Unspent outer fuel temporarily withheld by same-head probes. Only used
+  /// to preserve the non-Regular startup window inside a larger Regular
+  /// slice; it never increases the fuel available to a nested computation.
+  pub(crate) same_head_fuel_reserve: u64,
+  /// Per-declaration admission history, not cached conversion facts.
+  pub(crate) same_head_backoff: super::def_eq::SameHeadBackoff,
+  /// Bounded non-semantic history for selective dependent-prefix caching.
+  pub(crate) prefix_admission: super::infer::PrefixAdmission,
   /// Optional diagnostic label for the current top-level constant.
   pub debug_label: Option<String>,
 
@@ -173,9 +195,9 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// Addresses of constants whose bodies were delta-unfolded during the current
   /// constant's check. Drained per constant by `record_current_fuel_used`.
   pub(crate) delta_targets: FxHashSet<Address>,
-  /// Gated miss sampler for fuel-exhaustion diagnostics. Populated only when
-  /// `IX_HOT_MISSES=1`, keyed by a compact phase/head/lbr shape.
-  hot_misses: FxHashMap<String, u64>,
+  /// Gated, bounded heavy-hitter sampler for fuel-exhaustion diagnostics.
+  /// Populated only when `IX_HOT_MISSES=1`; never retains expressions.
+  hot_misses: HotMisses,
 
   /// Memoization cache for [`Self::ctx_addr_for_lbr`].
   ///
@@ -215,15 +237,21 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       infer_only: false,
       in_native_reduce: false,
       cheap_recursion_depth: 0,
+      in_projection_probe: false,
+      in_app_congruence: false,
+      in_binder_batch: false,
       eager_reduce: false,
       def_eq_depth: 0,
       def_eq_trace_depth: 0,
       def_eq_peak: 0,
       rec_fuel: max_rec_fuel(),
+      same_head_fuel_reserve: 0,
+      same_head_backoff: Default::default(),
+      prefix_admission: Default::default(),
       debug_label: None,
       cur_const: None,
       delta_targets: FxHashSet::default(),
-      hot_misses: FxHashMap::default(),
+      hot_misses: HotMisses::default(),
       ctx_addr_cache: FxHashMap::default(),
       lctx: super::lctx::LocalContext::new(),
     }
@@ -746,7 +774,9 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       ExprData::App(f, a, _) => {
         let f2 = self.inst_univ_inner(f, us, cache)?;
         let a2 = self.inst_univ_inner(a, us, cache)?;
-        KExpr::app(f2, a2)
+        let r = self.env.intern.intern_app(&f2, &a2);
+        cache.insert(key, r.clone());
+        return Ok(r);
       },
 
       ExprData::Lam(name, bi, ty, body, _) => {
@@ -758,7 +788,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       ExprData::All(name, bi, ty, body, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::all(name.clone(), bi.clone(), ty2, body2)
+        let r =
+          self.env.intern.intern_all(name.clone(), bi.clone(), &ty2, &body2);
+        cache.insert(key, r.clone());
+        return Ok(r);
       },
 
       ExprData::Let(name, ty, val, body, nd, _) => {
@@ -835,6 +868,9 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.infer_only = false;
     self.in_native_reduce = false;
     self.cheap_recursion_depth = 0;
+    self.in_projection_probe = false;
+    self.in_app_congruence = false;
+    self.in_binder_batch = false;
     self.eager_reduce = false;
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;
@@ -848,6 +884,9 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       self.env.clear_reduction_caches();
     }
     self.rec_fuel = max_rec_fuel();
+    self.same_head_fuel_reserve = 0;
+    self.same_head_backoff = Default::default();
+    self.prefix_admission = Default::default();
     self.hot_misses.clear();
     // Reset the local context (it must always be empty between constants).
     // The fvar id counter lives on KEnv and is intentionally not reset here:
@@ -874,6 +913,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   #[inline]
   pub fn tick(&mut self) -> Result<(), TcError<M>> {
     if self.rec_fuel == 0 {
+      self.dump_guard_stack("recursive-fuel");
       if crate::env_var("IX_REC_FUEL_DUMP").is_ok()
         && self.debug_label_matches_env()
       {
@@ -896,6 +936,30 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
     self.rec_fuel -= 1;
     Ok(())
+  }
+
+  /// Diagnostics only: at most four stacks per process, 100 lines each.
+  /// Capture only at a guard, never on the checking hot path; do not retain
+  /// expressions, change limits, or turn an exhausted check into a verdict.
+  pub(crate) fn dump_guard_stack(&self, guard: &str) {
+    if !*IX_GUARD_STACKS || !self.debug_label_matches_env() {
+      return;
+    }
+    if GUARD_STACK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 4
+    {
+      return;
+    }
+    eprintln!(
+      "[guard stack] {guard} const={} local_depth={} def_eq_depth={} fuel_used={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.depth(),
+      self.def_eq_depth,
+      self.fuel_used(),
+    );
+    let trace = std::backtrace::Backtrace::force_capture().to_string();
+    for line in trace.lines().take(100) {
+      eprintln!("[guard stack] {line}");
+    }
   }
 
   /// Starting fuel for the current check. Used by diagnostics that want
@@ -982,14 +1046,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
 
   /// Check if expression is of the form `eagerReduce _ _` (2 args applied to the eagerReduce const).
   pub fn is_eager_reduce(&self, e: &KExpr<M>) -> bool {
-    let (head, args) = collect_app_spine(e);
-    if args.len() != 2 {
-      return false;
-    }
-    match head.data() {
-      ExprData::Const(id, _, _) => id.addr == self.prims.eager_reduce.addr,
-      _ => false,
-    }
+    let ExprData::App(f, _, _) = e.data() else { return false };
+    let ExprData::App(head, _, _) = f.data() else { return false };
+    matches!(head.data(), ExprData::Const(id, _, _)
+      if id.addr == self.prims.eager_reduce.addr)
   }
 
   /// Intern an expression through the mutable intern environment.
@@ -1006,45 +1066,47 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     if !*IX_HOT_MISSES {
       return;
     }
-    let mut key = format!("{} {}", phase, hot_expr_shape(e));
-    if *IX_HOT_MISS_CTX {
-      let ctx = self.ctx_addr_for_lbr(e.lbr());
-      key.push_str(&format!(
-        " ctx={} depth={}",
-        short_ctx_addr(&ctx),
-        self.depth()
-      ));
-    }
-    *self.hot_misses.entry(key).or_insert(0) += 1;
+    let context = (*IX_HOT_MISS_CTX)
+      .then(|| (self.ctx_addr_for_lbr(e.lbr()), self.depth()));
+    let key = MissKey { phase, a: *e.addr(), b: None, context };
+    self.hot_misses.record(key, |out| {
+      use std::fmt::Write;
+      write!(out, "{phase} ")?;
+      write_hot_expr_shape(out, e)?;
+      write_hot_context(out, context)
+    });
   }
 
   pub fn record_hot_def_eq_miss(&mut self, a: &KExpr<M>, b: &KExpr<M>) {
     if !*IX_HOT_MISSES {
       return;
     }
-    let mut key =
-      format!("defeq {} =?= {}", hot_expr_shape(a), hot_expr_shape(b));
-    if *IX_HOT_MISS_CTX {
-      let ctx = self.def_eq_ctx_key(a, b);
-      key.push_str(&format!(
-        " ctx={} depth={}",
-        short_ctx_addr(&ctx),
-        self.depth()
-      ));
-    }
-    *self.hot_misses.entry(key).or_insert(0) += 1;
+    let context =
+      (*IX_HOT_MISS_CTX).then(|| (self.def_eq_ctx_key(a, b), self.depth()));
+    let key =
+      MissKey { phase: "defeq", a: *a.addr(), b: Some(*b.addr()), context };
+    self.hot_misses.record(key, |out| {
+      use std::fmt::Write;
+      write!(out, "defeq ")?;
+      write_hot_expr_shape(out, a)?;
+      write!(out, " =?= ")?;
+      write_hot_expr_shape(out, b)?;
+      write_hot_context(out, context)
+    });
   }
 
   fn dump_hot_misses(&self) {
-    if !*IX_HOT_MISSES || self.hot_misses.is_empty() {
-      return;
+    eprint!("{}", self.hot_miss_summary());
+  }
+
+  /// Snapshot opt-in miss counters without rerunning work or retaining terms.
+  /// The subject helper can report once at completion instead of dumping at
+  /// every exhausted speculative slice via `IX_REC_FUEL_DUMP`.
+  pub fn hot_miss_summary(&self) -> String {
+    if !*IX_HOT_MISSES {
+      return String::new();
     }
-    let mut entries: Vec<_> = self.hot_misses.iter().collect();
-    entries.sort_unstable_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    eprintln!("[hot misses] top {}:", entries.len().min(25));
-    for (key, count) in entries.into_iter().take(25) {
-      eprintln!("  {count:>8}  {key}");
-    }
+    self.hot_misses.summary()
   }
 }
 
@@ -1088,11 +1150,50 @@ impl<'a> TypeChecker<'a, super::mode::Anon> {
 /// Check whether an expression mentions a constant with the given address.
 /// Iterative (stack-based) — immune to stack overflow on deeply nested input.
 pub fn expr_mentions_addr<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
+  expr_mentions_any_addr(e, std::slice::from_ref(addr))
+}
+
+/// Check syntactic occurrences in one traversal for the entire address set.
+/// No unfolding, context-dependent memoization or dependency traversal.
+pub fn expr_mentions_any_addr<M: KernelMode>(
+  e: &KExpr<M>,
+  addrs: &[Address],
+) -> bool {
+  expr_mentions_any_addr_impl(e, addrs, || {})
+}
+
+// Small trees are cheaper to inspect directly than to allocate a visited set.
+// This is a fixed prefix budget, not an input-dependent heuristic: after it
+// is spent the remaining walk is DAG-aware, so worst-case work stays linear
+// in unique nodes/edges plus this constant prefix and its pending edges.
+const OCCURRENCE_TREE_BUDGET: usize = 32;
+
+fn expr_mentions_any_addr_impl<M: KernelMode>(
+  e: &KExpr<M>,
+  addrs: &[Address],
+  mut on_visit: impl FnMut(),
+) -> bool {
+  if addrs.is_empty() {
+    return false;
+  }
+  // Exact allocation identity, scoped to one fixed target set. Borrowing
+  // the root keeps every descendant alive, so pointer reuse is impossible.
+  // A shared subtree has the same occurrences at every binder depth.
+  let mut seen = FxHashSet::default();
+  let mut tree_budget = OCCURRENCE_TREE_BUDGET;
   let mut stack: Vec<&KExpr<M>> = vec![e];
   while let Some(e) = stack.pop() {
+    // Zero-cost callback in production; tests bound attempted node visits
+    // so a regression cannot hang on an exponentially expanded diamond.
+    on_visit();
+    if tree_budget > 0 {
+      tree_budget -= 1;
+    } else if !seen.insert(std::ptr::from_ref(e.data()).addr()) {
+      continue;
+    }
     match e.data() {
       ExprData::Const(id, _, _) => {
-        if id.addr == *addr {
+        if addrs.contains(&id.addr) {
           return true;
         }
       },
@@ -1110,7 +1211,7 @@ pub fn expr_mentions_addr<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
         stack.push(body);
       },
       ExprData::Prj(id, _, val, _) => {
-        if id.addr == *addr {
+        if addrs.contains(&id.addr) {
           return true;
         }
         stack.push(val);
@@ -1125,12 +1226,28 @@ pub fn expr_mentions_addr<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
   false
 }
 
-/// Check whether an expression mentions any constant from a set of addresses.
-pub fn expr_mentions_any_addr<M: KernelMode>(
-  e: &KExpr<M>,
-  addrs: &[Address],
-) -> bool {
-  addrs.iter().any(|a| expr_mentions_addr(e, a))
+/// Borrow the head of an application spine without collecting arguments or
+/// cloning any Arcs. Does not reduce the expression.
+pub(crate) fn app_head<M: KernelMode>(mut e: &KExpr<M>) -> &KExpr<M> {
+  while let ExprData::App(f, _, _) = e.data() {
+    e = f;
+  }
+  e
+}
+
+/// Borrow an application head and its arguments in source application order.
+/// The caller-held root owns every returned node; nothing is borrowed from a
+/// mutable interner/cache. Short spines need neither allocation nor Arc clones.
+pub(crate) fn borrow_app_spine<M: KernelMode>(
+  mut e: &KExpr<M>,
+) -> (&KExpr<M>, smallvec::SmallVec<[&KExpr<M>; 8]>) {
+  let mut args = smallvec::SmallVec::new();
+  while let ExprData::App(f, a, _) = e.data() {
+    args.push(a);
+    e = f;
+  }
+  args.reverse();
+  (e, args)
 }
 
 /// Collect the application spine: `App(App(f, a1), a2)` → `(f, [a1, a2])`.
@@ -1156,40 +1273,96 @@ pub fn collect_app_spine<M: KernelMode>(
     return (e.clone(), Vec::new());
   }
   let mut args = Vec::with_capacity(count);
-  let mut cur = e.clone();
+  let mut cur = e;
   while let ExprData::App(f, a, _) = cur.data() {
     args.push(a.clone());
-    cur = f.clone();
+    cur = f;
   }
   args.reverse();
-  (cur, args)
+  (cur.clone(), args)
 }
 
-fn hot_expr_shape<M: KernelMode>(e: &KExpr<M>) -> String {
-  let (head, args) = collect_app_spine(e);
-  let head = match head.data() {
-    ExprData::Var(i, _, _) => format!("#{i}"),
-    ExprData::FVar(id, _, _) => format!("{id}"),
-    ExprData::Sort(u, _) => format!("Sort({u})"),
-    ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
-    ExprData::App(..) => "app".to_string(),
-    ExprData::Lam(..) => "lam".to_string(),
-    ExprData::All(..) => "forall".to_string(),
-    ExprData::Let(..) => "let".to_string(),
-    ExprData::Prj(id, field, _, _) => format!("Prj({id}.{field})"),
-    ExprData::Nat(v, _, _) => format!("Nat({})", v.0),
-    ExprData::Str(v, _, _) => format!("Str(len={})", v.len()),
-  };
-  format!("{head}/{} lbr={} @{}", args.len(), e.lbr(), short_addr(e.addr()))
+#[cfg(test)]
+mod spine_tests;
+
+fn write_hot_expr_shape<M: KernelMode>(
+  out: &mut impl std::fmt::Write,
+  e: &KExpr<M>,
+) -> std::fmt::Result {
+  let mut head = e;
+  let mut arity = 0usize;
+  while let ExprData::App(f, _, _) = head.data() {
+    head = f;
+    arity += 1;
+  }
+  match head.data() {
+    ExprData::Var(i, _, _) => write!(out, "#{i}"),
+    ExprData::FVar(id, _, _) => write!(out, "{id}"),
+    // Do not render an arbitrarily large universe DAG or Nat literal.
+    ExprData::Sort(u, _) => write!(out, "Sort(uid{})", u.addr()),
+    ExprData::Const(id, us, _) => {
+      write_hot_id(out, id)?;
+      write!(out, ".{{{}}}", us.len())
+    },
+    ExprData::App(..) => unreachable!("peeled all applications"),
+    ExprData::Lam(..) => write!(out, "lam"),
+    ExprData::All(..) => write!(out, "forall"),
+    ExprData::Let(..) => write!(out, "let"),
+    ExprData::Prj(id, field, _, _) => {
+      write!(out, "Prj(")?;
+      write_hot_id(out, id)?;
+      write!(out, ".{field})")
+    },
+    ExprData::Nat(..) => write!(out, "Nat(uid{})", head.addr()),
+    ExprData::Str(v, _, _) => write!(out, "Str(len={})", v.len()),
+  }?;
+  write!(out, "/{arity} lbr={} @uid{}", e.lbr(), e.addr())
 }
 
-fn short_addr(addr: &Addr) -> String {
-  format!("uid{addr}")
+fn write_hot_id<M: KernelMode>(
+  out: &mut impl std::fmt::Write,
+  id: &KId<M>,
+) -> std::fmt::Result {
+  // Name::Display builds its whole `pretty()` string before passing it to
+  // the writer. A bounded output writer alone cannot limit that temporary.
+  // Check at most 64 borrowed components/256 bytes before invoking Display;
+  // oversized names fall back to their fixed-size declaration address.
+  let compact = M::meta_get(&id.name).is_none_or(|name| {
+    use ix_common::env::NameData;
+    let mut name = name;
+    let mut bytes = 256usize;
+    for _ in 0..64 {
+      let (parent, cost) = match name.as_data() {
+        NameData::Anonymous(_) => return true,
+        NameData::Str(parent, s, _) => (parent, s.len().saturating_add(1)),
+        NameData::Num(parent, n, _) => {
+          if n.to_u64().is_none() {
+            return false;
+          }
+          (parent, 21)
+        },
+      };
+      let Some(remaining) = bytes.checked_sub(cost) else { return false };
+      bytes = remaining;
+      name = parent;
+    }
+    false
+  });
+  if compact { write!(out, "{id}") } else { write!(out, "#{}", id.addr.hex()) }
 }
 
-fn short_ctx_addr(addr: &CtxAddr) -> String {
-  addr.to_hex().chars().take(12).collect()
+fn write_hot_context(
+  out: &mut impl std::fmt::Write,
+  context: Option<(CtxAddr, u64)>,
+) -> std::fmt::Result {
+  if let Some((ctx, depth)) = context {
+    write!(out, " ctx={} depth={depth}", &ctx.to_hex()[..12])?;
+  }
+  Ok(())
 }
+
+#[cfg(test)]
+mod scan_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1203,6 +1376,24 @@ mod tests {
   fn new_tc() -> TypeChecker<'static, Meta> {
     let env = Box::leak(Box::new(KEnv::<Meta>::new()));
     TypeChecker::new(env)
+  }
+
+  #[test]
+  fn hot_miss_labels_do_not_pretty_print_unbounded_names() {
+    use ix_common::env::Name;
+    for name in [
+      Name::str(Name::anon(), "λ".repeat(100_000)),
+      (0..128).fold(Name::anon(), |n, _| Name::str(n, "x".to_owned())),
+    ] {
+      let id = KId::<Meta>::new(Address::hash(b"large-name"), name);
+      let mut out = String::new();
+      write_hot_id(&mut out, &id).unwrap();
+      assert_eq!(out, format!("#{}", id.addr.hex()));
+    }
+    let id = mk_id("List.below");
+    let mut out = String::new();
+    write_hot_id(&mut out, &id).unwrap();
+    assert_eq!(out, format!("{id}"));
   }
 
   // ---- Context push/pop ----
@@ -1527,6 +1718,25 @@ mod tests {
   }
 
   // ---- tick / fuel ----
+
+  #[test]
+  fn configured_fuel_initializes_and_resets_checks() {
+    assert_eq!(MAX_REC_FUEL, 100_000_000);
+    let expected = crate::env_var("IX_MAX_REC_FUEL")
+      .ok()
+      .and_then(|s| s.parse::<u64>().ok())
+      .unwrap_or(MAX_REC_FUEL);
+    assert_eq!(max_rec_fuel(), expected);
+
+    let mut tc = new_tc();
+    assert_eq!(tc.rec_fuel, expected);
+    tc.rec_fuel = 0;
+    tc.reset();
+    assert_eq!(tc.rec_fuel, expected);
+    tc.rec_fuel = 0;
+    tc.finish_constant_accounting();
+    assert_eq!(tc.rec_fuel, expected);
+  }
 
   #[test]
   fn tick_consumes_fuel() {

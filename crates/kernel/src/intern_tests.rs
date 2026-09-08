@@ -226,6 +226,174 @@ fn interning_matches_reference_in_both_modes_and_seeded_tables() {
   differential::<Anon>();
 }
 
+fn smart_constructor_differential<M: KernelMode>() {
+  let mut old = KEnv::<M>::new();
+  let mut new = KEnv::<M>::new();
+  // Reusing old inputs after clearing must not reuse stale canonical keys.
+  let inputs = fixtures::<M>("input");
+  for seeded in [false, true, false] {
+    old.clear_releasing_memory();
+    new.clear_releasing_memory();
+    if seeded {
+      for seed in fixtures::<M>("first") {
+        old.intern.intern_expr_reference(seed.clone());
+        new.intern.intern_expr(seed);
+      }
+    }
+    for pair in inputs.windows(2) {
+      let (a, b) = (&pair[0], &pair[1]);
+      // Seed parent occurrences too: their metadata must win on a hit,
+      // including when the new constructor supplies different binder info.
+      if seeded {
+        for root in [
+          KExpr::app_mdata(
+            a.clone(),
+            b.clone(),
+            M::meta_field(metadata("parent")),
+          ),
+          KExpr::all_mdata(
+            M::meta_field(name("parent")),
+            M::meta_field(BinderInfo::Implicit),
+            a.clone(),
+            b.clone(),
+            M::meta_field(metadata("parent")),
+          ),
+        ] {
+          old.intern.intern_expr_reference(root.clone());
+          new.intern.intern_expr(root);
+        }
+      }
+      for _ in 0..2 {
+        let expected =
+          old.intern.intern_expr_reference(KExpr::app(a.clone(), b.clone()));
+        let actual = new.intern.intern_app(a, b);
+        assert_same_expr(&actual, &expected);
+        assert!(new.intern.intern_expr(actual.clone()).ptr_eq(&actual));
+        let n = M::meta_field(name("second"));
+        let bi = M::meta_field(BinderInfo::InstImplicit);
+        let expected = old.intern.intern_expr_reference(KExpr::all(
+          n.clone(),
+          bi.clone(),
+          a.clone(),
+          b.clone(),
+        ));
+        let actual = new.intern.intern_all(n, bi, a, b);
+        assert_same_expr(&actual, &expected);
+      }
+    }
+    assert_eq!(new.intern.exprs.len(), old.intern.exprs.len());
+    assert_eq!(new.intern.univs.len(), old.intern.univs.len());
+  }
+}
+
+#[test]
+fn smart_constructors_match_reference_with_metadata_and_resets() {
+  smart_constructor_differential::<Meta>();
+  smart_constructor_differential::<Anon>();
+}
+
+#[test]
+fn smart_constructor_hit_does_not_invoke_node_factory() {
+  let mut intern = InternTable::<Anon>::new();
+  let a = intern.intern_expr(KExpr::var(0, ()));
+  let b = intern.intern_expr(KExpr::var(1, ()));
+  let key = ExprKey::App(*a.addr(), *b.addr());
+  let app = intern.intern_expr_with(key.clone(), || KExpr::app(a, b));
+  let hit = intern.intern_expr_with(key, || panic!("allocated on hit"));
+  assert!(app.ptr_eq(&hit));
+  assert!(intern.canon_exprs.contains(app.addr()));
+}
+
+#[test]
+fn smart_constructor_canonicalizes_shared_noncanonical_children_once() {
+  let mut intern = InternTable::<Anon>::new();
+  intern.intern_expr(KExpr::sort(KUniv::zero()));
+  let input = expr_dag(KExpr::sort(KUniv::zero()), 60);
+  take_op_counts();
+  let app = intern.intern_app(&input, &input);
+  assert_eq!(take_op_counts().intern_nodes, 124);
+  let ExprData::App(a, b, _) = app.data() else { panic!("app") };
+  assert!(a.ptr_eq(b));
+  assert!(!intern.canon_exprs.contains(input.addr()));
+}
+
+#[test]
+fn smart_constructor_preserves_same_uid_occurrence_metadata() {
+  let a = KExpr::<Meta>::var(0, name("a"));
+  let mut info = a.info().clone();
+  info.mdata = metadata("b");
+  let b = KExpr::new(ExprData::Var(0, name("b"), info));
+  let expected =
+    InternTable::new().intern_expr_reference(KExpr::app(a.clone(), b.clone()));
+  let actual = InternTable::new().intern_app(&a, &b);
+  assert_same_expr(&actual, &expected);
+  let ExprData::App(_, rhs, _) = actual.data() else { panic!("app") };
+  assert!(rhs.ptr_eq(&b));
+}
+
+#[test]
+fn constant_level_buffer_preserves_unchanged_prefix_and_decorations() {
+  for first_change in 0..=4 {
+    let mut old = InternTable::<Meta>::new();
+    let mut new = InternTable::<Meta>::new();
+    let mut levels = Vec::new();
+    for i in 0..4 {
+      let seed = KUniv::param(i, name("first"));
+      old.intern_univ_reference(seed.clone());
+      new.intern_univ(seed.clone());
+      levels.push(if i < first_change {
+        seed
+      } else {
+        KUniv::param(i, name("second"))
+      });
+    }
+    let root = KExpr::cnst_full(
+      KId::new(Address::hash(b"C"), name("C")),
+      levels.into(),
+      metadata("constant"),
+      Some(UnivDecor::Const(vec![Univ::zero(); 4].into())),
+    );
+    let actual = new.intern_expr(root.clone());
+    let expected = old.intern_expr_reference(root.clone());
+    assert_same_expr(&actual, &expected);
+    assert_eq!(actual.ptr_eq(&root), first_change == 4);
+  }
+}
+
+#[test]
+#[ignore = "manual release benchmark; no wall-clock assertions"]
+fn benchmark_smart_constructors() {
+  use std::{hint::black_box, time::Instant};
+  for hits in [true, false] {
+    let count: usize = if hits { 200_000 } else { 30_000 };
+    for smart in [false, true, true, false] {
+      let mut table = InternTable::<Anon>::new();
+      let head = table.intern_expr(KExpr::var(0, ()));
+      let inputs: Vec<_> = (0..if hits { 1 } else { count })
+        .map(|i| {
+          table.intern_expr(KExpr::var(u64::try_from(i).unwrap() + 1, ()))
+        })
+        .collect();
+      if hits {
+        table.intern_app(&head, &inputs[0]);
+      }
+      let start = Instant::now();
+      for i in 0..count {
+        let arg = inputs[if hits { 0 } else { i }].clone();
+        black_box(if smart {
+          table.intern_app(&head, &arg)
+        } else {
+          table.intern_expr(KExpr::app(head.clone(), arg))
+        });
+      }
+      eprintln!(
+        "smart={smart} hits={hits} count={count} elapsed={:?}",
+        start.elapsed()
+      );
+    }
+  }
+}
+
 #[test]
 fn shared_expression_dag_visits_edges_not_expanded_tree() {
   let depth = 60;
@@ -329,6 +497,10 @@ fn input_pointer_keys_preserve_same_uid_spelling_twins() {
     old.intern_univ_reference(KUniv::zero());
     new.intern_univ(KUniv::zero());
     let expected = old.intern_expr_reference(root.clone());
+    let mut smart = InternTable::new();
+    smart.intern_univ(KUniv::zero());
+    let ExprData::App(f, a, _) = root.data() else { panic!("app") };
+    assert_same_expr(&smart.intern_app(f, a), &expected);
     let result = new.intern_expr(root);
     assert_same_expr(&result, &expected);
     let ExprData::App(a, rest, _) = result.data() else { panic!("app") };

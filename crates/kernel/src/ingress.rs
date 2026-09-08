@@ -3102,6 +3102,47 @@ fn lean_const_to_kconst(
   }
 }
 
+/// Lean emits original recursors in `.all` declaration order, followed by
+/// nested auxiliaries named `<all[0]>.rec_N` in numeric source-walk order.
+/// This is loader layout metadata, not evidence that a recursor is valid:
+/// the kernel still checks every peer's full header, type, and rules.
+#[cfg(not(target_arch = "riscv64"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum LeanRecursorOrder {
+  Original(usize),
+  Nested(usize),
+  Unrecognized,
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+fn lean_recursor_order(
+  name: &Name,
+  block_name: &Name,
+  original_positions: &FxHashMap<Name, usize>,
+) -> LeanRecursorOrder {
+  use ix_common::env::NameData;
+
+  let NameData::Str(parent, suffix, _) = name.as_data() else {
+    return LeanRecursorOrder::Unrecognized;
+  };
+  if suffix == "rec" {
+    return original_positions
+      .get(parent)
+      .map_or(LeanRecursorOrder::Unrecognized, |&i| {
+        LeanRecursorOrder::Original(i)
+      });
+  }
+  if parent == block_name
+    && let Some(index) = suffix.strip_prefix("rec_")
+    && !index.starts_with('0')
+    && index.bytes().all(|b| b.is_ascii_digit())
+    && let Ok(index) = index.parse::<usize>()
+  {
+    return LeanRecursorOrder::Nested(index);
+  }
+  LeanRecursorOrder::Unrecognized
+}
+
 /// Direct ingress: build a `KEnv<Meta>` from a Lean `Env` without going
 /// through Ixon compilation. Used by the `kernel-lean-roundtrip`
 /// diagnostic test and by `compile_env` to produce the `orig_kenv`
@@ -3188,7 +3229,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   //   the block, rule RHS construction returns None and the stored
   //   rules can't be verified).
   //
-  // **Order matters for inductives.** `discover_block_inductives`
+  // **Order matters for inductives and recursors.** `discover_block_inductives`
   // filters the block's member list down to `KConst::Indc` entries
   // and the resulting order drives `build_flat_block` → `build_rec_type`
   // → motive-binder emission in `generate_block_recursors`. That
@@ -3211,9 +3252,9 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // `lean_env` directly to push each constant's `self_kid` gave
   // random (FxHashMap iteration) order; we now seed each block with
   // its `all` list the first time any member is observed, then
-  // append ctors and recursors in a second pass. Ctors/recursors
-  // land at the tail — the block's inductive-prefix carries the
-  // declaration order that `discover_block_inductives` consumes.
+  // append ctors and source-ordered recursors in a second pass. The
+  // inductive and recursor subsequences must align positionally with the
+  // flat block (original `.all` members, then source-walk nested auxes).
   //
   // `ixon_ingress` builds an analogous list for `kctx.kenv`, but
   // there the ordering comes from `sort_consts`' equivalence-class
@@ -3232,7 +3273,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   };
 
   // Phase A: seed each block's initial member list from the constant's
-  // `all` list (canonical order), exactly once per block. Constants
+  // `all` list (source order), exactly once per block. Constants
   // without `all` (axioms, quotients, ctors) seed a singleton block
   // under their own KId.
   let t = Instant::now();
@@ -3255,12 +3296,12 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
     );
   }
 
-  // Phase B: append constructors (for each inductive in the block) and
-  // recursors (which aren't in `all` — `all` lists inductives even for
-  // RecInfo). Order within ctors/recs doesn't affect kernel correctness
-  // because consumer lookups go by KId (ctors) or major-inductive match
-  // (`find_peer_recursors` for recs).
+  // Phase B: append constructors and collect recursors separately. `.all`
+  // lists inductives even for RecInfo; environment iteration is not the
+  // recursor order required by positional peer matching in the kernel.
   let t = Instant::now();
+  let mut recursors: FxHashMap<KId<Meta>, Vec<KId<Meta>>> =
+    FxHashMap::default();
   for (name, ci) in lean_env.iter() {
     match &*ci {
       LeanCI::InductInfo(v) => {
@@ -3274,13 +3315,28 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
       LeanCI::RecInfo(_) => {
         let block_id = block_rep(name, &ci);
         let self_kid = KId::new(leon_addr_of(name, &n2a), name.clone());
-        kenv.blocks.entry(block_id).or_default().push(self_kid);
+        recursors.entry(block_id).or_default().push(self_kid);
       },
       // Inductives and Defns/Thms/Opaques are already in the Phase-A
       // seed via their `all` list; axioms, quotients, and ctors are
       // placed as singletons (the latter also get appended above).
       _ => {},
     }
+  }
+  for (block_id, mut peers) in recursors {
+    let members = kenv.blocks.entry(block_id.clone()).or_default();
+    let original_positions: FxHashMap<Name, usize> = members
+      .iter()
+      .filter(|id| matches!(kenv.consts.get(id), Some(KConst::Indc { .. })))
+      .enumerate()
+      .map(|(i, id)| (id.name.clone(), i))
+      .collect();
+    peers.sort_by_cached_key(|id| {
+      lean_recursor_order(&id.name, &block_id.name, &original_positions)
+    });
+    // Keep unrecognized names too. Dropping malformed/extra peers here
+    // could hide a recursor-count or type mismatch from kernel validation.
+    members.extend(peers);
   }
   if !quiet {
     log::info!(
@@ -4815,6 +4871,62 @@ mod tests {
 
   fn n_lit(x: u64) -> Nat {
     Nat::from(x)
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn lean_recursor_layout_uses_source_then_numeric_order() {
+    // Layout-only test: the source mutual may split into structural SCCs,
+    // but direct ingress must keep all three originals in `.all` order.
+    let head = mk_name("Z");
+    let positions = FxHashMap::from_iter([
+      (head.clone(), 0),
+      (mk_name("A"), 1),
+      (mk_name("C"), 2),
+    ]);
+    let mut peers =
+      ["Z.rec_10", "A.rec", "Z.rec_2", "C.rec", "Z.rec_1", "Z.rec"]
+        .map(mk_name);
+    peers
+      .sort_by_cached_key(|name| lean_recursor_order(name, &head, &positions));
+    assert_eq!(
+      peers.map(|name| name.pretty()),
+      ["Z.rec", "A.rec", "C.rec", "Z.rec_1", "Z.rec_2", "Z.rec_10"],
+    );
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn lean_recursor_layout_does_not_recognize_foreign_or_malformed_names() {
+    let head = mk_name("Z");
+    let positions =
+      FxHashMap::from_iter([(head.clone(), 0), (mk_name("A"), 1)]);
+    for name in [
+      "Foreign.rec",
+      "Foreign.rec_1",
+      "A.rec_1",
+      "Z.rec_0",
+      "Z.rec_01",
+      "Z.rec_",
+      "Z.rec_+1",
+      "Z.rec_-1",
+      "Z.rec_١",
+      "Z.rec_9999999999999999999999999999999999999999",
+    ] {
+      assert_eq!(
+        lean_recursor_order(&mk_name(name), &head, &positions),
+        LeanRecursorOrder::Unrecognized,
+        "{name} must not claim a valid source slot",
+      );
+    }
+    assert_eq!(
+      lean_recursor_order(
+        &Name::num(head.clone(), n_lit(1)),
+        &head,
+        &positions
+      ),
+      LeanRecursorOrder::Unrecognized,
+    );
   }
 
   // ---- lean_level_to_kuniv ----

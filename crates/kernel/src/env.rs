@@ -7,11 +7,13 @@
 //! and move parallelism above the kernel state boundary.
 
 use std::collections::BTreeSet;
+use std::collections::hash_map::Entry;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::OnceCell;
 
 use ix_common::address::Address;
+use ix_common::env::{BinderInfo, Name};
 
 use super::constant::{KConst, RecRule};
 use super::error::TcError;
@@ -21,6 +23,9 @@ use super::level::KUniv;
 use super::mode::KernelMode;
 use super::perf::PerfCounters;
 use super::primitive::Primitives;
+
+mod scratch;
+use scratch::ScratchMap;
 
 /// Canonical identity of an expression or universe node: the
 /// intern-assigned uid. Plain `u64`, allocated from a process-global
@@ -109,15 +114,15 @@ pub struct InternTable<M: KernelMode> {
   /// meaningful.
   pub(crate) canon_exprs: FxHashSet<Addr>,
   pub(crate) canon_univs: FxHashSet<Addr>,
-  /// Scratch buffer for `subst` / `simul_subst` per-call memoization,
-  /// keyed by `(addr, depth)`. Cleared on entry. Owned here so the
-  /// allocation persists across calls.
-  pub(crate) subst_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
+  /// Scratch buffer for `subst` / `simul_subst` / binder opening and closing,
+  /// keyed by `(addr, depth)`. Cleared on entry; retained allocation adapts
+  /// to recent occupancy without sharing logical entries between calls.
+  pub(crate) subst_scratch: ScratchMap<(Addr, u64), KExpr<M>>,
   /// Scratch buffer for `lift` per-call memoization, keyed by
   /// `(addr, cutoff)`. Cleared on entry. Separate from `subst_scratch`
   /// because `lift` is invoked from inside `subst_cached`, and the two
   /// caches have different semantics, so they must not share entries.
-  pub(crate) lift_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
+  pub(crate) lift_scratch: ScratchMap<(Addr, u64), KExpr<M>>,
   /// Pool of scratch maps for `clo_subst` per-call memoization, keyed by
   /// `(addr, depth)`. A pool rather than a single buffer because
   /// `clo_subst` re-enters itself through `clo_readback` of environment
@@ -198,8 +203,8 @@ impl<M: KernelMode> InternTable<M> {
       exprs: FxHashMap::default(),
       canon_exprs: FxHashSet::default(),
       canon_univs: FxHashSet::default(),
-      subst_scratch: FxHashMap::default(),
-      lift_scratch: FxHashMap::default(),
+      subst_scratch: ScratchMap::default(),
+      lift_scratch: ScratchMap::default(),
       clo_scratch_pool: Vec::new(),
     }
   }
@@ -216,6 +221,56 @@ impl<M: KernelMode> InternTable<M> {
   #[inline]
   pub fn try_get_expr(&self, key: &ExprKey) -> Option<KExpr<M>> {
     self.exprs.get(key).cloned()
+  }
+
+  /// Construct an application only if its canonical parent is absent.
+  /// Equivalent to `intern_expr(KExpr::app(f, a))`, including child traversal
+  /// order and first-insert-wins metadata. Inputs need not be canonical.
+  pub(crate) fn intern_app(&mut self, f: &KExpr<M>, a: &KExpr<M>) -> KExpr<M> {
+    crate::profile::bump_intern_nodes();
+    let mut memo = InternMemo::default();
+    // Keep both input roots alive until the call-local pointer memo is gone.
+    let cf = self.intern_expr_cached(f, &mut memo);
+    let ca = self.intern_expr_cached(a, &mut memo);
+    self.intern_expr_with(ExprKey::App(*cf.addr(), *ca.addr()), || {
+      KExpr::app(cf, ca)
+    })
+  }
+
+  /// Allocate-on-miss counterpart of `intern_expr(KExpr::all(...))`.
+  pub(crate) fn intern_all(
+    &mut self,
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    ty: &KExpr<M>,
+    body: &KExpr<M>,
+  ) -> KExpr<M> {
+    crate::profile::bump_intern_nodes();
+    let mut memo = InternMemo::default();
+    let ct = self.intern_expr_cached(ty, &mut memo);
+    let cb = self.intern_expr_cached(body, &mut memo);
+    self.intern_expr_with(ExprKey::All(*ct.addr(), *cb.addr()), || {
+      KExpr::all(name, bi, ct, cb)
+    })
+  }
+
+  /// Private constructor gate: `key` MUST describe `make()` exactly, with
+  /// children already canonical in this table. Never expose arbitrary keys
+  /// to callers. Entry lookup avoids a second parent probe on misses.
+  fn intern_expr_with(
+    &mut self,
+    key: ExprKey,
+    make: impl FnOnce() -> KExpr<M>,
+  ) -> KExpr<M> {
+    match self.exprs.entry(key) {
+      Entry::Occupied(entry) => entry.get().clone(),
+      Entry::Vacant(entry) => {
+        let e = make();
+        debug_assert_eq!(entry.key(), &expr_key(&e));
+        self.canon_exprs.insert(*e.addr());
+        entry.insert(e).clone()
+      },
+    }
   }
 
   /// Intern a universe: returns the canonical value for its structural
@@ -360,17 +415,30 @@ impl<M: KernelMode> InternTable<M> {
         }
       },
       ExprData::Const(id, us, _) => {
-        let cus: Box<[KUniv<M>]> =
-          us.iter().map(|un| self.intern_univ_cached(un, memo)).collect();
-        if cus.iter().zip(us.iter()).all(|(a, b)| a.ptr_eq(b)) {
-          input.clone()
-        } else {
+        // Most generated constants already have canonical levels. Delay the
+        // replacement buffer until the first changed child, without changing
+        // traversal order or re-interning the unchanged prefix.
+        let mut changed: Option<Vec<KUniv<M>>> = None;
+        for (i, un) in us.iter().enumerate() {
+          let cu = self.intern_univ_cached(un, memo);
+          if let Some(cus) = &mut changed {
+            cus.push(cu);
+          } else if !cu.ptr_eq(un) {
+            let mut cus = Vec::with_capacity(us.len());
+            cus.extend(us[..i].iter().cloned());
+            cus.push(cu);
+            changed = Some(cus);
+          }
+        }
+        if let Some(cus) = changed {
           KExpr::cnst_full(
             id.clone(),
-            cus,
+            cus.into_boxed_slice(),
             input.mdata().clone(),
             input.univ_decor().clone(),
           )
+        } else {
+          input.clone()
         }
       },
       ExprData::App(f, a, _) => {
@@ -501,6 +569,7 @@ pub struct KEnvCacheSizes {
   pub unfold: usize,
   pub ingress: usize,
   pub is_prop: usize,
+  pub decl_summary: usize,
   pub is_rec: usize,
   pub recursor: usize,
   pub rec_majors: usize,
@@ -531,6 +600,7 @@ impl KEnvCacheSizes {
       self.unfold,
       self.ingress,
       self.is_prop,
+      self.decl_summary,
       self.is_rec,
       self.recursor,
       self.rec_majors,
@@ -547,7 +617,7 @@ impl std::fmt::Display for KEnvCacheSizes {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(
       f,
-      "consts={} intern_exprs={} intern_univs={} whnf={}/{}/{}/{}/{} infer={}/{} def_eq={}/{}/{} unfold={} ingress={} is_prop={}",
+      "consts={} intern_exprs={} intern_univs={} whnf={}/{}/{}/{}/{} infer={}/{} def_eq={}/{}/{} unfold={} ingress={} is_prop={} decl_summary={}",
       self.consts,
       self.intern_exprs,
       self.intern_univs,
@@ -564,6 +634,7 @@ impl std::fmt::Display for KEnvCacheSizes {
       self.unfold,
       self.ingress,
       self.is_prop,
+      self.decl_summary,
     )
   }
 }
@@ -671,6 +742,14 @@ pub struct KEnv<M: KernelMode> {
   /// is the dominant cost on mathlib proof-heavy blocks, where the same
   /// propositions are tested for equality thousands of times.
   pub is_prop_cache: FxHashMap<(Addr, CtxAddr), bool>,
+  /// Conservative proof-eligibility summaries keyed by the exact Const
+  /// expression UID (including its instantiated universes). Types in this
+  /// declaration environment are the same assumptions ordinary inference
+  /// consults; no argument or declaration validation is replaced by a hit.
+  /// Clear on environment resets and declaration replacement, including
+  /// replacements of dependencies consulted while constructing a summary.
+  pub(crate) decl_summary_cache:
+    FxHashMap<Addr, super::infer::summary::DeclarationSummary>,
   /// Computed `is_rec` per inductive, keyed by content address
   pub is_rec_cache: FxHashMap<Address, bool>,
   /// Generated recursors, keyed by inductive Muts block id.
@@ -764,6 +843,7 @@ impl<M: KernelMode> KEnv<M> {
       nat_succ_stuck: FxHashSet::default(),
       ingress_cache: FxHashMap::default(),
       is_prop_cache: FxHashMap::default(),
+      decl_summary_cache: FxHashMap::default(),
       is_rec_cache: FxHashMap::default(),
       recursor_cache: FxHashMap::default(),
       recursor_aux_order,
@@ -824,7 +904,9 @@ impl<M: KernelMode> KEnv<M> {
         id.addr.hex()
       );
     }
-    self.consts.insert(id, c);
+    if self.consts.insert(id, c).is_some() {
+      self.decl_summary_cache.clear();
+    }
   }
 
   pub fn len(&self) -> usize {
@@ -884,6 +966,7 @@ impl<M: KernelMode> KEnv<M> {
     self.nat_succ_stuck.clear();
     self.ingress_cache.clear();
     self.is_prop_cache.clear();
+    self.decl_summary_cache.clear();
     self.recursor_cache.clear();
     self.rec_majors_cache.clear();
     self.block_peer_agreement_cache.clear();
@@ -914,6 +997,7 @@ impl<M: KernelMode> KEnv<M> {
       unfold: self.unfold_cache.len(),
       ingress: self.ingress_cache.len(),
       is_prop: self.is_prop_cache.len(),
+      decl_summary: self.decl_summary_cache.len(),
       is_rec: self.is_rec_cache.len(),
       recursor: self.recursor_cache.len(),
       rec_majors: self.rec_majors_cache.len(),
@@ -948,12 +1032,67 @@ impl<M: KernelMode> KEnv<M> {
     self.nat_succ_stuck = FxHashSet::default();
     self.ingress_cache = FxHashMap::default();
     self.is_prop_cache = FxHashMap::default();
+    self.decl_summary_cache = FxHashMap::default();
     self.recursor_cache = FxHashMap::default();
     self.rec_majors_cache = FxHashMap::default();
     self.block_peer_agreement_cache = FxHashSet::default();
     self.block_check_results = FxHashMap::default();
     self.prim_family_cache = FxHashMap::default();
     self.next_fvar_id = 0;
+  }
+
+  /// Clear the same logical state as [`Self::clear`], retaining only modest
+  /// backing tables for the next scheduled check.
+  ///
+  /// `max_capacity` is an entry-capacity bound on EACH cleared collection,
+  /// not a byte budget for the environment or process. Oversized allocations
+  /// are discarded, not shrunk/reallocated. Expression references, canonical
+  /// uid sets, scope-sensitive memo entries and block results are all cleared
+  /// before free-variable ids can be reused. The existing address-keyed
+  /// `is_rec_cache`, profile sink and configuration survive just as they do
+  /// with `clear` and `clear_releasing_memory`.
+  pub fn clear_with_capacity_limit(&mut self, max_capacity: usize) {
+    // Keep logical reset centralized: capacity reuse must never accidentally
+    // retain an entry when the ordinary reset gains another cache.
+    self.clear();
+    macro_rules! release_oversized {
+      ($($table:expr),+ $(,)?) => {
+        $(if $table.capacity() > max_capacity {
+          $table = Default::default();
+        })+
+      };
+    }
+    release_oversized!(
+      self.consts,
+      self.blocks,
+      self.intern.univs,
+      self.intern.exprs,
+      self.intern.canon_exprs,
+      self.intern.canon_univs,
+      self.intern.subst_scratch,
+      self.intern.lift_scratch,
+      self.intern.clo_scratch_pool,
+      self.whnf_cache,
+      self.whnf_no_delta_cache,
+      self.whnf_no_delta_cheap_cache,
+      self.whnf_core_cache,
+      self.whnf_core_cheap_cache,
+      self.infer_cache,
+      self.infer_only_cache,
+      self.def_eq_cache,
+      self.def_eq_cheap_cache,
+      self.def_eq_failure,
+      self.unfold_cache,
+      self.nat_succ_stuck,
+      self.ingress_cache,
+      self.is_prop_cache,
+      self.decl_summary_cache,
+      self.recursor_cache,
+      self.rec_majors_cache,
+      self.block_peer_agreement_cache,
+      self.block_check_results,
+      self.prim_family_cache,
+    );
   }
 
   /// Clear only the reduction-memo caches (whnf / infer / def-eq / unfold /
@@ -966,6 +1105,7 @@ impl<M: KernelMode> KEnv<M> {
   /// the in-circuit cost, which has no cross-constant memoization. Clearing a
   /// pure memo never affects correctness — only performance.
   pub fn clear_reduction_caches(&mut self) {
+    self.decl_summary_cache.clear();
     self.whnf_cache.clear();
     self.whnf_no_delta_cache.clear();
     self.whnf_no_delta_cheap_cache.clear();
@@ -1044,6 +1184,89 @@ mod tests {
   fn get_missing_returns_none() {
     let env = KEnv::<Anon>::new();
     assert!(env.get(&mk_id("missing")).is_none());
+  }
+
+  #[test]
+  fn bounded_clear_reuses_small_tables_but_not_logical_entries() {
+    let mut env = KEnv::<Anon>::new();
+    let id = mk_id("old");
+    let ctx = blake3::hash(b"old context");
+    let old = env.intern.intern_expr(KExpr::var(0, ()));
+    let key = (old.hash_key(), ctx);
+    env.insert(id.clone(), mk_axio("old"));
+    env.blocks.insert(id.clone(), vec![id.clone()]);
+    env.whnf_cache.insert(key, old.clone());
+    env.infer_cache.insert(key, old.clone());
+    env.infer_only_cache.insert(key, old.clone());
+    env.def_eq_cache.insert((key.0, key.0, ctx), true);
+    env.block_check_results.insert(id.clone(), Ok(()));
+    env
+      .intern
+      .subst_scratch
+      .restore_after_call(FxHashMap::from_iter([((key.0, 0), old.clone())]));
+    env
+      .intern
+      .lift_scratch
+      .restore_after_call(FxHashMap::from_iter([((key.0, 0), old.clone())]));
+    env
+      .intern
+      .clo_scratch_pool
+      .push(FxHashMap::from_iter([((key.0, 0), old.clone())]));
+    assert_eq!(env.fresh_fvar_id(), FVarId(0));
+    assert_eq!(env.fresh_fvar_id(), FVarId(1));
+    let capacities = (
+      env.consts.capacity(),
+      env.intern.exprs.capacity(),
+      env.whnf_cache.capacity(),
+    );
+
+    env.clear_with_capacity_limit(128);
+
+    assert_eq!(env.cache_sizes().max(), 0);
+    assert!(env.intern.canon_exprs.is_empty());
+    assert!(env.intern.canon_univs.is_empty());
+    assert!(env.intern.subst_scratch.is_empty());
+    assert!(env.intern.lift_scratch.is_empty());
+    assert!(env.intern.clo_scratch_pool.is_empty());
+    assert_eq!(env.fresh_fvar_id(), FVarId(0));
+    assert_eq!(
+      capacities,
+      (
+        env.consts.capacity(),
+        env.intern.exprs.capacity(),
+        env.whnf_cache.capacity(),
+      )
+    );
+    let new = env.intern.intern_expr(KExpr::var(0, ()));
+    assert!(!old.ptr_eq(&new), "reset must release the old canonical entry");
+  }
+
+  #[test]
+  fn bounded_clear_discards_oversized_allocations() {
+    let mut env = KEnv::<Anon>::new();
+    env.consts.reserve(256);
+    env.intern.exprs.reserve(256);
+    env.intern.canon_exprs.reserve(256);
+    env.whnf_cache.reserve(256);
+    let mut scratch = env.intern.subst_scratch.take_for_call();
+    scratch.reserve(256);
+    env.intern.subst_scratch.restore_after_call(scratch);
+    env.intern.clo_scratch_pool.reserve(256);
+    env.infer_cache.reserve(16);
+    let small_capacity = env.infer_cache.capacity();
+
+    env.clear_with_capacity_limit(128);
+
+    assert_eq!(env.consts.capacity(), 0);
+    assert_eq!(env.intern.exprs.capacity(), 0);
+    assert_eq!(env.intern.canon_exprs.capacity(), 0);
+    assert_eq!(env.whnf_cache.capacity(), 0);
+    assert_eq!(env.intern.subst_scratch.capacity(), 0);
+    assert_eq!(env.intern.clo_scratch_pool.capacity(), 0);
+    assert_eq!(env.infer_cache.capacity(), small_capacity);
+
+    env.clear_with_capacity_limit(0);
+    assert_eq!(env.infer_cache.capacity(), 0);
   }
 
   #[test]

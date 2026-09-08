@@ -19,9 +19,17 @@ use super::level::{KUniv, univ_eq};
 use super::mode::KernelMode;
 use super::subst::{instantiate_rev, lift};
 use super::tc::{
-  MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, collect_app_spine,
+  MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, app_head, borrow_app_spine,
+  collect_app_spine,
 };
 use super::whnf::PrimFamily;
+
+mod application;
+mod binders;
+mod speculation;
+pub(crate) use speculation::SameHeadBackoff;
+#[cfg(test)]
+mod same_head_tests;
 
 /// When set, trace every `is_def_eq` call where one side's head constant
 /// starts with the prefix in `IX_DEF_EQ_TRACE` (e.g. `IX_DEF_EQ_TRACE=bmod`
@@ -45,6 +53,13 @@ static IX_DEF_EQ_COUNT_LOG: crate::EnvFlag =
 static IX_DEF_EQ_MAX_DUMP: crate::EnvString =
   crate::EnvString::new(|| crate::env_var("IX_DEF_EQ_MAX_DUMP").ok());
 
+/// Print at most 96 cache-missing pairs near the depth guard. Identity and
+/// mode/context fields distinguish a repeated state from a long descent.
+static IX_DEF_EQ_NEAR_GUARD: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_DEF_EQ_NEAR_GUARD").is_ok());
+static NEAR_GUARD_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
+
 static IX_ETA_TRACE: crate::EnvString =
   crate::EnvString::new(|| crate::env_var("IX_ETA_TRACE").ok());
 
@@ -54,11 +69,21 @@ static IX_PROJ_DELTA_TRACE: crate::EnvString =
 static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
-/// Non-Regular same-head comparisons are speculative: a failed attempt must
-/// not be allowed to consume the entire constant-check budget before ordinary
+/// Same-head comparisons are speculative for every reducibility hint: a miss
+/// must not consume the entire constant-check budget before ordinary
 /// delta reduction gets its turn.
 const SAME_HEAD_SPECULATION_ATTEMPT_FUEL: u64 = 4_096;
+/// Regular congruence can profitably compare larger arguments (a Mathlib
+/// regression needs about 76k fuel). Leave headroom without allowing a single
+/// speculative comparison to consume the entire 100M check allowance.
+const SAME_HEAD_REGULAR_ATTEMPT_FUEL: u64 = 131_072;
+/// Only non-Regular probes have a per-constant startup window. Regular
+/// congruence remains useful throughout a check, but each attempt is bounded.
 const SAME_HEAD_SPECULATION_START_FUEL: u64 = 16_384;
+
+/// Try comparing the requested fields before comparing whole records, without
+/// letting an unsuccessful probe starve the ordinary conversion algorithm.
+const PROJECTION_PROBE_FUEL: u64 = 4_096;
 
 /// Step journal (`IX_STEP_TRACE=1`): one `[deq] <fuel> <a8> ~ <b8>` line
 /// per `is_def_eq` entry (plus `[whnf+]` lines in whnf.rs), mirroring the
@@ -215,6 +240,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.env.perf.record_def_eq_miss();
     self.record_hot_def_eq_miss(a, b);
 
+    if *IX_DEF_EQ_NEAR_GUARD
+      && self.def_eq_depth >= MAX_DEF_EQ_DEPTH.saturating_sub(32)
+      && self.debug_label_matches_env()
+      && NEAR_GUARD_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        < 96
+    {
+      eprintln!(
+        "[deq near guard] depth={} local={} ctx={} cheap={} infer_only={} eager={} a={} {} b={} {}",
+        self.def_eq_depth,
+        self.depth(),
+        eq_ctx,
+        self.cheap_recursion_depth,
+        self.infer_only,
+        self.eager_reduce,
+        a.hash_key(),
+        compact_def_eq_expr(a),
+        b.hash_key(),
+        compact_def_eq_expr(b),
+      );
+    }
+
     // Charge recursive fuel only after the O(1) exits above. Large proof
     // terms can perform hundreds of thousands of pointer/equiv/cache hits;
     // those should not consume the same budget as an actual comparison.
@@ -228,6 +274,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       self.def_eq_peak = self.def_eq_depth;
     }
     if self.def_eq_depth > MAX_DEF_EQ_DEPTH {
+      self.dump_guard_stack("def-eq-depth");
       self.def_eq_depth -= 1;
       self.dump_def_eq_max("depth", a, b, None, None);
       return Err(TcError::MaxRecDepth);
@@ -237,6 +284,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.def_eq_depth -= 1;
 
     let ok = result?;
+    // Some optional reducers treat an inner error as a miss. Do not let an
+    // exhausted speculative slice escape that way as a cached inequality.
+    if !ok && self.rec_fuel == 0 {
+      return Err(TcError::MaxRecFuel);
+    }
     if trace_active {
       log::info!(
         "[deq] depth={} -> {} ({})",
@@ -358,187 +410,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(true);
     }
 
-    // Tier 4: iterative lazy delta (lean4lean lazyDeltaReduction)
-    let mut fuel = MAX_WHNF_FUEL;
-    loop {
-      if fuel == 0 {
-        self.dump_def_eq_max("fuel", a, b, Some(&wa), Some(&wb));
-        return Err(TcError::MaxRecDepth);
-      }
-      fuel -= 1;
-
-      // M2: Nat offset reduction at top of loop (lean4lean isDefEqOffset)
-      if let Some(result) = self.try_def_eq_offset(&wa, &wb)? {
-        return Ok(result);
-      }
-
-      // Nat primitive reduction inside lazy delta. Mirrors lean4
-      // (`refs/lean4/src/kernel/type_checker.cpp:978-984`) and lean4lean
-      // (`refs/lean4lean/Lean4Lean/TypeChecker.lean:619`): skip Nat
-      // primitives entirely when either side has a free variable, unless
-      // eagerReduce is active.
-      let nat_ok = (!wa.has_fvars() && !wb.has_fvars()) || self.eager_reduce;
-      let fam_a = self.head_prim_family(&wa);
-      let fam_b = self.head_prim_family(&wb);
-      if nat_ok {
-        if fam_a == PrimFamily::Nat
-          && let Some(wa2) = self.try_reduce_nat(&wa)?
-        {
-          return self.is_def_eq(&wa2, &wb);
-        }
-        if fam_b == PrimFamily::Nat
-          && let Some(wb2) = self.try_reduce_nat(&wb)?
-        {
-          return self.is_def_eq(&wa, &wb2);
-        }
-      }
-
-      // Native reduction inside lazy delta. Reference order is
-      // `is_def_eq_offset → reduce_nat (gated) → reduce_native → delta`
-      // (lean4 `type_checker.cpp:986-991`, lean4lean `TypeChecker.lean:625-628`).
-      // Ix-specific `try_reduce_decidable` runs after native to keep the
-      // reference-aligned segment tight.
-      if fam_a == PrimFamily::Native
-        && let Some(wa2) = self.try_reduce_native(&wa)?
-      {
-        return self.is_def_eq(&wa2, &wb);
-      }
-      if fam_b == PrimFamily::Native
-        && let Some(wb2) = self.try_reduce_native(&wb)?
-      {
-        return self.is_def_eq(&wa, &wb2);
-      }
-
-      if fam_a == PrimFamily::Decidable
-        && let Some(wa2) = self.try_reduce_decidable(&wa)?
-      {
-        return self.is_def_eq(&wa2, &wb);
-      }
-      if fam_b == PrimFamily::Decidable
-        && let Some(wb2) = self.try_reduce_decidable(&wb)?
-      {
-        return self.is_def_eq(&wa, &wb2);
-      }
-
-      let a_head = head_const_id(&wa);
-      let b_head = head_const_id(&wb);
-      let a_delta = match &a_head {
-        Some(h) => self.is_delta(h)?,
-        None => false,
-      };
-      let b_delta = match &b_head {
-        Some(h) => self.is_delta(h)?,
-        None => false,
-      };
-
-      if !a_delta && !b_delta {
-        break;
-      }
-
-      // C6: Before unfolding a definition, try reducing projection apps
-      // on the non-definition side (lean4lean tryUnfoldProjApp).
-      if a_delta && !b_delta {
-        if let Some(wb2) = self.try_unfold_proj_app(&wb)? {
-          wb = wb2;
-          continue;
-        }
-      } else if b_delta
-        && !a_delta
-        && let Some(wa2) = self.try_unfold_proj_app(&wa)?
-      {
-        wa = wa2;
-        continue;
-      }
-
-      if a_delta && b_delta {
-        // Both `a_delta` and `b_delta` already imply a present head, so the
-        // `map_or` defaults are dead code in practice. We keep the
-        // "missing-head ranks above all real ranks" semantic by mapping the
-        // None case to `(u8::MAX, u32::MAX)` — preserving the old `u32::MAX`
-        // sentinel under the new tuple-based comparator.
-        let wa_w = match &a_head {
-          Some(h) => self.def_rank_id(h)?,
-          None => (u8::MAX, u32::MAX),
-        };
-        let wb_w = match &b_head {
-          Some(h) => self.def_rank_id(h)?,
-          None => (u8::MAX, u32::MAX),
-        };
-
-        if wa_w == wb_w {
-          // H2: Same-head congruence is sound for every hint. Keep Regular
-          // attempts unbounded; bound non-Regular speculation so a miss cannot
-          // starve the ordinary delta path. Cache only rejected attempts.
-          if let (Some(ah), Some(bh)) = (&a_head, &b_head)
-            && ah.addr == bh.addr
-          {
-            let (lo, hi) = canonical_pair(wa.hash_key(), wb.hash_key());
-            let failure_key = (lo, hi, self.def_eq_ctx_key(&wa, &wb));
-            if !self.env.def_eq_failure.contains(&failure_key) {
-              let result = if self.is_regular(ah)? {
-                self.try_same_head_spine(&wa, &wb)?
-              } else {
-                self.try_same_head_spine_speculative(&wa, &wb)?
-              };
-              if let Some(result) = result {
-                return Ok(result);
-              }
-              // Spine comparison was attempted and failed — cache it
-              self.env.def_eq_failure.insert(failure_key);
-              self.env.perf.record_def_eq_failure_insert();
-            } else {
-              self.env.perf.record_def_eq_failure_hit();
-            }
-          }
-          // H1: Equal height — unfold BOTH sides (lean4lean:596)
-          let ua = self.delta_unfold_one(&wa)?;
-          let ub = self.delta_unfold_one(&wb)?;
-          match (ua, ub) {
-            (Some(ua), Some(ub)) => {
-              wa = self.whnf_no_delta_for_def_eq(&ua)?;
-              wb = self.whnf_no_delta_for_def_eq(&ub)?;
-            },
-            (Some(ua), None) => {
-              wa = self.whnf_no_delta_for_def_eq(&ua)?;
-            },
-            (None, Some(ub)) => {
-              wb = self.whnf_no_delta_for_def_eq(&ub)?;
-            },
-            (None, None) => break,
-          }
-        } else if wa_w > wb_w {
-          // a is heavier — unfold a first
-          if let Some(ua) = self.delta_unfold_one(&wa)? {
-            wa = self.whnf_no_delta_for_def_eq(&ua)?;
-          } else {
-            break;
-          }
-        } else {
-          // b is heavier — unfold b first
-          if let Some(ub) = self.delta_unfold_one(&wb)? {
-            wb = self.whnf_no_delta_for_def_eq(&ub)?;
-          } else {
-            break;
-          }
-        }
-      } else if a_delta {
-        if let Some(ua) = self.delta_unfold_one(&wa)? {
-          wa = self.whnf_no_delta_for_def_eq(&ua)?;
-        } else {
-          break;
-        }
-      } else if let Some(ub) = self.delta_unfold_one(&wb)? {
-        wb = self.whnf_no_delta_for_def_eq(&ub)?;
-      } else {
-        break;
-      }
-
-      if wa.ptr_eq(&wb) {
-        return Ok(true);
-      }
-      if self.quick_def_eq(&wa, &wb)? {
-        return Ok(true);
-      }
+    if let Some(result) = self.def_eq_lazy_delta(a, b, &mut wa, &mut wb)? {
+      return Ok(result);
     }
 
     if self.def_eq_trace_depth > 0 {
@@ -600,6 +473,209 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     result
   }
 
+  /// Keep lazy-delta temporaries out of the native frame retained while
+  /// recursively comparing irreducible applications. In unoptimized builds
+  /// those temporaries otherwise occupy many KiB at EVERY application level,
+  /// even when neither head can unfold. Reduction order/fuel are unchanged.
+  #[inline]
+  fn def_eq_lazy_delta(
+    &mut self,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+    wa: &mut KExpr<M>,
+    wb: &mut KExpr<M>,
+  ) -> Result<Option<bool>, TcError<M>> {
+    // Tier 4: iterative lazy delta (lean4lean lazyDeltaReduction)
+    let mut fuel = MAX_WHNF_FUEL;
+    loop {
+      if fuel == 0 {
+        self.dump_guard_stack("def-eq-lazy-delta-fuel");
+        self.dump_def_eq_max("fuel", a, b, Some(wa), Some(wb));
+        return Err(TcError::MaxRecDepth);
+      }
+      fuel -= 1;
+
+      // M2: Nat offset reduction at top of loop (lean4lean isDefEqOffset)
+      if let Some(result) = self.try_def_eq_offset(wa, wb)? {
+        return Ok(Some(result));
+      }
+
+      // Nat primitive reduction inside lazy delta. Mirrors lean4
+      // (`refs/lean4/src/kernel/type_checker.cpp:978-984`) and lean4lean
+      // (`refs/lean4lean/Lean4Lean/TypeChecker.lean:619`): skip Nat
+      // primitives entirely when either side has a free variable, unless
+      // eagerReduce is active.
+      let nat_ok = (!wa.has_fvars() && !wb.has_fvars()) || self.eager_reduce;
+      let fam_a = self.head_prim_family(wa);
+      let fam_b = self.head_prim_family(wb);
+      if nat_ok {
+        if fam_a == PrimFamily::Nat
+          && let Some(wa2) = self.try_reduce_nat(wa)?
+        {
+          return self.is_def_eq(&wa2, wb).map(Some);
+        }
+        if fam_b == PrimFamily::Nat
+          && let Some(wb2) = self.try_reduce_nat(wb)?
+        {
+          return self.is_def_eq(wa, &wb2).map(Some);
+        }
+      }
+
+      // Native reduction inside lazy delta. Reference order is
+      // `is_def_eq_offset → reduce_nat (gated) → reduce_native → delta`
+      // (lean4 `type_checker.cpp:986-991`, lean4lean `TypeChecker.lean:625-628`).
+      // Ix-specific `try_reduce_decidable` runs after native to keep the
+      // reference-aligned segment tight.
+      if fam_a == PrimFamily::Native
+        && let Some(wa2) = self.try_reduce_native(wa)?
+      {
+        return self.is_def_eq(&wa2, wb).map(Some);
+      }
+      if fam_b == PrimFamily::Native
+        && let Some(wb2) = self.try_reduce_native(wb)?
+      {
+        return self.is_def_eq(wa, &wb2).map(Some);
+      }
+
+      if fam_a == PrimFamily::Decidable
+        && let Some(wa2) = self.try_reduce_decidable(wa)?
+      {
+        return self.is_def_eq(&wa2, wb).map(Some);
+      }
+      if fam_b == PrimFamily::Decidable
+        && let Some(wb2) = self.try_reduce_decidable(wb)?
+      {
+        return self.is_def_eq(wa, &wb2).map(Some);
+      }
+
+      let a_head = head_const_id(wa);
+      let b_head = head_const_id(wb);
+      let a_delta = match &a_head {
+        Some(h) => self.is_delta(h)?,
+        None => false,
+      };
+      let b_delta = match &b_head {
+        Some(h) => self.is_delta(h)?,
+        None => false,
+      };
+
+      if !a_delta && !b_delta {
+        break;
+      }
+
+      // C6: Before unfolding a definition, try reducing projection apps
+      // on the non-definition side (lean4lean tryUnfoldProjApp).
+      if a_delta && !b_delta {
+        if let Some(wb2) = self.try_unfold_proj_app(wb)? {
+          *wb = wb2;
+          continue;
+        }
+      } else if b_delta
+        && !a_delta
+        && let Some(wa2) = self.try_unfold_proj_app(wa)?
+      {
+        *wa = wa2;
+        continue;
+      }
+
+      if a_delta && b_delta {
+        // Both `a_delta` and `b_delta` already imply a present head, so the
+        // `map_or` defaults are dead code in practice. We keep the
+        // "missing-head ranks above all real ranks" semantic by mapping the
+        // None case to `(u8::MAX, u32::MAX)` — preserving the old `u32::MAX`
+        // sentinel under the new tuple-based comparator.
+        let wa_w = match &a_head {
+          Some(h) => self.def_rank_id(h)?,
+          None => (u8::MAX, u32::MAX),
+        };
+        let wb_w = match &b_head {
+          Some(h) => self.def_rank_id(h)?,
+          None => (u8::MAX, u32::MAX),
+        };
+
+        if wa_w == wb_w {
+          // H2: Same-head congruence is sound for every hint, but it is only
+          // a sufficient condition: unfolding may erase unequal arguments.
+          // Bound speculation and cache only inconclusive/rejected probes,
+          // never an inequality of the enclosing applications.
+          if let (Some(ah), Some(bh)) = (&a_head, &b_head)
+            && ah.addr == bh.addr
+          {
+            let (lo, hi) = canonical_pair(wa.hash_key(), wb.hash_key());
+            let failure_key = (lo, hi, self.def_eq_ctx_key(wa, wb));
+            if !self.env.def_eq_failure.contains(&failure_key) {
+              let regular = self.is_regular(ah)?;
+              let result =
+                self.try_same_head_spine_speculative(wa, wb, ah, regular)?;
+              if let Some(result) = result {
+                return Ok(Some(result));
+              }
+              // This pair did not yield a useful probe (possibly skipped or
+              // resource-limited). The cache only skips future speculation.
+              self.env.def_eq_failure.insert(failure_key);
+              self.env.perf.record_def_eq_failure_insert();
+            } else {
+              self.env.perf.record_def_eq_failure_hit();
+              crate::perf::same_head::skip(
+                wa_w.0 == 1,
+                crate::perf::same_head::Skip::FailureCache,
+              );
+            }
+          }
+          // H1: Equal height — unfold BOTH sides (lean4lean:596)
+          let ua = self.delta_unfold_one(wa)?;
+          let ub = self.delta_unfold_one(wb)?;
+          match (ua, ub) {
+            (Some(ua), Some(ub)) => {
+              *wa = self.whnf_no_delta_for_def_eq(&ua)?;
+              *wb = self.whnf_no_delta_for_def_eq(&ub)?;
+            },
+            (Some(ua), None) => {
+              *wa = self.whnf_no_delta_for_def_eq(&ua)?;
+            },
+            (None, Some(ub)) => {
+              *wb = self.whnf_no_delta_for_def_eq(&ub)?;
+            },
+            (None, None) => break,
+          }
+        } else if wa_w > wb_w {
+          // a is heavier — unfold a first
+          if let Some(ua) = self.delta_unfold_one(wa)? {
+            *wa = self.whnf_no_delta_for_def_eq(&ua)?;
+          } else {
+            break;
+          }
+        } else {
+          // b is heavier — unfold b first
+          if let Some(ub) = self.delta_unfold_one(wb)? {
+            *wb = self.whnf_no_delta_for_def_eq(&ub)?;
+          } else {
+            break;
+          }
+        }
+      } else if a_delta {
+        if let Some(ua) = self.delta_unfold_one(wa)? {
+          *wa = self.whnf_no_delta_for_def_eq(&ua)?;
+        } else {
+          break;
+        }
+      } else if let Some(ub) = self.delta_unfold_one(wb)? {
+        *wb = self.whnf_no_delta_for_def_eq(&ub)?;
+      } else {
+        break;
+      }
+
+      if wa.ptr_eq(wb) {
+        return Ok(Some(true));
+      }
+      if self.quick_def_eq(wa, wb)? {
+        return Ok(Some(true));
+      }
+    }
+
+    Ok(None)
+  }
+
   /// Quick structural: same constructor, recursively same children (no WHNF).
   fn quick_def_eq(
     &mut self,
@@ -608,42 +684,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ) -> Result<bool, TcError<M>> {
     match (a.data(), b.data()) {
       (ExprData::Sort(u1, _), ExprData::Sort(u2, _)) => Ok(univ_eq(u1, u2)),
-      (
-        ExprData::Lam(name, bi, ty1, body1, _),
-        ExprData::Lam(_, _, ty2, body2, _),
-      )
-      | (
-        ExprData::All(name, bi, ty1, body1, _),
-        ExprData::All(_, _, ty2, body2, _),
-      ) => {
-        if !self.is_def_eq(ty1, ty2)? {
-          return Ok(false);
-        }
-        // Open both bodies with the SAME fresh fvar — the common-fvar
-        // trick that makes alpha-renamed bodies hash-equal under
-        // `instantiate_rev` and lets def-eq compare them structurally.
-        // Mirrors lean4lean `isDefEqBinding`
-        // (refs/lean4lean/Lean4Lean/TypeChecker.lean:546).
-        self.with_lctx_scope(|tc| {
-          let fv_id = tc.fresh_fvar_id();
-          let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
-          tc.lctx.push(
-            fv_id,
-            LocalDecl::CDecl {
-              name: name.clone(),
-              bi: bi.clone(),
-              ty: ty1.clone(),
-            },
-          );
-          let b1_open = instantiate_rev(
-            &mut tc.env.intern,
-            body1,
-            std::slice::from_ref(&fv),
-          );
-          let b2_open = instantiate_rev(&mut tc.env.intern, body2, &[fv]);
-          tc.is_def_eq(&b1_open, &b2_open)
-        })
-      },
+      (ExprData::Lam(..), ExprData::Lam(..))
+      | (ExprData::All(..), ExprData::All(..)) => self.def_eq_binders(a, b),
       _ => Ok(false),
     }
   }
@@ -654,8 +696,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<Option<bool>, TcError<M>> {
-    let (a_head, a_args) = collect_app_spine(a);
-    let (b_head, b_args) = collect_app_spine(b);
+    let (a_head, a_args) = borrow_app_spine(a);
+    let (b_head, b_args) = borrow_app_spine(b);
     let (a_id, a_us) = match a_head.data() {
       ExprData::Const(id, us, _) => (id, us),
       _ => return Ok(None),
@@ -672,6 +714,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return Ok(None);
     }
+    if self.try_app_congruence(a, b)? {
+      return Ok(Some(true));
+    }
     for (ai, bi) in a_args.iter().zip(b_args.iter()) {
       if !self.is_def_eq(ai, bi)? {
         return Ok(None);
@@ -680,7 +725,54 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     Ok(Some(true))
   }
 
-  /// Give a non-Regular same-head attempt a small local slice of recursive
+  /// Measurement wraps only a real attempt, inside any speculative fuel slice.
+  /// Nested inclusive counts overlap; the diagnostic also reports exclusive
+  /// and root fuel. The result and all accounting of actual checking work are
+  /// unchanged, including errors that a speculative caller may swallow.
+  fn try_same_head_spine_measured(
+    &mut self,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+    head: &KId<M>,
+    regular: bool,
+  ) -> Result<Option<bool>, TcError<M>> {
+    use crate::perf::same_head::{self, Outcome};
+    if !same_head::enabled() {
+      return self.try_same_head_spine(a, b);
+    }
+    let ticket = same_head::begin(&head.addr, regular);
+    let before = self.rec_fuel;
+    let result = self.try_same_head_spine(a, b);
+    let outcome = match &result {
+      Ok(Some(true)) => Outcome::Success,
+      Ok(_) => Outcome::Miss,
+      Err(TcError::MaxRecFuel) => Outcome::FuelAbort,
+      Err(TcError::MaxRecDepth) => Outcome::DepthAbort,
+      Err(_) => Outcome::Error,
+    };
+    let consumed = before.saturating_sub(self.rec_fuel);
+    same_head::finish(ticket, consumed, outcome);
+    if let Some(sample) = same_head::take_root_trace(ticket, consumed) {
+      eprintln!(
+        "[same-head-root] sample={sample} head=#{} regular={regular} outcome={outcome:?} fuel={consumed} pair={},{} legacy_ctx={} lbr={},{} depth={} def_eq_depth={} cheap={} infer_only={} a={} b={}",
+        head.addr.hex(),
+        a.hash_key(),
+        b.hash_key(),
+        self.ctx_id,
+        a.lbr(),
+        b.lbr(),
+        self.depth(),
+        self.def_eq_depth,
+        self.cheap_recursion_depth,
+        self.infer_only,
+        compact_def_eq_expr(a),
+        compact_def_eq_expr(b)
+      );
+    }
+    result
+  }
+
+  /// Give a same-head attempt a small local slice of recursive
   /// fuel. Nested attempts inherit the remaining slice; an exhausted slice is
   /// a speculative miss, after which the caller follows the ordinary delta
   /// path with the consumed work charged to the enclosing check.
@@ -688,17 +780,45 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     a: &KExpr<M>,
     b: &KExpr<M>,
+    head: &KId<M>,
+    regular: bool,
   ) -> Result<Option<bool>, TcError<M>> {
     let saved_fuel = self.rec_fuel;
+    // Preserve the existing non-Regular policy inside small inherited slices.
+    // A Regular slice is larger: its temporarily withheld fuel is NOT work
+    // already performed, and must not prematurely close the startup window.
     let nested = saved_fuel <= SAME_HEAD_SPECULATION_ATTEMPT_FUEL;
-    if !nested && self.fuel_used() >= SAME_HEAD_SPECULATION_START_FUEL {
+    let used = self.fuel_used().saturating_sub(self.same_head_fuel_reserve);
+    if !regular && !nested && used >= SAME_HEAD_SPECULATION_START_FUEL {
+      crate::perf::same_head::skip(false, crate::perf::same_head::Skip::Window);
       return Ok(None);
     }
-    let local_fuel = saved_fuel.min(SAME_HEAD_SPECULATION_ATTEMPT_FUEL);
+    if self.same_head_backoff.should_skip(regular) {
+      crate::perf::same_head::skip(
+        regular,
+        crate::perf::same_head::Skip::Backoff,
+      );
+      return Ok(None);
+    }
+    let allowance = if regular {
+      SAME_HEAD_REGULAR_ATTEMPT_FUEL
+    } else {
+      SAME_HEAD_SPECULATION_ATTEMPT_FUEL
+    };
+    let local_fuel = saved_fuel.min(allowance);
+    let saved_reserve = self.same_head_fuel_reserve;
+    self.same_head_fuel_reserve += saved_fuel - local_fuel;
     self.rec_fuel = local_fuel;
-    let result = self.try_same_head_spine(a, b);
+    self.same_head_backoff.enter();
+    let result = self.try_same_head_spine_measured(a, b, head, regular);
     let consumed = local_fuel.saturating_sub(self.rec_fuel);
     self.rec_fuel = saved_fuel.saturating_sub(consumed);
+    self.same_head_fuel_reserve = saved_reserve;
+    let unsuccessful = matches!(
+      result,
+      Ok(None | Some(false)) | Err(TcError::MaxRecDepth | TcError::MaxRecFuel)
+    );
+    self.same_head_backoff.leave(regular, unsuccessful, consumed);
     match result {
       Err(TcError::MaxRecDepth | TcError::MaxRecFuel) => Ok(None),
       other => other,
@@ -734,38 +854,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         }
         false
       },
-      (
-        ExprData::Lam(name, bi, ty1, body1, _),
-        ExprData::Lam(_, _, ty2, body2, _),
-      )
-      | (
-        ExprData::All(name, bi, ty1, body1, _),
-        ExprData::All(_, _, ty2, body2, _),
-      ) => {
-        if self.is_def_eq(ty1, ty2)? {
-          // Open both bodies with the same fresh fvar (see `quick_def_eq`).
-          let r = self.with_lctx_scope(|tc| {
-            let fv_id = tc.fresh_fvar_id();
-            let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
-            tc.lctx.push(
-              fv_id,
-              LocalDecl::CDecl {
-                name: name.clone(),
-                bi: bi.clone(),
-                ty: ty1.clone(),
-              },
-            );
-            let b1_open = instantiate_rev(
-              &mut tc.env.intern,
-              body1,
-              std::slice::from_ref(&fv),
-            );
-            let b2_open = instantiate_rev(&mut tc.env.intern, body2, &[fv]);
-            tc.is_def_eq(&b1_open, &b2_open)
-          })?;
-          if r {
-            return Ok(true);
-          }
+      (ExprData::Lam(..), ExprData::Lam(..))
+      | (ExprData::All(..), ExprData::All(..)) => {
+        if self.def_eq_binders(a, b)? {
+          return Ok(true);
         }
         false
       },
@@ -873,6 +965,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    if self.known_non_proof(a) {
+      return Ok(false);
+    }
     let a_ty = match self.with_infer_only(|tc| tc.infer(a)) {
       Ok(ty) => ty,
       Err(_) => return Ok(false),
@@ -893,9 +988,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ///
   /// On a hit this is one `FxHashMap` probe; on a miss it pays the
   /// existing `infer ∘ whnf` chain and stores the result. Errors from
-  /// the inner chain are propagated as `Ok(false)` (treating ill-typed
-  /// metadata as non-prop), matching the previous behaviour of
-  /// `try_proof_irrel`.
+  /// the inner chain are treated as a miss, but are NOT cached: in particular,
+  /// exhausting a speculative fuel slice must not permanently classify a
+  /// proposition as non-propositional.
   pub(crate) fn is_prop_type(&mut self, ty: &KExpr<M>) -> bool {
     let cache_key = (ty.hash_key(), self.ctx_addr_for_lbr(ty.lbr()));
     if let Some(&cached) = self.env.is_prop_cache.get(&cache_key) {
@@ -914,9 +1009,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           ExprData::Sort(u, _) => u.is_semantic_zero(),
           _ => false,
         },
-        Err(_) => false,
+        Err(_) => return false,
       },
-      Err(_) => false,
+      Err(_) => return false,
     };
     self.env.is_prop_cache.insert(cache_key, result);
     result
@@ -937,7 +1032,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(w) => w,
       Err(_) => return Ok(false),
     };
-    let (a_head, _) = collect_app_spine(&a_ty_w);
+    let a_head = app_head(&a_ty_w);
     let a_ind = match a_head.data() {
       ExprData::Const(id, _, _) => id.clone(),
       _ => return Ok(false),
@@ -1254,12 +1349,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     t: &KExpr<M>,
     s: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    use super::tc::collect_app_spine;
-
     let t_norm = self.whnf_no_delta(t).unwrap_or_else(|_| t.clone());
 
     // s must be a constructor application
-    let (s_head, s_args) = collect_app_spine(s);
+    let (s_head, s_args) = borrow_app_spine(s);
     let ctor_id = match s_head.data() {
       ExprData::Const(id, _, _) => id.clone(),
       _ => {
@@ -1341,13 +1434,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for i in 0..num_fields {
       let proj =
         self.intern(KExpr::prj(induct_id.clone(), i as u64, t_norm.clone()));
-      if !self.is_def_eq(&proj, &s_args[num_params + i])? {
+      if !self.is_def_eq(&proj, s_args[num_params + i])? {
         self.dump_eta_trace(
           "field-mismatch",
           Some(&induct_id),
           i,
           &proj,
-          &s_args[num_params + i],
+          s_args[num_params + i],
         );
         return Ok(false);
       }
@@ -1362,7 +1455,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     induct_id: &KId<M>,
     num_params: usize,
     num_fields: usize,
-    args: &[KExpr<M>],
+    args: &[&KExpr<M>],
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
     let mut base: Option<KExpr<M>> = None;
     for i in 0..num_fields {
@@ -1396,13 +1489,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return Ok(false);
     }
-    let (a_head, a_args) = collect_app_spine(a);
-    let (b_head, b_args) = collect_app_spine(b);
+    let (a_head, a_args) = borrow_app_spine(a);
+    let (b_head, b_args) = borrow_app_spine(b);
     if a_args.len() != b_args.len() {
       return Ok(false);
     }
-    if !self.is_def_eq(&a_head, &b_head)? {
+    if !self.is_def_eq(a_head, b_head)? {
       return Ok(false);
+    }
+    if self.try_app_congruence(a, b)? {
+      return Ok(true);
     }
     for (ai, bi) in a_args.iter().zip(b_args.iter()) {
       if !self.is_def_eq(ai, bi)? {
@@ -1491,11 +1587,47 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if id1.addr != id2.addr || f1 != f2 {
           return Ok(false);
         }
+        if self.try_projected_def_eq(a, b)? {
+          return Ok(true);
+        }
         let mut v1 = v1.clone();
         let mut v2 = v2.clone();
         self.lazy_delta_proj_reduction(id1, *f1, &mut v1, &mut v2)
       },
       _ => Ok(false),
+    }
+  }
+
+  /// A positive-only shortcut: compare reduced fields before traversing the
+  /// other fields/arguments of their records. Failure (including local budget
+  /// exhaustion) leaves the ORIGINAL record-congruence path available. Never
+  /// turn an interrupted record comparison into a negative conversion result.
+  fn try_projected_def_eq(
+    &mut self,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+  ) -> Result<bool, TcError<M>> {
+    if self.in_projection_probe {
+      return Ok(false);
+    }
+    let saved_fuel = self.rec_fuel;
+    let local_fuel = saved_fuel.min(PROJECTION_PROBE_FUEL);
+    self.rec_fuel = local_fuel;
+    self.in_projection_probe = true;
+    let result = (|| {
+      let pa = self.whnf_core(a)?;
+      let pb = self.whnf_core(b)?;
+      if pa.hash_key() == a.hash_key() && pb.hash_key() == b.hash_key() {
+        return Ok(false);
+      }
+      self.is_def_eq(&pa, &pb)
+    })();
+    self.in_projection_probe = false;
+    let consumed = local_fuel.saturating_sub(self.rec_fuel);
+    self.rec_fuel = saved_fuel.saturating_sub(consumed);
+    match result {
+      Err(TcError::MaxRecDepth | TcError::MaxRecFuel) => Ok(false),
+      other => other,
     }
   }
 
@@ -1509,6 +1641,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let mut fuel = MAX_WHNF_FUEL;
     loop {
       if fuel == 0 {
+        self.dump_guard_stack("def-eq-projection-delta-fuel");
         self.dump_def_eq_max("proj-delta-fuel", a, b, None, None);
         return Err(TcError::MaxRecDepth);
       }
@@ -1595,11 +1728,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         }
       } else {
         if a_id.addr == b_id.addr {
-          let result = if self.is_regular(a_id)? {
-            self.try_same_head_spine(a, b)?
-          } else {
-            self.try_same_head_spine_speculative(a, b)?
-          };
+          let regular = self.is_regular(a_id)?;
+          let result =
+            self.try_same_head_spine_speculative(a, b, a_id, regular)?;
           if let Some(true) = result {
             return Ok(LazyDeltaStep::Equal);
           }
@@ -1670,7 +1801,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    let (head, _) = collect_app_spine(e);
+    let head = app_head(e);
     if !matches!(head.data(), ExprData::Prj(..)) {
       return Ok(None);
     }
@@ -1778,7 +1909,7 @@ fn head_const_id<M: KernelMode>(e: &KExpr<M>) -> Option<KId<M>> {
   match e.data() {
     ExprData::Const(id, _, _) => Some(id.clone()),
     ExprData::App(..) => {
-      let (head, _) = collect_app_spine(e);
+      let head = app_head(e);
       match head.data() {
         ExprData::Const(id, _, _) => Some(id.clone()),
         _ => None,
@@ -1886,6 +2017,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 }
 
 #[cfg(test)]
+#[path = "def_eq/projection_tests.rs"]
+mod projection_tests;
+
+#[cfg(test)]
 mod tests {
 
   use super::super::constant::KConst;
@@ -1922,6 +2057,21 @@ mod tests {
 
   fn sort1() -> AE {
     AE::sort(AU::succ(AU::zero()))
+  }
+
+  #[test]
+  fn declaration_summary_skips_only_non_proof_irrelevance() {
+    let mut env = env_with_same_head_hint(ReducibilityHints::Abbrev);
+    let a = AE::cnst(mk_id("same_head.c"), Box::new([]));
+    let b = AE::cnst(mk_id("same_head.d"), Box::new([]));
+    let mut tc = TypeChecker::new(&mut env);
+    assert!(!tc.try_proof_irrel(&a, &b).unwrap());
+    assert!(!tc.env.decl_summary_cache.is_empty());
+    assert!(tc.env.infer_cache.is_empty());
+    assert!(tc.env.infer_only_cache.is_empty());
+    // Other conversion rules can still infer (e.g. structure eta). The
+    // summary bypasses only this probe, and never establishes equality.
+    assert!(!tc.is_def_eq(&a, &b).unwrap());
   }
 
   fn env_with_id() -> KEnv<Anon> {
@@ -2069,6 +2219,81 @@ mod tests {
       env.unfold_cache.contains_key(&head_key),
       "a rejected same-head comparison must continue with ordinary delta"
     );
+  }
+
+  #[test]
+  fn same_head_profile_preserves_success_result_and_fuel() {
+    use crate::perf::same_head;
+    let run = |measured: bool| {
+      let mut env = env_with_same_head_hint(ReducibilityHints::Regular(7));
+      let a = AE::cnst(mk_id("same_head.A"), Box::new([]));
+      let c = AE::cnst(mk_id("same_head.c"), Box::new([]));
+      let id = mk_id("same_head.head");
+      let head = AE::cnst(id.clone(), Box::new([]));
+      let beta_arg = AE::app(AE::lam((), (), a, AE::var(0, ())), c.clone());
+      let left = AE::app(head.clone(), beta_arg);
+      let right = AE::app(head, c);
+      let mut tc = TypeChecker::new(&mut env);
+      same_head::reset();
+      let result = if measured {
+        tc.try_same_head_spine_measured(&left, &right, &id, true)
+      } else {
+        tc.try_same_head_spine(&left, &right)
+      }
+      .unwrap();
+      if measured && same_head::enabled() {
+        let report = same_head::summary();
+        assert!(report.contains("regular outcome=success calls=1"), "{report}");
+        assert!(
+          report.contains(&format!("root_fuel={} ", tc.fuel_used())),
+          "{report}"
+        );
+        assert!(report.contains("active=0 "), "{report}");
+        assert!(report.contains("accounting_errors=0"), "{report}");
+      }
+      (result, tc.fuel_used())
+    };
+    assert_eq!(run(false), run(true));
+  }
+
+  #[test]
+  fn same_head_profile_distinguishes_window_skip_from_fuel_abort() {
+    use crate::perf::same_head;
+    let mut env = env_with_same_head_hint(ReducibilityHints::Abbrev);
+    let a = AE::cnst(mk_id("same_head.A"), Box::new([]));
+    let c = AE::cnst(mk_id("same_head.c"), Box::new([]));
+    let id = mk_id("same_head.head");
+    let head = AE::cnst(id.clone(), Box::new([]));
+    let beta_arg = AE::app(AE::lam((), (), a, AE::var(0, ())), c.clone());
+    let left = AE::app(head.clone(), beta_arg);
+    let right = AE::app(head, c);
+    let mut tc = TypeChecker::new(&mut env);
+    tc.rec_fuel = crate::tc::max_rec_fuel()
+      .saturating_sub(super::SAME_HEAD_SPECULATION_START_FUEL);
+    let before = tc.rec_fuel;
+    same_head::reset();
+    assert_eq!(
+      tc.try_same_head_spine_speculative(&left, &right, &id, false).unwrap(),
+      None
+    );
+    assert_eq!(tc.rec_fuel, before);
+    tc.rec_fuel = 1;
+    assert_eq!(
+      tc.try_same_head_spine_speculative(&left, &right, &id, false).unwrap(),
+      None
+    );
+    assert_eq!(tc.rec_fuel, 0);
+    if same_head::enabled() {
+      let report = same_head::summary();
+      assert!(report.contains("non_regular skipped_window=1"), "{report}");
+      assert!(
+        report.contains("non_regular outcome=fuel_abort calls=1"),
+        "{report}"
+      );
+      assert!(report.contains("root_fuel=1 "), "{report}");
+      assert!(report.contains("active=0 "), "{report}");
+      assert!(report.contains("accounting_errors=0"), "{report}");
+    }
   }
 
   /// Insert a `Defn` with the given reducibility hints under `name`, returning

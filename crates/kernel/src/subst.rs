@@ -20,6 +20,12 @@ use super::env::{Addr, InternTable};
 use super::expr::{ExprData, FVarId, KExpr};
 use super::mode::KernelMode;
 
+#[cfg(test)]
+mod menv_tests;
+
+#[cfg(test)]
+mod scratch_tests;
+
 /// When set, log every 100K `subst` (top-level) entries. Substitution is
 /// called once per `App` in `infer` (plus other sites in whnf / def_eq),
 /// and each call recursively rebuilds the body; a check that spends
@@ -40,8 +46,9 @@ static SUBST_COUNT: std::sync::atomic::AtomicUsize =
 /// shared sub-expressions within `body` are walked once per depth.
 ///
 /// Memoization scratch is borrowed from `env.subst_scratch` to avoid
-/// allocating a fresh `FxHashMap` per call. We `mem::take` it out
-/// (replacing with an empty placeholder) so the borrow checker lets us
+/// allocating a fresh `FxHashMap` per call. `take_for_call` clears entries
+/// and adaptively releases persistently sparse, oversized allocations. It
+/// leaves an empty placeholder so the borrow checker lets us
 /// thread `&mut env` and `&mut scratch` separately into `subst_cached`,
 /// then put it back on the way out. `subst_cached` does not call back
 /// into `subst`, so there is no risk of recursive scratch use.
@@ -62,10 +69,9 @@ pub fn subst<M: KernelMode>(
   if body.lbr() <= depth {
     return body.clone();
   }
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let result = subst_cached(env, body, arg, depth, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 
@@ -182,7 +188,9 @@ fn subst_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = subst_cached(env, f, arg, depth, cache);
       let x2 = subst_cached(env, x, arg, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -194,7 +202,9 @@ fn subst_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = subst_cached(env, ty, arg, depth, cache);
       let inner2 = subst_cached(env, inner, arg, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -244,13 +254,12 @@ pub fn simul_subst<M: KernelMode>(
   if body.lbr() <= depth {
     return body.clone();
   }
-  // See `subst` for the mem::take/restore pattern. `simul_subst_cached`
+  // See `subst` for the take/restore pattern. `simul_subst_cached`
   // does not call into `subst`/`simul_subst`, so it is safe to share the
   // single `subst_scratch` between them.
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let result = simul_subst_cached(env, body, substs, depth, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 
@@ -293,7 +302,9 @@ fn simul_subst_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = simul_subst_cached(env, f, substs, depth, cache);
       let x2 = simul_subst_cached(env, x, substs, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -305,7 +316,9 @@ fn simul_subst_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = simul_subst_cached(env, ty, substs, depth, cache);
       let inner2 = simul_subst_cached(env, inner, substs, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -355,10 +368,9 @@ pub fn lift<M: KernelMode>(
   // buffer keeps both available simultaneously. `lift_cached` does not
   // call back into `lift`/`subst`/`simul_subst`, so the scratch is safe
   // to share across calls without nested-borrow risk.
-  let mut cache = std::mem::take(&mut env.lift_scratch);
-  cache.clear();
+  let mut cache = env.lift_scratch.take_for_call();
   let result = lift_cached(env, e, shift, cutoff, &mut cache);
-  env.lift_scratch = cache;
+  env.lift_scratch.restore_after_call(cache);
   result
 }
 
@@ -448,7 +460,9 @@ fn lift_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = lift_cached(env, f, shift, cutoff, cache);
       let x2 = lift_cached(env, x, shift, cutoff, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, body, _) => {
@@ -460,7 +474,9 @@ fn lift_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, body, _) => {
       let ty2 = lift_cached(env, ty, shift, cutoff, cache);
       let body2 = lift_cached(env, body, shift, cutoff + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, body2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &body2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, body, nd, _) => {
@@ -526,13 +542,27 @@ impl<M: KernelMode> Clo<M> {
 
 struct MEnvNode<M: KernelMode> {
   head: Arc<Clo<M>>,
-  tail: MEnv<M>,
+  tail: Option<Arc<MEnvNode<M>>>,
+  /// The ancestor `jump_len` ordinary tail steps away, or `None` when
+  /// those steps reach the empty environment. Spans have size 2^k - 1.
+  jump: Option<Arc<MEnvNode<M>>>,
+  jump_len: u64,
 }
 
-/// Persistent cons-list environment: O(1) push with structural sharing
-/// across the closures captured at each binder. `len` is carried on the
-/// handle — recomputing it per suffix was a measured cost on the IxVM
-/// port of this machine.
+/// Persistent skew-binary random-access environment: O(1) push and
+/// O(log n) lookup, with the most recent binding still O(1).
+///
+/// Ordinary tails retain the original cons-list meaning. A jump skips a
+/// complete preorder block of size 2^k - 1; following jumps partitions the
+/// list into increasing blocks, with only the first two allowed equal.
+/// Prepending merges two equal first blocks with the new head, or adds a
+/// singleton block. Both cases need one node and constant work, even when
+/// branching from an old snapshot. Lookup skips whole blocks or takes an
+/// ordinary tail to descend into one, without materializing any closures.
+///
+/// `len` lives on the handle, not on each tail. Compared with the original
+/// cons node this adds one pointer-sized field on 64-bit hosts, rather than
+/// a separate allocation or a logarithmic jump table at every binder.
 pub(crate) struct MEnv<M: KernelMode> {
   node: Option<Arc<MEnvNode<M>>>,
   len: u64,
@@ -555,20 +585,50 @@ impl<M: KernelMode> MEnv<M> {
   }
 
   pub(crate) fn push(&self, c: Arc<Clo<M>>) -> Self {
+    let len = self.len.checked_add(1).expect("MEnv length overflow");
+    let (jump, jump_len) = if let Some(first) = &self.node
+      && let Some(second) = &first.jump
+      && first.jump_len == second.jump_len
+    {
+      // New head + two equal blocks. The span cannot overflow: both
+      // blocks belong to `self`, whose length was checked above.
+      (second.jump.clone(), 1 + 2 * first.jump_len)
+    } else {
+      (self.node.clone(), 1)
+    };
     MEnv {
-      node: Some(Arc::new(MEnvNode { head: c, tail: self.clone() })),
-      len: self.len + 1,
+      node: Some(Arc::new(MEnvNode {
+        head: c,
+        tail: self.node.clone(),
+        jump,
+        jump_len,
+      })),
+      len,
     }
   }
 
-  /// O(i) cons-list walk; `i` must be `< self.len()`. Machine variable
-  /// lookups are typically near the front (recently pushed args).
+  /// Return the same closure as `i` ordinary tail steps, in O(log n).
+  /// `i` must be `< self.len()`; no closure is forced or copied here.
   pub(crate) fn get(&self, i: u64) -> &Arc<Clo<M>> {
     let mut node = self.node.as_ref().expect("MEnv::get out of range");
+    if i == 0 {
+      return &node.head;
+    }
     let mut i = i;
+    // Recent bindings are common. Once the remaining offset is tiny,
+    // ordinary tails avoid a jump-size branch at every visited node.
+    while i >= 8 {
+      if node.jump_len <= i {
+        i -= node.jump_len;
+        node = node.jump.as_ref().expect("MEnv::get out of range");
+      } else {
+        i -= 1;
+        node = node.tail.as_ref().expect("MEnv::get out of range");
+      }
+    }
     while i > 0 {
-      node = node.tail.node.as_ref().expect("MEnv::get out of range");
       i -= 1;
+      node = node.tail.as_ref().expect("MEnv::get out of range");
     }
     &node.head
   }
@@ -658,7 +718,9 @@ fn clo_subst_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = clo_subst_cached(intern, f, env, depth, cache);
       let x2 = clo_subst_cached(intern, x, env, depth, cache);
-      KExpr::app(f2, x2)
+      let r = intern.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -670,7 +732,9 @@ fn clo_subst_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
       let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = intern.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -775,7 +839,7 @@ pub fn cheap_beta_reduce<M: KernelMode>(
   if head.lbr() == 0 {
     let mut result = head;
     for arg in &args[i..] {
-      result = env.intern_expr(KExpr::app(result, arg.clone()));
+      result = env.intern_app(&result, arg);
     }
     return result;
   }
@@ -791,7 +855,7 @@ pub fn cheap_beta_reduce<M: KernelMode>(
       let chosen_idx = i - (k as usize) - 1;
       let mut result = args[chosen_idx].clone();
       for arg in &args[i..] {
-        result = env.intern_expr(KExpr::app(result, arg.clone()));
+        result = env.intern_app(&result, arg);
       }
       return result;
     }
@@ -832,10 +896,9 @@ pub fn instantiate_rev<M: KernelMode>(
   // `subst`/`simul_subst`). `instantiate_rev_cached` does not call back
   // into subst/simul_subst/lift, so the scratch is safe to share across
   // top-level calls without nested-borrow risk.
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let result = instantiate_rev_cached(env, body, fvars, 0, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 
@@ -889,7 +952,9 @@ fn instantiate_rev_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = instantiate_rev_cached(env, f, fvars, depth, cache);
       let x2 = instantiate_rev_cached(env, x, fvars, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -901,7 +966,9 @@ fn instantiate_rev_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
       let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
@@ -964,11 +1031,10 @@ pub fn abstract_fvars<M: KernelMode>(
     pos.insert(*fv, (fvars.len() - 1 - i) as u64);
   }
 
-  let mut cache = std::mem::take(&mut env.subst_scratch);
-  cache.clear();
+  let mut cache = env.subst_scratch.take_for_call();
   let n = fvars.len() as u64;
   let result = abstract_fvars_cached(env, body, &pos, n, 0, &mut cache);
-  env.subst_scratch = cache;
+  env.subst_scratch.restore_after_call(cache);
   result
 }
 
@@ -1024,7 +1090,9 @@ fn abstract_fvars_cached<M: KernelMode>(
     ExprData::App(f, x, _) => {
       let f2 = abstract_fvars_cached(env, f, pos, n, depth, cache);
       let x2 = abstract_fvars_cached(env, x, pos, n, depth, cache);
-      KExpr::app(f2, x2)
+      let r = env.intern_app(&f2, &x2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Lam(name, bi, ty, inner, _) => {
@@ -1036,7 +1104,9 @@ fn abstract_fvars_cached<M: KernelMode>(
     ExprData::All(name, bi, ty, inner, _) => {
       let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
       let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      cache.insert(key, r.clone());
+      return r;
     },
 
     ExprData::Let(name, ty, val, inner, nd, _) => {
