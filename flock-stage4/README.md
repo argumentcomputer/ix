@@ -12,13 +12,15 @@ The optimized integration fixture has **1,059,840,428 PLONK constraint rows**,
 down **89.78%** from the original baseline and **20.35%** from the preceding
 version. Its base domain is now **2^30**, and its polynomial products' size-2^32
 FFT fits the field limit. The prover supports authenticated file-backed SRS
-and fixed-key polynomials. These replace **936 GiB** of resident SRS points
-and **768 GiB** of retained polynomials with about **14 MiB** of authentication
-indexes and bounded I/O buffers. Gates and copy cells still occupy **264 GiB**;
-witnesses and temporary proof polynomials remain materialized, so a complete
-proof on 512 GB RAM remains unsupported.
+and fixed-key polynomials, plus a file workspace for wire values and temporary
+proof polynomials. The workspace uses one resident FFT array with a bounded
+roots cache. On the 65,536-row synthetic fixture, it reduces total proving
+heap from **116.0 MB to 63.6 MB (45.19%)**, with matching verified proof digests.
+A complete proof on 512 GB RAM remains unsupported: gates, copy cells,
+canonical R1CS, and the original witness still remain resident.
 See the [circuit census](census/stage2-integration-v3.md) and
-[file-key measurements](census/file-key-v1.md) for the remaining storage work.
+[prover workspace measurements](census/file-workspace-v1.md) for the current
+memory assessment and remaining work.
 
 The `ix-terminal-circuit` crate owns the backend-independent R1CS. Its first
 landed slice fixes the two-limb public-input encoding for the 256-bit Stage 3
@@ -239,18 +241,32 @@ seconds, and the proof digest is unchanged. The [key storage report](census/file
 records both key modes, preprocessing measurements, and the storage layout.
 Raw polynomial files are scratch data; trusted key metadata remains in memory.
 
-The next production step is spillable witness and temporary polynomial
-buffers, external FFTs and copy-permutation construction, and streamed
-gate/witness processing. The file-backed SRS, fixed-key polynomials, and
-bounded MSM kernel are implemented; an aggregate memory budget across all
-working buffers is still required. The capacity model reports
-the supported size-2^32 polynomial FFT requirement and separate lower bounds
-for resident, file-SRS, and file-SRS/file-key configurations. Even with the
-file key, the early wire/public-input polynomial buffers and retained key
-already require about 520 GiB at the full fixture's domain, before R1CS and
-other excluded allocations. The prover checks the FFT
-requirement before allocating its witness columns. Every backend must consume
-the canonical relation rather than define another one.
+`prove_fflonk_with_file_workspace` now spills wire evaluations and temporary
+proof polynomials to authenticated scratch storage. Multiplication keeps one
+FFT array in RAM and stores the other operand's evaluations on disk. A tiled
+roots cache avoids the FFT library's domain/2 roots table. Quotients, packing,
+evaluations, and opening combinations stream through bounded buffers, and
+released scratch regions are reused. The existing `prove_fflonk` API retains
+the memory workspace. On the 65,536-row fixture with file SRS/key storage,
+additional proving heap falls from **81.4 MB to 29.0 MB**, and total heap from
+**116.0 MB to 63.6 MB**. Paired prove times are 20.99 and 21.31 seconds.
+The [workspace report](census/file-workspace-v1.md) records the measurements,
+storage semantics, and unchanged proof digests.
+
+The capacity model reports the supported size-2^32 polynomial FFT requirement,
+separate retained-key minima, and file-workspace buffers. At the full fixture's
+size, the key/indexes plus one 128 GiB FFT array and a 2 MiB roots cache total
+about **392 GiB**. The still-resident canonical R1CS and original witness add
+another **180 GiB**. Even witness lowering, before the FFT, requires at least
+**596.3 GB (555.37 GiB)** including retained inputs. These are allocation minima,
+not measured RSS, and exclude spare capacity and other buffers.
+
+The next production work is streaming or releasing canonical R1CS storage,
+streamed witness processing and copy-permutation construction, and an enforced
+aggregate memory budget. External FFTs remain an option for additional
+headroom. The prover checks its FFT requirement before allocating witness
+columns. Every backend must consume the canonical relation rather than define
+another one. A complete proof and peak-RSS measurement remain outstanding.
 
 The proof width follows the [FFLONK paper](https://eprint.iacr.org/2021/1167)
 and uses [EIP-2537](https://eips.ethereum.org/EIPS/eip-2537) for G1 transport.
@@ -318,3 +334,15 @@ cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
 
 Polynomial scratch files use `create_new` and cannot be reopened as standalone
 keys. Choose a fresh scratch path for each run.
+
+Append a second new scratch path to use the file prover workspace:
+
+```sh
+cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
+  -p ix-fflonk --example prover_memory -- \
+  14 /tmp/ix-test-uncompressed.srs uncompressed \
+  /tmp/ix-test-key.bin /tmp/ix-test-workspace.bin
+```
+
+The prover scratch file contains private witness values. The caller controls
+its protection and cleanup; it cannot be reopened as a standalone workspace.

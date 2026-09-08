@@ -1,9 +1,10 @@
 # Second optimization pass and 512 GB RAM assessment
 
 The circuit census below remains current. The subsequent
-[file-backed SRS](file-srs-v1.md) and [fixed-key polynomial storage](file-key-v1.md)
-supersede the resident-SRS/key assumptions in this RAM assessment. Witnesses,
-temporary proof polynomials, and external FFT processing remain unfinished.
+[file-backed SRS](file-srs-v1.md), [fixed-key polynomial storage](file-key-v1.md),
+and [file prover workspace](file-workspace-v1.md) supersede the RAM assumptions
+in this historical assessment. The workspace report contains the current
+measurements and remaining relation/witness storage and memory-budget work.
 
 The complete fixture now uses **1,059,840,428 PLONK constraint rows**,
 **20.35% fewer** than the [preceding version](stage2-integration-v2.md) and
