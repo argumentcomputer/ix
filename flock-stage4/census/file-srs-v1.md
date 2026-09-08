@@ -1,5 +1,9 @@
 # File-backed SRS and proving memory
 
+This report records the SRS-only storage pass. The subsequent
+[file-backed polynomial key implementation](file-key-v1.md) supersedes its
+materialized-key assumptions and reduces the retained SRS/key minimum further.
+
 The existing FFLONK preprocessor and prover can now use an authenticated SRS
 file without retaining all G1 powers in memory. At the
 [current complete fixture's size](stage2-integration-v3.md), this replaces

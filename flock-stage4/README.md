@@ -11,13 +11,14 @@ Flock Stage 3 proof
 The optimized integration fixture has **1,059,840,428 PLONK constraint rows**,
 down **89.78%** from the original baseline and **20.35%** from the preceding
 version. Its base domain is now **2^30**, and its polynomial products' size-2^32
-FFT fits the field limit. The prover now supports an authenticated file-backed
-SRS, replacing **936 GiB** of resident points with a **4.50 MiB** index and
-bounded working buffers. The remaining materialized proving key still requires
-at least **1,032 GiB (about 1.01 TiB)**, so a complete proof on 512 GB RAM
-remains unsupported.
+FFT fits the field limit. The prover supports authenticated file-backed SRS
+and fixed-key polynomials. These replace **936 GiB** of resident SRS points
+and **768 GiB** of retained polynomials with about **14 MiB** of authentication
+indexes and bounded I/O buffers. Gates and copy cells still occupy **264 GiB**;
+witnesses and temporary proof polynomials remain materialized, so a complete
+proof on 512 GB RAM remains unsupported.
 See the [circuit census](census/stage2-integration-v3.md) and
-[file-SRS measurements](census/file-srs-v1.md) for the remaining storage work.
+[file-key measurements](census/file-key-v1.md) for the remaining storage work.
 
 The `ix-terminal-circuit` crate owns the backend-independent R1CS. Its first
 landed slice fixes the two-limb public-input encoding for the 256-bit Stage 3
@@ -228,12 +229,26 @@ total peak heap from 226.0 MB to 168.4 MB, with approximately the same proving
 time. The [storage report](census/file-srs-v1.md) records both formats and
 distinguishes retained setup from temporary buffers and process RSS.
 
-The next production step is a disk-backed polynomial store, external FFT and
-copy-permutation construction, and streamed gate/witness processing. The
-file-backed SRS and bounded MSM kernel are implemented; an aggregate memory
-budget across all working buffers is still required. The capacity model reports
+`preprocess_fflonk_to_file` constructs fixed-key polynomials directly in an
+empty scratch file. `prove_fflonk` accepts either key backend through
+`FflonkProvingKeyV1`, reading authenticated polynomial chunks as needed.
+On the same 65,536-row fixture with an uncompressed file SRS, the file key
+reduces proving heap from 168.4 MB to **118.1 MB (29.88%)** and preprocessing
+heap from 118.1 MB to **63.6 MB (46.17%)**. Proving still takes about 21.6
+seconds, and the proof digest is unchanged. The [key storage report](census/file-key-v1.md)
+records both key modes, preprocessing measurements, and the storage layout.
+Raw polynomial files are scratch data; trusted key metadata remains in memory.
+
+The next production step is spillable witness and temporary polynomial
+buffers, external FFTs and copy-permutation construction, and streamed
+gate/witness processing. The file-backed SRS, fixed-key polynomials, and
+bounded MSM kernel are implemented; an aggregate memory budget across all
+working buffers is still required. The capacity model reports
 the supported size-2^32 polynomial FFT requirement and separate lower bounds
-for resident and file-backed SRS configurations. The prover checks the FFT
+for resident, file-SRS, and file-SRS/file-key configurations. Even with the
+file key, the early wire/public-input polynomial buffers and retained key
+already require about 520 GiB at the full fixture's domain, before R1CS and
+other excluded allocations. The prover checks the FFT
 requirement before allocating its witness columns. Every backend must consume
 the canonical relation rather than define another one.
 
@@ -289,4 +304,17 @@ cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
 The example creates missing archives and validates matching existing ones
 without overwriting them. Use separate paths for different domain sizes or
 encodings. Archive creation, validation, and preprocessing peaks are excluded
-from the reported proving measurement.
+from the reported proving measurement; preprocessing now has a separate
+peak/time measurement.
+
+Add an explicit SRS encoding and a new polynomial scratch path to use the
+file-backed key:
+
+```sh
+cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
+  -p ix-fflonk --example prover_memory -- \
+  14 /tmp/ix-test-uncompressed.srs uncompressed /tmp/ix-test-key.bin
+```
+
+Polynomial scratch files use `create_new` and cannot be reopened as standalone
+keys. Choose a fresh scratch path for each run.

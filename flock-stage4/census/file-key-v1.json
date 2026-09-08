@@ -1,0 +1,238 @@
+{
+  "schema": "ix:stage4:file-key-measurements:v1",
+  "measured_at_utc": "2026-09-08",
+  "implementation_revision": "50377fd200a4c96200067e9307bb9aef9fccca40",
+  "preceding_revision": "9de2fd3531419ce3e8dd0d72c437157d548e8dbc",
+  "circuit_revision": "1d3a0e4a21e8936cd74f4428c87f4173ea09cc89",
+  "circuit_census": "stage2-integration-v3.json",
+  "circuit_unchanged": true,
+  "full_circuit_census_rerun": false,
+  "full_fflonk_proof_generated": false,
+  "full_circuit_peak_ram_measured": false,
+  "polynomial_storage": {
+    "kind": "scratch storage; trusted key metadata and authentication hashes remain in memory",
+    "standalone_key_import_supported": false,
+    "canonical_field_bytes": 32,
+    "byte_order": "little-endian",
+    "chunk_fields": 65536,
+    "chunk_digest_bytes": 32,
+    "coefficient_columns": 8,
+    "sigma_evaluation_columns": 3,
+    "packed_c0_columns": 8,
+    "omitted_selector_evaluation_columns": 5,
+    "authentication_formula": "32 * (11 * ceil(n / 65536) + ceil(8*n / 65536))",
+    "digest_domain": "ix:stage4:fflonk-polynomial-chunk:bls12-381:v1",
+    "digest_binds": [
+      "domain",
+      "absolute chunk byte offset as u64 little-endian",
+      "chunk byte length as u64 little-endian",
+      "canonical field bytes"
+    ],
+    "hashes_computed_before_writing": true,
+    "whole_chunks_authenticated_before_decoding": true,
+    "preprocessing_digest_unchanged": true,
+    "verification_key_unchanged": true,
+    "proof_format_unchanged": true,
+    "layout": [
+      {
+        "polynomial": "ql coefficients",
+        "start_field_multiple_of_n": 0,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "qr coefficients",
+        "start_field_multiple_of_n": 1,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "qm coefficients",
+        "start_field_multiple_of_n": 2,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "qo coefficients",
+        "start_field_multiple_of_n": 3,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "qc coefficients",
+        "start_field_multiple_of_n": 4,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "sigma1 evaluations",
+        "start_field_multiple_of_n": 5,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "sigma1 coefficients",
+        "start_field_multiple_of_n": 6,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "sigma2 evaluations",
+        "start_field_multiple_of_n": 7,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "sigma2 coefficients",
+        "start_field_multiple_of_n": 8,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "sigma3 evaluations",
+        "start_field_multiple_of_n": 9,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "sigma3 coefficients",
+        "start_field_multiple_of_n": 10,
+        "length_multiple_of_n": 1
+      },
+      {
+        "polynomial": "C0 coefficients",
+        "start_field_multiple_of_n": 11,
+        "length_multiple_of_n": 8
+      }
+    ]
+  },
+  "full_fixture_capacity": {
+    "domain_size": 1073741824,
+    "field_column_bytes": 34359738368,
+    "old_retained_polynomial_bytes": 824633720832,
+    "file_key_polynomial_bytes": 652835028992,
+    "file_key_authentication_bytes": 9961472,
+    "gate_and_copy_cell_bytes": 283467841536,
+    "file_srs_authentication_bytes": 4718624,
+    "file_srs_and_materialized_key_minimum_bytes": 1108106280992,
+    "file_srs_and_file_key_minimum_bytes": 283482521632,
+    "early_prover_wire_and_public_input_buffers_bytes": 274877906944,
+    "early_prover_minimum_bytes": 558360428576,
+    "resident_type_bytes": {
+      "field": 32,
+      "plonk_gate": 216,
+      "plonk_copy_cell": 16
+    },
+    "lower_bound_exclusions": [
+      "R1CS",
+      "original witness",
+      "spare Vec capacity",
+      "allocator overhead",
+      "reader state",
+      "filesystem cache",
+      "MSM and FFT workspace",
+      "other temporary proof polynomials",
+      "process memory"
+    ],
+    "early_prover_allocation_basis": "retained file SRS/key plus three wire evaluation columns, three wire coefficient columns, and public-input evaluation and coefficient columns during the first public-input IFFT"
+  },
+  "memory_target": {
+    "ram_bytes": 512000000000,
+    "proposed_reserve_bytes": 68719476736,
+    "file_srs_implemented": true,
+    "file_backed_fixed_key_polynomials_implemented": true,
+    "direct_file_key_preprocessing_implemented": true,
+    "streamed_kzg_coefficients_implemented": true,
+    "streamed_sigma_evaluation_reads_implemented": true,
+    "file_backed_temporary_prover_polynomials_implemented": false,
+    "external_fft_implemented": false,
+    "external_copy_permutation_construction_implemented": false,
+    "streamed_gate_and_witness_proving_implemented": false,
+    "aggregate_memory_cap_implemented": false,
+    "full_proof_fits": false
+  },
+  "benchmark": {
+    "fixture": "synthetic multiplication constraints; public test tau 29; unchanged nonzero wire and Z blinding",
+    "srs_backend": "authenticated uncompressed file SRS for every sample",
+    "metric": "requested live heap allocations; excludes allocator overhead, transient reallocation internals, stack, RSS, and filesystem cache",
+    "proving_scope": "retained SRS/key, R1CS, witness, and bookkeeping plus peak inside prove_fflonk",
+    "preprocessing_scope": "initial live SRS, R1CS, witness, and arithmetization plus peak inside preprocessing; excludes SRS creation/import and initial relation construction",
+    "timings": "single sequential runs on a shared host; background load and filesystem cache were not controlled",
+    "all_proofs_verified": true,
+    "proof_digests_match_across_key_backends": true,
+    "proof_digests_match_previous_file_srs_report": true,
+    "samples": [
+      {
+        "domain_size": 16384,
+        "backend": "memory",
+        "retained_bytes": 21234931,
+        "total_peak_bytes": 62263219,
+        "additional_peak_bytes": 41028288,
+        "prove_seconds": 5.435175,
+        "preprocess_initial_bytes": 8652019,
+        "preprocess_peak_bytes": 49680435,
+        "preprocess_seconds": 0.84661,
+        "proof_digest": "65d7ed465f8a91fa6b057ed6c61a2eec853537147788847473f38152d3fc86c5",
+        "srs_file_bytes": 14157720,
+        "srs_authentication_bytes": 96
+      },
+      {
+        "domain_size": 16384,
+        "backend": "file",
+        "retained_bytes": 8652617,
+        "total_peak_bytes": 49680905,
+        "additional_peak_bytes": 41028288,
+        "prove_seconds": 5.596905,
+        "preprocess_initial_bytes": 8652081,
+        "preprocess_peak_bytes": 37622409,
+        "preprocess_seconds": 0.862847,
+        "proof_digest": "65d7ed465f8a91fa6b057ed6c61a2eec853537147788847473f38152d3fc86c5",
+        "srs_file_bytes": 14157720,
+        "srs_authentication_bytes": 96,
+        "key_file_bytes": 9961472,
+        "key_authentication_bytes": 416
+      },
+      {
+        "domain_size": 65536,
+        "backend": "memory",
+        "retained_bytes": 84936147,
+        "total_peak_bytes": 168431763,
+        "additional_peak_bytes": 83495616,
+        "prove_seconds": 21.644216,
+        "preprocess_initial_bytes": 34604499,
+        "preprocess_peak_bytes": 118100243,
+        "preprocess_seconds": 3.411988,
+        "proof_digest": "c23b58fa94b8f4d88508a376323850fce2837e949262155b58b7e458eb683ff7",
+        "srs_file_bytes": 56625048,
+        "srs_authentication_bytes": 320
+      },
+      {
+        "domain_size": 65536,
+        "backend": "file",
+        "retained_bytes": 34605289,
+        "total_peak_bytes": 118100905,
+        "additional_peak_bytes": 83495616,
+        "prove_seconds": 21.617023,
+        "preprocess_initial_bytes": 34604561,
+        "preprocess_peak_bytes": 63575081,
+        "preprocess_seconds": 3.337766,
+        "proof_digest": "c23b58fa94b8f4d88508a376323850fce2837e949262155b58b7e458eb683ff7",
+        "srs_file_bytes": 56625048,
+        "srs_authentication_bytes": 320,
+        "key_file_bytes": 39845888,
+        "key_authentication_bytes": 608
+      }
+    ]
+  },
+  "validation": {
+    "stage4_tests_passed": 135,
+    "regular_host_tests_passed": 63,
+    "serial_cryptographic_vectors_passed": 13,
+    "formatting_passed_both_workspaces": true,
+    "clippy_passed_both_workspaces": true,
+    "coverage": [
+      "memory/file key polynomial, digest, verifier-key and proof-byte equality",
+      "file keys with memory, compressed-file and uncompressed-file SRS backends",
+      "nonzero and zero blinding",
+      "wrong SRS and insufficient SRS degree",
+      "nonempty scratch file rejection",
+      "whole-chunk authentication on partial reads",
+      "external mutations in early and late proof rounds",
+      "short I/O, truncation, write/read/flush/seek errors and poisoned locks",
+      "KZG coefficient reads across 65536-term boundary and tail",
+      "sigma reads across storage and inversion batch boundaries",
+      "C0 interleaving across multiple source and output chunks",
+      "capacity arithmetic at the complete fixture domain"
+    ]
+  }
+}
