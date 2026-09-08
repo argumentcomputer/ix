@@ -3,13 +3,20 @@
 //! production setup. Allocator overhead, transient realloc internals, stack,
 //! and resident pages are not measured; setup allocations are counted only
 //! while they remain live during proving.
+//! Pass an archive path as the second argument to stream the test SRS to disk
+//! and prove with `KzgFileSrsV1<File>`. Existing matching archives are validated
+//! and reused; existing files are never overwritten.
+//! Files use uncompressed points by default; pass `compressed` as the third
+//! argument to trade decompression work for a smaller archive.
 
 use ark_bls12_381::{Fr, G1Affine, G2Affine};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{One, PrimeField};
 use ix_fflonk::{
-  FflonkBlindingV1, KzgUniversalSrsV1, arithmetize_r1cs, plan_fflonk_capacity,
-  preprocess_fflonk, prove_fflonk, required_fflonk_srs_degree, verify_fflonk,
+  FflonkBlindingV1, KzgCommitmentSourceV1, KzgFileSrsV1, KzgSrsFileEncodingV1,
+  KzgUniversalSrsV1, PlonkArithmetizationV1, arithmetize_r1cs,
+  plan_fflonk_capacity, preprocess_fflonk, prove_fflonk,
+  required_fflonk_srs_degree, verify_fflonk, write_kzg_srs_file,
 };
 use ix_terminal_circuit::{
   CanonicalR1csV1, ConstraintPhase, LinearCombination, R1csBuilder, Witness,
@@ -89,19 +96,14 @@ fn fixture(size: usize) -> (CanonicalR1csV1, Witness) {
   builder.finish().unwrap()
 }
 
-fn test_srs(max_degree: usize) -> KzgUniversalSrsV1 {
+fn test_powers(max_degree: usize) -> impl Iterator<Item = G1Affine> {
   let tau = Fr::from(29u64);
   let mut scalar = Fr::one();
-  let powers = (0..=max_degree)
-    .map(|_| {
-      let point = G1Affine::generator().mul_bigint(scalar.into_bigint());
-      scalar *= tau;
-      point.into_affine()
-    })
-    .collect();
-  let tau_g2 =
-    G2Affine::generator().mul_bigint(tau.into_bigint()).into_affine();
-  KzgUniversalSrsV1::new(powers, G2Affine::generator(), tau_g2).unwrap()
+  (0..=max_degree).map(move |_| {
+    let point = G1Affine::generator().mul_bigint(scalar.into_bigint());
+    scalar *= tau;
+    point.into_affine()
+  })
 }
 
 fn main() {
@@ -121,9 +123,66 @@ fn main() {
     "capacity={:?}",
     plan_fflonk_capacity(arithmetization.census()).unwrap()
   );
-  let degree = required_fflonk_srs_degree(size_u64).unwrap();
-  let srs = test_srs(usize::try_from(degree).unwrap());
-  let key = preprocess_fflonk(&srs, arithmetization).unwrap();
+  let degree =
+    usize::try_from(required_fflonk_srs_degree(size_u64).unwrap()).unwrap();
+  let tau_g2 = G2Affine::generator()
+    .mul_bigint(Fr::from(29u64).into_bigint())
+    .into_affine();
+  if let Some(path) = std::env::args_os().nth(2) {
+    let encoding = match std::env::args().nth(3).as_deref() {
+      Some("compressed") => KzgSrsFileEncodingV1::Compressed,
+      Some("uncompressed") | None => KzgSrsFileEncodingV1::Uncompressed,
+      Some(_) => panic!("choose compressed or uncompressed SRS storage"),
+    };
+    let created =
+      std::fs::OpenOptions::new().write(true).create_new(true).open(&path);
+    match created {
+      Ok(mut archive) => write_kzg_srs_file(
+        &mut archive,
+        degree + 1,
+        test_powers(degree),
+        G2Affine::generator(),
+        tau_g2,
+        encoding,
+      )
+      .unwrap(),
+      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {},
+      Err(error) => panic!("create test SRS archive: {error}"),
+    }
+    let srs = KzgFileSrsV1::open(std::fs::File::open(&path).unwrap()).unwrap();
+    assert_eq!(srs.max_degree(), degree, "archive has a different domain");
+    assert_eq!(
+      srs.verifier_key().tau_g2,
+      tau_g2,
+      "archive has a different test tau"
+    );
+    assert_eq!(srs.encoding(), encoding, "archive has a different encoding");
+    println!(
+      "srs_backend=file encoding={:?} archive_bytes={} authentication_bytes={}",
+      srs.encoding(),
+      std::fs::metadata(&path).unwrap().len(),
+      srs.authentication_bytes(),
+    );
+    profile(&srs, arithmetization, &r1cs, &witness);
+  } else {
+    let srs = KzgUniversalSrsV1::new(
+      test_powers(degree).collect(),
+      G2Affine::generator(),
+      tau_g2,
+    )
+    .unwrap();
+    println!("srs_backend=memory");
+    profile(&srs, arithmetization, &r1cs, &witness);
+  }
+}
+
+fn profile(
+  srs: &impl KzgCommitmentSourceV1,
+  arithmetization: PlonkArithmetizationV1,
+  r1cs: &CanonicalR1csV1,
+  witness: &Witness,
+) {
+  let key = preprocess_fflonk(srs, arithmetization).unwrap();
   let blinding = FflonkBlindingV1 {
     wire_evaluations: core::array::from_fn(|index| {
       Fr::from(u64::try_from(index).unwrap() + 31)
@@ -133,7 +192,7 @@ fn main() {
   let retained = LIVE.load(Relaxed);
   PEAK.store(retained, Relaxed);
   let start = Instant::now();
-  let output = prove_fflonk(&srs, &key, &r1cs, &witness, blinding).unwrap();
+  let output = prove_fflonk(srs, &key, r1cs, witness, blinding).unwrap();
   let elapsed = start.elapsed();
   let peak = PEAK.load(Relaxed);
   println!(

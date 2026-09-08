@@ -1,9 +1,10 @@
 use crate::{
   FFLONK_COMMITMENTS, FFLONK_EVALUATIONS,
   FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER, FflonkEvaluationRootsV1,
-  FflonkPreprocessedCircuitV1, FflonkProofV1, FflonkTranscriptError, KzgError,
-  KzgUniversalSrsV1, PlonkArithmetizationError, commit_polynomial,
-  derive_fflonk_challenges, evaluate_polynomial, lower_plonk_witness,
+  FflonkPreprocessedCircuitV1, FflonkProofV1, FflonkTranscriptError,
+  KzgCommitmentSourceV1, KzgError, PlonkArithmetizationError,
+  commit_polynomial, derive_fflonk_challenges, evaluate_polynomial,
+  lower_plonk_witness,
 };
 use ark_bls12_381::{Fr, G1Affine};
 use ark_ff::{FftField, Field, One, Zero, batch_inversion};
@@ -102,7 +103,7 @@ impl From<FflonkTranscriptError> for FflonkProverError {
 
 /// Produces one Stage 4 FFLONK proof from a preprocessed canonical relation.
 pub fn prove_fflonk(
-  srs: &KzgUniversalSrsV1,
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
   preprocessed: &FflonkPreprocessedCircuitV1,
   r1cs: &CanonicalR1csV1,
   witness: &Witness,

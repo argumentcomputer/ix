@@ -2,13 +2,14 @@
 //!
 //! The backend consumes the canonical R1CS owned by `ix-terminal-circuit`.
 //! It provides constant-memory gate projection, materialized development
-//! preprocessing/proving, native verification, and the fixed EIP-2537 proof
-//! wire boundary.
+//! preprocessing/proving with in-memory or authenticated file SRS sources,
+//! native verification, and the fixed EIP-2537 proof wire boundary.
 
 mod arithmetization;
 mod capacity;
 mod eip2537;
 mod kzg;
+mod kzg_srs_file;
 mod preprocessing;
 mod proof;
 mod prover;
@@ -35,8 +36,13 @@ pub use eip2537::{
   FflonkEip2537GasV1, FflonkEip2537PlanV1, build_eip2537_verification_plan,
 };
 pub use kzg::{
-  KzgCommitmentV1, KzgError, KzgOpeningV1, KzgUniversalSrsV1, KzgVerifierKeyV1,
-  commit_polynomial, evaluate_polynomial, open_polynomial, verify_opening,
+  KzgCommitmentSourceV1, KzgCommitmentV1, KzgError, KzgOpeningV1,
+  KzgUniversalSrsV1, KzgVerifierKeyV1, commit_polynomial, evaluate_polynomial,
+  open_polynomial, verify_opening,
+};
+pub use kzg_srs_file::{
+  KZG_SRS_FILE_CHUNK_POINTS, KZG_SRS_FILE_HEADER_BYTES, KzgFileSrsV1,
+  KzgSrsFileEncodingV1, write_kzg_srs_file,
 };
 pub use preprocessing::{
   FFLONK_SRS_DEGREE_OVERHEAD, FFLONK_SRS_DOMAIN_MULTIPLIER,

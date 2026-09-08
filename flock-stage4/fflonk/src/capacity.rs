@@ -1,5 +1,6 @@
 use crate::{
   FFLONK_SRS_DEGREE_OVERHEAD, FFLONK_SRS_DOMAIN_MULTIPLIER,
+  KZG_SRS_FILE_CHUNK_POINTS, KZG_SRS_FILE_HEADER_BYTES, KzgSrsFileEncodingV1,
   PLONK_GATE_RECORD_BYTES, PlonkCellV1, PlonkGateCensusV1, PlonkGateV1,
 };
 use ark_bls12_381::{Fr, G1Affine};
@@ -18,10 +19,10 @@ pub const FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER: u64 = 4;
 
 /// Checked production-storage census for one Stage 4 FFLONK domain.
 ///
-/// Storage fields are payload bytes, not a peak-RSS promise: filesystem metadata,
-/// sort/FFT scratch space, checksums, and implementation buffering are not
-/// included. Public and padding gate rows are deterministic and therefore the
-/// gate stream stores constraint rows only.
+/// Storage fields count canonical data, not peak RSS. Filesystem metadata,
+/// sort/FFT scratch space, and runtime buffering are excluded. Archive headers
+/// and retained SRS authentication indexes have explicit fields. Public and
+/// padding gate rows are deterministic, so the stream stores constraint rows only.
 /// A sizing census may describe a domain above the field's FFT limit; these
 /// payload sizes alone do not establish that the backend can use that domain.
 /// The polynomial-FFT requirement and target-specific resident SRS/key lower
@@ -41,11 +42,21 @@ pub struct FflonkCapacityPlanV1 {
   pub largest_packed_polynomial_bytes: u64,
   pub compressed_srs_g1_bytes: u64,
   pub eip2537_srs_g1_bytes: u64,
+  /// Compressed G1 payload plus the v1 archive's fixed header.
+  pub compressed_file_srs_bytes: u64,
+  /// Uncompressed G1 coordinates plus the v1 archive's fixed header.
+  pub uncompressed_file_srs_bytes: u64,
+  /// One retained 32-byte authentication digest per file-SRS chunk.
+  pub file_srs_authentication_bytes: u64,
   /// Lower bound for the resident SRS and materialized proving key on this
   /// target architecture. Includes typed gates, copy cells, retained
   /// polynomials, and affine G1 points. Excludes R1CS, witness, temporary
   /// buffers, spare Vec capacity, allocator overhead, and process memory.
   pub materialized_srs_and_key_minimum_bytes: u64,
+  /// Materialized proving key plus a file-SRS authentication index. Uses the
+  /// same exclusions as the resident-SRS bound, and excludes temporary SRS
+  /// decoding/MSM buffers, reader state, filesystem cache, and I/O buffers.
+  pub file_srs_and_key_minimum_bytes: u64,
 }
 
 /// Why capacity arithmetic could not represent a proposed census.
@@ -114,6 +125,25 @@ pub fn plan_fflonk_capacity(
     bytes(census.domain_size, retained_key_bytes_per_row)?
       .checked_add(bytes(required_srs_g1_points, srs_point_bytes)?)
       .ok_or(FflonkCapacityError::CountOverflow)?;
+  let compressed_srs_g1_bytes =
+    bytes(required_srs_g1_points, BLS12_381_G1_COMPRESSED_BYTES)?;
+  let compressed_file_srs_bytes = compressed_srs_g1_bytes
+    .checked_add(KZG_SRS_FILE_HEADER_BYTES as u64)
+    .ok_or(FflonkCapacityError::CountOverflow)?;
+  let uncompressed_file_srs_bytes = bytes(
+    required_srs_g1_points,
+    KzgSrsFileEncodingV1::Uncompressed.point_bytes() as u64,
+  )?
+  .checked_add(KZG_SRS_FILE_HEADER_BYTES as u64)
+  .ok_or(FflonkCapacityError::CountOverflow)?;
+  let file_srs_authentication_bytes = bytes(
+    required_srs_g1_points.div_ceil(KZG_SRS_FILE_CHUNK_POINTS as u64),
+    32,
+  )?;
+  let file_srs_and_key_minimum_bytes =
+    bytes(census.domain_size, retained_key_bytes_per_row)?
+      .checked_add(file_srs_authentication_bytes)
+      .ok_or(FflonkCapacityError::CountOverflow)?;
 
   Ok(FflonkCapacityPlanV1 {
     domain_size: census.domain_size,
@@ -134,15 +164,16 @@ pub fn plan_fflonk_capacity(
     // C0 interleaves eight size-n coefficient polynomials.
     packed_c0_bytes: bytes(field_column_bytes, 8)?,
     largest_packed_polynomial_bytes,
-    compressed_srs_g1_bytes: bytes(
-      required_srs_g1_points,
-      BLS12_381_G1_COMPRESSED_BYTES,
-    )?,
+    compressed_srs_g1_bytes,
     eip2537_srs_g1_bytes: bytes(
       required_srs_g1_points,
       BLS12_381_G1_EIP2537_BYTES,
     )?,
     materialized_srs_and_key_minimum_bytes,
+    compressed_file_srs_bytes,
+    uncompressed_file_srs_bytes,
+    file_srs_authentication_bytes,
+    file_srs_and_key_minimum_bytes,
   })
 }
 
@@ -179,6 +210,9 @@ mod tests {
     assert_eq!(plan.largest_packed_polynomial_bytes, 2_880);
     assert_eq!(plan.compressed_srs_g1_bytes, 4_320);
     assert_eq!(plan.eip2537_srs_g1_bytes, 11_520);
+    assert_eq!(plan.compressed_file_srs_bytes, 4_536);
+    assert_eq!(plan.uncompressed_file_srs_bytes, 8_856);
+    assert_eq!(plan.file_srs_authentication_bytes, 32);
     assert_eq!(plan.polynomial_fft_domain_size, 32);
     assert!(plan.supported_polynomial_fft_domain);
   }
@@ -194,8 +228,13 @@ mod tests {
     assert!(plan.materialized_srs_and_key_minimum_bytes > 512_000_000_000);
     large.domain_size >>= 1;
     large.padding_rows = large.domain_size - large.active_rows();
+    let plan = plan_fflonk_capacity(&large).unwrap();
+    assert!(plan.supported_polynomial_fft_domain);
+    assert_eq!(plan.file_srs_authentication_bytes, 4_718_624);
+    assert!(plan.file_srs_and_key_minimum_bytes > 512_000_000_000);
     assert!(
-      plan_fflonk_capacity(&large).unwrap().supported_polynomial_fft_domain
+      plan.file_srs_and_key_minimum_bytes
+        < plan.materialized_srs_and_key_minimum_bytes
     );
   }
 

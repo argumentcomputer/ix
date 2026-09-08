@@ -1,6 +1,6 @@
 use crate::{
-  FflonkVerificationKeyError, FflonkVerificationKeyV1, KzgCommitmentV1,
-  KzgError, KzgUniversalSrsV1, PlonkArithmetizationV1, PlonkCellV1,
+  FflonkVerificationKeyError, FflonkVerificationKeyV1, KzgCommitmentSourceV1,
+  KzgCommitmentV1, KzgError, PlonkArithmetizationV1, PlonkCellV1,
   commit_polynomial,
 };
 use ark_bls12_381::Fr;
@@ -151,7 +151,7 @@ pub fn required_fflonk_srs_degree(
 /// Computes selector and sigma polynomials, packs and commits C0, and returns
 /// the validated circuit-specific verification key.
 pub fn preprocess_fflonk(
-  srs: &KzgUniversalSrsV1,
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
   arithmetization: PlonkArithmetizationV1,
 ) -> Result<FflonkPreprocessedCircuitV1, FflonkPreprocessingError> {
   let domain_size_u64 = arithmetization.census().domain_size;
@@ -335,7 +335,7 @@ fn hash_fields(hasher: &mut blake3::Hasher, values: &[Fr]) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{arithmetize_r1cs, evaluate_polynomial};
+  use crate::{KzgUniversalSrsV1, arithmetize_r1cs, evaluate_polynomial};
   use ark_bls12_381::{G1Affine, G2Affine};
   use ark_ec::{AffineRepr, CurveGroup};
   use ix_terminal_circuit::{ConstraintPhase, LinearCombination, R1csBuilder};

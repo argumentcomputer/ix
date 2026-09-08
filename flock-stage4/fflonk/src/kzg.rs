@@ -4,12 +4,39 @@ use ark_ff::{One, PrimeField, Zero};
 use ark_serialize::CanonicalSerialize;
 use core::fmt;
 
-const SRS_DIGEST_DOMAIN: &[u8] = b"ix:stage4:kzg-srs:bls12-381:v1";
+pub(super) const SRS_DIGEST_DOMAIN: &[u8] = b"ix:stage4:kzg-srs:bls12-381:v1";
 const SRS_BATCH_CHALLENGE_DOMAIN: &[u8] =
   b"ix:stage4:kzg-srs-batch-challenge:bls12-381:v1";
 // Arkworks expands scalars into window digits. Bound that workspace even
 // when a polynomial or universal SRS contains billions of coefficients.
-const MSM_BATCH_POINTS: usize = 65_536;
+pub(super) const MSM_BATCH_POINTS: usize = 65_536;
+
+/// Commitment access to one validated universal SRS, independent of storage.
+///
+/// Implementations must commit with the exact powers bound by `verifier_key`
+/// and its SRS digest. The in-memory and file-backed implementations validate
+/// every power before exposing this interface.
+pub trait KzgCommitmentSourceV1 {
+  fn max_degree(&self) -> usize;
+
+  fn verifier_key(&self) -> KzgVerifierKeyV1;
+
+  fn commit(&self, coefficients: &[Fr]) -> Result<KzgCommitmentV1, KzgError>;
+
+  fn digest(&self) -> [u8; 32] {
+    self.verifier_key().srs_digest
+  }
+
+  fn ensure_degree(&self, degree: usize) -> Result<(), KzgError> {
+    if degree > self.max_degree() {
+      return Err(KzgError::DegreeTooLarge {
+        degree,
+        max_degree: self.max_degree(),
+      });
+    }
+    Ok(())
+  }
+}
 
 /// Universal BLS12-381 powers-of-tau material used by the Stage 4 backend.
 ///
@@ -101,6 +128,27 @@ impl KzgUniversalSrsV1 {
   }
 }
 
+impl KzgCommitmentSourceV1 for KzgUniversalSrsV1 {
+  fn max_degree(&self) -> usize {
+    self.max_degree()
+  }
+
+  fn verifier_key(&self) -> KzgVerifierKeyV1 {
+    self.verifier_key()
+  }
+
+  fn commit(&self, coefficients: &[Fr]) -> Result<KzgCommitmentV1, KzgError> {
+    let live_len = live_coefficient_count(coefficients);
+    if live_len == 0 {
+      return Ok(KzgCommitmentV1(G1Affine::identity()));
+    }
+    self.ensure_degree(live_len - 1)?;
+    let commitment =
+      bounded_msm(&self.powers_of_g1[..live_len], &coefficients[..live_len])?;
+    Ok(KzgCommitmentV1(commitment.into_affine()))
+  }
+}
+
 /// Constant-size KZG verifier material derived from a validated universal SRS.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KzgVerifierKeyV1 {
@@ -131,6 +179,10 @@ pub enum KzgError {
   InconsistentPowers,
   Serialization,
   InternalShape,
+  Io(std::io::ErrorKind),
+  InvalidSrsFile(&'static str),
+  SrsChunkChanged { index: usize },
+  SrsStoragePoisoned,
 }
 
 impl fmt::Display for KzgError {
@@ -163,28 +215,41 @@ impl fmt::Display for KzgError {
         formatter.write_str("KZG SRS point serialization failed")
       },
       Self::InternalShape => formatter.write_str("internal KZG shape mismatch"),
+      Self::Io(kind) => write!(formatter, "KZG SRS storage I/O failed: {kind}"),
+      Self::InvalidSrsFile(reason) => {
+        write!(formatter, "invalid KZG SRS file: {reason}")
+      },
+      Self::SrsChunkChanged { index } => {
+        write!(formatter, "KZG SRS chunk {index} changed after validation")
+      },
+      Self::SrsStoragePoisoned => {
+        formatter.write_str("KZG SRS storage lock was poisoned")
+      },
     }
   }
 }
 
 impl std::error::Error for KzgError {}
 
+impl From<std::io::Error> for KzgError {
+  fn from(error: std::io::Error) -> Self {
+    Self::Io(error.kind())
+  }
+}
+
 /// Commit to a coefficient-form polynomial in ascending degree order.
 pub fn commit_polynomial(
-  srs: &KzgUniversalSrsV1,
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
   coefficients: &[Fr],
 ) -> Result<KzgCommitmentV1, KzgError> {
-  let live_len = coefficients
+  srs.commit(coefficients)
+}
+
+pub(super) fn live_coefficient_count(coefficients: &[Fr]) -> usize {
+  coefficients
     .iter()
     .rposition(|coefficient| !coefficient.is_zero())
-    .map_or(0, |degree| degree + 1);
-  if live_len == 0 {
-    return Ok(KzgCommitmentV1(G1Affine::identity()));
-  }
-  srs.ensure_degree(live_len - 1)?;
-  let commitment =
-    bounded_msm(&srs.powers_of_g1[..live_len], &coefficients[..live_len])?;
-  Ok(KzgCommitmentV1(commitment.into_affine()))
+    .map_or(0, |degree| degree + 1)
 }
 
 #[must_use]
@@ -197,7 +262,7 @@ pub fn evaluate_polynomial(coefficients: &[Fr], point: Fr) -> Fr {
 
 /// Open a coefficient-form polynomial at one point using synthetic division.
 pub fn open_polynomial(
-  srs: &KzgUniversalSrsV1,
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
   coefficients: &[Fr],
   point: Fr,
 ) -> Result<KzgOpeningV1, KzgError> {
@@ -237,7 +302,7 @@ fn quotient_by_linear(coefficients: &[Fr], point: Fr, value: Fr) -> Vec<Fr> {
   quotient
 }
 
-fn bounded_msm(
+pub(super) fn bounded_msm(
   bases: &[G1Affine],
   scalars: &[Fr],
 ) -> Result<G1Projective, KzgError> {
@@ -276,7 +341,7 @@ fn srs_consistency_commitments(
   Ok((left, right))
 }
 
-fn srs_batch_challenge(digest: [u8; 32]) -> Fr {
+pub(super) fn srs_batch_challenge(digest: [u8; 32]) -> Fr {
   let mut hasher = blake3::Hasher::new();
   hasher.update(SRS_BATCH_CHALLENGE_DOMAIN);
   hasher.update(&digest);
