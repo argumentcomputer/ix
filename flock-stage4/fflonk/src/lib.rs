@@ -2,7 +2,8 @@
 //!
 //! The backend consumes the canonical R1CS owned by `ix-terminal-circuit`.
 //! It provides constant-memory gate projection, materialized development
-//! preprocessing/proving with in-memory or authenticated file SRS sources,
+//! preprocessing/proving with in-memory or authenticated file SRS and fixed
+//! polynomial sources (witnesses and temporary proof polynomials remain resident),
 //! native verification, and the fixed EIP-2537 proof wire boundary.
 
 mod arithmetization;
@@ -10,7 +11,9 @@ mod capacity;
 mod eip2537;
 mod kzg;
 mod kzg_srs_file;
+mod polynomial_storage;
 mod preprocessing;
+mod preprocessing_file;
 mod proof;
 mod prover;
 mod transcript;
@@ -37,18 +40,26 @@ pub use eip2537::{
 };
 pub use kzg::{
   KzgCommitmentSourceV1, KzgCommitmentV1, KzgError, KzgOpeningV1,
-  KzgUniversalSrsV1, KzgVerifierKeyV1, commit_polynomial, evaluate_polynomial,
-  open_polynomial, verify_opening,
+  KzgUniversalSrsV1, KzgVerifierKeyV1, commit_polynomial,
+  commit_polynomial_source, evaluate_polynomial, open_polynomial,
+  verify_opening,
 };
 pub use kzg_srs_file::{
   KZG_SRS_FILE_CHUNK_POINTS, KZG_SRS_FILE_HEADER_BYTES, KzgFileSrsV1,
   KzgSrsFileEncodingV1, write_kzg_srs_file,
 };
+pub use polynomial_storage::{
+  FFLONK_POLYNOMIAL_CHUNK_FIELDS, FflonkPolynomialSourceV1, FflonkStorageError,
+};
 pub use preprocessing::{
   FFLONK_SRS_DEGREE_OVERHEAD, FFLONK_SRS_DOMAIN_MULTIPLIER,
-  FflonkPreprocessedCircuitV1, FflonkPreprocessedPolynomialV1,
-  FflonkPreprocessedPolynomialsV1, FflonkPreprocessingError, preprocess_fflonk,
+  FflonkFixedPolynomialV1, FflonkPreprocessedCircuitV1,
+  FflonkPreprocessedPolynomialV1, FflonkPreprocessedPolynomialsV1,
+  FflonkPreprocessingError, FflonkProvingKeyV1, preprocess_fflonk,
   required_fflonk_srs_degree,
+};
+pub use preprocessing_file::{
+  FflonkFilePreprocessedCircuitV1, preprocess_fflonk_to_file,
 };
 
 pub use proof::{

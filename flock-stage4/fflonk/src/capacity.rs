@@ -1,7 +1,8 @@
 use crate::{
-  FFLONK_SRS_DEGREE_OVERHEAD, FFLONK_SRS_DOMAIN_MULTIPLIER,
-  KZG_SRS_FILE_CHUNK_POINTS, KZG_SRS_FILE_HEADER_BYTES, KzgSrsFileEncodingV1,
-  PLONK_GATE_RECORD_BYTES, PlonkCellV1, PlonkGateCensusV1, PlonkGateV1,
+  FFLONK_POLYNOMIAL_CHUNK_FIELDS, FFLONK_SRS_DEGREE_OVERHEAD,
+  FFLONK_SRS_DOMAIN_MULTIPLIER, KZG_SRS_FILE_CHUNK_POINTS,
+  KZG_SRS_FILE_HEADER_BYTES, KzgSrsFileEncodingV1, PLONK_GATE_RECORD_BYTES,
+  PlonkCellV1, PlonkGateCensusV1, PlonkGateV1,
 };
 use ark_bls12_381::{Fr, G1Affine};
 use ark_ff::FftField;
@@ -57,6 +58,16 @@ pub struct FflonkCapacityPlanV1 {
   /// same exclusions as the resident-SRS bound, and excludes temporary SRS
   /// decoding/MSM buffers, reader state, filesystem cache, and I/O buffers.
   pub file_srs_and_key_minimum_bytes: u64,
+  /// Eight fixed coefficient columns, three sigma evaluation columns, and C0
+  /// in canonical field storage. The file key omits five unused selector
+  /// evaluation columns retained by the materialized development key.
+  pub file_key_polynomial_bytes: u64,
+  /// One 32-byte authentication digest per stored polynomial chunk.
+  pub file_key_authentication_bytes: u64,
+  /// Typed gates/copy cells plus file-SRS and file-key authentication indexes.
+  /// Uses the same exclusions as `file_srs_and_key_minimum_bytes`, also
+  /// excluding polynomial reader state, read buffers, and filesystem cache.
+  pub file_srs_and_file_key_minimum_bytes: u64,
 }
 
 /// Why capacity arithmetic could not represent a proposed census.
@@ -144,6 +155,24 @@ pub fn plan_fflonk_capacity(
     bytes(census.domain_size, retained_key_bytes_per_row)?
       .checked_add(file_srs_authentication_bytes)
       .ok_or(FflonkCapacityError::CountOverflow)?;
+  let polynomial_chunks = bytes(
+    census.domain_size.div_ceil(FFLONK_POLYNOMIAL_CHUNK_FIELDS as u64),
+    11,
+  )?
+  .checked_add(
+    bytes(census.domain_size, 8)?
+      .div_ceil(FFLONK_POLYNOMIAL_CHUNK_FIELDS as u64),
+  )
+  .ok_or(FflonkCapacityError::CountOverflow)?;
+  let file_key_authentication_bytes = bytes(polynomial_chunks, 32)?;
+  let arithmetization_bytes_per_row =
+    u64::try_from(size_of::<PlonkGateV1>() + 3 * size_of::<PlonkCellV1>())
+      .map_err(|_| FflonkCapacityError::CountOverflow)?;
+  let file_srs_and_file_key_minimum_bytes =
+    bytes(census.domain_size, arithmetization_bytes_per_row)?
+      .checked_add(file_srs_authentication_bytes)
+      .and_then(|total| total.checked_add(file_key_authentication_bytes))
+      .ok_or(FflonkCapacityError::CountOverflow)?;
 
   Ok(FflonkCapacityPlanV1 {
     domain_size: census.domain_size,
@@ -174,6 +203,9 @@ pub fn plan_fflonk_capacity(
     uncompressed_file_srs_bytes,
     file_srs_authentication_bytes,
     file_srs_and_key_minimum_bytes,
+    file_key_polynomial_bytes: bytes(field_column_bytes, 19)?,
+    file_key_authentication_bytes,
+    file_srs_and_file_key_minimum_bytes,
   })
 }
 
@@ -213,6 +245,8 @@ mod tests {
     assert_eq!(plan.compressed_file_srs_bytes, 4_536);
     assert_eq!(plan.uncompressed_file_srs_bytes, 8_856);
     assert_eq!(plan.file_srs_authentication_bytes, 32);
+    assert_eq!(plan.file_key_polynomial_bytes, 4_864);
+    assert_eq!(plan.file_key_authentication_bytes, 384);
     assert_eq!(plan.polynomial_fft_domain_size, 32);
     assert!(plan.supported_polynomial_fft_domain);
   }
@@ -232,6 +266,16 @@ mod tests {
     assert!(plan.supported_polynomial_fft_domain);
     assert_eq!(plan.file_srs_authentication_bytes, 4_718_624);
     assert!(plan.file_srs_and_key_minimum_bytes > 512_000_000_000);
+    assert_eq!(plan.file_key_polynomial_bytes, 652_835_028_992);
+    assert_eq!(plan.file_key_authentication_bytes, 9_961_472);
+    let arithmetization_bytes = (1u64 << 30)
+      * u64::try_from(size_of::<PlonkGateV1>() + 3 * size_of::<PlonkCellV1>())
+        .unwrap();
+    assert_eq!(
+      plan.file_srs_and_file_key_minimum_bytes,
+      arithmetization_bytes + 9_961_472 + 4_718_624
+    );
+    assert!(plan.file_srs_and_file_key_minimum_bytes < 512_000_000_000);
     assert!(
       plan.file_srs_and_key_minimum_bytes
         < plan.materialized_srs_and_key_minimum_bytes

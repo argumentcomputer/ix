@@ -1,3 +1,4 @@
+use crate::{FflonkPolynomialSourceV1, FflonkStorageError};
 use ark_bls12_381::{Bls12_381, Fr, G1Affine, G1Projective, G2Affine};
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM, pairing::Pairing};
 use ark_ff::{One, PrimeField, Zero};
@@ -22,6 +23,17 @@ pub trait KzgCommitmentSourceV1 {
   fn verifier_key(&self) -> KzgVerifierKeyV1;
 
   fn commit(&self, coefficients: &[Fr]) -> Result<KzgCommitmentV1, KzgError>;
+
+  /// Commit without materializing the coefficient source. The declared length
+  /// must fit the SRS, including trailing zeros. Both built-in SRS backends
+  /// bound coefficient reads to 65,536 fields. Custom backends must implement
+  /// this method to support file-backed preprocessing.
+  fn commit_source(
+    &self,
+    _coefficients: &dyn FflonkPolynomialSourceV1,
+  ) -> Result<KzgCommitmentV1, KzgError> {
+    Err(KzgError::StreamingCommitmentUnsupported)
+  }
 
   fn digest(&self) -> [u8; 32] {
     self.verifier_key().srs_digest
@@ -147,6 +159,26 @@ impl KzgCommitmentSourceV1 for KzgUniversalSrsV1 {
       bounded_msm(&self.powers_of_g1[..live_len], &coefficients[..live_len])?;
     Ok(KzgCommitmentV1(commitment.into_affine()))
   }
+
+  fn commit_source(
+    &self,
+    coefficients: &dyn FflonkPolynomialSourceV1,
+  ) -> Result<KzgCommitmentV1, KzgError> {
+    if coefficients.is_empty() {
+      return Ok(KzgCommitmentV1(G1Affine::identity()));
+    }
+    self.ensure_degree(coefficients.len() - 1)?;
+    let mut scalars =
+      vec![Fr::zero(); coefficients.len().min(MSM_BATCH_POINTS)];
+    let mut commitment = G1Projective::zero();
+    for start in (0..coefficients.len()).step_by(MSM_BATCH_POINTS) {
+      let len = scalars.len().min(coefficients.len() - start);
+      coefficients.read_fields(start, &mut scalars[..len])?;
+      commitment +=
+        bounded_msm(&self.powers_of_g1[start..start + len], &scalars[..len])?;
+    }
+    Ok(KzgCommitmentV1(commitment.into_affine()))
+  }
 }
 
 /// Constant-size KZG verifier material derived from a validated universal SRS.
@@ -183,6 +215,8 @@ pub enum KzgError {
   InvalidSrsFile(&'static str),
   SrsChunkChanged { index: usize },
   SrsStoragePoisoned,
+  PolynomialStorage(FflonkStorageError),
+  StreamingCommitmentUnsupported,
 }
 
 impl fmt::Display for KzgError {
@@ -225,11 +259,28 @@ impl fmt::Display for KzgError {
       Self::SrsStoragePoisoned => {
         formatter.write_str("KZG SRS storage lock was poisoned")
       },
+      Self::PolynomialStorage(error) => error.fmt(formatter),
+      Self::StreamingCommitmentUnsupported => formatter.write_str(
+        "KZG backend does not implement streamed coefficient commitments",
+      ),
     }
   }
 }
 
-impl std::error::Error for KzgError {}
+impl std::error::Error for KzgError {
+  fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+    match self {
+      Self::PolynomialStorage(error) => Some(error),
+      _ => None,
+    }
+  }
+}
+
+impl From<FflonkStorageError> for KzgError {
+  fn from(error: FflonkStorageError) -> Self {
+    Self::PolynomialStorage(error)
+  }
+}
 
 impl From<std::io::Error> for KzgError {
   fn from(error: std::io::Error) -> Self {
@@ -243,6 +294,16 @@ pub fn commit_polynomial(
   coefficients: &[Fr],
 ) -> Result<KzgCommitmentV1, KzgError> {
   srs.commit(coefficients)
+}
+
+/// Commit to streamed coefficients in ascending degree order. Unlike the
+/// slice API, the entire declared length must fit the SRS even when padded
+/// with zeros. No preliminary scan or full coefficient allocation is needed.
+pub fn commit_polynomial_source(
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
+  coefficients: &dyn FflonkPolynomialSourceV1,
+) -> Result<KzgCommitmentV1, KzgError> {
+  srs.commit_source(coefficients)
 }
 
 pub(super) fn live_coefficient_count(coefficients: &[Fr]) -> usize {
@@ -437,6 +498,69 @@ mod tests {
     assert_eq!(
       bounded_msm(&bases, &scalars[..count - 1]),
       Err(KzgError::InternalShape)
+    );
+  }
+
+  #[test]
+  fn streamed_memory_commitments_keep_global_offsets_and_bound_scalar_reads() {
+    use std::cell::Cell;
+    struct GeneratedCoefficients {
+      len: usize,
+      largest: Cell<usize>,
+      fail_tail: Cell<bool>,
+    }
+    impl FflonkPolynomialSourceV1 for GeneratedCoefficients {
+      fn len(&self) -> usize {
+        self.len
+      }
+      fn read_fields(
+        &self,
+        start: usize,
+        output: &mut [Fr],
+      ) -> Result<(), FflonkStorageError> {
+        self.largest.set(self.largest.get().max(output.len()));
+        if start.checked_add(output.len()).is_none_or(|end| end > self.len) {
+          return Err(FflonkStorageError::Range);
+        }
+        if self.fail_tail.get() && start >= MSM_BATCH_POINTS {
+          return Err(FflonkStorageError::Io(std::io::ErrorKind::BrokenPipe));
+        }
+        for (index, value) in output.iter_mut().enumerate() {
+          *value = Fr::from((start + index + 3) as u64);
+        }
+        Ok(())
+      }
+    }
+    let count = MSM_BATCH_POINTS + 5;
+    let generator = G1Affine::generator();
+    let srs = KzgUniversalSrsV1::new(
+      (0..count)
+        .map(|index| if index % 2 == 0 { generator } else { -generator })
+        .collect(),
+      G2Affine::generator(),
+      -G2Affine::generator(),
+    )
+    .unwrap();
+    let source = GeneratedCoefficients {
+      len: count,
+      largest: Cell::new(0),
+      fail_tail: Cell::new(false),
+    };
+    let expected_scalar = (0..count).fold(Fr::zero(), |sum, index| {
+      let scalar = Fr::from(index as u64 + 3);
+      if index % 2 == 0 { sum + scalar } else { sum - scalar }
+    });
+    assert_eq!(
+      commit_polynomial_source(&srs, &source).unwrap().0,
+      generator.mul_bigint(expected_scalar.into_bigint()).into_affine()
+    );
+    assert_eq!(source.largest.get(), MSM_BATCH_POINTS);
+    source.fail_tail.set(true);
+    assert_eq!(
+      commit_polynomial_source(&srs, &source),
+      Err(KzgError::PolynomialStorage(FflonkStorageError::Io(
+        std::io::ErrorKind::BrokenPipe
+      )))
     );
   }
 

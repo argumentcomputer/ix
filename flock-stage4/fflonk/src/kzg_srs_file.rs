@@ -3,7 +3,8 @@ use crate::kzg::{
   srs_batch_challenge,
 };
 use crate::{
-  KzgCommitmentSourceV1, KzgCommitmentV1, KzgError, KzgVerifierKeyV1,
+  FflonkPolynomialSourceV1, KzgCommitmentSourceV1, KzgCommitmentV1, KzgError,
+  KzgVerifierKeyV1,
 };
 use ark_bls12_381::{Bls12_381, Fr, G1Affine, G1Projective, G2Affine};
 use ark_ec::{AffineRepr, CurveGroup, pairing::Pairing};
@@ -323,6 +324,25 @@ impl<R: Read + Seek> KzgCommitmentSourceV1 for KzgFileSrsV1<R> {
     })?;
     Ok(KzgCommitmentV1(commitment.into_affine()))
   }
+
+  fn commit_source(
+    &self,
+    coefficients: &dyn FflonkPolynomialSourceV1,
+  ) -> Result<KzgCommitmentV1, KzgError> {
+    if coefficients.is_empty() {
+      return Ok(KzgCommitmentV1(G1Affine::identity()));
+    }
+    self.ensure_degree(coefficients.len() - 1)?;
+    let mut scalars =
+      vec![Fr::zero(); coefficients.len().min(self.chunk_points)];
+    let mut commitment = G1Projective::zero();
+    self.for_each_chunk(coefficients.len(), |start, points| {
+      coefficients.read_fields(start, &mut scalars[..points.len()])?;
+      commitment += bounded_msm(points, &scalars[..points.len()])?;
+      Ok(())
+    })?;
+    Ok(KzgCommitmentV1(commitment.into_affine()))
+  }
 }
 
 /// Encode a v1 archive from a point iterator without collecting the powers.
@@ -486,6 +506,15 @@ mod tests {
           commitment,
           commit_polynomial(&memory, &coefficients).unwrap()
         );
+        let source = ObservedPolynomial {
+          values: &coefficients,
+          largest_read: Cell::new(0),
+          fail: Cell::new(false),
+        };
+        for srs in [&memory as &dyn KzgCommitmentSourceV1, &file] {
+          assert_eq!(srs.commit_source(&source).unwrap(), commitment);
+        }
+        assert!(source.largest_read.get() <= KZG_SRS_FILE_CHUNK_POINTS);
         let opening =
           open_polynomial(&file, &coefficients, Fr::from(11u64)).unwrap();
         assert_eq!(
@@ -501,6 +530,57 @@ mod tests {
         commit_polynomial(&file, &[Fr::one(); 20]),
         Err(KzgError::DegreeTooLarge { degree: 19, max_degree: 18 }),
       );
+      let padded = [Fr::zero(); 20];
+      let source = ObservedPolynomial {
+        values: &padded,
+        largest_read: Cell::new(0),
+        fail: Cell::new(false),
+      };
+      for srs in [&memory as &dyn KzgCommitmentSourceV1, &file] {
+        assert_eq!(
+          srs.commit_source(&source),
+          Err(KzgError::DegreeTooLarge { degree: 19, max_degree: 18 })
+        );
+      }
+      assert_eq!(source.largest_read.get(), 0);
+      let source = ObservedPolynomial {
+        values: &padded[..2],
+        largest_read: Cell::new(0),
+        fail: Cell::new(true),
+      };
+      for srs in [&memory as &dyn KzgCommitmentSourceV1, &file] {
+        assert_eq!(
+          srs.commit_source(&source),
+          Err(KzgError::PolynomialStorage(crate::FflonkStorageError::Io(
+            std::io::ErrorKind::BrokenPipe
+          )))
+        );
+      }
+    }
+  }
+
+  struct ObservedPolynomial<'a> {
+    values: &'a [Fr],
+    largest_read: Cell<usize>,
+    fail: Cell<bool>,
+  }
+
+  impl FflonkPolynomialSourceV1 for ObservedPolynomial<'_> {
+    fn len(&self) -> usize {
+      self.values.len()
+    }
+    fn read_fields(
+      &self,
+      start: usize,
+      output: &mut [Fr],
+    ) -> Result<(), crate::FflonkStorageError> {
+      self.largest_read.set(self.largest_read.get().max(output.len()));
+      if self.fail.get() {
+        return Err(crate::FflonkStorageError::Io(
+          std::io::ErrorKind::BrokenPipe,
+        ));
+      }
+      self.values.read_fields(start, output)
     }
   }
 
@@ -564,6 +644,13 @@ mod tests {
       .mul_bigint(evaluate_polynomial(&coefficients, -Fr::one()).into_bigint())
       .into_affine();
     assert_eq!(commitment.0, expected);
+    let source = ObservedPolynomial {
+      values: &coefficients,
+      largest_read: Cell::new(0),
+      fail: Cell::new(false),
+    };
+    assert_eq!(file.commit_source(&source).unwrap(), commitment);
+    assert_eq!(source.largest_read.get(), KZG_SRS_FILE_CHUNK_POINTS);
     assert_eq!(
       largest_request.get(),
       KZG_SRS_FILE_CHUNK_POINTS * encoding.point_bytes()
@@ -882,7 +969,8 @@ mod tests {
   fn check_file_preprocessing_and_proving(encoding: KzgSrsFileEncodingV1) {
     use crate::{
       FflonkBlindingV1, FflonkProverError, arithmetize_r1cs, preprocess_fflonk,
-      prove_fflonk, required_fflonk_srs_degree, verify_fflonk,
+      preprocess_fflonk_to_file, prove_fflonk, required_fflonk_srs_degree,
+      verify_fflonk,
     };
     use ix_terminal_circuit::{
       ConstraintPhase, LinearCombination, R1csBuilder,
@@ -921,8 +1009,19 @@ mod tests {
     assert_eq!(file.digest(), memory.digest());
     let memory_key =
       preprocess_fflonk(&memory, arithmetization.clone()).unwrap();
-    let file_key = preprocess_fflonk(&file, arithmetization).unwrap();
+    let file_key = preprocess_fflonk(&file, arithmetization.clone()).unwrap();
     assert_eq!(file_key, memory_key);
+    let (polynomial_path, storage) = TestFile::new();
+    drop(storage);
+    let storage = std::fs::OpenOptions::new()
+      .read(true)
+      .write(true)
+      .open(&polynomial_path.0)
+      .unwrap();
+    let disk_key =
+      preprocess_fflonk_to_file(&file, arithmetization, storage).unwrap();
+    assert_eq!(disk_key.digest(), memory_key.digest());
+    assert_eq!(disk_key.verification_key(), memory_key.verification_key());
     let blinding = FflonkBlindingV1 {
       wire_evaluations: core::array::from_fn(|index| {
         Fr::from(index as u64 + 31)
@@ -935,6 +1034,10 @@ mod tests {
       prove_fflonk(&file, &file_key, &r1cs, &witness, blinding).unwrap();
     assert_eq!(actual.proof.to_bytes(), expected.proof.to_bytes());
     assert_eq!(actual.public_inputs, expected.public_inputs);
+    let disk_output =
+      prove_fflonk(&file, &disk_key, &r1cs, &witness, blinding).unwrap();
+    assert_eq!(disk_output.proof.to_bytes(), expected.proof.to_bytes());
+    assert_eq!(disk_output.public_inputs, expected.public_inputs);
     assert_eq!(
       verify_fflonk(
         &file_key.verification_key(),

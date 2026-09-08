@@ -1,7 +1,11 @@
+use crate::polynomial_storage::{
+  evaluate_polynomial_source, for_each_polynomial_chunk, load_polynomial,
+};
 use crate::{
-  FFLONK_COMMITMENTS, FFLONK_EVALUATIONS,
+  FFLONK_COMMITMENTS, FFLONK_EVALUATIONS, FFLONK_POLYNOMIAL_CHUNK_FIELDS,
   FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER, FflonkEvaluationRootsV1,
-  FflonkPreprocessedCircuitV1, FflonkProofV1, FflonkTranscriptError,
+  FflonkFixedPolynomialV1, FflonkPolynomialSourceV1, FflonkProofV1,
+  FflonkProvingKeyV1, FflonkStorageError, FflonkTranscriptError,
   KzgCommitmentSourceV1, KzgError, PlonkArithmetizationError,
   commit_polynomial, derive_fflonk_challenges, evaluate_polynomial,
   lower_plonk_witness,
@@ -40,6 +44,7 @@ pub enum FflonkProverError {
   SingularChallenge(&'static str),
   CopyPermutationDoesNotClose,
   PolynomialNotDivisible(&'static str),
+  Storage(FflonkStorageError),
 }
 
 impl fmt::Display for FflonkProverError {
@@ -64,6 +69,7 @@ impl fmt::Display for FflonkProverError {
         formatter,
         "FFLONK polynomial is not exactly divisible by {relation}",
       ),
+      Self::Storage(error) => error.fmt(formatter),
     }
   }
 }
@@ -74,12 +80,19 @@ impl std::error::Error for FflonkProverError {
       Self::Arithmetization(error) => Some(error),
       Self::Kzg(error) => Some(error),
       Self::Transcript(error) => Some(error),
+      Self::Storage(error) => Some(error),
       Self::SrsMismatch
       | Self::Shape(_)
       | Self::SingularChallenge(_)
       | Self::CopyPermutationDoesNotClose
       | Self::PolynomialNotDivisible(_) => None,
     }
+  }
+}
+
+impl From<FflonkStorageError> for FflonkProverError {
+  fn from(error: FflonkStorageError) -> Self {
+    Self::Storage(error)
   }
 }
 
@@ -104,7 +117,7 @@ impl From<FflonkTranscriptError> for FflonkProverError {
 /// Produces one Stage 4 FFLONK proof from a preprocessed canonical relation.
 pub fn prove_fflonk(
   srs: &(impl KzgCommitmentSourceV1 + ?Sized),
-  preprocessed: &FflonkPreprocessedCircuitV1,
+  preprocessed: &(impl FflonkProvingKeyV1 + ?Sized),
   r1cs: &CanonicalR1csV1,
   witness: &Witness,
   blinding: FflonkBlindingV1,
@@ -149,7 +162,6 @@ pub fn prove_fflonk(
   let a = domain.ifft(&wire_evaluations[0]);
   let b = domain.ifft(&wire_evaluations[1]);
   let c = domain.ifft(&wire_evaluations[2]);
-  let polynomials = preprocessed.polynomials();
   let mut public_input_evaluations = vec![Fr::zero(); domain_size];
   for (row, input) in public_inputs.iter().enumerate() {
     public_input_evaluations[row] = -*input;
@@ -157,20 +169,36 @@ pub fn prove_fflonk(
   let public_input_polynomial = domain.ifft(&public_input_evaluations);
   drop(public_input_evaluations);
 
-  let mut t0_numerator = poly_mul(polynomials.ql.coefficients(), &a);
+  let mut t0_numerator = poly_mul_source(
+    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Ql),
+    &a,
+  )?;
   poly_add_assign(
     &mut t0_numerator,
-    &poly_mul(polynomials.qr.coefficients(), &b),
+    &poly_mul_source(
+      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qr),
+      &b,
+    )?,
   );
   poly_add_assign(
     &mut t0_numerator,
-    &poly_mul(polynomials.qm.coefficients(), &poly_mul(&a, &b)),
+    &poly_mul_source(
+      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qm),
+      &poly_mul(&a, &b),
+    )?,
   );
   poly_add_assign(
     &mut t0_numerator,
-    &poly_mul(polynomials.qo.coefficients(), &c),
+    &poly_mul_source(
+      &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qo),
+      &c,
+    )?,
   );
-  poly_add_assign(&mut t0_numerator, polynomials.qc.coefficients());
+  poly_add_scaled_source(
+    &mut t0_numerator,
+    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Qc),
+    Fr::one(),
+  )?;
   poly_add_assign(&mut t0_numerator, &public_input_polynomial);
   let t0 = divide_by_xn_minus(t0_numerator, domain_size, Fr::one(), "Z_H(X)")?;
   let c1 = pack_polynomials(4, [&a, &b, &c, &t0])?;
@@ -185,15 +213,10 @@ pub fn prove_fflonk(
   let (round1, _) =
     derive_fflonk_challenges(&verification_key, &proof, &public_inputs)?;
 
-  let sigma_evaluations = [
-    polynomials.sigma1.evaluations(),
-    polynomials.sigma2.evaluations(),
-    polynomials.sigma3.evaluations(),
-  ];
   let mut z = permutation_grand_product(
     &domain,
     &wire_evaluations,
-    sigma_evaluations,
+    preprocessed.sigma_sources(),
     round1.beta,
     round1.gamma,
     verification_key.k1(),
@@ -231,18 +254,24 @@ pub fn prove_fflonk(
   drop(identity_a);
   drop(identity_b);
   drop(identity_c);
-  let copy_a = poly_add(
-    &poly_add(&a, &poly_scale(polynomials.sigma1.coefficients(), round1.beta)),
-    &[round1.gamma],
-  );
-  let copy_b = poly_add(
-    &poly_add(&b, &poly_scale(polynomials.sigma2.coefficients(), round1.beta)),
-    &[round1.gamma],
-  );
-  let copy_c = poly_add(
-    &poly_add(&c, &poly_scale(polynomials.sigma3.coefficients(), round1.beta)),
-    &[round1.gamma],
-  );
+  let copy_a = copy_factor(
+    &a,
+    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma1),
+    round1.beta,
+    round1.gamma,
+  )?;
+  let copy_b = copy_factor(
+    &b,
+    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma2),
+    round1.beta,
+    round1.gamma,
+  )?;
+  let copy_c = copy_factor(
+    &c,
+    &preprocessed.coefficient_source(FflonkFixedPolynomialV1::Sigma3),
+    round1.beta,
+    round1.gamma,
+  )?;
   let z_shifted = shift_argument(&z, verification_key.omega());
   let copy_product =
     poly_mul(&poly_mul(&poly_mul(&copy_a, &copy_b), &copy_c), &z_shifted);
@@ -263,15 +292,13 @@ pub fn prove_fflonk(
 
   let (round3, roots) =
     derive_fflonk_challenges(&verification_key, &proof, &public_inputs)?;
-  proof.evaluations = [
-    evaluate_polynomial(polynomials.ql.coefficients(), round3.xi),
-    evaluate_polynomial(polynomials.qr.coefficients(), round3.xi),
-    evaluate_polynomial(polynomials.qm.coefficients(), round3.xi),
-    evaluate_polynomial(polynomials.qo.coefficients(), round3.xi),
-    evaluate_polynomial(polynomials.qc.coefficients(), round3.xi),
-    evaluate_polynomial(polynomials.sigma1.coefficients(), round3.xi),
-    evaluate_polynomial(polynomials.sigma2.coefficients(), round3.xi),
-    evaluate_polynomial(polynomials.sigma3.coefficients(), round3.xi),
+  for (index, id) in FflonkFixedPolynomialV1::ALL.into_iter().enumerate() {
+    proof.evaluations[index] = evaluate_polynomial_source(
+      &preprocessed.coefficient_source(id),
+      &[round3.xi],
+    )?[0];
+  }
+  proof.evaluations[8..].copy_from_slice(&[
     evaluate_polynomial(&a, round3.xi),
     evaluate_polynomial(&b, round3.xi),
     evaluate_polynomial(&c, round3.xi),
@@ -279,7 +306,7 @@ pub fn prove_fflonk(
     evaluate_polynomial(&z, round3.xi_omega),
     evaluate_polynomial(&t1, round3.xi_omega),
     evaluate_polynomial(&t2, round3.xi_omega),
-  ];
+  ]);
   drop(a);
   drop(b);
   drop(c);
@@ -290,17 +317,19 @@ pub fn prove_fflonk(
     derive_fflonk_challenges(&verification_key, &proof, &public_inputs)?;
   debug_assert_eq!(roots, roots_after_evaluations);
 
-  let r0 = interpolate_from_polynomial(
+  let c0_source = preprocessed.c0_source();
+  let r0 = interpolate(
     &roots.h0_omega8,
-    preprocessed.c0_coefficients(),
+    &evaluate_polynomial_source(&c0_source, &roots.h0_omega8)?,
   )?;
   let r1 = interpolate_from_polynomial(&roots.h1_omega4, &c1)?;
   let r2_roots = combined_r2_roots(&roots);
   let r2 = interpolate_from_polynomial(&r2_roots, &c2)?;
-  let mut f_source = Vec::with_capacity(
-    preprocessed.c0_coefficients().len().max(c1.len()).max(c2.len()),
-  );
-  f_source.extend_from_slice(preprocessed.c0_coefficients());
+  let mut f_source =
+    Vec::with_capacity(c0_source.len().max(c1.len()).max(c2.len()));
+  for_each_polynomial_chunk(&c0_source, |_, values| {
+    f_source.extend_from_slice(values)
+  })?;
   poly_sub_assign(&mut f_source, &r0);
   let mut f = divide_by_xn_minus(f_source, 8, round4.xi, "X^8 - xi")?;
   let f1 = divide_by_xn_minus(poly_sub(&c1, &r1), 4, round4.xi, "X^4 - xi")?;
@@ -348,7 +377,7 @@ pub fn prove_fflonk(
   for (polynomial, scale) in parts {
     poly_add_scaled_assign(&mut l, &polynomial, scale);
   }
-  poly_add_scaled_assign(&mut l, preprocessed.c0_coefficients(), pre0);
+  poly_add_scaled_source(&mut l, &c0_source, pre0)?;
   l.resize(l.len().max(1), Fr::zero());
   l[0] -= evaluate_polynomial(&r0, round5.y) * pre0
     + evaluate_polynomial(&r1, round5.y) * pre1
@@ -371,7 +400,7 @@ const PERMUTATION_BATCH_ROWS: usize = 16_384;
 fn permutation_grand_product(
   domain: &Radix2EvaluationDomain<Fr>,
   wires: &[Vec<Fr>; 3],
-  sigma: [&[Fr]; 3],
+  sigma: [impl FflonkPolynomialSourceV1; 3],
   beta: Fr,
   gamma: Fr,
   k1: Fr,
@@ -384,6 +413,19 @@ fn permutation_grand_product(
     return Err(FflonkProverError::Shape("permutation column length"));
   }
   let batch_rows = PERMUTATION_BATCH_ROWS.min(size);
+  // Cache one authenticated chunk per file-backed sigma column across the
+  // smaller inversion batches, avoiding repeated reads of the same bytes.
+  debug_assert!(
+    FFLONK_POLYNOMIAL_CHUNK_FIELDS.is_multiple_of(PERMUTATION_BATCH_ROWS)
+  );
+  let chunk_rows = FFLONK_POLYNOMIAL_CHUNK_FIELDS.min(size);
+  let mut sigma_buffers: [Vec<Fr>; 3] = core::array::from_fn(|index| {
+    if sigma[index].as_slice().is_some() {
+      Vec::new()
+    } else {
+      vec![Fr::zero(); chunk_rows]
+    }
+  });
   let mut numerators = Vec::with_capacity(batch_rows);
   let mut denominators = Vec::with_capacity(batch_rows);
   let mut evaluations = Vec::with_capacity(size);
@@ -391,6 +433,22 @@ fn permutation_grand_product(
   let mut current = Fr::one();
   let mut x = Fr::one();
   for start in (0..size).step_by(batch_rows) {
+    let chunk_start = start / chunk_rows * chunk_rows;
+    let chunk_end = (chunk_start + chunk_rows).min(size);
+    let mut sigma_chunk = [&[][..]; 3];
+    for (index, (source, buffer)) in
+      sigma.iter().zip(&mut sigma_buffers).enumerate()
+    {
+      sigma_chunk[index] = if let Some(values) = source.as_slice() {
+        &values[chunk_start..chunk_end]
+      } else {
+        if start == chunk_start {
+          source
+            .read_fields(chunk_start, &mut buffer[..chunk_end - chunk_start])?;
+        }
+        &buffer[..chunk_end - chunk_start]
+      };
+    }
     numerators.clear();
     denominators.clear();
     let end = (start + batch_rows).min(size);
@@ -400,9 +458,10 @@ fn permutation_grand_product(
           * (wires[1][row] + beta * k1 * x + gamma)
           * (wires[2][row] + beta * k2 * x + gamma),
       );
-      let denominator = (wires[0][row] + beta * sigma[0][row] + gamma)
-        * (wires[1][row] + beta * sigma[1][row] + gamma)
-        * (wires[2][row] + beta * sigma[2][row] + gamma);
+      let denominator =
+        (wires[0][row] + beta * sigma_chunk[0][row - chunk_start] + gamma)
+          * (wires[1][row] + beta * sigma_chunk[1][row - chunk_start] + gamma)
+          * (wires[2][row] + beta * sigma_chunk[2][row - chunk_start] + gamma);
       if denominator.is_zero() {
         return Err(FflonkProverError::SingularChallenge(
           "the permutation denominator",
@@ -515,6 +574,46 @@ fn pack_polynomials<const N: usize>(
   Ok(packed)
 }
 
+fn poly_mul_source(
+  source: &impl FflonkPolynomialSourceV1,
+  right: &[Fr],
+) -> Result<Vec<Fr>, FflonkStorageError> {
+  Ok(poly_mul(&load_polynomial(source)?, right))
+}
+
+fn copy_factor(
+  wire: &[Fr],
+  sigma: &impl FflonkPolynomialSourceV1,
+  beta: Fr,
+  gamma: Fr,
+) -> Result<Vec<Fr>, FflonkStorageError> {
+  let mut output = wire.to_vec();
+  poly_add_scaled_source(&mut output, sigma, beta)?;
+  poly_add_assign(&mut output, &[gamma]);
+  Ok(output)
+}
+
+fn poly_add_scaled_source(
+  output: &mut Vec<Fr>,
+  source: &impl FflonkPolynomialSourceV1,
+  scalar: Fr,
+) -> Result<(), FflonkStorageError> {
+  if scalar.is_zero() {
+    return Ok(());
+  }
+  output.reserve_exact(source.len().saturating_sub(output.len()));
+  output.resize(output.len().max(source.len()), Fr::zero());
+  for_each_polynomial_chunk(source, |start, values| {
+    for (target, coefficient) in
+      output[start..start + values.len()].iter_mut().zip(values)
+    {
+      *target += *coefficient * scalar;
+    }
+  })?;
+  trim(output);
+  Ok(())
+}
+
 fn poly_mul(left: &[Fr], right: &[Fr]) -> Vec<Fr> {
   let live_len = |polynomial: &[Fr]| {
     polynomial
@@ -559,12 +658,6 @@ fn validate_polynomial_domain(
     ));
   }
   Ok(())
-}
-
-fn poly_add(left: &[Fr], right: &[Fr]) -> Vec<Fr> {
-  let mut output = left.to_vec();
-  poly_add_assign(&mut output, right);
-  output
 }
 
 fn poly_add_assign(output: &mut Vec<Fr>, addend: &[Fr]) {
@@ -868,7 +961,9 @@ mod tests {
 
   #[test]
   fn batched_permutation_satisfies_every_row_and_rejects_zero_denominators() {
-    for size in [8, 2 * PERMUTATION_BATCH_ROWS] {
+    for size in
+      [8, 2 * PERMUTATION_BATCH_ROWS, 2 * FFLONK_POLYNOMIAL_CHUNK_FIELDS]
+    {
       let domain = Radix2EvaluationDomain::<Fr>::new(size).unwrap();
       let k1 = Fr::GENERATOR;
       let k2 = k1.square();
@@ -899,6 +994,36 @@ mod tests {
       .unwrap();
       assert_eq!(evaluations.len(), size);
       assert_eq!(evaluations[0], Fr::one());
+      // Exercise file sources across authentication and inversion boundaries.
+      let file = crate::polynomial_storage::PolynomialFile::new(
+        std::io::Cursor::new(Vec::new()),
+      )
+      .unwrap();
+      let mut offset = 0;
+      let stored: [_; 3] = core::array::from_fn(|column| {
+        let stored = file
+          .write_polynomial(
+            offset,
+            sigma[column].as_slice(),
+            FFLONK_POLYNOMIAL_CHUNK_FIELDS,
+          )
+          .unwrap();
+        offset = stored.end();
+        stored
+      });
+      assert_eq!(
+        permutation_grand_product(
+          &domain,
+          &wires,
+          stored.each_ref().map(|stored| file.source(stored)),
+          beta,
+          gamma,
+          k1,
+          k2,
+        )
+        .unwrap(),
+        evaluations
+      );
       for row in 0..size {
         let numerator = (0..3).fold(Fr::one(), |product, column| {
           product * (wires[column][row] + beta * labels[column][row] + gamma)

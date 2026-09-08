@@ -1,10 +1,11 @@
+use crate::polynomial_storage::encode_field;
 use crate::{
-  FflonkVerificationKeyError, FflonkVerificationKeyV1, KzgCommitmentSourceV1,
-  KzgCommitmentV1, KzgError, PlonkArithmetizationV1, PlonkCellV1,
-  commit_polynomial,
+  FflonkPolynomialSourceV1, FflonkStorageError, FflonkVerificationKeyError,
+  FflonkVerificationKeyV1, KzgCommitmentSourceV1, KzgCommitmentV1, KzgError,
+  PlonkArithmetizationV1, PlonkCellV1, commit_polynomial,
 };
 use ark_bls12_381::Fr;
-use ark_ff::{BigInteger, FftField, Field, PrimeField, Zero};
+use ark_ff::{FftField, Field, Zero};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use std::fmt;
 
@@ -15,6 +16,74 @@ const PREPROCESSING_DIGEST_DOMAIN: &[u8] =
 /// C2 has the largest bound and needs powers through `9*n + 17` inclusive.
 pub const FFLONK_SRS_DOMAIN_MULTIPLIER: u64 = 9;
 pub const FFLONK_SRS_DEGREE_OVERHEAD: u64 = 17;
+
+/// A selector or copy-permutation polynomial in the fixed proving key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FflonkFixedPolynomialV1 {
+  Ql,
+  Qr,
+  Qm,
+  Qo,
+  Qc,
+  Sigma1,
+  Sigma2,
+  Sigma3,
+}
+
+impl FflonkFixedPolynomialV1 {
+  pub const ALL: [Self; 8] = [
+    Self::Ql,
+    Self::Qr,
+    Self::Qm,
+    Self::Qo,
+    Self::Qc,
+    Self::Sigma1,
+    Self::Sigma2,
+    Self::Sigma3,
+  ];
+  pub(crate) const C0_ORDER: [Self; 8] = [
+    Self::Ql,
+    Self::Qr,
+    Self::Qo,
+    Self::Qm,
+    Self::Qc,
+    Self::Sigma1,
+    Self::Sigma2,
+    Self::Sigma3,
+  ];
+
+  pub(crate) fn index(self) -> usize {
+    match self {
+      Self::Ql => 0,
+      Self::Qr => 1,
+      Self::Qm => 2,
+      Self::Qo => 3,
+      Self::Qc => 4,
+      Self::Sigma1 => 5,
+      Self::Sigma2 => 6,
+      Self::Sigma3 => 7,
+    }
+  }
+}
+
+pub(crate) mod sealed {
+  pub trait Sealed {}
+}
+
+/// One preprocessed relation, with polynomial reads independent of storage.
+/// Implemented by the materialized and authenticated file-backed keys.
+pub trait FflonkProvingKeyV1: sealed::Sealed {
+  fn arithmetization(&self) -> &PlonkArithmetizationV1;
+  fn verification_key(&self) -> FflonkVerificationKeyV1;
+  fn required_srs_degree(&self) -> u64;
+  fn digest(&self) -> [u8; 32];
+  fn coefficient_source(
+    &self,
+    polynomial: FflonkFixedPolynomialV1,
+  ) -> impl FflonkPolynomialSourceV1 + '_;
+  fn sigma_sources(&self) -> [impl FflonkPolynomialSourceV1 + '_; 3];
+  fn c0_source(&self) -> impl FflonkPolynomialSourceV1 + '_;
+}
 
 /// One domain-evaluation polynomial and its coefficient-form IFFT.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,12 +161,58 @@ impl FflonkPreprocessedCircuitV1 {
   }
 }
 
+impl sealed::Sealed for FflonkPreprocessedCircuitV1 {}
+
+impl FflonkProvingKeyV1 for FflonkPreprocessedCircuitV1 {
+  fn arithmetization(&self) -> &PlonkArithmetizationV1 {
+    self.arithmetization()
+  }
+  fn verification_key(&self) -> FflonkVerificationKeyV1 {
+    self.verification_key()
+  }
+  fn required_srs_degree(&self) -> u64 {
+    self.required_srs_degree()
+  }
+  fn digest(&self) -> [u8; 32] {
+    self.digest()
+  }
+
+  fn coefficient_source(
+    &self,
+    polynomial: FflonkFixedPolynomialV1,
+  ) -> impl FflonkPolynomialSourceV1 + '_ {
+    match polynomial {
+      FflonkFixedPolynomialV1::Ql => self.polynomials.ql.coefficients(),
+      FflonkFixedPolynomialV1::Qr => self.polynomials.qr.coefficients(),
+      FflonkFixedPolynomialV1::Qm => self.polynomials.qm.coefficients(),
+      FflonkFixedPolynomialV1::Qo => self.polynomials.qo.coefficients(),
+      FflonkFixedPolynomialV1::Qc => self.polynomials.qc.coefficients(),
+      FflonkFixedPolynomialV1::Sigma1 => self.polynomials.sigma1.coefficients(),
+      FflonkFixedPolynomialV1::Sigma2 => self.polynomials.sigma2.coefficients(),
+      FflonkFixedPolynomialV1::Sigma3 => self.polynomials.sigma3.coefficients(),
+    }
+  }
+
+  fn sigma_sources(&self) -> [impl FflonkPolynomialSourceV1 + '_; 3] {
+    [
+      self.polynomials.sigma1.evaluations(),
+      self.polynomials.sigma2.evaluations(),
+      self.polynomials.sigma3.evaluations(),
+    ]
+  }
+
+  fn c0_source(&self) -> impl FflonkPolynomialSourceV1 + '_ {
+    self.c0_coefficients()
+  }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FflonkPreprocessingError {
   UnsupportedDomain { domain_size: u64 },
   CountOverflow,
   Srs(KzgError),
   VerificationKey(FflonkVerificationKeyError),
+  Storage(FflonkStorageError),
 }
 
 impl fmt::Display for FflonkPreprocessingError {
@@ -112,6 +227,7 @@ impl fmt::Display for FflonkPreprocessingError {
       },
       Self::Srs(error) => error.fmt(formatter),
       Self::VerificationKey(error) => error.fmt(formatter),
+      Self::Storage(error) => error.fmt(formatter),
     }
   }
 }
@@ -121,8 +237,15 @@ impl std::error::Error for FflonkPreprocessingError {
     match self {
       Self::Srs(error) => Some(error),
       Self::VerificationKey(error) => Some(error),
+      Self::Storage(error) => Some(error),
       Self::UnsupportedDomain { .. } | Self::CountOverflow => None,
     }
+  }
+}
+
+impl From<FflonkStorageError> for FflonkPreprocessingError {
+  fn from(error: FflonkStorageError) -> Self {
+    Self::Storage(error)
   }
 }
 
@@ -154,25 +277,10 @@ pub fn preprocess_fflonk(
   srs: &(impl KzgCommitmentSourceV1 + ?Sized),
   arithmetization: PlonkArithmetizationV1,
 ) -> Result<FflonkPreprocessedCircuitV1, FflonkPreprocessingError> {
+  let (domain, required_srs_degree) =
+    preprocessing_domain(srs, &arithmetization)?;
+  let domain_size = domain.size();
   let domain_size_u64 = arithmetization.census().domain_size;
-  let domain_size = usize::try_from(domain_size_u64)
-    .map_err(|_| FflonkPreprocessingError::CountOverflow)?;
-  let domain = Radix2EvaluationDomain::<Fr>::new(domain_size).ok_or(
-    FflonkPreprocessingError::UnsupportedDomain {
-      domain_size: domain_size_u64,
-    },
-  )?;
-  if domain.size() != domain_size {
-    return Err(FflonkPreprocessingError::UnsupportedDomain {
-      domain_size: domain_size_u64,
-    });
-  }
-  let required_srs_degree = required_fflonk_srs_degree(domain_size_u64)?;
-  srs.ensure_degree(
-    usize::try_from(required_srs_degree)
-      .map_err(|_| FflonkPreprocessingError::CountOverflow)?,
-  )?;
-
   let k1 = Fr::GENERATOR;
   let k2 = k1.square();
   let sigma_evaluations = sigma_evaluations(
@@ -220,6 +328,32 @@ pub fn preprocess_fflonk(
     required_srs_degree,
     digest,
   })
+}
+
+pub(crate) fn preprocessing_domain(
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
+  arithmetization: &PlonkArithmetizationV1,
+) -> Result<(Radix2EvaluationDomain<Fr>, u64), FflonkPreprocessingError> {
+  let domain_size_u64 = arithmetization.census().domain_size;
+  let domain_size = usize::try_from(domain_size_u64)
+    .map_err(|_| FflonkPreprocessingError::CountOverflow)?;
+  let domain = Radix2EvaluationDomain::<Fr>::new(domain_size).ok_or(
+    FflonkPreprocessingError::UnsupportedDomain {
+      domain_size: domain_size_u64,
+    },
+  )?;
+  if domain.size() != domain_size {
+    return Err(FflonkPreprocessingError::UnsupportedDomain {
+      domain_size: domain_size_u64,
+    });
+  }
+  let required_srs_degree = required_fflonk_srs_degree(domain_size_u64)?;
+  srs.ensure_degree(
+    usize::try_from(required_srs_degree)
+      .map_err(|_| FflonkPreprocessingError::CountOverflow)?,
+  )?;
+
+  Ok((domain, required_srs_degree))
 }
 
 fn polynomial(
@@ -296,12 +430,8 @@ fn preprocessing_digest(
   srs_digest: [u8; 32],
   required_srs_degree: u64,
 ) -> [u8; 32] {
-  let mut hasher = blake3::Hasher::new();
-  hasher.update(PREPROCESSING_DIGEST_DOMAIN);
-  hasher.update(&arithmetization.r1cs_digest());
-  hasher.update(&arithmetization.census().domain_size.to_le_bytes());
-  hasher.update(&required_srs_degree.to_le_bytes());
-  hasher.update(&srs_digest);
+  let mut hasher =
+    preprocessing_hasher(arithmetization, srs_digest, required_srs_degree);
   for polynomial in [
     &polynomials.ql,
     &polynomials.qr,
@@ -318,16 +448,33 @@ fn preprocessing_digest(
   *hasher.finalize().as_bytes()
 }
 
-fn hash_fields(hasher: &mut blake3::Hasher, values: &[Fr]) {
+pub(crate) fn preprocessing_hasher(
+  arithmetization: &PlonkArithmetizationV1,
+  srs_digest: [u8; 32],
+  required_srs_degree: u64,
+) -> blake3::Hasher {
+  let mut hasher = blake3::Hasher::new();
+  hasher.update(PREPROCESSING_DIGEST_DOMAIN);
+  hasher.update(&arithmetization.r1cs_digest());
+  hasher.update(&arithmetization.census().domain_size.to_le_bytes());
+  hasher.update(&required_srs_degree.to_le_bytes());
+  hasher.update(&srs_digest);
+  hasher
+}
+
+pub(crate) fn hash_fields(hasher: &mut blake3::Hasher, values: &[Fr]) {
   hasher.update(
     &u64::try_from(values.len())
       .expect("field vector length fits u64")
       .to_le_bytes(),
   );
+  hash_field_values(hasher, values);
+}
+
+pub(crate) fn hash_field_values(hasher: &mut blake3::Hasher, values: &[Fr]) {
   for value in values {
     let mut encoded = [0_u8; 32];
-    let bytes = value.into_bigint().to_bytes_le();
-    encoded[..bytes.len()].copy_from_slice(&bytes);
+    encode_field(value, &mut encoded);
     hasher.update(&encoded);
   }
 }
@@ -338,6 +485,7 @@ mod tests {
   use crate::{KzgUniversalSrsV1, arithmetize_r1cs, evaluate_polynomial};
   use ark_bls12_381::{G1Affine, G2Affine};
   use ark_ec::{AffineRepr, CurveGroup};
+  use ark_ff::PrimeField;
   use ix_terminal_circuit::{ConstraintPhase, LinearCombination, R1csBuilder};
 
   fn test_srs(max_degree: usize, tau: Fr) -> KzgUniversalSrsV1 {

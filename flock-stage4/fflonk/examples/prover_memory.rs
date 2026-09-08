@@ -8,15 +8,18 @@
 //! and reused; existing files are never overwritten.
 //! Files use uncompressed points by default; pass `compressed` as the third
 //! argument to trade decompression work for a smaller archive.
+//! An optional fourth argument names a new, empty polynomial scratch file.
+//! That mode preprocesses and proves with an authenticated file-backed key.
 
 use ark_bls12_381::{Fr, G1Affine, G2Affine};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{One, PrimeField};
 use ix_fflonk::{
-  FflonkBlindingV1, KzgCommitmentSourceV1, KzgFileSrsV1, KzgSrsFileEncodingV1,
-  KzgUniversalSrsV1, PlonkArithmetizationV1, arithmetize_r1cs,
-  plan_fflonk_capacity, preprocess_fflonk, prove_fflonk,
-  required_fflonk_srs_degree, verify_fflonk, write_kzg_srs_file,
+  FflonkBlindingV1, FflonkProvingKeyV1, KzgCommitmentSourceV1, KzgFileSrsV1,
+  KzgSrsFileEncodingV1, KzgUniversalSrsV1, PlonkArithmetizationV1,
+  arithmetize_r1cs, plan_fflonk_capacity, preprocess_fflonk,
+  preprocess_fflonk_to_file, prove_fflonk, required_fflonk_srs_degree,
+  verify_fflonk, write_kzg_srs_file,
 };
 use ix_terminal_circuit::{
   CanonicalR1csV1, ConstraintPhase, LinearCombination, R1csBuilder, Witness,
@@ -182,7 +185,48 @@ fn profile(
   r1cs: &CanonicalR1csV1,
   witness: &Witness,
 ) {
-  let key = preprocess_fflonk(srs, arithmetization).unwrap();
+  let retained = LIVE.load(Relaxed);
+  PEAK.store(retained, Relaxed);
+  let start = Instant::now();
+  if let Some(path) = std::env::args_os().nth(4) {
+    let storage = std::fs::OpenOptions::new()
+      .read(true)
+      .write(true)
+      .create_new(true)
+      .open(path)
+      .expect("create new polynomial scratch file");
+    let key = preprocess_fflonk_to_file(srs, arithmetization, storage).unwrap();
+    let elapsed = start.elapsed();
+    let peak = PEAK.load(Relaxed);
+    println!(
+      "key_backend=file storage_bytes={} authentication_bytes={}",
+      key.storage_bytes(),
+      key.authentication_bytes()
+    );
+    println!(
+      "preprocess_initial_bytes={retained} preprocess_peak_bytes={peak} preprocess_seconds={:.6}",
+      elapsed.as_secs_f64()
+    );
+    profile_key(srs, &key, r1cs, witness);
+  } else {
+    let key = preprocess_fflonk(srs, arithmetization).unwrap();
+    let elapsed = start.elapsed();
+    let peak = PEAK.load(Relaxed);
+    println!("key_backend=memory");
+    println!(
+      "preprocess_initial_bytes={retained} preprocess_peak_bytes={peak} preprocess_seconds={:.6}",
+      elapsed.as_secs_f64()
+    );
+    profile_key(srs, &key, r1cs, witness);
+  }
+}
+
+fn profile_key(
+  srs: &impl KzgCommitmentSourceV1,
+  key: &impl FflonkProvingKeyV1,
+  r1cs: &CanonicalR1csV1,
+  witness: &Witness,
+) {
   let blinding = FflonkBlindingV1 {
     wire_evaluations: core::array::from_fn(|index| {
       Fr::from(u64::try_from(index).unwrap() + 31)
@@ -192,7 +236,7 @@ fn profile(
   let retained = LIVE.load(Relaxed);
   PEAK.store(retained, Relaxed);
   let start = Instant::now();
-  let output = prove_fflonk(srs, &key, r1cs, witness, blinding).unwrap();
+  let output = prove_fflonk(srs, key, r1cs, witness, blinding).unwrap();
   let elapsed = start.elapsed();
   let peak = PEAK.load(Relaxed);
   println!(
