@@ -1018,8 +1018,12 @@ mod tests {
       .write(true)
       .open(&polynomial_path.0)
       .unwrap();
-    let disk_key =
-      preprocess_fflonk_to_file(&file, arithmetization, storage).unwrap();
+    let disk_key = preprocess_fflonk_to_file(
+      &file,
+      crate::arithmetize_r1cs_owned(r1cs.clone()).unwrap(),
+      storage,
+    )
+    .unwrap();
     assert_eq!(disk_key.digest(), memory_key.digest());
     assert_eq!(disk_key.verification_key(), memory_key.verification_key());
     let blinding = FflonkBlindingV1 {
@@ -1050,6 +1054,24 @@ mod tests {
     )
     .unwrap();
     assert_eq!(disk_workspace_output, expected);
+    let checked =
+      crate::FflonkCheckedWitnessV1::new(&r1cs, witness.clone()).unwrap();
+    let owned_output =
+      crate::prove_fflonk_checked(&file, &disk_key, checked.clone(), blinding)
+        .unwrap();
+    assert_eq!(owned_output, expected);
+    let (owned_workspace_path, storage) = TestFile::new();
+    drop(storage);
+    let storage = std::fs::OpenOptions::new()
+      .read(true)
+      .write(true)
+      .open(&owned_workspace_path.0)
+      .unwrap();
+    let owned_file_output = crate::prove_fflonk_checked_with_file_workspace(
+      &file, &disk_key, checked, blinding, storage,
+    )
+    .unwrap();
+    assert_eq!(owned_file_output, expected);
     assert_eq!(
       verify_fflonk(
         &file_key.verification_key(),

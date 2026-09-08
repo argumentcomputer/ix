@@ -240,6 +240,13 @@ impl CanonicalR1csV1 {
     &self.constraints
   }
 
+  /// Consume the relation in canonical constraint order. Each yielded
+  /// constraint can be dropped after lowering, releasing its sparse terms
+  /// instead of retaining the original matrices alongside backend data.
+  pub fn into_constraints(self) -> impl ExactSizeIterator<Item = Constraint> {
+    self.constraints.into_iter()
+  }
+
   pub fn variables(&self) -> u32 {
     1 + self.public_variables + self.private_variables
   }

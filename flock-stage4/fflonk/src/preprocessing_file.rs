@@ -338,7 +338,7 @@ mod tests {
       let memory = preprocess_fflonk(&srs, arithmetization.clone()).unwrap();
       let file = preprocess_fflonk_to_file(
         &srs,
-        arithmetization,
+        crate::arithmetize_r1cs_owned(r1cs.clone()).unwrap(),
         Cursor::new(Vec::new()),
       )
       .unwrap();
@@ -409,6 +409,30 @@ mod tests {
           )
           .unwrap();
         assert_eq!(memory_key_disk_workspace, expected);
+        let checked =
+          crate::FflonkCheckedWitnessV1::new(&r1cs, witness.clone()).unwrap();
+        for result in [
+          crate::prove_fflonk_checked(&srs, &memory, checked.clone(), blinding),
+          crate::prove_fflonk_checked(&srs, &file, checked.clone(), blinding),
+          crate::prove_fflonk_checked_with_file_workspace(
+            &srs,
+            &memory,
+            checked.clone(),
+            blinding,
+            Cursor::new(Vec::new()),
+          ),
+          crate::prove_fflonk_checked_with_file_workspace(
+            &srs,
+            &file,
+            checked,
+            blinding,
+            Cursor::new(Vec::new()),
+          ),
+        ] {
+          let output = result.unwrap();
+          assert_eq!(output, expected);
+          assert_eq!(output.proof.to_bytes(), expected.proof.to_bytes());
+        }
         assert_eq!(
           verify_fflonk(
             &file.verification_key(),

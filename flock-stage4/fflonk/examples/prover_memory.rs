@@ -13,16 +13,20 @@
 //! An optional fifth argument names a new scratch file for witness and
 //! temporary prover polynomials. It contains private witness values; the
 //! caller controls file protection and cleanup.
+//! Pass `owned` as the sixth argument to check and consume the R1CS/witness
+//! inputs. The default `borrowed` mode retains them during proving.
 
 use ark_bls12_381::{Fr, G1Affine, G2Affine};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{One, PrimeField};
 use ix_fflonk::{
-  FflonkBlindingV1, FflonkProvingKeyV1, KzgCommitmentSourceV1, KzgFileSrsV1,
-  KzgSrsFileEncodingV1, KzgUniversalSrsV1, PlonkArithmetizationV1,
-  arithmetize_r1cs, plan_fflonk_capacity, preprocess_fflonk,
-  preprocess_fflonk_to_file, prove_fflonk, prove_fflonk_with_file_workspace,
-  required_fflonk_srs_degree, verify_fflonk, write_kzg_srs_file,
+  FflonkBlindingV1, FflonkCheckedWitnessV1, FflonkProvingKeyV1,
+  KzgCommitmentSourceV1, KzgFileSrsV1, KzgSrsFileEncodingV1, KzgUniversalSrsV1,
+  PlonkArithmetizationV1, arithmetize_r1cs, arithmetize_r1cs_owned,
+  plan_fflonk_capacity, preprocess_fflonk, preprocess_fflonk_to_file,
+  prove_fflonk, prove_fflonk_checked, prove_fflonk_checked_with_file_workspace,
+  prove_fflonk_with_file_workspace, required_fflonk_srs_degree, verify_fflonk,
+  write_kzg_srs_file,
 };
 use ix_terminal_circuit::{
   CanonicalR1csV1, ConstraintPhase, LinearCombination, R1csBuilder, Witness,
@@ -112,6 +116,11 @@ fn test_powers(max_degree: usize) -> impl Iterator<Item = G1Affine> {
   })
 }
 
+enum Inputs {
+  Borrowed { r1cs: CanonicalR1csV1, witness: Witness },
+  Owned(FflonkCheckedWitnessV1),
+}
+
 fn main() {
   let log_size: u32 =
     std::env::args().nth(1).unwrap_or_else(|| "14".into()).parse().unwrap();
@@ -130,7 +139,28 @@ fn main() {
     size_of::<(ix_terminal_circuit::Variable, Fr)>(),
   );
   let (r1cs, witness) = fixture(size);
-  let arithmetization = arithmetize_r1cs(&r1cs).unwrap();
+  let owned = match std::env::args().nth(6).as_deref() {
+    Some("owned") => true,
+    Some("borrowed") | None => false,
+    Some(_) => panic!("choose borrowed or owned circuit inputs"),
+  };
+  let retained = LIVE.load(Relaxed);
+  PEAK.store(retained, Relaxed);
+  let start = Instant::now();
+  let (arithmetization, inputs) = if owned {
+    let checked = FflonkCheckedWitnessV1::new(&r1cs, witness).unwrap();
+    (arithmetize_r1cs_owned(r1cs).unwrap(), Inputs::Owned(checked))
+  } else {
+    (arithmetize_r1cs(&r1cs).unwrap(), Inputs::Borrowed { r1cs, witness })
+  };
+  let elapsed = start.elapsed();
+  let peak = PEAK.load(Relaxed);
+  let live = LIVE.load(Relaxed);
+  println!("inputs_backend={}", if owned { "owned" } else { "borrowed" });
+  println!(
+    "arithmetize_initial_bytes={retained} arithmetize_peak_bytes={peak} arithmetize_retained_bytes={live} arithmetize_seconds={:.6}",
+    elapsed.as_secs_f64()
+  );
   assert_eq!(arithmetization.census().domain_size, size_u64);
   println!(
     "capacity={:?}",
@@ -176,7 +206,7 @@ fn main() {
       std::fs::metadata(&path).unwrap().len(),
       srs.authentication_bytes(),
     );
-    profile(&srs, arithmetization, &r1cs, &witness);
+    profile(&srs, arithmetization, inputs);
   } else {
     let srs = KzgUniversalSrsV1::new(
       test_powers(degree).collect(),
@@ -185,15 +215,14 @@ fn main() {
     )
     .unwrap();
     println!("srs_backend=memory");
-    profile(&srs, arithmetization, &r1cs, &witness);
+    profile(&srs, arithmetization, inputs);
   }
 }
 
 fn profile(
   srs: &impl KzgCommitmentSourceV1,
   arithmetization: PlonkArithmetizationV1,
-  r1cs: &CanonicalR1csV1,
-  witness: &Witness,
+  inputs: Inputs,
 ) {
   let retained = LIVE.load(Relaxed);
   PEAK.store(retained, Relaxed);
@@ -217,7 +246,7 @@ fn profile(
       "preprocess_initial_bytes={retained} preprocess_peak_bytes={peak} preprocess_seconds={:.6}",
       elapsed.as_secs_f64()
     );
-    profile_key(srs, &key, r1cs, witness);
+    profile_key(srs, &key, inputs);
   } else {
     let key = preprocess_fflonk(srs, arithmetization).unwrap();
     let elapsed = start.elapsed();
@@ -227,15 +256,14 @@ fn profile(
       "preprocess_initial_bytes={retained} preprocess_peak_bytes={peak} preprocess_seconds={:.6}",
       elapsed.as_secs_f64()
     );
-    profile_key(srs, &key, r1cs, witness);
+    profile_key(srs, &key, inputs);
   }
 }
 
 fn profile_key(
   srs: &impl KzgCommitmentSourceV1,
   key: &impl FflonkProvingKeyV1,
-  r1cs: &CanonicalR1csV1,
-  witness: &Witness,
+  inputs: Inputs,
 ) {
   let blinding = FflonkBlindingV1 {
     wire_evaluations: core::array::from_fn(|index| {
@@ -254,10 +282,25 @@ fn profile_key(
       .create_new(true)
       .open(path)
       .expect("create new prover workspace file");
-    prove_fflonk_with_file_workspace(srs, key, r1cs, witness, blinding, storage)
-      .unwrap()
+    match inputs {
+      Inputs::Borrowed { r1cs, witness } => prove_fflonk_with_file_workspace(
+        srs, key, &r1cs, &witness, blinding, storage,
+      ),
+      Inputs::Owned(checked) => prove_fflonk_checked_with_file_workspace(
+        srs, key, checked, blinding, storage,
+      ),
+    }
+    .unwrap()
   } else {
-    prove_fflonk(srs, key, r1cs, witness, blinding).unwrap()
+    match inputs {
+      Inputs::Borrowed { r1cs, witness } => {
+        prove_fflonk(srs, key, &r1cs, &witness, blinding)
+      },
+      Inputs::Owned(checked) => {
+        prove_fflonk_checked(srs, key, checked, blinding)
+      },
+    }
+    .unwrap()
   };
   let elapsed = start.elapsed();
   let peak = PEAK.load(Relaxed);

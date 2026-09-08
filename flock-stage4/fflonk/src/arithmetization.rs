@@ -494,9 +494,37 @@ impl From<R1csError> for PlonkArithmetizationError {
 pub fn arithmetize_r1cs(
   r1cs: &CanonicalR1csV1,
 ) -> Result<PlonkArithmetizationV1, PlonkArithmetizationError> {
-  let public_input_rows = u64::from(r1cs.public_variables());
+  arithmetize_constraints(
+    r1cs.digest(),
+    r1cs.variables(),
+    r1cs.public_variables(),
+    r1cs.constraints(),
+  )
+}
+
+/// Consume the canonical relation while lowering it. Sparse terms are freed
+/// after each constraint, and the remaining constraint array is released
+/// before padding and copy-permutation construction.
+pub fn arithmetize_r1cs_owned(
+  r1cs: CanonicalR1csV1,
+) -> Result<PlonkArithmetizationV1, PlonkArithmetizationError> {
+  arithmetize_constraints(
+    r1cs.digest(),
+    r1cs.variables(),
+    r1cs.public_variables(),
+    r1cs.into_constraints(),
+  )
+}
+
+fn arithmetize_constraints<C: std::borrow::Borrow<Constraint>>(
+  r1cs_digest: [u8; 32],
+  r1cs_variables: u32,
+  public_variables: u32,
+  constraints: impl IntoIterator<Item = C>,
+) -> Result<PlonkArithmetizationV1, PlonkArithmetizationError> {
+  let public_input_rows = u64::from(public_variables);
   let mut sink = MaterializingSink::default();
-  for index in 0..r1cs.public_variables() {
+  for index in 0..public_variables {
     sink.push(PlonkGateV1 {
       phase: None,
       wires: [
@@ -511,8 +539,8 @@ pub fn arithmetize_r1cs(
       qc: Fr::zero(),
     })?;
   }
-  for constraint in r1cs.constraints() {
-    lower_constraint(&mut sink, constraint)?;
+  for constraint in constraints {
+    lower_constraint(&mut sink, std::borrow::Borrow::borrow(&constraint))?;
   }
   let constraint_rows = u64::try_from(sink.gates.len())
     .map_err(|_| PlonkArithmetizationError::CountOverflow)?
@@ -527,10 +555,14 @@ pub fn arithmetize_r1cs(
   let domain_size = usize::try_from(census.domain_size)
     .map_err(|_| PlonkArithmetizationError::CountOverflow)?;
   sink.gates.resize_with(domain_size, PlonkGateV1::blank);
-  let sigma = build_copy_permutation(&sink.gates)?;
+  let sigma = build_copy_permutation(
+    &sink.gates,
+    r1cs_variables,
+    census.auxiliary_wires,
+  )?;
   Ok(PlonkArithmetizationV1 {
-    r1cs_digest: r1cs.digest(),
-    r1cs_variables: r1cs.variables(),
+    r1cs_digest,
+    r1cs_variables,
     census,
     gates: sink.gates,
     sigma,
@@ -553,6 +585,80 @@ pub fn lower_plonk_witness(
     });
   }
   r1cs.check(witness)?;
+  lower_witness_values(arithmetization, witness.assignment())
+}
+
+/// A satisfying canonical assignment bound to its R1CS content address.
+/// The assignment is immutable after checking, so proving can consume this
+/// object without retaining or rechecking the original constraint matrices.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FflonkCheckedWitnessV1 {
+  r1cs_digest: [u8; 32],
+  public_variables: u32,
+  witness: Witness,
+}
+
+impl FflonkCheckedWitnessV1 {
+  /// Check satisfaction before taking the assignment into the immutable
+  /// wrapper. The caller may then consume or drop the canonical R1CS.
+  pub fn new(
+    r1cs: &CanonicalR1csV1,
+    witness: Witness,
+  ) -> Result<Self, R1csError> {
+    r1cs.check(&witness)?;
+    Ok(Self {
+      r1cs_digest: r1cs.digest(),
+      public_variables: r1cs.public_variables(),
+      witness,
+    })
+  }
+
+  pub const fn r1cs_digest(&self) -> [u8; 32] {
+    self.r1cs_digest
+  }
+
+  pub fn assignment(&self) -> &[Fr] {
+    self.witness.assignment()
+  }
+
+  pub fn public_inputs(&self) -> &[Fr] {
+    &self.assignment()
+      [1..1 + usize::try_from(self.public_variables).expect("u32 fits usize")]
+  }
+
+  /// Recover a mutable assignment by consuming its checked state.
+  pub fn into_witness(self) -> Witness {
+    self.witness
+  }
+}
+
+pub(crate) fn lower_checked_plonk_witness(
+  arithmetization: &PlonkArithmetizationV1,
+  witness: &FflonkCheckedWitnessV1,
+) -> Result<PlonkWitnessV1, PlonkArithmetizationError> {
+  if arithmetization.r1cs_digest != witness.r1cs_digest {
+    return Err(PlonkArithmetizationError::R1csDigestMismatch);
+  }
+  let actual = u32::try_from(witness.assignment().len())
+    .map_err(|_| PlonkArithmetizationError::CountOverflow)?;
+  if arithmetization.r1cs_variables != actual {
+    return Err(PlonkArithmetizationError::R1csVariableMismatch {
+      expected: arithmetization.r1cs_variables,
+      actual,
+    });
+  }
+  if arithmetization.census.public_input_rows
+    != u64::from(witness.public_variables)
+  {
+    return Err(PlonkArithmetizationError::R1csDigestMismatch);
+  }
+  lower_witness_values(arithmetization, witness.assignment())
+}
+
+fn lower_witness_values(
+  arithmetization: &PlonkArithmetizationV1,
+  assignment: &[Fr],
+) -> Result<PlonkWitnessV1, PlonkArithmetizationError> {
   let domain_size = arithmetization.gates.len();
   let public_input_rows =
     usize::try_from(arithmetization.census.public_input_rows)
@@ -568,17 +674,13 @@ pub fn lower_plonk_witness(
   for (row, gate) in arithmetization.gates.iter().enumerate() {
     let row_u64 = u64::try_from(row)
       .map_err(|_| PlonkArithmetizationError::CountOverflow)?;
-    let public_input = if row < public_input_rows {
-      -witness.assignment()[row + 1]
-    } else {
-      Fr::zero()
-    };
+    let public_input =
+      if row < public_input_rows { -assignment[row + 1] } else { Fr::zero() };
     let mut values = [None; 3];
     for (column, wire) in gate.wires.iter().enumerate() {
       values[column] = match wire {
         None => Some(Fr::zero()),
-        Some(PlonkWireV1::R1cs(variable)) => witness
-          .assignment()
+        Some(PlonkWireV1::R1cs(variable)) => assignment
           .get(usize::try_from(variable.index()).expect("u32 fits usize"))
           .copied(),
         Some(PlonkWireV1::Auxiliary(index)) => auxiliary
@@ -1019,7 +1121,17 @@ fn validate_domain(
 
 fn build_copy_permutation(
   gates: &[PlonkGateV1],
+  r1cs_variables: u32,
+  auxiliary_wires: u64,
 ) -> Result<[Vec<PlonkCellV1>; 3], PlonkArithmetizationError> {
+  let slots = u64::from(r1cs_variables)
+    .checked_add(auxiliary_wires)
+    .and_then(|count| usize::try_from(count).ok())
+    .ok_or(PlonkArithmetizationError::CountOverflow)?;
+  let cells = gates
+    .len()
+    .checked_mul(3)
+    .ok_or(PlonkArithmetizationError::CountOverflow)?;
   let mut sigma: [Vec<PlonkCellV1>; 3] = core::array::from_fn(|column| {
     (0..gates.len())
       .map(|row| PlonkCellV1 {
@@ -1028,27 +1140,77 @@ fn build_copy_permutation(
       })
       .collect()
   });
-  let mut occurrences: BTreeMap<PlonkWireV1, Vec<PlonkCellV1>> =
-    BTreeMap::new();
+  // One tail per wire is sufficient. The tail's current successor is the
+  // first cell, so inserting the next occurrence extends the forward cycle
+  // in exactly the same row/column order as the original occurrence lists.
+  // Avoid allocating a huge dense array for sparsely used variable spaces.
+  let mut tails = if slots <= cells {
+    CopyTails::Dense(vec![0u64; slots])
+  } else {
+    CopyTails::Sparse(BTreeMap::new())
+  };
   for (row, gate) in gates.iter().enumerate() {
     for (column, wire) in gate.wires.iter().enumerate() {
       if let Some(wire) = wire {
-        occurrences.entry(*wire).or_default().push(PlonkCellV1 {
+        let index = match wire {
+          PlonkWireV1::R1cs(variable) if variable.index() < r1cs_variables => {
+            u64::from(variable.index())
+          },
+          PlonkWireV1::R1cs(variable) => {
+            return Err(R1csError::UnknownVariable(*variable).into());
+          },
+          PlonkWireV1::Auxiliary(index) if *index < auxiliary_wires => {
+            u64::from(r1cs_variables) + index
+          },
+          PlonkWireV1::Auxiliary(index) => {
+            return Err(PlonkArithmetizationError::UnknownAuxiliaryWire {
+              wire: *index,
+              row: row as u64,
+            });
+          },
+        };
+        let current = PlonkCellV1 {
           column: u8::try_from(column).expect("three columns fit u8"),
           row: u64::try_from(row)
             .map_err(|_| PlonkArithmetizationError::CountOverflow)?,
-        });
+        };
+        let encoded = u64::try_from(row * 3 + column)
+          .ok()
+          .and_then(|cell| cell.checked_add(1))
+          .ok_or(PlonkArithmetizationError::CountOverflow)?;
+        let previous = tails.replace(
+          usize::try_from(index)
+            .map_err(|_| PlonkArithmetizationError::CountOverflow)?,
+          encoded,
+        );
+        if previous != 0 {
+          let previous = previous - 1;
+          let previous_column =
+            usize::try_from(previous % 3).expect("three columns fit usize");
+          let previous_row = usize::try_from(previous / 3)
+            .map_err(|_| PlonkArithmetizationError::CountOverflow)?;
+          let first = sigma[previous_column][previous_row];
+          sigma[previous_column][previous_row] = current;
+          sigma[column][row] = first;
+        }
       }
     }
   }
-  for cells in occurrences.values() {
-    for (index, source) in cells.iter().enumerate() {
-      let target = cells[(index + 1) % cells.len()];
-      sigma[usize::from(source.column)][usize::try_from(source.row)
-        .map_err(|_| PlonkArithmetizationError::CountOverflow)?] = target;
+  Ok(sigma)
+}
+
+enum CopyTails {
+  Dense(Vec<u64>),
+  Sparse(BTreeMap<usize, u64>),
+}
+
+impl CopyTails {
+  fn replace(&mut self, wire: usize, cell: u64) -> u64 {
+    match self {
+      Self::Dense(tails) => core::mem::replace(&mut tails[wire], cell),
+      Self::Sparse(tails) => tails.insert(wire, cell).unwrap_or(0),
     }
   }
-  Ok(sigma)
 }
 
 fn validate_copy_values(
@@ -1124,6 +1286,152 @@ mod tests {
     );
     builder.enforce_zero(ConstraintPhase::Zerocheck, sum);
     vec![x1, x2, x3, x4, x5, product, bit]
+  }
+
+  #[test]
+  fn owned_lowering_and_checked_assignment_preserve_the_borrowed_result() {
+    let mut builder = R1csBuilder::new();
+    build_fixture(&mut builder);
+    let (r1cs, witness) = builder.finish().unwrap();
+    let borrowed = arithmetize_r1cs(&r1cs).unwrap();
+    let expected = lower_plonk_witness(&borrowed, &r1cs, &witness).unwrap();
+    let assignment = witness.assignment().as_ptr();
+    let checked = FflonkCheckedWitnessV1::new(&r1cs, witness).unwrap();
+    assert_eq!(checked.assignment().as_ptr(), assignment);
+    assert_eq!(checked.public_inputs(), &[Fr::one()]);
+    assert_eq!(checked.r1cs_digest(), r1cs.digest());
+    let owned = arithmetize_r1cs_owned(r1cs).unwrap();
+    assert_eq!(owned, borrowed);
+    assert_eq!(
+      lower_checked_plonk_witness(&owned, &checked).unwrap(),
+      expected
+    );
+    assert_eq!(checked.into_witness().assignment().as_ptr(), assignment);
+  }
+
+  #[test]
+  fn checked_assignment_rejects_invalid_values_and_other_relations() {
+    let mut builder = R1csBuilder::new();
+    let variables = build_fixture(&mut builder);
+    let (r1cs, witness) = builder.finish().unwrap();
+    for (variable, error) in [
+      (Variable::ONE, R1csError::InvalidConstantWire),
+      (variables[0], R1csError::Unsatisfied { constraint: 0 }),
+      (variables[5], R1csError::Unsatisfied { constraint: 0 }),
+    ] {
+      let mut invalid = witness.clone();
+      invalid.set(variable, Fr::zero()).unwrap();
+      assert_eq!(FflonkCheckedWitnessV1::new(&r1cs, invalid), Err(error));
+    }
+    let (_, short) = R1csBuilder::new().finish().unwrap();
+    assert_eq!(
+      FflonkCheckedWitnessV1::new(&r1cs, short),
+      Err(R1csError::AssignmentLength {
+        actual: 1,
+        expected: witness.assignment().len()
+      })
+    );
+
+    // Same variable layout, different constraint set, satisfied by
+    // the same values. Binding must reject it before lowering the assignment.
+    let mut other = R1csBuilder::new();
+    let variables = build_fixture(&mut other);
+    other.enforce_zero(
+      ConstraintPhase::Statement,
+      LinearCombination::from_variable(variables[0])
+        .minus(&LinearCombination::from_constant(Fr::one())),
+    );
+    let (other, _) = other.finish().unwrap();
+    assert_eq!(other.variables(), r1cs.variables());
+    let checked = FflonkCheckedWitnessV1::new(&r1cs, witness).unwrap();
+    assert_eq!(
+      lower_checked_plonk_witness(
+        &arithmetize_r1cs_owned(other).unwrap(),
+        &checked
+      ),
+      Err(PlonkArithmetizationError::R1csDigestMismatch)
+    );
+    let mut recovered = checked.into_witness();
+    recovered.set(variables[0], Fr::zero()).unwrap();
+    assert!(FflonkCheckedWitnessV1::new(&r1cs, recovered).is_err());
+  }
+
+  #[test]
+  fn compact_copy_cycles_match_occurrence_lists_for_dense_and_sparse_wires() {
+    // Independent reference: collect every occurrence, then connect each
+    // list in canonical row/column order, including its closing edge.
+    fn occurrence_cycles(gates: &[PlonkGateV1]) -> [Vec<PlonkCellV1>; 3] {
+      let mut lists = BTreeMap::<PlonkWireV1, Vec<PlonkCellV1>>::new();
+      let mut sigma: [Vec<PlonkCellV1>; 3] = core::array::from_fn(|column| {
+        (0..gates.len())
+          .map(|row| PlonkCellV1 {
+            column: u8::try_from(column).unwrap(),
+            row: row as u64,
+          })
+          .collect()
+      });
+      for (row, gate) in gates.iter().enumerate() {
+        for (column, wire) in gate.wires.iter().enumerate() {
+          if let Some(wire) = wire {
+            lists.entry(*wire).or_default().push(PlonkCellV1 {
+              column: u8::try_from(column).unwrap(),
+              row: row as u64,
+            });
+          }
+        }
+      }
+      for cells in lists.values() {
+        for (index, cell) in cells.iter().enumerate() {
+          sigma[usize::from(cell.column)][usize::try_from(cell.row).unwrap()] =
+            cells[(index + 1) % cells.len()];
+        }
+      }
+      sigma
+    }
+
+    for rows in [0, 1, 2, 7, 32, 129] {
+      for seed in 0..16 {
+        let mut gates = vec![PlonkGateV1::blank(); rows];
+        for (row, gate) in gates.iter_mut().enumerate() {
+          gate.wires = core::array::from_fn(|column| {
+            match (row * row + column * seed + seed) % 13 {
+              0 => None,
+              wire @ 1..=6 => Some(PlonkWireV1::R1cs(Variable::from_index(
+                u32::try_from(wire - 1).unwrap(),
+              ))),
+              wire => Some(PlonkWireV1::Auxiliary((wire - 7) as u64)),
+            }
+          });
+        }
+        let expected = occurrence_cycles(&gates);
+        assert_eq!(build_copy_permutation(&gates, 6, 6).unwrap(), expected);
+        assert_eq!(
+          build_copy_permutation(&gates, u32::MAX, 6).unwrap(),
+          expected
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn copy_cycle_builder_rejects_overflow_and_undeclared_wires() {
+    assert_eq!(
+      build_copy_permutation(&[], 1, u64::MAX),
+      Err(PlonkArithmetizationError::CountOverflow)
+    );
+    let mut gate = PlonkGateV1::blank();
+    gate.wires[0] = Some(PlonkWireV1::R1cs(Variable::from_index(3)));
+    assert_eq!(
+      build_copy_permutation(&[gate.clone()], 3, 0),
+      Err(PlonkArithmetizationError::R1cs(R1csError::UnknownVariable(
+        Variable::from_index(3)
+      )))
+    );
+    gate.wires[0] = Some(PlonkWireV1::Auxiliary(5));
+    assert_eq!(
+      build_copy_permutation(&[gate], 1, 5),
+      Err(PlonkArithmetizationError::UnknownAuxiliaryWire { wire: 5, row: 0 })
+    );
   }
 
   #[test]

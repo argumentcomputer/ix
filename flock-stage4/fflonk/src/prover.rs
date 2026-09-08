@@ -1,14 +1,16 @@
+use crate::arithmetization::lower_checked_plonk_witness;
 use crate::polynomial_storage::{
   evaluate_polynomial_source, for_each_polynomial_chunk,
 };
 use crate::prover_workspace::{ProverPolynomial, ProverWorkspace};
 use crate::{
   FFLONK_COMMITMENTS, FFLONK_EVALUATIONS, FFLONK_POLYNOMIAL_CHUNK_FIELDS,
-  FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER, FflonkEvaluationRootsV1,
-  FflonkFixedPolynomialV1, FflonkPolynomialSourceV1, FflonkProofV1,
-  FflonkProvingKeyV1, FflonkStorageError, FflonkTranscriptError,
+  FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER, FflonkCheckedWitnessV1,
+  FflonkEvaluationRootsV1, FflonkFixedPolynomialV1, FflonkPolynomialSourceV1,
+  FflonkProofV1, FflonkProvingKeyV1, FflonkStorageError, FflonkTranscriptError,
   KzgCommitmentSourceV1, KzgError, PlonkArithmetizationError,
-  derive_fflonk_challenges, evaluate_polynomial, lower_plonk_witness,
+  PlonkArithmetizationV1, PlonkWitnessV1, derive_fflonk_challenges,
+  evaluate_polynomial, lower_plonk_witness,
 };
 use ark_bls12_381::{Fr, G1Affine};
 use ark_ff::{FftField, Field, One, Zero, batch_inversion};
@@ -126,8 +128,7 @@ pub fn prove_fflonk(
   prove_in_workspace(
     srs,
     preprocessed,
-    r1cs,
-    witness,
+    ProverWitness::Borrowed { r1cs, witness },
     blinding,
     &ProverWorkspace::<std::fs::File>::Memory,
   )
@@ -155,14 +156,91 @@ pub fn prove_fflonk_with_file_workspace<R: Read + Write + Seek>(
   storage: R,
 ) -> Result<FflonkProverOutputV1, FflonkProverError> {
   let workspace = ProverWorkspace::file(storage)?;
-  prove_in_workspace(srs, preprocessed, r1cs, witness, blinding, &workspace)
+  prove_in_workspace(
+    srs,
+    preprocessed,
+    ProverWitness::Borrowed { r1cs, witness },
+    blinding,
+    &workspace,
+  )
+}
+
+/// Prove from an immutable assignment already checked against its canonical
+/// relation. The relation can be released before preprocessing. This function
+/// consumes the checked assignment and releases it after witness lowering,
+/// before polynomial work. An error also consumes the assignment.
+pub fn prove_fflonk_checked(
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
+  preprocessed: &(impl FflonkProvingKeyV1 + ?Sized),
+  witness: FflonkCheckedWitnessV1,
+  blinding: FflonkBlindingV1,
+) -> Result<FflonkProverOutputV1, FflonkProverError> {
+  prove_in_workspace(
+    srs,
+    preprocessed,
+    ProverWitness::Checked(witness),
+    blinding,
+    &ProverWorkspace::<std::fs::File>::Memory,
+  )
+}
+
+/// Prove from a consumed checked assignment with authenticated temporary
+/// polynomial storage. The relation can be released before preprocessing;
+/// the original assignment is released after lowering and before FFTs.
+/// An error also consumes the assignment.
+///
+/// Storage ownership, cleanup, and polynomial memory bounds are the same as
+/// [`prove_fflonk_with_file_workspace`]. The lowering step still materializes
+/// three columns and auxiliary values. No aggregate RAM budget is enforced.
+pub fn prove_fflonk_checked_with_file_workspace<R: Read + Write + Seek>(
+  srs: &(impl KzgCommitmentSourceV1 + ?Sized),
+  preprocessed: &(impl FflonkProvingKeyV1 + ?Sized),
+  witness: FflonkCheckedWitnessV1,
+  blinding: FflonkBlindingV1,
+  storage: R,
+) -> Result<FflonkProverOutputV1, FflonkProverError> {
+  let workspace = ProverWorkspace::file(storage)?;
+  prove_in_workspace(
+    srs,
+    preprocessed,
+    ProverWitness::Checked(witness),
+    blinding,
+    &workspace,
+  )
+}
+
+enum ProverWitness<'a> {
+  Borrowed { r1cs: &'a CanonicalR1csV1, witness: &'a Witness },
+  Checked(FflonkCheckedWitnessV1),
+}
+
+impl ProverWitness<'_> {
+  fn assignment(&self) -> &[Fr] {
+    match self {
+      Self::Borrowed { witness, .. } => witness.assignment(),
+      Self::Checked(witness) => witness.assignment(),
+    }
+  }
+
+  fn lower(
+    &self,
+    arithmetization: &PlonkArithmetizationV1,
+  ) -> Result<PlonkWitnessV1, PlonkArithmetizationError> {
+    match self {
+      Self::Borrowed { r1cs, witness } => {
+        lower_plonk_witness(arithmetization, r1cs, witness)
+      },
+      Self::Checked(witness) => {
+        lower_checked_plonk_witness(arithmetization, witness)
+      },
+    }
+  }
 }
 
 fn prove_in_workspace<R: Read + Write + Seek>(
   srs: &(impl KzgCommitmentSourceV1 + ?Sized),
   preprocessed: &(impl FflonkProvingKeyV1 + ?Sized),
-  r1cs: &CanonicalR1csV1,
-  witness: &Witness,
+  witness: ProverWitness<'_>,
   blinding: FflonkBlindingV1,
   ws: &ProverWorkspace<R>,
 ) -> Result<FflonkProverOutputV1, FflonkProverError> {
@@ -177,8 +255,7 @@ fn prove_in_workspace<R: Read + Write + Seek>(
   let domain_size = usize::try_from(verification_key.domain_size())
     .map_err(|_| FflonkProverError::Shape("domain exceeds usize"))?;
   validate_polynomial_domain(domain_size)?;
-  let plonk_witness =
-    lower_plonk_witness(preprocessed.arithmetization(), r1cs, witness)?;
+  let plonk_witness = witness.lower(preprocessed.arithmetization())?;
   let domain = Radix2EvaluationDomain::<Fr>::new(domain_size)
     .ok_or(FflonkProverError::Shape("unsupported FFT domain"))?;
   if domain.size() != domain_size
@@ -195,6 +272,7 @@ fn prove_in_workspace<R: Read + Write + Seek>(
     .get(1..1 + public_input_count)
     .ok_or(FflonkProverError::Shape("R1CS public-input slice"))?
     .to_vec();
+  drop(witness);
 
   let mut wire_evaluations = plonk_witness.into_columns();
   let blind_row0 = domain_size - 2;
@@ -831,6 +909,48 @@ mod tests {
         &output.public_inputs,
       ),
       Ok(false),
+    );
+  }
+
+  #[test]
+  fn checked_proof_releases_relation_before_preprocessing_and_rejects_mismatch()
+  {
+    let (r1cs, witness) = fixture();
+    let checked = FflonkCheckedWitnessV1::new(&r1cs, witness).unwrap();
+    let arithmetization = crate::arithmetize_r1cs_owned(r1cs).unwrap();
+    let required =
+      required_fflonk_srs_degree(arithmetization.census().domain_size).unwrap();
+    let srs = test_srs(usize::try_from(required).unwrap(), Fr::from(29u64));
+    let key = preprocess_fflonk(&srs, arithmetization).unwrap();
+    let (other, other_witness) = R1csBuilder::new().finish().unwrap();
+    let wrong = FflonkCheckedWitnessV1::new(&other, other_witness).unwrap();
+    let blinding = FflonkBlindingV1::default();
+    assert_eq!(
+      prove_fflonk_checked(&srs, &key, wrong.clone(), blinding),
+      Err(FflonkProverError::Arithmetization(
+        PlonkArithmetizationError::R1csDigestMismatch
+      ))
+    );
+    assert_eq!(
+      prove_fflonk_checked_with_file_workspace(
+        &srs,
+        &key,
+        wrong,
+        blinding,
+        std::io::Cursor::new(Vec::new())
+      ),
+      Err(FflonkProverError::Arithmetization(
+        PlonkArithmetizationError::R1csDigestMismatch
+      ))
+    );
+    let output = prove_fflonk_checked(&srs, &key, checked, blinding).unwrap();
+    assert_eq!(
+      verify_fflonk(
+        &key.verification_key(),
+        &output.proof,
+        &output.public_inputs
+      ),
+      Ok(true)
     );
   }
 

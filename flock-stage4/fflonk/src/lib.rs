@@ -4,8 +4,10 @@
 //! It provides constant-memory gate projection, preprocessing/proving with
 //! in-memory or authenticated file SRS, fixed polynomials, and temporary prover
 //! workspaces, native verification, and the fixed EIP-2537 proof wire boundary.
-//! The file workspace retains one FFT array with bounded roots/I/O buffers;
-//! relation storage and witness lowering remain materialized.
+//! Owned inputs release the canonical relation during gate lowering and the
+//! checked assignment before polynomial work. The file workspace retains one
+//! FFT array with bounded roots/I/O buffers; gates and wire lowering remain
+//! materialized.
 
 mod arithmetization;
 mod capacity;
@@ -23,10 +25,11 @@ mod verifier;
 mod verifier_key;
 
 pub use arithmetization::{
-  FFLONK_BLINDING_ROWS, PLONK_GATE_RECORD_BYTES, PlonkArithmetizationError,
-  PlonkArithmetizationV1, PlonkCellV1, PlonkGateCensusV1,
-  PlonkGateProjectionV1, PlonkGateRecordError, PlonkGateV1, PlonkWireV1,
-  PlonkWitnessV1, arithmetize_r1cs, lower_plonk_witness,
+  FFLONK_BLINDING_ROWS, FflonkCheckedWitnessV1, PLONK_GATE_RECORD_BYTES,
+  PlonkArithmetizationError, PlonkArithmetizationV1, PlonkCellV1,
+  PlonkGateCensusV1, PlonkGateProjectionV1, PlonkGateRecordError, PlonkGateV1,
+  PlonkWireV1, PlonkWitnessV1, arithmetize_r1cs, arithmetize_r1cs_owned,
+  lower_plonk_witness,
 };
 pub use capacity::{
   BLS12_381_G1_COMPRESSED_BYTES, BLS12_381_G1_EIP2537_BYTES,
@@ -71,6 +74,7 @@ pub use proof::{
 };
 pub use prover::{
   FflonkBlindingV1, FflonkProverError, FflonkProverOutputV1, prove_fflonk,
+  prove_fflonk_checked, prove_fflonk_checked_with_file_workspace,
   prove_fflonk_with_file_workspace,
 };
 pub use transcript::{
