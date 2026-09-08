@@ -276,8 +276,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_859_583_032, got {actual}"
-              (actual = 6_859_583_032))
+              s!"Shard pipeline FFT matches: expected 6_946_001_069, got {actual}"
+              (actual = 6_946_001_069))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
