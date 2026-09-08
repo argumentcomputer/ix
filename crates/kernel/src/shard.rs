@@ -1551,13 +1551,22 @@ impl ShardManifest {
     }
     let total_cross_ingress = c.u128()?;
     let num_shards = c.u32()? as usize;
+    // Even an empty shard needs 37 bytes. Validate before allocating from
+    // an untrusted count, including on the native execution startup path.
+    if num_shards > (c.buf.len() - c.pos) / 37 {
+      return Err("truncated .ixes shard table".into());
+    }
     let mut shards = Vec::with_capacity(num_shards);
     for _ in 0..num_shards {
       let id = c.u32()?;
       let heartbeats = c.u64()?;
       let own_size = c.u64()?;
       let cross_ingress = c.u64()?;
-      let assumption_root = if c.u8()? == 1 { Some(c.addr()?) } else { None };
+      let assumption_root = match c.u8()? {
+        0 => None,
+        1 => Some(c.addr()?),
+        tag => return Err(format!("invalid .ixes assumption-root tag {tag}")),
+      };
       let blocks = c.addrs()?;
       let foreign_blocks = c.addrs()?;
       shards.push(ShardInfo {
@@ -1574,15 +1583,28 @@ impl ShardManifest {
     // Optional trailing tree section. Absent (end-of-input) on pre-tree
     // manifests, or an explicit `0` presence byte.
     let tree = if c.pos < c.buf.len() {
-      if c.u8()? == 1 { Some(AggNode::get(&mut c)?) } else { None }
+      match c.u8()? {
+        0 => None,
+        1 => Some(AggNode::get(&mut c)?),
+        tag => return Err(format!("invalid .ixes tree-presence tag {tag}")),
+      }
     } else {
       None
     };
     // Optional trailing measured-peaks section; absent on older manifests.
-    if c.pos < c.buf.len() && c.u8()? == 1 {
-      for sh in &mut shards {
-        sh.measured_peak_bytes = c.u64()?;
+    if c.pos < c.buf.len() {
+      match c.u8()? {
+        0 => {},
+        1 => {
+          for sh in &mut shards {
+            sh.measured_peak_bytes = c.u64()?;
+          }
+        },
+        tag => return Err(format!("invalid .ixes measured-peaks tag {tag}")),
       }
+    }
+    if c.pos != c.buf.len() {
+      return Err("trailing bytes after .ixes manifest".into());
     }
     // The tree is the aggregation plan: a leaf set that is not exactly the
     // shard id set (each id once) would silently drop or duplicate proven
@@ -1646,11 +1668,14 @@ impl<'a> Cur<'a> {
   }
   fn addrs(&mut self) -> Result<Vec<Address>, String> {
     let n = self.u32()? as usize;
-    let mut v = Vec::with_capacity(n);
-    for _ in 0..n {
-      v.push(self.addr()?);
-    }
-    Ok(v)
+    let len = n.checked_mul(32).ok_or(".ixes address count overflow")?;
+    self
+      .take(len)?
+      .as_chunks::<32>()
+      .0
+      .iter()
+      .map(|bytes| Address::from_slice(bytes).map_err(|_| "bad address".into()))
+      .collect()
   }
 }
 

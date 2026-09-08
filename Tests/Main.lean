@@ -335,6 +335,9 @@ def main (args : List String) : IO UInt32 := do
     return 0
 
   -- Special case: cli tests have their own runner
+  if args.contains "native-partition" then
+    Tests.Cli.NativePartition.run
+    return 0
   if args.contains "cli" then
     return ← Tests.Cli.suite
 

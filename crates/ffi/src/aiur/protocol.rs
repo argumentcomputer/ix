@@ -761,7 +761,6 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  use rayon::prelude::*;
   let toplevel = decode_toplevel(&toplevel_obj);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let jobs = lean_unbox_nat_as_usize(jobs.inner());
@@ -778,6 +777,58 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
     decode_commitment_parameters(&commitment_parameters),
     decode_fri_parameters(&fri_parameters),
   );
+  let results = match check_shard_batch(
+    &toplevel,
+    fun_idx,
+    env,
+    &shards,
+    use_bytecode,
+    jobs,
+    &system,
+    max_ram_bytes,
+    false,
+  ) {
+    Ok(results) => results,
+    Err(error) => return LeanExcept::error_string(&error),
+  };
+  let arr = LeanArray::alloc(results.len());
+  for (i, result) in results.iter().enumerate() {
+    let row = LeanAiurShardResult::alloc(0);
+    row.set_obj(0, LeanString::new(&result.error));
+    row.set_obj(1, LeanOwned::box_usize(result.peak_bytes));
+    row.set_obj(2, LeanOwned::box_usize(result.suggested_parts));
+    arr.set(i, row);
+  }
+  LeanExcept::ok(arr)
+}
+
+pub(super) struct ShardCheckResult {
+  pub error: String,
+  pub peak_bytes: usize,
+  pub suggested_parts: usize,
+  /// Digest of the exact claim supplied to execution, retained for reports.
+  pub claim: Option<ix_common::address::Address>,
+}
+
+/// Shared executor for the legacy Lean wave driver and native whole-partition
+/// setup. Witness construction, kernel dispatch, record lifetime, and the RAM
+/// gate must stay identical across the two callers.
+#[allow(clippy::cast_precision_loss)]
+pub(super) fn check_shard_batch(
+  toplevel: &aiur::bytecode::Toplevel,
+  fun_idx: usize,
+  env: &ixon::Env,
+  shards: &[Vec<ix_common::address::Address>],
+  use_bytecode: bool,
+  jobs: usize,
+  system: &AiurSystem,
+  max_ram_bytes: usize,
+  progress: bool,
+) -> Result<Vec<ShardCheckResult>, String> {
+  use rayon::prelude::*;
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  let started = std::time::Instant::now();
+  let completed = AtomicUsize::new(0);
   // RAM-gated admission: reserve each shard's estimated execution RSS
   // (fixed ingress cost + owned serialized bytes x measured slope)
   // against most of the RAM available at entry. Memory in flight —
@@ -811,42 +862,69 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
       max as f64 / gib,
     );
   }
-  let check_batch = || -> Vec<(String, usize, usize)> {
+  let check_batch = || -> Vec<ShardCheckResult> {
     shards
       .par_iter()
       .zip(estimates.par_iter())
-      .map(|(owned, est)| {
+      .enumerate()
+      .map(|(index, (owned, est))| {
         gate.acquire(*est);
+        if progress {
+          eprintln!(
+            "[ixvm_check] shard {index} started ({} consts)",
+            owned.len()
+          );
+        }
+        let mut claim_digest = None;
         let result =
           match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
             env, owned,
           ) {
             Err(e) => (format!("witness build: {e}"), 0, 1),
-            Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
-              &toplevel,
-              fun_idx,
-              input,
-              &mut io_buffer,
-              use_bytecode,
-            ) {
-              Err(e) => (e, 0, 1),
-              // Both reductions happen here, while the record is
-              // still owned by this task: it is dropped before
-              // `gate.release`, so admission keeps bounding peak RSS by
-              // the shards in flight rather than by the whole partition.
-              Ok((record, _output)) => {
-                let peak = system.peak_prove_bytes(&record).peak;
-                let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
-                  system.suggested_split_parts(&record, max_ram_bytes)
-                } else {
-                  1
-                };
-                (String::new(), peak, parts)
-              },
+            Ok((claim, input, mut io_buffer)) => {
+              let mut bytes = Vec::new();
+              claim.put(&mut bytes);
+              claim_digest = Some(ix_common::address::Address::hash(&bytes));
+              match dispatch_execute(
+                toplevel,
+                fun_idx,
+                input,
+                &mut io_buffer,
+                use_bytecode,
+              ) {
+                Err(e) => (e, 0, 1),
+                // Both reductions happen here, while the record is
+                // still owned by this task: it is dropped before
+                // `gate.release`, so admission keeps bounding peak RSS by
+                // the shards in flight rather than by the whole partition.
+                Ok((record, _output)) => {
+                  let peak = system.peak_prove_bytes(&record).peak;
+                  let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
+                    system.suggested_split_parts(&record, max_ram_bytes)
+                  } else {
+                    1
+                  };
+                  (String::new(), peak, parts)
+                },
+              }
             },
           };
         gate.release(*est);
-        result
+        let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+        if progress {
+          eprintln!(
+            "[ixvm_check] {done}/{} shards, {:.1}s: shard {index} {}",
+            shards.len(),
+            started.elapsed().as_secs_f64(),
+            if result.0.is_empty() { "ok" } else { &result.0 },
+          );
+        }
+        ShardCheckResult {
+          error: result.0,
+          peak_bytes: result.1,
+          suggested_parts: result.2,
+          claim: claim_digest,
+        }
       })
       .collect()
   };
@@ -856,20 +934,12 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
     let pool = match rayon::ThreadPoolBuilder::new().num_threads(jobs).build() {
       Ok(p) => p,
       Err(e) => {
-        return LeanExcept::error_string(&format!("rayon pool: {e}"));
+        return Err(format!("rayon pool: {e}"));
       },
     };
     pool.install(check_batch)
   };
-  let arr = LeanArray::alloc(results.len());
-  for (i, (err, peak, parts)) in results.iter().enumerate() {
-    let row = LeanAiurShardResult::alloc(0);
-    row.set_obj(0, LeanString::new(err));
-    row.set_obj(1, LeanOwned::box_usize(*peak));
-    row.set_obj(2, LeanOwned::box_usize(*parts));
-    arr.set(i, row);
-  }
-  LeanExcept::ok(arr)
+  Ok(results)
 }
 
 /// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
@@ -1623,7 +1693,7 @@ fn build_lean_io_map(io_buffer: &IOBuffer) -> LeanArray<LeanOwned> {
   arr
 }
 
-fn decode_commitment_parameters(
+pub(super) fn decode_commitment_parameters(
   obj: &LeanAiurCommitmentParameters<impl LeanRef>,
 ) -> CommitmentParameters {
   let ctor = obj.as_ctor();
@@ -1633,7 +1703,7 @@ fn decode_commitment_parameters(
   }
 }
 
-fn decode_fri_parameters(
+pub(super) fn decode_fri_parameters(
   obj: &LeanAiurFriParameters<impl LeanRef>,
 ) -> FriParameters {
   let ctor = obj.as_ctor();

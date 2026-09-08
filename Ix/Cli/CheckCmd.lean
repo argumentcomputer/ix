@@ -1040,6 +1040,33 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
   -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
   -- load so the peak covers the whole run, like `check-rs`.
   if json?.isSome then TracingTexray.startSampler
+  -- The common whole-partition execution path keeps all environment-sized
+  -- work in Rust. Advanced refinement/selection/cache guards below retain
+  -- their existing driver; none may silently fall through to an all-shard run.
+  if maxRamBytes == 0 && outIxes.isNone && opts.selection.isNone &&
+      opts.provenGuard.isNone && !opts.emitOnFailure then
+    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+    let result ← compiled.bytecode.checkPartition funIdx ixePath manifestPath
+      (jobs?.getD 0) useBytecode Aiur.defaultCommitmentParameters
+      Aiur.defaultFriParameters (opts.report.getD "") (← gitRevision)
+      opts.command opts.budgetSource
+    match result with
+    | .error e => IO.eprintln s!"native partition check: {e}"; return 1
+    | .ok r =>
+      if let some (path, key) := json? then
+        let secs := r.elapsedMs.toFloat / 1000.0
+        let tput := if r.elapsedMs > 0
+          then r.constants.toFloat * 1000.0 / r.elapsedMs.toFloat else 0.0
+        let peakRss ← TracingTexray.peakTreeRssBytes
+        Ix.Benchmark.Results.writeRow path key
+          (if r.failures == 0 then "ok" else "rejected")
+          [ ("constants", Lean.toJson r.constants)
+          , ("shards", Lean.toJson r.shards)
+          , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
+          , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
+          , ("peak-rss", Lean.toJson peakRss) ]
+      if r.failures == 0 then return 0
+      return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>

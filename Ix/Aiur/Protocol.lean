@@ -356,6 +356,28 @@ def detectedRamBudgetBytes : IO Nat := do
 
 namespace Bytecode.Toplevel
 
+/-- Small result of whole-partition native orchestration. The environment,
+manifest, per-constant ownership, witness data, and audit remain Rust-owned. -/
+structure PartitionCheckResult where
+  constants : Nat
+  shards : Nat
+  failures : Nat
+  elapsedMs : Nat
+  deriving Inhabited
+
+/-- Full-partition execution without a refinement budget, shard selection, or
+proof-cache reuse. Rust memory-maps the input, validates and assigns every
+constant in one pass, then invokes the same shard executor as the wave API.
+An empty `report` string omits the audit file. File reads and report writes
+are sequenced through `IO`; this is not a pure function of the path strings. -/
+@[extern "rs_aiur_check_partition"]
+opaque checkPartition (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (ixe manifest : @& String)
+  (jobs : @& Nat) (useBytecode : Bool)
+  (commitment : @& CommitmentParameters) (fri : @& FriParameters)
+  (report revision command budgetSource : @& String) :
+    IO (Except String PartitionCheckResult)
+
 /-- One shard's result from `shardCheckBatchWithEnv`. -/
 structure ShardResult where
   error : String

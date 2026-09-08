@@ -297,6 +297,8 @@ lean_ffi::lean_inductive! {
   LeanAiurProveEnvResult [ { num_obj: 4 } ];
   // error, peakBytes, suggestedParts
   LeanAiurShardResult    [ { num_obj: 3 } ];
+  // constants, shards, failures, elapsedMs
+  LeanAiurPartitionCheckResult [ { num_obj: 4 } ];
   // claimBytes, proof, peakBytes, suggestedParts
   LeanAiurShardProveResult [ { num_obj: 4 } ];
   // claimBytes, constantCount
