@@ -11,10 +11,13 @@ Flock Stage 3 proof
 The optimized integration fixture has **1,059,840,428 PLONK constraint rows**,
 down **89.78%** from the original baseline and **20.35%** from the preceding
 version. Its base domain is now **2^30**, and its polynomial products' size-2^32
-FFT fits the field limit. The current materialized prover still cannot run
-this fixture on 512 GB RAM: its SRS and proving key alone require at least
-**1.92 TiB**. See the [optimized census and RAM assessment](census/stage2-integration-v3.md)
-for measurements and the remaining disk-backed prover requirements.
+FFT fits the field limit. The prover now supports an authenticated file-backed
+SRS, replacing **936 GiB** of resident points with a **4.50 MiB** index and
+bounded working buffers. The remaining materialized proving key still requires
+at least **1,032 GiB (about 1.01 TiB)**, so a complete proof on 512 GB RAM
+remains unsupported.
+See the [circuit census](census/stage2-integration-v3.md) and
+[file-SRS measurements](census/file-srs-v1.md) for the remaining storage work.
 
 The `ix-terminal-circuit` crate owns the backend-independent R1CS. Its first
 landed slice fixes the two-limb public-input encoding for the 256-bit Stage 3
@@ -215,14 +218,24 @@ the preceding version and 99.9 MB originally. All versions produce the same
 verified proof with the same key, witness, and randomness. This measures the
 development backend on a small circuit; the full Flock proof remains unmeasured.
 
+`KzgFileSrsV1<File>` now supplies validated powers directly from disk to the
+same preprocessor and prover through `KzgCommitmentSourceV1`. It validates
+all points and SRS consistency on opening, then authenticates each bounded
+chunk before use. Compressed 48-byte and uncompressed 96-byte G1 storage
+produce the same SRS digest, keys, and proofs. The uncompressed format avoids
+repeated point decompression. On the 65,536-row synthetic fixture, it reduces
+total peak heap from 226.0 MB to 168.4 MB, with approximately the same proving
+time. The [storage report](census/file-srs-v1.md) records both formats and
+distinguishes retained setup from temporary buffers and process RSS.
+
 The next production step is a disk-backed polynomial store, external FFT and
-copy-permutation construction, and streamed SRS point storage. The bounded
-MSM kernel is implemented; an aggregate memory budget across all working
-buffers is still required. The capacity model reports the supported size-2^32
-polynomial FFT requirement and a lower bound for the resident materialized
-SRS/key. The prover checks the FFT requirement before allocating its witness
-columns. Every backend must consume the canonical relation rather than define
-another one.
+copy-permutation construction, and streamed gate/witness processing. The
+file-backed SRS and bounded MSM kernel are implemented; an aggregate memory
+budget across all working buffers is still required. The capacity model reports
+the supported size-2^32 polynomial FFT requirement and separate lower bounds
+for resident and file-backed SRS configurations. The prover checks the FFT
+requirement before allocating its witness columns. Every backend must consume
+the canonical relation rather than define another one.
 
 The proof width follows the [FFLONK paper](https://eprint.iacr.org/2021/1167)
 and uses [EIP-2537](https://eips.ethereum.org/EIPS/eip-2537) for G1 transport.
@@ -264,3 +277,16 @@ cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
 The argument is the base-two domain logarithm. This example uses a public
 test-only SRS and reports retained and additional peak heap bytes separately;
 it does not measure allocator overhead or process RSS.
+
+Add an archive path to use an uncompressed file-backed SRS, or append
+`compressed` to use compressed points:
+
+```sh
+cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
+  -p ix-fflonk --example prover_memory -- 14 /tmp/ix-test-uncompressed.srs
+```
+
+The example creates missing archives and validates matching existing ones
+without overwriting them. Use separate paths for different domain sizes or
+encodings. Archive creation, validation, and preprocessing peaks are excluded
+from the reported proving measurement.

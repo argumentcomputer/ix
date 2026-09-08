@@ -1,5 +1,9 @@
 # Second optimization pass and 512 GB RAM assessment
 
+The circuit census below remains current. The subsequent
+[file-backed SRS implementation](file-srs-v1.md) supersedes the resident-SRS
+assumption in this RAM assessment; polynomial and key storage remain unfinished.
+
 The complete fixture now uses **1,059,840,428 PLONK constraint rows**,
 **20.35% fewer** than the [preceding version](stage2-integration-v2.md) and
 **89.78% fewer** than the [original baseline](stage2-integration-v1.md).

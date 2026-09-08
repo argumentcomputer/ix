@@ -1,0 +1,133 @@
+{
+  "schema": "ix:stage4:file-srs-measurements:v1",
+  "measured_at_utc": "2026-09-08",
+  "implementation_revision": "111512e9be44bd7651afdb9a0b5a4ebe028de512",
+  "preceding_revision": "4fb59d61052fcc794ae243e0b74b39cbaa132e74",
+  "circuit_revision": "1d3a0e4a21e8936cd74f4428c87f4173ea09cc89",
+  "circuit_census": "stage2-integration-v3.json",
+  "circuit_unchanged": true,
+  "full_circuit_census_rerun": false,
+  "full_fflonk_proof_generated": false,
+  "full_circuit_peak_ram_measured": false,
+  "file_format": {
+    "magic_ascii": "IX-KZG-SRS-V1",
+    "encoding_tag_offset": 13,
+    "compressed_tag": 0,
+    "uncompressed_tag": 1,
+    "reserved_zero_offsets": [
+      14,
+      15
+    ],
+    "header_bytes": 216,
+    "power_count_offset": 16,
+    "power_count_byte_order": "little-endian",
+    "g2_offset": 24,
+    "tau_g2_offset": 120,
+    "compressed_g2_bytes": 96,
+    "compressed_g1_bytes": 48,
+    "uncompressed_g1_bytes": 96,
+    "chunk_points": 65536,
+    "chunk_digest_bytes": 32,
+    "canonical_srs_digest_unchanged": true
+  },
+  "full_fixture_capacity": {
+    "domain_size": 1073741824,
+    "point_count": 9663676434,
+    "g1_resident_bytes": 1005022349136,
+    "compressed_file_bytes": 463856469048,
+    "uncompressed_file_bytes": 927712937880,
+    "authentication_bytes": 4718624,
+    "materialized_key_minimum_bytes": 1108101562368,
+    "file_srs_and_key_minimum_bytes": 1108106280992,
+    "file_srs_and_key_TiB": 1.0078167915635277,
+    "saved_resident_bytes": 1005017630512,
+    "point_buffer_bytes": 6815744,
+    "compressed_read_buffer_bytes": 3145728,
+    "uncompressed_read_buffer_bytes": 6291456
+  },
+  "memory_target": {
+    "ram_bytes": 512000000000,
+    "proposed_reserve_bytes": 68719476736,
+    "file_srs_implemented": true,
+    "disk_backed_polynomial_store_implemented": false,
+    "external_fft_implemented": false,
+    "external_copy_permutation_implemented": false,
+    "aggregate_memory_cap_implemented": false,
+    "full_proof_fits": false
+  },
+  "benchmark": {
+    "fixture": "synthetic multiplication constraints; public test tau 29",
+    "metric": "requested live heap allocations; excludes allocator overhead, transient reallocation internals, stack, RSS, and filesystem cache",
+    "scope": "retained setup plus peak during prove_fflonk; excludes archive creation, import validation, and preprocessing peaks",
+    "timings": "single runs on a shared host; background load and filesystem cache were not controlled",
+    "all_proofs_verified": true,
+    "proof_digests_match_across_backends": true,
+    "direct_proof_byte_comparison_test": {
+      "domain_size": 8,
+      "compressed": true,
+      "uncompressed": true,
+      "preprocessed_keys_identical": true
+    },
+    "samples": [
+      {
+        "domain_size": 16384,
+        "proof_digest": "65d7ed465f8a91fa6b057ed6c61a2eec853537147788847473f38152d3fc86c5",
+        "memory": {
+          "retained_bytes": 36571972,
+          "total_peak_bytes": 64493060,
+          "additional_peak_bytes": 27921088,
+          "prove_seconds": 5.298128
+        },
+        "compressed": {
+          "retained_bytes": 21234916,
+          "total_peak_bytes": 59117476,
+          "additional_peak_bytes": 37882560,
+          "prove_seconds": 16.611343,
+          "archive_bytes": 7078968,
+          "authentication_bytes": 96
+        },
+        "uncompressed": {
+          "retained_bytes": 21234895,
+          "total_peak_bytes": 62263183,
+          "additional_peak_bytes": 41028288,
+          "prove_seconds": 5.448338,
+          "archive_bytes": 14157720,
+          "authentication_bytes": 96
+        }
+      },
+      {
+        "domain_size": 65536,
+        "proof_digest": "c23b58fa94b8f4d88508a376323850fce2837e949262155b58b7e458eb683ff7",
+        "memory": {
+          "retained_bytes": 146279236,
+          "total_peak_bytes": 226003748,
+          "additional_peak_bytes": 79724512,
+          "prove_seconds": 22.328812
+        },
+        "compressed": {
+          "retained_bytes": 84936132,
+          "total_peak_bytes": 165286020,
+          "additional_peak_bytes": 80349888,
+          "prove_seconds": 67.148421,
+          "archive_bytes": 28312632,
+          "authentication_bytes": 320
+        },
+        "uncompressed": {
+          "retained_bytes": 84936111,
+          "total_peak_bytes": 168431727,
+          "additional_peak_bytes": 83495616,
+          "prove_seconds": 22.000536,
+          "archive_bytes": 56625048,
+          "authentication_bytes": 320
+        }
+      }
+    ]
+  },
+  "validation": {
+    "stage4_tests_passed": 126,
+    "regular_host_tests_passed": 63,
+    "serial_cryptographic_vectors_passed": 13,
+    "formatting_passed_both_workspaces": true,
+    "clippy_passed_both_workspaces": true
+  }
+}

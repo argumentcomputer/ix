@@ -666,6 +666,37 @@ mod tests {
     }
   }
 
+  #[test]
+  fn rejects_errors_that_cancel_if_batch_challenge_powers_restart() {
+    let memory = test_srs(10, Fr::from(23u64));
+    let mut powers = memory.powers_of_g1().to_vec();
+    powers[1] = (powers[1].into_group() + G1Affine::generator().into_group())
+      .into_affine();
+    powers[4] = (powers[4].into_group() - G1Affine::generator().into_group())
+      .into_affine();
+    for encoding in
+      [KzgSrsFileEncodingV1::Compressed, KzgSrsFileEncodingV1::Uncompressed]
+    {
+      let mut encoded = Vec::new();
+      write_kzg_srs_file(
+        &mut encoded,
+        powers.len(),
+        powers.iter().copied(),
+        memory.verifier_key().g2,
+        memory.verifier_key().tau_g2,
+        encoding,
+      )
+      .unwrap();
+      // The errors occupy the same position in successive three-point chunks.
+      // Restarting the challenge powers makes them cancel for every challenge.
+      // Global exponents must detect the inconsistent (but valid subgroup) points.
+      assert!(matches!(
+        KzgFileSrsV1::open_with_chunk_points(Cursor::new(encoded), 3),
+        Err(KzgError::InconsistentPowers),
+      ));
+    }
+  }
+
   #[derive(Clone)]
   struct SharedReader(Rc<RefCell<Cursor<Vec<u8>>>>);
 
