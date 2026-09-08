@@ -209,11 +209,33 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
     circuits := bytecode.singletonCircuits fun i => reverseMap[i]?.getD s!"<fn {i}>" }
   pure (CompiledToplevel.mk t bytecode nameMap)
 
+/-- Name of the environment variable that switches function grouping OFF
+process-wide: when it is set to anything but `0` or the empty string,
+`compileWithGroups` ignores its grouping and compiles the singleton
+partition. For testing and measurement only - the prover and the verifier
+must see the same setting, since grouping changes the verifying key. -/
+def noFunctionGroupsEnvVar : String := "IX_NO_FUNCTION_GROUPS"
+
+unsafe def functionGroupsDisabledUnsafe (_ : Unit) : Bool :=
+  match unsafeBaseIO (IO.getEnv noFunctionGroupsEnvVar) with
+  | some v => v != "0" && v != ""
+  | none => false
+
+@[implemented_by functionGroupsDisabledUnsafe]
+opaque functionGroupsDisabledImpl (_ : Unit) : Bool := false
+
+/-- Whether `IX_NO_FUNCTION_GROUPS` disables function grouping in this
+process (see `noFunctionGroupsEnvVar`). -/
+def functionGroupsDisabled : Bool := functionGroupsDisabledImpl ()
+
 /-- `compile`, then apply a function grouping (see
-`CompiledToplevel.groupFunctions`). -/
+`CompiledToplevel.groupFunctions`) - unless `IX_NO_FUNCTION_GROUPS` is set
+(see `noFunctionGroupsEnvVar`), in which case the grouping is ignored and
+every constrained function keeps its singleton circuit. -/
 def Source.Toplevel.compileWithGroups (t : Source.Toplevel)
     (groups : Array (String × Array String)) : Except String CompiledToplevel := do
-  (← t.compile).groupFunctions groups
+  let compiled ← t.compile
+  if functionGroupsDisabled then pure compiled else compiled.groupFunctions groups
 
 /-- Progress helper: given success of the three `Except`-returning stages,
 `compile` as a whole returns `.ok` (the remaining stages — `deduplicate`,
