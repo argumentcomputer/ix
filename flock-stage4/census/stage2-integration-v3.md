@@ -2,9 +2,10 @@
 
 The circuit census below remains current. The subsequent
 [file-backed SRS](file-srs-v1.md), [fixed-key polynomial storage](file-key-v1.md),
-and [file prover workspace](file-workspace-v1.md) supersede the RAM assumptions
-in this historical assessment. The workspace report contains the current
-measurements and remaining relation/witness storage and memory-budget work.
+[file prover workspace](file-workspace-v1.md), and
+[owned-input pass](owned-inputs-v1.md) supersede the RAM assumptions in this
+historical assessment. The ownership report contains the current measurements
+and remaining memory-budget and full-proof validation work.
 
 The complete fixture now uses **1,059,840,428 PLONK constraint rows**,
 **20.35% fewer** than the [preceding version](stage2-integration-v2.md) and

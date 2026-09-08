@@ -2,8 +2,9 @@
 
 This report records the fixed-key storage pass with the memory prover
 workspace. The subsequent [file prover workspace](file-workspace-v1.md)
-replaces the temporary-polynomial schedule and provides the current RAM
-assessment. The key's storage layout and circuit census are unchanged.
+replaces the temporary-polynomial schedule, and the
+[owned-input pass](owned-inputs-v1.md) provides the current RAM assessment.
+The key's storage layout and circuit census are unchanged.
 
 The FFLONK preprocessor can now write its fixed polynomials directly to
 authenticated scratch storage, and the same prover consumes either key backend.

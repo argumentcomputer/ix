@@ -1,5 +1,11 @@
 # File-backed prover workspace and memory
 
+This report records the file-workspace pass with borrowed circuit inputs.
+The subsequent [owned-input pass](owned-inputs-v1.md) releases the canonical
+R1CS and original assignment at their last use and provides the current RAM
+assessment. The polynomial schedule, storage format, and circuit census below
+remain unchanged.
+
 The FFLONK prover can now store wire values and temporary polynomials in an
 authenticated scratch file. On the 65,536-row synthetic fixture, the file
 workspace reduces total proving heap from **116.0 MB to 63.6 MB (45.19%)**.

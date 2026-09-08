@@ -14,12 +14,16 @@ version. Its base domain is now **2^30**, and its polynomial products' size-2^32
 FFT fits the field limit. The prover supports authenticated file-backed SRS
 and fixed-key polynomials, plus a file workspace for wire values and temporary
 proof polynomials. The workspace uses one resident FFT array with a bounded
-roots cache. On the 65,536-row synthetic fixture, it reduces total proving
-heap from **116.0 MB to 63.6 MB (45.19%)**, with matching verified proof digests.
-A complete proof on 512 GB RAM remains unsupported: gates, copy cells,
-canonical R1CS, and the original witness still remain resident.
+roots cache. Owned inputs now release the canonical R1CS during gate lowering
+and the original assignment before polynomial work. Copy-permutation
+construction keeps one pointer per wire while preserving canonical cycles.
+At 65,536 synthetic rows, owned inputs reduce proving heap from **63.6 MB
+to 46.3 MB (27.21%)**, with the same verified proof and about 21.5 seconds
+of proving time in both runs.
+A complete proof on 512 GB RAM has not been demonstrated; gates, copy cells,
+and witness-lowering buffers remain materialized.
 See the [circuit census](census/stage2-integration-v3.md) and
-[prover workspace measurements](census/file-workspace-v1.md) for the current
+[owned-input measurements](census/owned-inputs-v1.md) for the current
 memory assessment and remaining work.
 
 The `ix-terminal-circuit` crate owns the backend-independent R1CS. Its first
@@ -253,20 +257,30 @@ additional proving heap falls from **81.4 MB to 29.0 MB**, and total heap from
 The [workspace report](census/file-workspace-v1.md) records the measurements,
 storage semantics, and unchanged proof digests.
 
+`FflonkCheckedWitnessV1::new` now validates and consumes the assignment,
+binding it to the canonical relation digest. `arithmetize_r1cs_owned` consumes
+the R1CS and releases sparse terms as it lowers each constraint. The checked
+prover APIs release the original assignment after lowering and public-input
+extraction, before polynomial work. Borrowed callers retain their existing
+behavior. The compact copy-cycle builder uses one encoded tail per wire,
+with a sparse fallback for mostly unused variable spaces. The
+[ownership report](census/owned-inputs-v1.md) records the new measurements
+and exact key/proof equality checks across storage backends.
+
 The capacity model reports the supported size-2^32 polynomial FFT requirement,
 separate retained-key minima, and file-workspace buffers. At the full fixture's
-size, the key/indexes plus one 128 GiB FFT array and a 2 MiB roots cache total
-about **392 GiB**. The still-resident canonical R1CS and original witness add
-another **180 GiB**. Even witness lowering, before the FFT, requires at least
-**596.3 GB (555.37 GiB)** including retained inputs. These are allocation minima,
-not measured RSS, and exclude spare capacity and other buffers.
+size, the owned path's key/indexes plus one 128 GiB FFT array and a 2 MiB roots
+cache total **420.9 GB (392.02 GiB)**. Witness lowering, while the original
+assignment is still live, has a **423.6 GB (394.54 GiB)** minimum, down from
+596.3 GB with borrowed inputs. These are native payload minima. They do not
+account for vector capacities, transient reallocation, allocator overhead,
+other buffers, or OS cache, and do not bound the full pipeline.
 
-The next production work is streaming or releasing canonical R1CS storage,
-streamed witness processing and copy-permutation construction, and an enforced
-aggregate memory budget. External FFTs remain an option for additional
-headroom. The prover checks its FFT requirement before allocating witness
-columns. Every backend must consume the canonical relation rather than define
-another one. A complete proof and peak-RSS measurement remain outstanding.
+The next production work is complete allocation accounting and an enforced
+aggregate memory budget, followed by a full proof and peak-RSS measurement.
+Streaming witness lowering, external gate/copy storage, and external FFTs
+remain options for additional headroom. The prover checks its FFT requirement
+before allocating witness columns. Every backend consumes the canonical relation.
 
 The proof width follows the [FFLONK paper](https://eprint.iacr.org/2021/1167)
 and uses [EIP-2537](https://eips.ethereum.org/EIPS/eip-2537) for G1 transport.
@@ -346,3 +360,17 @@ cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
 
 The prover scratch file contains private witness values. The caller controls
 its protection and cleanup; it cannot be reopened as a standalone workspace.
+
+Append `owned` to release canonical inputs at their last use:
+
+```sh
+cargo run --release --locked --manifest-path flock-stage4/Cargo.toml \
+  -p ix-fflonk --example prover_memory -- \
+  14 /tmp/ix-test-uncompressed.srs uncompressed \
+  /tmp/ix-test-owned-key.bin /tmp/ix-test-owned-workspace.bin owned
+```
+
+The example separately reports relation-lowering, preprocessing, and proving
+heap/time. Owned mode includes assignment validation in relation lowering;
+borrowed mode performs that check during proving. Choose fresh scratch paths
+for each run.
