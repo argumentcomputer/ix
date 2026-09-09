@@ -42,7 +42,6 @@ def verifierFunctionGroups : Array (String × Array String) := #[
     "read_field",
     "lookup_groups_count",
     "assert_blowup_zero",
-    "last_acc_is_zero",
     "ext_exp_pow2",
     "reconstruct_ext_row",
     "assert_bits",

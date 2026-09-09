@@ -609,19 +609,17 @@ def circuit := ⟦
     sys
   }
 
-  -- Verify one child proof against `sys`. The verified proof's lookup
-  -- accumulator and Fiat-Shamir transcript bind `cbytes` directly, so child
-  -- claims need no standalone public digest.
+  -- Verify one child (a batch of trace shards) against `sys`. The batch's
+  -- headers carry the child claims and the batch transcript binds them, so
+  -- they need no standalone public digest; the channel-2 copy is checked
+  -- equal to them.
   fn aggr_verify_child(sys: Sys, key: G) -> List‹List‹U64›› {
     let (idx, len) = io_get_info(0, [key]);
-    let (proof, stop) = @read_proof(idx);
-    assert_eq!(stop, idx + len);
     let (cidx, clen) = io_get_info(2, [key]);
     let cbytes = #read_byte_stream(2, cidx, clen);
     let (claims, crest) = @read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
-    assert_eq!(@verify(proof), 1);
-    assert_eq!(@ood_verify(sys, proof, claims, cbytes), 1);
+    assert_eq!(@verify_batch_at(sys, idx, len, claims), 1);
     claims
   }
 

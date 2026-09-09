@@ -29,17 +29,20 @@ The Rust verifier runs these steps:
 * Step 1 (the system-independent part): the proof is internally consistent —
   `stage_1`, `stage_2` and `intermediate_accumulators` all have the same length
   (the circuit count) and it is non-zero.
-* Step 2: accumulator balance — the last `intermediate_accumulator` is the zero
-  extension element.
-* Step 3: the Fiat-Shamir challenger replay (`fiat_shamir`). Prover-faithful:
-  starts from the parameter-seeded challenger (`b"multi-stark/v0"` + the 7
-  protocol parameters), observes the system shape, the verifying key's
-  preprocessed commitment, the stage_1 commitment, the trace heights, and the
-  length-prefixed public claims (in that order), then samples and re-observes
-  the lookup/fingerprint challenges, observes stage_2 and the intermediate
-  accumulators, samples α, observes the quotient commitment, and samples ζ —
-  matching `verify_multiple_claims` byte-for-byte.
-* Step 5: the out-of-domain composition/quotient check (`ood_verify`). For each
+* Step 2: accumulator balance — each shard's last `intermediate_accumulator`
+  is its residual, and the batch balances when the residuals plus the batch
+  messages' contributions sum to zero (`verify_batch`).
+* Step 3: the Fiat-Shamir challenger replay (`batch_fiat_shamir` through the
+  lookup challenges, `shard_fiat_shamir` per shard). Prover-faithful: starts
+  from the parameter-seeded challenger (`b"multi-stark/v0"` + the 7 protocol
+  parameters), observes the system shape, the verifying key's preprocessed
+  commitment, the shard count, every shard header (activation bits, stage_1
+  commitment, trace heights, length-prefixed claims) and the batch messages,
+  then samples and re-observes the lookup/fingerprint challenges; each shard
+  then observes its index, stage_2 and the intermediate accumulators, samples
+  α, observes the quotient commitment, and samples ζ — matching
+  `verify_batch` byte-for-byte.
+* Step 5: the out-of-domain composition/quotient check (`verify_shard`). For each
   circuit it recomputes `composition(ζ)` by replaying the AIR constraint folder
   (`VerifierConstraintFolder` + `LookupAir::eval`) over the deserialized
   symbolic system and the opened values, recomputes `quotient(ζ)` from the
@@ -69,20 +72,6 @@ def verifier := ⟦
   -- coefficients are zero. (`read_ext` already reduced the limbs mod p.)
   fn ext_is_zero(e: Ext) -> G {
     eq_zero(e[0]) * eq_zero(e[1])
-  }
-
-  -- 1 iff the LAST element of the accumulator list is the zero extension
-  -- element (Rust: `intermediate_accumulators.last() == Some(ExtVal::ZERO)`).
-  -- The empty list returns 0 (there is no last element to balance).
-  fn last_acc_is_zero(accs: List‹Ext›) -> G {
-    match load(accs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(e, rest) =>
-        match load(rest) {
-          ListNode.Nil => @ext_is_zero(e),
-          _ => last_acc_is_zero(rest),
-        },
-    }
   }
 
   -- ==========================================================================
@@ -335,48 +324,6 @@ def verifier := ⟦
     }
   }
 
-  fn fiat_shamir(tlimbs: List‹U64›, active: List‹G›, prep: MerkleCap, s1: MerkleCap, s2: MerkleCap,
-      q: MerkleCap, lds: List‹U8›, cbytes: ByteStream, accs: List‹Ext›)
-      -> (Ext, Ext, Ext, Ext, ByteStream) {
-    -- Initial transcript, front-to-back: seed tag, parameter + shape words
-    -- (`tlimbs`, from the verifying key), the activation bitmap, prep,
-    -- stage_1, log_degrees, claims. Built inner-to-outer with the prepend
-    -- helpers so the result is in forward (observation) order. The claims
-    -- segment is `cbytes` VERBATIM: the wire format (u64 count, per-claim
-    -- u64 len + raw u64 vals, all 8 LE bytes) is exactly the transcript
-    -- encoding `verify_multiple_claims` observes, and the entrypoint
-    -- asserts the stream fully consumed — so no re-serialization walk.
-    let input = log_degrees_onto(lds, cbytes);
-    let input = cap_onto(s1, input);
-    let input = cap_onto(prep, input);
-    let input = active_onto(active, input);
-    let input = limbs_onto(tlimbs, input);
-    let input = @seed_tag_onto(input);
-    -- sample lookup challenge, then observe it back (append; one concat of
-    -- the 16-byte segment instead of two full-buffer snoc walks)
-    let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = list_concat(input, b8_onto(l0, b8_onto(l1, store(ListNode.Nil))));
-    -- sample fingerprint challenge, then observe it back
-    let (f0, f1, input, _of) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = list_concat(input, b8_onto(f0, b8_onto(f1, store(ListNode.Nil))));
-    -- observe stage_2 commitment
-    let input = snoc_cap(input, s2);
-    -- observe the intermediate accumulators (public values entering the
-    -- constraints; α and ζ must depend on them directly)
-    let input = list_concat(input, accs_onto(accs, store(ListNode.Nil)));
-    -- sample constraint challenge α (not observed)
-    let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
-    -- observe quotient commitment
-    let input = snoc_cap(input, q);
-    -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
-    let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
-    ([@gl_val(l0), @gl_val(l1)],
-     [@gl_val(f0), @gl_val(f1)],
-     [@gl_val(a0), @gl_val(a1)],
-     [@gl_val(z0), @gl_val(z1)],
-     zinput)
-  }
-
   -- ==========================================================================
   -- OOD evaluation domain math (`TwoAdicMultiplicativeCoset`, Goldilocks).
   -- The trace domain for a circuit of size 2^L is the order-2^L subgroup H
@@ -439,35 +386,6 @@ def verifier := ⟦
     let is_trans = @eg_sub(zeta, [ginv, 0]);
     let inv_van = @eg_inverse(zh);
     (is_first, is_last, is_trans, inv_van)
-  }
-
-  -- Structural + accumulator + PCS checks of a deserialized proof (steps 1, 2,
-  -- 4). Fiat-Shamir (step 3) and the OOD check (step 5) live in `ood_verify`,
-  -- which needs the verifying key and the claims.
-  --
-  -- Returns 1 on success; `assert_eq!` aborts the (proof) execution on any
-  -- failed check, exactly as the Rust verifier returns `Err`.
-  fn verify(proof: Proof) -> G {
-    -- Single-constructor destructure (not a match): keeps the body — and the
-    -- entrypoint it splices into — single-path, so its lookups group 2 per
-    -- stage-2 slot.
-    let Proof.Mk(_active, _commitments, accs, _log_degrees, _opening,
-                 quotient, _preprocessed, stage_1, stage_2) = proof;
-    -- Step 1 (shape, system-independent): the per-round opened-value lists
-    -- and the accumulator list all have the same length = the circuit count.
-    let num_circuits = list_length(accs);
-    -- there must be at least one circuit (Rust: InvalidSystem)
-    assert_eq!(eq_zero(num_circuits), 0);
-    assert_eq!(list_length(stage_1), num_circuits);
-    assert_eq!(list_length(stage_2), num_circuits);
-    -- one wide quotient matrix per active circuit
-    assert_eq!(list_length(quotient), num_circuits);
-
-    -- Step 2: accumulator balance — the last accumulator must be zero.
-    assert_eq!(last_acc_is_zero(accs), 1);
-    -- Step 4 (PCS/FRI) now runs inside `ood_verify`, which has the verifying
-    -- key, the challenger continuation, and the opened values it needs.
-    1
   }
 
   -- ==========================================================================
@@ -862,59 +780,6 @@ def verifier := ⟦
     }
   }
 
-  -- Step 3 + 5: derive the challenges via the (prover-faithful) Fiat-Shamir
-  -- replay over the verifying key's preprocessed commitment + the proof
-  -- commitments + log_degrees + claims, seed the lookup accumulator from the
-  -- claims, then run the OOD composition/quotient check for every circuit.
-  -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
-  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››, cbytes: ByteStream) -> G {
-    -- The FRI parameters (`log_blowup`, `num_queries`, `commit_pow_bits`,
-    -- `query_pow_bits`) all come from the verifying key, which the public
-    -- statement binds through `system_digest` — no separate public inputs.
-    let Sys.Mk(params, tlimbs, circuits, commit, prep_indices) = sys;
-    let SysParams.Mk(log_blowup, cap_height, log_final_poly_len,
-                     max_log_arity, num_queries, commit_pow_bits,
-                     query_pow_bits) = params;
-    -- This recursive verifier is deliberately specialized to root caps,
-    -- binary FRI folds, and a constant final polynomial. These parameters are
-    -- digest-bound but still prover-visible inputs to this circuit, so reject
-    -- unsupported systems explicitly instead of silently applying the wrong
-    -- Merkle geometry or folding semantics.
-    assert_eq!(cap_height, 0);
-    assert_eq!(log_final_poly_len, 0);
-    assert_eq!(max_log_arity, 1);
-    let Proof.Mk(active, commitments, accs, log_degrees, opening,
-                 q_opened, prep_opt, stage1, stage2) = proof;
-    -- Sparse activation: the bitmap covers the canonical circuit set;
-    -- each bit must be boolean; every per-circuit proof sequence is
-    -- indexed by ACTIVE position, so the verifying key's circuit and
-    -- preprocessed-index lists are filtered to the active subset once
-    -- and everything downstream runs on the filtered lists. Soundness
-    -- of deactivation rests on the lookup accumulator: an inactive
-    -- circuit contributes no sends or receives, and dishonestly
-    -- deactivating a needed circuit leaves the final accumulator
-    -- nonzero (checked in `verify`).
-    assert_eq!(assert_bits(active), 1);
-    assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
-    let acirc = select_active_circuits(circuits, active);
-    let aprep = select_active_prep(prep_indices, active);
-    assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
-    let Commitments.Mk(s1c, s2c, qc) = commitments;
-    -- opt_commit_cap stays a cross-circuit call: its two-arm match would
-    -- make the (spliced) entrypoint branchy, doubling every lookup's
-    -- stage-2 cost there — the one small circuit is cheaper.
-    let prep_cap = @opt_commit_cap(commit);
-    let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, cbytes, accs);
-    let acc0 = claims_acc([0, 0], claims, lch, fch);
-    -- Step 5: OOD composition/quotient identity for every active circuit.
-    let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
-             prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
-    @pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
-      s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
-      list_length(acirc), log_blowup, num_queries, commit_pow_bits,
-      query_pow_bits)
-  }
-
   -- 1 iff every element of `l` is boolean (0 or 1).
   fn assert_bits(l: List‹G›) -> G {
     match load(l) {
@@ -947,6 +812,367 @@ def verifier := ⟦
           _ => store(ListNode.Cons(p, select_active_prep(prest, arest))),
         },
     }
+  }
+
+  -- ==========================================================================
+  -- Batch verification (`multi_stark::batch`): K shard proofs of one system
+  -- under one pair of lookup challenges.
+  --
+  -- The batch transcript observes the seed, the shape, the preprocessed
+  -- commitment, the shard count, every shard header (activation bits,
+  -- stage-1 commitment, heights, claims) and every batch message, then
+  -- samples β and γ; each shard forks that state at its index and continues
+  -- as a single proof does from the stage-2 commitment on. A shard's final
+  -- accumulator is its residual; the batch balances iff the residuals plus
+  -- the messages' contributions sum to zero. Mirrors `System::verify_batch`.
+  --
+  -- Aiur's policy over the batch (`aiur::shard::check_batch_policy`) is
+  -- checked here as well, so every consumer of a batch gets it: the
+  -- messages are closure pairs on the memseg channel with distinct widths,
+  -- every shard's heights are at most 2^32, and there are at most 2^16
+  -- shards — which bounds the batch's total rows below the field
+  -- characteristic without a circuit-to-width table. The claim policy (one
+  -- claim, equal to the expected one) is the caller's, as for a single proof.
+  -- ==========================================================================
+
+  -- A `Val::from_usize(n)` observation: the count's 8 canonical LE bytes.
+  fn count_onto(n: G, tail: ByteStream) -> ByteStream {
+    b8_onto(@gl_to_bytes(n), tail)
+  }
+  -- Length-prefixed claims as `observe_claims` sees them: the claim count,
+  -- then per claim its length and raw limbs (identical to their wire bytes).
+  fn claims_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
+    count_onto(list_length(claims), claims_onto_each(claims, tail))
+  }
+  fn claims_onto_each(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
+    match load(claims) {
+      ListNode.Nil => tail,
+      ListNode.Cons(c, rest) =>
+        count_onto(list_length(c), limbs_onto(c, claims_onto_each(rest, tail))),
+    }
+  }
+  -- One shard header as the batch challenger observes it: activation bits,
+  -- the stage-1 cap, the height count and heights, the claims.
+  fn header_onto(h: ShardHeader, tail: ByteStream) -> ByteStream {
+    let ShardHeader.Mk(active, cap, lds, claims) = h;
+    active_onto(active,
+      cap_onto(cap,
+        count_onto(list_length(lds),
+          log_degrees_onto(lds, claims_onto(claims, tail)))))
+  }
+  fn headers_onto(hs: List‹ShardHeader›, tail: ByteStream) -> ByteStream {
+    match load(hs) {
+      ListNode.Nil => tail,
+      ListNode.Cons(h, rest) => header_onto(h, headers_onto(rest, tail)),
+    }
+  }
+  -- The batch messages as observed: the count, then per message its
+  -- argument count, arguments and multiplicity limb.
+  fn messages_onto(ms: List‹BatchMessage›, tail: ByteStream) -> ByteStream {
+    count_onto(list_length(ms), messages_onto_each(ms, tail))
+  }
+  fn messages_onto_each(ms: List‹BatchMessage›, tail: ByteStream) -> ByteStream {
+    match load(ms) {
+      ListNode.Nil => tail,
+      ListNode.Cons(m, rest) =>
+        let BatchMessage.Mk(args, mult) = m;
+        count_onto(list_length(args),
+          limbs_onto(args, b8_onto(mult, messages_onto_each(rest, tail)))),
+    }
+  }
+
+  -- The batch transcript through the lookup challenges (`batch_challenger`):
+  -- seed tag, parameter/shape limbs, the preprocessed cap, the shard count,
+  -- every header, the messages; sample β and observe it back, sample γ and
+  -- observe it back. Returns (β, γ, input): the state every shard forks from.
+  fn batch_fiat_shamir(tlimbs: List‹U64›, prep: MerkleCap, headers: List‹ShardHeader›,
+      messages: List‹BatchMessage›) -> (Ext, Ext, ByteStream) {
+    let input = messages_onto(messages, store(ListNode.Nil));
+    let input = headers_onto(headers, input);
+    let input = count_onto(list_length(headers), input);
+    let input = cap_onto(prep, input);
+    let input = limbs_onto(tlimbs, input);
+    let input = @seed_tag_onto(input);
+    let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
+    let input = list_concat(input, b8_onto(l0, b8_onto(l1, store(ListNode.Nil))));
+    let (f0, f1, input, _of) = ch_sample_ext(input, store(ListNode.Nil));
+    let input = list_concat(input, b8_onto(f0, b8_onto(f1, store(ListNode.Nil))));
+    ([@gl_val(l0), @gl_val(l1)], [@gl_val(f0), @gl_val(f1)], input)
+  }
+
+  -- One shard's continuation of the batch transcript: observe the shard
+  -- index, the stage-2 commitment and the accumulators; sample α; observe
+  -- the quotient commitment; sample ζ. Returns (α, ζ, post-ζ input).
+  fn shard_fiat_shamir(input: ByteStream, shard: G, s2: MerkleCap, q: MerkleCap,
+      accs: List‹Ext›) -> (Ext, Ext, ByteStream) {
+    let input = snoc_b8(input, @gl_to_bytes(shard));
+    let input = snoc_cap(input, s2);
+    let input = list_concat(input, accs_onto(accs, store(ListNode.Nil)));
+    let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
+    let input = snoc_cap(input, q);
+    let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
+    ([@gl_val(a0), @gl_val(a1)], [@gl_val(z0), @gl_val(z1)], zinput)
+  }
+
+  -- Header/proof agreement. The challenges were derived from the header, so
+  -- the proof must be exactly the one it describes; bytes are compared as
+  -- field values, which is exact for range-checked bytes (both sides are
+  -- hashed elsewhere in this verifier, which pins them to bytes).
+  fn assert_same_bits(a: List‹G›, b: List‹G›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        assert_eq!(load(b), ListNode.Nil);
+        1,
+      ListNode.Cons(x, ra) =>
+        let ListNode.Cons(y, rb) = load(b);
+        assert_eq!(x, y);
+        assert_same_bits(ra, rb),
+    }
+  }
+  fn assert_same_u8s(a: List‹U8›, b: List‹U8›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        assert_eq!(load(b), ListNode.Nil);
+        1,
+      ListNode.Cons(x, ra) =>
+        let ListNode.Cons(y, rb) = load(b);
+        assert_eq!(to_field(x), to_field(y));
+        assert_same_u8s(ra, rb),
+    }
+  }
+  fn assert_same_limbs(a: List‹U64›, b: List‹U64›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        assert_eq!(load(b), ListNode.Nil);
+        1,
+      ListNode.Cons(x, ra) =>
+        let ListNode.Cons(y, rb) = load(b);
+        assert_eq!(u64_eq(x, y), 1);
+        assert_same_limbs(ra, rb),
+    }
+  }
+  fn assert_same_claims(a: List‹List‹U64››, b: List‹List‹U64››) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        assert_eq!(load(b), ListNode.Nil);
+        1,
+      ListNode.Cons(x, ra) =>
+        let ListNode.Cons(y, rb) = load(b);
+        assert_eq!(assert_same_limbs(x, y), 1);
+        assert_same_claims(ra, rb),
+    }
+  }
+  fn assert_same_cap(a: MerkleCap, b: MerkleCap) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        assert_eq!(load(b), ListNode.Nil);
+        1,
+      ListNode.Cons(d, ra) =>
+        let ListNode.Cons(e, rb) = load(b);
+        let x = load(d);
+        let y = load(e);
+        assert_eq!(u64_eq(x[0], y[0]), 1);
+        assert_eq!(u64_eq(x[1], y[1]), 1);
+        assert_eq!(u64_eq(x[2], y[2]), 1);
+        assert_eq!(u64_eq(x[3], y[3]), 1);
+        assert_same_cap(ra, rb),
+    }
+  }
+
+  -- The last intermediate accumulator: the shard's residual.
+  fn last_acc(accs: List‹Ext›) -> Ext {
+    let ListNode.Cons(e, rest) = load(accs);
+    match load(rest) {
+      ListNode.Nil => e,
+      _ => last_acc(rest),
+    }
+  }
+
+  -- `Σ multiplicity · (β + fingerprint(γ, args))⁻¹` over the batch messages.
+  -- The multiplicity limb is reduced mod p, so `p − 1` reads as `−1`.
+  fn messages_acc(acc: Ext, ms: List‹BatchMessage›, lch: Ext, fch: Ext) -> Ext {
+    match load(ms) {
+      ListNode.Nil => acc,
+      ListNode.Cons(m, rest) =>
+        let BatchMessage.Mk(args, mult) = m;
+        let msg = @eg_add(lch, fingerprint_vals(fch, args));
+        let term = @eg_mul(@eg_inverse(msg), [@gl_val(mult), 0]);
+        messages_acc(@eg_add(acc, term), rest, lch, fch),
+    }
+  }
+
+  -- ---- Aiur's batch policy ----
+
+  -- 1 iff `ld ≤ 32`, the largest trace height the Goldilocks PCS can serve.
+  fn log_degree_ok(ld: U8) -> G {
+    match to_field(ld) {
+      0 => 1, 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1, 7 => 1, 8 => 1,
+      9 => 1, 10 => 1, 11 => 1, 12 => 1, 13 => 1, 14 => 1, 15 => 1, 16 => 1,
+      17 => 1, 18 => 1, 19 => 1, 20 => 1, 21 => 1, 22 => 1, 23 => 1, 24 => 1,
+      25 => 1, 26 => 1, 27 => 1, 28 => 1, 29 => 1, 30 => 1, 31 => 1, 32 => 1,
+      _ => 0,
+    }
+  }
+  fn assert_log_degrees_ok(lds: List‹U8›) -> G {
+    match load(lds) {
+      ListNode.Nil => 1,
+      ListNode.Cons(ld, rest) =>
+        assert_eq!(log_degree_ok(ld), 1);
+        assert_log_degrees_ok(rest),
+    }
+  }
+  -- The number of active circuits a header declares.
+  fn count_ones(bits: List‹G›) -> G {
+    match load(bits) {
+      ListNode.Nil => 0,
+      ListNode.Cons(b, rest) => b + count_ones(rest),
+    }
+  }
+  -- `1 ≤ k ≤ 2^16`: the canonical bytes of `k` vanish above byte 2, and byte 2
+  -- is boolean with the low bytes zero when it is set.
+  fn assert_shard_count_ok(k: G) -> G {
+    assert_eq!(eq_zero(k), 0);
+    let b = @gl_to_bytes(k);
+    assert_eq!(to_field(b[3]) + to_field(b[4]) + to_field(b[5]) + to_field(b[6]) + to_field(b[7]), 0);
+    let hi = to_field(b[2]);
+    assert_eq!(hi * (hi - 1), 0);
+    assert_eq!(hi * (to_field(b[0]) + to_field(b[1])), 0);
+    1
+  }
+  -- Exactly three limbs.
+  fn three_limbs(args: List‹U64›) -> (U64, U64, U64) {
+    let ListNode.Cons(a, r1) = load(args);
+    let ListNode.Cons(b, r2) = load(r1);
+    let ListNode.Cons(c, r3) = load(r2);
+    assert_eq!(load(r3), ListNode.Nil);
+    (a, b, c)
+  }
+  -- 1 iff `w` is among `seen`.
+  fn width_seen(w: G, seen: List‹G›) -> G {
+    match load(seen) {
+      ListNode.Nil => 0,
+      ListNode.Cons(x, rest) =>
+        match eq_zero(w - x) {
+          0 => width_seen(w, rest),
+          _ => 1,
+        },
+    }
+  }
+  -- The memseg closure pairs (`aiur::memseg_channel` = 15): a pull of
+  -- pointer 0 with multiplicity −1 and a push of a total with multiplicity 1,
+  -- the same width in both, no width twice. Widths compare as field values,
+  -- exactly as the lookup argument reads them.
+  fn assert_closure_pairs(ms: List‹BatchMessage›, seen: List‹G›) -> G {
+    match load(ms) {
+      ListNode.Nil => 1,
+      ListNode.Cons(pull, rest1) =>
+        let ListNode.Cons(push, rest) = load(rest1);
+        let BatchMessage.Mk(pargs, pmult) = pull;
+        let BatchMessage.Mk(qargs, qmult) = push;
+        assert_eq!(@gl_val(pmult) + 1, 0);
+        assert_eq!(@gl_val(qmult), 1);
+        let (pc, pw, pp) = three_limbs(pargs);
+        let (qc, qw, _qn) = three_limbs(qargs);
+        assert_eq!(@gl_val(pc), 15);
+        assert_eq!(@gl_val(qc), 15);
+        assert_eq!(@gl_val(pp), 0);
+        let w = @gl_val(pw);
+        assert_eq!(@gl_val(qw), w);
+        assert_eq!(width_seen(w, seen), 0);
+        assert_closure_pairs(rest, store(ListNode.Cons(w, seen))),
+    }
+  }
+
+  -- Verify shard `shard` against its header under the batch challenges and
+  -- return its residual. Mirrors `verify_batch_shard`: shape, header
+  -- agreement, the shard's transcript fork, the OOD identity, the PCS.
+  fn verify_shard(sys: Sys, header: ShardHeader, shard: G, proof: Proof,
+      input: ByteStream, lch: Ext, fch: Ext) -> Ext {
+    let Sys.Mk(params, _tlimbs, circuits, commit, prep_indices) = sys;
+    let SysParams.Mk(log_blowup, cap_height, log_final_poly_len,
+                     max_log_arity, num_queries, commit_pow_bits,
+                     query_pow_bits) = params;
+    assert_eq!(cap_height, 0);
+    assert_eq!(log_final_poly_len, 0);
+    assert_eq!(max_log_arity, 1);
+    let ShardHeader.Mk(h_active, h_cap, h_lds, h_claims) = header;
+    let Proof.Mk(active, commitments, accs, log_degrees, opening,
+                 q_opened, prep_opt, stage1, stage2) = proof;
+    let num_circuits = list_length(accs);
+    assert_eq!(eq_zero(num_circuits), 0);
+    assert_eq!(list_length(stage1), num_circuits);
+    assert_eq!(list_length(stage2), num_circuits);
+    assert_eq!(list_length(q_opened), num_circuits);
+    assert_eq!(assert_bits(active), 1);
+    assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
+    let acirc = select_active_circuits(circuits, active);
+    let aprep = select_active_prep(prep_indices, active);
+    assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
+    let Commitments.Mk(s1c, s2c, qc) = commitments;
+    assert_eq!(assert_same_bits(h_active, active), 1);
+    assert_eq!(assert_same_cap(h_cap, s1c), 1);
+    assert_eq!(assert_same_u8s(h_lds, log_degrees), 1);
+    assert_eq!(assert_log_degrees_ok(log_degrees), 1);
+    assert_eq!(count_ones(active), list_length(log_degrees));
+    let prep_cap = @opt_commit_cap(commit);
+    let (alpha, zeta, post_zeta_input) = shard_fiat_shamir(input, shard, s2c, qc, accs);
+    let acc0 = claims_acc([0, 0], h_claims, lch, fch);
+    let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
+             prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
+    assert_eq!(@pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
+      s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
+      list_length(acirc), log_blowup, num_queries, commit_pow_bits,
+      query_pow_bits), 1);
+    last_acc(accs)
+  }
+  -- Verify every shard in order, accumulating residuals into `acc`.
+  fn verify_shards(sys: Sys, headers: List‹ShardHeader›, proofs: List‹Proof›, shard: G,
+      input: ByteStream, lch: Ext, fch: Ext, acc: Ext) -> Ext {
+    match load(headers) {
+      ListNode.Nil =>
+        assert_eq!(load(proofs), ListNode.Nil);
+        acc,
+      ListNode.Cons(h, hrest) =>
+        let ListNode.Cons(p, prest) = load(proofs);
+        let r = verify_shard(sys, h, shard, p, input, lch, fch);
+        verify_shards(sys, hrest, prest, shard + 1, input, lch, fch, @eg_add(acc, r)),
+    }
+  }
+  -- All claims of the batch, in shard order.
+  fn batch_claims(headers: List‹ShardHeader›) -> List‹List‹U64›› {
+    match load(headers) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(h, rest) =>
+        let ShardHeader.Mk(_active, _cap, _lds, claims) = h;
+        list_concat(claims, batch_claims(rest)),
+    }
+  }
+
+  -- Verify a whole batch: policy, the batch transcript, every shard, and the
+  -- residual balance. Returns the batch's claims for the caller to bind.
+  fn verify_batch(sys: Sys, batch: Batch) -> List‹List‹U64›› {
+    let Batch.Mk(headers, messages, proofs) = batch;
+    assert_eq!(assert_shard_count_ok(list_length(headers)), 1);
+    assert_eq!(list_length(proofs), list_length(headers));
+    assert_eq!(assert_closure_pairs(messages, store(ListNode.Nil)), 1);
+    let Sys.Mk(_params, tlimbs, _circuits, commit, _prep_indices) = sys;
+    let prep_cap = @opt_commit_cap(commit);
+    let (lch, fch, input) = batch_fiat_shamir(tlimbs, prep_cap, headers, messages);
+    let acc = messages_acc([0, 0], messages, lch, fch);
+    let total = verify_shards(sys, headers, proofs, 0, input, lch, fch, acc);
+    assert_eq!(@ext_is_zero(total), 1);
+    batch_claims(headers)
+  }
+
+  -- Read the batch at channel-0 offset `idx` (asserting the stream is fully
+  -- consumed at `idx + len`), verify it, and bind its claims to `claims`
+  -- (the digest-bound claims of the caller's channel). Returns 1.
+  fn verify_batch_at(sys: Sys, idx: G, len: G, claims: List‹List‹U64››) -> G {
+    let (batch, stop) = @read_batch(idx);
+    assert_eq!(stop, idx + len);
+    let found = verify_batch(sys, batch);
+    assert_eq!(assert_same_claims(found, claims), 1);
+    1
   }
 
   -- Read the public claims from the verifier's IO channel. Wire format (set by

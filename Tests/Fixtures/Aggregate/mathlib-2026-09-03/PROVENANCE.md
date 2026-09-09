@@ -78,8 +78,11 @@ This proof was produced with `multi-stark` revision `2892243e` and remains a
 record of the fully validated run above. The 2026-09-03 merge of
 `origin/main` at `76751119` moves Ix to `multi-stark` revision `a8aab731`,
 whose native pruned-multiproof protocol and verifying key are intentionally
-incompatible. The current backend rejects this historical wrapper with
-`InvalidProofShape`; accepting it would be a protocol-separation failure.
+incompatible. The current backend rejects this historical wrapper at its
+protocol boundary — as a proof of an incompatible shape
+(`InvalidProofShape`) under `a8aab731`, and as bytes that do not decode
+at all once proofs became batches of trace shards; accepting it would be a
+protocol-separation failure.
 
 The repository test deliberately does not commit the 3.33 GB environment or
 52.5 MB manifest. It pins the wrapper size, content address, decoded claim and

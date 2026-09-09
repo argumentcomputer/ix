@@ -534,19 +534,17 @@ def aggregate := ⟦
     claim
   }
 
-  -- Verify one recursive child against the already-bound recursion system.
-  -- Child claims need no standalone public digest: the verified proof's lookup
-  -- accumulator and Fiat-Shamir transcript bind `cbytes` directly.
+  -- Verify one recursive child (a batch of trace shards) against the
+  -- already-bound recursion system. Child claims need no standalone public
+  -- digest: the batch's headers carry them, the batch transcript binds the
+  -- headers, and the channel-2 copy is checked equal to them.
   fn join_verify_child(sys: Sys, key: G) -> List‹List‹U64›› {
     let (idx, len) = io_get_info(0, [key]);
-    let (proof, stop) = @read_proof(idx);
-    assert_eq!(stop, idx + len);
     let (cidx, clen) = io_get_info(2, [key]);
     let cbytes = #read_byte_stream(2, cidx, clen);
     let (claims, crest) = @read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
-    assert_eq!(@verify(proof), 1);
-    assert_eq!(@ood_verify(sys, proof, claims, cbytes), 1);
+    assert_eq!(@verify_batch_at(sys, idx, len, claims), 1);
     claims
   }
 

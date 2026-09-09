@@ -196,13 +196,15 @@ def endToEndSuite : IO UInt32 := do
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
 
   -- ── negative-test inputs ────────────────────────────────────────────────────
-  -- Tampered proof advice: locate the first stage-1 commitment byte after the
-  -- native proof's `Vec<bool>` activation bitmap and cap-length prefix. This
-  -- keeps the proof structurally parseable while forcing Fiat-Shamir and the
-  -- Merkle checks away from the proof that was actually produced.
+  -- Tampered proof advice: locate the first byte of the stage-1 commitment
+  -- in the batch's first shard header — after the `u64` shard count, the
+  -- header's `Vec<bool>` activation bitmap and the cap-length prefix. This
+  -- keeps the batch structurally parseable while making the header disagree
+  -- with the proof it describes (and moving the lookup challenges away from
+  -- the ones the proof was produced under).
   let activeLen := (List.range 8).foldl (fun n i =>
-    n ||| (proofBytes.data[i]!.toUInt64 <<< (i * 8).toUInt64)) 0
-  let firstCommitByte := 8 + activeLen.toNat + 8
+    n ||| (proofBytes.data[8 + i]!.toUInt64 <<< (i * 8).toUInt64)) 0
+  let firstCommitByte := 8 + 8 + activeLen.toNat + 8
   let badProofBytes :=
     proofBytes.set! firstCommitByte
       (UInt8.ofNat ((proofBytes.data[firstCommitByte]!.toNat + 1) % 256))

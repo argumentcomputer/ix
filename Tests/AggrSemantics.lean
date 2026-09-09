@@ -134,8 +134,12 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
       if out.exitCode == 0 then
         IO.eprintln "obsolete Stage 2 fixture unexpectedly verified under the current protocol"
         return false
-      unless out.stderr.contains "InvalidProofShape" ||
-          out.stdout.contains "InvalidProofShape" do
+      -- The fence is the protocol boundary, wherever it currently falls: a
+      -- decoded proof of an incompatible shape, or bytes that no longer
+      -- decode as a proof at all (the batch wire format).
+      let fenced (s : String) : Bool :=
+        s.contains "InvalidProofShape" || s.contains "does not decode"
+      unless fenced out.stderr || fenced out.stdout do
         IO.eprintln s!"obsolete Stage 2 fixture failed for an unexpected reason \
 ({out.exitCode}): {out.stderr.take 500}"
         return false
@@ -431,7 +435,7 @@ def semanticSuite : IO UInt32 := do
         let planWorks := (ixvmSystem.aggregateStage2 selfSystem handle
           ixesPath.toString "" verifyIdx fakeAggrIdx 1
           (16 * 1024 * 1024 * 1024) 4096 0 false true
-          childRecursionParameters.cacheFriBytes false true).isOk
+          childRecursionParameters.cacheFriBytes false true false).isOk
         let expectedMatches := match Aiur.AiurSystem.aggregateExpected
             handle ixesPath.toString 4096 with
           | .error _ => false
