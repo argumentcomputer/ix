@@ -978,7 +978,7 @@ private def runAggregateCmdNativeWith
       structuralAbove reproveSlotCode (p.hasFlag "direct-joins")
       (p.hasFlag "plan-only")
       recursionParameters.cacheFriBytes (!(p.hasFlag "no-cache"))
-      (!(p.hasFlag "no-write"))
+      (!(p.hasFlag "no-write")) (p.hasFlag "trace-shards")
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok _ => return 0
@@ -1210,6 +1210,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
     "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
+    "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
 
   ARGS:
     ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (one per nonempty shard, except --plan-only or replay with aggregate children)."

@@ -112,7 +112,34 @@ struct RowMeta<'a> {
   result: QueryRef<'a>,
 }
 
+/// A position in a function circuit's concatenated query maps: the member
+/// (its index within the circuit's member list) and the position within that
+/// member's query map. `(members, 0)` is one past the last query.
+pub type QueryPosition = (usize, usize);
+
 impl Toplevel {
+  /// The number of rows function circuit `circuit_index` contributes: its
+  /// members' queries with a nonzero multiplicity, in member order then
+  /// record order. The unit [`Self::witness_data_range`] indexes.
+  pub fn function_rows(
+    &self,
+    circuit_index: usize,
+    query_record: &QueryRecord,
+  ) -> usize {
+    self.circuits[circuit_index]
+      .members
+      .iter()
+      .map(|&member| {
+        query_record.function_queries[member]
+          .iter()
+          .filter(|(_, res)| !res.multiplicity.is_zero())
+          .count()
+      })
+      .sum()
+  }
+
+  /// All of function circuit `circuit_index`'s rows as one trace:
+  /// [`Self::witness_data_range`] over every member's every query.
   pub fn witness_data(
     &self,
     circuit_index: usize,
@@ -120,29 +147,70 @@ impl Toplevel {
     io_buffer: &IOBuffer,
     slot_arg_widths: &[usize],
   ) -> (RowMajorMatrix<G>, LookupValues<G>) {
+    let members = self.circuits[circuit_index].members.len();
+    let rows = self.function_rows(circuit_index, query_record);
+    self.witness_data_range(
+      circuit_index,
+      query_record,
+      io_buffer,
+      slot_arg_widths,
+      (0, 0),
+      (members, 0),
+      rows,
+    )
+  }
+
+  /// The rows among the queries from `start` to `end` (positions in the
+  /// concatenated query maps of circuit `circuit_index`'s members) as a
+  /// trace: the queries in that span with a nonzero multiplicity, of which
+  /// there must be exactly `row_count`. An empty span yields an EMPTY trace
+  /// (not a padded height-1 one): the prover deactivates the circuit, so it
+  /// is neither committed nor opened.
+  pub fn witness_data_range(
+    &self,
+    circuit_index: usize,
+    query_record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    slot_arg_widths: &[usize],
+    start: QueryPosition,
+    end: QueryPosition,
+    row_count: usize,
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
     let circuit = &self.circuits[circuit_index];
     let layout = &circuit.layout;
     let width = layout.width();
-    // Concatenate the members' queried rows, in member order.
+    // Concatenate the members' queried rows in the span, in member order.
     let mut rows_meta = Vec::new();
     let mut sel_offset = 0;
-    for &member in &circuit.members {
+    for (m, &member) in circuit.members.iter().enumerate() {
       let function = &self.functions[member];
-      let function_index = G::from_usize(member);
-      rows_meta.extend(
-        query_record.function_queries[member]
-          .iter()
-          .filter(|(_, res)| !res.multiplicity.is_zero())
-          .map(|(inputs, result)| RowMeta {
-            function,
-            sel_offset,
-            function_index,
-            inputs,
-            result,
-          }),
-      );
+      if (start.0..=end.0).contains(&m) {
+        let queries = &query_record.function_queries[member];
+        let lo = if m == start.0 { start.1 } else { 0 };
+        let hi = if m == end.0 { end.1 } else { queries.len() };
+        let function_index = G::from_usize(member);
+        rows_meta.extend(
+          queries
+            .iter()
+            .skip(lo)
+            .take(hi.saturating_sub(lo))
+            .filter(|(_, res)| !res.multiplicity.is_zero())
+            .map(|(inputs, result)| RowMeta {
+              function,
+              sel_offset,
+              function_index,
+              inputs,
+              result,
+            }),
+        );
+      }
       sel_offset += function.layout.selectors;
     }
+    assert_eq!(
+      rows_meta.len(),
+      row_count,
+      "query span holds a different row count"
+    );
     let height_no_padding = rows_meta.len();
     // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
     // the prover deactivates it, so it is neither committed nor opened.

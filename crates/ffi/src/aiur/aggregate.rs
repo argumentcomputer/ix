@@ -393,6 +393,9 @@ struct ProveContext<'a> {
   cache_dir: Option<&'a Path>,
   reprove_slot: Option<usize>,
   write_outputs: bool,
+  /// The prover budget of one slot when its execution is proven as trace
+  /// shards; `None` proves every slot unsharded and unbudgeted.
+  wrap_budget: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -413,6 +416,7 @@ struct RunConfig<'a> {
   cache_fri_bytes: &'a [u8],
   use_cache: bool,
   write_outputs: bool,
+  trace_shards: bool,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -1391,21 +1395,29 @@ fn prove_aggregate(
   let mut public_input = packed_digest(ctx.allowed);
   public_input.extend(packed_digest(&spec.statement.claim_bytes));
   let proving_started = Instant::now();
-  let (outer_claim, proof, peak) = match ctx
-    .aggr_system
-    .prove_ixvm_within_budget(
+  let (outer_claim, proof, peak) =
+    match ctx.aggr_system.prove_ixvm_within_budget(
       ctx.aggr_idx,
       &public_input,
       &mut io,
       execute_ix_aggr,
-      None,
+      ctx.wrap_budget,
       false,
+      ctx.wrap_budget.is_some(),
+      None,
     ) {
-    GatedProve::Proved { claim, proof, peak } => (claim, proof, peak),
-    GatedProve::Split { .. } | GatedProve::Measured { .. } => {
-      return Err("unbudgeted aggregate prove did not produce a proof".into());
-    },
-  };
+      GatedProve::Proved { claim, proof, peak } => (claim, proof, peak),
+      GatedProve::Split { peak, .. } => {
+        return Err(format!(
+          "slot {slot_index}: no trace-shard count fits the {} B budget \
+         (whole-execution peak {peak} B) — raise --max-ram",
+          ctx.wrap_budget.unwrap_or(0)
+        ));
+      },
+      GatedProve::Measured { .. } => {
+        return Err("aggregate prove did not produce a proof".into());
+      },
+    };
   let proved_at = Instant::now();
   if outer_claim != spec.outer_claim {
     return Err("aggregate prover returned an unexpected outer claim".into());
@@ -1945,6 +1957,12 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     cache_dir,
     reprove_slot: config.reprove_slot,
     write_outputs: config.write_outputs,
+    // Slots share the run's budget evenly across the concurrent jobs; with
+    // every ready slot allowed at once, each gets the whole budget and the
+    // scheduler's per-slot weights alone bound concurrency.
+    wrap_budget: config
+      .trace_shards
+      .then(|| config.ram_budget_bytes / config.jobs.max(1)),
   };
   if let (Some(target), Some(plan)) =
     (config.reprove_slot, replay_plan.as_ref())
@@ -2047,6 +2065,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_cache: bool,
   write_outputs: bool,
+  trace_shards: bool,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
@@ -2068,6 +2087,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       cache_fri_bytes: cache_fri_bytes.as_bytes(),
       use_cache,
       write_outputs,
+      trace_shards,
     })
   }));
   match result {

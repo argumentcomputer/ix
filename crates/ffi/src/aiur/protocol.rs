@@ -22,7 +22,10 @@ use crate::{
 use aiur::{
   G,
   execute::{IOBuffer, IOKeyInfo, QueryRecord},
-  synthesis::{AiurProof, AiurSystem, CircuitShape, GatedProve},
+  synthesis::{
+    AiurProof, AiurSystem, CircuitShape, GatedProve,
+    ShardRetention as Retention,
+  },
 };
 
 // =============================================================================
@@ -1011,6 +1014,14 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
 /// either way, and `suggestedParts` is 1 exactly when the peak fits —
 /// the split loop runs on executions alone, no STARK ever starts.
 ///
+/// `trace_shards` lets an over-budget record be proven as a batch of
+/// trace shards instead of being split into parts, whenever some shard
+/// count fits the budget; `peakBytes` is then the heaviest shard's
+/// projection and `suggestedParts` stays 1. `retention` overrides what the
+/// batch keeps across its barrier: 1 retains every shard's stage 1, 2
+/// regenerates each shard for round two, anything else lets the RAM model
+/// choose (retain when the retained batch fits the budget).
+///
 /// Returns `(claimBytes, proof?, peakBytes, suggestedParts)`. The final IO buffer is
 /// deliberately NOT returned: it is the shard's whole ingested byte
 /// scope, both Lean callers discarded it, and marshalling it back is
@@ -1026,10 +1037,17 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
   exec_only: bool,
+  trace_shards: bool,
+  retention: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
     let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+    let retention = match lean_unbox_nat_as_usize(retention.inner()) {
+      1 => Some(Retention::Retain),
+      2 => Some(Retention::Regenerate),
+      _ => None,
+    };
     let owned = match decode_owned_blob(&owned_blob) {
       Ok(v) => v,
       Err(e) => return LeanExcept::error_string(&e),
@@ -1064,6 +1082,8 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       },
       budget,
       exec_only,
+      trace_shards,
+      retention,
     );
     let (proof, peak, parts) = match proved {
       GatedProve::Proved { proof, peak, .. } => (

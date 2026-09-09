@@ -169,9 +169,9 @@ impl Toplevel {
       yield_info: vec![],
     };
     // The shared multiplicity column: first auxiliary, right after the
-    // selectors. The return lookup occupies the first lookup slot.
+    // selectors. The return lookup occupies the first lookup slot; its
+    // multiplicity is gated by the circuit-level selector below.
     let multiplicity = var(layout.input_size + layout.selectors);
-    state.lookups[0].multiplicity = -multiplicity;
     let aux_start = layout.input_size + layout.selectors + 1;
     let mut sel_base = layout.input_size;
     let mut circuit_sel = Expr::from(G::ZERO);
@@ -205,8 +205,13 @@ impl Toplevel {
       state
         .constraints
         .zeros
-        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel));
+        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel.clone()));
     }
+    // The return pull is gated by the circuit-level selector: a padding row
+    // has every constraint switched off, so whatever it pulled would be an
+    // unconstrained return message (raw arguments, in a branchless circuit)
+    // with a multiplicity of the prover's choosing.
+    state.lookups[0].multiplicity = -(circuit_sel * multiplicity);
     (state.constraints, state.lookups)
   }
 }

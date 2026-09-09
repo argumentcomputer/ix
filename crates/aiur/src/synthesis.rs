@@ -1,17 +1,14 @@
 use multi_stark::{
+  batch::{BatchProof, Retention},
   expr::Expr,
   lookup::Lookup,
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
-  prover::Proof,
-  system::{CircuitInputs, ProverKey, System, SystemWitness},
+  system::{CircuitInputs, ProverKey, System},
   types::{
     CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
   },
   verifier::VerificationError,
-};
-use rayon::iter::{
-  IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
 
 use crate::{
@@ -21,12 +18,34 @@ use crate::{
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
+  shard::ShardPlan,
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
 pub type AiurConfig = GoldilocksBlake3Config;
-/// A proof under [`AiurConfig`].
-pub type AiurProof = Proof<AiurConfig>;
+/// A proof under [`AiurConfig`]: a batch of one or more trace shards proven
+/// under shared lookup challenges (see [`crate::shard`]). A proof of an
+/// unsharded execution is the one-shard batch.
+pub type AiurProof = BatchProof<AiurConfig>;
+/// What a batch prover keeps of each shard across its barrier.
+pub use multi_stark::batch::Retention as ShardRetention;
+
+/// Why an [`AiurProof`] was rejected.
+#[derive(Debug)]
+pub enum AiurVerificationError {
+  /// The batch violates Aiur's policy over multi-stark's batch protocol:
+  /// the claim, or the `memseg` closure messages, are not what one
+  /// execution's proof carries (see `AiurSystem::check_batch_policy`).
+  Policy(String),
+  /// The multi-stark batch itself failed to verify.
+  Stark(VerificationError<PcsError>),
+}
+
+impl From<VerificationError<PcsError>> for AiurVerificationError {
+  fn from(error: VerificationError<PcsError>) -> Self {
+    Self::Stark(error)
+  }
+}
 
 /// The prover RAM model's phase breakdown; `peak` is the number the
 /// budget gate compares (see [`AiurSystem::peak_prove_bytes`]).
@@ -35,6 +54,10 @@ pub struct PeakProveBytes {
   pub phase_stage2: usize,
   pub phase_open: usize,
   pub preprocessed: usize,
+  /// What a proof holds of its stage 1 once committed: the stage-1 LDEs,
+  /// their Merkle tree and the lookup witness — the state a batch prover
+  /// retains per shard across its barrier under `Retention::Retain`.
+  pub retained_stage_1: usize,
   pub peak: usize,
 }
 
@@ -48,7 +71,12 @@ pub struct PeakProveBytes {
 const PROVER_RSS_CALIBRATION_NUMERATOR: usize = 43;
 const PROVER_RSS_CALIBRATION_DENOMINATOR: usize = 40;
 
-fn calibrate_prover_rss(analytic_peak: usize) -> usize {
+/// Extension degree of the lookup argument's challenge field: the number of
+/// base-field columns behind every stage-2 accumulator and quotient column.
+pub(crate) const EXTENSION_DEGREE: usize =
+  <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<G>>::DIMENSION;
+
+pub(crate) fn calibrate_prover_rss(analytic_peak: usize) -> usize {
   analytic_peak
     .checked_mul(PROVER_RSS_CALIBRATION_NUMERATOR)
     .map_or(usize::MAX, |scaled| {
@@ -87,7 +115,8 @@ pub struct AiurSystem {
   slot_widths: Vec<Vec<usize>>,
 }
 
-enum CircuitType {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CircuitType {
   Function { idx: usize },
   Memory { width: usize },
   Bytes1,
@@ -217,7 +246,11 @@ impl AiurSystem {
   /// index), then memories, then `Bytes1`, then `Bytes2`. This matches the
   /// order the circuits were chained in [`AiurSystem::build`], so index `i`
   /// of the returned `Vec` corresponds to `self.system.circuits[i]`.
-  fn circuit_types(&self) -> Vec<CircuitType> {
+  pub(crate) fn toplevel(&self) -> &Toplevel {
+    &self.toplevel
+  }
+
+  pub(crate) fn circuit_types(&self) -> Vec<CircuitType> {
     let functions = (0..self.toplevel.circuits.len())
       .map(|idx| CircuitType::Function { idx });
     let memories = self
@@ -232,7 +265,7 @@ impl AiurSystem {
   /// The argument width of each lookup slot of circuit `circuit_idx`, taken
   /// from the lookups built at construction so the witness layout always
   /// matches the compiled circuit.
-  fn slot_arg_widths(&self, circuit_idx: usize) -> Vec<usize> {
+  pub(crate) fn slot_arg_widths(&self, circuit_idx: usize) -> Vec<usize> {
     self.slot_widths[circuit_idx].clone()
   }
 
@@ -285,7 +318,7 @@ impl AiurSystem {
     )
   }
 
-  fn peak_prove_bytes_by(
+  pub(crate) fn peak_prove_bytes_by(
     &self,
     raw_of: impl Fn(usize, &CircuitType) -> usize,
     record_bytes: usize,
@@ -317,7 +350,7 @@ impl AiurSystem {
       }
       let n = raw.next_power_of_two();
       let c = &self.system.circuits[i];
-      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      let d = EXTENSION_DEGREE;
       let args: usize = self.slot_widths[i].iter().sum();
       let q = c.quotient_degree();
       witness +=
@@ -342,6 +375,7 @@ impl AiurSystem {
       phase_stage2,
       phase_open,
       preprocessed: prep,
+      retained_stage_1: s1_lde + 2 * DG * h + lookup_w,
       peak: calibrate_prover_rss(analytic_peak),
     }
   }
@@ -407,44 +441,106 @@ impl AiurSystem {
     query_record: QueryRecord,
     output: &[G],
   ) -> (Vec<G>, AiurProof) {
-    let _g = tracing::info_span!("aiur/witness").entered();
-    let circuit_types = self.circuit_types();
-    let witness_data = circuit_types
-      .into_par_iter()
-      .enumerate()
-      .map(|(circuit_idx, circuit_type)| {
-        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
-        match circuit_type {
-          CircuitType::Function { idx } => self.toplevel.witness_data(
-            idx,
-            &query_record,
-            io_buffer,
-            &slot_arg_widths,
-          ),
-          CircuitType::Memory { width } => {
-            Memory::witness_data(width, &query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes1 => {
-            Bytes1.witness_data(&query_record, &slot_arg_widths)
-          },
-          CircuitType::Bytes2 => {
-            Bytes2.witness_data(&query_record, &slot_arg_widths)
-          },
-        }
-      })
-      .collect::<Vec<_>>();
-    drop(query_record); // Early drop to free memory.
-    let (traces, lookups) = witness_data.into_iter().unzip();
-    let witness = SystemWitness { traces, lookups };
-    drop(_g);
+    let plan = self.single_shard_plan(&query_record);
+    self.prove_from_execution_planned(
+      fun_idx,
+      input,
+      io_buffer,
+      query_record,
+      output,
+      &plan,
+      Retention::Retain,
+    )
+  }
 
+  /// [`Self::prove_from_execution`] with the record's rows dealt out to the
+  /// fewest shards whose committed cells each fit `max_cells`
+  /// ([`Self::plan_shards`]). With more than one shard, only the headers
+  /// survive the batch barrier and each shard is rebuilt from the record
+  /// for round two ([`Retention::Regenerate`]), so the peak is the record
+  /// plus one shard rather than the stage-1 state of every shard. A plan
+  /// of one shard has nothing to save and is proven as the unsharded
+  /// execution is ([`Retention::Retain`]).
+  pub fn prove_from_execution_sharded(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &IOBuffer,
+    query_record: QueryRecord,
+    output: &[G],
+    max_cells: usize,
+  ) -> (Vec<G>, AiurProof) {
+    let plan = self.plan_shards(&query_record, Some(max_cells));
+    let retention = if plan.num_shards() == 1 {
+      Retention::Retain
+    } else {
+      Retention::Regenerate
+    };
+    self.prove_from_execution_planned(
+      fun_idx,
+      input,
+      io_buffer,
+      query_record,
+      output,
+      &plan,
+      retention,
+    )
+  }
+
+  /// Proves an execution as the batch of trace shards `plan` describes: one
+  /// witness per shard, the claim in shard 0, and the `memseg` closure
+  /// messages for the plan's memory totals.
+  ///
+  /// Under [`Retention::Retain`] every shard's witness is built first and
+  /// the record is released before proving starts, so the record and the
+  /// proving state never coexist, but the whole batch's stage 1 does. Under
+  /// [`Retention::Regenerate`] the record stays until the last shard is
+  /// proven and each shard's witness is built from it when needed, twice.
+  pub fn prove_from_execution_planned(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &IOBuffer,
+    query_record: QueryRecord,
+    output: &[G],
+    plan: &ShardPlan,
+    retention: Retention,
+  ) -> (Vec<G>, AiurProof) {
     // Construct the claim.
     let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
     claim.extend(input);
     claim.extend(output);
 
-    // Finally prove.
-    let proof = self.system.prove(&self.key, &claim, witness);
+    let claims: Vec<Vec<Vec<G>>> = (0..plan.num_shards())
+      .map(|shard| if shard == 0 { vec![claim.clone()] } else { vec![] })
+      .collect();
+    let messages = Self::boundary_messages(plan);
+    let index = self.row_index(&query_record, plan);
+    let build = |shard: usize| {
+      let _g = tracing::info_span!("aiur/witness").entered();
+      self.shard_witness(&query_record, io_buffer, plan, &index, shard)
+    };
+    let proof = match retention {
+      Retention::Retain => {
+        let mut witnesses: Vec<_> =
+          (0..plan.num_shards()).map(|shard| Some(build(shard))).collect();
+        drop(query_record);
+        self.system.prove_batch_with(
+          &self.key,
+          &claims,
+          messages,
+          Retention::Retain,
+          |shard| witnesses[shard].take().expect("each shard is built once"),
+        )
+      },
+      Retention::Regenerate => self.system.prove_batch_with(
+        &self.key,
+        &claims,
+        messages,
+        Retention::Regenerate,
+        build,
+      ),
+    };
     (claim, proof)
   }
 
@@ -497,7 +593,7 @@ impl AiurSystem {
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
     match self.prove_ixvm_within_budget(
-      fun_idx, input, io_buffer, executor, None, false,
+      fun_idx, input, io_buffer, executor, None, false, false, None,
     ) {
       GatedProve::Proved { claim, proof, .. } => (claim, proof),
       _ => unreachable!("an unbudgeted prove always proves"),
@@ -512,8 +608,13 @@ impl AiurSystem {
   /// The peak is measured on the REAL record ([`Self::peak_prove_bytes`]),
   /// not estimated from serialized bytes, so an over-budget shard is
   /// caught in the gap between execution and the witness phase — before
-  /// the LDE/commit/FRI phases that would actually exhaust the box: the
-  /// record is dropped and [`GatedProve::Split`] carries the part count
+  /// the LDE/commit/FRI phases that would actually exhaust the box. With
+  /// `trace_shards`, an over-budget record is first planned as trace
+  /// shards ([`Self::plan_shards_within`]) and, if some shard count fits,
+  /// proven as that batch with the record resident throughout; the peak
+  /// reported is then the heaviest shard's projection. Otherwise — or
+  /// without `trace_shards` — the record is dropped and
+  /// [`GatedProve::Split`] carries the part count
   /// [`Self::suggested_split_parts`] projects will fit, computed here
   /// because this is the last moment the record exists to read counts
   /// from. Every outcome carries the measured peak: proving a shard
@@ -532,6 +633,8 @@ impl AiurSystem {
     executor: F,
     max_bytes: Option<usize>,
     exec_only: bool,
+    trace_shards: bool,
+    retention: Option<Retention>,
   ) -> GatedProve
   where
     F: FnOnce(
@@ -552,6 +655,60 @@ impl AiurSystem {
     if let Some(max) = max_bytes
       && peak > max
     {
+      if trace_shards {
+        let record_bytes = crate::execute::record_retained_bytes(&query_record);
+        match self.plan_shards_within(&query_record, max) {
+          Ok((plan, shard_peak)) => {
+            let retention = retention
+              .unwrap_or_else(|| self.retention_for(&plan, record_bytes, max));
+            eprintln!(
+              "[trace-shards] {} shards for a {} B budget: record {} B, \
+               whole-execution peak {} B, heaviest shard peak {} B, {}",
+              plan.num_shards(),
+              max,
+              record_bytes,
+              peak,
+              shard_peak,
+              match retention {
+                Retention::Retain => "retaining every shard's stage 1",
+                Retention::Regenerate => "regenerating each shard for round 2",
+              }
+            );
+            for (shard, rows) in plan.shards.iter().enumerate() {
+              let ranges: Vec<String> = rows
+                .rows
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| !r.is_empty())
+                .map(|(ci, r)| format!("{ci}:{}..{}", r.start, r.end))
+                .collect();
+              eprintln!(
+                "[trace-shards] shard {shard}: projected peak {} B, rows {}",
+                self.shard_peak_bytes(&plan, shard, record_bytes),
+                ranges.join(" ")
+              );
+            }
+            if exec_only {
+              return GatedProve::Measured { peak: shard_peak };
+            }
+            let (claim, proof) = self.prove_from_execution_planned(
+              fun_idx,
+              input,
+              io_buffer,
+              query_record,
+              &output,
+              &plan,
+              retention,
+            );
+            return GatedProve::Proved { claim, proof, peak: shard_peak };
+          },
+          Err(floor) => eprintln!(
+            "[trace-shards] no shard count fits a {} B budget: record {} B, \
+             whole-execution peak {} B, lowest heaviest-shard peak {} B",
+            max, record_bytes, peak, floor
+          ),
+        }
+      }
       let parts = self.suggested_split_parts(&query_record, max);
       return GatedProve::Split { peak, parts };
     }
@@ -568,13 +725,18 @@ impl AiurSystem {
     GatedProve::Proved { claim, proof, peak }
   }
 
-  #[inline]
+  /// Verifies a proof of `claim`: Aiur's batch policy (one claim, canonical
+  /// `memseg` closure — see [`crate::shard`]), then the multi-stark batch.
   pub fn verify(
     &self,
     claim: &[G],
     proof: &AiurProof,
-  ) -> Result<(), VerificationError<PcsError>> {
-    self.system.verify(claim, proof)
+  ) -> Result<(), AiurVerificationError> {
+    self
+      .check_batch_policy(claim, &proof.preamble)
+      .map_err(AiurVerificationError::Policy)?;
+    self.system.verify_batch(proof)?;
+    Ok(())
   }
 
   /// Verify and serialize the native Plonky3 multiproof for the in-circuit
@@ -595,9 +757,13 @@ mod tests {
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
     execute::IOBuffer,
+    shard::ShardRows,
   };
   use multi_stark::{
+    batch::ShardInput,
+    lookup::LookupValues,
     p3_field::PrimeCharacteristicRing,
+    system::SystemWitness,
     types::{CommitmentParameters, FriParameters},
   };
   use rustc_hash::FxHashMap;
@@ -983,5 +1149,428 @@ mod tests {
     assert_eq!(shapes[3].preprocessed_height, 256);
     assert_eq!(shapes[4].preprocessed_width, 14);
     assert_eq!(shapes[4].preprocessed_height, 65536);
+  }
+
+  // -- Trace shards --
+  //
+  // `call_and_memory_toplevel`'s system order: f, g, memory[1], Bytes1,
+  // Bytes2. Its record has one row of f, one of g, and one memory row.
+  const F: usize = 0;
+  const G_FN: usize = 1;
+  const MEM: usize = 2;
+  const BYTES1: usize = 3;
+  const BYTES2: usize = 4;
+
+  fn executed_call_and_memory()
+  -> (AiurSystem, Vec<G>, QueryRecord, Vec<G>, IOBuffer) {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let input = vec![G::from_u64(3), G::from_u64(5)];
+    let mut io_buffer = empty_io_buffer();
+    let (record, output) = system
+      .toplevel()
+      .execute(0, input.clone(), &mut io_buffer)
+      .expect("execution succeeds");
+    (system, input, record, output, io_buffer)
+  }
+
+  /// Two shards: `f` and the byte tables in shard 0, `g` in shard 1, and the
+  /// memory row wherever `memory_ranges` puts it (one range per shard).
+  fn two_shard_plan(memory_ranges: [std::ops::Range<usize>; 2]) -> ShardPlan {
+    let mut shard_0 = vec![0..0; 5];
+    let mut shard_1 = vec![0..0; 5];
+    shard_0[F] = 0..1;
+    shard_0[BYTES1] = 0..256;
+    shard_0[BYTES2] = 0..65536;
+    shard_1[G_FN] = 0..1;
+    let [range_0, range_1] = memory_ranges;
+    shard_0[MEM] = range_0;
+    shard_1[MEM] = range_1;
+    ShardPlan {
+      shards: vec![ShardRows { rows: shard_0 }, ShardRows { rows: shard_1 }],
+      memory_totals: vec![(1, 1)],
+    }
+  }
+
+  #[test]
+  fn sharded_prove_verify_across_two_shards() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    // The memory table lives in the shard WITHOUT the claim and WITHOUT the
+    // caller's store/load rows: every memory message crosses the cut.
+    let plan = two_shard_plan([0..0, 0..1]);
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Regenerate,
+    );
+    assert_eq!(proof.proofs.len(), 2);
+    // The byte tables are present in both shards; only shard 0's copy
+    // carries multiplicities.
+    assert!(proof.proofs[0].active[BYTES1] && proof.proofs[0].active[BYTES2]);
+    assert!(proof.proofs[1].active[BYTES1] && proof.proofs[1].active[BYTES2]);
+    assert!(!proof.proofs[0].active[MEM] && proof.proofs[1].active[MEM]);
+    assert_eq!(proof.preamble.headers[0].claims.len(), 1);
+    assert!(proof.preamble.headers[1].claims.is_empty());
+    system.verify(&claim, &proof).expect("two-shard proof verifies");
+
+    let mut bad_claim = claim.clone();
+    let last = bad_claim.len() - 1;
+    bad_claim[last] += G::ONE;
+    assert!(matches!(
+      system.verify(&bad_claim, &proof),
+      Err(AiurVerificationError::Policy(_))
+    ));
+  }
+
+  #[test]
+  fn sharded_proof_bytes_round_trip() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    let plan = two_shard_plan([0..1, 0..0]);
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+    let bytes = proof.to_bytes().expect("serialize");
+    let decoded = AiurProof::from_bytes(&bytes).expect("deserialize");
+    system.verify(&claim, &decoded).expect("decoded proof verifies");
+  }
+
+  #[test]
+  fn plan_shards_respects_budget_and_covers_every_row() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    let single = system.single_shard_plan(&record);
+    assert_eq!(single.num_shards(), 1);
+    assert_eq!(single.memory_totals, vec![(1, 1)]);
+
+    // Every committed cell of the single shard, less one, forces a second
+    // shard; the byte tables stay in shard 0 and everything else moves.
+    let widths: Vec<usize> = system
+      .circuit_shapes()
+      .iter()
+      .map(|s| {
+        s.main_width + s.stage2_width + s.quotient_degree * EXTENSION_DEGREE
+      })
+      .collect();
+    // Every shard commits the byte tables, so they are charged to each.
+    let cells = |plan: &ShardPlan, shard: usize| -> usize {
+      plan.shards[shard]
+        .rows
+        .iter()
+        .zip(&widths)
+        .zip(&single.shards[0].rows)
+        .enumerate()
+        .map(|(ci, ((r, &w), whole))| {
+          let r = if ci == BYTES1 || ci == BYTES2 { whole } else { r };
+          if r.is_empty() { 0 } else { r.len().next_power_of_two() * w }
+        })
+        .sum()
+    };
+    let total = cells(&single, 0);
+    let plan = system.plan_shards(&record, Some(total - 1));
+    assert_eq!(plan.num_shards(), 2);
+    assert!(cells(&plan, 0) < total && cells(&plan, 1) < total);
+    for ci in 0..5 {
+      let covered: usize = plan.shards.iter().map(|s| s.rows[ci].len()).sum();
+      assert_eq!(covered, single.shards[0].rows[ci].len(), "circuit {ci}");
+    }
+    assert_eq!(plan.shards[0].rows[BYTES2], 0..65536);
+    assert!(plan.shards[1].rows[BYTES2].is_empty());
+
+    // A budget nothing can meet still yields a plan (the byte tables floor
+    // shard 0), without searching further than the three placeable rows
+    // allow.
+    let floored = system.plan_shards(&record, Some(1));
+    assert!((1..=3).contains(&floored.num_shards()));
+    for ci in 0..5 {
+      let covered: usize =
+        floored.shards.iter().map(|s| s.rows[ci].len()).sum();
+      assert_eq!(covered, single.shards[0].rows[ci].len(), "circuit {ci}");
+    }
+
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+    system.verify(&claim, &proof).expect("planned two-shard proof verifies");
+  }
+
+  #[test]
+  fn rejects_duplicated_memory_range() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    // Both shards claim pointer 0: two `0 → 1` edges against one boot and
+    // one terminal term.
+    let plan = two_shard_plan([0..1, 0..1]);
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+    assert!(matches!(
+      system.verify(&claim, &proof),
+      Err(AiurVerificationError::Stark(VerificationError::UnbalancedBatch))
+    ));
+  }
+
+  #[test]
+  fn rejects_memory_row_missing_from_every_shard() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    // No shard carries the memory table, yet the plan still closes it: the
+    // closure's end points (0 and 1) then match no rows, and the caller's
+    // store/load pushes match no pull.
+    let plan = two_shard_plan([0..0, 0..0]);
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+    assert!(matches!(
+      system.verify(&claim, &proof),
+      Err(AiurVerificationError::Stark(VerificationError::UnbalancedBatch))
+    ));
+  }
+
+  #[test]
+  fn rejects_duplicate_closure_width() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    // Both shards hold pointer 0 of width 1, and the plan closes width 1
+    // twice: balanced as a sum, rejected as a policy violation.
+    let mut plan = two_shard_plan([0..1, 0..1]);
+    plan.memory_totals.push((1, 1));
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+    assert!(matches!(
+      system.verify(&claim, &proof),
+      Err(AiurVerificationError::Policy(_))
+    ));
+  }
+
+  #[test]
+  fn rejects_noncanonical_messages_and_extra_claims() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    let plan = two_shard_plan([0..1, 0..0]);
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+
+    let mut extra_message = proof.clone();
+    extra_message.preamble.messages.push(
+      multi_stark::batch::BatchMessage::push(vec![G::ZERO, G::ONE, G::TWO]),
+    );
+    assert!(matches!(
+      system.verify(&claim, &extra_message),
+      Err(AiurVerificationError::Policy(_))
+    ));
+
+    let mut swapped_polarity = proof.clone();
+    swapped_polarity.preamble.messages.swap(0, 1);
+    assert!(matches!(
+      system.verify(&claim, &swapped_polarity),
+      Err(AiurVerificationError::Policy(_))
+    ));
+
+    let mut second_claim = proof.clone();
+    second_claim.preamble.headers[1].claims.push(claim.clone());
+    assert!(matches!(
+      system.verify(&claim, &second_claim),
+      Err(AiurVerificationError::Policy(_))
+    ));
+
+    let mut no_claim = proof;
+    no_claim.preamble.headers[0].claims.clear();
+    assert!(matches!(
+      system.verify(&claim, &no_claim),
+      Err(AiurVerificationError::Policy(_))
+    ));
+  }
+  /// A witness whose only real work is one row of `f` with its selector OFF:
+  /// no constraint of `f` applies to the row, yet it still pulls a return
+  /// message for the entry claim. `g` and the memory table carry no rows, so
+  /// the only message in the batch is that forged return, matched by the
+  /// verifier's claim.
+  fn forged_entry_witness(
+    system: &AiurSystem,
+    io_buffer: &IOBuffer,
+    output: G,
+  ) -> (Vec<G>, SystemWitness<G>) {
+    let record = QueryRecord::new(system.toplevel());
+    let plan = ShardPlan {
+      shards: vec![ShardRows { rows: vec![0..0; 5] }],
+      memory_totals: vec![],
+    };
+    let index = system.row_index(&record, &plan);
+    let mut witness =
+      system.shard_witness(&record, io_buffer, &plan, &index, 0);
+
+    let shape = &system.circuit_shapes()[F];
+    let input = [G::from_u64(3), G::from_u64(5)];
+    let mut claim = vec![function_channel(), G::from_usize(F)];
+    claim.extend(input);
+    claim.push(output);
+
+    // `f`'s columns: inputs (2), selector (1), auxiliaries (5): multiplicity,
+    // call output, store pointer, loaded value, product. The selector stays
+    // zero; the multiplicity and the returned product are set freely.
+    let mut row = vec![G::ZERO; shape.main_width];
+    row[0] = input[0];
+    row[1] = input[1];
+    row[3] = G::ONE;
+    row[7] = output;
+    witness.traces[F] = RowMajorMatrix::new(row, shape.main_width);
+    let mut builder = LookupValues::builder(1, &system.slot_arg_widths(F));
+    builder.rows_mut()[0].pull(0, G::ONE, &claim);
+    witness.lookups[F] = builder.finish();
+    (claim, witness)
+  }
+
+  #[test]
+  fn padding_row_cannot_pull_a_return_message() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let io_buffer = empty_io_buffer();
+    let (claim, witness) =
+      forged_entry_witness(&system, &io_buffer, G::from_u64(999));
+    let shards = vec![ShardInput { claims: vec![claim.clone()], witness }];
+    let proof = system.system.prove_batch(&system.key, shards, vec![]);
+    assert!(system.verify(&claim, &proof).is_err(), "forged claim verified");
+  }
+
+  #[test]
+  fn padding_memory_rows_cannot_carry_multiplicities() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    let plan = system.single_shard_plan(&record);
+    let index = system.row_index(&record, &plan);
+    let mut witness =
+      system.shard_witness(&record, &io_buffer, &plan, &index, 0);
+
+    // The honest memory table has one row; pad it to four, and let the
+    // padding rows pull the all-zero message with multiplicities that
+    // cancel among themselves (`1 + 1 - 2`), so the batch stays balanced.
+    let width = system.circuit_shapes()[MEM].main_width;
+    let real = witness.traces[MEM].values[..width].to_vec();
+    let mut rows = vec![G::ZERO; 4 * width];
+    rows[..width].copy_from_slice(&real);
+    for (i, m) in [G::ONE, G::ONE, -G::TWO].into_iter().enumerate() {
+      rows[(i + 1) * width] = m;
+    }
+    witness.traces[MEM] = RowMajorMatrix::new(rows, width);
+
+    let slot_arg_widths = system.slot_arg_widths(MEM);
+    let mut builder = LookupValues::builder(4, &slot_arg_widths);
+    let mut writers = builder.rows_mut();
+    let size = G::ONE;
+    writers[0].pull(
+      0,
+      real[0],
+      &Memory::lookup_args(size, real[2], &real[3..]),
+    );
+    writers[0].push(1, G::ONE, &Memory::memseg_args(size, real[2]));
+    writers[0].pull(2, G::ONE, &Memory::memseg_args(size, real[2] + G::ONE));
+    let zero = vec![G::ZERO; slot_arg_widths[0]];
+    for (i, m) in [G::ONE, G::ONE, -G::TWO].into_iter().enumerate() {
+      writers[i + 1].pull(0, m, &zero);
+    }
+    drop(writers);
+    witness.lookups[MEM] = builder.finish();
+
+    let mut claim = vec![function_channel(), G::ZERO];
+    claim.extend(&input);
+    claim.extend(&output);
+    let shards = vec![ShardInput { claims: vec![claim.clone()], witness }];
+    let messages = AiurSystem::boundary_messages(&plan);
+    let proof = system.system.prove_batch(&system.key, shards, messages);
+    assert!(
+      system.verify(&claim, &proof).is_err(),
+      "padding rows carried multiplicities"
+    );
+  }
+
+  #[test]
+  fn plan_shards_within_budget_bounds_every_shard() {
+    let (system, _input, record, _output, _io_buffer) =
+      executed_call_and_memory();
+    let record_bytes = crate::execute::record_retained_bytes(&record);
+    let single = system.single_shard_plan(&record);
+    let single_peak = system.shard_peak_bytes(&single, 0, record_bytes);
+
+    // Enough for the whole execution: the single-shard plan, unchanged.
+    let (plan, peak) = system
+      .plan_shards_within(&record, single_peak)
+      .expect("the single shard fits its own peak");
+    assert_eq!(plan.num_shards(), 1);
+    assert_eq!(peak, single_peak);
+
+    // Just below it: a batch whose every shard is projected to fit.
+    let (plan, peak) = system
+      .plan_shards_within(&record, single_peak - 1)
+      .expect("a smaller budget still admits a plan");
+    assert!(plan.num_shards() > 1);
+    assert!(peak < single_peak);
+    for shard in 0..plan.num_shards() {
+      assert!(system.shard_peak_bytes(&plan, shard, record_bytes) <= peak);
+    }
+    for ci in 0..5 {
+      let covered: usize = plan.shards.iter().map(|s| s.rows[ci].len()).sum();
+      assert_eq!(covered, single.shards[0].rows[ci].len(), "circuit {ci}");
+    }
+
+    // Below the record plus the byte tables nothing can fit.
+    assert!(system.plan_shards_within(&record, record_bytes).is_err());
+  }
+
+  #[test]
+  fn sharded_proofs_are_reproducible() {
+    let plan = two_shard_plan([0..0, 0..1]);
+    // Execution is deterministic, so each prove starts from an equal record.
+    let prove = |retention| {
+      let (system, input, record, output, io_buffer) =
+        executed_call_and_memory();
+      system
+        .prove_from_execution_planned(
+          0, &input, &io_buffer, record, &output, &plan, retention,
+        )
+        .1
+        .to_bytes()
+        .expect("serialize")
+    };
+    let first = prove(Retention::Regenerate);
+    let second = prove(Retention::Regenerate);
+    let retained = prove(Retention::Retain);
+    assert_eq!(first, second, "two regenerating proves differ");
+    assert_eq!(first, retained, "retain and regenerate differ");
   }
 }

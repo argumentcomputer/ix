@@ -217,7 +217,7 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
   (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
-  (useCache writeOutputs : Bool) :
+  (useCache writeOutputs traceShards : Bool) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
@@ -274,8 +274,28 @@ structure ShardProveResult where
 
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& Nat → Bool →
-    Except String ShardProveResult
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& Nat → Bool → Bool →
+  @& Nat → Except String ShardProveResult
+
+/-- What a trace-shard batch keeps of each shard between its two rounds.
+    `auto` lets the prover's RAM model choose: retain when the whole
+    retained batch fits the budget, regenerate otherwise. -/
+inductive ShardRetention where
+  | auto
+  | retain
+  | regenerate
+  deriving Repr, DecidableEq
+
+def ShardRetention.parse : String → Option ShardRetention
+  | "auto" => some .auto
+  | "retain" => some .retain
+  | "regenerate" => some .regenerate
+  | _ => none
+
+def ShardRetention.code : ShardRetention → Nat
+  | .auto => 0
+  | .retain => 1
+  | .regenerate => 2
 
 /-- Per-shard prove against a Rust-owned `EnvHandle`: ONE execution,
     whose record is proven from directly.
@@ -291,13 +311,22 @@ private opaque shardProveWithEnv' : @& AiurSystem →
 
     `execOnly` stops after execution + measurement (`proof` is `none`
     either way; `suggestedParts` is 1 exactly when the peak fits): the
-    split loop runs on executions alone, never starting a STARK. -/
+    split loop runs on executions alone, never starting a STARK.
+
+    `traceShards` proves an over-budget record as a batch of trace
+    shards, each within the budget, instead of splitting it into parts;
+    `peakBytes` is then the heaviest shard's projection. Only when no
+    shard count fits does the result fall back to `suggestedParts`.
+    `retention` fixes what the batch keeps between its rounds, or lets
+    the RAM model choose. -/
 def shardProveWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (maxRamBytes : Nat := 0)
-  (execOnly : Bool := false) :
+  (execOnly : Bool := false) (traceShards : Bool := false)
+  (retention : ShardRetention := .auto) :
     Except String ShardProveResult :=
   shardProveWithEnv' system funIdx envHandle ownedBlob maxRamBytes execOnly
+    traceShards retention.code
 
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →
