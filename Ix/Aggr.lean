@@ -1,6 +1,7 @@
 module
 public import Blake3.Rust
 public import Ix.Aggr.Circuit
+public import Ix.Aggr.FunctionGroups
 public import Ix.Aggr.Host
 public import Ix.AssumptionTree
 public import Ix.MultiStark

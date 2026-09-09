@@ -514,7 +514,7 @@ def run : IO UInt32 := do
   let top ← match Aggr.ixAggr with
     | .error e => IO.eprintln s!"activation toplevel merge failed: {e}"; return 1
     | .ok top => pure top
-  let compiled ← match top.compile with
+  let compiled ← match top.compileWithGroups Aggr.functionGroups with
     | .error e => IO.eprintln s!"activation toplevel compilation failed: {e}"; return 1
     | .ok compiled => pure compiled
   let some ixAggrIdx := compiled.getFuncIdx `ix_aggr | do

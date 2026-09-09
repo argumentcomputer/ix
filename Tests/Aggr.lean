@@ -107,7 +107,7 @@ def smokeSuite : IO UInt32 := do
   let aggrTop ← match Aggr.ixAggr with
     | .error e => IO.eprintln s!"ixAggr toplevel merge failed: {e}"; return 1
     | .ok t => pure t
-  let aggrCompiled ← match aggrTop.compile with
+  let aggrCompiled ← match aggrTop.compileWithGroups Aggr.functionGroups with
     | .error e => IO.eprintln s!"ixAggr compilation failed: {e}"; return 1
     | .ok c => pure c
   let some ixAggrIdx := aggrCompiled.getFuncIdx `ix_aggr

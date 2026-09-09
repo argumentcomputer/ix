@@ -483,11 +483,12 @@ def prepareShards (env : Ixon.Env) (shards : Array (Array Address))
   pure prepared
 
 private def compileToplevel (label : String)
-    (source : Except Aiur.Global Aiur.Source.Toplevel) :
+    (source : Except Aiur.Global Aiur.Source.Toplevel)
+    (groups : Array (String × Array String)) :
     IO (Except String Aiur.CompiledToplevel) := do
   match source with
   | .error e => return Except.error s!"{label} toplevel merge failed: {e}"
-  | .ok top => match top.compile with
+  | .ok top => match top.compileWithGroups groups with
     | .error e => return Except.error s!"{label} compilation failed: {e}"
     | .ok compiled => return Except.ok compiled
 
@@ -502,10 +503,11 @@ pipeline together lets the independent IxVM and recursion backends build in
 parallel instead of serializing their Rust setup on the controller thread. -/
 private def buildAggregateBackend (label : String)
     (source : Unit → Except Aiur.Global Aiur.Source.Toplevel)
+    (groups : Array (String × Array String))
     (commitment : Aiur.CommitmentParameters) (fri : Aiur.FriParameters) :
     IO (Except String AggregateBackend) := do
   let source ← IO.lazyPure source
-  let compiled ← match ← compileToplevel label source with
+  let compiled ← match ← compileToplevel label source groups with
     | .error e => return .error e
     | .ok compiled => pure compiled
   let system := Aiur.AiurSystem.build compiled.bytecode commitment fri
@@ -943,11 +945,11 @@ private def runAggregateCmdNativeWith
   let envTask ← IO.asTask (prio := .dedicated) do
     timed (IO.lazyPure fun _ => Aiur.EnvHandle.fromIxe ixePath)
   let ixvmBackendTask ← IO.asTask (prio := .dedicated) do
-    timed (buildAggregateBackend "IxVM" (fun _ => IxVM.ixVM)
+    timed (buildAggregateBackend "IxVM" (fun _ => IxVM.ixVM) IxVM.functionGroups
       Aiur.defaultCommitmentParameters Aiur.defaultFriParameters)
   let aggrBackendTask ← IO.asTask (prio := .dedicated) do
     timed (buildAggregateBackend "ixAggr recursion" (fun _ => Aggr.ixAggr)
-      recursionParameters.commitment recursionParameters.fri)
+      Aggr.functionGroups recursionParameters.commitment recursionParameters.fri)
 
   -- Join every setup branch before selecting an error, so a failed branch
   -- cannot orphan compilation work in the process.
@@ -1052,11 +1054,11 @@ private def runAggregateCmdLeanReferenceWith
   let proofsTask ← IO.asTask (prio := .dedicated) do
     timed (loadShardProofs proofHexes)
   let ixvmBackendTask ← IO.asTask (prio := .dedicated) do
-    timed (buildAggregateBackend "IxVM" (fun _ => IxVM.ixVM)
+    timed (buildAggregateBackend "IxVM" (fun _ => IxVM.ixVM) IxVM.functionGroups
       Aiur.defaultCommitmentParameters Aiur.defaultFriParameters)
   let aggrBackendTask ← IO.asTask (prio := .dedicated) do
     timed (buildAggregateBackend "ixAggr recursion" (fun _ => Aggr.ixAggr)
-      recursionParameters.commitment recursionParameters.fri)
+      Aggr.functionGroups recursionParameters.commitment recursionParameters.fri)
 
   let prepareOutcome := prepareTask.get
   let proofsOutcome := proofsTask.get
