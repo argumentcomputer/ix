@@ -53,17 +53,18 @@ on:
   issue_comment:
     types: [created]
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write # ack creates/applies the bencher-thresholds-reset:<workload> label
+permissions: {}
 
 jobs:
   reset:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       EVENT: ${{ github.event_name }}
       INPUT_WORKLOAD: ${{ inputs.workload }}
@@ -122,8 +123,11 @@ jobs:
   ack:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open' && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '!bencher-thresholds-reset') && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.issue.number }}
       BODY: ${{ github.event.comment.body }}

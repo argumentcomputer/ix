@@ -1,0 +1,34 @@
+name: Set up Namespace build cache
+description: >-
+  Mount .lake, Namespace's built-in cache presets, and optional build
+  directories on the shared cache volume.
+
+inputs:
+  cache-modes:
+    description: Built-in Namespace cache presets to mount (for example, rust or nix)
+    required: false
+    default: rust
+  additional-paths:
+    description: Paths to mount in addition to the repository's .lake directory
+    required: false
+
+outputs:
+  cache-hit:
+    description: Whether Namespace restored a prior cache volume
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create Lake build directory
+      shell: bash
+      run: mkdir -p "${{ github.workspace }}/.lake"
+
+    - name: Mount Namespace build cache
+      id: cache
+      uses: namespacelabs/nscloud-cache-action@v1
+      with:
+        cache: ${{ inputs.cache-modes }}
+        path: |
+          ${{ github.workspace }}/.lake
+          ${{ inputs.additional-paths }}

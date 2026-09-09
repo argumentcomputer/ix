@@ -1,29 +1,45 @@
 name: Set up Rust toolchain
 description: >-
-  Install Rust on Warp Linux x64, configure compiler flags, and cache Cargo
-  artifacts.
+  Install Rust on supported Linux x64 runners, configure compiler flags, and
+  optionally cache Cargo artifacts.
 
 inputs:
   cache-workspaces:
     description: Cargo workspaces to cache
     required: false
+  use-github-cache:
+    description: Enable Cargo artifact caching through the selected provider
+    required: false
+    default: "true"
+  cache-provider:
+    description: Cache provider used by the Rust setup action
+    required: false
+    default: github
   avx512-codegen:
-    description: Enable AVX-512 code generation for the Warp x64 fleet's common ISA
+    description: Enable portable AVX-512 code generation for supported x64 runners
     required: false
     default: "true"
 
 runs:
   using: composite
   steps:
-    - name: Require Warp Linux x64 runner
+    # The AVX-512 baseline below is a property of the Warp and Namespace
+    # fleets; a portable build may run on any Linux x64 host.
+    - name: Require supported Linux x64 runner
       shell: bash
       env:
         IX_RUNNER_NAME: ${{ runner.name }}
         IX_RUNNER_OS: ${{ runner.os }}
         IX_RUNNER_ARCH: ${{ runner.arch }}
+        IX_AVX512_CODEGEN: ${{ inputs.avx512-codegen }}
       run: |
-        if [[ "$IX_RUNNER_NAME" != warp-* || "$IX_RUNNER_OS" != Linux || "$IX_RUNNER_ARCH" != X64 ]]; then
-          echo "::error::setup-rust-toolchain requires a Warp Linux x64 runner; got name=$IX_RUNNER_NAME os=$IX_RUNNER_OS arch=$IX_RUNNER_ARCH"
+        if [[ "$IX_RUNNER_OS" != Linux || "$IX_RUNNER_ARCH" != X64 ]]; then
+          echo "::error::setup-rust-toolchain requires a Linux x64 runner; got os=$IX_RUNNER_OS arch=$IX_RUNNER_ARCH"
+          exit 1
+        fi
+        if [[ "$IX_AVX512_CODEGEN" == true && \
+              "$IX_RUNNER_NAME" != warp-* && "$IX_RUNNER_NAME" != nsc-runner-* ]]; then
+          echo "::error::AVX-512 builds require a Warp or Namespace runner; got name=$IX_RUNNER_NAME"
           exit 1
         fi
 
@@ -40,16 +56,16 @@ runs:
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
         fi
 
-    # The fleet mixes Intel Granite Rapids and AMD Zen 5, and a binary may be
-    # built on one and measured on another. Neither vendor's feature set
-    # contains the other's, so `-Ctarget-cpu=native` is not portable across
-    # the fleet: Zen 5 enables SSE4A, which LLVM emits (as INSERTQ, in
-    # witness generation) and Intel traps on with #UD. Pin the measured
-    # intersection instead. x86-64-v4 covers every AVX-512 subset Plonky3
-    # uses; +avx512vbmi2 keeps its VPSHRDQ interleave and +gfni keeps LLVM's
-    # byte-shift lowering. blake3 selects its kernels via CPUID at runtime
-    # and is unaffected. Pinning also makes codegen host-independent, so the
-    # cache key below is sound and main-vs-PR timings stay comparable.
+    # The supported fleets mix Intel and AMD hosts, and cached artifacts may
+    # be built on one CPU model and consumed on another. Neither vendor's
+    # feature set contains the other's, so `-Ctarget-cpu=native` is not
+    # portable across the fleet: Zen 5 enables SSE4A, which LLVM emits (as
+    # INSERTQ, in witness generation) and Intel traps on with #UD. Pin the
+    # measured intersection instead. x86-64-v4 covers every AVX-512 subset
+    # Plonky3 uses; +avx512vbmi2 keeps its VPSHRDQ interleave and +gfni keeps
+    # LLVM's byte-shift lowering. blake3 selects its kernels via CPUID at
+    # runtime and is unaffected. Pinning also makes codegen host-independent,
+    # so the cache key below is sound and main-vs-PR timings stay comparable.
     - name: Require the fleet's baseline CPU features
       if: inputs.avx512-codegen == 'true'
       shell: bash
@@ -59,14 +75,33 @@ runs:
           grep -qw "$f" /proc/cpuinfo || missing+=("$f")
         done
         if [ ${#missing[@]} -gt 0 ]; then
-          echo "::error::Runner CPU lacks required feature(s): ${missing[*]}. Benchmark binaries are built for x86-64-v4 +avx512vbmi2,+gfni."
+          echo "::error::Runner CPU lacks required feature(s): ${missing[*]}. Binaries are built for x86-64-v4 +avx512vbmi2,+gfni."
           exit 1
         fi
+
+    # bindgen collects include paths from the `clang` binary on PATH and
+    # passes them as `-isystem`, while clang-sys loads whichever libclang it
+    # finds. On an image with several LLVM versions those differ: clang's
+    # `stdatomic.h` then `include_next`s the other version's copy, whose
+    # identical include guard skips its body, and every C11 atomic in
+    # `lean.h` comes out undeclared. Point both at one install.
+    - name: Pin bindgen to a single LLVM install
+      shell: bash
+      run: |
+        for llvm in $(printf '%s\n' /usr/lib/llvm-* | sort -V -r); do
+          if [ -x "$llvm/bin/clang" ] && ls "$llvm"/lib/libclang*.so* >/dev/null 2>&1; then
+            echo "LIBCLANG_PATH=$llvm/lib" >> "$GITHUB_ENV"
+            echo "CLANG_PATH=$llvm/bin/clang" >> "$GITHUB_ENV"
+            echo "bindgen pinned to $llvm"
+            exit 0
+          fi
+        done
+        echo "no versioned LLVM install with both clang and libclang; leaving bindgen defaults"
 
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ${{ inputs.avx512-codegen == 'true' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni -Dwarnings' || '-Dwarnings' }}
-        # Codegen is pinned above, so `target/` artifacts are interchangeable
-        # across every Warp x64 host.
-        cache-key: warp-x64
+        cache: ${{ inputs.use-github-cache }}
+        cache-provider: ${{ inputs.cache-provider }}
+        cache-key: ${{ inputs.avx512-codegen == 'true' && 'x64-avx512' || 'x64-portable' }}
         cache-workspaces: ${{ inputs.cache-workspaces }}

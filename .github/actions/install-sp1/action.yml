@@ -13,11 +13,11 @@ runs:
     - name: Install system build deps
       shell: bash
       run: |
-        # Some warpbuild images ship an unreachable azure mirror that hangs
+        # Some runner images ship an unreachable Azure mirror that hangs
         # `apt-get update`; drop it first (no-op elsewhere).
         sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
         export DEBIAN_FRONTEND=noninteractive
-        # The Ubuntu EC2 mirrors sporadically 502 / throttle on these large
+        # Ubuntu package mirrors sporadically 502 / throttle on these large
         # fetches (qemu-system alone pulls hundreds of MB), so retry the whole
         # update+install: `Acquire::Retries` absorbs single-download blips and
         # `--fix-missing` resumes a partially fetched set.
