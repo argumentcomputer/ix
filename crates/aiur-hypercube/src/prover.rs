@@ -85,7 +85,7 @@ impl std::fmt::Display for AiurVerifyError {
 
 impl std::error::Error for AiurVerifyError {}
 
-pub(crate) fn shard_verifier(
+pub fn shard_verifier(
   machine: &AiurMachine,
   params: ProverParams,
 ) -> ShardVerifier<SP1GlobalContext, sp1_hypercube::InnerSC<AiurAir>> {

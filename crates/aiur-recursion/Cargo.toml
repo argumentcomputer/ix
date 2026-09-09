@@ -1,0 +1,38 @@
+[package]
+name = "aiur-recursion"
+description = "SP1 recursion over Aiur Hypercube shard proofs: normalize, compose, shrink, wrap, PLONK"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aiur = { workspace = true }
+aiur-hypercube = { path = "../aiur-hypercube" }
+
+# SP1 Hypercube's prover/verifier stack and its recursion circuit, at the
+# version `aiur-hypercube` proves against.
+sp1-hypercube = "=6.6.0"
+sp1-primitives = "=6.6.0"
+sp1-prover = "=6.6.0"
+sp1-recursion-circuit = "=6.6.0"
+sp1-recursion-compiler = "=6.6.0"
+sp1-recursion-executor = "=6.6.0"
+sp1-recursion-gnark-ffi = "=6.6.0"
+slop-algebra = "=6.6.0"
+slop-bn254 = "=6.6.0"
+slop-challenger = "=6.6.0"
+
+anyhow = { workspace = true }
+hex = "0.4"
+bincode = "1"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+multi-stark = { workspace = true }
+p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+
+[lints]
+workspace = true

@@ -2,6 +2,7 @@
 members = [
   "crates/aiur",
   "crates/aiur-hypercube",
+  "crates/aiur-recursion",
   "crates/bench",
   "crates/common",
   "crates/compile",
