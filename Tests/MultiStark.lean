@@ -1169,8 +1169,9 @@ def joinSmokeSuite : IO UInt32 := do
     expectErr "join rejects an extra output subject" extraSubject,
     expectErr "join rejects an unsorted output subject tree" unsorted,
     expectErr "join rejects a tampered child proof" badProof,
--- `foreign-verifier`: the SAME pipeline over `multiStarkForeign` — the
--- byte-limb (outer-field-independent) verifier toplevel, stage 3's program
+  ])]) []
+
+-- ═════════════════════════════════════════════════════════════════════════════
 -- `bytes-verifier`: the SAME pipeline over `multiStarkBytes` — the
 -- byte-limb (outer-field-independent) verifier toplevel
 -- ════════════════════════════════════════════════════════════════════════════
@@ -1317,6 +1318,14 @@ def stage2HypercubeSuite : IO UInt32 := do
     if area ≥ 2 ^ 30 && (← IO.getEnv "IX_S2_FORCE").isNone then
       IO.println s!"  area {area} ≥ 2^30: single-shard hypercube IMPOSSIBLE \
         (jagged PCS AreaOutOfBounds); skipping prove — sharding required"
+      return 0
+    -- Likewise no chip may exceed `2^max_log_row_count` rows (the default
+    -- `ProverParams`: 2^20); slop asserts on it deep inside the padded MLE
+    -- instead of returning an error. Production query counts (100) put the
+    -- per-query circuits (`u32_add`, `add16`) far past that.
+    if tallest > 2 ^ 20 && (← IO.getEnv "IX_S2_FORCE").isNone then
+      IO.println s!"  tallest height {tallest} > 2^20 rows: single-shard hypercube \
+        IMPOSSIBLE at the default ProverParams; skipping prove — sharding required"
       return 0
     IO.println s!"  {← hwm} (before hypercube)"
     let t0 ← IO.monoMsNow

@@ -197,7 +197,9 @@ def primaryRunners : List (String × IO UInt32) := [
     return if r1 == 0 && r2 == 0 then 0 else 1),
   ("rbtree-map", do
     IO.println "rbtree-map"
-    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
+    -- `u32_lt` comes from the Goldilocks width profile, so the standalone
+    -- map toplevel is tested merged with it.
+    match AiurTestEnv.build (IxVM.rbTreeMap.merge IxVM.widthGoldilocks) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
   -- Multi-STARK recursive verifier: `multi-stark` runs the verifier's
@@ -293,8 +295,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_946_001_069, got {actual}"
-              (actual = 6_946_001_069))
+              s!"Shard pipeline FFT matches: expected 6_945_755_038, got {actual}"
+              (actual = 6_945_755_038))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),

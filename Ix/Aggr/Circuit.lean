@@ -551,7 +551,7 @@ def circuit := ⟦
   }
 
   fn aggr_claim_field(claim: List‹U64›, index: G) -> G {
-    @gl_val(list_lookup(claim, index))
+    val_from_bytes(list_lookup(claim, index))
   }
 
   fn aggr_claim_digest(claim: List‹U64›, start: G) -> [G; 8] {

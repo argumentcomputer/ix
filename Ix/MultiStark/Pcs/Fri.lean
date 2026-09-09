@@ -48,34 +48,37 @@ def pcsFri := ⟦
 
   -- Interface type: the PCS commitment on the wire — a Merkle cap.
   type Commitment = MerkleCap
-  -- `BatchOpening<Val, Mmcs>`: per-round input opening of a FRI query.
-  --   opened_values : Vec<Vec<Val>>   (one row of base-field values per matrix)
-  --   opening_proof : Vec<Digest>     (Merkle authentication path)
-  enum BatchOpening {
-    Mk(List‹List‹U64››, List‹DigestP›)
+  -- One input commitment opened at all query indices with a shared pruned
+  -- Merkle frontier. `opened_values[q][m]` is query q's row of matrix m.
+  enum BatchMultiOpening {
+    Mk(List‹List‹List‹U64›››, List‹DigestP›)
   }
 
   -- `CommitPhaseProofStep<ExtVal, ExtMmcs>`: one folding step of a FRI query.
   --   log_arity      : u8
   --   sibling_values : Vec<Ext>  (arity - 1 siblings)
   --   opening_proof  : Vec<Digest>
-  enum CommitPhaseProofStep {
-    Mk(U8, List‹Ext›, List‹DigestP›)
+  enum CommitPhaseMultiStep {
+    Mk(U8, List‹List‹Ext››, List‹DigestP›)
   }
 
-  -- `QueryProof<ExtVal, ExtMmcs, Vec<BatchOpening<Val, Mmcs>>>`.
-  enum QueryProof {
-    Mk(List‹BatchOpening›, List‹CommitPhaseProofStep›)
-  }
+  -- Per-query views derived in-circuit from the native batch openings. They
+  -- retain the existing FRI arithmetic organization; authentication is done
+  -- once per native multiproof before that arithmetic runs.
+  enum BatchOpening { Mk(List‹List‹U64››) }
+  enum CommitPhaseProofStep { Mk(U8, List‹Ext›) }
+  enum QueryProof { Mk(List‹BatchOpening›, List‹CommitPhaseProofStep›) }
 
   -- `PcsProof = FriProof<ExtVal, ExtMmcs, Witness = Val, ..>`.
   --   commit_phase_commits : Vec<MerkleCap>
   --   commit_pow_witnesses : Vec<Val>
-  --   query_proofs         : Vec<QueryProof>
+  --   input_openings       : Vec<BatchMultiOpening>
+  --   commit_phase_openings: Vec<CommitPhaseMultiStep>
   --   final_poly           : Vec<Ext>
   --   query_pow_witness    : Val
   enum FriProof {
-    Mk(List‹MerkleCap›, List‹U64›, List‹QueryProof›, List‹Ext›, U64)
+    Mk(List‹MerkleCap›, List‹U64›, List‹BatchMultiOpening›,
+       List‹CommitPhaseMultiStep›, List‹Ext›, U64)
   }
 
   -- Interface type: the PCS opening proof — the FRI proof.
@@ -132,6 +135,20 @@ def pcsFri := ⟦
     }
   }
 
+  fn read_u64_vec_vec_vec(i: G) -> (List‹List‹List‹U64›››, G) {
+    let (n, j) = read_count_at(i);
+    read_u64_vec_vec_vec_n(j, n)
+  }
+  fn read_u64_vec_vec_vec_n(i: G, n: G) -> (List‹List‹List‹U64›››, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_u64_vec_vec(i);
+        let (rest, j2) = read_u64_vec_vec_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
   -- Interface: read one commitment at proof offset `i`.
   fn read_commitment_at(i: G) -> (Commitment, G) {
     read_digest_vec_at(i)
@@ -150,16 +167,16 @@ def pcsFri := ⟦
     }
   }
 
-  fn read_batch_opening(i: G) -> (BatchOpening, G) {
-    let (opened_values, j0) = @read_u64_vec_vec(i);
+  fn read_batch_opening(i: G) -> (BatchMultiOpening, G) {
+    let (opened_values, j0) = @read_u64_vec_vec_vec(i);
     let (opening_proof, j1) = read_digest_vec_at(j0);
-    (BatchOpening.Mk(opened_values, opening_proof), j1)
+    (BatchMultiOpening.Mk(opened_values, opening_proof), j1)
   }
-  fn read_batch_opening_vec(i: G) -> (List‹BatchOpening›, G) {
+  fn read_batch_opening_vec(i: G) -> (List‹BatchMultiOpening›, G) {
     let (n, j) = read_count_at(i);
     read_batch_opening_vec_n(j, n)
   }
-  fn read_batch_opening_vec_n(i: G, n: G) -> (List‹BatchOpening›, G) {
+  fn read_batch_opening_vec_n(i: G, n: G) -> (List‹BatchMultiOpening›, G) {
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
@@ -169,17 +186,17 @@ def pcsFri := ⟦
     }
   }
 
-  fn read_commit_phase_step(i: G) -> (CommitPhaseProofStep, G) {
+  fn read_commit_phase_step(i: G) -> (CommitPhaseMultiStep, G) {
     let (log_arity, j0) = #read_u8_at(i);
-    let (sibling_values, j1) = read_ext_vec(j0);
+    let (sibling_values, j1) = @read_ext_vec_vec(j0);
     let (opening_proof, j2) = read_digest_vec_at(j1);
-    (CommitPhaseProofStep.Mk(log_arity, sibling_values, opening_proof), j2)
+    (CommitPhaseMultiStep.Mk(log_arity, sibling_values, opening_proof), j2)
   }
-  fn read_commit_phase_step_vec(i: G) -> (List‹CommitPhaseProofStep›, G) {
+  fn read_commit_phase_step_vec(i: G) -> (List‹CommitPhaseMultiStep›, G) {
     let (n, j) = read_count_at(i);
     read_commit_phase_step_vec_n(j, n)
   }
-  fn read_commit_phase_step_vec_n(i: G, n: G) -> (List‹CommitPhaseProofStep›, G) {
+  fn read_commit_phase_step_vec_n(i: G, n: G) -> (List‹CommitPhaseMultiStep›, G) {
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
@@ -189,34 +206,16 @@ def pcsFri := ⟦
     }
   }
 
-  fn read_query_proof(i: G) -> (QueryProof, G) {
-    let (input_proof, j0) = @read_batch_opening_vec(i);
-    let (commit_phase_openings, j1) = @read_commit_phase_step_vec(j0);
-    (QueryProof.Mk(input_proof, commit_phase_openings), j1)
-  }
-  fn read_query_proof_vec(i: G) -> (List‹QueryProof›, G) {
-    let (n, j) = read_count_at(i);
-    read_query_proof_vec_n(j, n)
-  }
-  fn read_query_proof_vec_n(i: G, n: G) -> (List‹QueryProof›, G) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = @read_query_proof(i);
-        let (rest, j2) = read_query_proof_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
-    }
-  }
-
   -- Interface: read the PCS proof at proof offset `i`.
   fn read_pcs_proof(i: G) -> (PcsProof, G) {
     let (commit_phase_commits, j0) = @read_merkle_cap_vec(i);
     let (commit_pow_witnesses, j1) = read_u64_vec(j0);
-    let (query_proofs, j2) = @read_query_proof_vec(j1);
-    let (final_poly, j3) = read_ext_vec(j2);
-    let (query_pow_witness, j4) = #read_u64_at(j3);
-    (FriProof.Mk(commit_phase_commits, commit_pow_witnesses, query_proofs,
-                 final_poly, query_pow_witness), j4)
+    let (input_openings, j2) = @read_batch_opening_vec(j1);
+    let (commit_phase_openings, j3) = @read_commit_phase_step_vec(j2);
+    let (final_poly, j4) = read_ext_vec(j3);
+    let (query_pow_witness, j5) = #read_u64_at(j4);
+    (FriProof.Mk(commit_phase_commits, commit_pow_witnesses, input_openings,
+                 commit_phase_openings, final_poly, query_pow_witness), j5)
   }
 
 
@@ -1491,10 +1490,19 @@ def pcsFri := ⟦
       s1c: Commitment, s2c: Commitment, qc: Commitment, prep_commit: Commitment,
       prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
       zeta: Ext, num_circuits: G, params: PcsParams) -> G {
-    let PcsParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
-                     _max_log_arity, num_queries, commit_pow_bits,
+    let PcsParams.Mk(log_blowup, cap_height, log_final_poly_len,
+                     max_log_arity, num_queries, commit_pow_bits,
                      query_pow_bits) = params;
-    let FriProof.Mk(commit_phase_commits, pw, query_proofs, final_poly, qpw) = opening;
+    -- This recursive verifier is deliberately specialized to root caps,
+    -- binary FRI folds, and a constant final polynomial. These parameters are
+    -- digest-bound but still prover-visible inputs to this circuit, so reject
+    -- unsupported systems explicitly instead of silently applying the wrong
+    -- Merkle geometry or folding semantics.
+    assert_eq!(cap_height, 0);
+    assert_eq!(log_final_poly_len, 0);
+    assert_eq!(max_log_arity, 1);
+    let FriProof.Mk(commit_phase_commits, pw, input_openings, commit_phase_openings,
+      final_poly, qpw) = opening;
     let num_rounds = list_length(commit_phase_commits);
     -- FRI shape: one PoW witness per round, num_queries query proofs, and (since
     -- log_final_poly_len = 0) a single final-poly coefficient.
