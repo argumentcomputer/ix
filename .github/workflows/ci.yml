@@ -13,14 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  merge-tests:
-    name: Merge tests
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Defer tests to merge queue
-        run: echo "Merge tests run against the merge group's synthetic commit."
-
   # Build every regular Lake target before the test fan-out. The Namespace
   # volume is committed only after this job succeeds, so every saved build
   # cache contains the complete build rather than one parallel job's subset.
