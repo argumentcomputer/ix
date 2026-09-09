@@ -153,6 +153,7 @@ jobs:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
       - name: Log compile CPU
+        id: cpu
         uses: ./.github/actions/log-cpu
         with:
           label: Compile measurement CPU
@@ -200,6 +201,7 @@ jobs:
           meta() { jq -r --arg env "${{ matrix.env }}" "first(.[] | select(.backend == \"compile\" and .env == \$env)).$1" matrix.json; }
           echo "testbed=$(meta testbed)" >> "$GITHUB_OUTPUT"
           echo "workload=$(meta workload)" >> "$GITHUB_OUTPUT"
+          echo "mode=$(meta mode)" >> "$GITHUB_OUTPUT"
           { echo "thresholds<<EOF"; meta thresholds; echo "EOF"; } >> "$GITHUB_OUTPUT"
       # Cache the `.ixe` for the benchmark job. IMPORTANT: every restore of
       # this key must list the same paths — cache versions include the
@@ -212,6 +214,22 @@ jobs:
         with:
           path: ${{ matrix.env }}.ixe
           key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
+      # Record the host that measured this row. Bencher stores metric rows
+      # only, so bench-pr restores this note by (SHA, parameters) to label a
+      # bencher-sourced base side with its own hardware. Best-effort: a
+      # missing entry renders as "not recorded".
+      - name: Record measurement hardware
+        if: ${{ !cancelled() }}
+        env:
+          HARDWARE: ${{ steps.cpu.outputs.summary }}
+        run: printf '%s\n' "$HARDWARE" > bench-hardware.txt
+      - name: Cache measurement hardware
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: WarpBuilds/cache/save@v2
+        with:
+          path: bench-hardware.txt
+          key: bench-hardware-${{ github.sha }}-compile-${{ matrix.env }}-${{ steps.gates.outputs.mode }}
       # Upload the compile metrics. Testbed, workload, and threshold flags
       # all come from the registry (the reasoning behind each bound lives
       # next to `thresholds` in Ix/Cli/BenchCmd.lean).
@@ -263,6 +281,7 @@ jobs:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
       - name: Log run CPU
+        id: cpu
         uses: ./.github/actions/log-cpu
         with:
           label: Benchmark measurement CPU
@@ -303,6 +322,20 @@ jobs:
         with:
           path: bench.json.perconst.csv
           key: bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+      # The measurement host, by (SHA, parameters), for bench-pr to label a
+      # bencher-sourced base side — same best-effort contract as the CSV.
+      - name: Record measurement hardware
+        if: ${{ !cancelled() }}
+        env:
+          HARDWARE: ${{ steps.cpu.outputs.summary }}
+        run: printf '%s\n' "$HARDWARE" > bench-hardware.txt
+      - name: Cache measurement hardware
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: WarpBuilds/cache/save@v2
+        with:
+          path: bench-hardware.txt
+          key: bench-hardware-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # Convert rows for upload even when the run step failed: bmf drops
       # every non-ok row (rejected or OOM), so only clean measurements
       # reach bencher. bmf exits nonzero when NO ok rows survive — the
