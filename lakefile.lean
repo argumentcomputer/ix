@@ -95,6 +95,12 @@ The second Cargo build is incremental — only feature-affected crates recompile
 -/
 section FFI
 
+/-- Environment for the cargo invocations: with `IX_SP1_RECURSION=1` the
+`sp1-recursion-gnark-ffi` build script runs `go build`, whose `go.mod` pins a
+toolchain newer than most installed ones — `GOTOOLCHAIN=auto` lets Go fetch
+it instead of failing. -/
+def cargoEnv : Array (String × Option String) := #[("GOTOOLCHAIN", some "auto")]
+
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
@@ -132,7 +138,7 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     (sourceFiles, manifestFiles)) manifests
   let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
   buildFileAfterDep output deps (fun _ => do
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv } (quiet := true)
     let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
     copyFile built output
   ) (extraDepTrace := pure <| .ofHash (pureHash args) s!"cargo args: {args}")
@@ -148,7 +154,7 @@ target ix_rs_test pkg : FilePath := do
   let base ← ix_rs.fetch
   base.mapM fun _ => do
     let args ← cargoArgs (testFfi := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv } (quiet := true)
     let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
     let output := pkg.buildDir / "lib" / "libix_ffi_test.a"
     copyFile built output
@@ -160,7 +166,7 @@ target ix_rs_net pkg : FilePath := do
   let base ← ix_rs.fetch
   base.mapM fun _ => do
     let args ← cargoArgs (net := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv } (quiet := true)
     let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
     let output := pkg.buildDir / "lib" / "libix_ffi_net.a"
     copyFile built output
@@ -172,7 +178,7 @@ target ix_rs_net pkg : FilePath := do
 that crate's full dependency graph. -/
 target ix_ffi_dyn pkg : FilePath := do
   let args := #["build", "--release", "-p", "ix-ffi-dyn"]
-  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+  proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv } (quiet := true)
   inputBinFile $ pkg.dir / "target" / "release" / nameToSharedLib "ix_ffi_dyn"
 
 end FFI
