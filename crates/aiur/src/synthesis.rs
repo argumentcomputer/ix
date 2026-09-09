@@ -657,7 +657,23 @@ impl AiurSystem {
     {
       if trace_shards {
         let record_bytes = crate::execute::record_retained_bytes(&query_record);
-        match self.plan_shards_within(&query_record, max) {
+        // `AIUR_TRACE_SHARD_MAX_CELLS` plans to a committed-cell budget
+        // (a device-residency bound, e.g. VRAM) instead of the host peak.
+        let planned = match std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
+          .ok()
+          .and_then(|v| v.parse::<usize>().ok())
+        {
+          Some(cells) => {
+            let plan = self.plan_shards(&query_record, Some(cells));
+            let shard_peak = (0..plan.num_shards())
+              .map(|s| self.shard_peak_bytes(&plan, s, record_bytes))
+              .max()
+              .unwrap_or(0);
+            Ok((plan, shard_peak))
+          },
+          None => self.plan_shards_within(&query_record, max),
+        };
+        match planned {
           Ok((plan, shard_peak)) => {
             let retention = retention
               .unwrap_or_else(|| self.retention_for(&plan, record_bytes, max));
@@ -674,6 +690,11 @@ impl AiurSystem {
                 Retention::Regenerate => "regenerating each shard for round 2",
               }
             );
+            // Per-circuit committed widths, so a plan's padded cells and
+            // active width can be computed from the row ranges below.
+            let widths: Vec<String> =
+              self.committed_widths().iter().map(usize::to_string).collect();
+            eprintln!("[trace-shards] committed widths: {}", widths.join(" "));
             for (shard, rows) in plan.shards.iter().enumerate() {
               let ranges: Vec<String> = rows
                 .rows

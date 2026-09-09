@@ -250,23 +250,19 @@ q·d` is circuit `c`'s committed width, `n_c` its padded height in `S`,
 - proof size: `9 B · q · Σ_{c active in S} W_c` — a fixed price per
   *activation*, independent of rows.
 
-Heuristic (the colleague's observation, made precise; `plan_rows` in
-`crates/aiur/src/shard.rs`): every shard commits the byte tables, so
-their cells are charged to every shard and the budget a shard has for
-rows is what remains after them. Sort the remaining circuits by committed
-cells. A circuit larger than half that remainder is *hot* and is split
-evenly across all K shards, its slices dealt to the lightest shards
-first; padding is paid per slice, but no shard carries the whole width.
-Every other circuit is *cold* and placed whole in the least-loaded
-shard — each one costs its full width in proof size wherever it appears,
-so appearing once is optimal. K is searched upward from the budget's lower
-bound; the heaviest shard is not monotone in K (a hot slice pads to a
-power of two, so it only shrinks when K crosses the next boundary of the
-circuit's rows), so the search runs through such plateaus and stops when
-a plan fits, when K reaches the number of placeable rows, or when K has
-doubled since the last improvement, returning the best plan seen. K is a
-per-batch output of the planner, not a global constant, and can be
-re-sized freely — the protocol does not depend on K.
+Planner (`plan_rows` in `crates/aiur/src/shard.rs`): every shard commits
+the byte tables, so their cells are charged to every shard and the room a
+shard has for rows is what remains after them. Each circuit is cut into
+the fewest pieces that each fit that room — a circuit that fits whole is
+one piece, a larger one is cut into equal pieces of at most the largest
+power-of-two row count whose padded cells fit — and the pieces are packed
+first-fit in decreasing size, a new shard opening only when no shard has
+room; two pieces of one circuit never share a shard. A circuit's width is
+charged to proof size and verification once per shard it appears in, so
+the fewest pieces and the fewest shards are what the packing minimizes,
+and padding costs at most one doubling per piece. K is an output of the
+packing, not a global constant, and can be re-sized freely — the protocol
+does not depend on K.
 
 Expected shape for a Mathlib env shard after PR #619: shard 0 carries the
 ~150 cold grouped circuits (most of the ~10k active columns) plus byte
@@ -846,10 +842,12 @@ seams.
   Bytes2 table needs global counts; today they come from the record, so
   nothing changes, but if execution is ever distributed the counts need
   the same gather Zisk does for shared tables.
-- **Hot-circuit padding.** Splitting a hot circuit K ways pads each slice
-  to a power of two; choosing K and slice sizes to minimize total padding
-  (rather than equalizing rows) is a small planner refinement worth
-  measuring.
+- **Piece padding.** A circuit cut into the fewest fitting pieces pads
+  each piece to a power of two, up to one doubling; cutting into one more
+  piece can pad less at the price of one more activation. Whether the
+  trade is worth taking depends on the ratio of prover cost per cell to
+  recursion cost per column, and is worth measuring once both are
+  calibrated.
 - **Root on GPU.** If the CPU `K = 1` root becomes the bottleneck, the
   root is a `K > 1` vector; the verifier routine is the same, and only a
   downstream consumer with a per-proof cost budget would notice.

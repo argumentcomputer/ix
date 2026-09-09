@@ -223,7 +223,7 @@ impl AiurSystem {
   }
 
   /// Per-circuit committed width: main, stage 2 and quotient columns.
-  fn committed_widths(&self) -> Vec<usize> {
+  pub(crate) fn committed_widths(&self) -> Vec<usize> {
     self
       .circuit_shapes()
       .iter()
@@ -477,12 +477,12 @@ impl AiurSystem {
     let total: usize =
       rows.iter().zip(&widths).map(|(&r, &w)| committed_cells(r, w)).sum();
 
-    // Halve the cell budget until a plan fits. The planner's shard count
-    // grows with every halving unless it has reached the number of
-    // placeable rows, at which point no budget fits.
+    // Halve the cell budget until a plan fits. The shard count need not
+    // grow with every halving (a piece-height cap can pin it at one
+    // circuit's piece count while the room still shrinks), so the search
+    // runs the budget down to zero before giving up; planning is cheap.
     let mut hi = total;
     let mut cells = total / 2;
-    let mut last_shards = single.num_shards();
     let mut floor = single_peak;
     let (mut lo, mut best, mut best_peak) = loop {
       if cells == 0 {
@@ -494,10 +494,6 @@ impl AiurSystem {
       if peak <= max_bytes {
         break (cells, plan, peak);
       }
-      if plan.num_shards() <= last_shards {
-        return Err(floor);
-      }
-      last_shards = plan.num_shards();
       hi = cells;
       cells /= 2;
     };
@@ -601,6 +597,7 @@ fn is_byte_table(circuit_type: &CircuitType) -> bool {
 /// Committed cells of one shard of a plan. Every shard commits the byte
 /// tables whole, whether or not its copy carries multiplicities, so their
 /// cells are charged regardless of the shard's (marker) range for them.
+#[cfg(test)]
 fn shard_cells(
   shard: &ShardRows,
   rows: &[usize],
@@ -620,142 +617,109 @@ fn shard_cells(
     .sum()
 }
 
-/// Partitions per-circuit row counts into the fewest shards whose committed
-/// cells ([`shard_cells`]) each fit `max_cells`.
+/// Partitions per-circuit row counts into shards whose committed cells
+/// ([`shard_cells`]) each fit `max_cells`, opening as few shards as the
+/// packing needs.
 ///
-/// Circuits are placed largest first. A circuit too large to sit whole in
-/// half of what a shard has left after the byte tables is *hot*: its rows
-/// are split evenly across every shard, so its per-shard padding is paid
-/// once per shard but its full width never concentrates in one. Every
-/// other circuit is *cold* and placed whole in the least-loaded shard: a
-/// circuit's width is charged to proof size and verification per shard it
-/// appears in, so appearing once is cheapest. Byte tables are marked whole
-/// in shard 0 and charged to every shard. Memory circuits follow the same
-/// rules, which keeps their ranges contiguous in pointer order.
+/// Every circuit is cut into the fewest pieces that each fit the room a
+/// shard has beside the byte tables ([`piece_rows`]): a circuit that fits
+/// whole is one piece, a larger one is cut into equal pieces. The pieces are
+/// packed first-fit in decreasing size, a new shard opening only when no
+/// shard has room; two pieces of one circuit never share a shard, since a
+/// shard holds one row range per circuit. A circuit's width is charged to
+/// proof size and verification once per shard it appears in, so the fewest
+/// pieces and the fewest shards are what the packing minimizes, and padding
+/// costs at most one doubling per piece. Byte tables are marked whole in
+/// shard 0 and charged to every shard. Memory circuits are cut in pointer
+/// order, so every piece is a contiguous pointer range.
 ///
-/// The shard count is searched upward from the budget's lower bound. The
-/// heaviest shard does not shrink monotonically: a hot circuit's slice pads
-/// to a power of two, so its share stays flat until the count crosses the
-/// next power-of-two boundary of its rows, at most a doubling of the count
-/// past the last drop. The search therefore continues through such
-/// plateaus and stops once the count has doubled since the last
-/// improvement, when it reaches the number of placeable rows, or when a
-/// plan fits; the best plan seen is returned.
+/// A room no piece can meet (a single row wider than it) still yields a
+/// plan: every such row is a piece of its own, and the shards those open
+/// exceed the budget by exactly that row.
 fn plan_rows(
   rows: &[usize],
   widths: &[usize],
   circuit_types: &[CircuitType],
   max_cells: usize,
 ) -> Vec<ShardRows> {
-  let cells: Vec<usize> =
-    rows.iter().zip(widths).map(|(&r, &w)| committed_cells(r, w)).collect();
-  let (table_cells, placeable_cells) = cells.iter().zip(circuit_types).fold(
-    (0usize, 0usize),
-    |(tables, placeable), (&c, ct)| {
-      if is_byte_table(ct) {
-        (tables + c, placeable)
-      } else {
-        (tables, placeable + c)
-      }
-    },
-  );
-  // What a shard can hold besides the tables it commits in any case.
-  let budget = max_cells.saturating_sub(table_cells);
-  // A row is the smallest unit placed, so more shards than placeable rows
-  // cannot shrink any shard further.
-  let splittable_rows = rows
-    .iter()
-    .zip(circuit_types)
-    .filter(|(_, ct)| !is_byte_table(ct))
-    .map(|(&r, _)| r)
-    .sum::<usize>()
-    .clamp(1, MAX_SHARDS);
-  let mut num_shards = if budget == 0 {
-    1
-  } else {
-    placeable_cells.div_ceil(budget).clamp(1, splittable_rows)
-  };
-
-  let mut best: Option<(usize, Vec<ShardRows>)> = None;
-  let mut last_improvement = num_shards;
-  loop {
-    let shards =
-      place_rows(rows, widths, &cells, circuit_types, num_shards, budget);
-    let heaviest = shards
-      .iter()
-      .map(|shard| shard_cells(shard, rows, widths, circuit_types))
-      .max()
-      .unwrap_or(0);
-    if best.as_ref().is_none_or(|(h, _)| heaviest < *h) {
-      last_improvement = num_shards;
-      best = Some((heaviest, shards));
-    }
-    if heaviest <= max_cells
-      || num_shards >= splittable_rows
-      || num_shards >= 2 * last_improvement
-    {
-      break;
-    }
-    num_shards += 1;
-  }
-  best.expect("at least one plan").1
-}
-
-/// One placement of [`plan_rows`] at a fixed shard count; `budget` is the
-/// per-shard room besides the byte tables.
-fn place_rows(
-  rows: &[usize],
-  widths: &[usize],
-  cells: &[usize],
-  circuit_types: &[CircuitType],
-  num_shards: usize,
-  budget: usize,
-) -> Vec<ShardRows> {
   let num_circuits = rows.len();
-  let mut shards: Vec<ShardRows> = (0..num_shards)
-    .map(|_| ShardRows { rows: vec![0..0; num_circuits] })
-    .collect();
-  // The byte tables cost every shard the same, so they play no part in
-  // balancing.
-  let mut loads = vec![0usize; num_shards];
+  let table_cells: usize = (0..num_circuits)
+    .filter(|&ci| is_byte_table(&circuit_types[ci]))
+    .map(|ci| committed_cells(rows[ci], widths[ci]))
+    .sum();
+  // What a shard can hold besides the tables it commits in any case.
+  let room = max_cells.saturating_sub(table_cells);
 
-  for (ci, ct) in circuit_types.iter().enumerate() {
-    if is_byte_table(ct) {
+  // Every circuit's pieces: (cells, circuit, rows).
+  let mut pieces: Vec<(usize, usize, Range<usize>)> = Vec::new();
+  for ci in 0..num_circuits {
+    if is_byte_table(&circuit_types[ci]) || rows[ci] == 0 {
+      continue;
+    }
+    let count = rows[ci].div_ceil(piece_rows(rows[ci], widths[ci], room));
+    let per_piece = rows[ci].div_ceil(count);
+    let mut start = 0;
+    while start < rows[ci] {
+      let end = (start + per_piece).min(rows[ci]);
+      pieces.push((committed_cells(end - start, widths[ci]), ci, start..end));
+      start = end;
+    }
+  }
+  pieces.sort_by_key(|(cells, ci, range)| {
+    (std::cmp::Reverse(*cells), *ci, range.start)
+  });
+
+  let mut shards: Vec<ShardRows> = Vec::new();
+  let mut loads: Vec<usize> = Vec::new();
+  for (cells, ci, range) in pieces {
+    let k = (0..shards.len())
+      .find(|&k| loads[k] + cells <= room && shards[k].rows[ci].is_empty())
+      .unwrap_or_else(|| {
+        shards.push(ShardRows { rows: vec![0..0; num_circuits] });
+        loads.push(0);
+        shards.len() - 1
+      });
+    shards[k].rows[ci] = range;
+    loads[k] += cells;
+  }
+  if shards.is_empty() {
+    shards.push(ShardRows { rows: vec![0..0; num_circuits] });
+  }
+  for ci in 0..num_circuits {
+    if is_byte_table(&circuit_types[ci]) {
       shards[0].rows[ci] = 0..rows[ci];
     }
   }
-
-  let mut order: Vec<usize> = (0..num_circuits)
-    .filter(|&ci| !is_byte_table(&circuit_types[ci]) && rows[ci] > 0)
-    .collect();
-  order.sort_by_key(|&ci| (std::cmp::Reverse(cells[ci]), ci));
-
-  for ci in order {
-    let hot = num_shards > 1 && cells[ci] > budget / 2;
-    if hot {
-      // Slices go to the lightest shards first, so the slices of several
-      // hot circuits do not all stack on the same low-numbered shards.
-      let per_shard = rows[ci].div_ceil(num_shards);
-      let mut by_load: Vec<usize> = (0..num_shards).collect();
-      by_load.sort_by_key(|&k| (loads[k], k));
-      let mut start = 0;
-      for k in by_load {
-        let end = (start + per_shard).min(rows[ci]);
-        shards[k].rows[ci] = start..end;
-        loads[k] += committed_cells(end - start, widths[ci]);
-        start = end;
-      }
-    } else {
-      let (k, _) = loads
-        .iter()
-        .enumerate()
-        .min_by_key(|&(k, &load)| (load, k))
-        .expect("at least one shard");
-      shards[k].rows[ci] = 0..rows[ci];
-      loads[k] += cells[ci];
-    }
-  }
   shards
+}
+
+/// Log2 of the tallest piece the planner cuts. The prover's cost per
+/// committed cell rises with a shard's tallest matrix once its FFTs leave
+/// cache (2026-09-09, Init at 200 GiB on the 64-core Xeon 6975P-C: ~21 ns
+/// per cell at 2^22 rows, ~30 ns at 2^24, ~40 ns at 2^25), so a tall circuit
+/// is cut shorter than the room alone would require, at the price of one
+/// activation per extra piece. `AIUR_MAX_PIECE_LOG_HEIGHT` overrides it.
+const MAX_PIECE_LOG_HEIGHT: u32 = 22;
+
+fn max_piece_rows() -> usize {
+  let log_height = std::env::var("AIUR_MAX_PIECE_LOG_HEIGHT")
+    .ok()
+    .and_then(|v| v.parse().ok())
+    .unwrap_or(MAX_PIECE_LOG_HEIGHT);
+  1 << log_height
+}
+
+/// The most rows of a width-`width` circuit with `rows` rows one piece may
+/// hold: within `room` committed cells and at most [`max_piece_rows`], the
+/// largest power of two meeting both, at least one row; all of the rows when
+/// the circuit meets both whole.
+fn piece_rows(rows: usize, width: usize, room: usize) -> usize {
+  let cap = max_piece_rows();
+  if rows <= cap && committed_cells(rows, width) <= room {
+    return rows;
+  }
+  let fit = (room / width.max(1)).min(cap);
+  if fit == 0 { 1 } else { 1 << (usize::BITS - 1 - fit.leading_zeros()) }
 }
 
 #[cfg(test)]
@@ -790,15 +754,32 @@ mod tests {
   }
 
   #[test]
-  fn search_continues_through_padding_plateaus() {
+  fn oversize_circuit_is_cut_into_the_fewest_fitting_pieces() {
     let rows = [100_000, 0, 0, 256, 65_536];
     let tables =
       committed_cells(256, WIDTHS[3]) + committed_cells(65_536, WIDTHS[4]);
-    // Four slices of 25,000 rows pad to 32,768; two of 50,000 and three of
-    // 33,334 both pad to 65,536, so the third shard improves nothing.
+    // Room for 32,768 padded rows: four equal pieces of 25,000 rows, each
+    // padding to exactly the room, one per shard.
     let budget = tables + committed_cells(25_000, WIDTHS[0]);
     let shards = plan_rows(&rows, &WIDTHS, &circuit_types(), budget);
     assert_eq!(shards.len(), 4);
+    assert!(shards.iter().all(|s| s.rows[0].len() == 25_000));
+    assert!(heaviest(&shards, &rows) <= budget);
+    covers(&shards, &rows);
+  }
+
+  #[test]
+  fn cold_circuit_appears_once() {
+    // The widest circuit needs four pieces; the second fits whole and must
+    // not be spread across the shards the first opens.
+    let rows = [100_000, 40_000, 3_000, 256, 65_536];
+    let tables =
+      committed_cells(256, WIDTHS[3]) + committed_cells(65_536, WIDTHS[4]);
+    let budget = tables + committed_cells(32_768, WIDTHS[0]);
+    let shards = plan_rows(&rows, &WIDTHS, &circuit_types(), budget);
+    assert_eq!(shards.len(), 5);
+    assert_eq!(shards.iter().filter(|s| !s.rows[1].is_empty()).count(), 1);
+    assert_eq!(shards.iter().filter(|s| !s.rows[2].is_empty()).count(), 1);
     assert!(heaviest(&shards, &rows) <= budget);
     covers(&shards, &rows);
   }
@@ -809,12 +790,11 @@ mod tests {
     let tables =
       committed_cells(256, WIDTHS[3]) + committed_cells(65_536, WIDTHS[4]);
     // Room for the tables plus one row of the widest circuit, and nothing
-    // more: each of its three rows takes a shard of its own, the two rows
-    // of the next circuit two more, and the memory row fits beside one of
-    // those.
+    // more: each of its three rows takes a shard of its own, and the next
+    // circuit and the memory row share a fourth.
     let budget = tables + committed_cells(1, WIDTHS[0]);
     let shards = plan_rows(&rows, &WIDTHS, &circuit_types(), budget);
-    assert_eq!(shards.len(), 5);
+    assert_eq!(shards.len(), 4);
     assert!(heaviest(&shards, &rows) <= budget);
     covers(&shards, &rows);
     // The marker range for the tables is shard 0's alone.
@@ -823,10 +803,81 @@ mod tests {
   }
 
   #[test]
-  fn unattainable_budget_returns_the_lightest_plan() {
+  fn unattainable_budget_still_covers_every_row() {
     let rows = [3, 2, 1, 256, 65_536];
     let shards = plan_rows(&rows, &WIDTHS, &circuit_types(), 1);
-    assert!((1..=6).contains(&shards.len()));
+    assert_eq!(shards.len(), 6);
     covers(&shards, &rows);
+  }
+
+  /// Plans a measured system offline. `AIUR_PLAN_FILE` holds one `rows
+  /// width` pair per circuit in system order, the last two being the byte
+  /// tables; `AIUR_PLAN_CELLS` the per-shard cell budgets to sweep. Prints,
+  /// per budget and piece-height cap, the shard count, activations, summed
+  /// active width, padded cells and the tallest-piece histogram.
+  #[test]
+  #[ignore]
+  fn plan_file() {
+    let file = std::env::var("AIUR_PLAN_FILE").expect("AIUR_PLAN_FILE");
+    let (rows, widths): (Vec<usize>, Vec<usize>) =
+      std::fs::read_to_string(file)
+        .expect("readable plan file")
+        .lines()
+        .map(|l| {
+          let mut it = l.split_whitespace().map(|x| x.parse::<usize>().unwrap());
+          (it.next().unwrap(), it.next().unwrap())
+        })
+        .unzip();
+    let n = rows.len();
+    let types: Vec<CircuitType> = (0..n)
+      .map(|ci| match n - ci {
+        1 => CircuitType::Bytes2,
+        2 => CircuitType::Bytes1,
+        _ => CircuitType::Function { idx: ci },
+      })
+      .collect();
+    let budgets: Vec<usize> = std::env::var("AIUR_PLAN_CELLS")
+      .expect("AIUR_PLAN_CELLS")
+      .split(',')
+      .map(|x| x.parse().unwrap())
+      .collect();
+    let real: usize =
+      rows.iter().zip(&widths).map(|(&r, &w)| r * w).sum();
+    println!("{n} circuits, real cells {real}");
+    for &cells in &budgets {
+      for cap in 20..=26 {
+        // SAFETY: single-threaded test; the planner reads the override.
+        unsafe { std::env::set_var("AIUR_MAX_PIECE_LOG_HEIGHT", cap.to_string()) };
+        let shards = plan_rows(&rows, &widths, &types, cells);
+        let mut activations = 0;
+        let mut width = 0;
+        let mut padded = 0;
+        let mut tallest = std::collections::BTreeMap::new();
+        for s in &shards {
+          let mut tall = 0;
+          for (ci, r) in s.rows.iter().enumerate() {
+            let rr = if is_byte_table(&types[ci]) { rows[ci] } else { r.len() };
+            if rr == 0 {
+              continue;
+            }
+            activations += 1;
+            width += widths[ci];
+            padded += committed_cells(rr, widths[ci]);
+            tall = tall.max(rr.next_power_of_two());
+          }
+          *tallest.entry(tall.trailing_zeros()).or_insert(0) += 1;
+        }
+        // Padding over the real cells, in tenths of a percent.
+        let pad_permille = padded.saturating_sub(real) * 1000 / real.max(1);
+        println!(
+          "cells {cells} cap 2^{cap}: K {} act {activations} width {width} \
+           padded {padded} pad {}.{}% tallest {:?}",
+          shards.len(),
+          pad_permille / 10,
+          pad_permille % 10,
+          tallest
+        );
+      }
+    }
   }
 }
