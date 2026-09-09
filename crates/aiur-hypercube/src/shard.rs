@@ -544,8 +544,36 @@ pub fn partition_records(
         chunk_cells + adapter_cells + 256 + ROW_ALIGNMENT
       })
       .collect();
-    let over: Vec<usize> =
-      (0..num_shards).filter(|k| totals[*k] > AREA_BOUND).collect();
+    // The row cap is a per-chunk bound the prover asserts on (a padded MLE
+    // of `max_log_row_count` variables), and the epoch seed only sized the
+    // ORIGINAL heights: affinity moves and the duplicated rows appended
+    // above can push a chunk past it, as can an adapter class. Treat that
+    // like an area overflow — the shard's interval gets split.
+    let tallest: Vec<usize> = shard_chunks
+      .iter()
+      .zip(&adapters)
+      .map(|(chunks, rows)| {
+        let chunk_rows = chunks
+          .iter()
+          .flatten()
+          .map(|t| t.height().max(1).next_multiple_of(ROW_ALIGNMENT))
+          .max()
+          .unwrap_or(0);
+        let mut class_rows = vec![0usize; machine.global_classes.len()];
+        for row in rows {
+          class_rows[GlobalSpec::class_for(row.tuple.len()) - 1] += 1;
+        }
+        let adapter_rows = class_rows
+          .iter()
+          .map(|rows| rows.max(&1).next_multiple_of(ROW_ALIGNMENT))
+          .max()
+          .unwrap_or(0);
+        chunk_rows.max(adapter_rows)
+      })
+      .collect();
+    let over: Vec<usize> = (0..num_shards)
+      .filter(|k| totals[*k] > AREA_BOUND || tallest[*k] > params.max_rows)
+      .collect();
 
     if debug {
       let dup: usize = replicated.iter().map(Vec::len).sum();
@@ -553,8 +581,10 @@ pub fn partition_records(
       eprintln!(
         "hypercube refine round {refine_round}: {num_shards} shards, \
          {dup} duplicated rows, {crossings} adapter rows, peak \
-         ~{} cells, {} shard(s) over the bound",
+         ~{} cells, tallest chunk {} rows (cap {}), {} shard(s) over the bound",
         totals.iter().max().unwrap_or(&0),
+        tallest.iter().max().unwrap_or(&0),
+        params.max_rows,
         over.len()
       );
     }
