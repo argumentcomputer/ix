@@ -671,13 +671,21 @@ jobs:
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
           echo "base .ixe: $([ "$ixe" = true ] && echo restored from cache || echo compiling in the base run)"
           echo "base binaries: $([ "$cached" = true ] && echo restored from cache || echo building from source)"
-      - name: Set up changed base Rust toolchain
+      # A from-scratch base build must match the PR and main binaries: the
+      # same pinned x86-64-v4 codegen (RUSTFLAGS overrides the tree's
+      # `.cargo/config.toml`, which selects `native`) and an installed
+      # toolchain. The action installs the PR checkout's toolchain; the base
+      # tree may pin a different channel, so ensure its own is present too.
+      - name: Set up Rust for the base build
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-provider: warpbuild
+          cache-workspaces: base
+      - name: Install the base tree's Rust toolchain
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         working-directory: base
-        run: |
-          if ! cmp -s rust-toolchain.toml ../rust-toolchain.toml; then
-            rustup show active-toolchain || rustup toolchain install
-          fi
+        run: rustup show active-toolchain || rustup toolchain install
       - name: Log base build CPU
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: ./.github/actions/log-cpu
