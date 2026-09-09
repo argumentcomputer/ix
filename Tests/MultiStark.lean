@@ -1349,7 +1349,28 @@ def stage2HypercubeSuite : IO UInt32 := do
     IO.println s!"  verify        {t3 - t2} ms"
     let expected := #[Aiur.G.ofNat 0, Aiur.G.ofNat vIdx] ++ pubInput
     IO.println s!"  claim ok: {hClaim == expected}"
-    pure 0
+    -- `IX_S2_RECURSION=wrap|plonk`: the SP1 recursion tail over the proof
+    -- (normalize every shard, compose, shrink, BN254 wrap; `plonk` adds the
+    -- gnark stage). Needs `ix-ffi` built with `IX_SP1_RECURSION=1`.
+    match ← IO.getEnv "IX_S2_RECURSION" with
+    | none => pure 0
+    | some mode =>
+      IO.println "── sp1 recursion (normalize → compose → shrink → wrap)"
+      let t4 ← IO.monoMsNow
+      let wrapBlob ← match Aiur.HypercubeSystem.wrap hSys blob with
+        | .error e => IO.eprintln s!"recursion wrap failed: {e}"; return 1
+        | .ok b => pure b
+      let t5 ← IO.monoMsNow
+      IO.println s!"  wrap          {t5 - t4} ms, {wrapBlob.size} bytes"
+      IO.println s!"  {← hwm} (process peak)"
+      if mode == "plonk" then
+        let (proof, inputs) ← match Aiur.HypercubeSystem.plonk wrapBlob with
+          | .error e => IO.eprintln s!"plonk failed: {e}"; return 1
+          | .ok r => pure r
+        let t6 ← IO.monoMsNow
+        IO.println s!"  plonk         {t6 - t5} ms (incl. artifact build on a cold cache), {proof.size} bytes JSON"
+        IO.println s!"  {inputs}"
+      pure 0
 
 /-- Exercises the Hypercube sharding path: prove factorial and verify,
 also checking that a tampered blob and a wrong claim are rejected. The

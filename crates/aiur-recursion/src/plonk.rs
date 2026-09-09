@@ -46,7 +46,9 @@ impl PlonkPublicInputs {
       proof.proof.public_values.as_slice().borrow();
     let bytes: [SP1Field; 32] = words_to_bytes(&pv.committed_value_digest)
       .try_into()
-      .map_err(|_| anyhow!("committed_value_digest is not 32 bytes"))?;
+      .map_err(|bytes: Vec<SP1Field>| {
+        anyhow!("committed_value_digest is {} bytes, not 32", bytes.len())
+      })?;
     Ok(Self {
       vkey_hash: koalabears_to_bn254(&pv.sp1_vk_digest),
       committed_values_digest: koalabear_bytes_to_bn254(&bytes),
@@ -106,6 +108,17 @@ pub fn prove(
   witness.write_proof_nonce(inputs.proof_nonce);
   let prover = PlonkBn254Prover::new();
   let proof = prover.prove(witness, build_dir);
+  if std::env::var_os("IX_HC_DEBUG").is_some() {
+    eprintln!("plonk proof public inputs: {:?}", proof.public_inputs);
+    eprintln!(
+      "expected: vkey_hash {} committed {} exit_code {} vk_root {} nonce {}",
+      inputs.vkey_hash.as_canonical_biguint(),
+      inputs.committed_values_digest.as_canonical_biguint(),
+      inputs.exit_code.as_canonical_biguint(),
+      inputs.vk_root.as_canonical_biguint(),
+      inputs.proof_nonce.as_canonical_biguint()
+    );
+  }
   prover
     .verify(
       &proof,

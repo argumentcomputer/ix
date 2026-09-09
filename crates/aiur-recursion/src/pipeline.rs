@@ -22,6 +22,7 @@ use sp1_hypercube::{
 };
 use sp1_primitives::{
   SP1ExtensionField, SP1Field, SP1GlobalContext, SP1OuterGlobalContext,
+  fri_params::recursion_fri_config,
 };
 use sp1_prover::{
   CompressAir, CpuSP1ProverComponents, RecursionSC, SP1ProverComponents,
@@ -65,6 +66,12 @@ type AiurShardProof = ShardProof<SP1GlobalContext, SP1PcsProofInner>;
 /// Prover for the recursion tail over one Aiur machine.
 pub struct AiurRecursionProver {
   aiur_verifier: RecursiveShardVerifier<SP1GlobalContext, AiurAir, InnerConfig>,
+  /// The recursion machine the normalize (leaf) proofs are proven on. An
+  /// Aiur verifier machine has far more chips and columns than SP1's RISC-V
+  /// core, so its normalize program does not fit SP1's compress limits
+  /// (2^21 rows per chip); the leaf level gets its own, larger caps (see
+  /// [`leaf_params`]) and the first compose level verifies against them.
+  leaf_verifier: MachineVerifier<SP1GlobalContext, RecursionSC>,
   compress_verifier: MachineVerifier<SP1GlobalContext, RecursionSC>,
   shrink_verifier: MachineVerifier<SP1GlobalContext, ShrinkSC>,
   wrap_verifier: MachineVerifier<SP1OuterGlobalContext, WrapSC>,
@@ -84,8 +91,17 @@ impl AiurRecursionProver {
     let aiur_verifier = recursive_verifier::<SP1GlobalContext, _, InnerConfig>(
       &shard_verifier(machine, params),
     );
+    let (leaf_log_stacking_height, leaf_max_log_row_count) = leaf_params();
+    let leaf_verifier =
+      MachineVerifier::new(ShardVerifier::from_basefold_parameters(
+        recursion_fri_config(),
+        leaf_log_stacking_height,
+        leaf_max_log_row_count,
+        CompressAir::<SP1Field>::compress_machine(),
+      ));
     Ok(Self {
       aiur_verifier,
+      leaf_verifier,
       compress_verifier: CpuSP1ProverComponents::compress_verifier(),
       shrink_verifier: CpuSP1ProverComponents::shrink_verifier(),
       wrap_verifier: CpuSP1ProverComponents::wrap_verifier(),
@@ -100,7 +116,14 @@ impl AiurRecursionProver {
     self.vks.root()
   }
 
-  /// The compress-level verifier (for checking normalize/compose proofs).
+  /// The leaf-level verifier (for checking normalize proofs).
+  pub fn leaf_verifier(
+    &self,
+  ) -> &MachineVerifier<SP1GlobalContext, RecursionSC> {
+    &self.leaf_verifier
+  }
+
+  /// The compress-level verifier (for checking compose proofs).
   pub fn compress_verifier(
     &self,
   ) -> &MachineVerifier<SP1GlobalContext, RecursionSC> {
@@ -137,29 +160,39 @@ impl AiurRecursionProver {
       AiurRecursiveVerifier::verify(&mut builder, &self.aiur_verifier, input);
       compile(builder)
     };
+    report_program("normalize", &program);
     let mut blocks: Vec<WitnessBlock> = Vec::new();
     Witnessable::<InnerConfig>::write(&witness, &mut blocks);
     let (vk, proof) = self.prove_inner(
-      self.compress_verifier.shard_verifier(),
+      self.leaf_verifier.shard_verifier(),
       Arc::new(program),
       blocks,
     )?;
     self.finish_recursion_proof(vk, proof)
   }
 
-  /// Fold recursion proofs (normalize or compose level) with SP1's compose
-  /// program. The children must be in shard order.
+  /// Fold recursion proofs with SP1's compose program. The children must be
+  /// in shard order and all from the same level: `leaves` says whether they
+  /// are normalize proofs (proven on the leaf machine configuration) or
+  /// compose proofs.
   pub fn compose(
     &self,
     children: Vec<RecursionProof>,
+    leaves: bool,
     is_complete: bool,
   ) -> Result<RecursionProof> {
-    let input = self.compress_input(children, is_complete)?;
+    let input = self.compress_input(children, is_complete);
+    let child_verifier = if leaves {
+      self.leaf_verifier.shard_verifier()
+    } else {
+      self.compress_verifier.shard_verifier()
+    };
     let program = compose_program_from_input(
-      &recursive_verifier(self.compress_verifier.shard_verifier()),
+      &recursive_verifier(child_verifier),
       false,
       &input,
     );
+    report_program("compose", &program);
     let mut blocks: Vec<WitnessBlock> = Vec::new();
     Witnessable::<InnerConfig>::write(&input, &mut blocks);
     let (vk, proof) = self.prove_inner(
@@ -186,23 +219,35 @@ impl AiurRecursionProver {
       tracing::info!("normalize shard {k}/{n}");
       level.push(self.normalize(vk, shard, k, n == 1)?);
     }
+    let mut leaves = true;
     while level.len() > 1 {
       let last_level = level.len() <= self.arity;
       let mut next = Vec::with_capacity(level.len().div_ceil(self.arity));
       for chunk in level.chunks(self.arity) {
         tracing::info!("compose {} proofs", chunk.len());
-        next.push(self.compose(chunk.to_vec(), last_level)?);
+        next.push(self.compose(chunk.to_vec(), leaves, last_level)?);
       }
       level = next;
+      leaves = false;
     }
     Ok(level.pop().expect("one proof"))
   }
 
-  /// SP1's shrink program over a complete compress-level proof.
-  pub fn shrink(&self, proof: RecursionProof) -> Result<RecursionProof> {
-    let input = self.compress_input(vec![proof], true)?;
+  /// SP1's shrink program over a complete proof: a compose-level one, or —
+  /// `leaf` — a lone normalize proof (single-shard systems).
+  pub fn shrink(
+    &self,
+    proof: RecursionProof,
+    leaf: bool,
+  ) -> Result<RecursionProof> {
+    let input = self.compress_input(vec![proof], true);
+    let child_verifier = if leaf {
+      self.leaf_verifier.shard_verifier()
+    } else {
+      self.compress_verifier.shard_verifier()
+    };
     let program = shrink_program_from_input(
-      &recursive_verifier(self.compress_verifier.shard_verifier()),
+      &recursive_verifier(child_verifier),
       false,
       &input,
     );
@@ -218,7 +263,7 @@ impl AiurRecursionProver {
 
   /// SP1's BN254 wrap program over a shrink proof.
   pub fn wrap(&self, proof: RecursionProof) -> Result<WrapProof> {
-    let input = self.compress_input(vec![proof], true)?;
+    let input = self.compress_input(vec![proof], true);
     let program = {
       let verifier = recursive_verifier::<SP1GlobalContext, _, WrapConfig>(
         self.shrink_verifier.shard_verifier(),
@@ -268,7 +313,7 @@ impl AiurRecursionProver {
   ) -> Result<WrapProof> {
     let compressed = self.compress(vk, proof)?;
     tracing::info!("shrink");
-    let shrunk = self.shrink(compressed)?;
+    let shrunk = self.shrink(compressed, proof.shard_proofs.len() == 1)?;
     tracing::info!("wrap");
     self.wrap(shrunk)
   }
@@ -327,7 +372,7 @@ impl AiurRecursionProver {
     &self,
     children: Vec<RecursionProof>,
     is_complete: bool,
-  ) -> Result<SP1CompressWithVKeyWitnessValues<SP1PcsProofInner>> {
+  ) -> SP1CompressWithVKeyWitnessValues<SP1PcsProofInner> {
     let num_vks = self.vks.num_keys();
     let mut vks_and_proofs = Vec::with_capacity(children.len());
     let mut values = Vec::with_capacity(children.len());
@@ -339,14 +384,36 @@ impl AiurRecursionProver {
       vk_merkle_proofs.push(vk_merkle_proof);
       vks_and_proofs.push((vk, proof));
     }
-    Ok(SP1CompressWithVKeyWitnessValues {
+    SP1CompressWithVKeyWitnessValues {
       compress_val: SP1ShapedWitnessValues { vks_and_proofs, is_complete },
       merkle_val: SP1MerkleProofWitnessValues {
         root: self.vks.root(),
         values,
         vk_merkle_proofs,
       },
-    })
+    }
+  }
+}
+
+/// The leaf machine's `(log_stacking_height, max_log_row_count)`: defaults
+/// `(21, 23)` — four times SP1's compress row cap, sized for the 181-chip
+/// stage-2 verifier — overridable through `IX_REC_LEAF_LOG_STACKING` and
+/// `IX_REC_LEAF_MAX_LOG_ROWS`.
+fn leaf_params() -> (u32, usize) {
+  let env = |k: &str, d: usize| {
+    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+  };
+  let stacking = env("IX_REC_LEAF_LOG_STACKING", 21);
+  let rows = env("IX_REC_LEAF_MAX_LOG_ROWS", 23);
+  (u32::try_from(stacking).expect("log stacking height"), rows)
+}
+
+/// With `IX_HC_DEBUG` set, print a program's recursion-chip event counts —
+/// the row counts the recursion machine must fit (each chip is capped at
+/// `2^RECURSION_MAX_LOG_ROW_COUNT` rows).
+fn report_program(stage: &str, program: &RecursionProgram<SP1Field>) {
+  if std::env::var_os("IX_HC_DEBUG").is_some() {
+    eprintln!("recursion {stage} program: {:?}", program.event_counts);
   }
 }
 

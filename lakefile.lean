@@ -107,6 +107,10 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
     features := features.push "cuda"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
+  -- IX_SP1_RECURSION=1 compiles in the SP1 recursion tail over Hypercube
+  -- proofs (`aiur-recursion`; pulls in `sp1-prover`).
+  if (← IO.getEnv "IX_SP1_RECURSION") == some "1" then
+    features := features.push "sp1-recursion"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs

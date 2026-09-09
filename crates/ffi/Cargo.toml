@@ -10,6 +10,9 @@ crate-type = ["lib", "staticlib"]
 [dependencies]
 aiur = { workspace = true }
 aiur-hypercube = { workspace = true }
+# SP1 recursion over Hypercube proofs (compress/shrink/wrap/PLONK); opt-in
+# (`IX_SP1_RECURSION=1` in lake) because it pulls in `sp1-prover`.
+aiur-recursion = { path = "../aiur-recursion", optional = true }
 anyhow = { workspace = true }
 bignat = { workspace = true }
 blake3 = { workspace = true }
@@ -50,6 +53,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 default = []
 parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda", "aiur-hypercube/cuda"]
+sp1-recursion = ["aiur-recursion"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom"]
 

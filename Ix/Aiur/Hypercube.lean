@@ -52,6 +52,19 @@ as the proof's public-value prefix). -/
 opaque verify : @& HypercubeSystem → @& Array G → @& ByteArray →
   Except String Unit
 
+/-- The SP1 recursion tail over a proof blob: normalize every shard in SP1's
+recursion circuit, compose, shrink, and wrap to BN254. Returns the wrap
+proof `(vk, proof)` bincoded. Needs `ix-ffi` built with `sp1-recursion`
+(`IX_SP1_RECURSION=1`). -/
+@[extern "rs_aiur_hypercube_wrap"]
+opaque wrap : @& HypercubeSystem → @& ByteArray → Except String ByteArray
+
+/-- The gnark PLONK proof over a wrap proof blob. Returns the proof as JSON
+and a summary of its public inputs. Needs `sp1-recursion` and SP1's gnark
+Docker image. -/
+@[extern "rs_aiur_hypercube_plonk"]
+opaque plonk : @& ByteArray → Except String (ByteArray × String)
+
 end HypercubeSystem
 
 end Aiur

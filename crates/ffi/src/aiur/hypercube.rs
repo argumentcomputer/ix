@@ -224,3 +224,102 @@ extern "C" fn rs_aiur_hypercube_verify(
     }
   })
 }
+
+/// `Aiur.HypercubeSystem.wrap` : the SP1 recursion tail over a proof blob —
+/// normalize every shard, compose, shrink, BN254 wrap — returning the wrap
+/// proof `(vk, proof)` bincoded. Needs the `sp1-recursion` feature.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_hypercube_wrap(
+  system_obj: LeanExternal<HypercubeSystem, LeanBorrowed<'_>>,
+  blob: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind_except("Hypercube.wrap", || {
+    #[cfg(not(feature = "sp1-recursion"))]
+    {
+      let _ = (&system_obj, &blob);
+      LeanExcept::error_string(
+        "Hypercube.wrap: ix-ffi was built without the `sp1-recursion` \
+         feature (IX_SP1_RECURSION=1)",
+      )
+    }
+    #[cfg(feature = "sp1-recursion")]
+    {
+      let system = system_obj.get();
+      let (vk, proof): (AiurVerifyingKey, AiurProof) =
+        match bincode::serde::decode_from_slice(
+          blob.as_bytes(),
+          bincode_config(),
+        ) {
+          Ok((t, _)) => t,
+          Err(e) => {
+            return LeanExcept::error_string(&format!("proof decode: {e}"));
+          },
+        };
+      let wrapped = match aiur_recursion::AiurRecursionProver::new(
+        system.machine.machine(),
+        system.params,
+        2,
+      )
+      .and_then(|prover| prover.prove_wrap(&vk, &proof))
+      {
+        Ok(w) => w,
+        Err(e) => return LeanExcept::error_string(&format!("{e:#}")),
+      };
+      match bincode::serde::encode_to_vec(&wrapped, bincode_config()) {
+        Ok(b) => LeanExcept::ok(LeanByteArray::from_bytes(&b)),
+        Err(e) => LeanExcept::error_string(&format!("wrap proof encode: {e}")),
+      }
+    }
+  })
+}
+
+/// `Aiur.HypercubeSystem.plonk` : the gnark PLONK proof over a wrap proof
+/// blob (see `wrap`). Returns the proof as JSON bytes and a summary of its
+/// public inputs. Needs the `sp1-recursion` feature and SP1's gnark Docker
+/// image (or a native gnark build).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_hypercube_plonk(
+  wrap_blob: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind_except("Hypercube.plonk", || {
+    #[cfg(not(feature = "sp1-recursion"))]
+    {
+      let _ = &wrap_blob;
+      LeanExcept::error_string(
+        "Hypercube.plonk: ix-ffi was built without the `sp1-recursion` \
+         feature (IX_SP1_RECURSION=1)",
+      )
+    }
+    #[cfg(feature = "sp1-recursion")]
+    {
+      let wrapped: aiur_recursion::WrapProof =
+        match bincode::serde::decode_from_slice(
+          wrap_blob.as_bytes(),
+          bincode_config(),
+        ) {
+          Ok((t, _)) => t,
+          Err(e) => {
+            return LeanExcept::error_string(&format!(
+              "wrap proof decode: {e}"
+            ));
+          },
+        };
+      let result = aiur_recursion::plonk::ensure_artifacts(&wrapped)
+        .and_then(|dir| aiur_recursion::plonk::prove(wrapped, &dir));
+      let (proof, inputs) = match result {
+        Ok(r) => r,
+        Err(e) => return LeanExcept::error_string(&format!("{e:#}")),
+      };
+      let json = match serde_json::to_vec(&proof) {
+        Ok(j) => j,
+        Err(e) => {
+          return LeanExcept::error_string(&format!("plonk proof encode: {e}"));
+        },
+      };
+      LeanExcept::ok(LeanProd::new(
+        LeanByteArray::from_bytes(&json),
+        lean_ffi::object::LeanString::new(&format!("{inputs:?}")),
+      ))
+    }
+  })
+}

@@ -64,16 +64,17 @@ fn compress_shrink_wrap_a_toplevel_call() {
   let prover =
     AiurRecursionProver::new(machine.machine(), params(), 2).unwrap();
 
-  // Compress: one shard, so one normalize marked complete.
+  // Compress: one shard, so one normalize marked complete — a leaf-level
+  // proof, verified under the leaf machine configuration.
   let compressed = prover.compress(&vk, &proof).unwrap();
   let mut challenger =
     <SP1GlobalContext as slop_challenger::IopCtx>::default_challenger();
   compressed.vk.observe_into(&mut challenger);
   prover
-    .compress_verifier()
+    .leaf_verifier()
     .shard_verifier()
     .verify_shard(&compressed.vk, &compressed.proof, &mut challenger)
-    .expect("compress-level proof verifies");
+    .expect("leaf-level proof verifies");
   let pv: &RecursionPublicValues<SP1Field> =
     compressed.proof.public_values.as_slice().borrow();
   assert_eq!(pv.is_complete, SP1Field::one());
@@ -88,12 +89,14 @@ fn compress_shrink_wrap_a_toplevel_call() {
   let got: Vec<u8> = pv
     .committed_value_digest
     .iter()
-    .flat_map(|word| word.iter().map(|limb| limb.as_canonical_u32() as u8))
+    .flat_map(|word| {
+      word.iter().map(|limb| u8::try_from(limb.as_canonical_u32()).unwrap())
+    })
     .collect();
   assert_eq!(got, expected.to_vec());
 
   // Shrink, then wrap.
-  let shrunk = prover.shrink(compressed).unwrap();
+  let shrunk = prover.shrink(compressed, true).unwrap();
   let wrapped = prover.wrap(shrunk).unwrap();
   let mut challenger =
     <SP1OuterGlobalContext as slop_challenger::IopCtx>::default_challenger();
@@ -104,9 +107,29 @@ fn compress_shrink_wrap_a_toplevel_call() {
     .verify_shard(&wrapped.vk, &wrapped.proof, &mut challenger)
     .expect("wrap proof verifies");
 
-  if std::env::var_os("IX_RECURSION_PLONK").is_some() {
-    let dir = aiur_recursion::plonk::ensure_artifacts(&wrapped).unwrap();
-    let (plonk, inputs) = aiur_recursion::plonk::prove(wrapped, &dir).unwrap();
-    println!("plonk proof {} bytes, inputs {inputs:?}", plonk.raw_proof.len());
+  if let Some(path) = std::env::var_os("IX_RECURSION_WRAP_OUT") {
+    std::fs::write(path, bincode::serialize(&wrapped).unwrap()).unwrap();
   }
+  if std::env::var_os("IX_RECURSION_PLONK").is_some() {
+    plonk_stage(wrapped);
+  }
+}
+
+fn plonk_stage(wrapped: aiur_recursion::WrapProof) {
+  let dir = aiur_recursion::plonk::ensure_artifacts(&wrapped).unwrap();
+  let (plonk, inputs) = aiur_recursion::plonk::prove(wrapped, &dir).unwrap();
+  println!("plonk proof {} bytes, inputs {inputs:?}", plonk.raw_proof.len());
+}
+
+/// The PLONK stage alone, over a wrap proof saved by the roundtrip with
+/// `IX_RECURSION_WRAP_OUT` (`IX_RECURSION_WRAP_IN` names the file).
+#[test]
+#[ignore]
+fn plonk_from_saved_wrap() {
+  let path =
+    std::env::var_os("IX_RECURSION_WRAP_IN").expect("IX_RECURSION_WRAP_IN");
+  let bytes = std::fs::read(path).unwrap();
+  let wrapped: aiur_recursion::WrapProof =
+    bincode::deserialize(&bytes).unwrap();
+  plonk_stage(wrapped);
 }
