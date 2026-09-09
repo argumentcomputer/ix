@@ -4,6 +4,10 @@ on:
   merge_group:
   issue_comment:
     types: [created]
+  # Only the valgrind job runs on pull requests, as a trial of the
+  # GitHub-hosted runner's build and cache times before it takes that role
+  # in the queue permanently.
+  pull_request:
 
 run-name: "${{ github.event_name == 'issue_comment' && format('Merge tests for PR #{0}', github.event.issue.number) || 'Merge tests' }}"
 
@@ -17,8 +21,9 @@ jobs:
   prepare:
     name: Prepare merge tests
     if: >-
-      github.event_name != 'issue_comment' ||
-      (github.event.issue.pull_request &&
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
        github.event.issue.state == 'open' &&
        github.event.comment.user.type != 'Bot' &&
        contains(github.event.comment.body, '!merge-tests') &&
@@ -168,20 +173,26 @@ jobs:
   valgrind:
     name: Valgrind FFI
     needs: prepare
-    if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
-    # Valgrind cannot decode the shared baseline's AVX-512, so its portable
-    # build artifacts must not share a cache volume with the other test jobs.
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix-valgrind
+    # `prepare` is skipped on pull_request, so `!cancelled()` keeps this job
+    # eligible there; the other events still require `prepare` to succeed.
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'pull_request' ||
+       (needs.prepare.result == 'success' &&
+        (github.event_name == 'merge_group' || github.event_name == 'issue_comment')))
+    # Valgrind cannot decode the shared baseline's AVX-512, so this job builds
+    # portable artifacts under its own cache key. Valgrind itself is
+    # single-threaded, so a GitHub-hosted runner suffices once that build is
+    # cached.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          ref: ${{ github.event_name == 'pull_request' && github.sha || (github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision) }}
           persist-credentials: false
 
       - name: Verify test revision
+        if: github.event_name != 'pull_request'
         env:
           TEST_REVISION: ${{ needs.prepare.outputs.revision }}
         run: |
@@ -194,8 +205,13 @@ jobs:
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           avx512-codegen: "false"
-          use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
+      # `./.lake`, not `.lake`: the path string is hashed into the cache
+      # entry's version, so the spelling must stay fixed for restores to hit.
+      - uses: actions/cache@v6
+        with:
+          path: ./.lake
+          key: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -224,6 +240,7 @@ jobs:
     name: Merge tests
     if: >-
       always() &&
+      github.event_name != 'pull_request' &&
       (github.event_name != 'issue_comment' || needs.prepare.result != 'skipped')
     needs: [prepare, merge-tests, valgrind]
     runs-on: ubuntu-latest
