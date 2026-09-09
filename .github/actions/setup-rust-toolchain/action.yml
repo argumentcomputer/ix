@@ -23,16 +23,23 @@ inputs:
 runs:
   using: composite
   steps:
+    # The AVX-512 baseline below is a property of the Warp and Namespace
+    # fleets; a portable build may run on any Linux x64 host.
     - name: Require supported Linux x64 runner
       shell: bash
       env:
         IX_RUNNER_NAME: ${{ runner.name }}
         IX_RUNNER_OS: ${{ runner.os }}
         IX_RUNNER_ARCH: ${{ runner.arch }}
+        IX_AVX512_CODEGEN: ${{ inputs.avx512-codegen }}
       run: |
-        if [[ "$IX_RUNNER_OS" != Linux || "$IX_RUNNER_ARCH" != X64 || \
-              ("$IX_RUNNER_NAME" != warp-* && "$IX_RUNNER_NAME" != nsc-runner-*) ]]; then
-          echo "::error::setup-rust-toolchain requires a Warp or Namespace Linux x64 runner; got name=$IX_RUNNER_NAME os=$IX_RUNNER_OS arch=$IX_RUNNER_ARCH"
+        if [[ "$IX_RUNNER_OS" != Linux || "$IX_RUNNER_ARCH" != X64 ]]; then
+          echo "::error::setup-rust-toolchain requires a Linux x64 runner; got os=$IX_RUNNER_OS arch=$IX_RUNNER_ARCH"
+          exit 1
+        fi
+        if [[ "$IX_AVX512_CODEGEN" == true && \
+              "$IX_RUNNER_NAME" != warp-* && "$IX_RUNNER_NAME" != nsc-runner-* ]]; then
+          echo "::error::AVX-512 builds require a Warp or Namespace runner; got name=$IX_RUNNER_NAME"
           exit 1
         fi
 
