@@ -151,7 +151,6 @@ jobs:
       fresh: ${{ steps.parse.outputs.fresh }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
-      hardware-summary: ${{ steps.cpu.outputs.summary }}
       # Set (with the step failing) when the !benchmark command was
       # rejected; the failure comment quotes it.
       parse-error: ${{ steps.parse.outputs.parse-error }}
@@ -209,11 +208,10 @@ jobs:
         uses: ./.github/actions/setup-rust-toolchain
         with:
           cache-provider: warpbuild
-      - name: Log benchmark runner CPU
-        id: cpu
+      - name: Log build CPU
         uses: ./.github/actions/log-cpu
         with:
-          label: Benchmark runner CPU
+          label: Benchmark binary build CPU
       - name: Build benchmark binaries
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
         run: |
@@ -264,7 +262,6 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
           SUMMARY: ${{ needs.build.outputs.config-summary }}
-          HARDWARE: ${{ needs.build.outputs.hardware-summary }}
           HEAD_SHA: ${{ needs.build.outputs.revision }}
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -284,9 +281,6 @@ jobs:
               echo
               if [ -n "$SUMMARY" ]; then
                 echo "> $SUMMARY"
-              fi
-              if [ -n "$HARDWARE" ]; then
-                echo "> $HARDWARE"
               fi
               echo
               echo "Benchmarking \`${HEAD_SHA:0:7}\` — this comment will be replaced with the results when the run finishes."
@@ -351,7 +345,9 @@ jobs:
         id: pr-row
         uses: WarpBuilds/cache/restore@v2
         with:
-          path: compile.json
+          path: |
+            compile.json
+            compile-hardware.txt
           key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Select compile source
         id: compile-source
@@ -375,6 +371,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Log compile CPU
         if: steps.compile-source.outputs.rebuild == 'true'
+        id: cpu
         uses: ./.github/actions/log-cpu
         with:
           label: Compile measurement CPU
@@ -400,6 +397,14 @@ jobs:
       - name: Compile ${{ matrix.env }}.ixe
         if: steps.compile-source.outputs.rebuild == 'true'
         run: ix bench run --backend compile --env ${{ matrix.env }} --out compile.json
+      # The compile row is measured here, not in the benchmark job that
+      # renders it, so its host travels with the row: same cache entry and
+      # run artifact below.
+      - name: Record compile hardware
+        if: steps.compile-source.outputs.rebuild == 'true'
+        env:
+          HARDWARE: ${{ steps.cpu.outputs.summary }}
+        run: printf '%s\n' "$HARDWARE" > compile-hardware.txt
       - name: Publish .ixe
         if: needs.build.outputs.fresh != '1' && steps.pr-ixe.outputs.cache-hit != 'true'
         uses: WarpBuilds/cache/save@v2
@@ -414,7 +419,9 @@ jobs:
         if: needs.build.outputs.fresh != '1' && steps.pr-row.outputs.cache-hit != 'true'
         uses: WarpBuilds/cache/save@v2
         with:
-          path: compile.json
+          path: |
+            compile.json
+            compile-hardware.txt
           key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Upload run environment
         uses: actions/upload-artifact@v7
@@ -423,6 +430,7 @@ jobs:
           path: |
             ${{ matrix.env }}.ixe
             compile.json
+            compile-hardware.txt
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -487,6 +495,7 @@ jobs:
           tar -C .lake/build/bin -xf benchmark-binaries.tar
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       - name: Log run CPU
+        id: cpu
         uses: ./.github/actions/log-cpu
         with:
           label: Benchmark job CPU
@@ -589,6 +598,16 @@ jobs:
         with:
           path: bench.json.perconst.csv
           key: bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+      # The host that measured the base SHA's rows on main, recorded by
+      # bench-main next to its bencher upload. Only a bencher-sourced base side
+      # uses it; a base run in this job is labelled with this runner instead.
+      - name: Restore base-side measurement hardware
+        if: env.FRESH != '1'
+        continue-on-error: true
+        uses: WarpBuilds/cache/restore@v2
+        with:
+          path: bench-hardware.txt
+          key: bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # The final base-run decision — every base-side step gates on THIS
       # step. A base run, whatever triggered it (bencher miss or partial,
       # `fresh`, or an ooc attribution-CSV cache miss), is always a FULL
@@ -782,6 +801,8 @@ jobs:
             mv bench.json.perconst.csv "$GITHUB_WORKSPACE/main.json.perconst.csv"
           fi
       - name: Build comparison table
+        env:
+          RUN_HARDWARE: ${{ steps.cpu.outputs.summary }}
         run: |
           mkdir -p out
           ix bench compare \
@@ -790,6 +811,25 @@ jobs:
             --base-source "${{ steps.decide.outputs.source }}" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --out "out/table-$LABEL.md"
+          # Label each side with the host that measured it. The fleet mixes
+          # CPU models, and the two sides need not share one: the PR compile
+          # row comes from the compile job, and a bencher-sourced base side
+          # from bench-main's run at the base SHA. Every other side ran here.
+          if [ "$BACKEND" = compile ]; then
+            pr_hw=$(cat compile-hardware.txt 2>/dev/null || true)
+          else
+            pr_hw="$RUN_HARDWARE"
+          fi
+          if [ "${{ steps.decide.outputs.run-base }}" = true ]; then
+            base_hw="$RUN_HARDWARE"
+          else
+            base_hw=$(cat bench-hardware.txt 2>/dev/null || true)
+          fi
+          {
+            echo
+            echo "- Base hardware (${{ steps.decide.outputs.source }}): ${base_hw:-not recorded}"
+            echo "- PR hardware: ${pr_hw:-not recorded}"
+          } >> "out/table-$LABEL.md"
           cat "out/table-$LABEL.md"
 
       - name: Upload table
@@ -851,21 +891,13 @@ jobs:
       - name: Build comment body
         env:
           SUMMARY: ${{ needs.build.outputs.config-summary }}
-          HARDWARE: ${{ needs.build.outputs.hardware-summary }}
           HEAD_SHA: ${{ needs.build.outputs.revision }}
           BASE_SHA: ${{ inputs.base-sha }}
           BASE_REF: ${{ inputs.base-ref }}
         run: |
           mkdir -p tables   # absent when no run uploaded a table
-          summary="$SUMMARY"
-          if [ -n "$HARDWARE" ]; then
-            if [ -n "$summary" ]; then
-              summary="$summary"$'\n\n'
-            fi
-            summary="$summary$HARDWARE"
-          fi
           ix bench report \
-            --tables tables --summary "$summary" \
+            --tables tables --summary "$SUMMARY" \
             --head "$HEAD_SHA" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \

@@ -297,9 +297,14 @@ WarpCache for both workflow products and Cargo build artifacts.
 
 Every job that creates a timing row logs its CPU model, instruction set,
 effective CPU count, affinity, and cgroup allocation directly in the Actions
-logs. The `!benchmark` comment also includes a compact CPU model, effective
-vCPU count, and total RAM summary. This is diagnostic only: CPU information
-does not participate in cache keys or benchmark results.
+logs. Each table in the `!benchmark` comment ends with one hardware line per
+side (CPU model, effective vCPUs, total RAM), because the two sides need not
+share a host: the PR compile row is measured in the compile job, and a
+bencher-sourced base side was measured by bench-main at the base SHA, which
+caches that host next to its upload for the PR run to restore. A base run
+performed in the benchmark job is labelled with that job's runner. This is
+diagnostic only: CPU information does not participate in cache keys or
+benchmark results, and a missing note renders as "not recorded".
 
 ## Palomar compatibility corpus
 
