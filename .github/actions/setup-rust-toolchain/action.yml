@@ -72,6 +72,25 @@ runs:
           exit 1
         fi
 
+    # bindgen collects include paths from the `clang` binary on PATH and
+    # passes them as `-isystem`, while clang-sys loads whichever libclang it
+    # finds. On an image with several LLVM versions those differ: clang's
+    # `stdatomic.h` then `include_next`s the other version's copy, whose
+    # identical include guard skips its body, and every C11 atomic in
+    # `lean.h` comes out undeclared. Point both at one install.
+    - name: Pin bindgen to a single LLVM install
+      shell: bash
+      run: |
+        for llvm in $(printf '%s\n' /usr/lib/llvm-* | sort -V -r); do
+          if [ -x "$llvm/bin/clang" ] && ls "$llvm"/lib/libclang*.so* >/dev/null 2>&1; then
+            echo "LIBCLANG_PATH=$llvm/lib" >> "$GITHUB_ENV"
+            echo "CLANG_PATH=$llvm/bin/clang" >> "$GITHUB_ENV"
+            echo "bindgen pinned to $llvm"
+            exit 0
+          fi
+        done
+        echo "no versioned LLVM install with both clang and libclang; leaving bindgen defaults"
+
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ${{ inputs.avx512-codegen == 'true' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni -Dwarnings' || '-Dwarnings' }}
