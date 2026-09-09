@@ -13,7 +13,7 @@
 //! - **compose, shrink, wrap** ([`pipeline`]): SP1's programs, as is, with
 //!   vk verification off.
 //! - **PLONK** ([`plonk`]): SP1's gnark circuit build and prover over the
-//!   wrap proof.
+//!   wrap proof, in-process (the `native-gnark` feature, on by default).
 //!
 //! The PLONK proof's public inputs are the Poseidon2 digest of the Aiur
 //! machine's verifying key and a 32-byte Poseidon2 digest of the claim

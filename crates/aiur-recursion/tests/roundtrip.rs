@@ -133,3 +133,25 @@ fn plonk_from_saved_wrap() {
     bincode::deserialize(&bytes).unwrap();
   plonk_stage(wrapped);
 }
+
+/// gnark's `test` mode over a saved wrap proof: compiles the outer circuit
+/// and checks the witness satisfies it, without proving. Splits "the wrap
+/// proof does not satisfy the circuit" from "prove/verify disagree".
+#[test]
+#[ignore]
+fn plonk_circuit_test_from_saved_wrap() {
+  let path =
+    std::env::var_os("IX_RECURSION_WRAP_IN").expect("IX_RECURSION_WRAP_IN");
+  let bytes = std::fs::read(path).unwrap();
+  let wrapped: aiur_recursion::WrapProof =
+    bincode::deserialize(&bytes).unwrap();
+  let (constraints, witness) =
+    sp1_prover::build::build_constraints_and_witness(
+      &wrapped.vk,
+      &wrapped.proof,
+    )
+    .unwrap();
+  println!("outer circuit: {} constraints", constraints.len());
+  sp1_recursion_gnark_ffi::PlonkBn254Prover::test(constraints, witness);
+  println!("gnark test passed");
+}

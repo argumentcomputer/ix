@@ -1,7 +1,14 @@
 //! The gnark PLONK stage over a wrap proof: SP1's circuit-artifact build
 //! (`sp1_prover::build`) keyed by the wrap verifying key, then the PLONK
-//! prover/verifier of `sp1-recursion-gnark-ffi`. The gnark toolchain runs in
-//! SP1's Docker image unless the FFI crate's `native` feature is on.
+//! prover/verifier of `sp1-recursion-gnark-ffi`.
+//!
+//! The gnark side runs in-process by default (this crate's `native-gnark`
+//! feature: the FFI crate's Go sources compiled at build time; needs Go with
+//! `GOTOOLCHAIN=auto` and libclang). SP1's Docker image (`sp1-gnark:v6.1.0`,
+//! the pinned `SP1_CIRCUIT_VERSION`) builds the circuit and passes
+//! `gnark test` on our witness, but the proofs it produces do not verify
+//! ("algebraic relation does not hold") — its prover/verifier predate the
+//! 6.6.0 Go sources — so the Docker path is not usable with this SP1 pin.
 
 use std::{
   borrow::Borrow,
@@ -60,7 +67,11 @@ impl PlonkPublicInputs {
 }
 
 /// Where the PLONK circuit artifacts for `wrap_vk` live: keyed by the
-/// serialized verifying key, under `~/.ix/cache/plonk-bn254/`.
+/// serialized verifying key, under `~/.ix/cache/plonk-bn254/`. The name
+/// ends in `dev` on purpose: `sp1-recursion-gnark-ffi` mounts such a
+/// directory as `/circuit_dev`, the gnark CLI's development build (a circuit
+/// compiled from the template proof), as opposed to `/circuit`, SP1's
+/// released circuit.
 pub fn artifacts_dir(
   wrap_vk: &sp1_hypercube::MachineVerifyingKey<
     sp1_primitives::SP1OuterGlobalContext,
@@ -71,7 +82,17 @@ pub fn artifacts_dir(
   let home = std::env::var_os("HOME")
     .map(PathBuf::from)
     .ok_or_else(|| anyhow!("HOME is not set"))?;
-  Ok(home.join(".ix").join("cache").join("plonk-bn254").join(key))
+  // Artifacts built by the in-process (native) gnark and by SP1's Docker
+  // image are kept apart.
+  let backend =
+    if cfg!(feature = "native-gnark") { "native" } else { "docker" };
+  Ok(
+    home
+      .join(".ix")
+      .join("cache")
+      .join("plonk-bn254")
+      .join(format!("{key}-{backend}-plonk-dev")),
+  )
 }
 
 /// Build the PLONK circuit artifacts for the wrap proof's verifying key if

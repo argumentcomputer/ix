@@ -17,7 +17,10 @@ sp1-prover = "=6.6.0"
 sp1-recursion-circuit = "=6.6.0"
 sp1-recursion-compiler = "=6.6.0"
 sp1-recursion-executor = "=6.6.0"
-sp1-recursion-gnark-ffi = "=6.6.0"
+# `native`: gnark's prover/verifier compiled in-process from the crate's Go
+# sources (needs Go; `GOTOOLCHAIN=auto` fetches the pinned toolchain)
+# instead of SP1's Docker image.
+sp1-recursion-gnark-ffi = { version = "=6.6.0", features = ["native"] }
 slop-algebra = "=6.6.0"
 slop-bn254 = "=6.6.0"
 slop-challenger = "=6.6.0"
@@ -33,6 +36,11 @@ tracing = { workspace = true }
 [dev-dependencies]
 multi-stark = { workspace = true }
 p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+
+[features]
+default = ["native-gnark"]
+# Mirrors `sp1-recursion-gnark-ffi/native` for the artifact cache key.
+native-gnark = ["sp1-recursion-gnark-ffi/native"]
 
 [lints]
 workspace = true

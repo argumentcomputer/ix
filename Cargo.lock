@@ -94,7 +94,7 @@ dependencies = [
  "multi-stark",
  "num-bigint 0.4.6",
  "rayon",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "tracing",
  "tracing-texray",
 ]
@@ -488,6 +488,26 @@ dependencies = [
 
 [[package]]
 name = "bindgen"
+version = "0.70.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f49d8fed880d473ea71efb9bf597651e77201bdd4893efe54c9e5d65ae04ce6f"
+dependencies = [
+ "bitflags",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.12.1",
+ "log",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash 1.1.0",
+ "shlex",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
@@ -501,7 +521,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "shlex",
  "syn 2.0.117",
 ]
@@ -2630,7 +2650,7 @@ dependencies = [
  "portmapper",
  "rand 0.9.4",
  "reqwest",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "rustls",
  "rustls-pki-types",
  "rustls-webpki",
@@ -2808,7 +2828,7 @@ dependencies = [
  "indexmap 2.14.0",
  "quickcheck",
  "quickcheck_macros",
- "rustc-hash",
+ "rustc-hash 2.1.2",
 ]
 
 [[package]]
@@ -2826,7 +2846,7 @@ dependencies = [
  "ixon",
  "num-bigint 0.4.6",
  "rayon",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "sha2 0.10.9",
 ]
 
@@ -2861,7 +2881,7 @@ dependencies = [
  "n0-error",
  "num-bigint 0.4.6",
  "rayon",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2895,7 +2915,7 @@ dependencies = [
  "quickcheck",
  "quickcheck_macros",
  "rayon",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "smallvec",
 ]
 
@@ -2914,7 +2934,7 @@ dependencies = [
  "quickcheck",
  "quickcheck_macros",
  "rayon",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "sha2 0.10.9",
  "tiny-keccak",
 ]
@@ -2930,7 +2950,7 @@ dependencies = [
  "multi-stark",
  "num-bigint 0.4.6",
  "rayon",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "stacker",
 ]
 
@@ -2990,7 +3010,7 @@ version = "0.1.0"
 source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=93c7e52952ae94546be08313f4ff3922984c84d5#93c7e52952ae94546be08313f4ff3922984c84d5"
 dependencies = [
  "bignat",
- "bindgen",
+ "bindgen 0.72.1",
  "cc",
  "num-bigint 0.4.6",
 ]
@@ -3463,7 +3483,7 @@ dependencies = [
  "noq-proto",
  "noq-udp",
  "pin-project-lite",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "rustls",
  "socket2 0.6.3",
  "thiserror 2.0.18",
@@ -3489,7 +3509,7 @@ dependencies = [
  "lru-slab",
  "rand 0.9.4",
  "ring",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "rustls",
  "rustls-pki-types",
  "slab",
@@ -4881,7 +4901,7 @@ dependencies = [
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "rustls",
  "socket2 0.6.3",
  "thiserror 2.0.18",
@@ -4901,7 +4921,7 @@ dependencies = [
  "lru-slab",
  "rand 0.9.4",
  "ring",
- "rustc-hash",
+ "rustc-hash 2.1.2",
  "rustls",
  "rustls-pki-types",
  "slab",
@@ -5205,6 +5225,12 @@ name = "rustc-demangle"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b74b56ffa8bb2830709a538c2cbcae9aa062db0d2a42563bfb09bdaae44020eb"
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"
@@ -6873,6 +6899,7 @@ checksum = "17d79814de28b769e53fe62819730752d525ce8a7fcf9fa88241de68b47a0e95"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
+ "bindgen 0.70.1",
  "cfg-if",
  "num-bigint 0.4.6",
  "serde",
