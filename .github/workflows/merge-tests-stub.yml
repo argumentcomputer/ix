@@ -1,0 +1,21 @@
+name: Merge tests (pull request)
+
+# The "Merge tests" required check is enforced by merge-tests.yml, which runs
+# the ignored suites only against the merge queue's synthetic commit. A pull
+# request cannot enter the queue until every required check has passed on its
+# own head, so this workflow reports the same check name there and does
+# nothing else. It triggers only on pull_request so that a merge-group commit
+# carries exactly one "Merge tests" check run — the real one — and no skipped
+# stub alongside it.
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  merge-tests:
+    name: Merge tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Defer tests to merge queue
+        run: echo "Merge tests run against the merge group's synthetic commit."
