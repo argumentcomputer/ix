@@ -20,7 +20,7 @@ use crate::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  querymap::QueryRef,
+  querymap::{QueryMap, QuerySlice},
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
   u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
   u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
@@ -96,20 +96,18 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
 struct TraceContext<'a> {
   function_index: G,
   multiplicity: G,
-  inputs: &'a [G],
-  output: &'a [G],
+  inputs: QuerySlice<'a>,
+  output: QuerySlice<'a>,
   query_record: &'a QueryRecord,
 }
 
-/// One row of a circuit trace: the member function it belongs to, the
-/// member's selector offset within the circuit, its function index, and the
-/// recorded query.
-struct RowMeta<'a> {
+/// Shared metadata for a circuit member. Selected rows retain only the
+/// member/index pair, not decoded packed query views or repeated layouts.
+struct MemberMeta<'a> {
   function: &'a Function,
   sel_offset: usize,
   function_index: G,
-  inputs: &'a [G],
-  result: QueryRef<'a>,
+  queries: &'a QueryMap,
 }
 
 impl Toplevel {
@@ -125,22 +123,24 @@ impl Toplevel {
     let width = layout.width();
     // Concatenate the members' queried rows, in member order.
     let mut rows_meta = Vec::new();
+    let mut members = Vec::with_capacity(circuit.members.len());
     let mut sel_offset = 0;
     for &member in &circuit.members {
       let function = &self.functions[member];
       let function_index = G::from_usize(member);
+      let queries = &query_record.function_queries[member];
+      let member_index = members.len();
       rows_meta.extend(
-        query_record.function_queries[member]
-          .iter()
-          .filter(|(_, res)| !res.multiplicity.is_zero())
-          .map(|(inputs, result)| RowMeta {
-            function,
-            sel_offset,
-            function_index,
-            inputs,
-            result,
-          }),
+        (0..queries.len())
+          .filter(|&index| !queries.mult_at(index).is_zero())
+          .map(|index| (member_index, index)),
       );
+      members.push(MemberMeta {
+        function,
+        sel_offset,
+        function_index,
+        queries,
+      });
       sel_offset += function.layout.selectors;
     }
     let height_no_padding = rows_meta.len();
@@ -162,7 +162,9 @@ impl Toplevel {
       .zip(row_writers[..height_no_padding].par_iter_mut())
       .enumerate()
       .for_each(|(i, (row, lookups))| {
-        let meta = &rows_meta[i];
+        let (member_index, query_index) = rows_meta[i];
+        let meta = &members[member_index];
+        let (inputs, result) = meta.queries.get_index(query_index).unwrap();
         let index = &mut ColumnIndex {
           auxiliary: 0,
           // we skip the first lookup, which is reserved for return
@@ -177,9 +179,9 @@ impl Toplevel {
         );
         let context = TraceContext {
           function_index: meta.function_index,
-          inputs: meta.inputs,
-          multiplicity: meta.result.multiplicity,
-          output: meta.result.output,
+          inputs,
+          multiplicity: result.multiplicity,
+          output: result.output,
           query_record,
         };
         meta.function.populate_row(index, slice, context, io_buffer);
@@ -208,13 +210,13 @@ impl Function {
       "Argument mismatch"
     );
     // Variable to value map
-    let map = &mut context.inputs.iter().map(|arg| (*arg, 1)).collect();
+    let map = &mut context.inputs.iter().map(|arg| (arg, 1)).collect();
     // One column per input
     context
       .inputs
       .iter()
       .enumerate()
-      .for_each(|(i, arg)| slice.inputs[i] = *arg);
+      .for_each(|(i, arg)| slice.inputs[i] = arg);
     // Push the multiplicity
     slice.push_auxiliary(index, context.multiplicity);
     let _ = self.body.populate_row(map, index, slice, context, io_buffer);
@@ -383,13 +385,13 @@ impl Op {
         let queries = &context.query_record.function_queries[*function_index];
         let result = queries.get(&inputs).expect("Cannot find query result");
         for f in result.output.iter() {
-          map.push((*f, 1));
-          slice.push_auxiliary(index, *f);
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
         }
         if !op_unconstrained {
           let args = function_lookup_args(
             G::from_usize(*function_index),
-            &inputs,
+            QuerySlice::Fields(&inputs),
             result.output,
           );
           slice.push_lookup(index, G::ONE, &args);
@@ -408,7 +410,11 @@ impl Op {
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
-        let args = Memory::lookup_args(G::from_usize(size), ptr, &values);
+        let args = Memory::lookup_args(
+          G::from_usize(size),
+          ptr,
+          QuerySlice::Fields(&values),
+        );
         slice.push_lookup(index, G::ONE, &args);
       },
       Op::Load(size, ptr) => {
@@ -423,8 +429,8 @@ impl Op {
         let (values, _) =
           memory_queries.get_index(ptr_usize).expect("Unbound pointer");
         for f in values.iter() {
-          map.push((*f, 1));
-          slice.push_auxiliary(index, *f);
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
         }
         let args = Memory::lookup_args(G::from_usize(*size), ptr, values);
         slice.push_lookup(index, G::ONE, &args);
@@ -694,11 +700,11 @@ impl Op {
 
 fn function_lookup_args(
   function_index: G,
-  inputs: &[G],
-  output: &[G],
+  inputs: QuerySlice<'_>,
+  output: QuerySlice<'_>,
 ) -> Vec<G> {
   let mut args = vec![function_channel(), function_index];
-  args.extend(inputs);
-  args.extend(output);
+  args.extend(inputs.iter());
+  args.extend(output.iter());
   args
 }

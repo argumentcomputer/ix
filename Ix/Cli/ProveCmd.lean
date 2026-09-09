@@ -83,7 +83,7 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
     | .shard owned, some envHandle =>
       let mut blob := ByteArray.empty
       for x in owned do blob := blob ++ x.hash
-      match aiurSystem.shardProveWithEnv funIdx envHandle blob with
+      match ← aiurSystem.shardProveWithEnv funIdx envHandle blob with
       | .error e =>
         IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
         return 1
@@ -161,7 +161,7 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
     blob := blob ++ a.hash
   IO.println s!"Proving {label} ({blocks.size} blocks, {owned.size} consts)"
   (← IO.getStdout).flush
-  match aiurSystem.shardProveWithEnv funIdx envHandle blob maxRamBytes
+  match ← aiurSystem.shardProveWithEnv funIdx envHandle blob maxRamBytes
       execOnly with
   | .error e => return .error s!"{label}: shardProveWithEnv error: {e}"
   | .ok { claimBytes, proof, peakBytes, suggestedParts } =>
@@ -176,11 +176,16 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       -- A single block is the atom the kernel checks together; there is
       -- no smaller shard to fall back to.
       if blocks.size <= 1 then
+        if peakBytes == 0 then
+          return .error s!"{label}: execution memory limit reached and the shard is a single block — cannot split"
         return .error s!"{label}: projected prover peak {gib} GiB exceeds \
           the budget and the shard is a single block — raise --max-ram"
       let cut := Ix.Cli.CheckCmd.cutBlocks blocks suggestedParts
-      IO.println s!"[{label}] peak {gib} GiB over budget — cutting \
-        {blocks.size} blocks into {cut.size} parts"
+      if peakBytes == 0 then
+        IO.println s!"[{label}] execution memory limit — cutting {blocks.size} blocks into {cut.size} parts"
+      else
+        IO.println s!"[{label}] peak {gib} GiB over budget — cutting \
+          {blocks.size} blocks into {cut.size} parts"
       let cutOwned := Ix.Cli.CheckCmd.partitionOwned ixonEnv owned cut
       let mut proven : Array (Array Address × Nat) := #[]
       for (i, part, po) in (cut.zip cutOwned).mapIdx

@@ -7,7 +7,10 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
 };
 
-use crate::{G, execute::QueryRecord};
+use crate::{
+  G,
+  execute::{ExecError, QueryRecord},
+};
 
 /// A trait representing a generic Aiur gadget.
 ///
@@ -37,7 +40,7 @@ pub(crate) trait AiurGadget {
     op: &Self::Op,
     input: &[G],
     record: &mut QueryRecord,
-  ) -> Vec<G>;
+  ) -> Result<Vec<G>, ExecError>;
 
   /// Returns the lookups associated with this gadget.
   fn lookups(&self) -> Vec<Lookup<Expr<G>>>;

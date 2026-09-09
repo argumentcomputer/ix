@@ -4,6 +4,11 @@ import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Exploits
+import Tests.Ix.IxVM.ByteHints
+import Tests.Ix.IxVM.LimbMul
+import Tests.Ix.IxVM.FusedMul
+import Tests.Ix.IxVM.CarryAdd
+import Tests.Ix.IxVM.SubstProjection
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -162,6 +167,11 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("ixvm-byte-hints", Tests.Ix.IxVM.ByteHints.run),
+  ("ixvm-limb-mul", Tests.Ix.IxVM.LimbMul.run),
+  ("ixvm-fused-mul", Tests.Ix.IxVM.FusedMul.run),
+  ("ixvm-carry-add", Tests.Ix.IxVM.CarryAdd.run),
+  ("ixvm-subst-projection", Tests.Ix.IxVM.SubstProjection.run),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -276,8 +286,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_946_001_069, got {actual}"
-              (actual = 6_946_001_069))
+              s!"Shard pipeline FFT matches: expected 7_008_644_066, got {actual}"
+              (actual = 7_008_644_066))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
@@ -299,6 +309,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
 ]
 
 def main (args : List String) : IO UInt32 := do
+  if let some arg := args.find? (·.startsWith "ixvm-byte-hints-probe=") then
+    return ← Tests.Ix.IxVM.ByteHints.runOutOfRangeProbe
+      (arg.drop "ixvm-byte-hints-probe=".length).toString
   -- Special case: namespace-filtered kernel ixon roundtrip diagnostic.
   -- `kernel-roundtrip-ns=Nat.le` runs the same pipeline as the
   -- `kernel-ixon-roundtrip` suite (compile → ingress → egress →
@@ -335,6 +348,9 @@ def main (args : List String) : IO UInt32 := do
     return 0
 
   -- Special case: cli tests have their own runner
+  if args.contains "native-partition" then
+    Tests.Cli.NativePartition.run
+    return 0
   if args.contains "cli" then
     return ← Tests.Cli.suite
 

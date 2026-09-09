@@ -1023,9 +1023,9 @@ private def fileJson (path : String) (digest : Option (String × Nat))
     shard the analytic prover RAM peak of the executed record is
     reported — the input to split (over a prover budget) / merge (far
     under it) decisions. Builds the `EnvHandle` ONCE, shared by every
-    shard. Coverage-gates the manifest before running any shard — exit
-    0 has to mean "every env const was checked by some shard", same
-    soundness contract as `runShardCheckAll`.
+    shard. Coverage-gates the entire manifest before running any shard — exit
+    0 means every selected shard's owned constants passed (every env constant
+    when no selection is given), never that skipped shards were checked.
 
     `opts` turns the batch into an audit: a selection of leaves, the
     proven-leaf guard, a JSON report, and `ix shard refine`'s failure
@@ -1040,6 +1040,33 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
   -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
   -- load so the peak covers the whole run, like `check-rs`.
   if json?.isSome then TracingTexray.startSampler
+  -- Whole-partition and selected-shard execution keep all environment-sized
+  -- work in Rust. Destination prover budgets and proof-cache/refinement
+  -- output options below retain their existing driver; none may be ignored.
+  if maxRamBytes == 0 && outIxes.isNone &&
+      opts.provenGuard.isNone && !opts.emitOnFailure then
+    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+    let result ← compiled.bytecode.checkPartition funIdx ixePath manifestPath
+      (jobs?.getD 0) useBytecode Aiur.defaultCommitmentParameters
+      Aiur.defaultFriParameters (opts.report.getD "") (← gitRevision)
+      opts.command opts.budgetSource opts.selection
+    match result with
+    | .error e => IO.eprintln s!"native partition check: {e}"; return 1
+    | .ok r =>
+      if let some (path, key) := json? then
+        let secs := r.elapsedMs.toFloat / 1000.0
+        let tput := if r.elapsedMs > 0
+          then r.constants.toFloat * 1000.0 / r.elapsedMs.toFloat else 0.0
+        let peakRss ← TracingTexray.peakTreeRssBytes
+        Ix.Benchmark.Results.writeRow path key
+          (if r.failures == 0 then "ok" else "rejected")
+          [ ("constants", Lean.toJson r.constants)
+          , ("shards", Lean.toJson r.shards)
+          , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
+          , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
+          , ("peak-rss", Lean.toJson peakRss) ]
+      if r.failures == 0 then return 0
+      return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
@@ -1076,9 +1103,8 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     -- One loop over execution waves. Wave 0 is the selected part of the
     -- planned partition; with a budget every over-budget leaf is cut into
     -- the peak model's suggested part count and the parts re-batched as
-    -- the next wave, until everything fits or is a single block. Without
-    -- a budget the FFI answers 1 part everywhere and the loop is a single
-    -- wave — the plain batch check.
+    -- the next wave, until everything fits or is a single block. Early
+    -- execution limits also split/retry, even without a prover budget.
     let mut wave : Array (Nat × String × Array Address × Array Address) :=
       selected.filterMap fun k =>
         if proven.contains k then none
@@ -1093,6 +1119,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     let mut leafParts : Std.HashMap Nat (Array PartReport) := {}
     let mut totalConsts := 0
     let mut elapsedMs := 0
+    let mut pressureRetries : Std.HashMap String Nat := {}
     while wave.size > 0 do
       if waveNum == 0 then
         IO.println s!"Typechecking {wave.size} shard(s) in one rayon \
@@ -1102,24 +1129,30 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       (← IO.getStdout).flush
       let ownedPer := wave.map (·.2.2.2)
       let start ← IO.monoMsNow
-      match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle
+      match ← compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle
           (addrListsBlob ownedPer) useBytecode jobs
           Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
           maxRamBytes with
       | .error e => IO.eprintln s!"shard batch (wave {waveNum}): {e}"; return 1
       | .ok rs =>
+        -- Include every required retry in the measured execution window;
+        -- an interrupted wave-0 parent did not complete the requested check.
+        elapsedMs := elapsedMs + (← IO.monoMsNow) - start
         if waveNum == 0 then
-          -- The bench row's measured window: the planned partition's
-          -- batch call, matching `check-rs`. Split waves are audit
-          -- extras outside the benchmarked engine window.
-          elapsedMs := (← IO.monoMsNow) - start
           totalConsts := ownedPer.foldl (· + ·.size) 0
         let mut next : Array (Nat × String × Array Address × Array Address) := #[]
         for (r, origin, label, blocks, owned) in rs.zip wave do
           let gib := toGib r.peakBytes
           if waveNum == 0 then leafPeak := leafPeak.insert origin r.peakBytes
           let mut settled : Option String := none
-          if !r.error.isEmpty then
+          if r.resourceStatus == 2 && pressureRetries.getD label 0 < 2 then
+            IO.eprintln s!"[shard {label}] batch execution memory limit — retry after wave drains"
+            pressureRetries := pressureRetries.insert label (pressureRetries.getD label 0 + 1)
+            next := next.push (origin, label, blocks, owned)
+          else if r.resourceStatus == 1 && blocks.size > 1 then
+            IO.eprintln s!"[shard {label}] execution memory limit — cut into 2 and retry"
+            next := next ++ cutLabeled origin label blocks owned 2
+          else if !r.error.isEmpty then
             IO.eprintln s!"[shard {label}] FAILED: {r.error}"
             failed := failed.push s!"shard {label}: {r.error}"
             settled := some r.error
@@ -1467,7 +1500,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
-    "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
+    "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once); native coverage setup uses a separate pool (up to 8 CPUs, overridden by IX_AIUR_SETUP_THREADS). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
     "json"      : String;   "With --ixes (no --shard): append one env-keyed results row (see Ix.Benchmark.Results) for the batch to this file — check-time, throughput, peak-rss, constants, shards. Used by `ix bench run --backend aiur-sharded-env`."
     "json-name" : String;   "Row key for the --json row (default: `env`)."
     "ram-budget" : Nat;     "The destination prove box's per-shard RAM budget, GiB (with --ixes, no --shard): after the batch, cut every shard whose projected prover peak exceeds the budget into the peak model's suggested part count and re-batch the parts, wave by wave, until everything fits — the exec-only split audit. Under-filled partitions get a printed suggestion (the shard count the measured total says would fit), never an extra execution: re-shard with --shards N and let the next run's mandatory executions verify it inline. Same unit and model as `ix prove --max-ram`, but no auto-detection: the budget describes the prove box the partition is destined for, not the machine running the check. Omit for a plain check."

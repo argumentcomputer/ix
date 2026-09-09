@@ -1,6 +1,9 @@
 use multi_stark::p3_field::integers::QuotientMap;
 
+mod admission;
 pub mod aggregate;
+mod check;
+mod memory;
 pub mod protocol;
 pub mod toplevel;
 

@@ -1,6 +1,14 @@
 use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
+use std::{
+  sync::Arc,
+  time::{Duration, Instant},
+};
+
+pub mod budget;
+use budget::{BudgetExceeded, Charge, ExecutionBudget};
+mod stats;
 
 use crate::{
   FxIndexMap, G,
@@ -10,7 +18,7 @@ use crate::{
     bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
     bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
   },
-  querymap::QueryMap,
+  querymap::{QueryMap, hash_g_slice},
 };
 
 fn u32_value(map: &[G], bytes: &[usize]) -> u64 {
@@ -33,23 +41,148 @@ pub struct QueryRecord {
   pub memory_queries: FxIndexMap<usize, QueryMap>,
   pub bytes1_queries: Bytes1Queries,
   pub bytes2_queries: Bytes2Queries,
+  budget: Option<Arc<ExecutionBudget>>,
+  _base_charge: Option<Charge>,
+  checkpoints: u64,
+  logged: Instant,
+  current_function: usize,
 }
 
 impl QueryRecord {
   pub fn new(toplevel: &Toplevel) -> Self {
+    Self::create(toplevel, None, None)
+  }
+
+  pub fn with_budget(
+    toplevel: &Toplevel,
+    io: &IOBuffer,
+    budget: Option<Arc<ExecutionBudget>>,
+  ) -> Result<Self, ExecError> {
+    // Byte gadget tables are fixed-size (< 8 MiB combined). IO storage is
+    // already built by the caller; account it before starting execution.
+    let charge = budget
+      .as_ref()
+      .map(|b| {
+        let base = io
+          .data
+          .values()
+          .fold(8u64 << 20, |n, v| {
+            n.saturating_add((v.capacity() as u64).saturating_mul(8))
+          })
+          .saturating_add(io.map.iter().fold(0u64, |n, ((_, k), _)| {
+            n.saturating_add(
+              (k.capacity() as u64).saturating_mul(8).saturating_add(128),
+            )
+          }));
+        b.charge(base)
+      })
+      .transpose()?;
+    Ok(Self::create(toplevel, budget, charge))
+  }
+
+  fn create(
+    toplevel: &Toplevel,
+    budget: Option<Arc<ExecutionBudget>>,
+    charge: Option<Charge>,
+  ) -> Self {
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| QueryMap::new(f.layout.input_size))
+      .map(|f| QueryMap::with_budget(f.layout.input_size, budget.clone()))
       .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::new(*width)))
+      .map(|width| {
+        (*width, QueryMap::with_memory_budget(*width, budget.clone()))
+      })
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
-    Self { function_queries, memory_queries, bytes1_queries, bytes2_queries }
+    Self {
+      function_queries,
+      memory_queries,
+      bytes1_queries,
+      bytes2_queries,
+      budget,
+      _base_charge: charge,
+      checkpoints: 0,
+      logged: Instant::now(),
+      current_function: 0,
+    }
+  }
+
+  /// Generated functions and interpreter operations both visit this hook.
+  /// Diagnostics stay bounded by the fixed function/memory map count, never
+  /// by the number of expressions. Allocation limits are checked at inserts.
+  #[inline]
+  pub fn checkpoint(&mut self, function: usize) {
+    if self.budget.is_none() {
+      return;
+    }
+    self.current_function = function;
+    self.checkpoints = self.checkpoints.wrapping_add(1);
+    if self.checkpoints.is_multiple_of(1 << 16)
+      && self.logged.elapsed() >= Duration::from_secs(5)
+    {
+      self.log_budget("running");
+      self.logged = Instant::now();
+    }
+  }
+
+  pub fn execution_error(&self, error: ExecError) -> ExecError {
+    let error =
+      if let Some(failure) = self.budget.as_ref().and_then(|b| b.failure()) {
+        self.log_budget("resource-limit");
+        ExecError::ResourceLimit(failure)
+      } else {
+        error
+      };
+    self.log_multiplicity_stats(
+      if matches!(error, ExecError::ResourceLimit(_)) {
+        "resource-limit"
+      } else {
+        "rejected"
+      },
+    );
+    error
+  }
+
+  fn log_budget(&self, status: &str) {
+    let Some(b) = &self.budget else {
+      return;
+    };
+    let mut rows: Vec<_> = self
+      .function_queries
+      .iter()
+      .enumerate()
+      .filter(|(_, m)| !m.is_empty())
+      .map(|(id, m)| (m.accounted_bytes(), format!("fn{id}"), m.len()))
+      .chain(
+        self
+          .memory_queries
+          .iter()
+          .filter(|(_, m)| !m.is_empty())
+          .map(|(w, m)| (m.accounted_bytes(), format!("mem{w}"), m.len())),
+      )
+      .collect();
+    rows.sort_unstable_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let top: Vec<_> = rows
+      .iter()
+      .take(8)
+      .map(|(bytes, name, entries)| {
+        format!("{name}:{entries}rows/{}MiB", bytes >> 20)
+      })
+      .collect();
+    eprintln!(
+      "[ixvm_record] {} {status}: accounted={}MiB peak={}MiB limit={}MiB current=fn{} top=[{}]",
+      b.label,
+      b.used() >> 20,
+      b.peak() >> 20,
+      b.limit() >> 20,
+      self.current_function,
+      top.join(", ")
+    );
   }
 }
 
@@ -112,6 +245,7 @@ impl IOBuffer {
 /// genuine bytecode bugs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecError {
+  ResourceLimit(BudgetExceeded),
   NotEntryFunction(FunIdx),
   InvalidMemorySize(usize),
   UnboundPointer {
@@ -152,6 +286,7 @@ pub enum ExecError {
 impl std::fmt::Display for ExecError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
+      Self::ResourceLimit(error) => std::fmt::Display::fmt(error, f),
       Self::NotEntryFunction(idx) => {
         write!(f, "cannot execute non-entry function {idx}")
       },
@@ -192,58 +327,126 @@ impl std::fmt::Display for ExecError {
 
 impl std::error::Error for ExecError {}
 
+impl From<BudgetExceeded> for ExecError {
+  fn from(error: BudgetExceeded) -> Self {
+    Self::ResourceLimit(error)
+  }
+}
+
 /// Gated by `IX_AIUR_QUERY_STATS=1`: dump per-function query-map sizes
 /// during/after execution so RAM blowups can be attributed to specific
 /// Aiur functions (indices resolve to names via the Lean
-/// `CompiledToplevel`). Heaviest maps first, by retained G elements.
+/// `CompiledToplevel`). Heaviest maps first, by encoded payload bytes.
 static QUERY_STATS: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| {
     std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
   });
 
 fn dump_query_stats(record: &QueryRecord, tag: &str) {
-  let mut rows: Vec<(usize, usize, usize)> = record
+  let mut rows: Vec<(usize, usize, usize, usize)> = record
     .function_queries
     .iter()
     .enumerate()
-    .map(|(i, m)| (i, m.len(), m.retained_elems()))
-    .filter(|(_, n, _)| *n > 0)
+    .map(|(i, m)| (i, m.len(), m.retained_elems(), m.retained_bytes()))
+    .filter(|(_, n, _, _)| *n > 0)
     .collect();
-  rows.sort_by_key(|row| std::cmp::Reverse(row.2));
+  rows.sort_by_key(|row| std::cmp::Reverse(row.3));
   let total_entries: usize = rows.iter().map(|r| r.1).sum();
   let total_elems: usize = rows.iter().map(|r| r.2).sum();
+  let total_bytes: usize = rows.iter().map(|r| r.3).sum();
   eprintln!(
     "[aiur-stats {tag}] function_queries: {total_entries} entries, \
-     {total_elems} G-elems; top maps:"
+     {total_elems} logical G-elems, {total_bytes} payload bytes; top maps:"
   );
-  for (i, n, e) in rows.iter().take(30) {
-    eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
+  for (i, n, e, b) in rows.iter().take(30) {
+    eprintln!("  fn{i:<4} entries={n:<12} g_elems={e} payload_bytes={b}");
   }
   let mem: Vec<String> = record
     .memory_queries
     .iter()
-    .map(|(w, m)| format!("w{w}={}", m.len()))
+    .map(|(w, m)| format!("w{w}={}rows/{}bytes", m.len(), m.retained_bytes()))
     .collect();
   eprintln!("[aiur-stats {tag}] memory entries: {}", mem.join(" "));
 }
 
 impl Toplevel {
+  /// Full-width reference storage for differential witness/proof tests.
+  /// This deliberately shares the interpreter, but never byte-encodes rows.
+  #[cfg(test)]
+  pub(crate) fn execute_uncompressed(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    self.execute_test_storage(fun_idx, args, io_buffer, false)
+  }
+
+  /// Force both column and counter encodings in differential tests, without
+  /// mutating a process-global environment variable or depending on opt-in.
+  #[cfg(test)]
+  pub(crate) fn execute_test_storage(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    compact: bool,
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    if !self.functions[fun_idx].entry {
+      return Err(ExecError::NotEntryFunction(fun_idx));
+    }
+    let mut record = QueryRecord::new(self);
+    for (map, function) in
+      record.function_queries.iter_mut().zip(&self.functions)
+    {
+      *map = QueryMap::with_encodings(
+        function.layout.input_size,
+        None,
+        compact,
+        compact,
+      );
+    }
+    for (&size, map) in &mut record.memory_queries {
+      *map = QueryMap::with_encodings(size, None, compact, compact);
+    }
+    let output = self.functions[fun_idx].execute(
+      fun_idx,
+      args,
+      self,
+      &mut record,
+      io_buffer,
+    )?;
+    Ok((record, output))
+  }
+
   pub fn execute(
     &self,
     fun_idx: FunIdx,
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
   ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    self.execute_with_budget(fun_idx, args, io_buffer, None)
+  }
+
+  pub fn execute_with_budget(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    budget: Option<Arc<ExecutionBudget>>,
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
-    let mut record = QueryRecord::new(self);
+    let mut record = QueryRecord::with_budget(self, io_buffer, budget)?;
     let function = &self.functions[fun_idx];
-    let output =
-      function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    let output = function
+      .execute(fun_idx, args, self, &mut record, io_buffer)
+      .map_err(|e| record.execution_error(e))?;
     if *QUERY_STATS {
       dump_query_stats(&record, "final");
     }
+    record.log_multiplicity_stats("returned");
     Ok((record, output))
   }
 }
@@ -258,6 +461,7 @@ struct CallerState {
   map: Vec<G>,
   unconstrained: bool,
   continuation_depth: usize,
+  query_hash: u64,
 }
 
 struct ContinuationState<'a> {
@@ -285,8 +489,10 @@ impl Function {
     }
     push_block_exec_entries!(&self.body);
     let mut unconstrained = false;
+    let mut query_hash = hash_g_slice(&map[..self.layout.input_size]);
     let mut stats_ops: u64 = 0;
     while let Some(exec_entry) = exec_entries_stack.pop() {
+      record.checkpoint(fun_idx);
       if *QUERY_STATS {
         stats_ops += 1;
         if stats_ops.is_multiple_of(1 << 31) {
@@ -327,10 +533,11 @@ impl Function {
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
+          let callee_hash = hash_g_slice(&args);
           let callee_unconstrained = unconstrained || *op_unconstrained;
           let mut cached_output = None;
-          if let Some(i) =
-            record.function_queries[*callee_idx].get_index_of(&args)
+          if let Some(i) = record.function_queries[*callee_idx]
+            .get_index_of_hashed(&args, callee_hash)
           {
             // A zero-multiplicity entry was computed only as an
             // unconstrained hint.  Promoting just this row would omit all
@@ -340,7 +547,7 @@ impl Function {
             let mult = record.function_queries[*callee_idx].mult_at(i);
             if callee_unconstrained || !mult.is_zero() {
               if !callee_unconstrained {
-                record.function_queries[*callee_idx].bump_multiplicity(i);
+                record.function_queries[*callee_idx].bump_multiplicity(i)?;
               }
               cached_output = Some(
                 record.function_queries[*callee_idx].output_at(i).to_vec(),
@@ -356,8 +563,10 @@ impl Function {
               map: saved_map,
               unconstrained,
               continuation_depth: continuation_stack.len(),
+              query_hash,
             });
             fun_idx = *callee_idx;
+            query_hash = callee_hash;
             unconstrained = callee_unconstrained;
             push_block_exec_entries!(&toplevel.functions[fun_idx].body);
           }
@@ -365,22 +574,24 @@ impl Function {
         ExecEntry::Op(Op::Store(values)) => {
           let values = values.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let size = values.len();
+          let hash = hash_g_slice(&values);
           let memory_queries = record
             .memory_queries
             .get_mut(&size)
             .ok_or(ExecError::InvalidMemorySize(size))?;
-          if let Some(i) = memory_queries.get_index_of(&values) {
+          if let Some(i) = memory_queries.get_index_of_hashed(&values, hash) {
             if !unconstrained {
-              memory_queries.bump_multiplicity(i);
+              memory_queries.bump_multiplicity(i)?;
             }
-            map.extend_from_slice(memory_queries.output_at(i));
+            map.extend(memory_queries.output_at(i).iter());
           } else {
             let ptr = G::from_usize(memory_queries.len());
-            memory_queries.insert(
+            memory_queries.insert_hashed(
               &values,
+              hash,
               &[ptr],
               G::from_bool(!unconstrained),
-            );
+            )?;
             map.push(ptr);
           }
         },
@@ -401,11 +612,11 @@ impl Function {
             });
           }
           if !unconstrained {
-            memory_queries.bump_multiplicity(ptr_usize);
+            memory_queries.bump_multiplicity(ptr_usize)?;
           }
           let (args, _) =
             memory_queries.get_index(ptr_usize).expect("bounds checked above");
-          map.extend_from_slice(args);
+          map.extend(args.iter());
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
           if xs.len() != ys.len() {
@@ -464,40 +675,39 @@ impl Function {
               &Bytes1Op::BitDecomposition,
               &mut map,
               record,
-            );
+            )?;
           }
         },
         ExecEntry::Op(Op::U8ShiftLeft(byte)) => {
           if unconstrained {
             map.push(Bytes1::shift_left(&map[*byte]));
           } else {
-            bytes1_execute(*byte, &Bytes1Op::ShiftLeft, &mut map, record);
+            bytes1_execute(*byte, &Bytes1Op::ShiftLeft, &mut map, record)?;
           }
         },
         ExecEntry::Op(Op::U8ShiftRight(byte)) => {
           if unconstrained {
             map.push(Bytes1::shift_right(&map[*byte]));
           } else {
-            bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record);
+            bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record)?;
           }
         },
         ExecEntry::Op(Op::U8Xor(i, j)) => {
           if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
             map.push(Bytes2::xor(&map[*i], &map[*j]));
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record);
+            bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record)?;
           }
         },
         ExecEntry::Op(Op::U8Add(i, j)) => {
-          // The add gadget yields only the low byte; the carry is derived
-          // and pushed separately so the op still produces `(low, carry)`.
-          let (_r, o) = Bytes2::add(&map[*i], &map[*j]);
-          if unconstrained {
-            map.push(Bytes2::add(&map[*i], &map[*j]).0);
+          let (a, b) = if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
+            Bytes2::add(&map[*i], &map[*j])
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
-          }
-          map.push(o);
+            bytes2_add_value(map[*i], map[*j], record)?
+          };
+          map.extend([a, b]);
         },
         ExecEntry::Op(Op::UnconstrainedU32Add(a, b)) => {
           let (bytes, carry) =
@@ -519,42 +729,44 @@ impl Function {
         },
         ExecEntry::Op(Op::U8Mul(i, j)) => {
           if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
             let (lo, hi) = Bytes2::mul(&map[*i], &map[*j]);
             map.extend([lo, hi]);
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::Mul, &mut map, record);
+            bytes2_execute(*i, *j, &Bytes2Op::Mul, &mut map, record)?;
           }
         },
         ExecEntry::Op(Op::U8Sub(i, j)) => {
-          // The sub gadget yields only the low byte; the borrow is derived
-          // and pushed separately so the op still produces `(low, borrow)`.
-          let (_r, u) = Bytes2::sub(&map[*i], &map[*j]);
-          if unconstrained {
-            map.push(Bytes2::sub(&map[*i], &map[*j]).0);
+          let (a, b) = if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
+            Bytes2::sub(&map[*i], &map[*j])
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::Sub, &mut map, record);
-          }
-          map.push(u);
+            bytes2_sub_value(map[*i], map[*j], record)?
+          };
+          map.extend([a, b]);
         },
         ExecEntry::Op(Op::U8And(i, j)) => {
           if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
             map.push(Bytes2::and(&map[*i], &map[*j]));
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::And, &mut map, record);
+            bytes2_execute(*i, *j, &Bytes2Op::And, &mut map, record)?;
           }
         },
         ExecEntry::Op(Op::U8Or(i, j)) => {
           if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
             map.push(Bytes2::or(&map[*i], &map[*j]));
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::Or, &mut map, record);
+            bytes2_execute(*i, *j, &Bytes2Op::Or, &mut map, record)?;
           }
         },
         ExecEntry::Op(Op::U8LessThan(i, j)) => {
           if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
             map.push(Bytes2::less_than(&map[*i], &map[*j]));
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::LessThan, &mut map, record);
+            bytes2_execute(*i, *j, &Bytes2Op::LessThan, &mut map, record)?;
           }
         },
         ExecEntry::Op(Op::U32LessThan(x_idx, y_idx)) => {
@@ -582,22 +794,26 @@ impl Function {
             ] {
               record
                 .bytes2_queries
-                .bump_range_check(&G::from_u8(i), &G::from_u8(j));
+                .bump_range_check(&G::from_u8(i), &G::from_u8(j))?;
             }
           }
         },
         ExecEntry::Op(Op::U8XorSplit7(i, j)) => {
-          let (a, b) = Bytes2::xor_split7(&map[*i], &map[*j]);
-          if !unconstrained {
-            record.bytes2_queries.bump_xor_split7(&map[*i], &map[*j]);
-          }
+          let (a, b) = if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
+            Bytes2::xor_split7(&map[*i], &map[*j])
+          } else {
+            bytes2_xor_split7_value(map[*i], map[*j], record)?
+          };
           map.extend([a, b]);
         },
         ExecEntry::Op(Op::U8XorSplit4(i, j)) => {
-          let (a, b) = Bytes2::xor_split4(&map[*i], &map[*j]);
-          if !unconstrained {
-            record.bytes2_queries.bump_xor_split4(&map[*i], &map[*j]);
-          }
+          let (a, b) = if unconstrained {
+            Bytes2::validate_inputs(&map[*i], &map[*j])?;
+            Bytes2::xor_split4(&map[*i], &map[*j])
+          } else {
+            bytes2_xor_split4_value(map[*i], map[*j], record)?
+          };
           map.extend([a, b]);
         },
         ExecEntry::Op(Op::U8RangeCheck(i, j)) => {
@@ -605,14 +821,7 @@ impl Function {
           // Records a range-check query so the byte-chip lookup is satisfied.
           if !unconstrained {
             let (vi, vj) = (map[*i], map[*j]);
-            let (bi, bj) = (vi.as_canonical_u64(), vj.as_canonical_u64());
-            if bi >= 256 {
-              return Err(ExecError::U8RangeCheckFailed(bi));
-            }
-            if bj >= 256 {
-              return Err(ExecError::U8RangeCheckFailed(bj));
-            }
-            record.bytes2_queries.bump_range_check(&vi, &vj);
+            record.bytes2_queries.bump_range_check(&vi, &vj)?;
           }
         },
         ExecEntry::Op(Op::UnconstrainedBigUintDivMod(a_idx, b_idx)) => {
@@ -718,20 +927,23 @@ impl Function {
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          record.function_queries[fun_idx].finish(
+          record.function_queries[fun_idx].finish_hashed(
             &map[..input_size],
+            query_hash,
             &output,
             !unconstrained,
-          );
+          )?;
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,
             unconstrained: caller_unconstrained,
             continuation_depth,
+            query_hash: caller_hash,
           }) = callers_states_stack.pop()
           {
             continuation_stack.truncate(continuation_depth);
             fun_idx = caller_idx;
+            query_hash = caller_hash;
             map = caller_map;
             map.extend(output);
             unconstrained = caller_unconstrained;
@@ -755,8 +967,9 @@ pub fn bytes1_execute(
   op: &Bytes1Op,
   map: &mut Vec<G>,
   record: &mut QueryRecord,
-) {
-  map.extend(Bytes1.execute(op, &[map[byte]], record));
+) -> Result<(), ExecError> {
+  map.extend(Bytes1.execute(op, &[map[byte]], record)?);
+  Ok(())
 }
 
 pub fn bytes2_execute(
@@ -765,8 +978,9 @@ pub fn bytes2_execute(
   op: &Bytes2Op,
   map: &mut Vec<G>,
   record: &mut QueryRecord,
-) {
-  map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
+) -> Result<(), ExecError> {
+  map.extend(Bytes2.execute(op, &[map[i], map[j]], record)?);
+  Ok(())
 }
 
 // ============================================================================
@@ -785,10 +999,13 @@ pub fn bytes2_execute(
 // ============================================================================
 
 #[inline]
-pub fn bytes1_bit_decompose_value(byte: G, record: &mut QueryRecord) -> [G; 8] {
-  record.bytes1_queries.bump_bit_decomposition(&byte);
+pub fn bytes1_bit_decompose_value(
+  byte: G,
+  record: &mut QueryRecord,
+) -> Result<[G; 8], ExecError> {
+  record.bytes1_queries.bump_bit_decomposition(&byte)?;
   let byte_u64 = byte.as_canonical_u64();
-  [
+  Ok([
     G::from_bool(byte_u64 & 1 == 1),
     G::from_bool(byte_u64 >> 1 & 1 == 1),
     G::from_bool(byte_u64 >> 2 & 1 == 1),
@@ -797,70 +1014,104 @@ pub fn bytes1_bit_decompose_value(byte: G, record: &mut QueryRecord) -> [G; 8] {
     G::from_bool(byte_u64 >> 5 & 1 == 1),
     G::from_bool(byte_u64 >> 6 & 1 == 1),
     G::from_bool(byte_u64 >> 7 & 1 == 1),
-  ]
+  ])
 }
 
 /// IxVM kernel doesn't emit `Op::U8ShiftLeft` today; kept for codegen
 /// of other toplevels that might.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_left_value(byte: G, record: &mut QueryRecord) -> G {
-  record.bytes1_queries.bump_shift_left(&byte);
-  Bytes1::shift_left(&byte)
+pub fn bytes1_shift_left_value(
+  byte: G,
+  record: &mut QueryRecord,
+) -> Result<G, ExecError> {
+  record.bytes1_queries.bump_shift_left(&byte)?;
+  Ok(Bytes1::shift_left(&byte))
 }
 
 /// IxVM kernel doesn't emit `Op::U8ShiftRight` today; kept for
 /// codegen of other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_right_value(byte: G, record: &mut QueryRecord) -> G {
-  record.bytes1_queries.bump_shift_right(&byte);
-  Bytes1::shift_right(&byte)
+pub fn bytes1_shift_right_value(
+  byte: G,
+  record: &mut QueryRecord,
+) -> Result<G, ExecError> {
+  record.bytes1_queries.bump_shift_right(&byte)?;
+  Ok(Bytes1::shift_right(&byte))
 }
 
 #[inline]
-pub fn bytes2_xor_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_xor(&a, &b);
-  Bytes2::xor(&a, &b)
+pub fn bytes2_xor_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<G, ExecError> {
+  record.bytes2_queries.bump_xor(&a, &b)?;
+  Ok(Bytes2::xor(&a, &b))
 }
 
 #[inline]
-pub fn bytes2_and_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_and(&a, &b);
-  Bytes2::and(&a, &b)
+pub fn bytes2_and_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<G, ExecError> {
+  record.bytes2_queries.bump_and(&a, &b)?;
+  Ok(Bytes2::and(&a, &b))
 }
 
 #[inline]
-pub fn bytes2_or_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_or(&a, &b);
-  Bytes2::or(&a, &b)
+pub fn bytes2_or_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<G, ExecError> {
+  record.bytes2_queries.bump_or(&a, &b)?;
+  Ok(Bytes2::or(&a, &b))
 }
 
 #[inline]
-pub fn bytes2_less_than_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_less_than(&a, &b);
-  Bytes2::less_than(&a, &b)
+pub fn bytes2_less_than_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<G, ExecError> {
+  record.bytes2_queries.bump_less_than(&a, &b)?;
+  Ok(Bytes2::less_than(&a, &b))
 }
 
 /// IxVM kernel doesn't emit `Op::U8Mul` today; kept for codegen of
 /// other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes2_mul_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_mul(&a, &b);
-  Bytes2::mul(&a, &b)
+pub fn bytes2_mul_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<(G, G), ExecError> {
+  record.bytes2_queries.bump_mul(&a, &b)?;
+  Ok(Bytes2::mul(&a, &b))
 }
 
 #[inline]
-pub fn bytes2_xor_split7_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_xor_split7(&a, &b);
-  Bytes2::xor_split7(&a, &b)
+pub fn bytes2_xor_split7_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<(G, G), ExecError> {
+  record.bytes2_queries.bump_xor_split7(&a, &b)?;
+  Ok(Bytes2::xor_split7(&a, &b))
 }
 
 #[inline]
-pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_xor_split4(&a, &b);
-  Bytes2::xor_split4(&a, &b)
+pub fn bytes2_xor_split4_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<(G, G), ExecError> {
+  record.bytes2_queries.bump_xor_split4(&a, &b)?;
+  Ok(Bytes2::xor_split4(&a, &b))
 }
 
 /// Bumps `bytes2_queries.add` and returns the full `(low, carry)`
@@ -868,15 +1119,23 @@ pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
 /// chip; carry is derived natively. The codegen path uses this
 /// helper so the add gadget runs exactly once.
 #[inline]
-pub fn bytes2_add_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_add(&a, &b);
-  Bytes2::add(&a, &b)
+pub fn bytes2_add_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<(G, G), ExecError> {
+  record.bytes2_queries.bump_add(&a, &b)?;
+  Ok(Bytes2::add(&a, &b))
 }
 
 #[inline]
-pub fn bytes2_sub_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_sub(&a, &b);
-  Bytes2::sub(&a, &b)
+pub fn bytes2_sub_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> Result<(G, G), ExecError> {
+  record.bytes2_queries.bump_sub(&a, &b)?;
+  Ok(Bytes2::sub(&a, &b))
 }
 
 /// Re-exports for the codegen'd kernel (`ix::aiur_ixvm`). The generated
@@ -962,7 +1221,8 @@ fn find_klimbs_u64(
   let mut tail_ptr = queries
     .get(&nil_key)
     .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
-    .output[0];
+    .output
+    .at(0);
   for limb in limbs.iter().rev() {
     let mut key: Vec<G> = Vec::with_capacity(10);
     key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
@@ -975,7 +1235,8 @@ fn find_klimbs_u64(
       .ok_or_else(|| {
         format!("List<U64> Cons node for limb {limb} not recorded")
       })?
-      .output[0];
+      .output
+      .at(0);
   }
   Ok(tail_ptr)
 }
@@ -1000,7 +1261,7 @@ fn read_klimbs_u64(
     let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
       format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
     })?;
-    let tag = key[0].as_canonical_u64();
+    let tag = key.at(0).as_canonical_u64();
     // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
     // first variant (tag 0), Nil the second (tag 1).
     if tag == 1 {
@@ -1012,15 +1273,15 @@ fn read_klimbs_u64(
       ));
     }
     let mut limb_bytes = [0u8; 8];
-    for k in 0..8 {
-      let b = key[1 + k].as_canonical_u64();
+    for (k, byte) in limb_bytes.iter_mut().enumerate() {
+      let b = key.at(1 + k).as_canonical_u64();
       if b >= 256 {
         return Err(format!("limb byte {b} out of u8 range"));
       }
-      limb_bytes[k] = u8::try_from(b).expect("range-checked above");
+      *byte = u8::try_from(b).expect("range-checked above");
     }
     limbs.push(u64::from_le_bytes(limb_bytes));
-    ptr = key[9];
+    ptr = key.at(9);
   }
 }
 
@@ -1053,7 +1314,7 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
 /// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)
 /// and return the head pointer. Each entry is inserted with multiplicity 0
 /// (unconstrained); subsequent constrained `Load`s by the kernel will bump
-/// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
+/// the multiplicity. Content-addressed via `QueryMap::get`, so repeated
 /// identical sub-tails share storage.
 fn build_klimbs_u64(
   memory: &mut FxIndexMap<usize, QueryMap>,
@@ -1065,11 +1326,11 @@ fn build_klimbs_u64(
   // Find or insert the Nil ptr (tag = 1, padded payload all zero).
   let nil_key: Vec<G> =
     std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
-  let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
-    out.output[0]
+  let mut tail_ptr = if let Some(out) = queries.get(&nil_key) {
+    out.output.at(0)
   } else {
     let ptr = G::from_usize(queries.len());
-    queries.insert(&nil_key, &[ptr], G::ZERO);
+    queries.insert(&nil_key, &[ptr], G::ZERO).map_err(|e| e.to_string())?;
     ptr
   };
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
@@ -1081,32 +1342,35 @@ fn build_klimbs_u64(
       key.push(G::from_u8(*b));
     }
     key.push(tail_ptr);
-    tail_ptr = if let Some(out) = queries.get_mut(&key) {
-      out.output[0]
+    tail_ptr = if let Some(out) = queries.get(&key) {
+      out.output.at(0)
     } else {
       let ptr = G::from_usize(queries.len());
-      queries.insert(&key, &[ptr], G::ZERO);
+      queries.insert(&key, &[ptr], G::ZERO).map_err(|e| e.to_string())?;
       ptr
     };
   }
   Ok(tail_ptr)
 }
 
-/// Approximate retained bytes of a record's query maps: field elements
-/// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
+/// Approximate retained bytes of a record's query maps: losslessly encoded
+/// key/output payload plus ~21 bytes of per-entry index
 /// overhead (hash-table slot, stored hash, multiplicity). Feeds the
 /// witness phase of the prover RAM model
 /// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
 pub fn record_retained_bytes(record: &QueryRecord) -> usize {
-  let mut elems = 0usize;
+  let mut payload = 0usize;
   let mut entries = 0usize;
   for m in &record.function_queries {
-    elems += m.retained_elems();
+    payload += m.retained_bytes();
     entries += m.len();
   }
   for (_, m) in &record.memory_queries {
-    elems += m.retained_elems();
+    payload += m.retained_bytes();
     entries += m.len();
   }
-  elems * 8 + entries * 21
+  payload + entries * 21
 }
+
+#[cfg(test)]
+mod byte_tests;

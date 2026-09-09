@@ -1,22 +1,27 @@
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
-use crate::G;
+use crate::{
+  G,
+  execute::budget::{BudgetExceeded, ExecutionBudget},
+};
+use std::sync::Arc;
+
+mod storage;
+use storage::PackedStore;
+pub use storage::{PackedRow, QuerySlice};
+mod stats;
+pub use stats::MultiplicityStats;
+mod multiplicity;
+use multiplicity::Multiplicities;
 
 /// Immutable view of one query entry.
 #[derive(Clone, Copy)]
 pub struct QueryRef<'a> {
-  pub(crate) output: &'a [G],
+  pub(crate) output: QuerySlice<'a>,
   pub multiplicity: G,
 }
 
-/// Mutable view of one query entry: the output is fixed at insertion,
-/// only the multiplicity is bumped on memo hits.
-pub struct QueryRefMut<'a> {
-  pub output: &'a [G],
-  pub multiplicity: &'a mut G,
-}
-
-fn hash_g_slice(key: &[G]) -> u64 {
+pub(crate) fn hash_g_slice(key: &[G]) -> u64 {
   use std::hash::Hasher;
   let mut h = rustc_hash::FxHasher::default();
   for g in key {
@@ -25,8 +30,30 @@ fn hash_g_slice(key: &[G]) -> u64 {
   h.finish()
 }
 
+/// Immutable arguments and their canonical hash for generated execution.
+/// Owning the fixed-size array keeps the hash tied to its values across
+/// recursive calls. This is not a cached bucket or permission to skip exact
+/// equality checks: tables may rehash while the callee executes.
+#[derive(Clone, Copy)]
+pub struct QueryKey<const N: usize> {
+  values: [G; N],
+  hash: u64,
+}
+
+impl<const N: usize> QueryKey<N> {
+  #[inline]
+  pub fn new(values: [G; N]) -> Self {
+    Self { hash: hash_g_slice(&values), values }
+  }
+
+  #[inline]
+  pub fn values(&self) -> &[G; N] {
+    &self.values
+  }
+}
+
 /// Entries per storage segment (2^20). Segments are fixed-size, so growth
-/// never reallocates or copies: appending past a segment boundary just
+/// does not copy older segments: appending past a segment boundary just
 /// allocates the next segment. This removes the O(len) memmove of a growing
 /// `Vec` AND its transient 2x memory spike — on kernel-heavy executions the
 /// arenas reach tens of GB, where a doubling copy is both seconds of pure
@@ -67,7 +94,7 @@ impl<T: Copy> HugeVec<T> {
   #[cfg(target_os = "linux")]
   fn with_capacity(cap: usize) -> Self {
     assert!(cap > 0, "HugeVec capacity must be positive");
-    let bytes = cap * size_of::<T>();
+    let bytes = cap.checked_mul(size_of::<T>()).expect("query arena overflow");
     let ptr = unsafe {
       let p = libc::mmap(
         std::ptr::null_mut(),
@@ -146,56 +173,6 @@ impl<T: Copy> Drop for HugeVec<T> {
   }
 }
 
-/// Append-only segmented arena of fixed-stride `G` entries. Entry `i` lives
-/// at segment `i >> SEG_BITS`, offset `(i & SEG_MASK) * stride` — no entry
-/// ever straddles a segment.
-struct SegStore {
-  stride: usize,
-  segs: Vec<HugeVec<G>>,
-  entries: usize,
-}
-
-impl SegStore {
-  fn new(stride: usize) -> Self {
-    Self { stride, segs: Vec::new(), entries: 0 }
-  }
-
-  #[inline]
-  fn at(&self, i: usize) -> &[G] {
-    if self.stride == 0 {
-      return &[];
-    }
-    let base = (i & SEG_MASK) * self.stride;
-    self.segs[i >> SEG_BITS].slice(base, self.stride)
-  }
-
-  #[inline]
-  fn at_mut(&mut self, i: usize) -> &mut [G] {
-    if self.stride == 0 {
-      return &mut [];
-    }
-    let base = (i & SEG_MASK) * self.stride;
-    self.segs[i >> SEG_BITS].slice_mut(base, self.stride)
-  }
-
-  #[inline]
-  fn push(&mut self, vals: &[G]) {
-    debug_assert_eq!(vals.len(), self.stride);
-    if self.stride != 0 {
-      let seg = self.entries >> SEG_BITS;
-      if seg == self.segs.len() {
-        self.segs.push(HugeVec::with_capacity(SEG_ENTRIES * self.stride));
-      }
-      self.segs[seg].extend_from_slice(vals);
-    }
-    self.entries += 1;
-  }
-
-  fn retained_elems(&self) -> usize {
-    self.entries * self.stride
-  }
-}
-
 /// Segmented store of per-entry `u64` key hashes. Keeping the hashes lets
 /// hash-table growth re-insert entries without re-hashing every key from the
 /// keys arena; table doubling on a multi-GB map used to be a full sequential
@@ -231,15 +208,19 @@ impl SegU64s {
 /// Functionally the insertion-ordered map `args -> (output, multiplicity)`
 /// it replaces (`FxIndexMap<Vec<G>, QueryResult>`) — but every circuit has
 /// a FIXED key arity and output width, so keys and outputs live in flat
-/// segmented `G` arenas addressed by entry index, and the hash table holds
+/// segmented arenas addressed by entry index, and the hash table holds
 /// only `u32` indices. This cuts per-entry overhead from ~130 B (two heap
 /// `Vec`s + IndexMap bucket + allocator metadata) to the raw field
-/// elements plus ~21 B of index + stored hash. The record IS the proof
+/// elements plus ~21 B of index + stored hash. Columns retain one, four or
+/// eight bytes per field and decode losslessly on access; larger values widen
+/// only the active segment. Memory outputs are reconstructed indices. The record IS the proof
 /// witness, so entries cannot be dropped — only stored compactly; on
 /// kernel-heavy executions it is the dominant RAM consumer (billions of
-/// entries). Segmented storage keeps growth copy-free (no doubling
-/// memmove, no transient 2x RSS), stored hashes make table growth a cheap
-/// sequential pass, and segments are hugepage-advised (see `advise_huge`).
+/// entries). Segmented growth avoids whole-arena doubling; active-segment
+/// widening is budgeted before copying. Stored hashes make table growth a
+/// sequential pass, and segments are hugepage-advised.
+/// Multiplicities optionally use u32 segments with budgeted full-field
+/// promotion on insertion or a later hit, preserving field arithmetic.
 ///
 /// Entry index == insertion order; memory circuits use it as the pointer
 /// value, mirroring the old `IndexMap::get_index_of` semantics.
@@ -247,23 +228,68 @@ pub struct QueryMap {
   /// Output width; inferred on first insert (not statically available in
   /// `FunctionLayout`).
   out_stride_set: bool,
-  keys: SegStore,
-  outs: SegStore,
-  mults: SegStore,
+  /// Only memory maps may reconstruct outputs from their insertion index.
+  implicit_output: bool,
+  keys: PackedStore,
+  outs: PackedStore,
+  mults: Multiplicities,
   hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
+  budget: Option<Arc<ExecutionBudget>>,
+  charged: u64,
 }
 
 impl QueryMap {
   pub fn new(key_stride: usize) -> Self {
+    Self::with_budget(key_stride, None)
+  }
+
+  pub(crate) fn with_budget(
+    key_stride: usize,
+    budget: Option<Arc<ExecutionBudget>>,
+  ) -> Self {
+    Self::with_storage(key_stride, budget, true)
+  }
+
+  pub(crate) fn with_storage(
+    key_stride: usize,
+    budget: Option<Arc<ExecutionBudget>>,
+    compact: bool,
+  ) -> Self {
+    Self::with_encodings(
+      key_stride,
+      budget,
+      compact,
+      compact && *multiplicity::COMPACT,
+    )
+  }
+
+  pub(crate) fn with_encodings(
+    key_stride: usize,
+    budget: Option<Arc<ExecutionBudget>>,
+    compact: bool,
+    compact_mults: bool,
+  ) -> Self {
     Self {
       out_stride_set: false,
-      keys: SegStore::new(key_stride),
-      outs: SegStore::new(0),
-      mults: SegStore::new(1),
+      implicit_output: false,
+      keys: PackedStore::new(key_stride, compact),
+      outs: PackedStore::new(0, compact),
+      mults: Multiplicities::new(compact_mults),
       hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
+      budget,
+      charged: 0,
     }
+  }
+
+  pub(crate) fn with_memory_budget(
+    key_stride: usize,
+    budget: Option<Arc<ExecutionBudget>>,
+  ) -> Self {
+    let mut map = Self::with_budget(key_stride, budget);
+    map.implicit_output = true;
+    map
   }
 
   #[inline]
@@ -276,117 +302,326 @@ impl QueryMap {
     self.mults.entries == 0
   }
 
-  /// Total retained field elements (keys + outputs); used by the
+  /// Logical field elements (including reconstructed memory outputs); used by the
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
-    self.keys.retained_elems() + self.outs.retained_elems()
+    self.keys.retained_elems()
+      + if self.implicit_output {
+        self.len()
+      } else {
+        self.outs.retained_elems()
+      }
+  }
+
+  /// Encoded key/output payload, excluding hashes, multiplicities and index.
+  pub fn retained_bytes(&self) -> usize {
+    self.keys.retained_bytes() + self.outs.retained_bytes()
   }
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
+    self.get_index_of_hashed(key, hash_g_slice(key))
+  }
+
+  #[inline]
+  pub fn get_prehashed<const N: usize>(
+    &self,
+    key: &QueryKey<N>,
+  ) -> Option<usize> {
+    self.get_index_of_hashed(&key.values, key.hash)
+  }
+
+  // The interpreter's mutable value stack retains its original input prefix;
+  // it carries this hash in the call frame without cloning those inputs.
+  pub(crate) fn get_index_of_hashed(
+    &self,
+    key: &[G],
+    hash: u64,
+  ) -> Option<usize> {
     debug_assert_eq!(key.len(), self.keys.stride);
-    let hash = hash_g_slice(key);
     self
       .table
-      .find(hash, |&i| self.keys.at(i as usize) == key)
+      .find(hash, |&i| self.keys.at(i as usize).matches(key))
       .map(|&i| i as usize)
   }
 
   pub fn get(&self, key: &[G]) -> Option<QueryRef<'_>> {
     let i = self.get_index_of(key)?;
-    Some(QueryRef {
-      output: self.outs.at(i),
-      multiplicity: self.mults.at(i)[0],
-    })
-  }
-
-  pub fn get_mut(&mut self, key: &[G]) -> Option<QueryRefMut<'_>> {
-    let i = self.get_index_of(key)?;
-    Some(QueryRefMut {
-      output: self.outs.at(i),
-      multiplicity: &mut self.mults.at_mut(i)[0],
-    })
+    Some(QueryRef { output: self.output_at(i), multiplicity: self.mults.at(i) })
   }
 
   /// Multiplicity of entry `i`.
   #[inline]
   pub fn mult_at(&self, i: usize) -> G {
-    self.mults.at(i)[0]
+    self.mults.at(i)
   }
 
-  /// Output slice of entry `i`.
+  /// Lossless output view of entry `i`.
   #[inline]
-  pub fn output_at(&self, i: usize) -> &[G] {
-    self.outs.at(i)
+  pub fn output_at(&self, i: usize) -> QuerySlice<'_> {
+    assert!(i < self.len(), "query output index out of bounds");
+    if self.implicit_output {
+      QuerySlice::Value(G::from_usize(i))
+    } else {
+      self.outs.at(i)
+    }
   }
 
-  /// Record a constrained memo hit on entry `i`.
+  /// Record a constrained memo hit on entry `i`. Widening a counter segment
+  /// is fallible; rejection leaves every counter and its encoding unchanged.
   #[inline]
-  pub fn bump_multiplicity(&mut self, i: usize) {
-    self.mults.at_mut(i)[0] += G::ONE;
+  pub fn bump_multiplicity(&mut self, i: usize) -> Result<(), BudgetExceeded> {
+    if self.mults.try_bump(i) {
+      return Ok(());
+    }
+    self.bump_widened(i)
+  }
+
+  #[cold]
+  fn bump_widened(&mut self, i: usize) -> Result<(), BudgetExceeded> {
+    let plan = self.mults.plan_bump(i);
+    let reservation = if let Some(budget) = &self.budget {
+      let next = self
+        .accounted_bytes()
+        .saturating_sub(self.mults.accounted_bytes())
+        .saturating_add(plan.storage_after)
+        .saturating_add(plan.transient);
+      Some(budget.charge(next - self.charged)?)
+    } else {
+      None
+    };
+    self.mults.bump_widened(i, plan);
+    if let Some(reservation) = reservation {
+      let after = self.accounted_bytes();
+      reservation.retain_bytes(after - self.charged);
+      self.charged = after;
+    }
+    Ok(())
   }
 
   /// Register a function query at `Ctrl::Return`: insert on first
   /// registration and bump on constrained promotion of a cached hint row.
-  pub fn finish(&mut self, key: &[G], output: &[G], constrained: bool) {
-    if let Some(i) = self.get_index_of(key) {
+  pub fn finish(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    constrained: bool,
+  ) -> Result<(), BudgetExceeded> {
+    self.finish_hashed(key, hash_g_slice(key), output, constrained)
+  }
+
+  #[inline]
+  pub fn finish_prehashed<const N: usize>(
+    &mut self,
+    key: &QueryKey<N>,
+    output: &[G],
+    constrained: bool,
+  ) -> Result<(), BudgetExceeded> {
+    self.finish_hashed(&key.values, key.hash, output, constrained)
+  }
+
+  pub(crate) fn finish_hashed(
+    &mut self,
+    key: &[G],
+    hash: u64,
+    output: &[G],
+    constrained: bool,
+  ) -> Result<(), BudgetExceeded> {
+    if let Some(i) = self.get_index_of_hashed(key, hash) {
       // The only ordinary way to execute an already cached function is
       // constrained promotion of an unconstrained hint entry.
-      debug_assert_eq!(self.outs.at(i), output);
+      debug_assert!(self.output_at(i).matches(output));
       if constrained {
-        self.bump_multiplicity(i);
+        self.bump_multiplicity(i)?;
       }
     } else {
-      self.insert(key, output, G::from_bool(constrained));
+      self.insert_hashed(key, hash, output, G::from_bool(constrained))?;
     }
+    Ok(())
   }
 
   /// Append a new entry. The key must not already be present: call sites
   /// only insert on a confirmed miss, and a same-key re-entrant call
   /// would loop forever before reaching its own insert.
-  pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
-    debug_assert_eq!(key.len(), self.keys.stride);
-    debug_assert!(self.get_index_of(key).is_none());
+  pub fn insert(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    multiplicity: G,
+  ) -> Result<(), BudgetExceeded> {
+    self.insert_hashed(key, hash_g_slice(key), output, multiplicity)
+  }
+
+  /// Insert on a confirmed miss, preserving the existing `insert` contract.
+  pub fn insert_prehashed<const N: usize>(
+    &mut self,
+    key: &QueryKey<N>,
+    output: &[G],
+    multiplicity: G,
+  ) -> Result<(), BudgetExceeded> {
+    self.insert_hashed(&key.values, key.hash, output, multiplicity)
+  }
+
+  pub(crate) fn insert_hashed(
+    &mut self,
+    key: &[G],
+    hash: u64,
+    output: &[G],
+    multiplicity: G,
+  ) -> Result<(), BudgetExceeded> {
+    assert_eq!(key.len(), self.keys.stride);
+    debug_assert!(self.get_index_of_hashed(key, hash).is_none());
+    if self.implicit_output {
+      assert_eq!(
+        output,
+        &[G::from_usize(self.len())],
+        "memory output must equal insertion index"
+      );
+    } else if self.out_stride_set {
+      assert_eq!(output.len(), self.outs.stride);
+    }
+    let key_plan = self.keys.plan(key);
+    let stored_output = if self.implicit_output { &[][..] } else { output };
+    let out_plan = self.outs.plan(stored_output);
+    let mult_plan = self.mults.plan_append(multiplicity);
+    // Cover both tables during rehash, and hugepage-rounded arena growth,
+    // BEFORE touching new pages. A failed charge leaves all query data intact.
+    let reservation = if let Some(budget) = &self.budget {
+      let mut next = key_plan
+        .storage_after
+        .saturating_add(out_plan.storage_after)
+        .saturating_add(key_plan.transient)
+        .saturating_add(out_plan.transient)
+        .saturating_add(mult_plan.storage_after)
+        .saturating_add(mult_plan.transient)
+        .saturating_add(arena_bytes(self.len().saturating_add(1), 1));
+      if self.len() == self.table.capacity() {
+        next = next
+          .saturating_add(table_bytes(self.table.capacity()))
+          .saturating_add(table_bytes(
+            self.table.capacity().saturating_mul(2).saturating_add(1).max(4),
+          ));
+      } else {
+        next = next.saturating_add(table_bytes(self.table.capacity()));
+      }
+      if next > self.charged {
+        Some(budget.charge(next - self.charged)?)
+      } else {
+        None
+      }
+    } else {
+      None
+    };
     if !self.out_stride_set {
-      self.outs.stride = output.len();
+      self.outs.stride = stored_output.len();
       self.out_stride_set = true;
     } else {
-      debug_assert_eq!(output.len(), self.outs.stride);
+      debug_assert_eq!(stored_output.len(), self.outs.stride);
     }
-    let hash = hash_g_slice(key);
     let i = u32::try_from(self.mults.entries).expect("query map overflow");
-    self.keys.push(key);
-    self.outs.push(output);
-    self.mults.push(&[multiplicity]);
+    self.keys.push(key, key_plan);
+    self.outs.push(stored_output, out_plan);
+    self.mults.push(multiplicity, mult_plan);
     self.hashes.push(hash);
     let hashes = &self.hashes;
     self.table.insert_unique(hash, i, |&j| hashes.at(j as usize));
-  }
-
-  /// Entry at insertion index `i`: the key slice plus a mutable handle on
-  /// the multiplicity (memory `Load` bumps the pointed-to row's count).
-  pub fn get_index_mut(&mut self, i: usize) -> Option<(&[G], &mut G)> {
-    if i >= self.mults.entries {
-      return None;
+    if let Some(reservation) = reservation {
+      // Keep only steady-state storage; the temporary old table is now gone.
+      let before = self.charged;
+      let after = self.accounted_bytes();
+      // The reservation includes a conservative upper bound for table growth.
+      // Retain exactly the new steady-state charge and return its excess.
+      let added = after.saturating_sub(before);
+      reservation.retain_bytes(added);
+      self.charged = after;
     }
-    Some((self.keys.at(i), &mut self.mults.at_mut(i)[0]))
+    Ok(())
   }
 
-  pub fn get_index(&self, i: usize) -> Option<(&[G], QueryRef<'_>)> {
+  fn storage_bytes(&self) -> u64 {
+    self
+      .keys
+      .accounted_bytes()
+      .saturating_add(self.outs.accounted_bytes())
+      .saturating_add(self.mults.accounted_bytes())
+      .saturating_add(arena_bytes(self.len(), 1))
+  }
+
+  pub fn accounted_bytes(&self) -> u64 {
+    self.storage_bytes().saturating_add(table_bytes(self.table.capacity()))
+  }
+
+  /// Explicit linear scan of counter storage, without decoding keys/outputs.
+  /// Intended for final opt-in diagnostics, never a progress-tick hot path.
+  pub fn multiplicity_stats(&self) -> MultiplicityStats {
+    MultiplicityStats::of_store(&self.mults)
+  }
+
+  pub fn get_index(&self, i: usize) -> Option<(QuerySlice<'_>, QueryRef<'_>)> {
     if i >= self.len() {
       return None;
     }
     Some((
       self.keys.at(i),
-      QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+      QueryRef { output: self.output_at(i), multiplicity: self.mults.at(i) },
     ))
   }
 
-  pub fn iter(&self) -> impl Iterator<Item = (&[G], QueryRef<'_>)> {
+  pub fn iter(&self) -> impl Iterator<Item = (QuerySlice<'_>, QueryRef<'_>)> {
     (0..self.len()).map(|i| {
       (
         self.keys.at(i),
-        QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+        QueryRef { output: self.output_at(i), multiplicity: self.mults.at(i) },
       )
     })
   }
 }
+
+impl Drop for QueryMap {
+  fn drop(&mut self) {
+    if let Some(budget) = &self.budget {
+      // Release accounting only AFTER the physical storage has been dropped.
+      self.keys.clear_storage();
+      self.outs.clear_storage();
+      self.mults.segs.clear();
+      self.hashes.segs.clear();
+      drop(std::mem::replace(&mut self.table, hashbrown::HashTable::new()));
+      budget.release(self.charged);
+    }
+  }
+}
+
+fn arena_bytes(entries: usize, stride: usize) -> u64 {
+  if entries == 0 || stride == 0 {
+    return 0;
+  }
+  let segment =
+    (SEG_ENTRIES as u64).saturating_mul(stride as u64).saturating_mul(8);
+  #[cfg(target_os = "linux")]
+  {
+    let whole = (entries >> SEG_BITS) as u64;
+    let tail = ((entries & SEG_MASK) as u64)
+      .saturating_mul(stride as u64)
+      .saturating_mul(8);
+    whole
+      .saturating_mul(segment)
+      .saturating_add(tail.div_ceil(1 << 21).saturating_mul(1 << 21))
+  }
+  #[cfg(not(target_os = "linux"))]
+  {
+    (entries.div_ceil(SEG_ENTRIES) as u64).saturating_mul(segment)
+  }
+}
+
+// HashTable<u32>: reserve eight bytes per bucket (index + control + margin),
+// plus a page for alignment/control-group padding. Include old + new on grow.
+fn table_bytes(capacity: usize) -> u64 {
+  if capacity == 0 {
+    return 0;
+  }
+  capacity
+    .checked_next_power_of_two()
+    .map_or(u64::MAX, |b| (b as u64).saturating_mul(8).saturating_add(4096))
+}
+
+#[cfg(test)]
+mod tests;

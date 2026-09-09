@@ -17,7 +17,9 @@
 use crate::aiur_ixvm::execute_generated;
 use aiur::G;
 use aiur::bytecode::{FunIdx, Toplevel};
+use aiur::execute::budget::ExecutionBudget;
 use aiur::execute::{ExecError, IOBuffer, QueryRecord};
+use std::sync::Arc;
 
 /// Mirror of `Toplevel::execute` (same return shape, same
 /// `entry`-flag gate), but routes execution through the codegen'd
@@ -34,10 +36,24 @@ pub fn execute_ixvm(
   args: Vec<G>,
   io_buffer: &mut IOBuffer,
 ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+  execute_ixvm_with_budget(toplevel, fun_idx, args, io_buffer, None)
+}
+
+// Keep the same owned-input shape as AiurSystem's executor callback.
+#[allow(clippy::needless_pass_by_value)]
+pub fn execute_ixvm_with_budget(
+  toplevel: &Toplevel,
+  fun_idx: FunIdx,
+  args: Vec<G>,
+  io_buffer: &mut IOBuffer,
+  budget: Option<Arc<ExecutionBudget>>,
+) -> Result<(QueryRecord, Vec<G>), ExecError> {
   if !toplevel.functions[fun_idx].entry {
     return Err(ExecError::NotEntryFunction(fun_idx));
   }
-  let mut record = QueryRecord::new(toplevel);
-  let output = execute_generated(fun_idx, &args, &mut record, io_buffer)?;
+  let mut record = QueryRecord::with_budget(toplevel, io_buffer, budget)?;
+  let output = execute_generated(fun_idx, &args, &mut record, io_buffer)
+    .map_err(|e| record.execution_error(e))?;
+  record.log_multiplicity_stats("returned");
   Ok((record, output))
 }

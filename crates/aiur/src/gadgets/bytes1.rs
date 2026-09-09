@@ -6,8 +6,10 @@ use multi_stark::{
 };
 
 use crate::{
-  G, execute::QueryRecord, gadgets::AiurGadget, u8_bit_decomposition_channel,
-  u8_shift_left_channel, u8_shift_right_channel,
+  G,
+  execute::{ExecError, QueryRecord},
+  gadgets::AiurGadget,
+  u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
@@ -81,22 +83,22 @@ impl AiurGadget for Bytes1 {
     op: &Bytes1Op,
     input: &[G],
     record: &mut QueryRecord,
-  ) -> Vec<G> {
+  ) -> Result<Vec<G>, ExecError> {
     let byte = &input[0];
-    match op {
+    Ok(match op {
       Bytes1Op::BitDecomposition => {
-        record.bytes1_queries.bump_bit_decomposition(byte);
+        record.bytes1_queries.bump_bit_decomposition(byte)?;
         Self::bit_decompose(byte)
       },
       Bytes1Op::ShiftLeft => {
-        record.bytes1_queries.bump_shift_left(byte);
+        record.bytes1_queries.bump_shift_left(byte)?;
         vec![Self::shift_left(byte)]
       },
       Bytes1Op::ShiftRight => {
-        record.bytes1_queries.bump_shift_right(byte);
+        record.bytes1_queries.bump_shift_right(byte)?;
         vec![Self::shift_right(byte)]
       },
-    }
+    })
   }
 
   fn lookups(&self) -> Vec<Lookup<Expr<G>>> {
@@ -217,21 +219,31 @@ impl Bytes1Queries {
     Self([[G::ZERO; TRACE_WIDTH]; 256])
   }
 
-  pub(crate) fn bump_bit_decomposition(&mut self, byte: &G) {
+  pub(crate) fn bump_bit_decomposition(
+    &mut self,
+    byte: &G,
+  ) -> Result<(), ExecError> {
     self.bump_multiplicity_for(byte, 0)
   }
 
-  pub(crate) fn bump_shift_left(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_left(&mut self, byte: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(byte, 1)
   }
 
-  pub(crate) fn bump_shift_right(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_right(&mut self, byte: &G) -> Result<(), ExecError> {
     self.bump_multiplicity_for(byte, 2)
   }
 
-  pub(crate) fn bump_multiplicity_for(&mut self, byte: &G, col: usize) {
-    let row = usize::try_from(byte.as_canonical_u64()).unwrap();
-    self.0[row][col] += G::ONE;
+  pub(crate) fn bump_multiplicity_for(
+    &mut self,
+    byte: &G,
+    col: usize,
+  ) -> Result<(), ExecError> {
+    let value = byte.as_canonical_u64();
+    let row = u8::try_from(value)
+      .map_err(|_range_error| ExecError::U8RangeCheckFailed(value))?;
+    self.0[usize::from(row)][col] += G::ONE;
+    Ok(())
   }
 }
 

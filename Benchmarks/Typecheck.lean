@@ -378,13 +378,18 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
       | _, _, _ => fields
     (r.name, Json.mkObj fields)
 
-/-- Time a thunk, returning its value and the elapsed seconds. The result is
-    forced by `blackBoxIO` so a pure computation isn't optimized away. -/
-def timed (f : Unit → α) : IO (α × Float) := do
+/-- Execute an IO action inside the timing window, returning its result and
+    elapsed seconds rather than measuring construction of the action. -/
+def timedIO (action : IO α) : IO (α × Float) := do
   let t0 ← IO.monoNanosNow
-  let a ← blackBoxIO f ()
+  let a ← action
   let t1 ← IO.monoNanosNow
   return (a, (t1 - t0).toFloat / 1e9)
+
+/-- Time a thunk, returning its value and the elapsed seconds. The result is
+    forced by `blackBoxIO` so a pure computation isn't optimized away. -/
+def timed (f : Unit → α) : IO (α × Float) :=
+  timedIO (blackBoxIO f ())
 
 def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let some ixeArg := p.flag? "ixe"
@@ -650,23 +655,24 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       -- Windowed high-water: each prove's peak is its own window, not
       -- the run's cumulative maximum (mirrors the Phase-1 resets).
       TracingTexray.resetPeakTreeRss
-      let (proveRes, proveSec) ← timed fun _ =>
+      let (proveRes, proveSec) ← timedIO do
         if skipDeps then
-          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          let proveRes :=
-            if useInterp then
-              aiurSystem.prove funIdx witness.input witness.inputIOBuffer
-            else
-              aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
-          proveRes.map fun (claim, proof, ioBuf) =>
-            (claim, proof, ioBuf, (none : Option ByteArray))
+          blackBoxIO (fun _ =>
+            let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+            let proveRes :=
+              if useInterp then
+                aiurSystem.prove funIdx witness.input witness.inputIOBuffer
+              else
+                aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
+            proveRes.map fun (claim, proof, ioBuf) =>
+              (claim, proof, ioBuf, (none : Option ByteArray))) ()
         else if join then
-          match aiurSystem.shardProveWithEnv funIdx envHandle
+          match ← aiurSystem.shardProveWithEnv funIdx envHandle
               (singletonOwnedBlob addr) with
-          | .error e => .error e
+          | .error e => return .error e
           | .ok result => match result.proof with
             | none =>
-              .error s!"projected prover peak {result.peakBytes} bytes exceeds \
+              return .error s!"projected prover peak {result.peakBytes} bytes exceeds \
                 the budget; suggested {result.suggestedParts} parts"
             | some proof =>
               let digest := Address.blake3 result.claimBytes
@@ -674,19 +680,20 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                 Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
               -- Shard proving no longer returns its whole ingested IO scope;
               -- this benchmark never reads it after the proof is produced.
-              .ok (claim, proof, default, some result.claimBytes)
+              return .ok (claim, proof, default, some result.claimBytes)
         else
-          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp with
-          | .error e => .error e
-          | .ok (claimBytes, proof, ioBuf) =>
-            -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
-            -- the Array-G claim `verify` takes — `verify_claim`'s input is
-            -- the 32-G blake3 digest of those bytes (same recipe as
-            -- `ix verify`).
-            let digest := Address.blake3 claimBytes
-            let claim :=
-              Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
-            .ok (claim, proof, ioBuf, none)
+          blackBoxIO (fun _ =>
+            match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp with
+            | .error e => .error e
+            | .ok (claimBytes, proof, ioBuf) =>
+              -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
+              -- the Array-G claim `verify` takes — `verify_claim`'s input is
+              -- the 32-G blake3 digest of those bytes (same recipe as
+              -- `ix verify`).
+              let digest := Address.blake3 claimBytes
+              let claim :=
+                Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
+              .ok (claim, proof, ioBuf, none)) ()
       match (proveRes : Except String
           (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer × Option ByteArray)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue

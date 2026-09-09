@@ -254,7 +254,8 @@ def proveAddrWithEnv (system : @& AiurSystem)
     projects will fit the budget
     (`AiurSystem::suggested_split_parts`).
 
-    `proof` is `none` exactly when the peak exceeded the budget — a
+    `proof` is `none` for measurement-only execution, an oversized prover
+    peak, or an early execution-memory interruption. Oversize is a
     RESULT rather than an error, since the caller's answer is to cut
     the shard into `suggestedParts` parts and prove those. The count is
     computed Rust-side because only there does the executed record
@@ -263,6 +264,10 @@ def proveAddrWithEnv (system : @& AiurSystem)
     must still be gated on its own record. `suggestedParts` is 1
     whenever the prove ran. The claim bytes are filled either way (the
     claim is known before proving starts).
+
+    Early execution-memory interruption returns `peakBytes = 0` (unknown,
+    NOT a measured zero-byte peak) and `suggestedParts = 2`, so neither
+    prove nor exec-only callers can accept the interrupted parent.
 
     The final IO buffer is not returned — it is the shard's whole
     ingested byte scope and no caller reads it. -/
@@ -275,19 +280,20 @@ structure ShardProveResult where
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& Nat → Bool →
-    Except String ShardProveResult
+    IO (Except String ShardProveResult)
 
 /-- Per-shard prove against a Rust-owned `EnvHandle`: ONE execution,
     whose record is proven from directly.
 
     `maxRamBytes` is a per-shard prover-RAM budget checked against that
     record's projected peak before the witness phase begins; `0` means
-    detect (85% of `MemAvailable`, the policy the check batch's RAM gate
-    uses), and an unreadable `/proc/meminfo` disables the check rather
-    than guessing. Over budget, the record is dropped and `proof` is
+    detect (85% of cgroup-aware available memory). A separate cooperative
+    execution-storage limit can abort before the record completes. Over
+    the prover budget, the record is dropped and `proof` is
     `none` — learning that here costs one execution instead of an OOM
     part-way through an FFT. The peak comes back either way, so a prove
-    run yields the same split/merge signal a check run does.
+    run yields the same split/merge signal a check run does. Early execution
+    interruption instead returns an unknown peak (0) and a split request.
 
     `execOnly` stops after execution + measurement (`proof` is `none`
     either way; `suggestedParts` is 1 exactly when the peak fits): the
@@ -296,7 +302,7 @@ def shardProveWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (maxRamBytes : Nat := 0)
   (execOnly : Bool := false) :
-    Except String ShardProveResult :=
+    IO (Except String ShardProveResult) :=
   shardProveWithEnv' system funIdx envHandle ownedBlob maxRamBytes execOnly
 
 @[extern "rs_aiur_system_verify"]
@@ -346,15 +352,41 @@ opaque shardManifestRefine : @& EnvHandle → @& String →
 @[extern "rs_aiur_detected_ram_budget"]
 private opaque detectedRamBudgetFFI : IO UInt64
 
-/-- The prover/execution RAM budget the Rust side detects on this machine:
-    85 % of `MemAvailable` (`ix_kernel::shard::RAM_USABLE_FRAC`) — the policy
-    the check batch's RAM gate and `ix prove --max-ram 0` use. `0` when
-    `/proc/meminfo` is unreadable; callers that need a budget fail closed
-    on it instead of running ungated. -/
+/-- The one-shot prover RAM budget: 85 % of the minimum of host available
+    RAM and visible cgroup headroom (including existing charges).
+    Returns `0` when telemetry is unavailable. Shard-batch execution uses
+    a separate live admission controller with additional growth headroom. -/
 def detectedRamBudgetBytes : IO Nat := do
   pure (← detectedRamBudgetFFI).toNat
 
 namespace Bytecode.Toplevel
+
+/-- Small result of native partition orchestration. Counts describe only the
+selected source shards and their owned constants (all shards without a
+selection). The environment, ownership, witness data and audit stay in Rust. -/
+structure PartitionCheckResult where
+  constants : Nat
+  shards : Nat
+  failures : Nat
+  elapsedMs : Nat
+  deriving Inhabited
+
+/-- Partition execution without a destination prover budget or proof-cache
+reuse. Rust memory-maps the input, validates and assigns EVERY constant in one
+pass, then executes only the selected shards with the existing wave executor.
+`none` selects all shards; `some #[]` is an error, never an all-shards fallback.
+Ids are bounds-checked, sorted and deduplicated. Coverage/tree validation is
+never restricted by the selection, and skipped leaves are not reported checked.
+An empty `report` string omits the audit file. File reads and report writes
+are sequenced through `IO`; this is not a pure function of the path strings. -/
+@[extern "rs_aiur_check_partition"]
+opaque checkPartition (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (ixe manifest : @& String)
+  (jobs : @& Nat) (useBytecode : Bool)
+  (commitment : @& CommitmentParameters) (fri : @& FriParameters)
+  (report revision command budgetSource : @& String)
+  (selection : @& Option (Array Nat) := none) :
+    IO (Except String PartitionCheckResult)
 
 /-- One shard's result from `shardCheckBatchWithEnv`. -/
 structure ShardResult where
@@ -365,13 +397,18 @@ structure ShardResult where
       fit (`AiurSystem::suggested_split_parts`, measured on the record
       in-task). -/
   suggestedParts : Nat
+  /-- 0 = execution finished (success or semantic error); 1 = interrupted at
+      the per-record memory limit (split and retry); 2 = interrupted at the
+      shared batch record limit (retry after this wave drains). An interrupted
+      execution always has a nonempty error and no measured prover peak. -/
+  resourceStatus : Nat := 0
   deriving Inhabited
 
 @[extern "rs_aiur_toplevel_shard_check_batch"]
 private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → @& Nat →
   @& CommitmentParameters → @& FriParameters → @& Nat →
-    Except String (Array ShardResult)
+    IO (Except String (Array ShardResult))
 
 /-- Check EVERY shard of a partition in one call: rayon over the shard
     list with true work-stealing (no chunk barriers), each shard
@@ -381,25 +418,28 @@ private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
     Returns one `ShardResult` per shard in shard order: empty error =
     clean, and `peakBytes` is the analytic prover RAM peak
     ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's executed
-    record — the split/merge input (0 on failure).
-    `jobs = 0` uses rayon's default pool width (all cores): peak RSS
-    is bounded by the Rust-side RAM gate (a byte-weighted admission
-    semaphore over estimated per-shard execution RSS vs available
-    system RAM), not by thread count — pass `jobs` only to narrow
-    CPU use.
+    record — the split/merge input (0 when no completed record is available).
+    `jobs = 0` uses rayon's default pool width (all cores). Live memory
+    admission controls concurrency, and cooperative allocation accounting
+    bounds per-record and aggregate query storage. Neither replaces the OS
+    memory cap: input/witness construction, stacks and allocator overhead
+    also consume memory. `IX_AIUR_EXEC_MAX_BYTES` overrides the per-record
+    accounted-storage limit (positive bytes; default at most 32 GiB).
 
     `maxRamBytes > 0` is a per-shard prover-RAM budget: each result's
     `suggestedParts` is 1 when its peak fits and the model's projected
     part count otherwise, so a caller can cut over-budget shards and
     re-batch the parts — the wave loop that audits a partition's split
-    behavior on executions alone. -/
+    behavior on executions alone. Early execution limits instead return a
+    nonzero `resourceStatus`, a nonempty error and no measured peak. Callers
+    split/retry these outcomes even without a destination prover budget. -/
 def shardCheckBatchWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (shardsBlob : ByteArray) (useBytecode : Bool := false) (jobs : Nat := 0)
   (commitmentParameters : CommitmentParameters := defaultCommitmentParameters)
   (friParameters : FriParameters := defaultFriParameters)
   (maxRamBytes : Nat := 0)
-  : Except String (Array ShardResult) :=
+  : IO (Except String (Array ShardResult)) :=
   shardCheckBatchWithEnv' toplevel funIdx envHandle shardsBlob useBytecode
     jobs commitmentParameters friParameters maxRamBytes
 

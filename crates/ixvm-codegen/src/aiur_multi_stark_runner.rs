@@ -219,7 +219,9 @@ pub fn execute_multi_stark(
     return Err(ExecError::NotEntryFunction(fun_idx));
   }
   let mut record = QueryRecord::new(toplevel);
-  let output = execute_generated(fun_idx, &args, &mut record, io_buffer)?;
+  let output = execute_generated(fun_idx, &args, &mut record, io_buffer)
+    .map_err(|e| record.execution_error(e))?;
+  record.log_multiplicity_stats("returned");
   Ok((record, output))
 }
 

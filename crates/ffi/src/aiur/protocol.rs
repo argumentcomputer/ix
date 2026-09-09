@@ -3,11 +3,12 @@ use multi_stark::{
   types::{CommitmentParameters, FriParameters},
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOption, LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanExternal, LeanIOResult, LeanNat, LeanOption, LeanOwned, LeanProd,
+  LeanRef, LeanString,
 };
 
 use crate::{
@@ -21,7 +22,9 @@ use crate::{
 };
 use aiur::{
   G,
-  execute::{IOBuffer, IOKeyInfo, QueryRecord},
+  execute::{
+    ExecError, IOBuffer, IOKeyInfo, QueryRecord, budget::ExecutionBudget,
+  },
   synthesis::{AiurProof, AiurSystem, CircuitShape, GatedProve},
 };
 
@@ -463,20 +466,36 @@ fn dispatch_execute(
   io_buffer: &mut IOBuffer,
   use_bytecode: bool,
 ) -> Result<(QueryRecord, Vec<G>), String> {
+  dispatch_execute_with_budget(
+    toplevel,
+    fun_idx,
+    input,
+    io_buffer,
+    use_bytecode,
+    None,
+  )
+  .map_err(|e| format!("execute_ixvm: {e}"))
+}
+
+fn dispatch_execute_with_budget(
+  toplevel: &aiur::bytecode::Toplevel,
+  fun_idx: aiur::bytecode::FunIdx,
+  input: Vec<G>,
+  io_buffer: &mut IOBuffer,
+  use_bytecode: bool,
+  budget: Option<Arc<ExecutionBudget>>,
+) -> Result<(QueryRecord, Vec<G>), ExecError> {
   // Same span name as the prove pipeline's execution phase
   // (`synthesis.rs`), so a standalone execute renders/records through the
   // one texray channel — timing and RAM come from the subscriber, not
   // per-benchmark arithmetic.
   let _g = tracing::info_span!("aiur/execute_ixvm").entered();
   if use_bytecode {
-    toplevel
-      .execute(fun_idx, input, io_buffer)
-      .map_err(|e| format!("execute (bytecode): {e}"))
+    toplevel.execute_with_budget(fun_idx, input, io_buffer, budget)
   } else {
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-      toplevel, fun_idx, input, io_buffer,
+    ixvm_codegen::aiur_ixvm_runner::execute_ixvm_with_budget(
+      toplevel, fun_idx, input, io_buffer, budget,
     )
-    .map_err(|e| format!("execute_ixvm: {e}"))
   }
 }
 
@@ -642,36 +661,7 @@ pub(crate) fn decode_addr_lists(
   Ok(lists)
 }
 
-/// Byte-weighted admission gate: a counting semaphore over estimated
-/// execution RSS, expressed with the std Mutex+Condvar construction.
-/// Bounds MEMORY in flight instead of shards in flight, so the rayon
-/// pool can run at full width: cheap shards run many-wide while a
-/// heavy one takes a proportional slice of the budget. Workers block
-/// in `acquire` until reserving their estimate fits the budget.
-struct RamGate {
-  reserved: std::sync::Mutex<usize>,
-  cv: std::sync::Condvar,
-  budget: usize,
-}
-
-impl RamGate {
-  fn acquire(&self, bytes: usize) {
-    let mut used = self.reserved.lock().unwrap();
-    // Admit-when-alone: a shard whose estimate alone exceeds the
-    // budget must still run (by itself) rather than deadlock.
-    while *used > 0 && *used + bytes > self.budget {
-      used = self.cv.wait(used).unwrap();
-    }
-    *used += bytes;
-  }
-
-  fn release(&self, bytes: usize) {
-    *self.reserved.lock().unwrap() -= bytes;
-    self.cv.notify_all();
-  }
-}
-
-/// Per-shard execution-RSS reserve for [`RamGate`], an AFFINE model:
+/// Per-shard execution-RSS estimate, an AFFINE model:
 /// `EXEC_RSS_FIXED_BYTES + EXEC_RSS_PER_OWNED_BYTE x owned bytes`. The
 /// byte basis is the sum of the shard's owned constants' raw
 /// serialized bytes (`Env::get_const_bytes`) — NOT the shard's share
@@ -687,7 +677,7 @@ impl RamGate {
 const EXEC_RSS_FIXED_BYTES: usize = 9 * (1 << 29); // 4.5 GiB
 // Two calibrations, each accurate in its own regime, combined as a MAX
 // in `exec_rss_estimate` because the per-owned-byte execution footprint
-// is env-dependent and the gate's contract is NEVER OOM:
+// is env-dependent. Neither calibration is a proven memory upper bound:
 // - The affine fit (4.5 GiB + 1100x) measured on ISLB's small shards
 //   (1.4-5.7 MB owned; a pure ratio under-reserved them and OOM'd a
 //   128 GB box).
@@ -711,36 +701,22 @@ fn exec_rss_estimate(owned_bytes: usize) -> usize {
     .max(owned_bytes.saturating_mul(EXEC_RSS_RATIO_PER_OWNED_BYTE))
 }
 
-/// FFI: the detected prover/execution RAM budget in bytes
-/// ([`detected_ram_budget`]: [`ix_kernel::shard::RAM_USABLE_FRAC`] of
-/// `MemAvailable`), or `0` when `/proc/meminfo` is unreadable — the caller
-/// decides whether to fail closed.
+/// FFI: the detected prover RAM budget, respecting both host and visible
+/// cgroup headroom, or 0 when telemetry is unavailable. Shard-batch execution
+/// has its own live, fail-closed admission controller.
 #[unsafe(no_mangle)]
-extern "C" fn rs_aiur_detected_ram_budget()
--> lean_ffi::object::LeanIOResult<LeanOwned> {
+extern "C" fn rs_aiur_detected_ram_budget() -> LeanIOResult<LeanOwned> {
   let bytes = detected_ram_budget().unwrap_or(0);
-  lean_ffi::object::LeanIOResult::ok(LeanOwned::box_u64(bytes as u64))
+  LeanIOResult::ok(LeanOwned::box_u64(bytes as u64))
 }
 
-/// Detected prover/execution RAM budget:
-/// [`ix_kernel::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
-/// the rest for the OS. `None` (no gate) when meminfo is unreadable —
-/// disabling the check beats guessing at it.
+/// One-shot prover budget: the usual usable fraction of current headroom,
+/// including cgroup limits and their existing charges (not host RAM alone).
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 #[allow(clippy::cast_sign_loss)] // MemAvailable and the fraction are positive
 fn detected_ram_budget() -> Option<usize> {
-  available_ram_bytes()
-    .map(|b| (b as f64 * ix_kernel::shard::RAM_USABLE_FRAC) as usize)
-}
-
-/// `MemAvailable` from `/proc/meminfo`, in bytes (Linux; includes
-/// reclaimable page cache). `None` if unreadable — the caller then
-/// disables the gate rather than guessing.
-fn available_ram_bytes() -> Option<usize> {
-  let s = std::fs::read_to_string("/proc/meminfo").ok()?;
-  let rest = s.lines().find_map(|l| l.strip_prefix("MemAvailable:"))?;
-  let kib: usize = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
-  Some(kib * 1024)
+  let memory = super::memory::MemoryReader::new().ok()??.read().ok()?;
+  Some((memory.available as f64 * ix_kernel::shard::RAM_USABLE_FRAC) as usize)
 }
 
 // cast_precision_loss: the [ram-gate] line renders byte counts in GiB
@@ -760,116 +736,277 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
   fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
-) -> LeanExcept<LeanOwned> {
-  use rayon::prelude::*;
-  let toplevel = decode_toplevel(&toplevel_obj);
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let jobs = lean_unbox_nat_as_usize(jobs.inner());
-  let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
-  let shards = match decode_addr_lists(shards_blob.as_bytes()) {
-    Ok(v) => v,
-    Err(e) => return LeanExcept::error_string(&e),
-  };
-  let env = &env_handle.get().env;
-  // One system build for the whole batch: the RAM model reads circuit
-  // widths and lookup counts off the compiled circuits.
-  let system = AiurSystem::build(
-    decode_toplevel(&toplevel_obj),
-    decode_commitment_parameters(&commitment_parameters),
-    decode_fri_parameters(&fri_parameters),
-  );
-  // RAM-gated admission: reserve each shard's estimated execution RSS
-  // (fixed ingress cost + owned serialized bytes x measured slope)
-  // against most of the RAM available at entry. Memory in flight —
-  // not `jobs` — is what bounds peak RSS; an unreadable meminfo
-  // disables the gate.
-  let estimates: Vec<usize> = shards
-    .iter()
-    .map(|owned| {
-      exec_rss_estimate(
-        owned
-          .iter()
-          .filter_map(|a| env.get_const_bytes(a).map(|b| b.len()))
-          .sum::<usize>(),
-      )
+) -> LeanIOResult<LeanOwned> {
+  LeanIOResult::ok(ffi_catch_unwind_except("shardCheckBatchWithEnv", || {
+    let toplevel = decode_toplevel(&toplevel_obj);
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let jobs = lean_unbox_nat_as_usize(jobs.inner());
+    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+    let shards = match decode_addr_lists(shards_blob.as_bytes()) {
+      Ok(v) => v,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let env = &env_handle.get().env;
+    // One system build for the whole batch: the RAM model reads circuit
+    // widths and lookup counts off the compiled circuits.
+    let system = AiurSystem::build(
+      decode_toplevel(&toplevel_obj),
+      decode_commitment_parameters(&commitment_parameters),
+      decode_fri_parameters(&fri_parameters),
+    );
+    let pool = match rayon::ThreadPoolBuilder::new().num_threads(jobs).build() {
+      Ok(pool) => pool,
+      Err(e) => return LeanExcept::error_string(&format!("rayon pool: {e}")),
+    };
+    let results = match check_shard_batch(
+      &toplevel,
+      fun_idx,
+      env,
+      &shards,
+      use_bytecode,
+      &pool,
+      &system,
+      max_ram_bytes,
+      false,
+      &[],
+    ) {
+      Ok(results) => results,
+      Err(error) => return LeanExcept::error_string(&error),
+    };
+    let arr = LeanArray::alloc(results.len());
+    for (i, result) in results.iter().enumerate() {
+      let row = LeanAiurShardResult::alloc(0);
+      row.set_obj(0, LeanString::new(&result.error));
+      row.set_obj(1, LeanOwned::box_usize(result.peak_bytes));
+      row.set_obj(2, LeanOwned::box_usize(result.suggested_parts));
+      row.set_obj(3, LeanOwned::box_usize(result.resource_status));
+      arr.set(i, row);
+    }
+    LeanExcept::ok(arr)
+  }))
+}
+
+#[derive(Clone)]
+pub(super) struct ShardCheckResult {
+  pub error: String,
+  pub peak_bytes: usize,
+  pub suggested_parts: usize,
+  /// 0 = completed/rejected, 1 = per-record limit (split), 2 = aggregate
+  /// record limit (retry after the other records have dropped).
+  pub resource_status: usize,
+  /// Digest of the exact claim supplied to execution, retained for reports.
+  pub claim: Option<ix_common::address::Address>,
+}
+
+/// One execution session shares the same hard record/batch budgets across all
+/// attempts. Refinement changes ownership, never constructs a second competing
+/// memory controller or widens a grant while other records remain alive.
+pub(super) struct ShardExecutor<'a> {
+  toplevel: &'a aiur::bytecode::Toplevel,
+  fun_idx: usize,
+  env: &'a ixon::Env,
+  use_bytecode: bool,
+  system: &'a AiurSystem,
+  max_ram_bytes: usize,
+  batch_budget: Arc<ExecutionBudget>,
+  record_limit: u64,
+}
+
+impl<'a> ShardExecutor<'a> {
+  pub(super) fn new(
+    toplevel: &'a aiur::bytecode::Toplevel,
+    fun_idx: usize,
+    env: &'a ixon::Env,
+    use_bytecode: bool,
+    system: &'a AiurSystem,
+    max_ram_bytes: usize,
+    batch_limit: u64,
+  ) -> Result<Self, String> {
+    let batch_budget = ExecutionBudget::new(batch_limit, "batch".into(), None);
+    let record_limit = record_memory_limit(batch_limit)?;
+    eprintln!(
+      "[ixvm_record] execution limits: per-shard={}MiB batch={}MiB; resource-limited records are NOT successful checks",
+      record_limit >> 20,
+      batch_limit >> 20
+    );
+    Ok(Self {
+      toplevel,
+      fun_idx,
+      env,
+      use_bytecode,
+      system,
+      max_ram_bytes,
+      batch_budget,
+      record_limit,
     })
-    .collect();
-  let gate = RamGate {
-    reserved: std::sync::Mutex::new(0),
-    cv: std::sync::Condvar::new(),
-    budget: detected_ram_budget().unwrap_or(usize::MAX),
-  };
+  }
+
+  fn raw_estimate(&self, owned: &[ix_common::address::Address]) -> usize {
+    exec_rss_estimate(
+      owned
+        .iter()
+        .filter_map(|a| self.env.get_const_bytes(a).map(|b| b.len()))
+        .fold(0usize, usize::saturating_add),
+    )
+  }
+
+  pub(super) fn reservation(
+    &self,
+    owned: &[ix_common::address::Address],
+  ) -> usize {
+    // Admission doubles the static hint. Retain the existing enforceable cap.
+    self
+      .raw_estimate(owned)
+      .min(usize::try_from(self.record_limit / 2).unwrap_or(usize::MAX))
+  }
+
+  /// Both execution modes and both schedulers use exactly this worker. It
+  /// returns only scalar results: record, witness and scratch are dropped
+  /// before the caller releases admission or publishes a completion.
+  pub(super) fn check(
+    &self,
+    owned: &[ix_common::address::Address],
+    label: &str,
+  ) -> ShardCheckResult {
+    let mut claim_digest = None;
+    let result =
+      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+        self.env, owned,
+      ) {
+        Err(e) => (format!("witness build: {e}"), 0, 1, 0),
+        Ok((claim, input, mut io_buffer)) => {
+          let mut bytes = Vec::new();
+          claim.put(&mut bytes);
+          claim_digest = Some(ix_common::address::Address::hash(&bytes));
+          let record_budget = ExecutionBudget::new(
+            self.record_limit,
+            format!("shard {label}"),
+            Some(Arc::clone(&self.batch_budget)),
+          );
+          match dispatch_execute_with_budget(
+            self.toplevel,
+            self.fun_idx,
+            input,
+            &mut io_buffer,
+            self.use_bytecode,
+            Some(record_budget),
+          ) {
+            Err(ExecError::ResourceLimit(e)) => {
+              let status = if e.shared { 2 } else { 1 };
+              (e.to_string(), 0, 2, status)
+            },
+            Err(e) => (e.to_string(), 0, 1, 0),
+            Ok((record, _output)) => {
+              let peak = self.system.peak_prove_bytes(&record).peak;
+              let parts = if self.max_ram_bytes > 0 && peak > self.max_ram_bytes
+              {
+                self.system.suggested_split_parts(&record, self.max_ram_bytes)
+              } else {
+                1
+              };
+              (String::new(), peak, parts, 0)
+            },
+          }
+        },
+      };
+    ShardCheckResult {
+      error: result.0,
+      peak_bytes: result.1,
+      suggested_parts: result.2,
+      resource_status: result.3,
+      claim: claim_digest,
+    }
+  }
+}
+
+/// Legacy Lean wave driver's batch API. Native refinement shares its executor
+/// but keeps admission and aggregate accounting alive across completions.
+#[allow(clippy::cast_precision_loss)]
+pub(super) fn check_shard_batch(
+  toplevel: &aiur::bytecode::Toplevel,
+  fun_idx: usize,
+  env: &ixon::Env,
+  shards: &[Vec<ix_common::address::Address>],
+  use_bytecode: bool,
+  pool: &rayon::ThreadPool,
+  system: &AiurSystem,
+  max_ram_bytes: usize,
+  progress: bool,
+  labels: &[String],
+) -> Result<Vec<ShardCheckResult>, String> {
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  let started = std::time::Instant::now();
+  let completed = AtomicUsize::new(0);
+  let gate = super::admission::Admission::new(pool.current_num_threads())?;
+  let executor = ShardExecutor::new(
+    toplevel,
+    fun_idx,
+    env,
+    use_bytecode,
+    system,
+    max_ram_bytes,
+    gate.execution_budget(),
+  )?;
+  let estimates: Vec<_> =
+    shards.iter().map(|owned| executor.raw_estimate(owned)).collect();
   {
     let gib = 1024.0 * 1024.0 * 1024.0;
     let min = estimates.iter().min().copied().unwrap_or(0);
     let max = estimates.iter().max().copied().unwrap_or(0);
     eprintln!(
-      "[ram-gate] budget {:.1} GiB, {} shard estimates: min {:.1} / max {:.1} GiB",
-      gate.budget as f64 / gib,
+      "[ram-gate] {} raw shard estimates: min {:.1} / max {:.1} GiB; reservation safety factor=2",
       estimates.len(),
       min as f64 / gib,
       max as f64 / gib,
     );
   }
-  let check_batch = || -> Vec<(String, usize, usize)> {
-    shards
-      .par_iter()
-      .zip(estimates.par_iter())
-      .map(|(owned, est)| {
-        gate.acquire(*est);
-        let result =
-          match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-            env, owned,
-          ) {
-            Err(e) => (format!("witness build: {e}"), 0, 1),
-            Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
-              &toplevel,
-              fun_idx,
-              input,
-              &mut io_buffer,
-              use_bytecode,
-            ) {
-              Err(e) => (e, 0, 1),
-              // Both reductions happen here, while the record is
-              // still owned by this task: it is dropped before
-              // `gate.release`, so admission keeps bounding peak RSS by
-              // the shards in flight rather than by the whole partition.
-              Ok((record, _output)) => {
-                let peak = system.peak_prove_bytes(&record).peak;
-                let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
-                  system.suggested_split_parts(&record, max_ram_bytes)
-                } else {
-                  1
-                };
-                (String::new(), peak, parts)
-              },
-            },
-          };
-        gate.release(*est);
-        result
-      })
-      .collect()
-  };
-  let results = if jobs == 0 {
-    check_batch()
-  } else {
-    let pool = match rayon::ThreadPoolBuilder::new().num_threads(jobs).build() {
-      Ok(p) => p,
-      Err(e) => {
-        return LeanExcept::error_string(&format!("rayon pool: {e}"));
-      },
-    };
-    pool.install(check_batch)
-  };
-  let arr = LeanArray::alloc(results.len());
-  for (i, (err, peak, parts)) in results.iter().enumerate() {
-    let row = LeanAiurShardResult::alloc(0);
-    row.set_obj(0, LeanString::new(err));
-    row.set_obj(1, LeanOwned::box_usize(*peak));
-    row.set_obj(2, LeanOwned::box_usize(*parts));
-    arr.set(i, row);
+  // An enforced record cap replaces the unbounded tail of the static fit.
+  // Admission doubles these hints; retain the smaller enforceable ceiling.
+  let reservations: Vec<_> = estimates
+    .iter()
+    .map(|&estimate| {
+      estimate
+        .min(usize::try_from(executor.record_limit / 2).unwrap_or(usize::MAX))
+    })
+    .collect();
+  gate.map(pool, &reservations, |index| {
+    let owned = &shards[index];
+    let label = labels.get(index).cloned().unwrap_or_else(|| index.to_string());
+    if progress {
+      eprintln!("[ixvm_check] shard {label} started ({} consts)", owned.len());
+    }
+    let result = executor.check(owned, &label);
+    let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+    if progress {
+      eprintln!(
+        "[ixvm_check] {done}/{} shards, {:.1}s: shard {label} {}",
+        shards.len(),
+        started.elapsed().as_secs_f64(),
+        if result.error.is_empty() { "ok" } else { &result.error },
+      );
+    }
+    result
+  })
+}
+
+/// Execution storage is a different budget from the destination prover peak.
+/// Default to at most 32 GiB per record, and at most half the live batch budget.
+/// The byte override is also useful for small, deterministic resource tests.
+fn record_memory_limit(batch: u64) -> Result<u64, String> {
+  match std::env::var("IX_AIUR_EXEC_MAX_BYTES") {
+    Ok(value) => value
+      .parse::<u64>()
+      .ok()
+      .filter(|n| *n > 0)
+      .map(|n| n.min(batch))
+      .ok_or_else(|| {
+        "IX_AIUR_EXEC_MAX_BYTES must be a positive byte count".into()
+      }),
+    Err(std::env::VarError::NotPresent) => {
+      Ok((32u64 << 30).min(batch / 2).max(1))
+    },
+    Err(e) => Err(format!("IX_AIUR_EXEC_MAX_BYTES: {e}")),
   }
-  LeanExcept::ok(arr)
 }
 
 /// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
@@ -1026,65 +1163,89 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
   exec_only: bool,
-) -> LeanExcept<LeanOwned> {
-  ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
-    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
-    let owned = match decode_owned_blob(&owned_blob) {
-      Ok(v) => v,
-      Err(e) => return LeanExcept::error_string(&e),
-    };
-    let env = &env_handle.get().env;
-
-    let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-        env, &owned,
-      ) {
-        Ok(t) => t,
-        Err(e) => {
-          return LeanExcept::error_string(&format!("witness build: {e}"));
-        },
+) -> LeanIOResult<LeanOwned> {
+  LeanIOResult::ok(ffi_catch_unwind_except(
+    "AiurSystem.shardProveWithEnv",
+    || {
+      let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+      let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+      let owned = match decode_owned_blob(&owned_blob) {
+        Ok(v) => v,
+        Err(e) => return LeanExcept::error_string(&e),
       };
+      let env = &env_handle.get().env;
 
-    // 0 = detect. Matching the check batch's gate keeps one RAM policy in
-    // the system rather than two that can disagree.
-    let budget = if max_ram_bytes > 0 {
-      Some(max_ram_bytes)
-    } else {
-      detected_ram_budget()
-    };
-    let proved = aiur_system_obj.get().prove_ixvm_within_budget(
-      fun_idx,
-      &input,
-      &mut io_buffer,
-      |toplevel, fun_idx, input, io_buffer| {
-        ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-          toplevel, fun_idx, input, io_buffer,
-        )
-      },
-      budget,
-      exec_only,
-    );
-    let (proof, peak, parts) = match proved {
-      GatedProve::Proved { proof, peak, .. } => (
-        LeanOption::some(LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)),
-        peak,
-        1,
-      ),
-      GatedProve::Split { peak, parts } => (LeanOption::none(), peak, parts),
-      GatedProve::Measured { peak } => (LeanOption::none(), peak, 1),
-    };
-    drop(io_buffer);
+      let (claim, input, mut io_buffer) =
+        match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+          env, &owned,
+        ) {
+          Ok(t) => t,
+          Err(e) => {
+            return LeanExcept::error_string(&format!("witness build: {e}"));
+          },
+        };
 
-    let mut claim_bytes: Vec<u8> = Vec::new();
-    claim.put(&mut claim_bytes);
-    let result = LeanAiurShardProveResult::alloc(0);
-    result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
-    result.set_obj(1, proof);
-    result.set_obj(2, LeanOwned::box_usize(peak));
-    result.set_obj(3, LeanOwned::box_usize(parts));
-    LeanExcept::ok(result)
-  })
+      // 0 = detect cgroup-aware headroom. The batch execution controller also
+      // samples live pressure; this one-shot prover budget is not admission.
+      let budget = if max_ram_bytes > 0 {
+        Some(max_ram_bytes)
+      } else {
+        detected_ram_budget()
+      };
+      let record_limit = match record_memory_limit(
+        detected_ram_budget().unwrap_or(1 << 30) as u64,
+      ) {
+        Ok(limit) => limit.min(budget.unwrap_or(usize::MAX) as u64),
+        Err(error) => return LeanExcept::error_string(&error),
+      };
+      let execution_budget =
+        ExecutionBudget::new(record_limit, "prove shard".into(), None);
+      let proved = aiur_system_obj.get().prove_ixvm_within_budget(
+        fun_idx,
+        &input,
+        &mut io_buffer,
+        |toplevel, fun_idx, input, io_buffer| {
+          ixvm_codegen::aiur_ixvm_runner::execute_ixvm_with_budget(
+            toplevel,
+            fun_idx,
+            input,
+            io_buffer,
+            Some(execution_budget),
+          )
+        },
+        budget,
+        exec_only,
+      );
+      let (proof, peak, parts) = match proved {
+        GatedProve::ExecutionFailed(ExecError::ResourceLimit(error)) => {
+          eprintln!("[ixvm_record] {error}; execution aborted, split required");
+          // 0 is UNKNOWN, not a measured zero-byte peak. >=2 parts guarantees
+          // exec-only/prove callers cannot accept this as a successful execution.
+          (LeanOption::none(), 0, 2)
+        },
+        GatedProve::ExecutionFailed(error) => {
+          return LeanExcept::error_string(&error.to_string());
+        },
+        GatedProve::Proved { proof, peak, .. } => (
+          LeanOption::some(LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)),
+          peak,
+          1,
+        ),
+        GatedProve::Split { peak, parts } => (LeanOption::none(), peak, parts),
+        GatedProve::Measured { peak } => (LeanOption::none(), peak, 1),
+      };
+      drop(io_buffer);
+
+      let mut claim_bytes: Vec<u8> = Vec::new();
+      claim.put(&mut claim_bytes);
+      let result = LeanAiurShardProveResult::alloc(0);
+      result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
+      result.set_obj(1, proof);
+      result.set_obj(2, LeanOwned::box_usize(peak));
+      result.set_obj(3, LeanOwned::box_usize(parts));
+      LeanExcept::ok(result)
+    },
+  ))
 }
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
@@ -1623,7 +1784,7 @@ fn build_lean_io_map(io_buffer: &IOBuffer) -> LeanArray<LeanOwned> {
   arr
 }
 
-fn decode_commitment_parameters(
+pub(super) fn decode_commitment_parameters(
   obj: &LeanAiurCommitmentParameters<impl LeanRef>,
 ) -> CommitmentParameters {
   let ctor = obj.as_ctor();
@@ -1633,7 +1794,7 @@ fn decode_commitment_parameters(
   }
 }
 
-fn decode_fri_parameters(
+pub(super) fn decode_fri_parameters(
   obj: &LeanAiurFriParameters<impl LeanRef>,
 ) -> FriParameters {
   let ctor = obj.as_ctor();

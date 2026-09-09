@@ -178,6 +178,10 @@ lean_exe «bench-ixvm» where
 lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
 
+lean_exe «bench-ixvm-focus» where
+  root := `Benchmarks.IxVM.FocusFailures
+  moreLinkObjs := #[ix_rs]
+
 lean_exe «bench-typecheck» where
   root := `Benchmarks.Typecheck
   supportInterpreter := true

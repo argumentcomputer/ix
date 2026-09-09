@@ -58,11 +58,13 @@ fn calibrate_prover_rss(analytic_peak: usize) -> usize {
 
 /// Outcome of a budget-gated prove
 /// ([`AiurSystem::prove_ixvm_within_budget`]). Only the case that ran a
-/// STARK carries a proof; the other two report the measured peak the
-/// caller decides with.
+/// STARK carries a proof. Completed executions report a measured peak;
+/// interrupted/rejected executions carry an error and no measurement.
 // One short-lived value per prove; the variant size gap is irrelevant.
 #[allow(clippy::large_enum_variant)]
 pub enum GatedProve {
+  /// Execution did not complete. No record peak and no proof are available.
+  ExecutionFailed(ExecError),
   /// Fit the budget; proven from the gating record.
   Proved { claim: Vec<G>, proof: AiurProof, peak: usize },
   /// Over budget: the record was dropped, and `parts` is the count
@@ -107,19 +109,26 @@ pub struct CircuitShape {
   pub preprocessed_height: usize,
 }
 
-/// Raw row count of a circuit under `record`, ceil-divided into `parts`
-/// even shares — `parts = 1` is the record's exact heights. The byte
+/// Conservative row count of a circuit under `record`, ceil-divided into
+/// `parts` even shares. Sum member-function rows before dividing; circuit
+/// indices are not function indices. Unlike witness generation, the estimate
+/// still includes zero-multiplicity hint rows. The byte
 /// gadgets keep their fixed heights: they are the same size in every
 /// shard and are most of the peak model's floor, which dividing cannot
 /// shrink.
-fn raw_of(
-  record: &QueryRecord,
+fn raw_of<'a>(
+  toplevel: &'a Toplevel,
+  record: &'a QueryRecord,
   parts: usize,
-) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+) -> impl Fn(usize, &CircuitType) -> usize + 'a {
   move |_, ct| match ct {
-    CircuitType::Function { idx } => {
-      record.function_queries[*idx].len().div_ceil(parts)
-    },
+    CircuitType::Function { idx } => toplevel.circuits[*idx]
+      .members
+      .iter()
+      .fold(0usize, |rows, &member| {
+        rows.saturating_add(record.function_queries[member].len())
+      })
+      .div_ceil(parts),
     CircuitType::Memory { width } => {
       record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
     },
@@ -280,7 +289,7 @@ impl AiurSystem {
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      raw_of(record, 1),
+      raw_of(&self.toplevel, record, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -371,7 +380,10 @@ impl AiurSystem {
     // count; stop rather than search forever.
     while parts < (1 << 20) {
       let peak = self
-        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
+        .peak_prove_bytes_by(
+          raw_of(&self.toplevel, record, parts),
+          record_bytes / parts,
+        )
         .peak;
       if peak <= max_bytes {
         break;
@@ -500,6 +512,9 @@ impl AiurSystem {
       fun_idx, input, io_buffer, executor, None, false,
     ) {
       GatedProve::Proved { claim, proof, .. } => (claim, proof),
+      GatedProve::ExecutionFailed(error) => {
+        panic!("Aiur execution failed: {error}")
+      },
       _ => unreachable!("an unbudgeted prove always proves"),
     }
   }
@@ -544,8 +559,10 @@ impl AiurSystem {
     tracing_texray::examine_current();
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
     let (query_record, output) =
-      executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
-        .expect("IxVM-native Aiur execution failed during prove_ixvm");
+      match executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer) {
+        Ok(result) => result,
+        Err(error) => return GatedProve::ExecutionFailed(error),
+      };
     drop(_g);
 
     let peak = self.peak_prove_bytes(&query_record).peak;
@@ -897,6 +914,43 @@ mod tests {
     with_singleton_circuits(vec![f, g, h], vec![])
   }
 
+  /// Put the nested callees in one circuit, retaining the entry singleton.
+  /// The members have different auxiliary/lookup widths and selector offsets.
+  fn grouped_promotion_toplevel() -> Toplevel {
+    let mut toplevel = unconstrained_call_promotion_toplevel();
+    toplevel.circuits.truncate(1);
+    toplevel.circuits.push(crate::bytecode::Circuit {
+      members: vec![1, 2],
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 2,
+        auxiliaries: 2,
+        lookups: 2,
+      },
+    });
+    toplevel
+  }
+
+  #[test]
+  fn grouped_peak_rows_sum_member_queries_before_dividing() {
+    let toplevel = grouped_promotion_toplevel();
+    let mut record = QueryRecord::new(&toplevel);
+    for (function, count) in [1, 3, 5].into_iter().enumerate() {
+      for index in 0..count {
+        record.function_queries[function]
+          .insert(&[G::from_usize(index)], &[G::ONE], G::ONE)
+          .unwrap();
+      }
+    }
+    let exact = raw_of(&toplevel, &record, 1);
+    assert_eq!(exact(0, &CircuitType::Function { idx: 0 }), 1);
+    assert_eq!(exact(1, &CircuitType::Function { idx: 1 }), 8);
+    let split = raw_of(&toplevel, &record, 3);
+    assert_eq!(split(1, &CircuitType::Function { idx: 1 }), 3);
+    assert_eq!(split(2, &CircuitType::Bytes1), 256);
+    assert_eq!(split(3, &CircuitType::Bytes2), 65536);
+  }
+
   #[test]
   fn prove_verify_promotes_nested_unconstrained_call() {
     let (cp, fp) = test_parameters();
@@ -913,6 +967,137 @@ mod tests {
     system
       .verify(&claim, &proof)
       .expect("nested constrained promotion must balance function channels");
+  }
+
+  #[test]
+  fn compact_storage_preserves_witnesses_and_lookup_traces() {
+    use multi_stark::lookup::LookupValues;
+
+    fn witness(
+      system: &AiurSystem,
+      record: &QueryRecord,
+      io: &IOBuffer,
+    ) -> (Vec<RowMajorMatrix<G>>, Vec<LookupValues<G>>) {
+      system
+        .circuit_types()
+        .into_iter()
+        .enumerate()
+        .map(|(i, circuit)| {
+          let widths = &system.slot_widths[i];
+          match circuit {
+            CircuitType::Function { idx } => {
+              system.toplevel.witness_data(idx, record, io, widths)
+            },
+            CircuitType::Memory { width } => {
+              Memory::witness_data(width, record, widths)
+            },
+            CircuitType::Bytes1 => Bytes1.witness_data(record, widths),
+            CircuitType::Bytes2 => Bytes2.witness_data(record, widths),
+          }
+        })
+        .unzip()
+    }
+
+    for toplevel in [
+      call_and_memory_toplevel(),
+      unconstrained_call_promotion_toplevel(),
+      grouped_promotion_toplevel(),
+      xor_splits_toplevel(),
+    ] {
+      let (cp, fp) = test_parameters();
+      let system = AiurSystem::build(toplevel, cp, fp);
+      // Exercise byte encoding, output-only widening (255 + 1), wide
+      // inputs/outputs and a field wraparound. Byte gadgets remain in range.
+      let values = if system.toplevel.memory_sizes.is_empty()
+        && system.toplevel.functions.len() == 1
+      {
+        vec![G::ZERO, G::ONE, G::from_u8(255)]
+      } else {
+        vec![G::ONE, G::from_u8(255), G::from_u64(1 << 48), G::NEG_ONE]
+      };
+      for value in values {
+        let input = vec![value; system.toplevel.functions[0].layout.input_size];
+        let mut compact_io = empty_io_buffer();
+        let mut full_io = empty_io_buffer();
+        let (compact, compact_out) = system
+          .toplevel
+          .execute_test_storage(0, input.clone(), &mut compact_io, true)
+          .unwrap();
+        let (full, full_out) =
+          system.toplevel.execute_uncompressed(0, input, &mut full_io).unwrap();
+        assert_eq!(compact_out, full_out);
+        let (compact_traces, compact_lookups) =
+          witness(&system, &compact, &compact_io);
+        let (full_traces, full_lookups) = witness(&system, &full, &full_io);
+        assert_eq!(
+          compact_traces, full_traces,
+          "every main-trace field, including multiplicities and padding"
+        );
+        // LookupValues does not expose its flat buffers. Compare its public
+        // stage-2 construction at two challenges as well as the exact main
+        // traces, row-level storage differentials and proof checks.
+        let groups = vec![1; compact_lookups.len()];
+        for challenge in [G::from_u64(1_000_003), G::from_u64(1_000_033)] {
+          let compact_stage2 = LookupValues::stage_2_traces(
+            &compact_lookups,
+            &groups,
+            challenge,
+            &G::from_u8(37),
+            G::ZERO,
+          );
+          let full_stage2 = LookupValues::stage_2_traces(
+            &full_lookups,
+            &groups,
+            challenge,
+            &G::from_u8(37),
+            G::ZERO,
+          );
+          assert_eq!(compact_stage2, full_stage2);
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn compact_and_full_records_both_prove_the_same_claim() {
+    assert_compact_full_proofs(
+      call_and_memory_toplevel(),
+      &[G::from_u8(255), G::from_u64(1 << 48)],
+    );
+  }
+
+  #[test]
+  fn grouped_compact_and_full_records_both_prove_the_same_claim() {
+    assert_compact_full_proofs(
+      grouped_promotion_toplevel(),
+      &[G::from_u64(1 << 48)],
+    );
+  }
+
+  fn assert_compact_full_proofs(toplevel: Toplevel, input: &[G]) {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(toplevel, cp, fp);
+    let mut compact_io = empty_io_buffer();
+    let mut full_io = empty_io_buffer();
+    let (compact, compact_out) = system
+      .toplevel
+      .execute_test_storage(0, input.to_vec(), &mut compact_io, true)
+      .unwrap();
+    let (full, full_out) = system
+      .toplevel
+      .execute_uncompressed(0, input.to_vec(), &mut full_io)
+      .unwrap();
+    let (compact_claim, compact_proof) =
+      system.prove_from_execution(0, input, &compact_io, compact, &compact_out);
+    let (full_claim, full_proof) =
+      system.prove_from_execution(0, input, &full_io, full, &full_out);
+    assert_eq!(compact_claim, full_claim);
+    for proof in [&compact_proof, &full_proof] {
+      system.verify(&compact_claim, proof).unwrap();
+      let mut bad_claim = compact_claim.clone();
+      *bad_claim.last_mut().unwrap() += G::ONE;
+      assert!(system.verify(&bad_claim, proof).is_err());
+    }
   }
 
   #[test]
@@ -945,6 +1130,32 @@ mod tests {
       system.verify(&bad_claim, &proof).is_err(),
       "verification must reject a tampered claim"
     );
+  }
+
+  #[test]
+  fn resource_limited_execution_never_becomes_a_measurement_or_proof() {
+    use crate::execute::budget::ExecutionBudget;
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(mul_toplevel(), cp, fp);
+    for exec_only in [true, false] {
+      let budget = ExecutionBudget::new(8 << 20, "test".into(), None);
+      let retained = budget.clone();
+      let result = system.prove_ixvm_within_budget(
+        0,
+        &[G::ONE, G::ONE],
+        &mut empty_io_buffer(),
+        move |t, idx, input, io| {
+          t.execute_with_budget(idx, input, io, Some(budget))
+        },
+        None,
+        exec_only,
+      );
+      assert!(matches!(
+        result,
+        GatedProve::ExecutionFailed(ExecError::ResourceLimit(_))
+      ));
+      assert_eq!(retained.used(), 0);
+    }
   }
 
   #[test]
