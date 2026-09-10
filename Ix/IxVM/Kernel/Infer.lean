@@ -135,16 +135,136 @@ def infer := ⟦
         let u2 = k_ensure_sort(body, types2);
         store(KExprNode.Srt(level_imax(u1, u2))),
 
-      KExprNode.Let(ty, val, body) =>
-        k_ensure_sort(ty, types);
-        k_check(val, ty, types);
-        let body_substed = expr_inst1(body, val, 0);
-        k_infer(body_substed, types),
+      KExprNode.Let(ty, val, body) => k_infer_let_start(ty, val, body, types),
 
       --  handlers:
       KExprNode.Lit(lit) => k_infer_lit(lit),
       KExprNode.Proj(struct_addr, fidx, e1) =>
         k_infer_proj(struct_addr, fidx, e1, types),
+    }
+  }
+
+  -- Let-local inference environment. Values are closures in the environment
+  -- before their declaration; checked types are concrete at the saved depth.
+  -- Lambda locals keep their introduction depth, so extending the environment
+  -- does not eagerly lift every earlier value. No new expression kind is
+  -- introduced, and whnf/def-eq still consume ordinary concrete expressions.
+  enum InferLetEnvNode {
+    Id(List‹KExpr›, G),
+    Local(KExpr, G, InferLetEnv),
+    Let(KExpr, KExpr, InferLetEnv, G)
+  }
+  type InferLetEnv = &InferLetEnvNode
+
+  fn k_infer_let_start(ty: KExpr, val: KExpr, body: KExpr,
+                            types: List‹KExpr›) -> KExpr {
+    k_ensure_sort(ty, types);
+    k_check(val, ty, types);
+    let depth = list_length(types);
+    let env = store(InferLetEnvNode.Id(types, depth));
+    k_infer_let_env(body, store(InferLetEnvNode.Let(ty, val, env, depth)), types, depth)
+  }
+
+  fn infer_let_var_type(env: InferLetEnv, i: G,
+                             types: List‹KExpr›, depth: G) -> KExpr {
+    let (ty, created) = infer_let_lookup_type(env, i);
+    expr_lift(ty, depth - created, 0)
+  }
+
+  fn infer_let_lookup_type(env: InferLetEnv, i: G) -> (KExpr, G) {
+    match load(env) {
+      InferLetEnvNode.Id(types, origin) => (types_lookup(types, i), origin),
+      InferLetEnvNode.Local(ty, introduced, outer) => match i {
+        0 => (ty, introduced - 1),
+        _ => infer_let_lookup_type(outer, i - 1),
+      },
+      InferLetEnvNode.Let(ty, _, outer, created) => match i {
+        0 => (ty, created),
+        _ => infer_let_lookup_type(outer, i - 1),
+      },
+    }
+  }
+
+  fn infer_let_var_value(env: InferLetEnv, i: G, depth: G) -> KExpr {
+    let (value, created) = infer_let_lookup_value(env, i);
+    expr_lift(value, depth - created, 0)
+  }
+
+  fn infer_let_lookup_value(env: InferLetEnv, i: G) -> (KExpr, G) {
+    match load(env) {
+      InferLetEnvNode.Id(_, origin) => (store(KExprNode.BVar(i)), origin),
+      InferLetEnvNode.Local(_, introduced, outer) => match i {
+        0 => (store(KExprNode.BVar(0)), introduced),
+        _ => infer_let_lookup_value(outer, i - 1),
+      },
+      InferLetEnvNode.Let(_, value, outer, created) => match i {
+        0 => (infer_let_materialize(value, outer, created, 0), created),
+        _ => infer_let_lookup_value(outer, i - 1),
+      },
+    }
+  }
+
+  fn infer_let_materialize(e: KExpr, env: InferLetEnv, depth: G, cutoff: G) -> KExpr {
+    match memo_u32_less_than(cutoff, expr_lbr(e)) {
+      0 => e,
+      _ => match load(e) {
+        KExprNode.BVar(i) => match memo_u32_less_than(i, cutoff) {
+          1 => e,
+          _ => expr_lift(@infer_let_var_value(env, i - cutoff, depth), cutoff, 0),
+        },
+        KExprNode.App(f, a) => store(KExprNode.App(
+          infer_let_materialize(f, env, depth, cutoff), infer_let_materialize(a, env, depth, cutoff))),
+        KExprNode.Lam(ty, body) => store(KExprNode.Lam(
+          infer_let_materialize(ty, env, depth, cutoff), infer_let_materialize(body, env, depth, cutoff + 1))),
+        KExprNode.Forall(ty, body) => store(KExprNode.Forall(
+          infer_let_materialize(ty, env, depth, cutoff), infer_let_materialize(body, env, depth, cutoff + 1))),
+        KExprNode.Let(ty, val, body) => store(KExprNode.Let(
+          infer_let_materialize(ty, env, depth, cutoff), infer_let_materialize(val, env, depth, cutoff),
+          infer_let_materialize(body, env, depth, cutoff + 1))),
+        KExprNode.Proj(addr, i, val) => store(KExprNode.Proj(addr, i,
+          infer_let_materialize(val, env, depth, cutoff))),
+        _ => e,
+      },
+    }
+  }
+
+  fn k_infer_let_env(e: KExpr, env: InferLetEnv, types: List‹KExpr›, depth: G) -> KExpr {
+    match expr_lbr(e) {
+      0 => k_infer(e, store(ListNode.Nil)),
+      _ => match load(e) {
+        KExprNode.BVar(i) => @infer_let_var_type(env, i, types, depth),
+        KExprNode.Lam(ty, body) =>
+          let dom = infer_let_materialize(ty, env, depth, 0);
+          k_ensure_sort(dom, types);
+          let inner_types = store(ListNode.Cons(dom, types));
+          let inner_env = store(InferLetEnvNode.Local(dom, depth + 1, env));
+          let body_ty = k_infer_let_env(body, inner_env, inner_types, depth + 1);
+          store(KExprNode.Forall(dom, body_ty)),
+        KExprNode.Forall(ty, body) =>
+          let dom = infer_let_materialize(ty, env, depth, 0);
+          let u1 = k_ensure_sort(dom, types);
+          let inner_types = store(ListNode.Cons(dom, types));
+          let inner_env = store(InferLetEnvNode.Local(dom, depth + 1, env));
+          let bt = k_infer_let_env(body, inner_env, inner_types, depth + 1);
+          let KExprNode.Srt(u2) = load(whnf(bt, inner_types));
+          store(KExprNode.Srt(level_imax(u1, u2))),
+        KExprNode.Let(ty, val, body) =>
+          let dom = infer_let_materialize(ty, env, depth, 0);
+          k_ensure_sort(dom, types);
+          let val_ty = k_infer_let_env(val, env, types, depth);
+          assert_eq!(k_is_def_eq(val_ty, dom, types), 1, "delayed let value type mismatch");
+          k_infer_let_env(body, store(InferLetEnvNode.Let(dom, val, env, depth)), types, depth),
+        KExprNode.App(f, a) =>
+          let ft = k_infer_let_env(f, env, types, depth);
+          let KExprNode.Forall(dom, cod) = load(whnf(ft, types));
+          let arg_ty = k_infer_let_env(a, env, types, depth);
+          assert_eq!(k_is_def_eq(arg_ty, dom, types), 1, "delayed application type mismatch");
+          match has_bvar_in_range(cod, 0, 1) {
+            0 => expr_lower(cod, 1, 1),
+            _ => expr_inst1(cod, infer_let_materialize(a, env, depth, 0), 0),
+          },
+        _ => k_infer(infer_let_materialize(e, env, depth, 0), types),
+      },
     }
   }
 

@@ -459,19 +459,23 @@ def klimbs := ⟦
     match load(a) {
       ListNode.Nil => acc,
       ListNode.Cons(a_limb, rest) =>
-        let prod = klimbs_mul_single(a_limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil));
+        let prod = klimbs_mul_single(a_limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
         let shifted = klimbs_shl_limbs(prod, shift);
         let new_acc = klimbs_add(acc, shifted);
         klimbs_mul_outer(rest, b, new_acc, shift + 1),
     }
   }
 
-  fn klimbs_mul_single(a_limb: U64, b: KLimbs, carry: U64, acc: KLimbs) -> KLimbs {
+  -- Build the low limb onto the recursively computed tail. Repeated snoc
+  -- copied growing output prefixes; cons builds each result limb once and
+  -- removes the irrelevant output prefix from the memo key. The arithmetic
+  -- and the zero/trailing-limb representation are unchanged.
+  fn klimbs_mul_single(a_limb: U64, b: KLimbs, carry: U64) -> KLimbs {
     match load(b) {
       ListNode.Nil =>
         match u64_is_zero(carry) {
-          1 => acc,
-          0 => list_snoc(acc, carry),
+          1 => store(ListNode.Nil),
+          0 => store(ListNode.Cons(carry, store(ListNode.Nil))),
         },
       ListNode.Cons(b_limb, rest) =>
         match u64_mul(a_limb, b_limb) {
@@ -480,8 +484,8 @@ def klimbs := ⟦
               (sum, carry_out) =>
                 match u64_add(hi, [carry_out, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) {
                   (new_carry, _) =>
-                    let new_acc = list_snoc(acc, sum);
-                    klimbs_mul_single(a_limb, rest, new_carry, new_acc),
+                    store(ListNode.Cons(sum,
+                      klimbs_mul_single(a_limb, rest, new_carry))),
                 },
             },
         },
