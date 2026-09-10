@@ -665,6 +665,15 @@ def toplevel := ⟦
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
   }
 
+  -- An assertion runs before the statements after it, even when those
+  -- begin with an inlined call whose splice hoists `let`s: the spliced
+  -- lets stay in the continuation instead of wrapping the assertion.
+  pub fn assert_before_inline(x: G) -> G {
+    assert_eq!(x, 1, "assertion first");
+    let (p1, p2) = @inl_pair(x);                  -- (2, 2)
+    p1 + p2
+  }
+
   ---------------------------------------------------------------------------
   -- Unconstrained big-uint div/mod: lists of [U8; 8] limbs in, the same
   -- list datatype at [G; 8] out. The datatype must declare Cons FIRST
@@ -891,6 +900,7 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Inlined function calls (`@fn(args)`): all scenarios in one proof
     .prove `inline_test #[] #[3182],
+    .prove `assert_before_inline #[1] #[4],
 
     -- Unconstrained big-uint div/mod: all cases in one proof
     -- (6042 + 300 + 1000300 + 2^63 + 1)
@@ -918,6 +928,27 @@ def groupedTestCases : List AiurTestCase := [
   .prove `calls_grouped #[1, 3, 9] #[15]
     (label := "calls_grouped(1,3,9) [grouped]"),
 ]
+
+/-- The compiled `assert_before_inline` keeps its assertion ahead of the
+inlined continuation: the `assertEq` op precedes every `call` op. -/
+def assertOrderChecks (compiled : Aiur.CompiledToplevel) : TestSeq :=
+  match compiled.getFuncIdx `assert_before_inline with
+  | none => test "assert_before_inline compiles" false
+  | some idx =>
+    let ops := compiled.bytecode.functions[idx]!.body.ops
+    let isAssert : Aiur.Bytecode.Op → Bool
+      | .assertEq .. => true
+      | _ => false
+    let isCall : Aiur.Bytecode.Op → Bool
+      | .call .. => true
+      | _ => false
+    let firstAssert := ops.findIdx? isAssert
+    let firstCall := ops.findIdx? isCall
+    let ordered : Bool := match firstAssert, firstCall with
+      | some a, some c => a < c
+      | some _, none => true
+      | _, _ => false
+    test "assertion precedes the inlined continuation's calls" ordered
 
 /-- Structural checks on the grouped partition: the grouped circuit exists,
 holds exactly its members, its layout follows the merge rule (max inputs,

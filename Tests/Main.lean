@@ -175,7 +175,8 @@ def primaryRunners : List (String × IO UInt32) := [
       | .ok genv => do
         let r2 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (genv.runTestCase tc)
         let r3 ← LSpec.lspecIO
-          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled])]) []
+          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled]),
+            ("aiur-inline-order", [assertOrderChecks env.compiled])]) []
         return if r1 == 0 && r2 == 0 && r3 == 0 then 0 else 1),
   ("aiur-hashes", do
     IO.println "aiur-hashes"

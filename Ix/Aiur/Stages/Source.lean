@@ -716,16 +716,36 @@ decreasing_by
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
 
-/-- Peel the leading `let` bindings off a term: returns the binding frames
-(outermost first) and the non-`let` core. -/
-def Term.peelLets : Term → List (Pattern × Term) × Term
-  | .let p v b => let (fs, c) := Term.peelLets b; ((p, v) :: fs, c)
+/-- A statement frame: one construct that binds, checks, prints or writes
+and then continues with the rest of its block. A term is a chain of frames
+ending in a value core; `peelFrames` and `wrapFrames` take that chain apart
+and put it back, in order. -/
+inductive StmtFrame
+  | «let» (p : Pattern) (v : Term)
+  | assertEq (a b : Term) (msg : Option String)
+  | debug (label : String) (t : Option Term)
+  | ioSetInfo (c k i l : Term)
+  | ioWrite (c d : Term)
+
+/-- Peel the leading statement frames off a term: returns the frames
+(outermost first) and the value core. -/
+def Term.peelFrames : Term → List StmtFrame × Term
+  | .let p v b => let (fs, c) := Term.peelFrames b; (.let p v :: fs, c)
+  | .assertEq a b msg r => let (fs, c) := Term.peelFrames r; (.assertEq a b msg :: fs, c)
+  | .debug s o r => let (fs, c) := Term.peelFrames r; (.debug s o :: fs, c)
+  | .ioSetInfo ch k i l r =>
+    let (fs, c) := Term.peelFrames r; (.ioSetInfo ch k i l :: fs, c)
+  | .ioWrite ch d r => let (fs, c) := Term.peelFrames r; (.ioWrite ch d :: fs, c)
   | t => ([], t)
 
-/-- Wrap `body` in a chain of `let` frames (first frame outermost). -/
-def Term.wrapLets : List (Pattern × Term) → Term → Term
+/-- Wrap `body` in a chain of statement frames (first frame outermost). -/
+def Term.wrapFrames : List StmtFrame → Term → Term
   | [], body => body
-  | (p, v) :: fs, body => .let p v (Term.wrapLets fs body)
+  | .let p v :: fs, body => .let p v (Term.wrapFrames fs body)
+  | .assertEq a b msg :: fs, body => .assertEq a b msg (Term.wrapFrames fs body)
+  | .debug s o :: fs, body => .debug s o (Term.wrapFrames fs body)
+  | .ioSetInfo c k i l :: fs, body => .ioSetInfo c k i l (Term.wrapFrames fs body)
+  | .ioWrite c d :: fs, body => .ioWrite c d (Term.wrapFrames fs body)
 
 /-- Every `.inlined` call site in `t`, as `(callee, argCount)` pairs. Drives
 both validation (callee exists, arity matches) and the inline-dependency
@@ -794,16 +814,16 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
           (cnt + 1, subst.insert inp inp', acc ++ [inp'])
       let (cnt, freshBody) := Term.freshen cnt subst body
       -- A branching callee ends in a `match`. In a strict argument position
-      -- the splice's leading lets hoist out (`Term.hoistLets`) but the match
-      -- core would stay put, which lowering rejects as a non-tail match in
-      -- arbitrary position. Bind the match to a fresh local so hoisting
-      -- leaves only a variable behind; in let-RHS/tail positions the extra
-      -- binding is harmless.
+      -- the splice's leading statement frames hoist out (`Term.hoistFrames`)
+      -- but the match core would stay put, which lowering rejects as a
+      -- non-tail match in arbitrary position. Bind the match to a fresh
+      -- local so hoisting leaves only a variable behind; in let-RHS/tail
+      -- positions the extra binding is harmless.
       let (cnt, freshBody) :=
-        match Term.peelLets freshBody with
+        match Term.peelFrames freshBody with
         | (fs, core@(.match ..)) =>
           let out : Local := .str s!"inl#{cnt}"
-          (cnt + 1, Term.wrapLets fs (.let (.var out) core (.var out)))
+          (cnt + 1, Term.wrapFrames fs (.let (.var out) core (.var out)))
         | _ => (cnt, freshBody)
       (cnt, (freshInputs.zip args').foldr
         (fun (input, arg) acc => Term.let (.var input) arg acc) freshBody)
@@ -890,121 +910,132 @@ decreasing_by
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
 
-/-- Peel leading lets off each of `ts` (already hoisted), collecting the
-frames left-to-right so evaluation order is preserved, and returning the
-frame chain plus the cores. -/
-def Term.peelListLets (ts : List Term) : List (Pattern × Term) × List Term :=
+/-- Peel the leading statement frames off each of `ts` (already hoisted),
+collecting them left-to-right so evaluation order is preserved, and
+returning the frame chain plus the cores. -/
+def Term.peelListFrames (ts : List Term) : List StmtFrame × List Term :=
   ts.foldr
-    (fun t (fs, cs) => let (f, c) := Term.peelLets t; (f ++ fs, c :: cs))
+    (fun t (fs, cs) => let (f, c) := Term.peelFrames t; (f ++ fs, c :: cs))
     ([], [])
 
-def Term.peelArrayLets (ts : Array Term) : List (Pattern × Term) × Array Term :=
-  let (fs, cs) := Term.peelListLets ts.toList
+def Term.peelArrayFrames (ts : Array Term) : List StmtFrame × Array Term :=
+  let (fs, cs) := Term.peelListFrames ts.toList
   (fs, cs.toArray)
 
-/-- Hoist every `let`-chain out of a strict argument position into a
-wrapping `let`. Inlining splices a callee body (a `let`-chain ending in a
-value) wherever the `@`-call appeared; in a `let`-RHS or tail position the
-`Simple` pass already floats those lets outward, but in an argument
-position (a `set`/array element, an operator operand, …) they would stay
-nested, which the lowering cannot handle. This normalizes all such
-positions. `let`-RHS, `match` arm bodies, and `ret`/`debug` continuations
-are already handled downstream, so their lets are left in place. -/
-def Term.hoistLets : Term → Term :=
+/-- Hoist every statement frame out of a value position into the enclosing
+block. Inlining splices a callee body (a chain of lets, assertions, debug
+prints and IO statements ending in a value) wherever the `@`-call
+appeared: as a `let` right-hand side, a `set`/array element, an operator
+operand, an assertion operand, a scrutinee, … Lowering handles statements
+only at block level, so each value position's chain is peeled off and
+wrapped around the construct, in evaluation order. A statement's own
+continuation (the rest of its block) stays where it is, so an assertion
+runs before the statements after it; `match` arm bodies are blocks of
+their own. -/
+def Term.hoistFrames : Term → Term :=
   fun t =>
-  -- Hoist a construct's argument terms: peel each arg's lets and wrap.
+  -- Hoist a construct's value positions: peel each one's frames and wrap.
   match t with
   | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => t
-  | .let p v b => .let p (Term.hoistLets v) (Term.hoistLets b)
+  | .let p v b =>
+    let (fs, c) := Term.peelFrames (Term.hoistFrames v)
+    Term.wrapFrames fs (.let p c (Term.hoistFrames b))
   | .match s arms =>
-    let (fs, sc) := Term.peelLets (Term.hoistLets s)
-    Term.wrapLets fs (.match sc (arms.attach.map fun ⟨(p, a), _⟩ => (p, Term.hoistLets a)))
-  | .ret a => .ret (Term.hoistLets a)
+    let (fs, sc) := Term.peelFrames (Term.hoistFrames s)
+    Term.wrapFrames fs (.match sc (arms.attach.map fun ⟨(p, a), _⟩ => (p, Term.hoistFrames a)))
+  | .ret a => .ret (Term.hoistFrames a)
   | .debug s o a =>
-    .debug s (match o with | none => none | some x => some (Term.hoistLets x)) (Term.hoistLets a)
+    match o with
+    | none => .debug s none (Term.hoistFrames a)
+    | some x =>
+      let (fs, c) := Term.peelFrames (Term.hoistFrames x)
+      Term.wrapFrames fs (.debug s (some c) (Term.hoistFrames a))
   | .tuple ts =>
-    let (fs, cs) := Term.peelArrayLets (ts.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
-    Term.wrapLets fs (.tuple cs)
+    let (fs, cs) := Term.peelArrayFrames (ts.attach.map fun ⟨x, _⟩ => Term.hoistFrames x)
+    Term.wrapFrames fs (.tuple cs)
   | .array ts =>
-    let (fs, cs) := Term.peelArrayLets (ts.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
-    Term.wrapLets fs (.array cs)
+    let (fs, cs) := Term.peelArrayFrames (ts.attach.map fun ⟨x, _⟩ => Term.hoistFrames x)
+    Term.wrapFrames fs (.array cs)
   | .app g args mode =>
-    let (fs, cs) := Term.peelListLets (args.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
-    Term.wrapLets fs (.app g cs mode)
+    let (fs, cs) := Term.peelListFrames (args.attach.map fun ⟨x, _⟩ => Term.hoistFrames x)
+    Term.wrapFrames fs (.app g cs mode)
+  -- Only the operands are argument positions; the continuation `c` runs
+  -- after the assertion and keeps its lets in place, so a failing assertion
+  -- stops execution before them.
   | .assertEq a b msg c =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
+    let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
     match cs with
-    | [a, b, c] => Term.wrapLets fs (.assertEq a b msg c)
+    | [a, b] => Term.wrapFrames fs (.assertEq a b msg (Term.hoistFrames c))
     | _ => t
   | .ioSetInfo a b c d e =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c, Term.hoistLets d, Term.hoistLets e]
+    let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b, Term.hoistFrames c, Term.hoistFrames d]
     match cs with
-    | [a, b, c, d, e] => Term.wrapLets fs (.ioSetInfo a b c d e)
+    | [a, b, c, d] => Term.wrapFrames fs (.ioSetInfo a b c d (Term.hoistFrames e))
     | _ => t
   | .ioWrite a b c =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
+    let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
     match cs with
-    | [a, b, c] => Term.wrapLets fs (.ioWrite a b c)
+    | [a, b] => Term.wrapFrames fs (.ioWrite a b (Term.hoistFrames c))
     | _ => t
   | .ioGetInfo a b =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-    match cs with | [a, b] => Term.wrapLets fs (.ioGetInfo a b) | _ => t
+    let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+    match cs with | [a, b] => Term.wrapFrames fs (.ioGetInfo a b) | _ => t
   | .ioRead a b n =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-    match cs with | [a, b] => Term.wrapLets fs (.ioRead a b n) | _ => t
-  | .add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                match cs with | [a, b] => Term.wrapLets fs (.add a b) | _ => t
-  | .sub a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                match cs with | [a, b] => Term.wrapLets fs (.sub a b) | _ => t
-  | .mul a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                match cs with | [a, b] => Term.wrapLets fs (.mul a b) | _ => t
-  | .eqZero a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.eqZero c)
-  | .proj a n => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.proj c n)
-  | .get a n => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.get c n)
-  | .slice a i j => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.slice c i j)
+    let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+    match cs with | [a, b] => Term.wrapFrames fs (.ioRead a b n) | _ => t
+  | .add a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                match cs with | [a, b] => Term.wrapFrames fs (.add a b) | _ => t
+  | .sub a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                match cs with | [a, b] => Term.wrapFrames fs (.sub a b) | _ => t
+  | .mul a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                match cs with | [a, b] => Term.wrapFrames fs (.mul a b) | _ => t
+  | .eqZero a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.eqZero c)
+  | .proj a n => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.proj c n)
+  | .get a n => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.get c n)
+  | .slice a i j => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.slice c i j)
   | .set a n v =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets v]
-    match cs with | [a, v] => Term.wrapLets fs (.set a n v) | _ => t
-  | .store a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.store c)
-  | .load a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.load c)
-  | .ptrVal a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.ptrVal c)
-  | .ann τ a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.ann τ c)
-  | .u8BitDecomposition a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8BitDecomposition c)
-  | .u8ShiftLeft a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8ShiftLeft c)
-  | .u8ShiftRight a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8ShiftRight c)
-  | .toField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.toField c)
-  | .u8FromFieldUnsafe a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8FromFieldUnsafe c)
-  | .unconstrainedGToBytes a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGToBytes c)
-  | .unconstrainedGInverse a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGInverse c)
-  | .u8Xor a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Xor a b) | _ => t
-  | .u8Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Add a b) | _ => t
-  | .u8Mul a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Mul a b) | _ => t
-  | .u8Sub a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Sub a b) | _ => t
-  | .u8And a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8And a b) | _ => t
-  | .u8Or a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                 match cs with | [a, b] => Term.wrapLets fs (.u8Or a b) | _ => t
-  | .u8LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                       match cs with | [a, b] => Term.wrapLets fs (.u8LessThan a b) | _ => t
-  | .u32LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                        match cs with | [a, b] => Term.wrapLets fs (.u32LessThan a b) | _ => t
-  | .u8XorSplit7 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                        match cs with | [a, b] => Term.wrapLets fs (.u8XorSplit7 a b) | _ => t
-  | .u8XorSplit4 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                        match cs with | [a, b] => Term.wrapLets fs (.u8XorSplit4 a b) | _ => t
-  | .unconstrainedU32Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                       match cs with | [a, b] => Term.wrapLets fs (.unconstrainedU32Add a b) | _ => t
-  | .unconstrainedU32Add3 a b c => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
-                          match cs with | [a, b, c] => Term.wrapLets fs (.unconstrainedU32Add3 a b c) | _ => t
-  | .u32ToField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u32ToField c)
-  | .unconstrainedBigUintDivMod a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                                       match cs with | [a, b] => Term.wrapLets fs (.unconstrainedBigUintDivMod a b) | _ => t
-  | .u8RangeCheck a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                         match cs with | [a, b] => Term.wrapLets fs (.u8RangeCheck a b) | _ => t
+    let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames v]
+    match cs with | [a, v] => Term.wrapFrames fs (.set a n v) | _ => t
+  | .store a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.store c)
+  | .load a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.load c)
+  | .ptrVal a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.ptrVal c)
+  | .ann τ a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.ann τ c)
+  | .u8BitDecomposition a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.u8BitDecomposition c)
+  | .u8ShiftLeft a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.u8ShiftLeft c)
+  | .u8ShiftRight a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.u8ShiftRight c)
+  | .toField a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.toField c)
+  | .u8FromFieldUnsafe a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.u8FromFieldUnsafe c)
+  | .unconstrainedGToBytes a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.unconstrainedGToBytes c)
+  | .unconstrainedGInverse a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.unconstrainedGInverse c)
+  | .u8Xor a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                  match cs with | [a, b] => Term.wrapFrames fs (.u8Xor a b) | _ => t
+  | .u8Add a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                  match cs with | [a, b] => Term.wrapFrames fs (.u8Add a b) | _ => t
+  | .u8Mul a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                  match cs with | [a, b] => Term.wrapFrames fs (.u8Mul a b) | _ => t
+  | .u8Sub a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                  match cs with | [a, b] => Term.wrapFrames fs (.u8Sub a b) | _ => t
+  | .u8And a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                  match cs with | [a, b] => Term.wrapFrames fs (.u8And a b) | _ => t
+  | .u8Or a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                 match cs with | [a, b] => Term.wrapFrames fs (.u8Or a b) | _ => t
+  | .u8LessThan a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                       match cs with | [a, b] => Term.wrapFrames fs (.u8LessThan a b) | _ => t
+  | .u32LessThan a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                        match cs with | [a, b] => Term.wrapFrames fs (.u32LessThan a b) | _ => t
+  | .u8XorSplit7 a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                        match cs with | [a, b] => Term.wrapFrames fs (.u8XorSplit7 a b) | _ => t
+  | .u8XorSplit4 a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                        match cs with | [a, b] => Term.wrapFrames fs (.u8XorSplit4 a b) | _ => t
+  | .unconstrainedU32Add a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                       match cs with | [a, b] => Term.wrapFrames fs (.unconstrainedU32Add a b) | _ => t
+  | .unconstrainedU32Add3 a b c => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b, Term.hoistFrames c]
+                          match cs with | [a, b, c] => Term.wrapFrames fs (.unconstrainedU32Add3 a b c) | _ => t
+  | .u32ToField a => let (fs, c) := Term.peelFrames (Term.hoistFrames a); Term.wrapFrames fs (.u32ToField c)
+  | .unconstrainedBigUintDivMod a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                                       match cs with | [a, b] => Term.wrapFrames fs (.unconstrainedBigUintDivMod a b) | _ => t
+  | .u8RangeCheck a b => let (fs, cs) := Term.peelListFrames [Term.hoistFrames a, Term.hoistFrames b]
+                         match cs with | [a, b] => Term.wrapFrames fs (.u8RangeCheck a b) | _ => t
 termination_by t => sizeOf t
 decreasing_by
   all_goals first
@@ -1091,7 +1122,7 @@ def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
   let functions := t.functions.map fun f =>
     match done[f.name]? with
     | none => f
-    | some (_, body) => { f with body := body.restoreTailMatches.hoistLets }
+    | some (_, body) => { f with body := body.restoreTailMatches.hoistFrames }
   pure { t with functions }
 
 /-- Every `Global` referenced by a term: function calls and constructor
