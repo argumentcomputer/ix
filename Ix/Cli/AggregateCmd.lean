@@ -19,6 +19,7 @@ import Std.Sync
 public import Cli
 public import Ix.Aggr
 public import Ix.Cli.CheckCmd
+public import Ix.Cli.Compress
 public import Ix.IxVM
 public import Ix.IxVM.ClaimHarness
 public import Ix.MultiStark
@@ -380,7 +381,7 @@ def fromAggrCheckEnvTrees (statement : Aggr.CheckEnvTrees) :
 of whether its witness used a wrap, flat pair, or structural pair. -/
 def aggregateOuterClaim (allowed : ByteArray) (aggrIdx : Aiur.Bytecode.FunIdx)
     (claim : Ix.Claim) : Array Aiur.G :=
-  Aiur.buildClaim aggrIdx (Aggr.pubInput allowed (Ix.Claim.ser claim)) #[]
+  Ix.Cli.Compress.aggregateOuterClaim allowed aggrIdx claim
 
 /-- Derive every converged slot statement, uniform outer claim, kind, and
 cache key before proving. Wrap-first leaves use shape 0; direct-policy leaves
@@ -979,9 +980,20 @@ private def runAggregateCmdNativeWith
       (p.hasFlag "plan-only")
       recursionParameters.cacheFriBytes (!(p.hasFlag "no-cache"))
       (!(p.hasFlag "no-write"))
-  match nativeResult with
-  | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
-  | .ok _ => return 0
+  let rootHex ← match nativeResult with
+    | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
+    | .ok root => pure root
+  -- `--compress`: the root through the Hypercube-proven recursive verifier
+  -- and SP1's recursion tail to a PLONK proof (see `Ix.Cli.Compress`).
+  if !(p.hasFlag "compress") || p.hasFlag "plan-only" then
+    return 0
+  let some rootAddr := Address.fromString rootHex.trim | do
+    IO.eprintln s!"error: aggregate returned no root proof address to compress ({rootHex})"
+    return 1
+  Ix.Cli.Compress.compressAggregateRoot recursionParameters
+    { out := (p.flag? "plonk-out").map (·.as! String)
+      blob := (p.flag? "hypercube-blob").map (·.as! String) }
+    rootAddr
 
 /-- Aggregate with an explicit recursion-proof configuration. The CLI wrapper
 below supplies `defaultRecursionParameters`; keeping this seam explicit lets a
@@ -1210,6 +1222,9 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
     "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
+    "compress";      "After aggregation, compress the root: verify it in the recursive verifier proven by SP1 Hypercube, then SP1's recursion tail and gnark to a BN254 PLONK proof (`ix compress`; needs IX_SP1_RECURSION=1)."
+    "plonk-out" : String; "With --compress: write the PLONK proof JSON here (default: the store's `plonk` cache)."
+    "hypercube-blob" : String; "With --compress: cache file for the Hypercube proof blob."
 
   ARGS:
     ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (one per nonempty shard, except --plan-only or replay with aggregate children)."
