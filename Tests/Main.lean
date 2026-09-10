@@ -162,6 +162,7 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("aiur-hoisting", AiurTests.Hoisting.suite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -208,6 +209,7 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("aiur-hoisting-prove", AiurTests.Hoisting.suite true),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

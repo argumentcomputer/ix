@@ -6,3 +6,4 @@ public import Tests.Aiur.Cost
 public import Tests.Aiur.Hashes
 public import Tests.Aiur.RBTreeMap
 public import Tests.Aiur.Cross
+public import Tests.Aiur.Hoisting

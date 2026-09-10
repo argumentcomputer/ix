@@ -147,6 +147,10 @@ section Tests
 
 lean_lib Tests
 
+lean_exe AiurHoistingTests where
+  root := `Tests.Aiur.HoistingMain
+  supportInterpreter := true
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
