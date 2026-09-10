@@ -11,20 +11,30 @@
 //!   SP1's generic in-circuit shard verifier and maps Aiur's public values
 //!   (claim, claim flag, septic chain digest) onto `RecursionPublicValues`.
 //! - **compose, shrink, wrap** ([`pipeline`]): SP1's programs, as is, with
-//!   vk verification off.
+//!   vk verification on against this pipeline's own allowlist ([`vks`]).
 //! - **PLONK** ([`plonk`]): SP1's gnark circuit build and prover over the
 //!   wrap proof, in-process (the `native-gnark` feature, on by default).
 //!
-//! The PLONK proof's public inputs are the Poseidon2 digest of the Aiur
-//! machine's verifying key and a 32-byte Poseidon2 digest of the claim
-//! ([`claim_digest_bytes`]).
+//! Every program is compiled from a dummy input of a fixed shape and pinned
+//! to a fixed recursion shape ([`shapes`]), so the pipeline is one finite
+//! set of programs per machine, and above the leaves one set for every
+//! machine: the wrap verifying key and the PLONK circuit do not depend on
+//! the toplevel. The PLONK proof's public inputs are the Poseidon2 digest of
+//! the Aiur machine's verifying key, a 32-byte Poseidon2 digest of the claim
+//! ([`claim_digest_bytes`]), and the allowlist root.
 
 pub mod normalize;
 pub mod pipeline;
 pub mod plonk;
+pub mod shapes;
+pub mod vks;
 
 pub use normalize::{
   AiurNormalizeWitnessValues, AiurRecursiveVerifier, claim_digest_bytes,
 };
-pub use pipeline::{AiurRecursionProver, RecursionProof, WrapProof};
+pub use pipeline::{
+  AiurRecursionProver, ProgramKind, RecursionProof, WrapProof,
+};
 pub use plonk::PlonkPublicInputs;
+pub use shapes::PinnedShapes;
+pub use vks::{AiurVks, VK_TREE_HEIGHT};

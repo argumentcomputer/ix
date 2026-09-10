@@ -1349,11 +1349,26 @@ def stage2HypercubeSuite : IO UInt32 := do
     IO.println s!"  verify        {t3 - t2} ms"
     let expected := #[Aiur.G.ofNat 0, Aiur.G.ofNat vIdx] ++ pubInput
     IO.println s!"  claim ok: {hClaim == expected}"
-    -- `IX_S2_RECURSION=wrap|plonk`: the SP1 recursion tail over the proof
-    -- (normalize every shard, compose, shrink, BN254 wrap; `plonk` adds the
-    -- gnark stage). Needs `ix-ffi` built with `IX_SP1_RECURSION=1`.
+    -- `IX_S2_RECURSION=wrap|plonk|shapes`: the SP1 recursion tail over the
+    -- proof (normalize every shard, compose, shrink, BN254 wrap; `plonk`
+    -- adds the gnark stage), or `shapes`: the recursion shapes this machine
+    -- needs, written to `IX_REC_SHAPES_OUT` (the pipeline's pinned shapes
+    -- are computed from the largest machine it must support). Needs
+    -- `ix-ffi` built with `IX_SP1_RECURSION=1`.
     match ← IO.getEnv "IX_S2_RECURSION" with
     | none => pure 0
+    | some "shapes" =>
+      let arity := (← IO.getEnv "IX_REC_ARITY").bind String.toNat? |>.getD 2
+      let t4 ← IO.monoMsNow
+      let json ← match Aiur.HypercubeSystem.recursionShapes hSys arity with
+        | .error e => IO.eprintln s!"recursion shapes failed: {e}"; return 1
+        | .ok j => pure j
+      let t5 ← IO.monoMsNow
+      IO.println s!"  recursion shapes (arity {arity}) computed in {t5 - t4} ms"
+      match ← IO.getEnv "IX_REC_SHAPES_OUT" with
+      | some path => IO.FS.writeFile path json; IO.println s!"  written to {path}"
+      | none => IO.println json
+      pure 0
     | some mode =>
       IO.println "── sp1 recursion (normalize → compose → shrink → wrap)"
       let t4 ← IO.monoMsNow

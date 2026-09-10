@@ -1,0 +1,38 @@
+{
+  "leaf": {
+    "shape": {
+      "heights": {
+        "BaseAlu": 660384,
+        "ExtAlu": 4712608,
+        "MemoryConst": 933248,
+        "MemoryVar": 1453888,
+        "Poseidon2WideDeg3": 130592,
+        "PrefixSumChecks": 3464960,
+        "PublicValues": 16,
+        "Select": 446624
+      },
+      "_marker": null
+    }
+  },
+  "compress": {
+    "shape": {
+      "heights": {
+        "BaseAlu": 306880,
+        "ExtAlu": 436480,
+        "MemoryConst": 262016,
+        "MemoryVar": 361376,
+        "Poseidon2WideDeg3": 86432,
+        "PrefixSumChecks": 38048,
+        "PublicValues": 16,
+        "Select": 591360
+      },
+      "_marker": null
+    }
+  },
+  "leaf_params": [
+    21,
+    23
+  ],
+  "arity": 2,
+  "vk_tree_height": 8
+}

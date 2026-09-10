@@ -85,17 +85,21 @@ impl std::fmt::Display for AiurVerifyError {
 
 impl std::error::Error for AiurVerifyError {}
 
+/// The FRI parameters of the Hypercube PCS under `params`.
+pub fn fri_config(params: ProverParams) -> FriConfig<F> {
+  FriConfig::new(
+    params.log_blowup,
+    unique_decoding_queries(params.log_blowup),
+    SP1_PROOF_OF_WORK_BITS,
+  )
+}
+
 pub fn shard_verifier(
   machine: &AiurMachine,
   params: ProverParams,
 ) -> ShardVerifier<SP1GlobalContext, sp1_hypercube::InnerSC<AiurAir>> {
-  let fri_config = FriConfig::new(
-    params.log_blowup,
-    unique_decoding_queries(params.log_blowup),
-    SP1_PROOF_OF_WORK_BITS,
-  );
   ShardVerifier::from_basefold_parameters(
-    fri_config,
+    fri_config(params),
     params.log_stacking_height,
     params.max_log_row_count,
     machine.machine().clone(),
@@ -107,20 +111,29 @@ pub fn shard_verifier(
 /// [`crate::cuda::prove`]; verification is identical either way.
 pub fn prove(
   machine: &AiurMachine,
-  records: Vec<AiurRecord>,
+  mut records: Vec<AiurRecord>,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
+  // Every shard is padded into the machine's shape catalogue (see
+  // [`crate::shape`]); the partitioner keeps shards under the area bound,
+  // so the only way this fails is a row cap too low for the pad chip.
+  let shapes = crate::shape::pad_records(machine, params, &mut records)
+    .unwrap_or_else(|e| panic!("shard shape padding: {e}"));
   #[cfg(feature = "cuda")]
   if std::env::var_os("IX_HC_GPU").is_some() {
     return crate::cuda::prove(machine, records, params);
   }
   if std::env::var_os("IX_HC_DEBUG").is_some() {
     let mv = MachineVerifier::new(shard_verifier(machine, params));
-    for (i, record) in records.iter().enumerate() {
+    for (i, (record, class)) in records.iter().zip(&shapes).enumerate() {
       match sp1_hypercube::prover::shape_from_record(&mv, record) {
         Some(shape) => eprintln!(
-          "hypercube shard {i} shape: preprocessed_area {}, main_area {}",
-          shape.preprocessed_area, shape.main_area
+          "hypercube shard {i} shape: preprocessed_area {}, main_area {} \
+           (class {} with {} padding column(s))",
+          shape.preprocessed_area,
+          shape.main_area,
+          class.main_area,
+          class.main_padding_cols
         ),
         None => eprintln!("hypercube shard {i} shape: no matching cluster"),
       }

@@ -23,6 +23,7 @@ pub mod global;
 pub mod machine;
 pub mod prover;
 pub mod record;
+pub mod shape;
 pub mod shard;
 
 /// The Hypercube base field (KoalaBear).
@@ -37,4 +38,5 @@ pub use frontend::ToplevelMachine;
 pub use machine::{AiurMachine, BuildError, CircuitSpec};
 pub use prover::{AiurProof, AiurVerifyingKey, ProverParams, prove, verify};
 pub use record::{AiurProgram, AiurRecord};
+pub use shape::ShardShape;
 pub use shard::ShardingParams;

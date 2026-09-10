@@ -18,7 +18,7 @@ use multi_stark::{
   expr::Expr, lookup::Lookup, p3_field::PrimeField64,
   p3_matrix::dense::RowMajorMatrix as FrontendMatrix,
 };
-use slop_algebra::AbstractField;
+use slop_algebra::{AbstractField, PrimeField32};
 use slop_matrix::{Matrix, dense::RowMajorMatrix};
 use sp1_hypercube::{Chip, Machine, MachineShape, PROOF_MAX_NUM_PVS};
 
@@ -215,9 +215,10 @@ impl AiurMachine {
     circuits.push(boundary_circuit(memory_sizes, counter_channel));
     circuits.push(adapter_bytes_circuit());
     circuits.push(constants_circuit());
+    circuits.push(pad_circuit());
 
     // Chip/trace slot layout: synthesis circuits, boundary, adapter byte
-    // table, adapter classes, constants.
+    // table, adapter classes, constants, pad (see [`crate::shape`]).
     let interpreted = |i: usize| {
       let c = &circuits[i];
       (
@@ -236,6 +237,7 @@ impl AiurMachine {
       ));
     }
     chip_parts.push(interpreted(num_frontend + 2));
+    chip_parts.push(interpreted(num_frontend + 3));
 
     let chips = chip_parts
       .into_iter()
@@ -280,9 +282,14 @@ impl AiurMachine {
     self.num_frontend + 2 + self.global_classes.len()
   }
 
+  /// Chip/trace slot of the pad chip (see [`crate::shape`]).
+  pub(crate) fn idx_pad(&self) -> usize {
+    self.idx_constants() + 1
+  }
+
   /// Total number of chip/trace slots.
   pub(crate) fn num_slots(&self) -> usize {
-    self.num_frontend + 3 + self.global_classes.len()
+    self.num_frontend + 4 + self.global_classes.len()
   }
 
   /// The interpreted circuit at a chip slot (`None` for adapter chips).
@@ -291,9 +298,39 @@ impl AiurMachine {
       Some(&self.circuits[slot])
     } else if slot == self.idx_constants() {
       Some(&self.circuits[self.num_frontend + 2])
+    } else if slot == self.idx_pad() {
+      Some(&self.circuits[self.num_frontend + 3])
     } else {
       None
     }
+  }
+
+  /// A digest of everything that determines the machine's chips — names,
+  /// lowered constraints and interactions, preprocessed traces — for keying
+  /// caches of artifacts derived from the chips (the recursion programs
+  /// verifying this machine's proofs, say). Two machines with equal
+  /// fingerprints have identical chips.
+  pub fn fingerprint(&self) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"aiur-hypercube machine v1\n");
+    for circuit in &self.circuits {
+      h.update(circuit.name.as_bytes());
+      h.update(format!("{:?}", circuit.lowered).as_bytes());
+      if let Some(p) = &circuit.preprocessed {
+        h.update(p.width().to_le_bytes());
+        h.update(p.height().to_le_bytes());
+        for v in &p.values {
+          h.update(v.as_canonical_u32().to_le_bytes());
+        }
+      }
+      h.update(b"\n");
+    }
+    for spec in &self.global_classes {
+      h.update(spec.chunks.to_le_bytes());
+    }
+    h.update(self.claim_len.to_le_bytes());
+    h.finalize().into()
   }
 
   /// The public values of a shard: the zero-padded claim, the claim-shard
@@ -510,5 +547,29 @@ fn constants_circuit() -> LoweredCircuit {
       materialized: vec![],
     },
     preprocessed: Some(RowMajorMatrix::new(vec![F::zero(); ROW_ALIGNMENT], 1)),
+  }
+}
+
+/// The pad chip: `PAD_WIDTH` zero columns under one trivial constraint and
+/// one zero-multiplicity lookup. Its height brings a shard's committed main
+/// area up to the power of two its shape class prescribes (see
+/// [`crate::shape`]); it has no rows otherwise.
+fn pad_circuit() -> LoweredCircuit {
+  let zero = Affine { constant: F::zero(), terms: vec![] };
+  LoweredCircuit {
+    name: "AiurPad".to_string(),
+    lowered: Lowered {
+      main_width: crate::shape::PAD_WIDTH,
+      frontend_width: crate::shape::PAD_WIDTH,
+      // `Chip::new` rejects a constraint-free AIR and the LogUp-GKR prover
+      // an interaction-free one; the column is zero, the lookup inert.
+      constraints: vec![Ast::main(0)],
+      interactions: vec![Interaction {
+        multiplicity: zero.clone(),
+        values: vec![zero],
+      }],
+      materialized: vec![],
+    },
+    preprocessed: None,
   }
 }

@@ -1,7 +1,8 @@
 //! End to end: an Aiur toplevel proven on Hypercube, then normalize →
 //! compose → shrink → wrap through SP1's recursion machines, each stage
-//! verified natively. The gnark PLONK stage runs only with
-//! `IX_RECURSION_PLONK=1` (it needs Docker or a native gnark build).
+//! verified natively, with the pipeline's vk allowlist enforced. The gnark
+//! PLONK stage runs only with `IX_RECURSION_PLONK=1` (it needs Docker or a
+//! native gnark build).
 
 use std::borrow::Borrow;
 
@@ -9,8 +10,11 @@ use aiur::{
   bytecode::{Block, Circuit, Ctrl, Function, FunctionLayout, Op, Toplevel},
   execute::IOBuffer,
 };
-use aiur_hypercube::{ProverParams, ShardingParams, ToplevelMachine, verify};
-use aiur_recursion::{AiurRecursionProver, claim_digest_bytes};
+use aiur_hypercube::{
+  AiurProof, AiurVerifyingKey, ProverParams, ShardingParams, ToplevelMachine,
+  verify,
+};
+use aiur_recursion::{AiurRecursionProver, PinnedShapes, claim_digest_bytes};
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_koala_bear::KoalaBear as FF;
 use slop_algebra::{AbstractField, PrimeField32};
@@ -39,19 +43,44 @@ fn mul_toplevel() -> Toplevel<FF> {
   Toplevel { functions: vec![function], memory_sizes: vec![], circuits }
 }
 
+/// `g(a, b) = a * b + a * a`: a different function of the same arity,
+/// whose machine differs from `mul_toplevel`'s in its constraints.
+fn other_toplevel() -> Toplevel<FF> {
+  let body = Block {
+    ops: vec![Op::Mul(0, 1), Op::Mul(0, 0), Op::Add(2, 3)],
+    ctrl: Ctrl::Return(0, vec![4]),
+  };
+  let function = Function {
+    body,
+    layout: FunctionLayout {
+      input_size: 2,
+      selectors: 1,
+      auxiliaries: 3,
+      lookups: 1,
+    },
+    entry: true,
+    constrained: true,
+  };
+  let circuits = vec![Circuit { members: vec![0], layout: function.layout }];
+  Toplevel { functions: vec![function], memory_sizes: vec![], circuits }
+}
+
 fn params() -> ProverParams {
   ProverParams { log_blowup: 1, log_stacking_height: 18, max_log_row_count: 17 }
 }
 
-#[test]
-fn compress_shrink_wrap_a_toplevel_call() {
-  let toplevel = mul_toplevel();
-  let machine = ToplevelMachine::build(&toplevel, 0).unwrap();
+const ARITY: usize = 2;
+
+/// Prove a call of `toplevel`'s entry function on Hypercube.
+fn hypercube_proof(
+  toplevel: &Toplevel<FF>,
+) -> (ToplevelMachine, Vec<FF>, AiurVerifyingKey, AiurProof) {
+  let machine = ToplevelMachine::build(toplevel, 0).unwrap();
   let (a, b) = (FF::from_u32(3), FF::from_u32(5));
   let mut io = IOBuffer { data: Default::default(), map: Default::default() };
   let (claim, vk, proof) = machine
     .execute_and_prove(
-      &toplevel,
+      toplevel,
       &[a, b],
       &mut io,
       params(),
@@ -60,26 +89,35 @@ fn compress_shrink_wrap_a_toplevel_call() {
     .unwrap();
   verify(machine.machine(), params(), &vk, &proof).unwrap();
   assert_eq!(proof.shard_proofs.len(), 1);
+  (machine, claim, vk, proof)
+}
 
-  let prover =
-    AiurRecursionProver::new(machine.machine(), params(), 2).unwrap();
-
-  // Compress: one shard, so one normalize marked complete — a leaf-level
-  // proof, verified under the leaf machine configuration.
-  let compressed = prover.compress(&vk, &proof).unwrap();
+/// The tail over one proof: compress, checked against the allowlist and
+/// the compress verifier; shrink; wrap, checked against the wrap verifier.
+fn tail(
+  prover: &AiurRecursionProver,
+  claim: &[FF],
+  vk: &AiurVerifyingKey,
+  proof: &AiurProof,
+) -> aiur_recursion::WrapProof {
+  // Compress: one shard, so one leaf folded by the arity-1 compose program
+  // into a complete compress-level proof.
+  let compressed = prover.compress(vk, proof).unwrap();
+  assert!(prover.vks().contains(&compressed.vk));
   let mut challenger =
     <SP1GlobalContext as slop_challenger::IopCtx>::default_challenger();
   compressed.vk.observe_into(&mut challenger);
   prover
-    .leaf_verifier()
+    .compress_verifier()
     .shard_verifier()
     .verify_shard(&compressed.vk, &compressed.proof, &mut challenger)
-    .expect("leaf-level proof verifies");
+    .expect("compress-level proof verifies");
   let pv: &RecursionPublicValues<SP1Field> =
     compressed.proof.public_values.as_slice().borrow();
   assert_eq!(pv.is_complete, SP1Field::one());
   assert_eq!(pv.contains_first_shard, SP1Field::one());
   assert_eq!(pv.sp1_vk_digest, vk.hash_koalabear());
+  assert_eq!(pv.vk_root, prover.vk_root());
   // The claim digest, byte for byte.
   let claim_felts: Vec<SP1Field> = claim
     .iter()
@@ -96,7 +134,8 @@ fn compress_shrink_wrap_a_toplevel_call() {
   assert_eq!(got, expected.to_vec());
 
   // Shrink, then wrap.
-  let shrunk = prover.shrink(compressed, true).unwrap();
+  let shrunk = prover.shrink(compressed).unwrap();
+  assert!(prover.vks().contains(&shrunk.vk));
   let wrapped = prover.wrap(shrunk).unwrap();
   let mut challenger =
     <SP1OuterGlobalContext as slop_challenger::IopCtx>::default_challenger();
@@ -106,6 +145,31 @@ fn compress_shrink_wrap_a_toplevel_call() {
     .shard_verifier()
     .verify_shard(&wrapped.vk, &wrapped.proof, &mut challenger)
     .expect("wrap proof verifies");
+  wrapped
+}
+
+/// The shapes the tests pin to: computed for `other_toplevel`'s machine
+/// (the built-in shapes are sized for production machines, which would
+/// make these proofs needlessly large).
+fn test_shapes() -> PinnedShapes {
+  let toplevel = other_toplevel();
+  let machine = ToplevelMachine::build(&toplevel, 0).unwrap();
+  AiurRecursionProver::compute_shapes(machine.machine(), params(), ARITY)
+    .unwrap()
+}
+
+#[test]
+fn compress_shrink_wrap_a_toplevel_call() {
+  let toplevel = mul_toplevel();
+  let (machine, claim, vk, proof) = hypercube_proof(&toplevel);
+  let prover = AiurRecursionProver::with_shapes(
+    machine.machine(),
+    params(),
+    ARITY,
+    test_shapes(),
+  )
+  .unwrap();
+  let wrapped = tail(&prover, &claim, &vk, &proof);
 
   if let Some(path) = std::env::var_os("IX_RECURSION_WRAP_OUT") {
     std::fs::write(path, bincode::serialize(&wrapped).unwrap()).unwrap();
@@ -113,6 +177,32 @@ fn compress_shrink_wrap_a_toplevel_call() {
   if std::env::var_os("IX_RECURSION_PLONK").is_some() {
     plonk_stage(wrapped);
   }
+}
+
+/// Two different toplevels, pinned to the same shapes, wrap to the same
+/// verifying key: the circuit above the leaves does not depend on the
+/// machine. Their leaf keys — and so their allowlist roots — differ.
+#[test]
+fn different_toplevels_share_the_wrap_vk() {
+  let shapes = test_shapes();
+  let mut wraps = Vec::new();
+  let mut roots = Vec::new();
+  for toplevel in [mul_toplevel(), other_toplevel()] {
+    let (machine, claim, vk, proof) = hypercube_proof(&toplevel);
+    let prover = AiurRecursionProver::with_shapes(
+      machine.machine(),
+      params(),
+      ARITY,
+      shapes.clone(),
+    )
+    .unwrap();
+    roots.push(prover.vk_root());
+    wraps.push(
+      bincode::serialize(&tail(&prover, &claim, &vk, &proof).vk).unwrap(),
+    );
+  }
+  assert_ne!(roots[0], roots[1], "different machines, different leaf keys");
+  assert_eq!(wraps[0], wraps[1], "one wrap vk for every machine");
 }
 
 fn plonk_stage(wrapped: aiur_recursion::WrapProof) {

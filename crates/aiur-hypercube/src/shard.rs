@@ -981,6 +981,9 @@ pub(crate) fn assemble_shard(
   traces.extend(global_traces.into_iter().map(Some));
   debug_assert_eq!(traces.len(), machine.idx_constants());
   traces.push(Some(RowMajorMatrix::new(vec![F::zero(); ROW_ALIGNMENT], 1)));
+  // The pad chip is filled by `shape::pad_record` at proving time.
+  traces.push(None);
+  debug_assert_eq!(traces.len(), machine.num_slots());
 
   pv[PV_CHAIN_LEN] = F::from_canonical_usize(chain.idx);
   pv[PV_DIGEST..PV_DIGEST + 7].copy_from_slice(&chain.acc.x.0);

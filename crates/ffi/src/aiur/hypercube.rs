@@ -273,6 +273,43 @@ extern "C" fn rs_aiur_hypercube_wrap(
   })
 }
 
+/// `Aiur.HypercubeSystem.recursionShapes` : the recursion shapes this
+/// system's pipeline needs (see `aiur_recursion::shapes`), as JSON — the
+/// contents of `crates/aiur-recursion/shapes/pinned.json` when this is the
+/// largest machine the pipeline must support. Needs the `sp1-recursion`
+/// feature.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_hypercube_recursion_shapes(
+  system_obj: LeanExternal<HypercubeSystem, LeanBorrowed<'_>>,
+  arity: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind_except("Hypercube.recursionShapes", || {
+    #[cfg(not(feature = "sp1-recursion"))]
+    {
+      let _ = (&system_obj, &arity);
+      LeanExcept::error_string(
+        "Hypercube.recursionShapes: ix-ffi was built without the \
+         `sp1-recursion` feature (IX_SP1_RECURSION=1)",
+      )
+    }
+    #[cfg(feature = "sp1-recursion")]
+    {
+      let system = system_obj.get();
+      let arity = lean_unbox_nat_as_usize(arity.inner());
+      match aiur_recursion::AiurRecursionProver::compute_shapes(
+        system.machine.machine(),
+        system.params,
+        arity,
+      ) {
+        Ok(shapes) => {
+          LeanExcept::ok(lean_ffi::object::LeanString::new(&shapes.to_json()))
+        },
+        Err(e) => LeanExcept::error_string(&format!("{e:#}")),
+      }
+    }
+  })
+}
+
 /// `Aiur.HypercubeSystem.plonk` : the gnark PLONK proof over a wrap proof
 /// blob (see `wrap`). Returns the proof as JSON bytes and a summary of its
 /// public inputs. Needs the `sp1-recursion` feature and SP1's gnark Docker

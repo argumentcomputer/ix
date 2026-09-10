@@ -60,10 +60,17 @@ proof `(vk, proof)` bincoded. Needs `ix-ffi` built with `sp1-recursion`
 opaque wrap : @& HypercubeSystem → @& ByteArray → Except String ByteArray
 
 /-- The gnark PLONK proof over a wrap proof blob. Returns the proof as JSON
-and a summary of its public inputs. Needs `sp1-recursion` and SP1's gnark
-Docker image. -/
+and a summary of its public inputs. Needs `sp1-recursion` and a native gnark
+build. -/
 @[extern "rs_aiur_hypercube_plonk"]
 opaque plonk : @& ByteArray → Except String (ByteArray × String)
+
+/-- The recursion shapes this system's pipeline needs, as JSON: the
+contents of `crates/aiur-recursion/shapes/pinned.json` when this is the
+largest machine the pipeline must support. `arity` is the compose fan-in the
+shapes are closed under. Needs `sp1-recursion`. -/
+@[extern "rs_aiur_hypercube_recursion_shapes"]
+opaque recursionShapes : @& HypercubeSystem → @& Nat → Except String String
 
 end HypercubeSystem
 

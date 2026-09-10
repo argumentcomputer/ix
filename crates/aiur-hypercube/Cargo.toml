@@ -23,6 +23,10 @@ slop-air = "=6.6.0"
 slop-algebra = "=6.6.0"
 slop-basefold = "=6.6.0"
 slop-matrix = "=6.6.0"
+# Machine fingerprints (cache keys for derived artifacts).
+sha2 = "0.10"
+# Shape classes are recorded in the recursion crate's caches.
+serde = { version = "1", features = ["derive"] }
 
 # The Hypercube prover is async.
 tokio = { version = "1", features = ["rt-multi-thread"] }

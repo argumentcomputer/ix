@@ -128,8 +128,11 @@ arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
 archive from a previous invocation. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
+  -- `.json`: data the crates embed (`include_str!`), e.g. the pinned
+  -- recursion shapes of `aiur-recursion`.
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
-    path.extension == some "rs" || path.fileName == "Cargo.toml"
+    path.extension == some "rs" || path.extension == some "json"
+      || path.fileName == "Cargo.toml"
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")
