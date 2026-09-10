@@ -57,7 +57,7 @@ log = "0.4"
 memmap2 = "0.9"
 # Bundle v3.5.1 to fix large-arena failures (microsoft/mimalloc#1309).
 mimalloc = { git = "https://github.com/argumentcomputer/mimalloc_rust.git", rev = "616cc1f130d9ea2a1111a46b4e98c140e078f882", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2042565be1939cf2bef4b0d4d47ba3354473c5bf" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "9322ec062c78a51843f78ea23119ea5a65b19b16" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"
@@ -71,12 +71,6 @@ tiny-keccak = { version = "2", features = ["keccak"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "fedd785ba02f16042f041fb8b0db9014955c6460" }
-
-# The two-call batch prover (`batch_round_one`/`batch_round_two`) lives on the local
-# multi-stark checkout until its commit is on `sb/trace-sharding`; drop this
-# and move the `rev` above once it is.
-[patch."https://github.com/argumentcomputer/multi-stark.git"]
-multi-stark = { path = "/home/ubuntu/multi-stark" }
 
 [workspace.lints.rust]
 invalid_reference_casting = "warn"
