@@ -137,18 +137,25 @@ pub struct CircuitShape {
 }
 
 /// Raw row count of a circuit under `record`, ceil-divided into `parts`
-/// even shares — `parts = 1` is the record's exact heights. The byte
-/// gadgets keep their fixed heights: they are the same size in every
-/// shard and are most of the peak model's floor, which dividing cannot
-/// shrink.
-fn raw_of(
-  record: &QueryRecord,
+/// even shares — `parts = 1` is the record's exact heights. A function
+/// circuit's rows are the sum over its member functions (one, unless the
+/// toplevel groups functions), every query entry included: a
+/// zero-multiplicity hint entry commits no row, so this bounds the trace
+/// from above. The byte gadgets keep their fixed heights: they are the same
+/// size in every shard and are most of the peak model's floor, which
+/// dividing cannot shrink.
+fn raw_of<'a>(
+  toplevel: &'a Toplevel,
+  record: &'a QueryRecord,
   parts: usize,
-) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+) -> impl Fn(usize, &CircuitType) -> usize + 'a {
   move |_, ct| match ct {
-    CircuitType::Function { idx } => {
-      record.function_queries[*idx].len().div_ceil(parts)
-    },
+    CircuitType::Function { idx } => toplevel.circuits[*idx]
+      .members
+      .iter()
+      .map(|&member| record.function_queries[member].len())
+      .sum::<usize>()
+      .div_ceil(parts),
     CircuitType::Memory { width } => {
       record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
     },
@@ -337,7 +344,7 @@ impl AiurSystem {
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      raw_of(record, 1),
+      raw_of(&self.toplevel, record, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -429,7 +436,10 @@ impl AiurSystem {
     // count; stop rather than search forever.
     while parts < (1 << 20) {
       let peak = self
-        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
+        .peak_prove_bytes_by(
+          raw_of(&self.toplevel, record, parts),
+          record_bytes / parts,
+        )
         .peak;
       if peak <= max_bytes {
         break;
@@ -983,6 +993,29 @@ mod tests {
     types::{CommitmentParameters, FriParameters},
   };
   use rustc_hash::FxHashMap;
+
+  /// A grouped circuit's raw rows are the sum over its members — the peak
+  /// model must not read one function's entries by circuit index.
+  #[test]
+  fn grouped_circuit_rows_sum_their_members() {
+    let mut toplevel = call_and_memory_toplevel();
+    let layout = toplevel.circuits[0].layout;
+    toplevel.circuits =
+      vec![crate::bytecode::Circuit { members: vec![0, 1], layout }];
+    let mut io_buffer = empty_io_buffer();
+    let (record, _) = toplevel
+      .execute(0, vec![G::from_u64(3), G::from_u64(5)], &mut io_buffer)
+      .expect("f(3, 5) executes");
+    let f_rows = record.function_queries[0].len();
+    let g_rows = record.function_queries[1].len();
+    assert!(f_rows > 0 && g_rows > 0);
+    let grouped = CircuitType::Function { idx: 0 };
+    assert_eq!(raw_of(&toplevel, &record, 1)(0, &grouped), f_rows + g_rows);
+    assert_eq!(
+      raw_of(&toplevel, &record, 2)(0, &grouped),
+      (f_rows + g_rows).div_ceil(2)
+    );
+  }
 
   #[test]
   fn prover_rss_calibration_rounds_up_and_saturates() {
