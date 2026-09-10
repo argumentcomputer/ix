@@ -59,6 +59,12 @@ import Tests.AggrActivation
 import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
+import Tests.Ixby
+import Tests.IxbyCrypto
+import Tests.IxbyCodec
+import Tests.IxbyAiur
+import Tests.IxbyControl
+import Tests.IxbyObjects
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
@@ -205,11 +211,20 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ix-aggr", Tests.Aggr.convergedSuite),
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
   ("ixes-manifest", Tests.Ix.Ixes.suite),
+  ("ixby", Tests.Ixby.suite),
+  ("ixby-crypto", Tests.IxbyCrypto.suite),
+  ("ixby-codec", Tests.IxbyCodec.suite),
+  ("ixby-aiur", Tests.IxbyAiur.suite (withProofs := false)),
+  ("ixby-control", Tests.IxbyControl.suite (withProofs := false)),
+  ("ixby-objects", Tests.IxbyObjects.suite (withProofs := false)),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("aiur-hoisting-prove", AiurTests.Hoisting.suite true),
+  ("ixby-aiur-prove", Tests.IxbyAiur.suite),
+  ("ixby-control-prove", Tests.IxbyControl.suite),
+  ("ixby-objects-prove", Tests.IxbyObjects.suite),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

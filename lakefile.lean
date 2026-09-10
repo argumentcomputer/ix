@@ -151,6 +151,18 @@ lean_exe AiurHoistingTests where
   root := `Tests.Aiur.HoistingMain
   supportInterpreter := true
 
+lean_exe IxbyAiurTests where
+  root := `Tests.IxbyAiurMain
+  supportInterpreter := true
+
+lean_exe IxbyControlTests where
+  root := `Tests.IxbyControlMain
+  supportInterpreter := true
+
+lean_exe IxbyObjectsTests where
+  root := `Tests.IxbyObjectsMain
+  supportInterpreter := true
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
