@@ -18,8 +18,8 @@ namespace IxVM
 -- by active committed width saved (proof size) per unit of modelled prover
 -- cost (FFT model plus a constraint-evaluation term, relative to each
 -- workload), capped at 16 members and 40 selectors per group, within an
--- average 2% (max 4%) cost increase per workload. 83 groups over 656 of
--- 743 groupable circuits: 744 -> 171 circuits.
+-- average 2% (max 4%) cost increase per workload. The original grouping had
+-- 83 groups over 656 of 743 groupable circuits (744 -> 171 circuits).
 def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_00", #[
     "memo_u32_less_than",
@@ -362,10 +362,6 @@ def functionGroups : Array (String × Array String) := #[
     "slow2_eager_fallback",
     "lazy_delta_a_const_b_proj",
     "lazy_delta_b_const_a_proj"
-  ]),
-  ("ixvm_group_29", #[
-    "get_address_list",
-    "list_snoc.U8_8"
   ]),
   ("ixvm_group_30", #[
     "unpack_def_kind_safety",
