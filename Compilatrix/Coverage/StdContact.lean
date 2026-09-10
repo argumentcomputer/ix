@@ -73,6 +73,11 @@ def expectedPieceHash : String :=
 def expectedPipelineAddress : String :=
   "131533e96baa7f50ba89d01892243e11a1221c8831e2f394eb14f89e9a54c6c4"
 
+/-- C2 admits the original closed failure slice. The unchanged full catalog
+then encounters this later unique-to-shared sink. -/
+def expectedRemainingFreezeAddress : String :=
+  "a3b83ad0799bcd3d1c70c01df44141d79e7358e1f23d7d7e5cf9e01dbdc73c85"
+
 def load (root : System.FilePath) : IO (Except String Catalog.Loaded) := do
   let manifest ← readHexAt root "manifest.hex"
   let piece ← readHexAt root "CompilatrixStdContact.ixe.hex"

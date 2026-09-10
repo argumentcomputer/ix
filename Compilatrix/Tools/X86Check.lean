@@ -7,22 +7,22 @@ namespace Compilatrix.Tools.X86Check
 
 open System Check
 
-def inspectElf (readelf : String) (path : FilePath) : IO String := do
+def inspectElf (readelf : String) (path : FilePath) (exportName : String := "compilatrix_main") : IO String := do
   let elf ← run readelf #["-W", "-h", "-S", "-s", "-r", "-n", path.toString]
   requireAll elf [
     "Class:                             ELF64",
     "Data:                              2's complement, little endian",
     "Type:                              REL (Relocatable file)",
     "Machine:                           Advanced Micro Devices X86-64",
-    ".text", ".note.compilatrix", ".note.GNU-stack", "compilatrix_main",
+    ".text", ".note.compilatrix", ".note.GNU-stack", exportName,
     "COMPILATRIX", "0x43495801"
   ] s!"{path}: readelf"
   return elf
 
-def disassemble (objdump : String) (path : FilePath) : IO String := do
+def disassemble (objdump : String) (path : FilePath) (exportName : String := "compilatrix_main") : IO String := do
   let result := (← run objdump #["-dr", "-M", "intel", path.toString]).toLower
   need (!result.contains "(bad)") s!"{path}: decoder emitted (bad)\n{result}"
-  requireAll result ["file format elf64-x86-64", "<compilatrix_main>:", "ret"] s!"{path}: objdump"
+  requireAll result ["file format elf64-x86-64", s!"<{exportName}>:", "ret"] s!"{path}: objdump"
   return result
 
 def provenance (root : String) : IO ByteArray := do

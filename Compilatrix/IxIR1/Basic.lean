@@ -4,8 +4,8 @@ import Compilatrix.IxIR0.Basic
 # IxIR₁: the first-order, store-based IR
 
 The level where memory becomes explicit and modes start paying rent
-(`plans/backend.md` pipeline stage 3). Shape, per the recorded gate
-decisions:
+(`docs/compiler-design.md`, architecture and proof boundaries). Shape, per
+the recorded gate decisions:
 
 - **Let-normalized and saturated** (gate C): code is a sequence of
   primitive operations binding one variable each, ending in `ret` or a

@@ -209,9 +209,11 @@ the reset/branch/allocation states inside a macro: its RC count, recorded peak,
 and live-node count fit within the actual baseline's terminal RC and peak
 counters. [`successfulPhysicalCostLaws`](../Compilatrix/IxIR2/PipelineCosts.lean)
 also covers independently chosen sufficient control and heap budgets for the
-two runs, in both selection branches. General credit refinement, credits
-across non-tail calls, static unique reuse, and native heap selection remain
-separate work.
+two runs, in both selection branches. Separate [source-map](source-call-reuse.md)
+and [unique reversal](source-unique-reuse.md) endpoints extend calls and static
+reuse, and [native unique reversal](source-native-unique.md) supplies the bounded
+heap witness. General credit refinement and native execution of this shared
+fold schema remain further work.
 
 ## Source observations
 

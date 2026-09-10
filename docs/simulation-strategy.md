@@ -2,8 +2,9 @@
 
 Proof architecture originating 2026-08-14, reviewed 2026-09-06. This document
 explains the erasure and ownership relations and their proof decomposition.
-The [roadmap](roadmap.md) owns completion state; the
-[development plan](development-plan.md) names the current composition work.
+The [roadmap](roadmap.md) owns completion state and current composition
+packages; the [development guide](development-plan.md) records validation
+practice.
 
 The scoped IxIR₀→IxIR₁ compiler induction is complete and attached in
 `PipelineSound.lean`. The separate `IxIR2/PipelineSim.lean` induction now
@@ -537,8 +538,9 @@ ownership interfaces → declaration result worlds → call/case preservation
 the generated-function/application seal. Lambda lifting and PAP ownership
 participate in that seal. Further proof extensions should reuse these
 interfaces rather than restart the induction or duplicate evaluator
-inversions. The next active composition boundary is recorded in the
-[development plan](development-plan.md).
+inversions. The [general credit refinement](credit-refinement.md) now composes
+logical/physical execution under both policies; the [roadmap](roadmap.md)
+records the next source and native boundaries.
 
 ## Baseline physical and scalar target composition
 
@@ -577,8 +579,10 @@ assumption or a caller-supplied intermediate execution.
 
 The synthetic fixture in `X86/ValidatedScalar.lean` executes each intermediate
 observation and carries the actual addressed IxIR₁ graph root into the ELF
-note. Native differential checks supplement these typed-machine theorems;
-the local ISA, encoder, and ELF writer remain ledgered specification boundaries.
+note. Native differential checks supplement these typed-machine theorems.
+[E2](x86-stream-objects.md) now supplies certified complete-stream and ELF
+interpretation bridges; local ISA faithfulness and system linker/loader
+behavior remain ledgered.
 
 ## Checked source recursion recovery
 
@@ -681,8 +685,11 @@ value relation, and shared-result domain. The same actual reclamations retain
 these bounds, empty balanced heaps, and R3's free equation. Its projection
 recovers R3's unchanged source endpoint. Seventeen new fences retain the
 existing trust basis; no additional rewrite-shape or compiler-state premise
-narrows the domain. The bounded static unique endpoint is described below;
-general credit refinement and native heap selection remain separate obligations.
+narrows the domain. The bounded static unique endpoint is described below,
+and [native unique reversal](source-native-unique.md) carries its Word subset
+through byte-memory execution. [General credit refinement](credit-refinement.md)
+now supplies a separate full-language execution bridge; wider native heap
+selection remains a separate obligation.
 
 ## Reuse through suspended direct calls
 
@@ -761,6 +768,20 @@ specifies the source domain, counter equations, and independent artifact gate.
 
 ## Acceptance gates
 
+The [bounded native reversal](source-native-unique.md) extends the actual unique
+selection through a permissioned byte-memory arena. Straight-line effects are
+propositions about the existing x86 evaluator; explicit block lookup and
+terminator lemmas assemble the complete main and release loops. Descending
+input and ascending accumulator intervals prove finite disjoint ownership.
+The source theorem relates its actual returned native graph to the same
+schema-indexed source value, and native counters agree with the selected
+physical IxIR₂ result. Both calls terminate without any trapped prefix and
+preserve saved registers and bytes outside the arena. Nine new axiom fences
+retain the existing trust boundary. [E2](x86-stream-objects.md) now certifies
+production text and ELF interpretation and composes the parameterized N2
+source endpoint through actual object execution. ISA and system linker/loader
+assumptions remain separate.
+
 A simulation stage is complete only when:
 
 - the executable pass output is connected to its relational premise by a
@@ -769,3 +790,52 @@ A simulation stage is complete only when:
 - unsupported cases are rejected before execution, not silently related;
 - theorem axiom audits and the complete Nix check surface remain green;
 - the roadmap names the next missing relation invariant precisely.
+
+## Closed borrowed-call translation validation
+
+The [B1 attachment](source-borrow.md) checks the exact unary shared
+caller/callee rewrite and preserves owned dynamic-entry wrappers. Its new
+semantic boundary is finite closed-program translation validation: the
+checker itself executes the original Ixon source and the actual baseline and
+selected physical IxIR₂ programs. It packages producer equations, equal Nat
+results, complete reclamation, strict actual RC improvement, and the declared
+peak-live-node bound. `IxIR2.Borrow.Execution.steps` turns each successful
+runner equation into its complete finite small-step execution.
+
+`Borrow.Improved.sourcePreservation` and `resources` expose those facts for
+the compiled source attachment; `Borrow.Selection.valid` and `fallbackExact`
+retain the last checked artifact on optional failure. No simulation callback
+is supplied by a caller. The source family covers both branches of a shared
+constructor reader and zero through eight acyclic forwarding functions.
+This finite certificate retains its closed scope. The B2 extension below
+supplies an open-family proof; recursive SCC summary soundness remains outside
+both. The existing baseline, credit-refinement, and native unique-input
+theorems keep their current scope.
+
+## Structural runtime borrowing
+
+[B2](source-borrow-runtime.md) recognizes the actual erased source graph and
+every inferred baseline/borrowed reader, forwarding body, repeated read, and
+owned wrapper. Inductive shape witnesses carry every callee lookup and derive
+source application and target small-step execution. The selector consumes
+neither runtime arguments nor a function-simulation callback.
+
+`Open.Entry.steps` handles arbitrary caller/resume continuations. Borrowed
+paths use `StableSteps`, whose prefix theorem preserves the entire store,
+including aliased lender refcounts, constructor views, and later reset facts.
+The owned wrapper releases its argument only after the borrowed result returns.
+Heap-worker retain/release cancellation isolates exactly two baseline RC
+ticks. `Entry.total` obtains deep-release fuel from the existing root-ownership
+and allocation-order reclamation theorem, yielding equal final stores modulo
+those ticks, complete reclamation, and unchanged saved peak. `runFunctions`
+exposes the corresponding actual evaluator equations.
+
+`Runtime.Certified.sourceToRuntime` projects the validated compiler's erasure
+certificate and composes `Sim.apply_sim_inlineSharing` with checked source
+shape induction and both target runners. The original successful source
+application, sharing well-formedness, oracle relation, and represented argument
+remain explicit premises. The target heap relation needs the observed outer
+tag/arity and whole-heap input ownership; the ignored payload can be arbitrary.
+The theorem covers every admitted input, beyond the finite direct/PAP and
+aliased-lender regression matrix. Fifteen fences expose the unchanged logical
+and addressed-source hash basis.

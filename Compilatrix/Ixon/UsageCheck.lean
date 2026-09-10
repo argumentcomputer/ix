@@ -153,6 +153,19 @@ def worldOf : Uses → Owned
   | .linear | .affine => .unique
   | _ => .shared
 
+/-- A fresh closure with only reusable runtime parameters and a shared
+result uses the existing shared-PAP representation. Successful lambda
+checking separately rules out unique captures. Erased parameters disappear
+before that representation is selected. Other callable modes retain the
+unique classification and the existing downstream restrictions. -/
+def closureWorld (uses : Uses) (result : Owned) : Owned :=
+  if (uses == .many || uses == .erased) && result == .shared then .shared else .unique
+
+theorem closureWorld_shared_iff {uses : Uses} {result : Owned} :
+    closureWorld uses result = .shared ↔
+      (uses = .many ∨ uses = .erased) ∧ result = .shared := by
+  cases uses <;> cases result <;> simp [closureWorld]
+
 /-! ## Errors -/
 
 inductive UsageErr where
@@ -399,7 +412,7 @@ def check (ctx : CheckCtx) (fuel : Nat) (ghost : Bool) (ws : List Owned)
       return (uv, .shared)
     | .lam u ty body => do
       discard <| check ctx fuel true ws ty
-      let (uvB, _) ← check ctx fuel ghost (worldOf u :: ws) body
+      let (uvB, ownB) ← check ctx fuel ghost (worldOf u :: ws) body
       let (entry, rest) ← headEntry uvB
       unless ghost do
         unless u.covers entry.uses do throw (.binderCovers u entry.uses)
@@ -409,7 +422,7 @@ def check (ctx : CheckCtx) (fuel : Nat) (ghost : Bool) (ws : List Owned)
         if entry.moved && entry.uses != .linear then
           throw (.useAfterMove entry.uses)
         rejectUniqueCaptures 0 rest ws
-      return (rest, .unique)
+      return (rest, closureWorld u ownB)
     | .all _ _ ty cod => do
       discard <| check ctx fuel true ws ty
       discard <| check ctx fuel true (.shared :: ws) cod
@@ -808,6 +821,86 @@ theorem headEntry_ok_iff {uses : UseVec} {entry : VarUse} {rest : UseVec} :
     headEntry uses = .ok (entry, rest) ↔ uses = entry :: rest := by
   cases uses <;> simp [headEntry]
 
+/-- Every captured unique context entry has zero runtime demand. The relation
+also records that the usage vector and context have the same length. -/
+inductive SharedCaptures : UseVec → List Owned → Prop where
+  | nil : SharedCaptures [] []
+  | cons {use : VarUse} {world : Owned} {uses : UseVec} {worlds : List Owned}
+      (head : world = .unique → use.uses = .erased)
+      (tail : SharedCaptures uses worlds) :
+      SharedCaptures (use :: uses) (world :: worlds)
+
+private theorem rejectUniqueCaptures_shared {start : Nat} {uses : UseVec}
+    {worlds : List Owned} (h : rejectUniqueCaptures start uses worlds = .ok ()) :
+    SharedCaptures uses worlds := by
+  induction uses generalizing start worlds with
+  | nil =>
+    cases worlds with
+    | nil => exact .nil
+    | cons world worlds => simp [rejectUniqueCaptures] at h
+  | cons use uses ih =>
+    cases worlds with
+    | nil => simp [rejectUniqueCaptures] at h
+    | cons world worlds =>
+      simp only [rejectUniqueCaptures] at h
+      split at h
+      · contradiction
+      · rename_i safe
+        exact .cons (by intro unique; simpa [unique] using safe) (ih h)
+
+/-- Inversion of the actual runtime checker: a lambda classified as shared
+has a reusable or erased parameter, a body that synthesizes shared, and no
+runtime capture of a unique value. No conversion of an existing unique value
+is hidden in the fresh-closure classification. -/
+theorem check_lam_shared {ctx : CheckCtx} {fuel : Nat} {worlds : List Owned}
+    {uses : Uses} {domain body : Expr} {outerUses : UseVec}
+    (hcheck : check ctx (fuel + 1) false worlds (.lam uses domain body) =
+      .ok (outerUses, .shared)) :
+    (uses = .many ∨ uses = .erased) ∧ SharedCaptures outerUses worlds ∧
+      ∃ entry, check ctx fuel false (worldOf uses :: worlds) body =
+        .ok (entry :: outerUses, .shared) := by
+  rw [check.eq_def] at hcheck
+  dsimp only at hcheck
+  cases hd : check ctx fuel true worlds domain with
+  | error err => rw [hd] at hcheck; contradiction
+  | ok domainResult =>
+    rw [hd] at hcheck
+    cases hb : check ctx fuel false (worldOf uses :: worlds) body with
+    | error err =>
+      rw [hb] at hcheck
+      simp only [exceptBindErr] at hcheck
+      contradiction
+    | ok bodyResult =>
+      rcases bodyResult with ⟨bodyUses, bodyOwn⟩
+      rw [hb] at hcheck
+      simp only [exceptBindOk] at hcheck
+      cases he : headEntry bodyUses with
+      | error err =>
+        rw [he] at hcheck
+        simp only [exceptBindErr] at hcheck
+        contradiction
+      | ok entryRest =>
+        rcases entryRest with ⟨entry, rest⟩
+        rw [he] at hcheck
+        by_cases hcovers : uses.covers entry.uses = true
+        · by_cases hdrop : erasureDropsBinder ctx.sharing fuel uses domain = true ∧
+              entry.uses ≠ .erased
+          · simp [hcovers, hdrop, exceptThrow, exceptBindErr] at hcheck
+          · by_cases hmove : entry.moved = true ∧ entry.uses ≠ .linear
+            · simp [hcovers, hdrop, hmove, exceptThrow, exceptBindErr] at hcheck
+            · cases hc : rejectUniqueCaptures 0 rest worlds with
+              | error err =>
+                simp [hcovers, hdrop, hmove, hc, Functor.map, Except.map] at hcheck
+              | ok done =>
+                cases done
+                have result : rest = outerUses ∧ closureWorld uses bodyOwn = .shared := by
+                  simpa [hcovers, hdrop, hmove, hc, Functor.map, Except.map] using hcheck
+                have classification := closureWorld_shared_iff.mp result.2
+                rcases result with ⟨rfl, _⟩
+                refine ⟨classification.1, rejectUniqueCaptures_shared hc, entry, ?_⟩
+                rw [headEntry_ok_iff.mp he, classification.2]
+        · simp [hcovers, exceptThrow, exceptBindErr] at hcheck
+
 /-- If the executable checker accepts a lambda whose binder the executable
 eraser classifies as dropped, the body's computed usage for that binder is
 exactly zero.  This covers both explicit `Uses.erased` and sort-like type
@@ -957,6 +1050,7 @@ private def aFresh := addrOf 4  -- fresh : X →ω X^unique
 private def aF := addrOf 5      -- f : X →ω X →ω X
 private def aC0 := addrOf 6     -- c0 : X
 private def aE := addrOf 7      -- e : ∀^0 (A : Sort), X ⊸ X
+private def aApply := addrOf 8  -- apply : (X →ω X) →ω X
 
 private def X : Expr := .ref 0 #[]
 private def gRef : Expr := .ref 1 #[]
@@ -965,6 +1059,7 @@ private def freshRef : Expr := .ref 3 #[]
 private def fRef : Expr := .ref 4 #[]
 private def c0Ref : Expr := .ref 5 #[]
 private def eRef : Expr := .ref 6 #[]
+private def applyRef : Expr := .ref 7 #[]
 
 private def axConst (refs : Array Address) (typ : Expr) : Constant :=
   { info := .axio { isUnsafe := false, lvls := 0, typ }
@@ -978,13 +1073,15 @@ private def cF := axConst #[aX] (.all .many .shared X (.all .many .shared X X))
 private def cC0 := axConst #[aX] X
 private def cE := axConst #[aX]
   (.all .erased .shared (.sort 0) (.all .linear .unique X X))
+private def cApply := axConst #[aX]
+  (.all .many .shared (.all .many .shared X X) X)
 
 private def resolver : Address → Option Constant := fun a =>
   (([(aX, cX), (aG, cG), (aH, cH), (aFresh, cFresh), (aF, cF),
-     (aC0, cC0), (aE, cE)] : List (Address × Constant)).find?
+     (aC0, cC0), (aE, cE), (aApply, cApply)] : List (Address × Constant)).find?
     (fun p => p.1 == a)).map (·.2)
 
-private def stdRefs : Array Address := #[aX, aG, aH, aFresh, aF, aC0, aE]
+private def stdRefs : Array Address := #[aX, aG, aH, aFresh, aF, aC0, aE, aApply]
 
 private def defnConst (typ value : Expr) (sharing : Array Expr := #[]) :
     Constant :=
@@ -1015,6 +1112,31 @@ private def failsWith (c : Constant) (p : UsageErr → Bool) : Bool :=
 
 -- The linear identity: unique in, unique out.
 #guard ok? (defnConst (.all .linear .unique X X) (.lam .linear X (.var 0)))
+
+-- Fresh reusable closures use the shared PAP ABI, including let binding,
+-- shared capture, and an erased parameter ahead of the runtime telescope.
+#guard ok? (defnConst X (.app applyRef (.lam .many X (.var 0))))
+#guard ok? (defnConst X
+  (.letE true (.all .many .shared X X) (.lam .many X (.var 0))
+    (.app applyRef (.var 0))))
+#guard ok? (defnConst (.all .many .shared X X)
+  (.lam .many X (.app applyRef (.lam .many X (.var 1)))))
+#guard match check { resolve := resolver, refs := stdRefs } 100 false []
+    (.lam .erased (.sort 0) (.lam .many X (.var 0))) with
+  | .ok ([], .shared) => true
+  | _ => false
+
+-- Neighboring callable modes/results still cannot enter shared storage.
+#guard failsWith (defnConst X (.app applyRef (.lam .affine X c0Ref)))
+  (fun | .freezeNeeded => true | _ => false)
+#guard failsWith (defnConst X (.app applyRef (.lam .linear X (.var 0))))
+  (fun | .freezeNeeded => true | _ => false)
+#guard failsWith (defnConst X
+  (.app applyRef (.lam .many X (.app freshRef (.var 0)))))
+  (fun | .freezeNeeded => true | _ => false)
+#guard failsWith (defnConst (.all .linear .shared X X)
+  (.lam .linear X (.app applyRef (.lam .many X (.app gRef (.var 1))))))
+  (fun | .uniqueCapture 0 => true | _ => false)
 
 -- Affine weakening: an affine argument may be unused.
 #guard ok? (defnConst (.all .affine .shared X X) (.lam .affine X c0Ref))

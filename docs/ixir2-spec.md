@@ -1,13 +1,14 @@
 # IxIR₂ v0 specification
 
-Last reviewed 2026-09-07.
+Last reviewed 2026-09-08.
 
 This document freezes the first IxIR₂ semantic data model. It is normative for
 the v0 syntax, ownership-flow checker,
 reuse-credit behavior, and IxIR₁→IxIR₂ simulation boundary. Forward-looking
-pass ideas remain in the local plans; an implementation that disagrees with
-this document must change the specification deliberately rather than silently
-choosing a different contract.
+pass ideas and acceptance gates live in the [roadmap](roadmap.md), with their
+rationale in [compiler design](compiler-design.md). An implementation that
+disagrees with this document must change the specification deliberately
+rather than silently choosing a different contract.
 
 The separately versioned [v1 call-credit extension](#v1-suspended-direct-call-credits)
 below permits credits in suspended caller continuations. The original v0
@@ -30,8 +31,10 @@ Nat and constructor branches against IxIR₁. The logical whole-main simulation
 is attached in [`IxIR2/PipelineSim.lean`](../Compilatrix/IxIR2/PipelineSim.lean).
 [`IxIR2/PipelinePhysical.lean`](../Compilatrix/IxIR2/PipelinePhysical.lean)
 transports its exact execution to the physical baseline using the checked
-absence of credit operations. General credit refinement and the codec remain
-separate gates; the [roadmap](roadmap.md) records their state.
+absence of credit operations. The [general credit refinement](credit-refinement.md)
+now covers both policies and the full instruction language, with explicit
+logical root ownership for complete reclamation. The codec remains a separate
+gate; the [roadmap](roadmap.md) records its state.
 
 The freeze covers the in-memory Lean model and proof interfaces. Numeric wire
 tags and a persistent codec are not frozen yet. No artifact may advertise a
@@ -496,9 +499,10 @@ cancels to the logical shallow reset. Physical in-place replacement is related
 to a fresh allocation after that concrete baseline prefix by a live-location
 bijection mapping the reused slot to the fresh slot. A linked-node proof
 fixture exercises the complete hot prefix, while executable non-degenerate
-runs pin the intermediate and terminal counter laws. Whole-machine
-logical/physical refinement remains to be composed through the checked rewrite
-and structured lowering; these local theorems do not claim that induction.
+runs pin the intermediate and terminal counter laws. The later
+[general credit theorem](credit-refinement.md) composes the actual primitive,
+frame, continuation, and policy-step relations through whole-machine execution,
+independently of a compiler rewrite template.
 
 ## IxIR₁→IxIR₂ lowering
 
@@ -1185,13 +1189,24 @@ constructor branches additionally recover their emitted selection from the
 checked attachment. Ambiguous-HPT branches recover it from the attachment's
 residual-target audit and evaluator-preserved live-constructor invariant, so
 constructor selection has no external semantic input. The later isomorphic
-credit refinement remains active proof work.
+credit refinement is now supplied by the general execution bridge below.
 
 ### 2. Credit implementation refinement
 
-Every well-formed logical IxIR₂ step is matched by the physical semantics with
-the same control decision and a related state. Terminal results are related by
-heap isomorphism and satisfy the terminal counter equations above.
+[`CreditRefinement.checked_runMain_refines`](../Compilatrix/IxIR2/CreditRefinement.lean)
+matches successful logical execution of the same checked program under both
+credit policies. It derives a physical run with the same budgets and related
+heap/value observations; independent successful budgets also preserve those
+observations. Every physical prefix has a corresponding logical prefix with
+the intermediate counter law, including all suspended reservations.
+
+The result's finite live-heap isomorphism, transported source value graph, and
+complete reclamation use explicit logical `RootOwnership`.
+`checked_runMain_owned` constructs both actual complete releases, deriving
+allocation order and release fuel internally. Validator acceptance alone is
+not claimed to establish semantic root ownership. The
+[R6 contract](credit-refinement.md) records the API, regression matrix, and
+unchanged error/effect/capacity boundaries.
 
 ### 3. Pipeline composition
 
@@ -1232,7 +1247,8 @@ reset macros. The same complete releases carry both inequalities and R3's free
 law. `CostDelta` tracks these observations separately from semantic relations;
 exact per-step peak updates include internal application heap work. No new
 heap or rewrite-shape premise is required. General logical/physical credit
-refinement remains separate; R5 extends the selected compiler proof to
+refinement has its own [delivered contract](credit-refinement.md); R5 extends
+the selected compiler proof to
 non-tail direct calls under the explicit policy below.
 
 Later CFG, recursion, borrow, reset-insertion, or RC-coalescing passes must
@@ -1384,8 +1400,47 @@ of every physical reservation prefix. Full release handles forward links
 created by in-place reversal. The source endpoint derives these facts from
 checked compilation and the established source evaluation premises. See
 [source unique reuse](source-unique-reuse.md) for its domain, costs, independent
-budgets, fallbacks, and artifact gate. General unique lowering and native heap
-selection remain separate extensions.
+budgets, fallbacks, and artifact gate. The delivered [native subset](source-native-unique.md)
+selects this actual artifact into a bounded arena ABI, with full byte-memory
+main/release proofs and source-produced native objects. General unique lowering
+and wider native heap selection remain separate extensions.
+
+## Checked borrowed source calls
+
+The optional [B1 pass](source-borrow.md) consumes the exact checked baseline,
+infers unary shared borrowed entries, reconstructs every affected body and
+call site, and validates the complete result. Original signatures remain
+owned wrappers for dynamic/PAP entry. Root retains become borrowed moves;
+root releases disappear; projected-field retains remain ownership adapters.
+Tail borrows require caller lenders. Take/reset, credit effects, externs, and
+self-call forms reject a candidate; conservative baseline releases alone do
+not force an owned signature.
+
+Selection additionally derives exact finite source and physical executions.
+Only equal scalar results, complete reclamation, strict executed-RC reduction,
+and no peak-live-node increase can select the candidate. This is a bounded
+closed-program translation-validation contract, not an arbitrary-runtime-input
+function simulation. Twelve ownership/resource negatives, field-retain
+preservation, three checked source fallbacks, ten axiom fences, and an
+independent full-prefix artifact gate pin the delivered boundary.
+
+The [B2 attachment](source-borrow-runtime.md) checks a reusable structural
+certificate for an accepted open shared tag-reading source function and every
+inferred summary, callee, and owned wrapper. Selection has compiler/checker
+limits but no runtime argument or replay fuel. `Open.Entry.steps` derives
+actual function and continuation paths; `lenderLifetime` preserves the exact
+store at every borrowed prefix. Later caller take/reset facts survive return.
+
+`Open.Input` requires one external shared root owning the whole allocation-
+ordered heap, balanced accounting, and a valid saved peak. Payload descendants
+are unrestricted by size. Root ownership constructs release fuel and proves
+empty final heaps, with exactly two fewer executed RC operations and unchanged
+peak at the owned entry. Its wrapper adds one control transition. The source
+composition consumes the actual erasure attachment and successful Ixon
+application under the existing sharing/oracle premises. Fifteen axiom fences,
+144 independent direct/PAP comparisons, aliased lenders, exact fallback, and
+twenty corrupted artifacts pin this extension. General recursive SCCs and
+native shared borrowing remain outside it.
 
 ## Implementation order fixed by this specification
 
@@ -1445,8 +1500,10 @@ realizes the public forward successful-run contract with independently chosen
 target budgets. Constructor selection, including the HPT-ambiguous case, is now
 derived entirely from the validated producer artifacts. This completes the
 IxIR₂ CFG/join-point tranche. The bounded scalar native path and source-level
-shared/static-unique reuse endpoints are also delivered; native heap selection
-is the next compiler milestone.
+shared/static-unique reuse endpoints are also delivered. Bounded unique reversal
+now also reaches native heap execution with exact cell costs and full release.
+General credit refinement now covers the complete instruction language under
+both policies, with the explicit ownership domain recorded above.
 
 The v0 syntax and semantics support both static unique and dynamic shared
 reuse with the same ownership and layout contracts.

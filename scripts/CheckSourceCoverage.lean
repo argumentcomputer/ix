@@ -1,4 +1,5 @@
 import Compilatrix.Tools.X86Check
+import Compilatrix.Tools.UpstreamNativeCheck
 
 /-! Compare complete artifacts from two fresh compiler processes, check the
 reviewed stage/identity/counter matrix, and independently inspect native exits.
@@ -14,6 +15,88 @@ private def requiredFields (value : Json) (keys : List String) (label : String) 
   for key in keys do
     let _ ← field value key
   need (value != Json.null) s!"missing {label}"
+
+private def inspectUpstream (row input compiled observations : Json) : IO Unit := do
+  requiredFields input ["manifest_bytes", "piece_bytes", "blob_inputs", "policy", "provenance"] "original upstream input"
+  need ((← field input "provenance") == (← field row "provenance")) "upstream provenance disagreement"
+  let provenance ← field row "provenance"
+  need ((← strField provenance "source_pin") == "git:ix@6f18ea907b78d06f7dc0917c43beb385561c35f4" &&
+      (← strField provenance "toolchain") == "leanprover/lean4:v4.33.1") "upstream writer pin drifted"
+  requiredFields provenance ["source_module", "source_module_hash", "piece_hash", "members_root", "content_root"] "upstream provenance"
+  if compiled == Json.null || (← strField row "last_accepted_stage") == "addressed-ixir0" then return
+  need ((← field (← field compiled "source") "constants") == (← field input "constants"))
+    "compiled upstream constants differ from their original byte records"
+  let summary ← field row "observation"
+  let number ← field summary "nat"
+  for stage in ["ixon", "raw_ixir0", "ixir0"] do
+    need ((← field observations stage) == number) s!"{stage} upstream result disagreement"
+  for stage in ["raw_ixir1", "ixir1", "logical_ixir2", "physical_ixir2"] do
+    let observation ← field observations stage
+    need ((← field observation "nat") == number) s!"{stage} upstream result disagreement"
+    requiredFields observation ["value", "store", "reclaimed"] "upstream heap observation"
+    let store ← field observation "store"
+    let reclaimed ← field observation "reclaimed"
+    let (store, reclaimed) ← if stage.endsWith "ixir2" then
+        pure (← field store "heap", ← field reclaimed "heap")
+      else pure (store, reclaimed)
+    let nodes ← arrField store "nodes"
+    let live := nodes.countP (· != Json.null)
+    need ((← nat (← field store "allocs")) == (← nat (← field store "frees")) + live)
+      s!"{stage} upstream live-node balance disagrees"
+    for key in ["allocs", "frees", "rcops", "reuses"] do
+      need ((← field store key) == (← field (← field summary "heap") key)) s!"{stage} terminal counters disagree"
+      need ((← field reclaimed key) == (← field (← field summary "reclaimed") key)) s!"{stage} reclaimed counters disagree"
+    need ((← arrField reclaimed "nodes").all (· == Json.null) &&
+        (← field reclaimed "allocs") == (← field reclaimed "frees")) s!"{stage} upstream result leaked"
+  need ((← field observations "logical_ixir2") == (← field observations "physical_ixir2"))
+    "complete upstream baseline stores or execution budgets disagree"
+
+private def inspectAddressed (row compiled : Json) : IO Unit := do
+  need ((← strField compiled "format") == "compilatrix/addressed-erasure/1" &&
+      (← field compiled "source_erasure_certified") == toJson false)
+    "partial addressed output was mislabeled as certified source erasure"
+  need ((← strField (← field row "rejection") "stage") == "validated-erasure")
+    "addressed source has an inconsistent next boundary"
+  let ir0 ← field compiled "ixir0"
+  requiredFields ir0 ["raw_declarations", "raw_main", "groups", "declarations", "main", "blocks", "address_map"] "addressed IxIR0"
+  let groups ← arrField ir0 "groups"
+  let blocks ← arrField ir0 "blocks"
+  let mapping ← arrField ir0 "address_map"
+  let mut raw := #[]
+  let mut blockMaps := #[]
+  let mut seen := #[]
+  let mut index := 0
+  for group in groups do
+    let entries ← arrField group "entries"
+    raw := raw ++ entries
+    if (← strField group "kind") != "mutual" then continue
+    let some block := blocks[index]? | throw (IO.userError "mutual producer block missing")
+    index := index + 1
+    let pairs ← arrField block "address_map"
+    let members ← arrField block "members"
+    need (pairs.size == entries.size && members.size == entries.size)
+      "mutual producer/member map lost a row"
+    for i in [:pairs.size] do
+      let pair ← array pairs[i]!
+      need (pair.size == 2 && pair[0]? == some (← field entries[i]! "key") &&
+          pair[1]? == some (← field members[i]! "key")) "mutual producer map has wrong order or identity"
+      need (!seen.contains pair[0]!) "mutual producer key was duplicated"
+      seen := seen.push pair[0]!
+    blockMaps := blockMaps ++ pairs
+  need (index == blocks.size && blockMaps == mapping && raw == (← arrField ir0 "raw_declarations"))
+    "addressed output omitted or reordered producers"
+  let declarations ← arrField ir0 "declarations"
+  need (declarations.size == raw.size) "addressed output dropped duplicate declaration rows"
+  for left in declarations do
+    for right in declarations do
+      if (← field left "key") == (← field right "key") then
+        need (left == right) "shared member identity has conflicting declarations"
+  let name ← strField row "name"
+  if name == "upstream-addClosed" || name == "std-failure-closure" then
+    need (blocks.size == 3 && mapping.size == 3) "repeated-erasure upstream fixture lost a producer"
+    for block in blocks do
+      for key in ["root", "preimage", "members"] do
+        need ((← field block key) == (← field blocks[0]! key)) "reused block artifact is not byte-exact"
 
 private def inspectSnapshot (directory : FilePath) (row : Json) : IO Unit := do
   let path ← strField row "snapshot"
@@ -42,8 +125,12 @@ private def inspectSnapshot (directory : FilePath) (row : Json) : IO Unit := do
       requiredFields certificate ["program_root", "cache_key", "dependencies", "members", "bytes"] "HPT certificate"
     requiredFields (← field compiled "ixir2_diagnostic")
       ["program", "validation_stats", "parameter_worlds", "constructors", "recursor_origins"] "IxIR2"
+  else if stage == "addressed-ixir0" then
+    inspectAddressed row compiled
   else
     need (compiled == Json.null) "negative source snapshot unexpectedly contains a compiler output"
+  if (← strField row "origin") == "upstream-lean" then
+    inspectUpstream row input compiled (← field snapshot "observations")
 
 private def compareFiles (first second : FilePath) (report : Json) : IO (Array Json) := do
   let rows ← arrField report "source_cases"
@@ -70,9 +157,10 @@ private def compareFiles (first second : FilePath) (report : Json) : IO (Array J
 
 def main (args : List String) : IO UInt32 := cli "source coverage check failed" do
   let args ← checked (parseArgs [
-    "--fixture", "--contact", "--expected", "--readelf", "--objdump", "--cc", "--harness"] args)
+    "--fixture", "--contact", "--upstream", "--expected", "--readelf", "--objdump", "--cc", "--harness"] args)
   let some exe := optional args "--fixture" | throw (IO.userError "--fixture is required")
   let contact := option args "--contact" "fixtures/ixon-std-contact"
+  let upstream := option args "--upstream" "fixtures/ixon-upstream"
   let expected ← readJson (option args "--expected" "fixtures/source-coverage/expected.json")
   let readelf := option args "--readelf" "readelf"
   let objdump := option args "--objdump" "objdump"
@@ -82,7 +170,7 @@ def main (args : List String) : IO UInt32 := cli "source coverage check failed" 
     let second := directory / "second"
     -- Each invocation constructs and compiles all source inputs from scratch.
     for output in [first, second] do
-      let result ← run exe #[output.toString, contact]
+      let result ← run exe #[output.toString, contact, upstream]
       requireAll result ["source-coverage ok:"] "coverage producer"
     let report ← readJson (first / "report.json")
     need (report == expected) "reviewed source coverage, identity, or counter matrix drifted"
@@ -99,10 +187,16 @@ def main (args : List String) : IO UInt32 := cli "source coverage check failed" 
       let observation ← field row "observation"
       let number ← nat (← field observation "nat")
       let disassembly ← disassemble objdump path
-      requireAll disassembly [s!"movabs rax,0x{hexNat number}"] "source scalar target"
       let bytes ← IO.FS.readBinFile path
-      need (containsBytes bytes (← provenance (← strField row "ir1_root")))
-        "source object lost its exact addressed IxIR1 provenance"
+      if (← strField row "origin") == "upstream-lean" then
+        let snapshot ← readJson (first / (← strField row "snapshot"))
+        Compilatrix.Tools.UpstreamNativeCheck.inspect row snapshot bytes
+        Compilatrix.Tools.UpstreamNativeCheck.regressions row snapshot bytes
+        requireAll disassembly ["call", "add    rax,0x1"] "upstream computational target"
+      else
+        requireAll disassembly [s!"movabs rax,0x{hexNat number}"] "source scalar target"
+        need (containsBytes bytes (← provenance (← strField row "ir1_root")))
+          "source object lost its exact addressed IxIR1 provenance"
       if let some (cc, harness) := native then
         linkAndRun cc readelf harness path (directory / s!"{← strField row "name"}-native") number
     need (objectCount > 0) "source coverage has no native-capable exit"

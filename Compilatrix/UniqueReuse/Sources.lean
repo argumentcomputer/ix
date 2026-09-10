@@ -42,8 +42,8 @@ def Source.main : Expr := .app (.ref 0 #[]) (.sort 0)
 def Source.entry (source : Source) : Pipeline.ClosedEntry :=
   { refs := #[source.root], univs := #[.zero], source := Source.main }
 
-def source (values : List Nat) : Except String Source := do
-  if values.length > 64 then throw "unique fixture exceeds 64 list elements"
+def source (values : List Nat) (maxElements : Nat := 64) : Except String Source := do
+  if values.length > maxElements then throw s!"unique fixture exceeds {maxElements} list elements"
   let natT := Expr.recur 0 #[]
   let listT := Expr.recur 1 #[]
   let builderT := .all .linear .unique natT (.all .linear .unique listT listT)

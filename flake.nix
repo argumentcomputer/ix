@@ -54,8 +54,8 @@
         pkgs,
         ...
       }: let
-        # Pinned Lean toolchain, resolved from ./lean-toolchain
-        # (matches lean4lean's pin, ahead of ix's — see plans/).
+        # Pinned Lean toolchain, resolved from ./lean-toolchain.
+        # Pin changes follow the compatibility gates in docs/roadmap.md.
         lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
         lake2nix = pkgs.callPackage lean4-nix.lake {inherit lean;};
         # Restrict build inputs to Lean-relevant files so edits to
@@ -75,11 +75,23 @@
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
             ./SourceUniqueReuse.lean
+            ./SourceNativeUnique.lean
+            ./SourceNativeRuntime.lean
+            ./SourceNativeUpstream.lean
+            ./benchmarks
+            ./SourceBorrow.lean
+            ./SourceBorrowRuntime.lean
             ./fixtures/ixon-std-contact
+            ./fixtures/ixon-upstream
             ./fixtures/source-coverage
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-unique-reuse
+            ./fixtures/source-native-unique
+            ./fixtures/source-native-runtime
+            ./fixtures/source-native-upstream
+            ./fixtures/source-borrow
+            ./fixtures/source-borrow-runtime
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
           ];
@@ -108,14 +120,27 @@
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
             ./SourceUniqueReuse.lean
+            ./SourceNativeUnique.lean
+            ./SourceNativeRuntime.lean
+            ./SourceNativeUpstream.lean
+            ./benchmarks
+            ./SourceBorrow.lean
+            ./SourceBorrowRuntime.lean
             ./fixtures/ixon-std-contact
+            ./fixtures/ixon-upstream
             ./fixtures/source-coverage
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-unique-reuse
+            ./fixtures/source-native-unique
+            ./fixtures/source-native-runtime
+            ./fixtures/source-native-upstream
+            ./fixtures/source-borrow
+            ./fixtures/source-borrow-runtime
             ./fixtures/x86/native_harness.c
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             ./docs/trusted-externs.json
+            ./docs/x86-reference-model.json
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
             ./.github/workflows
           ];
@@ -190,8 +215,8 @@
           '';
         };
 
-        # E0 keeps encoding outside the proof cone, so independently decode
-        # every Lean-pinned golden byte sequence with the pinned GNU decoder.
+        # Retain GNU decoding as an external oracle alongside E1's local
+        # encoding/execution proofs and compiled byte-evaluator matrix.
         x86EncoderCheck = lake2nix.mkPackage {
           inherit lakeDeps;
           src = leanSrc;
@@ -201,6 +226,28 @@
           postBuild = ''
             ./.lake/build/bin/check-x86-encoder \
               --objdump ${pkgs.binutils}/bin/objdump
+          '';
+        };
+
+        x86BytesCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "check-x86-bytes";
+          installArtifacts = false;
+          postBuild = ''
+            ./.lake/build/bin/check-x86-bytes
+          '';
+        };
+
+        x86StreamsCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "check-x86-streams";
+          installArtifacts = false;
+          postBuild = ''
+            ./.lake/build/bin/check-x86-streams
           '';
         };
 
@@ -245,6 +292,7 @@
             ./.lake/build/bin/check-source-coverage \
               --fixture ./.lake/build/bin/source-coverage \
               --contact ${auditSrc}/fixtures/ixon-std-contact \
+              --upstream ${auditSrc}/fixtures/ixon-upstream \
               --expected ${auditSrc}/fixtures/source-coverage/expected.json \
               --readelf ${pkgs.binutils}/bin/readelf \
               --objdump ${pkgs.binutils}/bin/objdump ${x86ObjectNativeArgs}
@@ -302,6 +350,145 @@
           '';
         };
 
+        # Checked native unique reversal from Ixon, exact source/ABI/object
+        # provenance, independent byte and hardware observations, full release.
+        sourceNativeUniqueCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs =
+            leanBuildInputs
+            ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "source-native-unique";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-native-unique
+            ./.lake/build/bin/check-source-native-unique \
+              --fixture ./.lake/build/bin/source-native-unique \
+              --expected ${auditSrc}/fixtures/source-native-unique/expected.json \
+              --readelf ${pkgs.binutils}/bin/readelf \
+              --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-unique/native_harness.c"}
+          '';
+        };
+
+        # One compiled source function and one ELF pair, independently checked
+        # against runtime arguments, malformed inputs, and full reclamation.
+        sourceNativeRuntimeCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs =
+            leanBuildInputs
+            ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "source-native-runtime";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-native-runtime
+            ./.lake/build/bin/check-source-native-runtime \
+              --fixture ./.lake/build/bin/source-native-runtime \
+              --expected ${auditSrc}/fixtures/source-native-runtime/expected.json \
+              --readelf ${pkgs.binutils}/bin/readelf \
+              --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-runtime/native_harness.c"}
+          '';
+        };
+
+        sourceNativeUpstreamCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "source-native-upstream";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-native-upstream
+            ./.lake/build/bin/check-source-native-upstream \
+              --fixture ./.lake/build/bin/source-native-upstream \
+              --expected ${auditSrc}/fixtures/source-native-upstream/expected.json \
+              --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-upstream/native_harness.c"}
+          '';
+        };
+
+        cakeBootstrap = pkgs.stdenv.mkDerivation {
+          pname = "cakeml-benchmark-bootstrap";
+          version = "3479";
+          src = pkgs.fetchurl {
+            url = "https://github.com/CakeML/cakeml/releases/download/v3479/cake-x64-64.tar.gz";
+            sha256 = "e110bfcba19d6524ee4748608a67a275647445a048928cf623c2c9a973e31c9a";
+          };
+          makeFlags = ["cake" "CC=${pkgs.gcc}/bin/gcc"];
+          installPhase = ''
+            mkdir -p $out/bin
+            cp cake basis_ffi.c $out/bin/
+          '';
+        };
+
+        # Full correctness and deliberately short smoke samples have no host
+        # timing thresholds. Reference measurement remains an explicit command.
+        benchmarkCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.gcc pkgs.clang pkgs.compcert
+            cakeBootstrap pkgs.binutils pkgs.time pkgs.which pkgs.git pkgs.ripgrep
+            pkgs.gnutar pkgs.gzip pkgs.util-linux pkgs.nix];
+          name = "benchmark";
+          installArtifacts = false;
+          postBuild = ''
+            lake build source-native-runtime check-source-native-runtime source-native-upstream check-source-native-upstream
+            ./.lake/build/bin/benchmark build "$TMPDIR/benchmark-build" \
+              --gcc ${pkgs.gcc}/bin/gcc --clang ${pkgs.clang}/bin/clang \
+              --compcert ${pkgs.compcert}/bin/ccomp --cakeml ${cakeBootstrap}/bin/cake \
+              --time ${pkgs.time}/bin/time
+            ./.lake/build/bin/benchmark verify "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-verify"
+            ./.lake/build/bin/benchmark smoke "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-smoke"
+            ./.lake/build/bin/benchmark gc-smoke "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-gc-smoke"
+            ./.lake/build/bin/benchmark analysis-self-check
+          '';
+        };
+
+        # Checked borrowed calls from Ixon, whole caller/callee reconstruction,
+        # independent heap execution, RC improvement, and baseline fallbacks.
+        sourceBorrowCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-borrow";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-borrow
+            ./.lake/build/bin/check-source-borrow \
+              --fixture ./.lake/build/bin/source-borrow \
+              --expected ${auditSrc}/fixtures/source-borrow/expected.json
+          '';
+        };
+
+        # Runtime arguments are supplied after one structural source selection.
+        # Independently check all call bodies, wrappers, and execution prefixes.
+        sourceBorrowRuntimeCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-borrow-runtime";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-borrow-runtime
+            ./.lake/build/bin/check-source-borrow-runtime \
+              --fixture ./.lake/build/bin/source-borrow-runtime \
+              --expected ${auditSrc}/fixtures/source-borrow-runtime/expected.json
+          '';
+        };
+
         # Lint every workflow file; fail closed if the glob matches none.
         ciWorkflowCheck =
           pkgs.runCommand "ci-workflow-check" {
@@ -316,7 +503,9 @@
       in {
         _module.args.pkgs = import nixpkgs {
           inherit system;
-          };
+          config.allowUnfreePredicate = package:
+            pkgs.lib.getName package == "compcert";
+        };
 
         packages = {
           default = compilatrixLib;
@@ -328,13 +517,22 @@
           ci-workflow = ciWorkflowCheck;
           trusted-extern-ledger = trustedExternCheck;
           x86-encoder-decoder = x86EncoderCheck;
+          x86-byte-execution = x86BytesCheck;
+          x86-stream-objects = x86StreamsCheck;
           x86-elf-object = x86ObjectCheck;
           source-coverage = sourceCoverageCheck;
           source-recursion = sourceRecursionCheck;
           source-call-reuse = sourceCallReuseCheck;
           source-unique-reuse = sourceUniqueReuseCheck;
+          source-native-unique = sourceNativeUniqueCheck;
+          source-native-runtime = sourceNativeRuntimeCheck;
+          source-native-upstream = sourceNativeUpstreamCheck;
+          source-borrow = sourceBorrowCheck;
+          source-borrow-runtime = sourceBorrowRuntimeCheck;
           tests = testsCheck;
           catalog-contact = catalogContactCheck;
+        } // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          benchmark-correctness-smoke = benchmarkCheck;
         };
 
         devShells.default = pkgs.mkShell {

@@ -48,13 +48,13 @@ inductive Expr where
   | proj (index : Nat) (struct : Expr)
   | lit (literal : IxIR0.Literal)
   | erased
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, Repr, Inhabited
 
 /-- A recursor rule in a symbolic mutual block. -/
 structure RecRule where
   fields : Nat
   rhs : Expr
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, Repr, Inhabited
 
 /-- A declaration in a symbolic mutual block. -/
 inductive Decl where
@@ -62,7 +62,7 @@ inductive Decl where
   | ctor (tag arity : Nat)
   | recursor (numArgs : Nat) (natLit : Bool) (rules : Array RecRule)
   | extern (arity : Nat)
-  deriving BEq, Repr, Inhabited
+  deriving BEq, ReflBEq, LawfulBEq, Repr, Inhabited
 
 /-! ## Temporary-name abstraction -/
 

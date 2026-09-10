@@ -51,4 +51,10 @@ IxIR₂ credits. Three elements use 5 physical allocations, 3 reuses, zero RC,
 and peak 5, with full release. Its comparison is against the consuming
 program's checked target baseline; it is not another mode-erasure pair in the
 table above. Neither instrument extrapolates the 83⅓% micro result to general
-programs or wall-clock speed. Native heap measurements retain their own gate.
+programs or wall-clock speed. The separate [native reversal gate](source-native-unique.md)
+now measures matching arena-cell counts and full release in linked code for
+eight source inputs; it makes no wall-clock speedup claim.
+
+The [benchmark plan](benchmark-plan.md) defines the next native timing and
+language/runtime comparisons, starting with the parameterized reversal. Keep
+these exact counters alongside those measurements as explanatory evidence.

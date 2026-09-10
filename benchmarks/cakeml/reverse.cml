@@ -1,0 +1,132 @@
+(* Ordinary int lists; each input spine is constructed independently.
+   Recursive reversal remains a callable boundary in the optimized IR. *)
+fun reverseOnto xs acc =
+  case xs of [] => acc | x::rest => reverseOnto rest (x::acc);
+fun reverse xs = reverseOnto xs [];
+
+val packet = Word8Array.array 1024 (Word8.fromInt 0);
+fun ffi command = #(bench) command packet;
+fun getWord offset =
+  let fun loop i acc = if i < 0 then acc else
+        loop (i - 1) (acc * 256 + Word8.toInt (Word8Array.sub packet (offset + i)))
+  in loop 7 0 end;
+fun putWord offset value =
+  let fun loop i rest = if i = 8 then () else
+        (Word8Array.update packet (offset + i) (Word8.fromInt (rest mod 256)); loop (i + 1) (rest div 256))
+  in loop 0 value end;
+fun times n f = let fun loop i = if i = n then () else (f i; loop (i + 1)) in loop 0 end;
+
+val () = ffi "init";
+val verifyMode = getWord 0 = 1;
+val rowCount = getWord 8;
+val samples = getWord 16;
+val diagnostic = getWord 32 = 1;
+val scalars = Array.tabulate 585 (fn id =>
+  (putWord 0 id; ffi "input"; Array.tabulate (getWord 0) (fn i => getWord (8 + 8 * i))));
+fun make id =
+  let val values = Array.sub scalars id
+      fun loop i acc = if i < 0 then acc else loop (i - 1) (Array.sub values i :: acc)
+  in loop (Array.length values - 1) [] end;
+
+(* The pinned Word64 basis has shifts and addition but no multiplication.
+   This exactly multiplies by 2^40 + 2^8 + 2^7 + 2^5 + 2^4 + 2 + 1. *)
+fun fnvMultiply x = Word64.+ (Word64.<< x 40)
+  (Word64.+ (Word64.<< x 8) (Word64.+ (Word64.<< x 7)
+  (Word64.+ (Word64.<< x 5) (Word64.+ (Word64.<< x 4) (Word64.+ (Word64.<< x 1) x)))));
+val basis = Word64.fromInt 14695981039346656037;
+val zeroWord = Word64.fromInt 0;
+fun digest xs =
+  let fun loop ys acc = case ys of [] => acc | x::rest => loop rest (fnvMultiply (Word64.xorb acc (Word64.fromInt x)))
+  in loop xs basis end;
+
+val inputSlots = Array.array 4096 (make 0);
+val outputSlots = Array.array 4096 (make 0);
+fun inputId n domain opIndex = n * 9 + (if domain = 0 then opIndex mod 6 else domain + 5);
+fun prepare n domain offset = times 4096 (fn i => Array.update inputSlots i (make (inputId n domain (offset + i))));
+fun enter () = times 4096 (fn i =>
+  let val owned = Array.sub inputSlots i
+      val () = Array.update inputSlots i []
+  in Array.update outputSlots i (reverse owned) end);
+fun consume () =
+  let fun loop i acc = if i = 4096 then acc else
+        let val owned = Array.sub outputSlots i
+            val () = Array.update outputSlots i []
+        in loop (i + 1) (Word64.+ acc (digest owned)) end
+  in loop 0 zeroWord end;
+fun lifecycle n domain offset =
+  let fun loop i acc = if i = 4096 then acc else
+        loop (i + 1) (Word64.+ acc (digest (reverse (make (inputId n domain (offset + i))))))
+  in loop 0 zeroWord end;
+fun chunk n domain profile offset timed =
+  if profile = 0 then
+    (prepare n domain offset;
+     if timed then ffi "clock-start" else ();
+     enter ();
+     if timed then ffi "clock-stop" else ();
+     consume ())
+  else
+    let val () = if timed then ffi "clock-start" else ()
+        val result = lifecycle n domain offset
+        val () = if timed then ffi "clock-stop" else ()
+    in result end;
+
+fun check id emit =
+  let val result = reverse (make id)
+      val n = Array.length (Array.sub scalars id)
+      fun values xs index = case xs of
+        [] => if index = n then () else Runtime.abort ()
+      | x::rest => if index >= n then Runtime.abort () else
+          (putWord (32 + 8 * index) x; values rest (index + 1))
+      val () = values result 0
+      val hash = digest result
+      val () = putWord 0 id
+      val () = putWord 8 n
+      val () = putWord 16 (Word64.toInt hash)
+      val () = putWord 24 emit
+  in ffi "verify" end;
+
+fun control () =
+  (ffi "control-start";
+   times 1024 (fn _ => enter ());
+   putWord 0 (List.length (Array.sub outputSlots 0));
+   ffi "control-end");
+fun warm () =
+  let val () = ffi "warm-start"
+      fun loop operations acc =
+        let val next = Word64.+ acc (chunk 64 0 1 operations False)
+            val count = operations + 4096
+            val () = ffi "warm-test"
+        in if getWord 0 = 1 then
+             (putWord 0 count; putWord 8 (Word64.toInt next); ffi "warm-end")
+           else loop count next
+        end
+  in loop 0 zeroWord end;
+fun runRow index =
+  let val () = putWord 0 index
+      val () = ffi "row"
+      val n = getWord 8
+      val domain = getWord 16
+      val profile = getWord 24
+      val operations = getWord 32
+      fun sample index =
+        let val () = ffi "sample-begin"
+            fun loop offset acc = if offset = operations then acc else
+              loop (offset + 4096) (Word64.+ acc (chunk n domain profile offset True))
+            val sink = loop 0 zeroWord
+            val () = putWord 0 index
+            val () = putWord 8 (Word64.toInt sink)
+            val () = ffi "sample-end"
+        in times (if domain = 0 then 6 else 1) (fn p => check (inputId n domain p) 0) end
+  in times samples sample end;
+
+val () = control ();
+val () = if verifyMode then times 585 (fn id => check id 1)
+         else (warm (); times rowCount runRow);
+(* Keep the request opaque: the pinned compiler folds an inlined ConfigGC
+ * with constant arguments. This separate diagnostic requires an actual
+ * additional traced collection, checked by the Lean runner. *)
+val () = if diagnostic then
+  let val request = Array.array 1 Runtime.fullGC
+  in ffi "terminal-start"; (Array.sub request 0) (); ffi "terminal-end" end
+  else ();
+val () = ffi "finish";

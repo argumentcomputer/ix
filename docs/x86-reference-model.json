@@ -1,0 +1,50 @@
+{
+  "format": "compilatrix/x86-reference-readiness/1",
+  "reviewed_at": "2026-09-09",
+  "model": {
+    "repository": "https://github.com/rems-project/sail-x86-from-acl2",
+    "revision": "0c6c023dccc7c20d8d9dbfc481f01d9bb49d62bf",
+    "archive": "https://codeload.github.com/rems-project/sail-x86-from-acl2/tar.gz/0c6c023dccc7c20d8d9dbfc481f01d9bb49d62bf",
+    "sha256": "3b4df2a26433915a8b8789cd7f4240dda82835a6bad7b8d118535e2557d0c6f6",
+    "view": { "set64bit": 1, "app_view": 1 }
+  },
+  "status": {
+    "archive_verified": true,
+    "source_mapping_inspected": true,
+    "reference_model_built": false,
+    "reference_execution_compared": false,
+    "lean_adapter_built": false,
+    "reference_agreement_proved": false
+  },
+  "coverage": [
+    { "forms": ["mov-reg", "store"], "file": "model/move.sail", "function": "x86_mov_op_en_mr" },
+    { "forms": ["load32", "load64"], "file": "model/move.sail", "function": "x86_mov_op_en_rm" },
+    { "forms": ["mov-imm"], "file": "model/move.sail", "function": "x86_mov_op_en_oi" },
+    { "forms": ["lea"], "file": "model/move.sail", "function": "x86_lea" },
+    { "forms": ["load8", "load16"], "file": "model/move.sail", "function": "x86_movzx" },
+    { "forms": ["alu-reg", "cmp-reg"], "file": "model/arith_and_logic.sail", "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_g" },
+    { "forms": ["alu-imm", "cmp-imm"], "file": "model/arith_and_logic.sail", "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_i" },
+    { "forms": ["imul"], "file": "model/multiply.sail", "function": "x86_imul_op_en_rm" },
+    { "forms": ["push"], "file": "model/push_and_pop.sail", "function": "x86_push_general_register" },
+    { "forms": ["pop"], "file": "model/push_and_pop.sail", "function": "x86_pop_general_register" },
+    { "forms": ["jump", "tail-call"], "file": "model/jump_and_loop.sail", "function": "x86_near_jmp_op_en_d" },
+    { "forms": ["conditional-branch"], "file": "model/conditional.sail", "function": "x86_two_byte_jcc" },
+    { "forms": ["call", "runtime-call"], "file": "model/subroutine.sail", "function": "x86_call_e8_op_en_m" },
+    { "forms": ["ret"], "file": "model/subroutine.sail", "function": "x86_ret" }
+  ],
+  "pseudo_forms": {
+    "alloc-frame": "alu-imm: SUB RSP",
+    "free-frame": "alu-imm: ADD RSP",
+    "spill": "store: RBP minus slot displacement",
+    "reload": "load64: RBP minus slot displacement"
+  },
+  "adapter_route": {
+    "compiler": "https://github.com/rems-project/sail",
+    "backend": "sail_lean_backend",
+    "support_library": "https://github.com/rems-project/lean-sail",
+    "compiler_revision": null,
+    "support_revision": null,
+    "target_lean": "leanprover/lean4:v4.33.0",
+    "next": "Establish model/compiler compatibility, pin compiler and support library, generate and kernel-check the adapter, then compare the emitted subset."
+  }
+}

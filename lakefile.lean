@@ -51,10 +51,37 @@ lean_exe «source-call-reuse» where
 lean_exe «source-unique-reuse» where
   root := `SourceUniqueReuse
 
+/- Bounded native unique reversal, compiled from checked Ixon fixtures. -/
+lean_exe «source-native-unique» where
+  root := `SourceNativeUnique
+
+/- One compiled function, with caller-supplied unique list arguments. -/
+lean_exe «source-native-runtime» where
+  root := `SourceNativeRuntime
+
+lean_exe «source-native-upstream» where
+  root := `SourceNativeUpstream
+
+/- Checked borrowed calls from accepted source, with complete RC observations. -/
+lean_exe «source-borrow» where
+  root := `SourceBorrow
+
+/- Borrowed direct calls with caller-supplied shared inputs. -/
+lean_exe «source-borrow-runtime» where
+  root := `SourceBorrowRuntime
+
 /- Repository checks are Lean programs, including the independent tool oracles. -/
 lean_exe «check-x86-encoder» where
   srcDir := "scripts"
   root := `CheckX86Encoder
+
+lean_exe «check-x86-bytes» where
+  srcDir := "scripts"
+  root := `CheckX86Bytes
+
+lean_exe «check-x86-streams» where
+  srcDir := "scripts"
+  root := `CheckX86Streams
 
 lean_exe «check-x86-object» where
   srcDir := "scripts"
@@ -79,6 +106,34 @@ lean_exe «check-source-call-reuse» where
 lean_exe «check-source-unique-reuse» where
   srcDir := "scripts"
   root := `CheckSourceUniqueReuse
+
+lean_exe «check-source-native-unique» where
+  srcDir := "scripts"
+  root := `CheckSourceNativeUnique
+
+lean_exe «check-source-native-runtime» where
+  srcDir := "scripts"
+  root := `CheckSourceNativeRuntime
+
+lean_exe «check-source-native-upstream» where
+  srcDir := "scripts"
+  root := `CheckSourceNativeUpstream
+
+lean_exe «check-source-borrow» where
+  srcDir := "scripts"
+  root := `CheckSourceBorrow
+
+lean_exe «check-source-borrow-runtime» where
+  srcDir := "scripts"
+  root := `CheckSourceBorrowRuntime
+
+/- Deterministic datasets and native comparison-suite orchestration. -/
+lean_lib Benchmark where
+  srcDir := "benchmarks"
+
+lean_exe benchmark where
+  srcDir := "benchmarks"
+  root := `Benchmark
 
 lean_exe «check-tools-tests» where
   srcDir := "scripts"

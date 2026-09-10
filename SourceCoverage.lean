@@ -1,4 +1,5 @@
 import Compilatrix.Coverage.Report
+import Compilatrix.Coverage.UpstreamNative
 
 /-! Emit a deterministic coverage report and complete compiler snapshots.
 The independent Lean gate runs this executable in two fresh directories. -/
@@ -6,7 +7,7 @@ The independent Lean gate runs this executable in two fresh directories. -/
 open Compilatrix Compilatrix.Coverage
 
 private def usage : String :=
-  "usage: lake exe source-coverage <new-output-directory> [ixon-std-contact-fixture-directory]"
+  "usage: lake exe source-coverage <new-output-directory> [ixon-std-contact-directory [ixon-upstream-directory]]"
 
 private def checked {α : Type} (result : Except String α) : IO α :=
   match result with
@@ -17,9 +18,10 @@ private def writeJson (path : System.FilePath) (value : Lean.Json) : IO Unit :=
   IO.FS.writeFile path (value.pretty 100 ++ "\n")
 
 def main (args : List String) : IO UInt32 := do
-  let some (output, contact) := (match args with
-      | [output] => some (output, CatalogContactFixture.directory)
-      | [output, contact] => some (output, contact)
+  let some (output, contact, upstream) := (match args with
+      | [output] => some (output, CatalogContactFixture.directory, Upstream.directory)
+      | [output, contact] => some (output, contact, Upstream.directory)
+      | [output, contact, upstream] => some (output, contact, upstream)
       | _ => none)
     | IO.eprintln usage
       return 2
@@ -33,8 +35,9 @@ def main (args : List String) : IO UInt32 := do
       (runSource source).mapError (fun error => s!"{source.name}: {error}"))
     let loaded ← checked (← CatalogContactFixture.load contact)
     let production ← checked (productionCases loaded)
+    let upstream ← checked (← UpstreamNative.cases upstream)
     let corpus ← checked generatedCorpus
-    let results := synthetic ++ production
+    let results := synthetic ++ production ++ upstream
     IO.FS.createDirAll output
     for result in results do
       writeJson (output / s!"{result.name}.json") result.snapshot

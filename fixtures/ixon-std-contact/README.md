@@ -65,5 +65,11 @@ tr -d '[:space:]' < CompilatrixStdContact.ixe.hex | xxd -r -p \
 `Catalog.loadWith`, freezes every measured aggregate counter, and pins the
 current downstream result: catalog ingress succeeds, while
 `Pipeline.checkProgram` rejects address
+`a3b83ad0799bcd3d1c70c01df44141d79e7358e1f23d7d7e5cf9e01dbdc73c85`
+with `UsageErr.freezeNeeded`. C2's shared-closure classification admits the
+original 17-constant slice rooted at
 `131533e96baa7f50ba89d01892243e11a1221c8831e2f394eb14f89e9a54c6c4`
-with `UsageErr.freezeNeeded`.
+through usage checking. Checked reuse of identical erased blocks also admits
+IxIR₀ readdressing; the next boundary is a missing root `Covered` certificate,
+recorded with complete artifacts in [source coverage](../../docs/source-coverage.md).
+All original manifest and piece bytes, roots, and ingress counters are unchanged.

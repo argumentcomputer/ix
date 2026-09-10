@@ -15,7 +15,7 @@ lemma of the erasure-simulation work.
 Error taxonomy: `Err.fuel` is the only non-answer (more fuel may
 succeed). `Err.stuck` is unreachable on well-typed, well-usaged
 inputs — a future theorem. `Err.oracleMissing` marks the
-trusted-extern boundary (the `plans/runtime.md` ledger).
+trusted-extern boundary (the `docs/trusted-extern-ledger.md` ledger).
 `Err.unknownRef` is a hole in the closed world; the Merkle-DAG env of
 a real program is total over its reachable addresses by construction.
 -/

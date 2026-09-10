@@ -1,5 +1,17 @@
 import Compilatrix.Sim
+import Compilatrix.X86.NatCallsSim
 import Compilatrix.UniqueReuse.PipelineSim
+import Compilatrix.UniqueReuse.NativeSim
+import Compilatrix.UniqueReuse.RuntimeNativeSim
+import Compilatrix.UniqueReuse.RuntimeObjectSim
+import Compilatrix.X86.RuntimeReject
+import Compilatrix.X86.ByteBranch
+import Compilatrix.X86.ByteCall
+import Compilatrix.X86.StreamExamples
+import Compilatrix.IxIR2.CreditRefinement
+import Compilatrix.Borrow.Pipeline
+import Compilatrix.Borrow.RuntimeSim
+import Compilatrix.Borrow.RuntimeInput
 import Compilatrix.IxIR1.Sim
 import Compilatrix.IxIR1.Reclamation
 import Compilatrix.IxIR1.LowerSim
@@ -163,6 +175,12 @@ stay inside the same intended axiom triple.
 Pin the generic common-erasure observation theorem, its contentful checked
 and certified dropped-variable instance, and the corresponding whole-entry
 forward simulation. -/
+
+/-- info: 'Compilatrix.Ixon.UsageCheck.closureWorld_shared_iff' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixon.UsageCheck.closureWorld_shared_iff
+
+/-- info: 'Compilatrix.Ixon.UsageCheck.check_lam_shared' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixon.UsageCheck.check_lam_shared
 
 /-- info: 'Compilatrix.UsageSound.computedErased_eval_noninterference' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.UsageSound.computedErased_eval_noninterference
@@ -6744,3 +6762,407 @@ actual SSA execution, every physical prefix, exact costs, and full release. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.UniqueReuse.Compilation.sourceRefinesWithCostLaws
+
+/-! Bounded native unique reversal: byte-memory realization, full emitted
+entry and release runs, and unchanged source-contract/axiom boundaries. -/
+
+/-- info: 'Compilatrix.X86.Memory.read64_write64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Memory.read64_write64
+
+/-- info: 'Compilatrix.X86.UniqueExecution.mainAndRelease' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueExecution.mainAndRelease
+
+/-- info: 'Compilatrix.X86.UniqueExecution.NativeList.nodup' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueExecution.NativeList.nodup
+
+/-- info: 'Compilatrix.UniqueReuse.Native.Output.executes' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Native.Output.executes
+
+/-- info: 'Compilatrix.UniqueReuse.Native.Output.costsAgree' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Native.Output.costsAgree
+
+/-- info: 'Compilatrix.UniqueReuse.Native.Output.sourceRefines' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Native.Output.sourceRefines
+
+/-- info: 'Compilatrix.UniqueReuse.Native.SourceNativeResult.witness' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Native.SourceNativeResult.witness
+
+/-- info: 'Compilatrix.UniqueReuse.Native.Execution.mainSafe' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Native.Execution.mainSafe
+
+/-- info: 'Compilatrix.UniqueReuse.Native.Execution.releaseSafe' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Native.Execution.releaseSafe
+
+/-! General logical/physical credit refinement, both policies and the whole
+instruction language. These bridges add no native hashing or new axioms. -/
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.step_related' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.step_related
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.prefix_resources' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.prefix_resources
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.runMain_prefix_resources' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.runMain_prefix_resources
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.checked_runMain_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.checked_runMain_refines
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.runMain_v0_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.runMain_v0_refines
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.runMain_refines_independent' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.runMain_refines_independent
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.OutcomeRel.ownership' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.OutcomeRel.ownership
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.OutcomeRel.valueGraph' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.OutcomeRel.valueGraph
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.OutcomeRel.reclamation' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.OutcomeRel.reclamation
+
+/-- info: 'Compilatrix.IxIR2.CreditRefinement.checked_runMain_owned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.checked_runMain_owned
+
+/-! Runtime source application and a single native reversal function. The
+native input, validation, execution, and rejection proofs add no semantic
+axiom; addressed compiler certificates retain the existing hash axiom. -/
+
+/-- info: 'Compilatrix.Sim.apply_sim_inlineSharing' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sim.apply_sim_inlineSharing
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Compilation.sourceRefines' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Compilation.sourceRefines
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Compilation.targetRuns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Compilation.targetRuns
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Target.makeInput_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Target.makeInput_valid
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.validationSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.validationSteps
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.executes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.executes
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.canonical_executes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.canonical_executes
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.Execution.mainSafe' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.Execution.mainSafe
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.Execution.releaseSafe' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.Execution.releaseSafe
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.lengthRejects' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.lengthRejects
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.capacityRejects' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.capacityRejects
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.ArgumentRel.graph' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.ArgumentRel.graph
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefines' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefines
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.costsAgree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.costsAgree
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.ofNats_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.ofNats_exact
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.inputWordsStep_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.inputWordsStep_eq
+
+/-! Borrowed ABI checking, finite closed-program execution certificates,
+source agreement, actual RC/peak laws, and checked baseline fallback. -/
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Checked.valid' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Checked.valid
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Checked.exactRewrite' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Checked.exactRewrite
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Execution.steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Execution.steps
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Improved.preservation' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Improved.preservation
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Improved.resources' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Improved.resources
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Selection.fallbackExact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Selection.fallbackExact
+
+/-- info: 'Compilatrix.Borrow.Improved.sourcePreservation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Improved.sourcePreservation
+
+/-- info: 'Compilatrix.Borrow.Improved.resources' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Improved.resources
+
+/-- info: 'Compilatrix.Borrow.Selection.valid' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Selection.valid
+
+/-- info: 'Compilatrix.Borrow.Selection.fallbackExact' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Selection.fallbackExact
+
+/-! Open borrowed functions: structurally derived calls and continuations,
+exact lender-store preservation, arbitrary owned input reclamation, and
+the actual source-to-runtime composition. No input replay selects a variant. -/
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.retain_release_cancel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.retain_release_cancel
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.Entry.steps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Entry.steps
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.Entry.lenderLifetime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Entry.lenderLifetime
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.Entry.total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Entry.total
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.Certificate.strictImprovement' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Certificate.strictImprovement
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.Certificate.controlCost' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Certificate.controlCost
+
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.Certificate.runFunctions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Certificate.runFunctions
+
+/-- info: 'Compilatrix.Borrow.Runtime.Source.Shape.applies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Source.Shape.applies
+
+/-- info: 'Compilatrix.Borrow.Runtime.Tree.counts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Tree.counts
+
+/-- info: 'Compilatrix.Borrow.Runtime.Argument.input' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Argument.input
+
+/-- info: 'Compilatrix.Borrow.Runtime.Certified.sourcePreservation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Certified.sourcePreservation
+
+/-- info: 'Compilatrix.Borrow.Runtime.Certified.runtimePreservation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Certified.runtimePreservation
+
+/-- info: 'Compilatrix.Borrow.Runtime.Certified.sourceToRuntime' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Certified.sourceToRuntime
+
+/-- info: 'Compilatrix.Borrow.Runtime.Selection.valid' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Selection.valid
+
+/-- info: 'Compilatrix.Borrow.Runtime.Selection.fallbackExact' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Borrow.Runtime.Selection.fallbackExact
+
+/-! E1 consumes actual emitted bytes through an independent parser. All local
+encoding, flag, memory-fault and control laws use only the ordinary logical
+axioms; whole-stream layout and reference ISA agreement remain separate. -/
+
+/-- info: 'Compilatrix.X86.Encode.instruction_decodeAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.instruction_decodeAt
+
+/-- info: 'Compilatrix.X86.Encode.terminator_decode' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.terminator_decode
+
+/-- info: 'Compilatrix.X86.Encode.encoded_instruction_execution' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.encoded_instruction_execution
+
+/-- info: 'Compilatrix.X86.Encode.compare_execution' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.compare_execution
+
+/-- info: 'Compilatrix.X86.Encode.branch_bytes_execution' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.branch_bytes_execution
+
+/-- info: 'Compilatrix.X86.Encode.branch_patch' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.branch_patch
+
+/-- info: 'Compilatrix.X86.Encode.call_pair' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.call_pair
+
+/-- info: 'Compilatrix.X86.Encode.call_fault' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.call_fault
+
+/-- info: 'Compilatrix.X86.Encode.ret_pair' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.ret_pair
+
+/-- info: 'Compilatrix.X86.Encode.relative_resolves_base' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.relative_resolves_base
+
+/-- info: 'Compilatrix.X86.Encode.patchSigned32_splice' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.patchSigned32_splice
+
+/-- info: 'Compilatrix.X86.Encode.signed32_checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.signed32_checked
+
+/-! E2 composes complete streams, explicit call-slot memory correspondence,
+independent ELF interpretation, PC32 relocation and the emitted N2 source
+endpoint. Only indexed source claims retain the existing native hash axiom. -/
+
+/-- info: 'Compilatrix.X86.Stream.pcOffset_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.pcOffset_injective
+
+/-- info: 'Compilatrix.X86.Stream.check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.check_sound
+
+/-- info: 'Compilatrix.X86.Stream.linear_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.linear_step
+
+/-- info: 'Compilatrix.X86.Stream.branch_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.branch_at
+
+/-- info: 'Compilatrix.X86.Stream.call_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.call_progress
+
+/-- info: 'Compilatrix.X86.Stream.ret_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.ret_progress
+
+/-- info: 'Compilatrix.X86.Stream.run_to_return' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.run_to_return
+
+/-- info: 'Compilatrix.X86.Stream.run_with_calls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.run_with_calls
+
+/-- info: 'Compilatrix.X86.Stream.run_permissions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.run_permissions
+
+/-- info: 'Compilatrix.X86.StreamExamples.reused_safe' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.StreamExamples.reused_safe
+
+/-- info: 'Compilatrix.X86.StreamExamples.nested_safe' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.StreamExamples.nested_safe
+
+/-- info: 'Compilatrix.X86.ELF.check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ELF.check_sound
+
+/-- info: 'Compilatrix.X86.ELF.Valid.text' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.X86.ELF.Valid.text
+
+/-- info: 'Compilatrix.X86.ELF.Valid.entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ELF.Valid.entry
+
+/-- info: 'Compilatrix.X86.ELFLink.pc32_call' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ELFLink.pc32_call
+
+/-- info: 'Compilatrix.X86.ELFLink.Applied.resolves' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ELFLink.Applied.resolves
+
+/-- info: 'Compilatrix.X86.ELFLink.runtime_call_transfer' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ELFLink.runtime_call_transfer
+
+/-- info: 'Compilatrix.X86.ObjectEval.run_from_typed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ObjectEval.run_from_typed
+
+/-- info: 'Compilatrix.X86.ObjectEval.run_with_calls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ObjectEval.run_with_calls
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.Output.emit_spec' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.Output.emit_spec
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.role_callFree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.role_callFree
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.Object.provenance_parsed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.Object.provenance_parsed
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects
+
+/-! C3 reuses only equal erased preimages. Closed Nat translation validation
+and explicit execution certificates compose with the original source bridge. -/
+
+/-- info: 'Compilatrix.IxIR0.Readdress.blockMembers_eq_of_compatibleBlocks' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR0.Readdress.blockMembers_eq_of_compatibleBlocks
+
+/-- info: 'Compilatrix.IxIR0.Readdress.members_eq_of_compatibleBlocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR0.Readdress.members_eq_of_compatibleBlocks
+
+/-- info: 'Compilatrix.IxIR2.Pipeline.Attached.sourcePhysical' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Attached.sourcePhysical
+
+/-- info: 'Compilatrix.X86.NatCalls.Output.refinesSuccessfulRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.Output.refinesSuccessfulRun
+
+/-- info: 'Compilatrix.X86.NatCalls.Execution.objectReturns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.Execution.objectReturns
+
+/-- info: 'Compilatrix.X86.NatCalls.sourceObjectRefines' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.sourceObjectRefines

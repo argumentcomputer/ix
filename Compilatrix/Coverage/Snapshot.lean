@@ -71,6 +71,27 @@ def ir0Group (group : IxIR0.Readdress.Group) : Json :=
     ("kind", toJson (match group with | .stable _ => "stable" | .mutual _ => "mutual")),
     ("entries", ir0Entries group.entries)]
 
+/-- Complete eraser/addressing output, before the source erasure certificate
+has been accepted. This is useful even when the next validator rejects. -/
+def erasedSnapshot (root : Address) (erasure : EraseAddressed.Result) : Json :=
+  Json.mkObj [
+    ("raw_declarations", ir0Entries erasure.raw),
+    ("raw_main", byteJson (IxIR0.Expr.bytes (.ref root))),
+    ("groups", toJson (erasure.groups.map ir0Group)),
+    ("declarations", ir0Entries erasure.declarations),
+    ("main", byteJson erasure.main.bytes),
+    ("blocks", toJson (erasure.addressed.blocks.map ir0Block)),
+    ("address_map", toJson erasure.addressMap)]
+
+def addressedSnapshot (constants : List (Address × Constant)) (root : Address)
+    (config : Pipeline.Config) (fuel : Nat) : Except String Json := do
+  let ctx := EraseValidator.eraseCtxOf (Pipeline.validatedEvalCtx constants config)
+  let erasure ← (EraseAddressed.run ctx constants (.ref root) fuel).mapError reprStr
+  return Json.mkObj [
+    ("format", toJson "compilatrix/addressed-erasure/1"),
+    ("source_erasure_certified", toJson false),
+    ("ixir0", erasedSnapshot root erasure)]
+
 def ir1Artifact : IxIR1.ReaddressAll.Artifact → Json
   | .stable address declaration =>
       Json.mkObj [("kind", toJson "stable"), ("root", toJson address),
@@ -118,14 +139,7 @@ def Source.compilationSnapshot (source : Source) (attached : source.Attached) : 
   Json.mkObj [
     ("format", toJson "compilatrix/compiler-snapshot/1"),
     ("source", source.inputSnapshot),
-    ("ixir0", Json.mkObj [
-      ("raw_declarations", ir0Entries erasure.raw),
-      ("raw_main", byteJson (IxIR0.Expr.bytes (.ref source.root))),
-      ("groups", toJson (erasure.groups.map ir0Group)),
-      ("declarations", ir0Entries erasure.declarations),
-      ("main", byteJson erasure.main.bytes),
-      ("blocks", toJson (erasure.addressed.blocks.map ir0Block)),
-      ("address_map", toJson erasure.addressMap)]),
+    ("ixir0", erasedSnapshot source.root erasure),
     ("ixir1", Json.mkObj [
       ("root", toJson (IxIR1.Optimizer.graphRoot artifact.targetArtifacts artifact.main)),
       ("raw_declarations", ir1Entries lowering.raw),

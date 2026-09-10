@@ -75,6 +75,16 @@ tools and introduce no project native interface or proof axiom. The
 support modules, executable scripts, native harness, and source matrices
 have reviewed integrity pins.
 
+C3's [upstream native gate](source-native-upstream.md) adds independent residual
+text/ELF reconstruction and closed Nat source/physical/object observations. Its
+execution theorem requires an explicit supplied-state call/stack certificate;
+the general N3/F1 contracts and reference ISA/loader assumptions remain open.
+The six new axiom fences introduce no new axiom or production foreign symbol.
+The ledger also pins the benchmark adapters, runner/checkers, manifest, and
+comparison toolchains. Clock, allocation, GC, process-memory, compiler, and
+runtime observations are recorded as measurement/build trust, separate from
+production source/compiler proof assumptions.
+
 The [source-recursion checker](../scripts/CheckSourceRecursion.lean) imports
 only the shared check helpers. It compares two fresh compiler processes,
 checks the reviewed eight-case matrix and HPT identities, verifies common
@@ -292,29 +302,47 @@ C source set from the integrity-pinned Lake configuration, and checks the
 source hash. A dependency symbol can therefore no longer accidentally cover an
 unreviewed local extern with the same foreign name.
 
-## Active target specification assumptions: x86-64 v0
+## Target specification boundaries: x86-64 v0
 
-| Boundary | Current assumption | Evidence | Retirement |
-| --- | --- | --- | --- |
-| Local typed semantics | Under compiler ABI invariants, the closed sequential v0 model agrees with x86-64 for its modeled registers, canonical permissioned little-endian memory addresses, stack/call behavior, local compare-branches, and architectural faults. Its symbolic PC token is not yet a byte RIP; top-level return is a harness halt. Misalignment, stack-mismatch, corrupt-return, and callee-saved-clobber outcomes are compiler-contract failures, not claimed hardware exceptions. | Typed exclusion theorem and axiom fence; executable arithmetic, memory, stack/spill, direct-call, ABI, runtime-call, mapping-fault, and alignment fixtures; plus the kernel-checked `selectScalarMoveRefines` validator-to-selector bridge, whose leaf preserves arbitrary input `rsp`; [Intel SDM version 092](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) and [AMD64 APM Volume 3 revision 3.37](https://docs.amd.com/v/u/en-US/24594_3.37) as reviewed references. | ISA stage S2 proves per-form decode/execution equivalence to the pinned upstream reference, including RIP, canonical-address checks, flags, memory, faults, and harness observation; selector/ABI proofs make contract traps unreachable. |
-| E0 encoder | Each total encoder case emits the intended instruction; rel32 block patches are relative to the following instruction; runtime calls carry PC32 relocation records with addend -4. | Byte-exact Lean goldens plus integrity-pinned `scripts/CheckX86Encoder.lean`, decoded independently by GNU objdump from locked nixpkgs. | E1/E2 prove per-form encoding and complete stream/relocation agreement. |
-| ELF64 object writer | The serialized ET_REL/EM_X86_64 headers, sections, symbols, PC32 relocations, non-executable-stack marker, and mandatory provenance note have the intended System V linker interpretation. | Lean structural guards; deterministic duplicate generation; GNU readelf/objdump inspection; and, on x86_64-linux, warning-fatal host link plus native execution of seven fixtures. Three cases compile synthetic Ixon through the actual validated pipeline and selector: zero, 42, and UInt64 max. They compare every intermediate scalar observation, fresh-process object bytes, frozen source/IR₁ address roots, and the actual IxIR₁-policy provenance note; overflow must fail before writing an object. The reviewed formats are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf) and [x86-64 psABI](https://refspecs.linuxfoundation.org/elf/x86_64-SysV-psABI.pdf). | E2 proves serialization and linker-input interpretation, including relocation resolution, exported entry placement, and the provenance commitment. |
+[E1](x86-encoded-instructions.md) proves every emitted local instruction
+form. [E2](x86-stream-objects.md) now certifies complete production text and
+independent ELF interpretation, and the N2 source endpoint consumes actual
+object execution. The JSON retains stable boundary identifiers and records
+exactly which portions are discharged.
 
-The syntax, local semantics, scalar selector, E0 encoder, and object writer are
-mechanically separated in `Compilatrix/X86/Basic.lean`, `Eval.lean`,
-`Select.lean`, `Encode.lean`, and `ELF.lean`; neither selection nor encoding can
-inject a raw byte instruction into the typed AST. The AST
-has no constructors for scalar hardware division, floating point, SIMD,
-atomics, indirect calls, raw syscalls, or TLS. It also excludes the x86
-high-byte register ambiguity, `rsp` as a SIB index, and the unavailable
-two-operand byte `imul` form. `Program.inV0` proves this containment for every
-typed program without an ISA axiom.
+| Boundary | Current scope | Evidence and remaining work |
+| --- | --- | --- |
+| Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |
+| Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
+| ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
-These entries are candid staging boundaries, not completed verification
-claims. No existing IxIR₂ compiler theorem depends on encoded bytes, and no
-native correctness theorem yet relates the local symbolic PC to final byte
-addresses. The first native wedge must carry all three assumptions until the
-corresponding bridge theorem retires them.
+The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)
+and [x86-64 psABI](https://refspecs.linuxfoundation.org/elf/x86_64-SysV-psABI.pdf).
+The existing provenance note uses the Linux/GNU four-byte convention for
+ELF64 notes, explicitly supported by [GNU binutils](https://sourceware.org/pipermail/binutils-cvs/2017-November/046965.html).
+It does not claim generic ELF64 eight-byte note alignment.
+
+The independent instruction and ELF readers import neither corresponding
+writer. All production object emitters validate the actual outputs and
+retain proof fields. This is fail-closed translation validation, with no
+claim of completeness for the unchecked encoder or writer. The AST still
+excludes division, floating point, SIMD, atomics, indirect calls, syscalls,
+TLS, high-byte registers, RSP SIB indices, and byte-width two-operand IMUL.
+
+E2 adds 23 public axiom fences. Its generic stream/object laws use ordinary
+logical axioms; the indexed N2 source endpoint retains its existing native
+BLAKE3 dependency. The source argument, sharing/oracle, successful-application
+and bounded-ABI premises remain explicit, along with successful certified
+emission and an initial readable caller return slot outside the arena.
+The proof derives preservation of that slot and actual physical return.
+
+The integrity-pinned stream/object gate checks 14 complete streams, 50
+branch objects, 15 stream corruptions, 1,010 object mutations/truncations,
+10 relocation cases, six stack contracts and a physical caller-slot fault.
+It also executes one actual source-selected N2 object pair for all eight
+runtime inputs (6,512 byte steps), checking registers, every arena byte,
+reversed pointer graphs and complete reclamation. Existing GNU readelf,
+objdump, fresh-artifact and linked-native checks remain independent evidence.
 
 ## Seed, runtime, and build trust
 
@@ -385,3 +413,80 @@ the composed pipeline currently supplies no such extern configuration.
 - “Empty ledger” means no persistent target/runtime extern assumptions. Seed
   provenance and independently reproducible build attestation remain separate
   bootstrap obligations.
+
+## Bounded native unique reversal
+
+The checked native selector and its byte-memory proof add no native interface
+or axiom. Nine new fences cover little-endian memory, the complete emitted
+main/release runs, finite owned graphs, source/value/cost composition, concrete
+witnesses, and prefix trap exclusion. The memory/execution proof uses ordinary
+logical axioms; indexed source statements retain the existing addressed-artifact
+BLAKE3 dependency.
+
+The source-native-unique gate independently checks eight source-produced ELF
+pairs and linked C runs, with exact graph/ABI/role provenance, arena-cell counts,
+full reclamation, and twelve native corruption regressions. Its checker,
+shared source-checking helper, native C harness, and reviewed matrix have
+integrity pins. The C code is a test harness that provisions the arena and
+checks generated code; it is not a new Lean FFI or semantic oracle. The existing
+ISA and system linker/loader assumptions remain active; E2 now certifies
+production text and independent ELF interpretation.
+
+## Native runtime input
+
+The [N2 endpoint](source-native-runtime.md) compiles a parameterized source
+function and selects one reversal/release pair for all admitted runtime lists.
+Sixteen fences cover source application, physical execution, canonical input,
+native validation/execution, prefix trap exclusion, unchanged-memory length and
+capacity rejection, cross-layer costs, and exact Nat-to-Word conversion. Native
+memory/execution proofs retain only ordinary logical axioms; addressed source
+certificates retain the existing BLAKE3 dependency. The efficient input-word
+builder is definitionally equal to the original allocation update.
+
+The independent runtime gate reconstructs function/ABI/policy preimages,
+compares two complete fresh artifact sets, decodes one ELF pair, and links it
+once for eight inputs in one process. It checks full release and 203 malformed
+calls without arena writes, plus 17 artifact/observation corruption regressions.
+Its checker, native harness, and reviewed report are integrity-pinned. The
+test harness provisions caller input; it is not a new Lean FFI or modeled
+oracle. [E2](x86-stream-objects.md) now composes the source theorem through
+actual object text, including parsed provenance, physical returns and complete
+reclamation. Reference-ISA agreement and system linker/loader assumptions
+remain under the scoped specification entries above.
+
+## Closed borrowed calls
+
+[B1](source-borrow.md) adds no FFI, modeled oracle, target runtime, or axiom.
+Six core fences for reconstructed CFG validation, actual finite execution,
+result/resource agreement, and fallback use `propext` and `Quot.sound`.
+Four indexed source fences retain the existing logical and BLAKE3 basis.
+The semantic selector derives bounded source and physical replay certificates
+internally; it does not assume an unproved open-function simulation.
+
+The independent source-borrow gate reconstructs all changed functions and
+owned wrappers and replays complete physical traces using its own small
+interpreter. It verifies eighteen source cases, three checked source
+fallbacks, twelve ownership/resource negatives, and thirteen corruptions.
+The checker, its two helpers, and the source-root matrix are integrity-pinned.
+Internal borrowed labels are collision-checked transient names, not a new
+content-addressed IxIR₂ format. The family is not natively selectable, so no
+ISA, encoder, ELF, or native runtime assumption is widened by this package.
+
+## Borrowed runtime arguments
+
+[B2](source-borrow-runtime.md) adds fifteen fences. Ten core/source-shape/input
+interfaces use only the existing logical axioms; five indexed source selection
+and preservation interfaces also retain the existing BLAKE3 dependency.
+Structural checking derives source application and function/continuation
+simulation for every admitted runtime heap. Release fuel comes from proved
+root ownership and allocation order. No input replay, new native reflection
+axiom, FFI, oracle, or target runtime is introduced.
+
+The independent runtime-borrow gate checks nine compiled source functions,
+144 direct/PAP comparisons, nine aliased lenders, complete fresh artifact
+agreement, four checked fallback policies, and twenty rejected corruptions.
+Its script, new helper, and reviewed source/export matrix are integrity-pinned.
+The shared execution helper's reviewed pin changes to admit explicit initial
+caller heaps; B1 retains its empty-main wrapper and regression gate. The same
+native selector rejects both shared artifacts, so all ISA, encoder, and object
+assumptions retain their previous scope.

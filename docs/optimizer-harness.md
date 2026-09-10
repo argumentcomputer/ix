@@ -324,8 +324,9 @@ and independent sufficient fuel. The source composition is in
 add RC/peak bounds without changing the source premises or narrowing the shared
 compiler domain. Intermediate macro states and both actual complete releases
 are covered. Semantic heap relations still omit runtime counters; the
-[development plan](development-plan.md) records the separate cost invariant
-and the next extension to credit lifetimes.
+[source-recursion record](source-recursion.md) details the separate cost
+invariants. The [roadmap](roadmap.md#r6-general-credit-refinement) defines the
+next general credit-refinement boundary.
 
 ## Validated source-to-native scalar check
 
@@ -444,3 +445,57 @@ from two fresh processes against the reviewed matrix. Twelve deliberate
 corruptions exercise identity, ownership, reservation, and cost checks. The
 `source-unique-reuse` Nix check runs this complete gate. Provenance identifies
 canonical IxIR₁ and policy metadata; IxIR₂ JSON remains diagnostic.
+
+## Native unique reversal
+
+The [native gate](source-native-unique.md) consumes the actual selected unique
+artifact, emits main and release objects, and compares eight complete source
+artifact sets from two fresh processes. The checker shares the independent
+source/graph/policy validation above and adds exact native ABI and role
+preimages, ELF text decoding, finite pointer graphs, arena-cell counts,
+operation-boundary ownership, and complete release. Twelve additional native
+corruptions exercise these checks.
+
+On x86-64 Linux every object pair is linked against the pinned C harness. It
+observes the actual reversed list and normalized heap, checks all saved
+registers and canaries, and rejects capacity errors without writes. The native
+heap observations match the byte evaluator exactly, including Word max and
+64-element inputs. `source-native-unique` runs this gate in Nix. Cell counts
+exclude allocation of the containing host buffer, and no timing claim is made.
+
+## Borrowed direct calls
+
+The [B1 gate](source-borrow.md) applies optional unary shared borrowing to an
+actual validated source attachment. Every summary addition reconstructs and
+validates the complete caller/callee graph. Owned wrappers preserve PAP entry;
+root retains and releases can disappear only in accepted borrowed variants.
+Bounded source/baseline/selected executions certify scalar result agreement,
+full reclamation, strict RC improvement, and nonincreasing peak live nodes.
+Any optional failure selects the exact checked baseline.
+
+Eighteen source chains execute 5 baseline RC operations and 3 selected RC
+operations, with three allocations/frees and peak two in both. Wrappers add
+three control transitions; complete declaration/instruction growth, inference
+attempts, and execution work are reported. Wall times are printed outside
+deterministic artifacts. The independent gate reconstructs the rewrite and
+replays all physical prefixes with a separate interpreter, compares complete
+fresh artifacts, and rejects thirteen corruptions. The `source-borrow` Nix
+check runs it. This closed-execution boundary does not generalize the IxIR₁
+optimizer's open-function simulation or introduce an IxIR₂ cache identity.
+
+The [B2 runtime gate](source-borrow-runtime.md) selects each of nine accepted
+source functions once with a structural certificate, then supplies eight
+runtime inputs to each artifact. Independent direct and PAP callers produce
+144 baseline/selected comparisons: exactly two fewer RC operations, full
+reclamation, and unchanged peak. The owned wrapper adds one control step;
+stored declarations grow from `d + 4` to `2d + 6` and instructions from 7 to
+`2d + 9`. Complete artifacts report inference work, source/compiler graphs,
+input heaps, and every runtime prefix; wall times remain outside snapshots.
+
+The separate interpreter also checks nine aliased borrowed lenders and their
+subsequent caller releases. All ten files agree across fresh processes; four
+source fallback policies, eight structural/lifetime guards, all twelve B1
+negatives, and twenty artifact corruptions are checked. The
+`source-borrow-runtime` Nix check runs this gate. Its finite measurements
+exercise the universal structural proof; selection does not replay an input.
+Native measurement waits for this shared family to become selectable.

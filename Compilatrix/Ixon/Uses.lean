@@ -3,8 +3,8 @@
 
 First real module of Compilatr.ix: the `Uses` algebra and `Owned`
 result modes that Ixon v2 binders (`all`, `lam`) carry as data. Design
-rationale lives in the (untracked) `plans/substructural-types.md`; the short
-version:
+rationale lives in `docs/compiler-design.md` under ownership, borrowing,
+and reuse; the short version:
 
 - `Uses` is one enum in the data model, but the checker reads it along
   two axes: `erased` is the multiplicative *grade* axis (QTT 0,

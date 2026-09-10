@@ -1,4 +1,6 @@
 import Compilatrix.Fuel
+import Compilatrix.X86.NatCallsSim
+import Compilatrix.X86.NatCallsExamples
 import Compilatrix.Ixon.Serialize
 import Compilatrix.Ixon.Uses
 import Compilatrix.Ixon.Address
@@ -121,6 +123,8 @@ import Compilatrix.Coverage.StdContact
 import Compilatrix.X86.SelectExamples
 import Compilatrix.X86.Encode
 import Compilatrix.X86.EncodeExamples
+import Compilatrix.X86.ByteExamples
+import Compilatrix.X86.StreamExamples
 import Compilatrix.X86.ELF
 import Compilatrix.X86.ELFExamples
 import Compilatrix.PipelineSound
@@ -138,4 +142,16 @@ import Compilatrix.CallReuse.MapSim
 import Compilatrix.CallReuse.Rejections
 import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.Rejections
+import Compilatrix.UniqueReuse.NativeSim
+import Compilatrix.UniqueReuse.NativeObject
+import Compilatrix.UniqueReuse.RuntimeNativeSim
+import Compilatrix.UniqueReuse.RuntimeObjectSim
+import Compilatrix.X86.RuntimeReject
+import Compilatrix.IxIR2.CreditRefinement
+import Compilatrix.IxIR2.CreditExamples
+import Compilatrix.Borrow.Pipeline
+import Compilatrix.IxIR2.Borrow.Examples
+import Compilatrix.Borrow.RuntimeSim
+import Compilatrix.Borrow.RuntimeInput
+import Compilatrix.IxIR2.Borrow.OpenExamples
 import Compilatrix.Fence

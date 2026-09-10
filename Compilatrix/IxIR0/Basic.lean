@@ -12,7 +12,7 @@ erasure simulation Ixon → IxIR₀.
 Shape: an untyped, pure, **curried** λ-calculus (environment
 semantics, no store — the heap appears at IxIR₁) with literals and
 content-addressed globals: definitions, constructors, recursors, and
-trusted externs. The active IR boundaries are recorded in `plans/backend.md`;
+trusted externs. The IR boundaries are recorded in `docs/compiler-design.md`;
 the key choices encoded here are:
 
 - **Functional big-step + fuel** (CakeML-style): executable and
@@ -26,7 +26,7 @@ the key choices encoded here are:
   self-reference.
 - **Externs as oracle**: an extern declaration is just an arity; its
   semantics is a parametric oracle keyed by address — the
-  trusted-extern ledger's formal hook (`plans/runtime.md`).
+  trusted-extern ledger's formal hook (`docs/trusted-extern-ledger.md`).
 - **No cost model here**: cost instrumentation attaches to IxIR₁
   memory ops, never to IxIR₀ steps or fuel.
 

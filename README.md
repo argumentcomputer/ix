@@ -32,10 +32,10 @@ Two ideas carry the design:
   post-fixpoint certificates instead of trusted fixpoint computation.
 
 Certification follows the CompCert discipline: executable passes are
-validated against relational specifications, semantics are fueled
-functional big-step interpreters (executable *and* proof-friendly), and
-every claim is either a theorem, a differential test between two
-independent semantics, or an explicitly recorded assumption.
+proved or validated against relational specifications. Source and early-IR
+semantics use fueled functional big-step interpreters; IxIR₂ and x86 also
+expose executable small-step machines. Theorems, differential tests, and
+explicit assumptions each retain their own stated boundary.
 
 ## What is implemented
 
@@ -107,15 +107,22 @@ and ELF emission. A synthetic Ixon scalar now passes the actual validated
 compiler, selects its emitted graph, and runs natively with its real addressed
 IxIR₁ provenance. The composed theorem preserves its Nat result exactly at the
 typed local x86 boundary. Independent checks cover zero, 42, and the largest
-64-bit value; larger Nats are rejected. Heap/runtime selection and native FIP
-remain later gates in the [development plan](docs/development-plan.md).
+64-bit value; larger Nats are rejected. The bounded native heap/FIP endpoints
+below extend this substrate to closed lists and a parameterized function with
+runtime input; the [roadmap](docs/roadmap.md) records the next extensions.
 
-The bounded [source coverage gate](docs/source-coverage.md) now records 13
+The bounded [source coverage gate](docs/source-coverage.md) now records 18
 Ixon cases, including accepted direct-call, constructor/Nat dispatch, and
 PAP/application paths. Two fresh compiler processes produce identical complete
 IxIR₀/IxIR₁ graphs, provenance maps, HPT records, IxIR₂ diagnostics, and native
-objects. The production Std rejection remains pinned, with a 17-constant
-dependency closure that preserves it.
+objects. Three unchanged [upstream Lean exports](fixtures/ixon-upstream/README.md)
+exercise fresh, shared-capturing, and let-bound closures through checked
+baseline IxIR₂, with matching source results and complete reclamation. The
+original 17-constant Std slice and upstream addition now pass checked reuse of
+identical erased blocks and reach precise source-certificate failures. Two
+[unchanged upstream computations](docs/source-native-upstream.md) also reach
+certified native objects with real successor instructions and direct calls;
+captured closures retain their checked physical fallback.
 
 The first [source-recursion recovery schema](docs/source-recursion.md) turns
 an eager Ixon list fold into a direct accumulator loop. Eight source cases
@@ -128,8 +135,8 @@ extension proves `baseline.allocs = selected.allocs + selected.reuses` and the
 corresponding free equation for the checked shared baseline, at halt and after
 complete release. The cost extension proves that selected RC operations and
 peak live nodes do not exceed that baseline, including intermediate execution
-states and complete result release. Native heap execution remains a separate
-boundary.
+states and complete result release. Native execution of these shared-reuse
+programs remains a separate boundary.
 
 The [source-map endpoint](docs/source-call-reuse.md) extends reuse across
 non-tail direct and recursive calls under an explicit v1 credit policy.
@@ -147,11 +154,69 @@ three elements uses 5 allocations, 3 reuses, zero RC operations, and peak 5;
 the result reclaims fully. The source theorem covers every finite Nat list
 accepted by this schema, including checked optimization fallback.
 
-Per-deliverable status — fragments, frontiers, exclusions, and evidence —
-lives in the tracked [roadmap](docs/roadmap.md), the single source of truth
-for completion claims; this README deliberately carries no second status
-table. Local `plans/` files are forward-looking design notes. The
-proof decomposition is recorded in the
+The [bounded native reversal endpoint](docs/source-native-unique.md) selects
+that actual checked artifact for up to 64 exact Word values. Its byte-memory
+proof covers both emitted calls, the owned result, matching heap counts, saved
+registers, and complete release. Eight source-produced ELF pairs run through
+independent decoding and linking; their native heaps match the byte evaluator.
+Production emission now certifies stream layout and independent ELF
+interpretation. ISA and system linker/loader assumptions remain explicit.
+
+The [runtime-input reversal endpoint](docs/source-native-runtime.md) compiles
+one parameterized function and emits one reversal/release pair. The same code
+accepts caller-built lists of up to 64 exact Word values, performs one new
+allocation, reverses in place, and fully releases the result. Source, physical
+IxIR₂, byte-memory, and one linked native process agree across eight inputs;
+203 malformed-input calls reject without changing arena bytes.
+
+The [general credit refinement](docs/credit-refinement.md) proves matching
+logical and physical execution for the full IxIR₂ instruction language under
+both credit policies. It covers every execution prefix, independently chosen
+successful budgets, and complete shared/unique reclamation under explicit
+logical root ownership, including multiple reservations across nested calls.
+
+The [E1 byte bridge](docs/x86-encoded-instructions.md) proves independent
+decoding and local execution agreement for every emitted instruction form,
+including widths, addresses, flags, memory faults and local control patches.
+The [E2 stream/object bridge](docs/x86-stream-objects.md) composes complete
+text, byte PCs, nested calls and reused return slots, independent ELF parsing,
+entry selection, provenance, and checked PC32 relocations. The N2 source
+theorem now reaches the actual emitted object text for every admitted runtime
+list. Reference ISA agreement and system linker/loader behavior remain
+explicit; the [reference readiness decision](docs/x86-reference-model.md)
+pins and maps the candidate Sail x86 snapshot.
+
+The optional [borrowed-call pass](docs/source-borrow.md) checks caller/callee
+rewrites and retains owned PAP entry wrappers. Eighteen closed source cases
+reduce executed RC operations from 5 to 3 with equal results, full reclamation,
+and unchanged peak heap use. Selection derives bounded source and target
+execution certificates.
+
+The [runtime borrowing extension](docs/source-borrow-runtime.md) selects from
+an accepted open source function using structural proofs before arguments
+arrive. Every admitted owned heap saves two RC operations, is fully reclaimed,
+and keeps its peak live heap use. Borrowed prefixes preserve the caller's
+exact store for later take/reset. Nine compiled functions serve 72 runtime
+inputs and 144 direct/PAP comparisons; owned wrappers add one control step.
+
+The [roadmap](docs/roadmap.md) is the single source for priorities, acceptance
+criteria, completion claims, and activation gates. Its next exits include
+compositional native contracts, finite heap/stack capacity, and canonical
+IxIR₂ identities. Broader borrowing needs the contracts for its selected family.
+[Compiler design](docs/compiler-design.md)
+records the architecture and enduring decisions; the
+[development guide](docs/development-plan.md) records proof and validation
+practice. The [first native performance report](docs/performance/native-reverse-2026-09-09/README.md)
+delivers PERF1 and C3 measurements: 30 paired blocks compare runtime-input
+reversal with Lean 4, CakeML, CompCert, GCC, and Clang, and measure the two
+unchanged upstream native entries. Complete raw results, compiler/memory costs,
+and independently reproduced artifacts and analysis are retained by digest.
+The [benchmark plan](docs/benchmark-plan.md) defines expansion with accepted
+source/native workloads.
+The [implemented protocol](benchmarks/protocol.md) provides all six adapters,
+full output/heap/ABI checking, paired measurement, uncertainty, and clean replay.
+The proof decomposition is
+recorded in the
 [simulation strategy](docs/simulation-strategy.md), the sharing identity
 boundary in [canonical sharing](docs/canonical-sharing.md), and every
 opaque dependency (BLAKE3 and the narrow durable-sync syscall shim today;
@@ -182,8 +247,8 @@ source imports, upstream native symbols, Cargo graph, and build/CI pins.
 Repository checks are Lean executables in `scripts/`. The encoder and object
 checks invoke GNU binutils; the trust audit uses Lake's TOML parser and
 `sha256sum`. The flake also runs the source-coverage, source-recursion,
-source-call-reuse, and source-unique-reuse artifact comparisons and the trust
-auditor's rejection regressions.
+source-call-reuse, source-unique-reuse, source-native-unique, and source-native-runtime artifact
+comparisons and the trust auditor's rejection regressions.
 
 > :warning: **Pre-alpha exploration; interfaces, encodings, and hashes
 > roll without notice. Nothing here should be used for any purpose.**

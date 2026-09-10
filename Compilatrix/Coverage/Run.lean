@@ -1,4 +1,5 @@
 import Compilatrix.Coverage.Snapshot
+import Compilatrix.X86.ELFValidate
 
 /-! Run each fixed Ixon input through the actual compiler and independently
 observe each executable stage. Expected rejection is part of the coverage
@@ -199,11 +200,12 @@ def runSource (source : Source) : Except String CaseResult := do
           let targetRun := X86.runFrom X86.Runtime.rejecting selected.target 2 (X86.Core.empty 0x1008)
           if targetRun.status != .halted selected.word || targetRun.core.readReg .rsp != 0x1008 then
             throw "typed x86 observation disagrees with the source"
-          let encoded ← (X86.Encode.encode selected.target).mapError (fun error => reprStr error)
+          let stream ← (X86.Stream.encode selected.target).mapError (fun error => reprStr error)
+          let encoded := stream.output
           let provenance : X86.ELF.Provenance :=
             .ixir1Policy (IxIR1.Optimizer.graphRoot attached.source.artifact.targetArtifacts
               attached.source.artifact.main) X86.ValidatedScalar.loweringVersion X86.ValidatedScalar.passPolicyVersion
-          let object ← (X86.ELF.write
+          let object ← (X86.ELF.writeChecked
             { encoded, entryBlock := selected.target.program.entry, provenance }).mapError (fun error => reprStr error)
           return {
             name := source.name
@@ -211,6 +213,6 @@ def runSource (source : Source) : Except String CaseResult := do
             snapshot := caseSnapshot source compilation
               (Json.mkObj [("intermediate", observation.stages), ("typed_x86", toJson selected.word),
                 ("text", byteJson encoded.text), ("provenance", byteJson provenance.bytes)])
-            object := some object }
+            object := some object.bytes }
 
 end Compilatrix.Coverage

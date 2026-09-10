@@ -1,16 +1,17 @@
 import Compilatrix.X86.Basic
 
 /-!
-# Staged x86-64 v0 encoder (E0)
+# Staged x86-64 v0 encoder
 
 This module is intentionally downstream of the typed target AST and has no
 dependency on IxIR₂ or instruction selection.  It emits fixed-shape encodings
 with rel32 placeholders, resolves block-local relocations after layout, and
 retains named runtime calls as explicit object-writer relocations.
 
-The encoder is executable evidence, not yet a proved semantics bridge.  Its
-bytes therefore remain in the E0 trusted surface until per-form decode/execute
-theorems discharge that boundary.
+The E1 modules prove local per-form decode/execution agreement with the
+independent Decode/ByteEval model. Complete stream layout, symbolic-PC/byte-RIP
+correspondence and object relocation composition remain E2 obligations;
+agreement with an external ISA reference remains the separate S2 boundary.
 -/
 
 namespace Compilatrix.X86.Encode

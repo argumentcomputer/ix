@@ -270,11 +270,45 @@ private def firstDuplicate? : List Address → Option Address
 private def firstOverlap? (left right : List Address) : Option Address :=
   left.find? right.contains
 
+/-- Previously produced identities may be reused only by the same complete
+symbolic and materialized artifact. Producer names deliberately do not enter
+this comparison: each producer retains its independently audited map. A block
+identity can never stand for a member, and members of different blocks cannot
+alias even when their materialized declarations happen to agree. -/
+def compatibleBlocks (left right : MutualBlock.Result) : Bool :=
+  !left.derivedAddresses.contains right.blockAddress &&
+    !right.derivedAddresses.contains left.blockAddress &&
+    if left.blockAddress == right.blockAddress then
+      left.blockMembers == right.blockMembers &&
+        left.members == right.members &&
+        left.derivedAddresses == right.derivedAddresses
+    else
+      !left.derivedAddresses.any right.derivedAddresses.contains
+
+/-- Reusing a block identity requires equal symbolic preimages, without any
+assumption that the hash function is injective. -/
+theorem blockMembers_eq_of_compatibleBlocks
+    {left right : MutualBlock.Result}
+    (hcompatible : compatibleBlocks left right = true)
+    (haddress : left.blockAddress = right.blockAddress) :
+    left.blockMembers = right.blockMembers := by
+  simp only [compatibleBlocks, haddress, beq_self_eq_true, ite_true,
+    Bool.and_eq_true] at hcompatible
+  exact (beq_iff_eq).mp hcompatible.2.1.1
+
+/-- Reuse also preserves the complete ordered member environment. -/
+theorem members_eq_of_compatibleBlocks
+    {left right : MutualBlock.Result}
+    (hcompatible : compatibleBlocks left right = true)
+    (haddress : left.blockAddress = right.blockAddress) :
+    left.members = right.members := by
+  simp only [compatibleBlocks, haddress, beq_self_eq_true, ite_true,
+    Bool.and_eq_true] at hcompatible
+  exact (beq_iff_eq).mp hcompatible.2.1.2
+
 private structure BuildState where
   blocks : List MutualBlock.Result := []
   addressMap : MutualBlock.Renaming := []
-  /-- Block artifact identities and derived member identities already chosen. -/
-  producedIdentities : List Address := []
 
 private def buildBlocks (baseProtected allTransient : List Address) :
     List Group → BuildState → Except String BuildState
@@ -285,14 +319,13 @@ private def buildBlocks (baseProtected allTransient : List Address) :
       let ownTransient := raw.map (·.1)
       let otherTransient := allTransient.filter fun address =>
         !ownTransient.contains address
-      let protectedKeys := baseProtected ++ otherTransient ++
-        state.producedIdentities
+      let protectedKeys := baseProtected ++ otherTransient
       let result ← MutualBlock.run protectedKeys raw
-      let produced := result.blockAddress :: result.derivedAddresses
+      unless state.blocks.all (compatibleBlocks · result) do
+        throw s!"conflicting generated mutual-block or member identity {Address.toHex result.blockAddress}"
       buildBlocks baseProtected allTransient rest
         { blocks := state.blocks ++ [result]
-          addressMap := state.addressMap ++ result.addressMap
-          producedIdentities := state.producedIdentities ++ produced }
+          addressMap := state.addressMap ++ result.addressMap }
 
 private def crossBlockTemporary? (allTransient : List Address) :
     List Group → Option Address

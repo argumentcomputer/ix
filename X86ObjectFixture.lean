@@ -1,4 +1,4 @@
-import Compilatrix.X86.ELF
+import Compilatrix.X86.ELFValidate
 import Compilatrix.X86.EvalExamples
 import Compilatrix.X86.Select
 import Compilatrix.X86.ValidatedScalar
@@ -98,16 +98,16 @@ def main (args : List String) : IO UInt32 := do
     | status =>
         IO.eprintln s!"x86-object-fixture: local execution failed: {repr status}"
         return 1
-  let encoded ← match X86.Encode.encode checked with
-    | .ok encoded => pure encoded
+  let encoded ← match X86.Stream.encode checked with
+    | .ok stream => pure stream.output
     | .error error =>
         IO.eprintln s!"x86-object-fixture: encode failed: {repr error}"
         return 1
-  let object ← match X86.ELF.write
+  let object ← match X86.ELF.writeChecked
       { encoded
         entryBlock := program.entry
         provenance := selectedFixture.provenance } with
-    | .ok object => pure object
+    | .ok object => pure object.bytes
     | .error error =>
         IO.eprintln s!"x86-object-fixture: ELF write failed: {repr error}"
         return 1

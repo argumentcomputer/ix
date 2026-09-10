@@ -1,6 +1,6 @@
 # Bounded ix corpus contact
 
-Last measured 2026-08-25.
+Ingress measured 2026-08-25; C2 compilation boundary updated 2026-09-08.
 
 The first production-writer contact is complete without changing any ingress
 or compilation default. It is a byte-exact, one-member fat `.ixc` containing a
@@ -71,8 +71,15 @@ The exact bytes pass manifest parsing, external ixon-v2 sharing recognition,
 all object and semantic address checks, every Merkle commitment, aggregate
 budgets, and store-wide member coherence. `Pipeline.checkProgram` then
 deterministically rejects constant
-`131533e96baa7f50ba89d01892243e11a1221c8831e2f394eb14f89e9a54c6c4`
+`a3b83ad0799bcd3d1c70c01df44141d79e7358e1f23d7d7e5cf9e01dbdc73c85`
 with `UsageCheck.UsageErr.freezeNeeded`.
+
+C2 corrected the ownership classification of fresh reusable closures. The
+original rejected constant `131533e96baa7f50…` and its unchanged 17-constant
+dependency slice now pass usage checking. C3's checked reuse of identical
+erased blocks advances the slice through IxIR₀ readdressing to a missing
+`Covered` certificate at its root. The [coverage gate](source-coverage.md)
+retains its complete addressed artifacts and three accepted upstream exports.
 
 That result is a successful ingress contact and an honest current-fragment
 boundary: the fixture is not rewritten to evade the usage policy. `Tests.lean`

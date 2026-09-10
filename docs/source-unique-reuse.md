@@ -56,8 +56,9 @@ Disabled or budget-limited reuse retains the exact checked IxIR₂ baseline.
 Any other optional reuse failure does the same. Target-validation failure
 returns `Backend.ownedOnly`, retaining the proved consuming IxIR₁ artifact.
 Source recognition and usage failures reject compilation at the source
-boundary. General unique lowering and native heap instruction selection are
-separate extensions.
+boundary. The delivered [native subset](source-native-unique.md) selects this
+actual artifact for closed lists of at most 64 exact Word values. General
+unique lowering and wider native heap instruction selection remain extensions.
 
 ## Proof and cost endpoints
 

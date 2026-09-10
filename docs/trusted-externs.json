@@ -1,14 +1,15 @@
 {
   "schema_version": 2,
-  "last_reviewed": "2026-09-07",
+  "last_reviewed": "2026-09-09",
   "policy": {
     "owner": "Compilatr.ix maintainers",
     "platform_baseline": "x86_64-linux",
     "local_import_roots": [
+      "Benchmark",
       "Compilatrix",
       "Init",
-      "Lean",
       "Lake",
+      "Lean",
       "Std"
     ],
     "rule": "Every project-local or external native interface, every native symbol declared anywhere in its Lean source tree (imported or not, with the shipping module and reachability recorded per symbol), seed/runtime dependency, target specification assumption, and CI action is recorded here with an owner and a retirement condition. A modeled IxIR oracle is not native code and is listed separately."
@@ -106,7 +107,9 @@
         "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
         "the Rust crate graph and checksums are locked and checked below",
         "the compiled tests check the official empty-input vector, determinism, input sensitivity, a complete serialized-constant address, complete IxIR0/IxIR1 declaration preimage addresses, dependency-rekeyed generated IxIR1 declaration digests, executable semantic audits, protected source identities, and version-3 recursively field-aware HPT cache/summary identities through deterministic production, persistent checked ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, power-loss-durable sibling staging for snapshots and indexed chunks with ignored orphan transactions, lazy stale-corruption isolation, file-backed corruption recovery, depth-two fetch/case refinement with exact and one-below depth limits, checked case-binder field recovery through both the ordinary checker and deterministic producer, checked finite-constructor case pruning, PAP fusion across all saturation classes, exact scalar fetch forwarding after allocation and reuse, rooted declaration/SCC removal with exported-root and dynamic-apply fallbacks through deterministic one-rebuild graph regressions, and a compiler-emitted six-to-one stored-function reduction that preserves its exact constructor result",
-        "Nix builds the Rust static library in a sandbox and records its closure"
+        "Nix builds the Rust static library in a sandbox and records its closure",
+        "the source-borrow gate checks eighteen accepted Ixon call chains, full caller/callee reconstruction, independent complete heap execution, actual RC reduction, checked baseline fallback, and thirteen corrupted artifacts; its four indexed source fences retain the existing addressed-source hash dependency while six core borrow fences use only propext and Quot.sound",
+        "the source-borrow-runtime gate checks nine accepted open source functions, 144 independent direct/PAP comparisons, nine aliased lenders, exact baseline fallback, and twenty corrupted artifacts; structural proofs select before runtime arguments arrive and derive source/function/continuation preservation and complete owned-input reclamation with two fewer RC ticks and unchanged peak; ten new core/source-shape/input fences use only existing logical axioms and five indexed source fences retain the addressed-source hash dependency"
       ],
       "tests": [
         "Tests.expectedEmptyBlake3",
@@ -327,6 +330,16 @@
       "assumption": "GitHub reports the workflow result honestly and supplies the pinned action revisions; the runner image itself is mutable.",
       "trust_basis": "Third-party actions are pinned by full commit and checked against this ledger; Nix then rebuilds or hash-verifies the actual project closure.",
       "retirement": "No semantic retirement required. For release attestation, reproduce the locked flake outside GitHub and compare store/output hashes."
+    },
+    {
+      "id": "benchmark-comparison-runtimes",
+      "status": "active-measurement-only",
+      "owner": "Compilatr.ix maintainers",
+      "version": "Lean 4.33.0; CakeML v3479/e8eca63affd1653105ca4b9cc2f5ca87a01cd0af; CompCert 3.16; GCC 14.3.0; Clang 21.1.2",
+      "current_role": "Build and execute the six PERF1 comparison programs, their native timing/ABI bridges, and independent artifact/correctness/analysis replay. They do not add a production Lean extern or an axiom to source/compiler proofs.",
+      "assumption": "The recorded compilers, language runtimes, libc allocation and clocks, Linux scheduling/affinity/RSS APIs, and host execute and report faithfully. Empirical output/ABI/GC checks support the measurements; compiler verification elsewhere does not prove these complete benchmark executables or clock readings.",
+      "trust_basis": "benchmarks/toolchains.json pins retrievable sources and configurations; the build records executable/tool digests and closure paths. Full input and malformed-input matrices, fresh artifact checks, opaque operation boundaries, separate GC instrumentation, raw paired timing, deterministic analysis, and clean environment replay are retained.",
+      "retirement": "Comparison measurements remain external observations. Verified runtime and ISA/loader contracts may narrow the boundary; dedicated-host repetition and independent seed/environment reproduction address measurement and supply-chain uncertainty separately."
     }
   ],
   "specification_assumptions": [
@@ -334,15 +347,20 @@
       "id": "x86-v0-local-semantics",
       "status": "active-specification",
       "owner": "Compilatr.ix maintainers",
-      "scope": "Compilatrix.X86 typed AST and executable local semantics",
-      "assumption": "For typed sequential x86-64 v0 executions that satisfy the compiler ABI invariants and use canonical mapped user addresses, the local register, permissioned little-endian memory, stack, direct-call/return, comparison/branch, and architectural-fault behavior agrees with the corresponding 64-bit user-mode behavior at the observations used by Compilatr.ix. Misaligned-call, stack-mismatch, corrupt-return, and callee-saved-clobber outcomes are compiler-contract failures that must be proved unreachable, not claimed hardware exceptions; top-level return is abstracted as a halt into the native harness. The symbolic PC return token is not yet a byte RIP; its relation to final text addresses remains an explicit unproved encoder-stage obligation.",
+      "scope": "Compilatrix.X86 typed AST, independent byte decoder, and executable local semantics",
+      "assumption": "For sequential x86-64 v0 executions that satisfy the compiler ABI invariants and use canonical mapped user addresses, the local register, permissioned little-endian memory, stack, comparison/branch, and architectural-fault behavior agrees with corresponding 64-bit user-mode behavior at Compilatr.ix observations. Misaligned-call, stack-mismatch, corrupt-return, and callee-saved-clobber outcomes are compiler-contract failures that must be proved unreachable, not hardware exceptions. E2 relates symbolic PCs and return tokens to byte RIP and physical stack slots under explicit access conditions and accounts for the final physical RET. Agreement of the local byte model with a reference ISA, including unified instruction fetch and canonical-address faults, remains unproved.",
       "proof_effect": "Lean theorems about the local semantics use only ordinary logical axioms and do not assert hardware correctness. Any native-correctness claim that treats the local model as its reference is conditional on this specification assumption until the emitted-fragment bridge is proved.",
       "trust_basis": [
         "Intel 64 and IA-32 Software Developer's Manual combined instruction-set reference, version 092",
         "AMD64 Architecture Programmer's Manual Volume 3, revision 3.37",
         "typed constructors exclude division, floating point, SIMD, atomics, indirect calls, raw syscalls, TLS, high-byte registers, rsp SIB indices, and byte-width two-operand imul",
         "Compilatrix.X86.EvalExamples executes arithmetic branches, stack/spill roundtrips, direct call/return, callee-saved ABI trapping, runtime dispatch, permission faults, and call-alignment faults",
-        "Compilatrix.X86.Select.selectScalarMoveRefines is a kernel-checked validator-to-selector-to-semantics theorem for every accepted member of the UInt64 scalar family; its leaf target returns through rax, preserves arbitrary input rsp, and reaches no local contract trap"
+        "Compilatrix.X86.Select.selectScalarMoveRefines is a kernel-checked validator-to-selector-to-semantics theorem for every accepted member of the UInt64 scalar family; its leaf target returns through rax, preserves arbitrary input rsp, and reaches no local contract trap",
+        "Compilatrix.UniqueReuse.Native.Output.sourceRefines composes the actual checked unique reversal selection to complete byte-memory main/release runs for at most 64 exact Word payloads; finite ownership, exact arena-cell counts, full reclamation, saved registers, surrounding bytes, and trap exclusion at every prefix are proved",
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefines composes one compiled parameterized source function with the selected physical IxIR2 export and one fixed native reversal/release pair; its runtime argument relation states finite ownership, exact words, capacity, permissions, alignment, and the memory frame; exported-entry length/capacity rejection preserves exact memory",
+        "E1 proves local encoded-instruction agreement through independent Decode and byte-RIP ByteEval, including defined comparison flags and explicit unknown IMUL flags; this local-to-local proof does not establish hardware faithfulness",
+        "docs/x86-reference-model.json pins the inspected Sail x86 snapshot and per-form source mapping; reference execution comparison, a reproducible Lean adapter and S2 agreement remain pending",
+        "E2 composes actual complete byte streams and independently parsed ELF objects; its SafeTrace states concrete stack/data-access conditions, and the N2 source-to-object theorem derives physical caller-slot preservation for every admitted runtime input"
       ],
       "tests": [
         "Compilatrix.X86.Examples.arithmeticBranchAccepted",
@@ -354,7 +372,19 @@
         "Compilatrix.X86.Examples.misalignedCallTraps",
         "Compilatrix.X86.Select.Examples.selectionAccepted",
         "Compilatrix.X86.Select.Examples.fixtureRefines",
-        "Compilatrix.X86.Select.selectScalarMoveRefines"
+        "Compilatrix.X86.Select.selectScalarMoveRefines",
+        "Compilatrix.X86.UniqueExecution.mainAndRelease",
+        "Compilatrix.UniqueReuse.Native.Output.sourceRefines",
+        "Compilatrix.UniqueReuse.Native.Execution.mainSafe",
+        "Compilatrix.UniqueReuse.Native.Execution.releaseSafe",
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefines",
+        "Compilatrix.UniqueReuse.Runtime.Native.ofNats_exact",
+        "Compilatrix.X86.RuntimeExecution.canonical_executes",
+        "Compilatrix.X86.RuntimeExecution.lengthRejects",
+        "Compilatrix.X86.RuntimeExecution.capacityRejects",
+        "Compilatrix.X86.Stream.run_with_calls",
+        "Compilatrix.X86.ObjectEval.run_with_calls",
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects"
       ],
       "retirement": {
         "milestone": "ISA plan S2 emitted-fragment equivalence",
@@ -369,16 +399,33 @@
     },
     {
       "id": "x86-v0-e0-encoder",
-      "status": "active-specification",
+      "status": "discharged-for-certified-emission",
       "owner": "Compilatr.ix maintainers",
-      "scope": "Compilatrix.X86.Encode instruction bytes, rel32 layout, and runtime relocation records",
-      "assumption": "The executable E0 encoder emits the documented x86-64 instruction for each typed AST constructor, resolves internal rel32 fields from the following instruction, and records runtime calls as R_X86_64_PC32-style relocations with addend -4. No Lean theorem yet connects those bytes to local execution.",
-      "proof_effect": "The encoder is not used by the existing compiler-correctness theorem cone. Future object/native claims are conditional on this assumption until E1/E2 prove per-form and stream-level encoding laws; the assumption introduces no Lean axiom or native FFI symbol.",
+      "scope": "Certified production stream emission; residual unchecked Encode.encode and Encode.Program.encode API results",
+      "assumption": "Calls that bypass Stream.encode and consume raw encoder output still lack a complete-stream certificate. Certified production emission does not use that assumption: acceptance proves every decoded operation, boundary, canonical block offset, signed internal target, and exact runtime relocation inventory. Internal-call execution uses the explicit SafeTrace stack/data-access conditions. Runtime CALL transfer is proved after checked PC32 application; execution of external procedure bodies requires their separate semantic/ABI contracts.",
+      "proof_effect": "E2 uses kernel-proved translation validation, so every successful production emission carries concrete complete-text facts. Stream.run_to_return and Stream.run_with_calls compose actual byte fetch and execution, including mapped continuations and residual return-slot bytes. ObjectEval lifts these results through serialized ELF, and the N2 Output.sourceRefinesObjects endpoint consumes them for every admitted runtime Word list. No new Lean axiom or native FFI symbol is introduced. Encoder completeness and unchecked raw API results are not claimed.",
+      "discharged": [
+        "every emitted instruction and terminator decodes independently with exact suffix consumption and local instruction length",
+        "all emitted linear instructions agree with typed register/memory effects and precise modeled memory faults",
+        "all ten CMP conditions agree with explicit condition flags, and actual patched CMP/Jcc/JMP bytes execute both paths correctly",
+        "local CALL/RET effects state the concrete return-slot difference; local rel32 patches preserve surrounding bytes and resolve following-instruction-relative targets under the signed range check",
+        "Stream.check_sound certifies all instruction boundaries, exact total length, canonical block offsets, internal signed targets and the complete ordered runtime relocation inventory",
+        "pcOffset_injective and checked successor laws relate all valid symbolic positions to distinct in-text byte offsets",
+        "run_to_return composes every finite successful call-free typed stream with physical RET under an explicit readable caller slot",
+        "run_with_calls composes nested direct/tail calls under concrete SafeTrace conditions, preserves mapped active return slots and retains or clears residual byte differences correctly",
+        "ELFLink applies actual parsed PC32 relocations with signed overflow checks, proves the S+A-P following-instruction equation, revalidates complete linked text and proves named runtime CALL transfer",
+        "the actual N2 source compiler reaches byte execution of its emitted object pair for every admitted runtime list"
+      ],
       "trust_basis": [
         "one total pattern-match case per typed instruction and terminator constructor",
         "elaboration-time byte-exact goldens in Compilatrix.X86.EncodeExamples",
         "GNU objdump 2.44 independently decodes representative forms and resolved branch/call streams in the pinned Nix check",
-        "the decoder check script is integrity-pinned by this ledger"
+        "the decoder check script is integrity-pinned by this ledger",
+        "the source-native-unique check independently decodes 16 source-produced main/release objects, compares their exact .text bytes, rejects external relocations and non-leaf register/instruction use, and links eight native reversal/reclamation runs",
+        "the source-native-runtime check independently decodes one function/release pair, checks exact .text bytes and leaf restrictions, then links it once for eight runtime inputs and 203 malformed calls in one process",
+        "E1's independent decoder and byte evaluator have twelve public axiom fences; check-x86-bytes runs 31921 instruction cases, 2000 patched branches, negative/fault/corruption checks, four complete streams and eight actual source-selected runtime main/release inputs",
+        "E2 adds 23 public axiom fences, kernel-evaluated nested/reused-call safety examples and the integrity-pinned check-x86-streams gate; all production object emitters use Stream.encode and ELF.writeChecked",
+        "C3 independently reconstructs two unchanged upstream closed Nat call objects and checks source/physical results, complete baseline release, exact Word representation, supplied-state call certificates and native ABI observations; general N3/F1 contracts remain open"
       ],
       "tests": [
         "Compilatrix.X86.Encode.Examples arithmeticProgramBytesAccepted",
@@ -386,32 +433,56 @@
         "Compilatrix.X86.Encode.Examples runtimeRelocationAccepted",
         "Compilatrix.X86.Encode.Examples malformedProgramRejected",
         "Compilatrix.X86.Select.Examples.selectedBytesAccepted",
-        "scripts/CheckX86Encoder.lean"
+        "scripts/CheckX86Encoder.lean",
+        "scripts/CheckSourceNativeUnique.lean",
+        "scripts/CheckSourceNativeRuntime.lean",
+        "Compilatrix.X86.Encode.instruction_decodeAt",
+        "Compilatrix.X86.Encode.terminator_decode",
+        "Compilatrix.X86.Encode.encoded_instruction_execution",
+        "Compilatrix.X86.Encode.branch_bytes_execution",
+        "Compilatrix.X86.Encode.branch_patch",
+        "Compilatrix.X86.Encode.call_pair",
+        "Compilatrix.X86.Encode.ret_pair",
+        "Compilatrix.X86.Encode.relative_resolves_base",
+        "scripts/CheckX86Bytes.lean",
+        "Compilatrix.X86.Stream.check_sound",
+        "Compilatrix.X86.Stream.run_to_return",
+        "Compilatrix.X86.Stream.run_with_calls",
+        "Compilatrix.X86.ELFLink.runtime_call_transfer",
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects",
+        "scripts/CheckX86Streams.lean",
+        "scripts/CheckSourceNativeUpstream.lean",
+        "Compilatrix.X86.NatCalls.Execution.objectReturns",
+        "Compilatrix.X86.NatCalls.sourceObjectRefines"
       ],
       "retirement": {
-        "milestone": "ISA plan E1/E2 encoder verification",
-        "replacement": "Kernel-checked per-form encoding and emitted-stream fetch/decode proofs, including relocation resolution",
+        "milestone": "E2 delivered for certified production outputs; unchecked API completeness remains outside that claim",
+        "replacement": "Fail-closed production translation validation with kernel-checked whole-stream, return-slot and relocation composition",
         "exit_criteria": [
-          "every emitted form has a proved decode/encode or equivalent injectivity theorem",
-          "immediate and displacement ranges plus operand constraints are proved",
-          "instruction boundaries, internal targets, and resolved runtime relocations agree with the machine semantics"
+          "the delivered native source endpoint consumes actual emitted object execution",
+          "any future caller of the raw encoder must validate its output or prove the same complete-stream facts",
+          "external procedure execution and ISA/reference agreement retain their separately stated contracts"
         ]
       }
     },
     {
       "id": "x86-v0-elf-writer",
-      "status": "active-specification",
+      "status": "active-system-linker-loader",
       "owner": "Compilatr.ix maintainers",
-      "scope": "Compilatrix.X86.ELF ELF64 relocatable-object serialization, symbols, relocations, and provenance note",
-      "assumption": "The pure writer emits a well-formed little-endian ELF64 ET_REL/EM_X86_64 object whose section headers, symbol table, executable text, R_X86_64_PC32 runtime relocations, non-executable-stack marker, and mandatory versioned Compilatr.ix provenance note are interpreted by conforming System V linkers as intended. No Lean theorem yet connects the serialized object to an independently specified ELF parser or linker.",
-      "proof_effect": "The writer is not used by the existing compiler-correctness theorem cone and adds no Lean axiom or native FFI symbol. Object-layout and native-execution claims are conditional on this assumption and on the separately recorded encoder, ISA, build-toolchain, and host-runtime boundaries until a checked ELF/linker-input bridge is proved.",
+      "scope": "Residual unchecked ELF.write results and the system ELF linker/loader; certified serialization and independent interpretation are discharged",
+      "assumption": "For actual native execution, the system linker/loader interprets the certified ELF64 ET_REL/EM_X86_64 fields and Linux/GNU four-byte provenance-note convention as specified, implements the proved R_X86_64_PC32 S+A-P rule with signed range checks, resolves named external procedures, maps parsed text immutably for executable fetch, and enters the selected export with the stated ABI. ELF.write callers that bypass ELF.writeChecked still lack object validation. Certified production outputs already have kernel-checked independent text, entry, symbol, relocation, layout, stack-policy and provenance interpretation.",
+      "proof_effect": "ELFRead imports neither encoder nor writer and independently parses actual object fields. ELF.check_sound and ELF.Valid.text/entry connect successful serialized output to certified machine text and exported entry selection. ObjectEval consumes those parsed bytes, including in the N2 source-to-object endpoint. The system linker/loader, external procedure bodies, ISA faithfulness and host build/runtime remain outside these local proofs. No new Lean axiom or native FFI symbol is introduced.",
       "trust_basis": [
         "the System V generic ABI ELF specification and x86-64 psABI define the reviewed header, section, symbol, relocation, and calling-convention fields",
         "Compilatrix.X86.ELFExamples checks header shape, section count, text placement, exact provenance bytes, exact runtime Rela entry, and negative entry/name cases during ordinary Lean builds",
         "the pinned Nix x86-elf-object check writes every fixture twice, requires byte determinism, and has GNU readelf 2.44 parse all headers, sections, symbols, relocations, and notes",
         "the Lean fixture executable runs local semantics for every object; selected-scalar also runs validated physical IxIR2, and validated-scalar constructs a synthetic canonical Ixon input, calls the actual validated compiler and selector, and compares Ixon, raw/addressed IxIR0, owned IxIR1, logical/physical IxIR2, and local x86 observations",
         "GNU objdump independently disassembles seven objects, and on x86_64-linux the locked host linker resolves them and each native program returns the local result with a non-executable GNU_STACK; source-driven zero, 42, and UInt64 max run through two fresh compiler processes with equal bytes, frozen source/IR1 address goldens, and exact real provenance; UInt64 overflow must be rejected before an object is written",
-        "the object-check script and native C harness are integrity-pinned by this ledger"
+        "the object-check script and native C harness are integrity-pinned by this ledger",
+        "the bounded native unique gate compares two complete fresh artifact sets, reconstructs canonical source/graph/native-policy preimages, checks distinct main/release ELF role provenance, and verifies native pointer graphs, all arena-cell counters, saved registers, canaries, full release, and capacity rejection without writes",
+        "the runtime-input gate compares two complete fresh artifact sets with one compiled function and one object pair; function/ABI/policy provenance excludes runtime payloads, and 17 deliberate artifact/observation corruptions must be rejected",
+        "GNU binutils commit 82ed9683ec099d8205dc499ac84febc975235af6 documents the Linux ELF64 four-byte-note convention used by the existing writer",
+        "E2 adds an independent parser, fail-closed object validation, actual relocation application and complete-object execution proofs; check-x86-streams rejects 1010 malformed/truncated object cases and exercises actual source-selected runtime object execution"
       ],
       "tests": [
         "Compilatrix.X86.ELF.Examples.arithmeticObjectAccepted",
@@ -423,18 +494,38 @@
         "Compilatrix.X86.ELF.Examples.duplicateSymbolRejected",
         "scripts/CheckX86Object.lean",
         "scripts/CheckSourceCoverage.lean",
-        "fixtures/source-coverage/expected.json"
+        "fixtures/source-coverage/expected.json",
+        "scripts/CheckSourceNativeUnique.lean",
+        "fixtures/source-native-unique/native_harness.c",
+        "fixtures/source-native-unique/expected.json",
+        "scripts/CheckSourceNativeRuntime.lean",
+        "fixtures/source-native-runtime/native_harness.c",
+        "fixtures/source-native-runtime/expected.json",
+        "Compilatrix.X86.ELF.check_sound",
+        "Compilatrix.X86.ELF.Valid.text",
+        "Compilatrix.X86.ELF.Valid.entry",
+        "Compilatrix.X86.ObjectEval.run_from_typed",
+        "Compilatrix.X86.ObjectEval.run_with_calls",
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects",
+        "scripts/CheckX86Streams.lean"
       ],
       "retirement": {
-        "milestone": "ISA plan E2 emitted-stream and object verification",
-        "replacement": "A kernel-checked ELF64 serializer and linker-input interpretation theorem connecting text, symbols, relocations, stack policy, and provenance to the emitted machine program",
+        "milestone": "E2 delivered for certified ELF interpretation; system linker/loader refinement remains",
+        "replacement": "The delivered independent parser and checked serialization bridge, followed by a separately verified system linker/loader or loaded-image refinement",
         "exit_criteria": [
-          "every emitted section header, symbol, and relocation is proved in range, aligned, and accepted by the independent ELF model",
-          "runtime relocation resolution and exported-entry placement are connected to machine fetch/execution semantics",
-          "the versioned provenance note is proved to commit to the exact selected root and pass-policy identity",
-          "native correctness consumes the checked object interpretation rather than this ledger assumption"
+          "actual system relocation and symbol resolution refine the proved PC32 application",
+          "loaded instruction fetch and export entry refine the independently parsed certified text",
+          "external procedures and the caller harness implement the stated semantic and ABI contracts",
+          "raw writer clients either use ELF.writeChecked or establish its validation facts"
         ]
-      }
+      },
+      "discharged": [
+        "all production emitters return only independently parsed and validated ELF output",
+        "bounded sections, nonoverlap, alignment, exact inventory and flags, executable text and non-executable GNU stack marker",
+        "exact exported name/value/size, selected block placement, complete symbol and runtime relocation inventory with concrete bounds",
+        "independently decoded provenance domain/kind/root/lowering/role-policy fields equal the actual selected input provenance",
+        "actual parsed text and entry feed whole-object execution, and parsed PC32 relocations feed the checked application trace"
+      ]
     }
   ],
   "modeled_oracles": [
@@ -501,28 +592,75 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "2ab0ec816540b58da430598b6e36252fd77ad7e2f2ad66df76fb92c12d1ba091",
+      "flake.nix": "ef9a2e75c6ca1f8c0a0196edee4ccd2b11b44b458b463058e75b45a9281aa03f",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "0e996eda7ca5238c211e95813021ec6159bbc5ba6ec2fc49b1fd167f06b93720",
+      "lakefile.lean": "aff8cc75865757bfcde3f30415b395806a5829ed33d827cf72f8602024b7e2e8",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
-      "Compilatrix/Tools/X86Check.lean": "4377f13e9317946784c30fa58f0397e2bd0937c941f1745093b7c1cf9228b7ba",
+      "Compilatrix/Tools/X86Check.lean": "45b406f5379834ca57253626393e560c426907752005804172f398b33e96683c",
+      "Compilatrix/Tools/UniqueCheck.lean": "422ccb315d7ef5494617f56f45bd1d4746680040eca312b7a01d255dd232f432",
+      "Compilatrix/Tools/BorrowCheck.lean": "fa8c68f31b771fa3354c7430d5864550f7f8a7dbe71d124ead7e797b99a1a2c7",
+      "Compilatrix/Tools/BorrowExecution.lean": "90c4f68b15c6492b6cdcbf25464b86690db94f40cf8c3341af5598d630bab9d4",
+      "Compilatrix/Tools/BorrowRuntimeCheck.lean": "e510dd4bc7007d63176cec3768597f86b14d1bf6561285bfad72a82d3703b48d",
       "Compilatrix/Tools/SourceScan.lean": "c5135b4f26379d49671dc43d3a126082ef6279e7fdaeb2b741d53e289fc93353",
       "Compilatrix/Tools/TrustLedger.lean": "1ac703b1984cf3cc28f6bdd2adf84f74e5525c1434e5abb92ce5bc6d99860777",
       "scripts/CheckTrustedExterns.lean": "b0713e930fee2db7ebc6adc9b31b6412ba50e4a965a3a9833eb4bda523568bbf",
       "scripts/CheckX86Encoder.lean": "c38c9980675135432766b080b4ee1c9eb85ded2f7eec17fe96c11fe5ff3f1a67",
+      "scripts/CheckX86Bytes.lean": "39c74ff685732de32110baf52a9e992d4a7ab4829bf9692d189d202f6cf2eef5",
+      "scripts/CheckX86Streams.lean": "ce7486fb7920f57d921fd296da3f24342e0e0d47ac0b1dd3edc8322920fe16a6",
+      "docs/x86-reference-model.json": "c9ca18623bb04f6f0aed5273ec268f7a634efba58008e2ac0ae505e98ea52b76",
       "scripts/CheckX86Object.lean": "3e95f985a47cb787791042f6c5838a51eb922f98525058b72e67f76d3a4d7da0",
-      "scripts/CheckSourceCoverage.lean": "557ff6d3ccd6a628b73af177e0f3e328f374e9323b995a0a3e231235598a8b2d",
+      "scripts/CheckSourceCoverage.lean": "148206508005c9e009c92adfafc4f671b60a7a4f39988b11ded05968c60ea628",
       "scripts/CheckSourceRecursion.lean": "089634410ba545377c79e954d3a5d0ad66bd177f9690b0b5461fbedbb096c36d",
       "scripts/CheckSourceCallReuse.lean": "592bd97cdf16812fbeec5eb46b991396f0347fd18746e885ecde8be18aa6f89a",
-      "scripts/CheckSourceUniqueReuse.lean": "cb96340cf52b3f12c4a2b04d09397b771eab37918b6be0137b83d9c95a854dc0",
+      "scripts/CheckSourceUniqueReuse.lean": "abe52f3e7f2e10be70b847a38694b9bcef60b9330a638625aea2ef03d1233842",
+      "scripts/CheckSourceNativeUnique.lean": "9de95509bbf31c4aac1c4acd778bdd56269e44e32ca1ff7fdaeeafa4044f8ef6",
+      "fixtures/source-native-unique/native_harness.c": "8013e02898ca5503b2e190f9f3b73bb9c6a05151179d33557264b8feb7ffa8cf",
+      "fixtures/source-native-unique/expected.json": "fbf32aec9288cf49f3e2d93726c7cbd462a998b294f71c76bb2a1e7e58be8d79",
+      "scripts/CheckSourceNativeRuntime.lean": "4aaf7096a5dd89cafae67e729df1e53f37685db76146691f388a98be4aebbce1",
+      "fixtures/source-native-runtime/native_harness.c": "d465ce5a7c86f9a89f41333e0b700378c0429c2c72be7ac11278e5e654ef16c2",
+      "fixtures/source-native-runtime/expected.json": "fe873805772d952046be02ef1d82ccfffa5dc2cecfd44baf6abe4d5eb3673af3",
+      "scripts/CheckSourceBorrow.lean": "0dbdf92905250b88ca020836b42fb84330f2eb0cf7a6fe7fb9d2fd0bf0c453b4",
+      "fixtures/source-borrow/expected.json": "cc47c3aa53c2fa815b08675f4c048e009de6884a7b62bbdb6a3b06fa3335317a",
+      "scripts/CheckSourceBorrowRuntime.lean": "d3f72bd430e0053d581b9f8647a9e201d9d20b9108f36cf9f98583a27592461b",
+      "fixtures/source-borrow-runtime/expected.json": "9c4336aac7104ff137557e33fbd706b6eda7f6ea89462246e7a28e8ef1790956",
       "scripts/CheckToolsTests.lean": "0c9ac5df5a47e91a94a218cad4bef9e51c4820f3fd415de862e76f04b662edd6",
-      "fixtures/source-coverage/expected.json": "cde2b28cb3713070619ca894b55efbce8e04e776ffbb172188ba02696c79bae7",
+      "fixtures/source-coverage/expected.json": "011cc8bf3e84d2f743682e55175f8e59a5a0b6a870cf6cbf5c0e67841f6988c2",
       "fixtures/source-recursion/expected.json": "3a24d64f8436be2772bd0343473e430b9fc9060fc728eb9a9316c2888f21f9de",
       "fixtures/source-call-reuse/expected.json": "c4fd62bc45f9d89a65ce0465fd2d5639ccf4e0d22dbfcef6486b71ca524a29b8",
-      "fixtures/source-unique-reuse/expected.json": "9e0dcc02e80cc48303bf28abd361cc1415e2b1f867503fa641d555d876dcd358"
+      "fixtures/source-unique-reuse/expected.json": "9e0dcc02e80cc48303bf28abd361cc1415e2b1f867503fa641d555d876dcd358",
+      "Compilatrix/Tools/UpstreamNativeCheck.lean": "29ac9b3267e2a1901fab5bea9992ec829ecc767e0017e6c5328065d0ed570256",
+      "scripts/CheckSourceNativeUpstream.lean": "374a1b7b9dd7f7c804fc83185c5df81a11533a020732bd2008d67a998b402fb0",
+      "fixtures/source-native-upstream/expected.json": "e38186879fb467c7dcf4c0000bf686d05320f122a8b0c9466f354b9225fac3e2",
+      "fixtures/source-native-upstream/native_harness.c": "60179668e270dfbeb712f0f56b4e523b6923242856149930cc1d0f2350ce624c",
+      "benchmarks/lean/LeanReverse.lean": "cfb76f1ca2127ce7ebeef3ed94be7dbf008401bdb5682748bded507426f9f690",
+      "benchmarks/manifest.json": "611ee80ab28a8770c0ab00f5e9a6a29affe733826c4f9d5ebbdb4e5457e3867c",
+      "benchmarks/toolchains.json": "d9ae803e1ce47086cf4fb1ccd8dcf024a0d33ad1d08f9b5c7765ecc02d982559",
+      "benchmarks/cakeml/reverse.cml": "4f2c12cdc34f1fe6c6c7d2ee75f316ef890c88793eb60198d9a5b16006c708c6",
+      "benchmarks/native/common.h": "9d775996a799eaf32a91344b86a75fc01dba602555b51c0ec9f777fe7c8b6bdc",
+      "benchmarks/native/arena_backend.c": "fb628ead6c2394502b59c45619b267c4ea1aa90df81fb2deab233a24a9364527",
+      "benchmarks/native/driver.c": "af29d971001532d5c23f0d0ac11bbf4dedd09341b8df907bf7d67f724612a394",
+      "benchmarks/native/arena.h": "2bae9b8ef61293352b4c58c547d46933b9e316deb71d07f2912dcfb830126502",
+      "benchmarks/native/worker_launcher.c": "2198aa8fe017f24e0c7a5ea1386a605d9db2d542c3bf06a9549135aa6c6d1bcf",
+      "benchmarks/native/common.c": "6e4d595166d98413d45ace22059dca2bfb4346ec8a8156166b30ef2bebf4d0ee",
+      "benchmarks/native/arena_kernel.c": "0a1c5786d71aa55cbb3594d1a99ac30a9fd4d08b43a6acd6f73bd455dc3a1d3e",
+      "benchmarks/native/lean_backend.c": "dfb370293ed8432ece88e148e73d5b8a2db4dd3d057d34066f7394518f5c8a5f",
+      "benchmarks/native/cakeml_ffi.c": "411eb54718f587bf456aa02c95077437f4d62aff97f8d2581ec9017d28627a9c",
+      "benchmarks/protocol.md": "ff5c77d346d8c59327a4cb5c7c6028ec07563f105f31a6f3ff4d940f0357d833",
+      "benchmarks/Benchmark/Check.lean": "76ab2bc3d6de25524675203c5d7a541cf1372dae90c6dc77a606dfc2bc9d84a2",
+      "benchmarks/Benchmark/Diagnostics.lean": "12f46c5e822a5ec3510473d15dc962b11b9e95a4aaec5089c09268c795685485",
+      "benchmarks/Benchmark/Build.lean": "75ba5b970928dda014c6dfc0ee19d32084556df4d0ecaab204a88bcb2d9252ea",
+      "benchmarks/Benchmark/Environment.lean": "87aa4ff0a69543a2c8d4ce56aef0ae6b09695cfb489f481960e66d5641b12c7f",
+      "benchmarks/Benchmark/Data.lean": "6a1e9581d333b497b9d8f160bfe7b468c805c73d6c042e90ddf3d3136a3eb4cd",
+      "benchmarks/Benchmark/Verify.lean": "03908e0e1ce0a4cfe7b2851aef8dfbe4c300299ee8a599f8703a2129ff82866b",
+      "benchmarks/Benchmark/Pilot.lean": "13541cf59515dfc29734e69bdaacac10d4b05213dc64530b7901078fed1aa187",
+      "benchmarks/Benchmark/Schedule.lean": "abfe1edb9aff40bb68f5fb87362490b22560fc742c1916c209a2f9a42b7b47ae",
+      "benchmarks/Benchmark/Measure.lean": "f407fa62c8094075de15c229269eaea6b3777102b49f697b01ac2f50cdd16e97",
+      "benchmarks/Benchmark/Reproduce.lean": "98da44b81c05a3299c18259819143a1a092df7b63cb7ce2158b441bef0e0c740",
+      "benchmarks/Benchmark/Analyze.lean": "a1fd180bd6ff79c342cfe4477e8c269ed16810bd9a0841ac73e38fe03820ad7a",
+      "benchmarks/Benchmark.lean": "dfe0889ed8a77942da5d537edaa46ced0a711bdbe7e109393ae2f50b9b3f9d82"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

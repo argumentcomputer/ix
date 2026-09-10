@@ -1054,6 +1054,104 @@ def rejectsDerivedReservedCollision : Bool :=
 
 end IxIR1MutualBlockFixtures
 
+namespace RepeatedErasureFixtures
+
+open Compilatrix Compilatrix.Ixon
+
+def first : Address := Address.replicate 0xc1
+def second : Address := Address.replicate 0xc2
+
+def groups : List IxIR0.Readdress.Group :=
+  [.mutual [(first, .defn .shared .erased)],
+   .mutual [(second, .defn .shared .erased)]]
+
+def mainExpr : IxIR0.Expr :=
+  .letE .many (.ref first)
+    (.letE .many (.ref second) (.lit (.nat 17)))
+
+def built := IxIR0.Readdress.run [] groups mainExpr
+
+/-- Both erased producers survive, even though their output identities and
+declarations coincide. The existing semantic transport theorem still applies. -/
+theorem transport (result : IxIR0.Readdress.Result) (hrun : built = .ok result) :
+    result.addressedCtx.run result.main 100 =
+      IxIR0.Readdress.mapResult
+        (IxIR0.MutualBlock.Renaming.apply result.addressMap)
+        ((result.preAddressCtx groups).run mainExpr 100) := by
+  exact IxIR0.Readdress.run_emptyOracle_of_run_eq_ok hrun 100
+
+def checkedReuse : Bool :=
+  match built with
+  | .error _ => false
+  | .ok result =>
+    match result.blocks, result.addressMap with
+    | [left, right], [(oldA, newA), (oldB, newB)] =>
+      oldA == first && oldB == second && newA == newB &&
+        left.blockAddress == right.blockAddress &&
+        left.blockMembers == [.defn .shared .erased] &&
+        left.members == right.members && left.addressMap != right.addressMap &&
+        result.declarations.length == 2 &&
+        result.semanticAudit [] groups mainExpr &&
+        (match (result.preAddressCtx groups).run mainExpr 100,
+            result.addressedCtx.run result.main 100 with
+        | .ok (.lit (.nat 17)), .ok (.lit (.nat 17)) => true
+        | _, _ => false)
+    | _, _ => false
+
+/-- Collision tests inject candidate results into the exact production
+comparison. They do not need to discover an actual BLAKE3 collision. -/
+def conflictsRejected : Bool :=
+  match IxIR0.MutualBlock.run [] [(first, .defn .shared .erased)] with
+  | .error _ => false
+  | .ok original =>
+    let compatible := IxIR0.Readdress.compatibleBlocks original
+    let member := original.derivedAddresses.head!
+    compatible { original with addressMap := [(second, member)] } &&
+      !compatible { original with blockMembers := [.extern 0] } &&
+      !compatible { original with members := [(member, .extern 0)] } &&
+      !compatible { original with addressMap := [(second, second)] } &&
+      !compatible { original with blockAddress := second } &&
+      !compatible { original with blockAddress := member } &&
+      !compatible { original with
+        members := [(original.blockAddress, .defn .shared .erased)]
+        addressMap := [(second, original.blockAddress)] }
+
+def protectedNamespaces : Bool :=
+  match IxIR0.MutualBlock.run [] [(first, .defn .shared .erased)] with
+  | .error _ => false
+  | .ok block =>
+    let rejects := fun reserved groups main =>
+      match IxIR0.Readdress.run reserved groups main with
+      | .error _ => true
+      | .ok _ => false
+    let identities := block.blockAddress :: block.derivedAddresses
+    identities.all fun key =>
+      rejects [key] groups mainExpr &&
+        rejects [] (groups ++ [.stable [(key, .extern 0)]]) mainExpr &&
+        rejects [] groups (.ref key)
+
+/-- Alpha-renamed two-member cycles share an entire block, including the
+position-sensitive derived member identities and all four producer mappings. -/
+def repeatedCycles : Bool :=
+  let make := fun a b => IxIR0.Readdress.Group.mutual
+    [(a, .defn .shared (.lam .many (.ref b))),
+     (b, .defn .shared (.lam .many (.ref a)))]
+  let a := Address.replicate 0xb1
+  let b := Address.replicate 0xb2
+  let groups := [make first second, make a b]
+  match IxIR0.Readdress.run [] groups .erased with
+  | .error _ => false
+  | .ok result =>
+    match result.addressMap with
+    | [(old0, key0), (old1, key1), (old2, key2), (old3, key3)] =>
+      [old0, old1, old2, old3] == [first, second, a, b] &&
+        key0 == key2 && key1 == key3 && key0 != key1 &&
+        result.blocks.length == 2 && result.declarations.length == 4 &&
+        result.semanticAudit [] groups .erased
+    | _ => false
+
+end RepeatedErasureFixtures
+
 namespace AddressedErasureFixtures
 
 open Compilatrix
@@ -4800,6 +4898,14 @@ def main : IO UInt32 := do
     IO.eprintln "FAIL: a derived IxIR₁ mutual-member key captured a reserved identity"
     ok := false
 
+  for (label, passed) in [
+      ("repeated erased blocks preserve both producers", RepeatedErasureFixtures.checkedReuse),
+      ("conflicting block/member identities reject", RepeatedErasureFixtures.conflictsRejected),
+      ("repeated blocks preserve protected namespaces", RepeatedErasureFixtures.protectedNamespaces),
+      ("repeated cycles preserve ordered member maps", RepeatedErasureFixtures.repeatedCycles)] do
+    if !passed then
+      IO.eprintln s!"FAIL: {label}"
+      ok := false
   match AddressedErasureFixtures.built with
   | .error error =>
     IO.eprintln s!"FAIL: addressed erasure rejected a cyclic program: {repr error}"
@@ -5319,7 +5425,7 @@ def main : IO UInt32 := do
           ok := false
       match Compilatrix.Pipeline.checkProgram loaded.constants with
       | .error (.usage address .freezeNeeded) =>
-        if toString address != CatalogContactFixture.expectedPipelineAddress then
+        if toString address != CatalogContactFixture.expectedRemainingFreezeAddress then
           IO.eprintln s!"FAIL: ix contact pipeline rejection moved to {address}"
           ok := false
       | .error error =>
