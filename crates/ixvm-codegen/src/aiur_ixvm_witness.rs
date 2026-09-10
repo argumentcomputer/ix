@@ -365,14 +365,24 @@ impl EnvCheckStatement {
   }
 }
 
+/// Every worker's byte scope: the closure its `check_owned` runs can reach
+/// from the constants it owns.
+pub fn worker_scopes(
+  env: &Env,
+  owners: &[Vec<Address>],
+) -> Vec<FxHashSet<Address>> {
+  owners.par_iter().map(|owned| witness_scope(env, owned)).collect()
+}
+
 /// Which workers may call into which: `callers[r]` lists every worker
-/// other than `r` whose byte scope — the closure its `check_owned` runs can
-/// reach — contains a constant `r` owns, plus worker 0 for every `r`, whose
+/// other than `r` whose byte scope (`scopes`, from [`worker_scopes`])
+/// contains a constant `r` owns, plus worker 0 for every `r`, whose
 /// `verify_claim` walk reaches every leaf. A superset of the calls actually
 /// deferred, so a worker whose callers have all executed can commit.
-pub fn worker_callers(env: &Env, owners: &[Vec<Address>]) -> Vec<Vec<usize>> {
-  let scopes: Vec<FxHashSet<Address>> =
-    owners.par_iter().map(|owned| witness_scope(env, owned)).collect();
+pub fn worker_callers(
+  owners: &[Vec<Address>],
+  scopes: &[FxHashSet<Address>],
+) -> Vec<Vec<usize>> {
   (0..owners.len())
     .map(|r| {
       (0..owners.len())

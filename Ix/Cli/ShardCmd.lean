@@ -157,19 +157,22 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
       p.printError "error: --max-cycles requires --profile (its budget \
         model is calibrated on profiled op counters)"
       return 1
+    let layout := if p.hasFlag "ordered" then "ordered" else "mincut"
     match shardsFlag, maxRam with
     | some n, _ =>
       if n == 0 then
         p.printError "error: --shards must be positive"; return 1
       IO.println s!"Sharding {envPath} into {n} shards \
-        (static strategy, balance ±{balancePct}%)"
-      rsShardEnvStaticFFI envPath (toString n) "0" (toString balancePct) outPath
+        (static strategy, {layout} layout, balance ±{balancePct}%)"
+      rsShardEnvStaticFFI envPath (toString n) "0" (toString balancePct) layout
+        outPath
     | none, some gib =>
       if gib == 0 then
         p.printError "error: --max-ram must be positive"; return 1
       IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
-        (static block-shape seed, balance ±{balancePct}%)"
-      rsShardEnvStaticFFI envPath "0" (toString gib) (toString balancePct) outPath
+        (static block-shape seed, {layout} layout, balance ±{balancePct}%)"
+      rsShardEnvStaticFFI envPath "0" (toString gib) (toString balancePct) layout
+        outPath
     | none, none =>
       p.printError "error: the static strategy (no --profile) requires \
         --shards N or --max-ram G"
@@ -207,6 +210,7 @@ def shardCmd : Cli.Cmd := `[Cli|
     "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
     "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term), with fitted scale and budget exponents anchored at Mathlib; the execution gate measures and corrects every boundary. Profiled strategy: budget from measured op counters (default: detected system RAM)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
+    ordered;               "Static strategy: lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants: its records then commit one at a time in shard order."
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
 

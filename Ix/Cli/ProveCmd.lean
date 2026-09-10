@@ -346,10 +346,15 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
           {shards.size} workers"
         (← IO.getStdout).flush
         let execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
+        let planOnly := p.hasFlag "plan-only"
         match aiurSystem.proveEnvDistributed funIdx checkOwnedIdx envHandle
-            ownedPer maxCells execOnly execJobs (!(p.hasFlag "no-prefetch")) with
+            ownedPer maxCells planOnly execOnly execJobs
+            (!(p.hasFlag "no-prefetch")) with
         | .error e => IO.eprintln s!"proveEnvDistributed error: {e}"; return 1
         | .ok { proof := none, .. } =>
+          if planOnly then
+            IO.println "planned the workers' commit order (plan-only)"
+            return 0
           if execOnly then
             IO.println "executed and absorbed every worker (exec-only)"
             return 0
@@ -429,6 +434,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
     "exec-jobs" : Nat;  "With --distributed: how many workers execute at once (default 0: all). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
     "no-prefetch";      "With --distributed: do not execute the next worker while the prover works on the current record (by default it does, hiding the re-execution behind proving at the price of a second resident record)."
+    "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
     "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."

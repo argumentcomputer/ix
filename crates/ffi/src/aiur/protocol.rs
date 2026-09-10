@@ -1156,10 +1156,13 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 /// namespace `r`. The workers execute in parallel, the deferred calls'
 /// counts are absorbed by their owners, and the records are proven as one
 /// batch, each planned to `max_cells` committed cells (`0`: one shard per
-/// record). `exec_only` stops after execution and the absorption of the
-/// deferred calls, reporting each record's size (`proof` is `none`). Same
-/// result shape as `shardProveWithEnv`, with `peakBytes` 0 and
-/// `suggestedParts` 1.
+/// record). `plan_only` stops after the static caller graph and the commit
+/// order, reporting each worker's owned constants, byte scope and callers
+/// and the largest group of mutually calling workers, which is how many
+/// records the first round holds at once; `exec_only` stops after execution
+/// and the absorption of the deferred calls, reporting each record's size.
+/// Both leave `proof` `none`. Same result shape as `shardProveWithEnv`, with
+/// `peakBytes` 0 and `suggestedParts` 1.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove_env_distributed(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -1171,6 +1174,7 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
   >,
   owners_blob: LeanByteArray<LeanBorrowed<'_>>,
   max_cells: LeanNat<LeanBorrowed<'_>>,
+  plan_only: bool,
   exec_only: bool,
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
   prefetch: bool,
@@ -1191,6 +1195,7 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
       check_owned_idx,
       &owners,
       max_cells,
+      plan_only,
       exec_only,
       exec_jobs,
       prefetch,
@@ -1351,6 +1356,7 @@ fn prove_env_distributed(
   check_owned_idx: usize,
   owners: &[Vec<ix_common::address::Address>],
   max_cells: usize,
+  plan_only: bool,
   exec_only: bool,
   exec_jobs: usize,
   prefetch: bool,
@@ -1358,7 +1364,7 @@ fn prove_env_distributed(
   use aiur::execute::{Ownership, pointer_stride};
   use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
   use ixvm_codegen::aiur_ixvm_witness::{
-    EnvCheckStatement, addr_key, worker_callers,
+    EnvCheckStatement, addr_key, worker_callers, worker_scopes,
   };
   use rustc_hash::FxHashSet;
 
@@ -1366,6 +1372,8 @@ fn prove_env_distributed(
     return Err("no workers".into());
   }
   let statement = EnvCheckStatement::new(env)?;
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  statement.claim.put(&mut claim_bytes);
   let input = statement.digest_key.clone();
   let toplevel = system.toplevel();
   let owned_keys: Vec<FxHashSet<Vec<G>>> = owners
@@ -1382,13 +1390,31 @@ fn prove_env_distributed(
   }
   let workers = owners.len();
   let jobs = if exec_jobs == 0 { workers } else { exec_jobs.min(workers) };
-  let callers = worker_callers(env, owners);
+  let scopes = worker_scopes(env, owners);
+  let callers = worker_callers(owners, &scopes);
   let groups = commit_order(&callers);
   let order: Vec<usize> = groups.iter().flatten().copied().collect();
   eprintln!(
     "[distributed] {workers} workers in {} groups, committed in order {order:?}, {jobs} executing at a time",
     groups.len()
   );
+  if plan_only {
+    for worker in 0..workers {
+      eprintln!(
+        "[distributed] plan: worker {worker} owns {} constants, scope {} constants, callers {:?}",
+        owners[worker].len(),
+        scopes[worker].len(),
+        callers[worker]
+      );
+    }
+    let largest = groups.iter().map(Vec::len).max().unwrap_or(0);
+    eprintln!(
+      "[distributed] plan: {} groups {:?}; the largest holds {largest} records at once in round one, plus one prefetched",
+      groups.len(),
+      groups.iter().map(Vec::len).collect::<Vec<_>>()
+    );
+    return Ok((claim_bytes, None));
+  }
 
   // One execution of worker `worker`: worker 0 the claimed entry, the
   // others their owned leaves, each in its own pointer namespace, over a
@@ -1466,8 +1492,6 @@ fn prove_env_distributed(
       output,
     })
   };
-  let mut claim_bytes: Vec<u8> = Vec::new();
-  statement.claim.put(&mut claim_bytes);
   std::thread::scope(|scope| {
     let mut pool = Workers {
       scope,

@@ -1993,6 +1993,127 @@ pub fn shard_static(
   ))
 }
 
+/// Lay the blocks out as `num_shards` contiguous ranges of a dependency
+/// order, cut at equal predicted cost, numbered from the top down: shard 0
+/// holds the blocks nothing depends on, the last shard the blocks
+/// everything depends on. `depends[b]` lists the blocks `b` references
+/// through any edge the byte scope follows, so a shard's reference closure
+/// lies in its own shard and higher-numbered ones. The distributed prover's
+/// static caller graph over such a manifest is acyclic, and its records
+/// commit one at a time in shard order. The blocks in `first` and their
+/// dependencies are laid out at the bottom of the order, ahead of
+/// everything else: the primitives the kernel reaches from any constant
+/// without a reference belong there. Blocks on a reference cycle keep the
+/// order they are first reached in; the report counts the edges that
+/// point from a shard to a lower-numbered one. No aggregation tree is
+/// attached.
+pub fn shard_static_ordered(
+  profile: &BlockProfile,
+  depends: &[Vec<u32>],
+  first: &[u32],
+  num_shards: usize,
+  out_path: Option<&str>,
+) -> Result<String, String> {
+  let n = profile.num_blocks();
+  if num_shards == 0 || num_shards > n {
+    return Err(format!(
+      "shard_static_ordered: {num_shards} shards for {n} blocks"
+    ));
+  }
+  let t0 = Instant::now();
+  let (shard_of, backward) =
+    ordered_layout(profile, depends, first, num_shards);
+  let mut manifest = ShardManifest::build(profile, &shard_of, num_shards);
+  seal_and_write(&mut manifest, out_path)?;
+  let costs = static_predicted_costs(profile, &shard_of, num_shards);
+  let (mut lo, mut hi, mut sum) = (f64::INFINITY, 0.0f64, 0.0f64);
+  for &c in &costs {
+    lo = lo.min(c);
+    hi = hi.max(c);
+    sum += c;
+  }
+  Ok(format!(
+    "blocks={} dependency_edges={} layout=ordered ({:.1?})\n{}\nbackward edges={backward}  predicted FFT/shard mean={:.3e} min={:.3e} max={:.3e} spread={:.2}x",
+    n,
+    depends.iter().map(Vec::len).sum::<usize>(),
+    t0.elapsed(),
+    manifest.summary(),
+    sum / num_shards as f64,
+    lo,
+    hi,
+    hi / lo.max(1.0),
+  ))
+}
+
+/// The shard of every block under the ordered layout (see
+/// [`shard_static_ordered`]) and the number of dependency edges that point
+/// to a lower-numbered shard, zero when `depends` is acyclic.
+fn ordered_layout(
+  profile: &BlockProfile,
+  depends: &[Vec<u32>],
+  first: &[u32],
+  num_shards: usize,
+) -> (Vec<u32>, usize) {
+  let n = profile.num_blocks();
+  // Post-order of a depth-first walk along `depends`: every block after the
+  // blocks it references, from the bottom of the environment upward.
+  let mut order: Vec<u32> = Vec::with_capacity(n);
+  let mut state = vec![0u8; n]; // 0 unseen, 1 on the stack, 2 emitted
+  for root in first.iter().copied().chain(0..n as u32) {
+    if state[root as usize] != 0 {
+      continue;
+    }
+    let mut stack: Vec<(u32, usize)> = vec![(root, 0)];
+    state[root as usize] = 1;
+    while let Some(top) = stack.len().checked_sub(1) {
+      let (b, next) = stack[top];
+      if let Some(&d) = depends[b as usize].get(next) {
+        stack[top].1 = next + 1;
+        if state[d as usize] == 0 {
+          state[d as usize] = 1;
+          stack.push((d, 0));
+        }
+      } else {
+        state[b as usize] = 2;
+        order.push(b);
+        stack.pop();
+      }
+    }
+  }
+  // Cut the order at equal predicted owned cost, every range non-empty;
+  // the range index counts from the bottom, the shard id from the top.
+  let weight = |b: u32| static_owned_weight(profile.block(b).serialized_size);
+  let total: f64 = order.iter().map(|&b| weight(b)).sum();
+  let mut shard_of = vec![0u32; n];
+  let mut range = 0usize;
+  let mut range_blocks = 0usize;
+  let mut cumulative = 0.0f64;
+  for (position, &b) in order.iter().enumerate() {
+    let remaining_blocks = n - position;
+    let remaining_ranges = num_shards - range;
+    let boundary = total * (range + 1) as f64 / num_shards as f64;
+    if range_blocks > 0
+      && range + 1 < num_shards
+      && (cumulative >= boundary || remaining_blocks == remaining_ranges)
+    {
+      range += 1;
+      range_blocks = 0;
+    }
+    cumulative += weight(b);
+    range_blocks += 1;
+    shard_of[b as usize] = (num_shards - 1 - range) as u32;
+  }
+  let backward: usize = (0..n as u32)
+    .map(|b| {
+      depends[b as usize]
+        .iter()
+        .filter(|&&d| shard_of[d as usize] < shard_of[b as usize])
+        .count()
+    })
+    .sum();
+  (shard_of, backward)
+}
+
 /// Read a `.ixprof`, partition into `num_shards` shards, and emit a manifest with
 /// per-shard cost metrics, foreign-block sets, and (delta-based) assumption
 /// roots. Optionally writes the manifest (`.ixes`). Returns a what-if report.
@@ -2798,6 +2919,36 @@ mod tests {
     // thin cross edge A->B
     b.delta_edge(addr(3), addr(4));
     b.finish()
+  }
+
+  /// Blocks 1 → 2 → 3 and 4 → 3 (`→` = depends on), equal sizes, two
+  /// shards: the bottom half {3, 2} is shard 1, the top half {1, 4} shard
+  /// 0, and every dependency points to the same or a higher-numbered shard.
+  #[test]
+  fn ordered_layout_puts_dependencies_in_later_shards() {
+    let mut b = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      b.block(addr(i), 100, 1000, 1, ops(100));
+    }
+    let profile = b.finish();
+    let depends = vec![vec![1], vec![2], vec![], vec![2]];
+    let (shard_of, backward) = ordered_layout(&profile, &depends, &[], 2);
+    assert_eq!(shard_of, vec![0, 1, 1, 0]);
+    assert_eq!(backward, 0);
+    for (block, deps) in depends.iter().enumerate() {
+      for &d in deps {
+        assert!(shard_of[d as usize] >= shard_of[block]);
+      }
+    }
+    // A block laid out first sinks to the bottom with its dependencies.
+    let (with_first, backward) = ordered_layout(&profile, &depends, &[3], 2);
+    assert_eq!(with_first, vec![0, 0, 1, 1]);
+    assert_eq!(backward, 0);
+    // Every shard is non-empty even when the cut lands on the last blocks.
+    let (four, _) = ordered_layout(&profile, &depends, &[], 4);
+    let mut seen = four.clone();
+    seen.sort_unstable();
+    assert_eq!(seen, vec![0, 1, 2, 3]);
   }
 
   #[test]

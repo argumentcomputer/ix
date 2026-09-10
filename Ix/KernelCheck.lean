@@ -195,17 +195,22 @@ opaque rsEnvExtractFFI :
     IO Unit
 
 /-- FFI: partition a `.ixe` with the STATIC strategy (no out-of-circuit
-    profiling): byte-balanced min-cut over the static walk-edge nets + a
-    predicted-FFT-cost rebalance post-pass (`ix_kernel::shard::shard_static`;
-    model constants documented there). A nonzero `numShards` fixes the count;
-    otherwise `ramGib` selects the static block-shape seed after the `.ixe` has
-    been profiled. Writes a `.ixes` manifest; prints the report to stderr. -/
+    profiling). Layout `mincut`: byte-balanced min-cut over the static
+    walk-edge nets + a predicted-FFT-cost rebalance post-pass
+    (`ix_kernel::shard::shard_static`; model constants documented there).
+    Layout `ordered`: contiguous ranges of a dependency order, shard 0 at
+    the top, so a shard's reference closure lies in its own shard and later
+    ones (`ix_kernel::shard::shard_static_ordered`; what the distributed
+    prover wants). A nonzero `numShards` fixes the count; otherwise `ramGib`
+    selects the static block-shape seed after the `.ixe` has been profiled.
+    Writes a `.ixes` manifest; prints the report to stderr. -/
 @[extern "rs_shard_env_static"]
 opaque rsShardEnvStaticFFI :
     @& String →                          -- .ixe path
     @& String →                          -- num_shards (N; "0" = score seed)
     @& String →                          -- max RAM GiB (used when N = 0)
     @& String →                          -- balance percent
+    @& String →                          -- layout: "mincut" or "ordered"
     @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 
