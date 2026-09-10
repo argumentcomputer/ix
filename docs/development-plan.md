@@ -55,6 +55,15 @@ environment. The CI gate is:
 nix flake check
 ```
 
+Crane's Rust build helper downloads its locked crates directly from
+`static.crates.io`. The flake overrides that helper's Nix Cargo fetcher because
+the crates.io API download route can reject CI requests with HTTP 403. The
+override preserves the upstream lockfile, crate checksums and TLS verification;
+it leaves the helper and Blake3 library output paths unchanged. A cached local
+check may conceal a failed source download. Use `nix build --rebuild` on the
+named fetch derivation to exercise the download itself while still allowing
+its build tools to come from the binary cache.
+
 For the configured local development environment, the complete build and
 compiled regression surface is:
 

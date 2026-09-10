@@ -318,7 +318,7 @@
       "version": "exact graph pinned by flake.lock",
       "current_role": "Nix, nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, the host C compiler/linker, GNU binutils readelf/objdump, GNU coreutils sha256sum, rsync, and the configured binary cache construct artifacts and run the Lean checks. The trust auditor uses the pinned Lake TOML parser for Cargo metadata.",
       "assumption": "Nix evaluates and realizes the locked derivations faithfully; compilers, linkers, builders, and fetched sources match their content hashes. The argumentcomputer Cachix key is trusted for signed substitution, with Nix store hashes still fixing content.",
-      "trust_basis": "Every flake node has a locked revision/narHash and the complete lockfile hash is checked by the ledger validator.",
+      "trust_basis": "Every flake node has a locked revision/narHash and the complete lockfile hash is checked by the ledger validator. The integrity-pinned flake redirects Crane's Rust helper crate downloads from the crates.io API to the official static.crates.io endpoint, retaining the upstream Cargo lockfile, SHA-256 checksums, TLS verification, and fixed-output identities.",
       "retirement": "This is build/supply-chain trust rather than a target-language extern. It shrinks through reproducible bootstrap artifacts and diverse reproduction; it leaves the semantic TCB when Gen 1 artifacts are address-exactly reproduced by an independent path."
     },
     {
@@ -592,7 +592,7 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "ef9a2e75c6ca1f8c0a0196edee4ccd2b11b44b458b463058e75b45a9281aa03f",
+      "flake.nix": "9653f90d5e1dbf3a51b5da8519aab3343ceaeb3e590c626d02ec7c7883c72a6d",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
       "lakefile.lean": "aff8cc75865757bfcde3f30415b395806a5829ed33d827cf72f8602024b7e2e8",

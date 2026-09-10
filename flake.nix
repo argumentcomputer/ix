@@ -40,7 +40,44 @@
     lean4-nix,
     blake3-lean,
     ...
-  }:
+  }: let
+    # Crane's own Rust helper uses nixpkgs' Cargo fetcher, independently of
+    # Crane's normal static.crates.io registry. The crates.io API endpoint can
+    # reject CI downloads; change only that host, retaining TLS verification,
+    # the upstream lockfile/checksums, and the existing fixed-output paths.
+    crane = blake3-lean.inputs.crane;
+    craneWithStaticCrates =
+      crane
+      // {
+        mkLib = pkgs:
+          (crane.mkLib pkgs).overrideScope (_final: prev: {
+            craneUtils = prev.craneUtils.overrideAttrs (old: {
+              cargoDeps =
+                (pkgs.rustPlatform.importCargoLock.override {
+                  fetchurl = args:
+                    pkgs.fetchurl (args
+                      // {
+                        url =
+                          pkgs.lib.replaceStrings
+                          ["https://crates.io/api/v1/crates/"]
+                          ["https://static.crates.io/crates/"]
+                          args.url;
+                      });
+                }) {
+                  lockFile = old.cargoDeps.lockFile;
+                };
+            });
+          });
+      };
+    # Reuse the pinned upstream flake and all its other inputs unchanged.
+    blake3WithStaticCrates =
+      (import (blake3-lean.outPath + "/flake.nix")).outputs
+      (blake3-lean.inputs
+        // {
+          self = blake3-lean;
+          crane = craneWithStaticCrates;
+        });
+  in
     flake-parts.lib.mkFlake {inherit inputs;} {
       systems = [
         "aarch64-darwin"
@@ -148,7 +185,7 @@
         lakeDeps = lake2nix.buildDeps {
           src = leanSrc;
           depOverrideDeriv = {
-            Blake3 = blake3-lean.packages.${system}.rust;
+            Blake3 = blake3WithStaticCrates.packages.${system}.rust;
           };
         };
         leanBuildInputs = [
