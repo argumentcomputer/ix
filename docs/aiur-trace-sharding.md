@@ -593,7 +593,7 @@ Round 2 needs, per shard, the stage-1 traces, the lookup witness, and
 the stage-1 LDE and Merkle tree (or the means to recompute them). What
 is held across the barrier determines the host peak. `Retention` in
 `multi_stark::batch` names the policy; `prove_batch_with` takes it with
-a witness factory. Two policies are implemented and a third is planned:
+a witness factory. Two policies are implemented:
 
 - **Retain.** Build every shard's witness, release the record, and hold
   every shard's committed stage 1 across the barrier. Nothing is
@@ -606,25 +606,22 @@ a witness factory. Two policies are implemented and a third is planned:
   and recompute the stage-1 LDE and Merkle tree on the GPU; the
   recommitted header must equal the one in the preamble, which the driver
   asserts.
-  Cost: one extra stage-1 commit per shard, roughly a quarter to a third
-  of the shard's GPU time. Host peak: the record plus the traces and
-  lookup witnesses of the shards being built *concurrently* (one per
-  active GPU lane), not of all K shards.
-- **Park (future work).** Keep stage-1 traces, lookup witness and Merkle
-  tree (not the LDE) in pinned host memory across the barrier and
-  recompute only the LDE in round 2. The pinned-host spill machinery of
-  multi-stark #79 is in the pinned checkout; parking a batch's round-one
-  state on it is not yet integrated into the batch driver. Host peak: the
-  record plus the parked state of every shard in the batch plus the
-  concurrent proving workspaces. Admissible only when the orchestrator
-  has budgeted that aggregate explicitly; on the 1.5 TiB metal boxes it
-  usually is, on a small GPU host it usually is not.
+  Cost: one extra witness build and stage-1 commit per shard. On the
+  2026-09-09/10 Init measurements (64-core Xeon 6975P-C) the commit is
+  ~20 % of STARK time and the rebuild ~5 %, under 1 s per shard: the
+  witness builder is per-row parallel and beats a copy of the witness, so
+  holding witnesses across the barrier instead (measured on a quarter of
+  Init in 21 shards: 4.5 s per clone against 0.9 s per rebuild, and the
+  held witnesses at 10× the record's bytes) does not pay on either axis.
+  Host peak: the record plus the traces and lookup witnesses of the
+  shards being built *concurrently* (one per active lane), not of all K
+  shards. This is the only policy whose peak does not grow with K, and so
+  the one whole-environment batches use.
 
-Under Regenerate or Park the 400 GiB-class STARK-phase host peaks of
-today disappear, because no full-execution LDE is ever resident on the
-host. The earlier draft claimed "record plus one shard" unconditionally;
-that holds only under Regenerate with one lane, and the policy must be
-stated.
+Under Regenerate the 400 GiB-class STARK-phase host peaks of today
+disappear, because no full-execution LDE is ever resident on the host;
+the peak is the record plus one shard per lane. The recommit is the LDE
+itself, which no policy short of Retain avoids.
 
 ## 8. Recursion and aggregation
 
@@ -773,8 +770,7 @@ seams.
    - `prove_multiple_claims`/`verify` become the `K = 1` compositions; the
      byte-level proof pins change because the transcript prefix changes,
      so this is a protocol bump.
-   - CUDA: the Regenerate policy needs nothing new; Park reuses the
-     pinned-host spill path.
+   - CUDA: the Regenerate policy needs nothing new.
 2. **Aiur: memory boundary flags and lookups, shard planner**
    (`crates/aiur/src/memory.rs`, `synthesis.rs`, `trace.rs`, new
    `shard.rs`).
