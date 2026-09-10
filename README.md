@@ -169,6 +169,13 @@ allocation, reverses in place, and fully releases the result. Source, physical
 IxIR₂, byte-memory, and one linked native process agree across eight inputs;
 203 malformed-input calls reject without changing arena bytes.
 
+The [first N3 scalar slice](docs/source-native-scalar.md) compiles functions
+with two runtime Nat arguments, exact arithmetic, branches/joins and direct
+helpers. Universal contracts connect checked erased source to emitted ELF,
+including finite stack sufficiency and overflow fallback. Five source fixtures
+pass 95 object executions and 830 linked native calls. General physical IxIR₂
+CFG selection remains an N3 follow-up.
+
 The [general credit refinement](docs/credit-refinement.md) proves matching
 logical and physical execution for the full IxIR₂ instruction language under
 both credit policies. It covers every execution prefix, independently chosen

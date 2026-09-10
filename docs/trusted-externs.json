@@ -417,7 +417,8 @@
         "run_to_return composes every finite successful call-free typed stream with physical RET under an explicit readable caller slot",
         "run_with_calls composes nested direct/tail calls under concrete SafeTrace conditions, preserves mapped active return slots and retains or clears residual byte differences correctly",
         "ELFLink applies actual parsed PC32 relocations with signed overflow checks, proves the S+A-P following-instruction equation, revalidates complete linked text and proves named runtime CALL transfer",
-        "the actual N2 source compiler reaches byte execution of its emitted object pair for every admitted runtime list"
+        "the actual N2 source compiler reaches byte execution of its emitted object pair for every admitted runtime list",
+        "N3's first scalar source slice composes checked erased-source application, exact Nat arithmetic, generic block/frame/call contracts and finite stack sufficiency into actual ELF execution for every admitted runtime Word pair; general physical IxIR2 selection remains open"
       ],
       "trust_basis": [
         "one total pattern-match case per typed instruction and terminator constructor",
@@ -428,7 +429,8 @@
         "the source-native-runtime check independently decodes each baseline/counter-fold function/release pair, checks exact .text bytes and leaf restrictions, then links each pair once for eight runtime inputs and 203 malformed calls in one process; both variants pass 20 corruption regressions",
         "E1's independent decoder and byte evaluator have twelve public axiom fences; check-x86-bytes runs 31921 instruction cases, 2000 patched branches, negative/fault/corruption checks, four complete streams and eight actual source-selected runtime main/release inputs",
         "E2 adds 23 public axiom fences, kernel-evaluated nested/reused-call safety examples and the integrity-pinned check-x86-streams gate; all production object emitters use Stream.encode and ELF.writeChecked",
-        "C3 independently reconstructs two unchanged upstream closed Nat call objects and checks source/physical results, complete baseline release, exact Word representation, supplied-state call certificates and native ABI observations; general N3/F1 contracts remain open"
+        "C3 independently reconstructs two unchanged upstream closed Nat call objects and checks source/physical results, complete baseline release, exact Word representation, supplied-state call certificates and native ABI observations; broader N3/F1 contracts remain open",
+        "the scalar source gate checks five full source compilations, 45 source inputs, 95 object executions, admission/conversion/capacity negatives, 25 artifact corruptions and 830 linked calls with ordinary and guarded stacks; fifteen axiom fences cover universal contracts rather than per-input native certificates"
       ],
       "tests": [
         "Compilatrix.X86.Encode.Examples arithmeticProgramBytesAccepted",
@@ -456,7 +458,14 @@
         "scripts/CheckX86Streams.lean",
         "scripts/CheckSourceNativeUpstream.lean",
         "Compilatrix.X86.NatCalls.Execution.objectReturns",
-        "Compilatrix.X86.NatCalls.sourceObjectRefines"
+        "Compilatrix.X86.NatCalls.sourceObjectRefines",
+        "Compilatrix.X86.Scalar.Evaluates.native",
+        "Compilatrix.X86.Scalar.Checked.function_total",
+        "Compilatrix.X86.Scalar.Stack.rank_capacity",
+        "Compilatrix.X86.ObjectEval.run_safeSteps",
+        "Compilatrix.X86.Scalar.Source.raw_evaluates",
+        "Compilatrix.X86.Scalar.Source.Compiled.sourceReturns",
+        "scripts/CheckSourceNativeScalar.lean"
       ],
       "retirement": {
         "milestone": "E2 delivered for certified production outputs; unchecked API completeness remains outside that claim",
@@ -596,10 +605,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "2803441f55d7f6c8e79591a4d4744e9b1add3b9fa43a39fadc06868e6101336e",
+      "flake.nix": "4b85ff6d19b2917625a8febc7507ce0e45d06ed8464d31954e3a00da894693b7",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "aff8cc75865757bfcde3f30415b395806a5829ed33d827cf72f8602024b7e2e8",
+      "lakefile.lean": "3d5d93dbf809910e7983053caf8b3248fd9e4be07dc11297b4210147774d4fbc",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -636,6 +645,10 @@
       "fixtures/source-call-reuse/expected.json": "c4fd62bc45f9d89a65ce0465fd2d5639ccf4e0d22dbfcef6486b71ca524a29b8",
       "fixtures/source-unique-reuse/expected.json": "9e0dcc02e80cc48303bf28abd361cc1415e2b1f867503fa641d555d876dcd358",
       "Compilatrix/Tools/UpstreamNativeCheck.lean": "29ac9b3267e2a1901fab5bea9992ec829ecc767e0017e6c5328065d0ed570256",
+      "Compilatrix/Tools/ScalarNativeCheck.lean": "50a6d20577ff7b61fa522fd61e792582ce8dce4e6800e870ca52985d1c7a55df",
+      "scripts/CheckSourceNativeScalar.lean": "c8afa27d9cc631120d450f8d95ace0a43b55aab86f111c0b52496401ad64f612",
+      "fixtures/source-native-scalar/expected.json": "2b745d79663b7371ddfb0741ce0dc46957f9d72eff23e0d8a116ad350f644e19",
+      "fixtures/source-native-scalar/native_harness.c": "2649afceb5433daa266ed3bf14d49d79aa7576ad7c72368e593c55ff238012e7",
       "scripts/CheckSourceNativeUpstream.lean": "374a1b7b9dd7f7c804fc83185c5df81a11533a020732bd2008d67a998b402fb0",
       "fixtures/source-native-upstream/expected.json": "e38186879fb467c7dcf4c0000bf686d05320f122a8b0c9466f354b9225fac3e2",
       "fixtures/source-native-upstream/native_harness.c": "60179668e270dfbeb712f0f56b4e523b6923242856149930cc1d0f2350ce624c",

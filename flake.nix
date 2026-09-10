@@ -115,6 +115,7 @@
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
             ./SourceNativeUpstream.lean
+            ./SourceNativeScalar.lean
             ./benchmarks
             ./SourceBorrow.lean
             ./SourceBorrowRuntime.lean
@@ -127,6 +128,7 @@
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
             ./fixtures/source-native-upstream
+            ./fixtures/source-native-scalar
             ./fixtures/source-borrow
             ./fixtures/source-borrow-runtime
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
@@ -160,6 +162,7 @@
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
             ./SourceNativeUpstream.lean
+            ./SourceNativeScalar.lean
             ./benchmarks
             ./SourceBorrow.lean
             ./SourceBorrowRuntime.lean
@@ -172,6 +175,7 @@
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
             ./fixtures/source-native-upstream
+            ./fixtures/source-native-scalar
             ./fixtures/source-borrow
             ./fixtures/source-borrow-runtime
             ./fixtures/x86/native_harness.c
@@ -462,6 +466,25 @@
           '';
         };
 
+        sourceNativeScalarCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "source-native-scalar";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-native-scalar
+            ./.lake/build/bin/check-source-native-scalar \
+              --fixture ./.lake/build/bin/source-native-scalar \
+              --expected ${auditSrc}/fixtures/source-native-scalar/expected.json \
+              --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-scalar/native_harness.c"}
+          '';
+        };
+
         cakeBootstrap = pkgs.stdenv.mkDerivation {
           pname = "cakeml-benchmark-bootstrap";
           version = "3479";
@@ -576,6 +599,7 @@
           source-native-unique = sourceNativeUniqueCheck;
           source-native-runtime = sourceNativeRuntimeCheck;
           source-native-upstream = sourceNativeUpstreamCheck;
+          source-native-scalar = sourceNativeScalarCheck;
           source-borrow = sourceBorrowCheck;
           source-borrow-runtime = sourceBorrowRuntimeCheck;
           tests = testsCheck;

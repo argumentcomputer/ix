@@ -62,6 +62,10 @@ lean_exe «source-native-runtime» where
 lean_exe «source-native-upstream» where
   root := `SourceNativeUpstream
 
+/- Runtime scalar arguments, exact Nat arithmetic, branches, joins, and calls. -/
+lean_exe «source-native-scalar» where
+  root := `SourceNativeScalar
+
 /- Checked borrowed calls from accepted source, with complete RC observations. -/
 lean_exe «source-borrow» where
   root := `SourceBorrow
@@ -118,6 +122,10 @@ lean_exe «check-source-native-runtime» where
 lean_exe «check-source-native-upstream» where
   srcDir := "scripts"
   root := `CheckSourceNativeUpstream
+
+lean_exe «check-source-native-scalar» where
+  srcDir := "scripts"
+  root := `CheckSourceNativeScalar
 
 lean_exe «check-source-borrow» where
   srcDir := "scripts"

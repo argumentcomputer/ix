@@ -119,6 +119,8 @@ import Compilatrix.X86.ScalarApply
 import Compilatrix.X86.Select
 import Compilatrix.X86.PipelineSim
 import Compilatrix.X86.ValidatedScalar
+import Compilatrix.X86.ScalarSourceObject
+import Compilatrix.X86.ScalarSources
 import Compilatrix.Coverage.StdContact
 import Compilatrix.X86.SelectExamples
 import Compilatrix.X86.Encode

@@ -70,11 +70,11 @@ compiled regression surface is:
 ```sh
 lake build Compilatrix tests catalog-contact x86-object-fixture \
   source-coverage source-recursion source-call-reuse source-unique-reuse \
-  source-native-unique source-native-runtime source-native-upstream source-borrow source-borrow-runtime \
+  source-native-unique source-native-runtime source-native-upstream source-native-scalar source-borrow source-borrow-runtime \
   check-trusted-externs check-x86-encoder check-x86-bytes check-x86-streams \
   check-x86-object check-source-coverage check-source-recursion \
   check-source-call-reuse check-source-unique-reuse \
-  check-source-native-unique check-source-native-runtime check-source-native-upstream check-source-borrow \
+  check-source-native-unique check-source-native-runtime check-source-native-upstream check-source-native-scalar check-source-borrow \
   check-source-borrow-runtime check-tools-tests benchmark
 ./.lake/build/bin/tests
 ./.lake/build/bin/check-trusted-externs --root .
@@ -105,6 +105,9 @@ lake build Compilatrix tests catalog-contact x86-object-fixture \
   --fixture .lake/build/bin/source-native-upstream \
   --cc gcc --harness fixtures/source-native-upstream/native_harness.c
 ./.lake/build/bin/benchmark analysis-self-check
+./.lake/build/bin/check-source-native-scalar \
+  --fixture .lake/build/bin/source-native-scalar \
+  --cc gcc --harness fixtures/source-native-scalar/native_harness.c
 ./.lake/build/bin/check-source-borrow-runtime --fixture .lake/build/bin/source-borrow-runtime
 ```
 

@@ -1,5 +1,6 @@
 import Compilatrix.Sim
 import Compilatrix.X86.NatCallsSim
+import Compilatrix.X86.ScalarSourceObject
 import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.NativeSim
 import Compilatrix.UniqueReuse.RuntimeNativeSim
@@ -7181,3 +7182,60 @@ and explicit execution certificates compose with the original source bridge. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.X86.NatCalls.sourceObjectRefines
+
+/-! N3's first scalar slice uses universal source/body, frame, call and
+object contracts. Source-indexed theorems retain the existing hash boundary. -/
+
+/-- info: 'Compilatrix.X86.ExactNat.encode_some_iff' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.X86.ExactNat.encode_some_iff
+
+/-- info: 'Compilatrix.X86.ExactNat.add_some_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ExactNat.add_some_iff
+
+/-- info: 'Compilatrix.X86.ExactNat.sub_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ExactNat.sub_toNat
+
+/-- info: 'Compilatrix.IxIR0.NatArithmetic.body_applies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR0.NatArithmetic.body_applies
+
+/-- info: 'Compilatrix.IxIR0.NatArithmetic.sub_applies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR0.NatArithmetic.sub_applies
+
+/-- info: 'Compilatrix.X86.Scalar.Evaluates.native' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Evaluates.native
+
+/-- info: 'Compilatrix.X86.Scalar.Checked.function_total' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Checked.function_total
+
+/-- info: 'Compilatrix.X86.Scalar.Stack.rank_capacity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Stack.rank_capacity
+
+/-- info: 'Compilatrix.X86.ObjectEval.run_safeSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ObjectEval.run_safeSteps
+
+/-- info: 'Compilatrix.X86.Scalar.RootRun.objectResult' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.RootRun.objectResult
+
+/-- info: 'Compilatrix.X86.Scalar.Source.programMatches_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Source.programMatches_sound
+
+/-- info: 'Compilatrix.X86.Scalar.Source.raw_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Source.raw_evaluates
+
+/-- info: 'Compilatrix.X86.Scalar.Source.Selected.sourceApplies' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Source.Selected.sourceApplies
+
+/-- info: 'Compilatrix.X86.Scalar.Source.Compiled.nativeReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Source.Compiled.nativeReturns
+
+/-- info: 'Compilatrix.X86.Scalar.Source.Compiled.sourceReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Source.Compiled.sourceReturns

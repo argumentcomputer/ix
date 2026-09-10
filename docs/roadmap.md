@@ -46,9 +46,9 @@ can proceed independently when their prerequisites are available.
 
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
-| [N3: compositional native lowering](#n3-compositional-native-lowering) | next; E1 prerequisite delivered | Compile a declared class of functions with runtime arguments, branches, joins, and direct calls using reusable instruction/block contracts and an explicit Nat/Word representation. Activate F1 and A1 for the admitted calls and allocation needs. |
+| [N3: compositional native lowering](#n3-compositional-native-lowering) | active; first scalar source slice delivered | Runtime arguments, exact arithmetic, branches/joins, helper calls, universal contracts and complete ELF execution are delivered at checked erased source. General physical IxIR₂ selection remains next. |
 | [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
-| [F1: finite heap and stack](#f1-finite-heap-and-stack) | next | With broader native allocation or non-leaf calls. Sufficient occupied-byte and stack capacity rules out resource failure for a named source family. |
+| [F1: finite heap and stack](#f1-finite-heap-and-stack) | active for scalar stack; heap extension next | N3 proves sufficient finite stack for nonrecursive scalar calls. General occupied-heap capacity and allocating calls remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | next | Before independent IxIR₂ persistence, cache keys, or self-hosted intermediate-root comparison. Land the strict codec and exact versioned preimages. |
 | [I3: modular source certification](#i3-modular-source-certification) | deferred | Wake before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. Compose independently checked units and reuse unaffected evidence after a dependency edit. |
 | [A1: allocation and spill validation](#a1-allocation-and-spill-validation) | deferred | Wake when an actual selected CFG needs general allocation, moves, or spills. Validate value flow through the allocated program, including calls and joins. |
@@ -131,6 +131,14 @@ Acceptance:
   measurement gate to activate M2d and further recursion/runtime extensions.
 
 ### N3: compositional native lowering
+
+The [first scalar source slice](source-native-scalar.md) delivers two runtime
+Nat arguments, exact arithmetic with explicit overflow fallback, immutable
+lets, branches/joins, direct helpers, and reusable contracts for every
+accepted function. Finite stack sufficiency and complete ELF execution are
+proved. Five synthetic source families pass full source compilation and native
+gates. This attachment consumes checked erased source; runtime selection and
+simulation of general physical IxIR₂ CFGs remain open.
 
 C3's [closed Nat call selector](source-native-upstream.md) provides structural
 known-closure specialization and explicit execution certificates. It does not

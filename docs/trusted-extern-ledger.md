@@ -458,6 +458,24 @@ actual object text, including parsed provenance, physical returns and complete
 reclamation. Reference-ISA agreement and system linker/loader assumptions
 remain under the scoped specification entries above.
 
+## Runtime scalar source functions
+
+The [first N3 slice](source-native-scalar.md) adds no FFI, oracle, or axiom.
+Fifteen fences cover exact Nat/Word arithmetic, canonical Nat recursor
+semantics, structural source checking, generic scalar totality and lowering,
+finite stack sufficiency, and complete object execution. Pure contracts retain
+only the existing logical axioms; source-indexed endpoints retain the existing
+addressed-BLAKE3 exception. Compilation does not consume per-input native runs.
+
+The independent gate pins five synthetic source/graph/text identities and
+compares two complete fresh artifact sets. It checks 45 source inputs, 95
+object executions, admission/conversion/capacity negatives, 25 corruptions,
+and 830 linked native calls including guarded stacks. The checker, harness,
+and reviewed report are integrity-pinned. Native selection attaches to checked
+erased source; general physical IxIR₂ selection, owned-heap capacity, and
+allocating native calls remain open. The C stack bridge is test infrastructure,
+not a new Lean FFI or source oracle. ISA and system-loader assumptions remain.
+
 ## Closed borrowed calls
 
 [B1](source-borrow.md) adds no FFI, modeled oracle, target runtime, or axiom.
