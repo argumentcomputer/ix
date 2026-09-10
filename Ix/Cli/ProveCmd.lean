@@ -237,6 +237,58 @@ def reportPartition (proven : Array (Array Address × Nat)) (planned : Nat) : IO
       ({proven.size - planned} from splits) — re-shard with this partition to \
       skip the splits next run"
 
+private def runShardPipeline (p : Cli.Parsed) (ixe manifest : String)
+    (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
+    (maxRamBytes : Nat) (indexDir? : Option System.FilePath) : IO UInt32 := do
+  let (ixonEnv, shards) ← match ← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe with
+    | .error e => IO.eprintln e; return 1
+    | .ok value => pure value
+  let selected ← match (p.flag? "shard").map (·.as! Nat), (p.flag? "shards").map (·.as! String) with
+    | some k, none => pure #[k]
+    | none, some s => match Ix.Cli.CheckCmd.parseShardSelection s with
+      | .error e => IO.eprintln e; return 1
+      | .ok ids => pure ids
+    | none, none => pure (Array.range shards.size)
+    | some _, some _ => IO.eprintln "use only one of --shard and --shards"; return 1
+  if let some k := selected.find? (· ≥ shards.size) then
+    IO.eprintln s!"shard {k} out of range ({shards.size} shards)"
+    return 1
+  let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+    | .error e => IO.eprintln e; return 1
+    | .ok handle => pure handle
+  let some verifyIdx := compiled.getFuncIdx `verify_claim
+    | IO.eprintln "verify_claim entrypoint missing"; return 1
+  let recursion ← match ShardProofIndex.buildRecursionBackend aiurSystem verifyIdx with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
+  let owned := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
+  let storePath ← StoreIO.toIO Store.storeDir
+  let plans ← StoreIO.toIO (Store.cacheDir "shard-splits")
+  -- `id<TAB>measuredPeakBytes` per selected leaf: the native pipeline balances
+  -- its NUMA lanes by measured prover peak when the manifest carries one
+  -- (`ix shard refine`), and falls back to block counts otherwise.
+  let peaks : Array Nat ← do
+    match Ix.Cli.CheckCmd.parseIxesManifest (← IO.FS.readBinFile manifest) with
+    | .ok view => pure (selected.map fun k =>
+        match view.shardIds.findIdx? (· == k) with
+        | some i => (view.measuredPeakBytes[i]?).getD 0
+        | none => (view.measuredPeakBytes[k]?).getD 0)
+    | .error _ => pure (selected.map fun _ => 0)
+  let ids := String.intercalate "\n"
+    ((selected.zip peaks).toList.map fun (k, peak) => s!"{k}\t{peak}")
+  match ← Aiur.shardPipeline aiurSystem recursion.system envHandle
+      (Ix.Cli.CheckCmd.addrListsBlob (selected.map (shards[·]!)))
+      (Ix.Cli.CheckCmd.addrListsBlob (selected.map (owned[·]!))) ids
+      verifyIdx recursion.aggrIdx maxRamBytes storePath.toString
+      (indexDir?.map (·.toString) |>.getD "") plans.toString
+      (p.hasFlag "lookahead") (p.hasFlag "skip-proven") (p.hasFlag "keep-going") with
+  | .error e => IO.eprintln s!"[prove] {e}"; return 1
+  | .ok summary =>
+    IO.eprintln s!"[prove] {summary}; original manifest claims preserved"
+    if let some out := (p.flag? "out-ixes").map (·.as! String) then
+      IO.FS.writeBinFile out (← IO.FS.readBinFile manifest)
+    return 0
+
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Streamed `[texray] <span>: <dur> ── RAM Δ/peak` lines on stderr as
   -- each `aiur/` / `stark/` span closes: the per-phase wall + RSS
@@ -245,10 +297,19 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let keepGoing := p.hasFlag "keep-going"
   -- Same units as `ix shard --max-ram`: the per-shard prover budget the
   -- partition was sized against, re-checked here against each shard's
-  -- measured peak. 0 = detect (85% of `MemAvailable`, the check batch's
-  -- gate policy — see `shardProveWithEnv`).
+  -- predicted peak. The legacy path detects a budget when this is 0
+  -- (see `shardProveWithEnv`); split healing requires an explicit budget.
   let maxRamBytes :=
     ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * gibBytes
+  let healSplits := p.hasFlag "heal-splits" || p.hasFlag "lookahead"
+  if healSplits then
+    if !(p.hasFlag "ixe" && p.hasFlag "ixes") || p.hasFlag "exec-only" ||
+        p.hasFlag "claim" || !(p.variableArgsAs! String).isEmpty then
+      IO.eprintln "--heal-splits/--lookahead require --ixe and --ixes, without --exec-only, --claim or names"
+      return 1
+    if maxRamBytes == 0 then
+      IO.eprintln "--heal-splits/--lookahead require explicit positive --max-ram (GiB)"
+      return 1
   let execOnly := p.hasFlag "exec-only"
   let outIxes := (p.flag? "out-ixes").map (·.as! String)
   -- The shard-proof index: written for every proof this run persists,
@@ -277,6 +338,9 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
     | .ok c => pure c
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
+  if healSplits then
+    return ← runShardPipeline p (p.flag! "ixe" |>.as! String)
+      (p.flag! "ixes" |>.as! String) aiurSystem compiled maxRamBytes indexDir?
   let runOne := proveOne aiurSystem compiled
   match ixePath, (p.flag? "ixes").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
   | some ixe, some manifest, some k =>
@@ -373,9 +437,11 @@ def proveCmd : Cli.Cmd := `[Cli|
     "shards" : String;  "With --ixes and no --shard: prove only these leaves — `K`, `a-b`, or a comma list of those — in one process (one env load); every other leaf is carried over unchanged by --out-ixes."
     "out-ixes" : String; "Write the partition this run actually proved — splits included — as a `.ixes` manifest to this path: the manifest `ix verify --ixes` checks these proofs against, and the one the next run of this env should start from. Skipped if any shard failed."
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
+    "heal-splits";      "With --ixe/--ixes: split oversized shards privately and prove flat joins back to each original CheckEnv claim. Requires explicit positive --max-ram; --out-ixes keeps the original manifest."
+    "lookahead";        "Enable split healing and execute at most one next shard while the current proof runs. Check each executed record's predicted proving peak against --max-ram before proving it."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
-    "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."
+    "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Required with --heal-splits/--lookahead; otherwise omit to detect 85% of the machine's available RAM."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

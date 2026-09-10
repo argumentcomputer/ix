@@ -59,6 +59,7 @@ import Tests.AggrActivation
 import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
+import Tests.ShardPipeline
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
@@ -208,6 +209,7 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("shard-pipeline", Tests.ShardPipeline.suite),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

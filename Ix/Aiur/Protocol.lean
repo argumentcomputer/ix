@@ -211,13 +211,16 @@ proving, and persistence. `proofHexes` is one store address per line;
 `reproveSlotCode` is zero for a full run and `slot + 1` for a targeted replay;
 the latter loads and verifies only the target's immediate cached children.
 When `writeOutputs` is false, proofs are hashed but neither the store nor cache
-is changed. Returns the root or replayed proof address. -/
+is changed. Returns the root or replayed proof address. With `verifyOnly`, the
+run stops after the parallel proof import — every shard claim reconstructed
+natively and every supplied proof bound to its shard and verified, exactly one
+per shard — returning the empty string (`ix verify --ixes` composed verdict). -/
 @[extern "rs_aiur_stage2_aggregate"]
 opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
   (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
-  (useCache writeOutputs : Bool) :
+  (useCache writeOutputs verifyOnly : Bool) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
@@ -310,6 +313,18 @@ opaque proofToAdviceBytes : @& AiurSystem →
   @& Array G → @& Proof → Except String ByteArray
 
 end AiurSystem
+
+/-- Native manifest-leaf proving with private split healing. `blocks` and
+`owned` use the counted address-list format; `ids` are newline-separated.
+`maxRam` is a positive byte count limiting the predicted proving peak of
+each executed query record. Oversized records are dropped and split.
+Only original leaf proofs are printed. An empty index path disables indexing.
+Every split is rejoined canonically and checked against the original claim. -/
+@[extern "rs_aiur_shard_pipeline"]
+opaque shardPipeline : @& AiurSystem → @& AiurSystem → @& EnvHandle →
+  @& ByteArray → @& ByteArray → @& String → @& Nat → @& Nat →
+  @& Nat → @& String → @& String → @& String →
+  Bool → Bool → Bool → IO (Except String String)
 
 /-- Write a `.ixes` manifest for an EXPLICIT partition — the block lists
     a run actually produced (splits included) rather than a planner's

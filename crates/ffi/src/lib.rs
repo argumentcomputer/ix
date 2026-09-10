@@ -20,6 +20,7 @@ pub mod lean_env;
   not(all(target_os = "macos", target_arch = "aarch64"))
 ))]
 pub mod lean_iroh;
+pub mod numa;
 pub mod texray;
 pub mod unsigned;
 

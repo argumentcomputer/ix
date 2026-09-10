@@ -11,6 +11,8 @@ module
 public import Ix.Address
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
+public import Ix.Aggr
+public import Ix.MultiStark
 public import Ix.Claim
 public import Ix.Ixon
 public import Ix.Store
@@ -19,6 +21,42 @@ public import Ix.IxVM.ClaimHarness
 public section
 
 namespace Ix.Cli.ShardProofIndex
+
+structure RecursionBackend where
+  system : Aiur.AiurSystem
+  aggrIdx : Aiur.Bytecode.FunIdx
+  allowed : ByteArray
+
+def buildRecursionBackend (ixvm : Aiur.AiurSystem) (verifyIdx : Nat)
+    (parameters : MultiStark.RecursionParameters := MultiStark.defaultRecursionParameters) :
+    Except String RecursionBackend := do
+  let top ← Aggr.ixAggr.mapError (fun e => s!"recursion toplevel: {e}")
+  let compiled ← top.compileWithGroups Aggr.functionGroups
+    |>.mapError (fun e => s!"recursion compilation: {e}")
+  let some aggrIdx := compiled.getFuncIdx `ix_aggr
+    | throw "recursion entrypoint missing"
+  let system := MultiStark.buildRecursionSystem compiled.bytecode parameters
+  pure { system, aggrIdx, allowed := Aggr.allowedBlob ixvm.vkBytes verifyIdx system.vkBytes aggrIdx }
+
+/-- Authenticate the backend from the proof. Healed CheckEnv leaves bind the
+same claim bytes through the configured recursion system and allowed keys. -/
+def verifyProof (ixvm : Aiur.AiurSystem) (verifyIdx : Nat)
+    (claim : Ix.Claim) (proof : Aiur.Proof)
+    (recursion? : Option RecursionBackend := none)
+    (parameters : MultiStark.RecursionParameters := MultiStark.defaultRecursionParameters) :
+    Except String Unit := do
+  let bytes := Ix.Claim.ser claim
+  let input := IxVM.ClaimHarness.packedDigestKey (Address.blake3 bytes)
+  match ixvm.verify (Aiur.buildClaim verifyIdx input #[]) proof with
+  | .ok () => pure ()
+  | .error rawError =>
+    let .checkEnv _ _ := claim | throw s!"IxVM verification failed: {rawError}"
+    let backend ← match recursion? with
+      | some backend => pure backend
+      | none => buildRecursionBackend ixvm verifyIdx parameters
+    backend.system.verify
+      (Aiur.buildClaim backend.aggrIdx (Aggr.pubInput backend.allowed bytes) #[]) proof
+      |>.mapError (fun e => s!"neither IxVM nor healed CheckEnv verification succeeded: {e}")
 
 /-- The index directory: the global `~/.ix/cache/shard-proofs`, or a hermetic
     root for tests. -/
@@ -48,12 +86,13 @@ def writeAddress (dir : System.FilePath) (digest addr : Address) : IO Unit := do
 
 /-- Native verification of a persisted shard-proof wrapper against the claim
     the caller expects: the wrapper must decode, bundle exactly `expected`,
-    and its proof must verify under `verify_claim`'s public input for that
-    claim (the same check `ix verify --shard K` performs). -/
+    and its proof must verify as either an IxVM or healed CheckEnv proof. -/
 def verifyWrapper (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
     (expected : Ix.Claim) (proofAddr : Address) : IO (Except String Unit) := do
   try
     let bytes ← StoreIO.toIO (Store.read proofAddr)
+    if Address.blake3 bytes != proofAddr then
+      return .error s!"wrapper {proofAddr} has a different content digest"
     match Ixon.Proof.de bytes with
     | .error e => pure (.error s!"wrapper {proofAddr} does not decode: {e}")
     | .ok wrapper =>
@@ -64,11 +103,7 @@ def verifyWrapper (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplev
       | .ok proof =>
         let some funIdx := compiled.getFuncIdx `verify_claim
           | return .error "`verify_claim` entrypoint missing from compiled toplevel"
-        let input := IxVM.ClaimHarness.packedDigestKey
-          (Address.blake3 (Ix.Claim.ser wrapper.claim))
-        match aiurSystem.verify (Aiur.buildClaim funIdx input #[]) proof with
-        | .ok () => pure (.ok ())
-        | .error e => pure (.error s!"proof {proofAddr} does not verify: {e}")
+        pure (verifyProof aiurSystem funIdx wrapper.claim proof)
   catch e => pure (.error s!"{e}")
 
 /-- The address of a verified proof of `expected`, if the index has one.

@@ -200,7 +200,8 @@ def smokeSuite : IO UInt32 := do
         Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
           3 * Ix.Cli.AggregateCmd.aggregateFlatJoinRamPerSubjectBytes,
         Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
-        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes] &&
+        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
+          4 * Ix.Cli.AggregateCmd.aggregateStructuralJoinRamPerSubjectBytes] &&
       Ix.Cli.AggregateCmd.aggregateSlotRamWeights direct == #[
         Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
         Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
