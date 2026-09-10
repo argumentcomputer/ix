@@ -26,9 +26,12 @@ The Rust verifier runs these steps:
    `composition(ζ) · inv_vanishing(ζ) == quotient(ζ)`.
 
 ### Implemented here
-* Step 1 (the system-independent part): the proof is internally consistent —
-  `stage_1`, `stage_2` and `intermediate_accumulators` all have the same length
-  (the circuit count) and it is non-zero.
+* Step 1: the proof is internally consistent — `stage_1`, `stage_2` and
+  `intermediate_accumulators` all have the same length (the circuit count)
+  and it is non-zero — and every opened row of every active circuit has the
+  width the verifying key gives it (main, stage 2, preprocessed in
+  `ood_loop`; the quotient through its degree), as `verify_shape` requires
+  natively.
 * Step 2: accumulator balance — each shard's last `intermediate_accumulator`
   is its residual, and the batch balances when the residuals plus the batch
   messages' contributions sum to zero (`verify_batch`).
@@ -724,7 +727,7 @@ def verifier := ⟦
     match load(circuits) {
       ListNode.Nil => 1,
       ListNode.Cons(circ, rest) =>
-        let SysCircuit.Mk(nodes, _node_count, zeros, md, lks, k) = circ;
+        let SysCircuit.Mk(nodes, _node_count, zeros, md, lks, k, mw, pw, s2w) = circ;
         -- log_degrees is proof advice; bound it so `two_adic_gen`'s squaring
         -- chain (bits ≤ 32) is never entered above its base case.
         let ld8 = list_lookup(log_degrees, i);
@@ -740,6 +743,16 @@ def verifier := ⟦
         let s2row = list_lookup(s2, 0);
         let s2next = list_lookup(s2, 1);
         let (prep, prep_next) = @ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
+        -- Every opened row has the width the verifying key gives the circuit
+        -- (Rust: `verify_shape`). Matrices of one height share a leaf hash,
+        -- so the commitment alone does not fix their column boundaries; the
+        -- PCS then pins the query rows to these rows by width.
+        assert_eq!(eq_zero(list_length(main) - mw), 1);
+        assert_eq!(eq_zero(list_length(main_next) - mw), 1);
+        assert_eq!(eq_zero(list_length(s2row) - s2w), 1);
+        assert_eq!(eq_zero(list_length(s2next) - s2w), 1);
+        assert_eq!(eq_zero(list_length(prep) - pw), 1);
+        assert_eq!(eq_zero(list_length(prep_next) - pw), 1);
         let (isf, isl, ist, invv) = @trace_selectors(zeta, l);
         let publics = @build_publics(lch, fch, accp, naccp);
         let inorm = @gl_inverse(pow2(l) * two_adic_gen(l));

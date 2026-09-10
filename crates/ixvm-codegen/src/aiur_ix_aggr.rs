@@ -9147,7 +9147,7 @@ fn aiur_fn_100(
 
 const INPUT_SIZE_101: usize = 1;
 const IN_101: usize = 1;
-const OUT_101: usize = 63;
+const OUT_101: usize = 66;
 fn aiur_fn_101(
   inp: [G; IN_101],
   record: &mut QueryRecord,
@@ -9284,120 +9284,119 @@ fn aiur_fn_101(
     if (__v_104 != __v_105) {
       return Err(ExecError::AssertEqMismatch { lhs: __v_104.as_canonical_u64(), rhs: __v_105.as_canonical_u64(), msg: None });
     }
-    let __v_106: G = (__v_58 + __v_58);
-    let __gb: [u8; 8] = __v_106.as_canonical_u64().to_le_bytes();
-    let __v_107: G = G::from_u8(__gb[0]);
-    let __v_108: G = G::from_u8(__gb[1]);
-    let __v_109: G = G::from_u8(__gb[2]);
-    let __v_110: G = G::from_u8(__gb[3]);
-    let __v_111: G = G::from_u8(__gb[4]);
-    let __v_112: G = G::from_u8(__gb[5]);
-    let __v_113: G = G::from_u8(__gb[6]);
-    let __v_114: G = G::from_u8(__gb[7]);
-    if !unconstrained { let __vi = __v_107; let __vj = __v_108; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    if !unconstrained { let __vi = __v_109; let __vj = __v_110; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    if !unconstrained { let __vi = __v_111; let __vj = __v_112; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    if !unconstrained { let __vi = __v_113; let __vj = __v_114; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    let __v_115: G = G::from_u64(1020);
-    let __v_116: G = (__v_114 - __v_115);
-    let __v_117: G = (__v_113 + __v_116);
-    let __v_118: G = (__v_112 + __v_117);
-    let __v_119: G = (__v_111 + __v_118);
-    let __v_120: G = G::from_bool((__v_119 == G::ZERO));
-    let __v_121: G = (__v_109 + __v_110);
-    let __v_122: G = (__v_108 + __v_121);
-    let __v_123: G = (__v_107 + __v_122);
-    let __v_124: G = G::from_bool((__v_123 == G::ZERO));
-    let __v_125: G = G::from_u64(256);
-    let __v_126: G = (__v_125 * __v_108);
-    let __v_127: G = G::from_u64(65536);
-    let __v_128: G = (__v_127 * __v_109);
-    let __v_129: G = G::from_u64(16777216);
-    let __v_130: G = (__v_129 * __v_110);
-    let __v_131: G = G::from_u64(4294967296);
-    let __v_132: G = (__v_131 * __v_111);
-    let __v_133: G = G::from_u64(1099511627776);
-    let __v_134: G = (__v_133 * __v_112);
-    let __v_135: G = G::from_u64(281474976710656);
-    let __v_136: G = (__v_135 * __v_113);
-    let __v_137: G = G::from_u64(72057594037927936);
-    let __v_138: G = (__v_137 * __v_114);
-    let __v_139: G = (__v_136 + __v_138);
-    let __v_140: G = (__v_134 + __v_139);
-    let __v_141: G = (__v_132 + __v_140);
-    let __v_142: G = (__v_130 + __v_141);
-    let __v_143: G = (__v_128 + __v_142);
-    let __v_144: G = (__v_126 + __v_143);
-    let __v_145: G = (__v_107 + __v_144);
-    if (__v_145 != __v_106) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_145.as_canonical_u64(), rhs: __v_106.as_canonical_u64(), msg: None });
+    let __gb: [u8; 8] = __v_59.as_canonical_u64().to_le_bytes();
+    let __v_106: G = G::from_u8(__gb[0]);
+    let __v_107: G = G::from_u8(__gb[1]);
+    let __v_108: G = G::from_u8(__gb[2]);
+    let __v_109: G = G::from_u8(__gb[3]);
+    let __v_110: G = G::from_u8(__gb[4]);
+    let __v_111: G = G::from_u8(__gb[5]);
+    let __v_112: G = G::from_u8(__gb[6]);
+    let __v_113: G = G::from_u8(__gb[7]);
+    if !unconstrained { let __vi = __v_106; let __vj = __v_107; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_108; let __vj = __v_109; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_110; let __vj = __v_111; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_112; let __vj = __v_113; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    let __v_114: G = G::from_u64(1020);
+    let __v_115: G = (__v_113 - __v_114);
+    let __v_116: G = (__v_112 + __v_115);
+    let __v_117: G = (__v_111 + __v_116);
+    let __v_118: G = (__v_110 + __v_117);
+    let __v_119: G = G::from_bool((__v_118 == G::ZERO));
+    let __v_120: G = (__v_108 + __v_109);
+    let __v_121: G = (__v_107 + __v_120);
+    let __v_122: G = (__v_106 + __v_121);
+    let __v_123: G = G::from_bool((__v_122 == G::ZERO));
+    let __v_124: G = G::from_u64(256);
+    let __v_125: G = (__v_124 * __v_107);
+    let __v_126: G = G::from_u64(65536);
+    let __v_127: G = (__v_126 * __v_108);
+    let __v_128: G = G::from_u64(16777216);
+    let __v_129: G = (__v_128 * __v_109);
+    let __v_130: G = G::from_u64(4294967296);
+    let __v_131: G = (__v_130 * __v_110);
+    let __v_132: G = G::from_u64(1099511627776);
+    let __v_133: G = (__v_132 * __v_111);
+    let __v_134: G = G::from_u64(281474976710656);
+    let __v_135: G = (__v_134 * __v_112);
+    let __v_136: G = G::from_u64(72057594037927936);
+    let __v_137: G = (__v_136 * __v_113);
+    let __v_138: G = (__v_135 + __v_137);
+    let __v_139: G = (__v_133 + __v_138);
+    let __v_140: G = (__v_131 + __v_139);
+    let __v_141: G = (__v_129 + __v_140);
+    let __v_142: G = (__v_127 + __v_141);
+    let __v_143: G = (__v_125 + __v_142);
+    let __v_144: G = (__v_106 + __v_143);
+    if (__v_144 != __v_59) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_144.as_canonical_u64(), rhs: __v_59.as_canonical_u64(), msg: None });
     }
+    let __v_145: G = G::from_u64(1);
     let __v_146: G = G::from_u64(1);
-    let __v_147: G = G::from_u64(1);
-    let __v_148: G = (__v_147 - __v_124);
-    let __v_149: G = (__v_120 * __v_148);
-    let __v_150: G = (__v_146 - __v_149);
-    let __v_151: G = G::from_u64(1);
-    if (__v_150 != __v_151) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_150.as_canonical_u64(), rhs: __v_151.as_canonical_u64(), msg: None });
+    let __v_147: G = (__v_146 - __v_123);
+    let __v_148: G = (__v_119 * __v_147);
+    let __v_149: G = (__v_145 - __v_148);
+    let __v_150: G = G::from_u64(1);
+    if (__v_149 != __v_150) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_149.as_canonical_u64(), rhs: __v_150.as_canonical_u64(), msg: None });
     }
     let __gb: [u8; 8] = __v_41.as_canonical_u64().to_le_bytes();
-    let __v_152: G = G::from_u8(__gb[0]);
-    let __v_153: G = G::from_u8(__gb[1]);
-    let __v_154: G = G::from_u8(__gb[2]);
-    let __v_155: G = G::from_u8(__gb[3]);
-    let __v_156: G = G::from_u8(__gb[4]);
-    let __v_157: G = G::from_u8(__gb[5]);
-    let __v_158: G = G::from_u8(__gb[6]);
-    let __v_159: G = G::from_u8(__gb[7]);
-    if !unconstrained { let __vi = __v_152; let __vj = __v_153; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    if !unconstrained { let __vi = __v_154; let __vj = __v_155; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    if !unconstrained { let __vi = __v_156; let __vj = __v_157; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    if !unconstrained { let __vi = __v_158; let __vj = __v_159; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    let __v_160: G = G::from_u64(1020);
-    let __v_161: G = (__v_159 - __v_160);
-    let __v_162: G = (__v_158 + __v_161);
-    let __v_163: G = (__v_157 + __v_162);
-    let __v_164: G = (__v_156 + __v_163);
-    let __v_165: G = G::from_bool((__v_164 == G::ZERO));
-    let __v_166: G = (__v_154 + __v_155);
-    let __v_167: G = (__v_153 + __v_166);
-    let __v_168: G = (__v_152 + __v_167);
-    let __v_169: G = G::from_bool((__v_168 == G::ZERO));
-    let __v_170: G = G::from_u64(256);
-    let __v_171: G = (__v_170 * __v_153);
-    let __v_172: G = G::from_u64(65536);
-    let __v_173: G = (__v_172 * __v_154);
-    let __v_174: G = G::from_u64(16777216);
-    let __v_175: G = (__v_174 * __v_155);
-    let __v_176: G = G::from_u64(4294967296);
-    let __v_177: G = (__v_176 * __v_156);
-    let __v_178: G = G::from_u64(1099511627776);
-    let __v_179: G = (__v_178 * __v_157);
-    let __v_180: G = G::from_u64(281474976710656);
-    let __v_181: G = (__v_180 * __v_158);
-    let __v_182: G = G::from_u64(72057594037927936);
-    let __v_183: G = (__v_182 * __v_159);
-    let __v_184: G = (__v_181 + __v_183);
-    let __v_185: G = (__v_179 + __v_184);
-    let __v_186: G = (__v_177 + __v_185);
-    let __v_187: G = (__v_175 + __v_186);
-    let __v_188: G = (__v_173 + __v_187);
-    let __v_189: G = (__v_171 + __v_188);
-    let __v_190: G = (__v_152 + __v_189);
-    if (__v_190 != __v_41) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_190.as_canonical_u64(), rhs: __v_41.as_canonical_u64(), msg: None });
+    let __v_151: G = G::from_u8(__gb[0]);
+    let __v_152: G = G::from_u8(__gb[1]);
+    let __v_153: G = G::from_u8(__gb[2]);
+    let __v_154: G = G::from_u8(__gb[3]);
+    let __v_155: G = G::from_u8(__gb[4]);
+    let __v_156: G = G::from_u8(__gb[5]);
+    let __v_157: G = G::from_u8(__gb[6]);
+    let __v_158: G = G::from_u8(__gb[7]);
+    if !unconstrained { let __vi = __v_151; let __vj = __v_152; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_153; let __vj = __v_154; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_155; let __vj = __v_156; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_157; let __vj = __v_158; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    let __v_159: G = G::from_u64(1020);
+    let __v_160: G = (__v_158 - __v_159);
+    let __v_161: G = (__v_157 + __v_160);
+    let __v_162: G = (__v_156 + __v_161);
+    let __v_163: G = (__v_155 + __v_162);
+    let __v_164: G = G::from_bool((__v_163 == G::ZERO));
+    let __v_165: G = (__v_153 + __v_154);
+    let __v_166: G = (__v_152 + __v_165);
+    let __v_167: G = (__v_151 + __v_166);
+    let __v_168: G = G::from_bool((__v_167 == G::ZERO));
+    let __v_169: G = G::from_u64(256);
+    let __v_170: G = (__v_169 * __v_152);
+    let __v_171: G = G::from_u64(65536);
+    let __v_172: G = (__v_171 * __v_153);
+    let __v_173: G = G::from_u64(16777216);
+    let __v_174: G = (__v_173 * __v_154);
+    let __v_175: G = G::from_u64(4294967296);
+    let __v_176: G = (__v_175 * __v_155);
+    let __v_177: G = G::from_u64(1099511627776);
+    let __v_178: G = (__v_177 * __v_156);
+    let __v_179: G = G::from_u64(281474976710656);
+    let __v_180: G = (__v_179 * __v_157);
+    let __v_181: G = G::from_u64(72057594037927936);
+    let __v_182: G = (__v_181 * __v_158);
+    let __v_183: G = (__v_180 + __v_182);
+    let __v_184: G = (__v_178 + __v_183);
+    let __v_185: G = (__v_176 + __v_184);
+    let __v_186: G = (__v_174 + __v_185);
+    let __v_187: G = (__v_172 + __v_186);
+    let __v_188: G = (__v_170 + __v_187);
+    let __v_189: G = (__v_151 + __v_188);
+    if (__v_189 != __v_41) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_189.as_canonical_u64(), rhs: __v_41.as_canonical_u64(), msg: None });
     }
+    let __v_190: G = G::from_u64(1);
     let __v_191: G = G::from_u64(1);
-    let __v_192: G = G::from_u64(1);
-    let __v_193: G = (__v_192 - __v_169);
-    let __v_194: G = (__v_165 * __v_193);
-    let __v_195: G = (__v_191 - __v_194);
-    let __v_196: G = G::from_u64(1);
-    if (__v_195 != __v_196) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_195.as_canonical_u64(), rhs: __v_196.as_canonical_u64(), msg: None });
+    let __v_192: G = (__v_191 - __v_168);
+    let __v_193: G = (__v_164 * __v_192);
+    let __v_194: G = (__v_190 - __v_193);
+    let __v_195: G = G::from_u64(1);
+    if (__v_194 != __v_195) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_194.as_canonical_u64(), rhs: __v_195.as_canonical_u64(), msg: None });
     }
-    let __ret: [G; OUT_101] = [__v_45, __v_43, __v_49, __v_31, __v_53, __v_41, __v_61, __v_62, __v_63, __v_64, __v_65, __v_66, __v_67, __v_68, __v_32, __v_33, __v_34, __v_35, __v_36, __v_37, __v_38, __v_39, __v_22, __v_23, __v_24, __v_25, __v_26, __v_27, __v_28, __v_29, __v_12, __v_13, __v_14, __v_15, __v_16, __v_17, __v_18, __v_19, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_107, __v_108, __v_109, __v_110, __v_111, __v_112, __v_113, __v_114, __v_152, __v_153, __v_154, __v_155, __v_156, __v_157, __v_158, __v_159, __v_54];
+    let __ret: [G; OUT_101] = [__v_45, __v_43, __v_49, __v_31, __v_53, __v_41, __v_1, __v_11, __v_59, __v_61, __v_62, __v_63, __v_64, __v_65, __v_66, __v_67, __v_68, __v_32, __v_33, __v_34, __v_35, __v_36, __v_37, __v_38, __v_39, __v_22, __v_23, __v_24, __v_25, __v_26, __v_27, __v_28, __v_29, __v_12, __v_13, __v_14, __v_15, __v_16, __v_17, __v_18, __v_19, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_106, __v_107, __v_108, __v_109, __v_110, __v_111, __v_112, __v_113, __v_151, __v_152, __v_153, __v_154, __v_155, __v_156, __v_157, __v_158, __v_54];
     record.function_queries[101].finish(&inp[..], &__ret[..], !unconstrained);
     return Ok(__ret);
   })
@@ -9506,7 +9505,7 @@ fn aiur_fn_103(
       0u64 => {
         let __v_2: G = G::from_u64(1);
         let __v_3: G = G::from_u64(1);
-        let __v_4: G = { let __values: [G; 8] = [__v_2, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3]; let __mq = record.memory_queries.get_mut(&8).ok_or(ExecError::InvalidMemorySize(8))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_4: G = { let __values: [G; 11] = [__v_2, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3]; let __mq = record.memory_queries.get_mut(&11).ok_or(ExecError::InvalidMemorySize(11))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
         let __v_5: G = G::from_u64(1);
         let __v_6: G = G::from_u64(1);
         let __v_7: G = { let __values: [G; 10] = [__v_5, __v_6, __v_6, __v_6, __v_6, __v_6, __v_6, __v_6, __v_6, __v_6]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
@@ -9643,142 +9642,141 @@ fn aiur_fn_103(
         if (__v_105 != __v_106) {
           return Err(ExecError::AssertEqMismatch { lhs: __v_105.as_canonical_u64(), rhs: __v_106.as_canonical_u64(), msg: None });
         }
-        let __v_107: G = (__v_59 + __v_59);
-        let __gb: [u8; 8] = __v_107.as_canonical_u64().to_le_bytes();
-        let __v_108: G = G::from_u8(__gb[0]);
-        let __v_109: G = G::from_u8(__gb[1]);
-        let __v_110: G = G::from_u8(__gb[2]);
-        let __v_111: G = G::from_u8(__gb[3]);
-        let __v_112: G = G::from_u8(__gb[4]);
-        let __v_113: G = G::from_u8(__gb[5]);
-        let __v_114: G = G::from_u8(__gb[6]);
-        let __v_115: G = G::from_u8(__gb[7]);
-        if !unconstrained { let __vi = __v_108; let __vj = __v_109; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        if !unconstrained { let __vi = __v_110; let __vj = __v_111; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        if !unconstrained { let __vi = __v_112; let __vj = __v_113; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        if !unconstrained { let __vi = __v_114; let __vj = __v_115; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        let __v_116: G = G::from_u64(1020);
-        let __v_117: G = (__v_115 - __v_116);
-        let __v_118: G = (__v_114 + __v_117);
-        let __v_119: G = (__v_113 + __v_118);
-        let __v_120: G = (__v_112 + __v_119);
-        let __v_121: G = G::from_bool((__v_120 == G::ZERO));
-        let __v_122: G = (__v_110 + __v_111);
-        let __v_123: G = (__v_109 + __v_122);
-        let __v_124: G = (__v_108 + __v_123);
-        let __v_125: G = G::from_bool((__v_124 == G::ZERO));
-        let __v_126: G = G::from_u64(256);
-        let __v_127: G = (__v_126 * __v_109);
-        let __v_128: G = G::from_u64(65536);
-        let __v_129: G = (__v_128 * __v_110);
-        let __v_130: G = G::from_u64(16777216);
-        let __v_131: G = (__v_130 * __v_111);
-        let __v_132: G = G::from_u64(4294967296);
-        let __v_133: G = (__v_132 * __v_112);
-        let __v_134: G = G::from_u64(1099511627776);
-        let __v_135: G = (__v_134 * __v_113);
-        let __v_136: G = G::from_u64(281474976710656);
-        let __v_137: G = (__v_136 * __v_114);
-        let __v_138: G = G::from_u64(72057594037927936);
-        let __v_139: G = (__v_138 * __v_115);
-        let __v_140: G = (__v_137 + __v_139);
-        let __v_141: G = (__v_135 + __v_140);
-        let __v_142: G = (__v_133 + __v_141);
-        let __v_143: G = (__v_131 + __v_142);
-        let __v_144: G = (__v_129 + __v_143);
-        let __v_145: G = (__v_127 + __v_144);
-        let __v_146: G = (__v_108 + __v_145);
-        if (__v_146 != __v_107) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_146.as_canonical_u64(), rhs: __v_107.as_canonical_u64(), msg: None });
+        let __gb: [u8; 8] = __v_60.as_canonical_u64().to_le_bytes();
+        let __v_107: G = G::from_u8(__gb[0]);
+        let __v_108: G = G::from_u8(__gb[1]);
+        let __v_109: G = G::from_u8(__gb[2]);
+        let __v_110: G = G::from_u8(__gb[3]);
+        let __v_111: G = G::from_u8(__gb[4]);
+        let __v_112: G = G::from_u8(__gb[5]);
+        let __v_113: G = G::from_u8(__gb[6]);
+        let __v_114: G = G::from_u8(__gb[7]);
+        if !unconstrained { let __vi = __v_107; let __vj = __v_108; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        if !unconstrained { let __vi = __v_109; let __vj = __v_110; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        if !unconstrained { let __vi = __v_111; let __vj = __v_112; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        if !unconstrained { let __vi = __v_113; let __vj = __v_114; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        let __v_115: G = G::from_u64(1020);
+        let __v_116: G = (__v_114 - __v_115);
+        let __v_117: G = (__v_113 + __v_116);
+        let __v_118: G = (__v_112 + __v_117);
+        let __v_119: G = (__v_111 + __v_118);
+        let __v_120: G = G::from_bool((__v_119 == G::ZERO));
+        let __v_121: G = (__v_109 + __v_110);
+        let __v_122: G = (__v_108 + __v_121);
+        let __v_123: G = (__v_107 + __v_122);
+        let __v_124: G = G::from_bool((__v_123 == G::ZERO));
+        let __v_125: G = G::from_u64(256);
+        let __v_126: G = (__v_125 * __v_108);
+        let __v_127: G = G::from_u64(65536);
+        let __v_128: G = (__v_127 * __v_109);
+        let __v_129: G = G::from_u64(16777216);
+        let __v_130: G = (__v_129 * __v_110);
+        let __v_131: G = G::from_u64(4294967296);
+        let __v_132: G = (__v_131 * __v_111);
+        let __v_133: G = G::from_u64(1099511627776);
+        let __v_134: G = (__v_133 * __v_112);
+        let __v_135: G = G::from_u64(281474976710656);
+        let __v_136: G = (__v_135 * __v_113);
+        let __v_137: G = G::from_u64(72057594037927936);
+        let __v_138: G = (__v_137 * __v_114);
+        let __v_139: G = (__v_136 + __v_138);
+        let __v_140: G = (__v_134 + __v_139);
+        let __v_141: G = (__v_132 + __v_140);
+        let __v_142: G = (__v_130 + __v_141);
+        let __v_143: G = (__v_128 + __v_142);
+        let __v_144: G = (__v_126 + __v_143);
+        let __v_145: G = (__v_107 + __v_144);
+        if (__v_145 != __v_60) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_145.as_canonical_u64(), rhs: __v_60.as_canonical_u64(), msg: None });
         }
+        let __v_146: G = G::from_u64(1);
         let __v_147: G = G::from_u64(1);
-        let __v_148: G = G::from_u64(1);
-        let __v_149: G = (__v_148 - __v_125);
-        let __v_150: G = (__v_121 * __v_149);
-        let __v_151: G = (__v_147 - __v_150);
-        let __v_152: G = G::from_u64(1);
-        if (__v_151 != __v_152) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_151.as_canonical_u64(), rhs: __v_152.as_canonical_u64(), msg: None });
+        let __v_148: G = (__v_147 - __v_124);
+        let __v_149: G = (__v_120 * __v_148);
+        let __v_150: G = (__v_146 - __v_149);
+        let __v_151: G = G::from_u64(1);
+        if (__v_150 != __v_151) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_150.as_canonical_u64(), rhs: __v_151.as_canonical_u64(), msg: None });
         }
         let __gb: [u8; 8] = __v_42.as_canonical_u64().to_le_bytes();
-        let __v_153: G = G::from_u8(__gb[0]);
-        let __v_154: G = G::from_u8(__gb[1]);
-        let __v_155: G = G::from_u8(__gb[2]);
-        let __v_156: G = G::from_u8(__gb[3]);
-        let __v_157: G = G::from_u8(__gb[4]);
-        let __v_158: G = G::from_u8(__gb[5]);
-        let __v_159: G = G::from_u8(__gb[6]);
-        let __v_160: G = G::from_u8(__gb[7]);
-        if !unconstrained { let __vi = __v_153; let __vj = __v_154; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        if !unconstrained { let __vi = __v_155; let __vj = __v_156; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        if !unconstrained { let __vi = __v_157; let __vj = __v_158; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        if !unconstrained { let __vi = __v_159; let __vj = __v_160; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-        let __v_161: G = G::from_u64(1020);
-        let __v_162: G = (__v_160 - __v_161);
-        let __v_163: G = (__v_159 + __v_162);
-        let __v_164: G = (__v_158 + __v_163);
-        let __v_165: G = (__v_157 + __v_164);
-        let __v_166: G = G::from_bool((__v_165 == G::ZERO));
-        let __v_167: G = (__v_155 + __v_156);
-        let __v_168: G = (__v_154 + __v_167);
-        let __v_169: G = (__v_153 + __v_168);
-        let __v_170: G = G::from_bool((__v_169 == G::ZERO));
-        let __v_171: G = G::from_u64(256);
-        let __v_172: G = (__v_171 * __v_154);
-        let __v_173: G = G::from_u64(65536);
-        let __v_174: G = (__v_173 * __v_155);
-        let __v_175: G = G::from_u64(16777216);
-        let __v_176: G = (__v_175 * __v_156);
-        let __v_177: G = G::from_u64(4294967296);
-        let __v_178: G = (__v_177 * __v_157);
-        let __v_179: G = G::from_u64(1099511627776);
-        let __v_180: G = (__v_179 * __v_158);
-        let __v_181: G = G::from_u64(281474976710656);
-        let __v_182: G = (__v_181 * __v_159);
-        let __v_183: G = G::from_u64(72057594037927936);
-        let __v_184: G = (__v_183 * __v_160);
-        let __v_185: G = (__v_182 + __v_184);
-        let __v_186: G = (__v_180 + __v_185);
-        let __v_187: G = (__v_178 + __v_186);
-        let __v_188: G = (__v_176 + __v_187);
-        let __v_189: G = (__v_174 + __v_188);
-        let __v_190: G = (__v_172 + __v_189);
-        let __v_191: G = (__v_153 + __v_190);
-        if (__v_191 != __v_42) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_191.as_canonical_u64(), rhs: __v_42.as_canonical_u64(), msg: None });
+        let __v_152: G = G::from_u8(__gb[0]);
+        let __v_153: G = G::from_u8(__gb[1]);
+        let __v_154: G = G::from_u8(__gb[2]);
+        let __v_155: G = G::from_u8(__gb[3]);
+        let __v_156: G = G::from_u8(__gb[4]);
+        let __v_157: G = G::from_u8(__gb[5]);
+        let __v_158: G = G::from_u8(__gb[6]);
+        let __v_159: G = G::from_u8(__gb[7]);
+        if !unconstrained { let __vi = __v_152; let __vj = __v_153; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        if !unconstrained { let __vi = __v_154; let __vj = __v_155; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        if !unconstrained { let __vi = __v_156; let __vj = __v_157; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        if !unconstrained { let __vi = __v_158; let __vj = __v_159; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        let __v_160: G = G::from_u64(1020);
+        let __v_161: G = (__v_159 - __v_160);
+        let __v_162: G = (__v_158 + __v_161);
+        let __v_163: G = (__v_157 + __v_162);
+        let __v_164: G = (__v_156 + __v_163);
+        let __v_165: G = G::from_bool((__v_164 == G::ZERO));
+        let __v_166: G = (__v_154 + __v_155);
+        let __v_167: G = (__v_153 + __v_166);
+        let __v_168: G = (__v_152 + __v_167);
+        let __v_169: G = G::from_bool((__v_168 == G::ZERO));
+        let __v_170: G = G::from_u64(256);
+        let __v_171: G = (__v_170 * __v_153);
+        let __v_172: G = G::from_u64(65536);
+        let __v_173: G = (__v_172 * __v_154);
+        let __v_174: G = G::from_u64(16777216);
+        let __v_175: G = (__v_174 * __v_155);
+        let __v_176: G = G::from_u64(4294967296);
+        let __v_177: G = (__v_176 * __v_156);
+        let __v_178: G = G::from_u64(1099511627776);
+        let __v_179: G = (__v_178 * __v_157);
+        let __v_180: G = G::from_u64(281474976710656);
+        let __v_181: G = (__v_180 * __v_158);
+        let __v_182: G = G::from_u64(72057594037927936);
+        let __v_183: G = (__v_182 * __v_159);
+        let __v_184: G = (__v_181 + __v_183);
+        let __v_185: G = (__v_179 + __v_184);
+        let __v_186: G = (__v_177 + __v_185);
+        let __v_187: G = (__v_175 + __v_186);
+        let __v_188: G = (__v_173 + __v_187);
+        let __v_189: G = (__v_171 + __v_188);
+        let __v_190: G = (__v_152 + __v_189);
+        if (__v_190 != __v_42) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_190.as_canonical_u64(), rhs: __v_42.as_canonical_u64(), msg: None });
         }
+        let __v_191: G = G::from_u64(1);
         let __v_192: G = G::from_u64(1);
-        let __v_193: G = G::from_u64(1);
-        let __v_194: G = (__v_193 - __v_170);
-        let __v_195: G = (__v_166 * __v_194);
-        let __v_196: G = (__v_192 - __v_195);
-        let __v_197: G = G::from_u64(1);
-        if (__v_196 != __v_197) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_196.as_canonical_u64(), rhs: __v_197.as_canonical_u64(), msg: None });
+        let __v_193: G = (__v_192 - __v_169);
+        let __v_194: G = (__v_165 * __v_193);
+        let __v_195: G = (__v_191 - __v_194);
+        let __v_196: G = G::from_u64(1);
+        if (__v_195 != __v_196) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_195.as_canonical_u64(), rhs: __v_196.as_canonical_u64(), msg: None });
         }
-        let __v_198: G = G::from_u64(1);
-        let __v_199: G = (__v_1 - __v_198);
-        let __r_arr: [G; OUT_103] = { let __args: [G; IN_103] = [__v_55, __v_199]; let __cu = unconstrained; let __hit = record.function_queries[103].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[103].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[103].bump_multiplicity(__i); } let __ret: [G; OUT_103] = unsafe { *(record.function_queries[103].output_at(__i).as_ptr() as *const [G; OUT_103]) }; __ret }, _ => aiur_fn_103(__args, record, io_buffer, __cu)? } };
-        let __v_200: G = __r_arr[0];
-        let __v_201: G = __r_arr[1];
-        let __v_202: G = __r_arr[2];
-        let __v_203: G = G::from_u64(0);
-        let __v_204: G = { let __values: [G; 8] = [__v_203, __v_46, __v_44, __v_50, __v_32, __v_54, __v_42, __v_200]; let __mq = record.memory_queries.get_mut(&8).ok_or(ExecError::InvalidMemorySize(8))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_197: G = G::from_u64(1);
+        let __v_198: G = (__v_1 - __v_197);
+        let __r_arr: [G; OUT_103] = { let __args: [G; IN_103] = [__v_55, __v_198]; let __cu = unconstrained; let __hit = record.function_queries[103].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[103].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[103].bump_multiplicity(__i); } let __ret: [G; OUT_103] = unsafe { *(record.function_queries[103].output_at(__i).as_ptr() as *const [G; OUT_103]) }; __ret }, _ => aiur_fn_103(__args, record, io_buffer, __cu)? } };
+        let __v_199: G = __r_arr[0];
+        let __v_200: G = __r_arr[1];
+        let __v_201: G = __r_arr[2];
+        let __v_202: G = G::from_u64(0);
+        let __v_203: G = { let __values: [G; 11] = [__v_202, __v_46, __v_44, __v_50, __v_32, __v_54, __v_42, __v_2, __v_12, __v_60, __v_199]; let __mq = record.memory_queries.get_mut(&11).ok_or(ExecError::InvalidMemorySize(11))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_204: G = G::from_u64(0);
         let __v_205: G = G::from_u64(0);
         let __v_206: G = G::from_u64(0);
         let __v_207: G = G::from_u64(0);
         let __v_208: G = G::from_u64(0);
         let __v_209: G = G::from_u64(0);
         let __v_210: G = G::from_u64(0);
-        let __v_211: G = G::from_u64(0);
-        let __v_212: G = { let __values: [G; 10] = [__v_211, __v_153, __v_154, __v_155, __v_156, __v_157, __v_158, __v_159, __v_160, __v_201]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __v_213: G = { let __values: [G; 10] = [__v_210, __v_108, __v_109, __v_110, __v_111, __v_112, __v_113, __v_114, __v_115, __v_212]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __v_214: G = { let __values: [G; 10] = [__v_209, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_10, __v_213]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __v_215: G = { let __values: [G; 10] = [__v_208, __v_13, __v_14, __v_15, __v_16, __v_17, __v_18, __v_19, __v_20, __v_214]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __v_216: G = { let __values: [G; 10] = [__v_207, __v_23, __v_24, __v_25, __v_26, __v_27, __v_28, __v_29, __v_30, __v_215]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __v_217: G = { let __values: [G; 10] = [__v_206, __v_33, __v_34, __v_35, __v_36, __v_37, __v_38, __v_39, __v_40, __v_216]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __v_218: G = { let __values: [G; 10] = [__v_205, __v_62, __v_63, __v_64, __v_65, __v_66, __v_67, __v_68, __v_69, __v_217]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __ret: [G; OUT_103] = [__v_204, __v_218, __v_202];
+        let __v_211: G = { let __values: [G; 10] = [__v_210, __v_152, __v_153, __v_154, __v_155, __v_156, __v_157, __v_158, __v_159, __v_200]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_212: G = { let __values: [G; 10] = [__v_209, __v_107, __v_108, __v_109, __v_110, __v_111, __v_112, __v_113, __v_114, __v_211]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_213: G = { let __values: [G; 10] = [__v_208, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_10, __v_212]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_214: G = { let __values: [G; 10] = [__v_207, __v_13, __v_14, __v_15, __v_16, __v_17, __v_18, __v_19, __v_20, __v_213]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_215: G = { let __values: [G; 10] = [__v_206, __v_23, __v_24, __v_25, __v_26, __v_27, __v_28, __v_29, __v_30, __v_214]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_216: G = { let __values: [G; 10] = [__v_205, __v_33, __v_34, __v_35, __v_36, __v_37, __v_38, __v_39, __v_40, __v_215]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __v_217: G = { let __values: [G; 10] = [__v_204, __v_62, __v_63, __v_64, __v_65, __v_66, __v_67, __v_68, __v_69, __v_216]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __ret: [G; OUT_103] = [__v_203, __v_217, __v_201];
         record.function_queries[103].finish(&inp[..], &__ret[..], !unconstrained);
         return Ok(__ret);
       },
@@ -18139,7 +18137,7 @@ fn aiur_fn_203(
     let __v_17: G = inp[17];
     let __v_18: G = inp[18];
     let __v_19: G = inp[19];
-    let __loaded: [G; 8] = { let __mq = record.memory_queries.get_mut(&8).ok_or(ExecError::InvalidMemorySize(8))?; let __ptr_u64 = __v_0.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 8 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 8] = __args[..8].try_into().unwrap(); __arr };
+    let __loaded: [G; 11] = { let __mq = record.memory_queries.get_mut(&11).ok_or(ExecError::InvalidMemorySize(11))?; let __ptr_u64 = __v_0.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 11 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 11] = __args[..11].try_into().unwrap(); __arr };
     let __v_20: G = __loaded[0];
     let __v_21: G = __loaded[1];
     let __v_22: G = __loaded[2];
@@ -18148,10 +18146,13 @@ fn aiur_fn_203(
     let __v_25: G = __loaded[5];
     let __v_26: G = __loaded[6];
     let __v_27: G = __loaded[7];
+    let __v_28: G = __loaded[8];
+    let __v_29: G = __loaded[9];
+    let __v_30: G = __loaded[10];
     match __v_20.as_canonical_u64() {
       1u64 => {
-        let __v_28: G = G::from_u64(1);
-        let __ret: [G; OUT_203] = [__v_28];
+        let __v_31: G = G::from_u64(1);
+        let __ret: [G; OUT_203] = [__v_31];
         record.function_queries[203].finish(&inp[..], &__ret[..], !unconstrained);
         return Ok(__ret);
       },
@@ -18159,62 +18160,62 @@ fn aiur_fn_203(
         match __v_21.as_canonical_u64() {
           _ => {
             let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_2, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-            let __v_28: G = __r_arr[0];
+            let __v_31: G = __r_arr[0];
             let __r_arr: [G; OUT_201] = { let __args: [G; IN_201] = [__v_24]; let __cu = unconstrained; let __hit = record.function_queries[201].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[201].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[201].bump_multiplicity(__i); } let __ret: [G; OUT_201] = unsafe { *(record.function_queries[201].output_at(__i).as_ptr() as *const [G; OUT_201]) }; __ret }, _ => aiur_fn_201(__args, record, io_buffer, __cu)? } };
-            let __v_29: G = __r_arr[0];
-            let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_3, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
-            let __v_30: G = __r_arr[0];
-            let __v_31: G = __r_arr[1];
-            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_4, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
             let __v_32: G = __r_arr[0];
-            let __v_33: G = G::from_u64(0);
-            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_32, __v_33]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-            let __v_34: G = __r_arr[0];
-            let __v_35: G = G::from_u64(1);
-            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_32, __v_35]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-            let __v_36: G = __r_arr[0];
-            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_5, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+            let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_3, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+            let __v_33: G = __r_arr[0];
+            let __v_34: G = __r_arr[1];
+            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_4, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+            let __v_35: G = __r_arr[0];
+            let __v_36: G = G::from_u64(0);
+            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_35, __v_36]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
             let __v_37: G = __r_arr[0];
-            let __v_38: G = G::from_u64(0);
-            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_37, __v_38]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+            let __v_38: G = G::from_u64(1);
+            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_35, __v_38]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
             let __v_39: G = __r_arr[0];
-            let __v_40: G = G::from_u64(1);
-            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_37, __v_40]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-            let __v_41: G = __r_arr[0];
-            let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_1, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_5, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+            let __v_40: G = __r_arr[0];
+            let __v_41: G = G::from_u64(0);
+            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_40, __v_41]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
             let __v_42: G = __r_arr[0];
-            let __v_43: G = __r_arr[1];
-            let __mc_out___mc_0: [G; 2] = '__mc_0: { match __v_42.as_canonical_u64() {
+            let __v_43: G = G::from_u64(1);
+            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_40, __v_43]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+            let __v_44: G = __r_arr[0];
+            let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_1, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+            let __v_45: G = __r_arr[0];
+            let __v_46: G = __r_arr[1];
+            let __mc_out___mc_0: [G; 2] = '__mc_0: { match __v_45.as_canonical_u64() {
   0u64 => {
-    let __v_44: G = G::from_u64(1);
-    let __v_45: G = G::from_u64(1);
-    let __v_46: G = { let __values: [G; 4] = [__v_44, __v_45, __v_45, __v_45]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
     let __v_47: G = G::from_u64(1);
     let __v_48: G = G::from_u64(1);
     let __v_49: G = { let __values: [G; 4] = [__v_47, __v_48, __v_48, __v_48]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-    break '__mc_0 [__v_46, __v_49];
+    let __v_50: G = G::from_u64(1);
+    let __v_51: G = G::from_u64(1);
+    let __v_52: G = { let __values: [G; 4] = [__v_50, __v_51, __v_51, __v_51]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+    break '__mc_0 [__v_49, __v_52];
   },
   1u64 => {
     match __v_6.as_canonical_u64() {
       0u64 => {
-        let __v_44: G = G::from_u64(1);
-        let __v_45: G = G::from_u64(1);
-        let __v_46: G = { let __values: [G; 4] = [__v_44, __v_45, __v_45, __v_45]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
         let __v_47: G = G::from_u64(1);
         let __v_48: G = G::from_u64(1);
         let __v_49: G = { let __values: [G; 4] = [__v_47, __v_48, __v_48, __v_48]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        break '__mc_0 [__v_46, __v_49];
+        let __v_50: G = G::from_u64(1);
+        let __v_51: G = G::from_u64(1);
+        let __v_52: G = { let __values: [G; 4] = [__v_50, __v_51, __v_51, __v_51]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        break '__mc_0 [__v_49, __v_52];
       },
       1u64 => {
-        let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_7, __v_43]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-        let __v_44: G = __r_arr[0];
-        let __v_45: G = G::from_u64(0);
-        let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_44, __v_45]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-        let __v_46: G = __r_arr[0];
-        let __v_47: G = G::from_u64(1);
-        let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_44, __v_47]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-        let __v_48: G = __r_arr[0];
-        break '__mc_0 [__v_46, __v_48];
+        let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_7, __v_46]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+        let __v_47: G = __r_arr[0];
+        let __v_48: G = G::from_u64(0);
+        let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_47, __v_48]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+        let __v_49: G = __r_arr[0];
+        let __v_50: G = G::from_u64(1);
+        let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_47, __v_50]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+        let __v_51: G = __r_arr[0];
+        break '__mc_0 [__v_49, __v_51];
       },
       _ => {
         return Err(ExecError::MatchNoCase(__v_6.as_canonical_u64()));
@@ -18222,133 +18223,130 @@ fn aiur_fn_203(
     }
   },
   _ => {
-    return Err(ExecError::MatchNoCase(__v_42.as_canonical_u64()));
+    return Err(ExecError::MatchNoCase(__v_45.as_canonical_u64()));
   },
 }
  };
-            let __v_44: G = __mc_out___mc_0[0];
-            let __v_45: G = __mc_out___mc_0[1];
-            let __r_arr: [G; OUT_185] = { let __args: [G; IN_185] = [__v_18, __v_19, __v_28]; let __cu = unconstrained; let __hit = record.function_queries[185].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[185].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[185].bump_multiplicity(__i); } let __ret: [G; OUT_185] = unsafe { *(record.function_queries[185].output_at(__i).as_ptr() as *const [G; OUT_185]) }; __ret }, _ => aiur_fn_185(__args, record, io_buffer, __cu)? } };
-            let __v_46: G = __r_arr[0];
-            let __v_47: G = __r_arr[1];
-            let __v_48: G = G::from_u64(1);
-            let __v_49: G = G::from_u64(0);
-            let __v_50: G = (__v_46 - __v_48);
-            let __v_51: G = (__v_47 - __v_49);
-            let __r_arr: [G; OUT_186] = { let __args: [G; IN_186] = [__v_28]; let __cu = unconstrained; let __hit = record.function_queries[186].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[186].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[186].bump_multiplicity(__i); } let __ret: [G; OUT_186] = unsafe { *(record.function_queries[186].output_at(__i).as_ptr() as *const [G; OUT_186]) }; __ret }, _ => aiur_fn_186(__args, record, io_buffer, __cu)? } };
-            let __v_52: G = __r_arr[0];
-            let __v_53: G = g_inverse_value(__v_52);
-            let __v_54: G = (__v_52 * __v_53);
-            let __v_55: G = G::from_u64(1);
-            let __v_56: G = (__v_54 - __v_55);
-            let __v_57: G = (__v_52 * __v_56);
-            let __v_58: G = G::from_u64(0);
-            if (__v_57 != __v_58) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_57.as_canonical_u64(), rhs: __v_58.as_canonical_u64(), msg: None });
+            let __v_47: G = __mc_out___mc_0[0];
+            let __v_48: G = __mc_out___mc_0[1];
+            let __r_arr: [G; OUT_185] = { let __args: [G; IN_185] = [__v_18, __v_19, __v_31]; let __cu = unconstrained; let __hit = record.function_queries[185].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[185].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[185].bump_multiplicity(__i); } let __ret: [G; OUT_185] = unsafe { *(record.function_queries[185].output_at(__i).as_ptr() as *const [G; OUT_185]) }; __ret }, _ => aiur_fn_185(__args, record, io_buffer, __cu)? } };
+            let __v_49: G = __r_arr[0];
+            let __v_50: G = __r_arr[1];
+            let __v_51: G = G::from_u64(1);
+            let __v_52: G = G::from_u64(0);
+            let __v_53: G = (__v_49 - __v_51);
+            let __v_54: G = (__v_50 - __v_52);
+            let __r_arr: [G; OUT_186] = { let __args: [G; IN_186] = [__v_31]; let __cu = unconstrained; let __hit = record.function_queries[186].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[186].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[186].bump_multiplicity(__i); } let __ret: [G; OUT_186] = unsafe { *(record.function_queries[186].output_at(__i).as_ptr() as *const [G; OUT_186]) }; __ret }, _ => aiur_fn_186(__args, record, io_buffer, __cu)? } };
+            let __v_55: G = __r_arr[0];
+            let __v_56: G = g_inverse_value(__v_55);
+            let __v_57: G = (__v_55 * __v_56);
+            let __v_58: G = G::from_u64(1);
+            let __v_59: G = (__v_57 - __v_58);
+            let __v_60: G = (__v_55 * __v_59);
+            let __v_61: G = G::from_u64(0);
+            if (__v_60 != __v_61) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_60.as_canonical_u64(), rhs: __v_61.as_canonical_u64(), msg: None });
             }
-            let __v_59: G = (__v_53 * __v_56);
-            let __v_60: G = G::from_u64(0);
-            if (__v_59 != __v_60) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_59.as_canonical_u64(), rhs: __v_60.as_canonical_u64(), msg: None });
+            let __v_62: G = (__v_56 * __v_59);
+            let __v_63: G = G::from_u64(0);
+            if (__v_62 != __v_63) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_62.as_canonical_u64(), rhs: __v_63.as_canonical_u64(), msg: None });
             }
-            let __v_61: G = G::from_u64(1);
-            let __v_62: G = G::from_u64(0);
-            let __v_63: G = (__v_18 - __v_61);
-            let __v_64: G = (__v_19 - __v_62);
-            let __v_65: G = (__v_63 * __v_63);
-            let __v_66: G = G::from_u64(7);
-            let __v_67: G = (__v_64 * __v_64);
-            let __v_68: G = (__v_66 * __v_67);
-            let __v_69: G = (__v_65 - __v_68);
-            let __v_70: G = g_inverse_value(__v_69);
+            let __v_64: G = G::from_u64(1);
+            let __v_65: G = G::from_u64(0);
+            let __v_66: G = (__v_18 - __v_64);
+            let __v_67: G = (__v_19 - __v_65);
+            let __v_68: G = (__v_66 * __v_66);
+            let __v_69: G = G::from_u64(7);
+            let __v_70: G = (__v_67 * __v_67);
             let __v_71: G = (__v_69 * __v_70);
-            let __v_72: G = G::from_u64(1);
-            let __v_73: G = (__v_71 - __v_72);
-            let __v_74: G = (__v_69 * __v_73);
-            let __v_75: G = G::from_u64(0);
-            if (__v_74 != __v_75) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_74.as_canonical_u64(), rhs: __v_75.as_canonical_u64(), msg: None });
+            let __v_72: G = (__v_68 - __v_71);
+            let __v_73: G = g_inverse_value(__v_72);
+            let __v_74: G = (__v_72 * __v_73);
+            let __v_75: G = G::from_u64(1);
+            let __v_76: G = (__v_74 - __v_75);
+            let __v_77: G = (__v_72 * __v_76);
+            let __v_78: G = G::from_u64(0);
+            if (__v_77 != __v_78) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_77.as_canonical_u64(), rhs: __v_78.as_canonical_u64(), msg: None });
             }
-            let __v_76: G = (__v_70 * __v_73);
-            let __v_77: G = G::from_u64(0);
-            if (__v_76 != __v_77) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_76.as_canonical_u64(), rhs: __v_77.as_canonical_u64(), msg: None });
+            let __v_79: G = (__v_73 * __v_76);
+            let __v_80: G = G::from_u64(0);
+            if (__v_79 != __v_80) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_79.as_canonical_u64(), rhs: __v_80.as_canonical_u64(), msg: None });
             }
-            let __v_78: G = (__v_63 * __v_70);
-            let __v_79: G = G::from_u64(0);
-            let __v_80: G = (__v_79 - __v_64);
-            let __v_81: G = (__v_80 * __v_70);
-            let __v_82: G = (__v_50 * __v_78);
-            let __v_83: G = G::from_u64(7);
-            let __v_84: G = (__v_51 * __v_81);
-            let __v_85: G = (__v_83 * __v_84);
-            let __v_86: G = (__v_82 + __v_85);
-            let __v_87: G = (__v_50 * __v_81);
-            let __v_88: G = (__v_51 * __v_78);
-            let __v_89: G = (__v_87 + __v_88);
-            let __v_90: G = G::from_u64(0);
-            let __v_91: G = (__v_18 - __v_53);
-            let __v_92: G = (__v_19 - __v_90);
-            let __v_93: G = (__v_91 * __v_91);
-            let __v_94: G = G::from_u64(7);
-            let __v_95: G = (__v_92 * __v_92);
-            let __v_96: G = (__v_94 * __v_95);
-            let __v_97: G = (__v_93 - __v_96);
-            let __v_98: G = g_inverse_value(__v_97);
+            let __v_81: G = (__v_66 * __v_73);
+            let __v_82: G = G::from_u64(0);
+            let __v_83: G = (__v_82 - __v_67);
+            let __v_84: G = (__v_83 * __v_73);
+            let __v_85: G = (__v_53 * __v_81);
+            let __v_86: G = G::from_u64(7);
+            let __v_87: G = (__v_54 * __v_84);
+            let __v_88: G = (__v_86 * __v_87);
+            let __v_89: G = (__v_85 + __v_88);
+            let __v_90: G = (__v_53 * __v_84);
+            let __v_91: G = (__v_54 * __v_81);
+            let __v_92: G = (__v_90 + __v_91);
+            let __v_93: G = G::from_u64(0);
+            let __v_94: G = (__v_18 - __v_56);
+            let __v_95: G = (__v_19 - __v_93);
+            let __v_96: G = (__v_94 * __v_94);
+            let __v_97: G = G::from_u64(7);
+            let __v_98: G = (__v_95 * __v_95);
             let __v_99: G = (__v_97 * __v_98);
-            let __v_100: G = G::from_u64(1);
-            let __v_101: G = (__v_99 - __v_100);
-            let __v_102: G = (__v_97 * __v_101);
-            let __v_103: G = G::from_u64(0);
-            if (__v_102 != __v_103) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_102.as_canonical_u64(), rhs: __v_103.as_canonical_u64(), msg: None });
+            let __v_100: G = (__v_96 - __v_99);
+            let __v_101: G = g_inverse_value(__v_100);
+            let __v_102: G = (__v_100 * __v_101);
+            let __v_103: G = G::from_u64(1);
+            let __v_104: G = (__v_102 - __v_103);
+            let __v_105: G = (__v_100 * __v_104);
+            let __v_106: G = G::from_u64(0);
+            if (__v_105 != __v_106) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_105.as_canonical_u64(), rhs: __v_106.as_canonical_u64(), msg: None });
             }
-            let __v_104: G = (__v_98 * __v_101);
-            let __v_105: G = G::from_u64(0);
-            if (__v_104 != __v_105) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_104.as_canonical_u64(), rhs: __v_105.as_canonical_u64(), msg: None });
+            let __v_107: G = (__v_101 * __v_104);
+            let __v_108: G = G::from_u64(0);
+            if (__v_107 != __v_108) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_107.as_canonical_u64(), rhs: __v_108.as_canonical_u64(), msg: None });
             }
-            let __v_106: G = (__v_91 * __v_98);
-            let __v_107: G = G::from_u64(0);
-            let __v_108: G = (__v_107 - __v_92);
-            let __v_109: G = (__v_108 * __v_98);
-            let __v_110: G = (__v_50 * __v_106);
-            let __v_111: G = G::from_u64(7);
-            let __v_112: G = (__v_51 * __v_109);
-            let __v_113: G = (__v_111 * __v_112);
-            let __v_114: G = (__v_110 + __v_113);
-            let __v_115: G = (__v_50 * __v_109);
-            let __v_116: G = (__v_51 * __v_106);
-            let __v_117: G = (__v_115 + __v_116);
-            let __v_118: G = G::from_u64(0);
-            let __v_119: G = (__v_18 - __v_53);
-            let __v_120: G = (__v_19 - __v_118);
-            let __v_121: G = (__v_50 * __v_50);
-            let __v_122: G = G::from_u64(7);
-            let __v_123: G = (__v_51 * __v_51);
-            let __v_124: G = (__v_122 * __v_123);
-            let __v_125: G = (__v_121 - __v_124);
-            let __v_126: G = g_inverse_value(__v_125);
+            let __v_109: G = (__v_94 * __v_101);
+            let __v_110: G = G::from_u64(0);
+            let __v_111: G = (__v_110 - __v_95);
+            let __v_112: G = (__v_111 * __v_101);
+            let __v_113: G = (__v_53 * __v_109);
+            let __v_114: G = G::from_u64(7);
+            let __v_115: G = (__v_54 * __v_112);
+            let __v_116: G = (__v_114 * __v_115);
+            let __v_117: G = (__v_113 + __v_116);
+            let __v_118: G = (__v_53 * __v_112);
+            let __v_119: G = (__v_54 * __v_109);
+            let __v_120: G = (__v_118 + __v_119);
+            let __v_121: G = G::from_u64(0);
+            let __v_122: G = (__v_18 - __v_56);
+            let __v_123: G = (__v_19 - __v_121);
+            let __v_124: G = (__v_53 * __v_53);
+            let __v_125: G = G::from_u64(7);
+            let __v_126: G = (__v_54 * __v_54);
             let __v_127: G = (__v_125 * __v_126);
-            let __v_128: G = G::from_u64(1);
-            let __v_129: G = (__v_127 - __v_128);
-            let __v_130: G = (__v_125 * __v_129);
-            let __v_131: G = G::from_u64(0);
-            if (__v_130 != __v_131) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_130.as_canonical_u64(), rhs: __v_131.as_canonical_u64(), msg: None });
+            let __v_128: G = (__v_124 - __v_127);
+            let __v_129: G = g_inverse_value(__v_128);
+            let __v_130: G = (__v_128 * __v_129);
+            let __v_131: G = G::from_u64(1);
+            let __v_132: G = (__v_130 - __v_131);
+            let __v_133: G = (__v_128 * __v_132);
+            let __v_134: G = G::from_u64(0);
+            if (__v_133 != __v_134) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_133.as_canonical_u64(), rhs: __v_134.as_canonical_u64(), msg: None });
             }
-            let __v_132: G = (__v_126 * __v_129);
-            let __v_133: G = G::from_u64(0);
-            if (__v_132 != __v_133) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_132.as_canonical_u64(), rhs: __v_133.as_canonical_u64(), msg: None });
+            let __v_135: G = (__v_129 * __v_132);
+            let __v_136: G = G::from_u64(0);
+            if (__v_135 != __v_136) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_135.as_canonical_u64(), rhs: __v_136.as_canonical_u64(), msg: None });
             }
-            let __v_134: G = (__v_50 * __v_126);
-            let __v_135: G = G::from_u64(0);
-            let __v_136: G = (__v_135 - __v_51);
-            let __v_137: G = (__v_136 * __v_126);
+            let __v_137: G = (__v_53 * __v_129);
             let __v_138: G = G::from_u64(0);
-            let __v_139: G = G::from_u64(0);
-            let __v_140: G = G::from_u64(0);
+            let __v_139: G = (__v_138 - __v_54);
+            let __v_140: G = (__v_139 * __v_129);
             let __v_141: G = G::from_u64(0);
             let __v_142: G = G::from_u64(0);
             let __v_143: G = G::from_u64(0);
@@ -18362,202 +18360,253 @@ fn aiur_fn_203(
             let __v_151: G = G::from_u64(0);
             let __v_152: G = G::from_u64(0);
             let __v_153: G = G::from_u64(0);
-            let __v_154: G = G::from_u64(1);
-            let __v_155: G = G::from_u64(1);
-            let __v_156: G = { let __values: [G; 4] = [__v_154, __v_155, __v_155, __v_155]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_157: G = { let __values: [G; 4] = [__v_152, __v_31, __v_153, __v_156]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_158: G = { let __values: [G; 4] = [__v_150, __v_30, __v_151, __v_157]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_159: G = { let __values: [G; 4] = [__v_148, __v_11, __v_149, __v_158]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_160: G = { let __values: [G; 4] = [__v_146, __v_10, __v_147, __v_159]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_161: G = { let __values: [G; 4] = [__v_144, __v_15, __v_145, __v_160]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_162: G = { let __values: [G; 4] = [__v_142, __v_14, __v_143, __v_161]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_163: G = { let __values: [G; 4] = [__v_140, __v_13, __v_141, __v_162]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __v_164: G = { let __values: [G; 4] = [__v_138, __v_12, __v_139, __v_163]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-            let __r_arr: [G; OUT_188] = { let __args: [G; IN_188] = [__v_28]; let __cu = unconstrained; let __hit = record.function_queries[188].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[188].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[188].bump_multiplicity(__i); } let __ret: [G; OUT_188] = unsafe { *(record.function_queries[188].output_at(__i).as_ptr() as *const [G; OUT_188]) }; __ret }, _ => aiur_fn_188(__args, record, io_buffer, __cu)? } };
-            let __v_165: G = __r_arr[0];
-            let __r_arr: [G; OUT_186] = { let __args: [G; IN_186] = [__v_28]; let __cu = unconstrained; let __hit = record.function_queries[186].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[186].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[186].bump_multiplicity(__i); } let __ret: [G; OUT_186] = unsafe { *(record.function_queries[186].output_at(__i).as_ptr() as *const [G; OUT_186]) }; __ret }, _ => aiur_fn_186(__args, record, io_buffer, __cu)? } };
-            let __v_166: G = __r_arr[0];
-            let __v_167: G = (__v_165 * __v_166);
-            let __v_168: G = g_inverse_value(__v_167);
-            let __v_169: G = (__v_167 * __v_168);
-            let __v_170: G = G::from_u64(1);
-            let __v_171: G = (__v_169 - __v_170);
-            let __v_172: G = (__v_167 * __v_171);
-            let __v_173: G = G::from_u64(0);
-            if (__v_172 != __v_173) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_172.as_canonical_u64(), rhs: __v_173.as_canonical_u64(), msg: None });
-            }
-            let __v_174: G = (__v_168 * __v_171);
-            let __v_175: G = G::from_u64(0);
-            if (__v_174 != __v_175) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_174.as_canonical_u64(), rhs: __v_175.as_canonical_u64(), msg: None });
-            }
+            let __v_154: G = G::from_u64(0);
+            let __v_155: G = G::from_u64(0);
+            let __v_156: G = G::from_u64(0);
+            let __v_157: G = G::from_u64(1);
+            let __v_158: G = G::from_u64(1);
+            let __v_159: G = { let __values: [G; 4] = [__v_157, __v_158, __v_158, __v_158]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_160: G = { let __values: [G; 4] = [__v_155, __v_34, __v_156, __v_159]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_161: G = { let __values: [G; 4] = [__v_153, __v_33, __v_154, __v_160]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_162: G = { let __values: [G; 4] = [__v_151, __v_11, __v_152, __v_161]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_163: G = { let __values: [G; 4] = [__v_149, __v_10, __v_150, __v_162]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_164: G = { let __values: [G; 4] = [__v_147, __v_15, __v_148, __v_163]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_165: G = { let __values: [G; 4] = [__v_145, __v_14, __v_146, __v_164]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_166: G = { let __values: [G; 4] = [__v_143, __v_13, __v_144, __v_165]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __v_167: G = { let __values: [G; 4] = [__v_141, __v_12, __v_142, __v_166]; let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __r_arr: [G; OUT_188] = { let __args: [G; IN_188] = [__v_31]; let __cu = unconstrained; let __hit = record.function_queries[188].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[188].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[188].bump_multiplicity(__i); } let __ret: [G; OUT_188] = unsafe { *(record.function_queries[188].output_at(__i).as_ptr() as *const [G; OUT_188]) }; __ret }, _ => aiur_fn_188(__args, record, io_buffer, __cu)? } };
+            let __v_168: G = __r_arr[0];
+            let __r_arr: [G; OUT_186] = { let __args: [G; IN_186] = [__v_31]; let __cu = unconstrained; let __hit = record.function_queries[186].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[186].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[186].bump_multiplicity(__i); } let __ret: [G; OUT_186] = unsafe { *(record.function_queries[186].output_at(__i).as_ptr() as *const [G; OUT_186]) }; __ret }, _ => aiur_fn_186(__args, record, io_buffer, __cu)? } };
+            let __v_169: G = __r_arr[0];
+            let __v_170: G = (__v_168 * __v_169);
+            let __v_171: G = g_inverse_value(__v_170);
+            let __v_172: G = (__v_170 * __v_171);
+            let __v_173: G = G::from_u64(1);
+            let __v_174: G = (__v_172 - __v_173);
+            let __v_175: G = (__v_170 * __v_174);
             let __v_176: G = G::from_u64(0);
-            let __v_177: G = G::from_u64(0);
-            let __r_arr: [G; OUT_194] = { let __args: [G; IN_194] = [__v_176, __v_177, __v_16, __v_17, __v_23, __v_21, __v_34, __v_36, __v_44, __v_45, __v_39, __v_41, __v_164, __v_86, __v_89, __v_114, __v_117, __v_119, __v_120]; let __cu = unconstrained; let __hit = record.function_queries[194].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[194].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[194].bump_multiplicity(__i); } let __ret: [G; OUT_194] = unsafe { *(record.function_queries[194].output_at(__i).as_ptr() as *const [G; OUT_194]) }; __ret }, _ => aiur_fn_194(__args, record, io_buffer, __cu)? } };
-            let __v_178: G = __r_arr[0];
-            let __v_179: G = __r_arr[1];
+            if (__v_175 != __v_176) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_175.as_canonical_u64(), rhs: __v_176.as_canonical_u64(), msg: None });
+            }
+            let __v_177: G = (__v_171 * __v_174);
+            let __v_178: G = G::from_u64(0);
+            if (__v_177 != __v_178) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_177.as_canonical_u64(), rhs: __v_178.as_canonical_u64(), msg: None });
+            }
+            let __v_179: G = G::from_u64(0);
             let __v_180: G = G::from_u64(0);
-            let __v_181: G = G::from_u64(0);
-            let __v_182: G = G::from_u64(0);
+            let __r_arr: [G; OUT_194] = { let __args: [G; IN_194] = [__v_179, __v_180, __v_16, __v_17, __v_23, __v_21, __v_37, __v_39, __v_47, __v_48, __v_42, __v_44, __v_167, __v_89, __v_92, __v_117, __v_120, __v_122, __v_123]; let __cu = unconstrained; let __hit = record.function_queries[194].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[194].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[194].bump_multiplicity(__i); } let __ret: [G; OUT_194] = unsafe { *(record.function_queries[194].output_at(__i).as_ptr() as *const [G; OUT_194]) }; __ret }, _ => aiur_fn_194(__args, record, io_buffer, __cu)? } };
+            let __v_181: G = __r_arr[0];
+            let __v_182: G = __r_arr[1];
             let __v_183: G = G::from_u64(0);
             let __v_184: G = G::from_u64(0);
             let __v_185: G = G::from_u64(0);
             let __v_186: G = G::from_u64(0);
             let __v_187: G = G::from_u64(0);
-            let __v_188: G = (__v_30 - __v_10);
-            let __v_189: G = (__v_186 - __v_184);
+            let __v_188: G = G::from_u64(0);
+            let __v_189: G = G::from_u64(0);
             let __v_190: G = G::from_u64(0);
-            let __v_191: G = (__v_188 * __v_168);
-            let __v_192: G = G::from_u64(7);
-            let __v_193: G = (__v_189 * __v_190);
-            let __v_194: G = (__v_192 * __v_193);
-            let __v_195: G = (__v_191 + __v_194);
-            let __v_196: G = (__v_188 * __v_190);
-            let __v_197: G = (__v_189 * __v_168);
-            let __v_198: G = (__v_196 + __v_197);
-            let __v_199: G = (__v_114 * __v_195);
-            let __v_200: G = G::from_u64(7);
-            let __v_201: G = (__v_117 * __v_198);
-            let __v_202: G = (__v_200 * __v_201);
-            let __v_203: G = (__v_199 + __v_202);
-            let __v_204: G = (__v_114 * __v_198);
-            let __v_205: G = (__v_117 * __v_195);
-            let __v_206: G = (__v_204 + __v_205);
-            let __v_207: G = (__v_31 - __v_11);
-            let __v_208: G = (__v_187 - __v_185);
-            let __v_209: G = G::from_u64(0);
-            let __v_210: G = (__v_207 * __v_168);
-            let __v_211: G = G::from_u64(7);
-            let __v_212: G = (__v_208 * __v_209);
-            let __v_213: G = (__v_211 * __v_212);
-            let __v_214: G = (__v_210 + __v_213);
-            let __v_215: G = (__v_207 * __v_209);
-            let __v_216: G = (__v_208 * __v_168);
-            let __v_217: G = (__v_215 + __v_216);
-            let __v_218: G = (__v_114 * __v_214);
-            let __v_219: G = G::from_u64(7);
-            let __v_220: G = (__v_117 * __v_217);
-            let __v_221: G = (__v_219 * __v_220);
-            let __v_222: G = (__v_218 + __v_221);
-            let __v_223: G = (__v_114 * __v_217);
-            let __v_224: G = (__v_117 * __v_214);
-            let __v_225: G = (__v_223 + __v_224);
+            let __v_191: G = (__v_33 - __v_10);
+            let __v_192: G = (__v_189 - __v_187);
+            let __v_193: G = G::from_u64(0);
+            let __v_194: G = (__v_191 * __v_171);
+            let __v_195: G = G::from_u64(7);
+            let __v_196: G = (__v_192 * __v_193);
+            let __v_197: G = (__v_195 * __v_196);
+            let __v_198: G = (__v_194 + __v_197);
+            let __v_199: G = (__v_191 * __v_193);
+            let __v_200: G = (__v_192 * __v_171);
+            let __v_201: G = (__v_199 + __v_200);
+            let __v_202: G = (__v_117 * __v_198);
+            let __v_203: G = G::from_u64(7);
+            let __v_204: G = (__v_120 * __v_201);
+            let __v_205: G = (__v_203 * __v_204);
+            let __v_206: G = (__v_202 + __v_205);
+            let __v_207: G = (__v_117 * __v_201);
+            let __v_208: G = (__v_120 * __v_198);
+            let __v_209: G = (__v_207 + __v_208);
+            let __v_210: G = (__v_34 - __v_11);
+            let __v_211: G = (__v_190 - __v_188);
+            let __v_212: G = G::from_u64(0);
+            let __v_213: G = (__v_210 * __v_171);
+            let __v_214: G = G::from_u64(7);
+            let __v_215: G = (__v_211 * __v_212);
+            let __v_216: G = (__v_214 * __v_215);
+            let __v_217: G = (__v_213 + __v_216);
+            let __v_218: G = (__v_210 * __v_212);
+            let __v_219: G = (__v_211 * __v_171);
+            let __v_220: G = (__v_218 + __v_219);
+            let __v_221: G = (__v_117 * __v_217);
+            let __v_222: G = G::from_u64(7);
+            let __v_223: G = (__v_120 * __v_220);
+            let __v_224: G = (__v_222 * __v_223);
+            let __v_225: G = (__v_221 + __v_224);
+            let __v_226: G = (__v_117 * __v_220);
+            let __v_227: G = (__v_120 * __v_217);
+            let __v_228: G = (__v_226 + __v_227);
             let __loaded: [G; 4] = { let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; let __ptr_u64 = __v_25.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 4 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 4] = __args[..4].try_into().unwrap(); __arr };
-            let __v_226: G = __loaded[0];
-            let __v_227: G = __loaded[1];
-            let __v_228: G = __loaded[2];
-            let __v_229: G = __loaded[3];
-            let __mc_out___mc_1: [G; 2] = '__mc_1: { match __v_226.as_canonical_u64() {
+            let __v_229: G = __loaded[0];
+            let __v_230: G = __loaded[1];
+            let __v_231: G = __loaded[2];
+            let __v_232: G = __loaded[3];
+            let __mc_out___mc_1: [G; 2] = '__mc_1: { match __v_229.as_canonical_u64() {
   1u64 => {
-    let __v_230: G = G::from_u64(0);
-    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_41, __v_230]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
-    let __v_231: G = __r_arr[0];
-    let __v_232: G = __r_arr[1];
     let __v_233: G = G::from_u64(0);
-    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_39, __v_233]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_44, __v_233]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
     let __v_234: G = __r_arr[0];
     let __v_235: G = __r_arr[1];
-    let __v_236: G = (__v_231 - __v_234);
-    let __v_237: G = (__v_232 - __v_235);
-    let __v_238: G = (__v_236 + __v_203);
-    let __v_239: G = (__v_237 + __v_206);
-    let __r_arr: [G; OUT_190] = { let __args: [G; IN_190] = [__v_178, __v_179, __v_16, __v_17, __v_238, __v_239]; let __cu = unconstrained; let __hit = record.function_queries[190].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[190].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[190].bump_multiplicity(__i); } let __ret: [G; OUT_190] = unsafe { *(record.function_queries[190].output_at(__i).as_ptr() as *const [G; OUT_190]) }; __ret }, _ => aiur_fn_190(__args, record, io_buffer, __cu)? } };
-    let __v_240: G = __r_arr[0];
-    let __v_241: G = __r_arr[1];
-    let __v_242: G = G::from_u64(1);
-    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_41, __v_242]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+    let __v_236: G = G::from_u64(0);
+    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_42, __v_236]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+    let __v_237: G = __r_arr[0];
+    let __v_238: G = __r_arr[1];
+    let __v_239: G = (__v_234 - __v_237);
+    let __v_240: G = (__v_235 - __v_238);
+    let __v_241: G = (__v_239 + __v_206);
+    let __v_242: G = (__v_240 + __v_209);
+    let __r_arr: [G; OUT_190] = { let __args: [G; IN_190] = [__v_181, __v_182, __v_16, __v_17, __v_241, __v_242]; let __cu = unconstrained; let __hit = record.function_queries[190].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[190].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[190].bump_multiplicity(__i); } let __ret: [G; OUT_190] = unsafe { *(record.function_queries[190].output_at(__i).as_ptr() as *const [G; OUT_190]) }; __ret }, _ => aiur_fn_190(__args, record, io_buffer, __cu)? } };
     let __v_243: G = __r_arr[0];
     let __v_244: G = __r_arr[1];
     let __v_245: G = G::from_u64(1);
-    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_39, __v_245]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_44, __v_245]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
     let __v_246: G = __r_arr[0];
     let __v_247: G = __r_arr[1];
-    let __v_248: G = (__v_243 - __v_246);
-    let __v_249: G = (__v_244 - __v_247);
-    let __v_250: G = (__v_248 + __v_222);
-    let __v_251: G = (__v_249 + __v_225);
-    let __r_arr: [G; OUT_190] = { let __args: [G; IN_190] = [__v_240, __v_241, __v_16, __v_17, __v_250, __v_251]; let __cu = unconstrained; let __hit = record.function_queries[190].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[190].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[190].bump_multiplicity(__i); } let __ret: [G; OUT_190] = unsafe { *(record.function_queries[190].output_at(__i).as_ptr() as *const [G; OUT_190]) }; __ret }, _ => aiur_fn_190(__args, record, io_buffer, __cu)? } };
-    let __v_252: G = __r_arr[0];
-    let __v_253: G = __r_arr[1];
-    break '__mc_1 [__v_252, __v_253];
+    let __v_248: G = G::from_u64(1);
+    let __r_arr: [G; OUT_288] = { let __args: [G; IN_288] = [__v_42, __v_248]; let __cu = unconstrained; let __hit = record.function_queries[288].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[288].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[288].bump_multiplicity(__i); } let __ret: [G; OUT_288] = unsafe { *(record.function_queries[288].output_at(__i).as_ptr() as *const [G; OUT_288]) }; __ret }, _ => aiur_fn_288(__args, record, io_buffer, __cu)? } };
+    let __v_249: G = __r_arr[0];
+    let __v_250: G = __r_arr[1];
+    let __v_251: G = (__v_246 - __v_249);
+    let __v_252: G = (__v_247 - __v_250);
+    let __v_253: G = (__v_251 + __v_225);
+    let __v_254: G = (__v_252 + __v_228);
+    let __r_arr: [G; OUT_190] = { let __args: [G; IN_190] = [__v_243, __v_244, __v_16, __v_17, __v_253, __v_254]; let __cu = unconstrained; let __hit = record.function_queries[190].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[190].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[190].bump_multiplicity(__i); } let __ret: [G; OUT_190] = unsafe { *(record.function_queries[190].output_at(__i).as_ptr() as *const [G; OUT_190]) }; __ret }, _ => aiur_fn_190(__args, record, io_buffer, __cu)? } };
+    let __v_255: G = __r_arr[0];
+    let __v_256: G = __r_arr[1];
+    break '__mc_1 [__v_255, __v_256];
   },
   0u64 => {
-    let __v_230: G = G::from_u64(0);
+    let __v_233: G = G::from_u64(0);
     let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_25]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
-    let __v_231: G = __r_arr[0];
-    let __v_232: G = G::from_u64(0);
-    let __v_233: G = G::from_u64(1);
-    let __v_234: G = G::from_u64(0);
+    let __v_234: G = __r_arr[0];
     let __v_235: G = G::from_u64(0);
-    let __v_236: G = G::from_u64(0);
+    let __v_236: G = G::from_u64(1);
     let __v_237: G = G::from_u64(0);
     let __v_238: G = G::from_u64(0);
     let __v_239: G = G::from_u64(0);
     let __v_240: G = G::from_u64(0);
-    let __r_arr: [G; OUT_197] = { let __args: [G; IN_197] = [__v_178, __v_179, __v_16, __v_17, __v_25, __v_230, __v_231, __v_232, __v_26, __v_26, __v_233, __v_234, __v_235, __v_236, __v_237, __v_238, __v_239, __v_240, __v_203, __v_206, __v_222, __v_225, __v_12, __v_180, __v_13, __v_181, __v_14, __v_182, __v_15, __v_183, __v_21, __v_34, __v_36, __v_44, __v_45, __v_39, __v_41, __v_164, __v_86, __v_89, __v_114, __v_117, __v_119, __v_120]; let __cu = unconstrained; let __hit = record.function_queries[197].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[197].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[197].bump_multiplicity(__i); } let __ret: [G; OUT_197] = unsafe { *(record.function_queries[197].output_at(__i).as_ptr() as *const [G; OUT_197]) }; __ret }, _ => aiur_fn_197(__args, record, io_buffer, __cu)? } };
-    let __v_241: G = __r_arr[0];
-    let __v_242: G = __r_arr[1];
-    break '__mc_1 [__v_241, __v_242];
+    let __v_241: G = G::from_u64(0);
+    let __v_242: G = G::from_u64(0);
+    let __v_243: G = G::from_u64(0);
+    let __r_arr: [G; OUT_197] = { let __args: [G; IN_197] = [__v_181, __v_182, __v_16, __v_17, __v_25, __v_233, __v_234, __v_235, __v_26, __v_26, __v_236, __v_237, __v_238, __v_239, __v_240, __v_241, __v_242, __v_243, __v_206, __v_209, __v_225, __v_228, __v_12, __v_183, __v_13, __v_184, __v_14, __v_185, __v_15, __v_186, __v_21, __v_37, __v_39, __v_47, __v_48, __v_42, __v_44, __v_167, __v_89, __v_92, __v_117, __v_120, __v_122, __v_123]; let __cu = unconstrained; let __hit = record.function_queries[197].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[197].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[197].bump_multiplicity(__i); } let __ret: [G; OUT_197] = unsafe { *(record.function_queries[197].output_at(__i).as_ptr() as *const [G; OUT_197]) }; __ret }, _ => aiur_fn_197(__args, record, io_buffer, __cu)? } };
+    let __v_244: G = __r_arr[0];
+    let __v_245: G = __r_arr[1];
+    break '__mc_1 [__v_244, __v_245];
   },
   _ => {
-    return Err(ExecError::MatchNoCase(__v_226.as_canonical_u64()));
+    return Err(ExecError::MatchNoCase(__v_229.as_canonical_u64()));
   },
 }
  };
-            let __v_230: G = __mc_out___mc_1[0];
-            let __v_231: G = __mc_out___mc_1[1];
+            let __v_233: G = __mc_out___mc_1[0];
+            let __v_234: G = __mc_out___mc_1[1];
             let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_8, __v_9]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-            let __v_232: G = __r_arr[0];
-            let __v_233: G = G::from_u64(0);
-            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_232, __v_233]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
-            let __v_234: G = __r_arr[0];
-            let __r_arr: [G; OUT_192] = { let __args: [G; IN_192] = [__v_234]; let __cu = unconstrained; let __hit = record.function_queries[192].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[192].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[192].bump_multiplicity(__i); } let __ret: [G; OUT_192] = unsafe { *(record.function_queries[192].output_at(__i).as_ptr() as *const [G; OUT_192]) }; __ret }, _ => aiur_fn_192(__args, record, io_buffer, __cu)? } };
             let __v_235: G = __r_arr[0];
-            let __r_arr: [G; OUT_185] = { let __args: [G; IN_185] = [__v_18, __v_19, __v_28]; let __cu = unconstrained; let __hit = record.function_queries[185].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[185].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[185].bump_multiplicity(__i); } let __ret: [G; OUT_185] = unsafe { *(record.function_queries[185].output_at(__i).as_ptr() as *const [G; OUT_185]) }; __ret }, _ => aiur_fn_185(__args, record, io_buffer, __cu)? } };
-            let __v_236: G = __r_arr[0];
-            let __v_237: G = __r_arr[1];
-            let __v_238: G = G::from_u64(1);
-            let __v_239: G = G::from_u64(0);
-            let __r_arr: [G; OUT_200] = { let __args: [G; IN_200] = [__v_235, __v_236, __v_237, __v_238, __v_239]; let __cu = unconstrained; let __hit = record.function_queries[200].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[200].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[200].bump_multiplicity(__i); } let __ret: [G; OUT_200] = unsafe { *(record.function_queries[200].output_at(__i).as_ptr() as *const [G; OUT_200]) }; __ret }, _ => aiur_fn_200(__args, record, io_buffer, __cu)? } };
-            let __v_240: G = __r_arr[0];
-            let __v_241: G = __r_arr[1];
-            let __v_242: G = (__v_230 * __v_134);
-            let __v_243: G = G::from_u64(7);
-            let __v_244: G = (__v_231 * __v_137);
-            let __v_245: G = (__v_243 * __v_244);
-            let __v_246: G = (__v_242 + __v_245);
-            let __v_247: G = (__v_230 * __v_137);
-            let __v_248: G = (__v_231 * __v_134);
-            let __v_249: G = (__v_247 + __v_248);
-            let __v_250: G = G::from_u64(32);
-            let __v_251: G = if unconstrained { Bytes2::less_than(&__v_28, &__v_250) } else { bytes2_less_than_value(__v_28, __v_250, record) };
-            let __v_252: G = G::from_u64(1);
-            if (__v_251 != __v_252) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_251.as_canonical_u64(), rhs: __v_252.as_canonical_u64(), msg: None });
+            let __v_236: G = G::from_u64(0);
+            let __r_arr: [G; OUT_277] = { let __args: [G; IN_277] = [__v_235, __v_236]; let __cu = unconstrained; let __hit = record.function_queries[277].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[277].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[277].bump_multiplicity(__i); } let __ret: [G; OUT_277] = unsafe { *(record.function_queries[277].output_at(__i).as_ptr() as *const [G; OUT_277]) }; __ret }, _ => aiur_fn_277(__args, record, io_buffer, __cu)? } };
+            let __v_237: G = __r_arr[0];
+            let __r_arr: [G; OUT_192] = { let __args: [G; IN_192] = [__v_237]; let __cu = unconstrained; let __hit = record.function_queries[192].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[192].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[192].bump_multiplicity(__i); } let __ret: [G; OUT_192] = unsafe { *(record.function_queries[192].output_at(__i).as_ptr() as *const [G; OUT_192]) }; __ret }, _ => aiur_fn_192(__args, record, io_buffer, __cu)? } };
+            let __v_238: G = __r_arr[0];
+            let __r_arr: [G; OUT_185] = { let __args: [G; IN_185] = [__v_18, __v_19, __v_31]; let __cu = unconstrained; let __hit = record.function_queries[185].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[185].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[185].bump_multiplicity(__i); } let __ret: [G; OUT_185] = unsafe { *(record.function_queries[185].output_at(__i).as_ptr() as *const [G; OUT_185]) }; __ret }, _ => aiur_fn_185(__args, record, io_buffer, __cu)? } };
+            let __v_239: G = __r_arr[0];
+            let __v_240: G = __r_arr[1];
+            let __v_241: G = G::from_u64(1);
+            let __v_242: G = G::from_u64(0);
+            let __r_arr: [G; OUT_200] = { let __args: [G; IN_200] = [__v_238, __v_239, __v_240, __v_241, __v_242]; let __cu = unconstrained; let __hit = record.function_queries[200].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[200].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[200].bump_multiplicity(__i); } let __ret: [G; OUT_200] = unsafe { *(record.function_queries[200].output_at(__i).as_ptr() as *const [G; OUT_200]) }; __ret }, _ => aiur_fn_200(__args, record, io_buffer, __cu)? } };
+            let __v_243: G = __r_arr[0];
+            let __v_244: G = __r_arr[1];
+            let __v_245: G = (__v_233 * __v_137);
+            let __v_246: G = G::from_u64(7);
+            let __v_247: G = (__v_234 * __v_140);
+            let __v_248: G = (__v_246 * __v_247);
+            let __v_249: G = (__v_245 + __v_248);
+            let __v_250: G = (__v_233 * __v_140);
+            let __v_251: G = (__v_234 * __v_137);
+            let __v_252: G = (__v_250 + __v_251);
+            let __v_253: G = G::from_u64(32);
+            let __v_254: G = if unconstrained { Bytes2::less_than(&__v_31, &__v_253) } else { bytes2_less_than_value(__v_31, __v_253, record) };
+            let __v_255: G = G::from_u64(1);
+            if (__v_254 != __v_255) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_254.as_canonical_u64(), rhs: __v_255.as_canonical_u64(), msg: None });
             }
-            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_235]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
-            let __v_253: G = __r_arr[0];
-            let __v_254: G = (__v_253 - __v_29);
-            let __v_255: G = G::from_bool((__v_254 == G::ZERO));
-            let __v_256: G = G::from_u64(1);
-            if (__v_255 != __v_256) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_255.as_canonical_u64(), rhs: __v_256.as_canonical_u64(), msg: None });
-            }
-            let __v_257: G = (__v_246 - __v_240);
+            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_37]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
+            let __v_256: G = __r_arr[0];
+            let __v_257: G = (__v_256 - __v_27);
             let __v_258: G = G::from_bool((__v_257 == G::ZERO));
-            let __v_259: G = (__v_249 - __v_241);
-            let __v_260: G = G::from_bool((__v_259 == G::ZERO));
-            let __v_261: G = (__v_258 * __v_260);
-            let __v_262: G = G::from_u64(1);
-            if (__v_261 != __v_262) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_261.as_canonical_u64(), rhs: __v_262.as_canonical_u64(), msg: None });
+            let __v_259: G = G::from_u64(1);
+            if (__v_258 != __v_259) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_258.as_canonical_u64(), rhs: __v_259.as_canonical_u64(), msg: None });
             }
+            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_39]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
+            let __v_260: G = __r_arr[0];
+            let __v_261: G = (__v_260 - __v_27);
+            let __v_262: G = G::from_bool((__v_261 == G::ZERO));
             let __v_263: G = G::from_u64(1);
-            let __v_264: G = (__v_9 + __v_263);
-            let __r_arr: [G; OUT_203] = { let __args: [G; IN_203] = [__v_27, __v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_264, __v_30, __v_31, __v_12, __v_13, __v_14, __v_15, __v_16, __v_17, __v_18, __v_19]; let __cu = unconstrained; let __hit = record.function_queries[203].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[203].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[203].bump_multiplicity(__i); } let __ret: [G; OUT_203] = unsafe { *(record.function_queries[203].output_at(__i).as_ptr() as *const [G; OUT_203]) }; __ret }, _ => aiur_fn_203(__args, record, io_buffer, __cu)? } };
-            let __v_265: G = __r_arr[0];
-            let __ret: [G; OUT_203] = [__v_265];
+            if (__v_262 != __v_263) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_262.as_canonical_u64(), rhs: __v_263.as_canonical_u64(), msg: None });
+            }
+            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_42]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
+            let __v_264: G = __r_arr[0];
+            let __v_265: G = (__v_264 - __v_29);
+            let __v_266: G = G::from_bool((__v_265 == G::ZERO));
+            let __v_267: G = G::from_u64(1);
+            if (__v_266 != __v_267) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_266.as_canonical_u64(), rhs: __v_267.as_canonical_u64(), msg: None });
+            }
+            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_44]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
+            let __v_268: G = __r_arr[0];
+            let __v_269: G = (__v_268 - __v_29);
+            let __v_270: G = G::from_bool((__v_269 == G::ZERO));
+            let __v_271: G = G::from_u64(1);
+            if (__v_270 != __v_271) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_270.as_canonical_u64(), rhs: __v_271.as_canonical_u64(), msg: None });
+            }
+            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_47]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
+            let __v_272: G = __r_arr[0];
+            let __v_273: G = (__v_272 - __v_28);
+            let __v_274: G = G::from_bool((__v_273 == G::ZERO));
+            let __v_275: G = G::from_u64(1);
+            if (__v_274 != __v_275) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_274.as_canonical_u64(), rhs: __v_275.as_canonical_u64(), msg: None });
+            }
+            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_48]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
+            let __v_276: G = __r_arr[0];
+            let __v_277: G = (__v_276 - __v_28);
+            let __v_278: G = G::from_bool((__v_277 == G::ZERO));
+            let __v_279: G = G::from_u64(1);
+            if (__v_278 != __v_279) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_278.as_canonical_u64(), rhs: __v_279.as_canonical_u64(), msg: None });
+            }
+            let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_238]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
+            let __v_280: G = __r_arr[0];
+            let __v_281: G = (__v_280 - __v_32);
+            let __v_282: G = G::from_bool((__v_281 == G::ZERO));
+            let __v_283: G = G::from_u64(1);
+            if (__v_282 != __v_283) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_282.as_canonical_u64(), rhs: __v_283.as_canonical_u64(), msg: None });
+            }
+            let __v_284: G = (__v_249 - __v_243);
+            let __v_285: G = G::from_bool((__v_284 == G::ZERO));
+            let __v_286: G = (__v_252 - __v_244);
+            let __v_287: G = G::from_bool((__v_286 == G::ZERO));
+            let __v_288: G = (__v_285 * __v_287);
+            let __v_289: G = G::from_u64(1);
+            if (__v_288 != __v_289) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_288.as_canonical_u64(), rhs: __v_289.as_canonical_u64(), msg: None });
+            }
+            let __v_290: G = G::from_u64(1);
+            let __v_291: G = (__v_9 + __v_290);
+            let __r_arr: [G; OUT_203] = { let __args: [G; IN_203] = [__v_30, __v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_291, __v_33, __v_34, __v_12, __v_13, __v_14, __v_15, __v_16, __v_17, __v_18, __v_19]; let __cu = unconstrained; let __hit = record.function_queries[203].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[203].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[203].bump_multiplicity(__i); } let __ret: [G; OUT_203] = unsafe { *(record.function_queries[203].output_at(__i).as_ptr() as *const [G; OUT_203]) }; __ret }, _ => aiur_fn_203(__args, record, io_buffer, __cu)? } };
+            let __v_292: G = __r_arr[0];
+            let __ret: [G; OUT_203] = [__v_292];
             record.function_queries[203].finish(&inp[..], &__ret[..], !unconstrained);
             return Ok(__ret);
           },
@@ -18776,7 +18825,7 @@ fn aiur_fn_207(
   stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
     let __v_0: G = inp[0];
     let __v_1: G = inp[1];
-    let __loaded: [G; 8] = { let __mq = record.memory_queries.get_mut(&8).ok_or(ExecError::InvalidMemorySize(8))?; let __ptr_u64 = __v_0.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 8 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 8] = __args[..8].try_into().unwrap(); __arr };
+    let __loaded: [G; 11] = { let __mq = record.memory_queries.get_mut(&11).ok_or(ExecError::InvalidMemorySize(11))?; let __ptr_u64 = __v_0.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 11 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 11] = __args[..11].try_into().unwrap(); __arr };
     let __v_2: G = __loaded[0];
     let __v_3: G = __loaded[1];
     let __v_4: G = __loaded[2];
@@ -18785,43 +18834,46 @@ fn aiur_fn_207(
     let __v_7: G = __loaded[5];
     let __v_8: G = __loaded[6];
     let __v_9: G = __loaded[7];
+    let __v_10: G = __loaded[8];
+    let __v_11: G = __loaded[9];
+    let __v_12: G = __loaded[10];
     match __v_2.as_canonical_u64() {
       1u64 => {
-        let __v_10: G = G::from_u64(1);
-        let __v_11: G = G::from_u64(1);
-        let __v_12: G = { let __values: [G; 8] = [__v_10, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11]; let __mq = record.memory_queries.get_mut(&8).ok_or(ExecError::InvalidMemorySize(8))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-        let __ret: [G; OUT_207] = [__v_12];
+        let __v_13: G = G::from_u64(1);
+        let __v_14: G = G::from_u64(1);
+        let __v_15: G = { let __values: [G; 11] = [__v_13, __v_14, __v_14, __v_14, __v_14, __v_14, __v_14, __v_14, __v_14, __v_14, __v_14]; let __mq = record.memory_queries.get_mut(&11).ok_or(ExecError::InvalidMemorySize(11))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __ret: [G; OUT_207] = [__v_15];
         record.function_queries[207].finish(&inp[..], &__ret[..], !unconstrained);
         return Ok(__ret);
       },
       0u64 => {
         let __loaded: [G; 3] = { let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; let __ptr_u64 = __v_1.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 3 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 3] = __args[..3].try_into().unwrap(); __arr };
-        let __v_10: G = __loaded[0];
-        let __v_11: G = __loaded[1];
-        let __v_12: G = __loaded[2];
-        match __v_10.as_canonical_u64() {
+        let __v_13: G = __loaded[0];
+        let __v_14: G = __loaded[1];
+        let __v_15: G = __loaded[2];
+        match __v_13.as_canonical_u64() {
           0u64 => {
-            match __v_11.as_canonical_u64() {
+            match __v_14.as_canonical_u64() {
               0u64 => {
-                let __r_arr: [G; OUT_207] = { let __args: [G; IN_207] = [__v_9, __v_12]; let __cu = unconstrained; let __hit = record.function_queries[207].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[207].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[207].bump_multiplicity(__i); } let __ret: [G; OUT_207] = unsafe { *(record.function_queries[207].output_at(__i).as_ptr() as *const [G; OUT_207]) }; __ret }, _ => aiur_fn_207(__args, record, io_buffer, __cu)? } };
-                let __v_13: G = __r_arr[0];
-                let __ret: [G; OUT_207] = [__v_13];
+                let __r_arr: [G; OUT_207] = { let __args: [G; IN_207] = [__v_12, __v_15]; let __cu = unconstrained; let __hit = record.function_queries[207].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[207].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[207].bump_multiplicity(__i); } let __ret: [G; OUT_207] = unsafe { *(record.function_queries[207].output_at(__i).as_ptr() as *const [G; OUT_207]) }; __ret }, _ => aiur_fn_207(__args, record, io_buffer, __cu)? } };
+                let __v_16: G = __r_arr[0];
+                let __ret: [G; OUT_207] = [__v_16];
                 record.function_queries[207].finish(&inp[..], &__ret[..], !unconstrained);
                 return Ok(__ret);
               },
               _ => {
-                let __v_13: G = G::from_u64(0);
-                let __r_arr: [G; OUT_207] = { let __args: [G; IN_207] = [__v_9, __v_12]; let __cu = unconstrained; let __hit = record.function_queries[207].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[207].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[207].bump_multiplicity(__i); } let __ret: [G; OUT_207] = unsafe { *(record.function_queries[207].output_at(__i).as_ptr() as *const [G; OUT_207]) }; __ret }, _ => aiur_fn_207(__args, record, io_buffer, __cu)? } };
-                let __v_14: G = __r_arr[0];
-                let __v_15: G = { let __values: [G; 8] = [__v_13, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_14]; let __mq = record.memory_queries.get_mut(&8).ok_or(ExecError::InvalidMemorySize(8))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
-                let __ret: [G; OUT_207] = [__v_15];
+                let __v_16: G = G::from_u64(0);
+                let __r_arr: [G; OUT_207] = { let __args: [G; IN_207] = [__v_12, __v_15]; let __cu = unconstrained; let __hit = record.function_queries[207].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[207].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[207].bump_multiplicity(__i); } let __ret: [G; OUT_207] = unsafe { *(record.function_queries[207].output_at(__i).as_ptr() as *const [G; OUT_207]) }; __ret }, _ => aiur_fn_207(__args, record, io_buffer, __cu)? } };
+                let __v_17: G = __r_arr[0];
+                let __v_18: G = { let __values: [G; 11] = [__v_16, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_10, __v_11, __v_17]; let __mq = record.memory_queries.get_mut(&11).ok_or(ExecError::InvalidMemorySize(11))?; if let Some(__i) = __mq.get_index_of(&__values[..]) { if !unconstrained { __mq.bump_multiplicity(__i); } __mq.output_at(__i)[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+                let __ret: [G; OUT_207] = [__v_18];
                 record.function_queries[207].finish(&inp[..], &__ret[..], !unconstrained);
                 return Ok(__ret);
               },
             }
           },
           _ => {
-            return Err(ExecError::MatchNoCase(__v_10.as_canonical_u64()));
+            return Err(ExecError::MatchNoCase(__v_13.as_canonical_u64()));
           },
         }
       },
@@ -21162,7 +21214,7 @@ fn aiur_fn_231(
                         let __v_59: G = G::from_u64(0);
                         let __r_arr: [G; OUT_203] = { let __args: [G; IN_203] = [__v_47, __v_48, __v_22, __v_21, __v_39, __v_40, __v_37, __v_38, __v_36, __v_59, __v_57, __v_58, __v_42, __v_43, __v_44, __v_45, __v_50, __v_51, __v_52, __v_53]; let __cu = unconstrained; let __hit = record.function_queries[203].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[203].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[203].bump_multiplicity(__i); } let __ret: [G; OUT_203] = unsafe { *(record.function_queries[203].output_at(__i).as_ptr() as *const [G; OUT_203]) }; __ret }, _ => aiur_fn_203(__args, record, io_buffer, __cu)? } };
                         let __v_60: G = __r_arr[0];
-                        let __r_arr: [G; OUT_292] = { let __args: [G; IN_292] = [__v_47]; let __cu = unconstrained; let __hit = record.function_queries[292].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[292].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[292].bump_multiplicity(__i); } let __ret: [G; OUT_292] = unsafe { *(record.function_queries[292].output_at(__i).as_ptr() as *const [G; OUT_292]) }; __ret }, _ => aiur_fn_292(__args, record, io_buffer, __cu)? } };
+                        let __r_arr: [G; OUT_285] = { let __args: [G; IN_285] = [__v_47]; let __cu = unconstrained; let __hit = record.function_queries[285].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[285].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[285].bump_multiplicity(__i); } let __ret: [G; OUT_285] = unsafe { *(record.function_queries[285].output_at(__i).as_ptr() as *const [G; OUT_285]) }; __ret }, _ => aiur_fn_285(__args, record, io_buffer, __cu)? } };
                         let __v_61: G = __r_arr[0];
                         match __v_23.as_canonical_u64() {
                           _ => {
@@ -21321,7 +21373,7 @@ fn aiur_fn_231(
                             }
                             let __r_arr: [G; OUT_279] = { let __args: [G; IN_279] = [__v_17]; let __cu = unconstrained; let __hit = record.function_queries[279].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[279].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[279].bump_multiplicity(__i); } let __ret: [G; OUT_279] = unsafe { *(record.function_queries[279].output_at(__i).as_ptr() as *const [G; OUT_279]) }; __ret }, _ => aiur_fn_279(__args, record, io_buffer, __cu)? } };
                             let __v_159: G = __r_arr[0];
-                            let __r_arr: [G; OUT_292] = { let __args: [G; IN_292] = [__v_8]; let __cu = unconstrained; let __hit = record.function_queries[292].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[292].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[292].bump_multiplicity(__i); } let __ret: [G; OUT_292] = unsafe { *(record.function_queries[292].output_at(__i).as_ptr() as *const [G; OUT_292]) }; __ret }, _ => aiur_fn_292(__args, record, io_buffer, __cu)? } };
+                            let __r_arr: [G; OUT_285] = { let __args: [G; IN_285] = [__v_8]; let __cu = unconstrained; let __hit = record.function_queries[285].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[285].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[285].bump_multiplicity(__i); } let __ret: [G; OUT_285] = unsafe { *(record.function_queries[285].output_at(__i).as_ptr() as *const [G; OUT_285]) }; __ret }, _ => aiur_fn_285(__args, record, io_buffer, __cu)? } };
                             let __v_160: G = __r_arr[0];
                             let __v_161: G = (__v_159 - __v_160);
                             let __v_162: G = G::from_bool((__v_161 == G::ZERO));
@@ -21329,7 +21381,7 @@ fn aiur_fn_231(
                             if (__v_162 != __v_163) {
                               return Err(ExecError::AssertEqMismatch { lhs: __v_162.as_canonical_u64(), rhs: __v_163.as_canonical_u64(), msg: None });
                             }
-                            let __r_arr: [G; OUT_292] = { let __args: [G; IN_292] = [__v_47]; let __cu = unconstrained; let __hit = record.function_queries[292].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[292].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[292].bump_multiplicity(__i); } let __ret: [G; OUT_292] = unsafe { *(record.function_queries[292].output_at(__i).as_ptr() as *const [G; OUT_292]) }; __ret }, _ => aiur_fn_292(__args, record, io_buffer, __cu)? } };
+                            let __r_arr: [G; OUT_285] = { let __args: [G; IN_285] = [__v_47]; let __cu = unconstrained; let __hit = record.function_queries[285].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[285].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[285].bump_multiplicity(__i); } let __ret: [G; OUT_285] = unsafe { *(record.function_queries[285].output_at(__i).as_ptr() as *const [G; OUT_285]) }; __ret }, _ => aiur_fn_285(__args, record, io_buffer, __cu)? } };
                             let __v_164: G = __r_arr[0];
                             let __r_arr: [G; OUT_280] = { let __args: [G; IN_280] = [__v_21]; let __cu = unconstrained; let __hit = record.function_queries[280].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[280].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[280].bump_multiplicity(__i); } let __ret: [G; OUT_280] = unsafe { *(record.function_queries[280].output_at(__i).as_ptr() as *const [G; OUT_280]) }; __ret }, _ => aiur_fn_280(__args, record, io_buffer, __cu)? } };
                             let __v_165: G = __r_arr[0];
@@ -24506,7 +24558,7 @@ fn aiur_fn_266(
   stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
     let __v_0: G = inp[0];
     let __v_1: G = inp[1];
-    let __r_arr: [G; OUT_293] = { let __args: [G; IN_293] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[293].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[293].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[293].bump_multiplicity(__i); } let __ret: [G; OUT_293] = unsafe { *(record.function_queries[293].output_at(__i).as_ptr() as *const [G; OUT_293]) }; __ret }, _ => aiur_fn_293(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_292] = { let __args: [G; IN_292] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[292].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[292].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[292].bump_multiplicity(__i); } let __ret: [G; OUT_292] = unsafe { *(record.function_queries[292].output_at(__i).as_ptr() as *const [G; OUT_292]) }; __ret }, _ => aiur_fn_292(__args, record, io_buffer, __cu)? } };
     let __v_2: G = __r_arr[0];
     let __v_3: G = __r_arr[1];
     let __v_4: G = __r_arr[2];
@@ -26724,7 +26776,7 @@ fn aiur_fn_286(
   stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
     let __v_0: G = inp[0];
     let __v_1: G = inp[1];
-    let __r_arr: [G; OUT_295] = { let __args: [G; IN_295] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[295].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[295].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[295].bump_multiplicity(__i); } let __ret: [G; OUT_295] = unsafe { *(record.function_queries[295].output_at(__i).as_ptr() as *const [G; OUT_295]) }; __ret }, _ => aiur_fn_295(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_294] = { let __args: [G; IN_294] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[294].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[294].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[294].bump_multiplicity(__i); } let __ret: [G; OUT_294] = unsafe { *(record.function_queries[294].output_at(__i).as_ptr() as *const [G; OUT_294]) }; __ret }, _ => aiur_fn_294(__args, record, io_buffer, __cu)? } };
     let __v_2: G = __r_arr[0];
     let __loaded: [G; 6] = { let __mq = record.memory_queries.get_mut(&6).ok_or(ExecError::InvalidMemorySize(6))?; let __ptr_u64 = __v_2.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 6 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 6] = __args[..6].try_into().unwrap(); __arr };
     let __v_3: G = __loaded[0];
@@ -26793,7 +26845,7 @@ fn aiur_fn_288(
   stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
     let __v_0: G = inp[0];
     let __v_1: G = inp[1];
-    let __r_arr: [G; OUT_294] = { let __args: [G; IN_294] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[294].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[294].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[294].bump_multiplicity(__i); } let __ret: [G; OUT_294] = unsafe { *(record.function_queries[294].output_at(__i).as_ptr() as *const [G; OUT_294]) }; __ret }, _ => aiur_fn_294(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_293] = { let __args: [G; IN_293] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[293].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[293].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[293].bump_multiplicity(__i); } let __ret: [G; OUT_293] = unsafe { *(record.function_queries[293].output_at(__i).as_ptr() as *const [G; OUT_293]) }; __ret }, _ => aiur_fn_293(__args, record, io_buffer, __cu)? } };
     let __v_2: G = __r_arr[0];
     let __loaded: [G; 4] = { let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; let __ptr_u64 = __v_2.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 4 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 4] = __args[..4].try_into().unwrap(); __arr };
     let __v_3: G = __loaded[0];
@@ -26940,9 +26992,9 @@ fn aiur_fn_291(
   })
 }
 
-const INPUT_SIZE_292: usize = 1;
-const IN_292: usize = 1;
-const OUT_292: usize = 1;
+const INPUT_SIZE_292: usize = 2;
+const IN_292: usize = 2;
+const OUT_292: usize = 8;
 fn aiur_fn_292(
   inp: [G; IN_292],
   record: &mut QueryRecord,
@@ -26951,51 +27003,8 @@ fn aiur_fn_292(
 ) -> Result<[G; OUT_292], ExecError> {
   stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
     let __v_0: G = inp[0];
-    let __loaded: [G; 8] = { let __mq = record.memory_queries.get_mut(&8).ok_or(ExecError::InvalidMemorySize(8))?; let __ptr_u64 = __v_0.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 8 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 8] = __args[..8].try_into().unwrap(); __arr };
-    let __v_1: G = __loaded[0];
-    let __v_2: G = __loaded[1];
-    let __v_3: G = __loaded[2];
-    let __v_4: G = __loaded[3];
-    let __v_5: G = __loaded[4];
-    let __v_6: G = __loaded[5];
-    let __v_7: G = __loaded[6];
-    let __v_8: G = __loaded[7];
-    match __v_1.as_canonical_u64() {
-      1u64 => {
-        let __v_9: G = G::from_u64(0);
-        let __ret: [G; OUT_292] = [__v_9];
-        record.function_queries[292].finish(&inp[..], &__ret[..], !unconstrained);
-        return Ok(__ret);
-      },
-      0u64 => {
-        let __r_arr: [G; OUT_292] = { let __args: [G; IN_292] = [__v_8]; let __cu = unconstrained; let __hit = record.function_queries[292].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[292].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[292].bump_multiplicity(__i); } let __ret: [G; OUT_292] = unsafe { *(record.function_queries[292].output_at(__i).as_ptr() as *const [G; OUT_292]) }; __ret }, _ => aiur_fn_292(__args, record, io_buffer, __cu)? } };
-        let __v_9: G = __r_arr[0];
-        let __v_10: G = G::from_u64(1);
-        let __v_11: G = (__v_9 + __v_10);
-        let __ret: [G; OUT_292] = [__v_11];
-        record.function_queries[292].finish(&inp[..], &__ret[..], !unconstrained);
-        return Ok(__ret);
-      },
-      _ => {
-        return Err(ExecError::MatchNoCase(__v_1.as_canonical_u64()));
-      },
-    }
-  })
-}
-
-const INPUT_SIZE_293: usize = 2;
-const IN_293: usize = 2;
-const OUT_293: usize = 8;
-fn aiur_fn_293(
-  inp: [G; IN_293],
-  record: &mut QueryRecord,
-  io_buffer: &mut IOBuffer,
-  unconstrained: bool,
-) -> Result<[G; OUT_293], ExecError> {
-  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
-    let __v_0: G = inp[0];
     let __v_1: G = inp[1];
-    let __r_arr: [G; OUT_296] = { let __args: [G; IN_296] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[296].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[296].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[296].bump_multiplicity(__i); } let __ret: [G; OUT_296] = unsafe { *(record.function_queries[296].output_at(__i).as_ptr() as *const [G; OUT_296]) }; __ret }, _ => aiur_fn_296(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_295] = { let __args: [G; IN_295] = [__v_0, __v_1]; let __cu = unconstrained; let __hit = record.function_queries[295].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[295].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[295].bump_multiplicity(__i); } let __ret: [G; OUT_295] = unsafe { *(record.function_queries[295].output_at(__i).as_ptr() as *const [G; OUT_295]) }; __ret }, _ => aiur_fn_295(__args, record, io_buffer, __cu)? } };
     let __v_2: G = __r_arr[0];
     let __loaded: [G; 10] = { let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; let __ptr_u64 = __v_2.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 10 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 10] = __args[..10].try_into().unwrap(); __arr };
     let __v_3: G = __loaded[0];
@@ -27010,12 +27019,55 @@ fn aiur_fn_293(
     let __v_12: G = __loaded[9];
     match __v_3.as_canonical_u64() {
       0u64 => {
-        let __ret: [G; OUT_293] = [__v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_10, __v_11];
-        record.function_queries[293].finish(&inp[..], &__ret[..], !unconstrained);
+        let __ret: [G; OUT_292] = [__v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_10, __v_11];
+        record.function_queries[292].finish(&inp[..], &__ret[..], !unconstrained);
         return Ok(__ret);
       },
       _ => {
         return Err(ExecError::MatchNoCase(__v_3.as_canonical_u64()));
+      },
+    }
+  })
+}
+
+const INPUT_SIZE_293: usize = 2;
+const IN_293: usize = 2;
+const OUT_293: usize = 1;
+fn aiur_fn_293(
+  inp: [G; IN_293],
+  record: &mut QueryRecord,
+  io_buffer: &mut IOBuffer,
+  unconstrained: bool,
+) -> Result<[G; OUT_293], ExecError> {
+  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
+    let __v_0: G = inp[0];
+    let __v_1: G = inp[1];
+    match __v_1.as_canonical_u64() {
+      0u64 => {
+        let __ret: [G; OUT_293] = [__v_0];
+        record.function_queries[293].finish(&inp[..], &__ret[..], !unconstrained);
+        return Ok(__ret);
+      },
+      _ => {
+        let __v_2: G = G::from_u64(1);
+        let __v_3: G = (__v_1 - __v_2);
+        let __r_arr: [G; OUT_293] = { let __args: [G; IN_293] = [__v_0, __v_3]; let __cu = unconstrained; let __hit = record.function_queries[293].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[293].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[293].bump_multiplicity(__i); } let __ret: [G; OUT_293] = unsafe { *(record.function_queries[293].output_at(__i).as_ptr() as *const [G; OUT_293]) }; __ret }, _ => aiur_fn_293(__args, record, io_buffer, __cu)? } };
+        let __v_4: G = __r_arr[0];
+        let __loaded: [G; 4] = { let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; let __ptr_u64 = __v_4.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 4 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 4] = __args[..4].try_into().unwrap(); __arr };
+        let __v_5: G = __loaded[0];
+        let __v_6: G = __loaded[1];
+        let __v_7: G = __loaded[2];
+        let __v_8: G = __loaded[3];
+        match __v_5.as_canonical_u64() {
+          0u64 => {
+            let __ret: [G; OUT_293] = [__v_8];
+            record.function_queries[293].finish(&inp[..], &__ret[..], !unconstrained);
+            return Ok(__ret);
+          },
+          _ => {
+            return Err(ExecError::MatchNoCase(__v_5.as_canonical_u64()));
+          },
+        }
       },
     }
   })
@@ -27044,14 +27096,16 @@ fn aiur_fn_294(
         let __v_3: G = (__v_1 - __v_2);
         let __r_arr: [G; OUT_294] = { let __args: [G; IN_294] = [__v_0, __v_3]; let __cu = unconstrained; let __hit = record.function_queries[294].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[294].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[294].bump_multiplicity(__i); } let __ret: [G; OUT_294] = unsafe { *(record.function_queries[294].output_at(__i).as_ptr() as *const [G; OUT_294]) }; __ret }, _ => aiur_fn_294(__args, record, io_buffer, __cu)? } };
         let __v_4: G = __r_arr[0];
-        let __loaded: [G; 4] = { let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; let __ptr_u64 = __v_4.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 4 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 4] = __args[..4].try_into().unwrap(); __arr };
+        let __loaded: [G; 6] = { let __mq = record.memory_queries.get_mut(&6).ok_or(ExecError::InvalidMemorySize(6))?; let __ptr_u64 = __v_4.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 6 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 6] = __args[..6].try_into().unwrap(); __arr };
         let __v_5: G = __loaded[0];
         let __v_6: G = __loaded[1];
         let __v_7: G = __loaded[2];
         let __v_8: G = __loaded[3];
+        let __v_9: G = __loaded[4];
+        let __v_10: G = __loaded[5];
         match __v_5.as_canonical_u64() {
           0u64 => {
-            let __ret: [G; OUT_294] = [__v_8];
+            let __ret: [G; OUT_294] = [__v_10];
             record.function_queries[294].finish(&inp[..], &__ret[..], !unconstrained);
             return Ok(__ret);
           },
@@ -27087,51 +27141,6 @@ fn aiur_fn_295(
         let __v_3: G = (__v_1 - __v_2);
         let __r_arr: [G; OUT_295] = { let __args: [G; IN_295] = [__v_0, __v_3]; let __cu = unconstrained; let __hit = record.function_queries[295].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[295].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[295].bump_multiplicity(__i); } let __ret: [G; OUT_295] = unsafe { *(record.function_queries[295].output_at(__i).as_ptr() as *const [G; OUT_295]) }; __ret }, _ => aiur_fn_295(__args, record, io_buffer, __cu)? } };
         let __v_4: G = __r_arr[0];
-        let __loaded: [G; 6] = { let __mq = record.memory_queries.get_mut(&6).ok_or(ExecError::InvalidMemorySize(6))?; let __ptr_u64 = __v_4.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 6 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 6] = __args[..6].try_into().unwrap(); __arr };
-        let __v_5: G = __loaded[0];
-        let __v_6: G = __loaded[1];
-        let __v_7: G = __loaded[2];
-        let __v_8: G = __loaded[3];
-        let __v_9: G = __loaded[4];
-        let __v_10: G = __loaded[5];
-        match __v_5.as_canonical_u64() {
-          0u64 => {
-            let __ret: [G; OUT_295] = [__v_10];
-            record.function_queries[295].finish(&inp[..], &__ret[..], !unconstrained);
-            return Ok(__ret);
-          },
-          _ => {
-            return Err(ExecError::MatchNoCase(__v_5.as_canonical_u64()));
-          },
-        }
-      },
-    }
-  })
-}
-
-const INPUT_SIZE_296: usize = 2;
-const IN_296: usize = 2;
-const OUT_296: usize = 1;
-fn aiur_fn_296(
-  inp: [G; IN_296],
-  record: &mut QueryRecord,
-  io_buffer: &mut IOBuffer,
-  unconstrained: bool,
-) -> Result<[G; OUT_296], ExecError> {
-  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
-    let __v_0: G = inp[0];
-    let __v_1: G = inp[1];
-    match __v_1.as_canonical_u64() {
-      0u64 => {
-        let __ret: [G; OUT_296] = [__v_0];
-        record.function_queries[296].finish(&inp[..], &__ret[..], !unconstrained);
-        return Ok(__ret);
-      },
-      _ => {
-        let __v_2: G = G::from_u64(1);
-        let __v_3: G = (__v_1 - __v_2);
-        let __r_arr: [G; OUT_296] = { let __args: [G; IN_296] = [__v_0, __v_3]; let __cu = unconstrained; let __hit = record.function_queries[296].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[296].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[296].bump_multiplicity(__i); } let __ret: [G; OUT_296] = unsafe { *(record.function_queries[296].output_at(__i).as_ptr() as *const [G; OUT_296]) }; __ret }, _ => aiur_fn_296(__args, record, io_buffer, __cu)? } };
-        let __v_4: G = __r_arr[0];
         let __loaded: [G; 10] = { let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; let __ptr_u64 = __v_4.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 10 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 10] = __args[..10].try_into().unwrap(); __arr };
         let __v_5: G = __loaded[0];
         let __v_6: G = __loaded[1];
@@ -27145,8 +27154,8 @@ fn aiur_fn_296(
         let __v_14: G = __loaded[9];
         match __v_5.as_canonical_u64() {
           0u64 => {
-            let __ret: [G; OUT_296] = [__v_14];
-            record.function_queries[296].finish(&inp[..], &__ret[..], !unconstrained);
+            let __ret: [G; OUT_295] = [__v_14];
+            record.function_queries[295].finish(&inp[..], &__ret[..], !unconstrained);
             return Ok(__ret);
           },
           _ => {
@@ -28643,11 +28652,6 @@ pub(crate) fn execute_generated(
     295u64 => {
       let __inp: [G; IN_295] = args.try_into().expect("input size mismatch");
       let __out = aiur_fn_295(__inp, record, io_buffer, false)?;
-      return Ok(__out.to_vec());
-    },
-    296u64 => {
-      let __inp: [G; IN_296] = args.try_into().expect("input size mismatch");
-      let __out = aiur_fn_296(__inp, record, io_buffer, false)?;
       return Ok(__out.to_vec());
     },
     _ => {
