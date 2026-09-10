@@ -891,34 +891,45 @@ there is exactly one statement.
 ### 13.2 The range-sum recursion
 
 A batch of K shards is too large for one recursion node (Mathlib is on
-the order of a thousand shards, §13.5), so recursion verifies *ranges*:
+the order of a thousand shards, §13.5; on this box one proof verifying
+the 71-shard Init batch needs 216 GiB, §13.3), so recursion verifies
+*ranges*. Built as three shapes of `ix_aggr` (`Ix/Aggr/Circuit.lean`,
+shapes 10–12), driven by `ix aggregate --range N`:
 
-- **Leaf node** `vec_verify(D, i, j)`: for each `k ∈ [i, j)`, verify
-  shard `k` under the batch challenges (β, γ from `D`), check its header
-  against its proof, and accumulate `r_k`. Public output: `(D, Σ r_k, i,
-  j)` plus the claims found in headers `i..j` (or their digest).
-- **Internal node**: verify two children, require the same `D`, contiguous
-  ranges `[a, b)`, `[b, c)`, output `(D, r_L + r_R, a, c)` and the union of
-  claims.
-- **Root**: range `[0, K)` with `K` the header count under `D`, plus
-  `Σ r + messages_acc(β, γ, messages) = 0`, the message policy of §4.4,
-  and exactly one claim equal to the expected `verify_claim` claim.
+- **Range leaf** (shape 10): with the batch preamble and the proofs of
+  shards `[lo, hi)` as advice, derive the batch challenges from the
+  preamble, verify each shard against its header (shape, transcript fork,
+  OOD, PCS — `verify_shard`, unchanged) and accumulate its residual.
+  Statement: `(D, lo, hi, Σ r_k)`.
+- **Range join** (shape 11): two self children with the same `D` and
+  adjacent ranges `[a, b)`, `[b, c)`; statement `(D, a, c, r_L + r_R)`.
+- **Range root** (shape 12): one self child over `[0, K)` with `K` the
+  header count of the preamble under `D`; `Σ r + messages_acc(β, γ,
+  messages) = 0`; the batch policy of §4.4 (closure pairs, shard count);
+  and exactly one header claim, a `verify_claim` claim whose `CheckEnv`
+  digest becomes the root's output. That is the wrap's (shape 0)
+  statement for the same batch, so the root replaces the wrap in the
+  slot and every pair shape above it is unchanged.
 
-Every node is an Aiur program and is itself proven as a batch of trace
-shards; the natural shard boundary is one child verification, so nodes
-fit the same VRAM budget as leaves. The whole `Ix/Aggr` set-folding
-circuit, its host advice (preimages, trees, paths), and the manifest-bound
-verifier become unnecessary on this path.
+`D` is the Blake3 digest of the preamble bytes (the batch's headers and
+messages, bincode). A leaf and the root parse the preamble from the byte
+stream they hash — not through the unconstrained offset readers the
+proof advice uses — so the headers that fix the challenges are the ones
+`D` names, and every node of a tree sees one batch. Range statements
+(`0x52 ‖ D ‖ lo ‖ hi ‖ r`) travel as output digests and open on channel 4
+like `CheckEnv` preimages; the tag keeps a range statement from ever
+parsing as a claim.
 
-**Preamble commitment.** With thousands of headers, every leaf cannot
-absorb the whole preamble to derive β, γ. The batch transcript should
-therefore observe a *commitment* `D` to the preamble — a Merkle root over
-the headers and messages — and a shard verifier takes `header_k` with its
-authentication path to `D`. That is a small revision of the multi-stark
-batch transcript (observe one digest instead of the header list) and the
-one protocol change this section needs; make it before anything ships,
-since it changes every batch proof's challenges. K = 1 pays a couple of
-hashes.
+Every node is proven as trace shards within the slot budget like any
+other `ix_aggr` proof, and the driver proves the nodes of one level
+`--jobs` at a time under the per-slot budget. The whole preamble is
+hashed by every leaf: at a few hundred bytes per header that is tens of
+kilobytes for a hundred-shard batch, and a few megabytes at Mathlib's
+thousand shards — the point at which the batch transcript should observe
+a Merkle root over the headers instead, with a leaf opening only its own
+headers by authentication path (a multi-stark protocol revision; K = 1
+pays a couple of hashes). Nothing in the shapes changes when it lands
+except `aggr_load_preamble`.
 
 ### 13.3 The two hard problems: record size and serial execution
 
@@ -982,8 +993,22 @@ against a one-leaf manifest of the same environment. Measured on Init
 (64 cores, 2026-09-10, 4 workers at 1.8 G cells): execution 107 s for all
 four workers in parallel against 6.0 min for one execution; 71 shards;
 27:22 wall; 170 GiB peak with all four records resident; a 100 MiB batch
-that verifies natively in 14 s. What is not built: the range-sum
-recursion of §13.2 (today the batch is wrapped whole).
+that verifies natively in 14 s. Wrapped whole (`ix aggregate
+--trace-shards --max-ram 250`), that batch is one recursion proof of six
+trace shards: 15:27 wall, 216 GiB peak, a 12.3 MiB root — and no room
+for it at all with 400 GiB slots, which is what the range shapes of
+§13.2 remove. As a range tree of six 12-shard leaves, four nodes at a
+time each within a 100 GiB slice (`ix aggregate --range 12 --jobs 4
+--max-ram 400`): leaves of 182–343 s, first-level joins of 172–184 s,
+then 97 s joins and an 86 s root, 17:07 in all at a 325 GiB box peak and
+a 7.0 MiB root that `ix verify --aggregate` checks in 40 ms against the
+environment's canonical claim. Every node is cut into two or three trace shards to fit
+its slice (a 12-shard leaf's whole execution would peak at 195–389 GB, a
+join at 205 GB), which under Regenerate costs a node about 3× its
+unsharded time; proven serially and unsharded the same tree takes 19:40
+with 58 s joins. The leaves and first-level joins are 79 % of the tree's
+work and independent, so the slice, not the batch, is what a machine
+needs.
 
 **Record residency.** A worker's record is needed from its execution to
 the second round of its last shard, and every worker's record exists at
@@ -1066,10 +1091,12 @@ until §13.3's distribution lands: ~3.5 h serial for Mathlib, then
 ### 13.6 Phasing
 
 1. **Preamble commitment** in multi-stark (observe a Merkle root; header +
-   path per shard). Protocol bump; small.
-2. **Range-sum recursion program** `vec_verify` (leaf/internal/root as one
-   entrypoint with a shape hint, like `ix_aggr`), its host driver, cache
-   keys `(D, i, j)`, and tests on a K = 4 InitStd batch. Retire nothing yet.
+   path per shard). Protocol bump; small. Needed once batches reach
+   thousands of shards (§13.2); not before.
+2. **Range-sum recursion**: built as `ix_aggr` shapes 10–12 with the
+   host driver behind `ix aggregate --range N` (§13.2). Range nodes
+   are not cached individually; the slot's root proof is cached as the
+   wrap's would be.
 3. **Bounded-memo execution** behind a flag, with the duplication
    measurement from `Statistics.lean` deciding the window size — enough to
    prove InitStd or a mid-size library as one execution end to end on one
@@ -1097,9 +1124,10 @@ until §13.3's distribution lands: ~3.5 h serial for Mathlib, then
   on, but the implementation must not let a hinted call leak into a
   constrained value without the push.
 - **Range-sum node cost** per verified shard byte on the CUDA backend — the
-  §8 wrap measurements are the prior; measure on the K = 4 batch.
-- **Preamble Merkle path cost** per shard in circuit (log K hashes) — small,
-  but it sits in every leaf.
+  §8 wrap measurements are the prior.
+- **Preamble cost** in every leaf: one Blake3 over the preamble bytes
+  today; a Merkle path per shard (log K hashes) once the commitment
+  lands.
 
 ## 14. Whole-env measurement on a large box
 

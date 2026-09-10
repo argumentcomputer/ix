@@ -31,6 +31,14 @@ and network boundaries must use this variant; `ofBytes` remains for callers
 whose bytes were produced in-process or already validated. -/
 @[extern "rs_aiur_proof_of_bytes_checked"]
 opaque ofBytesChecked : @& ByteArray → Except String Proof
+
+/-- The advice of a range-sum recursion node over shards `[lo, hi)` of this
+batch: the serialized preamble (headers and messages, the prefix of the
+batch's own encoding), the range's proofs as one length-prefixed vector, and
+the range's residual sum as two little-endian `u64` limbs. -/
+@[extern "rs_aiur_proof_range_advice"]
+opaque rangeAdvice : @& Proof → @& Nat → @& Nat →
+  Except String (ByteArray × ByteArray × ByteArray)
 end Proof
 
 structure CommitmentParameters where
@@ -218,7 +226,7 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
   (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
-  (useCache writeOutputs traceShards : Bool) :
+  (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in

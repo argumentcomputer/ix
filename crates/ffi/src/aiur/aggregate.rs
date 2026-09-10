@@ -24,7 +24,10 @@ use std::{
 };
 
 use aiur::{
-  G, function_channel,
+  G,
+  execute::IOBuffer,
+  function_channel,
+  range::{preamble_bytes, proofs_slice_bytes, range_residual, range_statement},
   synthesis::{AiurProof, AiurSystem, GatedProve},
 };
 use ix_common::address::Address;
@@ -49,7 +52,10 @@ use lean_ffi::object::{
   LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat, LeanOwned,
   LeanString,
 };
-use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use multi_stark::{
+  p3_field::{PrimeCharacteristicRing, PrimeField64},
+  types::ExtVal,
+};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -57,6 +63,12 @@ use super::lean_unbox_nat_as_usize;
 use crate::lean::LeanAiurAggregateExpected;
 
 const CACHE_VERSION: u64 = 2;
+
+/// The range-sum recursion shapes of `ix_aggr` (`Aggr.rangeLeafShape` and
+/// friends in `Ix/Aggr.lean`).
+const RANGE_LEAF_SHAPE: u8 = 10;
+const RANGE_JOIN_SHAPE: u8 = 11;
+const RANGE_ROOT_SHAPE: u8 = 12;
 const MIB: usize = 1024 * 1024;
 const GIB: usize = 1024 * 1024 * 1024;
 const WRAP_RAM_BYTES: usize = 195 * GIB;
@@ -396,6 +408,12 @@ struct ProveContext<'a> {
   /// The prover budget of one slot when its execution is proven as trace
   /// shards; `None` proves every slot unsharded and unbudgeted.
   wrap_budget: Option<usize>,
+  /// Wrap a shard proof of more than this many trace shards as a range-sum
+  /// tree whose leaves verify at most this many shards each; 0 always wraps
+  /// the whole batch in one proof.
+  range_width: usize,
+  /// How many range-tree nodes prove at once, each under `wrap_budget`.
+  range_jobs: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -417,6 +435,7 @@ struct RunConfig<'a> {
   use_cache: bool,
   write_outputs: bool,
   trace_shards: bool,
+  range_width: usize,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -1396,28 +1415,7 @@ fn prove_aggregate(
   public_input.extend(packed_digest(&spec.statement.claim_bytes));
   let proving_started = Instant::now();
   let (outer_claim, proof, peak) =
-    match ctx.aggr_system.prove_ixvm_within_budget(
-      ctx.aggr_idx,
-      &public_input,
-      &mut io,
-      execute_ix_aggr,
-      ctx.wrap_budget,
-      false,
-      ctx.wrap_budget.is_some(),
-      None,
-    ) {
-      GatedProve::Proved { claim, proof, peak } => (claim, proof, peak),
-      GatedProve::Split { peak, .. } => {
-        return Err(format!(
-          "slot {slot_index}: no trace-shard count fits the {} B budget \
-         (whole-execution peak {peak} B) — raise --max-ram",
-          ctx.wrap_budget.unwrap_or(0)
-        ));
-      },
-      GatedProve::Measured { .. } => {
-        return Err("aggregate prove did not produce a proof".into());
-      },
-    };
+    prove_aggr_io(ctx, &mut io, &public_input, &format!("slot {slot_index}"))?;
   let proved_at = Instant::now();
   if outer_claim != spec.outer_claim {
     return Err("aggregate prover returned an unexpected outer claim".into());
@@ -1456,6 +1454,253 @@ fn prove_aggregate(
       started.elapsed().as_secs_f64(),
     );
   }
+  Ok((proof, address))
+}
+
+/// Execute and prove one `ix_aggr` invocation over its advice buffer, as
+/// trace shards within the slot budget when the run has one.
+fn prove_aggr_io(
+  ctx: ProveContext<'_>,
+  io: &mut IOBuffer,
+  public_input: &[G],
+  label: &str,
+) -> Result<(Vec<G>, AiurProof, usize), String> {
+  match ctx.aggr_system.prove_ixvm_within_budget(
+    ctx.aggr_idx,
+    public_input,
+    io,
+    execute_ix_aggr,
+    ctx.wrap_budget,
+    false,
+    ctx.wrap_budget.is_some(),
+    None,
+  ) {
+    GatedProve::Proved { claim, proof, peak } => Ok((claim, proof, peak)),
+    GatedProve::Split { peak, .. } => Err(format!(
+      "{label}: no trace-shard count fits the {} B budget \
+       (whole-execution peak {peak} B) — raise --max-ram",
+      ctx.wrap_budget.unwrap_or(0)
+    )),
+    GatedProve::Measured { .. } => {
+      Err(format!("{label}: aggregate prove did not produce a proof"))
+    },
+  }
+}
+
+/// One proven node of a range-sum tree: shards `[lo, hi)` of the batch and
+/// their residual sum, stated by `statement` (`aiur::range::range_statement`).
+struct RangeNode {
+  lo: usize,
+  hi: usize,
+  residual: ExtVal,
+  statement: Vec<u8>,
+  outer_claim: Vec<G>,
+  proof: AiurProof,
+}
+
+/// Prove every item, `jobs` at a time.
+fn prove_range_level<T, F>(
+  items: Vec<T>,
+  jobs: usize,
+  prove: &F,
+) -> Result<Vec<RangeNode>, String>
+where
+  T: Send,
+  F: Fn(T) -> Result<RangeNode, String> + Sync,
+{
+  let mut nodes = Vec::with_capacity(items.len());
+  let mut pending = items.into_iter().peekable();
+  while pending.peek().is_some() {
+    let batch: Vec<T> = pending.by_ref().take(jobs.max(1)).collect();
+    let proven: Vec<Result<RangeNode, String>> = thread::scope(|scope| {
+      let handles: Vec<_> = batch
+        .into_iter()
+        .map(|item| scope.spawn(move || prove(item)))
+        .collect();
+      handles
+        .into_iter()
+        .map(|handle| {
+          handle.join().unwrap_or_else(|payload| {
+            Err(format!("range node panicked: {}", panic_text(&payload)))
+          })
+        })
+        .collect()
+    });
+    for node in proven {
+      nodes.push(node?);
+    }
+  }
+  Ok(nodes)
+}
+
+/// Wrap a shard proof of many trace shards as a range-sum tree: leaves of at
+/// most `range_width` shards, joins of adjacent ranges, and a root whose
+/// statement is exactly the wrap's, so the slot's cache entry and every
+/// consumer are unchanged.
+fn prove_range_tree(
+  ctx: ProveContext<'_>,
+  spec: &SlotSpec,
+  batch: &AiurProof,
+  slot_index: usize,
+) -> Result<(AiurProof, Option<Address>), String> {
+  if ctx.reprove_slot != Some(slot_index)
+    && let Some((proof, address)) = load_cached(ctx, slot_index, spec)
+  {
+    return Ok((proof, Some(address)));
+  }
+  let started = Instant::now();
+  let width = ctx.range_width;
+  let shards = batch.preamble.headers.len();
+  let preamble = preamble_bytes(batch)?;
+  let digest = *blake3::hash(&preamble).as_bytes();
+  let ranges: Vec<(usize, usize)> = (0..shards)
+    .step_by(width)
+    .map(|lo| (lo, (lo + width).min(shards)))
+    .collect();
+  eprintln!(
+    "[aggregate] slot {slot_index}: range tree over {shards} shards: {} leaves of at most {width} shards, {} at a time",
+    ranges.len(),
+    ctx.range_jobs
+  );
+  let self_claims = |node: &RangeNode| serialize_claims(&[&node.outer_claim]);
+  let child_advice = |node: &RangeNode| -> Result<Vec<u8>, String> {
+    ctx
+      .aggr_system
+      .proof_to_advice_bytes(&node.outer_claim, &node.proof)
+      .map_err(|error| {
+        format!(
+          "slot {slot_index}: range node {}..{} proof advice failed: {error}",
+          node.lo, node.hi
+        )
+      })
+  };
+  let prove_node = |shape: u8,
+                    lo: usize,
+                    hi: usize,
+                    residual: ExtVal,
+                    proof_advice: [&[u8]; 2],
+                    child_claims: [&[u8]; 2],
+                    preimages: &[AggrPreimage<'_>]|
+   -> Result<RangeNode, String> {
+    let node_started = Instant::now();
+    let statement = range_statement(&digest, lo, hi, residual);
+    let mut io = aggr_io_buffer(&AggrAdvice {
+      shape,
+      proof_advice,
+      ixvm_vk: ctx.ixvm_vk,
+      self_vk: ctx.aggr_vk,
+      child_claims,
+      output_claim: &statement,
+      allowed: ctx.allowed,
+      preimages,
+      trees: &[],
+      paths: &[],
+    });
+    let mut public_input = packed_digest(ctx.allowed);
+    public_input.extend(packed_digest(&statement));
+    let kind = if shape == RANGE_LEAF_SHAPE { "leaf" } else { "join" };
+    let (outer_claim, proof, peak) = prove_aggr_io(
+      ctx,
+      &mut io,
+      &public_input,
+      &format!("slot {slot_index} range {kind} {lo}..{hi}"),
+    )?;
+    eprintln!(
+      "[aggregate] slot {slot_index}: range {kind} {lo}..{hi} proven in {:.1}s (query-record peak {} GiB)",
+      node_started.elapsed().as_secs_f64(),
+      format_gib(peak)
+    );
+    Ok(RangeNode { lo, hi, residual, statement, outer_claim, proof })
+  };
+
+  let mut nodes = prove_range_level(ranges, ctx.range_jobs, &|(lo, hi)| {
+    let proofs = proofs_slice_bytes(batch, lo, hi)?;
+    prove_node(
+      RANGE_LEAF_SHAPE,
+      lo,
+      hi,
+      range_residual(batch, lo, hi),
+      [&preamble, &proofs],
+      [&[], &[]],
+      &[],
+    )
+  })?;
+  while nodes.len() > 1 {
+    let mut pairs = Vec::with_capacity(nodes.len().div_ceil(2));
+    let mut carried = None;
+    let mut pending = nodes.into_iter();
+    while let Some(left) = pending.next() {
+      match pending.next() {
+        Some(right) => pairs.push((left, right)),
+        None => carried = Some(left),
+      }
+    }
+    nodes = prove_range_level(pairs, ctx.range_jobs, &|(left, right)| {
+      let advice = [child_advice(&left)?, child_advice(&right)?];
+      let claims = [self_claims(&left), self_claims(&right)];
+      let preimages = [
+        AggrPreimage {
+          digest: *blake3::hash(&left.statement).as_bytes(),
+          bytes: &left.statement,
+        },
+        AggrPreimage {
+          digest: *blake3::hash(&right.statement).as_bytes(),
+          bytes: &right.statement,
+        },
+      ];
+      prove_node(
+        RANGE_JOIN_SHAPE,
+        left.lo,
+        right.hi,
+        left.residual + right.residual,
+        [&advice[0], &advice[1]],
+        [&claims[0], &claims[1]],
+        &preimages,
+      )
+    })?;
+    // An unpaired last node joins at the next level, keeping ranges in
+    // shard order.
+    nodes.extend(carried);
+  }
+  let node = nodes.pop().ok_or("range tree has no root")?;
+
+  let root_started = Instant::now();
+  let advice = child_advice(&node)?;
+  let claims = self_claims(&node);
+  let preimages = [AggrPreimage {
+    digest: *blake3::hash(&node.statement).as_bytes(),
+    bytes: &node.statement,
+  }];
+  let mut io = aggr_io_buffer(&AggrAdvice {
+    shape: RANGE_ROOT_SHAPE,
+    proof_advice: [&advice, &preamble],
+    ixvm_vk: ctx.ixvm_vk,
+    self_vk: ctx.aggr_vk,
+    child_claims: [&claims, &[]],
+    output_claim: &spec.statement.claim_bytes,
+    allowed: ctx.allowed,
+    preimages: &preimages,
+    trees: &[],
+    paths: &[],
+  });
+  let mut public_input = packed_digest(ctx.allowed);
+  public_input.extend(packed_digest(&spec.statement.claim_bytes));
+  let (outer_claim, proof, peak) = prove_aggr_io(
+    ctx,
+    &mut io,
+    &public_input,
+    &format!("slot {slot_index} range root"),
+  )?;
+  if outer_claim != spec.outer_claim {
+    return Err("range root returned an unexpected outer claim".into());
+  }
+  eprintln!(
+    "[aggregate] slot {slot_index}: range root proven in {:.1}s (query-record peak {} GiB); range tree total {:.1}s",
+    root_started.elapsed().as_secs_f64(),
+    format_gib(peak),
+    started.elapsed().as_secs_f64()
+  );
+  let address = persist_cached(ctx, slot_index, spec, &proof);
   Ok((proof, address))
 }
 
@@ -1511,8 +1756,13 @@ fn prove_slot(
         proof_address: None,
         claims_bytes: inner_claims,
       };
-      let (proof, proof_address) =
-        prove_aggregate(ctx, spec, &raw, None, slot_index)?;
+      let ranged = ctx.range_width > 0
+        && raw.proof.preamble.headers.len() > ctx.range_width;
+      let (proof, proof_address) = if ranged {
+        prove_range_tree(ctx, spec, &raw.proof, slot_index)?
+      } else {
+        prove_aggregate(ctx, spec, &raw, None, slot_index)?
+      };
       Ok(Arc::new(Slot {
         kind: ChildKind::Aggr,
         statement: spec.statement.clone(),
@@ -1963,6 +2213,8 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     wrap_budget: config
       .trace_shards
       .then(|| config.ram_budget_bytes / config.jobs.max(1)),
+    range_width: config.range_width,
+    range_jobs: config.jobs.max(1),
   };
   if let (Some(target), Some(plan)) =
     (config.reprove_slot, replay_plan.as_ref())
@@ -2066,6 +2318,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
   use_cache: bool,
   write_outputs: bool,
   trace_shards: bool,
+  range_width: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
@@ -2088,6 +2341,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       use_cache,
       write_outputs,
       trace_shards,
+      range_width: lean_unbox_nat_as_usize(range_width.inner()),
     })
   }));
   match result {

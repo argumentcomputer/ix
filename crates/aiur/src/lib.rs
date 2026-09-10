@@ -4,6 +4,7 @@ pub mod execute;
 pub mod gadgets;
 pub mod memory;
 pub mod querymap;
+pub mod range;
 pub mod shard;
 pub mod synthesis;
 pub mod trace;

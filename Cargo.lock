@@ -50,6 +50,7 @@ dependencies = [
 name = "aiur"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "hashbrown 0.15.5",
  "indexmap",
  "libc",

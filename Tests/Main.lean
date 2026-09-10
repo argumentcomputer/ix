@@ -200,7 +200,7 @@ def primaryRunners : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
-  -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
+  -- Converged heterogeneous aggregation circuit: all thirteen `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   ("ix-aggr", Tests.Aggr.convergedSuite),
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.

@@ -185,6 +185,45 @@ extern "C" fn rs_aiur_proof_to_advice_bytes(
   }
 }
 
+/// `Aiur.Proof.rangeAdvice : @& Proof → @& Nat → @& Nat →
+/// Except String (ByteArray × ByteArray × ByteArray)`
+///
+/// The advice of a range-sum recursion node over shards `[lo, hi)`: the
+/// batch preamble, the range's proofs, and the range's residual sum.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_range_advice(
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
+  lo: LeanNat<LeanBorrowed<'_>>,
+  hi: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let proof = proof_obj.get();
+  let lo = lean_unbox_nat_as_usize(lo.inner());
+  let hi = lean_unbox_nat_as_usize(hi.inner());
+  if lo > hi || hi > proof.proofs.len() {
+    return LeanExcept::error_string(&format!(
+      "shard range {lo}..{hi} is not within the batch's {} shards",
+      proof.proofs.len()
+    ));
+  }
+  let preamble = match aiur::range::preamble_bytes(proof) {
+    Ok(bytes) => bytes,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let proofs = match aiur::range::proofs_slice_bytes(proof, lo, hi) {
+    Ok(bytes) => bytes,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let residual =
+    aiur::range::ext_bytes(aiur::range::range_residual(proof, lo, hi));
+  LeanExcept::ok(LeanProd::new(
+    LeanByteArray::from_bytes(&preamble),
+    LeanProd::new(
+      LeanByteArray::from_bytes(&proofs),
+      LeanByteArray::from_bytes(&residual),
+    ),
+  ))
+}
+
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
 /// `Except String ExecuteResult` (see `Ix/Aiur/Semantics/BytecodeFfi.lean`).
 /// On execution failure (e.g. assertion mismatch from a typechecker

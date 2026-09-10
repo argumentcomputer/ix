@@ -7,7 +7,7 @@ public import Ix.MultiStark.Verifier
 # Heterogeneous recursive aggregation circuit
 
 One entrypoint, `ix_aggr`, subsumes wrapping and joining. A non-deterministic
-shape hint (IO channel 6) selects one of ten verified forms:
+shape hint (IO channel 6) selects one of thirteen verified forms:
 
 | shape | children                  | statement fold                          |
 |-------|---------------------------|-----------------------------------------|
@@ -21,6 +21,14 @@ shape hint (IO channel 6) selects one of ten verified forms:
 | 7     | IxVM, `ix_aggr`           | structural root / path discharge        |
 | 8     | `ix_aggr`, IxVM           | structural root / path discharge        |
 | 9     | `ix_aggr`, `ix_aggr`      | structural root / path discharge        |
+| 10    | shards `[lo, hi)` of an IxVM batch | range leaf: residual sum        |
+| 11    | `ix_aggr`, `ix_aggr` (ranges) | range join: adjacent ranges added   |
+| 12    | one `ix_aggr` range proof | range root: whole batch, IxVM claim     |
+
+Shapes 10–12 are the range-sum recursion (see the section of that name in
+the circuit): together they verify one large IxVM batch across several
+recursion proofs, and the root's statement is exactly the wrap's (shape 0),
+so ranges compose with every pair shape unchanged.
 
 The hint is advice, not trust: every shape verifies its children against the
 verifying key demanded by that shape (digest-bound to the allowed blob) and
@@ -69,13 +77,13 @@ not stored values to be globally deduplicated.
 
 | channel | key                  | payload                                  |
 |---------|----------------------|------------------------------------------|
-| 0       | `[0]` / `[1]`        | child proof bytes                        |
+| 0       | `[0]` / `[1]`        | child proof bytes; a range leaf carries the batch preamble at `[0]` and the range's proofs at `[1]`, a range root the preamble at `[1]` |
 | 1       | `[kind]`             | vk bytes (0 = IxVM, 1 = self)            |
-| 2       | `[0]` / `[1]`, `[2]` | child claims; output claim bytes         |
+| 2       | `[0]` / `[1]`, `[2]` | child claims; output claim or range statement bytes |
 | 3       | `[0]`                | 80-byte allowed blob                     |
-| 4       | packed digest        | `CheckEnv` claim preimages               |
+| 4       | packed digest        | `CheckEnv` claim and range statement preimages |
 | 5       | raw 32-byte root     | serialized canonical `AssumptionTree`s   |
-| 6       | `[0]` / address      | shape byte (0–9) / structural path choice |
+| 6       | `[0]` / address      | shape byte (0–12) / structural path choice |
 -/
 
 public section
@@ -735,6 +743,249 @@ def circuit := ⟦
     ()
   }
 
+  /- ## Range-sum recursion over one IxVM batch
+
+  A batch of K trace shards balances when the shards' residuals plus the
+  preamble messages' contribution sum to zero under the batch challenges.
+  The whole-batch check is `verify_batch`; the range shapes split it so no
+  single recursion proof has to verify every shard of a large batch:
+
+  * a **range leaf** (shape 10) verifies shards `[lo, hi)` and states their
+    residual sum;
+  * a **range join** (shape 11) adds two adjacent ranges of the same batch;
+  * a **range root** (shape 12) checks that one range covers `[0, K)`, adds
+    the messages' contribution, demands zero, and re-emits the batch's one
+    IxVM claim exactly as a wrap (shape 0) of that batch would.
+
+  Every range node binds the batch by `D = blake3(preamble bytes)`, the
+  bincode of the headers and messages. Leaves and the root parse the
+  preamble from the hashed byte stream itself — never through the
+  unconstrained offset readers — so the headers that fix the challenges are
+  the ones `D` names. The range statement is
+
+  `0x52 ‖ D(32) ‖ lo(u64 LE) ‖ hi(u64 LE) ‖ r0(u64 LE) ‖ r1(u64 LE)`
+
+  and travels as a node's output digest, opened on channel 4 like a
+  `CheckEnv` preimage; its tag keeps it from ever parsing as one.
+  -/
+
+  fn aggr_parse_range(bytes: ByteStream) -> (Addr, U64, U64, Ext) {
+    let (tag, s) = aggr_read_byte(bytes);
+    assert_eq!(tag, 0x52u8, "aggr range: statement has the wrong tag");
+    let (d, s2) = aggr_read_address(s);
+    let (lo, s3) = @read_u64(s2);
+    let (hi, s4) = @read_u64(s3);
+    let (r0, s5) = @read_u64(s4);
+    let (r1, stop) = @read_u64(s5);
+    assert_eq!(load(stop), ListNode.Nil,
+      "aggr range: trailing bytes after the statement");
+    (d, lo, hi, [@gl_val(r0), @gl_val(r1)])
+  }
+
+  -- Stream readers for the batch preamble, `Vec<ShardHeader>` then
+  -- `Vec<BatchMessage>` in bincode's fixed-int little-endian encoding.
+  fn aggr_read_digest(s: ByteStream) -> (DigestP, ByteStream) {
+    let (a, s1) = @read_u64(s);
+    let (b, s2) = @read_u64(s1);
+    let (c, s3) = @read_u64(s2);
+    let (d, s4) = @read_u64(s3);
+    (store([a, b, c, d]), s4)
+  }
+  fn aggr_read_cap_n(s: ByteStream, n: G) -> (MerkleCap, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), s),
+      _ =>
+        let (x, s1) = aggr_read_digest(s);
+        let (rest, s2) = aggr_read_cap_n(s1, n - 1);
+        (store(ListNode.Cons(x, rest)), s2),
+    }
+  }
+  fn aggr_read_bits_n(s: ByteStream, n: G) -> (List‹G›, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), s),
+      _ =>
+        let (b, s1) = aggr_read_byte(s);
+        let (rest, s2) = aggr_read_bits_n(s1, n - 1);
+        (store(ListNode.Cons(to_field(b), rest)), s2),
+    }
+  }
+  fn aggr_read_bytes_n(s: ByteStream, n: G) -> (List‹U8›, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), s),
+      _ =>
+        let (b, s1) = aggr_read_byte(s);
+        let (rest, s2) = aggr_read_bytes_n(s1, n - 1);
+        (store(ListNode.Cons(b, rest)), s2),
+    }
+  }
+  fn aggr_read_header(s: ByteStream) -> (ShardHeader, ByteStream) {
+    let (na, s1) = @read_count(s);
+    let (active, s2) = aggr_read_bits_n(s1, na);
+    let (nc, s3) = @read_count(s2);
+    let (cap, s4) = aggr_read_cap_n(s3, nc);
+    let (nl, s5) = @read_count(s4);
+    let (lds, s6) = aggr_read_bytes_n(s5, nl);
+    let (claims, s7) = @read_claims(s6);
+    (ShardHeader.Mk(active, cap, lds, claims), s7)
+  }
+  fn aggr_read_headers_n(s: ByteStream, n: G) -> (List‹ShardHeader›, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), s),
+      _ =>
+        let (h, s1) = aggr_read_header(s);
+        let (rest, s2) = aggr_read_headers_n(s1, n - 1);
+        (store(ListNode.Cons(h, rest)), s2),
+    }
+  }
+  fn aggr_read_message(s: ByteStream) -> (BatchMessage, ByteStream) {
+    let (args, s1) = @read_one_claim(s);
+    let (mult, s2) = @read_u64(s1);
+    (BatchMessage.Mk(args, mult), s2)
+  }
+  fn aggr_read_messages_n(s: ByteStream, n: G) -> (List‹BatchMessage›, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), s),
+      _ =>
+        let (m, s1) = aggr_read_message(s);
+        let (rest, s2) = aggr_read_messages_n(s1, n - 1);
+        (store(ListNode.Cons(m, rest)), s2),
+    }
+  }
+
+  -- The preamble on channel 0 at `key`, bound to the batch digest `d` and
+  -- parsed from the hashed stream.
+  fn aggr_load_preamble(key: G, d: Addr) -> (List‹ShardHeader›, List‹BatchMessage›) {
+    let (idx, len) = io_get_info(0, [key]);
+    let bytes = #read_byte_stream(0, idx, len);
+    assert_eq!(address_eq(bytes_to_addr(bytes), d), 1,
+      "aggr range: preamble does not hash to the statement's batch digest");
+    let (nh, s1) = @read_count(bytes);
+    let (headers, s2) = aggr_read_headers_n(s1, nh);
+    let (nm, s3) = @read_count(s2);
+    let (messages, stop) = aggr_read_messages_n(s3, nm);
+    assert_eq!(load(stop), ListNode.Nil,
+      "aggr range: trailing bytes after the preamble");
+    (headers, messages)
+  }
+
+  -- The batch challenges from the IxVM system and the preamble.
+  fn aggr_batch_challenges(sys: Sys, headers: List‹ShardHeader›,
+      messages: List‹BatchMessage›) -> (Ext, Ext, ByteStream) {
+    let Sys.Mk(_params, tlimbs, _circuits, commit, _prep_indices) = sys;
+    let prep_cap = @opt_commit_cap(commit);
+    batch_fiat_shamir(tlimbs, prep_cap, headers, messages)
+  }
+
+  -- Verify `n` consecutive shards from header list `headers` and channel-0
+  -- offset `i`, the first being shard `shard`, accumulating residuals.
+  -- Returns the sum and the offset after the last proof.
+  fn aggr_verify_range(sys: Sys, headers: List‹ShardHeader›, i: G, shard: G,
+      n: G, input: ByteStream, lch: Ext, fch: Ext, acc: Ext) -> (Ext, G) {
+    match n {
+      0 => (acc, i),
+      _ =>
+        let ListNode.Cons(h, hrest) = load(headers);
+        let (p, j) = read_proof(i);
+        let r = verify_shard(sys, h, shard, p, input, lch, fch);
+        aggr_verify_range(sys, hrest, j, shard + 1, n - 1, input, lch, fch,
+          @eg_add(acc, r)),
+    }
+  }
+
+  -- The output statement of a range node: channel 2 key 2, digest-bound.
+  fn aggr_output_range(out_claim_digest: [G; 8]) -> (Addr, U64, U64, Ext) {
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = #read_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "aggr range: output statement digest mismatch");
+    aggr_parse_range(output_bytes)
+  }
+
+  -- A verified self child at `key` whose output is a range statement.
+  fn aggr_child_range(key: G, ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8])
+      -> (Addr, U64, U64, Ext) {
+    let digest = aggr_child_check_env_digest(1, key,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    aggr_parse_range(aggr_load_preimage(digest))
+  }
+
+  -- Range leaf: the preamble on channel 0 key 0, the proofs of shards
+  -- `[lo, hi)` as a length-prefixed vector on channel 0 key 1.
+  fn aggr_range_leaf(ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let sys = aggr_load_sys(0, ixvm_vk_digest, self_vk_digest);
+    let (d, lo_limb, hi_limb, r) = aggr_output_range(out_claim_digest);
+    let (headers, messages) = aggr_load_preamble(0, d);
+    let (lch, fch, input) = aggr_batch_challenges(sys, headers, messages);
+    assert_eq!(bytes8_le(lo_limb, hi_limb), 1,
+      "aggr range: the range ends before it starts");
+    let lo = flatten_u64(lo_limb);
+    let n = flatten_u64(hi_limb) - lo;
+    let (pidx, plen) = io_get_info(0, [1]);
+    let (count, j) = read_count_at(pidx);
+    assert_eq!(count, n, "aggr range: proof count differs from the range");
+    let (total, stop) = aggr_verify_range(sys, list_drop(headers, lo), j, lo,
+      n, input, lch, fch, [0, 0]);
+    assert_eq!(stop, pidx + plen, "aggr range: trailing bytes after the proofs");
+    assert_eq!(@eg_eq(total, r), 1,
+      "aggr range: residual sum differs from the statement");
+    ()
+  }
+
+  -- Range join: two self children over adjacent ranges of one batch.
+  fn aggr_range_join(ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let (ld, llo, lhi, lr) = aggr_child_range(0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let (rd, rlo, rhi, rr) = aggr_child_range(1,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let (d, lo, hi, r) = aggr_output_range(out_claim_digest);
+    assert_eq!(address_eq(ld, rd), 1,
+      "aggr range: children verify different batches");
+    assert_eq!(address_eq(d, ld), 1,
+      "aggr range: output names a different batch than the children");
+    assert_eq!(flatten_u64(lhi), flatten_u64(rlo),
+      "aggr range: children are not adjacent");
+    assert_eq!(flatten_u64(lo), flatten_u64(llo),
+      "aggr range: output starts elsewhere than the left child");
+    assert_eq!(flatten_u64(hi), flatten_u64(rhi),
+      "aggr range: output ends elsewhere than the right child");
+    assert_eq!(@eg_eq(@eg_add(lr, rr), r), 1,
+      "aggr range: output residual is not the children's sum");
+    ()
+  }
+
+  -- Range root: one self child covering `[0, K)` on channel 0 key 0, the
+  -- preamble on channel 0 key 1. Emits the batch's IxVM claim digest.
+  fn aggr_range_root(ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let (d, lo, hi, r) = aggr_child_range(0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let sys = aggr_load_sys(0, ixvm_vk_digest, self_vk_digest);
+    let (headers, messages) = aggr_load_preamble(1, d);
+    let k = list_length(headers);
+    assert_eq!(assert_shard_count_ok(k), 1);
+    assert_eq!(flatten_u64(lo), 0,
+      "aggr range: root range does not start at shard 0");
+    assert_eq!(flatten_u64(hi), k,
+      "aggr range: root range does not end at the last shard");
+    assert_eq!(assert_closure_pairs(messages, 0, 0), 1);
+    let (lch, fch, _input) = aggr_batch_challenges(sys, headers, messages);
+    let total = messages_acc(r, messages, lch, fch);
+    assert_eq!(@ext_is_zero(total), 1, "aggr range: the batch does not balance");
+    let claim = aggr_only_claim(batch_claims(headers));
+    assert_eq!(list_length(claim), 10,
+      "aggr range: batch must carry a 10-word verify_claim claim");
+    assert_eq!(aggr_claim_field(claim, 0), 0,
+      "aggr range: batch claim has the wrong channel");
+    assert_eq!(aggr_claim_field(claim, 1), verify_idx,
+      "aggr range: batch claim has the wrong entrypoint");
+    aggr_assert_digest(aggr_claim_digest(claim, 2), out_claim_digest)
+  }
+
   /- ## Entrypoint -/
 
   -- Public input is `blake3(allowed_blob) ‖ blake3(output_claim_bytes)`,
@@ -764,6 +1015,7 @@ def circuit := ⟦
     --   0 = wrap IxVM        1 = wrap self
     --   2–5 = flat pairs:       2 + 2·left + right
     --   6–9 = structural pairs: 6 + 2·left + right
+    --   10 = range leaf      11 = range join      12 = range root
     let (hidx, hlen) = io_get_info(6, [0]);
     assert_eq!(hlen, 1, "aggr: shape hint must be exactly one byte");
     let hint = #read_byte_stream(6, hidx, hlen);
@@ -790,6 +1042,11 @@ def circuit := ⟦
       8 => aggr_pair_structural(1, 0, ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
       9 => aggr_pair_structural(1, 1, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      10 => aggr_range_leaf(ixvm_vk_digest, self_vk_digest, out_claim_digest),
+      11 => aggr_range_join(ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      12 => aggr_range_root(ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
     }
   }
