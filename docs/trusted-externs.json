@@ -382,6 +382,9 @@
         "Compilatrix.X86.RuntimeExecution.canonical_executes",
         "Compilatrix.X86.RuntimeExecution.lengthRejects",
         "Compilatrix.X86.RuntimeExecution.capacityRejects",
+        "Compilatrix.X86.UniqueCounterFold.state_eq",
+        "Compilatrix.X86.UniqueCounterFold.trace",
+        "Compilatrix.X86.RuntimeTarget.controlCost_saving",
         "Compilatrix.X86.Stream.run_with_calls",
         "Compilatrix.X86.ObjectEval.run_with_calls",
         "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects"
@@ -422,7 +425,7 @@
         "GNU objdump 2.44 independently decodes representative forms and resolved branch/call streams in the pinned Nix check",
         "the decoder check script is integrity-pinned by this ledger",
         "the source-native-unique check independently decodes 16 source-produced main/release objects, compares their exact .text bytes, rejects external relocations and non-leaf register/instruction use, and links eight native reversal/reclamation runs",
-        "the source-native-runtime check independently decodes one function/release pair, checks exact .text bytes and leaf restrictions, then links it once for eight runtime inputs and 203 malformed calls in one process",
+        "the source-native-runtime check independently decodes each baseline/counter-fold function/release pair, checks exact .text bytes and leaf restrictions, then links each pair once for eight runtime inputs and 203 malformed calls in one process; both variants pass 20 corruption regressions",
         "E1's independent decoder and byte evaluator have twelve public axiom fences; check-x86-bytes runs 31921 instruction cases, 2000 patched branches, negative/fault/corruption checks, four complete streams and eight actual source-selected runtime main/release inputs",
         "E2 adds 23 public axiom fences, kernel-evaluated nested/reused-call safety examples and the integrity-pinned check-x86-streams gate; all production object emitters use Stream.encode and ELF.writeChecked",
         "C3 independently reconstructs two unchanged upstream closed Nat call objects and checks source/physical results, complete baseline release, exact Word representation, supplied-state call certificates and native ABI observations; general N3/F1 contracts remain open"
@@ -480,7 +483,7 @@
         "GNU objdump independently disassembles seven objects, and on x86_64-linux the locked host linker resolves them and each native program returns the local result with a non-executable GNU_STACK; source-driven zero, 42, and UInt64 max run through two fresh compiler processes with equal bytes, frozen source/IR1 address goldens, and exact real provenance; UInt64 overflow must be rejected before an object is written",
         "the object-check script and native C harness are integrity-pinned by this ledger",
         "the bounded native unique gate compares two complete fresh artifact sets, reconstructs canonical source/graph/native-policy preimages, checks distinct main/release ELF role provenance, and verifies native pointer graphs, all arena-cell counters, saved registers, canaries, full release, and capacity rejection without writes",
-        "the runtime-input gate compares two complete fresh artifact sets with one compiled function and one object pair; function/ABI/policy provenance excludes runtime payloads, and 17 deliberate artifact/observation corruptions must be rejected",
+        "the runtime-input gate compares two complete fresh artifact sets for each baseline/counter-fold variant and can bind a supplied artifact set byte for byte; function/ABI/policy provenance excludes runtime payloads, and 20 deliberate artifact/observation corruptions must be rejected per variant",
         "GNU binutils commit 82ed9683ec099d8205dc499ac84febc975235af6 documents the Linux ELF64 four-byte-note convention used by the existing writer",
         "E2 adds an independent parser, fail-closed object validation, actual relocation application and complete-object execution proofs; check-x86-streams rejects 1010 malformed/truncated object cases and exercises actual source-selected runtime object execution"
       ],
@@ -501,6 +504,7 @@
         "scripts/CheckSourceNativeRuntime.lean",
         "fixtures/source-native-runtime/native_harness.c",
         "fixtures/source-native-runtime/expected.json",
+        "fixtures/source-native-runtime/expected-counter-fold.json",
         "Compilatrix.X86.ELF.check_sound",
         "Compilatrix.X86.ELF.Valid.text",
         "Compilatrix.X86.ELF.Valid.entry",
@@ -592,7 +596,7 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "9653f90d5e1dbf3a51b5da8519aab3343ceaeb3e590c626d02ec7c7883c72a6d",
+      "flake.nix": "2803441f55d7f6c8e79591a4d4744e9b1add3b9fa43a39fadc06868e6101336e",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
       "lakefile.lean": "aff8cc75865757bfcde3f30415b395806a5829ed33d827cf72f8602024b7e2e8",
@@ -619,7 +623,7 @@
       "scripts/CheckSourceNativeUnique.lean": "9de95509bbf31c4aac1c4acd778bdd56269e44e32ca1ff7fdaeeafa4044f8ef6",
       "fixtures/source-native-unique/native_harness.c": "8013e02898ca5503b2e190f9f3b73bb9c6a05151179d33557264b8feb7ffa8cf",
       "fixtures/source-native-unique/expected.json": "fbf32aec9288cf49f3e2d93726c7cbd462a998b294f71c76bb2a1e7e58be8d79",
-      "scripts/CheckSourceNativeRuntime.lean": "4aaf7096a5dd89cafae67e729df1e53f37685db76146691f388a98be4aebbce1",
+      "scripts/CheckSourceNativeRuntime.lean": "f99d0060dfb3dcb8ce2fa6df9071530ec1116a8fc4a7bd501d3226b447878d12",
       "fixtures/source-native-runtime/native_harness.c": "d465ce5a7c86f9a89f41333e0b700378c0429c2c72be7ac11278e5e654ef16c2",
       "fixtures/source-native-runtime/expected.json": "fe873805772d952046be02ef1d82ccfffa5dc2cecfd44baf6abe4d5eb3673af3",
       "scripts/CheckSourceBorrow.lean": "0dbdf92905250b88ca020836b42fb84330f2eb0cf7a6fe7fb9d2fd0bf0c453b4",
@@ -660,7 +664,12 @@
       "benchmarks/Benchmark/Measure.lean": "f407fa62c8094075de15c229269eaea6b3777102b49f697b01ac2f50cdd16e97",
       "benchmarks/Benchmark/Reproduce.lean": "98da44b81c05a3299c18259819143a1a092df7b63cb7ce2158b441bef0e0c740",
       "benchmarks/Benchmark/Analyze.lean": "a1fd180bd6ff79c342cfe4477e8c269ed16810bd9a0841ac73e38fe03820ad7a",
-      "benchmarks/Benchmark.lean": "dfe0889ed8a77942da5d537edaa46ced0a711bdbe7e109393ae2f50b9b3f9d82"
+      "benchmarks/Benchmark.lean": "d3ace43bb1b5b954aca1de364d65d807d3516ad48f081311431f63d62a41f7a5",
+      "fixtures/source-native-runtime/expected-counter-fold.json": "49be20e4439179563d2cf849989ddbee7680334455def7766b4ff868ccc803c6",
+      "benchmarks/Benchmark/CounterFoldBuild.lean": "34ec43928efc0277ba74abe7fb76955514d32ac4b711f761c4c4e496ac1fff56",
+      "benchmarks/Benchmark/CounterFoldRun.lean": "d6c61f6ba69f73578c938fd85e6b931abba52a37ca440df5a44a551b1f4fe4f3",
+      "benchmarks/Benchmark/CounterFold.lean": "d56dcf3f04dc06864e3f01b53fe97d3bf631c5628fab580d56b2e25e06fd1839",
+      "benchmarks/counter-fold.md": "e2bd9067fe8670e6f9f36021e5eb52479bcdf95cac05945ce2e9556c28a47f42"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

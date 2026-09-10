@@ -38,14 +38,17 @@ structure LoopResult (layout : Layout) (values : List Word) (counts : Counts) (b
   context : after.registers .rdi = layout.base
   saved : PreservesSaved before after
 
-theorem loopStepsWith (layout : Layout) (values acc : List Word) (counts : Counts) (state : State)
+theorem loopStepsFor (layout : Layout) (values acc : List Word) (counts : Counts) (state : State)
     (invariant : LoopInvariant layout values acc counts state)
     (capacity : values.length + acc.length + 2 ≤ layout.capacity) (positive : 0 < counts.live)
     (outside memory : Memory) (represented : Realizes layout outside state.words memory)
-    (runtime : Runtime) (checked : Checked) (code : LoopCode checked) :
+    (runtime : Runtime) (checked : Checked) (body : List Instr) (code : LoopCode checked body)
+    (bodyTrace : ∀ (state : State) (index : Nat), index < layout.capacity →
+      state.registers .rdi = layout.base → state.registers .rdx = layout.cell index →
+      Trace layout body state (consState state index)) :
     ∃ after nextMemory, LoopResult layout (values.reverse ++ acc) (counts.finish values.length) state after ∧
       Realizes layout outside after.words nextMemory ∧
-      Steps runtime checked (31 * values.length + 16) (leaf (state.core memory) 3 0)
+      Steps runtime checked ((body.length + 3) * values.length + 16) (leaf (state.core memory) 3 0)
         (haltedLeaf (after.core nextMemory) 4 13) := by
   induction values generalizing acc counts state memory with
   | nil =>
@@ -91,7 +94,7 @@ theorem loopStepsWith (layout : Layout) (values acc : List Word) (counts : Count
       obtain ⟨tagMemory, tagView, dispatch⟩ := load.branch outside memory represented runtime checked 3 4 5
         tagCompare .eq code.tag false tested code.hasCons
       let next := consState tagged index
-      have consume := consTrace layout tagged index indexBound
+      have consume := bodyTrace tagged index indexBound
         (by simpa [tagged, tagState] using invariant.context)
         (by simpa [tagged, tagState] using invariant.inputRoot)
       obtain ⟨consumeMemory, consumeView, consumed⟩ := consume.jump outside tagMemory tagView runtime checked 5 3
@@ -121,12 +124,24 @@ theorem loopStepsWith (layout : Layout) (values acc : List Word) (counts : Count
         exact { result with saved }
       · have all := dispatch.append (consumed.append rest)
         have cost : (tagInstructions .rdx).length + 1 +
-            (consInstructions.length + 1 + (31 * tail.length + 16)) =
-            31 * (head :: tail).length + 16 := by
-          change 2 + (29 + (31 * tail.length + 16)) = 31 * (tail.length + 1) + 16
+            (body.length + 1 + ((body.length + 3) * tail.length + 16)) =
+            (body.length + 3) * (head :: tail).length + 16 := by
+          simp only [tagInstructions, List.length_cons, List.length_nil, Nat.mul_add, Nat.mul_one]
           omega
         rw [cost] at all
         exact all
+
+theorem loopStepsWith (layout : Layout) (values acc : List Word) (counts : Counts) (state : State)
+    (invariant : LoopInvariant layout values acc counts state)
+    (capacity : values.length + acc.length + 2 ≤ layout.capacity) (positive : 0 < counts.live)
+    (outside memory : Memory) (represented : Realizes layout outside state.words memory)
+    (runtime : Runtime) (checked : Checked) (code : LoopCode checked) :
+    ∃ after nextMemory, LoopResult layout (values.reverse ++ acc) (counts.finish values.length) state after ∧
+      Realizes layout outside after.words nextMemory ∧
+      Steps runtime checked (31 * values.length + 16) (leaf (state.core memory) 3 0)
+        (haltedLeaf (after.core nextMemory) 4 13) :=
+  loopStepsFor layout values acc counts state invariant capacity positive outside memory represented
+    runtime checked consInstructions code (consTrace layout)
 
 theorem loopSteps (layout : Layout) (emitted values acc : List Word) (counts : Counts) (state : State)
     (invariant : LoopInvariant layout values acc counts state)

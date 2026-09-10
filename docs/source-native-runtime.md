@@ -99,16 +99,45 @@ zero. Both entries are leaves with no stack operations or runtime calls.
 
 The function performs one fresh allocation; the totals include the caller's
 input allocations. Validation takes `11n + 45` local evaluator steps, the
-complete reversal entry takes `42n + 82`, and release takes `17n + 16`.
+complete baseline reversal entry takes `42n + 82`, and release takes `17n + 16`.
 These are instruction/terminator counts, not hardware cycle measurements.
 Resource equalities apply at completed operation boundaries because individual
 instructions update tags and counters separately. Trap exclusion covers every
 instruction prefix.
 
+## Checked counter folding
+
+`Native.select compilation true` selects the same source/reuse certificate
+with the checked counter-folding body. The default remains `false`, preserving
+the original baseline byte for byte. `source-native-runtime --counter-fold OUT`
+emits the folded variant; its source and canonical IxIR₁ graph are unchanged.
+
+[`UniqueCounterFold`](../Compilatrix/X86/UniqueCounterFold.lean) removes four
+cancelling live/reservation counter changes from adjacent reserve/reuse:
+twelve instructions per cons cell. It retains every cell load/store, including
+the reserved tag and original payload store, and both cumulative reuse/payload
+counter changes. `state_eq` proves equality of every final register and arena
+word for arbitrary initial counter values. `trace` derives the actual body
+execution under the existing exclusive-arena layout contract. The complete
+entry costs `30n + 82` local steps; its reversal `.text` is 952 bytes versus
+1,036 for the baseline. These static savings do not establish a runtime speedup.
+
+The combined reserve/reuse operation is one source observation boundary.
+There is no intermediate reservation-count observation inside that folded
+body. The complete operation restores the same tag/counter relation; trap
+exclusion still covers every native instruction prefix. The input/guard,
+source/physical/native execution, reclamation and actual parsed-object
+theorems quantify over the selected variant and retain their existing premises.
+The [paired experiment](../benchmarks/counter-fold.md) measures both actual
+artifacts over the full existing matrix with the original driver.
+
 ## Artifact identity and gate
 
 The ELF notes commit to the canonical two-function IxIR₁ graph, native lowering
-version `3`, and role versions `1`/`2`. The separately labeled native-policy
+version `3`, and baseline role versions `1`/`2`. Counter folding uses main role
+version `3`, selector `unique-reverse-runtime-x86/2`, and the additional
+`unique-reserve-reuse-counter-fold/1` policy field. Release text is unchanged;
+its object provenance commits to the selected policy. The separately labeled native-policy
 preimage commits to the source bytes, graph, entry/worker identities, source,
 usage, lowering, reuse and execution policies, checker fuels and limits, runtime
 ABI, arena bounds, constructor identities, and object role. Runtime payloads
@@ -120,6 +149,9 @@ canonical preimages and compares all files from two fresh producer processes
 against the reviewed report. It checks input, returned and reclaimed heaps,
 physical counters, and native operation boundaries without importing compiler,
 selector, encoder, writer, or evaluator modules.
+`--artifacts DIR` also compares the complete supplied artifact set byte for
+byte with the fresh checked files. The paired benchmark uses this option to
+bind its actual linked objects to the gate.
 
 Binutils checks the two objects, exact text and provenance, absence of
 relocations, and leaf instructions. On x86_64 Linux, the C harness links that
@@ -127,7 +159,7 @@ pair once and calls the same functions on all eight runtime inputs in one
 process. It checks normalized graphs, all counters, saved registers, stack,
 frame canaries, complete release, and 203 malformed-input calls with unchanged
 arena bytes. These cover length, descriptor, cursor/capacity, counters, nil,
-and cons tag/tail/padding errors. Six adapter/selection negatives and 17
+and cons tag/tail/padding errors. Six adapter/selection negatives and 20
 deliberate artifact/observation corruptions are checked separately.
 
 ```sh
@@ -136,10 +168,14 @@ lake exe check-source-native-runtime \
   --fixture .lake/build/bin/source-native-runtime \
   --readelf readelf --objdump objdump --cc cc \
   --harness fixtures/source-native-runtime/native_harness.c
+lake exe check-source-native-runtime \
+  --fixture .lake/build/bin/source-native-runtime --variant counter-fold \
+  --readelf readelf --objdump objdump --cc cc \
+  --harness fixtures/source-native-runtime/native_harness.c
 ```
 
-The `source-native-runtime` Nix check runs this gate with pinned tools. The
-checker, shared checking utilities, harness, and expected report are integrity
+The `source-native-runtime` Nix check runs both variants with pinned tools. The
+checker, shared checking utilities, harness, and both expected reports are integrity
 pinned in the trust ledger. The new source/native theorem interfaces are
 included in `Compilatrix.Fence`: native memory and execution use only ordinary
 logical axioms; addressed source certificates retain the existing BLAKE3 axiom.

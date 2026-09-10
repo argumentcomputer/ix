@@ -35,7 +35,8 @@ private def rejectionInputs (layout : Layout) (length : Nat) (initial : Core) : 
      changed "cons-outside-tail" (cellSlot length 2) 0xffffffffffffffff,
      changed "cons-padding" (cellSlot length 3) 1])
 
-private def observeNative (values : List Word) (bound : values.length ≤ maxLength) : Except String Json := do
+private def observeNative (values : List Word) (bound : values.length ≤ maxLength)
+    (foldCounters : Bool) : Except String Json := do
   let layout := RuntimeExecution.canonicalLayout values bound
   let initial : Core :=
     { registers := ((Registers.zero.set .rsp 0x8008).set .rdi layout.base).set .rsi (UInt64.ofNat values.length)
@@ -43,18 +44,23 @@ private def observeNative (values : List Word) (bound : values.length ≤ maxLen
   need ((← nativeList layout initial.memory values.length (layout.cell values.length)) == values.map UInt64.toNat)
     "caller input graph disagreement"
   let input ← heapSnapshot layout initial.memory
-  let mut machine := Machine.initial RuntimeTarget.checked initial
+  let checked := RuntimeTarget.checked foldCounters
+  let cost := RuntimeTarget.controlCost values.length foldCounters
+  let mut machine := Machine.initial checked initial
   let mut prefixes := #[]
-  for count in [:RuntimeTarget.controlCost values.length + 1] do
+  for count in [:cost + 1] do
     need (machine.core.readReg .rsp == 0x8008 && machine.core.readReg .rdi == layout.base &&
       machine.core.calleeSavedSnapshot == initial.calleeSavedSnapshot) "runtime ABI register disagreement"
     match machine.status with
     | .trapped fault => throw s!"runtime byte evaluator trapped: {repr fault}"
     | _ => pure ()
-    if boundary machine then prefixes := prefixes.push (← prefixSnapshot layout machine count)
-    if count < RuntimeTarget.controlCost values.length then
+    -- The folded reserve/reuse pair is one operation boundary. Its cancelled
+    -- counter updates do not expose the old intermediate reservation state.
+    if boundary machine && !(foldCounters && machine.pc.block == 5 && machine.pc.offset == 10) then
+      prefixes := prefixes.push (← prefixSnapshot layout machine count)
+    if count < cost then
       need (machine.status == .running) "runtime entry halted before its control cost"
-      machine := step X86.Runtime.rejecting RuntimeTarget.checked machine
+      machine := step X86.Runtime.rejecting checked machine
   need (machine.status == .halted (layout.cell 1)) "runtime entry did not return its owned root"
   let observed ← nativeList layout machine.core.memory values.length (machine.core.readReg .rax)
   need (observed == (values.map UInt64.toNat).reverse) "runtime reversal disagreement"
@@ -67,7 +73,7 @@ private def observeNative (values : List Word) (bound : values.length ≤ maxLen
   need (after[2]! == after[3]! && after[5]! == 0 && after[7]! == 0 && after[9]! == 0) "runtime release leaked"
   let mut failures := #[]
   for (label, before) in rejectionInputs layout values.length initial do
-    let failed := runFrom X86.Runtime.rejecting RuntimeTarget.checked (RuntimeTarget.controlCost values.length) before
+    let failed := runFrom X86.Runtime.rejecting checked cost before
     need (failed.status == .halted 0 && failed.core.readReg .rsp == before.readReg .rsp &&
       failed.core.calleeSavedSnapshot == before.calleeSavedSnapshot) s!"runtime guard did not reject {label}"
     for byte in [:8 * layout.slots] do
@@ -105,9 +111,10 @@ private def objectJson (object : Object) : Json :=
     ("symbol", toJson object.role.symbol), ("identity", toJson (Address.blake3 object.bytes)),
     ("size", toJson object.bytes.size), ("policy_identity", toJson object.policyIdentity),
     ("policy_bytes", Coverage.byteJson object.policyBytes), ("provenance", Coverage.byteJson object.provenance.bytes),
-    ("lowering_version", toJson loweringVersion.toNat), ("role_version", toJson object.role.policyVersion.toNat),
+    ("lowering_version", toJson loweringVersion.toNat), ("role_version", toJson (object.role.policyVersion object.foldCounters).toNat),
     ("text", Coverage.byteJson object.encoded.text), ("blocks", toJson object.encoded.blockOffsets),
-    ("relocations", toJson object.encoded.relocations.size), ("typed_program_diagnostic", toJson (reprStr object.role.checked.program))]
+    ("relocations", toJson object.encoded.relocations.size),
+    ("typed_program_diagnostic", toJson (reprStr (object.role.checked object.foldCounters).program))]
 
 structure Result where
   pipeline : Json
@@ -116,13 +123,13 @@ structure Result where
   mainObject : ByteArray
   releaseObject : ByteArray
 
-def run : Except String Result := do
+def run (foldCounters : Bool := false) : Except String Result := do
   let source ← Runtime.source
   for (address, constant) in source.constants do
     need (Address.blake3 (ser constant) == address &&
       (de (ser constant) : Except String Constant).toOption == some constant) "runtime source codec disagreement"
   let compilation ← Runtime.compile source.constants source.entry
-  let .native output := Native.select compilation | throw "runtime source skipped native selection"
+  let .native output := Native.select compilation foldCounters | throw "runtime source skipped native selection"
   let main ← output.emit .main
   let release ← output.emit .release
   let sourceContext := Pipeline.validatedEvalCtx source.constants {}
@@ -156,9 +163,9 @@ def run : Except String Result := do
     let baselinePhysical ← observe2 view schema false .physical
     let selectedLogical ← observe2 view schema compilation.selection.reuse .logical
     let selectedPhysical ← observe2 view schema compilation.selection.reuse .physical
-    let native ← observeNative words bound.down
+    let native ← observeNative words bound.down foldCounters
     let row := Json.mkObj [("name", toJson name), ("input", toJson values), ("value", toJson values.reverse),
-      ("snapshot", toJson s!"{name}.json"), ("main_steps", toJson (RuntimeTarget.controlCost values.length)),
+      ("snapshot", toJson s!"{name}.json"), ("main_steps", toJson (RuntimeTarget.controlCost values.length foldCounters)),
       ("release_steps", toJson (UniqueTarget.releaseCost values.length)),
       ("prefixes", toJson (← (← native.getObjVal? "prefixes").getArr?).size),
       ("rejections", ← native.getObjVal? "rejections")]
@@ -178,7 +185,7 @@ def run : Except String Result := do
       ("rewrite-budget", { maxRewrites := 0 })] do
     let selected ← Runtime.select schema IxIR2.Validate.defaultLimits policy
     need (!selected.reuse) s!"{name}: runtime selector accepted"
-    let .skipped reason := Native.select { compilation with selection := selected }
+    let .skipped reason := Native.select { compilation with selection := selected } foldCounters
       | throw s!"{name}: native selector accepted the consuming fallback"
     rejections := rejections.push (Json.mkObj [("name", toJson name), ("reason", toJson reason)])
   let .error limitReason := Runtime.select schema { IxIR2.Validate.defaultLimits with maxDeclarations := 0 } {}
@@ -208,7 +215,7 @@ def run : Except String Result := do
       ("selected", toJson (Runtime.program schema compilation.selection.reuse)),
       ("baseline_stats", toJson baseline.checked.stats), ("selected_stats", toJson compilation.selection.checked.stats),
       ("limits", toJson IxIR2.Validate.defaultLimits)]),
-    ("abi", Json.mkObj [("policy", toJson RuntimeTarget.abiTag), ("selector", toJson RuntimeTarget.policyTag),
+    ("abi", Json.mkObj [("policy", toJson RuntimeTarget.abiTag), ("selector", toJson (RuntimeTarget.policyTag foldCounters)),
       ("max_length", toJson maxLength), ("header_words", toJson headerWords), ("cell_words", toJson cellWords)]),
     ("main", objectJson main), ("release", objectJson release)]
   let report := Json.mkObj [("format", toJson "compilatrix/source-native-runtime-report/1"),

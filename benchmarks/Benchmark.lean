@@ -1,9 +1,23 @@
 import Benchmark.Reproduce
+import Benchmark.CounterFold
 
 open Compilatrix.Tools.Check
 
 def main (args : List String) : IO UInt32 := cli "benchmark failed" do
   match args with
+  | "counter-fold-build" :: output :: options =>
+    let options ← checked (parseArgs ["--gcc", "--time"] options)
+    Benchmark.CounterFold.buildSuite output (option options "--gcc" "gcc") (option options "--time" "time")
+  | ["counter-fold-verify", build, output] => Benchmark.CounterFold.verifySuite build output
+  | ["counter-fold-smoke", build, output, core] =>
+    Benchmark.CounterFold.smokeSuite build output (← present core.toNat? "core must be a natural number")
+  | ["counter-fold-smoke", build, output] => Benchmark.CounterFold.smokeSuite build output (← Benchmark.firstCore)
+  | ["counter-fold-pilot", build, correctness, output, core] =>
+    Benchmark.CounterFold.pilotSuite build correctness output (← present core.toNat? "core must be a natural number")
+  | ["counter-fold-measure", build, correctness, pilot, output, core] =>
+    Benchmark.CounterFold.measureSuite build correctness pilot output (← present core.toNat? "core must be a natural number")
+  | ["counter-fold-analyze", build, measured, output] => Benchmark.CounterFold.analyzeSuite build measured output
+  | ["counter-fold-reproduce", build, measured, output] => Benchmark.CounterFold.reproduceSuite build measured output
   | ["datasets", output] =>
     Benchmark.writeDatasets output
     IO.println "benchmark datasets: 585 inputs, 19305 arena capacity cases, 38 timing rows"

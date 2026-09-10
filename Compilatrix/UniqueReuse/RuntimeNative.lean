@@ -17,13 +17,15 @@ variable {constants : List (Address × Constant)} {entry : Pipeline.ClosedEntry}
 
 structure Output (compilation : Compilation constants entry config checkFuel eraseFuel limits) where
   reuseSelected : compilation.selection.reuse = true
+  foldCounters : Bool := false
 
 inductive Selection (compilation : Compilation constants entry config checkFuel eraseFuel limits) where
   | skipped (reason : String)
   | native (output : Output compilation)
 
-def select (compilation : Compilation constants entry config checkFuel eraseFuel limits) : Selection compilation :=
-  if reused : compilation.selection.reuse = true then .native ⟨reused⟩
+def select (compilation : Compilation constants entry config checkFuel eraseFuel limits)
+    (foldCounters : Bool := false) : Selection compilation :=
+  if reused : compilation.selection.reuse = true then .native ⟨reused, foldCounters⟩
   else .skipped (compilation.selection.reason.getD "runtime native entry requires static unique reuse")
 
 inductive Role where
@@ -32,8 +34,10 @@ inductive Role where
 
 def Role.name : Role → String | .main => "main" | .release => "release"
 def Role.symbol : Role → String | .main => "compilatrix_runtime_reverse" | .release => "compilatrix_runtime_drop"
-def Role.policyVersion : Role → UInt32 | .main => 1 | .release => 2
-def Role.checked : Role → Checked | .main => RuntimeTarget.checked | .release => RuntimeTarget.releaseChecked
+def Role.policyVersion (role : Role) (foldCounters : Bool := false) : UInt32 :=
+  match role with | .main => if foldCounters then 3 else 1 | .release => 2
+def Role.checked (role : Role) (foldCounters : Bool := false) : Checked :=
+  match role with | .main => RuntimeTarget.checked foldCounters | .release => RuntimeTarget.releaseChecked
 def loweringVersion : UInt32 := 3
 
 /-- Check exact scalar representation before preparing a native argument. -/
@@ -75,32 +79,35 @@ def Output.policyBytes {compilation : Compilation constants entry config checkFu
     Encoding.string IxIR2.UniqueLower.policyTag ++ Encoding.string IxIR2.UniqueLower.reusePolicyTag ++
     Encoding.string IxIR2.CreditPolicy.callLocalV0.tag ++
     Encoding.nat checkFuel ++ Encoding.nat eraseFuel ++ targetLimitBytes limits ++
-    Encoding.string RuntimeTarget.abiTag ++ Encoding.string RuntimeTarget.policyTag ++
+    Encoding.string RuntimeTarget.abiTag ++ Encoding.string (RuntimeTarget.policyTag output.foldCounters) ++
     Encoding.nat UniqueABI.maxLength ++ Encoding.nat UniqueABI.headerWords ++ Encoding.nat UniqueABI.cellWords ++
     Encoding.address compilation.schema.nil ++ Encoding.address compilation.schema.cons ++
-    Encoding.string role.name ++ Encoding.nat loweringVersion.toNat ++ Encoding.nat role.policyVersion.toNat
+    Encoding.string role.name ++ Encoding.nat loweringVersion.toNat ++ Encoding.nat (role.policyVersion output.foldCounters).toNat ++
+    (if output.foldCounters then Encoding.string UniqueCounterFold.policyTag else ByteArray.empty)
 
 def Output.identity {compilation : Compilation constants entry config checkFuel eraseFuel limits}
     (output : Output compilation) (role : Role) : Address := Address.blake3 (output.policyBytes role)
 
 structure Object where
   role : Role
+  foldCounters : Bool := false
   provenance : ELF.Provenance
   policyBytes : ByteArray
   policyIdentity : Address
   encoded : Encode.Output
   bytes : ByteArray
-  streamValid : Stream.Valid role.checked.program encoded
-  objectValid : ELF.Valid { encoded, entryBlock := role.checked.program.entry, exportName := role.symbol, provenance } bytes
+  streamValid : Stream.Valid (role.checked foldCounters).program encoded
+  objectValid : ELF.Valid { encoded, entryBlock := (role.checked foldCounters).program.entry, exportName := role.symbol, provenance } bytes
 
 def Output.emit {compilation : Compilation constants entry config checkFuel eraseFuel limits}
     (output : Output compilation) (role : Role) : Except String Object := do
-  let stream ← (Stream.encode role.checked).mapError reprStr
+  let stream ← (Stream.encode (role.checked output.foldCounters)).mapError reprStr
   let encoded := stream.output
-  let provenance := ELF.Provenance.ixir1Policy output.graph loweringVersion role.policyVersion
-  let object ← (ELF.writeChecked { encoded, entryBlock := role.checked.program.entry, exportName := role.symbol, provenance }).mapError reprStr
+  let provenance := ELF.Provenance.ixir1Policy output.graph loweringVersion (role.policyVersion output.foldCounters)
+  let object ← (ELF.writeChecked { encoded, entryBlock := (role.checked output.foldCounters).program.entry, exportName := role.symbol, provenance }).mapError reprStr
   return {
-    role, provenance, encoded, bytes := object.bytes, policyBytes := output.policyBytes role, policyIdentity := output.identity role
+    role, foldCounters := output.foldCounters, provenance, encoded, bytes := object.bytes,
+    policyBytes := output.policyBytes role, policyIdentity := output.identity role
     streamValid := stream.valid, objectValid := object.valid }
 
 def Output.targetChecked {compilation : Compilation constants entry config checkFuel eraseFuel limits}

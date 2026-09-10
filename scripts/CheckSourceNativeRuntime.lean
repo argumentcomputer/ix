@@ -43,9 +43,9 @@ private def inspectHeap (heap : Json) (input : Array Json) (phase : String) : IO
       need ((← nat fields[0]!) == 1 && fields[1]! == input[count - index]!) "runtime payload disagreement"
       need (fields[2]! == toJson (if initial then index - 1 else index + 1)) "runtime pointer disagreement"
 
-private def inspectPrefixes (observations : Json) (count : Nat) : IO Unit := do
+private def inspectPrefixes (observations : Json) (count : Nat) (foldCounters : Bool) : IO Unit := do
   let prefixes ← arrField observations "prefixes"
-  need (prefixes.size == 8 * count + 22) "runtime macro-boundary inventory disagreement"
+  need (prefixes.size == (if foldCounters then 7 else 8) * count + 22) "runtime macro-boundary inventory disagreement"
   let mut previous := 0
   for index in [:prefixes.size] do
     let row := prefixes[index]!
@@ -55,7 +55,7 @@ private def inspectPrefixes (observations : Json) (count : Nat) : IO Unit := do
     let block ← number row "block"
     let offset ← number row "offset"
     let halted := (← field row "halted") == toJson true
-    need (offset == 0 || (block == 2 && offset == 20) || (block == 5 && offset == 10) || halted)
+    need (offset == 0 || (block == 2 && offset == 20) || (!foldCounters && block == 5 && offset == 10) || halted)
       "runtime observation is not a macro boundary"
     let header ← (← arrField row "header").mapM nat
     let tags ← (← arrField row "tags").mapM nat
@@ -68,11 +68,11 @@ private def inspectPrefixes (observations : Json) (count : Nat) : IO Unit := do
       reservations ≤ 1 && count + 1 ≤ tags.size && tags.size ≤ count + 2) "runtime prefix ownership accounting disagreement"
     need (header[7]! == 0 && live ≤ header[6]! && header[6]! ≤ count + 2) "runtime prefix RC or peak disagreement"
     need (halted == (index + 1 == prefixes.size)) "runtime prefix halt disagreement"
-  need (previous == 42 * count + 82) "runtime control cost disagreement"
+  need (previous == (if foldCounters then 30 else 42) * count + 82) "runtime control cost disagreement"
   need ((← field prefixes.back! "header") == (← field (← field observations "returned") "header"))
     "runtime terminal prefix disagrees"
 
-private def inspectPipeline (report pipeline : Json) : IO Unit := do
+private def inspectPipeline (report pipeline : Json) (foldCounters : Bool) : IO Unit := do
   need ((← strField pipeline "format") == "compilatrix/source-native-runtime-pipeline/1") "runtime pipeline format disagreement"
   let source ← field pipeline "source"
   need ((← field source "identity") == (← field report "source_identity") &&
@@ -105,8 +105,9 @@ private def inspectPipeline (report pipeline : Json) : IO Unit := do
   let graphBytes := "compilatrix/ixir1/optimizer-graph/1\x00".toUTF8 ++ vector artifactBytes ++ blob (← byteField graph "main")
   need (digest graphBytes == (← strField graph "root")) "runtime graph preimage disagreement"
   let abi ← field pipeline "abi"
+  let selector := if foldCounters then "unique-reverse-runtime-x86/2" else "unique-reverse-runtime-x86/1"
   need ((← strField abi "policy") == "unique-list-runtime-arena/1" &&
-    (← strField abi "selector") == "unique-reverse-runtime-x86/1" &&
+    (← strField abi "selector") == selector &&
     (← number abi "max_length") == 64 && (← number abi "header_words") == 10 && (← number abi "cell_words") == 4)
     "runtime ABI disagreement"
   let policies ← field pipeline "policies"
@@ -124,7 +125,7 @@ private def inspectPipeline (report pipeline : Json) : IO Unit := do
   let schema ← field pipeline "schema"
   for role in ["main", "release"] do
     let object ← field pipeline role
-    let version := if role == "main" then 1 else 2
+    let version := if role == "main" then (if foldCounters then 3 else 1) else 2
     need ((← strField object "file") == s!"{role}.o" && (← strField object "role") == role &&
       (← strField object "symbol") == (if role == "main" then "compilatrix_runtime_reverse" else "compilatrix_runtime_drop"))
       "runtime object role disagreement"
@@ -135,20 +136,21 @@ private def inspectPipeline (report pipeline : Json) : IO Unit := do
       (← byteField pipeline "entry_address") ++ (← byteField pipeline "worker_address") ++
       (policyValues.foldl (fun out pair => out ++ blob pair.2.toUTF8) ByteArray.empty) ++
       uleb (← number policies "check_fuel") ++ uleb (← number policies "erase_fuel") ++ vector limitValues ++
-      blob "unique-list-runtime-arena/1".toUTF8 ++ blob "unique-reverse-runtime-x86/1".toUTF8 ++ uleb 64 ++ uleb 10 ++ uleb 4 ++
-      (← byteField schema "nil") ++ (← byteField schema "cons") ++ blob role.toUTF8 ++ uleb 3 ++ uleb version
+      blob "unique-list-runtime-arena/1".toUTF8 ++ blob selector.toUTF8 ++ uleb 64 ++ uleb 10 ++ uleb 4 ++
+      (← byteField schema "nil") ++ (← byteField schema "cons") ++ blob role.toUTF8 ++ uleb 3 ++ uleb version ++
+      (if foldCounters then blob "unique-reserve-reuse-counter-fold/1".toUTF8 else ByteArray.empty)
     need (expected == (← byteField object "policy_bytes")) "runtime policy preimage disagreement"
     hashField object "policy_bytes" "policy_identity" "runtime policy"
     need ((← field object "policy_identity") == (← field report s!"{role}_policy") &&
       (← field object "identity") == (← field report s!"{role}_identity")) "runtime object summary disagreement"
     let provenance := "compilatrix/x86-object-provenance/1".toUTF8 ++
       (← checked (unhex ("00 00 " ++ (← strField graph "root") ++ " 03 00 00 00 " ++
-        (if role == "main" then "01" else "02") ++ " 00 00 00")))
+        (if role == "main" then (if foldCounters then "03" else "01") else "02") ++ " 00 00 00")))
     need (provenance == (← byteField object "provenance")) "runtime ELF provenance disagreement"
     need ((← number object "relocations") == 0 && !(← strField object "typed_program_diagnostic").isEmpty)
       "runtime leaf artifact disagreement"
 
-private def inspectCase (schema row snapshot : Json) : IO Unit := do
+private def inspectCase (schema row snapshot : Json) (foldCounters : Bool) : IO Unit := do
   need ((← strField snapshot "format") == "compilatrix/source-native-runtime-case/1" &&
     (← field snapshot "summary") == row) "runtime snapshot/report disagreement"
   let input ← arrField row "input"
@@ -184,12 +186,13 @@ private def inspectCase (schema row snapshot : Json) : IO Unit := do
         (← number observed "reclamation_remaining") == 0) "runtime physical control cost disagreement"
   let native ← field snapshot "native"
   need ((← number native "root") == 1 && (← field native "value") == Json.arr input.reverse) "runtime result root disagreement"
-  need ((← number row "main_steps") == 42 * count + 82 && (← number row "release_steps") == 17 * count + 16)
+  need ((← number row "main_steps") == (if foldCounters then 30 else 42) * count + 82 &&
+    (← number row "release_steps") == 17 * count + 16)
     "runtime step budget disagreement"
   for phase in ["input", "returned", "reclaimed"] do inspectHeap (← field native phase) input phase
   need ((← field native "rejections") == toJson (rejectionNames count) &&
     (← field row "rejections") == (← field native "rejections")) "runtime rejection inventory disagreement"
-  inspectPrefixes native count
+  inspectPrefixes native count foldCounters
   need ((← number row "prefixes") == (← arrField native "prefixes").size) "runtime prefix summary disagreement"
 
 private def hexValue (value : String) : IO Nat := do
@@ -251,7 +254,7 @@ private def nativeRun (cc readelf : String) (harness directory executable : File
   let stacks := (headers.splitOn "\n").filter (·.contains "GNU_STACK")
   need (stacks.length == 1 && !stacks.any (·.contains "RWE")) "runtime executable stack is executable"
 
-private def regressions (report pipeline row snapshot : Json) : IO Unit := do
+private def regressions (report pipeline row snapshot : Json) (foldCounters : Bool) : IO Unit := do
   for (name, path, replacement, fragment) in [
       ("ABI", ["abi", "cell_words"], toJson (3 : Nat), "runtime ABI"),
       ("word bound", ["abi", "max_length"], toJson (65 : Nat), "runtime ABI"),
@@ -261,27 +264,40 @@ private def regressions (report pipeline row snapshot : Json) : IO Unit := do
       ("role", ["release", "symbol"], toJson "compilatrix_runtime_reverse", "object role"),
       ("graph", ["ixir1", "main"], toJson "00", "graph preimage"),
       ("entry", ["entry_address"], ← field pipeline "worker_address", "function inventory")] do
-    rejects s!"{name} corruption" fragment (inspectPipeline report (← replaceAt pipeline path replacement))
+    rejects s!"{name} corruption" fragment (inspectPipeline report (← replaceAt pipeline path replacement) foldCounters)
+  rejects "counter-fold selector corruption" "runtime ABI"
+    (inspectPipeline report (← replaceAt pipeline ["abi", "selector"]
+      (toJson (if foldCounters then "unique-reverse-runtime-x86/1" else "unique-reverse-runtime-x86/2"))) foldCounters)
+  rejects "counter-fold role corruption" "object version"
+    (inspectPipeline report (← replaceAt pipeline ["main", "role_version"]
+      (toJson (if foldCounters then (1 : Nat) else 3))) foldCounters)
   let schema ← field pipeline "schema"
   for (name, path, replacement, fragment) in [
       ("root", ["native", "root"], toJson (0 : Nat), "result root"),
       ("rejections", ["native", "rejections"], toJson ([] : List String), "rejection inventory"),
       ("physical RC", ["selected_physical", "store", "heap", "rcops"], toJson (1 : Nat), "physical RC"),
       ("peak", ["selected_physical", "store", "peakLiveNodes"], toJson (99 : Nat), "peak or payload")] do
-    rejects s!"{name} corruption" fragment (inspectCase schema row (← replaceAt snapshot path replacement))
+    rejects s!"{name} corruption" fragment (inspectCase schema row (← replaceAt snapshot path replacement) foldCounters)
+  let changedRow ← replaceAt row ["main_steps"] (toJson (0 : Nat))
+  rejects "counter-fold step corruption" "step budget"
+    (inspectCase schema changedRow (← replaceAt snapshot ["summary"] changedRow) foldCounters)
   let cells ← arrField (← field (← field snapshot "native") "returned") "cells"
   let cell ← array cells[1]!
   for (fieldIndex, replacement, fragment) in [(2, toJson (1 : Nat), "runtime pointer"), (3, toJson (1 : Nat), "runtime padding")] do
     let changed ← replaceAt snapshot ["native", "returned", "cells"] (Json.arr (cells.set! 1 (Json.arr (cell.set! fieldIndex replacement))))
-    rejects "cell corruption" fragment (inspectCase schema row changed)
+    rejects "cell corruption" fragment (inspectCase schema row changed foldCounters)
   let freed ← arrField (← field (← field snapshot "native") "reclaimed") "cells"
   let changed ← replaceAt snapshot ["native", "reclaimed", "cells"] (Json.arr (freed.set! 1 cells[1]!))
-  rejects "reclamation corruption" "cell not fully reclaimed" (inspectCase schema row changed)
+  rejects "reclamation corruption" "cell not fully reclaimed" (inspectCase schema row changed foldCounters)
 
 def main (args : List String) : IO UInt32 := cli "source native runtime check failed" do
-  let args ← checked (parseArgs ["--fixture", "--expected", "--readelf", "--objdump", "--cc", "--harness"] args)
+  let args ← checked (parseArgs ["--fixture", "--expected", "--readelf", "--objdump", "--cc", "--harness", "--variant", "--artifacts"] args)
   let some fixture := optional args "--fixture" | throw (IO.userError "--fixture is required")
-  let expected ← readJson (option args "--expected" "fixtures/source-native-runtime/expected.json")
+  let variant := option args "--variant" "baseline"
+  need (variant == "baseline" || variant == "counter-fold") "--variant must be baseline or counter-fold"
+  let foldCounters := variant == "counter-fold"
+  let expected ← readJson (option args "--expected" (if foldCounters then
+    "fixtures/source-native-runtime/expected-counter-fold.json" else "fixtures/source-native-runtime/expected.json"))
   let readelf := option args "--readelf" "readelf"
   let objdump := option args "--objdump" "objdump"
   let native ← nativeArgs args
@@ -289,7 +305,8 @@ def main (args : List String) : IO UInt32 := cli "source native runtime check fa
     let first := directory / "first"
     let second := directory / "second"
     for output in [first, second] do
-      requireAll (← run fixture #[output.toString]) ["source-native-runtime ok:"] "runtime producer"
+      requireAll (← run fixture ((if foldCounters then #["--counter-fold"] else #[]) ++ #[output.toString]))
+        ["source-native-runtime ok:"] "runtime producer"
     let report ← readJson (first / "report.json")
     need (report == expected && (← strField report "format") == "compilatrix/source-native-runtime-report/1")
       "reviewed runtime source, object, resource, or rejection matrix drifted"
@@ -304,26 +321,28 @@ def main (args : List String) : IO UInt32 := cli "source native runtime check fa
       need (fileName name && !inventory.contains name) "invalid or duplicate runtime artifact path"
       inventory := name :: inventory
     inventory := inventory.mergeSort (· ≤ ·)
-    for output in [first, second] do
+    let outputs := [first, second] ++ (optional args "--artifacts").toList.map FilePath.mk
+    for output in outputs do
       let files ← output.readDir
       need ((files.toList.map (·.fileName) |>.mergeSort (· ≤ ·)) == inventory) "runtime artifact inventory drifted"
       for file in files do need (!(← file.path.isDir)) "unexpected runtime artifact directory"
     for name in inventory do
-      need ((← IO.FS.readBinFile (first / name)) == (← IO.FS.readBinFile (second / name))) s!"fresh runtime artifacts differ: {name}"
-    inspectPipeline report pipeline
+      for output in outputs.tail do
+        need ((← IO.FS.readBinFile (first / name)) == (← IO.FS.readBinFile (output / name))) s!"fresh or supplied runtime artifacts differ: {name}"
+    inspectPipeline report pipeline foldCounters
     for role in ["main", "release"] do inspectObject first pipeline role readelf objdump
     let snapshots ← rows.mapM fun row => do
       let snapshot ← readJson (first / (← strField row "snapshot"))
-      inspectCase (← field pipeline "schema") row snapshot
+      inspectCase (← field pipeline "schema") row snapshot foldCounters
       return snapshot
     if let some (cc, harness) := native then nativeRun cc readelf harness first (directory / "runtime-native") rows snapshots
     let some three := rows.findIdx? (fun row => (row.getObjValAs? String "name").toOption == some "three")
       | throw (IO.userError "missing runtime three-element regression")
-    regressions report pipeline rows[three]! snapshots[three]!
+    regressions report pipeline rows[three]! snapshots[three]! foldCounters
     let mainBytes ← IO.FS.readBinFile (first / "main.o")
     for corrupt in [mainBytes.extract 0 (mainBytes.size - 1), ← IO.FS.readBinFile (first / "release.o")] do
       IO.FS.writeBinFile (first / "main.o") corrupt
       rejects "object corruption" "object bytes disagree" (inspectObject first pipeline "main" readelf objdump)
     IO.FS.writeBinFile (first / "main.o") mainBytes
     let suffix := if native.isSome then ", one linked process runs all eight inputs" else ""
-    IO.println s!"source native runtime check ok: two fresh artifact sets, one compiled function and ELF pair, canonical provenance, 17 corruption regressions, complete reclamation{suffix}"
+    IO.println s!"source native runtime check ok: {variant}, two fresh artifact sets, one compiled function and ELF pair, canonical provenance, 20 corruption regressions, complete reclamation{suffix}"

@@ -87,10 +87,11 @@ theorem main_retCode (values : List Word) (checked : Checked) (produced : checke
   ⟨by rw [produced]; rfl, by decide⟩
 
 /-- The reversal loop can be reached from either a closed builder or a
-checked runtime-input prologue. Its three complete blocks are identical. -/
-structure LoopCode (checked : Checked) : Prop where
+checked runtime-input prologue. A replacement cons block supplies its own
+instruction-effect proof to the loop composition theorem. -/
+structure LoopCode (checked : Checked) (body : List Instr := consInstructions) : Prop where
   tag : BlockCode checked 3 (tagInstructions .rdx) (.branch tagCompare .eq 4 5)
-  cons : BlockCode checked 5 consInstructions (.jump 3)
+  cons : BlockCode checked 5 body (.jump 3)
   finish : BlockCode checked 4 (releaseCell .rdx ++ [Instr.mov .w64 .rax (.reg .rsi)]) .ret
   hasTag : checked.program.hasBlock 3 = true
   hasCons : checked.program.hasBlock 5 = true

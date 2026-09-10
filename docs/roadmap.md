@@ -47,7 +47,7 @@ can proceed independently when their prerequisites are available.
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
 | [N3: compositional native lowering](#n3-compositional-native-lowering) | next; E1 prerequisite delivered | Compile a declared class of functions with runtime arguments, branches, joins, and direct calls using reusable instruction/block contracts and an explicit Nat/Word representation. Activate F1 and A1 for the admitted calls and allocation needs. |
-| [PERF3: optimization and compiler scaling](#performance-measurement) | next; first target identified by PERF1 | Inspect runtime reversal's scalar/address/control work, propose a bounded checked rewrite, and compare paired artifacts over the full matrix with compile/check, code-size and fallback costs. Broader scaling experiments retain their own gates. |
+| [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
 | [F1: finite heap and stack](#f1-finite-heap-and-stack) | next | With broader native allocation or non-leaf calls. Sufficient occupied-byte and stack capacity rules out resource failure for a named source family. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | next | Before independent IxIR₂ persistence, cache keys, or self-hosted intermediate-root comparison. Land the strict codec and exact versioned preimages. |
 | [I3: modular source certification](#i3-modular-source-certification) | deferred | Wake before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. Compose independently checked units and reuse unaffected evidence after a dependency edit. |
@@ -260,7 +260,7 @@ and relocated analysis.
 | --- | --- | --- |
 | PERF1: first native benchmark suite | delivered; 2026-09-10 | The linked x86_64 Linux reference includes all five comparison toolchains, entry and lifecycle distributions, memory/code size, compiler/checker costs, uncertainty, complete raw samples, and independent artifact/correctness/analysis replay. |
 | PERF2: broader native workloads | deferred; admit families as C3/N3/runtime support lands | Cover at least three computational families including one unchanged upstream program, runtime arithmetic/control, and heap traversal. Extend input sizes beyond N2 only with the required ABI/selector and F1 contracts. Add OCaml, publish support gaps and per-family results, and keep a fixed common comparison subset. |
-| PERF3: optimization and compiler scaling | next; reversal lowering is the first measured target | Measure compile/check time, evidence/artifact growth, cache/dependency-edit behavior under fixed analysis choices, and paired checked optimizations. Require both native artifacts to select; include short-list/adverse and fallback cases, and use findings to activate M2d/I3 work. |
+| PERF3: optimization and compiler scaling | first paired optimization delivered; broader scaling next | The [counter-fold reference](performance/counter-fold-2026-09-10/README.md) delivers one checked rewrite, 38 paired comparisons, code/fixture-checking costs and exact replay. Extend to compiler scaling, evidence/artifact growth and cache/dependency-edit behavior under fixed analysis choices. Require both artifacts to select and retain short-list/adverse and fallback cases. |
 
 PERF1 acceptance:
 
@@ -334,10 +334,14 @@ the intermediate stages before building a richer interface.
 
 Each row activates separately from an accepted-source measurement and a
 concrete checked proposal. The [PERF1/C3 decision](performance/native-reverse-2026-09-09/README.md#follow-up-decision)
-identifies runtime reversal's entry-time gap against the matched arena C kernels
-as the first PERF3 target. Inspect scalar/address/control work and establish a
-specific rewrite and its semantic side conditions before activating the scalar
-peephole row. The measurements identify a target, not a validated optimization.
+identified runtime reversal's entry-time gap against the matched arena C kernels
+as the first PERF3 target. The [counter-fold experiment](performance/counter-fold-2026-09-10/README.md)
+now proves and measures cancellation of four adjacent reservation/live counter
+changes: twelve fewer instructions per cell, 84 fewer code bytes, and length-64
+primary paired speedups of 1.3621 for entry and 1.1829 for lifecycle. The full
+matrix and unchanged baseline are retained. This is one explicit native option;
+the general external-proposal checker and broader scalar rewrites keep the
+acceptance criterion below.
 
 General PAP specialization, field deletion and unboxing remain deferred. The
 two closed C3 entries already use no native heap, and this experiment has no
@@ -496,6 +500,7 @@ remain delivered; the forward queue extends them rather than reopening them.
 | E2: streams and objects | [Certified object execution](x86-stream-objects.md) composes complete text, injective byte PCs, nested/reused return slots, independent ELF text/entry/symbol/provenance interpretation and checked PC32 relocation. All production emitters return certificates; the actual N2 source endpoint reaches object bytes for every admitted runtime input. Twenty-three fences, the corruption/execution gate and all existing native gates retain the logical/hash basis. ISA, external bodies and system linker/loader behavior remain explicit. |
 | C3: upstream source progression | [Two unchanged upstream computations](source-native-upstream.md) reach source agreement, complete physical reclamation and certified computational ELF execution; six new fences preserve the logical/hash basis. Exact erased-block reuse advances addition and Std to recorded certificate failures. The [reference](performance/native-reverse-2026-09-09/README.md#c3-unchanged-upstream-computations) retains compiler/checker, evidence/code, counter and native call measurements. Runtime arguments, broader recursion and general stack sufficiency remain separate. |
 | PERF1: first native benchmark suite | [Full reversal reference](performance/native-reverse-2026-09-09/README.md) compares Compilatrix, Lean, CakeML, CompCert, GCC and Clang in 30 paired blocks, with all 38 rows, memory/GC and code diagnostics, uncertainty and a digest-addressed raw archive. Independent source/environment rebuild, full correctness and byte-identical analysis passed; premeasurement gates passed 805 Lake jobs, 17 compiled commands and 19 x86_64 Linux Nix checks. Shared-host results do not set a dedicated regression threshold. |
+| PERF3: first checked optimization experiment | [Reserve/reuse counter folding](performance/counter-fold-2026-09-10/README.md) preserves final general-purpose registers and arena words, every native instruction prefix's safety, and the selected source-to-object contract. It removes twelve instructions per cell and 84 code bytes, with 1.3621× entry and 1.1829× lifecycle paired speedups at length 64 on the recorded host. Both complete correctness matrices, 30 paired blocks/6,840 samples, 813 Lake jobs and 19 Nix checks passed; source/artifact/correctness/analysis replay is exact. The baseline remains the default, and broader compiler scaling and general peephole search remain separate. |
 | R6: general credit refinement | [Full credit contract](credit-refinement.md) covers successful execution of the same checked program under both policies, the full instruction language, every physical prefix, and independent successful budgets. Logical root ownership supplies physical ownership and complete shared/unique reclamation. No optimizer trace, per-step callback, or new axiom is required. |
 | B1: borrowed calls and RC | [Checked borrowed source calls](source-borrow.md) infer unary shared variants, preserve owned PAP wrappers, and validate every changed body/call site. Eighteen closed source chains execute 5→3 RC operations with equal results, full reclamation, and peak two. These finite source/target execution certificates retain their closed scope. |
 | B2: borrowing with runtime arguments | [Structural runtime borrowing](source-borrow-runtime.md) selects accepted open shared tag-readers before arguments arrive. Derived source/function/continuation proofs cover every admitted owned heap, preserve lender state through borrowed prefixes, and establish full reclamation with two fewer RC operations and unchanged peak. Nine source functions serve 144 direct/PAP comparisons; owned wrappers add one control transition. Recursive SCCs and native shared borrowing retain separate boundaries. |

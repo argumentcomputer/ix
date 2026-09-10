@@ -34,7 +34,7 @@ theorem ArgumentRel.graph {compilation : Compilation constants entry config chec
   RuntimeExecution.down_native relation.input.chain relation.represented (by have := relation.capacity; omega)
 
 structure Result {compilation : Compilation constants entry config checkFuel eraseFuel limits}
-    (_output : Output compilation) (sourceResult : Ixon.Eval.Value) (values : List Word)
+    (output : Output compilation) (sourceResult : Ixon.Eval.Value) (values : List Word)
     (layout : Layout) (state : State) (outside memory : Memory) (runtime : X86.Runtime) : Prop where
   source : @Sim.InlinedValRel (Pipeline.validatedEvalCtx constants config)
     { env := IxIR0.Env.ofList compilation.erased.erasure.result.raw }
@@ -48,7 +48,7 @@ structure Result {compilation : Compilation constants entry config checkFuel era
         result.store result.value ∧
       result.controlRemaining = 0 ∧ result.heapRemaining = heapFuel
   native : ∃ returned returnedMemory reclaimed reclaimedMemory,
-    RuntimeExecution.Execution layout values state memory outside runtime returned returnedMemory reclaimed reclaimedMemory
+    RuntimeExecution.Execution layout values state memory outside runtime returned returnedMemory reclaimed reclaimedMemory output.foldCounters
 
 /-- A successful source call refines to the selected physical function and
 the single selected native function on every admitted runtime argument. -/

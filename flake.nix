@@ -432,6 +432,14 @@
               --objdump ${pkgs.binutils}/bin/objdump \
               ${pkgs.lib.optionalString (system == "x86_64-linux")
                 "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-runtime/native_harness.c"}
+            ./.lake/build/bin/check-source-native-runtime \
+              --fixture ./.lake/build/bin/source-native-runtime \
+              --variant counter-fold \
+              --expected ${auditSrc}/fixtures/source-native-runtime/expected-counter-fold.json \
+              --readelf ${pkgs.binutils}/bin/readelf \
+              --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-runtime/native_harness.c"}
           '';
         };
 
@@ -489,6 +497,10 @@
             ./.lake/build/bin/benchmark smoke "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-smoke"
             ./.lake/build/bin/benchmark gc-smoke "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-gc-smoke"
             ./.lake/build/bin/benchmark analysis-self-check
+            ./.lake/build/bin/benchmark counter-fold-build "$TMPDIR/counter-fold-build" \
+              --gcc ${pkgs.gcc}/bin/gcc --time ${pkgs.time}/bin/time
+            ./.lake/build/bin/benchmark counter-fold-verify "$TMPDIR/counter-fold-build" "$TMPDIR/counter-fold-verify"
+            ./.lake/build/bin/benchmark counter-fold-smoke "$TMPDIR/counter-fold-build" "$TMPDIR/counter-fold-smoke"
           '';
         };
 

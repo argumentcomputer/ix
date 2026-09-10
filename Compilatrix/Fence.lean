@@ -6910,6 +6910,21 @@ axiom; addressed compiler certificates retain the existing hash axiom. -/
 /-- info: 'Compilatrix.X86.RuntimeExecution.inputWordsStep_eq' does not depend on any axioms -/
 #guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.inputWordsStep_eq
 
+/-! Adjacent reserve/reuse counter folding preserves final general-purpose
+registers, arena words, and the source-to-object contract without a new semantic axiom. -/
+
+/-- info: 'Compilatrix.X86.UniqueCounterFold.state_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueCounterFold.state_eq
+
+/-- info: 'Compilatrix.X86.UniqueCounterFold.trace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueCounterFold.trace
+
+/-- info: 'Compilatrix.X86.UniqueCounterFold.instruction_saving' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueCounterFold.instruction_saving
+
+/-- info: 'Compilatrix.X86.RuntimeTarget.controlCost_saving' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeTarget.controlCost_saving
+
 /-! Borrowed ABI checking, finite closed-program execution certificates,
 source agreement, actual RC/peak laws, and checked baseline fallback. -/
 

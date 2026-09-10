@@ -3,14 +3,16 @@ import Compilatrix.UniqueReuse.RuntimeObservations
 open Compilatrix.UniqueReuse.Runtime.Native.Examples
 
 def main (args : List String) : IO UInt32 := do
-  let output : Option System.FilePath ← match args with
-    | [] => pure none
-    | [path] => pure (some path)
-    | _ => IO.eprintln "usage: lake exe source-native-runtime [new-output-directory]"; return 2
+  let (foldCounters, output) : Bool × Option System.FilePath ← match args with
+    | [] => pure (false, none)
+    | ["--counter-fold"] => pure (true, none)
+    | [path] => pure (false, some path)
+    | ["--counter-fold", path] => pure (true, some path)
+    | _ => IO.eprintln "usage: lake exe source-native-runtime [--counter-fold] [new-output-directory]"; return 2
   try
     if let some path := output then
       if ← path.pathExists then throw (IO.userError "source-native-runtime requires a new output directory")
-    let result ← match run with
+    let result ← match run foldCounters with
       | .ok result => pure result
       | .error reason => throw (IO.userError reason)
     if let some path := output then

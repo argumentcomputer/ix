@@ -446,8 +446,12 @@ builder is definitionally equal to the original allocation update.
 The independent runtime gate reconstructs function/ABI/policy preimages,
 compares two complete fresh artifact sets, decodes one ELF pair, and links it
 once for eight inputs in one process. It checks full release and 203 malformed
-calls without arena writes, plus 17 artifact/observation corruption regressions.
-Its checker, native harness, and reviewed report are integrity-pinned. The
+calls without arena writes, plus 20 artifact/observation corruption regressions
+for each of the baseline and checked counter-folding variants. Its checker,
+native harness, and both reviewed reports are integrity-pinned. Counter folding
+adds complete-state equality, body execution and instruction-count fences using
+the existing logical axioms; source-to-object composition retains its existing
+hash dependency. It introduces no FFI or new runtime/ISA assumption. The
 test harness provisions caller input; it is not a new Lean FFI or modeled
 oracle. [E2](x86-stream-objects.md) now composes the source theorem through
 actual object text, including parsed provenance, physical returns and complete

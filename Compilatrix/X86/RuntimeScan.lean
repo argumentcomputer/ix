@@ -4,6 +4,8 @@ namespace Compilatrix.X86.RuntimeExecution
 
 open UniqueABI UniqueTarget UniqueExecution RuntimeTarget
 
+variable {foldCounters : Bool}
+
 theorem cell_successor (layout : Layout) (index : Nat) :
     layout.cell index + 32 = layout.cell (index + 1) := by
   simp [Layout.cell, Layout.address, cellSlot, headerWords, cellWords, Nat.mul_add,
@@ -77,9 +79,9 @@ theorem nilTrace (layout : Layout) (state : State) (context : state.registers .r
 theorem nilSteps (layout : Layout) (state : State) (context : state.registers .rdi = layout.base)
     (bound : 1 < layout.capacity) (atNil : CellAt state.words 0 nilTag 0 0)
     (outside memory : Memory) (represented : Realizes layout outside state.words memory) (runtime : Runtime) :
-    Steps runtime RuntimeTarget.checked 11 (leaf (state.core memory) 20 0)
+    Steps runtime (RuntimeTarget.checked foldCounters) 11 (leaf (state.core memory) 20 0)
       (leaf ((nilState layout state).core memory) 21 0) :=
-  guardSteps (nilTrace layout state context bound atNil) rfl outside memory represented runtime 20 21
+  guardSteps (foldCounters := foldCounters) (nilTrace layout state context bound atNil) rfl outside memory represented runtime 20 21
     .rcx (.imm 0) .eq ⟨rfl, by decide⟩
     (by simp [nilState, nilFieldsState, wordCompare, Compare.holds, Condition.holds, Core.readReg, State.core,
       AluSource.eval, signExtend32]) (by decide)
@@ -107,24 +109,24 @@ theorem inspectSteps (layout : Layout) (state : State) (index : Nat)
     (bound : index + 1 < layout.capacity) (pointer : state.registers .r8 = layout.cell (index + 1))
     (previous : state.registers .rdx = layout.cell index) (link : LinkAt layout state.words (index + 1))
     (outside memory : Memory) (represented : Realizes layout outside state.words memory) (runtime : Runtime) :
-    Steps runtime RuntimeTarget.checked 10 (leaf (state.core memory) 22 0)
+    Steps runtime (RuntimeTarget.checked foldCounters) 10 (leaf (state.core memory) 22 0)
       (leaf ((inspectedState state (index + 1)).core memory) 21 0) := by
   let tagged := fieldState state (index + 1) 0
   let linked := fieldState tagged (index + 1) 2
   let padded := fieldState linked (index + 1) 3
-  have tag := guardSteps (fieldTrace layout state (index + 1) 0 bound (by decide) pointer) rfl outside memory represented
+  have tag := guardSteps (foldCounters := foldCounters) (fieldTrace layout state (index + 1) 0 bound (by decide) pointer) rfl outside memory represented
     runtime 22 23 .rcx (.imm 1) .eq ⟨rfl, by decide⟩
     (by simp [fieldState, wordCompare, Compare.holds, Condition.holds, Core.readReg, State.core, AluSource.eval,
       signExtend32, link.tag, consTag]) (by decide)
-  have tail := guardSteps (fieldTrace layout tagged (index + 1) 2 bound (by decide) (by simpa [tagged, fieldState] using pointer))
+  have tail := guardSteps (foldCounters := foldCounters) (fieldTrace layout tagged (index + 1) 2 bound (by decide) (by simpa [tagged, fieldState] using pointer))
     rfl outside memory represented runtime 23 24 .rcx (.reg .rdx) .eq ⟨rfl, by decide⟩
     (by simp [fieldState, tagged, wordCompare, Compare.holds, Condition.holds, Core.readReg, State.core, AluSource.eval,
       link.tail, previous]) (by decide)
-  have padding := guardSteps (fieldTrace layout linked (index + 1) 3 bound (by decide)
+  have padding := guardSteps (foldCounters := foldCounters) (fieldTrace layout linked (index + 1) 3 bound (by decide)
     (by simpa [linked, tagged, fieldState] using pointer)) rfl outside memory represented runtime 24 25 .rcx (.imm 0) .eq
     ⟨rfl, by decide⟩ (by simp [fieldState, linked, tagged, wordCompare, Compare.holds, Condition.holds, Core.readReg, State.core,
       AluSource.eval, link.padding, signExtend32]) (by decide)
-  have advance := (advanceTrace layout padded).jump_readOnly rfl outside memory represented runtime RuntimeTarget.checked 25 21
+  have advance := (advanceTrace layout padded).jump_readOnly rfl outside memory represented runtime (RuntimeTarget.checked foldCounters) 25 21
     ⟨rfl, by decide⟩ (hasBlock 21 (by decide))
   exact tag.append (tail.append (padding.append advance))
 
@@ -153,12 +155,12 @@ theorem scanSteps (layout : Layout) (values : List Word) (remaining index : Nat)
     (counter : state.registers .r9 = UInt64.ofNat remaining)
     (outside memory : Memory) (represented : Realizes layout outside state.words memory) (runtime : Runtime) :
     ∃ after, Scanned layout values.length state after ∧
-      Steps runtime RuntimeTarget.checked (11 * remaining + 1) (leaf (state.core memory) 21 0)
+      Steps runtime (RuntimeTarget.checked foldCounters) (11 * remaining + 1) (leaf (state.core memory) 21 0)
         (leaf (after.core memory) 2 0) := by
   induction remaining generalizing index state with
   | zero =>
       have dispatch := (Trace.nil (layout := layout) state).branch_readOnly rfl outside memory represented runtime
-        RuntimeTarget.checked 21 2 22 (wordCompare .r9 (.imm 0)) .eq ⟨rfl, by decide⟩ true
+        (RuntimeTarget.checked foldCounters) 21 2 22 (wordCompare .r9 (.imm 0)) .eq ⟨rfl, by decide⟩ true
         (by simp [wordCompare, Compare.holds, Condition.holds, Core.readReg, State.core, AluSource.eval, counter, signExtend32])
         (hasBlock 2 (by decide))
       exact ⟨state, ⟨rfl, by simpa [show index = values.length by omega] using previous, rfl, rfl, PreservesSaved.refl state⟩, dispatch⟩
@@ -175,10 +177,10 @@ theorem scanSteps (layout : Layout) (values : List Word) (remaining index : Nat)
         change remaining + 1 = 0 at natEqual
         omega
       have dispatch := (Trace.nil (layout := layout) state).branch_readOnly rfl outside memory represented runtime
-        RuntimeTarget.checked 21 2 22 (wordCompare .r9 (.imm 0)) .eq ⟨rfl, by decide⟩ false
+        (RuntimeTarget.checked foldCounters) 21 2 22 (wordCompare .r9 (.imm 0)) .eq ⟨rfl, by decide⟩ false
         (by simpa [wordCompare, Compare.holds, Condition.holds, Core.readReg, State.core, AluSource.eval,
           counter, signExtend32] using nonzero) (hasBlock 22 (by decide))
-      have inspect := inspectSteps layout state index (by omega) pointer previous
+      have inspect := inspectSteps (foldCounters := foldCounters) layout state index (by omega) pointer previous
         (down_link chain (index + 1) (by omega) (by omega)) outside memory represented runtime
       let next := inspectedState state (index + 1)
       obtain ⟨after, result, rest⟩ := ih (index + 1) next chain (by omega)
@@ -204,18 +206,18 @@ theorem validationSteps (layout : Layout) (values : List Word) (state : State)
     (input : Input layout values state) (capacity : values.length + 2 ≤ layout.capacity)
     (outside memory : Memory) (represented : Realizes layout outside state.words memory) (runtime : Runtime) :
     ∃ after, Prepared layout values state after ∧
-      Steps runtime RuntimeTarget.checked (validationCost values.length) (leaf (state.core memory) 0 0)
+      Steps runtime (RuntimeTarget.checked foldCounters) (validationCost values.length) (leaf (state.core memory) 0 0)
         (leaf (after.core memory) 2 0) := by
   let described := descriptorState state
   let start := nilState layout described
-  have headerRun := descriptorSteps layout values.length state capacity input.counts input.context input.length
+  have headerRun := descriptorSteps (foldCounters := foldCounters) layout values.length state capacity input.counts input.context input.length
     outside memory represented runtime
   have describedContext : described.registers .rdi = layout.base :=
     (descriptorState_register state .rdi (by decide)).trans input.context
   have describedLength : described.registers .rsi = UInt64.ofNat values.length :=
     (descriptorState_register state .rsi (by decide)).trans input.length
-  have nilRun := nilSteps layout described describedContext (by omega) (down_nil input.chain) outside memory represented runtime
-  obtain ⟨after, result, scan⟩ := scanSteps layout values values.length 0 start input.chain capacity (by omega)
+  have nilRun := nilSteps (foldCounters := foldCounters) layout described describedContext (by omega) (down_nil input.chain) outside memory represented runtime
+  obtain ⟨after, result, scan⟩ := scanSteps (foldCounters := foldCounters) layout values values.length 0 start input.chain capacity (by omega)
     (by simp [start, nilState, nilFieldsState, nilSetupState])
     (by simp [start, nilState, nilFieldsState, nilSetupState])
     (by simpa [start, nilState, nilFieldsState, nilSetupState] using describedLength)

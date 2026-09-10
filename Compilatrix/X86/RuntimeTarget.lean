@@ -1,4 +1,5 @@
 import Compilatrix.X86.UniqueControl
+import Compilatrix.X86.UniqueCounterFold
 
 /-! One native reversal function for all admitted input lists. `rdi` points to
 the arena and `rsi` supplies the number of cons cells. Validation reads only
@@ -9,7 +10,8 @@ namespace Compilatrix.X86.RuntimeTarget
 
 open UniqueABI UniqueTarget
 
-def policyTag : String := "unique-reverse-runtime-x86/1"
+def policyTag (foldCounters : Bool := false) : String :=
+  if foldCounters then "unique-reverse-runtime-x86/2" else "unique-reverse-runtime-x86/1"
 def abiTag : String := "unique-list-runtime-arena/1"
 
 def wordCompare (left : GPR) (right : AluSource) : Compare := { width := .w64, left, right }
@@ -46,7 +48,18 @@ def fieldInstructions (offset : Nat) : List Instr := [.load .w64 .rcx (memoryOpe
 def advanceInstructions : List Instr :=
   [.mov .w64 .rdx (.reg .r8), .lea .r8 (memoryOperand .r8 cellBytes), .alu .sub .w64 .r9 (.imm 1)]
 
-def program : Program :=
+def loopInstructions (foldCounters : Bool) : List Instr :=
+  if foldCounters then UniqueCounterFold.instructions else consInstructions
+
+theorem loopTrace (foldCounters : Bool) (layout : Layout) (state : UniqueExecution.State) (index : Nat)
+    (indexBound : index < layout.capacity) (context : state.registers .rdi = layout.base)
+    (pointer : state.registers .rdx = layout.cell index) :
+    UniqueExecution.Trace layout (loopInstructions foldCounters) state (UniqueExecution.consState state index) := by
+  cases foldCounters
+  · exact UniqueExecution.consTrace layout state index indexBound context pointer
+  · exact UniqueCounterFold.trace layout state index indexBound context pointer
+
+def program (foldCounters : Bool := false) : Program :=
   { entry := 0
     blocks := #[
       guard [] .rsi (.imm 64) .unsignedLe 1,
@@ -55,7 +68,7 @@ def program : Program :=
       { instructions := #[.load .w64 .rcx (memoryOperand .rdx 0)]
         terminator := .branch (wordCompare .rcx (.imm 0)) .eq 4 5 },
       { instructions := (releaseCell .rdx ++ [Instr.mov .w64 .rax (.reg .rsi)]).toArray, terminator := .ret },
-      { instructions := consInstructions.toArray, terminator := .jump 3 },
+      { instructions := (loopInstructions foldCounters).toArray, terminator := .jump 3 },
       { instructions := #[.mov .w64 .rax (.imm 0)], terminator := .ret },
       guard [] .rdi (.imm 0) .ne 8,
       guard cursorInstructions .r11 (.reg .rax) .eq 9,
@@ -77,14 +90,15 @@ def program : Program :=
       guard (fieldInstructions 24) .rcx (.imm 0) .eq 25,
       { instructions := advanceInstructions.toArray, terminator := .jump 21 }] }
 
-theorem wellFormed : program.wellFormed = true := by
+theorem wellFormed (foldCounters : Bool := false) : (program foldCounters).wellFormed = true := by
+  cases foldCounters <;>
   simp [program, Program.wellFormed, Program.hasBlock, Block.offsetsFit, Block.targetsValid,
     Instr.targetsValid, Terminator.targetsValid, guard, alignmentInstructions, cursorInstructions,
     capacityInstructions, capacityAlignmentInstructions, headerInstructions, nilInstructions,
     fieldInstructions, advanceInstructions, allocate, changeCounter, consInstructions, reserveCons,
-    reuseCons, releaseCell]
+    reuseCons, releaseCell, loopInstructions, UniqueCounterFold.instructions]
 
-def checked : Checked := ⟨program, wellFormed⟩
+def checked (foldCounters : Bool := false) : Checked := ⟨program foldCounters, wellFormed foldCounters⟩
 
 theorem releaseWellFormed : UniqueTarget.releaseProgram.wellFormed = true := by
   simp [UniqueTarget.releaseProgram, Program.wellFormed, Program.hasBlock, Block.offsetsFit, Block.targetsValid,
@@ -92,10 +106,17 @@ theorem releaseWellFormed : UniqueTarget.releaseProgram.wellFormed = true := by
 
 def releaseChecked : Checked := ⟨UniqueTarget.releaseProgram, releaseWellFormed⟩
 
-theorem loopCode : UniqueExecution.LoopCode checked := by
+theorem loopCode (foldCounters : Bool := false) :
+    UniqueExecution.LoopCode (checked foldCounters) (loopInstructions foldCounters) := by
+  cases foldCounters <;>
   refine ⟨⟨rfl, by decide⟩, ⟨rfl, by decide⟩, ⟨rfl, by decide⟩, ?_, ?_, ?_⟩ <;> decide
 
 def validationCost (length : Nat) : Nat := 11 * length + 45
-def controlCost (length : Nat) : Nat := 42 * length + 82
+def controlCost (length : Nat) (foldCounters : Bool := false) : Nat :=
+  if foldCounters then 30 * length + 82 else 42 * length + 82
+
+theorem controlCost_saving (length : Nat) : controlCost length true + 12 * length = controlCost length := by
+  simp [controlCost]
+  omega
 
 end Compilatrix.X86.RuntimeTarget
