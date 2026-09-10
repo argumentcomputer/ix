@@ -13,6 +13,8 @@ Test-purpose declarations exercised by the `ixvm` test runner. Layout:
 
   * `IxVMPrim` — theorems whose `rfl` proofs force the kernel to drive
     each primitive reduction (Nat / String / BitVec / Decidable).
+  * `IxVMPerf` — synthetic FFT-cost guards for delayed let inference and
+    linear multiplication-row construction.
   * `IxVMInd` — sample inductives covering mutual blocks and nested
     parameters; their auto-generated recursors round-trip through the
     Aiur kernel.
@@ -105,6 +107,51 @@ public theorem bv_to_nat_lit : (BitVec.ofNat 16 1234).toNat = 1234 := rfl
 public theorem sizeof_unit : sizeOf () = 1 := rfl
 
 end IxVMPrim
+
+/-! ## FLT performance regressions
+
+Small synthetic witnesses for the two optimizations in PR #624. Generate
+ordinary Lean terms at elaboration time; checking these constants still uses
+the full production kernel, including hashing and dependency traversal.
+-/
+
+namespace IxVMPerf
+
+-- Alternate lets with applications/lambdas instead of just batching a let
+-- chain. Each saved value feeds the next continuation, whose body remains
+-- open under another binder. Eager substitution repeatedly rewrites the
+-- remaining continuation; the let-local inference environment avoids this.
+-- 64 stages: 374,093,264 FFT with eager inference vs 166,319,792 with the fix.
+local macro "letContinuations% " n:num a:ident x:ident : term => do
+  let mut body : Lean.TSyntax `term := ← `(term| $x)
+  for _ in [:n.getNat] do
+    body ← `(term| let saved : $a := $x
+                   (fun k : $a → $a => k saved) (fun $x : $a => $body))
+  return body
+
+public def let_continuations (A : Type) (x : A) : A := letContinuations% 64 A x
+
+-- Multiply one full limb by a long, varied row, exercising carry propagation
+-- and the final carry limb. A fixed LCG generates literal operands and the
+-- expected product at elaboration time: no PRNG/power computation enters the
+-- checked term. Regular/repeated limbs would let memoization hide the old
+-- quadratic list_snoc copying. Cons construction builds the row once.
+-- 512 limbs: 1,051,404,589 FFT with snoc vs 425,316,349 with the fix.
+local macro "mulRow% " n:num : term => do
+  let mut b := 0
+  let mut limb := 1
+  for _ in [:n.getNat] do
+    limb := (limb * 6364136223846793005 + 1442695040888963407) % 2^64
+    b := b * 2^64 + limb
+  let a := 2^64 - 1
+  let lhs := Lean.Syntax.mkNumLit (toString a)
+  let rhs := Lean.Syntax.mkNumLit (toString b)
+  let product := Lean.Syntax.mkNumLit (toString (a * b))
+  `(term| Nat.mul $lhs $rhs = $product)
+
+public theorem mul_row : mulRow% 512 := rfl
+
+end IxVMPerf
 
 /-! ## Inductive shape fixtures -/
 
@@ -431,6 +478,8 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("IxVMPrim.lazy_ble_offset",                                   234_260_320),
   ("IxVMPrim.lazy_unit_cast",                                    558_687_900),
   ("IxVMPrim.sizeof_unit",                                       160_835_381),
+  ("IxVMPerf.let_continuations",                                 166_319_792),
+  ("IxVMPerf.mul_row",                                           425_316_349),
 ]
 
 /-- Variant of `kernelChecks`, pinned to the baseline
