@@ -599,6 +599,29 @@ def semanticSuite : IO UInt32 := do
       { op := .join 0 1, subjectCount := 7, structural := false } ==
       Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
         7 * Ix.Cli.AggregateCmd.aggregateFlatJoinRamPerSubjectBytes
+  let structuralWeight := Ix.Cli.AggregateCmd.aggregateShapeRamBytes 9
+  let nodeBudget := 453 * Ix.Cli.AggregateCmd.aggregateGiB
+  -- Mathlib's low joins can still share a node. The pair live on node 0 at
+  -- the OOM (slots 140/355) must not, even with process-wide headroom.
+  let structuralPackingBySize : Bool :=
+    structuralWeight 9480 + structuralWeight 10271 <= nodeBudget &&
+    structuralWeight 23993 + structuralWeight 24805 <= nodeBudget &&
+    structuralWeight 187668 <= nodeBudget &&
+    structuralWeight 187668 + structuralWeight 13023 > nodeBudget &&
+    structuralWeight 91620 + structuralWeight 96048 > nodeBudget
+  let structuralWeightsCoverMeasuredPeaks : Bool :=
+    (#[(5371, 196), (11972, 203), (19751, 208), (55496, 212),
+       (91068, 381), (91620, 257), (96048, 249), (126527, 381),
+       (187668, 384), (314195, 455)] : Array (Nat × Nat)).all
+      fun (subjects, peakGiB) =>
+        peakGiB * Ix.Cli.AggregateCmd.aggregateGiB <= structuralWeight subjects
+  let structuralWeightStep :=
+    structuralWeight 65536 == 275 * Ix.Cli.AggregateCmd.aggregateGiB &&
+    structuralWeight 65537 == 390 * Ix.Cli.AggregateCmd.aggregateGiB
+  let structuralFallbackWeight :=
+    Ix.Cli.AggregateCmd.aggregateSlotRamBytes
+      { op := .join 0 1, subjectCount := 187668, structural := true } ==
+      structuralWeight 187668
   let memTotalParsing := Ix.Cli.AggregateCmd.aggregateMemTotalBytes
     "MemTotal:       1024 kB\nMemFree: 512 kB\n" == some (1024 * 1024)
   let invalidScheduleRejected : Bool := match
@@ -784,6 +807,14 @@ def semanticSuite : IO UInt32 := do
       oversizedRunsAlone,
     test "flat self-pair RAM reserve is affine in subject leaves"
       flatWeightAffine,
+    test "structural RAM weights preserve small packing and reject the OOM pair"
+      structuralPackingBySize,
+    test "structural RAM weights cover the measured Mathlib peak envelope"
+      structuralWeightsCoverMeasuredPeaks,
+    test "large structural joins reserve the trace-size step"
+      structuralWeightStep,
+    test "hand-built structural schedules use the subject-dependent weight"
+      structuralFallbackWeight,
     test "aggregate scheduler parses MemTotal for its default budget"
       memTotalParsing,
     test "invalid non-post-order schedules are rejected" invalidScheduleRejected,

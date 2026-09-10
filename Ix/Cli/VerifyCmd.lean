@@ -51,8 +51,12 @@ private def friParameters : Aiur.FriParameters :=
 /-- Verify one persisted `Ixon.Proof` wrapper (by store address) against its
     bundled claim, using an already-built Aiur backend. -/
 def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (proofAddr : Address) : IO UInt32 := do
+    (proofAddr : Address)
+    (recursionParameters : MultiStark.RecursionParameters := MultiStark.defaultRecursionParameters) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
+  if Address.blake3 bytes != proofAddr then
+    IO.eprintln s!"error: proof {proofAddr} has a different content digest"
+    return 1
   let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
   let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
@@ -67,9 +71,7 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
     | none =>
       IO.eprintln "error: `verify_claim` entrypoint missing from compiled toplevel"
       return 1
-  let input : Array Aiur.G := IxVM.ClaimHarness.packedDigestKey claimDigest
-  let aiurClaim := Aiur.buildClaim funIdx input #[]
-  match aiurSystem.verify aiurClaim proof with
+  match ShardProofIndex.verifyProof aiurSystem funIdx wrapper.claim proof none recursionParameters with
   | .ok () =>
     IO.println s!"ok: proof {proofAddr} verifies claim {claimDigest}"
     return 0
@@ -87,10 +89,7 @@ def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel))
     | .ok compiled =>
       return .ok (Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters, compiled)
 
-structure AggregateBackend where
-  system : Aiur.AiurSystem
-  aggrIdx : Aiur.Bytecode.FunIdx
-  allowed : ByteArray
+abbrev AggregateBackend := ShardProofIndex.RecursionBackend
 
 structure ExpectedAggregate where
   claim : Ix.Claim
@@ -152,30 +151,11 @@ aggregate root: the IxVM vk and the single-entrypoint recursion vk. -/
 private def buildAggregateBackend
     (recursionParameters : MultiStark.RecursionParameters) :
     IO (Except String AggregateBackend) := do
-  let ixvmCompiled ← match IxVM.ixVM with
-    | .error e => return .error s!"IxVM toplevel merging failed: {e}"
-    | .ok top => match top.compileWithGroups IxVM.functionGroups with
-      | .error e => return .error s!"IxVM compilation failed: {e}"
-      | .ok compiled => pure compiled
-  let aggrCompiled ← match Aggr.ixAggr with
-    | .error e => return .error s!"recursion toplevel merging failed: {e}"
-    | .ok top => match top.compileWithGroups Aggr.functionGroups with
-      | .error e => return .error s!"recursion compilation failed: {e}"
-      | .ok compiled => pure compiled
-  let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
-  let aggrIdx := aggrCompiled.getFuncIdx `ix_aggr |>.get!
-  let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
-    commitmentParameters friParameters
-  let aggrSystem := MultiStark.buildRecursionSystem aggrCompiled.bytecode
-    recursionParameters
-  let ixvmVk := ixvmSystem.vkBytes
-  let aggrVk := aggrSystem.vkBytes
-  let allowed := Aggr.allowedBlob ixvmVk verifyIdx aggrVk aggrIdx
-  return .ok {
-    system := aggrSystem
-    aggrIdx
-    allowed
-  }
+  let (ixvmSystem, compiled) ← match ← buildBackend with
+    | .error e => return .error e
+    | .ok backend => pure backend
+  let verifyIdx := compiled.getFuncIdx `verify_claim |>.get!
+  return ShardProofIndex.buildRecursionBackend ixvmSystem verifyIdx recursionParameters
 
 private def shardStatement (env : Ixon.Env) (owned : Array Address) :
     Except String Aggr.CheckEnvTrees := do
@@ -259,7 +239,8 @@ private def verifyAggregateProof (backend : AggregateBackend)
     - no `--shard` + proofs: composed verdict — coverage, every proof bound to a
       shard, and every shard covered by a valid proof. -/
 def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat)
-    (proofs : List String) (record : Bool := false) : IO UInt32 := do
+    (proofs : List String) (record : Bool := false)
+    (recursionParameters : MultiStark.RecursionParameters := MultiStark.defaultRecursionParameters) : IO UInt32 := do
   let (ixonEnv, shards) ← match (← Ix.Cli.CheckCmd.loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
     | .ok r => pure r
@@ -295,7 +276,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       if d != expected then
         IO.eprintln s!"[verify] FAIL: proof {proofAddr} (claim {d}) is not shard {k} (claim {expected})"
         rc := 1
-      else if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
+      else if (← verifyOneProof aiurSystem compiled proofAddr recursionParameters) != 0 then rc := 1
       else recordProof d proofAddr
     return rc
   | none =>
@@ -315,7 +296,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       match digestToShard.get? d with
       | none => IO.eprintln s!"[verify] FAIL: proof {proofAddr} (claim {d}) matches no shard"; rc := 1
       | some k =>
-        if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
+        if (← verifyOneProof aiurSystem compiled proofAddr recursionParameters) != 0 then rc := 1
         else
           covered := covered.insert k
           recordProof d proofAddr
@@ -397,7 +378,7 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
-      (p.hasFlag "record")
+      (p.hasFlag "record") recursionParameters
   | _, _ =>
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
@@ -408,7 +389,7 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "proof" hex
-      if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
+      if (← verifyOneProof aiurSystem compiled proofAddr recursionParameters) != 0 then rc := 1
     return rc
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 :=

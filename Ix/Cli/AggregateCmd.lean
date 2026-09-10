@@ -16,6 +16,7 @@
 -/
 module
 import Std.Sync
+import Ix.TracingTexray
 public import Cli
 public import Ix.Aggr
 public import Ix.Cli.CheckCmd
@@ -101,8 +102,7 @@ def aggregateLiftRamBytes : Nat := 195 * aggregateGiB
 benchmark/test union is migrated in M1-e/M1-f. -/
 def aggregateWrapRamBytes : Nat := aggregateLiftRamBytes
 
-/-- Structural joins are dominated by the same two recursive-proof checks as
-lifts. Keep the conservative lift reserve until the real E2E calibration. -/
+/-- Base reserve for self-pairs, before the flat or structural subject term. -/
 def aggregateStructuralJoinRamBytes : Nat := aggregateLiftRamBytes
 
 /-- Native verification and serialization of a raw shard proof in direct mode
@@ -110,10 +110,11 @@ is charged to its consuming pair. -/
 def aggregateRawShardRamBytes : Nat := 4 * aggregateGiB
 
 /-- Measured upper envelope for an `IxVM + IxVM` pair (shapes 2/6). -/
-def aggregateDirectJoinRamBytes : Nat := 390 * aggregateGiB
+def aggregateDirectJoinRamBytes : Nat := 180 * aggregateGiB
 
-/-- Measured upper envelope for a mixed recursive/IxVM pair (shapes 3/4/7/8). -/
-def aggregateMixedJoinRamBytes : Nat := 340 * aggregateGiB
+/-- Mixed recursive/IxVM pairs (shapes 3/4/7/8) predicted up to 385 GiB in
+the 2026-09-09 Mathlib run, exceeding the previous 340 GiB reserve. -/
+def aggregateMixedJoinRamBytes : Nat := 180 * aggregateGiB
 
 /-- Flat joins add canonical subject-tree work to the recursive-proof base.
 One MiB per subject is a deliberately conservative placeholder: at Init's
@@ -121,9 +122,19 @@ One MiB per subject is a deliberately conservative placeholder: at Init's
 default structural threshold caps this term near 4 GiB in production. -/
 def aggregateFlatJoinRamPerSubjectBytes : Nat := 1024 * 1024
 
-/-- Per-shape RAM weight used by the Lean admission gate. Shape 5 retains the
-flat subject-count reserve; shape 9 is the O(1)-subject structural arm. The
-direct/mixed values are conservative round-ups of the §3.4 measurements. -/
+/-- Mathlib structural self-joins need a subject-dependent reserve despite
+their O(1) subject-root fold: assumption/path checks and child verification
+can grow. Use a subject term and a doubled base above 64k subjects to cover
+trace-size steps (380.5 GiB predicted at 91068 subjects). See
+`exp/design/numa-slot-pinning.md` §12. Keep these constants in sync with
+Rust's `STRUCTURAL_RAM_PER_SUBJECT` and `STRUCTURAL_LARGE_SUBJECTS`. -/
+def aggregateStructuralJoinRamPerSubjectBytes : Nat := 5 * 1024 * 1024 / 4
+
+def aggregateStructuralLargeSubjects : Nat := 64 * 1024
+
+/-- Per-shape RAM weight used by the Lean admission gate. Both self-pair
+shapes (5/9) reserve subject-dependent work. The direct/mixed values are
+conservative round-ups of the §3.4 measurements. -/
 def aggregateShapeRamBytes (shape subjectCount : Nat) : Nat :=
   match shape with
   | 0 | 1 => aggregateWrapRamBytes
@@ -131,7 +142,12 @@ def aggregateShapeRamBytes (shape subjectCount : Nat) : Nat :=
   | 3 | 4 | 7 | 8 => aggregateMixedJoinRamBytes
   | 5 => aggregateStructuralJoinRamBytes +
       subjectCount * aggregateFlatJoinRamPerSubjectBytes
-  | 9 => aggregateStructuralJoinRamBytes
+  | 9 =>
+      let weight := aggregateStructuralJoinRamBytes +
+        subjectCount * aggregateStructuralJoinRamPerSubjectBytes
+      if subjectCount > aggregateStructuralLargeSubjects then
+        max weight (2 * aggregateStructuralJoinRamBytes)
+      else weight
   | _ => aggregateDirectJoinRamBytes
 
 /-- Calibration-pending per-slot RAM weight used by the Lean admission gate.
@@ -143,7 +159,7 @@ def aggregateSlotRamBytes (item : ScheduledFold) : Nat :=
     | .leaf _ => if item.kind == .ixvm then aggregateRawShardRamBytes
         else aggregateWrapRamBytes
     | .join _ _ =>
-      if item.structural then aggregateStructuralJoinRamBytes
+      if item.structural then aggregateShapeRamBytes 9 item.subjectCount
       else aggregateStructuralJoinRamBytes +
         item.subjectCount * aggregateFlatJoinRamPerSubjectBytes
 
@@ -972,6 +988,9 @@ private def runAggregateCmdNativeWith
     | .ok backend => pure backend
   let verifyIdx := ixvmBackend.compiled.getFuncIdx `verify_claim |>.get!
   let aggrIdx := aggrBackend.compiled.getFuncIdx `ix_aggr |>.get!
+  -- Streamed `[texray]` per-span lines (execute / witness / STARK) for every
+  -- Stage 2 slot, as `ix prove --texray` does for shards.
+  if p.hasFlag "texray" then TracingTexray.init {}
   let nativeResult ← IO.lazyPure fun _ =>
     ixvmBackend.system.aggregateStage2 aggrBackend.system envHandle
       manifestPath proofHexes verifyIdx aggrIdx jobs ramBudgetBytes
@@ -1017,6 +1036,9 @@ private def runAggregateCmdLeanReferenceWith
   let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
     defaultStructuralAbove
   let directJoins := p.hasFlag "direct-joins"
+  -- Same streamed `[texray]` per-span lines as `ix prove --texray`: the
+  -- execute / witness / STARK split of every Stage 2 slot.
+  if p.hasFlag "texray" then TracingTexray.init {}
   let plan ← match schedulePlan view.aggregationTree.foldPlan shardCounts
       structuralAbove directJoins with
     | .error e => IO.eprintln e; return 1
@@ -1035,13 +1057,20 @@ private def runAggregateCmdLeanReferenceWith
   let budgetSource := if maxRamGb?.isSome then "--max-ram" else "92% MemTotal"
   IO.println s!"[aggregate] scheduler: jobs={jobsLabel}, RAM budget \
     {formatAggregateGiB ramBudgetBytes} GiB ({budgetSource}); \
-    wrap/self reserve {formatAggregateGiB aggregateWrapRamBytes} GiB, \
+    wrap/self base {formatAggregateGiB aggregateWrapRamBytes} GiB, \
     direct {formatAggregateGiB aggregateDirectJoinRamBytes} GiB, mixed \
-    {formatAggregateGiB aggregateMixedJoinRamBytes} GiB, flat +1 MiB/subject"
+    {formatAggregateGiB aggregateMixedJoinRamBytes} GiB, flat self +1 MiB/subject, \
+    structural self +1.25 MiB/subject (minimum \
+    {formatAggregateGiB (2 * aggregateStructuralJoinRamBytes)} GiB above \
+    {aggregateStructuralLargeSubjects} subjects)"
   if p.hasFlag "plan-only" then return 0
 
   let proofHexes := (p.variableArgsAs! String).toList
-  if proofHexes.length != view.shards.size then
+  -- `IX_AGGREGATE_SHARDS` (experiment knob, see `shard_selection` in
+  -- aggregate.rs) aggregates a subtree; the native side then requires one
+  -- proof per selected shard and ignores the rest.
+  let partialRun := (← IO.getEnv "IX_AGGREGATE_SHARDS").isSome
+  if !partialRun && proofHexes.length != view.shards.size then
     IO.eprintln s!"aggregate requires exactly {view.shards.size} shard proofs; got {proofHexes.length}"
     return 1
 
@@ -1210,6 +1239,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
     "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
+    "texray";        "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages) for every slot to stderr, as `ix prove --texray` does."
 
   ARGS:
     ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (one per nonempty shard, except --plan-only or replay with aggregate children)."

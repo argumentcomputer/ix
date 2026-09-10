@@ -27,6 +27,7 @@ multi-stark = { workspace = true }
 mimalloc = { workspace = true }
 num-bigint = { workspace = true }
 rayon = { workspace = true }
+libc = { workspace = true }
 rustc-hash = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

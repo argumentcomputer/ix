@@ -311,6 +311,18 @@ opaque proofToAdviceBytes : @& AiurSystem →
 
 end AiurSystem
 
+/-- Native manifest-leaf proving with private split healing. `blocks` and
+`owned` use the counted address-list format; `ids` are newline-separated.
+`maxRam` is a positive byte count limiting the predicted proving peak of
+each executed query record. Oversized records are dropped and split.
+Only original leaf proofs are printed. An empty index path disables indexing.
+Every split is rejoined canonically and checked against the original claim. -/
+@[extern "rs_aiur_shard_pipeline"]
+opaque shardPipeline : @& AiurSystem → @& AiurSystem → @& EnvHandle →
+  @& ByteArray → @& ByteArray → @& String → @& Nat → @& Nat →
+  @& Nat → @& String → @& String → @& String →
+  Bool → Bool → Bool → IO (Except String String)
+
 /-- Write a `.ixes` manifest for an EXPLICIT partition — the block lists
     a run actually produced (splits included) rather than a planner's
     output. `shardsBlob`: per shard, a 4-byte LE block count followed by

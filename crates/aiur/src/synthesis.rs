@@ -504,6 +504,11 @@ impl AiurSystem {
     }
   }
 
+  /// The bytecode layout used by native executors to size their query record.
+  pub fn toplevel(&self) -> &Toplevel {
+    &self.toplevel
+  }
+
   /// `prove_ixvm`, but the record's projected prover peak has to fit
   /// `max_bytes` before any proving starts (`None` skips the check),
   /// and `exec_only` stops after execution + measurement — the split
