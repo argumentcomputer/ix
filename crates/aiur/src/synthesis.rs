@@ -112,14 +112,23 @@ pub struct CircuitShape {
 /// gadgets keep their fixed heights: they are the same size in every
 /// shard and are most of the peak model's floor, which dividing cannot
 /// shrink.
-fn raw_of(
-  record: &QueryRecord,
+/// Unique queried rows per circuit, before padding. A function circuit's
+/// trace concatenates its members' queried rows (see `trace.rs`), so its
+/// height is the sum over the circuit's member functions — `idx` is a
+/// CIRCUIT index, which only coincides with the function index while every
+/// circuit is a singleton.
+fn raw_of<'a>(
+  record: &'a QueryRecord,
+  circuits: &'a [crate::bytecode::Circuit],
   parts: usize,
-) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+) -> impl Fn(usize, &CircuitType) -> usize + 'a {
   move |_, ct| match ct {
-    CircuitType::Function { idx } => {
-      record.function_queries[*idx].len().div_ceil(parts)
-    },
+    CircuitType::Function { idx } => circuits[*idx]
+      .members
+      .iter()
+      .map(|&member| record.function_queries[member].len())
+      .sum::<usize>()
+      .div_ceil(parts),
     CircuitType::Memory { width } => {
       record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
     },
@@ -280,7 +289,7 @@ impl AiurSystem {
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      raw_of(record, 1),
+      raw_of(record, &self.toplevel.circuits, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -371,7 +380,10 @@ impl AiurSystem {
     // count; stop rather than search forever.
     while parts < (1 << 20) {
       let peak = self
-        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
+        .peak_prove_bytes_by(
+          raw_of(record, &self.toplevel.circuits, parts),
+          record_bytes / parts,
+        )
         .peak;
       if peak <= max_bytes {
         break;
