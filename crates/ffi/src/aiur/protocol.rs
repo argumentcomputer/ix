@@ -1,5 +1,5 @@
 use multi_stark::{
-  p3_field::PrimeField64,
+  p3_field::{PrimeCharacteristicRing, PrimeField64},
   types::{CommitmentParameters, FriParameters},
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
@@ -1105,6 +1105,547 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     result.set_obj(3, LeanOwned::box_usize(parts));
     LeanExcept::ok(result)
   })
+}
+
+/// `AiurSystem.proveEnvDistributed`: the whole environment as ONE claim,
+/// `CheckEnv(root, none)`, proven from several worker records
+/// (trace-sharding design §13.3). `owners_blob` is a `u32` worker count,
+/// then a `u32` address count per worker, then every worker's owned
+/// addresses (32 bytes each) in worker order. Worker 0 runs `verify_claim`
+/// and defers every `check_owned` call for a constant it does not own;
+/// worker `r` runs `check_owned` over the leaves it owns, in pointer
+/// namespace `r`. The workers execute in parallel, the deferred calls'
+/// counts are absorbed by their owners, and the records are proven as one
+/// batch, each planned to `max_cells` committed cells (`0`: one shard per
+/// record). `exec_only` stops after execution and the absorption of the
+/// deferred calls, reporting each record's size (`proof` is `none`). Same
+/// result shape as `shardProveWithEnv`, with `peakBytes` 0 and
+/// `suggestedParts` 1.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_prove_env_distributed(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  verify_idx: LeanNat<LeanBorrowed<'_>>,
+  check_owned_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  owners_blob: LeanByteArray<LeanBorrowed<'_>>,
+  max_cells: LeanNat<LeanBorrowed<'_>>,
+  exec_only: bool,
+  exec_jobs: LeanNat<LeanBorrowed<'_>>,
+  prefetch: bool,
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind_except("AiurSystem.proveEnvDistributed", || {
+    let verify_idx = lean_unbox_nat_as_usize(verify_idx.inner());
+    let check_owned_idx = lean_unbox_nat_as_usize(check_owned_idx.inner());
+    let max_cells = lean_unbox_nat_as_usize(max_cells.inner());
+    let exec_jobs = lean_unbox_nat_as_usize(exec_jobs.inner());
+    let owners = match decode_owners_blob(&owners_blob) {
+      Ok(owners) => owners,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let proved = prove_env_distributed(
+      aiur_system_obj.get(),
+      &env_handle.get().env,
+      verify_idx,
+      check_owned_idx,
+      &owners,
+      max_cells,
+      exec_only,
+      exec_jobs,
+      prefetch,
+    );
+    let (claim_bytes, proof) = match proved {
+      Ok(proved) => proved,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let result = LeanAiurShardProveResult::alloc(0);
+    result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
+    result.set_obj(
+      1,
+      match proof {
+        Some(proof) => {
+          LeanOption::some(LeanExternal::alloc(&AIUR_PROOF_CLASS, proof))
+        },
+        None => LeanOption::none(),
+      },
+    );
+    result.set_obj(2, LeanOwned::box_usize(0));
+    result.set_obj(3, LeanOwned::box_usize(1));
+    LeanExcept::ok(result)
+  })
+}
+
+/// `u32 W`, `u32` counts, then the addresses (see
+/// `rs_aiur_system_prove_env_distributed`).
+fn decode_owners_blob(
+  blob: &LeanByteArray<LeanBorrowed<'_>>,
+) -> Result<Vec<Vec<ix_common::address::Address>>, String> {
+  let bytes = blob.as_bytes();
+  let word = |at: usize| -> Result<usize, String> {
+    let chunk: [u8; 4] = bytes
+      .get(at..at + 4)
+      .and_then(|c| c.try_into().ok())
+      .ok_or_else(|| "owners_blob: truncated header".to_string())?;
+    Ok(u32::from_le_bytes(chunk) as usize)
+  };
+  let workers = word(0)?;
+  let counts: Vec<usize> =
+    (0..workers).map(|w| word(4 + 4 * w)).collect::<Result<_, _>>()?;
+  let mut at = 4 + 4 * workers;
+  let mut owners = Vec::with_capacity(workers);
+  for count in counts {
+    let end = at + 32 * count;
+    let slice = bytes
+      .get(at..end)
+      .ok_or_else(|| "owners_blob: truncated addresses".to_string())?;
+    owners.push(
+      slice
+        .as_chunks::<32>()
+        .0
+        .iter()
+        .map(|c| {
+          ix_common::address::Address::from_slice(c)
+            .expect("32-byte chunk is an address")
+        })
+        .collect(),
+    );
+    at = end;
+  }
+  if at != bytes.len() {
+    return Err("owners_blob: trailing bytes".into());
+  }
+  Ok(owners)
+}
+
+/// What a worker's execution produced: its record and IO buffer while they
+/// are kept, and always its deferred calls and its output.
+struct Executed {
+  record: Option<(Box<QueryRecord>, Box<IOBuffer>)>,
+  deferred: FxHashMap<Vec<G>, u64>,
+  output: Vec<G>,
+}
+
+/// The order records are committed in, callers before callees: the workers
+/// that may call into a worker (`callers`) must have executed before it
+/// commits, so its rows carry the calls' multiplicities. Strongly connected
+/// groups of mutually calling workers execute together and commit one after
+/// the other; between groups one record at a time is in flight.
+fn commit_order(callers: &[Vec<usize>]) -> Vec<Vec<usize>> {
+  // Tarjan's components over the edges `caller -> callee`.
+  let n = callers.len();
+  let mut callees: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for (callee, cs) in callers.iter().enumerate() {
+    for &caller in cs {
+      callees[caller].push(callee);
+    }
+  }
+  struct Tarjan<'a> {
+    callees: &'a [Vec<usize>],
+    index: Vec<Option<usize>>,
+    low: Vec<usize>,
+    on_stack: Vec<bool>,
+    stack: Vec<usize>,
+    next: usize,
+    components: Vec<Vec<usize>>,
+  }
+  impl Tarjan<'_> {
+    fn visit(&mut self, v: usize) {
+      self.index[v] = Some(self.next);
+      self.low[v] = self.next;
+      self.next += 1;
+      self.stack.push(v);
+      self.on_stack[v] = true;
+      for &w in &self.callees[v] {
+        match self.index[w] {
+          None => {
+            self.visit(w);
+            self.low[v] = self.low[v].min(self.low[w]);
+          },
+          Some(index) if self.on_stack[w] => {
+            self.low[v] = self.low[v].min(index);
+          },
+          Some(_) => {},
+        }
+      }
+      if self.low[v] == self.index[v].expect("indexed") {
+        let mut component = Vec::new();
+        loop {
+          let w = self.stack.pop().expect("stack holds v");
+          self.on_stack[w] = false;
+          component.push(w);
+          if w == v {
+            break;
+          }
+        }
+        component.sort_unstable();
+        self.components.push(component);
+      }
+    }
+  }
+  let mut tarjan = Tarjan {
+    callees: &callees,
+    index: vec![None; n],
+    low: vec![0; n],
+    on_stack: vec![false; n],
+    stack: Vec::new(),
+    next: 0,
+    components: Vec::new(),
+  };
+  for v in 0..n {
+    if tarjan.index[v].is_none() {
+      tarjan.visit(v);
+    }
+  }
+  // Tarjan emits components in reverse topological order of `callees`
+  // edges: a callee's component before its callers'. Reverse for callers
+  // first.
+  tarjan.components.reverse();
+  tarjan.components
+}
+
+fn prove_env_distributed(
+  system: &AiurSystem,
+  env: &ixon::Env,
+  verify_idx: usize,
+  check_owned_idx: usize,
+  owners: &[Vec<ix_common::address::Address>],
+  max_cells: usize,
+  exec_only: bool,
+  exec_jobs: usize,
+  prefetch: bool,
+) -> Result<(Vec<u8>, Option<AiurProof>), String> {
+  use aiur::execute::{Ownership, pointer_stride};
+  use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
+  use ixvm_codegen::aiur_ixvm_witness::{
+    EnvCheckStatement, addr_key, worker_callers,
+  };
+  use rustc_hash::FxHashSet;
+
+  if owners.is_empty() {
+    return Err("no workers".into());
+  }
+  let statement = EnvCheckStatement::new(env)?;
+  let input = statement.digest_key.clone();
+  let toplevel = system.toplevel();
+  let owned_keys: Vec<FxHashSet<Vec<G>>> = owners
+    .iter()
+    .map(|owned| owned.iter().map(addr_key).collect())
+    .collect();
+  let mut owner_of: FxHashMap<Vec<G>, usize> = FxHashMap::default();
+  for (worker, keys) in owned_keys.iter().enumerate() {
+    for key in keys {
+      if owner_of.insert(key.clone(), worker).is_some() {
+        return Err("a constant is owned by two workers".into());
+      }
+    }
+  }
+  let workers = owners.len();
+  let jobs = if exec_jobs == 0 { workers } else { exec_jobs.min(workers) };
+  let callers = worker_callers(env, owners);
+  let groups = commit_order(&callers);
+  let order: Vec<usize> = groups.iter().flatten().copied().collect();
+  eprintln!(
+    "[distributed] {workers} workers in {} groups, committed in order {order:?}, {jobs} executing at a time",
+    groups.len()
+  );
+
+  // One execution of worker `worker`: worker 0 the claimed entry, the
+  // others their owned leaves, each in its own pointer namespace, over a
+  // fresh IO buffer. Deterministic, so a record can be re-executed for
+  // its second round; the batch checks the headers agree.
+  let execute = |worker: usize, round: &str| -> Result<Executed, String> {
+    let started = std::time::Instant::now();
+    let mut io = statement.worker_io(env, owners, worker);
+    let mut record = QueryRecord::with_pointer_base(
+      toplevel,
+      worker * pointer_stride(workers),
+    );
+    record.ownership =
+      Some(Ownership { callee: check_owned_idx, owned: owned_keys[worker].clone() });
+    let mut output = Vec::new();
+    if worker == 0 {
+      output =
+        execute_ixvm_in(toplevel, verify_idx, &input, &mut io, &mut record)
+          .map_err(|e| format!("worker 0: {e}"))?;
+    } else {
+      // Leaves run as entries; each registers a multiplicity no claim
+      // pulls, taken off only once every leaf has run: a zeroed entry
+      // would read as a hint to a later leaf's walk and be replayed,
+      // double-counting its callees.
+      let mut entries: Vec<Vec<G>> = Vec::new();
+      for addr in &owners[worker] {
+        let key = addr_key(addr);
+        let queries = &record.function_queries[check_owned_idx];
+        // Reached already through another owned leaf's walk.
+        if queries
+          .get_index_of(&key)
+          .is_some_and(|i| queries.mult_at(i) != G::ZERO)
+        {
+          continue;
+        }
+        execute_ixvm_in(toplevel, check_owned_idx, &key, &mut io, &mut record)
+          .map_err(|e| format!("worker {worker}: {e}"))?;
+        entries.push(key);
+      }
+      let queries = &mut record.function_queries[check_owned_idx];
+      for key in entries {
+        let i = queries.get_index_of(&key).expect("executed as an entry");
+        let (_, multiplicity) =
+          queries.get_index_mut(i).expect("index just found");
+        *multiplicity -= G::ONE;
+      }
+    }
+    // Every table must stay inside the worker's pointer namespace, or its
+    // pointers collide with the next worker's.
+    let stride = pointer_stride(workers);
+    for (width, table) in &record.memory_queries {
+      if table.len() > stride {
+        return Err(format!(
+          "worker {worker}: width-{width} table of {} entries exceeds the \
+           pointer namespace of {stride}",
+          table.len()
+        ));
+      }
+    }
+    let function_rows: usize =
+      record.function_queries.iter().map(|q| q.len()).sum();
+    let memory_rows: usize =
+      record.memory_queries.iter().map(|(_, m)| m.len()).sum();
+    let io_bytes: usize = io.data.values().map(|arena| 8 * arena.len()).sum();
+    eprintln!(
+      "[distributed] worker {worker}: executed for {round} in {:.1?}; {function_rows} function queries, {memory_rows} memory entries, {} B retained, {io_bytes} B of IO, {} deferred calls",
+      started.elapsed(),
+      aiur::execute::record_retained_bytes(&record),
+      record.deferred.len()
+    );
+    let deferred = record.deferred.clone();
+    Ok(Executed {
+      record: Some((Box::new(record), Box::new(io))),
+      deferred,
+      output,
+    })
+  };
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  statement.claim.put(&mut claim_bytes);
+  std::thread::scope(|scope| {
+    let mut pool = Workers {
+      scope,
+      execute: &execute,
+      jobs,
+      order: &order,
+      callers: &callers,
+      owner_of: &owner_of,
+      check_owned_idx,
+      executed: (0..workers).map(|_| None).collect(),
+      served: vec![0; workers],
+      prefetch,
+      ahead: None,
+    };
+    if exec_only {
+      let started = std::time::Instant::now();
+      pool.execute_group(&order, "round one")?;
+      for &worker in &order {
+        drop(pool.take_record(worker, "round one")?);
+      }
+      eprintln!(
+        "[distributed] {workers} workers executed and absorbed in {:.1?}",
+        started.elapsed()
+      );
+      return Ok((claim_bytes, None));
+    }
+
+    // The first group executes before the batch, worker 0 among it (its
+    // walk calls into every worker): its output is the claim's. From there
+    // the batch asks for records in commit order (`Workers::supply`).
+    let first = order[0];
+    let mut wanted = callers[first].clone();
+    wanted.push(first);
+    pool.execute_group(&wanted, "round one")?;
+    let output = pool.output();
+    let (_, proof) = system.prove_record_supplier(
+      verify_idx,
+      &input,
+      move || output,
+      workers,
+      |position| pool.supply(position),
+      (max_cells > 0).then_some(max_cells),
+    )?;
+    Ok((claim_bytes, Some(proof)))
+  })
+}
+
+/// The workers' executions, owned by the driver: run in groups, handed to
+/// the prover one record at a time, the next one's execution started
+/// ahead of its turn when asked to.
+struct Workers<'scope, 'env> {
+  scope: &'scope std::thread::Scope<'scope, 'env>,
+  execute:
+    &'env (dyn Fn(usize, &'static str) -> Result<Executed, String> + Sync),
+  /// How many workers execute at once.
+  jobs: usize,
+  /// The commit order.
+  order: &'env [usize],
+  /// The workers that may call into each worker.
+  callers: &'env [Vec<usize>],
+  owner_of: &'env FxHashMap<Vec<G>, usize>,
+  check_owned_idx: usize,
+  executed: Vec<Option<Executed>>,
+  /// How many times the prover has asked for each worker's record.
+  served: Vec<u8>,
+  /// Whether to execute the next worker in commit order while the prover
+  /// works on the current one, at the price of a second resident record.
+  prefetch: bool,
+  /// The execution started ahead of its turn, if any.
+  ahead: Option<(
+    usize,
+    std::thread::ScopedJoinHandle<'scope, Result<Executed, String>>,
+  )>,
+}
+
+impl Workers<'_, '_> {
+  /// Execute the workers among `wanted` that have not executed, `jobs` at
+  /// a time: `jobs` threads each take the next pending worker from a shared
+  /// counter until none is left, so a freed slot starts the next worker at
+  /// once, and each thread's results come back through its join.
+  fn execute_group(
+    &mut self,
+    wanted: &[usize],
+    round: &'static str,
+  ) -> Result<(), String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    for &worker in wanted {
+      self.settle_ahead(worker)?;
+    }
+    let pending: Vec<usize> = wanted
+      .iter()
+      .copied()
+      .filter(|&worker| self.executed[worker].is_none())
+      .collect();
+    let execute = self.execute;
+    let next = AtomicUsize::new(0);
+    let results: Vec<Vec<(usize, Result<Executed, String>)>> =
+      std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..self.jobs.max(1).min(pending.len()))
+          .map(|_| {
+            scope.spawn(|| {
+              let mut done = Vec::new();
+              loop {
+                let at = next.fetch_add(1, Ordering::Relaxed);
+                let Some(&worker) = pending.get(at) else { break };
+                done.push((worker, execute(worker, round)));
+              }
+              done
+            })
+          })
+          .collect();
+        handles
+          .into_iter()
+          .map(|handle| handle.join().expect("worker thread panicked"))
+          .collect()
+      });
+    for (worker, result) in results.into_iter().flatten() {
+      self.executed[worker] = Some(result?);
+    }
+    Ok(())
+  }
+
+  /// If `worker`'s execution was started ahead of its turn, wait for it and
+  /// keep it.
+  fn settle_ahead(&mut self, worker: usize) -> Result<(), String> {
+    if self.ahead.as_ref().is_some_and(|(started, _)| *started == worker) {
+      let (_, handle) = self.ahead.take().expect("checked just above");
+      let done = handle.join().expect("prefetch thread panicked")?;
+      self.executed[worker] = Some(done);
+    }
+    Ok(())
+  }
+
+  /// The record of `worker` as the prover needs it: kept from its
+  /// execution if still there, else executed again; the calls into it
+  /// from every executed worker absorbed.
+  fn take_record(
+    &mut self,
+    worker: usize,
+    round: &'static str,
+  ) -> Result<aiur::synthesis::Supplied<'static>, String> {
+    self.settle_ahead(worker)?;
+    let kept = self.executed[worker]
+      .as_mut()
+      .expect("executed before it is taken")
+      .record
+      .take();
+    let (mut record, io) = match kept {
+      Some(kept) => kept,
+      None => (self.execute)(worker, round)?
+        .record
+        .expect("a fresh execution keeps its record"),
+    };
+    let mut into: FxHashMap<Vec<G>, u64> = FxHashMap::default();
+    for (caller, done) in self.executed.iter().enumerate() {
+      let Some(done) = done else { continue };
+      for (args, &count) in &done.deferred {
+        let Some(&owner) = self.owner_of.get(args) else {
+          return Err(format!(
+            "worker {caller} deferred a constant no worker owns"
+          ));
+        };
+        if owner == worker {
+          *into.entry(args.clone()).or_insert(0) += count;
+        }
+      }
+    }
+    record
+      .absorb_deferred(self.check_owned_idx, &into)
+      .map_err(|e| format!("worker {worker}: {e}"))?;
+    Ok(aiur::synthesis::Supplied::Owned(record, io))
+  }
+
+  /// The prover's request for the record at `position` of the commit
+  /// order. The first time, the worker and the callers it still lacks
+  /// execute first; the second time, all callers have executed, and the
+  /// worker is executed again. With prefetching, the next worker's
+  /// execution for its coming round starts before this record is handed
+  /// over, so it runs while the prover works on this one.
+  fn supply(
+    &mut self,
+    position: usize,
+  ) -> Result<aiur::synthesis::Supplied<'static>, String> {
+    let worker = self.order[position];
+    let first = self.served[worker] == 0;
+    self.served[worker] += 1;
+    if first {
+      let mut wanted = self.callers[worker].clone();
+      wanted.push(worker);
+      self.execute_group(&wanted, "round one")?;
+    }
+    let supplied =
+      self.take_record(worker, if first { "round one" } else { "round two" })?;
+    if self.prefetch && self.ahead.is_none() {
+      let next = self.order[(position + 1) % self.order.len()];
+      let (needed, round) = match self.served[next] {
+        0 => (self.executed[next].is_none(), "round one"),
+        1 => (true, "round two"),
+        _ => (false, ""),
+      };
+      if needed && next != worker {
+        let execute = self.execute;
+        self.ahead =
+          Some((next, self.scope.spawn(move || execute(next, round))));
+      }
+    }
+    Ok(supplied)
+  }
+
+  /// Worker 0's output, the claim's.
+  fn output(&self) -> Vec<G> {
+    self.executed[0]
+      .as_ref()
+      .expect("worker 0 executed with the first group")
+      .output
+      .clone()
+  }
 }
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape

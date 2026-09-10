@@ -72,6 +72,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "fedd785ba02f16042f041fb8b0db9014955c6460" }
 
+# The two-call batch prover (`batch_round_one`/`batch_round_two`) lives on the local
+# multi-stark checkout until its commit is on `sb/trace-sharding`; drop this
+# and move the `rev` above once it is.
+[patch."https://github.com/argumentcomputer/multi-stark.git"]
+multi-stark = { path = "/home/ubuntu/multi-stark" }
+
 [workspace.lints.rust]
 invalid_reference_casting = "warn"
 nonstandard_style = "warn"

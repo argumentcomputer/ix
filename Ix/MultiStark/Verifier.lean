@@ -841,7 +841,8 @@ def verifier := ⟦
   --
   -- Aiur's policy over the batch (`aiur::shard::check_batch_policy`) is
   -- checked here as well, so every consumer of a batch gets it: the
-  -- messages are closure pairs on the memseg channel with distinct widths,
+  -- messages are closure pairs on the memseg channel, sorted into disjoint
+  -- intervals per width,
   -- every shard's heights are at most 2^32, and there are at most 2^16
   -- shards — which bounds the batch's total rows below the field
   -- characteristic without a circuit-to-width table. The claim policy (one
@@ -1060,22 +1061,27 @@ def verifier := ⟦
     assert_eq!(load(r3), ListNode.Nil);
     (a, b, c)
   }
-  -- 1 iff `w` is among `seen`.
-  fn width_seen(w: G, seen: List‹G›) -> G {
-    match load(seen) {
-      ListNode.Nil => 0,
-      ListNode.Cons(x, rest) =>
-        match eq_zero(w - x) {
-          0 => width_seen(w, rest),
-          _ => 1,
-        },
-    }
+  -- `x ≤ y` as integers, one byte of each little-endian pair at a time:
+  -- 1 iff `xi < yi`, or `xi = yi` and the lower bytes say `rest`.
+  fn le_step(xi: U8, yi: U8, rest: G) -> G {
+    u8_less_than(xi, yi) + eq_zero(to_field(xi) - to_field(yi)) * rest
   }
-  -- The memseg closure pairs (`aiur::memseg_channel` = 15): a pull of
-  -- pointer 0 with multiplicity −1 and a push of a total with multiplicity 1,
-  -- the same width in both, no width twice. Widths compare as field values,
-  -- exactly as the lookup argument reads them.
-  fn assert_closure_pairs(ms: List‹BatchMessage›, seen: List‹G›) -> G {
+  -- 1 iff `x ≤ y` as integers, both given as range-checked little-endian
+  -- bytes (`gl_to_bytes`), compared from the most significant byte down.
+  fn bytes8_le(x: [U8; 8], y: [U8; 8]) -> G {
+    le_step(x[7], y[7], le_step(x[6], y[6], le_step(x[5], y[5],
+      le_step(x[4], y[4], le_step(x[3], y[3], le_step(x[2], y[2],
+        le_step(x[1], y[1], le_step(x[0], y[0], 1))))))))
+  }
+  -- The memseg closure pairs (`aiur::memseg_channel` = 15): a pull of an
+  -- interval's first pointer `a` with multiplicity −1 and a push of one
+  -- past its last `b` with multiplicity 1, the same width in both and
+  -- `a ≤ b`; the pairs sorted by width and, within a width, into disjoint
+  -- intervals (`b` of one at most `a` of the next). Widths and pointers
+  -- compare as the integers their canonical field values are. `prev_w`
+  -- and `prev_b` are the previous pair's width and end, `(0, 0)` before
+  -- the first: every width is at least one.
+  fn assert_closure_pairs(ms: List‹BatchMessage›, prev_w: G, prev_b: G) -> G {
     match load(ms) {
       ListNode.Nil => 1,
       ListNode.Cons(pull, rest1) =>
@@ -1084,15 +1090,22 @@ def verifier := ⟦
         let BatchMessage.Mk(qargs, qmult) = push;
         assert_eq!(@gl_val(pmult) + 1, 0);
         assert_eq!(@gl_val(qmult), 1);
-        let (pc, pw, pp) = three_limbs(pargs);
-        let (qc, qw, _qn) = three_limbs(qargs);
+        let (pc, pw, pa) = three_limbs(pargs);
+        let (qc, qw, qb) = three_limbs(qargs);
         assert_eq!(@gl_val(pc), 15);
         assert_eq!(@gl_val(qc), 15);
-        assert_eq!(@gl_val(pp), 0);
         let w = @gl_val(pw);
         assert_eq!(@gl_val(qw), w);
-        assert_eq!(width_seen(w, seen), 0);
-        assert_closure_pairs(rest, store(ListNode.Cons(w, seen))),
+        let a = @gl_val(pa);
+        let b = @gl_val(qb);
+        assert_eq!(bytes8_le(@gl_to_bytes(a), @gl_to_bytes(b)), 1);
+        -- `prev_w < w`, or the same width with `prev_b ≤ a`; the two
+        -- summands are exclusive, since equal widths are not increasing.
+        let same_w = eq_zero(w - prev_w);
+        let w_up = 1 - bytes8_le(@gl_to_bytes(w), @gl_to_bytes(prev_w));
+        assert_eq!(
+          w_up + same_w * bytes8_le(@gl_to_bytes(prev_b), @gl_to_bytes(a)), 1);
+        assert_closure_pairs(rest, w, b),
     }
   }
 
@@ -1167,7 +1180,7 @@ def verifier := ⟦
     let Batch.Mk(headers, messages, proofs) = batch;
     assert_eq!(assert_shard_count_ok(list_length(headers)), 1);
     assert_eq!(list_length(proofs), list_length(headers));
-    assert_eq!(assert_closure_pairs(messages, store(ListNode.Nil)), 1);
+    assert_eq!(assert_closure_pairs(messages, 0, 0), 1);
     let Sys.Mk(_params, tlimbs, _circuits, commit, _prep_indices) = sys;
     let prep_cap = @opt_commit_cap(commit);
     let (lch, fch, input) = batch_fiat_shamir(tlimbs, prep_cap, headers, messages);

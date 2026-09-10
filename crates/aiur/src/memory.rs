@@ -108,10 +108,10 @@ impl Memory {
     Self::witness_data_range(size, record, slot_arg_widths, 0..len)
   }
 
-  /// The rows of the width-`size` table holding pointers `range`, as a trace
-  /// whose row `i` carries pointer `range.start + i`. An empty range yields an
-  /// EMPTY trace: the prover deactivates the circuit, so it is neither
-  /// committed nor opened.
+  /// The rows of the width-`size` table at table indices `range`, as a trace
+  /// whose row `i` carries pointer `record.pointer_base + range.start + i`.
+  /// An empty range yields an EMPTY trace: the prover deactivates the
+  /// circuit, so it is neither committed nor opened.
   pub fn witness_data_range(
     size: usize,
     record: &QueryRecord,
@@ -142,12 +142,12 @@ impl Memory {
         .zip(row_writers[..height_no_padding].par_iter_mut())
         .enumerate()
         .for_each(|(i, (row, row_lookups))| {
-          let ptr = range.start + i;
+          let index = range.start + i;
           let (values, result) =
-            queries.get_index(ptr).expect("pointer in range");
+            queries.get_index(index).expect("pointer in range");
           row[0] = result.multiplicity;
           row[1] = G::ONE;
-          row[2] = G::from_usize(ptr);
+          row[2] = G::from_usize(record.pointer_base + index);
           row[3..].copy_from_slice(values);
 
           let args = Self::lookup_args(size_g, row[2], &row[3..]);

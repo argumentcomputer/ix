@@ -472,7 +472,8 @@ impl Op {
           .expect("Invalid memory size");
         let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
         let ptr = G::from_usize(
-          memory_queries.get_index_of(&values).expect("Unbound pointer"),
+          context.query_record.pointer_base
+            + memory_queries.get_index_of(&values).expect("Unbound pointer"),
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
@@ -487,9 +488,12 @@ impl Op {
           .expect("Invalid memory size");
         let (ptr, _) = map[*ptr];
         let ptr_u64 = ptr.as_canonical_u64();
-        let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
+        let table_index = usize::try_from(ptr_u64)
+          .expect("Pointer is too big")
+          .checked_sub(context.query_record.pointer_base)
+          .expect("Pointer below the record's base");
         let (values, _) =
-          memory_queries.get_index(ptr_usize).expect("Unbound pointer");
+          memory_queries.get_index(table_index).expect("Unbound pointer");
         for f in values.iter() {
           map.push((*f, 1));
           slice.push_auxiliary(index, *f);
@@ -730,6 +734,7 @@ impl Op {
           map[*a].0,
           map[*b].0,
           &context.query_record.memory_queries,
+          context.query_record.pointer_base,
         )
         .expect("BigUint div-mod result not recorded");
         for f in [q_ptr, r_ptr] {

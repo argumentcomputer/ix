@@ -18,7 +18,7 @@ use crate::{
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  shard::ShardPlan,
+  shard::{RowIndex, ShardPlan},
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
@@ -157,6 +157,30 @@ fn raw_of(
   }
 }
 
+/// A record and its IO buffer as a supplier hands them to the batch prover
+/// ([`AiurSystem::prove_record_supplier`]): borrowed from the caller, or
+/// owned by the prover until it moves on to the next record.
+pub enum Supplied<'a> {
+  Borrowed(&'a QueryRecord, &'a IOBuffer),
+  Owned(Box<QueryRecord>, Box<IOBuffer>),
+}
+
+impl Supplied<'_> {
+  pub fn record(&self) -> &QueryRecord {
+    match self {
+      Self::Borrowed(record, _) => record,
+      Self::Owned(record, _) => record,
+    }
+  }
+
+  pub fn io(&self) -> &IOBuffer {
+    match self {
+      Self::Borrowed(_, io) => io,
+      Self::Owned(_, io) => io,
+    }
+  }
+}
+
 impl AiurSystem {
   pub fn build(
     toplevel: Toplevel,
@@ -246,7 +270,7 @@ impl AiurSystem {
   /// index), then memories, then `Bytes1`, then `Bytes2`. This matches the
   /// order the circuits were chained in [`AiurSystem::build`], so index `i`
   /// of the returned `Vec` corresponds to `self.system.circuits[i]`.
-  pub(crate) fn toplevel(&self) -> &Toplevel {
+  pub fn toplevel(&self) -> &Toplevel {
     &self.toplevel
   }
 
@@ -451,6 +475,177 @@ impl AiurSystem {
       &plan,
       Retention::Retain,
     )
+  }
+
+  /// Proves several records as one batch under one claim: the executions of
+  /// one statement split across records by deferred calls
+  /// ([`crate::execute::Ownership`]), each with its own pointer base. Each
+  /// record is planned on its own to `max_cells` and its shards join the
+  /// batch in record order; the claim rides on the first shard, and the
+  /// closure messages cover every record's memory intervals. The records'
+  /// deferred multiplicities must already be absorbed by their owners
+  /// ([`QueryRecord::absorb_deferred`]); the witness of every shard is
+  /// rebuilt from its record for round two. Fails when a shard exceeds
+  /// `max_cells` (a row wider than the budget) or the batch exceeds
+  /// [`crate::shard::MAX_SHARDS`], rather than proving what cannot verify.
+  pub fn prove_records(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    output: &[G],
+    records: &[(QueryRecord, &IOBuffer)],
+    max_cells: Option<usize>,
+  ) -> Result<(Vec<G>, AiurProof), String> {
+    self.prove_record_supplier(
+      fun_idx,
+      input,
+      || output.to_vec(),
+      records.len(),
+      |r| Ok(Supplied::Borrowed(&records[r].0, records[r].1)),
+      max_cells,
+    )
+  }
+
+  /// [`Self::prove_records`] with the records handed over one at a time:
+  /// `supply(r)` is called when record `r` is next in batch order — once
+  /// for round one, once for round two — and what it hands over is dropped
+  /// when the batch moves on to the next record. A supplier may therefore
+  /// execute a record at its first call, keep or recompute it for the
+  /// second, and hold at most one record with the prover. The records are
+  /// planned as they arrive (nothing about a later record is needed before
+  /// an earlier one is committed) and the closure messages are formed once
+  /// every record's memory totals are known. The claim's `output` is asked
+  /// for when the first shard is committed, after the first record was
+  /// supplied, so the execution that produces it need not precede the
+  /// batch.
+  pub fn prove_record_supplier<'a, O, S>(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    output: O,
+    count: usize,
+    mut supply: S,
+    max_cells: Option<usize>,
+  ) -> Result<(Vec<G>, AiurProof), String>
+  where
+    O: FnOnce() -> Vec<G>,
+    S: FnMut(usize) -> Result<Supplied<'a>, String>,
+  {
+    if count == 0 {
+      return Err("no records to prove".into());
+    }
+    let mut output = Some(output);
+    let mut claim: Option<Vec<G>> = None;
+    // Filled by round one as records arrive, read by round two.
+    let mut plans: Vec<ShardPlan> = Vec::with_capacity(count);
+    let mut indexes: Vec<RowIndex> = Vec::with_capacity(count);
+    // Batch shard `k` is local shard `s` of record `r`.
+    let mut locate: Vec<(usize, usize)> = Vec::new();
+    let mut failure: Option<String> = None;
+
+    // Round one: record by record, shard by shard. The record at hand
+    // stays only until its last shard is committed. The stream borrows the
+    // state above until the round is over.
+    let mut current: Option<(usize, Supplied<'a>, usize)> = None;
+    let mut next_record = 0usize;
+    let round_one = std::iter::from_fn(|| {
+      loop {
+        if let Some((r, supplied, shard)) = &mut current {
+          let plan = &plans[*r];
+          if *shard < plan.num_shards() {
+            let s = *shard;
+            *shard += 1;
+            let claims = if locate.is_empty() {
+              let mut formed = vec![function_channel(), G::from_usize(fun_idx)];
+              formed.extend(input);
+              let output = output.take().expect("the output is asked once");
+              formed.extend(output());
+              claim = Some(formed.clone());
+              vec![formed]
+            } else {
+              vec![]
+            };
+            locate.push((*r, s));
+            let _g = tracing::info_span!("aiur/witness").entered();
+            let witness = self.shard_witness(
+              supplied.record(),
+              supplied.io(),
+              plan,
+              &indexes[*r],
+              s,
+            );
+            return Some((claims, witness));
+          }
+          current = None;
+        }
+        if next_record == count {
+          return None;
+        }
+        let r = next_record;
+        next_record += 1;
+        let supplied = match supply(r) {
+          Ok(supplied) => supplied,
+          Err(error) => {
+            failure = Some(format!("record {r}: {error}"));
+            return None;
+          },
+        };
+        let plan = self.plan_shards(supplied.record(), max_cells);
+        if locate.len() + plan.num_shards() > crate::shard::MAX_SHARDS {
+          failure = Some(format!("record {r}: the batch exceeds the shard limit"));
+          return None;
+        }
+        if let Some(max_cells) = max_cells {
+          let heaviest = self.shard_committed_cells(&plan).into_iter().max();
+          if let Some(cells) = heaviest.filter(|&cells| cells > max_cells) {
+            failure = Some(format!(
+              "record {r}: a shard of {cells} committed cells exceeds the \
+               budget of {max_cells}"
+            ));
+            return None;
+          }
+        }
+        eprintln!("[distributed] record {r}: {} shards", plan.num_shards());
+        indexes.push(self.row_index(supplied.record(), &plan));
+        plans.push(plan);
+        current = Some((r, supplied, 0));
+      }
+    });
+    let barrier = self.system.batch_round_one(round_one, Retention::Regenerate);
+    if let Some(error) = failure {
+      return Err(error);
+    }
+    let claim = claim.ok_or("no shards to prove")?;
+    let mut memory_totals: Vec<(usize, usize, usize)> = plans
+      .iter()
+      .flat_map(|plan| plan.memory_totals.iter().copied())
+      .collect();
+    memory_totals.sort_unstable();
+    let messages =
+      Self::boundary_messages(&ShardPlan { shards: vec![], memory_totals });
+
+    // Round two: the record is asked for again when the batch order
+    // reaches it and dropped when the order moves on.
+    let mut loaded: Option<(usize, Supplied<'a>)> = None;
+    let proof = self.system.batch_round_two(&self.key, barrier, messages, |k| {
+      let (r, s) = locate[k];
+      if loaded.as_ref().is_none_or(|(at, _)| *at != r) {
+        loaded = None;
+        let supplied =
+          supply(r).unwrap_or_else(|error| panic!("record {r}: {error}"));
+        loaded = Some((r, supplied));
+      }
+      let supplied = &loaded.as_ref().expect("loaded above").1;
+      let _g = tracing::info_span!("aiur/witness").entered();
+      self.shard_witness(
+        supplied.record(),
+        supplied.io(),
+        &plans[r],
+        &indexes[r],
+        s,
+      )
+    });
+    Ok((claim, proof))
   }
 
   /// [`Self::prove_from_execution`] with the record's rows dealt out to the
@@ -777,7 +972,7 @@ mod tests {
   use super::*;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
-    execute::IOBuffer,
+    execute::{IOBuffer, Ownership, pointer_stride},
     shard::ShardRows,
   };
   use multi_stark::{
@@ -1209,7 +1404,7 @@ mod tests {
     shard_1[MEM] = range_1;
     ShardPlan {
       shards: vec![ShardRows { rows: shard_0 }, ShardRows { rows: shard_1 }],
-      memory_totals: vec![(1, 1)],
+      memory_totals: vec![(1, 0, 1)],
     }
   }
 
@@ -1270,7 +1465,7 @@ mod tests {
     let (system, input, record, output, io_buffer) = executed_call_and_memory();
     let single = system.single_shard_plan(&record);
     assert_eq!(single.num_shards(), 1);
-    assert_eq!(single.memory_totals, vec![(1, 1)]);
+    assert_eq!(single.memory_totals, vec![(1, 0, 1)]);
 
     // Every committed cell of the single shard, less one, forces a second
     // shard; the byte tables stay in shard 0 and everything else moves.
@@ -1373,12 +1568,12 @@ mod tests {
   }
 
   #[test]
-  fn rejects_duplicate_closure_width() {
+  fn rejects_overlapping_closure_intervals() {
     let (system, input, record, output, io_buffer) = executed_call_and_memory();
-    // Both shards hold pointer 0 of width 1, and the plan closes width 1
+    // Both shards hold pointer 0 of width 1, and the plan closes `[0, 1)`
     // twice: balanced as a sum, rejected as a policy violation.
     let mut plan = two_shard_plan([0..1, 0..1]);
-    plan.memory_totals.push((1, 1));
+    plan.memory_totals.push((1, 0, 1));
     let (claim, proof) = system.prove_from_execution_planned(
       0,
       &input,
@@ -1392,6 +1587,237 @@ mod tests {
       system.verify(&claim, &proof),
       Err(AiurVerificationError::Policy(_))
     ));
+  }
+
+  /// `f(a)` (entry) calls `h(a)`, which returns nothing: it stores `a`,
+  /// loads it back and asserts the round trip. `h` is an entry too, so a
+  /// record that owns it can run it directly.
+  fn deferral_toplevel() -> Toplevel {
+    let f = Function {
+      body: Block {
+        ops: vec![Op::Call(1, vec![0], 0, false)],
+        ctrl: Ctrl::Return(0, vec![0]),
+      },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 1,
+        auxiliaries: 1,
+        lookups: 2,
+      },
+      entry: true,
+      constrained: true,
+    };
+    let h = Function {
+      body: Block {
+        ops: vec![
+          Op::Store(vec![0]),
+          Op::Load(1, 1),
+          Op::AssertEq(vec![0], vec![2], None),
+        ],
+        ctrl: Ctrl::Return(0, vec![]),
+      },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 1,
+        auxiliaries: 3,
+        lookups: 3,
+      },
+      entry: true,
+      constrained: true,
+    };
+    with_singleton_circuits(vec![f, h], vec![1])
+  }
+
+  #[test]
+  fn deferred_call_is_answered_by_another_record() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(deferral_toplevel(), cp, fp);
+    let seven = G::from_u64(7);
+    // Record 0 runs the claimed entry and owns nothing of `h`: its call is
+    // pushed by `f`'s row and answered nowhere in the record.
+    let deferring = || {
+      let mut io0 = empty_io_buffer();
+      let mut worker0 = QueryRecord::with_pointer_base(system.toplevel(), 0);
+      worker0.ownership = Some(Ownership {
+        callee: 1,
+        owned: rustc_hash::FxHashSet::default(),
+      });
+      let output = system
+        .toplevel()
+        .execute_in(0, vec![seven], &mut io0, &mut worker0)
+        .expect("entry executes");
+      (worker0, io0, output)
+    };
+    let (worker0, io0, output) = deferring();
+    assert_eq!(worker0.deferred.get(&vec![seven]), Some(&1));
+    let deferred = worker0.function_queries[1]
+      .get_index_of(&[seven])
+      .expect("the deferred call has an entry");
+    assert_eq!(worker0.function_queries[1].mult_at(deferred), G::ZERO);
+    assert!(worker0.memory_queries[&1].is_empty(), "nothing ran");
+
+    // Record 1 owns `h`: runs it as an entry in its own pointer namespace,
+    // drops the entry multiplicity no claim pulls, and absorbs record 0's
+    // push.
+    let owner = |deferred: &FxHashMap<Vec<G>, u64>, absorb: bool| {
+      let mut io1 = empty_io_buffer();
+      let mut worker1 =
+        QueryRecord::with_pointer_base(system.toplevel(), pointer_stride(2));
+      system
+        .toplevel()
+        .execute_in(1, vec![seven], &mut io1, &mut worker1)
+        .expect("owner executes");
+      let i = worker1.function_queries[1].get_index_of(&[seven]).unwrap();
+      *worker1.function_queries[1].get_index_mut(i).unwrap().1 -= G::ONE;
+      if absorb {
+        worker1.absorb_deferred(1, deferred).expect("absorbed");
+      }
+      (worker1, io1)
+    };
+    let (worker1, io1) = owner(&worker0.deferred, true);
+    let (claim, proof) = system.prove_records(
+      0,
+      &[seven],
+      &output,
+      &[(worker0, &io0), (worker1, &io1)],
+      None,
+    )
+    .expect("two records plan within an unbounded budget");
+    assert_eq!(proof.proofs.len(), 2);
+    assert_eq!(proof.preamble.messages.len(), 2, "one interval, the owner's");
+    system.verify(&claim, &proof).expect("two records prove one claim");
+
+    // Unabsorbed, the owner's row pulls nothing and record 0's push hangs.
+    let (worker0, io0, output) = deferring();
+    let (worker1, io1) = owner(&worker0.deferred, false);
+    let (claim, proof) = system.prove_records(
+      0,
+      &[seven],
+      &output,
+      &[(worker0, &io0), (worker1, &io1)],
+      None,
+    )
+    .expect("two records plan within an unbounded budget");
+    assert!(matches!(
+      system.verify(&claim, &proof),
+      Err(AiurVerificationError::Stark(VerificationError::UnbalancedBatch))
+    ));
+  }
+
+  /// A record regenerated by re-execution proves exactly as a resident one:
+  /// the supplier executes the owner afresh each time the batch asks for
+  /// it (once per round), absorbing the deferred call each time, and the
+  /// batch verifies — its round-two headers reproduce round one's.
+  #[test]
+  fn regenerated_record_proves_in_the_batch() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(deferral_toplevel(), cp, fp);
+    let seven = G::from_u64(7);
+    let mut io0 = empty_io_buffer();
+    let mut worker0 = QueryRecord::with_pointer_base(system.toplevel(), 0);
+    worker0.ownership =
+      Some(Ownership { callee: 1, owned: rustc_hash::FxHashSet::default() });
+    let output = system
+      .toplevel()
+      .execute_in(0, vec![seven], &mut io0, &mut worker0)
+      .expect("entry executes");
+    let deferred = worker0.deferred.clone();
+    let executions = std::cell::Cell::new(0usize);
+    let owner = || {
+      executions.set(executions.get() + 1);
+      let mut io1 = empty_io_buffer();
+      let mut worker1 =
+        QueryRecord::with_pointer_base(system.toplevel(), pointer_stride(2));
+      system
+        .toplevel()
+        .execute_in(1, vec![seven], &mut io1, &mut worker1)
+        .expect("owner executes");
+      let i = worker1.function_queries[1].get_index_of(&[seven]).unwrap();
+      *worker1.function_queries[1].get_index_mut(i).unwrap().1 -= G::ONE;
+      worker1.absorb_deferred(1, &deferred).expect("absorbed");
+      Supplied::Owned(Box::new(worker1), Box::new(io1))
+    };
+    let (claim, proof) = system
+      .prove_record_supplier(
+        0,
+        &[seven],
+        || output.clone(),
+        2,
+        |r| Ok(if r == 0 { Supplied::Borrowed(&worker0, &io0) } else { owner() }),
+        None,
+      )
+      .expect("two records plan within an unbounded budget");
+    assert_eq!(executions.get(), 2, "the owner ran once per round");
+    system.verify(&claim, &proof).expect("a regenerated record proves the claim");
+  }
+
+  #[test]
+  fn nonzero_pointer_base_proves_and_closes_its_interval() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let input = vec![G::from_u64(3), G::from_u64(5)];
+    let mut io_buffer = empty_io_buffer();
+    let (record, output) = system
+      .toplevel()
+      .execute_with_pointer_base(0, input.clone(), &mut io_buffer, pointer_stride(2))
+      .expect("execution succeeds");
+    let plan = system.single_shard_plan(&record);
+    assert_eq!(plan.memory_totals, vec![(1, pointer_stride(2), 1)]);
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+    system.verify(&claim, &proof).expect("shifted pointer namespace verifies");
+  }
+
+  #[test]
+  fn closure_interval_policy() {
+    let (system, input, record, output, io_buffer) = executed_call_and_memory();
+    let plan = two_shard_plan([0..1, 0..0]);
+    let (claim, proof) = system.prove_from_execution_planned(
+      0,
+      &input,
+      &io_buffer,
+      record,
+      &output,
+      &plan,
+      Retention::Retain,
+    );
+    let pair = |width: u64, start: u64, end: u64| {
+      let w = G::from_u64(width);
+      [
+        multi_stark::batch::BatchMessage::pull(
+          Memory::memseg_args(w, G::from_u64(start)).to_vec(),
+        ),
+        multi_stark::batch::BatchMessage::push(
+          Memory::memseg_args(w, G::from_u64(end)).to_vec(),
+        ),
+      ]
+    };
+    let with = |extra: Vec<[multi_stark::batch::BatchMessage<AiurConfig>; 2]>| {
+      let mut preamble = proof.preamble.clone();
+      for [pull, push] in extra {
+        preamble.messages.push(pull);
+        preamble.messages.push(push);
+      }
+      system.check_batch_policy(&claim, &preamble)
+    };
+    // The proof closes width 1 over `[0, 1)`. A later disjoint interval of
+    // the same width, an empty one, and a wider width are all canonical.
+    assert!(with(vec![pair(1, 1, 5)]).is_ok());
+    assert!(with(vec![pair(1, 1, 1)]).is_ok());
+    assert!(with(vec![pair(1, 7, 9), pair(2, 0, 3)]).is_ok());
+    // Overlap, reversed order, an interval ending before it starts, and a
+    // width out of order are not.
+    assert!(with(vec![pair(1, 0, 2)]).is_err());
+    assert!(with(vec![pair(1, 5, 9), pair(1, 2, 4)]).is_err());
+    assert!(with(vec![pair(1, 9, 8)]).is_err());
+    assert!(with(vec![pair(2, 0, 3), pair(1, 7, 9)]).is_err());
   }
 
   #[test]

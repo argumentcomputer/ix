@@ -389,13 +389,18 @@ VectorProof {
 
 1. `1 ≤ K ≤ K_MAX`; each `headers[k]` matches `shards[k]` (activation
    bitmap, stage-1 cap, `log_degrees`, claims).
-2. The messages are exactly consecutive pairs `pull (MEMSEG, w, 0)`,
-   `push (MEMSEG, w, N_w)` with strictly increasing widths — no other
-   shape, no other channel, no width twice. The verifier need not know
-   which widths the record uses: a missing pair leaves that width's end
-   points unmatched (unbalanced), and a pair for a width no shard carries
-   balances only at `N_w = 0`, the zero contribution. What must be
-   excluded is a second pair for one width (two `0 → N_w` paths).
+2. The messages are exactly consecutive pairs `pull (MEMSEG, w, a)`,
+   `push (MEMSEG, w, b)` with `a ≤ b`, sorted by width and, within a
+   width, into disjoint intervals (`b` of one pair at most `a` of the
+   next), compared as integers — no other shape, no other channel. Each
+   pair closes one memory interval `[a, b)`; a record's width-`w` table
+   is one such interval, starting at the record's pointer base, so a
+   batch of several records closes several per width. The verifier need
+   not know which intervals the records use: a missing pair leaves an
+   interval's end points unmatched (unbalanced), and a pair no shard
+   fills balances only at `a = b`, the zero contribution. What must be
+   excluded is two overlapping intervals (two paths through the same
+   pointers).
 3. `Σ_{k, active c} 2^{log_degree_{k,c}} < p` over every shard and
    circuit (the finite-field bound of §5, coarsened to the whole batch so
    it needs no circuit-to-width mapping; trivially true for honest
@@ -455,25 +460,29 @@ unnecessary.
 
 ### 5.2 Verifier terms and the tiling argument
 
-The vector verifier contributes, per width `w` in `memory_totals`, one
-pull of `(MEMSEG, w, 0)` and one push of `(MEMSEG, w, N_w)`. `N_w` is
-committed in the preamble before β, γ are sampled (§4.1) and the list is
-canonical (§4.4 step 2); both conditions are load-bearing:
+The vector verifier contributes, per memory interval `[A, B)` of width
+`w` in `memory_totals`, one pull of `(MEMSEG, w, A)` and one push of
+`(MEMSEG, w, B)`; a single record's table is the one interval
+`[0, N_w)`, and records proven together hold intervals a fixed pointer
+stride apart. The end points are committed in the preamble before β, γ
+are sampled (§4.1) and the list is canonical (§4.4 step 2); both
+conditions are load-bearing:
 
-- if `N_w` could be chosen after the challenges, an adversary with two
-  free base-field values (two widths' totals) can solve the two
-  extension-field coordinates of any target imbalance — the audit's
+- if an end point could be chosen after the challenges, an adversary
+  with two free base-field values (two intervals' ends) can solve the
+  two extension-field coordinates of any target imbalance — the audit's
   `adaptive_memory_totals` counterexample does exactly this to cancel a
   wrong memory read;
-- if duplicates were allowed, two entries `(w, 1)` supply two boot and
-  two terminal terms, so two shards can each claim range `[0, 1)` with
-  different values at pointer 0 and all `MEMSEG` terms cancel — the
-  audit's `duplicate_widths` counterexample. Distinct widths is the
+- if overlapping intervals were allowed, two entries `[0, 1)` supply two
+  boot and two terminal terms, so two shards can each claim pointer 0
+  with different values and all `MEMSEG` terms cancel — the audit's
+  `duplicate_widths` counterexample. Sorted, disjoint intervals is the
   whole of what canonicity must enforce; the verifier need not know the
-  record's widths (§4.4 step 2).
+  records' widths or intervals (§4.4 step 2).
 
 With both conditions, balance on the `MEMSEG` channel states, as
-multisets over `F_p`:
+multisets over `F_p` (written for the single interval `[0, N_w)`; each
+further interval adds its own source and sink):
 
 ```
 { first_{k,w} : k } ∪ { N_w }  ==  { last_{k,w} + 1 : k } ∪ { 0 }
@@ -936,33 +945,78 @@ An Aiur call is a lookup message; the callee's row may live anywhere in
 the batch. So one logical execution can be split across W workers without
 splitting the *statement*:
 
-- Worker 0 runs the top-level `verify_claim` loop with *deferred calls*:
-  for each `check_const(c)` it records the call's push message with the
-  callee's output supplied externally (a hint) instead of executing the
-  callee. This is an executor mode, not a program change.
-- Workers 1..W execute the deferred subtrees for disjoint constant sets and
-  produce the callee rows (multiplicity 1 for the top-level pull) plus
-  everything beneath them.
-- Memory pointers are worker-namespaced: each worker allocates from its own
-  base offset, so a width's table is a union of disjoint intervals rather
-  than `[0, N)`. The tiling argument of §5 generalizes: one closure pair
-  `pull a_j, push b_j` per interval, with the verifier checking the
-  intervals are sorted and disjoint (`b_j ≤ a_{j+1}`, a 32-bit comparison in
-  circuit). Cross-worker memory reads work unchanged — a load in one worker
-  is pulled by the memory row in another — provided the reader can obtain
-  the value, which for the kernel's scalar `check_const` results it never
-  needs.
+- The kernel names a constant across records by its 32 address bytes, not
+  by its interned pointer, which is per record: the whole-environment
+  `CheckEnv` walks every constant through `check_owned(bytes)`, an entry
+  whose body interns the bytes and runs the unsharded walk from there
+  (`Ix/IxVM/Kernel/Claim.lean`). Nothing else in the kernel changes.
+- A record carries an *ownership*: the set of address bytes it answers
+  `check_owned` for (`QueryRecord::ownership`). A constrained call to
+  `check_owned` outside it is *deferred*, in the interpreter and in every
+  generated call site: the caller's row pushes the call's message, no row
+  is emitted, and the record counts the push. The callee returns nothing,
+  so a deferring caller needs no hint. Ownership is a prover choice, never
+  constrained: a call no record answers leaves the batch unbalanced, and a
+  constant two records both check is two balanced rows.
+- Worker 0 runs `verify_claim` over the environment's claim and defers
+  every foreign constant; worker `r` runs `check_owned` as an entry over
+  the leaves it owns, in the same process or on another host, with no
+  ordering between workers: ownership is static, so nobody waits. After
+  execution each record's deferred counts are added to the multiplicities
+  of the rows that answer them (`QueryRecord::absorb_deferred`); a worker's
+  own entry registrations, which no claim pulls, are taken off.
+- Memory pointers are namespaced: record `r` stores its tables at pointer
+  base `r · 2^32 / W` (the kernel's memoization compares pointers as
+  `u32`, so every pointer stays below `2^32`), and the closure messages
+  become one `pull a_j, push b_j` pair per interval, which both verifiers
+  require sorted and disjoint (§5.2). A worker's tables must fit its
+  stride; the driver checks this before proving.
 - Memoization does not cross workers; shared subcomputations are
-  duplicated. This is the same cost as bounded memoization, bounded by
-  choosing worker subsets along the dependency structure the env-shard
-  partitioner already computes (a constant's dependencies mostly sit in its
-  own module cluster).
+  duplicated, as they are across env shards today (Init in 4 workers:
+  90 GiB of records against 75 GiB for one execution, 2026-09-10).
 
-The result is W records of tens of GB each — the same per-host footprint
-as an env shard today — and W-way parallel execution, feeding one planner
-and one batch. The executor work (deferred calls, base offsets, exporting
-rows in a shard-plannable form) is the deepest change on this path and
-should be prototyped on InitStd with W = 2 before anything else.
+`ix prove --ixe E --ixes M --distributed [--cells N]` runs this with one
+worker per manifest leaf, verifies nothing by itself, and persists one
+proof of `CheckEnv(root, none)` — the claim `ix verify --ixes` checks
+against a one-leaf manifest of the same environment. Measured on Init
+(64 cores, 2026-09-10, 4 workers at 1.8 G cells): execution 107 s for all
+four workers in parallel against 6.0 min for one execution; 71 shards;
+27:22 wall; 170 GiB peak with all four records resident; a 100 MiB batch
+that verifies natively in 14 s. What is not built: the range-sum
+recursion of §13.2 (today the batch is wrapped whole).
+
+**Record residency.** A worker's record is needed from its execution to
+the second round of its last shard, and every worker's record exists at
+the batch barrier if every worker executes first: the footprint is then
+the sum of the workers (Init: 84 GB of records for four, within a
+170 GiB process peak). Two facts bound it instead. A worker can commit as soon as every worker that may call into
+it has executed — its rows' multiplicities count those calls — and
+"may call into" is static: worker `c` reaches only the byte scope of
+its owned constants, so the callers of `r` are the workers whose scope
+holds a constant `r` owns (plus worker 0, whose walk reaches every
+leaf). Records are therefore committed in an order with callers first
+(Tarjan's components over that graph, mutually calling workers
+grouped), each worker executed when its turn comes with the callers it
+still lacks, `--exec-jobs` at a time, and dropped once its shards are
+committed. And a record is a deterministic function of the program,
+the worker's inputs and the calls absorbed, so round two re-executes
+the worker instead of retaining anything: the batch prover takes round
+one from a stream of shards (`batch_round_one`, no shard count up front,
+the closure messages asked for when every memory total exists) and
+`batch_round_two` asks for each record again, when it is regenerated and dropped after
+its shards. Resident memory is the size of the current caller group in
+records plus one shard's proving state in round one (Init's four
+workers all call into each other, so they are one group and all four
+records exist until the first is committed), and one record plus one
+shard in round two, plus the next worker's record when its execution
+runs ahead: by default the driver executes the next worker in commit
+order while the prover works on the current record, so the re-execution
+is hidden behind proving. Measured on Init with four workers: 28:16
+wall and 159 GiB peak against 27:04 and 170 GiB with every record
+resident (33:21 when the prover waits for each re-execution instead);
+the peak barely moves because Init's four workers are one caller group
+and all four records exist until the first commits, while round two
+holds one record and the one being executed ahead.
 
 ### 13.4 What the planner and prover look like
 
@@ -1022,7 +1076,10 @@ until §13.3's distribution lands: ~3.5 h serial for Mathlib, then
    GPU box.
 4. **Distributed execution**: deferred calls, worker memory namespaces,
    generalized closure policy (sorted disjoint intervals), coordinator.
-   Prototype W = 2 on InitStd; then Mathlib on the fleet.
+   Built (§13.3, `ix prove --distributed`) and measured on Init with four
+   workers in one process, records committed in caller order and
+   re-executed for round two; what remains is the fleet driver that
+   places workers on hosts.
 5. **Switch-over**: `ix prove` defaults to the single-execution batch;
    `ix aggregate`'s set-folding path and the manifest machinery become the
    legacy mode for composing independently proven libraries (the one thing

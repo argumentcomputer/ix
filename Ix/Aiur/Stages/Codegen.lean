@@ -403,13 +403,21 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     if opUn then "true"
     else
       s!"__cu || record.function_queries[{callee}].mult_at(__i) != G::ZERO"
+  -- A constrained call another record answers is deferred: the caller's
+  -- row pushes it and nothing runs (mirrors execute.rs `Op::Call`; only a
+  -- callee without outputs is ever deferrable, so the empty array is its
+  -- whole result).
+  let deferGuard : String :=
+    if opUn then "false"
+    else s!"!unconstrained && record.defer_call({callee}, &__args[..])"
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
     s!" let __cu = {cuExpr};" ++
+    s!" if {deferGuard} \{ let __ret: [G; OUT_{callee}] = [G::ZERO; OUT_{callee}]; __ret } else \{" ++
     s!" let __hit = record.function_queries[{callee}].get_index_of(&__args[..]);" ++
     s!" match __hit \{ Some(__i) if {hitGuard} => \{" ++
     bumpStmt ++ retExpr ++ " }," ++
-    s!" _ => aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
+    s!" _ => aiur_fn_{callee}(__args, record, io_buffer, __cu)? } } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
   ]
@@ -429,21 +437,23 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
     s!" __mq.output_at(__i)[0]" ++
     s!" } else \{" ++
-    s!" let __ptr = G::from_usize(__mq.len());" ++
+    s!" let __ptr = G::from_usize(record.pointer_base + __mq.len());" ++
     s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
     s!" __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
-/-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
-    index, bump multiplicity if constrained, splat `size` outputs. -/
+/-- `Op::Load`: mirror execute.rs `Op::Load`. Look up by pointer index
+    (the pointer less the record's base), bump multiplicity if constrained,
+    splat `size` outputs. -/
 private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt := Id.run do
   let blockExpr : String :=
-    s!"\{ let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
+    s!"\{ let __base = record.pointer_base;" ++
+    s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
-    s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
-    s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize); }" ++
-    s!" let (__args, _) = __mq.get_index(__ptr_usize).expect(\"bounds checked above\");" ++
+    s!" let __idx = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?" ++
+    s!".checked_sub(__base).filter(|&__i| __i < __mq.len()).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
+    s!" if !unconstrained \{ __mq.bump_multiplicity(__idx); }" ++
+    s!" let (__args, _) = __mq.get_index(__idx).expect(\"bounds checked above\");" ++
     s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)

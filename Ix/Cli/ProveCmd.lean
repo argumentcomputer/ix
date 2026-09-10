@@ -335,6 +335,35 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       -- once at the end rather than rewritten per split. Ownership is
       -- assigned in ONE env pass here; splits inherit it.
       let ownedPer := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
+      if p.hasFlag "distributed" then
+        -- One claim for the whole environment, one worker record per
+        -- manifest leaf (see `Aiur.AiurSystem.proveEnvDistributed`).
+        let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+        let some checkOwnedIdx := compiled.getFuncIdx `check_owned
+          | IO.eprintln "compiled toplevel has no `check_owned` entry"; return 1
+        let maxCells := ((p.flag? "cells").map (·.as! Nat)).getD 0
+        IO.println s!"Proving the whole environment as one claim over \
+          {shards.size} workers"
+        (← IO.getStdout).flush
+        let execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
+        match aiurSystem.proveEnvDistributed funIdx checkOwnedIdx envHandle
+            ownedPer maxCells execOnly execJobs (!(p.hasFlag "no-prefetch")) with
+        | .error e => IO.eprintln s!"proveEnvDistributed error: {e}"; return 1
+        | .ok { proof := none, .. } =>
+          if execOnly then
+            IO.println "executed and absorbed every worker (exec-only)"
+            return 0
+          IO.eprintln "proveEnvDistributed returned no proof"; return 1
+        | .ok { claimBytes, proof := some proof, .. } =>
+          match Ixon.runGet Ix.Claim.get claimBytes with
+          | .error e => IO.eprintln s!"Claim wire-decode failed: {e}"; return 1
+          | .ok claim =>
+            let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
+            let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
+            let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
+            IO.println s!"claim {Address.blake3 (Ix.Claim.ser claim)}"
+            IO.println (toString proofAddr)
+            return 0
       -- `--shards SEL` restricts the run to some leaves (one env load for
       -- all of them); every other leaf is carried over unchanged.
       let selected : Array Nat ← match (p.flag? "shards").map (·.as! String) with
@@ -396,6 +425,10 @@ def proveCmd : Cli.Cmd := `[Cli|
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
     "trace-shards";     "Prove an over-budget shard as a batch of trace shards that each fit --max-ram, from one execution, instead of cutting it into parts; a shard no trace-shard count can fit stops the run rather than being cut. With --exec-only, reports the planned shard count and the heaviest shard's projected peak without proving."
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
+    "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per manifest leaf executing in parallel (the leaf's constants are the worker's owned set; calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
+    "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
+    "exec-jobs" : Nat;  "With --distributed: how many workers execute at once (default 0: all). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
+    "no-prefetch";      "With --distributed: do not execute the next worker while the prover works on the current record (by default it does, hiding the re-execution behind proving at the price of a second resident record)."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
     "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."

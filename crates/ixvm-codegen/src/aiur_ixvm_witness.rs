@@ -63,8 +63,10 @@ fn extend(io: &mut IOBuffer, channel: G, key: Vec<G>, data: Vec<G>) {
   io.map.insert((channel, key), IOKeyInfo { idx, len });
 }
 
+/// An address as its 32 bytes, one field element each: the memory-table key
+/// of an interned `Addr` and the argument of `check_owned`.
 #[inline]
-fn addr_key(addr: &Address) -> Vec<G> {
+pub fn addr_key(addr: &Address) -> Vec<G> {
   addr.as_bytes().iter().map(|b| G::from_u8(*b)).collect()
 }
 
@@ -288,6 +290,99 @@ fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
   all_roots
     .extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
   env.bfs_closure(&all_roots)
+}
+
+/// Whole-environment `CheckEnv` witness split across workers (trace-sharding
+/// design §13.3): the claim over the environment's canonical tree with no
+/// assumptions, the digest key worker 0's `verify_claim` takes as input, and
+/// one IO buffer per worker. Worker 0's carries the claim bytes (ch 0) and
+/// the tree (ch 1); every worker's carries the byte scope (ch 2) of the
+/// constants it owns, which is all a worker's `check_owned` runs fault.
+pub fn build_env_check_witnesses(
+  env: &Env,
+  owners: &[Vec<Address>],
+) -> Result<(Claim, Vec<G>, Vec<IOBuffer>), String> {
+  let statement = EnvCheckStatement::new(env)?;
+  let ios = (0..owners.len())
+    .map(|worker| statement.worker_io(env, owners, worker))
+    .collect();
+  Ok((statement.claim, statement.digest_key, ios))
+}
+
+/// The whole-environment `CheckEnv` statement: the claim over the
+/// environment's canonical tree with no assumptions, the packed digest key
+/// worker 0's `verify_claim` takes as input, and the tree itself.
+pub struct EnvCheckStatement {
+  pub claim: Claim,
+  pub digest_key: Vec<G>,
+  claim_bytes: Vec<u8>,
+  tree: AssumptionTree,
+}
+
+impl EnvCheckStatement {
+  pub fn new(env: &Env) -> Result<Self, String> {
+    let mut all: Vec<Address> =
+      env.consts.iter().map(|entry| entry.key().clone()).collect();
+    all.sort();
+    let tree = AssumptionTree::canonical(&all)
+      .ok_or_else(|| "EnvCheckStatement: empty environment".to_string())?;
+    let claim = Claim::CheckEnv { root: tree.root(), assumptions: None };
+    let mut claim_bytes: Vec<u8> = Vec::new();
+    claim.put(&mut claim_bytes);
+    let digest_key = packed_digest_key(&Address::hash(&claim_bytes));
+    Ok(Self { claim, digest_key, claim_bytes, tree })
+  }
+
+  /// Worker `worker`'s IO buffer, built on demand (see
+  /// [`build_env_check_witnesses`] for the layout): a worker's execution
+  /// reads it, and a re-execution reads a fresh one.
+  pub fn worker_io(
+    &self,
+    env: &Env,
+    owners: &[Vec<Address>],
+    worker: usize,
+  ) -> IOBuffer {
+    let mut io = IOBuffer {
+      data: rustc_hash::FxHashMap::default(),
+      map: rustc_hash::FxHashMap::default(),
+    };
+    if worker == 0 {
+      extend(
+        &mut io,
+        G::ZERO,
+        self.digest_key.clone(),
+        bytes_to_g(&self.claim_bytes),
+      );
+      extend(
+        &mut io,
+        G::ONE,
+        addr_key(&self.tree.root()),
+        bytes_to_g(&self.tree.ser()),
+      );
+    }
+    add_entries_parallel(env, &witness_scope(env, &owners[worker]), &mut io);
+    io
+  }
+}
+
+/// Which workers may call into which: `callers[r]` lists every worker
+/// other than `r` whose byte scope — the closure its `check_owned` runs can
+/// reach — contains a constant `r` owns, plus worker 0 for every `r`, whose
+/// `verify_claim` walk reaches every leaf. A superset of the calls actually
+/// deferred, so a worker whose callers have all executed can commit.
+pub fn worker_callers(env: &Env, owners: &[Vec<Address>]) -> Vec<Vec<usize>> {
+  let scopes: Vec<FxHashSet<Address>> =
+    owners.par_iter().map(|owned| witness_scope(env, owned)).collect();
+  (0..owners.len())
+    .map(|r| {
+      (0..owners.len())
+        .filter(|&c| {
+          c != r
+            && (c == 0 || owners[r].iter().any(|addr| scopes[c].contains(addr)))
+        })
+        .collect()
+    })
+    .collect()
 }
 
 /// Shard `CheckEnv` witness: thin-frontier claim (see

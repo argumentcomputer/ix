@@ -33,10 +33,97 @@ pub struct QueryRecord {
   pub memory_queries: FxIndexMap<usize, QueryMap>,
   pub bytes1_queries: Bytes1Queries,
   pub bytes2_queries: Bytes2Queries,
+  /// The pointer of every memory table's first entry: entry `i` of a table
+  /// has pointer `pointer_base + i`. Records proven together in one batch
+  /// take distinct bases so their pointers never coincide
+  /// ([`pointer_stride`] apart), which is what lets a load in one record
+  /// be served by a memory row in another.
+  pub pointer_base: usize,
+  /// The calls this record leaves to other records, if any.
+  pub ownership: Option<Ownership>,
+  /// Deferred calls made so far: the callee's arguments and how many
+  /// times a caller in this record pushed them. Each is a push with no
+  /// row here; the owner's row absorbs the count
+  /// ([`Self::absorb_deferred`]).
+  pub deferred: FxHashMap<Vec<G>, u64>,
+}
+
+/// Which calls a record answers itself. A call to `callee` whose arguments
+/// are not in `owned` is deferred: the caller's row pushes the call's
+/// message as if the callee had run, and nothing runs. Some record whose
+/// `owned` holds the arguments executes the call for real, and its row
+/// pulls every record's pushes once their counts are absorbed. Ownership
+/// is a prover hint, never constrained: a call no record answers leaves
+/// the batch unbalanced, and a call two records answer is two balanced
+/// rows. The callee must return nothing, since a deferring record has no
+/// output to hand its caller.
+pub struct Ownership {
+  pub callee: FunIdx,
+  pub owned: rustc_hash::FxHashSet<Vec<G>>,
+}
+
+impl QueryRecord {
+  /// Records a call to `callee` with `args` as deferred and returns `true`,
+  /// or returns `false` when this record answers it itself (no ownership,
+  /// another callee, or owned arguments).
+  pub fn defer_call(&mut self, callee: FunIdx, args: &[G]) -> bool {
+    let Some(ownership) = &self.ownership else {
+      return false;
+    };
+    if ownership.callee != callee || ownership.owned.contains(args) {
+      return false;
+    }
+    let queries = &mut self.function_queries[callee];
+    if queries.get_index_of(args).is_none() {
+      // The entry a caller's row reads its (empty) output from; no
+      // multiplicity, so no row.
+      queries.insert(args, &[], G::ZERO);
+    }
+    *self.deferred.entry(args.to_vec()).or_insert(0) += 1;
+    true
+  }
+
+  /// Adds another record's deferred calls to the multiplicities of the rows
+  /// of `callee` that answer them. Every deferred call must have been
+  /// executed here — a call this record deferred as well has no answer.
+  pub fn absorb_deferred(
+    &mut self,
+    callee: FunIdx,
+    deferred: &FxHashMap<Vec<G>, u64>,
+  ) -> Result<(), String> {
+    let queries = &mut self.function_queries[callee];
+    for (args, &count) in deferred {
+      if self.deferred.contains_key(args) {
+        return Err("deferred call was deferred by its owner too".into());
+      }
+      let Some(i) = queries.get_index_of(args) else {
+        return Err("deferred call has no row in the owning record".into());
+      };
+      let (_, multiplicity) =
+        queries.get_index_mut(i).expect("index just found");
+      *multiplicity += G::from_u64(count);
+    }
+    Ok(())
+  }
+}
+
+/// Pointer distance between the memory namespaces of `workers` records
+/// proven in one batch: record `r` stores its width-`w` table at
+/// `[r · stride, r · stride + N_{r,w})`. Every pointer must stay below
+/// 2^32, since the kernel's memoization compares interned pointers as
+/// `u32`, so the stride is the largest power of two with `workers` strides
+/// below 2^32; a record's tables must fit it.
+pub fn pointer_stride(workers: usize) -> usize {
+  (1usize << 32) / workers.max(1).next_power_of_two()
 }
 
 impl QueryRecord {
   pub fn new(toplevel: &Toplevel) -> Self {
+    Self::with_pointer_base(toplevel, 0)
+  }
+
+  /// A record whose memory pointers start at `pointer_base`.
+  pub fn with_pointer_base(toplevel: &Toplevel, pointer_base: usize) -> Self {
     let function_queries = toplevel
       .functions
       .iter()
@@ -49,7 +136,15 @@ impl QueryRecord {
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
-    Self { function_queries, memory_queries, bytes1_queries, bytes2_queries }
+    Self {
+      function_queries,
+      memory_queries,
+      bytes1_queries,
+      bytes2_queries,
+      pointer_base,
+      ownership: None,
+      deferred: FxHashMap::default(),
+    }
   }
 }
 
@@ -234,17 +329,44 @@ impl Toplevel {
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
   ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    self.execute_with_pointer_base(fun_idx, args, io_buffer, 0)
+  }
+
+  /// [`Self::execute`] into a record whose memory pointers start at
+  /// `pointer_base` (see [`QueryRecord::pointer_base`]).
+  pub fn execute_with_pointer_base(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    pointer_base: usize,
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    let mut record = QueryRecord::with_pointer_base(self, pointer_base);
+    let output = self.execute_in(fun_idx, args, io_buffer, &mut record)?;
+    Ok((record, output))
+  }
+
+  /// Executes entry `fun_idx` into `record`, memoizing against whatever it
+  /// already holds. The entry query is registered with multiplicity one —
+  /// the pull a claim's push balances — so a record that runs an entry
+  /// nobody claims (a worker answering deferred calls) takes that one off
+  /// again.
+  pub fn execute_in(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    record: &mut QueryRecord,
+  ) -> Result<Vec<G>, ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
-    let mut record = QueryRecord::new(self);
     let function = &self.functions[fun_idx];
-    let output =
-      function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    let output = function.execute(fun_idx, args, self, record, io_buffer)?;
     if *QUERY_STATS {
-      dump_query_stats(&record, "final");
+      dump_query_stats(record, "final");
     }
-    Ok((record, output))
+    Ok(output)
   }
 }
 
@@ -328,6 +450,11 @@ impl Function {
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
           let callee_unconstrained = unconstrained || *op_unconstrained;
+          // A call another record answers: the caller's row pushes it and
+          // nothing runs here (the callee returns nothing).
+          if !callee_unconstrained && record.defer_call(*callee_idx, &args) {
+            continue;
+          }
           let mut cached_output = None;
           if let Some(i) =
             record.function_queries[*callee_idx].get_index_of(&args)
@@ -365,6 +492,7 @@ impl Function {
         ExecEntry::Op(Op::Store(values)) => {
           let values = values.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let size = values.len();
+          let pointer_base = record.pointer_base;
           let memory_queries = record
             .memory_queries
             .get_mut(&size)
@@ -375,7 +503,7 @@ impl Function {
             }
             map.extend_from_slice(memory_queries.output_at(i));
           } else {
-            let ptr = G::from_usize(memory_queries.len());
+            let ptr = G::from_usize(pointer_base + memory_queries.len());
             memory_queries.insert(
               &values,
               &[ptr],
@@ -385,26 +513,24 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::Load(size, ptr)) => {
+          let pointer_base = record.pointer_base;
           let memory_queries = record
             .memory_queries
             .get_mut(size)
             .ok_or(ExecError::InvalidMemorySize(*size))?;
           let ptr = &map[*ptr];
           let ptr_u64 = ptr.as_canonical_u64();
-          let ptr_usize = usize::try_from(ptr_u64)
+          let index = usize::try_from(ptr_u64)
             .ok()
-            .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
-          if ptr_usize >= memory_queries.len() {
-            return Err(ExecError::UnboundPointer {
-              ptr: ptr_u64,
-              size: *size,
-            });
-          }
+            .ok_or(ExecError::PointerTooLarge(ptr_u64))?
+            .checked_sub(pointer_base)
+            .filter(|&i| i < memory_queries.len())
+            .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
           if !unconstrained {
-            memory_queries.bump_multiplicity(ptr_usize);
+            memory_queries.bump_multiplicity(index);
           }
           let (args, _) =
-            memory_queries.get_index(ptr_usize).expect("bounds checked above");
+            memory_queries.get_index(index).expect("bounds checked above");
           map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
@@ -632,9 +758,9 @@ impl Function {
           // `tag(1) + U64(8) + ptr(1) = 10` G values.
           let a_ptr = map[*a_idx];
           let b_ptr = map[*b_idx];
-          let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
+          let a_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
             .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-          let b_limbs = read_klimbs_u64(&record.memory_queries, b_ptr)
+          let b_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
             .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
           let a_big = klimbs_u64_to_biguint(&a_limbs);
           let b_big = klimbs_u64_to_biguint(&b_limbs);
@@ -645,9 +771,9 @@ impl Function {
           };
           let q_limbs = biguint_to_klimbs_u64(&q_big);
           let r_limbs = biguint_to_klimbs_u64(&r_big);
-          let q_ptr = build_klimbs_u64(&mut record.memory_queries, &q_limbs)
+          let q_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &q_limbs)
             .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-          let r_ptr = build_klimbs_u64(&mut record.memory_queries, &r_limbs)
+          let r_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &r_limbs)
             .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
           map.push(q_ptr);
           map.push(r_ptr);
@@ -905,9 +1031,9 @@ pub fn unconstrained_big_uint_div_mod_helper(
   b_ptr: G,
   record: &mut QueryRecord,
 ) -> Result<(G, G), ExecError> {
-  let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
+  let a_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-  let b_limbs = read_klimbs_u64(&record.memory_queries, b_ptr)
+  let b_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
   let a_big = klimbs_u64_to_biguint(&a_limbs);
   let b_big = klimbs_u64_to_biguint(&b_limbs);
@@ -918,9 +1044,9 @@ pub fn unconstrained_big_uint_div_mod_helper(
   };
   let q_limbs = biguint_to_klimbs_u64(&q_big);
   let r_limbs = biguint_to_klimbs_u64(&r_big);
-  let q_ptr = build_klimbs_u64(&mut record.memory_queries, &q_limbs)
+  let q_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &q_limbs)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-  let r_ptr = build_klimbs_u64(&mut record.memory_queries, &r_limbs)
+  let r_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &r_limbs)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
   Ok((q_ptr, r_ptr))
 }
@@ -933,9 +1059,10 @@ pub fn find_unconstrained_big_uint_div_mod(
   a_ptr: G,
   b_ptr: G,
   memory: &FxIndexMap<usize, QueryMap>,
+  pointer_base: usize,
 ) -> Result<(G, G), String> {
-  let a_limbs = read_klimbs_u64(memory, a_ptr)?;
-  let b_limbs = read_klimbs_u64(memory, b_ptr)?;
+  let a_limbs = read_klimbs_u64(memory, pointer_base, a_ptr)?;
+  let b_limbs = read_klimbs_u64(memory, pointer_base, b_ptr)?;
   let a_big = klimbs_u64_to_biguint(&a_limbs);
   let b_big = klimbs_u64_to_biguint(&b_limbs);
   let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
@@ -986,6 +1113,7 @@ fn find_klimbs_u64(
 /// (terminator), `tag == 1` = Cons. Bytes are LE within the u64.
 fn read_klimbs_u64(
   memory: &FxIndexMap<usize, QueryMap>,
+  pointer_base: usize,
   head_ptr: G,
 ) -> Result<Vec<u64>, String> {
   let queries = memory.get(&10).ok_or_else(|| {
@@ -996,7 +1124,9 @@ fn read_klimbs_u64(
   loop {
     let ptr_u64 = ptr.as_canonical_u64();
     let ptr_idx = usize::try_from(ptr_u64)
-      .map_err(|_e| format!("ptr {ptr_u64} too large for usize"))?;
+      .map_err(|_e| format!("ptr {ptr_u64} too large for usize"))?
+      .checked_sub(pointer_base)
+      .ok_or_else(|| format!("ptr {ptr_u64} below the record's pointer base"))?;
     let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
       format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
     })?;
@@ -1057,6 +1187,7 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
 /// identical sub-tails share storage.
 fn build_klimbs_u64(
   memory: &mut FxIndexMap<usize, QueryMap>,
+  pointer_base: usize,
   limbs: &[u64],
 ) -> Result<G, String> {
   let queries = memory.get_mut(&10).ok_or_else(|| {
@@ -1068,7 +1199,7 @@ fn build_klimbs_u64(
   let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
     out.output[0]
   } else {
-    let ptr = G::from_usize(queries.len());
+    let ptr = G::from_usize(pointer_base + queries.len());
     queries.insert(&nil_key, &[ptr], G::ZERO);
     ptr
   };
@@ -1084,7 +1215,7 @@ fn build_klimbs_u64(
     tail_ptr = if let Some(out) = queries.get_mut(&key) {
       out.output[0]
     } else {
-      let ptr = G::from_usize(queries.len());
+      let ptr = G::from_usize(pointer_base + queries.len());
       queries.insert(&key, &[ptr], G::ZERO);
       ptr
     };

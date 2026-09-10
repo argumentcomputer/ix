@@ -36,27 +36,31 @@
 //! Every real memory row pushes `(memseg, w, ptr)` and pulls
 //! `(memseg, w, ptr + 1)`. Over a shard's contiguous run `[a, b)` the
 //! interior terms cancel, leaving one push of `a` and one pull of `b`. The
-//! verifier pulls `0` and pushes `N_w` once per width. Balance on the channel
-//! is then, as multisets, `{a_k} ∪ {N_w} = {b_k} ∪ {0}`. Viewing each shard as
-//! an edge `a_k → b_k` of length `b_k − a_k ≥ 1` on the residues mod `p`, that
-//! says every residue has equal in- and out-degree except a unit source at
-//! `0` and a unit sink at `N_w`; the edges decompose into one `0 → N_w` path
-//! plus directed cycles, and a directed cycle on `Z_p` has total length at
-//! least `p`. [`AiurSystem::verify`] checks that the shards' padded heights
-//! for the width sum below `p`, which rules the cycles out, so the edges form
-//! exactly one path: the ranges are disjoint, contiguous, and cover
-//! `[0, N_w)`. Hence `(w, ptr)` is unique across the batch, and the memory
-//! channel means what it means in a single proof.
+//! verifier pulls `A_j` and pushes `B_j` once per memory interval
+//! `[A_j, B_j)` a record holds (a record's width-`w` table sits at its
+//! pointer base, see `QueryRecord::pointer_base`). Balance on the channel
+//! is then, as multisets, `{a_k} ∪ {B_j} = {b_k} ∪ {A_j}`. Viewing each
+//! shard as an edge `a_k → b_k` of length `b_k − a_k ≥ 1` on the residues
+//! mod `p`, that says every residue has equal in- and out-degree except a
+//! unit source at each `A_j` and a unit sink at each `B_j`; the edges
+//! decompose into source-to-sink paths plus directed cycles, and a directed
+//! cycle on `Z_p` has total length at least `p`. [`AiurSystem::verify`]
+//! checks that the shards' padded heights sum below `p`, which rules the
+//! cycles out, and requires the intervals sorted and disjoint, so a path
+//! from `A_j` can only end at `B_j` (reaching any other sink would wrap
+//! around `Z_p`): the ranges tile each interval exactly. Hence `(w, ptr)` is
+//! unique across the batch, and the memory channel means what it means in
+//! a single proof.
 //!
 //! Two conditions carry that argument and are checked by the verifier, not
-//! assumed: the totals `N_w` are inside the preamble the challenges are
-//! derived from (two totals chosen after the challenges could solve the two
-//! coordinates of any target imbalance), and no width has two message pairs
-//! (duplicate widths would admit two `0 → N_w` paths, i.e. two shards
-//! claiming the same pointers). The verifier does not need to know which
-//! widths the record uses: a missing pair leaves the batch unbalanced, and
-//! a pair for an unused width balances only as the zero contribution
-//! `N_w = 0` (see [`AiurSystem::check_batch_policy`]).
+//! assumed: the intervals are inside the preamble the challenges are
+//! derived from (two end points chosen after the challenges could solve
+//! the two coordinates of any target imbalance), and no two intervals of
+//! one width overlap (overlap would admit two paths through the same
+//! pointers, i.e. two shards claiming them). The verifier does not need to
+//! know which widths or intervals the records use: a missing pair leaves
+//! the batch unbalanced, and a pair no shard fills balances only as the
+//! zero contribution `A_j = B_j` (see [`AiurSystem::check_batch_policy`]).
 
 use std::ops::Range;
 
@@ -102,9 +106,10 @@ pub struct ShardRows {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShardPlan {
   pub shards: Vec<ShardRows>,
-  /// `(width, N_w)` for every memory width with at least one row, ascending
-  /// by width: the totals the batch messages close the `memseg` channel with.
-  pub memory_totals: Vec<(usize, usize)>,
+  /// `(width, first pointer, rows)` for every memory interval the batch's
+  /// records hold, ascending by width then pointer: the intervals the batch
+  /// messages close the `memseg` channel with.
+  pub memory_totals: Vec<(usize, usize, usize)>,
 }
 
 impl ShardPlan {
@@ -174,15 +179,17 @@ impl AiurSystem {
     }
   }
 
-  /// `(width, rows)` for each memory width with rows, ascending by width.
-  fn memory_totals(&self, record: &QueryRecord) -> Vec<(usize, usize)> {
-    let mut totals: Vec<(usize, usize)> = self
+  /// `(width, first pointer, rows)` for each memory width with rows,
+  /// ascending by width: the record's table of width `w` holds pointers
+  /// `[base, base + rows)`.
+  fn memory_totals(&self, record: &QueryRecord) -> Vec<(usize, usize, usize)> {
+    let mut totals: Vec<(usize, usize, usize)> = self
       .toplevel()
       .memory_sizes
       .iter()
       .filter_map(|&w| {
         let rows = record.memory_queries.get(&w).map_or(0, |m| m.len());
-        (rows > 0).then_some((w, rows))
+        (rows > 0).then_some((w, record.pointer_base, rows))
       })
       .collect();
     totals.sort_unstable();
@@ -220,6 +227,33 @@ impl AiurSystem {
     let widths = self.committed_widths();
     let shards = plan_rows(rows, &widths, &self.circuit_types(), max_cells);
     ShardPlan { shards, memory_totals: self.memory_totals(record) }
+  }
+
+  /// Committed cells of each shard of `plan`, the byte tables charged to
+  /// every shard.
+  pub(crate) fn shard_committed_cells(&self, plan: &ShardPlan) -> Vec<usize> {
+    let widths = self.committed_widths();
+    let types = self.circuit_types();
+    plan
+      .shards
+      .iter()
+      .map(|shard| {
+        shard
+          .rows
+          .iter()
+          .zip(&widths)
+          .zip(&types)
+          .map(|((range, &width), circuit_type)| {
+            let rows = match circuit_type {
+              CircuitType::Bytes1 => 256,
+              CircuitType::Bytes2 => 65536,
+              _ => range.len(),
+            };
+            committed_cells(rows, width)
+          })
+          .sum()
+      })
+      .collect()
   }
 
   /// Per-circuit committed width: main, stage 2 and quotient columns.
@@ -348,20 +382,22 @@ impl AiurSystem {
   /// the shape of the `memseg` closure and bounds the batch's rows:
   ///
   /// - exactly one claim across all shards, equal to `claim`;
-  /// - the messages are consecutive pairs `pull (memseg, w, 0)`,
-  ///   `push (memseg, w, N)` — nothing else, and no width `w` twice (as a
-  ///   field element, which is how the lookup argument reads it);
+  /// - the messages are consecutive pairs `pull (memseg, w, a)`,
+  ///   `push (memseg, w, b)` with `a ≤ b` — nothing else — sorted by width
+  ///   and, within a width, by disjoint intervals (`b` of one pair at most
+  ///   `a` of the next), all compared as the integers the canonical field
+  ///   elements are;
   /// - the padded heights of every active circuit of every shard sum to
   ///   less than the field characteristic.
   ///
-  /// The verifier need not know which widths the record uses: a missing
-  /// pair leaves a width's end points unmatched and the batch unbalanced,
-  /// and a pair for a width no shard carries balances only at `N = 0`,
-  /// where it is the zero contribution. What must be excluded is a second
-  /// pair for the same width (two `0 → N` paths, i.e. two shards claiming
-  /// the same pointers), a pair of any other shape, and a message on any
-  /// other channel; the height bound is what lets the tiling argument treat
-  /// `ptr + 1` as an integer increment (see the module docs).
+  /// The verifier need not know which widths or intervals the records use:
+  /// a missing pair leaves an interval's end points unmatched and the batch
+  /// unbalanced, and a pair no shard fills balances only at `a = b`, where
+  /// it is the zero contribution. What must be excluded is two pairs whose
+  /// intervals overlap (two paths through the same pointers, i.e. two
+  /// shards claiming them), a pair of any other shape, and a message on
+  /// any other channel; the height bound is what lets the tiling argument
+  /// treat `ptr + 1` as an integer increment (see the module docs).
   pub(crate) fn check_batch_policy(
     &self,
     claim: &[G],
@@ -403,7 +439,9 @@ impl AiurSystem {
       return Err("batch messages do not pair up".into());
     }
     let memseg = memseg_channel();
-    let mut widths: Vec<u64> = Vec::new();
+    // The previous pair's width and end; every width is at least one, so
+    // `(0, 0)` precedes any first pair.
+    let mut previous = (0u64, 0u64);
     for [pull, push] in preamble.messages.as_chunks::<2>().0 {
       let well_formed = pull.multiplicity == G::NEG_ONE
         && push.multiplicity == G::ONE
@@ -411,16 +449,23 @@ impl AiurSystem {
         && push.args.len() == 3
         && pull.args[0] == memseg
         && push.args[0] == memseg
-        && pull.args[1] == push.args[1]
-        && pull.args[2] == G::ZERO;
+        && pull.args[1] == push.args[1];
       if !well_formed {
         return Err("batch messages are not memseg closure pairs".into());
       }
       let width = pull.args[1].as_canonical_u64();
-      if widths.contains(&width) {
-        return Err("memseg closure names a width twice".into());
+      let start = pull.args[2].as_canonical_u64();
+      let end = push.args[2].as_canonical_u64();
+      if start > end {
+        return Err("memseg closure interval ends before it starts".into());
       }
-      widths.push(width);
+      let (previous_width, previous_end) = previous;
+      let ordered = previous_width < width
+        || (previous_width == width && previous_end <= start);
+      if !ordered {
+        return Err("memseg closure intervals are not sorted and disjoint".into());
+      }
+      previous = (width, end);
     }
     Ok(())
   }
@@ -564,15 +609,17 @@ impl AiurSystem {
   }
 
   /// The batch messages closing the `memseg` channel for `plan`: per memory
-  /// width with rows, one pull of pointer `0` and one push of the total.
+  /// interval, one pull of its first pointer and one push of one past its
+  /// last.
   pub fn boundary_messages(plan: &ShardPlan) -> Vec<BatchMessage<AiurConfig>> {
     let mut messages = Vec::with_capacity(2 * plan.memory_totals.len());
-    for &(width, total) in &plan.memory_totals {
+    for &(width, base, total) in &plan.memory_totals {
       let w = G::from_usize(width);
-      messages
-        .push(BatchMessage::pull(Memory::memseg_args(w, G::ZERO).to_vec()));
+      messages.push(BatchMessage::pull(
+        Memory::memseg_args(w, G::from_usize(base)).to_vec(),
+      ));
       messages.push(BatchMessage::push(
-        Memory::memseg_args(w, G::from_usize(total)).to_vec(),
+        Memory::memseg_args(w, G::from_usize(base + total)).to_vec(),
       ));
     }
     messages
@@ -623,7 +670,8 @@ fn shard_cells(
 ///
 /// Every circuit is cut into the fewest pieces that each fit the room a
 /// shard has beside the byte tables ([`piece_rows`]): a circuit that fits
-/// whole is one piece, a larger one is cut into equal pieces. The pieces are
+/// whole is one piece, a larger one is cut into full pieces of the largest
+/// fitting power of two, which pad nothing, and a remainder. The pieces are
 /// packed first-fit in decreasing size, a new shard opening only when no
 /// shard has room; two pieces of one circuit never share a shard, since a
 /// shard holds one row range per circuit. A circuit's width is charged to
@@ -656,8 +704,10 @@ fn plan_rows(
     if is_byte_table(&circuit_types[ci]) || rows[ci] == 0 {
       continue;
     }
-    let count = rows[ci].div_ceil(piece_rows(rows[ci], widths[ci], room));
-    let per_piece = rows[ci].div_ceil(count);
+    // Full pieces of the largest fitting power of two pad nothing; only the
+    // remainder pads, so this is the least padded cut with this many
+    // pieces.
+    let per_piece = piece_rows(rows[ci], widths[ci], room);
     let mut start = 0;
     while start < rows[ci] {
       let end = (start + per_piece).min(rows[ci]);
@@ -758,26 +808,30 @@ mod tests {
     let rows = [100_000, 0, 0, 256, 65_536];
     let tables =
       committed_cells(256, WIDTHS[3]) + committed_cells(65_536, WIDTHS[4]);
-    // Room for 32,768 padded rows: four equal pieces of 25,000 rows, each
-    // padding to exactly the room, one per shard.
+    // Room for 32,768 padded rows: three full pieces of 32,768 rows, which
+    // pad nothing, and a remainder of 1,696, one per shard.
     let budget = tables + committed_cells(25_000, WIDTHS[0]);
     let shards = plan_rows(&rows, &WIDTHS, &circuit_types(), budget);
     assert_eq!(shards.len(), 4);
-    assert!(shards.iter().all(|s| s.rows[0].len() == 25_000));
+    let mut lengths: Vec<usize> =
+      shards.iter().map(|s| s.rows[0].len()).collect();
+    lengths.sort_unstable();
+    assert_eq!(lengths, vec![1_696, 32_768, 32_768, 32_768]);
     assert!(heaviest(&shards, &rows) <= budget);
     covers(&shards, &rows);
   }
 
   #[test]
   fn cold_circuit_appears_once() {
-    // The widest circuit needs four pieces; the second fits whole and must
-    // not be spread across the shards the first opens.
+    // The widest circuit needs four pieces (three full, one remainder); the
+    // second fits whole, shares the remainder's shard, and must not be
+    // spread across the shards the first opens.
     let rows = [100_000, 40_000, 3_000, 256, 65_536];
     let tables =
       committed_cells(256, WIDTHS[3]) + committed_cells(65_536, WIDTHS[4]);
     let budget = tables + committed_cells(32_768, WIDTHS[0]);
     let shards = plan_rows(&rows, &WIDTHS, &circuit_types(), budget);
-    assert_eq!(shards.len(), 5);
+    assert_eq!(shards.len(), 4);
     assert_eq!(shards.iter().filter(|s| !s.rows[1].is_empty()).count(), 1);
     assert_eq!(shards.iter().filter(|s| !s.rows[2].is_empty()).count(), 1);
     assert!(heaviest(&shards, &rows) <= budget);

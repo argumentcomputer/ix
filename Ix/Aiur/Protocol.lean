@@ -1,4 +1,5 @@
 module
+public import Ix.Address
 public import Ix.Aiur.Semantics.BytecodeFfi
 
 /-!
@@ -327,6 +328,47 @@ def shardProveWithEnv (system : @& AiurSystem)
     Except String ShardProveResult :=
   shardProveWithEnv' system funIdx envHandle ownedBlob maxRamBytes execOnly
     traceShards retention.code
+
+@[extern "rs_aiur_system_prove_env_distributed"]
+private opaque proveEnvDistributed' : @& AiurSystem →
+  @& Bytecode.FunIdx → @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
+  @& Nat → Bool → @& Nat → Bool → Except String ShardProveResult
+
+/-- The whole environment as ONE claim, `CheckEnv(root, none)`, proven from
+    one worker record per element of `owners` (trace-sharding design
+    §13.3). Worker 0 runs `verify_claim` (`verifyIdx`) and defers every
+    `check_owned` (`checkOwnedIdx`) call for a constant it does not own;
+    every other worker runs `check_owned` over the leaves it owns, in its
+    own pointer namespace. The workers execute in parallel; the records
+    are proven as one batch, each planned to `maxCells` committed cells
+    (`0`: one shard per record). `execOnly` stops after execution and the
+    absorption of the deferred calls, reporting every record's size
+    (`proof` is `none`). `peakBytes` is not measured (`0`).
+
+    Records are proven in an order that lets a worker commit as soon as
+    every worker that calls into it has executed, at most `execJobs`
+    workers executing at once (`0`: all); a committed record is dropped
+    and re-executed for its second round, so the prover holds one record
+    at a time beyond the workers whose callers are still executing. With
+    `prefetch`, the next worker's execution runs while the prover works on
+    the current record, hiding the re-execution behind proving at the
+    price of a second resident record. -/
+def proveEnvDistributed (system : @& AiurSystem)
+  (verifyIdx checkOwnedIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (owners : Array (Array Address)) (maxCells : Nat := 0)
+  (execOnly : Bool := false) (execJobs : Nat := 0) (prefetch : Bool := true) :
+    Except String ShardProveResult :=
+  let u32le (n : Nat) : ByteArray :=
+    ⟨#[(n &&& 0xFF).toUInt8, ((n >>> 8) &&& 0xFF).toUInt8,
+      ((n >>> 16) &&& 0xFF).toUInt8, ((n >>> 24) &&& 0xFF).toUInt8]⟩
+  let header : ByteArray :=
+    owners.foldl (fun (acc : ByteArray) (o : Array Address) => acc ++ u32le o.size)
+      (u32le owners.size)
+  let blob : ByteArray :=
+    owners.foldl (fun (acc : ByteArray) (o : Array Address) =>
+      o.foldl (fun (acc : ByteArray) (a : Address) => acc ++ a.hash) acc) header
+  proveEnvDistributed' system verifyIdx checkOwnedIdx envHandle blob maxCells
+    execOnly execJobs prefetch
 
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →
