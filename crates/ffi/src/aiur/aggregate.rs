@@ -464,6 +464,11 @@ struct RunConfig<'a> {
   cache_fri_bytes: &'a [u8],
   use_cache: bool,
   write_outputs: bool,
+  /// `ix verify --ixes <proofs>`: stop after the parallel proof import —
+  /// every shard claim reconstructed natively, every supplied proof bound
+  /// to its shard and verified (IxVM or healed `ix_aggr`), exactly one per
+  /// shard — and report that composed verdict instead of proving.
+  verify_only: bool,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -2777,10 +2782,10 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
         dir.display()
       ));
     }
-  } else {
+  } else if !config.verify_only {
     eprintln!("[aggregate] cache disabled (--no-cache)");
   }
-  if !config.write_outputs {
+  if !config.write_outputs && !config.verify_only {
     eprintln!("[aggregate] output writes disabled (--no-write)");
   }
   let needs_input_proofs = replay_plan.as_ref().is_none_or(|plan| {
@@ -2829,6 +2834,22 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     None
   };
   let proofs_at = Instant::now();
+  if config.verify_only {
+    let shards = prepared.shards.len();
+    let imported = proofs.as_ref().map_or(0, Vec::len);
+    if imported != shards {
+      return Err(format!(
+        "verified {imported} shard proofs but the manifest has {shards} shards"
+      ));
+    }
+    eprintln!(
+      "[verify] OK: composed verdict — all {shards} shards proven + disjoint cover ({} proofs verified natively in {:.1}s; claims {:.1}s)",
+      imported,
+      (proofs_at - specs_at).as_secs_f64(),
+      (prepared_at - parsed_at).as_secs_f64(),
+    );
+    return Ok(String::new());
+  }
   print_plan(&specs, &prepared.shards, config.structural_above);
   eprintln!(
     "[aggregate] Rust startup: manifest {:.3}s, env/claims {:.3}s, plan/statements {:.3}s, proofs {:.3}s; total {:.3}s",
@@ -2960,6 +2981,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_cache: bool,
   write_outputs: bool,
+  verify_only: bool,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
@@ -2981,6 +3003,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       cache_fri_bytes: cache_fri_bytes.as_bytes(),
       use_cache,
       write_outputs,
+      verify_only,
     })
   }));
   match result {
@@ -3438,7 +3461,7 @@ mod tests {
       Toplevel {
         functions: vec![Function {
           body: Block { ops: vec![], ctrl: Ctrl::Return(0, vec![]) },
-          layout: layout.clone(),
+          layout,
           entry: true,
           constrained: true,
         }],

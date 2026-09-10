@@ -997,7 +997,7 @@ private def runAggregateCmdNativeWith
       structuralAbove reproveSlotCode (p.hasFlag "direct-joins")
       (p.hasFlag "plan-only")
       recursionParameters.cacheFriBytes (!(p.hasFlag "no-cache"))
-      (!(p.hasFlag "no-write"))
+      (!(p.hasFlag "no-write")) false
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok _ => return 0
