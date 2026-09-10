@@ -1152,8 +1152,8 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 /// then a `u32` address count per worker, then every worker's owned
 /// addresses (32 bytes each) in worker order. Worker 0 runs `verify_claim`
 /// and defers every `check_owned` call for a constant it does not own;
-/// worker `r` runs `check_owned` over the leaves it owns, in pointer
-/// namespace `r`. The workers execute in parallel, the deferred calls'
+/// worker `r` runs `check_owned` over its chunk (the constants it owns),
+/// in pointer namespace `r`. The workers execute in parallel, the deferred calls'
 /// counts are absorbed by their owners, and the records are proven as one
 /// batch, each planned to `max_cells` committed cells (`0`: one shard per
 /// record). `plan_only` stops after the static caller graph and the commit
@@ -1417,7 +1417,7 @@ fn prove_env_distributed(
   }
 
   // One execution of worker `worker`: worker 0 the claimed entry, the
-  // others their owned leaves, each in its own pointer namespace, over a
+  // others their own chunk, each in its own pointer namespace, over a
   // fresh IO buffer. Deterministic, so a record can be re-executed for
   // its second round; the batch checks the headers agree.
   let execute = |worker: usize, round: &str| -> Result<Executed, String> {
@@ -1435,15 +1435,15 @@ fn prove_env_distributed(
         execute_ixvm_in(toplevel, verify_idx, &input, &mut io, &mut record)
           .map_err(|e| format!("worker 0: {e}"))?;
     } else {
-      // Leaves run as entries; each registers a multiplicity no claim
-      // pulls, taken off only once every leaf has run: a zeroed entry
-      // would read as a hint to a later leaf's walk and be replayed,
-      // double-counting its callees.
+      // The chunk's constants run as entries; each registers a
+      // multiplicity no claim pulls, taken off only once every one has
+      // run: a zeroed entry would read as a hint to a later constant's
+      // walk and be replayed, double-counting its callees.
       let mut entries: Vec<Vec<G>> = Vec::new();
       for addr in &owners[worker] {
         let key = addr_key(addr);
         let queries = &record.function_queries[check_owned_idx];
-        // Reached already through another owned leaf's walk.
+        // Reached already through another owned constant's walk.
         if queries
           .get_index_of(&key)
           .is_some_and(|i| queries.mult_at(i) != G::ZERO)

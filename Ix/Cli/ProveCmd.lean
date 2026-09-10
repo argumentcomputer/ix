@@ -337,7 +337,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let ownedPer := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
       if p.hasFlag "distributed" then
         -- One claim for the whole environment, one worker record per
-        -- manifest leaf (see `Aiur.AiurSystem.proveEnvDistributed`).
+        -- chunk, a manifest shard (see `Aiur.AiurSystem.proveEnvDistributed`).
         let funIdx := compiled.getFuncIdx `verify_claim |>.get!
         let some checkOwnedIdx := compiled.getFuncIdx `check_owned
           | IO.eprintln "compiled toplevel has no `check_owned` entry"; return 1
@@ -430,7 +430,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
     "trace-shards";     "Prove an over-budget shard as a batch of trace shards that each fit --max-ram, from one execution, instead of cutting it into parts; a shard no trace-shard count can fit stops the run rather than being cut. With --exec-only, reports the planned shard count and the heaviest shard's projected peak without proving."
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
-    "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per manifest leaf executing in parallel (the leaf's constants are the worker's owned set; calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
+    "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
     "exec-jobs" : Nat;  "With --distributed: how many workers execute at once (default 0: all). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
     "no-prefetch";      "With --distributed: do not execute the next worker while the prover works on the current record (by default it does, hiding the re-execution behind proving at the price of a second resident record)."

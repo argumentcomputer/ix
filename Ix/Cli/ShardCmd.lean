@@ -210,7 +210,7 @@ def shardCmd : Cli.Cmd := `[Cli|
     "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
     "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term), with fitted scale and budget exponents anchored at Mathlib; the execution gate measures and corrects every boundary. Profiled strategy: budget from measured op counters (default: detected system RAM)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
-    ordered;               "Static strategy: lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants: its records then commit one at a time in shard order."
+    ordered;               "Static strategy: lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
 

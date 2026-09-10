@@ -346,8 +346,9 @@ private opaque proveEnvDistributed' : @& AiurSystem →
     one worker record per element of `owners` (trace-sharding design
     §13.3). Worker 0 runs `verify_claim` (`verifyIdx`) and defers every
     `check_owned` (`checkOwnedIdx`) call for a constant it does not own;
-    every other worker runs `check_owned` over the leaves it owns, in its
-    own pointer namespace. The workers execute in parallel; the records
+    every other worker runs `check_owned` over its chunk (the constants it
+    owns), in its own pointer namespace. The workers execute in parallel;
+    the records
     are proven as one batch, each planned to `maxCells` committed cells
     (`0`: one shard per record). `planOnly` stops after the static caller
     graph and the commit order, reporting every worker's owned constants,

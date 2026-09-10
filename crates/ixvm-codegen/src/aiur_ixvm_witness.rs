@@ -377,7 +377,7 @@ pub fn worker_scopes(
 /// Which workers may call into which: `callers[r]` lists every worker
 /// other than `r` whose byte scope (`scopes`, from [`worker_scopes`])
 /// contains a constant `r` owns, plus worker 0 for every `r`, whose
-/// `verify_claim` walk reaches every leaf. A superset of the calls actually
+/// `verify_claim` walk reaches every chunk. A superset of the calls actually
 /// deferred, so a worker whose callers have all executed can commit.
 pub fn worker_callers(
   owners: &[Vec<Address>],

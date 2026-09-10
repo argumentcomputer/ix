@@ -196,8 +196,8 @@ downstream consumer of this design's verifier contract, not part of it.
 
 ### 3.1 Definition
 
-A *batch* is one execution (today: one env shard's `CheckEnv` claim; the
-manifest's leaf). A *trace shard* `S_k`, `k ∈ [0, K)`, is a choice of
+A *batch* is one execution (today: one env shard's `CheckEnv` claim, or
+in §13.3 one worker's chunk). A *trace shard* `S_k`, `k ∈ [0, K)`, is a choice of
 row subsets for every circuit such that every real row of every circuit
 belongs to exactly one shard. Shards are planned deterministically from
 the record by `plan_shards(record, budget)`; the plan is a pure
@@ -971,7 +971,8 @@ splitting the *statement*:
   constant two records both check is two balanced rows.
 - Worker 0 runs `verify_claim` over the environment's claim and defers
   every foreign constant; worker `r` runs `check_owned` as an entry over
-  the leaves it owns, in the same process or on another host, with no
+  its *chunk* — the constants it owns, one shard of the manifest — in the
+  same process or on another host, with no
   ordering between workers: ownership is static, so nobody waits. After
   execution each record's deferred counts are added to the multiplicities
   of the rows that answer them (`QueryRecord::absorb_deferred`); a worker's
@@ -987,9 +988,9 @@ splitting the *statement*:
   90 GiB of records against 75 GiB for one execution, 2026-09-10).
 
 `ix prove --ixe E --ixes M --distributed [--cells N]` runs this with one
-worker per manifest leaf, verifies nothing by itself, and persists one
+worker per chunk, verifies nothing by itself, and persists one
 proof of `CheckEnv(root, none)` — the claim `ix verify --ixes` checks
-against a one-leaf manifest of the same environment. Measured on Init
+against a one-shard manifest of the same environment. Measured on Init
 (64 cores, 2026-09-10, 4 workers at 1.8 G cells): execution 107 s for all
 four workers in parallel against 6.0 min for one execution; 71 shards;
 27:22 wall; 170 GiB peak with all four records resident; a 100 MiB batch
@@ -1019,7 +1020,7 @@ it has executed — its rows' multiplicities count those calls — and
 "may call into" is static: worker `c` reaches only the byte scope of
 its owned constants, so the callers of `r` are the workers whose scope
 holds a constant `r` owns (plus worker 0, whose walk reaches every
-leaf). Records are therefore committed in an order with callers first
+chunk). Records are therefore committed in an order with callers first
 (Tarjan's components over that graph, mutually calling workers
 grouped), each worker executed when its turn comes with the callers it
 still lacks, `--exec-jobs` at a time, and dropped once its shards are
@@ -1042,6 +1043,24 @@ resident (33:21 when the prover waits for each re-execution instead);
 the peak barely moves because Init's four workers are one caller group
 and all four records exist until the first commits, while round two
 holds one record and the one being executed ahead.
+
+The caller graph is the layout's to shape. A min-cut manifest gives every
+chunk a slice of every layer of the environment, so every worker calls
+every other and the chunks form one group at any count (`ix prove
+--distributed --plan-only` reports the groups without executing: Init's
+min-cut manifests are one group of 4, 8 and 16). `ix shard --ordered`
+lays the chunks out as contiguous ranges of a dependency order, the
+kernel's primitives and their closure first, numbered from the top down:
+a chunk's byte scope then lies in its own chunk and later ones, the graph
+is acyclic, and the records commit one at a time in chunk order, so the
+first round holds one record plus the one executed ahead. Init in 8
+ordered chunks (2026-09-10): 8 singleton groups; records of 10–23 GB
+(worker 0's carries the walk's 46 k deferred calls); 37:25 wall and a
+113 GiB peak against 28:16 and 159 GiB for the 4 min-cut chunks; 95
+shards and a 160 MiB batch against 71 and 100 MiB, because memoization
+does not cross records and each record's last shard is part full. The
+layout buys residency at the price of duplicated reduction work, which
+grows with the chunk count.
 
 ### 13.4 What the planner and prover look like
 
