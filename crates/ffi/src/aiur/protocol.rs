@@ -1297,7 +1297,9 @@ fn prove_shards_ahead(
         ));
       },
       Err(_) => {
-        return Err(format!("shard {label}: execution did not prepare a proof"));
+        return Err(format!(
+          "shard {label}: execution did not prepare a proof"
+        ));
       },
     };
     let mut claim_bytes = Vec::new();
@@ -1311,26 +1313,44 @@ fn prove_shards_ahead(
     );
     Ok((claim, claim_bytes, prepared))
   };
-  let mut proven = Vec::with_capacity(count);
+  // Executors report on a channel and the prover takes whichever record
+  // is ready, so a slow shard never holds the GPU while others wait.
+  let (done_tx, done_rx) =
+    std::sync::mpsc::channel::<(usize, Result<Prepared, String>)>();
+  let mut proven: Vec<Option<(Vec<u8>, Address, usize)>> =
+    (0..count).map(|_| None).collect();
   std::thread::scope(|scope| -> Result<(), String> {
-    let mut in_flight = std::collections::VecDeque::new();
-    let mut next = 0;
-    let fill = |in_flight: &mut std::collections::VecDeque<_>,
-                next: &mut usize| {
-      while *next < count && in_flight.len() < jobs {
-        let k = *next;
-        in_flight.push_back(scope.spawn(move || prepare(k)));
-        *next += 1;
-      }
+    let mut next = 0usize;
+    let mut in_flight = 0usize;
+    let prepare = &prepare;
+    let done_tx = &done_tx;
+    let spawn = |k: usize| {
+      let done_tx = done_tx.clone();
+      scope.spawn(move || {
+        let result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare(k)))
+            .unwrap_or_else(|_| {
+              Err(format!("shard {}: execution panicked", labels[k]))
+            });
+        let _ = done_tx.send((k, result));
+      });
     };
-    for k in 0..count {
-      fill(&mut in_flight, &mut next);
-      let handle = in_flight.pop_front().expect("shard k is in flight");
-      let (claim, claim_bytes, prepared) = handle
-        .join()
-        .map_err(|_| format!("shard {}: execution panicked", labels[k]))??;
+    while next < count && in_flight < jobs {
+      spawn(next);
+      next += 1;
+      in_flight += 1;
+    }
+    for _ in 0..count {
+      let (k, prepared) =
+        done_rx.recv().map_err(|e| format!("execution channel closed: {e}"))?;
+      in_flight -= 1;
       // The next execution starts before this proof does.
-      fill(&mut in_flight, &mut next);
+      while next < count && in_flight < jobs {
+        spawn(next);
+        next += 1;
+        in_flight += 1;
+      }
+      let (claim, claim_bytes, prepared) = prepared?;
       let label = labels[k];
       let started = std::time::Instant::now();
       let (_, proof, peak) = system.prove_prepared(prepared);
@@ -1357,11 +1377,17 @@ fn prove_shards_ahead(
       );
       println!("claim {}", digest.hex());
       println!("{}", address.hex());
-      proven.push((claim_bytes, address, peak));
+      proven[k] = Some((claim_bytes, address, peak));
     }
     Ok(())
   })?;
-  Ok(proven)
+  proven
+    .into_iter()
+    .enumerate()
+    .map(|(k, row)| {
+      row.ok_or_else(|| format!("shard {} was not proven", labels[k]))
+    })
+    .collect()
 }
 
 /// `AiurSystem.proveEnvDistributed`: the whole environment as ONE claim,

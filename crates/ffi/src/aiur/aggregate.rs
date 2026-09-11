@@ -441,6 +441,9 @@ struct RunConfig<'a> {
   /// Wrap the root proof (shape 1) until the final proof is a single
   /// trace shard.
   wrap_root: bool,
+  /// Slots preparing (executing) ahead of the provers; `0` fuses
+  /// preparation and proving on one worker per slot.
+  exec_ahead: usize,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -1316,17 +1319,38 @@ fn assumption_count(statement: &Statement) -> usize {
   statement.assumptions.as_ref().map_or(0, |tree| tree.leaves.len())
 }
 
-fn prove_aggregate(
+/// A slot executed and planned, waiting for the prover.
+struct PreparedAggregate {
+  slot_index: usize,
+  prepared: PreparedProve,
+  started: Instant,
+  proving_started: Instant,
+  /// The replayed slot's advice diagnostics, printed once it is proven.
+  replay: Option<String>,
+}
+
+/// What preparing a slot yields: its proof straight from the cache, or its
+/// execution waiting for the prover.
+enum Staged {
+  Cached(Box<AiurProof>, Address),
+  Prepared(Box<PreparedAggregate>),
+}
+
+/// The execution half of [`prove_aggregate`]: the cache probe, both
+/// children's advice, the trees and paths, then the `ix_aggr` execution
+/// planned within the slot budget. CPU work only, so one slot can prepare
+/// while another proves.
+fn prepare_aggregate(
   ctx: ProveContext<'_>,
   spec: &SlotSpec,
   left: &Slot,
   right: Option<&Slot>,
   slot_index: usize,
-) -> Result<(AiurProof, Option<Address>), String> {
+) -> Result<Staged, String> {
   let replaying = ctx.reprove_slot == Some(slot_index);
   if !replaying {
     if let Some((proof, address)) = load_cached(ctx, slot_index, spec) {
-      return Ok((proof, Some(address)));
+      return Ok(Staged::Cached(Box::new(proof), address));
     }
   } else {
     eprintln!(
@@ -1422,14 +1446,13 @@ fn prove_aggregate(
   let mut public_input = packed_digest(ctx.allowed);
   public_input.extend(packed_digest(&spec.statement.claim_bytes));
   let proving_started = Instant::now();
-  let (outer_claim, proof, peak) =
-    prove_aggr_io(ctx, &mut io, &public_input, &format!("slot {slot_index}"))?;
-  let proved_at = Instant::now();
-  if outer_claim != spec.outer_claim {
-    return Err("aggregate prover returned an unexpected outer claim".into());
-  }
-  let address = persist_cached(ctx, slot_index, spec, &proof);
-  if replaying {
+  let prepared = prepare_aggr_io(
+    ctx,
+    &mut io,
+    &public_input,
+    &format!("slot {slot_index}"),
+  )?;
+  let replay = replaying.then(|| {
     let tree_bytes: usize =
       tree_storage.iter().map(|tree| tree.bytes.len()).sum();
     let path_bytes: usize =
@@ -1438,7 +1461,7 @@ fn prove_aggregate(
       preimage_storage.iter().map(|(_, bytes)| bytes.len()).sum();
     let right_assumptions =
       right.map_or(0, |slot| assumption_count(&slot.statement));
-    eprintln!(
+    format!(
       "[aggregate] replay slot {slot_index}: shape {shape}, {} subjects, assumptions {}/{}/{}, proof advice {}+{} MiB, {} trees/{} MiB, {} paths/{} MiB, preimages {} MiB, query-record peak {} GiB ({} bytes)",
       spec.subject_count,
       assumption_count(&left.statement),
@@ -1451,9 +1474,44 @@ fn prove_aggregate(
       path_storage.len(),
       format_mib(path_bytes),
       format_mib(preimage_bytes),
-      format_gib(peak),
-      peak,
-    );
+      format_gib(prepared.peak),
+      prepared.peak,
+    )
+  });
+  Ok(Staged::Prepared(Box::new(PreparedAggregate {
+    slot_index,
+    prepared,
+    started,
+    proving_started,
+    replay,
+  })))
+}
+
+/// The proving half of [`prove_aggregate`]: the STARK, the outer-claim
+/// check and persistence.
+fn finish_aggregate(
+  ctx: ProveContext<'_>,
+  staged: Staged,
+) -> Result<(AiurProof, Option<Address>), String> {
+  let PreparedAggregate {
+    slot_index,
+    prepared,
+    started,
+    proving_started,
+    replay,
+  } = match staged {
+    Staged::Cached(proof, address) => return Ok((*proof, Some(address))),
+    Staged::Prepared(prepared) => *prepared,
+  };
+  let spec = ctx.specs.get(slot_index).ok_or("missing aggregate slot spec")?;
+  let (outer_claim, proof, _) = finish_aggr_io(ctx, prepared);
+  let proved_at = Instant::now();
+  if outer_claim != spec.outer_claim {
+    return Err("aggregate prover returned an unexpected outer claim".into());
+  }
+  let address = persist_cached(ctx, slot_index, spec, &proof);
+  if let Some(line) = replay {
+    eprintln!("{line}");
     eprintln!(
       "[aggregate] replay slot {slot_index}: advice {:.3}s, execute+prove {:.3}s, persistence {:.3}s, total {:.3}s",
       (proving_started - started).as_secs_f64(),
@@ -1885,58 +1943,73 @@ fn wrap_root(
   Ok(proof)
 }
 
-fn prove_slot(
+/// Verifies raw shard `shard` of slot `slot_index` natively and returns it
+/// as a raw IxVM slot (the child a direct join takes, or what a wrap-first
+/// leaf wraps).
+fn verify_leaf(
+  ctx: ProveContext<'_>,
+  slot_index: usize,
+  shard: usize,
+) -> Result<Slot, String> {
+  let spec = ctx.specs.get(slot_index).ok_or("missing aggregate slot spec")?;
+  let prepared = &ctx.prepared[shard];
+  let wrapper =
+    ctx.proofs.and_then(|proofs| proofs.get(shard)).ok_or_else(|| {
+      format!("shard {} proof was not loaded for replay", prepared.original_id)
+    })?;
+  let proof = AiurProof::from_bytes(&wrapper.proof).map_err(|error| {
+    format!("shard {} proof does not decode: {error}", prepared.original_id)
+  })?;
+  let inner = inner_claim(ctx.verify_idx, &prepared.statement.claim_bytes);
+  ctx.ixvm_system.verify(&inner, &proof).map_err(|error| {
+    format!(
+      "shard {} proof fails native verification: {error:?}",
+      prepared.original_id
+    )
+  })?;
+  let inner_claims = serialize_claims(&[&inner]);
+  if spec.kind == ChildKind::Ixvm && spec.outer_claim != inner {
+    return Err("direct shard slot has an unexpected outer claim".into());
+  }
+  Ok(Slot {
+    kind: ChildKind::Ixvm,
+    statement: spec.statement.clone(),
+    outer_claim: inner,
+    proof,
+    proof_address: None,
+    claims_bytes: inner_claims,
+  })
+}
+
+/// A slot prepared for the prover: complete already (a raw leaf verified,
+/// a cached proof), a wrap-first leaf whose batch becomes a range tree
+/// (executed and proven together), or an execution waiting for its STARK
+/// (a wrap or a join).
+enum StagedSlot {
+  Done(Arc<Slot>),
+  Range(Box<Slot>),
+  Staged(Staged),
+}
+
+/// The execution half of [`prove_slot`]: verification and, for a wrap or
+/// a join, the `ix_aggr` execution planned within the slot budget. No
+/// proving happens here, so it can run beside the prover.
+fn prepare_slot(
   ctx: ProveContext<'_>,
   slot_index: usize,
   children: &[Arc<Slot>],
-) -> Result<Arc<Slot>, String> {
+) -> Result<StagedSlot, String> {
   let spec = ctx.specs.get(slot_index).ok_or("missing aggregate slot spec")?;
   match spec.op {
     PlanOp::Leaf(shard) => {
-      let prepared = &ctx.prepared[shard];
-      let wrapper =
-        ctx.proofs.and_then(|proofs| proofs.get(shard)).ok_or_else(|| {
-          format!(
-            "shard {} proof was not loaded for replay",
-            prepared.original_id
-          )
-        })?;
-      let proof = AiurProof::from_bytes(&wrapper.proof).map_err(|error| {
-        format!("shard {} proof does not decode: {error}", prepared.original_id)
-      })?;
-      let inner = inner_claim(ctx.verify_idx, &prepared.statement.claim_bytes);
-      ctx.ixvm_system.verify(&inner, &proof).map_err(|error| {
-        format!(
-          "shard {} proof fails native verification: {error:?}",
-          prepared.original_id
-        )
-      })?;
-      let inner_claims = serialize_claims(&[&inner]);
+      let raw = verify_leaf(ctx, slot_index, shard)?;
       if spec.kind == ChildKind::Ixvm {
-        if spec.outer_claim != inner {
-          return Err("direct shard slot has an unexpected outer claim".into());
-        }
-        return Ok(Arc::new(Slot {
-          kind: ChildKind::Ixvm,
-          statement: spec.statement.clone(),
-          outer_claim: inner,
-          proof,
-          proof_address: None,
-          claims_bytes: inner_claims,
-        }));
+        return Ok(StagedSlot::Done(Arc::new(raw)));
       }
       eprintln!(
         "[aggregate] wrapping shard {} into slot {slot_index}",
-        prepared.original_id
+        ctx.prepared[shard].original_id
       );
-      let raw = Slot {
-        kind: ChildKind::Ixvm,
-        statement: spec.statement.clone(),
-        outer_claim: inner,
-        proof,
-        proof_address: None,
-        claims_bytes: inner_claims,
-      };
       // A batch of several shards becomes a range tree: leaves of the
       // requested width, or of the derived width (as few leaves as there
       // are node slots) when none was requested and slots are budgeted.
@@ -1944,42 +2017,64 @@ fn prove_slot(
       let ranged = shards > 1
         && (ctx.range_width > 0 && shards > ctx.range_width
           || ctx.range_width == 0 && ctx.wrap_budget.is_some());
-      let (proof, proof_address) = if ranged {
-        prove_range_tree(ctx, spec, &raw.proof, slot_index)?
-      } else {
-        prove_aggregate(ctx, spec, &raw, None, slot_index)?
-      };
-      Ok(Arc::new(Slot {
-        kind: ChildKind::Aggr,
-        statement: spec.statement.clone(),
-        outer_claim: spec.outer_claim.clone(),
-        proof,
-        proof_address,
-        claims_bytes: serialize_claims(&[&spec.outer_claim]),
-      }))
+      if ranged {
+        return Ok(StagedSlot::Range(Box::new(raw)));
+      }
+      let staged = prepare_aggregate(ctx, spec, &raw, None, slot_index)?;
+      Ok(StagedSlot::Staged(staged))
     },
     PlanOp::Join(left_index, right_index) => {
       if children.len() != 2 {
         return Err("aggregate join did not receive two children".into());
       }
-      let left = &children[0];
-      let right = &children[1];
       let mode = if spec.structural { "structural" } else { "flat" };
       eprintln!(
         "[aggregate] {mode}-joining slots {left_index}, {right_index} into {slot_index}"
       );
-      let (proof, proof_address) =
-        prove_aggregate(ctx, spec, left, Some(right), slot_index)?;
-      Ok(Arc::new(Slot {
-        kind: ChildKind::Aggr,
-        statement: spec.statement.clone(),
-        outer_claim: spec.outer_claim.clone(),
-        proof,
-        proof_address,
-        claims_bytes: serialize_claims(&[&spec.outer_claim]),
-      }))
+      let staged = prepare_aggregate(
+        ctx,
+        spec,
+        &children[0],
+        Some(&children[1]),
+        slot_index,
+      )?;
+      Ok(StagedSlot::Staged(staged))
     },
   }
+}
+
+/// The proving half of [`prove_slot`].
+fn finish_slot(
+  ctx: ProveContext<'_>,
+  slot_index: usize,
+  staged: StagedSlot,
+) -> Result<Arc<Slot>, String> {
+  let spec = ctx.specs.get(slot_index).ok_or("missing aggregate slot spec")?;
+  let (proof, proof_address) = match staged {
+    StagedSlot::Done(slot) => return Ok(slot),
+    StagedSlot::Range(raw) => {
+      prove_range_tree(ctx, spec, &raw.proof, slot_index)?
+    },
+    StagedSlot::Staged(staged) => finish_aggregate(ctx, staged)?,
+  };
+  Ok(Arc::new(Slot {
+    kind: ChildKind::Aggr,
+    statement: spec.statement.clone(),
+    outer_claim: spec.outer_claim.clone(),
+    proof,
+    proof_address,
+    claims_bytes: serialize_claims(&[&spec.outer_claim]),
+  }))
+}
+
+/// Prepares and proves one slot in place.
+fn prove_slot(
+  ctx: ProveContext<'_>,
+  slot_index: usize,
+  children: &[Arc<Slot>],
+) -> Result<Arc<Slot>, String> {
+  let staged = prepare_slot(ctx, slot_index, children)?;
+  finish_slot(ctx, slot_index, staged)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -2087,51 +2182,111 @@ fn dependencies_complete(spec: &SlotSpec, completed: &[bool]) -> bool {
   }
 }
 
+/// What a scheduler worker reports: a slot prepared (or found complete
+/// while preparing), or a slot proven.
+enum SchedulerEvent {
+  /// A slot prepared (the flag: it was a verify-only leaf).
+  Prepared(usize, bool, Result<StagedSlot, String>),
+  Finished(usize, Result<Arc<Slot>, String>),
+}
+
+/// Runs the slot plan with two lanes: `ahead` workers prepare ready slots
+/// (children complete) — the CPU half: advice, execution, planning —
+/// while `jobs` workers prove prepared slots — the GPU half — so a join
+/// executes while the previous one proves. `ahead == 0` fuses the lanes:
+/// each admitted slot prepares and proves on one worker, `jobs` at a
+/// time. Slots are admitted bottom level first, then by index, so parents
+/// become ready as early as possible; the RAM weights gate admission as
+/// before, a slot's weight held from admission to completion.
 fn run_scheduler(
   ctx: ProveContext<'_>,
   jobs: usize,
+  ahead: usize,
   budget: usize,
 ) -> Result<Vec<Arc<Slot>>, String> {
   if budget == 0 {
     return Err("aggregate scheduler RAM budget must be positive".into());
   }
-  let max_jobs = if jobs == 0 { ctx.specs.len().max(1) } else { jobs.max(1) };
-  let (sender, receiver) = mpsc::channel();
+  let count = ctx.specs.len();
+  let max_jobs = if jobs == 0 { count.max(1) } else { jobs.max(1) };
+  let fused = ahead == 0;
+  let max_ahead = if fused { max_jobs } else { ahead };
+  // Raw leaves only verify: they hold no record and take no prover, so
+  // they run beside both lanes, a core each.
+  let max_verify = thread::available_parallelism().map_or(1, usize::from);
+  // With trace shards each slot is held to its share of the budget inside
+  // its proof; the static per-shape weights describe whole CPU proofs and
+  // would keep every slot alone, so they gate nothing on that path.
+  let weight_of = |index: usize| {
+    if ctx.wrap_budget.is_some() { 0 } else { ctx.specs[index].ram_bytes }
+  };
+  let verify_only = |index: usize| {
+    matches!(ctx.specs[index].op, PlanOp::Leaf(_))
+      && ctx.specs[index].kind == ChildKind::Ixvm
+  };
+  let mut level = vec![0usize; count];
+  for (index, spec) in ctx.specs.iter().enumerate() {
+    if let PlanOp::Join(left, right) = spec.op {
+      level[index] = 1 + level[left].max(level[right]);
+    }
+  }
+  let (sender, receiver) = mpsc::channel::<SchedulerEvent>();
   thread::scope(|scope| -> Result<Vec<Arc<Slot>>, String> {
-    let mut slots: Vec<Option<Arc<Slot>>> = vec![None; ctx.specs.len()];
-    let mut completed = vec![false; ctx.specs.len()];
-    let mut in_flight = vec![false; ctx.specs.len()];
+    let mut slots: Vec<Option<Arc<Slot>>> = vec![None; count];
+    let mut completed = vec![false; count];
+    let mut admitted = vec![false; count];
     let mut completed_count = 0usize;
-    let mut active = 0usize;
+    let mut verifying = 0usize;
+    let mut preparing = 0usize;
+    let mut proving = 0usize;
     let mut reserved = 0usize;
+    let mut prepared: std::collections::VecDeque<(usize, StagedSlot)> =
+      std::collections::VecDeque::new();
     let mut failures: Vec<(usize, String)> = Vec::new();
 
-    while completed_count < ctx.specs.len() {
-      if failures.is_empty() && active < max_jobs {
-        let mut ready: Vec<usize> = ctx
-          .specs
-          .iter()
-          .enumerate()
-          .filter_map(|(index, spec)| {
-            (!completed[index]
-              && !in_flight[index]
-              && dependencies_complete(spec, &completed))
-            .then_some(index)
+    while completed_count < count {
+      if failures.is_empty() {
+        // Prover lane first: prepared slots, in the order prepared.
+        while proving < max_jobs {
+          let Some((index, staged)) = prepared.pop_front() else { break };
+          proving += 1;
+          let sender = sender.clone();
+          scope.spawn(move || {
+            let result =
+              std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                finish_slot(ctx, index, staged)
+              }))
+              .unwrap_or_else(|payload| {
+                Err(format!(
+                  "Rust proof worker panicked: {}",
+                  panic_text(&payload)
+                ))
+              });
+            let _ = sender.send(SchedulerEvent::Finished(index, result));
+          });
+        }
+        // Prepare lane: ready slots, bottom level first; a prepared record
+        // waiting for the prover counts against the lookahead, and raw
+        // leaves have their own allowance.
+        let mut ready: Vec<usize> = (0..count)
+          .filter(|&index| {
+            !admitted[index]
+              && dependencies_complete(&ctx.specs[index], &completed)
           })
           .collect();
-        ready.sort_unstable_by(|left, right| {
-          ctx.specs[*right]
-            .ram_bytes
-            .cmp(&ctx.specs[*left].ram_bytes)
-            .then_with(|| left.cmp(right))
-        });
+        ready.sort_unstable_by_key(|&index| (level[index], index));
         for index in ready {
-          if active >= max_jobs {
-            break;
+          let verify = verify_only(index);
+          if verify {
+            if verifying >= max_verify {
+              continue;
+            }
+          } else if preparing + prepared.len() >= max_ahead {
+            continue;
           }
-          let weight = ctx.specs[index].ram_bytes;
+          let weight = weight_of(index);
           let fits = reserved.saturating_add(weight) <= budget;
-          if !fits && active != 0 {
+          if !fits && verifying + preparing + proving + prepared.len() != 0 {
             continue;
           }
           let children = match ctx.specs[index].op {
@@ -2141,22 +2296,36 @@ fn run_scheduler(
               slots[right].as_ref().expect("completed right slot").clone(),
             ],
           };
-          in_flight[index] = true;
-          active += 1;
+          admitted[index] = true;
+          if verify {
+            verifying += 1;
+          } else {
+            preparing += 1;
+          }
           reserved = reserved.saturating_add(weight);
-          let over =
-            if weight > budget { "; over-budget slot runs alone" } else { "" };
-          eprintln!(
-            "[aggregate] slot {index}: admitted {} GiB; reserved {}/{} GiB; active {active}/{max_jobs}{over}",
-            format_gib(weight),
-            format_gib(reserved),
-            format_gib(budget),
-          );
+          if !verify {
+            let over = if weight > budget {
+              "; over-budget slot runs alone"
+            } else {
+              ""
+            };
+            eprintln!(
+              "[aggregate] slot {index}: admitted {} GiB; reserved {}/{} GiB; preparing {preparing}/{max_ahead} (queued {}), proving {proving}/{max_jobs}{over}",
+              format_gib(weight),
+              format_gib(reserved),
+              format_gib(budget),
+              prepared.len(),
+            );
+          }
           let sender = sender.clone();
           scope.spawn(move || {
             let result =
               std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                prove_slot(ctx, index, &children)
+                let staged = prepare_slot(ctx, index, &children)?;
+                if fused {
+                  return finish_slot(ctx, index, staged).map(StagedSlot::Done);
+                }
+                Ok(staged)
               }))
               .unwrap_or_else(|payload| {
                 Err(format!(
@@ -2164,30 +2333,52 @@ fn run_scheduler(
                   panic_text(&payload)
                 ))
               });
-            let _ = sender.send((index, weight, result));
+            let _ =
+              sender.send(SchedulerEvent::Prepared(index, verify, result));
           });
         }
       }
 
-      if active == 0 {
+      if verifying + preparing + proving == 0 {
         if failures.is_empty() {
-          failures
-            .push((ctx.specs.len(), "aggregate scheduler deadlocked".into()));
+          if !prepared.is_empty() {
+            continue;
+          }
+          failures.push((count, "aggregate scheduler deadlocked".into()));
         }
         break;
       }
 
-      let (index, weight, result) = receiver.recv().map_err(|error| {
+      let event = receiver.recv().map_err(|error| {
         format!("aggregate scheduler channel closed: {error}")
       })?;
-      if !in_flight.get(index).copied().unwrap_or(false) {
-        failures.push((index, "duplicate or unknown scheduler result".into()));
-        continue;
-      }
-      in_flight[index] = false;
-      active -= 1;
-      reserved = reserved.saturating_sub(weight);
-      match result {
+      let (index, outcome) = match event {
+        SchedulerEvent::Prepared(index, verify, result) => {
+          if verify {
+            verifying -= 1;
+          } else {
+            preparing -= 1;
+          }
+          match result {
+            Ok(StagedSlot::Done(slot)) => (index, Ok(slot)),
+            Ok(staged) => {
+              eprintln!(
+                "[aggregate] slot {index}: prepared, waiting for the prover ({} queued)",
+                prepared.len() + 1
+              );
+              prepared.push_back((index, staged));
+              continue;
+            },
+            Err(error) => (index, Err(error)),
+          }
+        },
+        SchedulerEvent::Finished(index, result) => {
+          proving -= 1;
+          (index, result)
+        },
+      };
+      reserved = reserved.saturating_sub(weight_of(index));
+      match outcome {
         Ok(slot) => {
           slots[index] = Some(slot);
           completed[index] = true;
@@ -2197,16 +2388,31 @@ fn run_scheduler(
       }
     }
 
-    while active > 0 {
-      let (index, weight, result) = receiver.recv().map_err(|error| {
+    // A failure stops admission; what is running finishes, what is
+    // prepared and unproven is dropped.
+    while verifying + preparing + proving > 0 {
+      let event = receiver.recv().map_err(|error| {
         format!("aggregate scheduler drain failed: {error}")
       })?;
-      if in_flight.get(index).copied().unwrap_or(false) {
-        in_flight[index] = false;
-        active -= 1;
-        reserved = reserved.saturating_sub(weight);
-      }
-      match result {
+      let (index, outcome) = match event {
+        SchedulerEvent::Prepared(index, verify, result) => {
+          if verify {
+            verifying -= 1;
+          } else {
+            preparing -= 1;
+          }
+          match result {
+            Ok(StagedSlot::Done(slot)) => (index, Ok(slot)),
+            Ok(_) => continue,
+            Err(error) => (index, Err(error)),
+          }
+        },
+        SchedulerEvent::Finished(index, result) => {
+          proving -= 1;
+          (index, result)
+        },
+      };
+      match outcome {
         Ok(slot) => {
           slots[index] = Some(slot);
           completed[index] = true;
@@ -2217,7 +2423,7 @@ fn run_scheduler(
     if !failures.is_empty() {
       failures.sort_unstable_by_key(|(index, _)| *index);
       let (index, error) = failures.remove(0);
-      return Err(if index < ctx.specs.len() {
+      return Err(if index < count {
         format!("slot {index}: {error}")
       } else {
         error
@@ -2417,7 +2623,12 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     "[aggregate] scheduler: jobs={jobs_label}, RAM budget {} GiB; wrap/self 195.0 GiB, direct 390.0 GiB, mixed 340.0 GiB, flat +1 MiB/subject",
     format_gib(config.ram_budget_bytes)
   );
-  let slots = run_scheduler(context, config.jobs, config.ram_budget_bytes)?;
+  let slots = run_scheduler(
+    context,
+    config.jobs,
+    config.exec_ahead,
+    config.ram_budget_bytes,
+  )?;
   let root = slots.last().ok_or("aggregate plan produced no root slot")?;
   if root.kind != ChildKind::Aggr {
     return Err("aggregate plan produced a raw IxVM root".into());
@@ -2427,20 +2638,22 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   // the previous proof, so its own execution shrinks with that proof's
   // shard count until one shard verifies it.
   let mut wrapped: Option<AiurProof> = None;
-  while config.wrap_root {
-    let current = wrapped.as_ref().unwrap_or(&root.proof);
-    let shards = current.preamble.headers.len();
-    if shards <= 1 {
-      break;
+  if config.wrap_root {
+    loop {
+      let current = wrapped.as_ref().unwrap_or(&root.proof);
+      let shards = current.preamble.headers.len();
+      if shards <= 1 {
+        break;
+      }
+      let next = wrap_root(context, root, current)?;
+      if next.preamble.headers.len() >= shards {
+        eprintln!(
+          "[aggregate] root wrap did not shrink the proof ({shards} shards); keeping the previous one"
+        );
+        break;
+      }
+      wrapped = Some(next);
     }
-    let next = wrap_root(context, root, current)?;
-    if next.preamble.headers.len() >= shards {
-      eprintln!(
-        "[aggregate] root wrap did not shrink the proof ({shards} shards); keeping the previous one"
-      );
-      break;
-    }
-    wrapped = Some(next);
   }
   let (proof, proof_address) = match &wrapped {
     Some(proof) => (proof, None),
@@ -2529,6 +2742,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
   trace_shards: bool,
   range_width: LeanNat<LeanBorrowed<'_>>,
   wrap_root: bool,
+  exec_ahead: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
@@ -2553,6 +2767,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       trace_shards,
       range_width: lean_unbox_nat_as_usize(range_width.inner()),
       wrap_root,
+      exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
     })
   }));
   match result {

@@ -227,7 +227,7 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
-  (wrapRoot : Bool) :
+  (wrapRoot : Bool) (execAhead : @& Nat) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
