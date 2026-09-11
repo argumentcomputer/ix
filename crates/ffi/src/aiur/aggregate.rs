@@ -444,6 +444,11 @@ struct RunConfig<'a> {
   /// Slots preparing (executing) ahead of the provers; `0` fuses
   /// preparation and proving on one worker per slot.
   exec_ahead: usize,
+  /// `ix verify --ixes <proofs>`: stop after the proof import — every
+  /// shard claim reconstructed natively, every supplied proof bound to its
+  /// shard by claim digest and verified in parallel, exactly one per shard
+  /// — and report that composed verdict instead of proving.
+  verify_only: bool,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -2528,7 +2533,9 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     .map(|target| plan_replay(&specs, target))
     .transpose()?;
   let specs_at = Instant::now();
-  print_plan(&specs, &prepared.shards, config.structural_above);
+  if !config.verify_only {
+    print_plan(&specs, &prepared.shards, config.structural_above);
+  }
   if config.plan_only {
     eprintln!(
       "[aggregate] Rust plan startup: manifest {:.3}s, env/claims {:.3}s, plan/statements {:.3}s; total {:.3}s",
@@ -2556,10 +2563,10 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
         dir.display()
       ));
     }
-  } else {
+  } else if !config.verify_only {
     eprintln!("[aggregate] cache disabled (--no-cache)");
   }
-  if !config.write_outputs {
+  if !config.write_outputs && !config.verify_only {
     eprintln!("[aggregate] output writes disabled (--no-write)");
   }
   let needs_input_proofs =
@@ -2575,6 +2582,44 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     None
   };
   let proofs_at = Instant::now();
+  if config.verify_only {
+    let shards = prepared.shards.len();
+    let proofs = proofs.as_deref().unwrap_or(&[]);
+    if proofs.len() != shards {
+      return Err(format!(
+        "bound {} shard proofs but the manifest has {shards} shards",
+        proofs.len()
+      ));
+    }
+    let failures: Vec<String> = proofs
+      .par_iter()
+      .enumerate()
+      .filter_map(|(shard, wrapper)| {
+        let statement = &prepared.shards[shard].statement;
+        let inner = inner_claim(config.verify_idx, &statement.claim_bytes);
+        let proof = match AiurProof::from_bytes(&wrapper.proof) {
+          Ok(proof) => proof,
+          Err(error) => {
+            return Some(format!("shard {shard}: proof does not decode: {error}"));
+          },
+        };
+        config
+          .ixvm_system
+          .verify(&inner, &proof)
+          .err()
+          .map(|error| format!("shard {shard}: proof fails verification: {error:?}"))
+      })
+      .collect();
+    if !failures.is_empty() {
+      return Err(failures.join("; "));
+    }
+    eprintln!(
+      "[verify] OK: composed verdict — all {shards} shards proven + disjoint cover ({shards} proofs verified natively in {:.1}s; claims {:.1}s)",
+      proofs_at.elapsed().as_secs_f64(),
+      (prepared_at - parsed_at).as_secs_f64(),
+    );
+    return Ok(String::new());
+  }
   eprintln!(
     "[aggregate] Rust startup: manifest {:.3}s, env/claims {:.3}s, plan/statements {:.3}s, proofs {:.3}s; total {:.3}s",
     (parsed_at - started).as_secs_f64(),
@@ -2743,6 +2788,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
   range_width: LeanNat<LeanBorrowed<'_>>,
   wrap_root: bool,
   exec_ahead: LeanNat<LeanBorrowed<'_>>,
+  verify_only: bool,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
@@ -2768,6 +2814,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       range_width: lean_unbox_nat_as_usize(range_width.inner()),
       wrap_root,
       exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
+      verify_only,
     })
   }));
   match result {

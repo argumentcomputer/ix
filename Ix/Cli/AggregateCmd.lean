@@ -981,7 +981,7 @@ private def runAggregateCmdNativeWith
       recursionParameters.cacheFriBytes (!(p.hasFlag "no-cache"))
       (!(p.hasFlag "no-write")) (p.hasFlag "trace-shards")
       (((p.flag? "range").map (·.as! Nat)).getD 0) (p.hasFlag "wrap-root")
-      (((p.flag? "exec-ahead").map (·.as! Nat)).getD 1)
+      (((p.flag? "exec-ahead").map (·.as! Nat)).getD 1) false
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok _ => return 0

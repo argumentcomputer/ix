@@ -220,14 +220,18 @@ proving, and persistence. `proofHexes` is one store address per line;
 `reproveSlotCode` is zero for a full run and `slot + 1` for a targeted replay;
 the latter loads and verifies only the target's immediate cached children.
 When `writeOutputs` is false, proofs are hashed but neither the store nor cache
-is changed. Returns the root or replayed proof address. -/
+is changed. Returns the root or replayed proof address. With `verifyOnly`, the
+run stops after the proof import — every shard claim reconstructed natively,
+every supplied proof bound to its shard by claim digest and verified in
+parallel, exactly one per shard — returning the empty string (the composed
+verdict of `ix verify --ixes`). -/
 @[extern "rs_aiur_stage2_aggregate"]
 opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
   (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
-  (wrapRoot : Bool) (execAhead : @& Nat) :
+  (wrapRoot : Bool) (execAhead : @& Nat) (verifyOnly : Bool) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in

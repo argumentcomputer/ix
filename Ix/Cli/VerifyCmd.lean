@@ -259,7 +259,9 @@ private def verifyAggregateProof (backend : AggregateBackend)
     - no `--shard` + proofs: composed verdict — coverage, every proof bound to a
       shard, and every shard covered by a valid proof. -/
 def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat)
-    (proofs : List String) (record : Bool := false) : IO UInt32 := do
+    (proofs : List String) (record : Bool := false)
+    (recursionParameters : MultiStark.RecursionParameters := MultiStark.defaultRecursionParameters) :
+    IO UInt32 := do
   let (ixonEnv, shards) ← match (← Ix.Cli.CheckCmd.loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
     | .ok r => pure r
@@ -301,31 +303,34 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
   | none =>
     if !(← Ix.Cli.CheckCmd.shardsCover ixonEnv shards) then return 1
     if proofs.isEmpty then return 0
-    let mut digestToShard : Std.HashMap Address Nat := {}
-    for k in [0:shards.size] do
-      let some d ← digestOf k | return 1
-      digestToShard := digestToShard.insert d k
-    let (aiurSystem, compiled) ← match (← buildBackend) with
+    -- Composed verdict through the native Stage 2 import: Rust reconstructs
+    -- every shard claim from the manifest (the Lean reconstruction above is
+    -- one shard at a time on one core — ~15 s per Mathlib shard, an hour for
+    -- the manifest), binds each proof to its shard by claim digest and
+    -- verifies all proofs in parallel, requiring exactly one valid proof per
+    -- shard.
+    let (ixvmSystem, compiled) ← match (← buildBackend) with
       | .error e => IO.eprintln e; return 1
       | .ok b => pure b
-    let mut covered : Std.HashSet Nat := {}
-    let mut rc : UInt32 := 0
+    let verifyIdx := compiled.getFuncIdx `verify_claim |>.get!
+    let backend ← match ← buildAggregateBackend recursionParameters with
+      | .error e => IO.eprintln e; return 1
+      | .ok backend => pure backend
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+      | .ok handle => pure handle
+    let proofHexes := String.intercalate "\n" proofs
+    let verdict ← IO.lazyPure fun _ =>
+      ixvmSystem.aggregateStage2 backend.system envHandle manifestPath proofHexes
+        verifyIdx backend.aggrIdx 0 0 Ix.Cli.AggregateCmd.defaultStructuralAbove 0
+        true false recursionParameters.cacheFriBytes false false false 0 false 1 true
+    match verdict with
+    | .error e => IO.eprintln s!"[verify] FAIL: {e}"; return 1
+    | .ok _ => pure ()
     for hex in proofs do
       let (proofAddr, d) ← claimDigestOfProof hex
-      match digestToShard.get? d with
-      | none => IO.eprintln s!"[verify] FAIL: proof {proofAddr} (claim {d}) matches no shard"; rc := 1
-      | some k =>
-        if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
-        else
-          covered := covered.insert k
-          recordProof d proofAddr
-    let missing := (List.range shards.size).filter (fun k => !covered.contains k)
-    if !missing.isEmpty then
-      IO.eprintln s!"[verify] FAIL: shards lacking a valid proof: {missing}"
-      rc := 1
-    if rc == 0 then
-      IO.println s!"[verify] OK: composed verdict — all {shards.size} shards proven + disjoint cover"
-    return rc
+      recordProof d proofAddr
+    return 0
 
 /-- Verify with an explicit aggregate-recursion configuration. Ordinary IxVM
 proof verification remains pinned to its independent canonical parameters. -/
@@ -397,7 +402,7 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
-      (p.hasFlag "record")
+      (p.hasFlag "record") recursionParameters
   | _, _ =>
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
