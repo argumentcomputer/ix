@@ -159,7 +159,8 @@
         "Tests.HPTFixtures.detailedConstructorAcceptedFact_sound",
         "Tests.HPTFixtures.caseBinderAcceptedFact_sound",
         "Tests.HPTFixtures.aliasReuseRegressionOk",
-        "Tests.HPTFixtures.aliasReuseAcceptedFact_sound"
+        "Tests.HPTFixtures.aliasReuseAcceptedFact_sound",
+        "the source-space gate checks nine actual Ixon maps, 555 complete heap/frame prefixes, six fuel/representation boundaries, 65 native arena byte budgets, two fresh artifact sets and thirteen corruptions; nineteen fences preserve the ordinary logical basis, with the same existing Blake3 dependency in the three source/compiled-map/native-object compositions"
       ],
       "retirement": {
         "milestone": "post-M3 verified primitives",
@@ -387,7 +388,10 @@
         "Compilatrix.X86.RuntimeTarget.controlCost_saving",
         "Compilatrix.X86.Stream.run_with_calls",
         "Compilatrix.X86.ObjectEval.run_with_calls",
-        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects"
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects",
+        "Compilatrix.X86.RuntimeExecution.executes_of_bytes",
+        "Compilatrix.X86.RuntimeExecution.capacityRejects_of_bytes",
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects_of_bytes"
       ],
       "retirement": {
         "milestone": "ISA plan S2 emitted-fragment equivalence",
@@ -557,6 +561,41 @@
         "independently decoded provenance domain/kind/root/lowering/role-policy fields equal the actual selected input provenance",
         "actual parsed text and entry feed whole-object execution, and parsed PC32 relocations feed the checked application trace"
       ]
+    },
+    {
+      "id": "ixir2-fixed-slot-space-v1",
+      "status": "proved-abstract-storage-contract",
+      "owner": "Compilatr.ix maintainers",
+      "scope": "Versioned Word-valued fixed-slot heap and explicit control-frame resource semantics for actual physical IxIR2 policy execution; native unique-list arenas use their separate proved ABI",
+      "assumption": "The declared sizes describe the bounded abstract representation. A host or future native implementation must refine these charges before they imply its actual physical-memory consumption. The Lean interpreter's host allocations, immutable code, recursive heap-traversal workspace, general native spills and free-list fragmentation are outside this first slice.",
+      "proof_effect": "Slot growth and the live/reserved/freed partition hold over actual physical steps and suspended calls. Successful profiling supplies sufficient and necessary independent capacities, rejects the first disallowed state on exhaustion, and preserves the evaluator result. Source-map composition includes full shared reclamation while retaining freed backing slots. N2 separately derives 80 + 32 * (n + 2) bytes and composes that premise through emitted ELF main/release execution. No new Lean axiom or native interface is introduced.",
+      "trust_basis": [
+        "Compilatrix/IxIR2/SpaceHeap.lean proves actual backing-slot history and all-prefix bounds.",
+        "Compilatrix/IxIR2/SpaceLayout.lean declares all charged heap, credit and explicit frame fields and checks representability.",
+        "Compilatrix/IxIR2/SpaceExecution.lean proves erasure, capacity equivalence, exhaustion, successful-prefix bounds and exact terminal heap demand.",
+        "Nineteen Compilatrix/Fence.lean entries retain ordinary logical axioms; three source compositions retain the existing native Blake3 dependency."
+      ],
+      "tests": [
+        "Compilatrix.CallReuse.MapCompilation.finite_refines",
+        "Compilatrix.IxIR2.Eval.Space.capacity_iff",
+        "Compilatrix.IxIR2.Eval.Space.capacity_exhausted",
+        "Compilatrix.IxIR2.Eval.Space.run_prefix_within",
+        "Compilatrix.IxIR2.Eval.Space.execute_heap_exact",
+        "Compilatrix.IxIR2.Eval.Space.release_committedBytes",
+        "Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects_of_bytes",
+        "scripts/CheckSourceSpace.lean",
+        "Compilatrix/Tools/SpaceCheck.lean",
+        "fixtures/source-space/expected.json"
+      ],
+      "retirement": {
+        "milestone": "F1 general native allocating calls and physical storage refinement",
+        "replacement": "A concrete allocator/control representation with proved layout, capacity, spill, traversal-workspace and freed-slot-reuse behavior",
+        "exit_criteria": [
+          "each represented heap and control component refines its byte charge and address/permission bounds",
+          "native allocating calls preserve suspended reservations and enforce the proved exhaustion contract",
+          "allocator reuse, fragmentation and destruction workspace are accounted for before broader physical-space claims"
+        ]
+      }
     }
   ],
   "modeled_oracles": [
@@ -623,10 +662,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "9cc702bcf583df8c7a86f0be348b5d44dafd2fa2d4ab430749bf9b1a697d8d0c",
+      "flake.nix": "2f41b624dadb503543bb768c2ce1d09e2a58e278a391b2237658b795a24b9655",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "5f893aa2097d5bada2d496781565b38b306ce43faebe0724723aaeaeaaf511ee",
+      "lakefile.lean": "46e79bfe9105f741b0238d370e4656c57b90d590f6a828fe7564baa59f529a15",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -645,7 +684,7 @@
       "scripts/CheckX86Object.lean": "3e95f985a47cb787791042f6c5838a51eb922f98525058b72e67f76d3a4d7da0",
       "scripts/CheckSourceCoverage.lean": "148206508005c9e009c92adfafc4f671b60a7a4f39988b11ded05968c60ea628",
       "scripts/CheckSourceRecursion.lean": "089634410ba545377c79e954d3a5d0ad66bd177f9690b0b5461fbedbb096c36d",
-      "scripts/CheckSourceCallReuse.lean": "592bd97cdf16812fbeec5eb46b991396f0347fd18746e885ecde8be18aa6f89a",
+      "scripts/CheckSourceCallReuse.lean": "25d270f5394e601c24255b6f213b3b6c0e54a642b0472aedf96a597ed91d9091",
       "scripts/CheckSourceUniqueReuse.lean": "abe52f3e7f2e10be70b847a38694b9bcef60b9330a638625aea2ef03d1233842",
       "scripts/CheckSourceNativeUnique.lean": "9de95509bbf31c4aac1c4acd778bdd56269e44e32ca1ff7fdaeeafa4044f8ef6",
       "fixtures/source-native-unique/native_harness.c": "8013e02898ca5503b2e190f9f3b73bb9c6a05151179d33557264b8feb7ffa8cf",
@@ -708,7 +747,11 @@
       "benchmarks/Benchmark/CounterFoldBuild.lean": "34ec43928efc0277ba74abe7fb76955514d32ac4b711f761c4c4e496ac1fff56",
       "benchmarks/Benchmark/CounterFoldRun.lean": "d6c61f6ba69f73578c938fd85e6b931abba52a37ca440df5a44a551b1f4fe4f3",
       "benchmarks/Benchmark/CounterFold.lean": "d56dcf3f04dc06864e3f01b53fe97d3bf631c5628fab580d56b2e25e06fd1839",
-      "benchmarks/counter-fold.md": "e2bd9067fe8670e6f9f36021e5eb52479bcdf95cac05945ce2e9556c28a47f42"
+      "benchmarks/counter-fold.md": "e2bd9067fe8670e6f9f36021e5eb52479bcdf95cac05945ce2e9556c28a47f42",
+      "Compilatrix/Tools/CallReuseCheck.lean": "7dd80eaa694e253dfe908ee83a19d78ac107664173dff9f93af5e0485fae7500",
+      "Compilatrix/Tools/SpaceCheck.lean": "8c147bf5df7f8ae29304bb8060d1cbfc15af0d83c8ac540ae6eb35314c139a42",
+      "scripts/CheckSourceSpace.lean": "cf34c79da34e1348904b4999ce41b985bba86e3aa6c8701f6a328d4437155d68",
+      "fixtures/source-space/expected.json": "b7dbeea0092a25201ee01b73d70d2a9a7e1c5a5fa1be8e687b6ae56d2e9fcada"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

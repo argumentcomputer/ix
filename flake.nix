@@ -111,6 +111,7 @@
             ./SourceCoverage.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
+            ./SourceSpace.lean
             ./SourceUniqueReuse.lean
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
@@ -126,6 +127,7 @@
             ./fixtures/source-coverage
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
+            ./fixtures/source-space
             ./fixtures/source-unique-reuse
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
@@ -162,6 +164,7 @@
             ./SourceCoverage.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
+            ./SourceSpace.lean
             ./SourceUniqueReuse.lean
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
@@ -177,6 +180,7 @@
             ./fixtures/source-coverage
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
+            ./fixtures/source-space
             ./fixtures/source-unique-reuse
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
@@ -379,6 +383,23 @@
             ./.lake/build/bin/check-source-call-reuse \
               --fixture ./.lake/build/bin/source-call-reuse \
               --expected ${auditSrc}/fixtures/source-call-reuse/expected.json
+          '';
+        };
+
+        # F1 checks committed/live/reserved bytes and every explicit caller
+        # frame, exact capacity failures, and complete result reclamation.
+        sourceSpaceCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-space";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-space
+            ./.lake/build/bin/check-source-space \
+              --fixture ./.lake/build/bin/source-space \
+              --expected ${auditSrc}/fixtures/source-space/expected.json
           '';
         };
 
@@ -641,6 +662,7 @@
           source-coverage = sourceCoverageCheck;
           source-recursion = sourceRecursionCheck;
           source-call-reuse = sourceCallReuseCheck;
+          source-space = sourceSpaceCheck;
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;
           source-native-runtime = sourceNativeRuntimeCheck;

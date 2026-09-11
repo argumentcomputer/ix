@@ -33,7 +33,7 @@ can proceed independently when their prerequisites are available.
 | --- | --- | --- |
 | [N3: compositional native lowering](#n3-compositional-native-lowering) | physical scalar source and static capture slices delivered | Runtime source application, one static Word capture, closure reclamation, Nat peeling, branches/joins, direct calls, source-to-ELF contracts, and finite stack sufficiency. Allocating calls, runtime/heap captures, and broader recursion remain extensions. |
 | [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
-| [F1: finite heap and stack](#f1-finite-heap-and-stack) | active for scalar stack; heap extension next | N3 proves sufficient finite stack for nonrecursive scalar calls. General occupied-heap capacity and allocating calls remain open. |
+| [F1: finite heap and stack](#f1-finite-heap-and-stack) | first heap/call slice delivered | Versioned occupied/committed bytes and explicit caller frames, finite physical execution, source-map adequacy/reclamation, and the exact native list arena bound. Native allocating calls, allocator reuse/fragmentation and traversal workspace remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | next | Before independent IxIR₂ persistence, cache keys, or self-hosted intermediate-root comparison. Land the strict codec and exact versioned preimages. |
 | [I3: modular source certification](#i3-modular-source-certification) | deferred | Wake before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. Compose independently checked units and reuse unaffected evidence after a dependency edit. |
 | [A1: allocation and spill validation](#a1-allocation-and-spill-validation) | deferred | Wake when an actual selected CFG needs general allocation, moves, or spills. Validate value flow through the allocated program, including calls and joins. |
@@ -120,6 +120,15 @@ the bignum extension: small/boxed transitions, limb operations, ownership,
 reclamation, and occupied-space costs need their own proofs and runtime ABI.
 
 ### F1: finite heap and stack
+
+The [first finite-storage slice](finite-space.md) is delivered. It proves
+committed-slot growth and live/reserved/freed partitioning across actual
+physical calls, checks a Word-valued fixed-slot layout and complete explicit
+frames, and relates profiled capacity to successful execution or capacity
+exhaustion. Nine source-compiled maps exercise suspended reservations while
+callees allocate. The existing native list arena's byte requirement composes
+through actual emitted ELF and release. Broader native allocation and host
+workspace bounds remain open.
 
 R4/R5 bound peak live nodes, but a reserved slot still occupies storage.
 `live + frees + presentCredits = allocs` does not by itself bound occupied
@@ -415,6 +424,7 @@ belong in those references.
 | Native unique reversal | [Closed native lists](source-native-unique.md) of at most 64 exact Words. Production emission is certified; the family's original source interface ends at typed execution. |
 | N2 | [Runtime list reversal](source-native-runtime.md): one object pair, caller-built unique lists of at most 64 Words, entry validation, source-to-object preservation, and full release. |
 | N3 scalar slices | [Runtime scalar functions](source-native-scalar.md) with exact arithmetic and overflow behavior; [physical scalar CFGs](source-native-physical-scalar.md) and [static captured exports](source-native-captured-scalar.md) with ordinary source application, exact closure reclamation, branches/joins, direct helpers, and finite-stack source-to-ELF proofs. |
+| F1 first heap slice | [Finite storage across calls](finite-space.md): separate occupied/committed heap and explicit control bytes, exact-capacity physical execution, source-map/reclamation composition, and the native arena byte-budget source-to-ELF theorem. |
 | E1/E2 | [Local instructions](x86-encoded-instructions.md) and [complete streams/ELF](x86-stream-objects.md), including calls, returns, provenance, entry selection, and checked PC32 relocation. Reference ISA, external bodies, and system loading remain explicit. |
 | R6 | [General credit refinement](credit-refinement.md) for both policies and every instruction, including prefixes and independent successful budgets. Complete reclamation requires explicit logical root ownership. |
 | B1/B2 | [Closed borrowed-call certificates](source-borrow.md) and [structural runtime borrowing](source-borrow-runtime.md), with lender preservation, two fewer RC operations, full reclamation, and unchanged peak. Recursive SCCs and native shared borrowing remain open. |

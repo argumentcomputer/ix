@@ -205,3 +205,8 @@ This is IxIR₁-plus-policy provenance. IxIR₂ diagnostic JSON has no wire,
 persistence, or cache identity claim; a canonical IxIR₂ codec remains future
 work. The new checker and reviewed report are pinned in the trust ledger.
 
+[Finite storage across calls](finite-space.md) adds a separately versioned
+Word-valued space model and finite runner over these same selected programs.
+It charges reservations in every saved caller, retained freed slots, and full
+explicit frames. The original source call/reuse report and peak-live laws keep
+their existing scope.

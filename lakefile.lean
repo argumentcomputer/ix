@@ -47,6 +47,10 @@ lean_exe «source-recursion» where
 lean_exe «source-call-reuse» where
   root := `SourceCallReuse
 
+/- Finite physical heap and explicit control storage across allocating calls. -/
+lean_exe «source-space» where
+  root := `SourceSpace
+
 /- Unique-major recursor and static-reuse source observations. -/
 lean_exe «source-unique-reuse» where
   root := `SourceUniqueReuse
@@ -112,6 +116,10 @@ lean_exe «check-source-recursion» where
 lean_exe «check-source-call-reuse» where
   srcDir := "scripts"
   root := `CheckSourceCallReuse
+
+lean_exe «check-source-space» where
+  srcDir := "scripts"
+  root := `CheckSourceSpace
 
 lean_exe «check-source-unique-reuse» where
   srcDir := "scripts"

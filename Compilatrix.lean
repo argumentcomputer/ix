@@ -147,12 +147,15 @@ import Compilatrix.Recursion.Rejections
 import Compilatrix.CallReuse.Sim
 import Compilatrix.CallReuse.MapSim
 import Compilatrix.CallReuse.Rejections
+import Compilatrix.CallReuse.SpaceSim
+import Compilatrix.CallReuse.SpaceObservations
 import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.Rejections
 import Compilatrix.UniqueReuse.NativeSim
 import Compilatrix.UniqueReuse.NativeObject
 import Compilatrix.UniqueReuse.RuntimeNativeSim
 import Compilatrix.UniqueReuse.RuntimeObjectSim
+import Compilatrix.UniqueReuse.RuntimeObjectSpace
 import Compilatrix.X86.RuntimeReject
 import Compilatrix.IxIR2.CreditRefinement
 import Compilatrix.IxIR2.CreditExamples

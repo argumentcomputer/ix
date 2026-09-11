@@ -858,6 +858,13 @@ native shared borrowing remain outside it.
 
 ## Extension policy
 
+The [finite-storage resource semantics](finite-space.md) adds checked heap and
+explicit control budgets to actual physical policy execution. Its versioned
+Word-valued slot model distinguishes live/reserved occupancy from committed
+backing storage and charges saved caller values and credits. It has its own
+representation admission and capacity errors; evaluator fuel, the existing
+peak-live results and native ABIs retain their separate meanings.
+
 The in-memory syntax and semantics support static unique and dynamic shared
 reuse with the same ownership/layout contracts. Extend them through separately
 checked passes and explicit policy versions. The [roadmap](roadmap.md) owns

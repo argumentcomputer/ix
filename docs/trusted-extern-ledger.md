@@ -386,6 +386,7 @@ source/environment premises, independent checks, and remaining scope.
 | --- | --- |
 | [Recursion recovery](source-recursion.md) | Checked source replacement, physical selection/fallback, reclamation and comparative costs; broader recursor forms need their own source proofs. |
 | [Reuse across calls](source-call-reuse.md) | Explicit v0/v1 policy, suspended credit ownership, checked map specialization, and source/resource composition |
+| [Finite storage across calls](finite-space.md) | Versioned Word-valued fixed-slot and explicit-frame resource semantics, occupied/committed partition, exact capacity success/failure and source-map reclamation; separate native arena byte-budget source-to-ELF composition. Nineteen fences retain the ordinary basis and three existing addressed-source hash dependencies. Host workspace and general native allocation remain outside this slice. |
 | [Unique reversal](source-unique-reuse.md) | Addressed recursor worlds, consuming emission, actual selected target, reservation safety, and no-RC resource laws |
 | [Closed native reversal](source-native-unique.md) | Bounded arena and main/release proof; its original source interface ends at typed execution, while production emission has E2 certificates. |
 | [Runtime native reversal](source-native-runtime.md) | Actual source-to-object execution for admitted caller heaps, exact-Word adapter, entry guards, frame/return-slot assumptions, and complete release; includes the separately checked counter-fold option. |

@@ -84,6 +84,8 @@ import Compilatrix.Recursion.Allocation
 import Compilatrix.Recursion.Costs
 import Compilatrix.CallReuse.Sim
 import Compilatrix.CallReuse.MapSim
+import Compilatrix.CallReuse.SpaceSim
+import Compilatrix.UniqueReuse.RuntimeObjectSpace
 
 /-!
 # Sorry/axiom fence (roadmap M0)
@@ -7403,3 +7405,73 @@ complete reclamation, and universal source-to-object composition. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceNatReturns
+
+
+/-! Finite occupied/committed heap and explicit control storage, source-map
+composition, and byte-budget adequacy for the actual native list objects. -/
+
+/-- info: 'Compilatrix.IxIR2.Eval.Policy.Step.slotGrowth' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Policy.Step.slotGrowth
+
+/-- info: 'Compilatrix.IxIR2.Eval.Policy.Steps.slot_partition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Policy.Steps.slot_partition
+
+/-- info: 'Compilatrix.IxIR2.Eval.Policy.runMachine_prefix_slots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Policy.runMachine_prefix_slots
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.Layout.committed_partition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.Layout.committed_partition
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.suspendCall_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.suspendCall_bytes
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.execute_erases' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.execute_erases
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.capacity_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.capacity_iff
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.capacity_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.capacity_exhausted
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.run_prefix_within' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.run_prefix_within
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.execute_heap_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.execute_heap_exact
+
+/-- info: 'Compilatrix.IxIR2.Eval.Space.release_committedBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Space.release_committedBytes
+
+/-- info: 'Compilatrix.CallReuse.MapLowered.finite_refines' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.CallReuse.MapLowered.finite_refines
+
+/-- info: 'Compilatrix.CallReuse.MapCompilation.finite_refines' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.CallReuse.MapCompilation.finite_refines
+
+/-- info: 'Compilatrix.X86.UniqueABI.Layout.enough_bytes_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueABI.Layout.enough_bytes_iff
+
+/-- info: 'Compilatrix.X86.UniqueABI.enough_cells_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueABI.enough_cells_iff
+
+/-- info: 'Compilatrix.X86.UniqueABI.one_byte_short' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueABI.one_byte_short
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.executes_of_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.executes_of_bytes
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.capacityRejects_of_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.capacityRejects_of_bytes
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects_of_bytes' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects_of_bytes

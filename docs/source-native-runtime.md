@@ -58,6 +58,12 @@ entry and prove a zero return with exactly unchanged memory. Other malformed
 inputs are covered by the generic read-only guard lemma and the executable
 rejection matrix; there is no universal arbitrary-pointer rejection theorem.
 
+The [finite-storage byte corollary](finite-space.md#native-list-arena) derives
+`80 + 32 * (n + 2)` bytes from this ABI and uses that premise in the actual
+source-to-ELF main/release theorem. It also proves the insufficient-byte
+capacity guard and rounding of a partial final cell. Stack return storage
+remains separate from the arena.
+
 ## Runtime arena ABI
 
 `unique-list-runtime-arena/1` receives the descriptor in `rdi` and the number
