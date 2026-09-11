@@ -978,11 +978,13 @@ splitting the *statement*:
   of the rows that answer them (`QueryRecord::absorb_deferred`); a worker's
   own entry registrations, which no claim pulls, are taken off.
 - Memory pointers are namespaced: record `r` stores its tables at pointer
-  base `r · 2^32 / W` (the kernel's memoization compares pointers as
-  `u32`, so every pointer stays below `2^32`), and the closure messages
-  become one `pull a_j, push b_j` pair per interval, which both verifiers
-  require sorted and disjoint (§5.2). A worker's tables must fit its
-  stride; the driver checks this before proving.
+  base `r · 2^32`. The kernel orders pointers on their low 32 bits
+  (`ptr_less_than` in `Ix/IxVM/Core.lean`: the pointer's range-checked
+  byte decomposition gives its namespace, and both operands must share
+  it), so a record's tables must each fit `2^32` entries — `Store` fails
+  when one would not — while the batch may hold up to `2^32 − 1` records.
+  The closure messages become one `pull a_j, push b_j` pair per interval,
+  which both verifiers require sorted and disjoint (§5.2).
 - Memoization does not cross workers; shared subcomputations are
   duplicated, as they are across env shards today (Init in 4 workers:
   90 GiB of records against 75 GiB for one execution, 2026-09-10).

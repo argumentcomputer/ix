@@ -231,6 +231,29 @@ wall: the first leaf's execution and the join/root dependencies remain
 exposed; the next lever is executing the first leaf while Stage 1's last
 shards prove, which needs the two commands to share one pipeline.
 
+## Mathlib: the pointer namespace
+
+The first Mathlib distributed run (256 ordered chunks) failed in worker 0
+before any commit: its width-3 memory table needed 238 M entries and the
+per-worker namespace was 2^32 / 256. The bound was the kernel's, not the
+protocol's: the memo RB-tree (the claim walk's address set) and def-eq's
+canonical pair ordering compared pointers with `u32_less_than`. Now every
+record owns a full namespace at base `r · 2^32`, and the kernel orders
+pointers within a namespace: `ptr_namespace_base` decomposes a pointer
+into 8 range-checked bytes (recomposition asserted, the top namespace
+excluded) and `ptr_less_than` asserts both operands share the namespace
+before comparing their low 32 bits (`Ix/IxVM/Core.lean`). The RB-tree
+keeps full pointer keys and compares with `ptr_less_than`, so a trace that
+mixes namespaces in one set fails the proof rather than merging two
+pointers with equal low bits (a false membership hit would skip a check).
+`Store` fails at allocation when a table reaches 2^32 entries, in the
+interpreter and in generated code. Nothing else changes: memory AIR,
+closure messages, batch policy and both verifiers were already
+base-agnostic. Regression: `rbtree-map` suite (same-namespace lookups at
+2^32 and 2^40; a mixed-namespace insert must fail).
+
+Cost on Init: single record 9:16 (9:11 before), records +0.2 % queries.
+
 ## Status against the recommendations
 
 | # | recommendation | state |

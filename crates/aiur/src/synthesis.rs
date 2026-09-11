@@ -1072,7 +1072,7 @@ mod tests {
   use super::*;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
-    execute::{IOBuffer, Ownership, pointer_stride},
+    execute::{IOBuffer, Ownership, pointer_base},
     shard::ShardRows,
   };
   use multi_stark::{
@@ -1783,7 +1783,7 @@ mod tests {
     let owner = |deferred: &FxHashMap<Vec<G>, u64>, absorb: bool| {
       let mut io1 = empty_io_buffer();
       let mut worker1 =
-        QueryRecord::with_pointer_base(system.toplevel(), pointer_stride(2));
+        QueryRecord::with_pointer_base(system.toplevel(), pointer_base(1));
       system
         .toplevel()
         .execute_in(1, vec![seven], &mut io1, &mut worker1)
@@ -1850,7 +1850,7 @@ mod tests {
       executions.set(executions.get() + 1);
       let mut io1 = empty_io_buffer();
       let mut worker1 =
-        QueryRecord::with_pointer_base(system.toplevel(), pointer_stride(2));
+        QueryRecord::with_pointer_base(system.toplevel(), pointer_base(1));
       system
         .toplevel()
         .execute_in(1, vec![seven], &mut io1, &mut worker1)
@@ -1890,11 +1890,11 @@ mod tests {
         0,
         input.clone(),
         &mut io_buffer,
-        pointer_stride(2),
+        pointer_base(1),
       )
       .expect("execution succeeds");
     let plan = system.single_shard_plan(&record);
-    assert_eq!(plan.memory_totals, vec![(1, pointer_stride(2), 1)]);
+    assert_eq!(plan.memory_totals, vec![(1, pointer_base(1), 1)]);
     let (claim, proof) = system.prove_from_execution_planned(
       0,
       &input,

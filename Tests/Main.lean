@@ -191,7 +191,8 @@ def primaryRunners : List (String × IO UInt32) := [
     return if r1 == 0 && r2 == 0 then 0 else 1),
   ("rbtree-map", do
     IO.println "rbtree-map"
-    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
+    match AiurTestEnv.build (do
+        let t ← IxVM.core.merge IxVM.byteStream; t.merge IxVM.rbTreeMap) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
   -- Multi-STARK recursive verifier: `multi-stark` runs the verifier's
