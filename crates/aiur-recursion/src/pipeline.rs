@@ -135,6 +135,10 @@ struct Context {
   catalogue: Vec<ShardShape>,
   arity: usize,
   runtime: tokio::runtime::Runtime,
+  /// The GPU worker proving every recursion machine (see [`crate::cuda`]),
+  /// when `IX_HC_GPU` selects it.
+  #[cfg(feature = "cuda")]
+  gpu: Option<crate::cuda::GpuRecursion>,
 }
 
 impl Context {
@@ -157,18 +161,41 @@ impl Context {
         leaf_max_log_row_count,
         CompressAir::<SP1Field>::compress_machine(),
       ));
+    let compress_verifier = CpuSP1ProverComponents::compress_verifier();
+    let shrink_verifier = CpuSP1ProverComponents::shrink_verifier();
+    let wrap_verifier = CpuSP1ProverComponents::wrap_verifier();
+    #[cfg(feature = "cuda")]
+    let gpu = if crate::cuda::GpuRecursion::selected() {
+      use crate::cuda::{Config, GpuRecursion, Machines};
+      let config = |mv: &MachineVerifier<SP1GlobalContext, RecursionSC>| {
+        Config { verifier: mv.shard_verifier().clone(), fri: *mv.fri_config() }
+      };
+      Some(GpuRecursion::start(Machines {
+        leaf: config(&leaf_verifier),
+        compress: config(&compress_verifier),
+        shrink: config(&shrink_verifier),
+        wrap: Config {
+          verifier: wrap_verifier.shard_verifier().clone(),
+          fri: *wrap_verifier.fri_config(),
+        },
+      })?)
+    } else {
+      None
+    };
     Ok(Self {
       machine: machine.machine().clone(),
       fingerprint: machine.fingerprint(),
       aiur_params,
       aiur_verifier,
       leaf_verifier,
-      compress_verifier: CpuSP1ProverComponents::compress_verifier(),
-      shrink_verifier: CpuSP1ProverComponents::shrink_verifier(),
-      wrap_verifier: CpuSP1ProverComponents::wrap_verifier(),
+      compress_verifier,
+      shrink_verifier,
+      wrap_verifier,
       catalogue: catalogue(machine.machine(), aiur_params),
       arity,
       runtime: tokio::runtime::Runtime::new()?,
+      #[cfg(feature = "cuda")]
+      gpu,
     })
   }
 
@@ -304,7 +331,11 @@ impl Context {
     &self,
     kind: ProgramKind,
     program: Arc<RecursionProgram<SP1Field>>,
-  ) -> MachineVerifyingKey<SP1GlobalContext> {
+  ) -> Result<MachineVerifyingKey<SP1GlobalContext>> {
+    #[cfg(feature = "cuda")]
+    if let Some(gpu) = &self.gpu {
+      return gpu.setup_inner(level_of(kind), program);
+    }
     let sv = self.verifier_of(kind);
     let prover = SimpleProver::new(
       sv.clone(),
@@ -312,7 +343,61 @@ impl Context {
         sv.clone(),
       ),
     );
-    self.runtime.block_on(async { prover.setup(program).await.1 })
+    Ok(self.runtime.block_on(async { prover.setup(program).await.1 }))
+  }
+
+  /// Setup and prove `record`, an execution of the program of `kind`, on the
+  /// kind's machine.
+  fn prove_record(
+    &self,
+    kind: ProgramKind,
+    program: Arc<RecursionProgram<SP1Field>>,
+    record: sp1_recursion_executor::ExecutionRecord<SP1Field>,
+  ) -> Result<(
+    MachineVerifyingKey<SP1GlobalContext>,
+    ShardProof<SP1GlobalContext, SP1PcsProofInner>,
+  )> {
+    #[cfg(feature = "cuda")]
+    if let Some(gpu) = &self.gpu {
+      return gpu.prove_inner(level_of(kind), program, record);
+    }
+    let sv = self.verifier_of(kind);
+    let prover = SimpleProver::new(
+      sv.clone(),
+      <CpuSP1ProverComponents as SP1ProverComponents>::RecursionProver::new(
+        sv.clone(),
+      ),
+    );
+    Ok(
+      self
+        .runtime
+        .block_on(prover.setup_and_prove_shard(program, None, record)),
+    )
+  }
+
+  /// Setup and prove `record`, an execution of the wrap `program`, on the
+  /// BN254 wrap machine.
+  fn prove_wrap_record(
+    &self,
+    program: Arc<RecursionProgram<SP1Field>>,
+    record: sp1_recursion_executor::ExecutionRecord<SP1Field>,
+  ) -> Result<WrapProof> {
+    #[cfg(feature = "cuda")]
+    if let Some(gpu) = &self.gpu {
+      let (vk, proof) = gpu.prove_outer(program, record)?;
+      return Ok(SP1WrapProof { vk, proof });
+    }
+    let shard_verifier = self.wrap_verifier.shard_verifier();
+    let prover = SimpleProver::new(
+      shard_verifier.clone(),
+      <CpuSP1ProverComponents as SP1ProverComponents>::WrapProver::new(
+        shard_verifier.clone(),
+      ),
+    );
+    let (vk, proof) = self
+      .runtime
+      .block_on(prover.setup_and_prove_shard(program, None, record));
+    Ok(SP1WrapProof { vk, proof })
   }
 
   /// The per-chip heights of `program` on the machine of `kind`.
@@ -548,7 +633,7 @@ impl AiurRecursionProver {
       let program = Arc::new(ctx.program(kind, &shapes, true));
       report_program(&format!("{kind:?}"), &program);
       Self::check_fits(&ctx, &shapes, kind, &program)?;
-      let vk = ctx.setup(kind, program.clone());
+      let vk = ctx.setup(kind, program.clone())?;
       map.insert(kind, vk.hash_koalabear());
       if kind.is_leaf() {
         machine_dirty = true;
@@ -769,7 +854,6 @@ impl AiurRecursionProver {
     };
     let mut blocks: Vec<WitnessBlock> = Vec::new();
     Witnessable::<WrapConfig>::write(&input, &mut blocks);
-    let shard_verifier = self.ctx.wrap_verifier.shard_verifier();
     let program = Arc::new(program);
     let mut runtime = Executor::<SP1Field, SP1ExtensionField, _>::new(
       program.clone(),
@@ -779,18 +863,7 @@ impl AiurRecursionProver {
     runtime
       .run()
       .map_err(|e| anyhow!("wrap program execution failed: {e:?}"))?;
-    let record = runtime.record;
-    let prover = SimpleProver::new(
-      shard_verifier.clone(),
-      <CpuSP1ProverComponents as SP1ProverComponents>::WrapProver::new(
-        shard_verifier.clone(),
-      ),
-    );
-    let (vk, proof) = self
-      .ctx
-      .runtime
-      .block_on(prover.setup_and_prove_shard(program, None, record));
-    Ok(SP1WrapProof { vk, proof })
+    self.ctx.prove_wrap_record(program, runtime.record)
   }
 
   /// Compress, shrink and wrap: the full tail from an Aiur proof to the
@@ -826,18 +899,7 @@ impl AiurRecursionProver {
     runtime
       .run()
       .map_err(|e| anyhow!("{kind:?} program execution failed: {e:?}"))?;
-    let record = runtime.record;
-    let sv = self.ctx.verifier_of(kind);
-    let prover = SimpleProver::new(
-      sv.clone(),
-      <CpuSP1ProverComponents as SP1ProverComponents>::RecursionProver::new(
-        sv.clone(),
-      ),
-    );
-    let (vk, proof) = self
-      .ctx
-      .runtime
-      .block_on(prover.setup_and_prove_shard(program, None, record));
+    let (vk, proof) = self.ctx.prove_record(kind, program, runtime.record)?;
     let expected = self.expected.get(&kind).expect("every kind has a key");
     if vk.hash_koalabear() != *expected {
       return Err(anyhow!(
@@ -881,6 +943,17 @@ impl AiurRecursionProver {
         vk_merkle_proofs,
       },
     }
+  }
+}
+
+/// The GPU worker's level of a program kind (see [`crate::cuda`]).
+#[cfg(feature = "cuda")]
+fn level_of(kind: ProgramKind) -> crate::cuda::Level {
+  use crate::cuda::Level;
+  match kind {
+    ProgramKind::Leaf(_) => Level::Leaf,
+    ProgramKind::ComposeLeaf(_) | ProgramKind::Compose(_) => Level::Compress,
+    ProgramKind::Shrink => Level::Shrink,
   }
 }
 

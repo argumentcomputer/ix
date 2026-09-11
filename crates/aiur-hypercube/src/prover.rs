@@ -107,26 +107,36 @@ pub fn shard_verifier(
 }
 
 /// Proves an execution's shards, returning the verifying key and the proof.
-/// With the `cuda` feature, `IX_HC_GPU=1` routes proving through
-/// [`crate::cuda::prove`]; verification is identical either way.
+/// See [`prove_iter`].
 pub fn prove(
   machine: &AiurMachine,
-  mut records: Vec<AiurRecord>,
+  records: Vec<AiurRecord>,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
+  prove_iter(machine, records.into_iter(), params)
+}
+
+/// Proves an execution's shards, returning the verifying key and the proof.
+/// The records are taken one at a time — padded into the shape catalogue,
+/// proven, dropped — so a lazily assembled partition
+/// ([`crate::shard::Partition::into_records`]) keeps one shard's traces
+/// resident at a time. With the `cuda` feature, `IX_HC_GPU=1` routes proving
+/// through [`crate::cuda::prove`]; verification is identical either way.
+pub fn prove_iter(
+  machine: &AiurMachine,
+  records: impl ExactSizeIterator<Item = AiurRecord>,
+  params: ProverParams,
+) -> (AiurVerifyingKey, AiurProof) {
+  let debug = std::env::var_os("IX_HC_DEBUG").is_some();
+  let mv = debug.then(|| MachineVerifier::new(shard_verifier(machine, params)));
   // Every shard is padded into the machine's shape catalogue (see
   // [`crate::shape`]); the partitioner keeps shards under the area bound,
   // so the only way this fails is a row cap too low for the pad chip.
-  let shapes = crate::shape::pad_records(machine, params, &mut records)
-    .unwrap_or_else(|e| panic!("shard shape padding: {e}"));
-  #[cfg(feature = "cuda")]
-  if std::env::var_os("IX_HC_GPU").is_some() {
-    return crate::cuda::prove(machine, records, params);
-  }
-  if std::env::var_os("IX_HC_DEBUG").is_some() {
-    let mv = MachineVerifier::new(shard_verifier(machine, params));
-    for (i, (record, class)) in records.iter().zip(&shapes).enumerate() {
-      match sp1_hypercube::prover::shape_from_record(&mv, record) {
+  let padded = records.enumerate().map(move |(i, mut record)| {
+    let class = crate::shape::pad_record(machine, params, &mut record)
+      .unwrap_or_else(|e| panic!("shard {i} shape padding: {e}"));
+    if let Some(mv) = &mv {
+      match sp1_hypercube::prover::shape_from_record(mv, &record) {
         Some(shape) => eprintln!(
           "hypercube shard {i} shape: preprocessed_area {}, main_area {} \
            (class {} with {} padding column(s))",
@@ -138,10 +148,15 @@ pub fn prove(
         None => eprintln!("hypercube shard {i} shape: no matching cluster"),
       }
     }
-    assert!(
-      std::env::var_os("IX_HC_PLAN_ONLY").is_none(),
-      "IX_HC_PLAN_ONLY: stopping after shape report"
-    );
+    record
+  });
+  if debug && std::env::var_os("IX_HC_PLAN_ONLY").is_some() {
+    padded.for_each(drop);
+    panic!("IX_HC_PLAN_ONLY: stopping after shape report");
+  }
+  #[cfg(feature = "cuda")]
+  if std::env::var_os("IX_HC_GPU").is_some() {
+    return crate::cuda::prove(machine, padded, params);
   }
   let verifier = shard_verifier(machine, params);
   let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -150,8 +165,8 @@ pub fn prove(
     let (pk, vk) = prover.setup(Arc::new(AiurProgram)).await;
     // SAFETY: the preprocessed data was produced by this very prover.
     let pk = unsafe { pk.into_inner() };
-    let mut shard_proofs = Vec::with_capacity(records.len());
-    for record in records {
+    let mut shard_proofs = Vec::with_capacity(padded.len());
+    for record in padded {
       shard_proofs.push(prover.prove_shard(pk.clone(), record).await);
     }
     (vk, MachineProof { shard_proofs })

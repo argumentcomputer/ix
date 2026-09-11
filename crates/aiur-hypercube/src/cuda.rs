@@ -46,9 +46,7 @@ use sp1_gpu_merkle_tree::{CudaTcsProver, Poseidon2SP1Field16CudaProver};
 use sp1_gpu_shard_prover::{CudaShardProver, CudaShardProverComponents};
 use sp1_gpu_tracegen::CudaTracegenAir;
 use sp1_hypercube::{
-  MachineProof, MachineVerifier, SP1InnerPcs,
-  air::MachineAir,
-  prover::{SimpleProver, shape_from_record},
+  MachineProof, SP1InnerPcs, air::MachineAir, prover::SimpleProver,
 };
 use sp1_primitives::{
   SP1GlobalContext,
@@ -80,10 +78,11 @@ impl CudaShardProverComponents<SP1GlobalContext> for AiurCudaComponents {
 
 /// Proves an execution's shards on the GPU, returning the verifying key and
 /// the proof — the same types [`crate::prover::prove`] returns, verified by
-/// the same [`crate::prover::verify`].
+/// the same [`crate::prover::verify`]. The records are padded shards (see
+/// [`crate::prover::prove_iter`]), taken one at a time.
 pub fn prove(
   machine: &AiurMachine,
-  records: Vec<AiurRecord>,
+  records: impl ExactSizeIterator<Item = AiurRecord>,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
   // Trace-buffer capacity. One dense buffer (and one pinned host buffer)
@@ -91,8 +90,11 @@ pub fn prove(
   // section zero-padded to a multiple of the stacking height, so it must
   // fit the preprocessed area plus the largest shard's main area. Setup
   // generates every chip's preprocessed trace regardless of the record, so
-  // that area comes from the machine; the main area comes from
-  // `shape_from_record` (already rounded to the stacking height). One extra
+  // that area comes from the machine. A padded shard's main round is one of
+  // the catalogue's classes and the records arrive lazily, so the buffer is
+  // sized for the largest class (2^29 cells less the preprocessed round:
+  // 2 GiB of pinned host memory and as much on the device) rather than
+  // measured on the records, which would mean holding them all. One extra
   // stacked column of headroom.
   let stacking = 1usize << params.log_stacking_height;
   let preprocessed_area = machine
@@ -105,12 +107,9 @@ pub fn prove(
     })
     .sum::<usize>()
     .next_multiple_of(stacking);
-  let mv = MachineVerifier::new(shard_verifier(machine, params));
-  let main_area = records
-    .iter()
-    .filter_map(|record| shape_from_record(&mv, record))
-    .map(|shape| shape.main_area)
-    .max()
+  let main_area = crate::shape::main_areas(machine.machine(), params)
+    .last()
+    .copied()
     .unwrap_or(stacking);
   let capacity = preprocessed_area + main_area + stacking;
   let capacity = std::env::var("IX_HC_GPU_TRACE_CAP")

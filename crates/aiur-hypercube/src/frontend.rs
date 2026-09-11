@@ -22,9 +22,9 @@ use multi_stark::{
 
 use crate::{
   machine::{AiurMachine, BuildError, CircuitSpec},
-  prover::{AiurProof, AiurVerifyingKey, ProverParams, prove},
+  prover::{AiurProof, AiurVerifyingKey, ProverParams, prove_iter},
   record::AiurRecord,
-  shard::{ShardingParams, partition_records},
+  shard::{ShardingParams, partition_shards},
 };
 
 /// Aiur's memory circuit for Hypercube.
@@ -229,10 +229,13 @@ impl ToplevelMachine {
       claim.iter().map(|x| crate::expr::convert_element(*x)).collect();
     let extended =
       self.machine.extended_traces(traces).map_err(ExecuteProveError::Build)?;
-    let records =
-      partition_records(&self.machine, &extended, &claim_backend, &sharding)
+    let partition =
+      partition_shards(&self.machine, &extended, &claim_backend, &sharding)
         .map_err(ExecuteProveError::Build)?;
-    let (vk, proof) = prove(&self.machine, records, params);
+    // The shards view `extended`; each record is assembled from it as the
+    // prover asks for it, so one shard's traces are resident at a time.
+    let records = partition.into_records(&self.machine);
+    let (vk, proof) = prove_iter(&self.machine, records, params);
     Ok((claim, vk, proof))
   }
 }

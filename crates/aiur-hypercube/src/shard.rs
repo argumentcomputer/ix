@@ -89,9 +89,202 @@ fn canonical_tuple(mut t: Vec<u32>) -> Vec<u32> {
   t
 }
 
-/// Splits an execution into shard records. `extended` are the outputs of
+/// A splittable circuit's rows in one shard, as a view into the execution's
+/// trace of that circuit: row ranges (one epoch slice, or the blocks a
+/// load-affinity circuit was assigned), the multiplicity reductions of the
+/// rows whose provides were duplicated elsewhere, and the rows duplicated
+/// *into* this shard with their demanded multiplicity. Nothing is copied
+/// until [`View::materialize`]; a refinement round therefore costs a few
+/// words per row edit rather than a second copy of the execution.
+struct View {
+  slot: usize,
+  /// Ascending, disjoint row ranges of `extended[slot]`.
+  ranges: Vec<std::ops::Range<usize>>,
+  /// `(row, delta)`, ascending by row: `mult_col` of `row` less `delta`.
+  reductions: Vec<(usize, F)>,
+  /// `(row, mult)`: copies of `row` with `mult_col` set to `mult`, after
+  /// the ranges.
+  extra: Vec<(usize, F)>,
+  /// The provide multiplicity column the edits apply to.
+  mult_col: Option<usize>,
+}
+
+impl View {
+  fn range(slot: usize, range: std::ops::Range<usize>) -> Self {
+    Self {
+      slot,
+      ranges: vec![range],
+      reductions: vec![],
+      extra: vec![],
+      mult_col: None,
+    }
+  }
+
+  fn height(&self) -> usize {
+    self.ranges.iter().map(ExactSizeIterator::len).sum::<usize>()
+      + self.extra.len()
+  }
+
+  /// Every row of the view, in order, with the edits applied.
+  fn for_each_row(&self, trace: &RowMajorMatrix<F>, mut f: impl FnMut(&[F])) {
+    let w = trace.width();
+    let mut buf: Vec<F> = Vec::with_capacity(w);
+    let mut reductions = self.reductions.iter().peekable();
+    for range in &self.ranges {
+      for r in range.clone() {
+        let row = &trace.values[r * w..(r + 1) * w];
+        while reductions.peek().is_some_and(|(rr, _)| *rr < r) {
+          reductions.next();
+        }
+        match reductions.peek() {
+          Some((rr, delta)) if *rr == r => {
+            buf.clear();
+            buf.extend_from_slice(row);
+            buf[self.mult_col.expect("edits name the multiplicity column")] -=
+              *delta;
+            f(&buf);
+            reductions.next();
+          },
+          _ => f(row),
+        }
+      }
+    }
+    for (r, mult) in &self.extra {
+      buf.clear();
+      buf.extend_from_slice(&trace.values[r * w..(r + 1) * w]);
+      buf[self.mult_col.expect("edits name the multiplicity column")] = *mult;
+      f(&buf);
+    }
+  }
+
+  fn materialize(&self, trace: &RowMajorMatrix<F>) -> RowMajorMatrix<F> {
+    let w = trace.width();
+    let mut values = Vec::with_capacity(self.height() * w);
+    self.for_each_row(trace, |row| values.extend_from_slice(row));
+    RowMajorMatrix::new(values, w)
+  }
+}
+
+/// A circuit's rows in one shard: the atomic circuits (replicated, with
+/// per-shard multiplicity columns) are owned copies; the splittable ones
+/// are views.
+enum Chunk {
+  Owned(RowMajorMatrix<F>),
+  View(View),
+}
+
+impl Chunk {
+  fn height(&self) -> usize {
+    match self {
+      Self::Owned(m) => m.height(),
+      Self::View(v) => v.height(),
+    }
+  }
+
+  fn width(&self, extended: &[Option<RowMajorMatrix<F>>]) -> usize {
+    match self {
+      Self::Owned(m) => m.width(),
+      Self::View(v) => extended[v.slot].as_ref().expect("viewed trace").width(),
+    }
+  }
+
+  fn materialize(
+    self,
+    extended: &[Option<RowMajorMatrix<F>>],
+  ) -> RowMajorMatrix<F> {
+    match self {
+      Self::Owned(m) => m,
+      Self::View(v) => {
+        v.materialize(extended[v.slot].as_ref().expect("viewed trace"))
+      },
+    }
+  }
+}
+
+/// One shard as the partitioner leaves it: its circuits' chunks and the
+/// adapter rows balancing its boundary, not yet laid out as traces.
+struct PlannedShard {
+  chunks: Vec<Option<Chunk>>,
+  adapters: Vec<AdapterRow>,
+}
+
+/// A partitioned execution, its shards assembled into records one at a time.
+///
+/// Assembly is where a shard becomes big: the adapter chips are wide (two
+/// Poseidon2 permutations per memory tuple), every shard is padded to the
+/// row alignment and, at proving time, to its shape class, so a large
+/// execution's records amount to `shards × 2^29` cells — hundreds of
+/// gigabytes for a few hundred shards, far more than the planned chunks
+/// they come from. [`Partition::into_records`] assembles each record when
+/// the prover asks for it, so one record's traces are resident at a time,
+/// beside the execution's traces (`extended`) the views point into.
+pub struct Partition<'e> {
+  extended: &'e [Option<RowMajorMatrix<F>>],
+  shards: Vec<Option<PlannedShard>>,
+  claim: Vec<F>,
+}
+
+impl Partition<'_> {
+  /// Number of shards.
+  #[must_use]
+  pub fn len(&self) -> usize {
+    self.shards.len()
+  }
+
+  #[must_use]
+  pub fn is_empty(&self) -> bool {
+    self.shards.is_empty()
+  }
+
+  /// Assembles shard `k` (each shard can be assembled once). With
+  /// `IX_HC_DEBUG`, simulates the record's full LogUp balance — every chip
+  /// plus `eval_public_values` — so a partitioner bug fails here, in
+  /// seconds, not inside GKR verification after the whole prove.
+  pub fn assemble(&mut self, machine: &AiurMachine, k: usize) -> AiurRecord {
+    let shard = self.shards[k].take().expect("a shard is assembled once");
+    let chunks = shard
+      .chunks
+      .into_iter()
+      .map(|chunk| chunk.map(|chunk| chunk.materialize(self.extended)))
+      .collect();
+    let record =
+      assemble_shard(machine, chunks, &shard.adapters, &self.claim, k == 0);
+    if debug_enabled() {
+      debug_check_balance(machine, k, &record);
+    }
+    record
+  }
+
+  /// The shard records, assembled lazily in shard order.
+  pub fn into_records(
+    self,
+    machine: &AiurMachine,
+  ) -> impl ExactSizeIterator<Item = AiurRecord> {
+    let n = self.len();
+    let mut partition = self;
+    (0..n).map(move |k| partition.assemble(machine, k))
+  }
+}
+
+/// Splits an execution into shard records: [`partition_shards`] with every
+/// record assembled up front.
+pub fn partition_records(
+  machine: &AiurMachine,
+  extended: &[Option<RowMajorMatrix<F>>],
+  claim: &[F],
+  params: &ShardingParams,
+) -> Result<Vec<AiurRecord>, BuildError> {
+  Ok(
+    partition_shards(machine, extended, claim, params)?
+      .into_records(machine)
+      .collect(),
+  )
+}
+
+/// Splits an execution into shards. `extended` are the outputs of
 /// [`AiurMachine::extended_traces`]; the first shard carries the claim (and
-/// the memory boundary's chain openings).
+/// the memory boundary's chain openings). The shards view `extended`, which
+/// must outlive the [`Partition`].
 // The refinement fractions and row cuts round through `f64`; shard counts
 // and trace heights are far below 2^52, so the casts are exact enough.
 #[allow(
@@ -99,12 +292,12 @@ fn canonical_tuple(mut t: Vec<u32>) -> Vec<u32> {
   clippy::cast_possible_truncation,
   clippy::cast_sign_loss
 )]
-pub fn partition_records(
+pub fn partition_shards<'e>(
   machine: &AiurMachine,
-  extended: &[Option<RowMajorMatrix<F>>],
+  extended: &'e [Option<RowMajorMatrix<F>>],
   claim: &[F],
   params: &ShardingParams,
-) -> Result<Vec<AiurRecord>, BuildError> {
+) -> Result<Partition<'e>, BuildError> {
   let num_split = machine.num_circuits() + 1;
   assert_eq!(extended.len(), num_split, "one trace per splittable slot");
 
@@ -273,25 +466,22 @@ pub fn partition_records(
       .collect();
 
     // ── Demand pass: what does each shard's epoch slice require?
-    let epoch_chunk = |plan: &ShardPlan, slot: usize| {
-      let range = plan.ranges[slot].clone();
-      extended[slot].as_ref().filter(|_| !range.is_empty()).map(|t| {
-        let w = t.width();
-        RowMajorMatrix::new(
-          t.values[range.start * w..range.end * w].to_vec(),
-          w,
-        )
-      })
-    };
     let mut demands: Vec<HashMap<Vec<u32>, i128>> = plans
       .par_iter()
       .map(|plan| {
         let mut demand: HashMap<Vec<u32>, i128> = HashMap::new();
         for &slot in &split_slots {
-          if let Some(chunk) = epoch_chunk(plan, slot) {
-            let circuit = machine.lowered_at(slot).unwrap();
-            accumulate_balance(circuit, &chunk, &mut demand);
+          let range = plan.ranges[slot].clone();
+          if range.is_empty() {
+            continue;
           }
+          let circuit = machine.lowered_at(slot).unwrap();
+          accumulate_balance(
+            circuit,
+            &Chunk::View(View::range(slot, range)),
+            extended,
+            &mut demand,
+          );
         }
         demand
       })
@@ -373,57 +563,72 @@ pub fn partition_records(
         *reductions[*slot].entry(*row).or_default() += r;
       }
     }
+    // Per slot, ascending by row, so a shard's slice of them is a range.
+    let reductions: Vec<Vec<(usize, F)>> = reductions
+      .into_par_iter()
+      .map(|map| {
+        let mut v: Vec<(usize, F)> =
+          map.into_iter().map(|(row, d)| (row, to_field(d))).collect();
+        v.sort_unstable_by_key(|(row, _)| *row);
+        v
+      })
+      .collect();
 
     // ── Per-shard chunks and residuals.
-    let per_shard: Vec<(
-      Vec<Option<RowMajorMatrix<F>>>,
-      HashMap<Vec<u32>, i128>,
-    )> = plans
+    let per_shard: Vec<(Vec<Option<Chunk>>, HashMap<Vec<u32>, i128>)> = plans
       .par_iter()
       .zip(&replicated)
       .enumerate()
       .map(|(shard_index, (plan, replicated))| {
         let is_claim_shard = shard_index == 0;
         let pv = machine.base_public_values(claim, is_claim_shard);
-        let mut chunks: Vec<Option<RowMajorMatrix<F>>> =
-          Vec::with_capacity(num_split);
+        let mut chunks: Vec<Option<Chunk>> = Vec::with_capacity(num_split);
         for slot in 0..num_split {
           let circuit = machine.lowered_at(slot).unwrap();
           let chunk = if is_atomic(slot) {
-            let mut full = extended[slot].clone();
-            if let Some(m) = &mut full {
-              refresh_public_columns(circuit, m, &pv);
-            }
-            full
+            extended[slot].clone().map(|mut m| {
+              refresh_public_columns(circuit, &mut m, &pv);
+              Chunk::Owned(m)
+            })
           } else if affinity[slot] {
-            let trace = extended[slot].as_ref().unwrap();
-            let (w, h) = (trace.width(), trace.height());
-            let mut values = Vec::new();
+            let h = extended[slot].as_ref().unwrap().height();
+            let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
             for (b, home) in block_home[slot].iter().enumerate() {
               if *home == shard_index {
                 let lo = b * AFFINITY_BLOCK;
                 let hi = ((b + 1) * AFFINITY_BLOCK).min(h);
-                values.extend_from_slice(&trace.values[lo * w..hi * w]);
-              }
-            }
-            (!values.is_empty()).then(|| RowMajorMatrix::new(values, w))
-          } else {
-            // The epoch slice, with home multiplicities reduced by what
-            // the duplicates below took over.
-            let mut chunk = epoch_chunk(plan, slot);
-            if let (Some(chunk), Some(info)) = (&mut chunk, &provides[slot])
-              && !reductions[slot].is_empty()
-            {
-              let w = chunk.width();
-              let start = plan.ranges[slot].start;
-              for r in 0..chunk.height() {
-                if let Some(d) = reductions[slot].get(&(start + r)) {
-                  let at = r * w + info.mult_col;
-                  chunk.values[at] -= to_field(*d);
+                match ranges.last_mut() {
+                  Some(last) if last.end == lo => last.end = hi,
+                  _ => ranges.push(lo..hi),
                 }
               }
             }
-            chunk
+            (!ranges.is_empty()).then(|| {
+              Chunk::View(View {
+                slot,
+                ranges,
+                reductions: vec![],
+                extra: vec![],
+                mult_col: None,
+              })
+            })
+          } else {
+            // The epoch slice, with home multiplicities reduced by what
+            // the duplicates below took over.
+            let range = plan.ranges[slot].clone();
+            (extended[slot].is_some() && !range.is_empty()).then(|| {
+              let mut view = View::range(slot, range.clone());
+              if let Some(info) = &provides[slot]
+                && !reductions[slot].is_empty()
+              {
+                let all = &reductions[slot];
+                let lo = all.partition_point(|(r, _)| *r < range.start);
+                let hi = all.partition_point(|(r, _)| *r < range.end);
+                view.mult_col = Some(info.mult_col);
+                view.reductions = all[lo..hi].to_vec();
+              }
+              Chunk::View(view)
+            })
           };
           chunks.push(chunk);
         }
@@ -432,17 +637,25 @@ pub fn partition_records(
         for group in replicated.chunk_by(|(a, _, _), (b, _, _)| a == b) {
           let slot = group[0].0;
           let info = provides[slot].as_ref().unwrap();
-          let trace = extended[slot].as_ref().unwrap();
-          let w = trace.width();
-          let mut extra = Vec::new();
-          for (_, row, r) in group {
-            let at = extra.len();
-            extra.extend_from_slice(&trace.values[row * w..(row + 1) * w]);
-            extra[at + info.mult_col] = to_field(*r);
-          }
+          let extra: Vec<(usize, F)> =
+            group.iter().map(|(_, row, r)| (*row, to_field(*r))).collect();
           match &mut chunks[slot] {
-            Some(chunk) => chunk.values.extend_from_slice(&extra),
-            none => *none = Some(RowMajorMatrix::new(extra, w)),
+            Some(Chunk::View(view)) => {
+              view.mult_col = Some(info.mult_col);
+              view.extra.extend(extra);
+            },
+            Some(Chunk::Owned(_)) => {
+              unreachable!("duplicated rows belong to splittable circuits")
+            },
+            none => {
+              *none = Some(Chunk::View(View {
+                slot,
+                ranges: vec![],
+                reductions: vec![],
+                extra,
+                mult_col: Some(info.mult_col),
+              }));
+            },
           }
         }
 
@@ -450,7 +663,7 @@ pub fn partition_records(
         for (slot, chunk) in chunks.iter().enumerate() {
           let Some(chunk) = chunk else { continue };
           let circuit = machine.lowered_at(slot).unwrap();
-          accumulate_balance(circuit, chunk, &mut residual);
+          accumulate_balance(circuit, chunk, extended, &mut residual);
         }
         if is_claim_shard {
           // The claim send from the public values is a require of the
@@ -461,9 +674,10 @@ pub fn partition_records(
           *residual.entry(claim_tuple).or_default() += 1;
         }
 
-        // Absorb what the shard's own tables can provide.
+        // Absorb what the shard's own tables can provide (the tables are
+        // atomic circuits, hence owned chunks).
         for (slot, chunk) in chunks.iter_mut().enumerate() {
-          let Some(chunk) = chunk else { continue };
+          let Some(Chunk::Owned(chunk)) = chunk else { continue };
           let circuit = machine.lowered_at(slot).unwrap();
           absorb_into_tables(circuit, chunk, &mut residual);
         }
@@ -526,7 +740,8 @@ pub fn partition_records(
           .iter()
           .flatten()
           .map(|t| {
-            t.height().max(1).next_multiple_of(ROW_ALIGNMENT) * t.width()
+            t.height().max(1).next_multiple_of(ROW_ALIGNMENT)
+              * t.width(extended)
           })
           .sum();
         let mut class_rows = vec![0usize; machine.global_classes.len()];
@@ -618,7 +833,8 @@ pub fn partition_records(
             .iter()
             .flatten()
             .map(|t| {
-              t.height().max(1).next_multiple_of(ROW_ALIGNMENT) * t.width()
+              t.height().max(1).next_multiple_of(ROW_ALIGNMENT)
+                * t.width(extended)
             })
             .sum();
           eprintln!(
@@ -629,24 +845,13 @@ pub fn partition_records(
           );
         }
       }
-      // ── Assemble.
-      let records: Vec<AiurRecord> = shard_chunks
+      // Assembly is deferred to `Partition::assemble`.
+      let shards = shard_chunks
         .into_iter()
         .zip(adapters)
-        .enumerate()
-        .map(|(shard_index, (chunks, rows))| {
-          assemble_shard(machine, chunks, &rows, claim, shard_index == 0)
-        })
+        .map(|(chunks, adapters)| Some(PlannedShard { chunks, adapters }))
         .collect();
-      if debug {
-        // Simulate the full LogUp balance of every shard — every chip plus
-        // `eval_public_values` — so a partitioner bug fails here, in
-        // seconds, not inside GKR verification after the whole prove.
-        records.par_iter().enumerate().for_each(|(shard, record)| {
-          debug_check_balance(machine, shard, record)
-        });
-      }
-      return Ok(records);
+      return Ok(Partition { extended, shards, claim: claim.to_vec() });
     }
     if refine_round == MAX_REFINE_ROUNDS {
       let worst = *over.iter().max_by_key(|k| totals[**k]).unwrap();
@@ -670,6 +875,8 @@ pub fn partition_records(
 
 /// Panics if a shard record's interactions do not balance (see the call
 /// site above). Mirrors what the chips and `eval_public_values` emit.
+/// Rows are checked in parallel chunks (records are assembled, and so
+/// checked, one at a time).
 pub(crate) fn debug_check_balance(
   machine: &AiurMachine,
   shard: usize,
@@ -677,58 +884,81 @@ pub(crate) fn debug_check_balance(
 ) {
   use crate::record::{CLAIM_WIDTH, PV_CHAIN_LEN, PV_CLAIM_FLAG, PV_DIGEST};
   use sp1_hypercube::septic_digest::SepticDigest;
-  let mut balance: HashMap<Vec<u32>, i128> = HashMap::new();
-  let add = |balance: &mut HashMap<Vec<u32>, i128>, values: Vec<F>, mult: F| {
+  fn add(balance: &mut HashMap<Vec<u32>, i128>, values: &[F], mult: F) {
     if mult == F::zero() {
       return;
     }
     let tuple =
       canonical_tuple(values.iter().map(|v| v.as_canonical_u32()).collect());
     *balance.entry(tuple).or_default() += signed(mult);
-  };
-  for slot in 0..machine.num_slots() {
-    let Some(trace) = &record.traces[slot] else { continue };
-    let width = trace.width();
-    if let Some(circuit) = machine.lowered_at(slot) {
-      let empty: [F; 0] = [];
-      for r in 0..trace.height() {
-        let main = &trace.values[r * width..(r + 1) * width];
-        let prep: &[F] = match &circuit.preprocessed {
-          Some(p) if r < p.height() => {
-            &p.values[r * p.width()..(r + 1) * p.width()]
-          },
-          _ => &empty,
-        };
-        for interaction in &circuit.lowered.interactions {
-          add(
-            &mut balance,
-            interaction.values.iter().map(|v| v.eval_row(prep, main)).collect(),
-            interaction.multiplicity.eval_row(prep, main),
-          );
+  }
+  const CHUNK: usize = 1 << 12;
+  let items: Vec<(usize, usize, usize)> = (0..machine.num_slots())
+    .flat_map(|slot| {
+      let h = record.traces[slot].as_ref().map_or(0, Matrix::height);
+      (0..h).step_by(CHUNK).map(move |lo| (slot, lo, (lo + CHUNK).min(h)))
+    })
+    .collect();
+  let partial: Vec<HashMap<Vec<u32>, i128>> = items
+    .par_iter()
+    .map(|&(slot, lo, hi)| {
+      let mut balance: HashMap<Vec<u32>, i128> = HashMap::new();
+      let trace = record.traces[slot].as_ref().expect("slot has a trace");
+      let width = trace.width();
+      if let Some(circuit) = machine.lowered_at(slot) {
+        let empty: [F; 0] = [];
+        for r in lo..hi {
+          let main = &trace.values[r * width..(r + 1) * width];
+          let prep: &[F] = match &circuit.preprocessed {
+            Some(p) if r < p.height() => {
+              &p.values[r * p.width()..(r + 1) * p.width()]
+            },
+            _ => &empty,
+          };
+          for interaction in &circuit.lowered.interactions {
+            let values: Vec<F> = interaction
+              .values
+              .iter()
+              .map(|v| v.eval_row(prep, main))
+              .collect();
+            add(
+              &mut balance,
+              &values,
+              interaction.multiplicity.eval_row(prep, main),
+            );
+          }
+        }
+      } else {
+        let spec =
+          machine.global_classes[slot - machine.idx_adapter_bytes() - 1];
+        for r in lo..hi {
+          let row = &trace.values[r * width..(r + 1) * width];
+          for (values, mult) in spec.row_lookups(row) {
+            add(&mut balance, &values, mult);
+          }
         }
       }
-    } else {
-      let spec = machine.global_classes[slot - machine.idx_adapter_bytes() - 1];
-      for r in 0..trace.height() {
-        let row = &trace.values[r * width..(r + 1) * width];
-        for (values, mult) in spec.row_lookups(row) {
-          add(&mut balance, values, mult);
-        }
-      }
+      balance
+    })
+    .collect();
+  let mut balance: HashMap<Vec<u32>, i128> = HashMap::new();
+  for part in partial {
+    for (tuple, r) in part {
+      *balance.entry(tuple).or_default() += r;
     }
   }
   // `eval_public_values`.
   let pv = &record.public_values;
-  add(&mut balance, pv[..CLAIM_WIDTH].to_vec(), pv[PV_CLAIM_FLAG]);
+  add(&mut balance, &pv[..CLAIM_WIDTH], pv[PV_CLAIM_FLAG]);
   let chain_channel = F::from_canonical_u32(crate::global::CHAIN_CHANNEL);
   let start = SepticDigest::<F>::zero().0;
   let mut values = vec![chain_channel, F::zero()];
   values.extend_from_slice(&start.x.0);
   values.extend_from_slice(&start.y.0);
-  add(&mut balance, values, F::one());
+  add(&mut balance, &values, F::one());
   let mut values = vec![chain_channel, pv[PV_CHAIN_LEN]];
   values.extend_from_slice(&pv[PV_DIGEST..PV_DIGEST + 14]);
-  add(&mut balance, values, -F::one());
+  add(&mut balance, &values, -F::one());
 
   let bad: Vec<_> = balance.iter().filter(|(_, r)| **r != 0).take(4).collect();
   assert!(
@@ -847,19 +1077,11 @@ fn refresh_public_columns(
 /// Adds a chunk's interaction multiplicities to the shard's residual.
 fn accumulate_balance(
   circuit: &LoweredCircuit,
-  chunk: &RowMajorMatrix<F>,
+  chunk: &Chunk,
+  extended: &[Option<RowMajorMatrix<F>>],
   residual: &mut HashMap<Vec<u32>, i128>,
 ) {
-  let width = chunk.width();
-  let empty: [F; 0] = [];
-  for r in 0..chunk.height() {
-    let main = &chunk.values[r * width..(r + 1) * width];
-    let prep: &[F] = match &circuit.preprocessed {
-      Some(p) if r < p.height() => {
-        &p.values[r * p.width()..(r + 1) * p.width()]
-      },
-      _ => &empty,
-    };
+  let mut row = |prep: &[F], main: &[F]| {
     for interaction in &circuit.lowered.interactions {
       let mult = interaction.multiplicity.eval_row(prep, main);
       if mult == F::zero() {
@@ -874,6 +1096,27 @@ fn accumulate_balance(
       );
       *residual.entry(tuple).or_default() += signed(mult);
     }
+  };
+  let empty: [F; 0] = [];
+  match chunk {
+    Chunk::Owned(m) => {
+      let width = m.width();
+      for r in 0..m.height() {
+        let main = &m.values[r * width..(r + 1) * width];
+        let prep: &[F] = match &circuit.preprocessed {
+          Some(p) if r < p.height() => {
+            &p.values[r * p.width()..(r + 1) * p.width()]
+          },
+          _ => &empty,
+        };
+        row(prep, main);
+      }
+    },
+    Chunk::View(view) => {
+      // Splittable circuits have no preprocessed trace.
+      let trace = extended[view.slot].as_ref().expect("viewed trace");
+      view.for_each_row(trace, |main| row(&empty, main));
+    },
   }
 }
 

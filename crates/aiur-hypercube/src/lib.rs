@@ -36,7 +36,9 @@ pub type FrontendField = p3_koala_bear::KoalaBear;
 pub use air::AiurAir;
 pub use frontend::ToplevelMachine;
 pub use machine::{AiurMachine, BuildError, CircuitSpec};
-pub use prover::{AiurProof, AiurVerifyingKey, ProverParams, prove, verify};
+pub use prover::{
+  AiurProof, AiurVerifyingKey, ProverParams, prove, prove_iter, verify,
+};
 pub use record::{AiurProgram, AiurRecord};
 pub use shape::ShardShape;
-pub use shard::ShardingParams;
+pub use shard::{Partition, ShardingParams};

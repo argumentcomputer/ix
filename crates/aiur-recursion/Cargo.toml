@@ -32,8 +32,22 @@ sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 slop-basefold = "=6.6.0"
-tokio = { version = "1", features = ["rt-multi-thread"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 tracing = { workspace = true }
+slop-air = "=6.6.0"
+
+# The open-source CUDA prover (sp1-gpu) for the recursion machines. Optional:
+# building these needs the CUDA toolchain (`nvcc`, `CUDA_ARCHS`), so they only
+# compile under `--features cuda`. `sp1-gpu-tracegen` carries the device
+# trace generation of SP1's recursion chips.
+sp1-gpu-shard-prover = { version = "=6.6.0", optional = true }
+sp1-gpu-tracegen = { version = "=6.6.0", optional = true }
+sp1-gpu-basefold = { version = "=6.6.0", optional = true }
+sp1-gpu-cudart = { version = "=6.6.0", optional = true }
+sp1-gpu-challenger = { version = "=6.6.0", optional = true }
+sp1-gpu-logup-gkr = { version = "=6.6.0", optional = true }
+sp1-gpu-merkle-tree = { version = "=6.6.0", optional = true }
+slop-futures = { version = "=6.6.0", optional = true }
 
 [dev-dependencies]
 multi-stark = { workspace = true }
@@ -43,6 +57,19 @@ p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a890
 default = ["native-gnark"]
 # Mirrors `sp1-recursion-gnark-ffi/native` for the artifact cache key.
 native-gnark = ["sp1-recursion-gnark-ffi/native"]
+# GPU proving of the recursion tail via sp1-gpu's `CudaShardProver` (see
+# `cuda.rs`); `IX_HC_GPU=1` selects it at runtime. Requires nvcc at build time.
+cuda = [
+  "aiur-hypercube/cuda",
+  "dep:sp1-gpu-shard-prover",
+  "dep:sp1-gpu-tracegen",
+  "dep:sp1-gpu-basefold",
+  "dep:sp1-gpu-cudart",
+  "dep:sp1-gpu-challenger",
+  "dep:sp1-gpu-logup-gkr",
+  "dep:sp1-gpu-merkle-tree",
+  "dep:slop-futures",
+]
 
 [lints]
 workspace = true

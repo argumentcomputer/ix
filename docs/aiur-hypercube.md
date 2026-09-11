@@ -107,7 +107,22 @@ artifacts.
 
 **GPU** (`cuda.rs`, feature `cuda`, `IX_HC_GPU=1`): the open-source
 `sp1-gpu` prover, machine-generic; two of its crates are vendored under
-`crates/vendor/` with capacity fixes. Not exercised in this session.
+`crates/vendor/` with capacity fixes. Its trace buffer is sized to the top
+catalogue class (2^29 cells) so every padded shard fits without measuring
+the records up front.
+
+**Memory** (`shard.rs`, `Partition`, `View`). A splittable circuit's rows
+in a shard are a *view* into the execution's trace of that circuit — row
+ranges (the epoch slice, or a load-affinity circuit's blocks), the
+multiplicity reductions of rows duplicated elsewhere, and the rows
+duplicated into the shard with their multiplicity — never a copy, so a
+refinement round costs a few words per row edit instead of a second copy
+of the execution; only the replicated atomic tables are owned per shard.
+`Partition::into_records` materializes one record when the prover asks for
+it, and `prover::prove_iter` pads and proves records one at a time.
+Assembly is where a shard becomes big (wide adapter chips, alignment and
+class padding), so the resident traces are the execution's plus one
+shard's.
 
 ### 4. `crates/aiur-recursion`: the fixed recursion pipeline
 
@@ -161,6 +176,21 @@ wrap key and the PLONK circuit are the same for every toplevel (tested:
 allowlisted one, which catches any drift between dummy-compiled and real
 programs.
 
+`cuda.rs` — the GPU (feature `cuda`, on with `IX_HC_GPU=1`, off again with
+`IX_REC_GPU=0`). SP1's recursion chips already have device trace
+generation in `sp1-gpu-tracegen`, so the four recursion machines are proven
+by the same `CudaShardProver` as the Hypercube stage, with two component
+selections: KoalaBear Poseidon2 Merkle trees and the duplex challenger for
+leaf, compress and shrink (`CompressAir` and `ShrinkAir` are one AIR type;
+the three levels differ in PCS parameters and get one prover each), and
+Poseidon2 over BN254 with the multi-field challenger for the wrap. A CUDA
+`TaskScope` only lives inside one `run_in_place` closure, so `GpuRecursion`
+is a worker thread that enters one scope for its whole life and serves
+setup and prove jobs over a channel; provers are built lazily per level
+and grown when a program needs a larger trace buffer. Setup also runs on
+the GPU, and the allowlist check in `prove` holds across backends: the
+keys a GPU setup produces equal the CPU ones.
+
 `plonk.rs` — gnark. `sp1-recursion-gnark-ffi` with the `native` feature (Go
 compiled in-process; needs Go with `GOTOOLCHAIN=auto`, exported by the
 lakefile, and libclang). SP1's Docker image builds the circuit but its
@@ -195,6 +225,10 @@ cargo test -p aiur-recursion --test roundtrip   # ~20–40 min each in debug: co
 
 # Lean + FFI with the recursion tail (Go toolchain and libclang required)
 IX_SP1_RECURSION=1 lake build ix IxTests
+# ... and with the GPU provers (nvcc; CUDA_ARCHS for the GPU generation)
+IX_CUDA=1 IX_SP1_RECURSION=1 CUDA_ARCHS=120 lake build ix IxTests
+
+# On the GPU, both stages: prefix any run below with IX_HC_GPU=1
 
 # Stage-2 verifier end to end (ignored suite); IX_S2_RECURSION=wrap|plonk|shapes
 IX_S2_QUERIES=3 IX_S2_RECURSION=plonk .lake/build/bin/IxTests --ignored stage2-hypercube
@@ -217,7 +251,8 @@ Environment knobs:
 |---|---|
 | `IX_HC_SHARD_CELLS`, `IX_HC_MAX_LOG_ROWS`, `IX_HC_LOG_STACKING`, `IX_HC_LOG_BLOWUP` | Hypercube prover/sharding parameters (defaults: single shard budget with automatic refinement, 2^20 rows, 2^21, blowup 1) |
 | `IX_HC_DEBUG` | partitioner, shape and recursion-program diagnostics; `IX_HC_PLAN_ONLY` stops after the shape report |
-| `IX_HC_GPU=1` | route proving through `sp1-gpu` (needs the `cuda` build) |
+| `IX_HC_GPU=1` | route Hypercube proving and the recursion tail through `sp1-gpu` (needs the `cuda` build) |
+| `IX_REC_GPU=0` | with `IX_HC_GPU`, keep the recursion tail on the CPU |
 | `IX_REC_SHAPES=compute\|<file>`, `IX_REC_SHAPES_OUT` | pinned-shape override / regeneration |
 | `IX_REC_LEAF_LOG_STACKING`, `IX_REC_LEAF_MAX_LOG_ROWS` | leaf machine configuration (must match the pinned shapes) |
 | `IX_S2_QUERIES`, `IX_S2_FORCE`, `IX_S2_RECURSION` | stage-2 test suite controls |
@@ -240,6 +275,43 @@ lift proof of 8.6 MB at 100 queries):
 | Hypercube, 114 shards | 2.6 h, 537 MB of shard proofs (~4.7 MB each), peak RSS 373 GB |
 | wrap tail | 46 min |
 | PLONK | 2 min, 4 KB |
+
+### GPU (RTX PRO 6000 Blackwell, 96 GB; 32 cores, 249 GB), 2026-09-11
+
+`IX_HC_GPU=1`, both stages on the GPU. The wall times include the CPU work
+around the provers (execution, witness, partitioning, recursion program
+compilation, gnark).
+
+| Input | Hypercube | Recursion tail | PLONK |
+|---|---|---|---|
+| stage 2, 3 queries, 1 shard | 5.3 s (54–115 s CPU) | wrap 6.7 s (160 s CPU): leaf 0.65 s, compose 0.14 s, shrink 0.12 s, wrap 1.5–8 s | 637 s cold artifacts, 4160 bytes, verified |
+| stage 2, 100 queries, 6 shards | 36–45 s (761 s CPU) | wrap 18 s (six leaves, three composes, shrink, wrap) | — |
+
+With the proving keys cached per program (`MAX_CACHED_KEYS`), the leaf
+proofs after the first of a class take 0.21 s and the compose proofs 0.09 s;
+setup is the rest. Peak RSS of the 6-shard run is 12.3 GB with records
+assembled one at a time (15.9 GB before). The GPU-computed recursion keys
+equal the CPU-computed ones: the allowlist check in `prove` passes against a
+`~/.ix/cache/recursion` seeded by a CPU run, and the gnark circuit accepts
+the GPU wrap proof.
+
+Full pipeline on the closure of `Nat.add_comm` (`ix aggregate --compress`,
+the same root proof as the CPU table above: 8.6 MB at 100 queries):
+
+| Stage | GPU, first run (`IX_HC_DEBUG=1`, records copied) | GPU, final code |
+|---|---|---|
+| IxVM shard proof (`ix prove`) | 1.3 s | — |
+| Hypercube, 113 shards | 2444 s (partitioning ~15 min, then ~20 s per shard incl. the sequential debug balance check), peak RSS 242 GB | 1921 s: partitioning ~15 min (5 refinement rounds, peak RSS 182 GB), then 113 shards in ~17 min (~9 s per shard: assembly, upload, GPU prove), the records resident one at a time (RSS 55 GB) |
+| wrap tail (113 leaves, 112 composes, shrink, wrap) | 221 s | 162 s (the GPU proves in ~1 min of it; the rest is executing the recursion programs on the CPU) |
+| PLONK (warm artifacts) | 183 s, 4160 bytes, verified | 170 s |
+| total `ix aggregate --compress` | 48 min | 38 min (`ix compress` on the cached root) |
+
+The CPU run of the same input took 2.6 h for Hypercube and 46 min for the
+tail at a 373 GB peak. The first GPU run was made with records still copied
+per shard. What remains of the peak is the partitioner's index working set
+during refinement (the execution's traces are ~55 GB of it); the CPU work
+around the GPU — partitioning, record assembly, recursion program execution
+— is now most of the wall time.
 
 Where the 114 shards come from: the verifier's own cells amount to ~30
 shards; the rest is cross-shard plumbing — 71 M adapter rows and 117 M
@@ -277,12 +349,20 @@ count is the number to drive down.
 5. **Arity 4** needs the compress shape recomputed and checked against
    SP1's 2^21 row cap; the arity-2 compose-over-leaves program already
    needs ~590k rows on its largest chip.
-6. **Memory.** The Hypercube prover holds every shard record; a streaming
-   prove would cut the 373 GB peak.
+6. **Memory.** Shards are views and records are assembled one at a time
+   (see the `Partition` paragraph above), so the resident traces are the
+   execution's plus one shard's. What remains is the partitioner's index
+   working set — the provide and affinity indexes and the per-shard demand
+   maps, hash maps keyed by tuples — which still scales with the execution.
 7. **Chip clusters.** Light shards still pay the leaf for all 181 chips; a
    catalogue with a few chip clusters would make them cheaper.
-8. GPU proving for the byte verifier, and a cleaner `ix` entry that skips
-   the aggregate cache when only compression is wanted.
+8. **GPU.** Both stages run on the GPU (see the measurements). The
+   recursion worker sets up each program's proving key again for every
+   proof (as the CPU path does); caching the leaf keys per program would
+   shave a fraction of the 0.65 s a leaf costs. The wrap prover is the
+   slowest recursion stage on the GPU (1.5–8 s, BN254 Poseidon2). A cleaner
+   `ix` entry that skips the aggregate cache when only compression is
+   wanted is still missing.
 
 ## Commit map
 

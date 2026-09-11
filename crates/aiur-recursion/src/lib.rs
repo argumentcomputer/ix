@@ -14,6 +14,9 @@
 //!   vk verification on against this pipeline's own allowlist ([`vks`]).
 //! - **PLONK** ([`plonk`]): SP1's gnark circuit build and prover over the
 //!   wrap proof, in-process (the `native-gnark` feature, on by default).
+//! - **GPU** ([`cuda`], feature `cuda`, `IX_HC_GPU=1`): every recursion
+//!   machine — leaf, compress, shrink and the BN254 wrap — proven by
+//!   sp1-gpu's `CudaShardProver`, from one long-lived CUDA worker.
 //!
 //! Every program is compiled from a dummy input of a fixed shape and pinned
 //! to a fixed recursion shape ([`shapes`]), so the pipeline is one finite
@@ -23,6 +26,8 @@
 //! the Aiur machine's verifying key, a 32-byte Poseidon2 digest of the claim
 //! ([`claim_digest_bytes`]), and the allowlist root.
 
+#[cfg(feature = "cuda")]
+pub mod cuda;
 pub mod normalize;
 pub mod pipeline;
 pub mod plonk;
