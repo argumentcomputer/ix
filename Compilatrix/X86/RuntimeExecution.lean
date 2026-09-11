@@ -11,17 +11,15 @@ open UniqueABI UniqueTarget UniqueExecution
 
 variable {foldCounters : Bool}
 
-theorem initializeInput (layout : Layout) (values : List Word) (state : State)
-    (capacity : values.length + 2 ≤ layout.capacity) (context : state.registers .rdi = layout.base)
+theorem initializeInput_result (layout : Layout) (values : List Word) (state : State)
+    (_capacity : values.length + 2 ≤ layout.capacity) (context : state.registers .rdi = layout.base)
     (root : state.registers .rdx = layout.cell values.length) (chain : DownChain layout state.words values)
     (counts : CountsAt layout (readyCounts (values.length + 1)) state.words) :
-    ∃ after, Trace layout (allocate nilTag 0 (.imm 0) .rsi) state after ∧ Initialized layout values state after := by
+    Initialized layout values state (allocateState state layout (values.length + 1) nilTag 0 (.imm 0) .rsi) := by
   let after := allocateState state layout (values.length + 1) nilTag 0 (.imm 0) .rsi
-  have allocation := allocateTrace layout state (values.length + 1) nilTag 0 (.imm 0) .rsi
-    (by omega) context counts.cursor
   have words : after.words = allocatedWords state.words (values.length + 1) nilTag 0 0 := by
     simpa [after] using allocateState_words state layout (values.length + 1) nilTag 0 (.imm 0) .rsi rfl
-  refine ⟨after, allocation, ?_, ?_, ?_, ?_, allocateState_destination state layout (values.length + 1) nilTag 0 (.imm 0) .rsi,
+  refine ⟨?_, ?_, ?_, ?_, allocateState_destination state layout (values.length + 1) nilTag 0 (.imm 0) .rsi,
     ?_, allocateState_saved state layout (values.length + 1) nilTag 0 (.imm 0) .rsi rfl⟩
   · rw [words]
     apply chain.mono
@@ -36,6 +34,14 @@ theorem initializeInput (layout : Layout) (values : List Word) (state : State)
       (by decide) (by decide) (by decide) (by decide)).trans root
   · exact (allocateState_other state layout (values.length + 1) nilTag 0 (.imm 0) .rsi .rdi
       (by decide) (by decide) (by decide) (by decide)).trans context
+
+theorem initializeInput (layout : Layout) (values : List Word) (state : State)
+    (capacity : values.length + 2 ≤ layout.capacity) (context : state.registers .rdi = layout.base)
+    (root : state.registers .rdx = layout.cell values.length) (chain : DownChain layout state.words values)
+    (counts : CountsAt layout (readyCounts (values.length + 1)) state.words) :
+    ∃ after, Trace layout (allocate nilTag 0 (.imm 0) .rsi) state after ∧ Initialized layout values state after :=
+  ⟨_, allocateTrace layout state (values.length + 1) nilTag 0 (.imm 0) .rsi (by omega) context counts.cursor,
+    initializeInput_result layout values state capacity context root chain counts⟩
 
 theorem mainSteps (layout : Layout) (values : List Word) (state : State)
     (input : Input layout values state) (capacity : values.length + 2 ≤ layout.capacity)
@@ -61,7 +67,7 @@ theorem mainSteps (layout : Layout) (values : List Word) (state : State)
   · have saved := (result.saved.trans initializedResult.saved).trans loopResult.saved
     simp only [List.append_nil, readyCounts_finish] at loopResult
     exact { loopResult with saved }
-  · have all := validation.append (allocationSteps.append loop)
+  · have all := validation.steps.append (allocationSteps.append loop)
     have cost : RuntimeTarget.validationCost values.length +
         ((allocate nilTag 0 (.imm 0) .rsi).length + 1 +
           (((RuntimeTarget.loopInstructions foldCounters).length + 3) * values.length + 16)) =

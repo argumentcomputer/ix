@@ -58,6 +58,7 @@ performance reports preserve evidence from their recorded revisions.
 | [Reference ISA model](x86-reference-model.md) | Pinned model, coverage, and remaining adapter/agreement work |
 | [Closed native reversal](source-native-unique.md) | Source-selected bounded arena code and complete release |
 | [Runtime native reversal](source-native-runtime.md) | Parameterized list ABI, source-to-object proof, and checked counter folding |
+| [Allocating native helper](source-native-allocating.md) | Live caller reservation, finite heap/stack, actual ELF execution and full release |
 | [Upstream native computations](source-native-upstream.md) | Unchanged source exports, structural selection, and fallback |
 | [Runtime scalar functions](source-native-scalar.md) | Exact arithmetic, branches, helpers, finite stack, and overflow behavior |
 | [Physical scalar CFGs](source-native-physical-scalar.md) | Compositional instruction/edge/call selection, source export binding, and physical-to-ELF preservation |

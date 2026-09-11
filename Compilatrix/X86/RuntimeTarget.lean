@@ -51,6 +51,21 @@ def advanceInstructions : List Instr :=
 def loopInstructions (foldCounters : Bool) : List Instr :=
   if foldCounters then UniqueCounterFold.instructions else consInstructions
 
+/-- The internal allocator preserves RDI, RDX, R8 and R9. The caller keeps
+its reservation pointer and exposed fields in those registers. Eight bytes
+of alignment padding and CALL's eight-byte return slot are the complete
+additional stack requirement. -/
+def allocatorCall : List Instr :=
+  [.alu .sub .w64 .rsp (.imm 8), .call 28, .alu .add .w64 .rsp (.imm 8)]
+
+def finishFirstInstructions : List Instr :=
+  reuseCons ++
+  [.load .w64 .r11 (header .live), .store .w64 (header .peak) .r11,
+   .mov .w64 .rsi (.reg .rdx), .mov .w64 .rdx (.reg .r9)]
+
+def firstCallInstructions : List Instr :=
+  reserveCons ++ allocatorCall ++ finishFirstInstructions
+
 theorem loopTrace (foldCounters : Bool) (layout : Layout) (state : UniqueExecution.State) (index : Nat)
     (indexBound : index < layout.capacity) (context : state.registers .rdi = layout.base)
     (pointer : state.registers .rdx = layout.cell index) :
@@ -59,12 +74,14 @@ theorem loopTrace (foldCounters : Bool) (layout : Layout) (state : UniqueExecuti
   · exact UniqueExecution.consTrace layout state index indexBound context pointer
   · exact UniqueCounterFold.trace layout state index indexBound context pointer
 
-def program (foldCounters : Bool := false) : Program :=
+def program (foldCounters : Bool := false) (callAllocator : Bool := false) : Program :=
   { entry := 0
     blocks := #[
       guard [] .rsi (.imm 64) .unsignedLe 1,
       guard alignmentInstructions .rax (.imm 0) .eq 7,
-      { instructions := (allocate nilTag 0 (.imm 0) .rsi).toArray, terminator := .jump 3 },
+      if callAllocator then
+        { instructions := #[], terminator := .branch (wordCompare .rsi (.imm 0)) .eq 26 27 }
+      else { instructions := (allocate nilTag 0 (.imm 0) .rsi).toArray, terminator := .jump 3 },
       { instructions := #[.load .w64 .rcx (memoryOperand .rdx 0)]
         terminator := .branch (wordCompare .rcx (.imm 0)) .eq 4 5 },
       { instructions := (releaseCell .rdx ++ [Instr.mov .w64 .rax (.reg .rsi)]).toArray, terminator := .ret },
@@ -88,17 +105,25 @@ def program (foldCounters : Bool := false) : Program :=
       guard (fieldInstructions 0) .rcx (.imm 1) .eq 23,
       guard (fieldInstructions 16) .rcx (.reg .rdx) .eq 24,
       guard (fieldInstructions 24) .rcx (.imm 0) .eq 25,
-      { instructions := advanceInstructions.toArray, terminator := .jump 21 }] }
+      { instructions := advanceInstructions.toArray, terminator := .jump 21 }] ++
+      if callAllocator then #[
+        { instructions := allocatorCall.toArray, terminator := .jump 3 },
+        { instructions := firstCallInstructions.toArray, terminator := .jump 3 },
+        { instructions := (allocate nilTag 0 (.imm 0) .rsi).toArray, terminator := .ret }]
+      else #[] }
 
-theorem wellFormed (foldCounters : Bool := false) : (program foldCounters).wellFormed = true := by
-  cases foldCounters <;>
+theorem wellFormed (foldCounters : Bool := false) (callAllocator : Bool := false) :
+    (program foldCounters callAllocator).wellFormed = true := by
+  cases foldCounters <;> cases callAllocator <;>
   simp [program, Program.wellFormed, Program.hasBlock, Block.offsetsFit, Block.targetsValid,
     Instr.targetsValid, Terminator.targetsValid, guard, alignmentInstructions, cursorInstructions,
     capacityInstructions, capacityAlignmentInstructions, headerInstructions, nilInstructions,
     fieldInstructions, advanceInstructions, allocate, changeCounter, consInstructions, reserveCons,
-    reuseCons, releaseCell, loopInstructions, UniqueCounterFold.instructions]
+    reuseCons, releaseCell, loopInstructions, UniqueCounterFold.instructions,
+    allocatorCall, firstCallInstructions, finishFirstInstructions]
 
-def checked (foldCounters : Bool := false) : Checked := ⟨program foldCounters, wellFormed foldCounters⟩
+def checked (foldCounters : Bool := false) (callAllocator : Bool := false) : Checked :=
+  ⟨program foldCounters callAllocator, wellFormed foldCounters callAllocator⟩
 
 theorem releaseWellFormed : UniqueTarget.releaseProgram.wellFormed = true := by
   simp [UniqueTarget.releaseProgram, Program.wellFormed, Program.hasBlock, Block.offsetsFit, Block.targetsValid,
@@ -106,9 +131,9 @@ theorem releaseWellFormed : UniqueTarget.releaseProgram.wellFormed = true := by
 
 def releaseChecked : Checked := ⟨UniqueTarget.releaseProgram, releaseWellFormed⟩
 
-theorem loopCode (foldCounters : Bool := false) :
-    UniqueExecution.LoopCode (checked foldCounters) (loopInstructions foldCounters) := by
-  cases foldCounters <;>
+theorem loopCode (foldCounters : Bool := false) (callAllocator : Bool := false) :
+    UniqueExecution.LoopCode (checked foldCounters callAllocator) (loopInstructions foldCounters) := by
+  cases foldCounters <;> cases callAllocator <;>
   refine ⟨⟨rfl, by decide⟩, ⟨rfl, by decide⟩, ⟨rfl, by decide⟩, ?_, ?_, ?_⟩ <;> decide
 
 def validationCost (length : Nat) : Nat := 11 * length + 45

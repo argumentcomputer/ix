@@ -196,3 +196,8 @@ The [E1 byte bridge](x86-encoded-instructions.md) supplies the local instruction
 laws. Reference ISA agreement and host linker/loader interpretation remain
 separate assumptions. General open heaps, shared native RC, larger inputs,
 additional source shapes, and native speedup claims remain outside this ABI.
+
+The separate [allocating helper extension](source-native-allocating.md) adds
+a real native CALL while the first caller cell remains reserved. Its objects,
+policy identities, finite-stack proof and independent gate are separate from
+these unchanged runtime variants.

@@ -155,6 +155,7 @@ import Compilatrix.UniqueReuse.NativeSim
 import Compilatrix.UniqueReuse.NativeObject
 import Compilatrix.UniqueReuse.RuntimeNativeSim
 import Compilatrix.UniqueReuse.RuntimeObjectSim
+import Compilatrix.UniqueReuse.AllocatingObjectSpace
 import Compilatrix.UniqueReuse.RuntimeObjectSpace
 import Compilatrix.X86.RuntimeReject
 import Compilatrix.IxIR2.CreditRefinement

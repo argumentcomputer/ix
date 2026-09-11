@@ -7,6 +7,7 @@ import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.NativeSim
 import Compilatrix.UniqueReuse.RuntimeNativeSim
 import Compilatrix.UniqueReuse.RuntimeObjectSim
+import Compilatrix.UniqueReuse.AllocatingObjectSpace
 import Compilatrix.X86.RuntimeReject
 import Compilatrix.X86.ByteBranch
 import Compilatrix.X86.ByteCall
@@ -7475,3 +7476,64 @@ composition, and byte-budget adequacy for the actual native list objects. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.Native.Output.sourceRefinesObjects_of_bytes
+
+/-! First allocating native helper: finite heap and stack, live caller reservation,
+actual ELF return, exact outside-memory frame and release of the byte result. -/
+
+/-- info: 'Compilatrix.X86.UniqueExecution.Trace.safeSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueExecution.Trace.safeSteps
+
+/-- info: 'Compilatrix.X86.UniqueExecution.loopSafeStepsFor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueExecution.loopSafeStepsFor
+
+/-- info: 'Compilatrix.X86.UniqueABI.Realizes.writeOutside' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.UniqueABI.Realizes.writeOutside
+
+/-- info: 'Compilatrix.X86.Steps.rejecting_permissions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Steps.rejecting_permissions
+
+/-- info: 'Compilatrix.X86.Allocating.Stack.callAligned' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Allocating.Stack.callAligned
+
+/-- info: 'Compilatrix.X86.Allocating.Stack.returnClean' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Allocating.Stack.returnClean
+
+/-- info: 'Compilatrix.X86.Allocating.allocatorSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Allocating.allocatorSteps
+
+/-- info: 'Compilatrix.X86.Allocating.firstState_words' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Allocating.firstState_words
+
+/-- info: 'Compilatrix.X86.Allocating.firstState_invariant' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Allocating.firstState_invariant
+
+/-- info: 'Compilatrix.X86.Allocating.mainSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Allocating.mainSteps
+
+/-- info: 'Compilatrix.X86.RuntimeExecution.capacityRejectedSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.RuntimeExecution.capacityRejectedSteps
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.AllocatingNative.Output.emit_spec' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.AllocatingNative.Output.emit_spec
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.AllocatingNative.byte_execution' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.AllocatingNative.byte_execution
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.AllocatingNative.ByteExecution.frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.AllocatingNative.ByteExecution.frame
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.AllocatingNative.Object.capacityRejects' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.AllocatingNative.Object.capacityRejects
+
+/-- info: 'Compilatrix.UniqueReuse.Runtime.AllocatingNative.Output.sourceRefinesObjects' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.AllocatingNative.Output.sourceRefinesObjects

@@ -1,11 +1,11 @@
-import Compilatrix.X86.RuntimeInspect
+import Compilatrix.X86.UniqueSafeControl
 import Compilatrix.X86.UniqueMain
 
 namespace Compilatrix.X86.RuntimeExecution
 
 open UniqueABI UniqueTarget UniqueExecution RuntimeTarget
 
-variable {foldCounters : Bool}
+variable {foldCounters callAllocator : Bool}
 
 structure Input (layout : Layout) (values : List Word) (state : State) : Prop where
   chain : DownChain layout state.words values
@@ -14,8 +14,9 @@ structure Input (layout : Layout) (values : List Word) (state : State) : Prop wh
   length : state.registers .rsi = UInt64.ofNat values.length
 
 theorem hasBlock (block : BlockId) (bound : block.toNat < 26) :
-    (RuntimeTarget.checked foldCounters).program.hasBlock block = true := by
-  simpa [RuntimeTarget.checked, RuntimeTarget.program, Program.hasBlock] using bound
+    (RuntimeTarget.checked foldCounters callAllocator).program.hasBlock block = true := by
+  cases callAllocator <;>
+    simp [RuntimeTarget.checked, RuntimeTarget.program, Program.hasBlock] <;> omega
 
 theorem and_seven (value : Word) : value &&& 7 = value % 8 := by
   apply UInt64.toNat_inj.mp
@@ -96,24 +97,24 @@ theorem guardSteps {layout : Layout} {instructions : List Instr} {before after :
     (trace : Trace layout instructions before after) (readonly : instructions.all readsOnly = true)
     (outside memory : Memory) (represented : Realizes layout outside before.words memory)
     (runtime : Runtime) (block next : BlockId) (left : GPR) (right : AluSource) (condition : Condition)
-    (code : BlockCode (RuntimeTarget.checked foldCounters) block instructions (.branch (wordCompare left right) condition next 6))
+    (code : BlockCode (RuntimeTarget.checked foldCounters callAllocator) block instructions (.branch (wordCompare left right) condition next 6))
     (holds : (wordCompare left right).holds condition (after.core Memory.unmapped) = true)
     (nextBound : next.toNat < 26) :
-    Steps runtime (RuntimeTarget.checked foldCounters) (instructions.length + 1) (leaf (before.core memory) block 0)
-      (leaf (after.core memory) next 0) :=
-  trace.branch_readOnly readonly outside memory represented runtime (RuntimeTarget.checked foldCounters) block next 6
-    (wordCompare left right) condition code true holds (hasBlock (foldCounters := foldCounters) next nextBound)
+    Stream.SafeSteps runtime (RuntimeTarget.checked foldCounters callAllocator) (instructions.length + 1) (fun _ => False) (leaf (before.core memory) block 0)
+      (fun _ => False) (leaf (after.core memory) next 0) :=
+  trace.safeBranch_readOnly readonly (HeapAccess.empty layout) outside memory represented runtime (RuntimeTarget.checked foldCounters callAllocator) block next 6
+    (wordCompare left right) condition code true holds (hasBlock (foldCounters := foldCounters) (callAllocator := callAllocator) next nextBound)
 
 theorem headerSteps (layout : Layout) (state : State) (field : Field)
     (context : state.registers .rdi = layout.base) (outside memory : Memory)
     (represented : Realizes layout outside state.words memory) (runtime : Runtime) (block next : BlockId)
     (right : AluSource)
-    (code : BlockCode (RuntimeTarget.checked foldCounters) block (headerInstructions field) (.branch (wordCompare .r11 right) .eq next 6))
+    (code : BlockCode (RuntimeTarget.checked foldCounters callAllocator) block (headerInstructions field) (.branch (wordCompare .r11 right) .eq next 6))
     (holds : (wordCompare .r11 right).holds .eq ((headerState state field).core Memory.unmapped) = true)
     (nextBound : next.toNat < 26) :
-    Steps runtime (RuntimeTarget.checked foldCounters) 2 (leaf (state.core memory) block 0)
-      (leaf ((headerState state field).core memory) next 0) :=
-  guardSteps (foldCounters := foldCounters) (headerTrace layout state field context) rfl outside memory represented runtime block next
+    Stream.SafeSteps runtime (RuntimeTarget.checked foldCounters callAllocator) 2 (fun _ => False) (leaf (state.core memory) block 0)
+      (fun _ => False) (leaf ((headerState state field).core memory) next 0) :=
+  guardSteps (foldCounters := foldCounters) (callAllocator := callAllocator) (headerTrace layout state field context) rfl outside memory represented runtime block next
     .r11 right .eq code holds nextBound
 
 end Compilatrix.X86.RuntimeExecution

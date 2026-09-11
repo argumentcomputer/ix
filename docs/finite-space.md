@@ -148,3 +148,9 @@ descriptor bytes. The reviewed summary lives in
 The existing native runtime gate still runs the emitted objects and their
 insufficient-capacity cases. This slice adds no new native timing claim or
 external runtime interface.
+
+The [allocating native helper](source-native-allocating.md) extends this native
+bound to a live caller reservation across actual CALL/RET. It requires 16
+additional stack bytes below the external return slot and proves release of
+the memory returned by ELF execution. Its capacity rejection proof preserves
+all heap and stack bytes. General allocating CFG selection remains separate.

@@ -63,6 +63,9 @@ lean_exe «source-native-unique» where
 lean_exe «source-native-runtime» where
   root := `SourceNativeRuntime
 
+lean_exe «source-native-allocating» where
+  root := `SourceNativeAllocating
+
 lean_exe «source-native-upstream» where
   root := `SourceNativeUpstream
 
@@ -132,6 +135,10 @@ lean_exe «check-source-native-unique» where
 lean_exe «check-source-native-runtime» where
   srcDir := "scripts"
   root := `CheckSourceNativeRuntime
+
+lean_exe «check-source-native-allocating» where
+  srcDir := "scripts"
+  root := `CheckSourceNativeAllocating
 
 lean_exe «check-source-native-upstream» where
   srcDir := "scripts"

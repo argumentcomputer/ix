@@ -115,6 +115,7 @@
             ./SourceUniqueReuse.lean
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
+            ./SourceNativeAllocating.lean
             ./SourceNativeUpstream.lean
             ./SourceNativeScalar.lean
             ./SourceNativePhysicalScalar.lean
@@ -131,6 +132,7 @@
             ./fixtures/source-unique-reuse
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
+            ./fixtures/source-native-allocating
             ./fixtures/source-native-upstream
             ./fixtures/source-native-scalar
             ./fixtures/source-native-physical-scalar
@@ -168,6 +170,7 @@
             ./SourceUniqueReuse.lean
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
+            ./SourceNativeAllocating.lean
             ./SourceNativeUpstream.lean
             ./SourceNativeScalar.lean
             ./SourceNativePhysicalScalar.lean
@@ -184,6 +187,7 @@
             ./fixtures/source-unique-reuse
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
+            ./fixtures/source-native-allocating
             ./fixtures/source-native-upstream
             ./fixtures/source-native-scalar
             ./fixtures/source-native-physical-scalar
@@ -476,6 +480,36 @@
           '';
         };
 
+        sourceNativeAllocatingCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs =
+            leanBuildInputs
+            ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "source-native-allocating";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-native-allocating
+            ./.lake/build/bin/check-source-native-allocating \
+              --fixture ./.lake/build/bin/source-native-allocating \
+              --expected ${auditSrc}/fixtures/source-native-allocating/expected.json \
+              --readelf ${pkgs.binutils}/bin/readelf \
+              --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-allocating/native_harness.c"}
+            ./.lake/build/bin/check-source-native-allocating \
+              --fixture ./.lake/build/bin/source-native-allocating \
+              --variant counter-fold \
+              --expected ${auditSrc}/fixtures/source-native-allocating/expected-counter-fold.json \
+              --readelf ${pkgs.binutils}/bin/readelf \
+              --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-allocating/native_harness.c"}
+          '';
+        };
+
         sourceNativeUpstreamCheck = lake2nix.mkPackage {
           inherit lakeDeps;
           lakeArtifacts = compilatrixLib;
@@ -666,6 +700,7 @@
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;
           source-native-runtime = sourceNativeRuntimeCheck;
+          source-native-allocating = sourceNativeAllocatingCheck;
           source-native-upstream = sourceNativeUpstreamCheck;
           source-native-scalar = sourceNativeScalarCheck;
           source-native-physical-scalar = sourceNativePhysicalScalarCheck;

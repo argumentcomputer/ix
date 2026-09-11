@@ -31,9 +31,9 @@ can proceed independently when their prerequisites are available.
 
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
-| [N3: compositional native lowering](#n3-compositional-native-lowering) | physical scalar source and static capture slices delivered | Runtime source application, one static Word capture, closure reclamation, Nat peeling, branches/joins, direct calls, source-to-ELF contracts, and finite stack sufficiency. Allocating calls, runtime/heap captures, and broader recursion remain extensions. |
+| [N3: compositional native lowering](#n3-compositional-native-lowering) | scalar/capture slices and first allocating helper delivered | Runtime source application, static capture, closure reclamation, branches/joins, direct calls, and a live reservation across an allocating native helper with finite heap/stack source-to-ELF contracts. General allocating CFG selection, runtime/heap captures, and broader recursion remain extensions. |
 | [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
-| [F1: finite heap and stack](#f1-finite-heap-and-stack) | first heap/call slice delivered | Versioned occupied/committed bytes and explicit caller frames, finite physical execution, source-map adequacy/reclamation, and the exact native list arena bound. Native allocating calls, allocator reuse/fragmentation and traversal workspace remain open. |
+| [F1: finite heap and stack](#f1-finite-heap-and-stack) | first heap/call slice delivered | Versioned occupied/committed bytes and explicit caller frames, finite physical execution, source-map adequacy/reclamation, and the exact native list arena bound. The first allocating native helper is delivered; general allocating CFGs, allocator reuse/fragmentation and traversal workspace remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | next | Before independent IxIR₂ persistence, cache keys, or self-hosted intermediate-root comparison. Land the strict codec and exact versioned preimages. |
 | [I3: modular source certification](#i3-modular-source-certification) | deferred | Wake before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. Compose independently checked units and reuse unaffected evidence after a dependency edit. |
 | [A1: allocation and spill validation](#a1-allocation-and-spill-validation) | deferred | Wake when an actual selected CFG needs general allocation, moves, or spills. Validate value flow through the allocated program, including calls and joins. |
@@ -90,8 +90,13 @@ source-to-ELF theorem derives application and exact reclamation, including
 dead initializer slots. Nine source exports, 171 source/application/object
 runs, 135 artifact corruptions, and 1,494 linked native calls cover captures
 zero, seven, and the maximum Word across projection, branches, and helpers.
-Allocating calls, runtime/heap captures, general occupied heaps, and broader
-recursion remain separate. C3 also admits the unchanged closed captured
+The [allocating helper extension](source-native-allocating.md) reserves the first
+cons of a runtime unique list across a real native CALL that allocates the
+result nil. Its universal source-to-ELF theorem covers the arena, finite
+stack, exact outside memory apart from the internal return slot, and complete
+release of the actual byte result. This remains a specialized reversal
+selector. General allocating CFG selection, runtime/heap captures, general
+occupied heaps, and broader recursion remain separate. C3 also admits the unchanged closed captured
 computation under its supplied-state translation-validation contract.
 
 Acceptance retained for extensions beyond the delivered scalar fragment:
@@ -127,8 +132,10 @@ physical calls, checks a Word-valued fixed-slot layout and complete explicit
 frames, and relates profiled capacity to successful execution or capacity
 exhaustion. Nine source-compiled maps exercise suspended reservations while
 callees allocate. The existing native list arena's byte requirement composes
-through actual emitted ELF and release. Broader native allocation and host
-workspace bounds remain open.
+through actual emitted ELF and release. The [first allocating native helper](source-native-allocating.md)
+also keeps a caller reservation live while a callee allocates, with the same
+arena bound and 16 bytes of internal stack. Broader native allocation and
+host workspace bounds remain open.
 
 R4/R5 bound peak live nodes, but a reserved slot still occupies storage.
 `live + frees + presentCredits = allocs` does not by itself bound occupied
@@ -424,6 +431,7 @@ belong in those references.
 | Native unique reversal | [Closed native lists](source-native-unique.md) of at most 64 exact Words. Production emission is certified; the family's original source interface ends at typed execution. |
 | N2 | [Runtime list reversal](source-native-runtime.md): one object pair, caller-built unique lists of at most 64 Words, entry validation, source-to-object preservation, and full release. |
 | N3 scalar slices | [Runtime scalar functions](source-native-scalar.md) with exact arithmetic and overflow behavior; [physical scalar CFGs](source-native-physical-scalar.md) and [static captured exports](source-native-captured-scalar.md) with ordinary source application, exact closure reclamation, branches/joins, direct helpers, and finite-stack source-to-ELF proofs. |
+| N3/F1 allocating helper | [Runtime reversal with an allocating helper](source-native-allocating.md): a caller reservation spans one actual CALL, with sufficient finite heap/stack, source-to-ELF preservation, exact rejection and full release of the byte result. General allocating CFG selection remains open. |
 | F1 first heap slice | [Finite storage across calls](finite-space.md): separate occupied/committed heap and explicit control bytes, exact-capacity physical execution, source-map/reclamation composition, and the native arena byte-budget source-to-ELF theorem. |
 | E1/E2 | [Local instructions](x86-encoded-instructions.md) and [complete streams/ELF](x86-stream-objects.md), including calls, returns, provenance, entry selection, and checked PC32 relocation. Reference ISA, external bodies, and system loading remain explicit. |
 | R6 | [General credit refinement](credit-refinement.md) for both policies and every instruction, including prefixes and independent successful budgets. Complete reclamation requires explicit logical root ownership. |
