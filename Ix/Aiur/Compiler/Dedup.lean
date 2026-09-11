@@ -138,14 +138,14 @@ def assignClasses [BEq α] [Hashable α] (values : Array α) : Array Nat × Nat 
       | none => (classes.push nextId, map.insert v nextId, nextId + 1)
   (classes, nextId)
 
-/-- Bounded refinement step. The `bound` caps iterations — `classes.size + 1`
-is always enough since the number of distinct equivalence classes can only
-increase (or stay the same) per step, and is bounded above by `classes.size`. -/
+/-- Bounded refinement step. The bound caps optimization work. The public
+pass validates the final candidate, so execution preservation does not
+depend on proving that this iteration has reached a fixed point. -/
 def partitionRefineBound : Nat → Array Nat → Array (Array FunIdx) → Array Nat
   | 0, classes, _ => classes
   | bound+1, classes, callees =>
     let signatures := classes.mapIdx fun i cls =>
-      (cls, callees[i]!.map (classes[·]!))
+      (cls, (callees[i]?.getD #[]).map fun callee => classes[callee]?.getD 0)
     let (newClasses, _) := assignClasses signatures
     if newClasses == classes then classes
     else partitionRefineBound bound newClasses callees
@@ -200,9 +200,9 @@ def deduplicate_newFunctions (functions : Array Function) (classes : Array Nat)
       else acc)
     #[]
 
-/-- Deduplicate bytecode functions via partition refinement.
-Returns the deduplicated toplevel and a mapping from old index to new index. -/
-def Toplevel.deduplicate (t : Toplevel) : Toplevel × (FunIdx → FunIdx) :=
+/-- Propose a deduplication by partition refinement. The public pass validates
+this candidate before returning it. -/
+def Toplevel.deduplicateCandidate (t : Toplevel) : Toplevel × (FunIdx → FunIdx) :=
   let functions := t.functions
   let n := functions.size
   if n == 0 then (t, id)
@@ -218,6 +218,37 @@ def Toplevel.deduplicate (t : Toplevel) : Toplevel × (FunIdx → FunIdx) :=
     let remapFn := deduplicate_remap classes
     let newFunctions := deduplicate_newFunctions functions classes canonical remapFn
     ({ t with functions := newFunctions }, remapFn)
+
+/-- Keep invalid source function indices outside the target's domain. -/
+def boundedRenaming (source : Toplevel) (rename : FunIdx → FunIdx) (i : FunIdx) : FunIdx :=
+  if i < source.functions.size then rename i else i
+
+/-- Every old function must map to a valid target with the same layout and
+the exact body obtained by rewriting calls. Target size and bounded renaming
+also prevent invalid source calls from becoming valid target calls. -/
+def validatesRenaming (source target : Toplevel) (rename : FunIdx → FunIdx) : Bool :=
+  target.functions.size ≤ source.functions.size &&
+    (Array.range source.functions.size).all fun i =>
+      if hi : i < source.functions.size then
+        if hj : rename i < target.functions.size then
+          source.functions[i].layout == target.functions[rename i].layout &&
+            rewriteBlock rename source.functions[i].body == target.functions[rename i].body
+        else false
+      else false
+
+/-- Use a proposed function renaming only after checking its complete code
+relation. An invalid candidate leaves the original program and indices intact. -/
+def checkedRenaming (source candidate : Toplevel) (rename : FunIdx → FunIdx) :
+    Toplevel × (FunIdx → FunIdx) :=
+  let bounded := boundedRenaming source rename
+  if validatesRenaming source candidate bounded then (candidate, bounded)
+  else (source, id)
+
+/-- Deduplicate bytecode functions via validated partition refinement.
+Returns the selected program and a mapping from old index to new index. -/
+def Toplevel.deduplicate (source : Toplevel) : Toplevel × (FunIdx → FunIdx) :=
+  let candidate := source.deduplicateCandidate
+  checkedRenaming source candidate.1 candidate.2
 
 end Bytecode
 

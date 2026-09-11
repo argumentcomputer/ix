@@ -86,13 +86,13 @@ use bignat::Nat;
 
 /// Reduction policy for structural WHNF.
 ///
-/// `cheap_proj` and `cheap_rec` mirror Lean4Lean's `cheapProj` and `cheapRec`
-/// flags (`refs/lean4lean/Lean4Lean/TypeChecker.lean:337–341`): when set,
+/// `cheap_proj` and `cheap_rec` mirror Ix.Theory.Named's `cheapProj` and `cheapRec`
+/// flags (`refs/the named specification/Ix.Theory.Named/TypeChecker.lean:337–341`): when set,
 /// projection-of-`Prj`'s value uses `whnf_core` instead of full `whnf`, and
 /// the recursor's major premise reduces with the same structural variant.
 ///
 /// The only non-full policy currently used is `DEF_EQ_CORE`, matching
-/// Lean/Lean4Lean's `whnfCore (cheapProj := true)` scaffold in def-eq.
+/// Lean/Ix.Theory.Named's `whnfCore (cheapProj := true)` scaffold in def-eq.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct WhnfFlags {
   cheap_rec: bool,
@@ -443,7 +443,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
 
-      // Nat primitive reduction in main WHNF loop (lean4lean TypeChecker.lean:439).
+      // Nat primitive reduction in main WHNF loop (the named specification TypeChecker.lean:439).
       // Must run BEFORE delta_unfold_one, so that Nat.sub/Nat.pow/etc. get
       // short-circuited before their bodies (which use Nat.rec) are exposed.
       if family == PrimFamily::Nat
@@ -525,7 +525,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Structural WHNF for def-eq's cheap projection scaffold:
-  /// `whnfCore (cheapProj := true)` in Lean/Lean4Lean. Projection values are
+  /// `whnfCore (cheapProj := true)` in Lean/Ix.Theory.Named. Projection values are
   /// reduced structurally instead of through full WHNF, but recursor majors
   /// still use full WHNF because def-eq does not enable `cheapRec` here.
   ///
@@ -548,7 +548,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// accidentally unfold projected values.
   ///
   /// FULL-mode results are cached in [`KEnv::whnf_core_cache`], mirroring
-  /// lean4lean's `whnfCoreCache` (TypeChecker.lean:19) and lean4 C++'s
+  /// the named specification's `whnfCoreCache` (TypeChecker.lean:19) and lean4 C++'s
   /// `m_whnf_core`. Cheap-mode results are NOT cached — projection values
   /// reduce structurally instead of through full WHNF, so cheap output is
   /// not safe to share with full callers.
@@ -646,8 +646,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           return Ok(cur);
         },
         // Let-bound fvar zeta-reduction: substitute the let-bound value.
-        // Mirrors lean4lean's `whnfFVar` branch
-        // (refs/lean4lean/Lean4Lean/TypeChecker.lean:233).
+        // Mirrors the named specification's `whnfFVar` branch
+        // (refs/the named specification/Ix.Theory.Named/TypeChecker.lean:233).
         ExprData::FVar(id, _, _) => {
           if let Some(super::lctx::LocalDecl::LDecl { val, .. }) =
             self.lctx.find(*id)
@@ -664,8 +664,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         | ExprData::Str(..)
         | ExprData::Const(..) => return Ok(cur),
 
-        // Projection reduction. Matches Lean4Lean's `reduceProj`
-        // (`refs/lean4lean/Lean4Lean/TypeChecker.lean:284–292`):
+        // Projection reduction. Matches Ix.Theory.Named's `reduceProj`
+        // (`refs/the named specification/Ix.Theory.Named/TypeChecker.lean:284–292`):
         //   let mut c ← (if cheapProj then whnfCore struct cheapRec cheapProj
         //                else whnf struct)
         //
@@ -971,7 +971,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if spine.len() <= major_idx {
           return Ok(None);
         }
-        // H6: level params arity (lean4lean Reduce.lean:76).
+        // H6: level params arity (the named specification Reduce.lean:76).
         if rec_us.len() as u64 != lvls {
           return Ok(None);
         }
@@ -1026,7 +1026,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if cidx >= recr.rules.len() {
       return Ok(None);
     }
-    // H5: nfields ≤ major args (lean4lean Reduce.lean:75).
+    // H5: nfields ≤ major args (the named specification Reduce.lean:75).
     if ctor_fields > ctor_args.len() {
       return Ok(None);
     }
@@ -1327,7 +1327,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ///
   /// Flags-threaded: when `flags.cheap_rec` is set, the major premise (and
   /// the freshly-built string-literal constructor) reduce with cheap WHNF,
-  /// mirroring Lean4Lean's `cheapRec` behaviour at TypeChecker.lean:337–341.
+  /// mirroring Ix.Theory.Named's `cheapRec` behaviour at TypeChecker.lean:337–341.
   /// Internal-only — callers go through `whnf_core_with_flags`.
   fn try_iota_with_flags(
     &mut self,
@@ -1395,7 +1395,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
 
     // WHNF the major premise. Cheap mode skips delta on the major itself,
-    // matching Lean4Lean's `cheapRec` (TypeChecker.lean:337–341); the rest of
+    // matching Ix.Theory.Named's `cheapRec` (TypeChecker.lean:337–341); the rest of
     // the iota machinery still gets a structural normal form to inspect.
     let mut major_whnf = if flags.cheap_rec {
       self.whnf_core_with_flags(&major, flags)?
@@ -1406,7 +1406,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Nat literal → constructor form (one level: n → Nat.succ(lit(n-1))).
     //
     // Mirrors lean4 (`refs/lean4/src/kernel/inductive.h:91-93`) and
-    // lean4lean (`refs/lean4lean/Lean4Lean/Inductive/Reduce.lean:70`):
+    // the named specification (`refs/the named specification/Ix.Theory.Named/Inductive/Reduce.lean:70`):
     // unconditional peel. Truly runaway recursors (step case forces the
     // IH on every iteration) are bounded by `MAX_WHNF_FUEL` / outer
     // `MaxRecDepth`, same as upstream. An earlier ix-specific
@@ -1435,7 +1435,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if let Some(cleaned) = self.cleanup_nat_offset_major(&major_whnf)? {
       major_whnf = cleaned;
     }
-    // String literal → constructor form (matching lean4lean
+    // String literal → constructor form (matching the named specification
     // Reduce.lean:71 / C++ inductive.h:95). The expansion takes one
     // delta step past `String.ofList` (see `str_lit_to_ctor_app`) so the
     // native collapse rule in `try_reduce_string` can't fold it straight
@@ -1496,11 +1496,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Ok(None);
       }
       let rule = &recr.rules[cidx];
-      // H6: Check level params arity (lean4lean Reduce.lean:76)
+      // H6: Check level params arity (the named specification Reduce.lean:76)
       if rec_us.len() as u64 != recr.lvls {
         return Ok(None);
       }
-      // H5: Check nfields ≤ major_args (lean4lean Reduce.lean:75)
+      // H5: Check nfields ≤ major_args (the named specification Reduce.lean:75)
       if ctor_fields > ctor_args.len() {
         return Ok(None);
       }
@@ -1902,7 +1902,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(None);
     }
 
-    // H3: Prop guard — don't eta-expand Prop-typed structures (lean4lean toCtorWhenStruct:51)
+    // H3: Prop guard — don't eta-expand Prop-typed structures (the named specification toCtorWhenStruct:51)
     let major = &spine[recr.major_idx];
     let major_ty = match self.with_infer_only(|tc| tc.infer(major)) {
       Ok(ty) => ty,
@@ -1946,7 +1946,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// definitive rejection; optional probe misses and cheap-mode false results
   /// are inconclusive and preserve the ordinary major-WHNF fallback.
   ///
-  /// Algorithm (following lean4lean/nanoda):
+  /// Algorithm (following the named specification/nanoda):
   /// 1. Infer major's type, WHNF it
   /// 2. Check head constant matches the recursor's target inductive
   /// 3. Build nullary ctor: `Ctor.{levels} params...`
@@ -3762,7 +3762,7 @@ static NAT_ZERO_LITERAL: LazyLock<Nat> =
 /// Extract a nat value from a literal or `Nat.zero` constructor.
 ///
 /// Matches both `Nat(n)` literals and the `Nat.zero` constructor constant,
-/// mirroring C++ `is_nat_lit_ext` and lean4lean `rawNatLitExt?`. After iota
+/// mirroring C++ `is_nat_lit_ext` and the named specification `rawNatLitExt?`. After iota
 /// reduction, `Nat.zero` can appear as `Const(Nat.zero, [])` which must be
 /// recognized for native Nat operations to fire.
 fn extract_nat_lit<'a, M: KernelMode>(
@@ -3868,7 +3868,7 @@ fn compute_nat_bin<M: KernelMode>(
   } else if *addr == p.nat_mod.addr {
     if b.0 == zero { a.0.clone() } else { &a.0 % &b.0 }
   } else if *addr == p.nat_pow.addr {
-    // Limit matches C++ kernel `ReducePowMaxExp` and lean4lean `reducePowMaxExp`.
+    // Limit matches C++ kernel `ReducePowMaxExp` and the named specification `reducePowMaxExp`.
     const REDUCE_POW_MAX_EXP: u64 = 1 << 24; // 16_777_216
     match b.to_u64() {
       #[allow(clippy::cast_possible_truncation)] // guarded: exp <= 2^24

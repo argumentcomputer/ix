@@ -1,6 +1,7 @@
 use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
+use std::sync::{Arc, atomic::AtomicU64};
 
 use crate::{
   FxIndexMap, G,
@@ -37,10 +38,11 @@ pub struct QueryRecord {
 
 impl QueryRecord {
   pub fn new(toplevel: &Toplevel) -> Self {
+    let clock = Arc::new(AtomicU64::new(0));
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| QueryMap::new(f.layout.input_size))
+      .map(|f| QueryMap::new_function(f.layout.input_size, Arc::clone(&clock)))
       .collect();
     let memory_queries = toplevel
       .memory_sizes
@@ -1094,14 +1096,15 @@ fn build_klimbs_u64(
 
 /// Approximate retained bytes of a record's query maps: field elements
 /// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
-/// overhead (hash-table slot, stored hash, multiplicity). Feeds the
+/// overhead (hash-table slot, stored hash, multiplicity), and 8 bytes per
+/// function entry for completion order. Feeds the
 /// witness phase of the prover RAM model
 /// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
 pub fn record_retained_bytes(record: &QueryRecord) -> usize {
   let mut elems = 0usize;
   let mut entries = 0usize;
   for m in &record.function_queries {
-    elems += m.retained_elems();
+    elems += m.retained_elems() + m.len();
     entries += m.len();
   }
   for (_, m) in &record.memory_queries {

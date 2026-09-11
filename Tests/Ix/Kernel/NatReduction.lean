@@ -2,7 +2,7 @@
   Comprehensive Nat literal reduction tests.
 
   See `docs/nat-reduction-audit.md` for the reference comparison
-  (Ix kernel vs `refs/lean4` and `refs/lean4lean`).
+  (Ix kernel vs `refs/lean4` and `refs/the named specification`).
 
   Tests use hand-built `Lean.Declaration` values with raw `.lit (.natVal _)`
   expressions rather than `by rfl` over surface syntax. This bypasses

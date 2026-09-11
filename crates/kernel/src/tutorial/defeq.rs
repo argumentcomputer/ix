@@ -645,7 +645,7 @@ mod tests {
     //   Acc.intro fields = 1 (h)
     //   Rule rhs: λ motive intro_case h, intro_case ... h ...
     //
-    // The lean4lean rule rhs for Acc.rec.intro is:
+    // The the named specification rule rhs for Acc.rec.intro is:
     //   λ motive intro_case h, intro_case (Acc.intro-major-x) h (λ y hr, Acc.rec motive intro_case y (h y hr))
     // But x comes from the major argument's decomposition, substituted for the index.
     //

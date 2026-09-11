@@ -49,7 +49,6 @@ require «Parser» from git "https://github.com/fgdorais/lean4-parser" @ "e2c243
 require «aesop» from git "https://github.com/leanprover-community/aesop" @ "3448c0bcc5ce01b2d1546e483ec3620e32df3d0e"
 require «i18n» from git "https://github.com/hhu-adam/lean-i18n" @ "1a99b00a940624c0a6c3009b756fb922acf0fe78"
 require «importGraph» from git "https://github.com/leanprover-community/import-graph" @ "16f02aa7642864af59f1ff0e384a015994db9118"
-require «lean4lean» from git "https://github.com/digama0/lean4lean" @ "e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00"
 require «lean_eff» from git "https://github.com/palladin/lean-eff" @ "453f4feb6508ec787fc325a70523d38e4378ef8f"
 require «lean_reducers» from git "https://github.com/palladin/lean-reducers" @ "6e93e0ce326025f762d00b947716c2b98ce1fb06"
 require «protobuf» from git "https://github.com/Lean-zh/protobuf" @ "8c707f2cb4ab8eae280127651162d28e58164c1e"
@@ -141,7 +140,6 @@ def catalogRootModules : Array Lean.Name := #[
     `Aesop,
     `I18n,
     `ImportGraph,
-    `Lean4Lean,
     `LeanEff,
     `LeanReducers,
     `Protobuf,

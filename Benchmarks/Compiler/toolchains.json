@@ -1,0 +1,47 @@
+{
+  "format": "compilatrix/benchmark-toolchains/1",
+  "platform": "x86_64-linux",
+  "repository_lock": "../../flake.lock",
+  "scope": "Ix compiler import. Comparison compiler versions and their source Nixpkgs provenance are retained from the original study; the monorepo does not provision these external toolchains.",
+  "nixpkgs": {
+    "revision": "1306659b587dc277866c7b69eb97e5f07864d8c4",
+    "nar_hash": "sha256-KJ2wa/BLSrTqDjbfyNx70ov/HdgNBCBBSQP3BIzKnv4="
+  },
+  "lean": {
+    "version": "4.33.1",
+    "revision": "819816b2e0a3bf405af45ae5c7af2491d8f5bee6",
+    "toolchain_file": "../../lean-toolchain",
+    "native_c_compiler": "gcc",
+    "c_flags": ["-O3", "-DNDEBUG", "-march=x86-64", "-mtune=generic", "-fno-lto", "-fomit-frame-pointer"],
+    "c_driver": "leanc with the installed Lean ABI flags and LEAN_CC set to pinned GCC"
+  },
+  "cakeml": {
+    "release": "v3479",
+    "revision": "e8eca63affd1653105ca4b9cc2f5ca87a01cd0af",
+    "bootstrap_url": "https://github.com/CakeML/cakeml/releases/download/v3479/cake-x64-64.tar.gz",
+    "bootstrap_sha256": "e110bfcba19d6524ee4748608a67a275647445a048928cf623c2c9a973e31c9a",
+    "hol_revision": "a390cbabd3a4521bab4ee20281e3e42933a8a3ae",
+    "bootstrap_polymL": "5.9",
+    "flags": ["--target=x64", "--reg_alg=2", "--gc=simple"],
+    "diagnostic_extra_flags": ["--emit_empty_ffi=true"],
+    "runtime_environment": {"CML_HEAP_SIZE": "64", "CML_STACK_SIZE": "8"},
+    "heap_units": "MiB",
+    "bootstrap_build": ["make", "cake", "CC=gcc"]
+  },
+  "compcert": {
+    "version": "3.16",
+    "source_revision": "v3.16",
+    "source_url": "https://github.com/AbsInt/CompCert/archive/refs/tags/v3.16.tar.gz",
+    "source_nar_hash": "sha256-Ep8bcSFs3Cu+lV5qgo89JJU2vh4TTq66Or0c4evo3gM=",
+    "nix_attribute": "compcert",
+    "coq_version": "9.0.1",
+    "coq_compatibility_patch": "https://github.com/AbsInt/CompCert/commit/a962ef9da0fb4ef2a4314ccedd111eb248e42cf2.patch",
+    "patch_nix_hash": "sha256-ipYqcfcgz3cKyI1NGSgfOgiVdV1WUwlv6DVB1S1hJvw=",
+    "configuration": ["x86_64-linux", "-clightgen", "-use-external-Flocq", "-use-external-MenhirLib"],
+    "nix_wrapper_flags": ["-U_FORTIFY_SOURCE"],
+    "kernel_flags": ["-O", "-c"]
+  },
+  "gcc": {"version": "14.3.0", "nix_attribute": "gcc", "kernel_flags": ["-O3", "-march=x86-64", "-mtune=generic", "-fno-lto", "-fomit-frame-pointer", "-c"]},
+  "clang": {"version": "21.1.2", "nix_attribute": "clang", "kernel_flags": ["-O3", "-march=x86-64", "-mtune=generic", "-fno-lto", "-fomit-frame-pointer", "-c"]},
+  "arena_driver": {"compiler": "gcc", "flags": ["-O3", "-march=x86-64", "-mtune=generic", "-fno-lto", "-fomit-frame-pointer"], "lto": false, "pgo": false}
+}

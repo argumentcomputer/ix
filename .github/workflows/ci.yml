@@ -31,7 +31,7 @@ jobs:
         with:
           build-args: "--wfail -v"
           test: false
-      # build-all lint driver compiles every lib/exe target with --wfail, so a
+      # build-all lint driver compiles production lib/exe targets with --wfail, so a
       # warning in any target (exes, benchmarks, Apps) — not just the default lib
       # lean-action builds above — fails CI.
       - name: Build all targets
@@ -86,6 +86,33 @@ jobs:
           use-github-cache: false
       - name: Test Ix CLI
         run: lake test --wfail -- cli
+      - name: Check Aiur proof boundaries and native verifier binding
+        run: lake run check-aiur
+      - name: Check certified source and claim adapters
+        run: lake run check-certified
+
+  compiler:
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Check compiler proofs, trust boundary, and native fixtures
+        run: lake run check-compiler
+
+  theory:
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Check consistency model and exact foundation manifest
+        run: lake run check-theory
 
   rust-test:
     runs-on: warp-ubuntu-latest-x64-8x

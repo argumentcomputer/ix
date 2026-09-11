@@ -84,7 +84,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // context. No lift is needed: every type pushed to `lctx` is closed
       // under fvar identity (its outer Vars/FVars were already
       // instantiate_rev'd or were absent), so the stored type is depth-
-      // invariant. Mirrors lean4lean's `inferType` `.fvar` branch.
+      // invariant. Mirrors the named specification's `inferType` `.fvar` branch.
       ExprData::FVar(id, _, _) => match self.lctx.find(*id) {
         Some(decl) => decl.ty().clone(),
         None => {
@@ -167,7 +167,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           let t = self.infer(ty)?;
           self.ensure_sort(&t)?;
         }
-        // Open the binder with a fresh fvar. Mirrors lean4lean
+        // Open the binder with a fresh fvar. Mirrors the named specification
         // `inferLambda` (TypeChecker.lean:122) and the C++
         // `infer_lambda` (refs/lean4/src/kernel/type_checker.cpp:116).
         self.with_lctx_scope(|tc| {
@@ -246,7 +246,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             return Err(TcError::DeclTypeMismatch);
           }
         }
-        // Open with let-bound fvar. Mirrors lean4lean `inferLet`
+        // Open with let-bound fvar. Mirrors the named specification `inferLet`
         // (TypeChecker.lean:165). The let value lives in the LDecl so
         // WHNF can zeta-reduce on FVar(let) lookup, and so the closing
         // step below produces a `Let` wrapper whose body is the

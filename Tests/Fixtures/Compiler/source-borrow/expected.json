@@ -1,0 +1,181 @@
+{
+  "format": "compilatrix/source-borrow-expectations/1",
+  "cases": [
+    {
+      "name": "read-tag-0-zero",
+      "depth": 0,
+      "successor": false,
+      "source_root": "fb9942fd15ac2f2ecf9516afed0120f50b1d081bf2e0a193b2ac77d733f8bee4",
+      "number": 11
+    },
+    {
+      "name": "read-tag-0-succ",
+      "depth": 0,
+      "successor": true,
+      "source_root": "d025c3820c3e89500a898ded931c80faa56b6251fc3c9a0d0f0b33a7dc600b52",
+      "number": 22
+    },
+    {
+      "name": "read-tag-1-zero",
+      "depth": 1,
+      "successor": false,
+      "source_root": "fc409d7f0c05e20730791e620b2576cd74ecdbe4a880b85894318e2b9f775b35",
+      "number": 11
+    },
+    {
+      "name": "read-tag-1-succ",
+      "depth": 1,
+      "successor": true,
+      "source_root": "556f0f3cc61ddfe66f480860a09b7e96c926c61e0e04f3cf131f6b95ce334248",
+      "number": 22
+    },
+    {
+      "name": "read-tag-2-zero",
+      "depth": 2,
+      "successor": false,
+      "source_root": "7e760358db564bfcfbe793c59bbb7a8fe2f78df17cd6b363066fd5ab73ee9a8b",
+      "number": 11
+    },
+    {
+      "name": "read-tag-2-succ",
+      "depth": 2,
+      "successor": true,
+      "source_root": "ce261debb3c8c69f930889899db7c0fc7e1a3e4589cb0f264929efadd5f53957",
+      "number": 22
+    },
+    {
+      "name": "read-tag-3-zero",
+      "depth": 3,
+      "successor": false,
+      "source_root": "36c9215b71831accddd7163990fc606aa5df7d8d14d3017ec2d1653b3ffa7be5",
+      "number": 11
+    },
+    {
+      "name": "read-tag-3-succ",
+      "depth": 3,
+      "successor": true,
+      "source_root": "20af7da51cf78ca126942fe32b608ce3ae18523bc5de012acb0057fa3da6b02f",
+      "number": 22
+    },
+    {
+      "name": "read-tag-4-zero",
+      "depth": 4,
+      "successor": false,
+      "source_root": "e6f80bef52005fdca7c12691885f74525eb3b274a04722fcc559a391ff2cb887",
+      "number": 11
+    },
+    {
+      "name": "read-tag-4-succ",
+      "depth": 4,
+      "successor": true,
+      "source_root": "e0be4b08c6230c8c97557e3ade8e1f144c11ff5987861d88bfa0201300e3f26d",
+      "number": 22
+    },
+    {
+      "name": "read-tag-5-zero",
+      "depth": 5,
+      "successor": false,
+      "source_root": "f4164487ebc52e522633f35bb612f821f7f4d3ca0dc4ed3e868fb4a491e3392e",
+      "number": 11
+    },
+    {
+      "name": "read-tag-5-succ",
+      "depth": 5,
+      "successor": true,
+      "source_root": "741197e554589585734e7e9c4fef645f4341bbbb8db4807ffe203773d54b8c0f",
+      "number": 22
+    },
+    {
+      "name": "read-tag-6-zero",
+      "depth": 6,
+      "successor": false,
+      "source_root": "e2c85c4fa684c9d5076a4654d707182d69d4f3c9cdc9ae7dbb67b88a937bc572",
+      "number": 11
+    },
+    {
+      "name": "read-tag-6-succ",
+      "depth": 6,
+      "successor": true,
+      "source_root": "689d5524775cc623fb7a7e9e912a72a5d7ad31451c0d4e6e5e84007c751714a1",
+      "number": 22
+    },
+    {
+      "name": "read-tag-7-zero",
+      "depth": 7,
+      "successor": false,
+      "source_root": "a6648a18bf6547067e3da01da5aca89529da7815e523c922da88b232d5d527d9",
+      "number": 11
+    },
+    {
+      "name": "read-tag-7-succ",
+      "depth": 7,
+      "successor": true,
+      "source_root": "50be0acafc0b6679dc631ff92ee38ecaac9e778bf8c5d127ecf10c21bd45c69c",
+      "number": 22
+    },
+    {
+      "name": "read-tag-8-zero",
+      "depth": 8,
+      "successor": false,
+      "source_root": "f44df93af8775ea5b380f2f63a34079fae545514094ec24e45d9bb9a97f6b31b",
+      "number": 11
+    },
+    {
+      "name": "read-tag-8-succ",
+      "depth": 8,
+      "successor": true,
+      "source_root": "91ce9a32914da8ef4ece16c8164c8200ac8109bbaba9f21847fe67974756784d",
+      "number": 22
+    }
+  ],
+  "negative_guards": [
+    [
+      "return-escape",
+      true
+    ],
+    [
+      "store-escape",
+      true
+    ],
+    [
+      "capture-escape",
+      true
+    ],
+    [
+      "local-tail-lender",
+      true
+    ],
+    [
+      "later-reset",
+      true
+    ],
+    [
+      "peak-regression",
+      true
+    ],
+    [
+      "no-rc-gain",
+      true
+    ],
+    [
+      "replay-budget",
+      true
+    ],
+    [
+      "internal-label-collision",
+      true
+    ],
+    [
+      "duplicate-summary",
+      true
+    ],
+    [
+      "missing-summary-owner",
+      true
+    ],
+    [
+      "candidate-limit",
+      true
+    ]
+  ]
+}

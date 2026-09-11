@@ -547,7 +547,7 @@ pub(super) fn batch_abstract(
 /// shifted — it's inserted as-is at the substitution depth.
 ///
 /// `instantiate1` is used when peeling forall binders during recursor
-/// construction (matching Lean C++ and lean4lean).
+/// construction (matching Lean C++ and the named specification).
 pub fn instantiate1(body: &LeanExpr, replacement: &LeanExpr) -> LeanExpr {
   instantiate1_at(body, replacement, 0)
 }

@@ -1606,12 +1606,12 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
   -- Fresh TypeChecker over the persistent kenv (Rust
   -- `TypeChecker::new(&mut kctx.kenv)`).
   modify fun kctx => { kctx with
-    tcState := Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims }
+    tcState := Ix.Kernel.TcState.new kctx.tcState.env kctx.tcState.prims }
 
   -- WHNF-reduced result sort level via the kernel.
   let resultKuniv ←
-    match ← runTc (Ix.Tc.TcM.runRec
-        (Ix.Tc.RecM.getResultSortLevel firstTyZ
+    match ← runTc (Ix.Kernel.TcM.runRec
+        (Ix.Kernel.RecM.getResultSortLevel firstTyZ
           (nParams + firstNIndices.toNat))) with
     | .ok u => pure u
     | .error e =>
@@ -1620,8 +1620,8 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
 {classes[0]!.ind.cnst.name.pretty}: {e}")
 
   let isLarge ←
-    match ← runTc (Ix.Tc.TcM.runRec
-        (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
+    match ← runTc (Ix.Kernel.TcM.runRec
+        (Ix.Kernel.RecM.isLargeEliminator resultKuniv indInfos)) with
     | .ok b => pure b
     | .error e =>
       throw (.invalidMutualBlock

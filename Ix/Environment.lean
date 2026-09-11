@@ -114,7 +114,7 @@ instance : ToString Name where
 /-- Dot-separated bare rendering — byte-for-byte mirror of the Rust
     `Name::pretty` (str components verbatim, num components as plain
     digits, NO `«»` escaping). The kernel's canonical aux ordering seeds
-    on this exact string (`Ix.Tc.canonicalAuxOrder` ↔ Rust
+    on this exact string (`Ix.Kernel.canonicalAuxOrder` ↔ Rust
     `canonical_aux_order`), so `toString` (which escapes nums as `«n»`)
     must not be substituted there. -/
 partial def pretty : Name → String

@@ -250,9 +250,9 @@ def toIndex
     let eltSize ← match typSize layoutMap eltTyp with
       | .error e => throw e
       | .ok len => pure len
+    let val ← toIndex layoutMap bindings val
     let arr ← toIndex layoutMap bindings arr
     let left := arr.extract 0 (i * eltSize)
-    let val ← toIndex layoutMap bindings val
     let right := arr.extract ((i + 1) * eltSize)
     pure $ left ++ val ++ right
   | .store _ _ arg => do

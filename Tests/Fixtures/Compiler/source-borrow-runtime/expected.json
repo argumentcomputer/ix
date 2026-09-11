@@ -1,0 +1,161 @@
+{
+  "format": "compilatrix/source-borrow-runtime-expected/1",
+  "cases": [
+    {
+      "name": "read-tag-runtime-0",
+      "depth": 0,
+      "source_root": "e99c1323f26099436b9437eead2c90de3c291b6a6f474520cbffe34ebc7f172e",
+      "entry": "59b3b74012c20c6a08e5a363f9954cf101b93c786ee0ac67a2453313cc0890eb",
+      "borrowed_entry": "c4127e70d954dbd85968a60514a03afc1246db56b9c11fa1599b0a661c9d055d",
+      "factory": "b3deded93e50c8326d0b9ca842d3c4837292626cc0c3cf45eb04e1de328d7b8a"
+    },
+    {
+      "name": "read-tag-runtime-1",
+      "depth": 1,
+      "source_root": "db97f65a4aaea7327c6a53fd45033e46304d289b0a088821f765ea57e06d0590",
+      "entry": "9708c017f408b4acf394331c996e09a4ae26e89888e05c2cae35b926124db565",
+      "borrowed_entry": "7b71cd750eb9c5c1bf7b72e9e0218ae770d1350e8f7555994e74c46523aa7839",
+      "factory": "1982fa758c0b519a9a9e333a7d7de266e16b4a34147185536d605c24dabf3507"
+    },
+    {
+      "name": "read-tag-runtime-2",
+      "depth": 2,
+      "source_root": "caed6598f5f4ca6e22923b886614937a34af75c1fa1d6feb8c8749ad07f4e8f7",
+      "entry": "5357eac8b31aa363134bcf09932f5827bcab791c67a098f2c545923414c8bc13",
+      "borrowed_entry": "ee73a274f77b3abe49781ccd1453a0d24124ce99a984a2bac9d0f342d11ab50c",
+      "factory": "c4e8286c7dbc09270e6b0d6dff7eeb47a1e05cbf915c10dd8f1049db5ffcac2a"
+    },
+    {
+      "name": "read-tag-runtime-3",
+      "depth": 3,
+      "source_root": "bcf4c2ce7a45d63e672205ef9cb46beb13638c524c31c8db64ec86af799b755a",
+      "entry": "d0e78a669d873301117f99195c213023048a97096894e605bd74da7824c1f6b2",
+      "borrowed_entry": "e9d735ca0f5e2ce60e17fde4c5a86bb9a9af73d523f8ecc25c4e58da5fe545b0",
+      "factory": "fcaa9a7ce8d5f5920141485b075c7bd35b9ded946b43b635f023a7b4eefcce73"
+    },
+    {
+      "name": "read-tag-runtime-4",
+      "depth": 4,
+      "source_root": "8de19831de0bee738ec693185b0b545cbc69ecc70113015b31a74ce80e18758d",
+      "entry": "7275466ff5aacbb9faac8e67cd99dc9b6bb551ab48dfcec3427772c166e33edc",
+      "borrowed_entry": "35c0307945348396c72e3f02c99e079011cf26f9529a6201802eee89ec2b3278",
+      "factory": "7226105757c1483409d05770cc803d1765b0d7c10d772b4f2d65c517e6a7d22e"
+    },
+    {
+      "name": "read-tag-runtime-5",
+      "depth": 5,
+      "source_root": "83f2623241e16853bb817fc5de0ce349c716025cc25a1bfa7ae25b7f18805cce",
+      "entry": "8e9f1709a92acf3ce11f284416ee46d4e85faa769e76351acf68052394e69ce4",
+      "borrowed_entry": "d11d82a4ee3a0c6927ac6bb30720b896e3b8ef46fe48f9cf6ae78c4563c66b51",
+      "factory": "50efd3a075f7ea80c5d5b9828166de4ddf27315ae202e87a16229285f183c6fc"
+    },
+    {
+      "name": "read-tag-runtime-6",
+      "depth": 6,
+      "source_root": "0b186fa3a95792e663879ff70af070cb2ec84b46709b7a107e8af2b3f60e3a3e",
+      "entry": "d3e794b9c19c74408ef7f2f5a35f97fe3917466cac624460e108acb55800dd1b",
+      "borrowed_entry": "b5fb5ee75a020a8bb33137c3afbde3afee0c82d36fc4ad59a808dcebe7124901",
+      "factory": "a9d9aab8df3c9c82e6f74418d7df5c217d020f4c9daf4ecf4b5850fd31e9304c"
+    },
+    {
+      "name": "read-tag-runtime-7",
+      "depth": 7,
+      "source_root": "6da972fdc4bbb1e8d519ecb5f0add7be933f38e0a3d78413b4c40007cac6994d",
+      "entry": "38d45af46401f5f91c44b4561180cbf552d9bbdad75c5ca86efd24acbeb2ebc3",
+      "borrowed_entry": "cefdb2a85454564b6e7ae4aaacab9214a3285f23628fde4173e49d149ee03954",
+      "factory": "da7d25ce7372e3deaa13ee696320d438c7a888276143092cf1b2ebc09fd4cd8a"
+    },
+    {
+      "name": "read-tag-runtime-8",
+      "depth": 8,
+      "source_root": "679ee49cc590e1e0ed412f80fc56a00d9eea5ef029c15e51ca596a9fd0c46e10",
+      "entry": "add3dcb05ab0d78699e9e22da57d687cbd1622ffa75e6c4f3e9a724ca2b932ee",
+      "borrowed_entry": "08142e783451ab2fc4023e79fe11a08597594f9d8bbd04e682b95ba5b3b2964f",
+      "factory": "9ed372751fa9688d4e5856a89dd90ca6f9c39a58ccf776debd77ffc83ac3189e"
+    }
+  ],
+  "structural_guards": [
+    [
+      "structural-open-certificate",
+      true
+    ],
+    [
+      "cyclic-summary-rejected",
+      true
+    ],
+    [
+      "allocation-peak-hazard-rejected",
+      true
+    ],
+    [
+      "structural-budget-fallback",
+      true
+    ],
+    [
+      "incomplete-summary-rejected",
+      true
+    ],
+    [
+      "borrow-then-reset",
+      true
+    ],
+    [
+      "local-tail-lender-rejected",
+      true
+    ],
+    [
+      "later-reset-keeps-owned-parameter",
+      true
+    ]
+  ],
+  "ownership_guards": [
+    [
+      "return-escape",
+      true
+    ],
+    [
+      "store-escape",
+      true
+    ],
+    [
+      "capture-escape",
+      true
+    ],
+    [
+      "local-tail-lender",
+      true
+    ],
+    [
+      "later-reset",
+      true
+    ],
+    [
+      "peak-regression",
+      true
+    ],
+    [
+      "no-rc-gain",
+      true
+    ],
+    [
+      "replay-budget",
+      true
+    ],
+    [
+      "internal-label-collision",
+      true
+    ],
+    [
+      "duplicate-summary",
+      true
+    ],
+    [
+      "missing-summary-owner",
+      true
+    ],
+    [
+      "candidate-limit",
+      true
+    ]
+  ]
+}

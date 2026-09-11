@@ -2,7 +2,7 @@
 //!
 //! Validates inductive declarations (parameter agreement, positivity, universe
 //! constraints, return types) and generates canonical recursors following
-//! lean4lean's constructive approach, then compares with provided recursors.
+//! the named specification's constructive approach, then compares with provided recursors.
 
 use ix_common::address::Address;
 
@@ -359,7 +359,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     //
     // References: lean4 `src/kernel/inductive.cpp:211–262 check_inductive_types`
     // (line 230–231: "parameters of all inductive datatypes must match")
-    // and lean4lean `Lean4Lean/Inductive/Add.lean:80–82`.
+    // and the named specification `Ix.Theory.Named/Inductive/Add.lean:80–82`.
     //
     // Memoization: the check is invariant across all peers of the block —
     // if peer[0] agrees with each of peer[1..N], then by transitivity all
@@ -711,7 +711,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Build the "flat" block for recursor generation, detecting nested occurrences.
   ///
-  /// Mirrors lean4lean's `ElimNestedInductive.run`: walks constructor fields,
+  /// Mirrors the named specification's `ElimNestedInductive.run`: walks constructor fields,
   /// detects `ExtInd(block_member_ref)` patterns, and adds auxiliary entries
   /// for each nested external inductive. Queue-based for transitive nesting.
   fn build_flat_block(
@@ -929,7 +929,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // local de Bruijn refs. Either case means the would-be aux parameter
       // depends on a constructor field, so it is not a valid nested inductive
       // parameter. Allow Var(0)..Var(n_rec_params-1) as shared parameter refs.
-      // (lean4lean: isNestedInductiveApp? checks looseBVars on param args.)
+      // (the named specification: isNestedInductiveApp? checks looseBVars on param args.)
       let param_depth =
         checked_usize_to_u64::<M>("nested parameter depth", param_depth)?;
       let param_bound = checked_metadata_sum::<M>(
@@ -1985,7 +1985,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Check that a field domain doesn't have block inductives in negative position.
-  /// Follows lean4lean's `checkPositivity`: recurse through foralls, reject if
+  /// Follows the named specification's `checkPositivity`: recurse through foralls, reject if
   /// inductive in domain (negative), accept if result is a valid inductive app
   /// (direct or nested).
   ///
@@ -2020,7 +2020,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           return Err(TcError::Other("strict positivity violation".into()));
         }
         // H4: Open binder with fvar so WHNF works correctly on dependent
-        // types (lean4lean Add.lean:187-189 uses withLocalDecl).
+        // types (the named specification Add.lean:187-189 uses withLocalDecl).
         let saved = self.lctx.len();
         let (inner_open, _) =
           self.open_binder_anon(inner_dom.clone(), inner_body);
@@ -2458,7 +2458,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Determine whether the recursor for this block is a large eliminator
-  /// (can target any universe). Follows lean4lean's isLargeEliminator.
+  /// (can target any universe). Follows the named specification's isLargeEliminator.
   ///
   /// Returns true if:
   /// 1. The inductive is NOT in Prop, OR
@@ -2549,7 +2549,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
-  /// Generate recursors for all inductives in a block (lean4lean-style).
+  /// Generate recursors for all inductives in a block (the named specification-style).
   ///
   /// Detects nested occurrences (à la `ElimNestedInductive`), builds a flat
   /// block with auxiliary entries, and generates canonical recursor types for
@@ -4398,7 +4398,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
     let target_n_params = u64_to_usize::<M>(flat[target_bi].own_params)?;
 
     // Use the TARGET recursor (the one for the inductive the field recurses on),
-    // matching lean4lean (Add.lean:427), lean4 C++ (inductive.cpp:738),
+    // matching the named specification (Add.lean:427), lean4 C++ (inductive.cpp:738),
     // and ix/kernel (recursor.rs:1391).
     let peer_rec = &peer_recs[target_bi];
     let peer_rec_lvls = match self.try_get_const(peer_rec)? {

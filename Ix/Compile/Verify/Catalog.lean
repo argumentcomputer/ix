@@ -5,7 +5,7 @@ import Std.Data.HashMap.Lemmas
 /-!
 # Immutable compiler catalog and representation well-formedness
 
-This module states the X1 representation boundary without running Ix.Tc.  It
+This module states the X1 representation boundary without running Ix.Kernel.  It
 separates content-address integrity, finite immutable lookup support, logical
 environment views, wire representability, and expression-table resolution.
 
@@ -393,7 +393,7 @@ structure Catalog.Finite (catalog : Catalog) : Prop where
   memberAddrs : FinitelySupported catalog.memberAddrs
 
 /-- X1 in-memory catalog integrity.  This is representation
-well-formedness, not Lean4Lean `VEnv.WF`. -/
+well-formedness, not Ix.Theory.Named `VEnv.WF`. -/
 structure Catalog.WF (catalog : Catalog) : Prop where
   finite : catalog.Finite
   constants : ∀ {addr constant}, catalog.constants addr = some constant →
@@ -434,7 +434,7 @@ theorem Catalog.empty_wf : Catalog.empty.WF := by
 
 /-- Immutable view of a concrete `Ixon.Env`.  `nameOf` and mutual member
 addresses remain explicit semantic inputs because the wire environment stores
-Ix names and projection constants, not Lean4Lean names or a redundant member
+Ix names and projection constants, not Ix.Theory.Named names or a redundant member
 array. -/
 def Catalog.ofEnv (env : Ixon.Env)
     (nameOf : Address → Option Lean.Name)

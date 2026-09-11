@@ -227,6 +227,10 @@ not this stable overview.
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
+The [certified source and claim profile](docs/certified-checking.md) has a
+separate gate: `lake run check-certified` checks its theorem audit, provenance
+and native/CLI regressions against the frozen C7 evidence.
+
 **Rust tests:** `cargo test` or `cargo nextest run`
 
 ### Proving under SP1

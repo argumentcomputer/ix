@@ -1,5 +1,5 @@
 import Ix.Compile.Verify.CompileConstantCodec
-import Lean4Lean.Verify.QSort
+import Ix.Theory.Named.Verify.QSort
 
 /-!
 # Production expression-table preseeding
@@ -350,7 +350,9 @@ theorem PreseedCollectionWireWF.pushUniv
 
 theorem addressBlake3_wire (bytes : ByteArray) :
     (Address.blake3 bytes).hash.size = 32 := by
-  exact (Blake3.Rust.hash bytes).property
+  exact (Blake3.HasherOps.finalizeWithLength
+    (Blake3.Rust.hasherUpdate (Blake3.Rust.hasherInit ()) bytes) 32 (by
+      rcases System.Platform.numBits_eq with bits | bits <;> rw [bits] <;> decide)).property
 
 /-- Conservative number of reference payloads a source walk can append.
 Seen-set deduplication can only decrease this cost. -/

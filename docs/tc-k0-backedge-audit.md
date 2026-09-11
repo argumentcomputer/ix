@@ -1,4 +1,4 @@
-# Ix.Tc K0 recursion and back-edge audit
+# Ix.Kernel K0 recursion and back-edge audit
 
 Snapshot: 2026-07-27. This is the named K0 tick/measure artifact required by
 the formal-verification plan. Its production scope is the kernel call graph
@@ -67,7 +67,7 @@ The direct-read audit is:
 
 ```text
 rg -n '\(← read\)\.(whnf|whnfCore|whnfMode|whnfCoreFlags|infer|isDefEq)' \
-  Ix/Tc --glob '*.lean'
+  Ix/Kernel --glob '*.lean'
 ```
 
 The live edges have the following roles:
@@ -116,11 +116,11 @@ adversarial inputs that could previously diverge in an unbounded loop now
 return `.maxRecDepth` at the documented cap. Valid-corpus verdict and
 headroom parity is the A5 closure gate. Rust and Aiur are deliberately
 unchanged in K0; any corresponding hardening is a later transport obligation
-after the Ix.Tc theorem interface is stable.
+after the Ix.Kernel theorem interface is stable.
 
 ## Proof and regression surface
 
-`Ix.Tc.Verify.Totalization` exposes, and the completed trust manifest audits:
+`Ix.Kernel.Verify.Totalization` exposes, and the completed trust manifest audits:
 
 - zero/successor equations for all six `methodsN` fields;
 - unchanged-error-state equations for all six `methodsOut` fields;
@@ -142,11 +142,11 @@ The reproducible source audits are:
 
 ```text
 rg -n '^\s*partial def' \
-  Ix/Tc/{Whnf,Infer,DefEq,Inductive,Check}.lean
+  Ix/Kernel/{Whnf,Infer,DefEq,Inductive,Check}.lean
 rg -n '^\s*(while|repeat)\b' \
-  Ix/Tc/{Whnf,Infer,DefEq,Inductive,Check}.lean
+  Ix/Kernel/{Whnf,Infer,DefEq,Inductive,Check}.lean
 rg -n 'TcM\.tick' \
-  Ix/Tc/{Whnf,Infer,DefEq,Inductive,Check}.lean
+  Ix/Kernel/{Whnf,Infer,DefEq,Inductive,Check}.lean
 ```
 
 The first two must return no matches; the last must return exactly the WHNF
@@ -168,13 +168,13 @@ The 2026-07-27 K0 closure run passed all of the following:
 
 - exact four-statement sorry-frontier check;
 - completed (295 roots) and statement (4 roots) trust audits;
-- `lake build IxTcVerify` and the default `lake build`;
+- `lake build IxKernelVerify` and the default `lake build`;
 - strict `tc-unit` with warnings treated as failures;
 - pinned Init/Std stress constants and accelerated-versus-pure differential;
 - Init-scale anon verdict parity;
 - focused anon differential, full anon/meta roundtrip, and `tc-init` suites;
-- Lean4Lean replay and tutorial suites.
+- Kernel replay and tutorial suites.
 
 No production source in the Rust kernel or Aiur IxVM was changed. Their
-acceptance simulation/refinement work remains downstream of the Ix.Tc
+acceptance simulation/refinement work remains downstream of the Ix.Kernel
 soundness theorem.

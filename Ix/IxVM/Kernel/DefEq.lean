@@ -691,7 +691,7 @@ def defEq := ⟦
                                 -- Mirrors the reference's
                                 -- "Types must be def-eq" check
                                 -- (crates/kernel/src/def_eq.rs), itself
-                                -- lean4lean's `tryEtaStructCore`.
+                                -- the named specification's `tryEtaStructCore`.
                                 let t_ty = k_infer_only(t, types);
                                 let s_ty = k_infer_only(s, types);
                                 match k_is_def_eq(t_ty, s_ty, types) {
@@ -784,7 +784,7 @@ def defEq := ⟦
   -- inductive.
   --
   -- The index count is part of the reference's test (`def_eq.rs:912`,
-  -- `if indices != 0 || ctors.len() != 1`) and of lean4lean's
+  -- `if indices != 0 || ctors.len() != 1`) and of the named specification's
   -- (`numIndices := 0`); it was dropped here, which made `Eq α a b` and
   -- every other 1-ctor 0-field indexed family read as unit-like.
   fn is_unit_like_type(ty: KExpr) -> G {
@@ -843,8 +843,8 @@ def defEq := ⟦
   -- binder type, not out of `ty_a`, and the ensuing Lam/Lam comparison
   -- is what checks the two domains agree. Rust `try_eta_expansion`
   -- (`def_eq.rs:1179-1211`) infers `s`, whnfs to `All`, and takes that
-  -- `ty`; `Ix/Tc` `tryEtaExpansion` (`DefEq.lean:946-951`) does the same
-  -- via `inferOnlyCall`; lean4lean `tryEtaExpansionCore`
+  -- `ty`; `Ix/Kernel` `tryEtaExpansion` (`DefEq.lean:946-951`) does the same
+  -- via `inferOnlyCall`; the named specification `tryEtaExpansionCore`
   -- (`TypeChecker.lean:507-511`) is `let .forallE name ty _ bi ← whnf
   -- (← inferType s)`.
   --
@@ -883,8 +883,8 @@ def defEq := ⟦
   -- SEMANTIC on purpose — `level_equal`, matching `is_inductive_prop`
   -- (`Infer.lean:260`) and all three references: Rust gates both struct-
   -- eta (`whnf.rs:1884`) and proof irrelevance (`def_eq.rs:878`) on
-  -- `KUniv::is_semantic_zero`, `Ix/Tc` on `isSemanticZero`
-  -- (`Whnf.lean:1139`, `DefEq.lean:817`), and lean4lean's `isProp` on
+  -- `KUniv::is_semantic_zero`, `Ix/Kernel` on `isSemanticZero`
+  -- (`Whnf.lean:1139`, `DefEq.lean:817`), and the named specification's `isProp` on
   -- `Level.isAlwaysZero` (`TypeChecker.lean:230`), all of which normalize.
   --
   -- A structural `KLevelNode.Zero` test is UNSOUND here: `convert_univ`

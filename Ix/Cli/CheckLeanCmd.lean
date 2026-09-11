@@ -1,6 +1,6 @@
 /-
   `ix check-lean <path.ixe>`: typecheck a serialized `.ixe` environment
-  through the pure-Lean `Ix.Tc` kernel — the reference-kernel counterpart
+  through the pure-Lean `Ix.Kernel` kernel — the reference-kernel counterpart
   of `ix check-rs`, with matching mode default, live progress, and exit
   codes. Correctness-first: expect the Rust kernel to be much faster.
 
@@ -17,7 +17,7 @@
   subject-only but still reads dependencies' declared types, so every
   constant must be present. `--max` therefore bounds the check phase
   only, never ingress. Checking then runs work-stealing parallel workers
-  over the shared env (see `Ix.Tc.ParCheck`).
+  over the shared env (see `Ix.Kernel.ParCheck`).
 
   Progress mirrors `check-rs`: a periodic aggregate line (done/total,
   rate, eta, oldest in-flight) on stderr, persistent lines only for
@@ -38,14 +38,14 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.Cli.ConstsFile
-public import Ix.Tc
+public import Ix.Kernel
 public import Ix.Benchmark.Results
 
 public section
 
 namespace Ix.Cli.CheckLeanCmd
 
-open Ix.Tc
+open Ix.Kernel
 
 /-- First set env var wins; else the default. Zero is a valid setting. -/
 def envNat (names : List String) (dflt : Nat) : IO Nat := do
@@ -222,7 +222,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     maxRecFuel? := ((← IO.getEnv "IX_MAX_REC_FUEL").bind
       (·.trimAscii.toString.toNat?)).map (·.toUInt64) }
 
-  IO.println s!"Running Ix.Tc kernel check \
+  IO.println s!"Running Ix.Kernel kernel check \
                 ({if anon then "anon" else "meta"} mode) on {envPath}"
   let t0 ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile envPath
@@ -271,7 +271,7 @@ end Ix.Cli.CheckLeanCmd
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Typecheck a `.ixe` through the pure-Lean Ix.Tc kernel (meta mode by default; parallel)"
+  "Typecheck a `.ixe` through the pure-Lean Ix.Kernel kernel (meta mode by default; parallel)"
 
   FLAGS:
     anon;                   "Run in anon mode (metadata never reaches the kernel; `#hex` labels)"

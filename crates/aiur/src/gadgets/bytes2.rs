@@ -424,6 +424,15 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, 6)
   }
 
+  pub(crate) fn add_rank_ranges(
+    &mut self,
+    ranges: crate::call_order::RankRanges,
+  ) {
+    for ([i, j], count) in ranges {
+      self.0[256 * usize::from(i) + usize::from(j)][6] += count;
+    }
+  }
+
   pub(crate) fn bump_mul(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 7)
   }

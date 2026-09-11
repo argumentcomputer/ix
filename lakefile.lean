@@ -10,7 +10,7 @@ require LSpec from git
 /- Blake3 precompiles its libraries, so Lake loads their shared objects -- which
 bundle the C and Rust FFI objects -- into any process elaborating a module that
 imports them. That is what supplies the BLAKE3 backend to Lean's native evaluator
-for the `native_decide` proofs in `IxTcVerify`, so this pin must stay at or after
+for the `native_decide` proofs in `IxKernelVerify`, so this pin must stay at or after
 the revision that turned precompilation on. Before it, Blake3 exposed a
 `blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
 that target no longer exists. -/
@@ -22,20 +22,6 @@ require Cli from git
 
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.33.0"
-
-/- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
-Theory/Verify specification surface, while `bench-lean4lean` and the ignored
-`lean4lean` test runner exercise the implementation. The default `ix` target
-still does not build this dependency. Pin `argumentcomputer/lean4ix` exactly --
-the Argument development line, a standalone repository rather than a GitHub
-fork of digama0/lean4lean: this revision carries the upstream v4.32/v4.33
-kernel hardening — including the `checkNoMVarNoFVar` check on an opaque's
-value (leanprover/lean4#14498), which the replay path in
-`Benchmarks/Lean4Lean.lean` reaches — on top of that line's certified
-inductive-environment and projection development, and tracks Lean v4.33.1 as
-this package does. -/
-require lean4lean from git
-  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
 
 /-! ## FFI
 
@@ -194,18 +180,6 @@ lean_exe «bench-aggregate-policy» where
   -- symbols are then resolved from ix_ffi and not pulled twice.
   moreLinkObjs := #[ix_rs]
 
-/- The lean4lean replay machinery as an importable lib: the
-`bench-lean4lean` exe root and the ignored `lean4lean` test runner both
-import `Benchmarks.Lean4Lean`, and modules under `Benchmarks/` belong to
-no other lib target, so without this Lake cannot schedule the module from
-the Tests import graph. -/
-lean_lib Lean4LeanBench where
-  globs := #[.one `Benchmarks.Lean4Lean]
-
-lean_exe «bench-lean4lean» where
-  root := `Benchmarks.Lean4LeanMain
-  supportInterpreter := true
-
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
@@ -228,9 +202,13 @@ lean_exe truthmines where
 
 end Benchmarks
 
-section IxTcVerify
+lean_lib IxTheoryNamed where
+  roots := #[]
+  globs := #[.submodules `Ix.Theory.Named]
 
-/-- Loadable FFI for Lean's native evaluator while `IxTcVerify` is elaborated.
+section IxKernelVerify
+
+/-- Loadable FFI for Lean's native evaluator while `IxKernelVerify` is elaborated.
 
 `native_decide` runs compiled Lean before any executable is linked, so for each
 opaque `@[extern]` it reaches, both symbol layers must be loadable up front:
@@ -255,31 +233,89 @@ target ix_native_decide_dynlib pkg : Dynlib := do
     (pkg.buildDir / nameToSharedLib "ix_native_decide")
     (boxedObjs.push ixCdylib) #[]
 
-/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
+/- Formal verification of `Ix.Kernel` against the internal named specification.
 Non-default: `lake build ix` never
 touches it, and `build-all` (the lint driver) skips it by name because its
-pinned Lean4Lean dependencies still emit named `sorry` warnings — `lake lint
+internal named-specification proofs still emit named `sorry` warnings — `lake lint
 -- --wfail` would otherwise fail even though the Ix verification source has
 no local `sorry` tokens. Required CI builds it separately without `--wfail`,
 audits the exact local sorry frontier, and checks exact per-root transitive
 axiom plus direct-`sorryAx`-origin manifests. Dev loop:
-`lake build IxTcVerify`; focused trust audit:
-`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional
-Ix.Tc.Verify.Audit.Statements`. -/
-lean_lib IxTcVerify where
-  globs := #[.submodules `Ix.Tc.Verify]
+`lake build IxKernelVerify`; focused trust audit:
+`lake build Ix.Kernel.Verify.Audit.Completed Ix.Kernel.Verify.Audit.Conditional
+Ix.Kernel.Verify.Audit.Statements`. -/
+lean_lib IxKernelVerify where
+  globs := #[.submodules `Ix.Kernel.Verify]
   -- `supportInterpreter` is a `lean_exe` option and takes effect only when
   -- that executable is linked, after its modules have been elaborated.
   -- These native-decide proofs need the boxed FFI symbols while the library
   -- modules are being elaborated, so they must be supplied as a dynlib.
   dynlibs := #[ix_native_decide_dynlib]
 
-end IxTcVerify
+end IxKernelVerify
+
+/- Refinement of production kernel operations into the new consistency model.
+Checked independently so its proved roots have their own axiom boundary. -/
+lean_lib IxKernelConsistency where
+  roots := #[`Ix.Kernel.Verify.Consistency]
+  globs := #[.andSubmodules `Ix.Kernel.Verify.Consistency]
+
+/- Compiler and verifier-binding components with an independent exact audit. -/
+lean_lib IxAiurVerify where
+  roots := #[`Ix.Aiur.Proofs]
+  globs := #[.andSubmodules `Ix.Aiur.Proofs]
+
+lean_exe «aiur-backend-tests» where
+  root := `Tests.Aiur.Backend
+
+lean_exe «aiur-bytecode-tests» where
+  root := `Tests.Aiur.BytecodeCompare
+  supportInterpreter := true
+
+lean_exe «aiur-dedup-tests» where
+  root := `Tests.Aiur.Dedup
+  supportInterpreter := true
+
+lean_exe «aiur-tail-match-tests» where
+  root := `Tests.Aiur.TailMatches
+  supportInterpreter := true
+
+lean_exe «aiur-source-value-tests» where
+  root := `Tests.Aiur.SourceValues
+  supportInterpreter := true
+
+lean_exe «aiur-hoisting-tests» where
+  root := `Tests.Aiur.Hoisting
+  supportInterpreter := true
+
+lean_exe «aiur-air-tests» where
+  root := `Tests.Aiur.AIRSemantics
+
+lean_exe «aiur-byte-gadget-tests» where
+  root := `Tests.Aiur.ByteGadgets
+
+lean_exe «aiur-lookup-shape-tests» where
+  root := `Tests.Aiur.LookupShapes
+
+lean_exe «aiur-lookup-budget-tests» where
+  root := `Tests.Aiur.LookupBudget
+
+lean_exe «aiur-selector-control-tests» where
+  root := `Tests.Aiur.SelectorControl
+
+lean_exe «aiur-operation-row-tests» where
+  root := `Tests.Aiur.OperationRows
+
+lean_exe «aiur-block-row-tests» where
+  root := `Tests.Aiur.BlockRows
+
+lean_exe «aiur-circuit-row-tests» where
+  root := `Tests.Aiur.CircuitRows
 
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
-Lean4Lean Theory endpoint as `IxTcVerify`.  Kept as a separate non-default
+internal named-specification endpoint as `IxKernelVerify`.  Kept as a separate non-default
 library so compiler proofs cannot accidentally inherit checker acceptance
 theorems as their specification. -/
 lean_lib IxCompileVerify where
@@ -342,12 +378,16 @@ script "get-exe-targets" := do
 @[lint_driver]
 script "build-all" (args) := do
   let pkg ← getRootPackage
-  let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
-  let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  -- IxTcVerify is the WIP proofs lib: sorry-bearing by design while the
+  let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString false)
+  let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString false)
+  -- IxKernelVerify is the WIP proofs lib: sorry-bearing by design while the
   -- verification frontier is open, so it must not run under `--wfail`.
   -- Required CI builds it separately and audits the exact frontier.
-  let allNames := (libNames ++ exeNames |>.toList).filter (· != "IxTcVerify")
+  -- Compiler and theory checks have dedicated CI jobs and scripts below.
+  let allNames := (libNames ++ exeNames |>.toList).filter fun name =>
+    name != "IxKernelVerify" && name != "IxCompileVerify" && !name.startsWith "IxCompiler" &&
+      !name.startsWith "IxTheory" && !name.startsWith "compiler-" &&
+      !name.startsWith "theory-"
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {
@@ -358,3 +398,381 @@ script "build-all" (args) := do
   return 0
 
 end Scripts
+
+section Compiler
+
+/- Independent compiler and theory imports. These are not dependencies of
+the production Ix umbrella or CLI. Their checks run in separate CI jobs. -/
+target compiler_hpt_cache_sync pkg : FilePath := do
+  let source ← inputTextFile <| pkg.dir / "native/compiler/hpt_cache_sync.c"
+  let object := pkg.buildDir / "native" / "compiler_hpt_cache_sync.o"
+  let includeDir ← getLeanIncludeDir
+  buildO object source #["-fPIC", "-I", includeDir.toString] #[] "cc" getLeanTrace
+
+lean_lib IxCompiler where
+  roots := #[`Ix.Compiler]
+  globs := #[.andSubmodules `Ix.Compiler]
+  moreLinkObjs := #[compiler_hpt_cache_sync]
+
+lean_lib IxCompilerTests where
+  roots := #[`Tests.Compiler]
+  globs := #[]
+
+lean_lib IxCompilerBench where
+  roots := #[`Benchmarks.Compiler]
+
+lean_exe «compiler-benchmark» where
+  root := `Benchmarks.Compiler
+
+lean_exe «compiler-tests» where
+  root := `Tests.Compiler.Tests
+
+lean_exe «compiler-catalog-contact» where
+  root := `Tests.Compiler.CatalogContact
+
+lean_exe «compiler-x86-object-fixture» where
+  root := `Tests.Compiler.X86ObjectFixture
+
+lean_exe «compiler-source-coverage» where
+  root := `Tests.Compiler.SourceCoverage
+
+lean_exe «compiler-source-recursion» where
+  root := `Tests.Compiler.SourceRecursion
+
+lean_exe «compiler-source-call-reuse» where
+  root := `Tests.Compiler.SourceCallReuse
+
+lean_exe «compiler-source-unique-reuse» where
+  root := `Tests.Compiler.SourceUniqueReuse
+
+lean_exe «compiler-source-native-unique» where
+  root := `Tests.Compiler.SourceNativeUnique
+
+lean_exe «compiler-source-native-runtime» where
+  root := `Tests.Compiler.SourceNativeRuntime
+
+lean_exe «compiler-source-native-upstream» where
+  root := `Tests.Compiler.SourceNativeUpstream
+
+lean_exe «compiler-source-native-scalar» where
+  root := `Tests.Compiler.SourceNativeScalar
+
+lean_exe «compiler-source-native-physical-scalar» where
+  root := `Tests.Compiler.SourceNativePhysicalScalar
+
+lean_exe «compiler-source-native-captured-scalar» where
+  root := `Tests.Compiler.SourceNativeCapturedScalar
+
+lean_exe «compiler-source-borrow» where
+  root := `Tests.Compiler.SourceBorrow
+
+lean_exe «compiler-source-borrow-runtime» where
+  root := `Tests.Compiler.SourceBorrowRuntime
+
+lean_exe «compiler-check-x86-encoder» where
+  root := `Tests.Compiler.Checks.CheckX86Encoder
+
+lean_exe «compiler-check-x86-bytes» where
+  root := `Tests.Compiler.Checks.CheckX86Bytes
+
+lean_exe «compiler-check-x86-streams» where
+  root := `Tests.Compiler.Checks.CheckX86Streams
+
+lean_exe «compiler-check-x86-object» where
+  root := `Tests.Compiler.Checks.CheckX86Object
+
+lean_exe «compiler-check-trusted-externs» where
+  root := `Tests.Compiler.Checks.CheckTrustedExterns
+
+lean_exe «compiler-check-source-coverage» where
+  root := `Tests.Compiler.Checks.CheckSourceCoverage
+
+lean_exe «compiler-check-source-recursion» where
+  root := `Tests.Compiler.Checks.CheckSourceRecursion
+
+lean_exe «compiler-check-source-call-reuse» where
+  root := `Tests.Compiler.Checks.CheckSourceCallReuse
+
+lean_exe «compiler-check-source-unique-reuse» where
+  root := `Tests.Compiler.Checks.CheckSourceUniqueReuse
+
+lean_exe «compiler-check-source-native-unique» where
+  root := `Tests.Compiler.Checks.CheckSourceNativeUnique
+
+lean_exe «compiler-check-source-native-runtime» where
+  root := `Tests.Compiler.Checks.CheckSourceNativeRuntime
+
+lean_exe «compiler-check-source-native-upstream» where
+  root := `Tests.Compiler.Checks.CheckSourceNativeUpstream
+
+lean_exe «compiler-check-source-native-scalar» where
+  root := `Tests.Compiler.Checks.CheckSourceNativeScalar
+
+lean_exe «compiler-check-source-native-physical-scalar» where
+  root := `Tests.Compiler.Checks.CheckSourceNativePhysicalScalar
+
+lean_exe «compiler-check-source-native-captured-scalar» where
+  root := `Tests.Compiler.Checks.CheckSourceNativeCapturedScalar
+
+lean_exe «compiler-check-source-borrow» where
+  root := `Tests.Compiler.Checks.CheckSourceBorrow
+
+lean_exe «compiler-check-source-borrow-runtime» where
+  root := `Tests.Compiler.Checks.CheckSourceBorrowRuntime
+
+lean_exe «compiler-check-tools-tests» where
+  root := `Tests.Compiler.Checks.CheckToolsTests
+
+end Compiler
+
+section Theory
+
+lean_lib IxTheory where
+  roots := #[`Ix.Theory]
+  -- The set model has its own import graph and trust audit. Named kernel
+  -- proof support belongs to IxTheoryNamed and is checked separately.
+  globs := #[.one `Ix.Theory, .one `Ix.Theory.Certified,
+    .one `Ix.Theory.Const, .one `Ix.Theory.Expr, .one `Ix.Theory.Quot,
+    .one `Ix.Theory.Ref, .one `Ix.Theory.Rename, .one `Ix.Theory.Store,
+    .one `Ix.Theory.VLevel, .submodules `Ix.Theory.Certificate,
+    .submodules `Ix.Theory.Certified, .submodules `Ix.Theory.Inductive,
+    .submodules `Ix.Theory.Model, .submodules `Ix.Theory.Std]
+
+lean_lib IxTheoryCertified where
+  roots := #[`Ix.Theory.Certified]
+
+lean_lib IxTheoryTests where
+  roots := #[`Tests.Theory]
+
+lean_exe «theory-provenance» where
+  root := `Tests.Theory.Provenance
+
+end Theory
+
+section Certified
+
+lean_lib IxCertified where
+  roots := #[`Ix.Certified]
+  moreLinkObjs := #[ix_rs]
+
+lean_lib IxCertifiedAudit where
+  roots := #[`Ix.Certified.AuditAll]
+
+lean_exe "certified-cli-tests" where
+  root := `Tests.Certified.CLI
+  supportInterpreter := true
+
+lean_exe "certified-adapter-tests" where
+  root := `Tests.Certified.Check
+  supportInterpreter := true
+
+lean_exe «certified-check» where
+  root := `Ix.Certified.Main
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-claim-check» where
+  root := `Ix.Certified.ClaimMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-feature-tests» where
+  root := `Tests.Certified.Features
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-ordinary-tests» where
+  root := `Tests.Certified.Ordinary
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-vm-tests» where
+  root := `Tests.Certified.VM
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-source-tests» where
+  root := `Tests.Certified.SourceMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-fidelity-tests» where
+  root := `Tests.Certified.FidelityMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-claim-tests» where
+  root := `Tests.Certified.ClaimsMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-modeled-tests» where
+  root := `Tests.Certified.ModeledMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+end Certified
+
+namespace ComponentChecks
+
+private def run (command : String) (args : Array String := #[]) : IO Unit := do
+  IO.println s!"Running: {command} {String.intercalate " " args.toList}"
+  let child ← IO.Process.spawn { cmd := command, args, stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  unless code == 0 do throw (IO.userError s!"{command} failed ({code})")
+
+private def compilerExe (name : String) : String := s!".lake/build/bin/compiler-{name}"
+
+end ComponentChecks
+
+open ComponentChecks
+
+/-- Build every compiler target, then exercise independent byte/native checks. -/
+script "check-compiler" := do
+  let pkg ← getRootPackage
+  let executables := pkg.configTargets LeanExe.configKind |>.map (·.name.toString false)
+    |>.filter (·.startsWith "compiler-")
+  run "lake" (#["build", "IxCompiler"] ++ executables)
+  for name in ["tests", "check-trusted-externs", "check-tools-tests",
+      "check-x86-encoder", "check-x86-bytes", "check-x86-streams"] do
+    run (compilerExe name)
+  let host ← IO.Process.output { cmd := "uname", args := #["-sm"] }
+  unless host.exitCode == 0 do throw (IO.userError "unable to identify native test host")
+  let native := host.stdout.trimAscii.toString == "Linux x86_64"
+  let nativeArgs (fixture : String) : Array String := if native then
+    #["--cc", "cc", "--harness", s!"Tests/Fixtures/Compiler/{fixture}/native_harness.c"] else #[]
+  run (compilerExe "check-x86-object")
+    (#["--fixture", compilerExe "x86-object-fixture"] ++ nativeArgs "x86")
+  run (compilerExe "check-source-coverage")
+    (#["--fixture", compilerExe "source-coverage"] ++ nativeArgs "x86")
+  for name in ["source-recursion", "source-call-reuse", "source-unique-reuse",
+      "source-borrow", "source-borrow-runtime"] do
+    run (compilerExe s!"check-{name}") #["--fixture", compilerExe name]
+  for name in ["source-native-unique", "source-native-runtime", "source-native-upstream",
+      "source-native-scalar", "source-native-physical-scalar", "source-native-captured-scalar"] do
+    run (compilerExe s!"check-{name}") (#["--fixture", compilerExe name] ++ nativeArgs name)
+  run (compilerExe "check-source-native-runtime")
+    (#["--fixture", compilerExe "source-native-runtime", "--variant", "counter-fold"] ++
+      nativeArgs "source-native-runtime")
+  run (compilerExe "benchmark") #["analysis-self-check"]
+  IO.println s!"Compiler checks passed (native execution: {native})."
+  return 0
+
+/-- Check the selected theory, its provenance, and the exact foundation report. -/
+script "check-theory" := do
+  run "lake" #["build", "--wfail", "IxTheory", "IxTheoryTests", "theory-provenance"]
+  run ".lake/build/bin/theory-provenance"
+  let report ← IO.Process.output {
+    cmd := "lake", args := #["env", "lean", "Tests/Theory/Audit/Certified.lean"] }
+  unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
+  let expected ← IO.FS.readFile "Tests/Theory/certified-foundation.txt"
+  unless report.stdout == expected do
+    IO.FS.withTempFile fun handle path => do
+      handle.putStr report.stdout
+      handle.flush
+      let child ← IO.Process.spawn {
+        cmd := "diff", args := #["-u", "Tests/Theory/certified-foundation.txt", path.toString]
+        stdout := .inherit, stderr := .inherit }
+      let _ ← child.wait
+      throw (IO.userError "certified foundation report differs from the reviewed manifest")
+  IO.println "Theory checks passed: exact root types, axioms, dependencies, and runtime inventory."
+  return 0
+
+/-- Audit Aiur components and exercise their actual native verifier binding. -/
+script "check-aiur" := do
+  run "lake" #["build", "--wfail", "IxAiurVerify", "aiur-backend-tests",
+    "aiur-bytecode-tests", "aiur-dedup-tests", "aiur-tail-match-tests", "aiur-source-value-tests",
+    "aiur-hoisting-tests", "aiur-air-tests", "aiur-byte-gadget-tests", "aiur-lookup-shape-tests",
+    "aiur-lookup-budget-tests", "aiur-selector-control-tests", "aiur-operation-row-tests",
+    "aiur-block-row-tests", "aiur-circuit-row-tests"]
+  let report ← IO.Process.output {
+    cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
+  unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
+  let expectedPath := "Tests/Aiur/backend-foundation.txt"
+  let expected ← IO.FS.readFile expectedPath
+  unless report.stdout == expected do
+    IO.FS.withTempFile fun handle path => do
+      handle.putStr report.stdout
+      handle.flush
+      let child ← IO.Process.spawn {
+        cmd := "diff", args := #["-u", expectedPath, path.toString]
+        stdout := .inherit, stderr := .inherit }
+      let _ ← child.wait
+      throw (IO.userError "Aiur component report differs from the reviewed manifest")
+  let snapshots : Array (String × Array String × String) := #[
+    ("aiur-bytecode-tests", #[], "Tests/Aiur/bytecode-compatibility.txt"),
+    ("aiur-dedup-tests", #["--snapshot"], "Tests/Aiur/dedup-compatibility.txt"),
+    ("aiur-tail-match-tests", #[], "Tests/Aiur/tail-match-compatibility.txt"),
+    ("aiur-source-value-tests", #[], "Tests/Aiur/source-value-compatibility.txt")]
+  for (program, args, comparisonPath) in snapshots do
+    let comparison ← IO.Process.output { cmd := s!".lake/build/bin/{program}", args }
+    unless comparison.exitCode == 0 && comparison.stderr.isEmpty do
+      throw (IO.userError s!"{comparison.stdout}{comparison.stderr}")
+    unless comparison.stdout == (← IO.FS.readFile comparisonPath) do
+      IO.FS.withTempFile fun handle path => do
+        handle.putStr comparison.stdout
+        handle.flush
+        let child ← IO.Process.spawn {
+          cmd := "diff", args := #["-u", comparisonPath, path.toString]
+          stdout := .inherit, stderr := .inherit }
+        let _ ← child.wait
+        throw (IO.userError s!"{program} differs from its original native snapshot")
+  run ".lake/build/bin/aiur-dedup-tests"
+  run ".lake/build/bin/aiur-hoisting-tests"
+  run ".lake/build/bin/aiur-air-tests"
+  IO.FS.withTempDir fun directory => do
+    let snapshot := directory / "native-byte-gadgets.bin"
+    let shapeSnapshot := directory / "native-lookup-shapes.bin"
+    let budgetSnapshot := directory / "native-lookup-budget.bin"
+    let selectorSnapshot := directory / "native-selector-control.bin"
+    let operationSnapshot := directory / "native-operation-rows.bin"
+    let blockSnapshot := directory / "native-block-rows.bin"
+    let circuitSnapshot := directory / "native-circuit-rows.bin"
+    let exporter ← IO.Process.spawn {
+      cmd := "cargo"
+      args := #["test", "--locked", "--release", "-p", "aiur",
+        "_snapshot"]
+      env := #[("IX_BYTE_GADGET_SNAPSHOT", some snapshot.toString),
+        ("IX_LOOKUP_SHAPE_SNAPSHOT", some shapeSnapshot.toString),
+        ("IX_LOOKUP_BUDGET_SNAPSHOT", some budgetSnapshot.toString),
+        ("IX_SELECTOR_CONTROL_SNAPSHOT", some selectorSnapshot.toString),
+        ("IX_OPERATION_ROW_SNAPSHOT", some operationSnapshot.toString),
+        ("IX_BLOCK_ROW_SNAPSHOT", some blockSnapshot.toString),
+        ("IX_CIRCUIT_ROW_SNAPSHOT", some circuitSnapshot.toString)]
+      stdout := .inherit
+      stderr := .inherit }
+    unless (← exporter.wait) == 0 do
+      throw (IO.userError "native Aiur component snapshot export failed")
+    run ".lake/build/bin/aiur-byte-gadget-tests" #[snapshot.toString]
+    run ".lake/build/bin/aiur-lookup-shape-tests" #[shapeSnapshot.toString]
+    run ".lake/build/bin/aiur-lookup-budget-tests" #[budgetSnapshot.toString]
+    run ".lake/build/bin/aiur-selector-control-tests" #[selectorSnapshot.toString]
+    run ".lake/build/bin/aiur-operation-row-tests" #[operationSnapshot.toString]
+    run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
+    run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
+  run ".lake/build/bin/aiur-backend-tests"
+  IO.println "Aiur component checks passed: exact proof/runtime boundaries, compiler compatibility and native binding."
+  return 0
+
+/-- Validate certified host adapters against exact audits and frozen C7 evidence. -/
+script "check-certified" := do
+  run "lake" #["build", "--wfail", "IxCertified", "IxCertifiedAudit",
+    "certified-check", "certified-claim-check", "certified-feature-tests",
+    "certified-ordinary-tests", "certified-vm-tests", "certified-source-tests",
+    "certified-fidelity-tests", "certified-claim-tests", "certified-modeled-tests",
+    "certified-cli-tests", "certified-adapter-tests"]
+  let report ← IO.Process.output {
+    cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Certified/AuditAll.lean"] }
+  unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
+  let expectedPath := "Tests/Certified/foundation.txt"
+  unless report.stdout == (← IO.FS.readFile expectedPath) do
+    IO.FS.withTempFile fun handle path => do
+      handle.putStr report.stdout
+      handle.flush
+      let child ← IO.Process.spawn {
+        cmd := "diff", args := #["-u", expectedPath, path.toString]
+        stdout := .inherit, stderr := .inherit }
+      let _ ← child.wait
+      throw (IO.userError "certified adapter report differs from the reviewed manifest")
+  run ".lake/build/bin/certified-adapter-tests"
+  return 0

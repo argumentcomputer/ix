@@ -1,0 +1,47 @@
+name: Set-theory model
+
+on:
+  pull_request:
+    paths:
+      - 'Models/SetTheory/**'
+      - 'Ix/Theory/Model/SetTheory/Core.lean'
+      - 'lakefile.lean'
+      - 'lake-manifest.json'
+      - 'lean-toolchain'
+      - '.github/workflows/set-theory-model.yml'
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  model:
+    runs-on: warp-ubuntu-latest-x64-16x
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: Models/SetTheory
+    env:
+      MATHLIB_NO_CACHE_ON_UPDATE: '1'
+      MATHLIB_CACHE_DIR: .lake/mathlib-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Check Lean toolchains match
+        run: cmp ../../lean-toolchain lean-toolchain
+      - uses: actions/cache@v6
+        with:
+          path: Models/SetTheory/.lake
+          key: set-theory-model-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Models/SetTheory/lean-toolchain', 'Models/SetTheory/lakefile.toml', 'Models/SetTheory/lake-manifest.json') }}
+      - name: Fetch the imported Mathlib modules and dependencies
+        run: lake exe cache get Mathlib.SetTheory.Cardinal.Regular Mathlib.SetTheory.ZFC.VonNeumann Mathlib.SetTheory.ZFC.Cardinal
+      - name: Build model and check axiom guard
+        run: lake build --wfail

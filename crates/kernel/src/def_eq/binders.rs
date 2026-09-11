@@ -3,8 +3,8 @@
 //! Domains are compared under the already-accepted prefix, before adding
 //! the SAME fresh local to both sides. The terminal bodies are opened once.
 //! Each accepted binder therefore follows the existing single-binder rule.
-//! See Ix/Tc/Verify/DefEq/Structural.lean (quickBinder_wf) and the lamDF /
-//! forallEDF rules in lean4lean. Those proofs do not certify this Rust loop.
+//! See Ix/Kernel/Verify/DefEq/Structural.lean (quickBinder_wf) and the lamDF /
+//! forallEDF rules in the named specification. Those proofs do not certify this Rust loop.
 //!
 //! This is not a complete conversion procedure for binder terms: skipping
 //! intermediate conversion can miss reduction/proof-irrelevance/cache wins.

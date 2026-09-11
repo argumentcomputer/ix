@@ -1,0 +1,1333 @@
+PROGRAM empty FUNCTIONS 0 -> 0
+RENAME #[0, 1, 2]
+MEMORY #[1, 2, 10]
+PROGRAM entry-union FUNCTIONS 3 -> 1
+RENAME #[0, 0, 0, 3, 4, 5]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+PROGRAM different-layouts FUNCTIONS 3 -> 3
+RENAME #[0, 1, 2, 3, 4, 5]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 1, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 9, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM mutual-cycle FUNCTIONS 2 -> 1
+RENAME #[0, 0, 2, 3, 4]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 0 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+PROGRAM invalid-callee FUNCTIONS 2 -> 1
+RENAME #[0, 0, 2, 3, 4]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 999 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+PROGRAM continuations FUNCTIONS 4 -> 2
+RENAME #[0, 0, 1, 1, 4, 5, 6]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.const 7],
+            ctrl := Aiur.Bytecode.Ctrl.matchContinue
+                      0
+                      #[(0, { ops := #[], ctrl := Aiur.Bytecode.Ctrl.yield 0 #[1] })]
+                      (some { ops := #[], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] })
+                      1
+                      3
+                      2
+                      { ops := #[Aiur.Bytecode.Op.call 1 #[2] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[3] } },
+  layout := { inputSize := 1, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 1, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-0 FUNCTIONS 2 -> 2
+RENAME #[0, 1, 2, 3, 4]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-1 FUNCTIONS 4 -> 4
+RENAME #[0, 1, 2, 3, 4, 5, 6]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-2 FUNCTIONS 6 -> 6
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-3 FUNCTIONS 8 -> 8
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-4 FUNCTIONS 10 -> 10
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-5 FUNCTIONS 12 -> 12
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-6 FUNCTIONS 14 -> 14
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-7 FUNCTIONS 16 -> 16
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-8 FUNCTIONS 18 -> 18
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-9 FUNCTIONS 20 -> 20
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-10 FUNCTIONS 22 -> 22
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.call 20 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.call 21 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 20 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 21 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-11 FUNCTIONS 24 -> 24
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.call 20 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.call 21 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 20 { body := { ops := #[Aiur.Bytecode.Op.call 22 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 21 { body := { ops := #[Aiur.Bytecode.Op.call 23 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 22 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 23 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-12 FUNCTIONS 26 -> 26
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.call 20 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.call 21 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 20 { body := { ops := #[Aiur.Bytecode.Op.call 22 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 21 { body := { ops := #[Aiur.Bytecode.Op.call 23 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 22 { body := { ops := #[Aiur.Bytecode.Op.call 24 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 23 { body := { ops := #[Aiur.Bytecode.Op.call 25 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 24 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 25 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-13 FUNCTIONS 28 -> 28
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.call 20 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.call 21 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 20 { body := { ops := #[Aiur.Bytecode.Op.call 22 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 21 { body := { ops := #[Aiur.Bytecode.Op.call 23 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 22 { body := { ops := #[Aiur.Bytecode.Op.call 24 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 23 { body := { ops := #[Aiur.Bytecode.Op.call 25 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 24 { body := { ops := #[Aiur.Bytecode.Op.call 26 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 25 { body := { ops := #[Aiur.Bytecode.Op.call 27 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 26 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 27 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-14 FUNCTIONS 30 -> 30
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.call 20 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.call 21 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 20 { body := { ops := #[Aiur.Bytecode.Op.call 22 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 21 { body := { ops := #[Aiur.Bytecode.Op.call 23 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 22 { body := { ops := #[Aiur.Bytecode.Op.call 24 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 23 { body := { ops := #[Aiur.Bytecode.Op.call 25 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 24 { body := { ops := #[Aiur.Bytecode.Op.call 26 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 25 { body := { ops := #[Aiur.Bytecode.Op.call 27 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 26 { body := { ops := #[Aiur.Bytecode.Op.call 28 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 27 { body := { ops := #[Aiur.Bytecode.Op.call 29 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 28 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 29 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-15 FUNCTIONS 32 -> 32
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.call 20 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.call 21 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 20 { body := { ops := #[Aiur.Bytecode.Op.call 22 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 21 { body := { ops := #[Aiur.Bytecode.Op.call 23 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 22 { body := { ops := #[Aiur.Bytecode.Op.call 24 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 23 { body := { ops := #[Aiur.Bytecode.Op.call 25 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 24 { body := { ops := #[Aiur.Bytecode.Op.call 26 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 25 { body := { ops := #[Aiur.Bytecode.Op.call 27 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 26 { body := { ops := #[Aiur.Bytecode.Op.call 28 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 27 { body := { ops := #[Aiur.Bytecode.Op.call 29 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 28 { body := { ops := #[Aiur.Bytecode.Op.call 30 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 29 { body := { ops := #[Aiur.Bytecode.Op.call 31 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 30 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 31 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+PROGRAM refinement-chain-16 FUNCTIONS 34 -> 34
+RENAME #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+MEMORY #[1, 2, 10]
+FUNCTION 0 { body := { ops := #[Aiur.Bytecode.Op.call 2 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 1 { body := { ops := #[Aiur.Bytecode.Op.call 3 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := true,
+  constrained := false }
+FUNCTION 2 { body := { ops := #[Aiur.Bytecode.Op.call 4 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 3 { body := { ops := #[Aiur.Bytecode.Op.call 5 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 4 { body := { ops := #[Aiur.Bytecode.Op.call 6 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 5 { body := { ops := #[Aiur.Bytecode.Op.call 7 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 6 { body := { ops := #[Aiur.Bytecode.Op.call 8 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 7 { body := { ops := #[Aiur.Bytecode.Op.call 9 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 8 { body := { ops := #[Aiur.Bytecode.Op.call 10 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 9 { body := { ops := #[Aiur.Bytecode.Op.call 11 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 10 { body := { ops := #[Aiur.Bytecode.Op.call 12 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 11 { body := { ops := #[Aiur.Bytecode.Op.call 13 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 12 { body := { ops := #[Aiur.Bytecode.Op.call 14 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 13 { body := { ops := #[Aiur.Bytecode.Op.call 15 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 14 { body := { ops := #[Aiur.Bytecode.Op.call 16 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 15 { body := { ops := #[Aiur.Bytecode.Op.call 17 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 16 { body := { ops := #[Aiur.Bytecode.Op.call 18 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 17 { body := { ops := #[Aiur.Bytecode.Op.call 19 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 18 { body := { ops := #[Aiur.Bytecode.Op.call 20 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 19 { body := { ops := #[Aiur.Bytecode.Op.call 21 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 20 { body := { ops := #[Aiur.Bytecode.Op.call 22 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 21 { body := { ops := #[Aiur.Bytecode.Op.call 23 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 22 { body := { ops := #[Aiur.Bytecode.Op.call 24 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 23 { body := { ops := #[Aiur.Bytecode.Op.call 25 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 24 { body := { ops := #[Aiur.Bytecode.Op.call 26 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 25 { body := { ops := #[Aiur.Bytecode.Op.call 27 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 26 { body := { ops := #[Aiur.Bytecode.Op.call 28 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 27 { body := { ops := #[Aiur.Bytecode.Op.call 29 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 28 { body := { ops := #[Aiur.Bytecode.Op.call 30 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 29 { body := { ops := #[Aiur.Bytecode.Op.call 31 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 30 { body := { ops := #[Aiur.Bytecode.Op.call 32 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 31 { body := { ops := #[Aiur.Bytecode.Op.call 33 #[] 1 false], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 32 { body := { ops := #[Aiur.Bytecode.Op.const 7], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }
+FUNCTION 33 { body := { ops := #[Aiur.Bytecode.Op.const 9], ctrl := Aiur.Bytecode.Ctrl.return 0 #[0] },
+  layout := { inputSize := 0, selectors := 2, auxiliaries := 8, lookups := 5 },
+  entry := false,
+  constrained := false }

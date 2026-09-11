@@ -2630,7 +2630,7 @@ mod tests {
   // ==========================================================================
   //
   // Prototype `canonUniv` = draft linearizer ∘ subsumption ∘ normalizeAux
-  // (the Géran machinery ported from `Ix/Tc/Level.lean:227-472` /
+  // (the Géran machinery ported from `Ix/Kernel/Level.lean:227-472` /
   // `crates/kernel/src/level.rs`) plus the frozen kernel `mk*` reducer,
   // both transliterated onto `ixon::univ::Univ`. Promoted to the real
   // implementation in stage 2 (the linearizer gating construction is the

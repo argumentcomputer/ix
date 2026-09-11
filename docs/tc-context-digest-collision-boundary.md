@@ -1,4 +1,4 @@
-# Ix.Tc context-digest collision boundary
+# Ix.Kernel context-digest collision boundary
 
 Snapshot: 2026-07-31. This note records a proof boundary for the K1/K2 cache
 soundness argument.

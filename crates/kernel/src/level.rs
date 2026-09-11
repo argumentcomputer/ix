@@ -5,31 +5,31 @@
 //! `M::MField<Name>` — the parameter name in Meta mode, erased to `()` in
 //! Anon mode.
 //!
-//! # Relationship to Lean4Lean
+//! # Relationship to Ix.Theory.Named
 //!
-//! `normalize_level` is a line-by-line port of Lean4Lean's `Level.Normalize`
-//! (see `refs/lean4lean/Lean4Lean/Level.lean`), based on Yoan Géran's paper
+//! `normalize_level` is a line-by-line port of Ix.Theory.Named's `Level.Normalize`
+//! (see `refs/the named specification/Ix.Theory.Named/Level.lean`), based on Yoan Géran's paper
 //! "A Canonical Form for Universe Levels in Impredicative Type Theory"
 //! (<https://lmf.cnrs.fr/downloads/Perso/long.pdf>). The Rust `NormLevel` is
 //! a `BTreeMap<Vec<u64>, Node>` indexed by sorted param-index paths — the
-//! Rust analogue of Lean4Lean's `Std.TreeMap (List Name) Node`, with `u64`
+//! Rust analogue of Ix.Theory.Named's `Std.TreeMap (List Name) Node`, with `u64`
 //! param indices replacing `Name` since our anon-mode params are positional.
 //!
 //! Point of divergence: `norm_level_le` is intentionally stronger than
-//! Lean4Lean's `NormLevel.le`. Lean4Lean's variant looks for a *single*
+//! Ix.Theory.Named's `NormLevel.le`. Ix.Theory.Named's variant looks for a *single*
 //! `p2 ⊆ p1` entry in `l2` that dominates both the constant and the variable
 //! contributions of `n_p1`; ours splits that into independent per-ingredient
 //! searches (`covers_const` and `covers_var`). See the detailed doc on
 //! `norm_level_le` for the concrete witness that motivated the change.
 //!
 //! This is a soundness-preserving completeness strengthening, not a
-//! disagreement with the canonical-form theory: Lean4Lean's
+//! disagreement with the canonical-form theory: Ix.Theory.Named's
 //! `NormLevel.subsumption_eval` is `sorry` in
-//! `refs/lean4lean/Lean4Lean/Verify/Level.lean:545`, and there is no
+//! `refs/the named specification/Ix.Theory.Named/Verify/Level.lean:545`, and there is no
 //! `geq'_wf` / `NormLevel.le_wf` theorem anywhere in the Verify tree, so the
-//! "complete for level algebra" claim in Lean4Lean's `divergences.md` is
+//! "complete for level algebra" claim in Ix.Theory.Named's `divergences.md` is
 //! aspirational for `geq'` specifically. `univ_eq` (via `norm_level_eq`)
-//! matches Lean4Lean's `isEquiv'` bit-for-bit, since that direction *is*
+//! matches Ix.Theory.Named's `isEquiv'` bit-for-bit, since that direction *is*
 //! proven sound (`isEquiv'_wf`, `Verify/Level.lean:578`) and the witness
 //! that exposed `NormLevel.le`'s gap is not an equality case.
 
@@ -351,8 +351,8 @@ fn norm_add_var(s: &mut NormLevel, idx: u64, k: u64, path: &[u64]) {
 }
 
 /// Insert `(idx, k)` into the var list at `path`, taking the max of offsets
-/// when `idx` is already present. Mirrors Lean4Lean's
-/// `NormLevel.addNode v k path'` (`refs/lean4lean/Lean4Lean/Level.lean:92`);
+/// when `idx` is already present. Mirrors Ix.Theory.Named's
+/// `NormLevel.addNode v k path'` (`refs/the named specification/Ix.Theory.Named/Level.lean:92`);
 /// `k` must be the current succ-accumulator from `normalize_aux`.
 ///
 /// An earlier port of this function dropped `k` and always inserted
@@ -432,7 +432,7 @@ fn normalize_aux<M: KernelMode>(
           // Param(idx) is already in path (so we're in an `imax(u, v)` where
           // v = Param(idx) and idx is fixed > 0 by the enclosing chain).
           // The outer k Succ's still contribute when idx > 0, which it is
-          // along this path. Matches Lean4Lean's `acc.addVar v k path`.
+          // along this path. Matches Ix.Theory.Named's `acc.addVar v k path`.
           if k != 0 {
             norm_add_var(acc, idx, k, path);
           }
@@ -508,7 +508,7 @@ fn normalize_imax_dispatch<M: KernelMode>(
       normalize_aux(a, &new_path, k, acc);
     } else {
       // idx is already in path; outer k Succ's still contribute.
-      // Matches Lean4Lean's `acc.addVar v k path`.
+      // Matches Ix.Theory.Named's `acc.addVar v k path`.
       if k != 0 {
         norm_add_var(acc, idx, k, path);
       }
@@ -623,9 +623,9 @@ fn covers_var(l2: &NormLevel, p1: &[u64], w: u64, off: u64) -> bool {
 /// where `p1`'s params are all positive must be dominated by the max of
 /// contributions from `{(p2, n_p2) : p2 ⊆ p1}` in the same branch.
 ///
-/// # Divergence from Lean4Lean
+/// # Divergence from Ix.Theory.Named
 ///
-/// Lean4Lean's `NormLevel.le` (`refs/lean4lean/Lean4Lean/Level.lean:164`)
+/// Ix.Theory.Named's `NormLevel.le` (`refs/the named specification/Ix.Theory.Named/Level.lean:164`)
 /// looks for a *single* `p2` covering both `n1.const` and `n1.var`
 /// simultaneously — sound, but incomplete. Concrete witness (see
 /// `prop_univ_max_is_geq_both_components_imax_witness`):
@@ -646,7 +646,7 @@ fn covers_var(l2: &NormLevel, p1: &[u64], w: u64, off: u64) -> bool {
 /// Checking `b ≤ m` at `p1 = [0,1]` needs both `const=3` and `var=[(0,0)]`.
 /// `m[[]]` covers the const (no var); `m[[0,1]]` covers the var (const was
 /// zeroed out by subsumption against `m[[]]`). No single `p2 ⊆ [0,1]` in
-/// `m` has both, so Lean4Lean's `le` reports `m ≱ b` even though `m ≥ b`
+/// `m` has both, so Ix.Theory.Named's `le` reports `m ≱ b` even though `m ≥ b`
 /// holds for every parameter assignment.
 ///
 /// The version here splits the check into `covers_const` and `covers_var`,
@@ -662,7 +662,7 @@ fn covers_var(l2: &NormLevel, p1: &[u64], w: u64, off: u64) -> bool {
 ///   n_p2.var` with `off' ≥ off`, then `l2`'s contribution along active
 ///   `p1` is at least `u_w + off' ≥ u_w + off`.
 ///
-/// This matches what Lean4Lean's paper-level theory expects but its
+/// This matches what Ix.Theory.Named's paper-level theory expects but its
 /// implementation doesn't cover (cf. the `sorry` on
 /// `NormLevel.subsumption_eval` in `Verify/Level.lean:545`, and the absence
 /// of any `geq'_wf`).
@@ -1284,7 +1284,7 @@ mod tests {
   /// Param(0)), Param(1))` and `a = Succ^3(0)`. Semantically the property
   /// holds for every parameter assignment.
   ///
-  /// The original Lean4Lean `NormLevel.le` was incomplete: it searched for
+  /// The original Ix.Theory.Named `NormLevel.le` was incomplete: it searched for
   /// a single `p2 ⊆ p1` in `l2` covering both the constant and variable
   /// ingredients of `n_p1`. Here `m`'s canonical form splits its `const=3`
   /// at `[]` from its `var=[(0,0)]` at `[0,1]`, while `b`'s `[0,1]` carries

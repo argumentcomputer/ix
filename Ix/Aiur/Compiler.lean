@@ -189,12 +189,11 @@ def Bytecode.Toplevel.needsCircuit (t : Bytecode.Toplevel) : Array Bool := Id.ru
         stack := stack.push callee
   needs
 
-/-- Full compilation pipeline. -/
-def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplevel := do
-  let t ← t.inlineCalls
-  let typedDecls ← t.checkAndSimplify.mapError toString
-  let concDecls ← typedDecls.concretize.mapError toString
-  let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
+/-- The exact artifact produced by the total final compilation passes.
+Keeping this operation separate lets the compilation success theorem bind
+the returned bytecode and function map to the successful stage outputs. -/
+def finishCompilation (t : Source.Toplevel) (bytecodeRaw : Bytecode.Toplevel)
+    (preNameMap : Std.HashMap Global Bytecode.FunIdx) : CompiledToplevel := Id.run do
   let (bytecodeDedup, remap) := bytecodeRaw.deduplicate
   let needs := bytecodeDedup.needsCircuit
   let bytecode : Bytecode.Toplevel := { bytecodeDedup with
@@ -208,6 +207,14 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
   let bytecode := { bytecode with
     circuits := bytecode.singletonCircuits fun i => reverseMap[i]?.getD s!"<fn {i}>" }
   pure (CompiledToplevel.mk t bytecode nameMap)
+
+/-- Full compilation pipeline. -/
+def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplevel := do
+  let t ← t.inlineCalls
+  let typedDecls ← t.checkAndSimplify.mapError toString
+  let concDecls ← typedDecls.concretize.mapError toString
+  let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
+  return finishCompilation t bytecodeRaw preNameMap
 
 /-- Name of the environment variable that switches function grouping OFF
 process-wide: when it is set to anything but `0` or the empty string,

@@ -46,7 +46,7 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 /// Shared recursive fuel budget, consumed by recursive whnf/infer/isDefEq
 /// entries and by productive structural-WHNF beta/zeta/iota transitions.
 /// This is cumulative work per declaration, not a recursion-depth limit;
-/// its units are not directly comparable to lean4lean's step-indexed depth
+/// its units are not directly comparable to the named specification's step-indexed depth
 /// allowance or the Lean C++ kernel's heartbeats.
 ///
 /// Large FLT proofs can finish successfully after roughly 54M counted steps
@@ -143,7 +143,7 @@ pub struct TypeChecker<'a, M: KernelMode> {
   ctx_id_stack: Vec<CtxAddr>,
 
   // -- Thread-local optimization --
-  /// Union-find for transitive def-eq caching (lean4lean EquivManager).
+  /// Union-find for transitive def-eq caching (the named specification EquivManager).
   /// Thread-local: path halving mutates on reads, not safe to share.
   pub equiv_manager: EquivManager,
 
@@ -494,7 +494,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   }
 
   /// Push a let-bound variable (type + value). WHNF will zeta-reduce references
-  /// to this variable by substituting the value (lean4lean withExtendedLetCtx).
+  /// to this variable by substituting the value (the named specification withExtendedLetCtx).
   pub fn push_let(&mut self, ty: KExpr<M>, val: KExpr<M>) {
     let ty = self.env.intern.intern_expr(ty);
     let val = self.env.intern.intern_expr(val);
@@ -570,7 +570,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// fvar (with `Var(>=1)` shifting down). Returns the opened body and
   /// the fresh fvar id (the caller may pass `_` to discard).
   ///
-  /// Mirrors lean4lean's `withLocalDecl` in shape; differs in that the
+  /// Mirrors the named specification's `withLocalDecl` in shape; differs in that the
   /// caller is responsible for `lctx.truncate(saved_len)` when leaving
   /// the binder scope.
   pub fn open_binder(

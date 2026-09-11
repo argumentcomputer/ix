@@ -7,9 +7,9 @@
 //! times (well-founded-recursion unfolds, recursor rules with repeated
 //! motives, etc.); without per-call memoization we re-walk every shared
 //! occurrence, turning a DAG walk into a tree walk and blowing O(N)
-//! sharing into O(2^k) work. Mirrors `lean4lean`'s `replaceM` which
+//! sharing into O(2^k) work. Mirrors `the named specification`'s `replaceM` which
 //! uses a `PtrMap Expr Expr` for the same reason (see
-//! `refs/lean4lean/Lean4Lean/Expr.lean:14`).
+//! `refs/the named specification/Ix.Theory.Named/Expr.lean:14`).
 
 use std::cell::OnceCell;
 use std::sync::Arc;
@@ -769,8 +769,8 @@ fn clo_subst_cached<M: KernelMode>(
 /// Cheap beta reduction: peephole-reduce `App(λ...λ. body, args)` shapes
 /// without invoking the full [`subst`] machinery in trivial cases.
 ///
-/// Mirrors `lean4lean`'s `Expr.cheapBetaReduce`
-/// (refs/lean4lean/Lean4Lean/Instantiate.lean:8-27) and the C++ kernel's
+/// Mirrors `the named specification`'s `Expr.cheapBetaReduce`
+/// (refs/the named specification/Ix.Theory.Named/Instantiate.lean:8-27) and the C++ kernel's
 /// `cheap_beta_reduce` (refs/lean4/src/kernel/instantiate.cpp:211).
 ///
 /// For a spine `App(λx_0 ... λx_{n-1}. body, a_0, ..., a_{m-1})` we peel
@@ -1485,7 +1485,7 @@ mod tests {
   }
 
   // ---------------------------------------------------------------------
-  // cheap_beta_reduce — see lean4lean Instantiate.lean:8-27.
+  // cheap_beta_reduce — see the named specification Instantiate.lean:8-27.
   // ---------------------------------------------------------------------
 
   #[test]

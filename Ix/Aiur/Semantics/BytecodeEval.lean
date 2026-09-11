@@ -6,17 +6,18 @@ public import Ix.IndexMap
 /-!
 Lean-native bytecode reference evaluator.
 
-Mirrors `src/aiur/execute.rs` in big-step form:
+Uncached big-step model of bytecode operations:
 - No `QueryRecord` (trace-side bookkeeping).
 - No call cache.
-- No `unconstrained` branching (both branches of every `if unconstrained` produce
-  the same value; they differ only in whether a query is logged).
+- No `unconstrained` branching or constrained promotion.
 - No stack machine — direct big-step.
 - Call-only fuel decrement at `Op.call`.
 - Errors return, never panic.
 
-Per-width memory buckets mirror Rust's `QueryRecord.memory_queries`
-(`execute.rs:36-40`). Each `Op.store values` uses `values.size` as the width key.
+Runtime cache hits and promotion can change effect multiplicity. Relating this
+model to native execution requires a separate refinement argument. Per-width
+memory buckets mirror Rust's `QueryRecord.memory_queries`; each
+`Op.store values` uses `values.size` as the width key.
 -/
 
 public section

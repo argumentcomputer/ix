@@ -109,7 +109,8 @@ structure LayoutMState where
   degrees : Array Nat
 
 @[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
-  ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.replicate inputSize 1⟩
+  -- Multiplicity plus six rank bytes, with three byte-pair range lookups.
+  ⟨{ inputSize, selectors := 0, auxiliaries := 7, lookups := 3 }, .empty, Array.replicate inputSize 1⟩
 
 abbrev LayoutM := StateM LayoutMState
 
@@ -174,7 +175,10 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .call _ _ outputSize unconstrained => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
-    if !unconstrained then bumpLookups
+    if !unconstrained then
+      -- Callee rank and six bytes for (callee rank - caller rank - 1).
+      bumpAuxiliaries 7
+      bumpLookups 4
   | .store values => do
     pushDegree 1; bumpAuxiliaries; bumpLookups; addMemSize values.size
   | .load size _ => do

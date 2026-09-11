@@ -678,8 +678,8 @@ pub struct KEnv<M: KernelMode> {
   /// `whnf_no_delta_for_def_eq` from scratch (mathlib hot path).
   pub whnf_no_delta_cheap_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// WHNF core cache: structural-only reduction (beta/iota/zeta/proj),
-  /// no native primitives, no delta. Mirrors lean4lean's `whnfCoreCache`
-  /// (refs/lean4lean/Lean4Lean/TypeChecker.lean:19) and lean4 C++'s
+  /// no native primitives, no delta. Mirrors the named specification's `whnfCoreCache`
+  /// (refs/the named specification/Ix.Theory.Named/TypeChecker.lean:19) and lean4 C++'s
   /// `m_whnf_core`. Populated only when flags are FULL — cheap-projection
   /// results are not safe to share with full callers.
   pub whnf_core_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,

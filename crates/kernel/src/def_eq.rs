@@ -1,6 +1,6 @@
 //! Definitional equality checking.
 //!
-//! Multi-tier strategy following lean4lean:
+//! Multi-tier strategy following the named specification:
 //! 1. Quick structural (same constructor, same children)
 //! 2. WHNF without delta, quick structural
 //! 3. Proof irrelevance (before delta)
@@ -87,9 +87,9 @@ const PROJECTION_PROBE_FUEL: u64 = 4_096;
 
 /// Step journal (`IX_STEP_TRACE=1`): one `[deq] <fuel> <a8> ~ <b8>` line
 /// per `is_def_eq` entry (plus `[whnf+]` lines in whnf.rs), mirroring the
-/// Lean kernel's `IX_TC_STEP_TRACE` journal (`Ix.Tc` / `TcM.stepTrace`).
+/// Lean kernel's `IX_TC_STEP_TRACE` journal (`Ix.Kernel` / `TcM.stepTrace`).
 /// Diffing the two sequences localizes a behavioral divergence at the
-/// first fork (workflow in `Ix/Tc/ParCheck.lean`). Unscoped by design —
+/// first fork (workflow in `Ix/Kernel/ParCheck.lean`). Unscoped by design —
 /// pair with a seeded single-constant run (`--consts <name>`).
 pub(crate) static IX_STEP_TRACE: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_STEP_TRACE").is_ok());
@@ -420,12 +420,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       log::info!("  wb: {wb}");
     }
 
-    // Tier 4b: post-delta congruence checks (lean4lean isDefEqConst/Fvar/Proj)
+    // Tier 4b: post-delta congruence checks (the named specification isDefEqConst/Fvar/Proj)
     if self.try_structural_congruence(&wa, &wb)? {
       return Ok(true);
     }
 
-    // Tier 4c: second structural pass (lean4lean:683-686, lean4
+    // Tier 4c: second structural pass (the named specification:683-686, lean4
     // type_checker.cpp:1109-1110). This is deliberately `whnfCore`, not full
     // `whnf`: full WHNF would delta-unfold stuck open primitives such as
     // `Nat.ble` and can literally walk enormous Nat literals in their
@@ -448,7 +448,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(true);
     }
 
-    // Tier 4d: app spine comparison (lean4lean isDefEqApp, lean4 type_checker.cpp:1115)
+    // Tier 4d: app spine comparison (the named specification isDefEqApp, lean4 type_checker.cpp:1115)
     if self.try_def_eq_app(&wa, &wb)? {
       return Ok(true);
     }
@@ -485,7 +485,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     wa: &mut KExpr<M>,
     wb: &mut KExpr<M>,
   ) -> Result<Option<bool>, TcError<M>> {
-    // Tier 4: iterative lazy delta (lean4lean lazyDeltaReduction)
+    // Tier 4: iterative lazy delta (the named specification lazyDeltaReduction)
     let mut fuel = MAX_WHNF_FUEL;
     loop {
       if fuel == 0 {
@@ -495,14 +495,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
       fuel -= 1;
 
-      // M2: Nat offset reduction at top of loop (lean4lean isDefEqOffset)
+      // M2: Nat offset reduction at top of loop (the named specification isDefEqOffset)
       if let Some(result) = self.try_def_eq_offset(wa, wb)? {
         return Ok(Some(result));
       }
 
       // Nat primitive reduction inside lazy delta. Mirrors lean4
-      // (`refs/lean4/src/kernel/type_checker.cpp:978-984`) and lean4lean
-      // (`refs/lean4lean/Lean4Lean/TypeChecker.lean:619`): skip Nat
+      // (`refs/lean4/src/kernel/type_checker.cpp:978-984`) and the named specification
+      // (`refs/the named specification/Ix.Theory.Named/TypeChecker.lean:619`): skip Nat
       // primitives entirely when either side has a free variable, unless
       // eagerReduce is active.
       let nat_ok = (!wa.has_fvars() && !wb.has_fvars()) || self.eager_reduce;
@@ -523,7 +523,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       // Native reduction inside lazy delta. Reference order is
       // `is_def_eq_offset → reduce_nat (gated) → reduce_native → delta`
-      // (lean4 `type_checker.cpp:986-991`, lean4lean `TypeChecker.lean:625-628`).
+      // (lean4 `type_checker.cpp:986-991`, the named specification `TypeChecker.lean:625-628`).
       // Ix-specific `try_reduce_decidable` runs after native to keep the
       // reference-aligned segment tight.
       if fam_a == PrimFamily::Native
@@ -564,7 +564,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // C6: Before unfolding a definition, try reducing projection apps
-      // on the non-definition side (lean4lean tryUnfoldProjApp).
+      // on the non-definition side (the named specification tryUnfoldProjApp).
       if a_delta && !b_delta {
         if let Some(wb2) = self.try_unfold_proj_app(wb)? {
           *wb = wb2;
@@ -622,7 +622,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               );
             }
           }
-          // H1: Equal height — unfold BOTH sides (lean4lean:596)
+          // H1: Equal height — unfold BOTH sides (the named specification:596)
           let ua = self.delta_unfold_one(wa)?;
           let ub = self.delta_unfold_one(wb)?;
           match (ua, ub) {
@@ -1152,7 +1152,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
-  /// M2: Nat offset reduction for lazy delta loop (lean4lean isDefEqOffset),
+  /// M2: Nat offset reduction for lazy delta loop (the named specification isDefEqOffset),
   /// generalized to offset form: each side decomposes to `base + offset`
   /// (`Lit n`, `succ` layers, and `Nat.add base (Lit m)` — the compact stuck
   /// form WHNF now leaves — all read in O(1) per layer), the shared offset
@@ -1236,8 +1236,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Convert a string literal to constructor form:
   /// `"abc"` → `String.ofList (List.cons (Char.ofNat 97) (List.cons (Char.ofNat 98) (... List.nil)))`
   ///
-  /// Uses `Char.ofNat` (not `Char.mk`) matching lean4lean/C++ kernel.
-  /// Uses `String.ofList` (= `String.mk` in our env) matching lean4lean/C++ kernel.
+  /// Uses `Char.ofNat` (not `Char.mk`) matching the named specification/C++ kernel.
+  /// Uses `String.ofList` (= `String.mk` in our env) matching the named specification/C++ kernel.
   pub(super) fn str_lit_to_constructor(&mut self, s: &str) -> KExpr<M> {
     let char_const =
       self.intern(KExpr::cnst(self.prims.char_type.clone(), Box::new([])));
@@ -1305,7 +1305,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   // Eta expansion
   // -----------------------------------------------------------------------
 
-  /// Lambda eta expansion (lean4lean style): if `t` is a lambda and `s` is not,
+  /// Lambda eta expansion (the named specification style): if `t` is a lambda and `s` is not,
   /// infer `s`'s type, WHNF to get a forall, wrap `s` as `λ(ty). s #0`, compare with `t`.
   fn try_eta_expansion(
     &mut self,
@@ -1341,7 +1341,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.is_def_eq(t, &s_lam)
   }
 
-  /// Struct eta (lean4lean style): if `s` is a fully-applied constructor of a
+  /// Struct eta (the named specification style): if `s` is a fully-applied constructor of a
   /// struct-like type, check `proj(i, t) ≡ s.args[params+i]` for each field.
   /// Tries `tryEtaStructCore(t, s)` — caller should try both directions.
   fn try_eta_struct(
@@ -1392,7 +1392,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(false);
     }
 
-    // Types must be def-eq (lean4lean tryEtaStructCore, line 515).
+    // Types must be def-eq (the named specification tryEtaStructCore, line 515).
     // No Prop guard here — struct eta in def-eq is safe even for Prop types
     // because we're checking equality, not constructing terms. The Prop guard
     // is only needed in iota's toCtorWhenStruct (whnf.rs try_struct_eta_iota)
@@ -1477,7 +1477,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     Ok(base)
   }
 
-  /// App spine comparison (lean4lean isDefEqApp): decompose both sides into
+  /// App spine comparison (the named specification isDefEqApp): decompose both sides into
   /// head + args and compare componentwise. Handles multi-arg apps.
   fn try_def_eq_app(
     &mut self,
@@ -1569,7 +1569,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   // Post-delta congruence and projection unfolding (C5, C6)
   // -----------------------------------------------------------------------
 
-  /// Structural congruence after lazy delta exhaustion (lean4lean isDefEqConst/Proj).
+  /// Structural congruence after lazy delta exhaustion (the named specification isDefEqConst/Proj).
   /// Checks Const-Const, Var-Var, Prj-Prj without further reduction.
   fn try_structural_congruence(
     &mut self,
@@ -1796,7 +1796,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// If the head of `e` is a projection, try reducing it via whnf_no_delta.
-  /// Returns the reduced form if it changed, None otherwise (lean4lean tryUnfoldProjApp).
+  /// Returns the reduced form if it changed, None otherwise (the named specification tryUnfoldProjApp).
   fn try_unfold_proj_app(
     &mut self,
     e: &KExpr<M>,

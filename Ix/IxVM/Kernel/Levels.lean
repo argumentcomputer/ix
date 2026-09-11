@@ -60,7 +60,7 @@ def levels := ⟦
   -- ============================================================================
   -- Canonical level normalization (mirror: crates/kernel/src/level.rs
   -- normalize_level / norm_level_eq / norm_level_le, itself a port of
-  -- Lean4Lean's Level.Normalize with the documented subsumption and
+  -- Ix.Theory.Named's Level.Normalize with the documented subsumption and
   -- covers-split fixes).
   --
   -- Semantic level comparison via the recursive `Level.leq` with its
@@ -594,7 +594,7 @@ def levels := ⟦
   -- Semantic l1 <= l2 on canonical forms: every entry's contribution in
   -- its activation branch must be dominated by subset-path entries of l2.
   -- Mirrors level.rs norm_level_le (with its covers split, sound where
-  -- Lean4Lean's single-entry search is incomplete).
+  -- Ix.Theory.Named's single-entry search is incomplete).
   fn nl_le(l1: List‹&NLEntry›, l2: List‹&NLEntry›) -> G {
     match load(l1) {
       ListNode.Nil => 1,

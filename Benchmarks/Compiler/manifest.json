@@ -1,0 +1,88 @@
+{
+  "format": "compilatrix/benchmark-suite/1",
+  "workload": "native-reverse/1",
+  "toolchains": "toolchains.json",
+  "implementations": ["compilatrix", "lean", "cakeml", "compcert", "gcc", "clang"],
+  "comparison_groups": {
+    "language_runtime": ["compilatrix", "lean", "cakeml"],
+    "matched_arena": ["compilatrix", "compcert", "gcc", "clang"]
+  },
+  "compilatrix": {
+    "origin": "synthetic-ixon-runtime-function",
+    "producer": "source-native-runtime",
+    "correctness_gate": "check-source-native-runtime",
+    "source_identity": "98a3fce164301466d4a5bbc36d847a2515d45b1c97b788b38af411a6d2b17815",
+    "ixir1_root": "6f0a0fc8cd38011ce68c710019fe0f6dc53ebaf691508cf2c4ce67345865b1df",
+    "main_identity": "2e2e92297dc85259600f807045e2442e3e890812fdaa5af2f85a8f250bb80a9e",
+    "release_identity": "ee24dd7813f34e83cc165e2517e1d96a7c21f243d9c0fdf2301b11d63822263d",
+    "pipeline_identity": "bf9fc4c3d067dde6f3e3513f64910f68add1cb1862c86da616612e503af3b427",
+    "policy": "production guards, counters, and static unique reuse; one object pair for every input"
+  },
+  "datasets": {
+    "generator": "xorshift64star-patterns/1",
+    "generator_source": "Benchmark/Data.lean",
+    "binary_bytes": 318256,
+    "binary_blake3": "9e7b53b6321516f99019b0c55c99b719b89b046c0cf7281b7f545b3d9625a8f5",
+    "input_cases": 585,
+    "arena_capacity_cases": 19305,
+    "length_range": [0, 64],
+    "primary_patterns": ["zero", "repeated", "ascending", "descending", "alternating", "random"],
+    "primary_upper_bound_exclusive": 1073741824,
+    "stress_values": [9223372036854775807, 9223372036854775808, 18446744073709551615],
+    "primary_timing_lengths": [0, 1, 2, 4, 8, 16, 32, 48, 63, 64],
+    "stress_timing_lengths": [1, 16, 64],
+    "primary_pattern_schedule": "absolute operation index modulo six"
+  },
+  "ownership": {
+    "input_list_owners": 1,
+    "input_slot": "cleared before the consuming call",
+    "scalar_inputs": "immutable pre-generated scalar values may be shared",
+    "output_slots_per_chunk": 4096,
+    "reclamation": "release each returned list; tracing-GC cycles and terminal collection are reported separately"
+  },
+  "timing": {
+    "profiles": ["entry+handoff", "lifecycle"],
+    "rows": 38,
+    "storage_profile": "fresh allocation",
+    "arena_capacity": "length + 2",
+    "chunk_operations": 4096,
+    "timer": "CLOCK_MONOTONIC_RAW",
+    "minimum_sample_ns": 100000000,
+    "pilot_target_ns": 200000000,
+    "warmup_ns_per_process": 1000000000,
+    "samples_per_block": 3,
+    "blocks": 30,
+    "sessions": 3,
+    "session_separation_seconds": 60,
+    "maximum_rss_kb": 2097152,
+    "minimum_chunk_clock_pair_factor": 100,
+    "order_seed": 1210345809,
+    "outlier_policy": "retain every valid block, including slow observations",
+    "operation_counts": "pilot then freeze identical counts for every implementation in a paired case",
+    "sink": "per-list fold h=(h xor value)*1099511628211 modulo 2^64, starting at 14695981039346656037; sum list digests modulo 2^64"
+  },
+  "analysis": {
+    "within_block": "median",
+    "distribution": ["median", "q25", "q75", "ci95_low", "ci95_high"],
+    "speedup": "baseline_ns_per_operation / compilatrix_ns_per_operation",
+    "bootstrap": "hierarchical paired bootstrap: resample three sessions, then ten whole paired blocks within each selected session",
+    "bootstrap_replicates": 10000,
+    "bootstrap_seed": 2671931027,
+    "aggregate_workload_ranking": false
+  },
+  "diagnostics": {
+    "cakeml_lifecycle_rows": [28, 31, 34, 37],
+    "samples_per_row": 5,
+    "maximum_post_gc_live_bytes_exclusive": 8388608,
+    "minimum_natural_collections_per_sample": 1,
+    "terminal_collection": "one separately timed collection after all diagnostic samples"
+  },
+  "upstream_computations": {
+    "selector": "closed-unary-nat-calls/1",
+    "entries": ["applyClosed", "letClosed"],
+    "runtime_arguments": 0,
+    "profile": "opaque native call plus scalar sum sink; separate from reversal",
+    "blocks": 30,
+    "samples_per_block": 3
+  }
+}
