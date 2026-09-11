@@ -263,12 +263,13 @@ The zero-count parser theorem establishes the checked empty-table relation
 at its actual output pointer, including canonical 13-field Nil padding and
 content-deduplicating allocation. A separate final-Cons-store theorem extends
 a checked tail table with a fresh semantic name in forward order. The
-nonzero recursive parser path, ten-limb identity reader, and duplicate-ID
-traversal still need to establish that theorem's premises. The zero-count
-certificate intentionally leaves the default branch unconstrained; it must
+nonzero recursive parser path and duplicate-ID traversal still need to
+establish that theorem's premises; the identity-reader component is proved
+below. The zero-count certificate intentionally leaves the default branch
+unconstrained; it must
 not be used as a certificate for the full declaration parser.
 
-All 22 axiom audits use only Lean's standard logical axioms. The 387 new
+All 22 axiom audits use only Lean's standard logical axioms. The initial 387
 `Tests/IxbyObjectsParser.lean` checks include every byte value, u32 boundaries
 and bit positions, exact suffix/state preservation, malformed cells, callee
 and instruction mutations, and fresh/deduplicated empty tables. Explicit
@@ -276,6 +277,43 @@ counterexamples show why byte ranges and the nonzero-branch proof are needed:
 forged non-bytes can wrap to a plausible u32, and a function passing only the
 zero-count certificate can have an invalid nonzero branch. These are diagnostic
 fixtures, not additional production advice or FRI workloads.
+
+### Compiled identity-reader composition
+
+`Aiur/ObjectsIdentity.lean` adds 20 public kernel-checked lemmas. The actual
+`is_read_id` body inlines ten u32 readers; calling the standalone word-reader
+theorem would not certify its register layout. The new proof handles the
+seventeen-register stride of each inlined word, composes the actual `runOps`
+semantics, and structurally checks all 130 operations and eleven outputs.
+The byte-reader callee is looked up and certified in the same toplevel.
+Certificates pass for both full and pruned production compilations, including
+relocated callee indices. This remains a certificate for those emitted shapes,
+not a general compiler-correctness theorem.
+
+Given a range-safe `BytePrefix`, the checked reader consumes exactly forty
+bytes into ten exact u32 limbs. Grouping into words is proved to cover every
+byte sequence of that length. The output decodes through the existing concrete
+`decodeId`: the first eight limbs retain the full 256-bit digest, followed by
+the member and tag. Their natural values agree with the existing little-endian
+byte codec, without field reduction or integer narrowing. The complete memory
+and I/O buffer are unchanged, and the full-field suffix pointer is returned
+without loading it. The actual Call theorem also restores the caller's prior
+registers and accounts for the nested byte-call fuel.
+
+All 20 axiom audits use only Lean's standard logical axioms. The parser suite
+adds 725 checks, for 1,112 total. They cover every identity instruction and
+output position, all forty truncation and malformed-tag positions, each limb's
+u32 boundaries and bit positions, actual byte-codec agreement at a nonzero
+offset, unreadable intermediate/suffix pointers, memory/I/O preservation,
+and actual Call argument/output/fuel failures. Forged non-bytes demonstrate
+both an out-of-range limb and a wrapped, apparently valid semantic name;
+another fixture shows why certifying the actual byte callee is necessary.
+These remain diagnostic tests, not new production advice or proof workloads.
+
+The admission loader still must establish `BytePrefix`. Duplicate-ID traversal,
+the nonzero declaration-parser induction, and binding the resulting table to
+the whole canonical program image remain open. The identity component alone
+does not establish any of those premises or an AIR-to-reference theorem.
 
 ### Compiler issue found and repaired
 
@@ -320,7 +358,7 @@ RAYON_NUM_THREADS=8 .lake/build/bin/IxTests recursive-verifier ix-aggr
 lake build --wfail Ix.Ixby.Aiur.ObjectsRefinement IxbyObjectsTests IxbyControlTests IxbyAiurTests
 lake build --wfail Ix.Ixby.Aiur.ObjectsMemory IxbyObjectsMemoryTests
 lake build --wfail Ix.Ixby.Aiur.ObjectsStore Ix.Ixby.Aiur.ObjectsTable IxbyObjectsTableTests
-lake build --wfail Ix.Ixby.Aiur.ObjectsParser IxbyObjectsParserTests
+lake build --wfail Ix.Ixby.Aiur.ObjectsParser Ix.Ixby.Aiur.ObjectsIdentity IxbyObjectsParserTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsMemoryTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTableTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsParserTests
@@ -358,8 +396,8 @@ targeted runtime checks total**, not counting theorems as runtime tests.
 `Tests/Main.lean` exposes execution-only `ixby-objects` and opt-in
 `ixby-objects-prove` alongside the earlier suites.
 The separate `ixby-objects-memory`, `ixby-objects-table`, and
-`ixby-objects-parser` suites add 126, 191, and 387 checks respectively,
-bringing current targeted runtime coverage to **1,938 checks**.
+`ixby-objects-parser` suites add 126, 191, and 1,112 checks respectively,
+bringing current targeted runtime coverage to **2,663 checks**.
 They add no FRI proof workloads and do not change the
 530-check object baseline or its measurements below.
 
@@ -404,9 +442,10 @@ fixed `Bytes2` table still has 65,536 rows and committed width 24. FFT-work
 surrogates are approximately 151.26, 151.89, and 166.08 million, with zero
 whole-machine cache hits. These are not Flock non-native-field estimates.
 
-Next: compose the byte/u32 contracts through the ten-limb identity reader,
-duplicate-ID traversal, and nonzero recursive declaration parser. Establish
-the input byte-prefix invariant from admission and connect the resulting table
+Next: prove exact `is_id_eq` comparison and `is_unique_id` duplicate-ID traversal,
+then compose them with the identity reader through the nonzero recursive
+declaration parser. Establish the input byte-prefix invariant from admission
+and connect the resulting table
 to the canonical program image. Then establish successful reconstruction for
 live values from initialization and complete transitions. Immutable Store
 preservation and the zero-count parser path are proved; full execution and

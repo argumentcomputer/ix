@@ -6,9 +6,10 @@ import all Ix.Aiur.Goldilocks
 
 Executable shape checks connect the proved bodies to actual bytecode without
 assuming a general compiler-correctness theorem. The scalar reader contracts
-and the zero-constructor parser path are proved here. The recursive nonzero
-parser, ten-limb identity reader, duplicate-ID traversal, admission loader,
-and commitment/compiler/gadget/AIR links are not yet proved.
+and the zero-constructor parser path are proved here. `ObjectsIdentity.lean`
+composes the inlined readers through the ten-limb identity parser. The recursive
+nonzero parser, duplicate-ID traversal, admission loader, and
+commitment/compiler/gadget/AIR links are not yet proved.
 
 These are diagnostic proof components, not a production verification path.
 -/

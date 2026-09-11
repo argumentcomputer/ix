@@ -1,5 +1,6 @@
 module
 import Ix.Ixby.Aiur.ObjectsParser
+import Ix.Ixby.Aiur.ObjectsIdentity
 import Ix.Ixby.Aiur.Objects
 import Ix.Aiur.Compiler
 
@@ -11,6 +12,7 @@ namespace Tests.IxbyObjectsParser
 
 open Ix.Ixby Ix.Ixby.AiurBackend
 open ObjectsMemory ObjectsTable ObjectsParser
+open ObjectsIdentity
 open Aiur.Bytecode.Eval
 
 private abbrev Check := String × Bool
@@ -64,15 +66,18 @@ private def failed (result : Except String (Array Aiur.G × EvalState))
 private def certificateChecks (compiled : Aiur.CompiledToplevel) : Except String (List Check) := do
   let (reader, byte) ← function compiled `ib_byte
   let (_, word) ← function compiled `ib_u32
+  let (_, identity) ← function compiled `is_read_id
   let (_, parser) ← function compiled `is_read_ctors
   let byteBody := byteReaderBody 0
   let wordBody := wordReaderBody reader 0
+  let identityBody := idReaderBody reader 0
   let byteBranch : Aiur.Bytecode.Block := ⟨#[], .return 0 #[2, 3]⟩
   let nonzero : Aiur.Bytecode.Block := ⟨#[], .return 0 #[0]⟩
   let baseOnly := { parser with body := emptyTableBody 0 (some nonzero) }
   let mut checks : List Check := [
     ("full compiled byte-reader certificate", checkByteReader byte 0),
     ("full compiled u32-reader certificate", checkWordReader word reader 0),
+    ("full compiled identity-reader certificate", checkIdReader identity reader 0),
     ("full compiled zero-count parser certificate", checkEmptyTableParser parser 0),
     ("byte certificate rejects wrong input arity", !checkByteReader
       { byte with layout := { byte.layout with inputSize := 2 } } 0),
@@ -105,6 +110,19 @@ private def certificateChecks (compiled : Aiur.CompiledToplevel) : Except String
       { word with body := { wordBody with ctrl := .return 0 #[8, 17] } } reader 0),
     ("u32 certificate rejects yield", !checkWordReader
       { word with body := { wordBody with ctrl := .yield 0 #[17, 8] } } reader 0),
+    ("identity certificate rejects wrong input arity", !checkIdReader
+      { identity with layout := { identity.layout with inputSize := 2 } } reader 0),
+    ("identity certificate rejects wrong byte callee", !checkIdReader identity (reader + 1) 0),
+    ("identity certificate rejects short body", !checkIdReader
+      { identity with body := { identityBody with ops := wordBody.ops } } reader 0),
+    ("identity certificate rejects added operation", !checkIdReader
+      { identity with body := { identityBody with ops := identityBody.ops.push (.const 0) } } reader 0),
+    ("identity certificate rejects missing suffix output", !checkIdReader
+      { identity with body := { identityBody with ctrl := .return 0 (wordIndices 1 10) } } reader 0),
+    ("identity certificate rejects yield", !checkIdReader { identity with body :=
+      { identityBody with ctrl := .yield 0 (wordIndices 1 10 ++ #[finishIndex 1 0 10]) } } reader 0),
+    ("identity selector is explicit", checkIdReader
+      { identity with body := idReaderBody reader 7 } reader 7 && !checkIdReader identity reader 7),
     ("zero-count certificate rejects wrong arity", !checkEmptyTableParser
       { parser with layout := { parser.layout with inputSize := 1 } } 0),
     ("zero-count certificate rejects leading operation", !checkEmptyTableParser
@@ -117,6 +135,13 @@ private def certificateChecks (compiled : Aiur.CompiledToplevel) : Except String
   for i in [:wordBody.ops.size] do
     checks := checks ++ [(s!"u32 certificate binds operation {i}", !checkWordReader
       { word with body := { wordBody with ops := wordBody.ops.set! i (.const 0) } } reader 0)]
+  for i in [:identityBody.ops.size] do
+    checks := checks ++ [(s!"identity certificate binds operation {i}", !checkIdReader
+      { identity with body := { identityBody with ops := identityBody.ops.set! i (.const 0) } } reader 0)]
+  for i in [:11] do
+    let indices := wordIndices 1 10 ++ #[finishIndex 1 0 10]
+    checks := checks ++ [(s!"identity certificate binds output {i}", !checkIdReader { identity with body :=
+      { identityBody with ctrl := .return 0 (indices.set! i 0) } } reader 0)]
   for i in [:13] do
     let indices : Array Nat := #[2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
     let branch := { emptyTableBranch 0 with ops := #[.const 1, .const 1, .store (indices.set! i 0)] }
@@ -193,6 +218,104 @@ private def wordChecks (compiled : Aiur.CompiledToplevel) : List Check := Id.run
     success (snapshot compiled `ib_u32 #[pointer] st) #[255, tail] st)]
   return checks
 
+private def identityBytes (words : Array Nat) : Array UInt8 :=
+  words.foldl (fun out word => out ++ bytesLE 4 word) #[]
+
+private def identityAgreement (compiled : Aiur.CompiledToplevel) (words : Array Nat) : Bool :=
+  let bytes := identityBytes words
+  let (suffix, finish) := storeStream initial #[90, 91, 92]
+  let (st, pointer) := storePrefix suffix (bytes.map Aiur.G.ofUInt8) finish
+  let wire := #[200, 201] ++ bytes ++ #[90, 91, 92]
+  match snapshot compiled `is_read_id #[pointer] st 1,
+      Codec.Internal.readCtorId.run { bytes := wire, offset := 2, nodes := 13 } with
+  | .ok (out, after), .ok (name, remaining) =>
+    out == (words.map Aiur.G.ofNat) ++ #[finish] && unchanged st after &&
+      decodeId (out.extract 0 10).toList == some name && remaining.offset == 42 &&
+      remaining.nodes == 13 && remaining.bytes == wire
+  | _, _ => false
+
+private def identityChecks (compiled : Aiur.CompiledToplevel) : Except String (List Check) := do
+  let (identity, identityFn) ← function compiled `is_read_id
+  let (reader, byteFn) ← function compiled `ib_byte
+  let baseline := #[0x01020304, 0x05060708, 0x11121314, 0x15161718, 0x21222324,
+    0x25262728, 0x31323334, 0x35363738, 0x41424344, 0x45464748]
+  let bytes := identityBytes baseline
+  let payload := bytes.map Aiur.G.ofUInt8
+  let mut checks : List Check := [
+    ("identity full asymmetric digest/member/tag matches the byte codec", identityAgreement compiled baseline),
+    ("identity all zero limbs match the byte codec", identityAgreement compiled (Array.replicate 10 0)),
+    ("identity all maximum limbs retain 256-bit digest and u32 member/tag",
+      identityAgreement compiled (Array.replicate 10 (2 ^ 32 - 1)))]
+  let samples := [0, 1, 255, 256, 65535, 65536, 2 ^ 24 - 1, 2 ^ 24, 0x12345678, 2 ^ 31, 2 ^ 32 - 1] ++
+    (List.range 32).map (2 ^ ·)
+  for limb in [:10] do
+    for n in samples do
+      checks := checks ++ [(s!"identity limb {limb}/{n} exact codec/suffix/memory/io",
+        identityAgreement compiled (baseline.set! limb n))]
+  for length in [:40] do
+    let (st, pointer) := storeStream initial (payload.extract 0 length)
+    checks := checks ++ [(s!"identity rejects {length}-byte truncation",
+      failed (snapshot compiled `is_read_id #[pointer] st 1) .unreachableAfterLayout)]
+  let (suffix, finish) := storeStream initial #[90, 91, 92]
+  for position in [:40] do
+    let (after, next) := storePrefix suffix (payload.extract (position + 1) 40) finish
+    let (malformed, bad) := memStore after #[2, payload.getD position 0, next]
+    let (st, pointer) := storePrefix malformed (payload.extract 0 position) (.ofNat bad)
+    checks := checks ++ [(s!"identity rejects malformed byte tag at {position}",
+      failed (snapshot compiled `is_read_id #[pointer] st 1) .unreachableAfterLayout)]
+  let large : Aiur.G := .ofNat (goldilocksModulus - 1)
+  for position in [:39] do
+    let (st, pointer) := storePrefix initial (payload.extract 0 (position + 1)) large
+    checks := checks ++ [(s!"identity rejects unreadable intermediate pointer after byte {position}",
+      failed (snapshot compiled `is_read_id #[pointer] st 1) (.invalidPointer 3 large.n))]
+  for n in [2 ^ 32 + 9, goldilocksModulus - 1] do
+    let tail : Aiur.G := .ofNat n
+    let (st, pointer) := storePrefix initial payload tail
+    checks := checks ++ [(s!"identity returns unreadable full-field suffix {n} without loading it",
+      success (snapshot compiled `is_read_id #[pointer] st 1) ((baseline.map Aiur.G.ofNat) ++ #[tail]) st)]
+  let (st, pointer) := storePrefix suffix payload finish
+  checks := checks ++ [
+    ("identity body needs fuel for byte calls", failed (snapshot compiled `is_read_id #[pointer] st 0) .outOfFuel),
+    ("identity input pointer is not narrowed", failed (snapshot compiled `is_read_id #[large] st 1)
+      (.invalidPointer 3 large.n))]
+  let caller := { st with map := #[99, 100, pointer, 102] }
+  for unconstrained in [false, true] do
+    checks := checks ++ [(s!"actual identity Call restores all caller registers/{unconstrained}",
+      match Aiur.Bytecode.Eval.evalOp compiled.bytecode 2 (.call identity #[2] 11 unconstrained) caller with
+      | .ok after => after.map == caller.map ++ ((baseline.map Aiur.G.ofNat) ++ #[finish]) && unchanged caller after
+      | _ => false)]
+  for (label, fuel, args, outputs, error) in [
+      ("nested-call fuel", 1, #[2], 11, BytecodeError.outOfFuel),
+      ("input arity", 2, #[], 11, .arityMismatch identity),
+      ("missing argument register", 2, #[4], 11, .invalidValIdx 4),
+      ("short output arity", 2, #[2], 10, .callOutputSizeMismatch),
+      ("long output arity", 2, #[2], 12, .callOutputSizeMismatch)] do
+    checks := checks ++ [("identity Call rejects " ++ label,
+      match Aiur.Bytecode.Eval.evalOp compiled.bytecode fuel (.call identity args outputs false) caller with
+      | .error actual => reprStr actual == reprStr error | _ => false)]
+  for limb in [:10] do
+    let forged := (Array.replicate 40 (0 : Aiur.G)).set! (limb * 4 + 3) 256
+    let (st, pointer) := storePrefix initial forged finish
+    checks := checks ++ [(s!"identity raw non-byte can exceed u32 at limb {limb}",
+      match snapshot compiled `is_read_id #[pointer] st 1 with
+      | .ok (out, after) => out[limb]? == some (.ofNat (2 ^ 32)) &&
+        (decodeId (out.extract 0 10).toList).isNone && unchanged st after
+      | _ => false)]
+  let forged := (Array.replicate 40 (0 : Aiur.G)).set! 0 large |>.set! 1 1
+  let (st, pointer) := storePrefix initial forged finish
+  checks := checks ++ [("identity non-byte can wrap into a decodable name: byte premise is essential",
+    match snapshot compiled `is_read_id #[pointer] st 1 with
+    | .ok (out, after) => out[0]? == some 255 && (decodeId (out.extract 0 10).toList).isSome && unchanged st after
+    | _ => false)]
+  let fakeByte := { byteFn with body := (⟨#[.const 0], .return 0 #[1, 0]⟩ : Aiur.Bytecode.Block) }
+  let fake := { compiled with bytecode := { compiled.bytecode with
+    functions := compiled.bytecode.functions.set! reader fakeByte } }
+  let (st, pointer) := storePrefix initial payload finish
+  checks := checks ++ [("identity certificate also requires its actual byte callee certificate",
+    checkIdReader identityFn reader 0 && !checkByteReader fakeByte 0 &&
+      success (snapshot fake `is_read_id #[pointer] st 1) ((Array.replicate 10 0) ++ #[pointer]) st)]
+  return checks
+
 private def emptyChecks (compiled : Aiur.CompiledToplevel) : List Check := Id.run do
   let mut checks := []
   let populated := (memStore (memStore initial (Array.replicate 13 2)).1 tableNil).1
@@ -218,12 +341,15 @@ public def suite : IO UInt32 := do
     let (_, byte) ← function pruned `ib_byte
     let (reader, _) ← function pruned `ib_byte
     let (_, word) ← function pruned `ib_u32
+    let (_, identity) ← function pruned `is_read_id
     let (_, parser) ← function pruned `is_read_ctors
     let shapes ← certificateChecks compiled
     let bytes ← byteChecks compiled
-    return shapes ++ bytes ++ wordChecks compiled ++ emptyChecks compiled ++ [
+    let identities ← identityChecks compiled
+    return shapes ++ bytes ++ wordChecks compiled ++ identities ++ emptyChecks compiled ++ [
       ("pruned byte-reader certificate", checkByteReader byte 0),
       ("pruned u32-reader certificate with relocated callee", checkWordReader word reader 0),
+      ("pruned identity-reader certificate with relocated callee", checkIdReader identity reader 0),
       ("pruned zero-count parser certificate", checkEmptyTableParser parser 0)]
   let .ok checks := result
     | IO.eprintln (match result with | .error error => error | _ => "unexpected result"); return 1

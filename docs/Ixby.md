@@ -44,6 +44,9 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
 - `Aiur/ObjectsParser.lean`: structurally checked byte/u32 reader contracts,
   byte-prefix preservation, and the zero-count declaration parser proof.
   The recursive nonzero parser and authenticated byte-stream invariant remain open.
+- `Aiur/ObjectsIdentity.lean`: compositional inlined-word and compiled ten-limb
+  identity-reader proofs, including exact digest/member/tag, suffix preservation,
+  and actual Call semantics. Duplicate traversal and admission remain open.
 - `Ix/Ixby/Validate.lean`: whole-image admission and bounded input validation.
 - `Ix/Ixby/Eval.lean`: total call/evaluate/return execution, fuel
   monotonicity, and uniqueness of successful results across fuel witnesses.
@@ -66,8 +69,9 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   native-output parity, and malformed-memory checks, without new proof workloads.
 - `Tests/IxbyObjectsTable.lean`: 191 table-layout, compiled parser/runner,
   store-preservation, and checked program/table-binding tests.
-- `Tests/IxbyObjectsParser.lean`: 387 checks covering full/pruned compilation
-  certificates, byte/u32 execution, malformed cells, and the zero-count parser.
+- `Tests/IxbyObjectsParser.lean`: 1,112 checks covering full/pruned compilation
+  certificates, byte/u32/identity execution, exact codec agreement, malformed
+  cells, forged ranges, actual Call boundaries, and the zero-count parser.
 
 The earlier mutable-register/word-stream prototype and its tests have been
 replaced, rather than maintained as a second ISA. The composition contract is
@@ -402,7 +406,10 @@ A further 24 lemmas establish immutable-store preservation—including an
 actual bytecode Store instruction—and checked declaration-table binding to
 canonical program bytes. Another 22 prove byte-prefix/store, actual byte/u32
 reader, and zero-count parser contracts, with executable structural certificates
-for the corresponding bytecode. The nonzero parser, advice-loader invariant,
+for the corresponding bytecode. Twenty more compose the actual inlined word
+operations through the ten-limb identity reader, prove exact natural-byte packing
+and semantic-name decoding, and preserve the suffix, memory/I/O, and caller
+registers. The nonzero parser, duplicate traversal, advice-loader invariant,
 initialization/full transitions, commitment agreement, and actual circuit/gadget
 refinement remain outstanding; checked representation alone is not execution verification.
 Object tests also found a shared let-hoisting capture bug; the

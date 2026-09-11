@@ -128,11 +128,22 @@ as a second ISA. See
   reader, range-check, and zero-count declaration-parser lemmas. Executable
   structural certificates are checked against full and pruned production-source
   compilations. Final Cons allocation extends a checked tail with a fresh name;
-  the nonzero recursive parser, identity/duplicate traversal, and input byte
-  invariant still have to establish its premises. The 387 new parser-component
+  the nonzero recursive parser, duplicate traversal, and input byte
+  invariant still have to establish its premises. The initial 387 parser-component
   checks include forged-range and uncertified-nonzero-branch counterexamples.
-  All 1,938 current targeted IxBy checks pass, including the existing scalar,
-  control, and object proof workloads.
+  All 1,938 targeted IxBy checks at that checkpoint passed, including the existing
+  scalar, control, and object proof workloads.
+- `Aiur/ObjectsIdentity.lean` adds 20 kernel-checked lemmas for actual inlined
+  u32 composition, the full compiled `is_read_id` body, semantic-name decoding,
+  and its Call boundary. The forty-byte prefix yields ten exact u32 limbs with
+  full 256-bit digest/member/tag agreement and unchanged suffix, memory, and I/O.
+  All byte sequences of that length can be grouped into the proved word form.
+  Structural certificates cover the actual full/pruned compilations and bind
+  the byte callee; all axiom audits use only standard logical axioms. The 725
+  added tests bring the parser suite to 1,112 checks and current targeted IxBy
+  coverage to 2,663, without changing interpreter profiles, proof workloads,
+  wire formats, or keys. Next are exact ID comparison/duplicate traversal,
+  the nonzero parser induction, and establishing the byte invariant at admission.
 - The shared hoisting repair also requires regenerating all three checked-in
   Rust kernels. That step was initially missed and caused the CI codegen check
   to fail. The generated snapshots are refreshed; content checks and native
@@ -546,12 +557,13 @@ The interpreter separates whole-image admission from execution and uses
 authenticated immutable tables and ranked object fields. This package remains
 in progress. Concrete-memory reconstruction now proves representation on
 successful decoding; checked tables bind to canonical program images, and
-actual immutable Store preservation is proved. Byte/u32 reader contracts and
-the zero-count parser path now have structural bytecode certificates and proofs.
-The next step is to compose them through the identity reader, duplicate check,
-and nonzero recursive declaration parser, while establishing the input byte
-invariant from admission. Canonical program/table agreement, initialization,
-and complete interpreter transition correctness follow those obligations.
+actual immutable Store preservation is proved. Byte/u32/ten-limb identity reader
+contracts and the zero-count parser path now have structural bytecode certificates
+and proofs. The next step is exact identity comparison and duplicate traversal,
+then composition through the nonzero recursive declaration parser, while
+establishing the input byte invariant from admission. Canonical program/table
+agreement, initialization, and complete interpreter transition correctness
+follow those obligations.
 Actual circuit/trace refinement, closures/PAPs and general application, the
 remaining crypto operations, broader malicious-witness testing, and
 full-workload/Flock-oriented measurements are still needed.
