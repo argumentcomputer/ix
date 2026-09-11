@@ -27,8 +27,10 @@ use aiur::{
   G,
   execute::IOBuffer,
   function_channel,
-  range::{preamble_bytes, proofs_slice_bytes, range_residual, range_statement},
-  synthesis::{AiurProof, AiurSystem, GatedProve},
+  range::{
+    preamble_bytes, proofs_slice_bytes, range_residual, range_statement,
+  },
+  synthesis::{AiurProof, AiurSystem, GatedProve, PreparedProve},
 };
 use ix_common::address::Address;
 use ix_kernel::shard::{AggNode, ShardManifest};
@@ -1465,26 +1467,45 @@ fn prove_aggr_io(
   public_input: &[G],
   label: &str,
 ) -> Result<(Vec<G>, AiurProof, usize), String> {
-  match ctx.aggr_system.prove_ixvm_within_budget(
+  let prepared = prepare_aggr_io(ctx, io, public_input, label)?;
+  Ok(finish_aggr_io(ctx, prepared))
+}
+
+/// The execution half of [`prove_aggr_io`]: executes the invocation, gates
+/// and plans it within the slot budget, and returns what
+/// [`finish_aggr_io`] proves from, so one node can execute while another
+/// proves.
+fn prepare_aggr_io(
+  ctx: ProveContext<'_>,
+  io: &mut IOBuffer,
+  public_input: &[G],
+  label: &str,
+) -> Result<PreparedProve, String> {
+  match ctx.aggr_system.prepare_ixvm_within_budget(
     ctx.aggr_idx,
     public_input,
     io,
     execute_ix_aggr,
     ctx.wrap_budget,
-    false,
     ctx.wrap_budget.is_some(),
     None,
   ) {
-    GatedProve::Proved { claim, proof, peak } => Ok((claim, proof, peak)),
-    GatedProve::Split { peak, .. } => Err(format!(
+    Ok(prepared) => Ok(prepared),
+    Err(GatedProve::Split { peak, .. }) => Err(format!(
       "{label}: no trace-shard count fits the {} B budget \
        (whole-execution peak {peak} B) — raise --max-ram",
       ctx.wrap_budget.unwrap_or(0)
     )),
-    GatedProve::Measured { .. } => {
-      Err(format!("{label}: aggregate prove did not produce a proof"))
-    },
+    Err(_) => Err(format!("{label}: aggregate prove did not produce a proof")),
   }
+}
+
+/// The proving half of [`prove_aggr_io`].
+fn finish_aggr_io(
+  ctx: ProveContext<'_>,
+  prepared: PreparedProve,
+) -> (Vec<G>, AiurProof, usize) {
+  ctx.aggr_system.prove_prepared(prepared)
 }
 
 /// One proven node of a range-sum tree: shards `[lo, hi)` of the batch and
@@ -1498,24 +1519,74 @@ struct RangeNode {
   proof: AiurProof,
 }
 
-/// Prove every item, `jobs` at a time.
-fn prove_range_level<T, F>(
+/// A range-tree node executed and planned, waiting for the prover.
+struct PreparedNode {
+  lo: usize,
+  hi: usize,
+  residual: ExtVal,
+  statement: Vec<u8>,
+  kind: &'static str,
+  started: Instant,
+  prepared: PreparedProve,
+}
+
+/// Prove every item of one tree level. With one job the level is a
+/// pipeline: a producer thread executes and plans item `k + 1` while this
+/// thread proves item `k`, at most one node ahead (a rendezvous channel), so
+/// the prover never waits for an execution it could have overlapped. With
+/// more jobs, that many items execute and prove at once.
+fn prove_range_level<T, P, F>(
   items: Vec<T>,
   jobs: usize,
-  prove: &F,
+  prepare: &P,
+  finish: &F,
 ) -> Result<Vec<RangeNode>, String>
 where
   T: Send,
-  F: Fn(T) -> Result<RangeNode, String> + Sync,
+  P: Fn(T) -> Result<PreparedNode, String> + Sync,
+  F: Fn(PreparedNode) -> Result<RangeNode, String> + Sync,
 {
+  if jobs <= 1 {
+    let span = tracing::Span::current();
+    return thread::scope(|scope| {
+      let (sender, receiver) =
+        mpsc::sync_channel::<Result<PreparedNode, String>>(0);
+      let producer = scope.spawn(move || {
+        let _g = span.entered();
+        for item in items {
+          let prepared = prepare(item);
+          let failed = prepared.is_err();
+          if sender.send(prepared).is_err() || failed {
+            break;
+          }
+        }
+      });
+      let mut nodes = Vec::new();
+      let mut outcome = Ok(());
+      for prepared in receiver {
+        match prepared.and_then(finish) {
+          Ok(node) => nodes.push(node),
+          Err(error) => {
+            outcome = Err(error);
+            break;
+          },
+        }
+      }
+      // Dropping the receiver stops the producer at its next send.
+      producer.join().map_err(|payload| {
+        format!("range node preparation panicked: {}", panic_text(&payload))
+      })?;
+      outcome.map(|()| nodes)
+    });
+  }
   let mut nodes = Vec::with_capacity(items.len());
   let mut pending = items.into_iter().peekable();
   while pending.peek().is_some() {
-    let batch: Vec<T> = pending.by_ref().take(jobs.max(1)).collect();
+    let batch: Vec<T> = pending.by_ref().take(jobs).collect();
     let proven: Vec<Result<RangeNode, String>> = thread::scope(|scope| {
       let handles: Vec<_> = batch
         .into_iter()
-        .map(|item| scope.spawn(move || prove(item)))
+        .map(|item| scope.spawn(move || prepare(item).and_then(finish)))
         .collect();
       handles
         .into_iter()
@@ -1549,8 +1620,15 @@ fn prove_range_tree(
     return Ok((proof, Some(address)));
   }
   let started = Instant::now();
-  let width = ctx.range_width;
   let shards = batch.preamble.headers.len();
+  // No requested width: as few leaves as there are node slots, so each
+  // slot proves one leaf and a leaf is as large as the slot budget allows;
+  // a leaf over the budget fails its gate, and the fix is a smaller width.
+  let width = if ctx.range_width > 0 {
+    ctx.range_width
+  } else {
+    shards.div_ceil(ctx.range_jobs.max(1)).max(1)
+  };
   let preamble = preamble_bytes(batch)?;
   let digest = *blake3::hash(&preamble).as_bytes();
   let ranges: Vec<(usize, usize)> = (0..shards)
@@ -1574,14 +1652,14 @@ fn prove_range_tree(
         )
       })
   };
-  let prove_node = |shape: u8,
-                    lo: usize,
-                    hi: usize,
-                    residual: ExtVal,
-                    proof_advice: [&[u8]; 2],
-                    child_claims: [&[u8]; 2],
-                    preimages: &[AggrPreimage<'_>]|
-   -> Result<RangeNode, String> {
+  let prepare_node = |shape: u8,
+                      lo: usize,
+                      hi: usize,
+                      residual: ExtVal,
+                      proof_advice: [&[u8]; 2],
+                      child_claims: [&[u8]; 2],
+                      preimages: &[AggrPreimage<'_>]|
+   -> Result<PreparedNode, String> {
     let node_started = Instant::now();
     let statement = range_statement(&digest, lo, hi, residual);
     let mut io = aggr_io_buffer(&AggrAdvice {
@@ -1599,32 +1677,55 @@ fn prove_range_tree(
     let mut public_input = packed_digest(ctx.allowed);
     public_input.extend(packed_digest(&statement));
     let kind = if shape == RANGE_LEAF_SHAPE { "leaf" } else { "join" };
-    let (outer_claim, proof, peak) = prove_aggr_io(
+    let prepared = prepare_aggr_io(
       ctx,
       &mut io,
       &public_input,
       &format!("slot {slot_index} range {kind} {lo}..{hi}"),
     )?;
     eprintln!(
+      "[aggregate] slot {slot_index}: range {kind} {lo}..{hi} executed in {:.1}s",
+      node_started.elapsed().as_secs_f64()
+    );
+    Ok(PreparedNode {
+      lo,
+      hi,
+      residual,
+      statement,
+      kind,
+      started: node_started,
+      prepared,
+    })
+  };
+  let finish_node = |node: PreparedNode| -> Result<RangeNode, String> {
+    let PreparedNode { lo, hi, residual, statement, kind, started, prepared } =
+      node;
+    let (outer_claim, proof, peak) = finish_aggr_io(ctx, prepared);
+    eprintln!(
       "[aggregate] slot {slot_index}: range {kind} {lo}..{hi} proven in {:.1}s (query-record peak {} GiB)",
-      node_started.elapsed().as_secs_f64(),
+      started.elapsed().as_secs_f64(),
       format_gib(peak)
     );
     Ok(RangeNode { lo, hi, residual, statement, outer_claim, proof })
   };
 
-  let mut nodes = prove_range_level(ranges, ctx.range_jobs, &|(lo, hi)| {
-    let proofs = proofs_slice_bytes(batch, lo, hi)?;
-    prove_node(
-      RANGE_LEAF_SHAPE,
-      lo,
-      hi,
-      range_residual(batch, lo, hi),
-      [&preamble, &proofs],
-      [&[], &[]],
-      &[],
-    )
-  })?;
+  let mut nodes = prove_range_level(
+    ranges,
+    ctx.range_jobs,
+    &|(lo, hi)| {
+      let proofs = proofs_slice_bytes(batch, lo, hi)?;
+      prepare_node(
+        RANGE_LEAF_SHAPE,
+        lo,
+        hi,
+        range_residual(batch, lo, hi),
+        [&preamble, &proofs],
+        [&[], &[]],
+        &[],
+      )
+    },
+    &finish_node,
+  )?;
   while nodes.len() > 1 {
     let mut pairs = Vec::with_capacity(nodes.len().div_ceil(2));
     let mut carried = None;
@@ -1635,29 +1736,34 @@ fn prove_range_tree(
         None => carried = Some(left),
       }
     }
-    nodes = prove_range_level(pairs, ctx.range_jobs, &|(left, right)| {
-      let advice = [child_advice(&left)?, child_advice(&right)?];
-      let claims = [self_claims(&left), self_claims(&right)];
-      let preimages = [
-        AggrPreimage {
-          digest: *blake3::hash(&left.statement).as_bytes(),
-          bytes: &left.statement,
-        },
-        AggrPreimage {
-          digest: *blake3::hash(&right.statement).as_bytes(),
-          bytes: &right.statement,
-        },
-      ];
-      prove_node(
-        RANGE_JOIN_SHAPE,
-        left.lo,
-        right.hi,
-        left.residual + right.residual,
-        [&advice[0], &advice[1]],
-        [&claims[0], &claims[1]],
-        &preimages,
-      )
-    })?;
+    nodes = prove_range_level(
+      pairs,
+      ctx.range_jobs,
+      &|(left, right)| {
+        let advice = [child_advice(&left)?, child_advice(&right)?];
+        let claims = [self_claims(&left), self_claims(&right)];
+        let preimages = [
+          AggrPreimage {
+            digest: *blake3::hash(&left.statement).as_bytes(),
+            bytes: &left.statement,
+          },
+          AggrPreimage {
+            digest: *blake3::hash(&right.statement).as_bytes(),
+            bytes: &right.statement,
+          },
+        ];
+        prepare_node(
+          RANGE_JOIN_SHAPE,
+          left.lo,
+          right.hi,
+          left.residual + right.residual,
+          [&advice[0], &advice[1]],
+          [&claims[0], &claims[1]],
+          &preimages,
+        )
+      },
+      &finish_node,
+    )?;
     // An unpaired last node joins at the next level, keeping ranges in
     // shard order.
     nodes.extend(carried);
@@ -1756,8 +1862,13 @@ fn prove_slot(
         proof_address: None,
         claims_bytes: inner_claims,
       };
-      let ranged = ctx.range_width > 0
-        && raw.proof.preamble.headers.len() > ctx.range_width;
+      // A batch of several shards becomes a range tree: leaves of the
+      // requested width, or of the derived width (as few leaves as there
+      // are node slots) when none was requested and slots are budgeted.
+      let shards = raw.proof.preamble.headers.len();
+      let ranged = shards > 1
+        && (ctx.range_width > 0 && shards > ctx.range_width
+          || ctx.range_width == 0 && ctx.wrap_budget.is_some());
       let (proof, proof_address) = if ranged {
         prove_range_tree(ctx, spec, &raw.proof, slot_index)?
       } else {

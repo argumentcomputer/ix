@@ -100,6 +100,20 @@ pub enum GatedProve {
   Measured { peak: usize },
 }
 
+/// An execution gated and planned within a budget, ready to prove
+/// ([`AiurSystem::prepare_ixvm_within_budget`] → [`AiurSystem::prove_prepared`]).
+pub struct PreparedProve {
+  pub fun_idx: FunIdx,
+  pub input: Vec<G>,
+  pub io: IOBuffer,
+  pub record: QueryRecord,
+  pub output: Vec<G>,
+  pub plan: ShardPlan,
+  pub retention: Retention,
+  /// The projected prover peak the plan was gated on.
+  pub peak: usize,
+}
+
 pub struct AiurSystem {
   toplevel: Toplevel,
   // perhaps remove the key from the system in verifier only mode?
@@ -859,11 +873,58 @@ impl AiurSystem {
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
     tracing_texray::examine_current();
+    let prepared = match self.prepare_ixvm_within_budget(
+      fun_idx,
+      input,
+      io_buffer,
+      executor,
+      max_bytes,
+      trace_shards,
+      retention,
+    ) {
+      Ok(prepared) => prepared,
+      Err(gated) => return gated,
+    };
+    if exec_only {
+      return GatedProve::Measured { peak: prepared.peak };
+    }
+    let (claim, proof, peak) = self.prove_prepared(prepared);
+    GatedProve::Proved { claim, proof, peak }
+  }
+
+  /// The execution half of [`Self::prove_ixvm_within_budget`]: executes,
+  /// gates the record against `max_bytes` and plans its trace shards,
+  /// returning everything [`Self::prove_prepared`] needs, so that the
+  /// execution of one proof can run while another proves. `io_buffer` is
+  /// taken (left empty) for the prepared proof. `Err` is the over-budget
+  /// outcome ([`GatedProve::Split`]).
+  pub fn prepare_ixvm_within_budget<F>(
+    &self,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &mut IOBuffer,
+    executor: F,
+    max_bytes: Option<usize>,
+    trace_shards: bool,
+    retention: Option<Retention>,
+  ) -> Result<PreparedProve, GatedProve>
+  where
+    F: FnOnce(
+      &Toplevel,
+      FunIdx,
+      Vec<G>,
+      &mut IOBuffer,
+    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
+  {
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
     let (query_record, output) =
       executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
         .expect("IxVM-native Aiur execution failed during prove_ixvm");
     drop(_g);
+    let io = std::mem::replace(
+      io_buffer,
+      IOBuffer { data: Default::default(), map: Default::default() },
+    );
 
     let peak = self.peak_prove_bytes(&query_record).peak;
     if let Some(max) = max_bytes
@@ -923,19 +984,16 @@ impl AiurSystem {
                 ranges.join(" ")
               );
             }
-            if exec_only {
-              return GatedProve::Measured { peak: shard_peak };
-            }
-            let (claim, proof) = self.prove_from_execution_planned(
+            return Ok(PreparedProve {
               fun_idx,
-              input,
-              io_buffer,
-              query_record,
-              &output,
-              &plan,
+              input: input.to_vec(),
+              io,
+              record: query_record,
+              output,
+              plan,
               retention,
-            );
-            return GatedProve::Proved { claim, proof, peak: shard_peak };
+              peak: shard_peak,
+            });
           },
           Err(floor) => eprintln!(
             "[trace-shards] no shard count fits a {} B budget: record {} B, \
@@ -945,19 +1003,42 @@ impl AiurSystem {
         }
       }
       let parts = self.suggested_split_parts(&query_record, max);
-      return GatedProve::Split { peak, parts };
+      return Err(GatedProve::Split { peak, parts });
     }
-    if exec_only {
-      return GatedProve::Measured { peak };
-    }
-    let (claim, proof) = self.prove_from_execution(
+    let plan = self.single_shard_plan(&query_record);
+    Ok(PreparedProve {
+      fun_idx,
+      input: input.to_vec(),
+      io,
+      record: query_record,
+      output,
+      plan,
+      retention: Retention::Retain,
+      peak,
+    })
+  }
+
+  /// The proving half of [`Self::prove_ixvm_within_budget`]: proves the
+  /// prepared execution as the batch its plan describes. Returns the claim,
+  /// the proof and the peak the preparation measured.
+  pub fn prove_prepared(
+    &self,
+    prepared: PreparedProve,
+  ) -> (Vec<G>, AiurProof, usize) {
+    let PreparedProve {
       fun_idx,
       input,
-      io_buffer,
-      query_record,
-      &output,
+      io,
+      record,
+      output,
+      plan,
+      retention,
+      peak,
+    } = prepared;
+    let (claim, proof) = self.prove_from_execution_planned(
+      fun_idx, &input, &io, record, &output, &plan, retention,
     );
-    GatedProve::Proved { claim, proof, peak }
+    (claim, proof, peak)
   }
 
   /// Verifies a proof of `claim`: Aiur's batch policy (one claim, canonical
