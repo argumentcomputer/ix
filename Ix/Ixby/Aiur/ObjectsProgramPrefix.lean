@@ -9,6 +9,8 @@ function-table/input/machine code or its control. The theorem passes the exact
 proved prefix state to that unchanged continuation. Genuine loaded bytes and
 initial memory capacity remain explicit; compiler/hash/gadget/AIR refinement
 and authenticated whole-program binding are separate obligations.
+`ObjectsCodeHeaders` extends this state through function-count admission and
+proves the function/block header handoffs without certifying their later code.
 -/
 
 namespace Ix.Ixby.AiurBackend.ObjectsProgramPrefix

@@ -191,11 +191,43 @@ as a second ISA. See
   registers, preserves reads/I/O, and passes the precise state to the original
   continuation without assuming it succeeds. Loader composition supplies genuine
   bytes and preserves the suffix stream under explicit initial bounds. The 3,074
-  new regressions bring parser coverage to 6,680 and targeted coverage to 8,231;
+  new regressions brought parser coverage to 6,680 and targeted coverage to 8,231 at that checkpoint;
   all 18 audits use only standard logical axioms. Function-table admission,
   initial/whole-admission resource discharge, and authenticated canonical
   whole-program binding remain open. No production/compiler/interpreter/wire/key
   changes or new FRI workloads.
+- `Aiur/ObjectsCodeHeaders.lean` adds 27 public kernel-checked contracts for
+  actual function-count, function-header, and block-header admission prefixes.
+  Success derives functions 1–8, arity ≤16, blocks 1–64, and locals ≤64, retains
+  exact live state, and hands off to the bound next Calls and original remaining
+  controls without assuming their success. Both real zero-count branches have
+  exact Nil/store/read-preservation proofs, including shared width-13 Nil reuse.
+  Loader composition supplies the genuine-byte premise and preserves the suffix
+  and constructor table under explicit initial bounds. The instruction target
+  and downstream decoding/table validation remain outside the prefix certificate.
+  All 27 axiom audits use only standard logical axioms. The 4,572 new regressions
+  brought parser coverage to 11,252 and targeted coverage to 12,803 at that
+  checkpoint, including the unchanged FRI workloads. No production/compiler/
+  interpreter/wire/key changes.
+- `Aiur/ObjectsScalars.lean` and `Aiur/ObjectsOperands.lean` add 40 public
+  kernel-checked lemmas for complete field/scalar and local/literal/erased leaf
+  readers. Exact canonical Goldilocks guards precede modular packing; scalar
+  and operand layouts reconstruct their semantic values. The local guard is
+  exact under an explicit u32 frame bound, and invalid scalar payloads/unknown
+  tags are rejected. Same-toplevel certificates bind all required bodies and
+  Calls; execution preserves memory/I/O and exact caller registers. Actual
+  checked loading supplies genuine bytes at an identified operand prefix and
+  preserves the remaining stream and prior reads. All 40 axiom audits use only
+  standard logical axioms. The 12,580 new checks bring parser coverage to 23,832
+  and targeted coverage to 25,383, with unchanged FRI workloads. Operand lists,
+  instructions, whole-table validation and canonical program binding remain
+  open. This proof checkpoint changes no production/compiler/interpreter/wire/keys.
+- Merged `main` at `72238a58` (IxVM FLT/witness optimization, #627) into this
+  branch in `db16a464`. The sole conflict was the generated IxVM Rust kernel;
+  regenerating it from the merged Lean sources resolved it. All three generated
+  content checks, rebuilt IxVM kernel/adversarial/native-parity tests, and seven
+  release `ixvm-codegen` tests pass. This integration is separate from the
+  proof-only scalar/operand changes and does not change the IxBy workloads.
 - The shared hoisting repair also requires regenerating all three checked-in
   Rust kernels. That step was initially missed and caused the CI codegen check
   to fail. The generated snapshots are refreshed; content checks and native
@@ -614,9 +646,12 @@ contracts, exact semantic identity comparison, bounded duplicate traversal,
 and the complete bounded declaration parser now have structural bytecode
 certificates and proofs. The bounded raw-advice loader now supplies genuine bytes
 and preserves table capacity under explicit metadata/address and storage bounds.
-The actual `is_run` header/declaration prefix now derives the constructor bound
-and supplies the exact state to the remaining continuation. Next certify
-function-table admission and discharge initial/whole-admission resource
+The actual program, function, and block header prefixes now derive their local
+count/arity bounds and supply exact states to the remaining continuations.
+Complete scalar/leaf-operand readers now have canonical-value/layout proofs,
+same-toplevel certificates, exact Call contracts, and checked loader composition.
+Next certify operand-list/instruction decoding, recursive block/function table
+construction, and cross-table validation; discharge initial/whole-admission resource
 premises. Authenticated canonical whole-program/table agreement, initialization, and
 complete interpreter transition correctness follow those obligations.
 Actual circuit/trace refinement, closures/PAPs and general application, the

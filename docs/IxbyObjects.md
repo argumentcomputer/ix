@@ -517,7 +517,7 @@ checked advice loading under the earlier metadata/address and byte-space
 bounds; it preserves the suffix's readable stream and initial reads/I/O.
 
 All 18 axiom audits use only Lean's standard logical axioms. The 3,074 added
-regressions bring the parser suite to 6,680 checks. They cover every magic-byte
+regressions brought the parser suite to 6,680 checks at that checkpoint. They cover every magic-byte
 value, every revision and entry bit, counts through sixteen and oversized u32
 counts, all header truncation/tag positions, invalid declarations at every
 position, exact new/deduplicated storage, full-field pointers, loader composition,
@@ -527,6 +527,158 @@ the prefix-only certificate boundary. Initial/whole-admission resource
 discharge, function-table admission, authenticated canonical whole-program
 binding, initialization, full transitions, and compiler/hash/gadget/trace/AIR
 refinement remain open. No production code, wire, advice, FRI workload, or key changes.
+
+### Function-count and function/block header admission
+
+`Aiur/ObjectsCodeHeaders.lean` adds 27 public kernel-checked lemmas. The new
+certificate extends the program prefix and checks both the complete zero branch
+and a bounded nonzero prefix of each list reader. It also binds the exact next
+Call, including its argument registers, output arity, callee index, and constraint
+flag. `checkHeaderCode` resolves the earlier six functions plus the function and
+block readers in one toplevel; full and pruned production compilations pass.
+
+The proved prefixes stop before these next Calls:
+
+| Actual body | Proved operations | Derived bounds | Next Call arguments | Post-prefix registers |
+| --- | --- | --- | --- | --- |
+| `is_run` | 83 | constructors ≤16; functions 1–8 | `is_read_functions [80, 89, 97]` | 98 |
+| `is_read_functions`, nonzero | 60 | arity ≤16; blocks 1–64 | `is_read_blocks [54, 63, 2]` | 71 |
+| `is_read_blocks`, nonzero | 19 | locals ≤64 | `is_read_instr [10, 2, 19]` | 25 |
+
+The executable shape checks include those next Calls, so they bind 84, 61,
+and 20 operations respectively. Later operations and final controls remain
+unrestricted. The instruction target's existence, body, and semantics are
+not certified here; `checkHeaderCode` is not a whole-image validator.
+
+`checked_program_headers` composes the previous constructor-table proof with
+the actual function-count read, upper-bound guard, nonzero guard, and self-zero
+initialization. It derives the new count bound rather than assuming it. Success
+retains program/input at registers 0/1, program entry at 48, constructor count
+at 65, and constructor table at 71; function bytes start at 80, function count
+is at 89, and self zero is at 97. `program_function_arguments` identifies the
+exact next Call arguments. The original remaining body receives that precise
+state; it can still reject or return an invalid result.
+
+For nonzero list counts, `checked_function_header` reads twelve genuine bytes
+and checks both arity limits, including the redundant local-capacity check,
+then requires a nonempty block count at most 64. The full u32 function entry
+is preserved without claiming it is a valid block index. Every twelve-byte
+sequence has the proved header grouping. `checked_block_header` reads four
+genuine bytes and enforces the local bound. Both contracts preserve all memory,
+I/O, the remaining counter, and the full-field self value. One unit of body Call
+fuel suffices; neither contract needs instruction/block payload bytes or an
+allocation premise. Invalid headers reject before the next Call. Valid ones
+pass their exact register state to the original continuation, not to an assumed
+successful parser.
+
+`checked_empty_list` covers both real zero-count branches: six ones for a
+function-list Nil and thirteen for a block-list Nil. It proves exact stores,
+outputs, caller-body registers, readable field-valued pointers, I/O preservation,
+and preservation of every prior read under `bucketSize before width + 1 ≤ p`.
+It requires no readable byte pointer or body Call fuel. Deduplication is allowed;
+the block-list Nil can reuse the constructor-list Nil in the shared width-13
+bucket. No rollback state is asserted on errors.
+
+`loaded_program_headers` supplies genuine bytes from actual successful checked
+advice loading, preserves the function-byte suffix stream and constructor table,
+and derives both program counts under the earlier metadata/address, byte-space,
+and initial constructor-space bounds. It does not require the suffix to contain
+a valid function table. Initial/whole-admission allocation discharge remains open.
+
+All 27 axiom audits use only Lean's standard logical axioms. The 4,572 new
+regressions brought the parser suite to 11,252 checks at that checkpoint.
+Full/pruned cases exhaust
+all 17 supported arities × 64 nonempty block counts and all 65 local counts,
+exercise all entry bits and truncation/tag positions, and check exact Nil/new/
+deduplicated state, both program counts, loader composition, full-field pointers,
+codec-prefix agreement, and certificate mutations. Controlled continuations
+demonstrate exact Call handoffs without implying successful downstream admission.
+Forged non-byte arity/local words at `2^32` and count words at `2^32 + 1` can pass
+the Lean evaluator's cast-based guards; the actual loader rejects those fixtures.
+These document the genuine-byte premise, not native/AIR soundness claims.
+
+That checkpoint leaves instruction/operand decoding and complete recursive
+block/function-table admission open. The following checkpoint handles the leaf
+scalars and operands. Neither checkpoint changes production code, wire, advice,
+FRI workloads, or keys.
+
+### Complete scalar and leaf-operand decoding
+
+`Aiur/ObjectsScalars.lean` adds 27 public kernel-checked lemmas and
+`Aiur/ObjectsOperands.lean` adds 13. Their structural certificates check the
+complete bodies of `ib_field`, `ib_scalar`, and `ic_read_operand`, including all
+operations, Call targets/arguments/output sizes/flags, match tags and ordering,
+default branches, return selectors and every output register. The combined
+bundle resolves those functions and `ib_byte` in the same bytecode toplevel;
+it is tested against both full compilation and pruned, relocated indices.
+Evaluator-irrelevant metadata is intentionally ignored. These are Lean bytecode
+contracts, not a compiler, native implementation, gadget, or AIR soundness proof.
+
+The field reader's eight inputs are genuine `UInt8` bytes, including encodings
+at or above `p = 18446744069414584321`. `field_guard_exact` proves that the actual
+emitted `gl_lt_p` arithmetic accepts exactly values below `p`: all four high bytes
+being 255 requires all four low bytes to be zero. `packed_field_mod` separately
+proves packing modulo `p`; `canonical_field_exact` removes that reduction only
+after the guard. `field_bytes_codec` identifies the unreduced natural with the
+existing little-endian codec helper. No canonical-input assumption hides rejection.
+
+`checked_scalar_reader` covers every supported scalar form and rejects invalid
+Boolean bytes or noncanonical field components. Both extension components are
+checked independently. Unknown scalar tags fail before reading any payload.
+Success yields the five-field `IBValue` followed by the exact suffix pointer:
+
+| Wire scalar | Five-field output |
+| --- | --- |
+| Boolean | `[0, bit, 0, 0, 0]` |
+| Word32 | `[1, byte0, byte1, byte2, byte3]` |
+| Field | `[2, field, 0, 0, 0]` |
+| Extension | `[3, component0, component1, 0, 0]` |
+
+`scalar_flat_decoded` proves reconstruction through the concrete `decodeAtom`,
+including its padding checks. Erasure is not an accepted standalone scalar wire
+tag: the operand reader's erased branch produces the repeated-tag value instead.
+Local operands produce `[0, index, 0, 0, 0, 0]`; literals prepend `1` to the
+scalar layout; erased operands produce `[1, 4, 4, 4, 4, 4]`. The exact suffix is
+the seventh result. `decodeOperand` checks these six-field layouts and reconstructs
+the semantic operand; frame membership is a separate admission property.
+
+`checked_operand_reader` accepts a local exactly when its genuine u32 index is
+below the supplied u32 frame count. The count premise is explicit, with the
+earlier checked block header supplying the stronger bound of 64. Literal and
+erased branch lemmas do not require that frame-count bound. Invalid literal
+payloads and unknown operand tags are rejected; the unknown branch does not read
+the payload. These leaf readers allocate nothing and preserve memory and I/O.
+Actual checked Call lemmas append exactly the returned fields to the original
+caller registers. Sufficient uniform body fuel is `fuel + 1` for fields,
+`fuel + 2` for scalars, and `fuel + 3` for operands, with one more for their Calls;
+the simpler scalar and operand branches also have smaller exact fuel contracts.
+
+`loaded_operand` composes actual successful checked advice loading with parsing
+an identified operand prefix. It derives genuine bytes, proves the semantic
+operand on success, and preserves the exact unconsumed byte stream, memory after
+loading, original I/O, and all reads predating loading. The earlier metadata,
+address, byte-space, length and limit premises remain explicit, as does the
+u32 frame bound. It does not prove that this prefix occupies the right position
+inside a canonical program. Errors carry no state; no rollback claim is made.
+
+All 40 axiom audits use only Lean's standard logical axioms, with no proof holes,
+new axioms, native-decision oracle, or proof-limit overrides. The 12,580 new
+regressions bring parser coverage to 23,832 checks. They include all Boolean
+bytes, all Word32 byte positions, all field boundary byte positions, paired
+extension boundaries, local-count/index boundaries, codec differential checks,
+every truncation/malformed-cell position in representative readers, minimum fuel,
+actual Call failure modes, padding, unknown tags, and loaded valid/invalid operands.
+Structural mutations bind every checked operation and dispatch edge; changing an
+instruction implementation still passes the leaf certificate, documenting its scope.
+Forged non-byte memory can pass raw Word/field readers or the cast-based local
+guard while violating byte/representation premises. The actual loader rejects
+every tested non-byte position. These fixtures are Lean evaluator diagnostics,
+not claims about native execution or AIR constraints.
+
+Next are operand-list and instruction decoding, complete recursive block/function
+table construction, cross-table entry/target/arity validation, and authenticated
+canonical whole-program binding. Initialization, full transitions, compiler/hash/
+gadget/trace/AIR refinement, and whole-admission resource discharge remain separate.
 
 ### Compiler issue found and repaired
 
@@ -575,6 +727,8 @@ lake build --wfail Ix.Ixby.Aiur.ObjectsParser Ix.Ixby.Aiur.ObjectsIdentity IxbyO
 lake build --wfail Ix.Ixby.Aiur.ObjectsEquality Ix.Ixby.Aiur.ObjectsUnique
 lake build --wfail Ix.Ixby.Aiur.ObjectsDeclarations Ix.Ixby.Aiur.ObjectsAdmission
 lake build --wfail Ix.Ixby.Aiur.ObjectsProgramPrefix
+lake build --wfail Ix.Ixby.Aiur.ObjectsCodeHeaders
+lake build --wfail Ix.Ixby.Aiur.ObjectsScalars Ix.Ixby.Aiur.ObjectsOperands
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsMemoryTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTableTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsParserTests
@@ -612,8 +766,8 @@ targeted runtime checks total**, not counting theorems as runtime tests.
 `Tests/Main.lean` exposes execution-only `ixby-objects` and opt-in
 `ixby-objects-prove` alongside the earlier suites.
 The separate `ixby-objects-memory`, `ixby-objects-table`, and
-`ixby-objects-parser` suites add 126, 191, and 6,680 checks respectively,
-bringing current targeted runtime coverage to **8,231 checks**.
+`ixby-objects-parser` suites add 126, 191, and 23,832 checks respectively,
+bringing current targeted runtime coverage to **25,383 checks**.
 They add no FRI proof workloads and do not change the
 530-check object baseline or its measurements below.
 
@@ -658,11 +812,14 @@ fixed `Bytes2` table still has 65,536 rows and committed width 24. FFT-work
 surrogates are approximately 151.26, 151.89, and 166.08 million, with zero
 whole-machine cache hits. These are not Flock non-native-field estimates.
 
-Next: certify function-table admission and connect the resulting tables to the
-authenticated canonical program image, while discharging initial/whole-admission
-resource premises. The bounded loader now establishes genuine bytes; the actual
-`is_run` header/declaration prefix derives the constructor bound and supplies
-the exact continuation state. It does not establish the whole-program connection.
+Next: certify operand-list/instruction decoding, recursive block/function table
+construction, and cross-table validation, then connect the tables to the
+authenticated canonical program image while discharging initial/whole-admission
+resource premises. The bounded loader now establishes genuine bytes; program,
+function, and block header guards derive their local bounds and supply exact
+continuation states. Complete leaf scalar/operand readers now have same-toplevel
+certificates, exact semantic layouts, and loader composition. These do not
+establish the whole-program connection.
 Then establish successful reconstruction for
 live values from initialization and complete transitions. Immutable Store
 preservation and the complete bounded declaration parser are proved; full

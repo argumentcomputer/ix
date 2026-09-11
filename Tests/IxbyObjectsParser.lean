@@ -5,6 +5,8 @@ import Ix.Ixby.Aiur.ObjectsUnique
 import Ix.Ixby.Aiur.ObjectsDeclarations
 import Ix.Ixby.Aiur.ObjectsAdmission
 import Ix.Ixby.Aiur.ObjectsProgramPrefix
+import Ix.Ixby.Aiur.ObjectsCodeHeaders
+import Ix.Ixby.Aiur.ObjectsOperands
 import Ix.Ixby.Aiur.Objects
 import Ix.Aiur.Compiler
 
@@ -15,7 +17,11 @@ declaration and advice-loader certificates check both branches and their
 required callees. Forged natural metadata tests document Lean evaluator
 premises, not claims about native execution or the AIR's range constraints.
 The program-prefix certificate binds only the first sixty operations; positive
-suffix/control mutations deliberately test that limited boundary. -/
+suffix/control mutations deliberately test that limited boundary. Code-header
+certificates extend the program count checks and cover function/block headers,
+not instruction decoding or complete function-table admission. Separate full
+scalar/leaf-operand certificates cover canonical fields, concrete value layouts,
+frame guards and loader composition, not operand lists or whole instructions. -/
 
 namespace Tests.IxbyObjectsParser
 
@@ -1233,6 +1239,689 @@ private def loadedChecks (compiled : Aiur.CompiledToplevel) (label : String) : L
 
 end ProgramPrefixTests
 
+namespace CodeHeaderTests
+open ObjectsCodeHeaders
+
+private def code (compiled : Aiur.CompiledToplevel) : Except String HeaderCode := do
+  let program ← ProgramPrefixTests.code compiled
+  let (functions, _) ← function compiled `is_read_functions
+  let (blocks, _) ← function compiled `is_read_blocks
+  let (instruction, _) ← function compiled `is_read_instr
+  return { program, functions, blocks, instruction }
+
+private def stepOf (f : Aiur.Bytecode.Function) : Except String Aiur.Bytecode.Block :=
+  match f.body.ctrl with
+  | .match _ _ (some step) => .ok step
+  | _ => .error "missing nonzero branch"
+
+private def withStep (f : Aiur.Bytecode.Function) (step : Aiur.Bytecode.Block) : Aiur.Bytecode.Function :=
+  match f.body.ctrl with
+  | .match index arms _ => { f with body := { f.body with ctrl := .match index arms (some step) } }
+  | _ => f
+
+/-- Observe only actual compiled operations, never substitute model op arrays. -/
+private def observe (compiled : Aiur.CompiledToplevel) (name : Lean.Name) (count : Nat)
+    (args : Array Aiur.G) (outputs : Array Nat) (st : EvalState) (fuel := 1) :
+    Except String (Array Aiur.G × EvalState) := do
+  let (_, f) ← function compiled name
+  let body ← if name == `is_run then pure f.body else stepOf f
+  match runOps compiled.bytecode fuel (body.ops.toList.take count).toArray { st with map := args } 0 with
+  | .error error => throw (reprStr error)
+  | .ok after =>
+    match readIdxs after outputs with
+    | .ok out => return (out, after)
+    | .error error => throw (reprStr error)
+
+private def wireFunction (arity entry blocks : Nat) : FunctionHeaderBytes :=
+  ⟨wordBytes arity, wordBytes entry, wordBytes blocks⟩
+
+private def certificates (compiled : Aiur.CompiledToplevel) (label : String) : Except String (List Check) := do
+  let hc ← code compiled
+  let (_, runner) ← function compiled `is_run
+  let (_, functions) ← function compiled `is_read_functions
+  let (_, blocks) ← function compiled `is_read_blocks
+  let (_, instruction) ← function compiled `is_read_instr
+  let functionStep ← stepOf functions
+  let blockStep ← stepOf blocks
+  let byte := hc.program.declarations.reader
+  let mut checks : List Check := [
+    (s!"{label} complete code-header prefix bundle", checkHeaderCode compiled.bytecode hc),
+    (s!"{label} program count prefix and next function Call", checkProgramHeaders runner hc),
+    (s!"{label} function header, zero branch, and next block Call", checkListHeader functions 6 (functionHeaderOps byte) (blockCall hc.blocks)),
+    (s!"{label} block header, zero branch, and next instruction Call", checkListHeader blocks 13 (blockHeaderOps byte) (instructionCall hc.instruction)),
+    (s!"{label} program header prefix has eighty-three operations", (programHeadersOps byte hc.program.declarations.self).size == 83),
+    (s!"{label} function header prefix has sixty operations", (functionHeaderOps byte).size == 60),
+    (s!"{label} block header prefix has nineteen operations", (blockHeaderOps byte).size == 19)]
+  for i in [:84] do
+    checks := checks ++ [
+      (s!"{label} code-header program certificate binds op/{i}", !checkProgramHeaders
+        { runner with body := { runner.body with ops := runner.body.ops.set! i (.const 1234567) } } hc),
+      (s!"{label} code-header program rejects short prefix/{i}", !checkProgramHeaders
+        { runner with body := { runner.body with ops := (runner.body.ops.toList.take i).toArray } } hc)]
+  for i in [84:runner.body.ops.size] do
+    checks := checks ++ [(s!"{label} code-header program leaves later op/{i} unrestricted", checkProgramHeaders
+      { runner with body := { runner.body with ops := runner.body.ops.set! i (.const 1234567) } } hc)]
+  checks := checks ++ [(s!"{label} code-header program leaves final control unrestricted", checkProgramHeaders
+    { runner with body := { runner.body with ctrl := .return 0 #[0] } } hc)]
+  for (desc, f, step, width, headOps, next) in [
+      ("function", functions, functionStep, 6, functionHeaderOps byte, blockCall hc.blocks),
+      ("block", blocks, blockStep, 13, blockHeaderOps byte, instructionCall hc.instruction)] do
+    let accepts := fun f => checkListHeader f width headOps next
+    let certifiedSize := headOps.size + 1
+    for i in [:certifiedSize] do
+      checks := checks ++ [
+        (s!"{label} {desc} header binds op/{i}", !accepts (withStep f { step with ops := step.ops.set! i (.const 1234567) })),
+        (s!"{label} {desc} header rejects short prefix/{i}", !accepts (withStep f { step with ops := (step.ops.toList.take i).toArray }))]
+      match step.ops.getD i (.const 0) with
+      | .call callee args outputs flag =>
+        for (change, op) in [("callee", .call (callee + 1) args outputs flag),
+            ("argument", .call callee (args.set! 0 1) outputs flag),
+            ("outputs", .call callee args (outputs + 1) flag), ("flag", .call callee args outputs (!flag))] do
+          checks := checks ++ [(s!"{label} {desc} header binds Call {change}/{i}",
+            !accepts (withStep f { step with ops := step.ops.set! i op }))]
+      | _ => pure ()
+    for i in [certifiedSize:step.ops.size] do
+      checks := checks ++ [(s!"{label} {desc} header leaves later op/{i} unrestricted",
+        accepts (withStep f { step with ops := step.ops.set! i (.const 1234567) }))]
+    let zero := emptyListBranch width
+    for i in [:3] do
+      let badZero := { zero with ops := zero.ops.set! i (.const 1234567) }
+      checks := checks ++ [(s!"{label} {desc} zero branch binds operation/{i}", !accepts { f with body :=
+        ⟨#[], .match 1 #[(0, badZero)] (some step)⟩ })]
+    let indices := #[3] ++ Array.replicate (width - 1) 4
+    for i in [:width] do
+      let badZero := { zero with ops := #[.const 1, .const 1, .store (indices.set! i 0)] }
+      checks := checks ++ [(s!"{label} {desc} zero branch binds Nil padding/{i}", !accepts { f with body :=
+        ⟨#[], .match 1 #[(0, badZero)] (some step)⟩ })]
+    checks := checks ++ [
+      (s!"{label} {desc} header binds input arity", !accepts { f with layout := { f.layout with inputSize := 2 } }),
+      (s!"{label} {desc} header ignores irrelevant layout", accepts { f with
+        layout := { f.layout with lookups := 777, auxiliaries := 888 }, constrained := false }),
+      (s!"{label} {desc} header binds root ops", !accepts { f with body := { f.body with ops := #[.const 0] } }),
+      (s!"{label} {desc} header binds dispatch counter", !accepts { f with body := ⟨#[], .match 2 #[(0, zero)] (some step)⟩ }),
+      (s!"{label} {desc} header binds zero tag", !accepts { f with body := ⟨#[], .match 1 #[(1, zero)] (some step)⟩ }),
+      (s!"{label} {desc} header rejects extra branch", !accepts { f with body := ⟨#[], .match 1 #[(0, zero), (1, zero)] (some step)⟩ }),
+      (s!"{label} {desc} header requires default branch", !accepts { f with body := ⟨#[], .match 1 #[(0, zero)] none⟩ }),
+      (s!"{label} {desc} header binds zero return", !accepts { f with body := ⟨#[], .match 1
+        #[(0, { zero with ctrl := .return 1 #[0, 5] })] (some step)⟩ }),
+      (s!"{label} {desc} header rejects zero yield", !accepts { f with body := ⟨#[], .match 1
+        #[(0, { zero with ctrl := .yield 0 #[5, 0] })] (some step)⟩ }),
+      (s!"{label} {desc} header does not certify step control", accepts (withStep f { step with ctrl := .return 0 #[0] }))]
+  for name in [`is_run, `ib_byte, `is_read_id, `is_id_eq, `is_unique_id, `is_read_ctors, `is_read_functions, `is_read_blocks] do
+    let (index, f) ← function compiled name
+    let bad := { compiled.bytecode with functions := compiled.bytecode.functions.set! index { f with body := { f.body with ops := #[.const 1234567] } } }
+    checks := checks ++ [(s!"{label} code-header bundle binds function/{name}", !checkHeaderCode bad hc)]
+  let missing := compiled.bytecode.functions.size
+  for (desc, changed) in [("functions", { hc with functions := missing }), ("blocks", { hc with blocks := missing })] do
+    checks := checks ++ [(s!"{label} code-header bundle rejects missing/{desc}", !checkHeaderCode compiled.bytecode changed)]
+  let arbitraryInstruction := { instruction with body := (⟨#[.const 77], .return 0 (Array.replicate 10 3 ++ #[0])⟩ : Aiur.Bytecode.Block) }
+  let changedInstruction := { compiled.bytecode with functions := compiled.bytecode.functions.set! hc.instruction arbitraryInstruction }
+  checks := checks ++ [(s!"{label} instruction body is explicitly outside the header certificate", checkHeaderCode changedInstruction hc)]
+  let detachedBlocks := withStep blocks { blockStep with ops := blockStep.ops.set! 19 (instructionCall missing) }
+  let detached := { compiled.bytecode with functions := compiled.bytecode.functions.set! hc.blocks detachedBlocks }
+  checks := checks ++ [(s!"{label} instruction Call is bound but its target lookup is not certified",
+    checkHeaderCode detached { hc with instruction := missing })]
+  return checks
+
+private def functionAgreement (compiled : Aiur.CompiledToplevel) (h : FunctionHeaderBytes)
+    (remaining self finish : Aiur.G) : Bool :=
+  let raw := h.bytes.toArray.map Aiur.G.ofUInt8
+  let (st, pointer) := storePrefix initial raw finish
+  let bytes := #[200, 201] ++ h.bytes.toArray ++ #[90, 91, 92]
+  let decoder : Codec.Internal.Decoder (Nat × Nat × Nat) := do
+    let arity ← Codec.Internal.readCount 16
+    let entry ← Codec.Internal.readU32
+    let blocks ← Codec.Internal.readCount 64
+    return (arity, entry, blocks)
+  match observe compiled `is_read_functions 60 #[pointer, remaining, self] #[0, 1, 2, 19, 46, 63, 54] st,
+      decoder.run { bytes, offset := 2, nodes := 13 } with
+  | .ok (out, after), .ok ((arity, entry, blocks), rest) =>
+    out == #[pointer, remaining, self, h.arity.field, h.entry.field, h.blocks.field, finish] && after.map.size == 71 &&
+      unchanged st after && arity == h.arity.field.n && entry == h.entry.field.n && blocks == h.blocks.field.n &&
+      blocks != 0 && rest.offset == 14 && rest.nodes == 13 && rest.bytes == bytes
+  | _, _ => false
+
+private def headerChecks (compiled : Aiur.CompiledToplevel) (label : String) : List Check := Id.run do
+  let full : Aiur.G := .ofNat (goldilocksModulus - 1)
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  let mut checks : List Check := []
+  for arity in [:17] do
+    for blocks in [1:65] do
+      checks := checks ++ [(s!"{label} function header exact state and codec/{arity}/{blocks}",
+        functionAgreement compiled (wireFunction arity (2 ^ 32 - 1) blocks) full full finish)]
+  for bit in [:32] do
+    checks := checks ++ [(s!"{label} function entry retains bit/{bit}",
+      functionAgreement compiled (wireFunction 16 (2 ^ bit) 64) 1 full finish)]
+  for arity in [17, 18, 64, 65, 255, 256, 65536, 2 ^ 31, 2 ^ 32 - 1] do
+    let (st, pointer) := storePrefix initial ((wordBytes arity).bytes.toArray.map Aiur.G.ofUInt8) finish
+    checks := checks ++ [(s!"{label} function arity rejects before entry/block bytes/{arity}",
+      failed (snapshot compiled `is_read_functions #[pointer, full, full] st 1) .assertFailed)]
+  for arity in [:17] do
+    for blocks in [0, 65, 66, 255, 256, 65536, 2 ^ 31, 2 ^ 32 - 1] do
+      let h := wireFunction arity (2 ^ 32 - 1) blocks
+      let (st, pointer) := storePrefix initial (h.bytes.toArray.map Aiur.G.ofUInt8) finish
+      checks := checks ++ [(s!"{label} invalid block count rejects before block Call/{arity}/{blocks}",
+        failed (snapshot compiled `is_read_functions #[pointer, full, full] st 1) .assertFailed)]
+  for locals in [:65] do
+    for self in [0, 2 ^ 32 + 7, goldilocksModulus - 1] do
+      let word := wordBytes locals
+      let (st, pointer) := storePrefix initial (word.bytes.toArray.map Aiur.G.ofUInt8) finish
+      checks := checks ++ [(s!"{label} block local header exact state/{locals}/{self}",
+        match observe compiled `is_read_blocks 19 #[pointer, full, .ofNat self] #[0, 1, 2, 19, 10] st with
+        | .ok (out, after) => out == #[pointer, full, .ofNat self, word.field, finish] && after.map.size == 25 && unchanged st after
+        | _ => false)]
+  for locals in [65, 66, 255, 256, 65536, 2 ^ 31, 2 ^ 32 - 1] do
+    let (st, pointer) := storePrefix initial ((wordBytes locals).bytes.toArray.map Aiur.G.ofUInt8) finish
+    checks := checks ++ [(s!"{label} local count rejects before instruction Call/{locals}",
+      failed (snapshot compiled `is_read_blocks #[pointer, full, full] st 1) .assertFailed)]
+  for (name, length, raw, outputs) in [
+      (`is_read_functions, 60, (wireFunction 16 0 64).bytes.toArray.map Aiur.G.ofUInt8, #[19, 46, 63, 54]),
+      (`is_read_blocks, 19, (wordBytes 64).bytes.toArray.map Aiur.G.ofUInt8, #[19, 10])] do
+    for position in [:raw.size] do
+      let (shortState, shortPointer) := storeStream initial (raw.extract 0 position)
+      let (tailState, tail) := storePrefix initial (raw.extract (position + 1) raw.size) finish
+      let (badState, bad) := memStore tailState #[2, raw.getD position 0, tail]
+      let (st, pointer) := storePrefix badState (raw.extract 0 position) (.ofNat bad)
+      checks := checks ++ [
+        (s!"{label} {name} header rejects truncation/{position}", failed (observe compiled name length #[shortPointer, 1, full] outputs shortState) .unreachableAfterLayout),
+        (s!"{label} {name} header rejects byte tag/{position}", failed (observe compiled name length #[pointer, 1, full] outputs st) .unreachableAfterLayout)]
+    let (st, pointer) := storePrefix initial raw finish
+    checks := checks ++ [
+      (s!"{label} {name} header requires byte Call fuel", failed (observe compiled name length #[pointer, 1, full] outputs st 0) .outOfFuel),
+      (s!"{label} {name} header does not narrow program pointer", failed
+        (observe compiled name length #[.ofNat (2 ^ 32 + pointer.n), 1, full] outputs st) (.invalidPointer 3 (2 ^ 32 + pointer.n)))]
+  for (name, length, raw, fieldIndex, expected) in [
+      (`is_read_functions, 60, ((wireFunction 0 0 1).bytes.toArray.map Aiur.G.ofUInt8).set! 0 (.ofNat (2 ^ 32)), 19, 2 ^ 32),
+      (`is_read_functions, 60, ((wireFunction 0 0 1).bytes.toArray.map Aiur.G.ofUInt8).set! 8 (.ofNat (2 ^ 32 + 1)), 63, 2 ^ 32 + 1),
+      (`is_read_blocks, 19, #[.ofNat (2 ^ 32), 0, 0, 0], 19, 2 ^ 32)] do
+    let (st, pointer) := storePrefix initial raw finish
+    checks := checks ++ [
+      (s!"{label} non-byte fixture shows {name}/{fieldIndex} UInt32 premise", match observe compiled name length #[pointer, 1, full] #[fieldIndex] st with
+        | .ok (out, _) => out == #[.ofNat expected]
+        | _ => false),
+      (s!"{label} actual loader rejects forged {name}/{fieldIndex} header", failed
+        (snapshot compiled `ib_load #[0, .ofNat raw.size] (rawAdvice initial 0 0 raw.size raw) (raw.size + 1)) .u8RangeCheckFailed)]
+  return checks
+
+private def zeroChecks (compiled : Aiur.CompiledToplevel) (label : String) : List Check := Id.run do
+  let mut checks : List Check := []
+  for (name, width) in [(`is_read_functions, 6), (`is_read_blocks, 13)] do
+    for pointer in [0, 2 ^ 32 + 19, goldilocksModulus - 1] do
+      for self in [0, 2 ^ 32 + 7, goldilocksModulus - 1] do
+        let flat : Array Aiur.G := Array.replicate width 1
+        let (occupied, _) := memStore initial (Array.replicate width 99)
+        let expected := memStore occupied flat
+        for (desc, base) in [("new", occupied), ("dedup", expected.1)] do
+          let stored := memStore base flat
+          checks := checks ++ [(s!"{label} exact {name} Nil/{desc}/{pointer}/{self}",
+            match snapshot compiled name #[.ofNat pointer, 0, .ofNat self] base 0 with
+            | .ok (out, after) => out == #[.ofNat stored.2, .ofNat pointer] &&
+                after.map == #[.ofNat pointer, 0, .ofNat self, 1, 1, .ofNat stored.2] &&
+                memoryView after == memoryView stored.1 && (match memLoad after width stored.2 with | .ok found => found == flat | _ => false) &&
+                preservesReads base after && sameIo base after &&
+                ObjectsStore.bucketSize after width ≤ ObjectsStore.bucketSize base width + 1
+            | _ => false)]
+  let ctors := ObjectsDeclarations.storeDeclarations initial []
+  checks := checks ++ [(s!"{label} empty block list reuses the constructor Nil cell in width thirteen",
+    match snapshot compiled `is_read_blocks #[.ofNat (goldilocksModulus - 1), 0, 0] ctors.1 0 with
+    | .ok (out, after) => out[0]? == some ctors.2 && unchanged ctors.1 after &&
+        readTable (bytecodeMemory after) ctors.2.n 0 == some #[]
+    | _ => false)]
+  return checks
+
+private def programChecks (compiled : Aiur.CompiledToplevel) (label : String) : List Check := Id.run do
+  let input : Aiur.G := .ofNat (goldilocksModulus - 1)
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  let outputs := #[0, 1, 48, 65, 71, 80, 89, 97]
+  let mut checks : List Check := []
+  for count in [:17] do
+    let decls := wireDeclarations count
+    let h := ProgramPrefixTests.wireHeader (2 ^ 32 - 1) count
+    for functions in [:10] do
+      let raw := ProgramPrefixTests.payload h decls ++ (wordBytes functions).bytes.toArray.map Aiur.G.ofUInt8
+      let (st, pointer) := storePrefix initial raw finish
+      let expected := ObjectsDeclarations.storeDeclarations st decls
+      checks := checks ++ [(s!"{label} composed constructor/function-count prefix/{count}/{functions}",
+        if functions == 0 || functions > 8 then failed (snapshot compiled `is_run #[pointer, input] st (count + 3)) .assertFailed
+        else match observe compiled `is_run 83 #[pointer, input] outputs st (count + 3) with
+        | .ok (out, after) => out == #[pointer, input, h.entry.field, .ofNat count, expected.2, finish, .ofNat functions, 0] &&
+            after.map.size == 98 && memoryView after == memoryView expected.1 && sameIo st after && preservesReads st after &&
+            readTable (bytecodeMemory after) expected.2.n count == some (decls.map DeclarationBytes.declaration).toArray
+        | _ => false)]
+  for functions in [10, 16, 17, 255, 256, 65536, 2 ^ 31, 2 ^ 32 - 1] do
+    let raw := ProgramPrefixTests.payload (ProgramPrefixTests.wireHeader 0 0) [] ++
+      (wordBytes functions).bytes.toArray.map Aiur.G.ofUInt8
+    let (st, pointer) := storePrefix initial raw finish
+    checks := checks ++ [(s!"{label} program rejects high function count before Call/{functions}",
+      failed (snapshot compiled `is_run #[pointer, input] st 1) .assertFailed)]
+  let prefixBytes := ProgramPrefixTests.payload (ProgramPrefixTests.wireHeader 0 1) (wireDeclarations 1)
+  let countBytes := (wordBytes 8).bytes.toArray.map Aiur.G.ofUInt8
+  for position in [:4] do
+    let (shortState, shortPointer) := storeStream initial (prefixBytes ++ countBytes.extract 0 position)
+    let (tailState, tail) := storePrefix initial (countBytes.extract (position + 1) 4) finish
+    let (badState, bad) := memStore tailState #[2, countBytes.getD position 0, tail]
+    let (st, pointer) := storePrefix badState (prefixBytes ++ countBytes.extract 0 position) (.ofNat bad)
+    checks := checks ++ [
+      (s!"{label} program function count rejects truncation/{position}", failed
+        (observe compiled `is_run 83 #[shortPointer, input] outputs shortState 4) .unreachableAfterLayout),
+      (s!"{label} program function count rejects byte tag/{position}", failed
+        (observe compiled `is_run 83 #[pointer, input] outputs st 4) .unreachableAfterLayout)]
+  let good := ProgramPrefixTests.payload (ProgramPrefixTests.wireHeader 0 0) [] ++ #[1, 0, 0, 0]
+  let (st, pointer) := storePrefix initial good finish
+  checks := checks ++ [(s!"{label} admitted count does not establish any function bytes",
+    (observe compiled `is_run 83 #[pointer, input] outputs st 1).isOk &&
+      failed (snapshot compiled `is_run #[pointer, input] st 3) (.invalidPointer 3 finish.n))]
+  let forged := good.set! 16 (.ofNat (2 ^ 32 + 1))
+  let (st, pointer) := storePrefix initial forged finish
+  checks := checks ++ [
+    (s!"{label} non-byte function-count fixture can pass the UInt32 guard", match observe compiled `is_run 83 #[pointer, input] #[89] st 1 with
+      | .ok (out, _) => out == #[.ofNat (2 ^ 32 + 1)]
+      | _ => false),
+    (s!"{label} actual loader closes non-byte function-count fixture", failed
+      (snapshot compiled `ib_load #[0, 20] (rawAdvice initial 0 0 20 forged) 21) .u8RangeCheckFailed)]
+  return checks
+
+private def loadedChecks (compiled : Aiur.CompiledToplevel) (label : String) : List Check := Id.run do
+  let input : Aiur.G := .ofNat (goldilocksModulus - 1)
+  let suffix : Array Aiur.G := #[90, 91, 92]
+  let outputs := #[0, 1, 48, 65, 71, 80, 89, 97]
+  let mut checks : List Check := []
+  for count in [:17] do
+    let decls := wireDeclarations count
+    let h := ProgramPrefixTests.wireHeader (2 ^ 32 - 1) count
+    for functions in [1, 8] do
+      let raw := ProgramPrefixTests.payload h decls ++ (wordBytes functions).bytes.toArray.map Aiur.G.ofUInt8 ++ suffix
+      let ready := rawAdvice initial 0 2 raw.size (#[256, 65536] ++ raw)
+      checks := checks ++ [(s!"{label} actual loader to both program count guards/{count}/{functions}",
+        match snapshot compiled `ib_load #[0, .ofNat raw.size] ready (raw.size + 1) with
+        | .ok (loadedOut, loaded) =>
+          let pointer := loadedOut.getD 0 0
+          let expected := ObjectsDeclarations.storeDeclarations loaded decls
+          match skipStream loaded pointer (20 + 44 * count), observe compiled `is_run 83 #[pointer, input] outputs loaded (count + 3) with
+          | some finish, .ok (out, after) =>
+            out == #[pointer, input, h.entry.field, .ofNat count, expected.2, finish, .ofNat functions, 0] &&
+              after.map.size == 98 && memoryView after == memoryView expected.1 && preservesReads ready after && sameIo ready after &&
+              streamMatches after finish suffix.toList &&
+              readTable (bytecodeMemory after) expected.2.n count == some (decls.map DeclarationBytes.declaration).toArray
+          | _, _ => false
+        | _ => false)]
+  for functions in [0, 9, 2 ^ 32 - 1] do
+    let raw := ProgramPrefixTests.payload (ProgramPrefixTests.wireHeader 0 0) [] ++
+      (wordBytes functions).bytes.toArray.map Aiur.G.ofUInt8 ++ suffix
+    checks := checks ++ [(s!"{label} loaded program rejects function count/{functions}",
+      match snapshot compiled `ib_load #[0, .ofNat raw.size] (rawAdvice initial 0 0 raw.size raw) (raw.size + 1) with
+      | .ok (out, loaded) => failed (snapshot compiled `is_run #[out.getD 0 0, input] loaded 1) .assertFailed
+      | _ => false)]
+  for (arity, blocks, valid) in [(0, 1, true), (16, 64, true), (17, 1, false), (16, 0, false), (16, 65, false)] do
+    let h := wireFunction arity (2 ^ 32 - 1) blocks
+    let raw := h.bytes.toArray.map Aiur.G.ofUInt8 ++ suffix
+    checks := checks ++ [(s!"{label} loaded function header/{arity}/{blocks}",
+      match snapshot compiled `ib_load #[0, .ofNat raw.size] (rawAdvice initial 0 0 raw.size raw) (raw.size + 1) with
+      | .ok (out, loaded) =>
+        let pointer := out.getD 0 0
+        if valid then match skipStream loaded pointer 12,
+            observe compiled `is_read_functions 60 #[pointer, 1, input] #[19, 46, 63, 54] loaded with
+          | some finish, .ok (out, after) => out == #[h.arity.field, h.entry.field, h.blocks.field, finish] &&
+              unchanged loaded after && streamMatches after finish suffix.toList
+          | _, _ => false
+        else failed (snapshot compiled `is_read_functions #[pointer, 1, input] loaded 1) .assertFailed
+      | _ => false)]
+  for (name, prefixBytes, fieldBytes) in [
+      ("function count", ProgramPrefixTests.payload (ProgramPrefixTests.wireHeader 0 0) [], (wordBytes 1).bytes.toArray.map Aiur.G.ofUInt8),
+      ("function header", #[], (wireFunction 0 0 1).bytes.toArray.map Aiur.G.ofUInt8),
+      ("block header", #[], (wordBytes 64).bytes.toArray.map Aiur.G.ofUInt8)] do
+    for position in [:fieldBytes.size] do
+      let raw := prefixBytes ++ fieldBytes.set! position (.ofNat (2 ^ 32))
+      checks := checks ++ [(s!"{label} loader rejects non-byte {name}/{position}", failed
+        (snapshot compiled `ib_load #[0, .ofNat raw.size] (rawAdvice initial 0 0 raw.size raw) (raw.size + 1)) .u8RangeCheckFailed)]
+  return checks
+
+private def continuationChecks (compiled : Aiur.CompiledToplevel) (label : String) : Except String (List Check) := do
+  let hc ← code compiled
+  let (_, functions) ← function compiled `is_read_functions
+  let (_, blocks) ← function compiled `is_read_blocks
+  let (_, instruction) ← function compiled `is_read_instr
+  let fs ← stepOf functions
+  let bs ← stepOf blocks
+  let fakeInstruction := { instruction with body := (⟨#[.const 77], .return 0 (Array.replicate 10 3 ++ #[0])⟩ : Aiur.Bytecode.Block) }
+  let controlledBlock := withStep blocks { bs with ops := (bs.ops.toList.take 20).toArray, ctrl := .return 0 #[2, 35] }
+  let controlledFunction := withStep functions { fs with
+    ops := (fs.ops.toList.take 61).toArray ++ #[.const 88]
+    ctrl := .return 0 #[19, 46, 63, 54, 2, 71, 72, 73] }
+  let replaced := compiled.bytecode.functions.set! hc.instruction fakeInstruction |>.set! hc.blocks controlledBlock |>.set! hc.functions controlledFunction
+  let changed := { compiled with bytecode := { compiled.bytecode with functions := replaced } }
+  let self : Aiur.G := .ofNat (goldilocksModulus - 1)
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  let h := wireFunction 16 (2 ^ 32 - 1) 1
+  let (blockState, blockPointer) := storePrefix initial ((wordBytes 64).bytes.toArray.map Aiur.G.ofUInt8) finish
+  let (st, pointer) := storePrefix blockState (h.bytes.toArray.map Aiur.G.ofUInt8) blockPointer
+  let missing := compiled.bytecode.functions.size
+  let detachedBlock := withStep blocks { bs with ops := bs.ops.set! 19 (instructionCall missing) }
+  let detached := { compiled with bytecode := { compiled.bytecode with functions := compiled.bytecode.functions.set! hc.blocks detachedBlock } }
+  return [
+    (s!"{label} header certificates permit arbitrary downstream implementations", checkHeaderCode changed.bytecode hc),
+    (s!"{label} function continuation receives exact header and actual block Call outputs",
+      match snapshot changed `is_read_functions #[pointer, 1, self] st 3 with
+      | .ok (out, after) => out == #[h.arity.field, h.entry.field, h.blocks.field, blockPointer, self, self, finish, 88] &&
+          after.map.size == 74 && unchanged st after
+      | _ => false),
+    (s!"{label} block continuation receives exact self and actual instruction suffix",
+      success (snapshot changed `is_read_blocks #[blockPointer, 1, self] blockState 2) #[self, finish] blockState),
+    (s!"{label} header certificate does not imply next instruction Call success",
+      checkHeaderCode detached.bytecode { hc with instruction := missing } &&
+        failed (snapshot detached `is_read_blocks #[blockPointer, 1, self] blockState 2) (.invalidFunIdx missing))]
+
+end CodeHeaderTests
+
+namespace ScalarOperandTests
+
+open ObjectsScalars ObjectsOperands
+
+private def fieldBytes (n : Nat) : FieldBytes :=
+  ⟨.ofNat n, .ofNat (n / 256), .ofNat (n / 65536), .ofNat (n / 16777216),
+    .ofNat (n / 4294967296), .ofNat (n / 1099511627776), .ofNat (n / 281474976710656),
+    .ofNat (n / 72057594037927936)⟩
+
+private def code (compiled : Aiur.CompiledToplevel) : Except String OperandCode := do
+  let (reader, _) ← function compiled `ib_byte
+  let (field, _) ← function compiled `ib_field
+  let (scalar, _) ← function compiled `ib_scalar
+  let (operand, _) ← function compiled `ic_read_operand
+  return ⟨⟨reader, field, scalar, 0⟩, operand⟩
+
+/-- Mutate every certified operation/return slot and dispatch edge. This is
+test-only traversal, never a compiler or evaluator modification. -/
+private def mutations : Nat → Aiur.Bytecode.Block → Array (String × Aiur.Bytecode.Block)
+  | 0, _ => #[]
+  | depth + 1, b => Id.run do
+    let mut out := #[("control form", { b with ctrl := .return 99 #[] })]
+    for idx in [:b.ops.size] do
+      out := out.push (s!"op/{idx}", { b with ops := b.ops.set! idx (.const (.ofNat (2 ^ 32 + 123))) })
+      out := out.push (s!"short ops/{idx}", { b with ops := b.ops.extract 0 idx })
+      if let .call callee args size flag := b.ops.getD idx (.const 0) then
+        for (label, op) in [("callee", Aiur.Bytecode.Op.call (callee + 1) args size flag),
+            ("output count", .call callee args (size + 1) flag),
+            ("flag", .call callee args size (!flag)), ("extra argument", .call callee (args.push 0) size flag)] do
+          out := out.push (s!"call/{idx}/{label}", { b with ops := b.ops.set! idx op })
+        for arg in [:args.size] do
+          let changed := Aiur.Bytecode.Op.call callee (args.set! arg (args[arg]! + 1)) size flag
+          out := out.push (s!"call/{idx}/arg/{arg}", { b with ops := b.ops.set! idx changed })
+    out := out.push ("extra op", { b with ops := b.ops.push (.const 0) })
+    match b.ctrl with
+    | .return selector outputs =>
+      out := out.push ("return selector", { b with ctrl := .return (selector + 1) outputs })
+      out := out.push ("yield", { b with ctrl := .yield selector outputs })
+      out := out.push ("extra return", { b with ctrl := .return selector (outputs.push 0) })
+      for idx in [:outputs.size] do
+        out := out.push (s!"return/{idx}", { b with ctrl := .return selector (outputs.set! idx (outputs[idx]! + 1)) })
+        out := out.push (s!"short return/{idx}", { b with ctrl := .return selector (outputs.extract 0 idx) })
+    | .match idx cases fallback =>
+      out := out.push ("scrutinee", { b with ctrl := .match (idx + 1) cases fallback })
+      out := out.push ("no fallback", { b with ctrl := .match idx cases none })
+      for arm in [:cases.size] do
+        let (tag, branch) := cases.getD arm (0, ⟨#[], .return 0 #[]⟩)
+        out := out.push (s!"tag/{arm}", { b with ctrl := .match idx (cases.set! arm (tag + 99, branch)) fallback })
+        out := out.push (s!"short arms/{arm}", { b with ctrl := .match idx (cases.extract 0 arm) fallback })
+        out := out.push (s!"extra arm/{arm}", { b with ctrl := .match idx (cases.push (tag, branch)) fallback })
+        for (label, changed) in mutations depth branch do
+          out := out.push (s!"arm/{arm}/{label}", { b with ctrl := .match idx (cases.set! arm (tag, changed)) fallback })
+      if let some branch := fallback then
+        for (label, changed) in mutations depth branch do
+          out := out.push (s!"fallback/{label}", { b with ctrl := .match idx cases (some changed) })
+    | _ => pure ()
+    return out
+
+private def certificates (compiled : Aiur.CompiledToplevel) (label : String) : Except String (List Check) := do
+  let c ← code compiled
+  let (_, byteFn) ← function compiled `ib_byte
+  let (_, fieldFn) ← function compiled `ib_field
+  let (_, scalarFn) ← function compiled `ib_scalar
+  let (_, operandFn) ← function compiled `ic_read_operand
+  let mut checks := [(s!"{label} complete scalar/operand same-toplevel certificate", checkOperandCode compiled.bytecode c)]
+  for (name, f, accepts) in [
+      ("field", fieldFn, fun f => checkFieldReader f c.scalars.reader),
+      ("scalar", scalarFn, fun f => checkScalarReader f c.scalars.reader c.scalars.field),
+      ("operand", operandFn, fun f => checkOperandReader f c.scalars.reader c.scalars.scalar)] do
+    let metadata := { f with constrained := f.constrained.not, layout := { f.layout with auxiliaries := 999, lookups := 888 } }
+    checks := checks ++ [(s!"{label} {name} full body certificate", accepts f),
+      (s!"{label} {name} wrong input arity", !accepts { f with layout := { f.layout with inputSize := f.layout.inputSize + 1 } }),
+      (s!"{label} {name} evaluator-irrelevant metadata", accepts metadata)]
+    for (path, body) in mutations 3 f.body do
+      checks := checks ++ [(s!"{label} {name} certificate binds {path}", !accepts { f with body })]
+  for (name, idx, f) in [("byte", c.scalars.reader, byteFn), ("field", c.scalars.field, fieldFn),
+      ("scalar", c.scalars.scalar, scalarFn), ("operand", c.operand, operandFn)] do
+    let broken := { f with body := (⟨#[], .return 0 #[]⟩ : Aiur.Bytecode.Block) }
+    let changed := { compiled.bytecode with functions := compiled.bytecode.functions.set! idx broken }
+    checks := checks ++ [(s!"{label} bundle binds {name} implementation", !checkOperandCode changed c),
+      (s!"{label} bundle resolves {name} target", !checkOperandCode
+        { compiled.bytecode with functions := compiled.bytecode.functions.extract 0 idx } c)]
+  let (instruction, f) ← function compiled `is_read_instr
+  let broken := { f with body := (⟨#[], .return 0 #[]⟩ : Aiur.Bytecode.Block) }
+  checks := checks ++ [(s!"{label} leaf certificate does not validate instructions", checkOperandCode
+    { compiled.bytecode with functions := compiled.bytecode.functions.set! instruction broken } c)]
+  return checks
+
+private def scalarCodec (s : ScalarBytes) : Bool :=
+  match Codec.Internal.decode 64 0 s.bytes.toArray (Codec.Internal.readScalar objectsProfile) with
+  | .ok value => decide s.valid && Value.scalar value == s.atom.decode
+  | .error .nonCanonical => !decide s.valid
+  | _ => false
+
+private def scalarFixture (compiled : Aiur.CompiledToplevel) (label : String) (s : ScalarBytes) : Check :=
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  let (st, pointer) := storePrefix initial (s.bytes.toArray.map Aiur.G.ofUInt8) finish
+  let result := snapshot compiled `ib_scalar #[pointer] st 2
+  (label, scalarCodec s && if s.valid then
+    success result (s.flat ++ #[finish]) st && decodeAtom s.flat.toList == some s.atom
+    else failed result .assertFailed)
+
+private def fields : List Nat := [0, 1, 255, 256, 65535, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 63,
+  goldilocksModulus - 2, goldilocksModulus - 1, goldilocksModulus, goldilocksModulus + 1, 2 ^ 64 - 1]
+private def scalars : List ScalarBytes :=
+  [.boolean 0, .boolean 1, .boolean 2, .boolean 255, .word (wordBytes 0), .word (wordBytes (2 ^ 32 - 1))] ++
+    fields.map (fun n => .field (fieldBytes n)) ++
+    fields.flatMap (fun a => fields.map (fun b => .extension (fieldBytes a) (fieldBytes b)))
+
+private def scalarChecks (compiled : Aiur.CompiledToplevel) (label : String) : List Check := Id.run do
+  let mut checks := scalars.zipIdx.map fun (s, idx) => scalarFixture compiled s!"{label} scalar codec/layout/{idx}" s
+  for byte in [:256] do
+    checks := checks ++ [scalarFixture compiled s!"{label} Boolean byte/{byte}" (.boolean (.ofNat byte))]
+  for pos in [:4] do
+    for byte in [:256] do
+      checks := checks ++ [scalarFixture compiled s!"{label} Word literal byte/{pos}/{byte}" (.word (wordBytes (byte * 256 ^ pos)))]
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  for pos in [:8] do
+    for byte in [:256] do
+      let n := if pos < 4 then goldilocksModulus - 1 + byte * 256 ^ pos
+        else goldilocksModulus - 1 - (255 - byte) * 256 ^ pos
+      let w := fieldBytes n
+      let (st, pointer) := storePrefix initial (w.bytes.toArray.map Aiur.G.ofUInt8) finish
+      let actual := snapshot compiled `ib_field #[pointer] st 1
+      checks := checks ++ [(s!"{label} field canonical boundary byte/{pos}/{byte}",
+        n == natOfBytesLE w.bytes.toArray && w.value == n &&
+          if n < goldilocksModulus then success actual #[.ofNat n, finish] st else failed actual .assertFailed)]
+  for tag in [4:256] do
+    let (st, pointer) := storePrefix initial #[.ofNat tag] finish
+    checks := checks ++ [(s!"{label} unsupported scalar stops before payload/{tag}",
+      failed (snapshot compiled `ib_scalar #[pointer] st 1) .assertFailed)]
+  return checks
+
+private def operandFixture (compiled : Aiur.CompiledToplevel) (label : String) (locals : Aiur.G) (o : OperandBytes) : Check :=
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  let (st, pointer) := storePrefix initial (o.bytes.toArray.map Aiur.G.ofUInt8) finish
+  let result := snapshot compiled `ic_read_operand #[pointer, locals] st 3
+  let codec := Codec.Internal.decode 64 0 o.bytes.toArray (Codec.Internal.readOperand objectsProfile)
+  (label, if o.valid locals then success result (o.flat ++ #[finish]) st &&
+      decodeOperand o.flat.toList == some o.operand && (match codec with | .ok actual => actual == o.operand | _ => false)
+    else failed result .assertFailed)
+
+private def operandChecks (compiled : Aiur.CompiledToplevel) (label : String) : List Check := Id.run do
+  let mut checks := []
+  for locals in [:65] do
+    for index in [0, locals - 1, locals, locals + 1, 2 ^ 32 - 1] do
+      checks := checks ++ [operandFixture compiled s!"{label} local frame boundary/{locals}/{index}" (.ofNat locals) (.local (wordBytes index))]
+  for index in [:256] do
+    checks := checks ++ [operandFixture compiled s!"{label} local index byte/{index}" 64 (.local (wordBytes index))]
+  for locals in [2 ^ 31, 2 ^ 32 - 1] do
+    for index in [0, 64, locals - 1, locals, 2 ^ 32 - 1] do
+      checks := checks ++ [operandFixture compiled s!"{label} full u32 local/index/{locals}/{index}" (.ofNat locals) (.local (wordBytes index))]
+  for locals in [0, 64, goldilocksModulus - 1] do
+    checks := checks ++ [operandFixture compiled s!"{label} erased operand/full local field/{locals}" (.ofNat locals) .erased]
+    for (s, idx) in scalars.zipIdx do
+      checks := checks ++ [operandFixture compiled s!"{label} literal operand/full local field/{locals}/{idx}" (.ofNat locals) (.literal s)]
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  for tag in [3:256] do
+    let (st, pointer) := storePrefix initial #[.ofNat tag] finish
+    checks := checks ++ [(s!"{label} unsupported operand stops before payload/{tag}",
+      failed (snapshot compiled `ic_read_operand #[pointer, 64] st 1) .assertFailed)]
+  return checks
+
+private structure ReaderCase where
+  name : Lean.Name
+  bytes : List UInt8
+  extraArgs : Array Aiur.G
+  flat : Array Aiur.G
+  fuel : Nat
+
+private def readerCases : List ReaderCase :=
+  let field := fieldBytes (goldilocksModulus - 1)
+  let scalarCases : List (ScalarBytes × Nat) := [(.boolean 1, 1), (.word (wordBytes (2 ^ 32 - 1)), 1),
+    (.field field, 2), (.extension field (fieldBytes (goldilocksModulus - 2)), 2)]
+  [⟨`ib_field, field.bytes, #[], #[field.field], 1⟩] ++
+    scalarCases.map (fun (s, fuel) => ⟨`ib_scalar, s.bytes, #[], s.flat, fuel⟩) ++
+    [⟨`ic_read_operand, (OperandBytes.local (wordBytes 63)).bytes, #[64],
+      (OperandBytes.local (wordBytes 63)).flat, 1⟩,
+     ⟨`ic_read_operand, [2], #[64], OperandBytes.erased.flat, 1⟩] ++
+    scalarCases.map (fun (s, fuel) => ⟨`ic_read_operand, (OperandBytes.literal s).bytes, #[64],
+      (OperandBytes.literal s).flat, fuel + 1⟩)
+
+private def opFailed (actual : Except BytecodeError EvalState) (error : BytecodeError) : Bool :=
+  match actual with | .error found => reprStr found == reprStr error | _ => false
+
+private def failureChecks (compiled : Aiur.CompiledToplevel) (label : String) : Except String (List Check) := do
+  let mut checks := []
+  let finish : Aiur.G := .ofNat (goldilocksModulus - 2)
+  for (c, idx) in readerCases.zipIdx do
+    let (callee, _) ← function compiled c.name
+    let bytes := c.bytes.toArray.map Aiur.G.ofUInt8
+    let (st, pointer) := storePrefix initial bytes finish
+    let args := #[pointer] ++ c.extraArgs
+    let outputs := c.flat ++ #[finish]
+    let caller := { st with map := #[99] ++ args ++ #[101] }
+    let indices := (List.range args.size).toArray.map (· + 1)
+    checks := checks ++ [
+      (s!"{label} leaf minimum body fuel/{idx}", success (snapshot compiled c.name args st c.fuel) outputs st),
+      (s!"{label} leaf insufficient body fuel/{idx}", failed (snapshot compiled c.name args st (c.fuel - 1)) .outOfFuel),
+      (s!"{label} leaf Call insufficient fuel/{idx}", opFailed
+        (Aiur.Bytecode.Eval.evalOp compiled.bytecode c.fuel (.call callee indices outputs.size false) caller) .outOfFuel),
+      (s!"{label} leaf Call input arity/{idx}", opFailed
+        (Aiur.Bytecode.Eval.evalOp compiled.bytecode (c.fuel + 1) (.call callee (indices.push 0) outputs.size false) caller)
+        (.arityMismatch callee)),
+      (s!"{label} leaf Call argument register/{idx}", opFailed
+        (Aiur.Bytecode.Eval.evalOp compiled.bytecode (c.fuel + 1) (.call callee (indices.set! 0 99) outputs.size false) caller)
+        (.invalidValIdx 99))]
+    for size in [outputs.size - 1, outputs.size + 1] do
+      checks := checks ++ [(s!"{label} leaf Call output arity/{idx}/{size}", opFailed
+        (Aiur.Bytecode.Eval.evalOp compiled.bytecode (c.fuel + 1) (.call callee indices size false) caller)
+        .callOutputSizeMismatch)]
+    for flag in [false, true] do
+      checks := checks ++ [(s!"{label} leaf actual Call exact caller append/{idx}/{flag}",
+        match Aiur.Bytecode.Eval.evalOp compiled.bytecode (c.fuel + 1) (.call callee indices outputs.size flag) caller with
+        | .ok after => after.map == caller.map ++ outputs && unchanged caller after
+        | _ => false)]
+    for pos in [:bytes.size] do
+      let beforeBytes := bytes.extract 0 pos
+      let (short, shortPointer) := storeStream initial beforeBytes
+      let (bad, badPointer) := memStore initial #[2, bytes.getD pos 0, finish]
+      let (malformed, malformedPointer) := storePrefix bad beforeBytes (.ofNat badPointer)
+      let (dangling, danglingPointer) := storePrefix initial beforeBytes finish
+      checks := checks ++ [
+        (s!"{label} leaf truncated byte/{idx}/{pos}", failed
+          (snapshot compiled c.name (#[shortPointer] ++ c.extraArgs) short c.fuel) .unreachableAfterLayout),
+        (s!"{label} leaf malformed Cons/{idx}/{pos}", failed
+          (snapshot compiled c.name (#[malformedPointer] ++ c.extraArgs) malformed c.fuel) .unreachableAfterLayout),
+        (s!"{label} leaf dangling full-field pointer/{idx}/{pos}", failed
+          (snapshot compiled c.name (#[danglingPointer] ++ c.extraArgs) dangling c.fuel) (.invalidPointer 3 finish.n))]
+      for nonByte in [256, goldilocksModulus - 1] do
+        let forged := bytes.set! pos (.ofNat nonByte)
+        let ready := rawAdvice initial 4 0 forged.size forged
+        checks := checks ++ [(s!"{label} loader rejects non-byte leaf position/{idx}/{pos}/{nonByte}",
+          failed (snapshot compiled `ib_load #[4, .ofNat forged.size] ready (forged.size + 1)) .u8RangeCheckFailed)]
+  -- These deliberately forged memory fixtures document why the genuine-byte
+  -- premise matters. They are not admissible advice or native/AIR claims.
+  let index : Aiur.G := .ofNat (2 ^ 32 + 1)
+  let (localState, localPointer) := storePrefix initial #[0, index, 0, 0, 0] finish
+  let (wordState, wordPointer) := storePrefix initial #[1, 1, 256, 0, 0, 0] finish
+  let (fieldState, fieldPointer) := storePrefix initial #[256, 0, 0, 0, 0, 0, 0, 0] finish
+  checks := checks ++ [
+    (s!"{label} forged local can pass UInt32 guard but is not a decoded operand",
+      success (snapshot compiled `ic_read_operand #[localPointer, 2] localState 1) #[0, index, 0, 0, 0, 0, finish] localState &&
+        (decodeOperand [0, index, 0, 0, 0, 0]).isNone),
+    (s!"{label} forged Word literal passes raw reader but fails representation",
+      success (snapshot compiled `ic_read_operand #[wordPointer, 64] wordState 2) #[1, 1, 256, 0, 0, 0, finish] wordState &&
+        (decodeOperand [1, 1, 256, 0, 0, 0]).isNone),
+    (s!"{label} raw field packing does not establish genuine bytes",
+      success (snapshot compiled `ib_field #[fieldPointer] fieldState 1) #[256, finish] fieldState)]
+  return checks
+
+private def loadedChecks (compiled : Aiur.CompiledToplevel) (label : String) : List Check := Id.run do
+  let operands : List OperandBytes := [.local (wordBytes 0), .local (wordBytes 63), .local (wordBytes 64), .erased,
+    .literal (.boolean 0), .literal (.boolean 1), .literal (.boolean 2), .literal (.word (wordBytes (2 ^ 32 - 1))),
+    .literal (.field (fieldBytes (goldilocksModulus - 1))), .literal (.field (fieldBytes goldilocksModulus)),
+    .literal (.extension (fieldBytes (goldilocksModulus - 1)) (fieldBytes (goldilocksModulus - 2))),
+    .literal (.extension (fieldBytes 1) (fieldBytes goldilocksModulus))]
+  let mut checks := []
+  for locals in [0, 64] do
+    for (o, idx) in operands.zipIdx do
+      let values := (o.bytes ++ [255, 254]).toArray.map Aiur.G.ofUInt8
+      let base := (storeStream initial #[17, 18]).1
+      let ready := rawAdvice base 4 2 values.size (#[256, .ofNat (goldilocksModulus - 1)] ++ values ++ #[65536])
+      checks := checks ++ [(s!"{label} actual loaded operand with untouched suffix/{locals}/{idx}",
+        match snapshot compiled `ib_load #[4, .ofNat values.size] ready (values.size + 1) with
+        | .ok (out, loaded) => out.size == 1 && sameIo ready loaded && preservesReads ready loaded &&
+          streamMatches loaded (out.getD 0 0) values.toList &&
+          (match skipStream loaded (out.getD 0 0) o.bytes.length with
+          | some finish =>
+            let result := snapshot compiled `ic_read_operand #[out.getD 0 0, .ofNat locals] loaded 3
+            if o.valid (.ofNat locals) then
+              match result with
+              | .ok (actual, after) => actual == o.flat ++ #[finish] && unchanged loaded after &&
+                sameIo ready after && preservesReads ready after && streamMatches after finish [255, 254] &&
+                decodeOperand (actual.extract 0 6).toList == some o.operand
+              | _ => false
+            else failed result .assertFailed
+          | none => false)
+        | _ => false)]
+  return checks
+
+private def layoutChecks : List Check := Id.run do
+  let mut checks := []
+  for (label, flat, pads) in [
+      ("local", #[0, 7, 0, 0, 0, 0], [2, 3, 4, 5]),
+      ("Boolean", #[1, 0, 1, 0, 0, 0], [3, 4, 5]),
+      ("field", #[1, 2, 17, 0, 0, 0], [3, 4, 5]),
+      ("extension", #[1, 3, 17, 18, 0, 0], [4, 5]),
+      ("erased", #[1, 4, 4, 4, 4, 4], [2, 3, 4, 5])] do
+    checks := checks ++ [(s!"operand layout accepted/{label}", (decodeOperand flat.toList).isSome),
+      (s!"operand layout extra field/{label}", (decodeOperand (flat.push 0).toList).isNone)]
+    for pos in [:6] do
+      checks := checks ++ [(s!"operand layout short/{label}/{pos}", (decodeOperand (flat.extract 0 pos).toList).isNone)]
+    for pos in pads do
+      checks := checks ++ [(s!"operand layout padding/{label}/{pos}",
+        (decodeOperand (flat.set! pos (flat.getD pos 0 + 1)).toList).isNone)]
+  for pos in [2:6] do
+    checks := checks ++ [(s!"operand Word byte range/{pos}",
+      (decodeOperand ((#[1, 1, 255, 255, 255, 255] : Array Aiur.G).set! pos 256).toList).isNone)]
+  for tag in [2, 3, 4, 255, goldilocksModulus - 1] do
+    checks := checks ++ [(s!"operand outer tag/{tag}", (decodeOperand [.ofNat tag, 0, 0, 0, 0, 0]).isNone)]
+  checks := checks ++ [
+    ("operand Boolean noncanonical payload", (decodeOperand [1, 0, 2, 0, 0, 0]).isNone),
+    ("operand scalar unsupported tag", (decodeOperand [1, 5, 0, 0, 0, 0]).isNone),
+    ("operand full-field local index is not narrowed", (decodeOperand [0, .ofNat (2 ^ 32), 0, 0, 0, 0]).isNone)]
+  return checks
+
+end ScalarOperandTests
+
 public def suite : IO UInt32 := do
   IO.println "IxBy bytecode parser proof components"
   let result : Except String (List Check) := do
@@ -1260,6 +1949,14 @@ public def suite : IO UInt32 := do
     let prunedLoader ← loaderCode pruned
     let programCertificates ← ProgramPrefixTests.certificates compiled "full"
     let prunedProgramCertificates ← ProgramPrefixTests.certificates pruned "pruned"
+    let headerCertificates ← CodeHeaderTests.certificates compiled "full"
+    let prunedHeaderCertificates ← CodeHeaderTests.certificates pruned "pruned"
+    let headerContinuations ← CodeHeaderTests.continuationChecks compiled "full"
+    let prunedHeaderContinuations ← CodeHeaderTests.continuationChecks pruned "pruned"
+    let scalarCertificates ← ScalarOperandTests.certificates compiled "full"
+    let prunedScalarCertificates ← ScalarOperandTests.certificates pruned "pruned"
+    let scalarFailures ← ScalarOperandTests.failureChecks compiled "full"
+    let prunedScalarFailures ← ScalarOperandTests.failureChecks pruned "pruned"
     return shapes ++ bytes ++ wordChecks compiled ++ identities ++ comparisons ++ uniqueness ++ emptyChecks compiled ++
       declarations ++ declarationRuntime ++ declarationSuccessChecks compiled "full" ++ declarationSuccessChecks pruned "pruned" ++
       loaders ++ loaderFailures ++ prunedFailures ++ loaderSuccessChecks compiled "full" ++ loaderSuccessChecks pruned "pruned" ++
@@ -1267,7 +1964,17 @@ public def suite : IO UInt32 := do
       programCertificates ++ prunedProgramCertificates ++
       ProgramPrefixTests.successChecks compiled "full" ++ ProgramPrefixTests.successChecks pruned "pruned" ++
       ProgramPrefixTests.failureChecks compiled "full" ++ ProgramPrefixTests.failureChecks pruned "pruned" ++
-      ProgramPrefixTests.loadedChecks compiled "full" ++ ProgramPrefixTests.loadedChecks pruned "pruned" ++ [
+      ProgramPrefixTests.loadedChecks compiled "full" ++ ProgramPrefixTests.loadedChecks pruned "pruned" ++
+      headerCertificates ++ prunedHeaderCertificates ++
+      CodeHeaderTests.headerChecks compiled "full" ++ CodeHeaderTests.headerChecks pruned "pruned" ++
+      CodeHeaderTests.zeroChecks compiled "full" ++ CodeHeaderTests.zeroChecks pruned "pruned" ++
+      CodeHeaderTests.programChecks compiled "full" ++ CodeHeaderTests.programChecks pruned "pruned" ++
+      CodeHeaderTests.loadedChecks compiled "full" ++ CodeHeaderTests.loadedChecks pruned "pruned" ++
+      headerContinuations ++ prunedHeaderContinuations ++ scalarCertificates ++ prunedScalarCertificates ++
+      ScalarOperandTests.scalarChecks compiled "full" ++ ScalarOperandTests.scalarChecks pruned "pruned" ++
+      ScalarOperandTests.operandChecks compiled "full" ++ ScalarOperandTests.operandChecks pruned "pruned" ++
+      scalarFailures ++ prunedScalarFailures ++ ScalarOperandTests.layoutChecks ++
+      ScalarOperandTests.loadedChecks compiled "full" ++ ScalarOperandTests.loadedChecks pruned "pruned" ++ [
       ("pruned byte-reader certificate", checkByteReader byte 0),
       ("pruned u32-reader certificate with relocated callee", checkWordReader word reader 0),
       ("pruned identity-reader certificate with relocated callee", checkIdReader identity reader 0),

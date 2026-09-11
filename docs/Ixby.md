@@ -46,7 +46,7 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   The authenticated byte-stream invariant remains open.
 - `Aiur/ObjectsIdentity.lean`: compositional inlined-word and compiled ten-limb
   identity-reader proofs, including exact digest/member/tag, suffix preservation,
-  and actual Call semantics. Admission remains open.
+  and actual Call semantics. Authenticated whole-program binding remains open.
 - `Aiur/ObjectsEquality.lean` and `ObjectsUnique.lean`: exact compiled ID
   comparison and bounded duplicate traversal, tied to semantic table decoding
   and preserving caller state.
@@ -61,6 +61,15 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   and declaration-call contracts, with a derived constructor bound, exact
   continuation state, and checked loader composition. The suffix/function-table
   code and whole-program binding are not certified by this prefix check.
+- `Aiur/ObjectsCodeHeaders.lean`: checked function-count, function-header, and
+  block-header guards, exact zero-count Nil stores, and continuation/loader
+  composition. Instruction decoding and complete function-table admission remain open.
+- `Aiur/ObjectsScalars.lean`: complete checked field and scalar-literal readers,
+  exact canonical Goldilocks packing, Boolean rejection, concrete value layouts,
+  and same-toplevel Call contracts.
+- `Aiur/ObjectsOperands.lean`: complete checked local/literal/erased leaf readers,
+  exact local-index bounds and six-field layouts, caller-state preservation,
+  and composition with the actual checked loader. Lists and instructions remain open.
 - `Ix/Ixby/Validate.lean`: whole-image admission and bounded input validation.
 - `Ix/Ixby/Eval.lean`: total call/evaluate/return execution, fuel
   monotonicity, and uniqueness of successful results across fuel witnesses.
@@ -83,12 +92,14 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   native-output parity, and malformed-memory checks, without new proof workloads.
 - `Tests/IxbyObjectsTable.lean`: 191 table-layout, compiled parser/runner,
   store-preservation, and checked program/table-binding tests.
-- `Tests/IxbyObjectsParser.lean`: 6,680 checks covering full/pruned compilation
+- `Tests/IxbyObjectsParser.lean`: 23,832 checks covering full/pruned compilation
   certificates, byte/u32/identity execution, exact codec agreement, malformed
   cells, forged ranges/metadata, actual Call boundaries, the zero-count parser,
   exact ID comparison/duplicate traversal, complete bounded declaration parsing,
-  raw-advice loading, and the program header/declaration prefix with exact
-  allocation, continuation-state, and loader-composition checks.
+  raw-advice loading, program/header count guards, and function/block headers
+  with exact allocation, continuation-state, and loader-composition checks;
+  complete scalar/leaf-operand certificates, canonical field/Boolean rejection,
+  local bounds, flat layouts, codec agreement, and per-byte failure cases.
 
 The earlier mutable-register/word-stream prototype and its tests have been
 replaced, rather than maintained as a second ISA. The composition contract is
@@ -447,7 +458,20 @@ the full u32 entry, a constructor bound derived from the executed check, and
 the ordered table at its actual output pointer. The precise 73-register state
 passes to the original suffix/control, whose success is not assumed. A loader
 composition supplies the genuine-byte premise and preserves the suffix stream.
-Function-table admission and canonical whole-program binding, remaining resource bounds,
+Another 27 lemmas extend the actual program prefix through the nonzero function
+count bounded by eight, and certify function arity/block-count and block-local
+headers. They preserve exact live state, prove both zero-count Nil stores, and
+bind the next Calls while leaving their remaining behavior unrestricted.
+Another 40 lemmas certify complete field/scalar/leaf-operand readers. The actual
+field guard accepts exactly the eight-byte encodings below the Goldilocks modulus;
+packing then agrees with the natural little-endian codec value without reduction.
+Boolean, Word32, field, and extension literals have exact five-field layouts;
+local, literal, and erased operands have exact six-field layouts. Under a genuine
+u32 frame count, the executed local-index comparison is exact. Same-toplevel Calls
+preserve caller registers, memory, and I/O; actual successful loading supplies
+genuine bytes at an identified operand prefix and preserves the suffix stream.
+Operand-list/instruction decoding, complete block/function-table admission and validation,
+canonical whole-program binding, remaining resource bounds,
 initialization/full transitions, commitment agreement, and actual circuit/gadget
 refinement remain outstanding; checked representation alone is not execution verification.
 Object tests also found a shared let-hoisting capture bug; the
