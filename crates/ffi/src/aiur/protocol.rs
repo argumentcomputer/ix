@@ -1572,7 +1572,7 @@ fn prove_env_distributed(
     };
     if exec_only {
       let started = std::time::Instant::now();
-      pool.fill(usize::MAX, None);
+      pool.fill(usize::MAX, None)?;
       for at in 0..order.len() {
         drop(pool.supply(at)?);
         // Executed and measured; nothing more is asked of it.
@@ -1591,7 +1591,7 @@ fn prove_env_distributed(
 
     // Worker 0's output is the claim's; its walk calls into every worker,
     // so it executes first, with the window open behind it.
-    pool.fill(usize::MAX, None);
+    pool.fill(usize::MAX, None)?;
     pool.ensure(0, "round one")?;
     let output = pool.output();
     let (_, proof) = system.prove_record_supplier(
@@ -1669,11 +1669,7 @@ impl Workers<'_, '_> {
   /// far, else nothing (until something is measured only the concurrency
   /// ceiling bounds what runs ahead).
   fn charge_for(&self, worker: usize) -> usize {
-    if self.measured[worker] > 0 {
-      self.measured[worker]
-    } else {
-      self.largest
-    }
+    if self.measured[worker] > 0 { self.measured[worker] } else { self.largest }
   }
 
   /// Which run `worker` needs next, if any: its first, or its second when
@@ -1735,6 +1731,11 @@ impl Workers<'_, '_> {
   ) -> Result<(), String> {
     if self.resident[worker].is_none() {
       if !self.in_flight.iter().any(|(w, _)| *w == worker) {
+        // A required execution runs regardless, but retained records
+        // used after it make room first.
+        let step = self.next_use(worker);
+        let charge = self.charge_for(worker);
+        self.make_room(charge, step, None);
         self.start(worker, round);
       }
       self.settle(worker)?;
@@ -1758,13 +1759,58 @@ impl Workers<'_, '_> {
     }
   }
 
+  /// Moves the records of executions that have finished in, so their
+  /// slots are free and their charges are their measured sizes.
+  fn harvest(&mut self) -> Result<(), String> {
+    let done: Vec<usize> = self
+      .in_flight
+      .iter()
+      .filter(|(_, handle)| handle.is_finished())
+      .map(|(worker, _)| *worker)
+      .collect();
+    for worker in done {
+      self.settle(worker)?;
+    }
+    Ok(())
+  }
+
+  /// Releases retained records, furthest next use first, until `charge`
+  /// more bytes fit both the record budget and the process's resident
+  /// size beside `--max-ram`; only records used after step `step` and
+  /// other than `handed` are released. False when nothing more can be.
+  fn make_room(
+    &mut self,
+    charge: usize,
+    step: usize,
+    handed: Option<usize>,
+  ) -> bool {
+    let count = self.order.len();
+    loop {
+      let over_budget = self.used + charge > self.budget;
+      let over_rss =
+        process_rss_bytes().is_some_and(|rss| rss + charge > self.max_ram);
+      if !over_budget && !over_rss {
+        return true;
+      }
+      let evict = (0..count)
+        .filter(|&w| self.resident[w].is_some() && Some(w) != handed)
+        .filter(|&w| self.next_use(w) > step)
+        .max_by_key(|&w| self.next_use(w));
+      match evict {
+        Some(w) => self.release(w),
+        None => return false,
+      }
+    }
+  }
+
   /// Starts executions for the workers after step `at` in commit order —
   /// wrapping into the second round after the last — while at most `jobs`
-  /// run and the budget has room, evicting resident records used later
+  /// run and the budget has room, releasing resident records used later
   /// than the candidate when that makes room. `handed` is the worker whose
   /// record the prover holds and must not be evicted; `at` is `usize::MAX`
   /// before the first step.
-  fn fill(&mut self, at: usize, handed: Option<usize>) {
+  fn fill(&mut self, at: usize, handed: Option<usize>) -> Result<(), String> {
+    self.harvest()?;
     let count = self.order.len();
     let from = at.wrapping_add(1);
     for step in from..2 * count {
@@ -1778,23 +1824,12 @@ impl Workers<'_, '_> {
         continue;
       }
       let charge = self.charge_for(next);
-      // What the process actually occupies, not only what is accounted:
-      // an execution ahead must fit beside it.
-      if process_rss_bytes().is_some_and(|rss| rss + charge > self.max_ram) {
-        return;
-      }
-      while self.used + charge > self.budget {
-        let evict = (0..count)
-          .filter(|&w| self.resident[w].is_some() && Some(w) != handed)
-          .filter(|&w| self.next_use(w) > step)
-          .max_by_key(|&w| self.next_use(w));
-        match evict {
-          Some(w) => self.release(w),
-          None => return,
-        }
+      if !self.make_room(charge, step, handed) {
+        return Ok(());
       }
       self.start(next, round);
     }
+    Ok(())
   }
 
   /// The record at step `at` of the commit order, as the prover needs it:
@@ -1856,7 +1891,7 @@ impl Workers<'_, '_> {
         aiur::synthesis::Supplied::Shared(shared)
       },
     };
-    self.fill(at, Some(worker));
+    self.fill(at, Some(worker))?;
     Ok(supplied)
   }
 

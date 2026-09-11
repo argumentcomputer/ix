@@ -40,13 +40,15 @@ struct ColumnMutSlice<'a, 'b> {
   lookups: Option<&'a mut LookupRowMut<'b, G>>,
 }
 
-/// Whether witness builders skip the lookup witness and hand the prover
-/// zero-filled lookup values of the right shape. The CUDA backend derives
+/// Whether witness builders skip the lookup witness and hand the prover a
+/// shape-only lookup witness (`LookupValues::shape_only`), which any
+/// prover path that would read the payload refuses. The CUDA backend derives
 /// every lookup message from the committed trace through the constraint
 /// graph and never reads the host lookup witness, so building it is wasted
 /// work there. Enabled by `AIUR_TRACE_ONLY_LOOKUPS=1`; a prover that reads
-/// the host lookup witness (the CPU backend) produces an unbalanced proof
-/// under this setting.
+/// the host lookup witness (the CPU backend, or the CUDA backend's host
+/// fallback for a circuit it cannot evaluate on the device) fails instead of
+/// proving.
 pub fn trace_only_lookups() -> bool {
   static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
   *FLAG.get_or_init(|| {
@@ -270,14 +272,16 @@ impl Toplevel {
         .par_chunks_mut(width)
         .enumerate()
         .for_each(|(i, row)| populate(i, row, None));
-    } else {
-      let mut row_writers = builder.rows_mut();
-      rows_no_padding
-        .par_chunks_mut(width)
-        .zip(row_writers[..height_no_padding].par_iter_mut())
-        .enumerate()
-        .for_each(|(i, (row, lookups))| populate(i, row, Some(lookups)));
+      let trace = RowMajorMatrix::new(rows, width);
+      return (trace, LookupValues::shape_only(height, slot_arg_widths));
     }
+    let mut row_writers = builder.rows_mut();
+    rows_no_padding
+      .par_chunks_mut(width)
+      .zip(row_writers[..height_no_padding].par_iter_mut())
+      .enumerate()
+      .for_each(|(i, (row, lookups))| populate(i, row, Some(lookups)));
+    drop(row_writers);
     let trace = RowMajorMatrix::new(rows, width);
     (trace, builder.finish())
   }

@@ -1492,13 +1492,17 @@ fn prepare_aggr_io(
   ) {
     Ok(prepared) => Ok(prepared),
     Err(GatedProve::Split { peak, .. }) => Err(format!(
-      "{label}: no trace-shard count fits the {} B budget \
+      "{OVER_SLOT_BUDGET}{label}: no trace-shard count fits the {} B budget \
        (whole-execution peak {peak} B) — raise --max-ram",
       ctx.wrap_budget.unwrap_or(0)
     )),
     Err(_) => Err(format!("{label}: aggregate prove did not produce a proof")),
   }
 }
+
+/// Prefix of the error [`prepare_aggr_io`] returns when a node's execution
+/// does not fit the slot budget, so callers can tell that outcome apart.
+const OVER_SLOT_BUDGET: &str = "over the slot budget: ";
 
 /// The proving half of [`prove_aggr_io`].
 fn finish_aggr_io(
@@ -1624,21 +1628,23 @@ fn prove_range_tree(
   // No requested width: two leaves per node slot, so a slot's pipeline
   // always has a next leaf to execute while it proves one, and each leaf
   // is as large as that allows; a leaf over the slot budget fails its
-  // gate, and the fix is a smaller width.
-  let width = if ctx.range_width > 0 {
+  // gate, and a derived width is halved until the leaves fit.
+  let mut width = if ctx.range_width > 0 {
     ctx.range_width
   } else {
     shards.div_ceil(2 * ctx.range_jobs.max(1)).max(1)
   };
   let preamble = preamble_bytes(batch)?;
   let digest = *blake3::hash(&preamble).as_bytes();
-  let ranges: Vec<(usize, usize)> = (0..shards)
-    .step_by(width)
-    .map(|lo| (lo, (lo + width).min(shards)))
-    .collect();
+  let leaves_of = |width: usize| -> Vec<(usize, usize)> {
+    (0..shards)
+      .step_by(width)
+      .map(|lo| (lo, (lo + width).min(shards)))
+      .collect()
+  };
   eprintln!(
     "[aggregate] slot {slot_index}: range tree over {shards} shards: {} leaves of at most {width} shards, {} at a time",
-    ranges.len(),
+    leaves_of(width).len(),
     ctx.range_jobs
   );
   let self_claims = |node: &RangeNode| serialize_claims(&[&node.outer_claim]);
@@ -1710,23 +1716,41 @@ fn prove_range_tree(
     Ok(RangeNode { lo, hi, residual, statement, outer_claim, proof })
   };
 
-  let mut nodes = prove_range_level(
-    ranges,
-    ctx.range_jobs,
-    &|(lo, hi)| {
-      let proofs = proofs_slice_bytes(batch, lo, hi)?;
-      prepare_node(
-        RANGE_LEAF_SHAPE,
-        lo,
-        hi,
-        range_residual(batch, lo, hi),
-        [&preamble, &proofs],
-        [&[], &[]],
-        &[],
-      )
-    },
-    &finish_node,
-  )?;
+  let prove_leaves = |width: usize| {
+    prove_range_level(
+      leaves_of(width),
+      ctx.range_jobs,
+      &|(lo, hi)| {
+        let proofs = proofs_slice_bytes(batch, lo, hi)?;
+        prepare_node(
+          RANGE_LEAF_SHAPE,
+          lo,
+          hi,
+          range_residual(batch, lo, hi),
+          [&preamble, &proofs],
+          [&[], &[]],
+          &[],
+        )
+      },
+      &finish_node,
+    )
+  };
+  let mut nodes = loop {
+    match prove_leaves(width) {
+      Ok(nodes) => break nodes,
+      Err(error)
+        if ctx.range_width == 0
+          && width > 1
+          && error.starts_with(OVER_SLOT_BUDGET) =>
+      {
+        width /= 2;
+        eprintln!(
+          "[aggregate] slot {slot_index}: a leaf did not fit the slot budget; retrying with leaves of at most {width} shards"
+        );
+      },
+      Err(error) => return Err(error),
+    }
+  };
   while nodes.len() > 1 {
     let mut pairs = Vec::with_capacity(nodes.len().div_ceil(2));
     let mut carried = None;

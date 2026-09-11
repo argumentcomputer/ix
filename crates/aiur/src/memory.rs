@@ -163,6 +163,8 @@ impl Memory {
           .par_chunks_mut(width)
           .enumerate()
           .for_each(|(i, row)| populate(i, row, None));
+        let trace = RowMajorMatrix::new(rows, width);
+        return (trace, LookupValues::shape_only(height, slot_arg_widths));
       } else {
         let mut row_writers = builder.rows_mut();
         rows_no_padding

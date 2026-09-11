@@ -254,13 +254,68 @@ base-agnostic. Regression: `rbtree-map` suite (same-namespace lookups at
 
 Cost on Init: single record 9:16 (9:11 before), records +0.2 % queries.
 
+## Blake3 and LDE kernel work (fork commits ff3237c, f15a6c4)
+
+Two multi-stark CUDA commits (single-chunk Blake3 rows hashed one thread
+per message; wide NTTs fused at any height with fewer LDE memory passes)
+measured end to end on Init, same inputs and flags as the rows above, both
+stages verified, proof hashes unchanged:
+
+| | before (namespace kernel) | after |
+|---|---|---|
+| Stage 1, distributed 8 chunks, wall | 6:26 | **5:47** |
+| stage-1 commit per shard (mean) | 1.57 s | 1.32 s |
+| round two per shard (mean) | 3.58 s | 3.09 s |
+| Stage 1 GPU util-seconds | 194 | 149 |
+| Stage 1 peak host RSS | 177 GiB | 174 GiB |
+| Stage 2, `--range 0` (= 28), wall | 3:46 | **3:41** |
+| Stage 2 range tree | 223 s | 218 s |
+| Stage 2 GPU util-seconds | 91 | 74 |
+| end to end to a verified root | 10:12 | **9:28** |
+
+Stage 1 gains 10 % of wall from 16 % off the commit floor and 23 % less GPU
+busy time; Stage 2 gains little because its wall is execution and
+dependency bound (leaf executions 41 + 53 s, join 26 s), not kernel
+bound. The cold first wave of executions (~80–90 s before the first shard
+proves) is unchanged and is now the largest fixed cost in Stage 1.
+
+### Review fixes before the Mathlib run
+
+Five findings from the last review, all in place before Mathlib Stage 1
+restarts:
+
+- **Retained records made room for required executions.** The driver
+  refused to run an execution ahead when retained round-two records filled
+  the budget, but a required execution ran regardless, on top of them.
+  Now both paths release retained records (furthest next use first) until
+  the charge fits the budget and the process's actual RSS beside
+  `--max-ram`; only when nothing releasable remains does an execution ahead
+  wait. Finished executions are harvested on every fill, so their slots and
+  measured sizes are current when the next admission is decided.
+- **Stage 2 default width scales.** `--range 0` derives
+  `ceil(K / (2 · jobs))`; when a leaf at that width fails its slot-budget
+  gate the width is halved and the level retried, so the default follows
+  the machine's budget instead of failing on it. A requested `--range N`
+  is left to the caller.
+- **Device and host caps are separate.** With `AIUR_TRACE_SHARD_MAX_CELLS`
+  set, every trace-sharded proof is planned to committed cells and the plan
+  is then held to the host budget; before, a record whose whole-execution
+  peak fit the host budget was proven as one shard, ignoring the device
+  bound.
+- **Omitted lookup witnesses fail closed** (row 3 above).
+- **Impossible budgets fail before planning.** The planner's floor is the
+  record plus the byte tables at full height, calibrated; a budget under it
+  returns that floor without cutting a plan, and the halving search stops
+  at twice the widest circuit's width instead of running the cell budget
+  to zero.
+
 ## Status against the recommendations
 
 | # | recommendation | state |
 |---|---|---|
-| 1 | explicit host + device admission | open; `--cells` still a work cap, host budget unenforced, planner floor check pending |
+| 1 | explicit host + device admission | device bound (`AIUR_TRACE_SHARD_MAX_CELLS`) and host budget (`--max-ram`) are separate gates on every trace-sharded plan; the planner refuses a budget under the record plus the byte tables before it cuts anything |
 | 2 | allocation / pinning reuse | done in the fork (pool threshold, slab, staged upload); traces generated straight into pinned storage is the next step |
-| 3 | metadata-only lookup witness | prototype only (`AIUR_TRACE_ONLY_LOOKUPS`, skips writes, still allocates lazily); needs a backend capability with a fallback contract in multi-stark |
+| 3 | metadata-only lookup witness | `AIUR_TRACE_ONLY_LOOKUPS=1` hands the prover a shape-only witness (`LookupValues::shape_only`); the host stage-2 paths refuse it, so a backend that cannot evaluate the lookups on the device fails instead of proving an unbalanced argument |
 | 4 | lookahead in both two-call APIs | done: STARK on a worker thread, caller's iterator/closure on its own thread, one witness ahead |
 | 5 | chunk tuning for GPU consumption | measuring: 8 ordered chunks queued, 4 next |
 | 6 | record cache vs commitment retention | open |
@@ -271,12 +326,13 @@ Cost on Init: single record 9:16 (9:11 before), records +0.2 % queries.
 
 **Branch state.** ix `sb/aiur-trace-sharding-gpu` = `sb/aiur-distributed-execution`
 (e3a29720) plus: trace-only lookup witness under the CUDA backend
-(`AIUR_TRACE_ONLY_LOOKUPS=1`, prototype: it skips the host lookup writes but
-multi-stark has no capability/fallback contract for it yet) and the THP
-checklist; the budget-driven distributed driver; measured-size admission with
-the RSS gate. multi-stark `sb/trace-sharding-gpu` (ac144be2) = `sb/trace-sharding`
+(`AIUR_TRACE_ONLY_LOOKUPS=1`: a shape-only witness the host stage-2 paths
+refuse) and the THP checklist; the budget-driven distributed driver;
+measured-size admission with the RSS gate; the pointer namespace; the review
+fixes above. multi-stark `sb/trace-sharding-gpu` = `sb/trace-sharding`
 (9322ec06) plus pool retention, managed-slab control blocks, staged pinned
-uploads, and the STARK-on-worker-thread pipeline in `batch_round_one/two`.
+uploads, the STARK-on-worker-thread pipeline in `batch_round_one/two`, and
+`LookupValues::shape_only`.
 Build with `IX_CUDA=1 LIBCLANG_PATH=/usr/lib/llvm-18/lib lake build ix`; THP
 must be `always` (§1.1). Recipes: `bench/trace-sharding-gpu-2026-09-11/`.
 
@@ -287,7 +343,8 @@ first wave is admitted before any record is measured, so `--max-ram` does
 not bound it (Init at `--max-ram 100` still peaked at 189 GiB). Once records
 are measured, `--max-ram` bounds what runs ahead and what is retained for
 round two, and an execution ahead must also fit beside the process's actual
-RSS. Required executions are never refused. The hard limit is a cgroup cap;
+RSS. Required executions are never refused, but retained records used
+later are released first to make room for them. The hard limit is a cgroup cap;
 `prove-distributed.sh` retries with `--exec-jobs` halved on a kill. For
 Mathlib, choose `--exec-jobs` from the chunk sizes the manifest was cut for
 (`ix prove --distributed --exec-only --out-ixes` measures them and writes
@@ -301,9 +358,10 @@ ones.
 1. Stage 2 on the device is measured (above: 3:46 with two leaves and
    lookahead). What remains there: overlapping the first leaf's execution
    with the end of Stage 1, and the root's size growing with leaf size.
-2. Blake3 row hashing is 43 % of GPU kernel time and radix-8 NTT 41 %; the
-   commit is at that kernel floor (1.4 s per Init shard). Kernel work starts
-   with Blake3.
+2. Blake3 row hashing was 43 % of GPU kernel time and radix-8 NTT 41 %;
+   the first round of kernel work (fork ff3237c, f15a6c4) took the commit
+   from 1.57 s to 1.32 s per Init shard. A fresh nsys kernel breakdown is
+   the next step before more kernel work.
 3. Chunking costs 21 extra shards on Init (56 vs 35 for one record: padding
    and duplicated memoization), ~100 s of the batch. Chunk count and
    balance (4 vs 8 ordered) is a measurement, not a setting.

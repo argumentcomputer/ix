@@ -927,24 +927,37 @@ impl AiurSystem {
     );
 
     let peak = self.peak_prove_bytes(&query_record).peak;
-    if let Some(max) = max_bytes
-      && peak > max
-    {
-      if trace_shards {
-        let record_bytes = crate::execute::record_retained_bytes(&query_record);
-        // `AIUR_TRACE_SHARD_MAX_CELLS` plans to a committed-cell budget
-        // (a device-residency bound, e.g. VRAM) instead of the host peak.
-        let planned = match std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
+    // `AIUR_TRACE_SHARD_MAX_CELLS` is a device-residency bound (VRAM) in
+    // committed cells: with it every trace-sharded proof is planned to
+    // cells, whatever the host peak, and the plan is then held to the host
+    // budget separately.
+    let device_cells = trace_shards
+      .then(|| {
+        std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
           .ok()
           .and_then(|v| v.parse::<usize>().ok())
-        {
+      })
+      .flatten();
+    let max = max_bytes.unwrap_or(usize::MAX);
+    if device_cells.is_some() || peak > max {
+      if trace_shards {
+        let record_bytes = crate::execute::record_retained_bytes(&query_record);
+        let planned = match device_cells {
           Some(cells) => {
             let plan = self.plan_shards(&query_record, Some(cells));
             let shard_peak = (0..plan.num_shards())
               .map(|s| self.shard_peak_bytes(&plan, s, record_bytes))
               .max()
               .unwrap_or(0);
-            Ok((plan, shard_peak))
+            if shard_peak > max {
+              eprintln!(
+                "[trace-shards] the {}-shard plan for {cells} committed cells projects a {shard_peak} B host peak over the {max} B budget",
+                plan.num_shards()
+              );
+              Err(shard_peak)
+            } else {
+              Ok((plan, shard_peak))
+            }
           },
           None => self.plan_shards_within(&query_record, max),
         };

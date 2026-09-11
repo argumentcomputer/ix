@@ -463,7 +463,9 @@ impl AiurSystem {
       let ordered = previous_width < width
         || (previous_width == width && previous_end <= start);
       if !ordered {
-        return Err("memseg closure intervals are not sorted and disjoint".into());
+        return Err(
+          "memseg closure intervals are not sorted and disjoint".into(),
+        );
       }
       previous = (width, end);
     }
@@ -517,10 +519,32 @@ impl AiurSystem {
       return Ok((single, single_peak));
     }
 
+    // Every shard carries the record and the byte tables at full height;
+    // a budget under that alone fits no plan, however finely it cuts.
+    let tables = self.peak_prove_bytes_by(
+      |_, ct| match ct {
+        CircuitType::Bytes1 => 256,
+        CircuitType::Bytes2 => 65536,
+        _ => 0,
+      },
+      0,
+    );
+    let floor = calibrate_prover_rss(
+      tables.phase_witness.max(tables.phase_stage2).max(tables.phase_open)
+        + tables.preprocessed
+        + record_bytes,
+    );
+    if floor > max_bytes {
+      return Err(floor);
+    }
+
     let rows = circuit_rows(self, record);
     let widths = self.committed_widths();
     let total: usize =
       rows.iter().zip(&widths).map(|(&r, &w)| committed_cells(r, w)).sum();
+    // No shard can be narrower than the widest circuit's smallest piece,
+    // so a budget below that cuts the same plan as one at it.
+    let widest = widths.iter().copied().max().unwrap_or(1).max(1);
 
     // Halve the cell budget until a plan fits. The shard count need not
     // grow with every halving (a piece-height cap can pin it at one
@@ -530,7 +554,7 @@ impl AiurSystem {
     let mut cells = total / 2;
     let mut floor = single_peak;
     let (mut lo, mut best, mut best_peak) = loop {
-      if cells == 0 {
+      if cells < 2 * widest {
         return Err(floor);
       }
       let plan = self.plan_shards_from_rows(record, &rows, cells);
@@ -878,7 +902,8 @@ mod tests {
         .expect("readable plan file")
         .lines()
         .map(|l| {
-          let mut it = l.split_whitespace().map(|x| x.parse::<usize>().unwrap());
+          let mut it =
+            l.split_whitespace().map(|x| x.parse::<usize>().unwrap());
           (it.next().unwrap(), it.next().unwrap())
         })
         .unzip();
@@ -895,13 +920,14 @@ mod tests {
       .split(',')
       .map(|x| x.parse().unwrap())
       .collect();
-    let real: usize =
-      rows.iter().zip(&widths).map(|(&r, &w)| r * w).sum();
+    let real: usize = rows.iter().zip(&widths).map(|(&r, &w)| r * w).sum();
     println!("{n} circuits, real cells {real}");
     for &cells in &budgets {
       for cap in 20..=26 {
         // SAFETY: single-threaded test; the planner reads the override.
-        unsafe { std::env::set_var("AIUR_MAX_PIECE_LOG_HEIGHT", cap.to_string()) };
+        unsafe {
+          std::env::set_var("AIUR_MAX_PIECE_LOG_HEIGHT", cap.to_string())
+        };
         let shards = plan_rows(&rows, &widths, &types, cells);
         let mut activations = 0;
         let mut width = 0;
