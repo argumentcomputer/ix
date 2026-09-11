@@ -1,8 +1,14 @@
 # Trace-sharded Aiur on GPU: measured ladder and status
 
-For the current code pins, queue22 evidence, and Mathlib run sequence, read
-[the pre-Mathlib handoff](aiur-gpu-mathlib-handoff.md). This page preserves the
-earlier measurement ladder as well as the later results.
+**Result (2026-09-11):** Mathlib proven end to end on one RTX PRO 6000 in
+**2:45:22** (Stage 1 1:39:16 + Stage 2 1:06:06), a 6.0 MB single-STARK
+root verified over all 679,499 constants, against 4:36 on the 192-vCPU /
+1.5 TB CPU box. The pipeline is env-shard claims (min-cut manifest, trace
+shards per claim, executions ahead of one GPU prover), direct structural
+joins with a join executing ahead of the prover, and root wraps. See the
+Handoff section at the end for the commands. The earlier sections are the
+measurement ladder that led here, including the one-claim chunk model this
+branch started from and then set aside.
 
 2026-09-11. Bases: ix `sb/aiur-trace-sharding-gpu` (on `sb/aiur-distributed-execution`
 e3a29720) and multi-stark `sb/trace-sharding-gpu` (on `sb/trace-sharding` 9322ec0,
@@ -444,6 +450,42 @@ reconstructs every claim in Rust, binds each proof by claim digest and
 verifies all proofs in parallel. Mathlib, 128 claims: claims 1.6 s,
 verification 1.0 s, 59 s wall (env load). All 128 Stage 1 claims verify.
 
+## Mathlib Stage 2 on one GPU, and the end-to-end result
+
+From the 128 stored Stage 1 claims: `ix aggregate --ixe mathlib.ixe --ixes
+mathlib-mincut-128.ixes --direct-joins --structural-above 0 --trace-shards
+--jobs 1 --max-ram 200 --wrap-root <128 proofs>` (aggregate cache on,
+`--exec-ahead 1` default), under the 230G cap:
+
+| Mathlib Stage 2, 128 claims | |
+|---|---|
+| plan | 128 direct leaves, 127 structural joins, 3 root wraps (12 → 4 → 2 → 1 shards) |
+| wall | **1:06:06** |
+| trace shards | 937 over 130 nodes; joins 6–10 shards on 11–16 GB records at every level |
+| per join | ~32 s, steady across levels (a join's cost is its two children's verification plus its assumptions, not what is under them) |
+| peak host RSS | 66 GiB |
+| GPU | active 57 % of the wall; the lookahead kept one join executing behind the prover throughout |
+| root | 6.0 MB, one STARK; `ix verify --aggregate --structural-above 0` 4 s: 679,499/679,499 constants, 0 assumptions |
+
+`ix verify --aggregate --ixes` must be given the `--structural-above` the
+tree was proven with (the flag's help says so); at the default 4096 the
+expected subject tree folds differently and the claim digest does not
+match.
+
+| Mathlib, end to end | one RTX PRO 6000 (32 cores, 249 GiB) | CPU baseline, r8i.48xl-metal (192 vCPU, 1.5 TB, 3 NUMA lanes) |
+|---|---|---|
+| Stage 1 | 1:39:16 (128 claims) | 2:44 (246 leaves) |
+| Stage 2 | 1:06:06 (127 joins + 3 wraps) | 1:52 (direct joins) |
+| total proving | **2:45:22** | 4:36 |
+| root | 6.0 MB, 679,499 constants, 0 assumptions | 4.91 MB, same |
+| Stage 2 peak | 66 GiB | 1207 GiB slice peak |
+
+Where the next factor is, in order: the ~40 % of each proof the GPU sits
+idle (CPU phases the batch pipeline does not hide), fewer and larger env
+shards (a 64-way split needs a memory trial first: one 128-way record was
+42 GB), a larger trace-shard cell cap (the device sat at 67 GB of 96 GB),
+and a second device (a `--shards` range per process; nothing is shared).
+
 ## Status against the recommendations
 
 | # | recommendation | state |
@@ -460,61 +502,74 @@ verification 1.0 s, 59 s wall (env load). All 128 Stage 1 claims verify.
 ## Handoff
 
 **Branch state.** ix `sb/aiur-trace-sharding-gpu` = `sb/aiur-distributed-execution`
-(e3a29720) plus: trace-only lookup witness under the CUDA backend
-(`AIUR_TRACE_ONLY_LOOKUPS=1`: a shape-only witness the host stage-2 paths
-refuse) and the THP checklist; the budget-driven distributed driver;
-measured-size admission with the RSS gate; the pointer namespace; the review
-fixes above. multi-stark `sb/trace-sharding-gpu` = `sb/trace-sharding`
-(9322ec06) plus pool retention, managed-slab control blocks, staged pinned
-uploads, the STARK-on-worker-thread pipeline in `batch_round_one/two`, and
-`LookupValues::shape_only`.
-Build with `IX_CUDA=1 LIBCLANG_PATH=/usr/lib/llvm-18/lib lake build ix`; THP
-must be `always` (§1.1). Recipes: `bench/trace-sharding-gpu-2026-09-11/`.
+(e3a29720) plus 18 commits (2026-09-11): the trace-only lookup witness and
+THP checklist; the (parked) budget-driven chunk driver and its review
+fixes; `ix aggregate --wrap-root`; `ix prove --ixes --trace-shards
+--exec-jobs` (executions ahead of the prover, whichever record is ready);
+the two-lane Stage 2 scheduler (`--exec-ahead`); `ix verify --ixes` composed
+verdict natively in parallel; the pointer-namespace kernel reverted with its
+2^32 table guard kept. multi-stark fork `~/multi-stark-ts`
+`sb/trace-sharding-gpu` = `sb/trace-sharding` (9322ec06) plus pool
+retention, managed-slab control blocks, staged pinned uploads, the
+STARK-on-worker-thread pipeline, `LookupValues::shape_only`, and the Blake3
+and fused-NTT kernels (ff3237c, f15a6c4); ix pins it by rev once pushed.
+Build: `IX_CUDA=1 LIBCLANG_PATH=/usr/lib/llvm-18/lib lake build ix`. THP
+must be `always` (§1.1). Every proving command below runs under a user-scope
+cgroup cap (`systemd-run --user --scope -p MemoryMax=230G -p MemoryHigh=220G
+--`) with `AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24
+AIUR_TRACE_SHARD_MAX_CELLS=1500000000`. Scripts: `bench/trace-sharding-gpu-2026-09-11/`.
 
-**What to know about execution memory.** There is no execution-size model
-and no accounting inside the executor, by decision. `--exec-jobs` (default:
-one per core) bounds how many workers execute at once; on a cold start that
-first wave is admitted before any record is measured, so `--max-ram` does
-not bound its peak. Once records are measured, `--max-ram` bounds what
-runs ahead and what is retained: after every harvest the driver releases
-retained records, furthest next use first, until what is charged fits the
-budget (so an over-budget first wave is not carried through the barrier;
-the released records re-execute for round two, on the CPU, behind the
-prover), and an execution ahead must also fit beside the process's actual
-RSS. Required executions are never refused, but retained records used
-later are released first to make room for them. The hard limit is a cgroup cap;
-`prove-distributed.sh` retries with `--exec-jobs` halved on a kill. For
-Mathlib, choose `--exec-jobs` from the chunk sizes the manifest was cut for
-(`ix prove --distributed --exec-only --out-ixes` measures them and writes
-them into the manifest, where the prover reads them if present; that pass
-costs one execution of every chunk) and run under the cap. Ordered waits are
-accepted: round two proves in commit order; a slow chunk holds up later ready
-ones.
+**The pipeline, Mathlib.**
 
-**Not measured yet, in the order to take them.**
+```
+# 1. partition: min-cut (no --ordered), 128 shards, 65 s
+ix shard mathlib.ixe --shards 128 --out mathlib-mincut-128.ixes
 
-0. Done: the execute-ahead loop (5:04 on the min-cut four). Next on this
-   path: start Stage 2 joins as soon as their two children are proven
-   (the Stage 1/Stage 2 overlap, a scheduling question with independent
-   claims), and the Mathlib run on a min-cut manifest sized from
-   execution memory and `--exec-jobs`.
-1. Stage 2 on the device is measured (above: 3:46 with two leaves and
-   lookahead on the chunk batch; 2:51 with direct joins over four min-cut
-   claims).
-2. Blake3 row hashing was 43 % of GPU kernel time and radix-8 NTT 41 %;
-   the first round of kernel work (fork ff3237c, f15a6c4) took the commit
-   from 1.57 s to 1.32 s per Init shard. A fresh nsys kernel breakdown is
-   the next step before more kernel work.
-3. Chunking costs 21 extra shards on Init (56 vs 35 for one record: padding
-   and duplicated memoization), ~100 s of the batch. Chunk count and
-   balance (4 vs 8 ordered) is a measurement, not a setting.
-4. The sppark NTT experiment (`aiur-gpu-upstream-review.md`) is bounded and
-   legitimate, but a swapped NTT can give at most about a 2× win on the NTT
-   itself, which is ~41 % of kernel time inside a commit that is ~1.4 s per
-   Init shard: on the order of 0.3 s per commit, ~10 % of the Init prove,
-   and at Mathlib scale (~25× the shards) still only a few minutes of wall
-   clock. Take it after the above unless kernel time has become dominant.
-5. Multi-GPU: one process per device with the preamble exchanged through
-   files needs nothing from the protocol; the driver is single-device.
-6. Trace generation straight into pinned memory and event-pipelined
-   uploads: only if a profile shows the staging copy on the critical path.
+# 2. Stage 1: one claim per shard, trace-sharded, executions ahead of the
+#    GPU prover; every proof is persisted and indexed as it lands, and a
+#    rerun with --skip-proven reuses them
+ix prove --ixe mathlib.ixe --ixes mathlib-mincut-128.ixes --trace-shards \
+  --retention regenerate --max-ram 200 --exec-jobs 4 --skip-proven
+#    prints "claim <digest>" and the proof address per shard: 1:39:16,
+#    peak 170 GiB; --exec-jobs is the memory knob (records in flight)
+
+# 3. check the claims (59 s, all of it env load)
+ix verify --ixe mathlib.ixe --ixes mathlib-mincut-128.ixes <128 proofs>
+
+# 4. Stage 2: direct structural joins, one join executing ahead of the
+#    prover, root wrapped until it is one STARK; the aggregate cache
+#    resumes a killed run at its last join
+ix aggregate --ixe mathlib.ixe --ixes mathlib-mincut-128.ixes --direct-joins \
+  --structural-above 0 --trace-shards --jobs 1 --max-ram 200 --wrap-root <128 proofs>
+#    1:06:06, peak 66 GiB, 6.0 MB root
+
+# 5. root verify (4 s); --structural-above must match step 4
+ix verify --aggregate --structural-above 0 --ixe mathlib.ixe \
+  --ixes mathlib-mincut-128.ixes <root>
+```
+
+**What to know.**
+
+- Memory: Stage 1 holds `--exec-jobs` records (14–42 GB each on Mathlib)
+  beside one prover (~60 GB host working set); Stage 2 holds one prover plus
+  `--exec-ahead` join records (11–16 GB). No model, no accounting: the
+  knobs are those two counts and the cgroup cap is the backstop. Under
+  trace shards the aggregate scheduler's static per-shape RAM weights gate
+  nothing (they describe whole CPU proofs).
+- Retention is `regenerate` on every real plan: round two rebuilds each
+  trace shard from the record (hidden behind the previous shard's STARK)
+  and commits it again (not hidden: ~a quarter of Stage 1's GPU time).
+  Retaining stage 1 would need every shard's ~50 GB LDE and tree resident
+  across the barrier. Trace-only lookups force regenerate because the CUDA
+  retain path reads the host lookup witness.
+- The GPU is idle ~40 % inside each proof (witness at the start of each
+  round, regeneration, the barrier, host lookup construction); that, not
+  scheduling, is the next Stage 1 lever. Then: fewer, larger env shards
+  (memory trial first), a larger cell cap (67 of 96 GB used), a second
+  device (`--shards a-b` per process).
+- The chunk model (`ix prove --distributed`, one claim, records in one
+  batch) is measured above and parked: same proving work as env shards on
+  the same partition, three times the host memory, a barrier, no
+  claim-level resume. Its uncommitted trim is in a git stash.
+- Stage 1/Stage 2 overlap is now a scheduling question: a join needs only
+  its two children, so `ix aggregate` could start on claims as they land.

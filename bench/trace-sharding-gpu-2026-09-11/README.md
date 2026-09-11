@@ -23,3 +23,22 @@ AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 \
     --cells 1500000000 --max-ram 200 --texray --no-index
 ix verify --ixe init.ixe --ixes init-1.ixes <batch address>
 ```
+
+## Env-shard pipeline (afternoon and evening of 2026-09-11)
+
+The runs behind the env-shard sections of `docs/aiur-gpu-plan-status.md`.
+Queue scripts in `~/benchdata/trace-shards-gpu/` (Init) and
+`~/benchdata/mathlib-gpu/` (Mathlib); each stage runs under the cgroup cap
+with the child-PID watchdog and the GPU/RSS sampler from `runlib.sh`.
+
+| script | what |
+|---|---|
+| `queue26.sh` / `queue27.sh` | Init as 4 / 8 ordered env-shard claims: Stage 1, direct-join Stage 2 |
+| `queue28.sh` | the same on `init-mincut-4.ixes` (`ix shard init.ixe --shards 4`) |
+| `queue29–31.sh` | Stage 2 with `--wrap-root` (once, then until one shard) |
+| `queue32.sh` | Stage 1 with `--exec-jobs 4` (executions ahead of the prover) |
+| `queue33.sh` | Init end to end on the reverted (namespace-free) kernel |
+| `queue34.sh` | Init end to end with the two-lane Stage 2 scheduler and ready-order Stage 1 |
+| `run-env-mathlib.sh` | Mathlib Stage 1 (128 min-cut claims, `--exec-jobs 4`, cap retry) |
+| `verify-native.sh` | the native parallel composed verdict on Init and Mathlib |
+| `run-mathlib-stage2.sh` | Mathlib Stage 2 from the stored claims, `--wrap-root`, root verify |
