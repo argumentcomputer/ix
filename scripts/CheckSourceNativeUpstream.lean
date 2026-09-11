@@ -57,11 +57,11 @@ def main (args : List String) : IO UInt32 := cli "source native upstream check f
           "linked upstream native result or representation disagrees"
         for key in ["saved_registers", "stack", "caller_frame"] do
           need ((← field result key) == toJson true) s!"linked upstream native {key} failed"
-    need (objects == 2) "upstream native object inventory drifted"
+    need (objects == 3) "upstream native object inventory drifted"
     inventory := inventory.mergeSort (· ≤ ·)
     for output in [first, second] do
       need (((← output.readDir).toList.map (·.fileName) |>.mergeSort (· ≤ ·)) == inventory) "upstream native complete file inventory drifted"
     for file in inventory do
       need ((← IO.FS.readBinFile (first / file)) == (← IO.FS.readBinFile (second / file)))
         s!"fresh upstream native artifact differs: {file}"
-    IO.println "source native upstream check ok: five unchanged entries, two fresh complete artifact sets, two computational objects, corruption/fallback and ABI checks"
+    IO.println "source native upstream check ok: five unchanged entries, two fresh complete artifact sets, three computational objects, capture transport/corruption/fallback and ABI checks"

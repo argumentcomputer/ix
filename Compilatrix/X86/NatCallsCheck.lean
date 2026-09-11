@@ -29,12 +29,13 @@ def evalContext (source : IxIR2.Program) (context : IxIR2.Validate.Context) : Ix
 
 structure Output (source : IxIR2.Program) (context : IxIR2.Validate.Context) (schema : Schema) where
   limits : Limits
+  captureMode : CaptureMode
   sourceStats : IxIR2.Validate.Stats
   sourceAccepted : IxIR2.Validate.validate context source = .ok sourceStats
   arity : source.main.signature.params.size = 0
   nonempty : source.main.blocks.isEmpty = false
   residual : Residual
-  lowered : lower source schema limits = .ok residual
+  lowered : lower source schema limits captureMode = .ok residual
   number : Nat
   evaluated : residual.evaluate 1024 = .ok number
   word : Word
@@ -62,13 +63,13 @@ inductive CheckError where
   deriving Repr
 
 def select (source : IxIR2.Program) (context : IxIR2.Validate.Context) (schema : Schema)
-    (limits : Limits := {}) : Except CheckError (Output source context schema) := do
+    (limits : Limits := {}) (captureMode : CaptureMode := .captureFree) : Except CheckError (Output source context schema) := do
   match sourceAccepted : IxIR2.Validate.validate context source with
   | .error error => throw (.source error)
   | .ok sourceStats =>
     if arity : source.main.signature.params.size = 0 then
       if nonempty : source.main.blocks.isEmpty = false then
-        match lowered : lower source schema limits with
+        match lowered : lower source schema limits captureMode with
         | .error error => throw (.lowering error)
         | .ok residual =>
           match evaluated : residual.evaluate 1024 with
@@ -87,7 +88,7 @@ def select (source : IxIR2.Program) (context : IxIR2.Validate.Context) (schema :
                       if balanced : reclaimed.heap.allocs = reclaimed.heap.frees then
                         if valid : residual.target.wellFormed = true then
                           return {
-                            limits, sourceStats, sourceAccepted, arity, nonempty, residual, lowered,
+                            limits, captureMode, sourceStats, sourceAccepted, arity, nonempty, residual, lowered,
                             number, evaluated, word, exactWord, physical, physicalRun, observation,
                             reclaimed, remaining, releaseRun, empty, balanced,
                             target := ⟨residual.target, valid⟩, targetProduced := rfl }
@@ -112,6 +113,16 @@ theorem Output.refinesSuccessfulRun {source context schema} (output : Output sou
   rw [stores, values, output.exactWord]
   exact output.observation
 
+/-- Every successful physical run has the same complete result release,
+including the captured PAP and its retained constructor graph. -/
+theorem Output.reclaimsSuccessfulRun {source context schema} (output : Output source context schema)
+    {control heap : Nat} {result : IxIR2.Eval.Result}
+    (execution : IxIR2.Eval.runMain (evalContext source context) .physical source control heap = .ok result) :
+    IxIR2.Eval.releaseShared 10000 result.store result.value = .ok (output.reclaimed, output.remaining) ∧
+      output.reclaimed.heap.live = 0 ∧ output.reclaimed.heap.allocs = output.reclaimed.heap.frees := by
+  obtain ⟨_, stores, values⟩ := output.refinesSuccessfulRun execution
+  exact ⟨by rw [stores, values]; exact output.releaseRun, output.empty, output.balanced⟩
+
 structure Object (source : IxIR2.Program) (context : IxIR2.Validate.Context) (schema : Schema) where
   selected : Output source context schema
   stream : Stream.Certified selected.target
@@ -120,12 +131,20 @@ structure Object (source : IxIR2.Program) (context : IxIR2.Validate.Context) (sc
   entry : input.entryBlock = selected.target.program.entry
   object : ELF.Certified input
 
+def CaptureMode.policy : CaptureMode → String
+  | .captureFree => "closed-unary-nat-calls/1"
+  | .staticNat => "closed-static-capture-nat-calls/1"
+
+def CaptureMode.loweringVersion : CaptureMode → UInt32
+  | .captureFree => 4
+  | .staticNat => 8
+
 def Output.emit {source context schema} (output : Output source context schema)
     (root : Ixon.Address) (name : String) : Except String (Object source context schema) := do
   let stream ← (Stream.encode output.target).mapError reprStr
   let input : ELF.Input := {
     encoded := stream.output, entryBlock := output.target.program.entry, exportName := name,
-    provenance := .ixir1Policy root 4 1 }
+    provenance := .ixir1Policy root output.captureMode.loweringVersion 1 }
   let object ← (ELF.writeChecked input).mapError reprStr
   return { selected := output, stream, input, encoded := rfl, entry := rfl, object }
 

@@ -4,7 +4,7 @@ import Compilatrix.X86.NatCallsSim
 namespace Compilatrix.Coverage.UpstreamNative
 open Lean Compilatrix.X86 Compilatrix.X86.NatCalls
 
-def policy : String := "closed-unary-nat-calls/1"
+def policy : String := "upstream-closed-nat/2"
 
 def schema (source : Source) (attached : source.Attached) : Except String NatCalls.Schema := do
   let ids ← Upstream.natIds source
@@ -22,7 +22,10 @@ def expressionJson : NatCalls.Expr → Json
 
 def parameterJson : NatCalls.Param → Json
   | .nat => Json.mkObj [("kind", toJson "nat")]
-  | .closure address => Json.mkObj [("kind", toJson "known-capture-free-pap"), ("function", toJson address)]
+  | .closure address none => Json.mkObj [("kind", toJson "known-capture-free-pap"), ("function", toJson address)]
+  | .closure address (some expression) => Json.mkObj [("kind", toJson "known-static-capture-pap"),
+      ("function", toJson address), ("capture", expressionJson expression)]
+  | .staticNat expression => Json.mkObj [("kind", toJson "static-nat"), ("value", expressionJson expression)]
   | .erased => Json.mkObj [("kind", toJson "erased")]
 
 def residualJson (residual : NatCalls.Residual) : Json :=
@@ -77,17 +80,26 @@ def snapshot {source context schema} (object : NatCalls.Object source context sc
   for (name, limits) in [("zero-depth", { depth := 0 : NatCalls.Limits }),
       ("zero-functions", { functions := 0 : NatCalls.Limits }),
       ("zero-instructions", { instructions := 0 : NatCalls.Limits })] do
-    match NatCalls.select source context schema limits with
+    match NatCalls.select source context schema limits selected.captureMode with
     | .error (.lowering .budget) => fallback := fallback.push (Json.mkObj [
         ("name", toJson name), ("reason", toJson "budget"), ("path", toJson "checked-baseline-ixir2")])
     | _ => throw "native budget fallback changed"
+  if selected.captureMode == .staticNat then
+    match NatCalls.select source context schema { captureFuel := 0 } .staticNat with
+    | .error (.lowering .budget) => fallback := fallback.push (Json.mkObj [
+        ("name", toJson "zero-capture-fuel"), ("reason", toJson "budget"), ("path", toJson "checked-baseline-ixir2")])
+    | _ => throw "native capture budget fallback changed"
+    match NatCalls.select source context schema with
+    | .error (.lowering .capturedPap) => fallback := fallback.push (Json.mkObj [
+        ("name", toJson "capture-free-policy"), ("reason", toJson "capturedPap"), ("path", toJson "checked-baseline-ixir2")])
+    | _ => throw "capture-free policy boundary changed"
   for (name, initial) in [("misaligned-stack", core 0x8000 1), ("insufficient-stack", core 0x8008 1 32)] do
     match certifyExecution object initial 100 with
     | .error _ => fallback := fallback.push (Json.mkObj [("name", toJson name),
         ("reason", toJson "execution-condition"), ("path", toJson "no-native-execution-certificate")])
     | .ok _ => throw "invalid native stack admitted"
   return Json.mkObj [
-    ("format", toJson "compilatrix/upstream-native/1"), ("selector", toJson policy),
+    ("format", toJson "compilatrix/upstream-native/1"), ("selector", toJson selected.captureMode.policy),
     ("representation", toJson "closed shared unary Nat constructors to exact UInt64"),
     ("runtime_arguments", toJson (0 : Nat)), ("schema", Json.mkObj [("zero", toJson schema.zero), ("succ", toJson schema.succ)]),
     ("residual", residualJson selected.residual), ("typed_program_diagnostic", toJson (reprStr selected.target.program)),
@@ -98,7 +110,7 @@ def snapshot {source context schema} (object : NatCalls.Object source context sc
       ("rcops", toJson (0 : Nat)), ("result_bytes", toJson (8 : Nat)), ("result_release", toJson "unboxed word; no heap root")]),
     ("text", byteJson object.stream.output.text), ("text_bytes", toJson object.stream.output.text.size),
     ("block_offsets", toJson (object.stream.output.blockOffsets.map id)),
-    ("symbol", toJson object.input.exportName), ("lowering_version", toJson (4 : Nat)), ("pass_policy_version", toJson (1 : Nat)),
+    ("symbol", toJson object.input.exportName), ("lowering_version", toJson selected.captureMode.loweringVersion.toNat), ("pass_policy_version", toJson (1 : Nat)),
     ("object", byteJson object.object.bytes), ("object_bytes", toJson object.object.bytes.size),
     ("object_identity", toJson (Ixon.Address.blake3 object.object.bytes)),
     ("executions", Json.arr executions), ("fallbacks_and_rejections", Json.arr fallback)]
@@ -109,16 +121,13 @@ def run (input : Upstream.Input) : Except String CaseResult := do
   | .ok attached, .nat number =>
     let observed ← Upstream.observe source attached number
     let schema ← schema source attached
-    match NatCalls.select attached.target.artifact.program attached.target.artifact.validationContext schema with
-    | .error (.lowering .capturedPap) =>
-      if source.name != "upstream-captureClosed" then throw "unexpected captured-PAP native fallback"
-      let failure := Json.mkObj [("stage", toJson "x86-selection"), ("code", toJson "capturedPap"),
-        ("root", toJson source.root), ("message", toJson "closed Nat selector requires capture-free known PAPs")]
-      return Upstream.result input "ixir2" failure observed.summary (some attached) observed.stages
-        (native := Json.mkObj [("selector", toJson policy), ("selected", toJson false), ("fallback", toJson "checked-baseline-ixir2")])
+    let selected := match NatCalls.select attached.target.artifact.program attached.target.artifact.validationContext schema with
+      | .error (.lowering .capturedPap) => NatCalls.select attached.target.artifact.program attached.target.artifact.validationContext schema {} .staticNat
+      | result => result
+    match selected with
     | .error error => throw s!"upstream computational native selection failed: {repr error}"
     | .ok selected =>
-      if selected.number != number || !["upstream-applyClosed", "upstream-letClosed"].contains source.name then
+      if selected.number != number || !["upstream-applyClosed", "upstream-captureClosed", "upstream-letClosed"].contains source.name then
         throw "upstream native accepted inventory or source value drifted"
       let root := IxIR1.Optimizer.graphRoot attached.source.artifact.targetArtifacts attached.source.artifact.main
       let object ← selected.emit root "compilatrix_main"

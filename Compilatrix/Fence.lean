@@ -7185,6 +7185,27 @@ and explicit execution certificates compose with the original source bridge. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.X86.NatCalls.sourceObjectRefines
 
+/-! C3's static Nat captures preserve exact initializer values and complete
+baseline reclamation under the existing closed translation-validation contract. -/
+
+/-- info: 'Compilatrix.X86.NatCalls.Expr.closed_evaluate' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.Expr.closed_evaluate
+
+/-- info: 'Compilatrix.X86.NatCalls.checkCapture' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.checkCapture
+
+/-- info: 'Compilatrix.X86.NatCalls.StaticCapture.evaluates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.StaticCapture.evaluates
+
+/-- info: 'Compilatrix.X86.NatCalls.Output.reclaimsSuccessfulRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.Output.reclaimsSuccessfulRun
+
+/-- info: 'Compilatrix.X86.NatCalls.sourceObjectReclaims' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.NatCalls.sourceObjectReclaims
+
 /-! N3's first scalar slice uses universal source/body, frame, call and
 object contracts. Source-indexed theorems retain the existing hash boundary. -/
 

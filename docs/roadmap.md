@@ -55,11 +55,12 @@ explicit until their corresponding obligations are discharged.
 
 ### C3: upstream source progression
 
-Delivered: checked equal-erased-block reuse, two unchanged
+Delivered: checked equal-erased-block reuse, three unchanged
 [computational native entries](source-native-upstream.md), and
-[retained measurements](performance/native-reverse-2026-09-09/README.md#c3-unchanged-upstream-computations).
-Addition and the Std slice now reach recorded source-certificate failures;
-captured closures retain physical fallback. Further source progression must
+[retained measurements](performance/native-reverse-2026-09-09/README.md#c3-unchanged-upstream-computations)
+for the original two entries. `captureClosed` now reaches certified ELF with
+exact static Nat capture transport and complete baseline reclamation. Addition
+and the Std slice reach recorded source-certificate failures. Further source progression must
 retain original bytes/writer pins, exact stage failures, source agreement,
 reclamation, fresh artifacts, and affected negative neighbors. N3/PERF2 govern
 broader native computation.
@@ -89,8 +90,9 @@ source-to-ELF theorem derives application and exact reclamation, including
 dead initializer slots. Nine source exports, 171 source/application/object
 runs, 135 artifact corruptions, and 1,494 linked native calls cover captures
 zero, seven, and the maximum Word across projection, branches, and helpers.
-Allocating calls, runtime/heap captures, general occupied heaps, broader
-recursion, and unchanged C3 captured-closure progression remain separate.
+Allocating calls, runtime/heap captures, general occupied heaps, and broader
+recursion remain separate. C3 also admits the unchanged closed captured
+computation under its supplied-state translation-validation contract.
 
 Acceptance retained for extensions beyond the delivered scalar fragment:
 
@@ -407,7 +409,7 @@ belong in those references.
 | Validated source and O1 | [Source preservation](simulation-strategy.md), owned IxIR₁, checked [HPT](hpt-certificates.md), and five [shrinking consumers](optimizer-harness.md). Source sharing/oracle premises remain explicit; the optimized universal counter law is `frees ≤ allocs`. |
 | Baseline IxIR₂ and R1–R4 | [Checked CFG lowering](ixir2-spec.md), physical baseline transport, selected shared reuse, fallback, reclamation, allocation/free comparison, and RC/peak-live bounds in the accepted compiler domain. |
 | C1/N1 | [Bounded coverage](source-coverage.md) and synthetic exact-Word scalar native entries, with complete fresh-process artifacts. |
-| C2/C3 | [Upstream closures](source-coverage.md) reach checked physical execution; two [unchanged computations](source-native-upstream.md) reach certified ELF and retained measurements. General source/recursor support remains bounded. |
+| C2/C3 | Three [unchanged computations](source-native-upstream.md), including a static Nat capture, reach certified ELF with full baseline reclamation; the original two retain performance measurements. General source/recursor support remains bounded. |
 | D1/D2/R5 | [Closed fold recovery](source-recursion.md) and [shared maps across calls](source-call-reuse.md), including source/resource laws and v1 suspended reservations. General nested/mutual recursion remains open. |
 | Static unique reuse | [Consuming list reversal](source-unique-reuse.md) for every accepted finite Nat list, with checked fallback, zero RC, reuse, and complete release. |
 | Native unique reversal | [Closed native lists](source-native-unique.md) of at most 64 exact Words. Production emission is certified; the family's original source interface ends at typed execution. |

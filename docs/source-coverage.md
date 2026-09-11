@@ -5,7 +5,7 @@ compiles fixed Ixon inputs through the actual validated pipeline and observes
 each executable stage. The separate Lean checker runs it twice in fresh
 processes, compares every artifact byte, checks the reviewed
 [matrix](../fixtures/source-coverage/expected.json), and independently inspects
-the five native exits, including two unchanged upstream computations.
+the six native exits, including three unchanged upstream computations.
 
 ## Coverage matrix
 
@@ -30,7 +30,7 @@ The final five rows are [pinned upstream Lean exports](../fixtures/ixon-upstream
 | `std-contact` | `1bc7e2215a1967d8` | Ixon | — | usage: `freezeNeeded` |
 | `std-failure-closure` | `131533e96baa7f50` | addressed IxIR₀, before source certification | — | erasure validation: missing `Covered` at root |
 | `upstream-applyClosed` | `b81b754f02c1b632` | ELF + native check | 3 | — |
-| `upstream-captureClosed` | `5628cfe1b4f959fb` | baseline IxIR₂ | 2 | closed Nat selector: `capturedPap` |
+| `upstream-captureClosed` | `5628cfe1b4f959fb` | ELF + native check | 2 | — |
 | `upstream-letClosed` | `6c737171f1a3c482` | ELF + native check | 4 | — |
 | `upstream-addClosed` | `799b7939dcc3c158` | addressed IxIR₀, before source certification | — | erasure validation: missing `Covered` at dependency `1ce12e12485a4793…` |
 | `upstream-recClosed` | `1248f5d1b9eb3c50` | addressed IxIR₀, before source certification | — | erasure validation: missing `Covered` at root |
@@ -142,11 +142,13 @@ manifest and piece byte. All five original exports, including the neighboring
 constant reconstruction.
 
 Checked baseline IxIR₂ remains recorded in full with its addressed IxIR₁ root
-and HPT records. C3 additionally selects `applyClosed` and `letClosed` under the
-[closed Nat call policy](source-native-upstream.md). Both retain real native
-successors and direct calls, exact source results, and complete baseline heap
-reclamation. `captureClosed` retains that baseline and a precise captured-PAP
-fallback. These entries are closed computations; they do not take runtime inputs.
+and HPT records. C3 additionally selects `applyClosed`, `captureClosed`, and
+`letClosed` under the [closed Nat call policies](source-native-upstream.md).
+All three retain native successors and direct calls, exact source results,
+and complete baseline heap reclamation. The captured entry uses a separate
+static Nat policy that preserves its initializer expression through known
+closure parameters. The original capture-free policy still rejects it with
+`capturedPap`. These entries are closed computations with no runtime inputs.
 
 ## Reviewed production transition
 
@@ -192,8 +194,10 @@ it does not serialize proofs. IxIR₂ JSON is a diagnostic without a decoder,
 content address, or persistent cache role. The existing codec milestone
 remains necessary before independently addressed IxIR₂ storage.
 
-Native objects retain the actual addressed IxIR₁ graph root and lowering/pass
-policy versions `1/1`. GNU readelf and objdump independently inspect them.
+Native objects retain the actual addressed IxIR₁ graph root. Lowering/pass
+policy versions are `1/1` for the synthetic scalar entries, `4/1` for the
+capture-free upstream entries, and `8/1` for `captureClosed`. GNU readelf and
+objdump independently inspect them.
 On x86-64 Linux the C harness links each object, checks its returned Nat, and
 requires a non-executable stack.
 

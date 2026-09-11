@@ -236,7 +236,8 @@ def result (input : Input) (stage : String) (failure observation : Json)
       ("name", toJson source.name), ("origin", toJson "upstream-lean"), ("root_kind", toJson "constant"),
       ("root", toJson source.root), ("source_constants", toJson source.constants.length),
       ("last_accepted_stage", toJson stage), ("rejection", failure), ("observation", observation),
-      ("optimization_policy", toJson (if object.isSome then "baseline-ixir2; closed-unary-nat-calls/1" else "baseline-only")),
+      ("optimization_policy", toJson (if object.isSome then "baseline-ixir2; " ++
+        (native.getObjValAs? String "selector").toOption.getD "unknown" else "baseline-only")),
       ("provenance", input.provenance),
       ("ir1_root", match compiled with
         | none => Json.null

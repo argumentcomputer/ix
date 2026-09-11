@@ -11,9 +11,9 @@ these bytes directly through `Catalog.load`.
 
 | Entry | Constants | Piece bytes | Upstream kernel | Compilatrix outcome |
 | --- | ---: | ---: | --- | --- |
-| `applyClosed` | 6 | 662 | 5/5 accepted | Baseline IxIR₂, Nat 3 |
-| `captureClosed` | 6 | 666 | 5/5 accepted | Baseline IxIR₂, Nat 2 |
-| `letClosed` | 6 | 670 | 5/5 accepted | Baseline IxIR₂, Nat 4 |
+| `applyClosed` | 6 | 662 | 5/5 accepted | Certified ELF, Nat 3 |
+| `captureClosed` | 6 | 666 | 5/5 accepted | Certified ELF with a static Nat capture, Nat 2 |
+| `letClosed` | 6 | 670 | 5/5 accepted | Certified ELF, Nat 4 |
 | `addClosed` | 19 | 3072 | 16/16 accepted | Addressed IxIR₀; erasure validation lacks dependency `Covered` |
 | `recClosed` | 6 | 796 | 5/5 accepted | Erasure validation lacks a `Covered` certificate |
 

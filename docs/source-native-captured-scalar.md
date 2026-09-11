@@ -48,9 +48,10 @@ wrapping.
 
 These initializer bounds constrain the compiler's closed evaluation. They
 are not a general occupied-heap capacity theorem or a native heap allocator.
-Runtime captures, captured heap objects, allocating native bodies, general
-recursion, and the unchanged upstream C3 captured-closure fixture retain
-their existing boundaries.
+Runtime captures, captured heap objects, allocating native bodies, and general
+recursion retain their existing boundaries. The unchanged upstream C3
+`captureClosed` fixture has a separate [closed Nat contract](source-native-upstream.md)
+with exact constructor capture transport and supplied-state execution certificates.
 
 ## ABI and proof chain
 

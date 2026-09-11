@@ -1,4 +1,4 @@
-{"policy": "closed-unary-nat-calls/1",
+{"policy": "upstream-closed-nat/2",
  "format": "compilatrix/source-native-upstream-report/1",
  "cases":
  [{"source_constants": 6,
@@ -44,11 +44,7 @@
    "snapshot": "upstream-captureClosed.json",
    "root_kind": "constant",
    "root": "5628cfe1b4f959fb116661fc50ae8e9e4bfa470ac5d0e639a75b9d23aed12953",
-   "rejection":
-   {"stage": "x86-selection",
-    "root": "5628cfe1b4f959fb116661fc50ae8e9e4bfa470ac5d0e639a75b9d23aed12953",
-    "message": "closed Nat selector requires capture-free known PAPs",
-    "code": "capturedPap"},
+   "rejection": null,
    "provenance":
    {"toolchain": "leanprover/lean4:v4.33.1",
     "source_pin": "git:ix@6f18ea907b78d06f7dc0917c43beb385561c35f4",
@@ -59,7 +55,7 @@
     "members_root": "b540312a765a85bea6bfecc321c84a0d3ab9384aff1496707c519a7168505bfa",
     "content_root": "f45a88c0c41dcc241a4a46ebc98953291f7c81eda7bd11c49978cb65ea82c969"},
    "origin": "upstream-lean",
-   "optimization_policy": "baseline-only",
+   "optimization_policy": "baseline-ixir2; closed-static-capture-nat-calls/1",
    "observation":
    {"reclaimed": {"reuses": 0, "rcops": 11, "live": 0, "frees": 5, "allocs": 5},
     "peak_live_nodes": 5,
@@ -67,9 +63,9 @@
     "heap_work": 5,
     "heap": {"reuses": 0, "rcops": 8, "live": 3, "frees": 2, "allocs": 5},
     "control_steps": 15},
-   "object": null,
+   "object": "upstream-captureClosed.o",
    "name": "upstream-captureClosed",
-   "last_accepted_stage": "ixir2",
+   "last_accepted_stage": "elf",
    "ir1_root": "85e7908d73603431fbf07e4a7b9fe12ab920d8a64f6fc9db9f5416b3741ee1ae",
    "hpt_roots":
    ["a12bed2f5a56dd313641c970e32c01c21753d76ae8bab35e1c39c9e55937e043",
