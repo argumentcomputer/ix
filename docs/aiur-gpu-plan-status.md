@@ -175,6 +175,62 @@ cgroup cap is the hard limit, and the recipe halves `--exec-jobs` on a
 kill. For Mathlib set `--exec-jobs` from the chunk sizes the manifest was
 cut for, and run under the cap.
 
+## Stage 2 on the device (range tree over the 56-shard batch)
+
+`ix aggregate --range 12 --trace-shards --jobs 1 --max-ram 100`, each node
+trace-sharded to 1.5e9 cells (`AIUR_TRACE_SHARD_MAX_CELLS`), one node at a
+time. Root 8.05 MB, `ix verify --aggregate` 1.2 s, 56,621 constants
+certified.
+
+| node | wall | execution (CPU) | round one | round two | shards |
+|---|---:|---:|---:|---:|---:|
+| range leaf ×5 (12, 12, 12, 12, 8 shards) | 39–49 s | 15–19 s | 9–12 s | 15–18 s | 5–6 |
+| join ×4 | 30–38 s | 12–15 s | 7–9 s | 11–14 s | 4–5 |
+| root | 19 s | 7 s | 5 s | 7 s | 2 |
+| tree | 372 s (6:16 wall) | 145 s | 92 s | 134 s | 46 |
+
+Host peak 30 GiB (the CPU model's per-node projection of 63–74 GiB is
+more than 2× high), VRAM peak 56 GB, GPU active 41 %: idle exactly during
+each node's execution, since the aggregate scheduler has no lookahead. A
+join verifying two proofs costs ~30 s against ~45 s for a leaf verifying
+twelve, so the fixed floor per node (preamble replay, child verification,
+the node's own pipeline start) is ~25 s and each shard verification
+~1.5 s; floors are ~250 s of the 372 s. Fewer nodes is the lever: see the
+`--range 28` / `--range 56` rows below. The same pipeline as Stage 1
+(execute node k+1 while node k proves) would recover most of the 41 %
+idle; the tree's parallel leaves buy nothing on one GPU.
+
+The 6:16 above was measured at THP `madvise` (a reboot had reset it). With
+THP `always`, under a 230 GiB user-scope cgroup cap:
+
+| tree | nodes | wall | tree | host peak | root |
+|---|---|---:|---:|---:|---:|
+| `--range 12` | 5 leaves, 4 joins, root | 5:28 | 325 s | 31 GiB | 8.05 MB, verified |
+| `--range 28` | 2 leaves (90, 98 s), join (56 s), root (24 s) | 4:32 | 269 s | 44 GiB | verified |
+| `--range 56` | not a tree: width = shard count took the whole-wrap path; one 25-shard wrap, 40 MB | 3:16 | — | 62 GiB | not comparable |
+
+| one leaf (56) + root, lookahead build | leaf executed 90 s (exposed), proven 190 s; root 54 s | 4:08 | 245 s | 62 GiB | 16.6 MB root, verified |
+
+Fewer nodes wins up to the point where the pipeline has nothing to
+overlap: one leaf leaves its whole execution exposed and its root grows
+(16.6 MB against 8 MB). The range is therefore not a per-machine constant:
+`--range 0` with `--trace-shards` derives the width as ⌈shards / 2·jobs⌉,
+two leaves per node slot (one slot per GPU), so a slot always executes its
+next leaf while proving one and each leaf is as large as that allows; a
+leaf over the slot budget fails its gate or the cgroup cap and the recipe
+halves the width. On this box that is 28, the measured best. Node
+execution is pipelined one node ahead of proving within each level
+(`prove_range_level`).
+
+| `--range 28`, lookahead | leaf executions 40 + 53 s, the second overlapped with the first leaf's proof | 3:46 | 223 s | 58 GiB | verified |
+
+End to end on this box, Init as one claim: Stage 1 6:18 + Stage 2 3:46 =
+10:04 to a verified root, against 47:40 (env shards) / 54:01 (trace
+shards) on the 64-core CPU box. Stage 2's GPU was active ~45 % of its
+wall: the first leaf's execution and the join/root dependencies remain
+exposed; the next lever is executing the first leaf while Stage 1's last
+shards prove, which needs the two commands to share one pipeline.
+
 ## Status against the recommendations
 
 | # | recommendation | state |
@@ -219,10 +275,9 @@ ones.
 
 **Not measured yet, in the order to take them.**
 
-1. Stage 2 on the device: `ix aggregate --range N --trace-shards` over the
-   distributed batch has only CPU numbers (25:45 for the 71-shard batch on
-   the 64-core box). It is the larger unknown end to end; the aggregate
-   command takes its cell budget from `AIUR_TRACE_SHARD_MAX_CELLS`.
+1. Stage 2 on the device is measured (above: 3:46 with two leaves and
+   lookahead). What remains there: overlapping the first leaf's execution
+   with the end of Stage 1, and the root's size growing with leaf size.
 2. Blake3 row hashing is 43 % of GPU kernel time and radix-8 NTT 41 %; the
    commit is at that kernel floor (1.4 s per Init shard). Kernel work starts
    with Blake3.

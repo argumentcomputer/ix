@@ -5,8 +5,11 @@ sampler() { local PID=$1 OUT=$2; while kill -0 $PID 2>/dev/null; do echo "$(date
 # run TAG BIN ARGS...: prove under time -v with the child watched.
 run() { local tag=$1 bin=$2; shift 2
   echo "=== $tag $(date)"
-  env AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 /usr/bin/time -v $bin "$@" > init-gpu-$tag.log 2>&1 &
-  local TPID=$!; sleep 2; local PID=$(pgrep -P $TPID | head -1); [ -z "$PID" ] && PID=$TPID
+  # Under a user-scope cgroup cap: an overrun is a clean kill (exit 137).
+  env AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 \
+    systemd-run --user --scope -q -p MemoryMax=${CAP:-230G} -p MemoryHigh=${CAP_HIGH:-220G} -- \
+    /usr/bin/time -v $bin "$@" > init-gpu-$tag.log 2>&1 &
+  local TPID=$!; sleep 3; local PID=$(pgrep -f "^$bin " | head -1); [ -z "$PID" ] && PID=$TPID
   sampler $PID init-gpu-$tag-util.log & local S=$!; watchdog $PID init-gpu-$tag.log; wait $TPID; wait $S
   grep -E "Elapsed|Maximum resident|WATCHDOG|panicked|record budget" init-gpu-$tag.log
   local A=$(grep -oE "^[0-9a-f]{64}$" init-gpu-$tag.log | head -1); echo "$tag proof $A"

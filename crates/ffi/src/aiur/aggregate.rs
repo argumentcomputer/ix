@@ -1621,13 +1621,14 @@ fn prove_range_tree(
   }
   let started = Instant::now();
   let shards = batch.preamble.headers.len();
-  // No requested width: as few leaves as there are node slots, so each
-  // slot proves one leaf and a leaf is as large as the slot budget allows;
-  // a leaf over the budget fails its gate, and the fix is a smaller width.
+  // No requested width: two leaves per node slot, so a slot's pipeline
+  // always has a next leaf to execute while it proves one, and each leaf
+  // is as large as that allows; a leaf over the slot budget fails its
+  // gate, and the fix is a smaller width.
   let width = if ctx.range_width > 0 {
     ctx.range_width
   } else {
-    shards.div_ceil(ctx.range_jobs.max(1)).max(1)
+    shards.div_ceil(2 * ctx.range_jobs.max(1)).max(1)
   };
   let preamble = preamble_bytes(batch)?;
   let digest = *blake3::hash(&preamble).as_bytes();
