@@ -435,6 +435,15 @@ root; on a four-leaf tree the root join and the wraps cannot overlap, so
 the Mathlib tree (127 joins, wide bottom levels) is where the lookahead
 pays.
 
+### `ix verify --ixes` composed verdict, natively and in parallel (commit 3ba6a656)
+
+The Lean composed verdict rebuilt each shard claim on one core (~15 s per
+Mathlib shard; the 128-claim check was killed after 35 min). Ported from
+`sb/cluster` (eacdfe24): the native Stage 2 entry's `verify_only` mode
+reconstructs every claim in Rust, binds each proof by claim digest and
+verifies all proofs in parallel. Mathlib, 128 claims: claims 1.6 s,
+verification 1.0 s, 59 s wall (env load). All 128 Stage 1 claims verify.
+
 ## Status against the recommendations
 
 | # | recommendation | state |
