@@ -140,6 +140,41 @@ theorem mem_store_load (st : EvalState) (flat : Array Aiur.G) :
     dsimp only
     rw [index_append_new _ _ _ absent]
 
+/-- Number of allocated cells at one exact width. Content-deduplicated stores
+may reuse a cell; they increase this count by at most one. -/
+def bucketSize (st : EvalState) (width : Nat) : Nat :=
+  ((st.memory.getByKey width).getD default).size
+
+theorem mem_store_bounds (st : EvalState) (flat : Array Aiur.G) :
+    (memStore st flat).2 ≤ bucketSize st flat.size ∧
+      bucketSize (memStore st flat).1 flat.size ≤ bucketSize st flat.size + 1 := by
+  unfold memStore
+  dsimp only
+  split
+  · rename_i index present
+    exact ⟨Nat.le_of_lt (((st.memory.getByKey flat.size).getD default).validIndices flat present).1,
+      Nat.le_succ _⟩
+  · refine ⟨Nat.le_refl _, ?_⟩
+    simp only [bucketSize, index_key_self, Option.getD_some]
+    unfold IndexMap.size IndexMap.insert
+    split <;> simp
+
+theorem mem_store_io (st : EvalState) (flat : Array Aiur.G) :
+    (memStore st flat).1.ioBuffer = st.ioBuffer := by
+  unfold memStore
+  dsimp only
+  split <;> rfl
+
+/-- A store cannot allocate in a different width bucket. -/
+theorem mem_store_other_bucket (st : EvalState) (flat : Array Aiur.G) (width : Nat)
+    (different : flat.size ≠ width) :
+    bucketSize (memStore st flat).1 width = bucketSize st width := by
+  unfold memStore
+  dsimp only
+  split
+  · rfl
+  · simp only [bucketSize, index_key_other _ _ _ _ different]
+
 /-- Extensional preservation of all successfully decoded cells. Unreachable
 malformed cells do not have to become well-typed for this relation to hold. -/
 def Extends (before after : Heap) : Prop :=

@@ -40,13 +40,27 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   establishing reconstruction success and the declaration table remains open.
 - `Aiur/ObjectsStore.lean` and `ObjectsTable.lean`: actual bytecode-store
   preservation and checked concrete-table binding to canonical program bytes.
-  The parser, complete interpreter transitions, and AIR links remain open.
+  Admission, complete interpreter transitions, and AIR links remain open.
 - `Aiur/ObjectsParser.lean`: structurally checked byte/u32 reader contracts,
   byte-prefix preservation, and the zero-count declaration parser proof.
-  The recursive nonzero parser and authenticated byte-stream invariant remain open.
+  The authenticated byte-stream invariant remains open.
 - `Aiur/ObjectsIdentity.lean`: compositional inlined-word and compiled ten-limb
   identity-reader proofs, including exact digest/member/tag, suffix preservation,
-  and actual Call semantics. Duplicate traversal and admission remain open.
+  and actual Call semantics. Admission remains open.
+- `Aiur/ObjectsEquality.lean` and `ObjectsUnique.lean`: exact compiled ID
+  comparison and bounded duplicate traversal, tied to semantic table decoding
+  and preserving caller state.
+- `Aiur/ObjectsDeclarations.lean`: complete bounded declaration-parser and Call
+  contracts, including exact byte-codec identities, field-limit/duplicate
+  rejection, table construction, and state preservation.
+- `Aiur/ObjectsAdmission.lean`: checked raw-advice reader and loader contracts,
+  genuine-byte stream construction, allocation/frame bounds, and composition
+  with a declaration prefix. Metadata/address and initial storage bounds are
+  explicit; authenticated whole-program admission remains open.
+- `Aiur/ObjectsProgramPrefix.lean`: actual `is_run` magic/revision, entry/count,
+  and declaration-call contracts, with a derived constructor bound, exact
+  continuation state, and checked loader composition. The suffix/function-table
+  code and whole-program binding are not certified by this prefix check.
 - `Ix/Ixby/Validate.lean`: whole-image admission and bounded input validation.
 - `Ix/Ixby/Eval.lean`: total call/evaluate/return execution, fuel
   monotonicity, and uniqueness of successful results across fuel witnesses.
@@ -69,9 +83,12 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   native-output parity, and malformed-memory checks, without new proof workloads.
 - `Tests/IxbyObjectsTable.lean`: 191 table-layout, compiled parser/runner,
   store-preservation, and checked program/table-binding tests.
-- `Tests/IxbyObjectsParser.lean`: 1,112 checks covering full/pruned compilation
+- `Tests/IxbyObjectsParser.lean`: 6,680 checks covering full/pruned compilation
   certificates, byte/u32/identity execution, exact codec agreement, malformed
-  cells, forged ranges, actual Call boundaries, and the zero-count parser.
+  cells, forged ranges/metadata, actual Call boundaries, the zero-count parser,
+  exact ID comparison/duplicate traversal, complete bounded declaration parsing,
+  raw-advice loading, and the program header/declaration prefix with exact
+  allocation, continuation-state, and loader-composition checks.
 
 The earlier mutable-register/word-stream prototype and its tests have been
 replaced, rather than maintained as a second ISA. The composition contract is
@@ -409,7 +426,28 @@ reader, and zero-count parser contracts, with executable structural certificates
 for the corresponding bytecode. Twenty more compose the actual inlined word
 operations through the ten-limb identity reader, prove exact natural-byte packing
 and semantic-name decoding, and preserve the suffix, memory/I/O, and caller
-registers. The nonzero parser, duplicate traversal, advice-loader invariant,
+registers. Another 37 prove full-field ID comparison, range-checked semantic
+equality, and bounded duplicate traversal through actual Call boundaries.
+Successful table decoding supplies the concrete-spine premise; the traversal
+preserves memory and I/O and succeeds exactly for an absent semantic ID.
+Another 25 lemmas establish store-allocation bounds and the complete bounded
+declaration-parser composition. Byte-derived prefixes of up to sixteen records
+are accepted exactly when their full IDs are distinct and field counts are
+supported. Success establishes the concrete semantic table in wire order,
+returns the exact suffix, and preserves prior reads, caller registers, and I/O.
+Allocation bounds prevent field-pointer wrap without assuming fresh cells.
+Another 29 lemmas certify the actual recursive advice reader and complete loader,
+prove exact limit/range-check behavior under explicit metadata bounds, and derive
+a genuine-byte stream from success. Actual loading preserves prior reads/I/O,
+adds at most one width-3 cell per byte plus Nil, and leaves other width buckets
+unchanged. This discharges the declaration parser's byte premise at an identified
+loaded prefix and preserves its table-capacity bound. Another 18 lemmas certify
+the actual `is_run` header and declaration-call prefix: exact magic and revision,
+the full u32 entry, a constructor bound derived from the executed check, and
+the ordered table at its actual output pointer. The precise 73-register state
+passes to the original suffix/control, whose success is not assumed. A loader
+composition supplies the genuine-byte premise and preserves the suffix stream.
+Function-table admission and canonical whole-program binding, remaining resource bounds,
 initialization/full transitions, commitment agreement, and actual circuit/gadget
 refinement remain outstanding; checked representation alone is not execution verification.
 Object tests also found a shared let-hoisting capture bug; the

@@ -10,9 +10,13 @@ Call semantics, including the complete 256-bit digest and u32 member/tag.
 Executable structural certificates bind the proved shape to a compiled body;
 they are not a general source-compiler correctness theorem.
 
-Input byte ranges are explicit in `BytePrefix`. Admission still has to
-establish that premise. Duplicate traversal, the nonzero declaration parser,
-whole-program binding, and compiler/hash/gadget/AIR links remain open.
+Input byte ranges are explicit in `BytePrefix`. `ObjectsAdmission.lean`
+establishes that premise for checked advice loading under explicit bounds.
+Comparison and bounded duplicate traversal are proved
+in `ObjectsEquality.lean` and `ObjectsUnique.lean`; `ObjectsDeclarations.lean`
+composes the complete bounded declaration parser. `ObjectsProgramPrefix.lean`
+derives constructor capacity from the actual header check and composes that
+parser call. Whole-program binding and compiler/hash/gadget/AIR links remain open.
 This module does not change the interpreter or the production proof path.
 -/
 

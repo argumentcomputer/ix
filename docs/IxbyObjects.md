@@ -256,18 +256,18 @@ restoration. The u32 theorem consumes four certified bytes, preserves memory
 and I/O, and agrees with the existing codec's little-endian numeric packing.
 Bounds cover every intermediate field operation, not just the final u32.
 The byte reader itself does **not** range-check: a separate theorem proves
-what a successful actual `u8RangeCheck` instruction establishes. Connecting
-the complete advice loader to `BytePrefix` remains an obligation.
+what a successful actual `u8RangeCheck` instruction establishes. The bounded
+loader checkpoint below connects actual loading to `BytePrefix` under explicit
+metadata/address and storage bounds.
 
 The zero-count parser theorem establishes the checked empty-table relation
 at its actual output pointer, including canonical 13-field Nil padding and
 content-deduplicating allocation. A separate final-Cons-store theorem extends
 a checked tail table with a fresh semantic name in forward order. The
-nonzero recursive parser path and duplicate-ID traversal still need to
-establish that theorem's premises; the identity-reader component is proved
-below. The zero-count certificate intentionally leaves the default branch
-unconstrained; it must
-not be used as a certificate for the full declaration parser.
+nonzero recursive parser composition in `ObjectsDeclarations.lean` below
+establishes that theorem's premises from a bounded byte-derived prefix.
+The zero-count certificate intentionally leaves the default branch
+unconstrained; it must not certify the full declaration parser.
 
 All 22 axiom audits use only Lean's standard logical axioms. The initial 387
 `Tests/IxbyObjectsParser.lean` checks include every byte value, u32 boundaries
@@ -301,8 +301,8 @@ without loading it. The actual Call theorem also restores the caller's prior
 registers and accounts for the nested byte-call fuel.
 
 All 20 axiom audits use only Lean's standard logical axioms. The parser suite
-adds 725 checks, for 1,112 total. They cover every identity instruction and
-output position, all forty truncation and malformed-tag positions, each limb's
+added 725 checks, for 1,112 at that checkpoint. They cover every identity
+instruction and output position, all forty truncation and malformed-tag positions, each limb's
 u32 boundaries and bit positions, actual byte-codec agreement at a nonzero
 offset, unreadable intermediate/suffix pointers, memory/I/O preservation,
 and actual Call argument/output/fuel failures. Forged non-bytes demonstrate
@@ -310,10 +310,223 @@ both an out-of-range limb and a wrapped, apparently valid semantic name;
 another fixture shows why certifying the actual byte callee is necessary.
 These remain diagnostic tests, not new production advice or proof workloads.
 
-The admission loader still must establish `BytePrefix`. Duplicate-ID traversal,
-the nonzero declaration-parser induction, and binding the resulting table to
-the whole canonical program image remain open. The identity component alone
-does not establish any of those premises or an AIR-to-reference theorem.
+The bounded loader below establishes `BytePrefix`, and the bounded
+declaration-parser induction is also proved below. Binding its resulting table
+to the authenticated whole canonical program image remains open. The identity
+component alone does not establish those connections or an AIR-to-reference theorem.
+
+### Exact comparison and bounded duplicate traversal
+
+`Aiur/ObjectsEquality.lean` and `ObjectsUnique.lean` add 37 public
+kernel-checked lemmas. The comparator certificate binds the actual twenty
+subtraction/zero-test operations, nine products, and output register.
+Field subtraction and the emitted zero test distinguish arbitrary canonical
+Goldilocks limbs. For successful `decodeId` results, the u32 bounds make
+little-endian packing injective, so raw ten-limb equality is exactly equality
+of the complete semantic digest, member, and tag. The actual Call theorem
+returns the corresponding Boolean field and preserves prior caller state.
+
+The uniqueness certificate checks all three emitted match layers, the padded
+Nil assertion, the duplicate assertion, the counter decrement, both return
+selectors, and both callee indices in the same toplevel. `DeclSpine` describes
+a finite, exact-length raw declaration list ending in thirteen copies of 1.
+With a counter below the field modulus and sufficient call fuel,
+`unique_spine_eval` proves fresh-ID success and assertion failure for a
+duplicate at any position. It does not assume limb ranges or distinct physical
+pointers. Successful execution leaves memory and I/O unchanged.
+
+`read_declarations_spine` derives that raw spine and each semantic name from
+the existing table decoder. `checked_unique_table` uses the profile's
+sixteen-constructor limit to discharge the no-wrap counter bound and gives
+the exact semantic freshness result. `checked_unique_call` also restores all
+caller registers: a successful no-output Call returns the identical state.
+The table-decoding premise is explicit in this component; the declaration
+parser below establishes it. Admission and whole-program binding remain open.
+Both constraint flags share the Lean Call semantics, not an asserted AIR relation.
+
+All 37 axiom audits use only Lean's standard logical axioms. The 416 added
+tests brought the parser-component suite to 1,528 checks at that checkpoint.
+They cover every comparator instruction/limb, full-field boundaries, all table lengths through
+sixteen and every duplicate position, count mismatches, all Nil padding fields,
+Call failures, full-field pointers, and full/pruned structural certificates.
+Out-of-range limbs and a forged comparator demonstrate why range and callee
+certificates remain necessary. Malformed-spine/cycle checks are regressions,
+not a general proof for arbitrary malformed memory. These add no FRI workloads
+and change no interpreter, compiler, wire format, or key.
+
+### Complete bounded declaration-parser composition
+
+`Aiur/ObjectsDeclarations.lean` adds 23 public kernel-checked lemmas, with two
+new allocation/I/O lemmas in `ObjectsStore.lean`. `checkDeclarations` checks
+both emitted branches, all 28 nonzero operations, argument and output
+registers, and selectors. `checkDeclarationCode` also resolves and certifies
+the byte, identity, comparison, uniqueness, and recursive parser functions in
+the same toplevel. Full and pruned production compilations pass, including
+relocated callees. The old zero-only checker remains intentionally partial.
+
+`checked_declarations_eval` proves exact acceptance/rejection for a
+`BytePrefix` of `44 * count` genuine bytes, with `count ≤ 16`, sufficient call
+fuel, and `bucketSize before 13 + count + 1 ≤ goldilocksModulus`.
+Each record contains the complete ten-word identity and one u32 field count;
+record grouping covers every byte sequence of the required length. Semantic
+digest/member/tag/field values agree with the existing little-endian byte
+codec. The actual UInt32 comparison agrees with the natural field limit
+because genuine bytes supply the u32 bound.
+
+Acceptance is exactly distinct full semantic IDs and field counts at most 16.
+The induction composes the actual identity read, inlined field read, arity
+assertion, recursive Call, certified duplicate traversal, and final Cons store.
+Neither a decoded tail table nor freshness is assumed at the public endpoint.
+`checked_declarations_table` establishes the existing `readTable` relation in
+forward wire order and preserves all prior readable cells and I/O. The store
+model allows content deduplication; its allocation bound proves that returned
+field-valued pointers do not wrap. The full-field suffix is returned unchanged
+without requiring a readable cell or Nil there.
+
+`checked_declarations_reject` rejects an unsupported arity or a duplicate at
+any depth. This classification assumes a complete byte-derived prefix; it is
+not a theorem for arbitrary malformed memory, mismatched counts, or truncated
+input. Assertion errors expose no post-state, so no rollback property is
+claimed. `checked_declarations_call` appends exactly the table and suffix
+pointers while preserving prior caller registers and I/O. Both constraint
+flags have that Lean evaluator behavior, not an asserted unconstrained AIR
+relation.
+
+All 25 new axiom audits use only Lean's standard logical axioms. The 867 added
+regressions brought the parser suite to 2,395 checks at that checkpoint. They cover full/pruned
+execution, every supported arity, all ten identity limbs and maximal digests,
+all record counts through sixteen, deep duplicate pairs, invalid arities at
+every position, all 132 truncation and malformed-tag positions in a three-record
+prefix, exact new/deduplicated stores, suffix and caller-state preservation,
+Call failures, every parser operation, and every required callee certificate.
+Counterexamples show the remaining admission boundary: the standalone parser
+can accept seventeen constructors, or a forged non-byte arity that wraps the
+UInt32 comparison, although `readTable` then rejects the result. A forged
+comparator likewise demonstrates why the complete callee bundle matters.
+
+The loader checkpoint below establishes genuine loaded bytes and preserves
+the table-capacity premise; the following program-prefix checkpoint derives
+constructor-count admission. Initial capacity discharge and correspondence
+with the authenticated whole canonical program image remain separate.
+These proofs do not establish compiler, hash, gadget,
+trace, or AIR correctness and add no production advice, FRI workloads, or keys.
+
+### Bounded raw-advice loading and parser composition
+
+`Aiur/ObjectsAdmission.lean` adds 28 public kernel-checked lemmas, with one new
+other-width allocation lemma in `ObjectsStore.lean`. `checkAdviceReader` binds
+both branches of the actual `ib_read_advice`, including the I/O read, byte range
+check, address/count updates, recursive Call, and exact Nil/Cons stores.
+`checkLoader` binds the complete `ib_load` metadata lookup, UInt32 limit check,
+assertion, Call, and return. `checkLoaderCode` resolves and checks both functions
+in the same toplevel; full and pruned production compilations pass with relocated
+indices. Input arity and block selectors are checked; evaluator-irrelevant
+layout bookkeeping is not an AIR certificate.
+
+`AdviceSlice` identifies a finite sequence of raw **field-valued** arena entries
+at successive natural addresses. It assumes availability, not byte validity.
+`checked_advice_eval` proves that the actual recursive reader succeeds exactly
+when all consumed fields are below 256, otherwise failing at the byte range
+check. `checked_load_eval` adds the length guard, whose assertion failure occurs
+before byte reading. The corresponding Call contracts preserve caller registers
+and perform exactly the modeled content-deduplicating stores. Standalone rejection
+lemmas need neither a readable tail nor recursive-call fuel when the length guard
+or next field already fails. Errors carry no post-state; no rollback is claimed.
+
+The bounds are explicit: for `N` raw entries at `start`, `start + N < p`,
+`N < 2^32`, and `limit + 1 < 2^32`, where `p` is the Goldilocks modulus.
+The metadata lookup must identify that start and length. Body fuel `N` suffices
+for the reader, `N + 1` for the loader, and `N + 2` for a loader Call. Extra
+fuel is permitted. `checked_extended_load` instantiates the contract for the
+actual `IOBuffer.extend` operation, including an already-populated channel;
+it does not assume host conversion of the raw fields to UInt8.
+
+With `bucketSize before 3 + N + 1 ≤ p`, `checked_load_admission` derives a
+`ByteStream` from successful execution: the genuine-byte prefix plus its readable
+Nil cell. No byte-validity premise or fresh-address assumption is used there.
+Loading adds at most `N + 1` width-3 cells, preserves all prior successful reads
+and all I/O, and leaves every other width bucket unchanged. Initial space is
+still a premise; the theorem bounds growth rather than validating arbitrary
+initial memory.
+
+`loaded_declarations` composes successful loading with the actual declaration
+reader at a byte sequence identified as a declaration prefix plus suffix.
+The loader supplies the genuine-byte premise and preserves the initial width-13
+space bound. Parsing accepts exactly valid arities and distinct full IDs,
+establishes the semantic table, and preserves prior reads/I/O; invalid declarations
+produce the proved assertion failure. The constructor count remains bounded
+explicitly by sixteen. This is **not** a certificate for the `is_run` magic/revision,
+entry/count prefix or its continuation, nor for canonical whole-program decoding,
+function-table admission, digest binding, initialization, compiler, gadgets,
+trace, or AIR correctness.
+
+Forged-metadata regressions make the Lean-evaluator boundary concrete: natural
+indices/lengths at `p` can wrap to zero on field conversion, a length of `2^32`
+can pass the UInt32 guard and later fail I/O, and `limit = 2^32 - 1` wraps the
+comparison's upper bound. These are not native-backend or AIR soundness claims;
+they explain why the theorem cannot infer arbitrary natural metadata bounds
+from this evaluator's cast-based comparison alone.
+
+All 29 new axiom audits use only Lean's standard logical axioms, with no proof
+oracle or unchecked proof shortcuts. The 1,211 added regressions brought the
+parser-component suite to 3,606 checks at that checkpoint. They cover every byte value, full/pruned
+compilations, exact and relaxed limits, nonzero arena offsets, full-field channel
+keys, unread non-byte prefixes/suffixes, every invalid-field and truncation
+position in a 33-entry arena, all declaration counts through sixteen, invalid
+arities and duplicates after loading, fresh/deduplicated storage, caller/fuel
+boundaries, certificate mutations, and forged metadata. The former forged
+non-byte arity fixture now fails in the loader. No interpreter, compiler, wire
+format, production advice, FRI workload, or key changes are involved.
+
+### Actual program header and constructor-admission prefix
+
+`Aiur/ObjectsProgramPrefix.lean` adds 18 public kernel-checked lemmas.
+`checkProgramPrefix` binds the input arity and exactly the first sixty
+operations of the actual compiled `is_run`: four magic-byte checks, revision
+zero, little-endian u32 entry and constructor count, the constructor-capacity
+guard, and the declaration-reader Call. `checkProgramCode` resolves that
+runner and all five declaration-reader dependencies in the same toplevel.
+Full and pruned production compilations pass with their actual callee indices.
+The remaining operations and final control are deliberately unrestricted.
+
+`checked_header_eval` proves the actual sixteen-byte read and guards, preserving
+all memory and I/O. Magic is exactly `IXBY`, revision is exactly four zero
+bytes, and the genuine u32 count is accepted exactly when it is at most sixteen.
+The count bound is a conclusion of the compiled check, not a premise. The entry
+is retained as a full u32; its later function-table range check is not claimed
+here. `group_header_bytes` represents every sixteen-byte sequence, including
+malformed headers, and the word values agree with the existing little-endian
+codec. Rejection of an invalid header occurs before the declaration Call and
+requires no declaration bytes, table-space bound, or recursive-call fuel.
+
+`checked_program_prefix` composes those checks with the complete declaration
+reader. For an identified sequence of `N` records whose length equals the
+header's count, it accepts exactly a valid header, supported arities, and distinct
+full IDs. The uniform initial bound `bucketSize before 13 + 17 ≤ p` covers the
+at-most-sixteen declarations plus Nil; stores may reuse existing cells.
+Body fuel `N + 3`, with arbitrary extra fuel, suffices. Success establishes the
+semantic table in wire order, preserves every prior readable cell and all I/O,
+and adds at most `N + 1` width-13 cells.
+
+The exact post-prefix map has 73 registers: program/input pointers at 0/1,
+entry at 48, count at 65, table pointer at 71, and unconsumed suffix at 72.
+`checked_program_continuation` passes this proved state to the original suffix
+operations and control. It does **not** conclude that those operations succeed.
+`loaded_program_prefix` supplies the genuine-byte premise from successful
+checked advice loading under the earlier metadata/address and byte-space
+bounds; it preserves the suffix's readable stream and initial reads/I/O.
+
+All 18 axiom audits use only Lean's standard logical axioms. The 3,074 added
+regressions bring the parser suite to 6,680 checks. They cover every magic-byte
+value, every revision and entry bit, counts through sixteen and oversized u32
+counts, all header truncation/tag positions, invalid declarations at every
+position, exact new/deduplicated storage, full-field pointers, loader composition,
+codec agreement, fuel boundaries, all prefix operations and required callees.
+Positive suffix/control mutations and failing continuations explicitly test
+the prefix-only certificate boundary. Initial/whole-admission resource
+discharge, function-table admission, authenticated canonical whole-program
+binding, initialization, full transitions, and compiler/hash/gadget/trace/AIR
+refinement remain open. No production code, wire, advice, FRI workload, or key changes.
 
 ### Compiler issue found and repaired
 
@@ -359,6 +572,9 @@ lake build --wfail Ix.Ixby.Aiur.ObjectsRefinement IxbyObjectsTests IxbyControlTe
 lake build --wfail Ix.Ixby.Aiur.ObjectsMemory IxbyObjectsMemoryTests
 lake build --wfail Ix.Ixby.Aiur.ObjectsStore Ix.Ixby.Aiur.ObjectsTable IxbyObjectsTableTests
 lake build --wfail Ix.Ixby.Aiur.ObjectsParser Ix.Ixby.Aiur.ObjectsIdentity IxbyObjectsParserTests
+lake build --wfail Ix.Ixby.Aiur.ObjectsEquality Ix.Ixby.Aiur.ObjectsUnique
+lake build --wfail Ix.Ixby.Aiur.ObjectsDeclarations Ix.Ixby.Aiur.ObjectsAdmission
+lake build --wfail Ix.Ixby.Aiur.ObjectsProgramPrefix
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsMemoryTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTableTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsParserTests
@@ -396,8 +612,8 @@ targeted runtime checks total**, not counting theorems as runtime tests.
 `Tests/Main.lean` exposes execution-only `ixby-objects` and opt-in
 `ixby-objects-prove` alongside the earlier suites.
 The separate `ixby-objects-memory`, `ixby-objects-table`, and
-`ixby-objects-parser` suites add 126, 191, and 1,112 checks respectively,
-bringing current targeted runtime coverage to **2,663 checks**.
+`ixby-objects-parser` suites add 126, 191, and 6,680 checks respectively,
+bringing current targeted runtime coverage to **8,231 checks**.
 They add no FRI proof workloads and do not change the
 530-check object baseline or its measurements below.
 
@@ -442,13 +658,14 @@ fixed `Bytes2` table still has 65,536 rows and committed width 24. FFT-work
 surrogates are approximately 151.26, 151.89, and 166.08 million, with zero
 whole-machine cache hits. These are not Flock non-native-field estimates.
 
-Next: prove exact `is_id_eq` comparison and `is_unique_id` duplicate-ID traversal,
-then compose them with the identity reader through the nonzero recursive
-declaration parser. Establish the input byte-prefix invariant from admission
-and connect the resulting table
-to the canonical program image. Then establish successful reconstruction for
+Next: certify function-table admission and connect the resulting tables to the
+authenticated canonical program image, while discharging initial/whole-admission
+resource premises. The bounded loader now establishes genuine bytes; the actual
+`is_run` header/declaration prefix derives the constructor bound and supplies
+the exact continuation state. It does not establish the whole-program connection.
+Then establish successful reconstruction for
 live values from initialization and complete transitions. Immutable Store
-preservation and the zero-count parser path are proved; full execution and
-trace/AIR contracts remain open. Continue hostile-witness work before adding
+preservation and the complete bounded declaration parser are proved; full
+execution and trace/AIR contracts remain open. Continue hostile-witness work before adding
 closures/PAPs, general application, and the remaining byte/crypto operations.
 Full verifier workloads and certified Compilatrix integration remain separate.

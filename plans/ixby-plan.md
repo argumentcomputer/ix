@@ -128,9 +128,11 @@ as a second ISA. See
   reader, range-check, and zero-count declaration-parser lemmas. Executable
   structural certificates are checked against full and pruned production-source
   compilations. Final Cons allocation extends a checked tail with a fresh name;
-  the nonzero recursive parser, duplicate traversal, and input byte
-  invariant still have to establish its premises. The initial 387 parser-component
-  checks include forged-range and uncertified-nonzero-branch counterexamples.
+  the bounded nonzero parser composition below now establishes its premises.
+  The input byte invariant is explicit here; the bounded loader checkpoint
+  below supplies it under metadata/address and storage bounds. The initial
+  387 parser-component checks include forged-range and uncertified-nonzero-branch
+  counterexamples.
   All 1,938 targeted IxBy checks at that checkpoint passed, including the existing
   scalar, control, and object proof workloads.
 - `Aiur/ObjectsIdentity.lean` adds 20 kernel-checked lemmas for actual inlined
@@ -140,10 +142,60 @@ as a second ISA. See
   All byte sequences of that length can be grouped into the proved word form.
   Structural certificates cover the actual full/pruned compilations and bind
   the byte callee; all axiom audits use only standard logical axioms. The 725
-  added tests bring the parser suite to 1,112 checks and current targeted IxBy
-  coverage to 2,663, without changing interpreter profiles, proof workloads,
-  wire formats, or keys. Next are exact ID comparison/duplicate traversal,
-  the nonzero parser induction, and establishing the byte invariant at admission.
+  added tests brought the parser suite to 1,112 checks and targeted IxBy
+  coverage to 2,663 at that checkpoint, without changing interpreter profiles,
+  proof workloads, wire formats, or keys.
+- `Aiur/ObjectsEquality.lean` and `ObjectsUnique.lean` add 37 kernel-checked
+  lemmas for exact full-field/semantic ID comparison and bounded duplicate
+  traversal. Structural certificates bind the whole emitted comparator and
+  uniqueness body, including both actual callee indices. Successful existing
+  table decoding supplies the finite raw spine and semantic-name relation;
+  the profile limit establishes a no-wrap counter. Actual execution succeeds
+  exactly for an absent ID, rejects duplicates at any position, preserves
+  memory/I/O, and restores caller registers at the no-output Call boundary.
+  All axiom audits use only standard logical axioms. The 416 added regressions
+  brought parser coverage to 1,528 and targeted coverage to 3,079 checks at that
+  checkpoint, with no new proof workloads or production/protocol/key changes.
+- `Aiur/ObjectsDeclarations.lean` and two store-bound lemmas add 25 public
+  kernel-checked contracts for complete bounded declaration parsing. A full
+  same-toplevel certificate links every required callee. The actual recursive
+  path accepts exactly supported field counts and distinct full IDs, establishes
+  the semantic table in wire order, and preserves prior reads, the suffix,
+  caller registers, and I/O. Byte grouping covers all 44-byte records and agrees
+  with the existing codec. Allocation bounds allow deduplication without pointer
+  wrap. The 867 new regressions brought parser coverage to 2,395 and targeted
+  coverage to 3,946 at that checkpoint; all 25 audits use only standard logical
+  axioms. Admission discharge and authenticated canonical program/table binding
+  remain separate from the parser contract itself.
+  No compiler, interpreter, wire, production advice, proof workload, or key changes.
+- `Aiur/ObjectsAdmission.lean` and an other-width store lemma add 29 public
+  kernel-checked contracts for the actual raw-advice reader and complete loader.
+  Under explicit metadata/address bounds, success is exactly a satisfied natural
+  byte limit and genuine raw bytes. Success establishes a byte stream including
+  Nil; loading adds at most one width-3 cell per byte plus Nil, preserves prior
+  reads/I/O, and leaves the width-13 table capacity unchanged. A composition
+  theorem supplies the declaration parser's byte premise at an identified loaded
+  prefix. Initial space and constructor count are still explicit premises, and
+  the `is_run` header/count prefix and authenticated whole-program connection
+  remained open at that checkpoint. The 1,211 new regressions brought parser
+  coverage to 3,606 and targeted coverage to 5,157, including existing FRI workloads; all 29 axiom
+  audits use only standard logical axioms. Forged metadata tests document the
+  Lean evaluator's field/UInt32 conversion boundary, not native or AIR claims.
+  No production/compiler/interpreter/wire/key changes or new FRI workloads.
+- `Aiur/ObjectsProgramPrefix.lean` adds 18 public kernel-checked contracts for
+  the actual first sixty `is_run` operations and complete declaration Call.
+  A same-toplevel certificate binds the runner and all required callees, while
+  explicitly leaving the suffix and control unrestricted. The proved header
+  checks exact magic/revision, preserves the u32 entry, and derives the natural
+  constructor bound. Success establishes the ordered table and exact live
+  registers, preserves reads/I/O, and passes the precise state to the original
+  continuation without assuming it succeeds. Loader composition supplies genuine
+  bytes and preserves the suffix stream under explicit initial bounds. The 3,074
+  new regressions bring parser coverage to 6,680 and targeted coverage to 8,231;
+  all 18 audits use only standard logical axioms. Function-table admission,
+  initial/whole-admission resource discharge, and authenticated canonical
+  whole-program binding remain open. No production/compiler/interpreter/wire/key
+  changes or new FRI workloads.
 - The shared hoisting repair also requires regenerating all three checked-in
   Rust kernels. That step was initially missed and caused the CI codegen check
   to fail. The generated snapshots are refreshed; content checks and native
@@ -558,12 +610,15 @@ authenticated immutable tables and ranked object fields. This package remains
 in progress. Concrete-memory reconstruction now proves representation on
 successful decoding; checked tables bind to canonical program images, and
 actual immutable Store preservation is proved. Byte/u32/ten-limb identity reader
-contracts and the zero-count parser path now have structural bytecode certificates
-and proofs. The next step is exact identity comparison and duplicate traversal,
-then composition through the nonzero recursive declaration parser, while
-establishing the input byte invariant from admission. Canonical program/table
-agreement, initialization, and complete interpreter transition correctness
-follow those obligations.
+contracts, exact semantic identity comparison, bounded duplicate traversal,
+and the complete bounded declaration parser now have structural bytecode
+certificates and proofs. The bounded raw-advice loader now supplies genuine bytes
+and preserves table capacity under explicit metadata/address and storage bounds.
+The actual `is_run` header/declaration prefix now derives the constructor bound
+and supplies the exact state to the remaining continuation. Next certify
+function-table admission and discharge initial/whole-admission resource
+premises. Authenticated canonical whole-program/table agreement, initialization, and
+complete interpreter transition correctness follow those obligations.
 Actual circuit/trace refinement, closures/PAPs and general application, the
 remaining crypto operations, broader malicious-witness testing, and
 full-workload/Flock-oriented measurements are still needed.

@@ -7,9 +7,14 @@ import all Ix.Aiur.Goldilocks
 Executable shape checks connect the proved bodies to actual bytecode without
 assuming a general compiler-correctness theorem. The scalar reader contracts
 and the zero-constructor parser path are proved here. `ObjectsIdentity.lean`
-composes the inlined readers through the ten-limb identity parser. The recursive
-nonzero parser, duplicate-ID traversal, admission loader, and
-commitment/compiler/gadget/AIR links are not yet proved.
+composes the inlined readers through the ten-limb identity parser.
+`ObjectsEquality.lean` and `ObjectsUnique.lean` prove comparison and bounded
+duplicate traversal. `ObjectsDeclarations.lean` composes the complete bounded
+recursive parser. `ObjectsAdmission.lean` establishes genuine loaded bytes and
+preserves table capacity under explicit metadata/address and storage bounds.
+`ObjectsProgramPrefix.lean` certifies the actual header/count prefix through
+the declaration call, handing its exact state to the remaining continuation.
+Whole-program admission and commitment/compiler/gadget/AIR links remain open.
 
 These are diagnostic proof components, not a production verification path.
 -/
@@ -409,8 +414,8 @@ theorem checked_empty_parser_table (t : Bytecode.Toplevel) (fuel selector : Nat)
   exact stored_empty_table st
 
 /-- The induction step at the final Cons store: retain the recursively read
-table in forward order and add a fresh semantic name. Proving that the full
-nonzero parser path establishes these premises is still required. -/
+table in forward order and add a fresh semantic name. `ObjectsDeclarations`
+establishes these premises through the actual bounded nonzero parser path. -/
 theorem stored_declaration_table (st : EvalState) (flat : Array G)
     (width : flat.size = tableWidth) (declaration : Ix.Ixby.CtorDecl)
     (tail count : Nat) (table : Array Ix.Ixby.CtorDecl)
