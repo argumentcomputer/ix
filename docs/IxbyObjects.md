@@ -119,6 +119,164 @@ tests do not substitute for a complete malicious-witness audit or reviewed
 cryptographic assumptions. The rank-growth theorem explicitly assumes the
 per-transition growth bound; the whole interpreter trace proof is still open.
 
+### Checked concrete-memory reconstruction
+
+`Aiur/ObjectsMemory.lean` now connects the logical heap to the Lean bytecode
+evaluator's actual width-bucketed memory. Its executable decoder follows the
+current compiler layout, not the wire encoding:
+
+| Value or cell | Flat field layout |
+| --- | --- |
+| `ISValue.Atom` | `[0, atomTag, a, b, c, d]` |
+| `ISValue.Ctor` | `[1, constructorIndex, fieldsPointer, fieldCount, rank, 0]` |
+| `ListNode.Cons<ISValue>` | `[0, ISValue's six fields, tailPointer]` |
+| `ListNode.Nil<ISValue>` | Eight copies of `1` |
+
+Bool must be 0 or 1; all four Word32 bytes must be below 256. Field and
+extension coefficients retain their full canonical Goldilocks values, and
+pointer/index/count/rank interpretation does not narrow to u32. Inactive
+fields of applied constructors must be zero. Nullary constructor references
+use **tag padding** in `Lower.toIndex`: the `IBValue.Erased` payload is five
+copies of `4`, and Nil is padded with `1`, not zero. Concrete-layout tests
+exercise this distinction against compiled code.
+
+`reconstruct` checks every reachable constructor's declaration, arity, exact
+field-list length and Nil terminator, and computed rank. The field bound 16
+is checked before walking a list. Recursive depth and a shared remaining-node
+budget bound reconstruction, including repeated occurrences of a shared DAG.
+Its node budget is diagnostic and caller-selected, not a new I/O admission
+rule; the derived rank bound remains 288. Valid intermediate objects can
+therefore be reconstructed with more than 128 nodes or depth 32.
+
+The module has 10 kernel-checked lemmas. `bytecode_heap_load_iff` relates a
+typed cell to the evaluator's actual `memLoad` and successful layout decoding.
+`reconstruct_sound` proves that successful reconstruction yields the existing
+`Represents` relation and a finite logical value, without a `ClosedRanked`
+premise. Other lemmas establish numeric exactness, local checks and bounds,
+pointwise child representation, and decreasing/shared budgets. All 10 theorem
+axiom audits use only Lean's standard logical axioms; none relies on FFI
+execution, custom axioms, `sorry`, or `native_decide`.
+
+This is a checked memory interpretation, **not** a production verifier or an
+execution/AIR soundness theorem. Reconstruction success is its explicit
+premise; success has not yet been derived from arbitrary interpreter traces.
+The lower-level decoder takes a declaration array; the table layer below now
+checks its correspondence and uniqueness. Establishing those checks from the
+interpreter's authenticated parsing still remains open. Malformed or cyclic
+unreachable cells and duplicate cells at distinct pointers are allowed.
+
+`Tests/IxbyObjectsMemory.lean` adds 126 checks. Typed fixtures call the real
+compiled `is_make` and `is_project`, retain Lean evaluator memory for decoding,
+and compare 14 native flat outputs. The native test adapter changes only the
+selected helper's entry flag; pointer-bearing internal signatures cannot be
+public source entries. It does not construct proofs or alter production keys,
+and flat-output parity is not a claim of native heap equivalence. Coverage
+includes malformed tags/padding/ranges/pointers/counts, cyclic spines and child
+graphs, exact shared budgets, rank 288, and larger-than-I/O intermediates.
+
+Forged-memory helper tests also make the invariant boundary explicit: a local
+`is_make` call can accept a forged child's in-range rank while recursive
+reconstruction rejects that child. Such memory is not production advice;
+this test documents why local checks alone do not establish child closure.
+
+### Concrete tables and immutable-store preservation
+
+`Aiur/ObjectsStore.lean` adds 13 public kernel-checked lemmas. Unlike a
+preservation assumption about an abstract heap, `mem_store_preserves` proves
+that the Lean evaluator's actual `memStore` preserves every existing readable
+cell, at every width. It uses the invariants carried by `IndexMap`, covering
+both appended and content-deduplicated cells. `mem_store_load` proves exact
+readback at the returned natural address. Converting that address to a field
+has a separate theorem with an explicit Goldilocks-bound premise.
+
+The store lemmas transport existing field lists, `Represents` relations, and
+successful reconstruction—including the exact remaining node budget. They
+also establish the field-list and logical-construction contract for a newly
+stored Cons cell. `eval_store_preserves_representation` covers a successful
+**actual bytecode Store instruction**, including its register update. These
+are not yet preservation theorems for all bytecode instructions or complete
+compiled `is_make` executions, nor proofs of the AIR memory argument.
+
+`Aiur/ObjectsTable.lean` adds 11 public kernel-checked lemmas and a concrete
+table decoder. `ISCtorDecl.Mk` is tagless and occupies eleven fields; a Cons
+cell is `[0, eight digest limbs, member, tag, fieldCount, tailPointer]` at width
+13, and Nil is thirteen copies of 1. All ten identity limbs must be u32.
+Natural packing is bounded and injective for fixed-length bounded limb lists;
+there is no Goldilocks reduction of the 256-bit digest or narrowing of metadata.
+The reader checks the 16-declaration and 16-field capacities, exact terminal
+Nil, declaration order, and uniqueness of full semantic names even when their
+arities differ. Unreachable cells and duplicate physical cells remain allowed.
+
+`reconstructProgram` uses the existing canonical program decoder, compares the
+entire concrete table with that program's declarations, and reconstructs the
+value in the matching constructor namespace. `reconstruct_program_sound`
+establishes the canonical program-encoding equation, concrete table agreement,
+unique IDs, and logical value representation. Table decoding and this complete
+checked reconstruction are also preserved by actual `memStore` operations.
+All 24 new public theorem axiom audits use only Lean's standard logical axioms.
+
+This diagnostic does **not** authenticate the program commitment or prove
+that the program produced the value. Tests explicitly demonstrate that a
+different valid function body with the same declarations can represent the
+same value. The outstanding work is to prove the compiled parser establishes
+the checked table relation, initialization establishes valid live references,
+and every interpreter transition maintains the representation and reference
+execution relation; the compiler/gadget/AIR and commitment links remain open.
+
+`Tests/IxbyObjectsTable.lean` adds 191 checks: malformed concrete tables, every
+identity limb and Nil padding field, duplicates, exact capacities, eight
+checks against compiled `is_read_ctors`, and five complete compiled `is_run`
+fixtures with memory inspection. The latter include parsed and runtime-created
+objects, case binding, erased input, and an empty table. They check same-width
+and other-width stores, readback, content reuse, actual Store instructions,
+valid-program/table mismatches, and the representation/execution distinction.
+The tests add no new FRI workloads and do not change the production interpreter,
+profiles, wire format, or keys.
+
+### Bytecode parser proof components
+
+`Aiur/ObjectsParser.lean` adds 22 public kernel-checked lemmas. Its `BytePrefix`
+relation describes exact width-3 Cons cells containing genuine bytes and
+field-valued tail pointers. It describes a consumed prefix, not a complete
+stream: the endpoint may point into the following artifact, and is returned
+without narrowing or an extra read. Actual stores preserve this relation;
+exposing a newly allocated pointer as a field retains an explicit bound.
+
+Executable structural certificates check the actual function bodies for
+`ib_byte`, standalone `ib_u32`, and the **zero-count path only** of
+`is_read_ctors`. Their soundness uses decidable structural equality, not an
+assumed lawful bytecode `BEq` or a compiler-correctness axiom. Tests check the
+certificates against both the full production compilation and a pruned one
+with different callee indices. This validates these emitted shapes; it is
+not a general theorem about source compilation.
+
+The byte-reader theorem describes actual `evalBlock` behavior, including
+function-return handling. The Call theorem additionally proves caller-register
+restoration. The u32 theorem consumes four certified bytes, preserves memory
+and I/O, and agrees with the existing codec's little-endian numeric packing.
+Bounds cover every intermediate field operation, not just the final u32.
+The byte reader itself does **not** range-check: a separate theorem proves
+what a successful actual `u8RangeCheck` instruction establishes. Connecting
+the complete advice loader to `BytePrefix` remains an obligation.
+
+The zero-count parser theorem establishes the checked empty-table relation
+at its actual output pointer, including canonical 13-field Nil padding and
+content-deduplicating allocation. A separate final-Cons-store theorem extends
+a checked tail table with a fresh semantic name in forward order. The
+nonzero recursive parser path, ten-limb identity reader, and duplicate-ID
+traversal still need to establish that theorem's premises. The zero-count
+certificate intentionally leaves the default branch unconstrained; it must
+not be used as a certificate for the full declaration parser.
+
+All 22 axiom audits use only Lean's standard logical axioms. The 387 new
+`Tests/IxbyObjectsParser.lean` checks include every byte value, u32 boundaries
+and bit positions, exact suffix/state preservation, malformed cells, callee
+and instruction mutations, and fresh/deduplicated empty tables. Explicit
+counterexamples show why byte ranges and the nonzero-branch proof are needed:
+forged non-bytes can wrap to a plausible u32, and a function passing only the
+zero-count certificate can have an invalid nonzero branch. These are diagnostic
+fixtures, not additional production advice or FRI workloads.
+
 ### Compiler issue found and repaired
 
 The shared `Source.Term.hoistLets` pass formerly hoisted continuation lets across
@@ -138,13 +296,34 @@ failure without relying on the workaround.
 failure stages, IO order, nested scopes, inline calls, alternative patterns,
 and generated-looking names. This is an implemented, tested repair, **not a
 compiler correctness proof**. Existing compiled circuits and verifying keys
-must be rebuilt; neither the IxBy wire revision nor Rust/protocol code changed
-as part of this repair.
+must be rebuilt. The checked-in generated Rust kernels for IxVM, MultiStark,
+and ixAggr must also be regenerated after this shared compiler change. This
+regeneration was initially omitted, causing `lake exe ix codegen --check` to
+report all three files stale; the snapshots are now refreshed. No IxBy wire
+revision or handwritten Rust/protocol implementation change is required.
+
+After changing the shared Aiur compiler, run `lake exe ix codegen`, rebuild
+the native test runner, and run the content and generated/interpreter parity
+checks. Checking content alone does not rebuild a previously linked test binary:
+
+```sh
+lake exe ix codegen
+lake build --wfail IxTests ix
+lake exe ix codegen --check
+RAYON_NUM_THREADS=8 .lake/build/bin/IxTests --ignored ixvm
+RAYON_NUM_THREADS=8 .lake/build/bin/IxTests recursive-verifier ix-aggr
+```
 
 ## Reproduction and coverage
 
 ```sh
 lake build --wfail Ix.Ixby.Aiur.ObjectsRefinement IxbyObjectsTests IxbyControlTests IxbyAiurTests
+lake build --wfail Ix.Ixby.Aiur.ObjectsMemory IxbyObjectsMemoryTests
+lake build --wfail Ix.Ixby.Aiur.ObjectsStore Ix.Ixby.Aiur.ObjectsTable IxbyObjectsTableTests
+lake build --wfail Ix.Ixby.Aiur.ObjectsParser IxbyObjectsParserTests
+RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsMemoryTests
+RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTableTests
+RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsParserTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTests --execute-only
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTests --stats
@@ -178,6 +357,11 @@ The 704 earlier scalar/control/reference/crypto/codec checks also pass: **1,234
 targeted runtime checks total**, not counting theorems as runtime tests.
 `Tests/Main.lean` exposes execution-only `ixby-objects` and opt-in
 `ixby-objects-prove` alongside the earlier suites.
+The separate `ixby-objects-memory`, `ixby-objects-table`, and
+`ixby-objects-parser` suites add 126, 191, and 387 checks respectively,
+bringing current targeted runtime coverage to **1,938 checks**.
+They add no FRI proof workloads and do not change the
+530-check object baseline or its measurements below.
 
 ## Initial costs (test parameters only)
 
@@ -220,6 +404,12 @@ fixed `Bytes2` table still has 65,536 rows and committed width 24. FFT-work
 surrogates are approximately 151.26, 151.89, and 166.08 million, with zero
 whole-machine cache hits. These are not Flock non-native-field estimates.
 
-Next: continue the actual trace/AIR refinement and hostile-witness work, then add closures/PAPs,
-general application, and the remaining byte/crypto operations explicitly.
+Next: compose the byte/u32 contracts through the ten-limb identity reader,
+duplicate-ID traversal, and nonzero recursive declaration parser. Establish
+the input byte-prefix invariant from admission and connect the resulting table
+to the canonical program image. Then establish successful reconstruction for
+live values from initialization and complete transitions. Immutable Store
+preservation and the zero-count parser path are proved; full execution and
+trace/AIR contracts remain open. Continue hostile-witness work before adding
+closures/PAPs, general application, and the remaining byte/crypto operations.
 Full verifier workloads and certified Compilatrix integration remain separate.

@@ -10,8 +10,8 @@ remain unfrozen; no proof-performance winner has been established.
 The [IxBy implementation plan](../plans/ixby-plan.md) owns the current direction
 and work packages. It supersedes the initial requirement to build complete
 competing provers before choosing an architecture. This document records the
-current executable model and the shared semantic boundaries. The plan lives
-under ignored `plans/` intentionally and is not a tracked protocol document.
+current executable model and the shared semantic boundaries. The plan is
+tracked on `jcb/ixby`, but is not a frozen protocol document.
 
 The local `jcb/ixby` bookmark starts this work. Existing claim encodings,
 Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
@@ -35,6 +35,15 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   with kernel-checked representation/transition lemmas, not an AIR theorem.
 - `Aiur/ObjectsRefinement.lean`: conditional ranked-heap finiteness, field-order,
   constructor/case, and field-counter bridges; the full circuit proof remains open.
+- `Aiur/ObjectsMemory.lean`: checked reconstruction of concrete bytecode memory,
+  with a proof that success yields the logical object representation. Execution
+  establishing reconstruction success and the declaration table remains open.
+- `Aiur/ObjectsStore.lean` and `ObjectsTable.lean`: actual bytecode-store
+  preservation and checked concrete-table binding to canonical program bytes.
+  The parser, complete interpreter transitions, and AIR links remain open.
+- `Aiur/ObjectsParser.lean`: structurally checked byte/u32 reader contracts,
+  byte-prefix preservation, and the zero-count declaration parser proof.
+  The recursive nonzero parser and authenticated byte-stream invariant remain open.
 - `Ix/Ixby/Validate.lean`: whole-image admission and bounded input validation.
 - `Ix/Ixby/Eval.lean`: total call/evaluate/return execution, fuel
   monotonicity, and uniqueness of successful results across fuel witnesses.
@@ -53,6 +62,12 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   restoration, tail/self/mutual recursion, resource boundaries, and proofs.
 - `Tests/IxbyObjects.lean`: recursive list map/fold, constructor identity and
   field order, shared objects, I/O budgets, malformed artifacts, and proofs.
+- `Tests/IxbyObjectsMemory.lean`: 126 concrete-layout, compiled-helper,
+  native-output parity, and malformed-memory checks, without new proof workloads.
+- `Tests/IxbyObjectsTable.lean`: 191 table-layout, compiled parser/runner,
+  store-preservation, and checked program/table-binding tests.
+- `Tests/IxbyObjectsParser.lean`: 387 checks covering full/pruned compilation
+  certificates, byte/u32 execution, malformed cells, and the zero-count parser.
 
 The earlier mutable-register/word-stream prototype and its tests have been
 replaced, rather than maintained as a second ISA. The composition contract is
@@ -380,12 +395,23 @@ proofs and differential/negative tests are not a formal AIR-to-reference
 refinement theorem, a complete hostile-witness audit, or production activation.
 The representation modules prove 27 frame/stack/transition lemmas and 25
 object/heap/field-counter lemmas. The latter derive finite values from a
-functional memory view and closed local rank constraints. Connecting actual
-decoded circuit memory and gadget results to these explicit premises remains
-outstanding. Object tests also found a shared let-hoisting capture bug; the
+functional memory view and closed local rank constraints. Ten additional
+concrete-memory lemmas establish checked reconstruction into that representation
+and its connection to the Lean bytecode evaluator's width-bucketed loads.
+A further 24 lemmas establish immutable-store preservation—including an
+actual bytecode Store instruction—and checked declaration-table binding to
+canonical program bytes. Another 22 prove byte-prefix/store, actual byte/u32
+reader, and zero-count parser contracts, with executable structural certificates
+for the corresponding bytecode. The nonzero parser, advice-loader invariant,
+initialization/full transitions, commitment agreement, and actual circuit/gadget
+refinement remain outstanding; checked representation alone is not execution verification.
+Object tests also found a shared let-hoisting capture bug; the
 shared normalizer now has a tested scope/evaluation-order repair, and the
 original shadowed entry passes its negative regressions without the workaround.
 This is not a compiler correctness proof; compiled artifacts/keys need rebuilding.
+The three checked-in generated Rust kernels have also been regenerated;
+the [reproduction steps](IxbyObjects.md#compiler-issue-found-and-repaired) include
+the CI content check and rebuilt native/interpreter parity tests.
 The fixed test capacities and FRI parameters are not security recommendations.
 
 ## Implementation sequence and acceptance gates

@@ -65,6 +65,9 @@ import Tests.IxbyCodec
 import Tests.IxbyAiur
 import Tests.IxbyControl
 import Tests.IxbyObjects
+import Tests.IxbyObjectsMemory
+import Tests.IxbyObjectsTable
+import Tests.IxbyObjectsParser
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
@@ -217,6 +220,9 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ixby-aiur", Tests.IxbyAiur.suite (withProofs := false)),
   ("ixby-control", Tests.IxbyControl.suite (withProofs := false)),
   ("ixby-objects", Tests.IxbyObjects.suite (withProofs := false)),
+  ("ixby-objects-memory", Tests.IxbyObjectsMemory.suite),
+  ("ixby-objects-table", Tests.IxbyObjectsTable.suite),
+  ("ixby-objects-parser", Tests.IxbyObjectsParser.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/

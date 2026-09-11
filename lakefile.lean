@@ -163,6 +163,18 @@ lean_exe IxbyObjectsTests where
   root := `Tests.IxbyObjectsMain
   supportInterpreter := true
 
+lean_exe IxbyObjectsMemoryTests where
+  root := `Tests.IxbyObjectsMemoryMain
+  supportInterpreter := true
+
+lean_exe IxbyObjectsTableTests where
+  root := `Tests.IxbyObjectsTableMain
+  supportInterpreter := true
+
+lean_exe IxbyObjectsParserTests where
+  root := `Tests.IxbyObjectsParserMain
+  supportInterpreter := true
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main

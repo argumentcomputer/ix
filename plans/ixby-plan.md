@@ -97,6 +97,46 @@ as a second ISA. See
   lemmas. Arbitrary physical pointers and duplicate cells are permitted in the
   memory view; closed local rank checks imply finite logical objects and rule
   out reachable object cycles. Actual trace/AIR discharge is still pending.
+- `Aiur/ObjectsMemory.lean` adds executable concrete-layout decoding and
+  reconstruction from the Lean bytecode evaluator's width-bucketed memory.
+  Ten kernel-checked lemmas connect successful reconstruction to the logical
+  representation, exact scalar interpretation, local bounds, and shared
+  budgets. It does not assume a closed ranked heap, but does require successful
+  reconstruction and a supplied declaration table; execution/trace establishment
+  and authenticated table correspondence are still open.
+- `Tests/IxbyObjectsMemory.lean` adds 126 checks, including 14 native flat-output
+  comparisons, compiled object helpers, malformed memory, duplicate cells,
+  cycles, exact shared budgets, and rank-288/larger-than-I/O intermediates.
+  It checks the compiler's distinct nullary tag padding, and documents that
+  local rank checks do not alone establish recursive child validity. No
+  interpreter, semantic profile, wire format, or production key changes.
+- `Aiur/ObjectsStore.lean` proves actual `memStore` readback and preservation
+  from `IndexMap`'s invariants, including deduplication, existing logical values,
+  exact successful reconstruction, stored field-list construction, and a real
+  bytecode Store instruction. Field-address conversion retains an explicit
+  canonical bound. `Aiur/ObjectsTable.lean` decodes width-13 declaration cells,
+  preserves complete u32-limb identities, checks order/arity/uniqueness, and
+  binds the entire table to the existing canonical program decoder. The two
+  modules add 24 public kernel-checked lemmas, not a full parser/interpreter/AIR
+  theorem or commitment-authentication proof.
+- `Tests/IxbyObjectsTable.lean` adds 191 checks against concrete tables, the
+  real compiled declaration parser, five complete `is_run` fixtures, and actual
+  store operations. Tests distinguish checked representation from execution
+  verification. All 1,551 targeted checks at that checkpoint passed; the existing
+  interpreter profiles, proof workloads, wire format, and keys are unchanged.
+- `Aiur/ObjectsParser.lean` adds 22 kernel-checked byte-prefix, actual byte/u32
+  reader, range-check, and zero-count declaration-parser lemmas. Executable
+  structural certificates are checked against full and pruned production-source
+  compilations. Final Cons allocation extends a checked tail with a fresh name;
+  the nonzero recursive parser, identity/duplicate traversal, and input byte
+  invariant still have to establish its premises. The 387 new parser-component
+  checks include forged-range and uncertified-nonzero-branch counterexamples.
+  All 1,938 current targeted IxBy checks pass, including the existing scalar,
+  control, and object proof workloads.
+- The shared hoisting repair also requires regenerating all three checked-in
+  Rust kernels. That step was initially missed and caused the CI codegen check
+  to fail. The generated snapshots are refreshed; content checks and native
+  parity must run against rebuilt binaries after shared compiler changes.
 - `Tests/IxbyObjects.lean` passes 530 checks, with 66 proved workloads over 55
   guest images under one object key. Coverage includes recursive map, tail fold,
   shared-object unfolding, all 20 primitives in objects, full ID limbs, and
@@ -504,11 +544,17 @@ Reference profile/codecs/commitments, straight-line and scalar CEK control, and
 immutable constructors/projections/cases have independently verified proofs.
 The interpreter separates whole-image admission from execution and uses
 authenticated immutable tables and ranked object fields. This package remains
-in progress: add closures/PAPs and general
-application and remaining crypto operations, discharge actual circuit/trace
-representation and refinement beyond the conditional lemmas, and extend
-malicious-witness testing and full-workload/Flock-oriented
-measurements are still needed.
+in progress. Concrete-memory reconstruction now proves representation on
+successful decoding; checked tables bind to canonical program images, and
+actual immutable Store preservation is proved. Byte/u32 reader contracts and
+the zero-count parser path now have structural bytecode certificates and proofs.
+The next step is to compose them through the identity reader, duplicate check,
+and nonzero recursive declaration parser, while establishing the input byte
+invariant from admission. Canonical program/table agreement, initialization,
+and complete interpreter transition correctness follow those obligations.
+Actual circuit/trace refinement, closures/PAPs and general application, the
+remaining crypto operations, broader malicious-witness testing, and
+full-workload/Flock-oriented measurements are still needed.
 
 - Specify the first constrained target profile, including value/image codecs,
   canonical decoding, resource bounds, domain-separated program/input/output
