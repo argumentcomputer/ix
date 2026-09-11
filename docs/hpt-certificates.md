@@ -1,45 +1,22 @@
 # IxIR₁ HPT result-shape certificates
 
-Status: active. The bounded result-shape checker, deterministic SCC-local
-producer, SCC-granular content-addressed summary format, concrete-evaluator
-soundness proof, bounded recursive allocation/fetch/reuse and case-binder
-field slice, and persistent checked cache ingress/rebuild paths landed
-2026-08-26. The filesystem boundary now offers both a bounded single-file
-snapshot and a metadata-only per-key chunk index with dependency-selected lazy
-reads. A first proof-sized consumer now propagates accepted facts through each
-complete stored function body, prunes impossible alternatives, and collapses
-the checked detailed-unary singleton case to one checked fetch even when the
-producer and case are not syntactically adjacent. Its whole-program path then
-performs a content-addressed graph rebuild; its proofs cover dynamic self calls
-and exact transport of the complete evaluator result. Conservative scalar
-fetch forwarding, scalar/exact-leaf destruction, and PAP/application fusion
-now compose with that consumer through the same owner-sensitive traversal.
-Checked rooted declaration
-reachability then filters their rewritten old-keyed graph before the shared
-content-address rebuild.
-This is a semantically justified analysis and optimization boundary, not yet
-the full heap-points-to optimization pass.
+This contract covers bounded result-shape analysis, recursive field facts,
+checked optimization consumers, and persistent cache production/repair. It is
+not a general heap-points-to analysis: parameters begin at `top`, and facts
+forget heap identities across potentially mutating operations.
 
-The executable domain and checker are in `Compilatrix/IxIR1/HPT.lean`; their
-concrete interpretation and evaluator proof are in
-`Compilatrix/IxIR1/HPTSound.lean`. The production pipeline exposes them through
-`Pipeline.Artifact.checkHPT[With]`, which fixes the checked program to the
-artifact's exact dependency-ordered IxIR₁ graph. `HPTProduce.lean` implements
-canonical local production, `HPTCache.lean` implements pure and effectful
-untrusted cache scheduling, `HPTCacheIO.lean` is the bounded one-file adapter,
-`HPTCacheDirIO.lean` is the metadata-indexed chunk adapter, and
-`HPTCasePrune.lean` implements the checked local, compatibility-recursive, and
-owner-sensitive fact-propagating rewrites. `HPTCasePruneProgram.lean` closes
-the declaration-environment recursion, content-address rebuild, and exact
-whole-program evaluator transport. `HPTFetchForward.lean` implements exact
-scalar projection forwarding, `HPTDestroy.lean` implements scalar and exact
-all-scalar unique-leaf destruction, and `HPTPAPFuse.lean` implements local
-PAP/application fusion. `Reachability.lean` implements the exact rooted graph
-restriction and its independent checked certificate. `HPTPAPFuseProgram.lean`
-composes all five consumers.
-`Optimizer.lean` wraps that bundle in the versioned, deterministic, fail-soft
-policy and reporting boundary described in the
-[optimizer harness](optimizer-harness.md).
+| Module | Responsibility |
+| --- | --- |
+| [`HPT.lean`](../Compilatrix/IxIR1/HPT.lean) / [`HPTSound.lean`](../Compilatrix/IxIR1/HPTSound.lean) | Abstract domain, bounded checker, concrete interpretation, and evaluator soundness |
+| [`HPTProduce.lean`](../Compilatrix/IxIR1/HPTProduce.lean) | Deterministic SCC-local producer |
+| [`HPTCache.lean`](../Compilatrix/IxIR1/HPTCache.lean) | Untrusted records, dependency scheduling, and checked local repair |
+| [`HPTCacheIO.lean`](../Compilatrix/IxIR1/HPTCacheIO.lean) / [`HPTCacheDirIO.lean`](../Compilatrix/IxIR1/HPTCacheDirIO.lean) | Bounded single-file snapshots and indexed per-key chunks |
+| [`HPTCasePrune.lean`](../Compilatrix/IxIR1/HPTCasePrune.lean) / [`HPTCasePruneProgram.lean`](../Compilatrix/IxIR1/HPTCasePruneProgram.lean) | Local/whole-function consumers and whole-program transport |
+| [`HPTPAPFuseProgram.lean`](../Compilatrix/IxIR1/HPTPAPFuseProgram.lean) | Composition of case, fetch, destructor, PAP, and reachability consumers |
+
+`Pipeline.Artifact.checkHPT[With]` fixes checking to the artifact's exact
+dependency-ordered graph. The [optimizer harness](optimizer-harness.md) owns
+pass policies, reports, and fallback.
 
 ## Accepted claim
 
@@ -149,202 +126,77 @@ environment.
 `functionSummary_sound_of_checkHPT_eq_ok` expose the same guarantee directly
 from the production API.
 
-## First checked consumer
+## Checked consumers
 
-`HPT.CasePrune.run` recognizes one supplied code root of the form
+### Case pruning and unary collapse
 
-```text
-let x := call f(args); case x of alternatives
-```
+`HPT.CasePrune.run` recognizes a call followed by a case on its newly bound
+result. For a finite heap-only function summary, it keeps alternatives whose
+runtime constructor index appears in the fact. Dispatch uses the index, not
+constructor-block identity; PAP shapes retain no alternative.
 
-where the case scrutinizes the newly bound `x`. If `f` is a function and its
-row is finite and heap-only (`mayScalar = false` and `unknownHeap = false`),
-the pass retains exactly those alternatives whose runtime constructor index
-occurs in a constructor shape in the row. Constructor dispatch observes the
-index, rather than the constructor block identity; PAP shapes retain no case
-alternative. If the row contains exactly one detailed unary constructor and
-filtering leaves exactly one unary branch with that index, the pass replaces
-the case by `let field := fetch x 0; body`. The fetch and original case are
-both non-consuming, retain `x` beneath the field binder, and consume the same
-code fuel. The output reports removed alternatives, collapsed cases, and
-materialized fetches. Scalar-capable, unknown-heap, missing, extern, and all
-nonmatching syntax paths are returned unchanged; identity-only, nullary,
-multi-field, and duplicate matching branches remain pruning-only.
+A singleton detailed unary constructor with exactly one matching unary branch
+permits replacing the case with `let field := fetch x 0; body`. Both forms
+preserve the original scrutinee binder, expose the same field, and consume the
+same code fuel. Identity-only, nullary, multi-field, and duplicate matching
+branches permit pruning only. Scalar-capable, unknown, missing, extern, and
+nonmatching cases stay unchanged.
 
-The unary restriction is intentional under the current exact fuel-indexed
-theorem. Erasing a nullary case removes a code step, while materializing two or
-more fields as separate fetches adds code steps. General collapse therefore
-waits for a checked batch projection/tick representation or a deliberately
-weaker fuel simulation; the optimizer does not blur that semantic choice.
+The unary restriction preserves exact fuel behavior. Removing a nullary case
+loses a code step; expanding multiple fields into separate fetches adds steps.
+General collapse needs a checked batch projection/tick representation or a
+separately specified weaker simulation.
 
-`HPT.CasePrune.runWithFacts` is the whole-function form. It mirrors the HPT
-transfer at every program point: `analyzeOp` supplies each new binding fact,
-all older facts cross the analyzer's `forgetHeap` mutation boundary, and
-`Fact.caseFields` supplies the refined binder environment for each case
-alternative. A case may therefore consume a fact propagated through aliases,
-allocations, fetches, direct or self calls, PAP construction/application, and
-other analyzed primitives rather than requiring an adjacent call. An abstract
-transfer or atom-resolution error is fail-soft for that subtree.
+`runWithFacts` propagates facts through the complete function using `analyzeOp`,
+`forgetHeap` on older bindings, and refined case-field environments. It supports
+non-adjacent producers and fails soft for a subtree on abstract-transfer or
+atom-resolution error. `runFunction` seeds parameters at `top` and retains the
+owner address for dynamic `callSelf`. `runRecursive` is the fixed-environment
+compatibility traversal over supplied code and the synthetic main.
 
-`runCode_runWithFacts_eq` proves exact evaluator equality for this general
-traversal from a local post-fixpoint, the current function's owner binding, and
-a pointwise concrete interpretation of the input fact environment. The public
-`analyzeOp_sound` theorem is the operation-level bridge used to extend that
-environment after each successful primitive. Case alternatives use the
-constructor and scalar-Nat binder soundness lemmas directly. The result covers
-every fuel, success, and error without assuming well-moded code.
+| Theorem/API | Guarantee |
+| --- | --- |
+| `runCode_run_eq` / `runCode_runWithFacts_eq` | Exact evaluator equality at every fuel, including errors, under the checked post-fixpoint and held environment facts |
+| `runCode_runRecursive_eq` | Exact equality through supplied continuations/alternatives |
+| `checkAndPruneCase[With]`, `pruneCaseWithProducedHPT`, `pruneCaseWithCachedHPT` | Checked, produced, and cached authority paths for one root |
+| `checkAndPruneCasesRecursive[With]` and produced/cached variants | Recursive supplied-code traversal |
+| `checkAndPruneMain[With]` and produced/cached variants | Actual synthetic-main execution, including self calls |
+| `checkAndPruneProgram[With]` and produced/cached variants | Whole graph rewriting, checked readdressing, and installation |
 
-`runFunction` seeds every parameter with `top`; `rewriteCurrentAt` retains the
-function's arity and result-world contract while making its address explicit
-for `callSelf`. A strong fuel induction proves both arbitrary-frame equality
-and combined rewritten-body/current-frame equality. Recursive self entry uses
-the owner-sensitive body theorem at strictly smaller fuel.
+### Whole-program composition
 
-`runRecursive` remains the fixed-environment compatibility traversal for a
-supplied `Code`, including the top-level main, which has no declaration owner.
-It descends through every continuation and alternative body and applies the
-adjacent-call `run` form. `rewriteCurrent` and `runMain_runRecursive_eq` account
-for the evaluator's synthetic main frame and dynamic `callSelf` re-entry.
+Owner-sensitive rewriting preserves declaration arity/result/PAP contracts
+and extern rows. `EvalRewrite.ExactEnvironment` lifts exact body equality
+through direct/self calls, applications, and recursive release. Scalar fetch
+forwarding preserves complete results/counters; destructor and PAP rewrites
+use their distinct successful-run contracts. Their acceptance rules are in
+the [optimizer harness](optimizer-harness.md).
 
-`CasePrune.runCode_run_eq` proves exact `runCode` equality for every fuel,
-store, environment, current function, success, and error whenever the supplied
-summary environment is a local post-fixpoint for the evaluator declaration
-environment. HPT soundness ensures that a live constructor's first matching
-alternative survives filtering. For collapse, the detailed unary field vector
-proves that fetch zero succeeds and produces exactly the branch environment at
-the same fuel. `runCode_run_eq_of_runWith_eq_ok` specializes this to an accepted
-untrusted certificate. The core theorem uses only the ordinary Lean logical
-axioms; its checked specialization inherits exactly the ledgered native digest
-dependency already used to materialize HPT summaries.
+`EvalRewrite.AbstractEnvironment` and `HeapHistoryIso` support changes to
+allocation history, dead holes, and counters. `fusePair?_refines` covers
+under/exact/over application with scalar captures and an unobservable retired
+PAP binder. Arbitrary heap captures cannot be classified as shared from HPT
+alone, because IxIR₁ no longer carries parameter modes.
 
-`CasePrune.runCode_runRecursive_eq` lifts the exact equality through the
-complete supplied-code traversal by induction on evaluator fuel. Rewriting
-alternatives preserves first-match dispatch, and the selected rewritten body
-is equivalent at the smaller fuel. Its accepted-certificate specialization
-has the same trust boundary as the one-root form.
+Checked reachability then restricts the rewritten old-keyed graph. Its
+`compilatrix/ixir1/reachability-input/1\0` identity commits to ordered rows and
+main; the certificate binds exported roots and a retained list in input order.
+Roots must exist and be retained, and direct call/PAP edges must remain closed.
+A reachable dynamic apply requires the complete graph. Producer disagreement
+or missing roots keeps the input. `runMain_filterEntries_eq_of_validate` proves
+exact equality for the checked restriction.
 
-The pipeline exposes `checkAndPruneCase[With]` for untrusted certificates,
-`pruneCaseWithProducedHPT` for direct proof-carrying production, and
-`pruneCaseWithCachedHPT` for checked cache hits/rebuilds. Their evaluator
-corollaries are pinned in `Compilatrix/Fence.lean`. The corresponding recursive
-APIs are `checkAndPruneCasesRecursive[With]`,
-`pruneCasesRecursiveWithProducedHPT`, and
-`pruneCasesRecursiveWithCachedHPT`; all three authority paths have separately
-pinned exact-evaluator corollaries. For the artifact's actual main,
-`checkAndPruneMain[With]`, `pruneMainWithProducedHPT`, and
-`pruneMainWithCachedHPT` expose the self-call-aware form and exact `runMain`
-corollaries.
+Changed bodies receive new addresses through one `ReaddressAll.rebuild`.
+Temporary producer names, SCC addressing, ordinary content audits, and an
+exact-source audit yield a total old-to-final map. Emitted rows have source
+producers, reverse images are isolated from occupied namespaces, and no final-key
+aliases are installed. `runMain_exact_of_rebuild_eq_ok` transports the complete
+result, including addresses in heap nodes and errors.
 
-`rewriteDeclarationAt`, `rewriteEntries`, and `rewriteCtx` apply the
-owner-sensitive traversal to every stored function while preserving extern
-declarations, function arities, and result-world contracts. The declaration
-address is threaded through both logical environment lookup and concrete list
-rebuilding. `HPTCasePruneProgram.lean` proves this logical old-keyed program
-an instance of `EvalRewrite.ExactEnvironment`: misses and externs are retained,
-calling conventions are stable, and each owner-sensitive rewritten body is
-exactly equivalent in the source context. The generic fuel induction then
-covers direct calls into rewritten bodies, dynamic `callSelf`,
-under/exact/over-application, PAP application, recursive drop entries,
-successful stores and values, every error, and instruction counters.
-
-`HPTFetchForward.lean` adds an exact owner-sensitive consumer for the local
-shape `let node := alloc/reuse ctor fields; let field := fetch node i; rest`.
-When the selected source atom is HPT-proven scalar, it replaces the fetch with
-`pure` of that atom lifted across the retained node binder. Both original
-binders and the constructor operation remain, so `runCode_forwardHead?_eq`
-proves equality of the complete evaluator result, including fuel behavior,
-store layout, allocation identities, and counters. The scalar gate is the
-syntax-ownership boundary: forwarding a heap-valued field source could
-duplicate an owner after installing it in the constructor. Missing facts,
-heap-capable sources, and out-of-range fields remain unchanged.
-
-`runCode_runWithFacts_eq_ownerCompatible` lifts the local equality through the
-same recursive HPT transfer used by case pruning. It accepts either a real
-stored-function owner or the top-level convention that the synthetic owner has
-no summary. This supports fresh allocations and successful in-place reuse with
-one theorem, while failing closed around ambiguous `main` owners.
-
-`HPTPAPFuse.lean` adds the first O1 consumer. Its executable checker recognizes
-an adjacent PAP allocation and application, validates the declaration arity,
-proves all captures scalar from the current HPT environment, lowers supplied
-operands across the consumed binder, and proves the continuation cannot observe
-that binder. It emits a larger PAP, a direct saturated call, or a direct call
-plus residual apply. Both binder positions remain in the target syntax, so the
-rewrite does not depend on a global de Bruijn substitution.
-
-Removing the source allocation cannot preserve literal `Store` equality: it
-changes dead slots, cost counters, and every later numeric allocation index.
-`EvalIso.lean` therefore proves all eight mutually recursive evaluator entries
-congruent under `HeapHistoryIso`, a finite partial heap bijection which covers
-live nodes, may remember dead/dead history, and ignores counter and hole
-numbering. `fusePair?_refines` uses that relation to prove every accepted
-under-, exact-, and over-saturated decision preserves successful evaluation at
-arbitrary fuel. The scalar-capture restriction is the current ownership
-boundary: IxIR₁ declarations retain result ownership but not parameter modes,
-so HPT cannot certify an arbitrary heap capture as shared.
-
-`EvalRewrite.lean` packages two declaration-environment relations over the same
-owner-sensitive calling boundary. `ExactEnvironment` preserves complete
-evaluator results and is used by case pruning; `AbstractEnvironment` preserves
-successful body runs modulo heap allocation history and is used by PAP fusion.
-Their common evaluator arguments cover direct calls, dynamic `callSelf`, PAP
-application, and reclamation entries.
-`HPTPAPFuseProgram.lean` instantiates those relations for the composed
-case/fetch/PAP rewrite, proves top-level main refinement under a fail-closed
-synthetic-owner condition, and transports the result through one exact
-content-address rebuild. A successful HPT check plus successful rebuild
-therefore authorizes
-`runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle`; fetch forwarding
-version 1, PAP fusion version 1, and reachability version 1 are enabled in
-`defaultPolicy`.
-
-`Reachability.lean` checks a second, deliberately small certificate after the
-body rewrites and before rebuilding. Its
-`compilatrix/ixir1/reachability-input/1\0` digest commits to the exact ordered
-old-key declaration rows and exact rewritten main; the certificate also
-commits to the exact configured exported-root list and a retained-key list in
-input order. A proper subset is accepted only when every root exists and is
-retained, and every direct `call` or `papp` edge in main and each retained body
-either names no local declaration or names another retained key. `callSelf`
-stays inside its retained owner. A reachable dynamic `apply` is conservatively
-open-world in version 1, so the checker accepts only the complete declaration
-set in that case.
-
-The deterministic closure producer is untrusted and immediately rechecked.
-Producer/checker disagreement, including a nonexistent configured root, keeps
-the complete graph. `runMain_filterEntries_eq_of_validate` proves exact
-evaluator equality for a valid restriction by a simultaneous fuel induction
-over code, primitive operations, and invocation; it covers case alternatives,
-direct calls, PAP lookup, self calls, externs, and recursive drop/free helpers.
-`runMain_run_eq` lifts that result through the fail-soft wrapper. The composed
-program proof first rewrites against the complete logical declaration
-environment, transports the result to the checked restriction, and only then
-uses the existing exact readdress theorem. Thus pruning a declaration or an
-entire dead SCC adds no second rebuild and does not weaken the successful-run
-history refinement of PAP fusion.
-
-Changed function bytes cannot retain their old content addresses.
-`ReaddressAll.rebuild` therefore alpha-renames function producers into a
-domain-separated temporary namespace, runs the ordinary SCC-aware address
-pass, and exposes only the final graph and the composed old-to-final map. It
-fails closed unless both the ordinary content-address audit and an
-exact-source audit pass. The latter checks the rewritten main and every source
-row under the total `rebuildRename`, rejects reverse images that are not holes
-in the emitted environment, and requires every emitted declaration to have a
-source producer. `runMain_exact_of_rebuild_eq_ok` then transports from the
-exact old-keyed declaration environment, without installing final-key aliases.
-
-The composed optimizer joins that rebuild to the logical HPT theorems and
-reports declaration removals, alternative removals, collapses, materialized
-fetches, forwarded fetches, and PAP fusion classes across the main and all
-retained declarations. The pipeline exposes
-`checkAndPruneProgram[With]`, `pruneProgramWithProducedHPT`, and
-`pruneProgramWithCachedHPT`; `installPrunedProgram` installs the result while
-composing the artifact's original `targetAddressMap` through the rebuild map.
-The returned HPT analysis still describes the input graph and is deliberately
-documented as stale for the rebuilt graph. The checked theorem transports the
-complete `RunResult` through `Readdress.mapRunResult`, including addresses in
-heap nodes and errors, rather than proving only equality of a scalar result.
+`runMain_rebuildProgram_of_runWith_eq_ok_defaultOracle` composes the accepted
+consumers, restriction, and rebuild. `installPrunedProgram` composes the
+artifact's producer address map with the rebuild map. The retained HPT result
+describes the **input graph**; recompute it before analyzing the rewritten root.
 
 ## Cache and summary identities
 
@@ -539,149 +391,37 @@ adds the three directory/index limits.
 
 ## Checked evidence and proof boundary
 
-`Tests.HPTFixtures` uses a content-addressed program containing a stable
-extern, a scalar target, PAP construction plus exact application, a constructor
-with one scalar field, and a genuine two-function SCC. One SCC branch allocates
-that constructor and fetches its field. `fieldSensitiveOk` checks the detailed
-produced row, precise/unknown/out-of-range fetch transfers, the concrete stored
-field, and the concrete projected scalar;
-`detailedConstructorAcceptedFact_sound` instantiates the accepted-row theorem
-at that detailed result. The fixture freezes five version-3 cache keys and five
-summary addresses. A precise/widened pair proves executable
-dependency-cone invalidation; underclaim, noncanonical, wrong-identity,
-reordered, and over-budget candidates fail closed. The exact structural limit
-fixture counts one field and succeeds; one-below field, shape, member, and
-coordinate limits fail. A separate deliberately ill-moded alias/reuse fixture
-allocates constructor A, aliases its unique location, reuses it as constructor
-B, and returns the older alias. The exact-A claim is rejected, the unknown-heap
-claim is accepted, concrete execution observes B, and
-`aliasReuseAcceptedFact_sound` instantiates the semantic theorem at that
-boundary. `casePruneOk` checks the first consumer at a real two-alternative
-call-result case: the accepted detailed unary row removes the impossible
-branch, collapses the remaining case to one fetch, and preserves the exact
-scalar result and store observations. It also pins pruning-only behavior for
-identity-only, nullary, binary, duplicate-match, and universal facts, plus a
-singleton collapse whose removed-alternative count is zero.
-`recursiveCasePruneOk` nests that redex in both bodies of an outer case: the
-one-root API changes nothing, recursive traversal removes two alternatives,
-collapses two cases (including the unexecuted outer branch), materializes two
-fetches, both executable paths agree, and the checked universal row again
-changes nothing.
-`callSelfCasePruneOk` runs a one-argument current body that recursively peels
-`3` to zero, enters the rewritten base branch through three dynamic self calls,
-and confirms that original and rewritten current/body pairs return the same
-scalar and store after the impossible alternative is removed and the unary
-case is collapsed.
-`pipelineCallSelfMainPruneOk` crosses the checked artifact-main pipeline on a
-zero-argument self-loop and confirms that the original and pruned mains have
-the same exact finite-fuel `.fuel` result.
-`declarationGraphCasePruneOk` crosses the complete checked program API: it
-rewrites a stored caller, removes one impossible alternative, collapses its
-case with one materialized fetch, changes the caller's content address,
-rewrites the main edge, passes both ordinary and exact rebuild audits,
-preserves the detailed concrete result/store, and checks that artifact
-installation composes the original producer address map to the new caller.
-`reachabilityCertificateOk` starts from four content-addressed functions: main
-reaches a caller and leaf while a two-function mutual SCC is dead. The checked
-closure retains exactly the first two rows; exporting either SCC member retains
-both; a standalone PAP root retains its target; and reachable dynamic apply
-retains the complete graph. A nonexistent root fails soft to the input.
-Separate candidates with a stale input digest, substituted root list, and
-canonical-but-unclosed retained list are rejected. Original and filtered
-execution both return Nat `42`.
-`reachabilityHarnessOk` crosses HPT production, the default optimizer, and the
-single rebuild. It reports two removed declarations and four-to-two functions,
-removes the mutual artifact, preserves content-address audits and execution,
-honors the exported-root policy, and selects the original graph for an
-unsupported reachability version.
-The destruction decision guard accepts scalar `drop`/`dropU` and one exact
-constructor with a complete all-scalar field vector, while rejecting shared
-constructor destruction, heap-valued fields, identity-only facts, multiple
-shapes, widening, unresolved variables, and unrelated operations. The native
-pipeline fixture crosses HPT production and the one-rebuild optimizer on a
-sentinel-owned main, attributes one scalar-drop elimination and one unique
-leaf specialization, changes static `dropU` to `free`, preserves the exact
-Nat result and allocation/free/live observations, and reports an unchanged
-second run; an unsupported destruction version fails soft to the input graph.
-The adjacent recursive-fuel guard pins the current IR boundary with two
-successful-source counterexamples: inline `fetch`/`free` expansion exhausts
-continuation fuel, and the equivalent stored helper exhausts call-entry fuel.
-Consequently deeper unique plans and the shared RC-zero branch are staged with
-the fuel-neutral consuming-destructure/reset primitive rather than encoded as
-ordinary IxIR₁ `Code`.
-The pipeline integration suite separately compiles a usage-checked Ixon
-constructor main alongside six stored functions with only one runtime-reachable
-target. The default optimizer removes the other five and preserves the exact
-shared constructor result, so declaration removal is pinned on compiler output
-as well as the hand-written IxIR₁ graph.
-Deterministic production reproduces the hand-written precise
-certificate and all five frozen summary identities in nine rounds. Repeating
-it returns the same candidate/result. Nine rounds is the exact global fixture
-boundary; either an eight-round global cap or a two-round local cap widens only
-the recursive SCC and remains accepted. Zero-shape and zero-field checker
-budgets independently force only the constructor artifact to `top` and also
-remain accepted. Persistent-cache regressions pin a five-miss cold run, a
-five-hit warm run, deterministic store bytes under reversed insertion order,
-record and store roundtrips, noncanonical/trailing-byte rejection, duplicate
-keys, bounded-width count/coordinate numeral rejection, every exact and
-one-below byte/count boundary, local repair of one
-malformed record, and a precise-to-widened dependency-cone rekey with unrelated
-hits preserved. Temporary-file tests cross both the generic and pipeline file
-APIs, including absent-file creation, warm reuse, pre-read file-size rejection,
-outer framing corruption, local persisted-record repair, complete atomic
-replacement, successful file/directory barriers, wrong-kind barrier rejection,
-staging cleanup, and an ignored interrupted-write orphan while the prior
-destination remains readable.
+`Tests.HPTFixtures` exercises content-addressed scalar, PAP, constructor, and
+recursive-SCC programs through the checker, producer, cache, and consumers.
 
-The chunk-directory fixtures additionally pin absent-directory creation,
-pipeline cold/warm reuse, canonical lowercase key filenames, exact and
-one-below metadata-entry/framed-byte/selected-read budgets, malformed stale
-chunk isolation, selected outer-framing repair, per-key transaction cleanup,
-and rejection of names outside the controlled cache namespace.
+| Boundary | Regression coverage |
+| --- | --- |
+| Sound facts | Detailed fields, nested fetch/case binders, source-to-de-Bruijn order, pointwise joins, exact PAPs, and successful concrete observations |
+| Mutation conservatism | An older alias survives overwrite with a different constructor; an exact old-shape claim rejects and unknown-heap remains sound. |
+| Consumer behavior | Unary collapse, pruning-only neighbors, aliases/non-adjacent producers, recursive self calls, exact errors, scalar fetch/destruction, and PAP saturation classes |
+| Whole-program rewrite | Changed caller and main edge, producer-map composition, dead SCCs, exported/PAP roots, reachable dynamic apply, and one checked rebuild |
+| Production | Deterministic facts/identities, local/global round boundaries, conservative widening, and unaffected dependency summaries |
+| Cache codecs and repair | Canonical record/store roundtrips, framing/order/duplicate errors, exact/one-below limits, malformed local repair, and precise-to-widened dependency invalidation |
+| Filesystem adapters | Cold/warm reuse, file-size admission, durable staging/barriers, cleanup/orphans, malformed stale chunks, selected framing repair, and metadata/framed/read budgets |
+| Resource boundaries | Per-fact/aggregate shapes and fields, coordinates, member counts, recursive depth, payload sizes, and producer caps |
 
-`caseBinderFieldOk` uses a separate content-addressed caller so the five frozen
-cache identities remain unchanged. It checks source-to-de-Bruijn reversal,
-pointwise joining of multiple detailed shapes, wrong-tag filtering,
-identity-only and unknown widening, alias-forgotten field conservatism, and Nat
-successor recovery. Both the ordinary checker and deterministic producer infer
-the caller's scalar result, direct inference agrees, and concrete execution
-returns Nat `7` with one live allocation. `caseBinderAcceptedFact_sound`
-instantiates the accepted-row semantic theorem for that result.
+`postFixpoint_of_runWith_eq_ok` exposes the checked post-fixpoint;
+`semanticAudit_of_runWith_eq_ok` exposes content addressing and dependency order.
+`Production` and cached results retain the exact checker equation. Generic
+`invoke_sound` uses ordinary logical axioms; accepted materialized certificates
+and digest-bound reachability wrappers retain the
+[ledgered native BLAKE3 dependency](trusted-extern-ledger.md). The production,
+cache, consumer, destruction, and reachability interfaces are pinned in
+[`Fence.lean`](../Compilatrix/Fence.lean).
 
-`recursiveFieldOk` adds a depth-two constructor fixture. It checks exact
-two-step fetch precision, nested case-binder precision, deterministic
-production, and concrete Nat `11` execution for both paths. Exact depth-two
-checker/cache limits accept the artifact, one-below depth limits reject it,
-the recursive record/store codecs round-trip it canonically, and a shallow
-producer widens conservatively while retaining its post-fixpoint and semantic
-guarantees.
+The single-file adapter retains one bounded in-memory store. The chunk adapter
+retains metadata and opens selected records lazily. Its selected-read accounting
+currently trusts the indexed length: replacement between indexing and lookup
+can load more payload than charged, while individual store limits still apply.
+The [reviewed gap](review-2026-09-09.md#2-p2--a-stale-cache-index-undercharges-the-payload-actually-loaded)
+is tracked under roadmap Q1.
 
-The file/directory durability barriers are implemented and ledgered. Controlled
-power-cut fault injection remains desirable platform evidence, not a missing
-step in the commit protocol. The single-file adapter still returns one bounded
-in-memory `Store`; the chunk-directory adapter instead retains metadata and at
-most one selected bounded record payload at the storage boundary. Streaming
-directory enumeration, sharding/garbage collection, and cross-store scheduling
-remain broader scalability work.
-
-`postFixpoint_of_runWith_eq_ok` exposes the exact executable post-fixpoint
-gate; `semanticAudit_of_runWith_eq_ok` exposes the returned content-address
-and dependency-order audit. Default-limit specializations are provided under
-the corresponding `run_eq_ok` names. Their axiom cones are pinned in
-`Compilatrix/Fence.lean`, including the ledgered native BLAKE3 exception used
-by materialization. The generic `invoke_sound` evaluator theorem stays within
-the ordinary `propext`/`Classical.choice`/`Quot.sound` set; composing it with an
-accepted, materialized certificate adds exactly that already-ledgered native
-hash axiom. Both direct-production and persistent-cache result layers,
-together with the one-root and recursive pipeline corollaries, are
-mechanically pinned. The two public reachability equalities are pinned as
-well. The destruction fence separately pins the accepted local arbitrary-fuel
-refinement and its owner-sensitive recursive traversal. Reachability's
-restriction induction is semantic, while its public validation
-premise exposes the same ledgered native BLAKE3 axiom because it commits to the
-exact reachability input digest.
-
-Record-streamed, power-loss-durable publication and the first disk-backed,
-per-artifact lazy chunk schedule are landed on the ledgered filesystem
-baseline. Cross-store scheduling, streaming/sharded index maintenance, and
-controlled power-cut recovery testing remain future scaling/platform evidence.
+Durable publication is implemented on the ledgered filesystem baseline.
+Controlled power-cut testing is additional platform evidence. Streaming
+namespace enumeration, sharding/garbage collection, and cross-store scheduling
+remain separate scalability extensions.

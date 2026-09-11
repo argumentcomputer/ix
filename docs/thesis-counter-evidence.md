@@ -55,6 +55,6 @@ programs or wall-clock speed. The separate [native reversal gate](source-native-
 now measures matching arena-cell counts and full release in linked code for
 eight source inputs; it makes no wall-clock speedup claim.
 
-The [benchmark plan](benchmark-plan.md) defines the next native timing and
-language/runtime comparisons, starting with the parameterized reversal. Keep
-these exact counters alongside those measurements as explanatory evidence.
+The [native performance reports](performance/README.md) now complement these
+exact counters with parameterized reversal and checked-optimization timings.
+The [benchmark design](benchmark-plan.md) keeps their measurement scopes explicit.

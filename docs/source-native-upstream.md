@@ -67,9 +67,10 @@ The producer certifies four finite stack/register configurations, including
 nonzero memory and high addresses, with 64 writable bytes below the return slot.
 Native tests additionally protect the caller frame and all System V saved
 registers. These are closed translation-validation and supplied-state execution
-claims. N3's runtime scalar arguments, branches, joins, and general compositional
-contracts, and F1's sufficient-stack theorem, remain separate work. The local
-x86 model and system linker/loader obligations remain explicit. Six new axiom
+claims. Runtime scalar arguments, branches/joins, reusable call contracts, and
+finite stack sufficiency have a separate [scalar source contract](source-native-scalar.md);
+this C3 endpoint retains its supplied-state certificate. The local x86 model
+and system linker/loader obligations remain explicit. Six new axiom
 fences retain the ordinary logical basis and the existing indexed-source hash
 axiom; they introduce no new axiom or production FFI symbol.
 

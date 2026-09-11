@@ -75,14 +75,16 @@ and linked source-family documents give their current scope.
 | --- | --- |
 | [`Pipeline.compileValidated`](../Compilatrix/Pipeline.lean) | Checked source erasure and owned IxIR₁. `Pipeline.compile` bypasses erasure certification and is not interchangeable for certified clients. |
 | [`IxIR2.Pipeline.compileValidated`](../Compilatrix/IxIR2/Pipeline.lean) | Separate checked baseline CFG attachment with trace and provenance; exact logical/physical baseline composition uses the credit-free inventory. |
-| [`Borrow.compileValidated`](../Compilatrix/Borrow/Pipeline.lean) / [`Borrow.select`](../Compilatrix/Borrow/Pipeline.lean) | Optional borrowed variants and owned entry wrappers. Bounded source/baseline/target replay selects only a closed scalar result with fewer actual RC operations, full reclamation, and no peak-live-node increase; every optional rejection retains the checked baseline. |
-| [`Borrow.Runtime.compileValidated`](../Compilatrix/Borrow/Runtime.lean) / [`Borrow.Runtime.select`](../Compilatrix/Borrow/Runtime.lean) | Structural source/caller/callee certificates select an open shared tag-reading family without runtime arguments or replay. Every admitted owned heap has source agreement, two fewer RC operations, complete reclamation, and unchanged peak; borrowed prefixes preserve lender state. Optional failure retains the checked baseline. |
+| [`Borrow.compileValidated`](../Compilatrix/Borrow/Pipeline.lean) / [`Borrow.select`](../Compilatrix/Borrow/Pipeline.lean) | [Closed borrowed-call certificates](source-borrow.md): owned wrappers, source/result agreement, RC improvement, reclamation/peak checks, and exact baseline fallback. |
+| [`Borrow.Runtime.compileValidated`](../Compilatrix/Borrow/Runtime.lean) / [`Borrow.Runtime.select`](../Compilatrix/Borrow/Runtime.lean) | [Structural runtime borrowing](source-borrow-runtime.md): selection before arguments, lender preservation, owned-heap resource laws, and exact fallback. |
 | [`Recursion.compileValidated`](../Compilatrix/Recursion/Pipeline.lean) | Optional checked recovery with generated artifacts, retaining original validated owned IxIR₁ on outer fallback. |
 | [`CallReuse.compileValidated`](../Compilatrix/CallReuse/Pipeline.lean) / [`compileMap`](../Compilatrix/CallReuse/MapPipeline.lean) | v1 selection on a checked attachment; `compileMap` adds the optional closed-source map specialization and original-source fallback. |
 | [`UniqueReuse.compile`](../Compilatrix/UniqueReuse/Pipeline.lean) | Opt-in `recursor-modes/1` closed-source schema, consuming IxIR₁, checked IxIR₂ translation, and optional static reuse with checked fallbacks. |
 | [`X86.ValidatedScalar.compile`](../Compilatrix/X86/ValidatedScalar.lean) | The synthetic source scalar goes through the actual validated compiler and graph selector. |
 | [`UniqueReuse.Native.select`](../Compilatrix/UniqueReuse/Native.lean) and [`Native.Output.emit`](../Compilatrix/UniqueReuse/NativeObject.lean) | Bounded exact-Word selection from the actual unique artifact, then main/release objects with real IxIR₁ and policy provenance. |
 | [`UniqueReuse.Runtime.compile`](../Compilatrix/UniqueReuse/Runtime.lean) and [`Runtime.Native.Output.emit`](../Compilatrix/UniqueReuse/RuntimeNative.lean) | Checked one-argument unique reversal, exported consuming/static-reuse IxIR₂ function, and one native object pair for every admitted runtime list. The [runtime ABI](source-native-runtime.md) states input ownership, capacity, guards, and complete release. |
+| [`X86.NatCalls`](../Compilatrix/X86/NatCalls.lean) | Structural closed Nat-call selection; [upstream contract](source-native-upstream.md) records source/object composition and supplied-state execution premises. |
+| [`Scalar.Source.compile`](../Compilatrix/X86/ScalarSourceObject.lean) | Runtime scalar source-to-ELF compilation; [scalar contract](source-native-scalar.md) records arithmetic, control/calls, finite stack, and overflow behavior. |
 
 ## Contracts, analyses, and identity
 
@@ -161,17 +163,10 @@ releases as evidence that every parameter inherently needs ownership.
 The local projection-lowering `lowerBorrow` helper is not a whole-function
 borrowed ABI.
 
-The delivered [B1 boundary](source-borrow.md) checks unary shared summaries
-and whole-program caller/callee rewriting, retaining owned PAP wrappers.
-Its semantic certificate uses internally checked finite executions of the
-original source, baseline, and rewritten closed program. The
-[B2 extension](source-borrow-runtime.md) derives reusable function/continuation
-proofs from the accepted open source graph and every changed target body.
-Exact-store borrowed prefixes preserve lender lifetimes; whole-heap root
-ownership and allocation order derive complete owned-input reclamation with
-two fewer RC operations and unchanged peak. Selection takes no runtime input
-or replay fuel. Recursive SCCs and broader parameter combinations still need
-their own structural and resource contracts.
+The [closed borrowed-call contract](source-borrow.md) uses finite execution
+certificates; [runtime borrowing](source-borrow-runtime.md) uses structural
+function/continuation proofs. Their focused specifications define selection,
+lender preservation, reclamation, cost laws, and current source restrictions.
 
 RC coalescing needs ownership-flow and lifetime evidence. Moving a release
 across an extern, reset, or allocation can change observations; delaying it
@@ -263,8 +258,8 @@ Keep the typed execution proof, E1 per-form encoding, E2 stream/object proof,
 and S0–S2 reference bridge separate. The preferred reference architecture is
 an independently maintained formal model, a reproducible Lean adapter, a
 small proof-friendly local model, and an agreement theorem for the emitted
-fragment. [Sail x86 from ACL2](https://github.com/rems-project/sail-x86-from-acl2)
-is a candidate, not a pinned implementation dependency. The relation must
+fragment. The [S0 readiness record](x86-reference-model.md) pins and maps the Sail x86
+candidate; adapter and agreement proofs remain separate. The relation must
 cover registers, RIP, relevant flags, memory, instruction lengths, and
 normal/failure outcomes; generated syntax alone is not that theorem.
 
@@ -351,7 +346,7 @@ Keep four obligations distinct:
 2. Correctness of the executable checker/compiler, including its source
    representation and generated code; the small X1 witness precedes scaling
    this obligation to the compiler closure.
-3. Remaining runtime, ISA, encoder, linker/loader assumptions and Gen-0
+3. Remaining runtime, ISA, unchecked-emission, linker/loader assumptions and Gen-0
    provenance, each with its own inventory and evidence.
 4. Statement faithfulness: what the user reads corresponds to the certified
    Ixon object. A sound checker alone does not establish this.
@@ -370,26 +365,14 @@ theorem. Interpreter-speed self-compilation is not the intended native exit.
 
 ## Measurement policy
 
-Treat direct control flow, higher-order/PAP elimination, borrowing/reuse,
-and representation as performance hypotheses to test on accepted programs.
-Backend tuning follows measurements. Record source origin and last accepted
-compiler stage alongside every result; hand-written IR and rejected catalogs
-answer different questions from compiled upstream executables.
+Treat control flow, specialization, borrowing/reuse, and representation as
+hypotheses to test on accepted programs. Record source origin, last accepted
+stage, selected policy, runtime/resource observations, code growth, checker
+cost, and evidence size. Keep hardware timing outside semantic certificates
+and distinguish evaluator payload units from occupied bytes.
 
-Use deterministic pass-attributed counters for control, allocation/reuse/free,
-RC, reset attempts/hot/cold decisions, layout misses, occupied/live bytes,
-code size, and artifact size. Report analysis/checker time, certificate size,
-and cache behavior alongside runtime gains. Keep machine-specific timing out
-of semantic certificates and distinguish evaluator payload units from bytes.
-
-Progress from rewrite fixtures through same-shape unique/shared kernels,
-higher-order and representation kernels, bounded upstream closures, and
-eventually Ix.Tc on one and N threads. Compare identical algorithms against
-upstream Lean and appropriate native baselines, stating runtime/library
-differences. Record native time distributions, allocated/peak bytes, and
-code size; cycles/cache/branch data are diagnostic when available.
-
-Measure pass combinations and adversarial growth as well as isolated wins.
-Do not claim native parity from interpreter counters or source reach from
-hand-built graphs. HPT/cache scaling and proof-elaboration refactors activate
-only when measured costs identify them as the bottleneck.
+The [benchmark design](benchmark-plan.md) defines comparisons and expansion
+criteria; the [implemented protocol](../benchmarks/protocol.md) defines the
+runner. [Retained reports](performance/README.md) record results and limits.
+A measured consumer activates further optimization or proof-engineering work
+through the roadmap.

@@ -221,8 +221,11 @@ dependency-selected record payloads read in one schedule. Each lowercase
 by key/length/rejection metadata; payloads remain on disk until
 `Cache.runLookupWithM` requests them. Malformed canonical-name chunks are local
 rejections, so unrelated keys remain usable. The selected-read cap is charged
-before each payload read, while each individual chunk still obeys the embedded
-4 MiB record and 72 MiB framed-file caps.
+against the indexed payload length before lookup. A chunk replaced after
+indexing can exceed that charge before the length mismatch is detected; the
+[reviewed accounting gap](review-2026-09-09.md#2-p2--a-stale-cache-index-undercharges-the-payload-actually-loaded)
+remains open. Individual chunks still obey the embedded 4 MiB record and
+72 MiB framed-file caps.
 
 The directory-entry and framed-byte caps are checked during admission, but the
 portable Lean `readDir` primitive itself returns one complete entry array.

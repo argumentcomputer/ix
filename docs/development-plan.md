@@ -1,13 +1,9 @@
 # Development and validation
 
-The [roadmap](roadmap.md) is the single source for priorities, state, and
-acceptance criteria. This guide describes how to implement and verify those
-packages. [Compiler design](compiler-design.md) records the enduring decisions;
-focused specifications own executable contracts and detailed theorem evidence.
-The [benchmark plan](benchmark-plan.md) defines native comparisons, compiler
-cost measurements, reproducible result bundles, and performance regression
-practice; its delivery gates live in the roadmap. The [first full reference](performance/native-reverse-2026-09-09/README.md)
-records PERF1/C3 results, limitations, retained artifacts, and replay commands.
+Use the [roadmap](roadmap.md) to choose a work package and the
+[design reference](compiler-design.md) for its architectural constraints.
+This guide covers implementation, validation, and documentation maintenance.
+The [benchmark protocol](../benchmarks/protocol.md) owns measurement commands.
 
 ## Landing a work package
 
@@ -54,15 +50,6 @@ environment. The CI gate is:
 ```sh
 nix flake check
 ```
-
-Crane's Rust build helper downloads its locked crates directly from
-`static.crates.io`. The flake overrides that helper's Nix Cargo fetcher because
-the crates.io API download route can reject CI requests with HTTP 403. The
-override preserves the upstream lockfile, crate checksums and TLS verification;
-it leaves the helper and Blake3 library output paths unchanged. A cached local
-check may conceal a failed source download. Use `nix build --rebuild` on the
-named fetch derivation to exercise the download itself while still allowing
-its build tools to come from the binary cache.
 
 For the configured local development environment, the complete build and
 compiled regression surface is:
@@ -111,50 +98,42 @@ lake build Compilatrix tests catalog-contact x86-object-fixture \
 ./.lake/build/bin/check-source-borrow-runtime --fixture .lake/build/bin/source-borrow-runtime
 ```
 
-Elaboration-time guards run in the build. The compiled gates cover native
-boundaries, encoder/object oracles, complete fresh-process source artifacts,
-independent corruption rejection, and the trust auditor's own regressions.
-The [R6 credit fixtures](credit-refinement.md#regression-and-trust-boundary)
-are imported by `Compilatrix.lean`; `lake build Compilatrix` checks their
-whole-trace comparisons and the ten public credit-refinement axiom fences.
-The [C2 coverage gate](source-coverage.md) includes three accepted upstream
-closures, two upstream negative neighbors, and the reviewed Std transition.
-The build checks the fresh-closure classifier's two axiom fences; the compiled
-gate checks all 18 source cases and their complete artifacts in fresh processes.
-The [C3 native gate](source-native-upstream.md) checks two unchanged computational
-ELF objects, source/physical results and complete release, structural/overflow
-negatives, independent reconstruction, and call-stack/ABI conditions. The six
-new axiom fences retain the existing logical/hash basis. The [benchmark
-protocol](../benchmarks/protocol.md) documents all six adapters, full correctness,
-short smoke/schema rejection, reference measurement, and independent replay.
-The first reference passed all 805 Lake jobs, 17 compiled validation commands,
-and 19 Nix checks on x86_64 Linux before measurement. Its 30 paired blocks
-cover every required baseline and both closed upstream native entries. A fresh
-source/environment replay rebuilt identical artifacts and executables, reran
-full correctness, and regenerated the analysis byte for byte; archive extraction
-and relocated analysis also passed. These results and their logs are retained
-in the linked reference. Ordinary CI keeps correctness and runner checks;
-performance thresholds await history from a controlled host.
-The [N2 runtime gate](source-native-runtime.md) compiles and emits once per
-producer process, compares complete fresh artifact sets, and links one object
-pair for eight runtime inputs and 203 malformed-input calls. Its source/native
-interfaces and exact-Word adapter are checked by the axiom fence.
-The [B1 borrowed-call gate](source-borrow.md) checks 18 accepted source chains,
-complete source/compiler artifacts, independent caller/callee reconstruction
-and heap replay, three checked source fallbacks, twelve boundary negatives,
-and thirteen artifact corruptions. Ten axiom fences cover checked rewriting,
-finite execution, source/result/resource agreement, and exact fallback.
-The [B2 runtime-borrow gate](source-borrow-runtime.md) checks nine source
-functions compiled before their arguments, 144 independent direct/PAP
-comparisons, nine aliased lenders, four exact source fallbacks, eight
-structural/lifetime guards, all twelve B1 negatives, and twenty artifact
-corruptions. Fifteen new fences cover the universal source/function/continuation
-proofs, input ownership, reclamation, RC/peak laws, and exact fallback.
-Native execution checks apply on supported hosts; inspect the check output
-before reporting platform coverage.
+Elaboration-time guards run in the build. Compiled gates check native ABI and
+object behavior, complete fresh-process artifacts, independent corruption
+rejection, and the trust auditor. The focused contracts in the
+[documentation guide](README.md) describe each gate's domain and theorem
+fences. Inspect output before reporting native platform coverage.
 
-During implementation, run checks appropriate to the changed boundary, then
-the required integration gate for delivery. Documentation and comment-only
-changes need link/consistency checks; changing an integrity-pinned file also
-requires a reviewed digest update and the trust check. Do not report a local
-cached build as a clean build, a full Nix gate, or cross-platform validation.
+Run checks appropriate to the changed boundary, followed by the required
+integration gate. Documentation-only changes need link, anchor, and consistency
+checks. An integrity-pinned input also needs its reviewed digest update and the
+trust check. Report cached builds, clean builds, Nix validation, and platform
+coverage accurately. Ordinary CI checks benchmark correctness and runner
+behavior; timing thresholds require a controlled performance host.
+
+## Documentation maintenance
+
+- Keep the root README focused on purpose, current scope, setup, and navigation.
+- Keep priorities and acceptance gates in the roadmap. On delivery, replace the
+  plan with a compact scoped record linked to its contract or result.
+- Put syntax, invariants, public APIs, and remaining restrictions in the focused
+  specification. Replace superseded proof-progress paragraphs when the proof
+  lands; keep implementation detail in source and theorem references.
+- Keep commands in this guide, the relevant source-family gate, or the benchmark
+  protocol. Link to them from overviews instead of repeating test inventories.
+- Preserve dated reviews and retained performance evidence as historical
+  records. New results get a new version; current status belongs in the roadmap.
+- Update the documentation index and check relative links/anchors when adding,
+  moving, or removing a page. Keep machine-readable identities and integrity
+  pins separate from editorial changes.
+
+## Build troubleshooting
+
+Crane's Rust build helper downloads its locked crates directly from
+`static.crates.io`. The flake overrides that helper's Nix Cargo fetcher because
+the crates.io API download route can reject CI requests with HTTP 403. The
+override preserves the upstream lockfile, crate checksums and TLS verification;
+it leaves the helper and Blake3 library output paths unchanged. A cached local
+check may conceal a failed source download. Use `nix build --rebuild` on the
+named fetch derivation to exercise the download itself while still allowing
+its build tools to come from the binary cache.

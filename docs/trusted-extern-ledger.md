@@ -1,6 +1,6 @@
 # Trusted-extern ledger
 
-Last reviewed: 2026-09-06. The machine-readable ledger is
+The machine-readable ledger is
 [`trusted-externs.json`](trusted-externs.json); `nix flake check` validates
 it with [`scripts/CheckTrustedExterns.lean`](../scripts/CheckTrustedExterns.lean).
 
@@ -75,54 +75,16 @@ tools and introduce no project native interface or proof axiom. The
 support modules, executable scripts, native harness, and source matrices
 have reviewed integrity pins.
 
-C3's [upstream native gate](source-native-upstream.md) adds independent residual
-text/ELF reconstruction and closed Nat source/physical/object observations. Its
-execution theorem requires an explicit supplied-state call/stack certificate;
-the general N3/F1 contracts and reference ISA/loader assumptions remain open.
-The six new axiom fences introduce no new axiom or production foreign symbol.
-The ledger also pins the benchmark adapters, runner/checkers, manifest, and
+Source/native gate contracts are indexed below. Their implementations and
+reviewed reports are integrity-pinned in the JSON ledger, including complete
+artifact, ownership/resource, rejection, and axiom-fence checks. Native
+provenance currently uses addressed IxIR₁ plus policy identities; diagnostic
+IxIR₂ JSON has no independent wire/cache role.
+
+The ledger also pins benchmark adapters, runner/checkers, manifest, and
 comparison toolchains. Clock, allocation, GC, process-memory, compiler, and
-runtime observations are recorded as measurement/build trust, separate from
+runtime measurements belong to build/measurement trust, separately from
 production source/compiler proof assumptions.
-
-The [source-recursion checker](../scripts/CheckSourceRecursion.lean) imports
-only the shared check helpers. It compares two fresh compiler processes,
-checks the reviewed eight-case matrix and HPT identities, verifies common
-lowering/sidecar links, and independently checks terminal allocation balances,
-reclaimed heaps, and comparative physical allocation/free laws and RC/peak
-bounds in both phases. It rejects RC and peak-counter corruption that preserves
-all earlier allocation/free checks. It adds no external oracle. D1's five,
-D2's seven, R2's nine, R3's twelve, and R4's seventeen theorem fences retain the
-ordinary Lean basis and the existing BLAKE3 assumption at the addressed
-wrapper, composed physical, shared-resource, and comparative boundaries;
-neither the native-interface inventory nor the three
-specification assumptions changes.
-
-The [source-call-reuse checker](../scripts/CheckSourceCallReuse.lean) adds the
-reviewed nine-map and 35 policy/rejection matrix, complete fresh-process
-artifacts, and independent reservation, allocation, reclamation, and RC/peak
-checks for all selected prefixes. Seven deliberate corruptions exercise the
-policy, reservation, and cost checks. It imports only shared check helpers;
-its source and reviewed report are integrity-pinned. R5 adds 25 theorem fences
-for explicit v0/v1 policy behavior, suspended credit ownership, actual compiler
-simulation, checked source-map specialization, and composed source/resource/
-cost endpoints. Their axiom sets retain the ordinary Lean basis and the
-existing addressed-BLAKE3 exception. The new provenance hashes canonical
-IxIR₁-plus-policy metadata; diagnostic IxIR₂ JSON has no wire or cache role.
-The native and specification-assumption inventories remain unchanged.
-
-The [source-unique-reuse checker](../scripts/CheckSourceUniqueReuse.lean)
-reconstructs canonical source, recursor-mode, IxIR₁ graph, and policy preimages
-using only shared check helpers and the existing BLAKE3 binding. It checks all
-seven fresh-process cases, full constructor identity and unit unique ownership,
-every reservation prefix, exact no-RC costs, and complete release. Forty-three
-source/boundary checks and twelve deliberate artifact corruptions accompany
-the reviewed report. Its source and report are integrity-pinned. Twenty-four
-new theorem fences cover the checked source specialization, consuming emission,
-actual target steps, all-prefix resources, full reclamation, comparative costs,
-and composed source endpoint. They retain the ordinary Lean axiom basis and
-the existing BLAKE3 assumption; no native interface or specification assumption
-is added. The new provenance remains an IxIR₁-plus-policy identity.
 
 `lake exe check-tools-tests` exercises the auditor on isolated temporary
 copies. It checks source literals/comments, unrecognized extern attributes,
@@ -414,101 +376,25 @@ the composed pipeline currently supplies no such extern configuration.
   provenance and independently reproducible build attestation remain separate
   bootstrap obligations.
 
-## Bounded native unique reversal
+## Source-family trust boundaries
 
-The checked native selector and its byte-memory proof add no native interface
-or axiom. Nine new fences cover little-endian memory, the complete emitted
-main/release runs, finite owned graphs, source/value/cost composition, concrete
-witnesses, and prefix trap exclusion. The memory/execution proof uses ordinary
-logical axioms; indexed source statements retain the existing addressed-artifact
-BLAKE3 dependency.
+These contracts retain the ordinary logical basis and the existing addressed
+BLAKE3 dependency where used. Each specification names its exact theorem,
+source/environment premises, independent checks, and remaining scope.
 
-The source-native-unique gate independently checks eight source-produced ELF
-pairs and linked C runs, with exact graph/ABI/role provenance, arena-cell counts,
-full reclamation, and twelve native corruption regressions. Its checker,
-shared source-checking helper, native C harness, and reviewed matrix have
-integrity pins. The C code is a test harness that provisions the arena and
-checks generated code; it is not a new Lean FFI or semantic oracle. The existing
-ISA and system linker/loader assumptions remain active; E2 now certifies
-production text and independent ELF interpretation.
+| Family | Boundary to preserve |
+| --- | --- |
+| [Recursion recovery](source-recursion.md) | Checked source replacement, physical selection/fallback, reclamation and comparative costs; broader recursor forms need their own source proofs. |
+| [Reuse across calls](source-call-reuse.md) | Explicit v0/v1 policy, suspended credit ownership, checked map specialization, and source/resource composition |
+| [Unique reversal](source-unique-reuse.md) | Addressed recursor worlds, consuming emission, actual selected target, reservation safety, and no-RC resource laws |
+| [Closed native reversal](source-native-unique.md) | Bounded arena and main/release proof; its original source interface ends at typed execution, while production emission has E2 certificates. |
+| [Runtime native reversal](source-native-runtime.md) | Actual source-to-object execution for admitted caller heaps, exact-Word adapter, entry guards, frame/return-slot assumptions, and complete release; includes the separately checked counter-fold option. |
+| [Upstream native computations](source-native-upstream.md) | Closed source/physical/object translation validation with an explicit supplied-state call/stack execution certificate |
+| [Runtime scalar functions](source-native-scalar.md) | Checked erased-source attachment, universal arithmetic/control/call contracts, finite stack and overflow behavior; general physical CFG selection remains separate. |
+| [Closed borrowed calls](source-borrow.md) | Finite source/baseline/target certificates, owned PAP wrappers, exact fallback, and measured RC/peak conditions |
+| [Runtime borrowing](source-borrow-runtime.md) | Structural source/function/continuation certificates, lender lifetime, owned-input reclamation, and explicit sharing/oracle/application premises |
 
-## Native runtime input
-
-The [N2 endpoint](source-native-runtime.md) compiles a parameterized source
-function and selects one reversal/release pair for all admitted runtime lists.
-Sixteen fences cover source application, physical execution, canonical input,
-native validation/execution, prefix trap exclusion, unchanged-memory length and
-capacity rejection, cross-layer costs, and exact Nat-to-Word conversion. Native
-memory/execution proofs retain only ordinary logical axioms; addressed source
-certificates retain the existing BLAKE3 dependency. The efficient input-word
-builder is definitionally equal to the original allocation update.
-
-The independent runtime gate reconstructs function/ABI/policy preimages,
-compares two complete fresh artifact sets, decodes one ELF pair, and links it
-once for eight inputs in one process. It checks full release and 203 malformed
-calls without arena writes, plus 20 artifact/observation corruption regressions
-for each of the baseline and checked counter-folding variants. Its checker,
-native harness, and both reviewed reports are integrity-pinned. Counter folding
-adds complete-state equality, body execution and instruction-count fences using
-the existing logical axioms; source-to-object composition retains its existing
-hash dependency. It introduces no FFI or new runtime/ISA assumption. The
-test harness provisions caller input; it is not a new Lean FFI or modeled
-oracle. [E2](x86-stream-objects.md) now composes the source theorem through
-actual object text, including parsed provenance, physical returns and complete
-reclamation. Reference-ISA agreement and system linker/loader assumptions
-remain under the scoped specification entries above.
-
-## Runtime scalar source functions
-
-The [first N3 slice](source-native-scalar.md) adds no FFI, oracle, or axiom.
-Fifteen fences cover exact Nat/Word arithmetic, canonical Nat recursor
-semantics, structural source checking, generic scalar totality and lowering,
-finite stack sufficiency, and complete object execution. Pure contracts retain
-only the existing logical axioms; source-indexed endpoints retain the existing
-addressed-BLAKE3 exception. Compilation does not consume per-input native runs.
-
-The independent gate pins five synthetic source/graph/text identities and
-compares two complete fresh artifact sets. It checks 45 source inputs, 95
-object executions, admission/conversion/capacity negatives, 25 corruptions,
-and 830 linked native calls including guarded stacks. The checker, harness,
-and reviewed report are integrity-pinned. Native selection attaches to checked
-erased source; general physical IxIR₂ selection, owned-heap capacity, and
-allocating native calls remain open. The C stack bridge is test infrastructure,
-not a new Lean FFI or source oracle. ISA and system-loader assumptions remain.
-
-## Closed borrowed calls
-
-[B1](source-borrow.md) adds no FFI, modeled oracle, target runtime, or axiom.
-Six core fences for reconstructed CFG validation, actual finite execution,
-result/resource agreement, and fallback use `propext` and `Quot.sound`.
-Four indexed source fences retain the existing logical and BLAKE3 basis.
-The semantic selector derives bounded source and physical replay certificates
-internally; it does not assume an unproved open-function simulation.
-
-The independent source-borrow gate reconstructs all changed functions and
-owned wrappers and replays complete physical traces using its own small
-interpreter. It verifies eighteen source cases, three checked source
-fallbacks, twelve ownership/resource negatives, and thirteen corruptions.
-The checker, its two helpers, and the source-root matrix are integrity-pinned.
-Internal borrowed labels are collision-checked transient names, not a new
-content-addressed IxIR₂ format. The family is not natively selectable, so no
-ISA, encoder, ELF, or native runtime assumption is widened by this package.
-
-## Borrowed runtime arguments
-
-[B2](source-borrow-runtime.md) adds fifteen fences. Ten core/source-shape/input
-interfaces use only the existing logical axioms; five indexed source selection
-and preservation interfaces also retain the existing BLAKE3 dependency.
-Structural checking derives source application and function/continuation
-simulation for every admitted runtime heap. Release fuel comes from proved
-root ownership and allocation order. No input replay, new native reflection
-axiom, FFI, oracle, or target runtime is introduced.
-
-The independent runtime-borrow gate checks nine compiled source functions,
-144 direct/PAP comparisons, nine aliased lenders, complete fresh artifact
-agreement, four checked fallback policies, and twenty rejected corruptions.
-Its script, new helper, and reviewed source/export matrix are integrity-pinned.
-The shared execution helper's reviewed pin changes to admit explicit initial
-caller heaps; B1 retains its empty-main wrapper and regression gate. The same
-native selector rejects both shared artifacts, so all ISA, encoder, and object
-assumptions retain their previous scope.
+Adding a family or widening one requires updating its contract, theorem fences,
+and affected integrity pins. It does not automatically add a native interface
+or retire an ISA/runtime/loader assumption. Current priorities remain in the
+[roadmap](roadmap.md).
