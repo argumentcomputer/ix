@@ -117,6 +117,7 @@
             ./SourceNativeUpstream.lean
             ./SourceNativeScalar.lean
             ./SourceNativePhysicalScalar.lean
+            ./SourceNativeCapturedScalar.lean
             ./benchmarks
             ./SourceBorrow.lean
             ./SourceBorrowRuntime.lean
@@ -131,6 +132,7 @@
             ./fixtures/source-native-upstream
             ./fixtures/source-native-scalar
             ./fixtures/source-native-physical-scalar
+            ./fixtures/source-native-captured-scalar
             ./fixtures/source-borrow
             ./fixtures/source-borrow-runtime
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
@@ -166,6 +168,7 @@
             ./SourceNativeUpstream.lean
             ./SourceNativeScalar.lean
             ./SourceNativePhysicalScalar.lean
+            ./SourceNativeCapturedScalar.lean
             ./benchmarks
             ./SourceBorrow.lean
             ./SourceBorrowRuntime.lean
@@ -180,6 +183,7 @@
             ./fixtures/source-native-upstream
             ./fixtures/source-native-scalar
             ./fixtures/source-native-physical-scalar
+            ./fixtures/source-native-captured-scalar
             ./fixtures/source-borrow
             ./fixtures/source-borrow-runtime
             ./fixtures/x86/native_harness.c
@@ -508,6 +512,25 @@
           '';
         };
 
+        sourceNativeCapturedScalarCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.binutils]
+            ++ pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+          name = "source-native-captured-scalar";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-native-captured-scalar
+            ./.lake/build/bin/check-source-native-captured-scalar \
+              --fixture ./.lake/build/bin/source-native-captured-scalar \
+              --expected ${auditSrc}/fixtures/source-native-captured-scalar/expected.json \
+              --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-captured-scalar/native_harness.c"}
+          '';
+        };
+
         cakeBootstrap = pkgs.stdenv.mkDerivation {
           pname = "cakeml-benchmark-bootstrap";
           version = "3479";
@@ -624,6 +647,7 @@
           source-native-upstream = sourceNativeUpstreamCheck;
           source-native-scalar = sourceNativeScalarCheck;
           source-native-physical-scalar = sourceNativePhysicalScalarCheck;
+          source-native-captured-scalar = sourceNativeCapturedScalarCheck;
           source-borrow = sourceBorrowCheck;
           source-borrow-runtime = sourceBorrowRuntimeCheck;
           tests = testsCheck;

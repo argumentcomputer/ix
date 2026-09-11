@@ -2,6 +2,7 @@ import Compilatrix.Sim
 import Compilatrix.X86.NatCallsSim
 import Compilatrix.X86.ScalarSourceObject
 import Compilatrix.X86.PhysicalScalarSourceObject
+import Compilatrix.X86.PhysicalScalarCapturedSourceObject
 import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.NativeSim
 import Compilatrix.UniqueReuse.RuntimeNativeSim
@@ -7326,3 +7327,58 @@ Source-indexed contracts retain the existing hash boundary. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Exported.sourceNatReturns
+
+/-! Captured scalar exports: checked closed initialization, capture binding,
+complete reclamation, and universal source-to-object composition. -/
+
+/-- info: 'Compilatrix.X86.Scalar.Bound.evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Scalar.Bound.evaluates
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Heap.owned' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Heap.owned
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Heap.spent_empty' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Heap.spent_empty
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Heap.applied' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Heap.applied
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.checkInitializer' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.checkInitializer
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Initialized.reclaimed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Initialized.reclaimed
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Compiled.nativeReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Compiled.nativeReturns
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Compiled.physicalReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Compiled.physicalReturns
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceFunction' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceFunction
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceRun' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceRun
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceReturns
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceNatReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Captured.Compiled.sourceNatReturns

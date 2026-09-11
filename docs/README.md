@@ -61,6 +61,7 @@ performance reports preserve evidence from their recorded revisions.
 | [Upstream native computations](source-native-upstream.md) | Unchanged source exports, structural selection, and fallback |
 | [Runtime scalar functions](source-native-scalar.md) | Exact arithmetic, branches, helpers, finite stack, and overflow behavior |
 | [Physical scalar CFGs](source-native-physical-scalar.md) | Compositional instruction/edge/call selection, source export binding, and physical-to-ELF preservation |
+| [Captured scalar exports](source-native-captured-scalar.md) | Checked closed initialization, one static Word capture, unary runtime application, complete reclamation, and source-to-ELF proof |
 | [Trust ledger](trusted-extern-ledger.md) | Native interfaces, seed/build trust, specification boundaries, and change control |
 
 The [machine-readable trust ledger](trusted-externs.json) and

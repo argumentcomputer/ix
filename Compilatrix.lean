@@ -123,6 +123,7 @@ import Compilatrix.X86.ScalarSourceObject
 import Compilatrix.X86.ScalarSources
 import Compilatrix.X86.PhysicalScalarExport
 import Compilatrix.X86.PhysicalScalarSourceObject
+import Compilatrix.X86.PhysicalScalarCapturedSourceObject
 import Compilatrix.X86.PhysicalScalarSources
 import Compilatrix.X86.PhysicalScalarExamples
 import Compilatrix.Coverage.StdContact

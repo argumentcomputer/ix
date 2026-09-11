@@ -24,7 +24,7 @@ Checked attachments extend it to IxIR₂ and selected x86-64 programs.
 | --- | --- |
 | Source and identity | Strict Ixon codecs, bounded catalog ingress, checked erasure, and cycle-safe IxIR₀/IxIR₁ addressing |
 | Ownership and optimization | Checked shape analysis, shrinking passes, shared and unique reuse, borrowed calls, and resource/reclamation proofs |
-| Native code | Source-to-ELF proofs for selected families and accepted physical scalar CFGs, with runtime application, closure reclamation, branches, joins, direct calls, and finite stack proofs |
+| Native code | Source-to-ELF proofs for selected families and physical scalar CFGs, including static Word captures, runtime application, closure reclamation, branches, joins, direct calls, and finite stack proofs |
 | Validation | Axiom fences, independent artifact/ABI checks, malformed-input tests, fresh-process reproducibility, and retained performance experiments |
 
 Native support is still bounded. Runtime reversal accepts at most 64 exact

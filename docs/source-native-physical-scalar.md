@@ -68,9 +68,11 @@ proves runtime addition, truncated subtraction, and explicit overflow fallback.
 
 Callers converting arbitrary Nats use `Scalar.encodeArguments` from
 `ScalarNat.lean`; it rejects values at or above `2^64` without wrapping.
-Unsupported graphs, captured exports, cyclic aliases/CFGs, recursion, missing
+Unsupported graphs, captured exports through this adapter, cyclic aliases/CFGs, recursion, missing
 targets, incorrect arities, credits, and exceeded limits return an error.
 The existing checked physical artifact remains available for fallback.
+The separate [captured export adapter](source-native-captured-scalar.md)
+accepts one static Word capture and a unary runtime argument.
 
 ## ABI and finite resources
 
@@ -127,9 +129,10 @@ Nine physical-to-object axiom fences retain the ordinary `propext`,
 `Classical.choice`, and `Quot.sound` basis. Eleven further fences cover the
 source application bridge. The complete source-compiler endpoints also use
 the existing Blake3 hash `native_decide` boundary, as the upstream compiler
-theorems do. This extension adds no axiom or native interface. Captured
-exports, allocating bodies, broader recursion, and general occupied heaps
-remain outside the fragment. The earlier arithmetic attachment retains its
+theorems do. This extension adds no axiom or native interface. Allocating
+bodies, broader recursion, and general occupied heaps remain outside the
+fragment. Static captured exports use their separate adapter and provenance
+policy. The earlier arithmetic attachment retains its
 own universal source-application theorem.
 
 Objects use the actual IxIR₁ graph root with lowering version **6**, policy

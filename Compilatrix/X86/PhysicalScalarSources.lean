@@ -6,7 +6,7 @@ exposes Nat peeling, direct calls, and scalar ownership operations. -/
 namespace Compilatrix.X86.PhysicalScalar.Examples
 open Compilatrix.Ixon (Address Constant)
 
-def source (name : String) : Except String Coverage.Source := do
+def source (name : String) (captured : Option Nat := none) : Except String Coverage.Source := do
   let nat : Ixon.Expr := .recur 0 #[]
   let tag : Ixon.Recursor := {
     k := false, isUnsafe := false, lvls := 0, params := 0, indices := 0, motives := 0, minors := 0
@@ -27,11 +27,15 @@ def source (name : String) : Except String Coverage.Source := do
     | "pred" => .app (.recur 2 #[]) (.var 1)
     | "unary-pred" => .app (.recur 2 #[]) (.var 0)
     | "choose" => .app (.app (.recur 3 #[]) (.var 0)) (.var 1)
+    | "capture-project" => .var 1
+    | "capture-choice" => .app (.app (.recur 3 #[]) (.var 1)) (.var 0)
+    | "capture-nested" => .letE true nat (.app (.recur 2 #[]) (.var 0))
+        (.app (.app (.recur 3 #[]) (.var 2)) (.app (.recur 2 #[]) (.var 0)))
     | "nested" => .letE true nat (.app (.recur 2 #[]) (.var 1))
         (.app (.app (.recur 3 #[]) (.var 1)) (.app (.recur 2 #[]) (.var 0)))
     | _ => .app (.recur 1 #[]) (.app (.recur 2 #[]) (.var 1))
   let block ← Coverage.addressed {
-    info := .muts #[.indc {
+    info := .muts (#[.indc {
       isUnsafe := false, lvls := 0, params := 0, indices := 0, typ := .sort 0
       ctors := #[
         { isUnsafe := false, lvls := 0, cidx := 0, params := 0, fields := 0, typ := nat },
@@ -39,17 +43,23 @@ def source (name : String) : Except String Coverage.Source := do
       .recr tag, .recr pred, .recr choose,
       .defn {
         kind := .defn, safety := .safe, lvls := 0
-        typ := if name == "unary-pred" then .all .many .shared nat nat else binary
-        value := if name == "unary-pred" then .lam .many nat body else .lam .many nat (.lam .many nat body) }]
+        typ := if captured.isSome then .recur 5 #[]
+          else if name == "unary-pred" then .all .many .shared nat nat else binary
+        value := if captured.isSome then .letE true nat
+          (.app (.lam .erased (.sort 0) (.nat 3)) (.sort 0)) (.lam .many nat body)
+          else if name == "unary-pred" then .lam .many nat body else .lam .many nat (.lam .many nat body) }] ++
+      if captured.isSome then #[.defn {
+        kind := .defn, safety := .safe, lvls := 0, typ := .sort 0
+        value := .all .many .shared nat nat }] else #[])
     sharing := #[], refs := #[ValidatedScalar.literalAddress 11, ValidatedScalar.literalAddress 22,
-      ValidatedScalar.literalAddress 0], univs := #[.zero] }
+      ValidatedScalar.literalAddress 0] ++ captured.toArray.map ValidatedScalar.literalAddress, univs := #[.zero] }
   let entry ← Coverage.addressed {
     info := .dPrj { idx := 4, block := block.1 }, sharing := #[], refs := #[], univs := #[] }
   return {
     name
     constants := [block, entry]
     root := entry.1
-    literals := [0, 11, 22]
+    literals := [0, 11, 22] ++ captured.toList
     natBlock := some block.1
     expected := .scalar 0 false }
 
