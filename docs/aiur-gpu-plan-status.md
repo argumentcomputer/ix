@@ -385,6 +385,12 @@ all 56621 constants). Findings:
   next implementation step: execute up to `--exec-jobs` shards ahead on
   threads, prove in order, persist each proof and its index entry as it
   completes.
+  Built (commit 851a06ef, `ix prove --ixes M --trace-shards --exec-jobs N`)
+  and measured on the min-cut four: **5:04** (all four executions
+  concurrent, landing at 95–109 s; the GPU then proves 52 + 50 + 48 + 45 s
+  back to back), the same 42 shards, peak 128 GiB, verified. Init end to
+  end: 5:04 + 3:32 = **8:36** to a single-STARK 6.0 MB root, against 9:28
+  for the chunk pipeline.
 - **`--wrap-root`** (shape 1, one `ix_aggr` child, statement passed
   through) wraps until the final proof is one trace shard: 7 → 3 → 2 → 1
   in 39 s, 14.6 → 6.0 MB. The first attempt exposed that a plan the
@@ -445,11 +451,11 @@ ones.
 
 **Not measured yet, in the order to take them.**
 
-0. The execute-ahead loop for env-shard claims (above): the one piece of
-   scheduling the env-shard path lacks, projected to take Stage 1 from
-   9:46 to ~5:00 on the min-cut four. With independent claims, Stage 2
-   joins can also start as soon as their two children are proven, which
-   is the Stage 1/Stage 2 overlap without any protocol work.
+0. Done: the execute-ahead loop (5:04 on the min-cut four). Next on this
+   path: start Stage 2 joins as soon as their two children are proven
+   (the Stage 1/Stage 2 overlap, a scheduling question with independent
+   claims), and the Mathlib run on a min-cut manifest sized from
+   execution memory and `--exec-jobs`.
 1. Stage 2 on the device is measured (above: 3:46 with two leaves and
    lookahead on the chunk batch; 2:51 with direct joins over four min-cut
    claims).
