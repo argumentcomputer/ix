@@ -437,7 +437,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
     s!" __mq.output_at(__i)[0]" ++
     s!" } else \{" ++
-    s!" if __mq.len() >= aiur::execute::POINTER_NAMESPACE \{ return Err(ExecError::MemoryNamespaceFull({size})); }" ++
+    s!" if __mq.len() >= aiur::execute::POINTER_LIMIT \{ return Err(ExecError::MemoryTableFull({size})); }" ++
     s!" let __ptr = G::from_usize(record.pointer_base + __mq.len());" ++
     s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
     s!" __ptr } }"

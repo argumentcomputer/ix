@@ -368,7 +368,7 @@ def claim := ⟦
   -- Addr-set membership via RBTreeMap keyed on the interned store
   -- pointer: content-addressed interning makes ptr equality ⇔ 32-byte
   -- equality in BOTH directions (each content has exactly one store
-  -- slot), so a ptr key is an exact membership test. O(log n) per
+  -- slot), so a u32 ptr key is an exact membership test. O(log n) per
   -- query vs the O(n) list scan — the frontier list is the biggest
   -- per-visit cost on fat-frontier shards (e.g. 1977 asm leaves).
   fn addr_set_build(leaves: List‹Addr›, acc: RBTreeMap‹G›) -> RBTreeMap‹G› {

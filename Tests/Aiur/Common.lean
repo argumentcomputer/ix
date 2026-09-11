@@ -29,9 +29,6 @@ structure AiurTestCase where
       `UInt64`). Pins per-circuit cost regressions: any kernel change that
       shifts FFT cost forces a manual update to the expected value. -/
   expectedFftCost : Option Nat := none
-  /-- Execution must fail (an assertion the program is meant to trip);
-      nothing else is run. -/
-  expectFailure : Bool := false
 
 /-- Full pipeline: execute + interpret + prove/verify. -/
 def AiurTestCase.prove (functionName : Lean.Name)
@@ -44,13 +41,6 @@ def AiurTestCase.interp (functionName : Lean.Name)
     (input expectedOutput : Array Aiur.G)
     (label : String := toString functionName) : AiurTestCase :=
   { functionName, label, input, expectedOutput, withProof := false }
-
-/-- Execution must fail. -/
-def AiurTestCase.fails (functionName : Lean.Name)
-    (input : Array Aiur.G := #[]) (label : String := toString functionName) :
-    AiurTestCase :=
-  { functionName, label, input, interpret := false, withProof := false,
-    expectFailure := true }
 
 /-- Execute only. -/
 def AiurTestCase.exec (functionName : Lean.Name)
@@ -117,11 +107,8 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
   let label := testCase.label
   let funIdx := env.compiled.getFuncIdx testCase.functionName |>.get!
   match env.compiled.bytecode.execute funIdx testCase.input testCase.inputIOBuffer with
-  | .error e =>
-    if testCase.expectFailure then test s!"Execute fails for {label}: {e}" true
-    else test s!"Execute succeeds for {label}: {e}" false
+  | .error e => test s!"Execute succeeds for {label}: {e}" false
   | .ok (execOutput, execIOBuffer, queryCounts) =>
-    if testCase.expectFailure then test s!"Execute fails for {label}" false else
     let execOutputTest := test s!"Execute output matches for {label}"
       (execOutput == testCase.expectedOutput)
     let execIOTest := test s!"Execute IOBuffer matches for {label}"

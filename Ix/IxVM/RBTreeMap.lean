@@ -64,14 +64,14 @@ def rbTreeMap := ⟦
       RBTreeMap.Nil =>
         RBTreeMap.Node(0, key, value, store(RBTreeMap.Nil), store(RBTreeMap.Nil)),
       RBTreeMap.Node(color, k, v, &left, &right) =>
-        let lt = ptr_less_than(key, k);
+        let lt = u32_less_than(key, k);
         match lt {
           1 => rbtree_map_balance(color, k, v, rbtree_map_ins(key, value, left), right),
           _ =>
             -- key not < k. Distinguish equal (overwrite) from greater
             -- (recurse right) with a field subtraction instead of a second
-            -- comparison (which would cost +12 aux / +6 lookups). Keys are
-            -- full pointers, so `key - k == 0` iff equal.
+            -- u32_less_than (which would cost +12 aux / +6 lookups). Keys
+            -- are u32-range field elements, so `key - k == 0` iff equal.
             let eq = key - k;
             match eq {
               0 => RBTreeMap.Node(color, key, value, store(left), store(right)),
@@ -95,7 +95,7 @@ def rbTreeMap := ⟦
   fn rbtree_map_lookup‹V›(key: G, tree: RBTreeMap‹V›) -> V {
     match tree {
       RBTreeMap.Node(_, k, v, &left, &right) =>
-        let lt = ptr_less_than(key, k);
+        let lt = u32_less_than(key, k);
         match lt {
           1 => rbtree_map_lookup(key, left),
           _ =>
@@ -115,7 +115,7 @@ def rbTreeMap := ⟦
     match tree {
       RBTreeMap.Nil => default,
       RBTreeMap.Node(_, k, v, &left, &right) =>
-        let lt = ptr_less_than(key, k);
+        let lt = u32_less_than(key, k);
         match lt {
           1 => rbtree_map_lookup_or_default(key, left, default),
           _ =>
@@ -129,30 +129,6 @@ def rbTreeMap := ⟦
   }
 
   /- # Test entrypoints -/
-
-  -- Keys of one record's namespace order by their low 32 bits at any base.
-  pub fn rbtree_map_namespace_test() -> [G; 4] {
-    -- Base 2^32.
-    let tree = rbtree_map_insert(4294967306, 100, RBTreeMap.Nil);
-    let tree = rbtree_map_insert(4294967316, 200, tree);
-    let tree = rbtree_map_insert(4294967301, 50, tree);
-    let r0 = rbtree_map_lookup(4294967301, tree);
-    let r1 = rbtree_map_lookup(4294967316, tree);
-    let r2 = rbtree_map_lookup_or_default(4294967307, tree, 7);
-    -- Base 2^40.
-    let tree = rbtree_map_insert(1099511627779, 3, RBTreeMap.Nil);
-    let tree = rbtree_map_insert(1099511627777, 1, tree);
-    let r3 = rbtree_map_lookup(1099511627779, tree);
-    [r0, r1, r2, r3]
-  }
-
-  -- Keys of two namespaces with equal low bits are distinct pointers and
-  -- may never meet in one tree: the comparison rejects the pair.
-  pub fn rbtree_map_mixed_namespace_test() -> G {
-    let tree = rbtree_map_insert(7, 1, RBTreeMap.Nil);
-    let tree = rbtree_map_insert(4294967303, 2, tree);
-    rbtree_map_lookup(7, tree)
-  }
 
   pub fn rbtree_map_test() -> [G; 22] {
     -- Single insert and lookup

@@ -28,36 +28,6 @@ def core := ⟦
     u32_less_than(a, b)
   }
 
-  -- Memory pointers of records proven in one batch are namespaced: record
-  -- `r` holds its tables at `[r · 2^32, (r + 1) · 2^32)`, so a pointer's
-  -- high 32 bits name its record and its low 32 bits order it within the
-  -- record. The bytes are prover hints; the range checks, the
-  -- recomposition and the exclusion of the top namespace (whose bytes
-  -- could also spell a small pointer plus the field modulus) pin them.
-  fn ptr_namespace_base(p: G) -> G {
-    let b = unconstrained_g_to_bytes(p);
-    let (c0, c1) = u8_range_check(b[0], b[1]);
-    let (c2, c3) = u8_range_check(b[2], b[3]);
-    let (c4, c5) = u8_range_check(b[4], b[5]);
-    let (c6, c7) = u8_range_check(b[6], b[7]);
-    let lo = to_field(c0) + to_field(c1) * 256 + to_field(c2) * 65536
-      + to_field(c3) * 16777216;
-    let hi = to_field(c4) + to_field(c5) * 256 + to_field(c6) * 65536
-      + to_field(c7) * 16777216;
-    assert_eq!(lo + hi * 4294967296, p);
-    assert_eq!(eq_zero(to_field(c4) + to_field(c5) + to_field(c6)
-      + to_field(c7) - 1020), 0);
-    hi * 4294967296
-  }
-
-  -- Orders two pointers of one record within their namespace: both must
-  -- share it, and the comparison is on the low 32 bits.
-  fn ptr_less_than(a: G, b: G) -> G {
-    let base = ptr_namespace_base(a);
-    assert_eq!(ptr_namespace_base(b), base);
-    u32_less_than(a - base, b - base)
-  }
-
   -- Interned 32-element address (blake3 content hash).
   --
   -- DIFFERENT POINTER VALUES DO NOT IMPLY DIFFERENT DATA. The Aiur

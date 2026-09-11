@@ -36,7 +36,7 @@ pub struct QueryRecord {
   /// The pointer of every memory table's first entry: entry `i` of a table
   /// has pointer `pointer_base + i`. Records proven together in one batch
   /// take distinct bases so their pointers never coincide
-  /// ([`POINTER_NAMESPACE`] apart), which is what lets a load in one record
+  /// ([`pointer_stride`] apart), which is what lets a load in one record
   /// be served by a memory row in another.
   pub pointer_base: usize,
   /// The calls this record leaves to other records, if any.
@@ -107,27 +107,20 @@ impl QueryRecord {
   }
 }
 
-/// The memory namespace of one record: records proven in one batch store
-/// their width-`w` tables at `[r · 2^32, r · 2^32 + N_{r,w})` for record
-/// `r`, so a pointer's high 32 bits name its record and its low 32 bits
-/// order it within the record (the kernel compares pointers on those low
-/// bits). A record's tables must each fit the namespace; `Store` fails
-/// when one would not.
-pub const POINTER_NAMESPACE: usize = 1 << 32;
-
-/// The pointer base of record `r` of a batch. The top namespace is
-/// excluded: its pointers' bytes could also spell a small pointer plus the
-/// field modulus, which the kernel's decomposition rules out.
-///
-/// # Panics
-/// Panics if `record` has no namespace below the excluded one.
-pub fn pointer_base(record: usize) -> usize {
-  assert!(
-    record < POINTER_NAMESPACE - 1,
-    "record {record} has no pointer namespace"
-  );
-  record * POINTER_NAMESPACE
+/// Pointer distance between the memory namespaces of `workers` records
+/// proven in one batch: record `r` stores its width-`w` table at
+/// `[r · stride, r · stride + N_{r,w})`. Every pointer must stay below
+/// 2^32, since the kernel's memoization compares interned pointers as
+/// `u32`, so the stride is the largest power of two with `workers` strides
+/// below 2^32; a record's tables must fit it.
+pub fn pointer_stride(workers: usize) -> usize {
+  POINTER_LIMIT / workers.max(1).next_power_of_two()
 }
+
+/// The entries a memory table can hold: the kernel compares pointers as
+/// `u32`, so `Store` fails once a table would reach 2^32 entries instead
+/// of allocating a pointer the comparison cannot order.
+pub const POINTER_LIMIT: usize = 1 << 32;
 
 impl QueryRecord {
   pub fn new(toplevel: &Toplevel) -> Self {
@@ -221,8 +214,8 @@ impl IOBuffer {
 pub enum ExecError {
   NotEntryFunction(FunIdx),
   InvalidMemorySize(usize),
-  /// A width's table reached the record's pointer namespace.
-  MemoryNamespaceFull(usize),
+  /// A width's table reached [`POINTER_LIMIT`] entries.
+  MemoryTableFull(usize),
   UnboundPointer {
     ptr: u64,
     size: usize,
@@ -265,9 +258,9 @@ impl std::fmt::Display for ExecError {
         write!(f, "cannot execute non-entry function {idx}")
       },
       Self::InvalidMemorySize(s) => write!(f, "invalid memory size {s}"),
-      Self::MemoryNamespaceFull(s) => write!(
+      Self::MemoryTableFull(s) => write!(
         f,
-        "width-{s} memory table reached the record's pointer namespace of {POINTER_NAMESPACE} entries"
+        "width-{s} memory table reached the pointer limit of {POINTER_LIMIT} entries"
       ),
       Self::UnboundPointer { ptr, size } => {
         write!(f, "unbound pointer {ptr} for memory size {size}")
@@ -521,8 +514,8 @@ impl Function {
             }
             map.extend_from_slice(memory_queries.output_at(i));
           } else {
-            if memory_queries.len() >= POINTER_NAMESPACE {
-              return Err(ExecError::MemoryNamespaceFull(size));
+            if memory_queries.len() >= POINTER_LIMIT {
+              return Err(ExecError::MemoryTableFull(size));
             }
             let ptr = G::from_usize(pointer_base + memory_queries.len());
             memory_queries.insert(

@@ -17,8 +17,6 @@ public def rbTreeMapTestCases : List AiurTestCase := [
       10, 20, 30, 40, 50,
       10, 20, 30, 40, 50,
       200, 300, 400, 500, 600, 700, 800],
-  .interp `rbtree_map_namespace_test #[] #[50, 200, 7, 3],
-  .fails `rbtree_map_mixed_namespace_test,
 ]
 
 end

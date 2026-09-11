@@ -1592,7 +1592,7 @@ fn prove_env_distributed(
   max_ram_bytes: usize,
   measured: &[usize],
 ) -> Result<(Vec<u8>, Option<AiurProof>, Vec<u64>), String> {
-  use aiur::execute::{Ownership, POINTER_NAMESPACE, pointer_base};
+  use aiur::execute::{Ownership, pointer_stride};
   use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
   use ixvm_codegen::aiur_ixvm_witness::{
     EnvCheckStatement, addr_key, worker_callers, worker_scopes,
@@ -1654,8 +1654,10 @@ fn prove_env_distributed(
   let execute = |worker: usize, round: &str| -> Result<Executed, String> {
     let started = std::time::Instant::now();
     let mut io = statement.worker_io(env, owners, worker);
-    let mut record =
-      QueryRecord::with_pointer_base(toplevel, pointer_base(worker));
+    let mut record = QueryRecord::with_pointer_base(
+      toplevel,
+      worker * pointer_stride(workers),
+    );
     record.ownership = Some(Ownership {
       callee: check_owned_idx,
       owned: owned_keys[worker].clone(),
@@ -1695,7 +1697,7 @@ fn prove_env_distributed(
     }
     // Every table must stay inside the worker's pointer namespace, or its
     // pointers collide with the next worker's.
-    let stride = POINTER_NAMESPACE;
+    let stride = pointer_stride(workers);
     for (width, table) in &record.memory_queries {
       if table.len() > stride {
         return Err(format!(
