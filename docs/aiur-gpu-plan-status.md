@@ -393,6 +393,48 @@ Decision: build the GPU pipeline on env-shard claims (min-cut manifest,
 trace shards per claim, direct joins, root wraps). The chunk driver stays
 on the branch as measured, not as the path forward.
 
+## Mathlib Stage 1 on one GPU (2026-09-11 evening)
+
+`ix shard mathlib.ixe --shards 128` (min-cut, 65 s), then
+`ix prove --ixe mathlib.ixe --ixes mathlib-mincut-128.ixes --trace-shards
+--retention regenerate --max-ram 200 --exec-jobs 4 --skip-proven` under the
+230G cap:
+
+| Mathlib Stage 1, 128 min-cut claims | |
+|---|---|
+| wall | **1:39:16** |
+| trace shards | 1209 (9.4 per claim) |
+| proof per claim | 43.8 s mean |
+| execution per claim | 116.5 s mean, 282 s max (4 at a time) |
+| record | 20.2 GB mean, 42.2 GB max |
+| peak host RSS | 170 GiB |
+| GPU | 57 % mean utilization, active 74 % of samples |
+
+The prover was inside a proof 97.5 % of the time; the 40 % idle is inside
+each proof (witness at the start of each round, round-two regeneration,
+the barrier, host lookup construction), not between claims. Stalls on slow
+shards (the loop took records in manifest order) totalled ~2.25 min; the
+loop now takes whichever record is ready. The CPU production baseline on
+r8i.48xl-metal (192 vCPU, 1.5 TB, 3 NUMA lanes): Stage 1 2:44 over 246
+leaves, Stage 2 1:52 with direct joins, **4:36** end to end, 4.91 MB root
+over 679,499 constants. Stage 2 of this Mathlib run was not proven; the
+128 claim proofs are in the store and the shard-proof index.
+
+### Stage 2 lookahead and ready-order Stage 1 (commit a2faf5e3)
+
+The direct-join scheduler runs two lanes: `--exec-ahead` (default 1)
+prepare workers — verification, advice, the `ix_aggr` execution planned
+within the slot budget — beside `--jobs` provers, so a join executes
+while the previous one proves; a queued record counts against the
+lookahead, the prover lane is dispatched first, verify-only leaves have
+their own allowance, nothing proves off the prover lane, and with trace
+shards the static per-shape RAM weights gate nothing (they describe whole
+CPU proofs and would keep every slot alone). Init, min-cut four: Stage 1
+5:04 → 4:53 (ready order), Stage 2 with wraps 3:32 → 3:05, same 6.0 MB
+root; on a four-leaf tree the root join and the wraps cannot overlap, so
+the Mathlib tree (127 joins, wide bottom levels) is where the lookahead
+pays.
+
 ## Status against the recommendations
 
 | # | recommendation | state |
