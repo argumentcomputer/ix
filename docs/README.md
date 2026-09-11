@@ -60,6 +60,7 @@ performance reports preserve evidence from their recorded revisions.
 | [Runtime native reversal](source-native-runtime.md) | Parameterized list ABI, source-to-object proof, and checked counter folding |
 | [Upstream native computations](source-native-upstream.md) | Unchanged source exports, structural selection, and fallback |
 | [Runtime scalar functions](source-native-scalar.md) | Exact arithmetic, branches, helpers, finite stack, and overflow behavior |
+| [Physical scalar CFGs](source-native-physical-scalar.md) | Compositional instruction/edge/call selection, source export binding, and physical-to-ELF preservation |
 | [Trust ledger](trusted-extern-ledger.md) | Native interfaces, seed/build trust, specification boundaries, and change control |
 
 The [machine-readable trust ledger](trusted-externs.json) and

@@ -1,6 +1,7 @@
 import Compilatrix.Sim
 import Compilatrix.X86.NatCallsSim
 import Compilatrix.X86.ScalarSourceObject
+import Compilatrix.X86.PhysicalScalarExport
 import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.NativeSim
 import Compilatrix.UniqueReuse.RuntimeNativeSim
@@ -7239,3 +7240,32 @@ object contracts. Source-indexed theorems retain the existing hash boundary. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.X86.Scalar.Source.Compiled.sourceReturns
+
+/-! Compositional selection of actual physical scalar CFGs. -/
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.atom_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.atom_sound
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.edge_transfer' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.edge_transfer
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Runs.call' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Runs.call
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Code.simulate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Code.simulate
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Selected.contract' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Selected.contract
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Runs.agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Runs.agrees
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.ExportPath.runMain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.ExportPath.runMain
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Compiled.nativeReturns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Compiled.nativeReturns
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Compiled.physicalReturns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Compiled.physicalReturns

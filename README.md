@@ -24,13 +24,13 @@ Checked attachments extend it to IxIR₂ and selected x86-64 programs.
 | --- | --- |
 | Source and identity | Strict Ixon codecs, bounded catalog ingress, checked erasure, and cycle-safe IxIR₀/IxIR₁ addressing |
 | Ownership and optimization | Checked shape analysis, shrinking passes, shared and unique reuse, borrowed calls, and resource/reclamation proofs |
-| Native code | Source-to-ELF proofs for selected families: runtime unique-list reversal, two unchanged upstream computations, and runtime scalar functions with arithmetic, branches, joins, and direct helpers |
+| Native code | Source-to-ELF proofs for selected families, plus compositional physical scalar CFG selection with runtime arguments, branches, joins, direct calls, and finite stack proofs |
 | Validation | Axiom fences, independent artifact/ABI checks, malformed-input tests, fresh-process reproducibility, and retained performance experiments |
 
 Native support is still bounded. Runtime reversal accepts at most 64 exact
-64-bit payloads; general physical IxIR₂ selection, broader recursion, shared
-native heaps, and self-hosting remain open. Theorems retain their stated
-source, ownership, and environment premises. Reference ISA agreement and
+64-bit payloads; physical IxIR₂ selection covers a bounded scalar fragment.
+Broader recursion, shared native heaps, and self-hosting remain open. Theorems
+retain their stated source, ownership, and environment premises. Reference ISA agreement and
 system linker/loader behavior remain explicit assumptions.
 
 See the [roadmap](docs/roadmap.md) for current priorities and delivery scope,

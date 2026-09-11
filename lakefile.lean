@@ -66,6 +66,9 @@ lean_exe «source-native-upstream» where
 lean_exe «source-native-scalar» where
   root := `SourceNativeScalar
 
+lean_exe «source-native-physical-scalar» where
+  root := `SourceNativePhysicalScalar
+
 /- Checked borrowed calls from accepted source, with complete RC observations. -/
 lean_exe «source-borrow» where
   root := `SourceBorrow
@@ -126,6 +129,10 @@ lean_exe «check-source-native-upstream» where
 lean_exe «check-source-native-scalar» where
   srcDir := "scripts"
   root := `CheckSourceNativeScalar
+
+lean_exe «check-source-native-physical-scalar» where
+  srcDir := "scripts"
+  root := `CheckSourceNativePhysicalScalar
 
 lean_exe «check-source-borrow» where
   srcDir := "scripts"

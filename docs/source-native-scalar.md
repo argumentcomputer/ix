@@ -10,7 +10,9 @@ Native lowering attaches at the **checked erased-source boundary**. The five
 fixtures also pass the complete ordinary source compiler through checked
 physical IxIR₂. The native proof uses the retained erasure certificate and
 runtime application simulation; it does not select arbitrary physical IxIR₂ CFGs.
-That extension remains part of N3. These are synthetic Ixon fixtures, not
+The subsequent [physical scalar CFG slice](source-native-physical-scalar.md)
+provides that separate selection boundary for its declared fragment.
+These are synthetic Ixon fixtures, not
 additional unchanged upstream programs.
 
 ## Admitted source fragment

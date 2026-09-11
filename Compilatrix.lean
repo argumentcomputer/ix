@@ -121,6 +121,9 @@ import Compilatrix.X86.PipelineSim
 import Compilatrix.X86.ValidatedScalar
 import Compilatrix.X86.ScalarSourceObject
 import Compilatrix.X86.ScalarSources
+import Compilatrix.X86.PhysicalScalarExport
+import Compilatrix.X86.PhysicalScalarSources
+import Compilatrix.X86.PhysicalScalarExamples
 import Compilatrix.Coverage.StdContact
 import Compilatrix.X86.SelectExamples
 import Compilatrix.X86.Encode

@@ -15,7 +15,7 @@ def expected (name : String) (a b : Nat) : Nat × Nat :=
     else some (a + b)
   (value.getD 0, if value.isSome then 0 else 1)
 
-def inspectObject (bytes text : ByteArray) (entry : Nat) (root : String) : IO Unit := do
+def inspectObject (bytes text : ByteArray) (entry : Nat) (root : String) (loweringVersion : UInt8 := 5) : IO Unit := do
   need (bytes.size ≥ 64 && bytes.extract 0 7 == (← checked (unhex "7f 45 4c 46 02 01 01"))) "scalar ELF header disagrees"
   need ((← readLE bytes 16 2) == 1 && (← readLE bytes 18 2) == 62 && (← readLE bytes 20 4) == 1 &&
     (← readLE bytes 24 8) == 0 && (← readLE bytes 32 8) == 0 && (← readLE bytes 52 2) == 64 &&
@@ -40,7 +40,7 @@ def inspectObject (bytes text : ByteArray) (entry : Nat) (root : String) : IO Un
     (← readLE symbols 56 8) == entry && (← readLE symbols 64 8) == text.size - entry)
     "scalar ELF export disagrees"
   let provenance := "compilatrix/x86-object-provenance/1".toUTF8 ++
-    (← checked (unhex ("00 00 " ++ root ++ " 05 00 00 00 01 00 00 00")))
+    (← checked (unhex ("00 00 " ++ root))) ++ ByteArray.mk #[loweringVersion, 0, 0, 0, 1, 0, 0, 0]
   let note ← payload 3
   need (containsBytes note provenance) "scalar ELF provenance disagrees"
 

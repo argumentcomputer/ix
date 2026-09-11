@@ -15,8 +15,9 @@ optimization, and a shrinking trusted boundary.
 The validated compiler reaches IxIR₁, with checked IxIR₂ and native attachments
 for selected source families. Native instruction/stream/object certification,
 upstream computations, runtime reversal, scalar functions, and the first
-performance experiments are delivered at the scopes listed below. General
-physical CFG selection and broader runtime/source support remain open.
+performance experiments are delivered at the scopes listed below. A bounded
+physical scalar CFG fragment is delivered; broader runtime/source support
+remains open.
 
 The core claim is successful-run forward preservation under the stated source,
 ownership, and environment premises. Reference ISA agreement, system linking,
@@ -30,7 +31,7 @@ can proceed independently when their prerequisites are available.
 
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
-| [N3: compositional native lowering](#n3-compositional-native-lowering) | active; first scalar source slice delivered | Runtime arguments, exact arithmetic, branches/joins, helper calls, universal contracts and complete ELF execution are delivered at checked erased source. General physical IxIR₂ selection remains next. |
+| [N3: compositional native lowering](#n3-compositional-native-lowering) | bounded physical scalar slice delivered | Runtime arguments, Nat peeling, branches/joins, direct calls, universal physical-to-ELF contracts, and finite stack sufficiency. Broader heap/call forms and an open source-invocation bridge remain separate extensions. |
 | [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
 | [F1: finite heap and stack](#f1-finite-heap-and-stack) | active for scalar stack; heap extension next | N3 proves sufficient finite stack for nonrecursive scalar calls. General occupied-heap capacity and allocating calls remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | next | Before independent IxIR₂ persistence, cache keys, or self-hosted intermediate-root comparison. Land the strict codec and exact versioned preimages. |
@@ -68,12 +69,17 @@ broader native computation.
 The [first scalar source slice](source-native-scalar.md) delivers two runtime
 Nat arguments, exact arithmetic with overflow fallback, branches/joins, direct
 helpers, finite stack sufficiency, and universal source-to-ELF contracts.
-It consumes checked erased source. The next exit is compositional selection
-and simulation of a bounded **physical IxIR₂ CFG** fragment using reusable
-instruction, block, and call contracts. [CompCert instruction selection](https://compcert.org/doc/html/compcert.backend.Selection.html)
-is a structural-pass reference.
+It consumes checked erased source. The subsequent
+[physical scalar CFG slice](source-native-physical-scalar.md) delivers
+compositional selection and simulation of actual physical IxIR₂: moves,
+scalar ownership operations, Nat peeling, jumps/joins, and nonrecursive
+direct calls. Its universal theorem reaches actual ELF execution with a
+sufficient finite stack. Six source exports, four separate CFG shapes,
+114 source/IR/object runs, 76 additional stream runs, and 996 linked native
+calls exercise this boundary. A general open source-application bridge,
+allocating calls, captured closures, and broader recursion remain separate.
 
-Acceptance:
+Acceptance retained for extensions beyond the delivered scalar fragment:
 
 - Declare the admitted instructions, signatures, representations, and control
   flow. Compile runtime scalar arguments, branches, joins, and direct calls;
