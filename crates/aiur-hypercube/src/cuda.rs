@@ -82,7 +82,8 @@ impl CudaShardProverComponents<SP1GlobalContext> for AiurCudaComponents {
 /// [`crate::prover::prove_iter`]), taken one at a time.
 pub fn prove(
   machine: &AiurMachine,
-  records: impl ExactSizeIterator<Item = AiurRecord>,
+  records: impl Iterator<Item = AiurRecord>,
+  num_shards: usize,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
   // Trace-buffer capacity. One dense buffer (and one pinned host buffer)
@@ -158,9 +159,22 @@ pub fn prove(
       let (pk, vk) = prover.setup(Arc::new(AiurProgram)).await;
       // SAFETY: the preprocessed data was produced by this very prover.
       let pk = unsafe { pk.into_inner() };
-      let mut shard_proofs = Vec::with_capacity(records.len());
+      let timing = crate::shard::timing_enabled();
+      let mut shard_proofs = Vec::with_capacity(num_shards);
+      let mut pulled = std::time::Instant::now();
       for record in records {
+        let waited = pulled.elapsed();
+        let start = std::time::Instant::now();
         shard_proofs.push(prover.prove_shard(pk.clone(), record).await);
+        if timing {
+          eprintln!(
+            "hypercube shard {}: waited {waited:.2?} for the record, gpu \
+             prove {:.2?}",
+            shard_proofs.len() - 1,
+            start.elapsed()
+          );
+        }
+        pulled = std::time::Instant::now();
       }
       let _ = tx.send((vk, MachineProof { shard_proofs }));
     })

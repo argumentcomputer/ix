@@ -55,8 +55,86 @@ struct ShardPlan {
   ranges: Vec<std::ops::Range<usize>>,
 }
 
+/// A signed multiset of lookup tuples: a shard's demand or residual.
+type Residual = HashMap<Vec<u32>, i128>;
+
+/// A read-only map over lookup tuples with ~10^8 entries, built in
+/// parallel: the entries are bucketed by a hash of the tuple and each
+/// bucket is its own hash map.
+struct TupleIndex<V> {
+  buckets: Vec<HashMap<Vec<u32>, V>>,
+}
+
+impl<V: Send + Sync> TupleIndex<V> {
+  const BUCKETS: usize = 256;
+
+  fn bucket_of(key: &[u32]) -> usize {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    key.hash(&mut h);
+    usize::try_from(h.finish() % Self::BUCKETS as u64).expect("bucket")
+  }
+
+  fn build(entries: Vec<(Vec<u32>, V)>) -> Self {
+    // Bucket in parallel by chunk, then merge each bucket in parallel.
+    let chunked: Vec<Vec<Vec<(Vec<u32>, V)>>> = entries
+      .into_par_iter()
+      .fold(
+        || (0..Self::BUCKETS).map(|_| Vec::new()).collect::<Vec<_>>(),
+        |mut acc, (key, value)| {
+          acc[Self::bucket_of(&key)].push((key, value));
+          acc
+        },
+      )
+      .collect();
+    let buckets = (0..Self::BUCKETS)
+      .into_par_iter()
+      .map(|b| {
+        let mut map = HashMap::new();
+        for chunk in &chunked {
+          // The values are moved out below; the chunks are consumed once.
+          map.reserve(chunk[b].len());
+        }
+        map
+      })
+      .collect::<Vec<_>>();
+    let mut buckets: Vec<std::sync::Mutex<HashMap<Vec<u32>, V>>> =
+      buckets.into_iter().map(std::sync::Mutex::new).collect();
+    chunked.into_par_iter().for_each(|chunk| {
+      for (b, entries) in chunk.into_iter().enumerate() {
+        if entries.is_empty() {
+          continue;
+        }
+        let mut map = buckets[b].lock().expect("bucket lock");
+        map.extend(entries);
+      }
+    });
+    let buckets =
+      buckets.drain(..).map(|m| m.into_inner().expect("bucket lock")).collect();
+    Self { buckets }
+  }
+
+  fn get(&self, key: &[u32]) -> Option<&V> {
+    self.buckets[Self::bucket_of(key)].get(key)
+  }
+}
+
 fn debug_enabled() -> bool {
   std::env::var_os("IX_HC_DEBUG").is_some()
+}
+
+/// `IX_HC_TIMING` (or `IX_HC_DEBUG`): report the wall time of the
+/// partitioner's rounds and of each shard's assembly.
+pub(crate) fn timing_enabled() -> bool {
+  std::env::var_os("IX_HC_TIMING").is_some() || debug_enabled()
+}
+
+/// The process's resident set, in whole gigabytes (Linux; 0 elsewhere).
+fn rss_gb() -> u64 {
+  std::fs::read_to_string("/proc/self/statm")
+    .ok()
+    .and_then(|s| s.split_whitespace().nth(1)?.parse::<u64>().ok())
+    .map_or(0, |pages| pages * 4096 / (1 << 30))
 }
 
 /// Interprets a field element as a small signed integer (multiplicities are
@@ -96,6 +174,7 @@ fn canonical_tuple(mut t: Vec<u32>) -> Vec<u32> {
 /// *into* this shard with their demanded multiplicity. Nothing is copied
 /// until [`View::materialize`]; a refinement round therefore costs a few
 /// words per row edit rather than a second copy of the execution.
+#[derive(Clone)]
 struct View {
   slot: usize,
   /// Ascending, disjoint row ranges of `extended[slot]`.
@@ -168,6 +247,7 @@ impl View {
 /// A circuit's rows in one shard: the atomic circuits (replicated, with
 /// per-shard multiplicity columns) are owned copies; the splittable ones
 /// are views.
+#[derive(Clone)]
 enum Chunk {
   Owned(RowMajorMatrix<F>),
   View(View),
@@ -220,7 +300,8 @@ struct PlannedShard {
 /// beside the execution's traces (`extended`) the views point into.
 pub struct Partition<'e> {
   extended: &'e [Option<RowMajorMatrix<F>>],
-  shards: Vec<Option<PlannedShard>>,
+  /// Each shard's plan, taken by whichever thread assembles it.
+  shards: Vec<std::sync::Mutex<Option<PlannedShard>>>,
   claim: Vec<F>,
 }
 
@@ -240,15 +321,29 @@ impl Partition<'_> {
   /// `IX_HC_DEBUG`, simulates the record's full LogUp balance — every chip
   /// plus `eval_public_values` — so a partitioner bug fails here, in
   /// seconds, not inside GKR verification after the whole prove.
-  pub fn assemble(&mut self, machine: &AiurMachine, k: usize) -> AiurRecord {
-    let shard = self.shards[k].take().expect("a shard is assembled once");
+  pub fn assemble(&self, machine: &AiurMachine, k: usize) -> AiurRecord {
+    let start = std::time::Instant::now();
+    let shard = self.shards[k]
+      .lock()
+      .expect("shard plan lock")
+      .take()
+      .expect("a shard is assembled once");
     let chunks = shard
       .chunks
-      .into_iter()
+      .into_par_iter()
       .map(|chunk| chunk.map(|chunk| chunk.materialize(self.extended)))
       .collect();
+    let materialized = start.elapsed();
     let record =
       assemble_shard(machine, chunks, &shard.adapters, &self.claim, k == 0);
+    if timing_enabled() {
+      eprintln!(
+        "hypercube shard {k}: materialized in {materialized:.2?}, assembled \
+         ({} adapter rows) in {:.2?}",
+        shard.adapters.len(),
+        start.elapsed()
+      );
+    }
     if debug_enabled() {
       debug_check_balance(machine, k, &record);
     }
@@ -259,10 +354,19 @@ impl Partition<'_> {
   pub fn into_records(
     self,
     machine: &AiurMachine,
-  ) -> impl ExactSizeIterator<Item = AiurRecord> {
+  ) -> impl ExactSizeIterator<Item = AiurRecord> + Send {
     let n = self.len();
-    let mut partition = self;
-    (0..n).map(move |k| partition.assemble(machine, k))
+    (0..n).map(move |k| self.assemble(machine, k))
+  }
+}
+
+impl crate::prover::RecordSource for Partition<'_> {
+  fn len(&self) -> usize {
+    self.shards.len()
+  }
+
+  fn take(&self, machine: &AiurMachine, k: usize) -> AiurRecord {
+    self.assemble(machine, k)
   }
 }
 
@@ -318,9 +422,13 @@ pub fn partition_shards<'e>(
     .filter(|s| is_atomic(*s))
     .flat_map(|s| table_tuples(machine.lowered_at(s).unwrap()))
     .collect();
+  // `IX_HC_DUMB`: plain epoch slices — no row replication, no load
+  // affinity — every crossing an adapter row. A baseline for what the
+  // optimizations buy (and cost).
+  let dumb = std::env::var_os("IX_HC_DUMB").is_some();
   let provides: Vec<Option<ProvideInfo>> = (0..num_split)
     .map(|slot| {
-      if is_atomic(slot) || extended[slot].is_none() {
+      if dumb || is_atomic(slot) || extended[slot].is_none() {
         return None;
       }
       provide_candidate(machine.lowered_at(slot).unwrap())
@@ -354,11 +462,14 @@ pub fn partition_shards<'e>(
   const AFFINITY_BLOCK: usize = 64;
   let affinity: Vec<bool> = (0..num_split)
     .map(|slot| {
-      machine.affinity_slots.contains(&slot) && extended[slot].is_some()
+      !dumb
+        && machine.affinity_slots.contains(&slot)
+        && extended[slot].is_some()
     })
     .collect();
   // tuple → (slot, block), over every interaction of the affinity circuits.
-  let affinity_index: HashMap<Vec<u32>, (usize, usize)> = (0..num_split)
+  let index_start = std::time::Instant::now();
+  let affinity_index: Vec<(Vec<u32>, (usize, usize))> = (0..num_split)
     .into_par_iter()
     .filter(|slot| affinity[*slot])
     .map(|slot| {
@@ -393,12 +504,11 @@ pub fn partition_shards<'e>(
         .collect::<Vec<_>>()
     })
     .flatten()
-    .collect::<Vec<_>>()
-    .into_iter()
-    .collect();
+    .collect::<Vec<_>>();
+  let affinity_index = TupleIndex::build(affinity_index);
   // Every provide of the candidate circuits, marking which rows qualify for
   // replication (all other lookups table-provided or inert).
-  let provide_index: HashMap<Vec<u32>, (usize, usize, bool)> = (0..num_split)
+  let provide_index: Vec<(Vec<u32>, (usize, usize, bool))> = (0..num_split)
     .into_par_iter()
     .filter(|slot| provides[*slot].is_some())
     .map(|slot| {
@@ -435,19 +545,63 @@ pub fn partition_shards<'e>(
         .collect::<Vec<_>>()
     })
     .flatten()
-    .collect::<Vec<_>>()
-    .into_iter()
-    .collect();
+    .collect::<Vec<_>>();
+  let provide_index = TupleIndex::build(provide_index);
+  if timing_enabled() {
+    eprintln!(
+      "hypercube: provide and affinity indexes built in {:.2?} (rss {} GB)",
+      index_start.elapsed(),
+      rss_gb()
+    );
+  }
 
   // The binding bound is `log_m <= 29` (`slop-jagged` verifier.rs:
   // `log_m >= 30 → AreaOutOfBounds`, `log_m` being the log of the round's
   // stacking-padded area), so the padded area must stay at or below 2^29;
   // leave headroom for the preprocessed round and the stacking round-up.
   const AREA_BOUND: usize = (1 << 29) - (32 << 20);
-  const MAX_REFINE_ROUNDS: usize = 6;
+  // Splitting a shard changes its neighbours' crossings too, so a shard
+  // that fit can overflow again; with incremental rounds, converging is
+  // cheap, so allow many.
+  const MAX_REFINE_ROUNDS: usize = 24;
   let debug = debug_enabled();
 
+  // ── Rounds are incremental. A round only splits the intervals that
+  // overflowed, so most shards see the same epoch slice again: their demand
+  // is cached by interval, and their chunks and residual by interval plus a
+  // fingerprint of the chunks' edits (reductions, duplicates, affinity
+  // blocks), which do move when other shards' demands change. Only the
+  // shards whose inputs changed are rescanned.
+  type Interval = (u64, u64);
+  // Cached per interval: the shard's views last round and its *base*
+  // residual (every chunk's interactions plus the claim, before the tables
+  // absorb anything). When only the edits moved — other shards' demands
+  // reduced more home rows in the slice, affinity blocks came or went —
+  // the base is updated by those differences alone.
+  let mut residual_cache: HashMap<Interval, (Vec<Option<View>>, Residual)> =
+    HashMap::new();
+  // Per interval: the affinity votes `(slot, block, weight)` its demand
+  // casts, and the rows its demand replicates.
+  type Votes = std::sync::Arc<Vec<(usize, usize, i128)>>;
+  type Replicated = std::sync::Arc<Vec<(usize, usize, i128)>>;
+  let mut votes_cache: HashMap<Interval, Votes> = HashMap::new();
+  let mut replicated_cache: HashMap<Interval, Replicated> = HashMap::new();
+
   for refine_round in 0..=MAX_REFINE_ROUNDS {
+    let round_start = std::time::Instant::now();
+    let timing = timing_enabled();
+    let mut step_start = std::time::Instant::now();
+    let mut step = |what: &str| {
+      if timing {
+        eprintln!(
+          "hypercube refine round {refine_round}: {what} in {:.2?} (rss {} \
+           GB)",
+          step_start.elapsed(),
+          rss_gb()
+        );
+      }
+      step_start = std::time::Instant::now();
+    };
     let num_shards = boundaries.len() - 1;
     let cut = |h: usize, k: usize| (h as f64 * boundaries[k]) as usize;
     let plans: Vec<ShardPlan> = (0..num_shards)
@@ -465,11 +619,21 @@ pub fn partition_shards<'e>(
       })
       .collect();
 
-    // ── Demand pass: what does each shard's epoch slice require?
-    let mut demands: Vec<HashMap<Vec<u32>, i128>> = plans
+    let intervals: Vec<Interval> = (0..num_shards)
+      .map(|k| (boundaries[k].to_bits(), boundaries[k + 1].to_bits()))
+      .collect();
+
+    // ── Demand pass: what does each shard's epoch slice require? Only
+    // for the intervals not seen before: a demand is used for the votes
+    // and the replicated rows, which are cached per interval, and dropped.
+    let mut demands: Vec<Option<Residual>> = plans
       .par_iter()
-      .map(|plan| {
-        let mut demand: HashMap<Vec<u32>, i128> = HashMap::new();
+      .zip(&intervals)
+      .map(|(plan, key)| {
+        if votes_cache.contains_key(key) && replicated_cache.contains_key(key) {
+          return None;
+        }
+        let mut demand: Residual = HashMap::new();
         for &slot in &split_slots {
           let range = plan.ranges[slot].clone();
           if range.is_empty() {
@@ -483,14 +647,20 @@ pub fn partition_shards<'e>(
             &mut demand,
           );
         }
-        demand
+        // Only what the slice requires and does not provide is used.
+        demand.retain(|_, r| *r > 0);
+        demand.shrink_to_fit();
+        Some(demand)
       })
       .collect();
     // The claim demands the entry function's return tuple in shard 0.
-    let claim_tuple =
-      canonical_tuple(claim.iter().map(|v| v.as_canonical_u32()).collect());
-    *demands[0].entry(claim_tuple).or_default() += 1;
+    if let Some(demand) = &mut demands[0] {
+      let claim_tuple =
+        canonical_tuple(claim.iter().map(|v| v.as_canonical_u32()).collect());
+      *demand.entry(claim_tuple).or_default() += 1;
+    }
 
+    step("demands");
     // ── Load-affinity assignment for the dependency-free circuits (Aiur's
     // memories): their rows are stored at creation time but loaded much
     // later, so epoch placement makes every load cross. Assign each block
@@ -505,14 +675,32 @@ pub fn partition_shards<'e>(
         vec![0i128; h.div_ceil(AFFINITY_BLOCK) * num_shards]
       })
       .collect();
-    for (shard, demand) in demands.iter().enumerate() {
-      for (tuple, r) in demand {
-        if *r <= 0 {
-          continue;
+    let shard_votes: Vec<Votes> = demands
+      .par_iter()
+      .zip(&intervals)
+      .map(|(demand, key)| {
+        if let Some(cached) = votes_cache.get(key) {
+          return cached.clone();
         }
-        if let Some((slot, block)) = affinity_index.get(tuple) {
-          votes[*slot][*block * num_shards + shard] += r;
-        }
+        std::sync::Arc::new(
+          demand
+            .as_ref()
+            .expect("a new interval's demand")
+            .iter()
+            .filter(|(_, r)| **r > 0)
+            .filter_map(|(tuple, r)| {
+              let (slot, block) = affinity_index.get(tuple)?;
+              Some((*slot, *block, *r))
+            })
+            .collect(),
+        )
+      })
+      .collect();
+    votes_cache =
+      intervals.iter().copied().zip(shard_votes.iter().cloned()).collect();
+    for (shard, cast) in shard_votes.iter().enumerate() {
+      for (slot, block, r) in cast.iter() {
+        votes[*slot][*block * num_shards + shard] += r;
       }
     }
     let block_home: Vec<Vec<usize>> = (0..num_split)
@@ -539,12 +727,19 @@ pub fn partition_shards<'e>(
       .collect();
     drop(votes);
 
+    step("affinity");
     // ── Duplicate each demanded, qualifying row into its demanding shards;
     // the home copy's multiplicity is reduced by what the duplicates took.
-    let replicated: Vec<Vec<(usize, usize, i128)>> = demands
+    let replicated: Vec<Replicated> = demands
       .par_iter()
-      .map(|demand| {
+      .zip(&intervals)
+      .map(|(demand, key)| {
+        if let Some(cached) = replicated_cache.get(key) {
+          return cached.clone();
+        }
         let mut rows: Vec<(usize, usize, i128)> = demand
+          .as_ref()
+          .expect("a new interval's demand")
           .iter()
           .filter(|(_, r)| **r > 0)
           .filter_map(|(tuple, r)| {
@@ -553,33 +748,57 @@ pub fn partition_shards<'e>(
           })
           .collect();
         rows.sort_unstable();
-        rows
+        std::sync::Arc::new(rows)
       })
       .collect();
-    let mut reductions: Vec<HashMap<usize, i128>> =
-      vec![HashMap::new(); num_split];
-    for rows in &replicated {
-      for (slot, row, r) in rows {
-        *reductions[*slot].entry(*row).or_default() += r;
-      }
-    }
-    // Per slot, ascending by row, so a shard's slice of them is a range.
-    let reductions: Vec<Vec<(usize, F)>> = reductions
-      .into_par_iter()
-      .map(|map| {
-        let mut v: Vec<(usize, F)> =
-          map.into_iter().map(|(row, d)| (row, to_field(d))).collect();
-        v.sort_unstable_by_key(|(row, _)| *row);
-        v
+    replicated_cache =
+      intervals.iter().copied().zip(replicated.iter().cloned()).collect();
+    drop(demands);
+    // Per slot, ascending by row, so a shard's slice of them is a range:
+    // every duplicated row, sorted, then summed per home row.
+    let reductions: Vec<Vec<(usize, F)>> = (0..num_split)
+      .map(|slot| {
+        if provides[slot].is_none() {
+          return vec![];
+        }
+        // A dense accumulator over the circuit's rows (one slot at a time,
+        // so the largest circuit's rows bound the transient memory); each
+        // shard's list is sorted by slot, so its rows for `slot` are a
+        // slice. Multiplicities fit an `i64` comfortably.
+        let height = extended[slot].as_ref().map_or(0, Matrix::height);
+        let mut dense = vec![0i64; height];
+        for rows in &replicated {
+          let lo = rows.partition_point(|(s, _, _)| *s < slot);
+          let hi = rows.partition_point(|(s, _, _)| *s <= slot);
+          for (_, row, r) in &rows[lo..hi] {
+            dense[*row] += i64::try_from(*r).expect("multiplicity fits i64");
+          }
+        }
+        dense
+          .into_iter()
+          .enumerate()
+          .filter(|(_, d)| *d != 0)
+          .map(|(row, d)| (row, to_field(i128::from(d))))
+          .collect()
       })
       .collect();
 
+    step("replication");
     // ── Per-shard chunks and residuals.
-    let per_shard: Vec<(Vec<Option<Chunk>>, HashMap<Vec<u32>, i128>)> = plans
+    let cache_hits = std::sync::atomic::AtomicUsize::new(0);
+    let cached: Vec<Option<(Vec<Option<View>>, Residual)>> =
+      intervals.iter().map(|key| residual_cache.remove(key)).collect();
+    let per_shard: Vec<(
+      Vec<Option<View>>,
+      Residual,
+      Vec<Option<Chunk>>,
+      Residual,
+    )> = plans
       .par_iter()
       .zip(&replicated)
+      .zip(cached.into_par_iter())
       .enumerate()
-      .map(|(shard_index, (plan, replicated))| {
+      .map(|(shard_index, ((plan, replicated), cached))| {
         let is_claim_shard = shard_index == 0;
         let pv = machine.base_public_values(claim, is_claim_shard);
         let mut chunks: Vec<Option<Chunk>> = Vec::with_capacity(num_split);
@@ -659,23 +878,47 @@ pub fn partition_shards<'e>(
           }
         }
 
-        let mut residual: HashMap<Vec<u32>, i128> = HashMap::new();
-        for (slot, chunk) in chunks.iter().enumerate() {
-          let Some(chunk) = chunk else { continue };
-          let circuit = machine.lowered_at(slot).unwrap();
-          accumulate_balance(circuit, chunk, extended, &mut residual);
-        }
-        if is_claim_shard {
-          // The claim send from the public values is a require of the
-          // entry function's return tuple.
-          let claim_tuple = canonical_tuple(
-            claim.iter().map(|v| v.as_canonical_u32()).collect(),
-          );
-          *residual.entry(claim_tuple).or_default() += 1;
-        }
+        let views: Vec<Option<View>> = chunks
+          .iter()
+          .map(|chunk| match chunk {
+            Some(Chunk::View(v)) => Some(v.clone()),
+            _ => None,
+          })
+          .collect();
+        let updated = cached.and_then(|(old, base)| {
+          update_base(machine, extended, &provides, &old, &views, base)
+        });
+        let base = match updated {
+          Some(base) => {
+            cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            base
+          },
+          None => {
+            let mut base: Residual = HashMap::new();
+            for (slot, chunk) in chunks.iter().enumerate() {
+              let Some(chunk) = chunk else { continue };
+              let circuit = machine.lowered_at(slot).unwrap();
+              accumulate_balance(circuit, chunk, extended, &mut base);
+            }
+            if is_claim_shard {
+              // The claim send from the public values is a require of the
+              // entry function's return tuple.
+              let claim_tuple = canonical_tuple(
+                claim.iter().map(|v| v.as_canonical_u32()).collect(),
+              );
+              *base.entry(claim_tuple).or_default() += 1;
+            }
+            // Tuples balanced within the shard are not part of the base
+            // (a later delta re-creates an entry if it needs one).
+            base.retain(|_, r| *r != 0);
+            base.shrink_to_fit();
+            base
+          },
+        };
 
         // Absorb what the shard's own tables can provide (the tables are
-        // atomic circuits, hence owned chunks).
+        // atomic circuits, hence owned chunks, fresh every round).
+        let mut residual = base.clone();
         for (slot, chunk) in chunks.iter_mut().enumerate() {
           let Some(Chunk::Owned(chunk)) = chunk else { continue };
           let circuit = machine.lowered_at(slot).unwrap();
@@ -683,53 +926,101 @@ pub fn partition_shards<'e>(
         }
         residual.retain(|_, r| *r != 0);
 
-        (chunks, residual)
+        (views, base, chunks, residual)
       })
       .collect();
-    let (shard_chunks, residuals): (Vec<_>, Vec<_>) =
-      per_shard.into_iter().unzip();
-
-    // ── Match residuals into pairwise flows.
-    let mut adapters: Vec<Vec<AdapterRow>> = vec![vec![]; plans.len()];
-    let mut by_tuple: HashMap<&Vec<u32>, Vec<(usize, i128)>> = HashMap::new();
-    for (shard, residual) in residuals.iter().enumerate() {
-      for (tuple, r) in residual {
-        by_tuple.entry(tuple).or_default().push((shard, *r));
-      }
+    let mut bases = Vec::with_capacity(per_shard.len());
+    let mut shard_chunks = Vec::with_capacity(per_shard.len());
+    let mut residuals = Vec::with_capacity(per_shard.len());
+    for (views, base, chunks, residual) in per_shard {
+      bases.push((views, base));
+      shard_chunks.push(chunks);
+      residuals.push(residual);
     }
-    for (tuple, mut entries) in by_tuple {
-      let total: i128 = entries.iter().map(|(_, r)| r).sum();
-      assert_eq!(
-        total, 0,
-        "unbalanced residual for tuple {tuple:?}: the partitioner lost flow"
-      );
-      let field_tuple: Vec<F> =
-        tuple.iter().map(|v| F::from_canonical_u32(*v)).collect();
-      entries.sort_unstable();
-      let (mut needs, mut gives): (Vec<_>, Vec<_>) =
-        entries.into_iter().partition(|(_, r)| *r > 0);
-      let mut give = gives.pop();
-      for (shard, mut need) in needs.drain(..) {
-        while need > 0 {
-          let (giver, avail) = give.as_mut().expect("flow matching exhausted");
-          let amount = need.min(-*avail);
-          let row = |import| AdapterRow {
-            import,
-            amount: to_field(amount),
-            tuple: field_tuple.clone(),
-          };
-          adapters[shard].push(row(true));
-          adapters[*giver].push(row(false));
-          need -= amount;
-          *avail += amount;
-          if *avail == 0 {
-            give = gives.pop();
+
+    step(&format!(
+      "residuals ({} of {num_shards} shards cached)",
+      cache_hits.load(std::sync::atomic::Ordering::Relaxed)
+    ));
+    // ── Match residuals into pairwise flows. Tuples are independent, so
+    // the matching runs in parallel over hash buckets of them.
+    const BUCKETS: usize = 512;
+    let bucket_of = |tuple: &Vec<u32>| -> usize {
+      use std::hash::{Hash, Hasher};
+      let mut h = std::hash::DefaultHasher::new();
+      tuple.hash(&mut h);
+      usize::try_from(h.finish() % BUCKETS as u64).expect("bucket index")
+    };
+    let per_shard_buckets: Vec<Vec<Vec<(&Vec<u32>, i128)>>> = residuals
+      .par_iter()
+      .map(|residual| {
+        let mut buckets = vec![Vec::new(); BUCKETS];
+        for (tuple, r) in residual {
+          buckets[bucket_of(tuple)].push((tuple, *r));
+        }
+        buckets
+      })
+      .collect();
+    let matched: Vec<Vec<(usize, AdapterRow)>> = (0..BUCKETS)
+      .into_par_iter()
+      .map(|b| {
+        let mut by_tuple: HashMap<&Vec<u32>, Vec<(usize, i128)>> =
+          HashMap::new();
+        for (shard, buckets) in per_shard_buckets.iter().enumerate() {
+          for (tuple, r) in &buckets[b] {
+            by_tuple.entry(tuple).or_default().push((shard, *r));
           }
         }
+        let mut out: Vec<(usize, AdapterRow)> = Vec::new();
+        for (tuple, mut entries) in by_tuple {
+          let total: i128 = entries.iter().map(|(_, r)| r).sum();
+          assert_eq!(
+            total, 0,
+            "unbalanced residual for tuple {tuple:?}: the partitioner lost \
+             flow"
+          );
+          let field_tuple: Vec<F> =
+            tuple.iter().map(|v| F::from_canonical_u32(*v)).collect();
+          entries.sort_unstable();
+          let (mut needs, mut gives): (Vec<_>, Vec<_>) =
+            entries.into_iter().partition(|(_, r)| *r > 0);
+          let mut give = gives.pop();
+          for (shard, mut need) in needs.drain(..) {
+            while need > 0 {
+              let (giver, avail) =
+                give.as_mut().expect("flow matching exhausted");
+              let amount = need.min(-*avail);
+              let row = |import| AdapterRow {
+                import,
+                amount: to_field(amount),
+                tuple: field_tuple.clone(),
+              };
+              out.push((shard, row(true)));
+              out.push((*giver, row(false)));
+              need -= amount;
+              *avail += amount;
+              if *avail == 0 {
+                give = gives.pop();
+              }
+            }
+          }
+          assert!(
+            give.is_none() && gives.is_empty(),
+            "flow matching left surplus"
+          );
+        }
+        out
+      })
+      .collect();
+    drop(per_shard_buckets);
+    let mut adapters: Vec<Vec<AdapterRow>> = vec![vec![]; plans.len()];
+    for rows in matched {
+      for (shard, row) in rows {
+        adapters[shard].push(row);
       }
-      assert!(give.is_none() && gives.is_empty(), "flow matching left surplus");
     }
 
+    step("flow matching");
     // ── Measure every shard against the area bound; split the intervals of
     // the shards that do not fit and try again.
     let totals: Vec<usize> = shard_chunks
@@ -786,21 +1077,29 @@ pub fn partition_shards<'e>(
         chunk_rows.max(adapter_rows)
       })
       .collect();
+    // A shard within a few percent of a bound is split too: splitting a
+    // neighbour moves affinity blocks and crossings, and a shard left right
+    // at the bound comes back over it next round, one round per shard.
+    const SLACK: f64 = 0.97;
+    let area_limit = (AREA_BOUND as f64 * SLACK) as usize;
+    let rows_limit = (params.max_rows as f64 * SLACK) as usize;
     let over: Vec<usize> = (0..num_shards)
-      .filter(|k| totals[*k] > AREA_BOUND || tallest[*k] > params.max_rows)
+      .filter(|k| totals[*k] > area_limit || tallest[*k] > rows_limit)
       .collect();
 
-    if debug {
-      let dup: usize = replicated.iter().map(Vec::len).sum();
+    if timing_enabled() {
+      let dup: usize = replicated.iter().map(|r| r.len()).sum();
       let crossings: usize = adapters.iter().map(Vec::len).sum();
       eprintln!(
         "hypercube refine round {refine_round}: {num_shards} shards, \
          {dup} duplicated rows, {crossings} adapter rows, peak \
-         ~{} cells, tallest chunk {} rows (cap {}), {} shard(s) over the bound",
+         ~{} cells, tallest chunk {} rows (cap {}), {} shard(s) over the \
+         bound; {:.2?}",
         totals.iter().max().unwrap_or(&0),
         tallest.iter().max().unwrap_or(&0),
         params.max_rows,
-        over.len()
+        over.len(),
+        round_start.elapsed()
       );
     }
 
@@ -849,7 +1148,9 @@ pub fn partition_shards<'e>(
       let shards = shard_chunks
         .into_iter()
         .zip(adapters)
-        .map(|(chunks, adapters)| Some(PlannedShard { chunks, adapters }))
+        .map(|(chunks, adapters)| {
+          std::sync::Mutex::new(Some(PlannedShard { chunks, adapters }))
+        })
         .collect();
       return Ok(Partition { extended, shards, claim: claim.to_vec() });
     }
@@ -860,17 +1161,148 @@ pub fn partition_shards<'e>(
         cells: totals[worst],
       });
     }
+    residual_cache = intervals.into_iter().zip(bases).collect();
+    // Split an overflowing interval into as many parts as its overflow
+    // calls for (area and row cap alike) rather than in two, aiming below
+    // the bounds: splitting creates crossings, in the parts and in their
+    // neighbours, so a part landing right at the bound comes back as a
+    // straggler the next round, each costing a round.
+    const SPLIT_TARGET: f64 = 0.9;
     let mut refined = Vec::with_capacity(boundaries.len() + over.len());
     for k in 0..num_shards {
       refined.push(boundaries[k]);
       if over.contains(&k) {
-        refined.push((boundaries[k] + boundaries[k + 1]) / 2.0);
+        let by_area = totals[k] as f64 / (AREA_BOUND as f64 * SPLIT_TARGET);
+        let by_rows =
+          tallest[k] as f64 / (params.max_rows as f64 * SPLIT_TARGET);
+        let parts = by_area.max(by_rows).ceil().max(2.0);
+        let (lo, hi) = (boundaries[k], boundaries[k + 1]);
+        for j in 1..parts as usize {
+          refined.push(lo + (hi - lo) * j as f64 / parts);
+        }
       }
     }
     refined.push(1.0);
     boundaries = refined;
   }
   unreachable!("refinement loop always returns")
+}
+
+/// The ranges in `new` not in `old` and vice versa (both ascending and
+/// disjoint).
+fn range_diff(
+  old: &[std::ops::Range<usize>],
+  new: &[std::ops::Range<usize>],
+) -> (Vec<std::ops::Range<usize>>, Vec<std::ops::Range<usize>>) {
+  let mut points: Vec<usize> =
+    old.iter().chain(new).flat_map(|r| [r.start, r.end]).collect();
+  points.sort_unstable();
+  points.dedup();
+  let covers = |ranges: &[std::ops::Range<usize>], lo: usize| {
+    let i = ranges.partition_point(|r| r.end <= lo);
+    ranges.get(i).is_some_and(|r| r.start <= lo)
+  };
+  let (mut added, mut removed) = (Vec::new(), Vec::new());
+  for w in points.windows(2) {
+    let (lo, hi) = (w[0], w[1]);
+    match (covers(old, lo), covers(new, lo)) {
+      (false, true) => added.push(lo..hi),
+      (true, false) => removed.push(lo..hi),
+      _ => {},
+    }
+  }
+  (added, removed)
+}
+
+/// A cached base residual brought up to date with this round's views, or
+/// `None` when the change is not one this handles (the duplicated rows
+/// differ, or a chunk appeared or vanished): rows that joined or left an
+/// affinity view are added or subtracted, and a home row whose reduction
+/// changed moves its provide tuple by the difference.
+fn update_base(
+  machine: &AiurMachine,
+  extended: &[Option<RowMajorMatrix<F>>],
+  provides: &[Option<ProvideInfo>],
+  old: &[Option<View>],
+  new: &[Option<View>],
+  mut base: Residual,
+) -> Option<Residual> {
+  for (slot, (old, new)) in old.iter().zip(new).enumerate() {
+    let (old, new) = match (old, new) {
+      (None, None) => continue,
+      (Some(old), Some(new)) => (old, new),
+      _ => return None,
+    };
+    if old.slot != new.slot || old.extra != new.extra {
+      return None;
+    }
+    let circuit = machine.lowered_at(slot).unwrap();
+    let trace = extended[slot].as_ref().expect("viewed trace");
+    // Rows that moved in or out.
+    let (added, removed) = range_diff(&old.ranges, &new.ranges);
+    for (ranges, sign) in [(added, 1i128), (removed, -1i128)] {
+      if ranges.is_empty() {
+        continue;
+      }
+      let view = View {
+        slot,
+        ranges,
+        reductions: vec![],
+        extra: vec![],
+        mult_col: None,
+      };
+      let mut delta: Residual = HashMap::new();
+      accumulate_balance(circuit, &Chunk::View(view), extended, &mut delta);
+      for (tuple, r) in delta {
+        *base.entry(tuple).or_default() += sign * r;
+      }
+    }
+    // Reductions that changed: the row's provide multiplicity is
+    // `-(orig - delta)`, so its residual moves by the delta's change.
+    if old.reductions != new.reductions {
+      let info = provides[slot].as_ref()?;
+      let interaction = &circuit.lowered.interactions[info.interaction];
+      let empty: [F; 0] = [];
+      let w = trace.width();
+      let (mut i, mut j) = (0, 0);
+      while i < old.reductions.len() || j < new.reductions.len() {
+        let (row, change) = match (old.reductions.get(i), new.reductions.get(j))
+        {
+          (Some((ro, d0)), Some((rn, d1))) if ro == rn => {
+            i += 1;
+            j += 1;
+            (*ro, *d1 - *d0)
+          },
+          (Some((ro, d0)), Some((rn, _))) if ro < rn => {
+            i += 1;
+            (*ro, -*d0)
+          },
+          (Some((ro, d0)), None) => {
+            i += 1;
+            (*ro, -*d0)
+          },
+          (_, Some((rn, d1))) => {
+            j += 1;
+            (*rn, *d1)
+          },
+          (None, None) => unreachable!(),
+        };
+        if change == F::zero() {
+          continue;
+        }
+        let main = &trace.values[row * w..(row + 1) * w];
+        let tuple = canonical_tuple(
+          interaction
+            .values
+            .iter()
+            .map(|v| v.eval_row(&empty, main).as_canonical_u32())
+            .collect(),
+        );
+        *base.entry(tuple).or_default() += signed(change);
+      }
+    }
+  }
+  Some(base)
 }
 
 /// Panics if a shard record's interactions do not balance (see the call
@@ -1191,15 +1623,17 @@ pub(crate) fn assemble_shard(
 ) -> AiurRecord {
   let mut pv = machine.base_public_values(claim, is_claim_shard);
 
-  let mut traces: Vec<Option<RowMajorMatrix<F>>> =
-    Vec::with_capacity(machine.num_slots());
-  for (slot, chunk) in chunks.into_iter().enumerate() {
-    let circuit = machine.lowered_at(slot).unwrap();
-    let chunk = chunk.unwrap_or_else(|| {
-      RowMajorMatrix::new(vec![], circuit.lowered.main_width)
-    });
-    traces.push(Some(pad_chunk(circuit, chunk, &pv)));
-  }
+  let mut traces: Vec<Option<RowMajorMatrix<F>>> = chunks
+    .into_par_iter()
+    .enumerate()
+    .map(|(slot, chunk)| {
+      let circuit = machine.lowered_at(slot).unwrap();
+      let chunk = chunk.unwrap_or_else(|| {
+        RowMajorMatrix::new(vec![], circuit.lowered.main_width)
+      });
+      Some(pad_chunk(circuit, chunk, &pv))
+    })
+    .collect();
 
   // Adapter chips, threading the accumulator chain and byte usage.
   let mut chain = ChainState::start();

@@ -106,71 +106,167 @@ pub fn shard_verifier(
   )
 }
 
+/// Where a prover's records come from: shard `k` is built on demand, by
+/// whichever thread asks first (see [`prove_source`]).
+pub trait RecordSource: Sync {
+  /// Number of shards.
+  fn len(&self) -> usize;
+  fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+  fn take(&self, machine: &AiurMachine, k: usize) -> AiurRecord;
+}
+
+/// Records built up front.
+pub struct Records(Vec<std::sync::Mutex<Option<AiurRecord>>>);
+
+impl RecordSource for Records {
+  fn len(&self) -> usize {
+    self.0.len()
+  }
+
+  fn take(&self, _machine: &AiurMachine, k: usize) -> AiurRecord {
+    self.0[k].lock().expect("record lock").take().expect("taken once")
+  }
+}
+
 /// Proves an execution's shards, returning the verifying key and the proof.
-/// See [`prove_iter`].
+/// See [`prove_source`].
 pub fn prove(
   machine: &AiurMachine,
   records: Vec<AiurRecord>,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
-  prove_iter(machine, records.into_iter(), params)
+  let records = Records(
+    records.into_iter().map(|r| std::sync::Mutex::new(Some(r))).collect(),
+  );
+  prove_source(machine, &records, params)
 }
 
 /// Proves an execution's shards, returning the verifying key and the proof.
-/// The records are taken one at a time — padded into the shape catalogue,
-/// proven, dropped — so a lazily assembled partition
-/// ([`crate::shard::Partition::into_records`]) keeps one shard's traces
-/// resident at a time. With the `cuda` feature, `IX_HC_GPU=1` routes proving
-/// through [`crate::cuda::prove`]; verification is identical either way.
-pub fn prove_iter(
+///
+/// Records are taken from `source` in shard order by a few producer threads
+/// (`IX_HC_ASSEMBLERS`, default 2) — assembled, padded into the shape
+/// catalogue, and handed to the prover through a bounded channel — so
+/// assembly overlaps proving and a lazily assembled partition
+/// ([`crate::shard::Partition`]) keeps a few shards' traces resident at a
+/// time. With the `cuda` feature, `IX_HC_GPU=1` routes proving through
+/// [`crate::cuda::prove`]; verification is identical either way.
+pub fn prove_source(
   machine: &AiurMachine,
-  records: impl ExactSizeIterator<Item = AiurRecord>,
+  source: &impl RecordSource,
   params: ProverParams,
 ) -> (AiurVerifyingKey, AiurProof) {
   let debug = std::env::var_os("IX_HC_DEBUG").is_some();
+  let timing = crate::shard::timing_enabled();
   let mv = debug.then(|| MachineVerifier::new(shard_verifier(machine, params)));
+  let num_shards = source.len();
+  let producers = std::env::var("IX_HC_ASSEMBLERS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    .unwrap_or(2)
+    .clamp(1, num_shards.max(1));
   // Every shard is padded into the machine's shape catalogue (see
   // [`crate::shape`]); the partitioner keeps shards under the area bound,
   // so the only way this fails is a row cap too low for the pad chip.
-  let padded = records.enumerate().map(move |(i, mut record)| {
+  let build = |k: usize| -> AiurRecord {
+    let mut record = source.take(machine, k);
+    let start = std::time::Instant::now();
     let class = crate::shape::pad_record(machine, params, &mut record)
-      .unwrap_or_else(|e| panic!("shard {i} shape padding: {e}"));
+      .unwrap_or_else(|e| panic!("shard {k} shape padding: {e}"));
+    if timing {
+      eprintln!("hypercube shard {k}: padded in {:.2?}", start.elapsed());
+    }
     if let Some(mv) = &mv {
       match sp1_hypercube::prover::shape_from_record(mv, &record) {
         Some(shape) => eprintln!(
-          "hypercube shard {i} shape: preprocessed_area {}, main_area {} \
+          "hypercube shard {k} shape: preprocessed_area {}, main_area {} \
            (class {} with {} padding column(s))",
           shape.preprocessed_area,
           shape.main_area,
           class.main_area,
           class.main_padding_cols
         ),
-        None => eprintln!("hypercube shard {i} shape: no matching cluster"),
+        None => eprintln!("hypercube shard {k} shape: no matching cluster"),
       }
     }
     record
-  });
+  };
   if debug && std::env::var_os("IX_HC_PLAN_ONLY").is_some() {
-    padded.for_each(drop);
+    (0..num_shards).for_each(|k| drop(build(k)));
     panic!("IX_HC_PLAN_ONLY: stopping after shape report");
   }
-  #[cfg(feature = "cuda")]
-  if std::env::var_os("IX_HC_GPU").is_some() {
-    return crate::cuda::prove(machine, padded, params);
-  }
-  let verifier = shard_verifier(machine, params);
-  let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
-  runtime.block_on(async move {
-    let prover = simple_prover(verifier);
-    let (pk, vk) = prover.setup(Arc::new(AiurProgram)).await;
-    // SAFETY: the preprocessed data was produced by this very prover.
-    let pk = unsafe { pk.into_inner() };
-    let mut shard_proofs = Vec::with_capacity(padded.len());
-    for record in padded {
-      shard_proofs.push(prover.prove_shard(pk.clone(), record).await);
+  let next = std::sync::atomic::AtomicUsize::new(0);
+  std::thread::scope(|scope| {
+    let (tx, rx) =
+      std::sync::mpsc::sync_channel::<(usize, AiurRecord)>(producers);
+    let (next, build) = (&next, &build);
+    for _ in 0..producers {
+      let tx = tx.clone();
+      scope.spawn(move || {
+        loop {
+          let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+          if k >= num_shards || tx.send((k, build(k))).is_err() {
+            break;
+          }
+        }
+      });
     }
-    (vk, MachineProof { shard_proofs })
+    drop(tx);
+    let records =
+      InOrder { rx, pending: std::collections::BTreeMap::new(), next: 0 };
+    #[cfg(feature = "cuda")]
+    if std::env::var_os("IX_HC_GPU").is_some() {
+      return crate::cuda::prove(machine, records, num_shards, params);
+    }
+    let verifier = shard_verifier(machine, params);
+    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+    runtime.block_on(async move {
+      let prover = simple_prover(verifier);
+      let (pk, vk) = prover.setup(Arc::new(AiurProgram)).await;
+      // SAFETY: the preprocessed data was produced by this very prover.
+      let pk = unsafe { pk.into_inner() };
+      let mut shard_proofs = Vec::with_capacity(num_shards);
+      let mut pulled = std::time::Instant::now();
+      for record in records {
+        let waited = pulled.elapsed();
+        let start = std::time::Instant::now();
+        shard_proofs.push(prover.prove_shard(pk.clone(), record).await);
+        if timing {
+          eprintln!(
+            "hypercube shard {}: waited {waited:.2?} for the record, cpu \
+             prove {:.2?}",
+            shard_proofs.len() - 1,
+            start.elapsed()
+          );
+        }
+        pulled = std::time::Instant::now();
+      }
+      (vk, MachineProof { shard_proofs })
+    })
   })
+}
+
+/// The producers' records, yielded in shard order.
+struct InOrder {
+  rx: std::sync::mpsc::Receiver<(usize, AiurRecord)>,
+  pending: std::collections::BTreeMap<usize, AiurRecord>,
+  next: usize,
+}
+
+impl Iterator for InOrder {
+  type Item = AiurRecord;
+
+  fn next(&mut self) -> Option<AiurRecord> {
+    loop {
+      if let Some(record) = self.pending.remove(&self.next) {
+        self.next += 1;
+        return Some(record);
+      }
+      let (k, record) = self.rx.recv().ok()?;
+      self.pending.insert(k, record);
+    }
+  }
 }
 
 /// Verifies a proof against the machine and verifying key, returning the

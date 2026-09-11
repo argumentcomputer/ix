@@ -37,7 +37,8 @@ pub use air::AiurAir;
 pub use frontend::ToplevelMachine;
 pub use machine::{AiurMachine, BuildError, CircuitSpec};
 pub use prover::{
-  AiurProof, AiurVerifyingKey, ProverParams, prove, prove_iter, verify,
+  AiurProof, AiurVerifyingKey, ProverParams, RecordSource, prove, prove_source,
+  verify,
 };
 pub use record::{AiurProgram, AiurRecord};
 pub use shape::ShardShape;

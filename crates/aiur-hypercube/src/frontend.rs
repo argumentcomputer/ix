@@ -22,7 +22,7 @@ use multi_stark::{
 
 use crate::{
   machine::{AiurMachine, BuildError, CircuitSpec},
-  prover::{AiurProof, AiurVerifyingKey, ProverParams, prove_iter},
+  prover::{AiurProof, AiurVerifyingKey, ProverParams, prove_source},
   record::AiurRecord,
   shard::{ShardingParams, partition_shards},
 };
@@ -212,13 +212,23 @@ impl ToplevelMachine {
     params: ProverParams,
     sharding: ShardingParams,
   ) -> Result<(Vec<FF>, AiurVerifyingKey, AiurProof), ExecuteProveError> {
+    let timing = crate::shard::timing_enabled();
+    let mut stage = std::time::Instant::now();
+    let mut lap = |what: &str| {
+      if timing {
+        eprintln!("hypercube: {what} in {:.2?}", stage.elapsed());
+      }
+      stage = std::time::Instant::now();
+    };
     let (query_record, output) = toplevel
       .execute(self.fun_idx, input.to_vec(), io_buffer)
       .map_err(ExecuteProveError::Exec)?;
+    lap("executed");
     let claim = self.claim(input, &output);
     let witness =
       build_witness(toplevel, &query_record, io_buffer, &self.slot_widths);
     drop(query_record);
+    lap("witness built");
     let boundary = boundary_trace(toplevel, &witness);
     let traces = witness
       .into_iter()
@@ -229,13 +239,15 @@ impl ToplevelMachine {
       claim.iter().map(|x| crate::expr::convert_element(*x)).collect();
     let extended =
       self.machine.extended_traces(traces).map_err(ExecuteProveError::Build)?;
+    lap("traces extended");
     let partition =
       partition_shards(&self.machine, &extended, &claim_backend, &sharding)
         .map_err(ExecuteProveError::Build)?;
-    // The shards view `extended`; each record is assembled from it as the
-    // prover asks for it, so one shard's traces are resident at a time.
-    let records = partition.into_records(&self.machine);
-    let (vk, proof) = prove_iter(&self.machine, records, params);
+    lap("partitioned");
+    // The shards view `extended`; records are assembled from it as the
+    // prover needs them (a couple ahead), so few shards' traces are
+    // resident at a time.
+    let (vk, proof) = prove_source(&self.machine, &partition, params);
     Ok((claim, vk, proof))
   }
 }

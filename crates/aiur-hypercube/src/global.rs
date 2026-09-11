@@ -58,6 +58,7 @@
 
 use std::borrow::Borrow;
 
+use rayon::prelude::*;
 use slop_air::{AirBuilder, PairBuilder};
 use slop_algebra::{AbstractField, PrimeField32};
 use slop_matrix::Matrix;
@@ -405,34 +406,43 @@ impl GlobalSpec {
     // constraints valid on padding rows.
     let mut zero_perm = vec![F::zero(); NUM_POSEIDON2_DEGREE3_COLS];
     populate_perm::<F, 3>([F::zero(); WIDTH], None, &mut zero_perm);
-    for r in 0..height {
-      let row = &mut values[r * width..(r + 1) * width];
-      for i in 0..self.chunks {
-        let s = self.perm_start(i);
-        row[s..s + NUM_POSEIDON2_DEGREE3_COLS].copy_from_slice(&zero_perm);
-      }
-    }
+
+    // Every row's own work — the padding permutations, the hash-to-curve
+    // of its tuple (the expensive part: Poseidon2 permutations, retried
+    // over the offset byte) and its tuple columns — is independent of the
+    // other rows and runs in parallel; only the accumulator chain below is
+    // sequential.
+    let points: Vec<Option<(SepticCurve<F>, u8)>> = values
+      .par_chunks_mut(width)
+      .enumerate()
+      .map(|(r, row)| {
+        for i in 0..self.chunks {
+          let s = self.perm_start(i);
+          row[s..s + NUM_POSEIDON2_DEGREE3_COLS].copy_from_slice(&zero_perm);
+        }
+        let entry = rows.get(r)?;
+        assert!(
+          entry.tuple.len() <= self.tuple_capacity(),
+          "adapter tuple exceeds the chip class"
+        );
+        let (point, offset) = self.populate_hash(row, entry);
+        row[IS_REAL] = F::one();
+        row[IS_IMPORT] = F::from_bool(entry.import);
+        row[AMOUNT] = entry.amount;
+        row[SIGNED_MULT] =
+          if entry.import { -entry.amount } else { entry.amount };
+        for (j, v) in entry.tuple.iter().enumerate() {
+          row[TUPLE + j] = *v;
+        }
+        Some((point, offset))
+      })
+      .collect();
 
     for (r, entry) in rows.iter().enumerate() {
-      assert!(
-        entry.tuple.len() <= self.tuple_capacity(),
-        "adapter tuple exceeds the chip class"
-      );
       let row_start = r * width;
-      let (point, offset) = {
-        let row = &mut values[row_start..row_start + width];
-        self.populate_hash(row, entry)
-      };
+      let (point, offset) = points[r].expect("a real row has a point");
       let row = &mut values[row_start..row_start + width];
-      row[IS_REAL] = F::one();
-      row[IS_IMPORT] = F::from_bool(entry.import);
-      row[AMOUNT] = entry.amount;
-      row[SIGNED_MULT] =
-        if entry.import { -entry.amount } else { entry.amount };
       row[IDX] = F::from_canonical_usize(chain.idx);
-      for (j, v) in entry.tuple.iter().enumerate() {
-        row[TUPLE + j] = *v;
-      }
 
       let acc_prev = chain.acc;
       assert!(

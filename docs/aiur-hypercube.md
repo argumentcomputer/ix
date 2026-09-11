@@ -205,11 +205,40 @@ multiplicity reductions of rows duplicated elsewhere, and the rows
 duplicated into the shard with their multiplicity — never a copy, so a
 refinement round costs a few words per row edit instead of a second copy
 of the execution; only the replicated atomic tables are owned per shard.
-`Partition::into_records` materializes one record when the prover asks for
-it, and `prover::prove_iter` pads and proves records one at a time.
-Assembly is where a shard becomes big (wide adapter chips, alignment and
-class padding), so the resident traces are the execution's plus one
-shard's.
+`prover::prove_source` has a couple of producer threads (`IX_HC_ASSEMBLERS`)
+materialize, assemble and pad records ahead of the prover, in shard order,
+so assembly (the adapter chips' hash-to-curve is parallel per row; the
+septic accumulator chain is the sequential part, ~1 s for 700 k rows)
+overlaps proving. Assembly is where a shard becomes big (wide adapter
+chips, alignment and class padding), so the resident traces are the
+execution's plus a few shards'.
+
+**Refinement rounds** (`shard.rs`, the loop in `partition_shards`). A
+round's cost was the tuple bookkeeping: every lookup of every row
+evaluated, allocated and hashed into tuple-keyed maps, twice per round,
+for five rounds. Now the first round is the only full scan:
+
+- the provide and affinity indexes are bucketed maps built in parallel
+  (`TupleIndex`);
+- per interval (a shard's epoch slice), the demand-derived lists — the
+  affinity votes and the rows to replicate — are cached, and the demand
+  itself is computed only for new intervals and dropped;
+- per interval, the *base* residual (every chunk's interactions before the
+  tables absorb anything, balanced tuples dropped) is cached and, when
+  only the edits moved — other shards' demands reduced more home rows in
+  the slice, affinity blocks came or went — updated by those differences
+  (`update_base`) instead of rescanned;
+- home-row reductions are summed in a dense per-circuit array; flow
+  matching runs in parallel over hash buckets of the residual tuples;
+- an overflowing interval is split into as many parts as its overflow
+  calls for, aiming 10 % under the bounds, and shards within 3 % of a
+  bound are split too, since a neighbour's split moves crossings and
+  affinity blocks; the round cap is generous because late rounds are cheap.
+
+`IX_HC_TIMING=1` reports every stage and round step with the process RSS;
+`IX_HC_DUMB=1` disables replication and affinity (a baseline: on the
+6-shard stage-2 input it triples the shards and needs four rounds instead
+of one — the optimizations are not what makes rounds expensive).
 
 ### 4. `crates/aiur-recursion`: the fixed recursion pipeline
 
@@ -337,7 +366,10 @@ Environment knobs:
 | Variable | Meaning |
 |---|---|
 | `IX_HC_SHARD_CELLS`, `IX_HC_MAX_LOG_ROWS`, `IX_HC_LOG_STACKING`, `IX_HC_LOG_BLOWUP` | Hypercube prover/sharding parameters (defaults: single shard budget with automatic refinement, 2^20 rows, 2^21, blowup 1) |
-| `IX_HC_DEBUG` | partitioner, shape and recursion-program diagnostics; `IX_HC_PLAN_ONLY` stops after the shape report |
+| `IX_HC_DEBUG` | partitioner, shape and recursion-program diagnostics, per-record LogUp balance checks; `IX_HC_PLAN_ONLY` stops after the shape report |
+| `IX_HC_TIMING` | stage, round-step and per-shard wall times with RSS |
+| `IX_HC_ASSEMBLERS` | record producer threads ahead of the prover (default 2) |
+| `IX_HC_DUMB` | plain epoch slices, no replication or affinity (baseline) |
 | `IX_HC_GPU=1` | route Hypercube proving and the recursion tail through `sp1-gpu` (needs the `cuda` build) |
 | `IX_REC_GPU=0` | with `IX_HC_GPU`, keep the recursion tail on the CPU |
 | `IX_REC_SHAPES=compute\|<file>`, `IX_REC_SHAPES_OUT` | pinned-shape override / regeneration |
@@ -383,22 +415,28 @@ equal the CPU-computed ones: the allowlist check in `prove` passes against a
 the GPU wrap proof.
 
 Full pipeline on the closure of `Nat.add_comm` (`ix aggregate --compress`,
-the same root proof as the CPU table above: 8.6 MB at 100 queries):
+the same root proof as the CPU table above: 8.6 MB at 100 queries), the
+compress stage over the session's iterations:
 
-| Stage | GPU, first run (`IX_HC_DEBUG=1`, records copied) | GPU, final code |
-|---|---|---|
-| IxVM shard proof (`ix prove`) | 1.3 s | — |
-| Hypercube, 113 shards | 2444 s (partitioning ~15 min, then ~20 s per shard incl. the sequential debug balance check), peak RSS 242 GB | 1921 s: partitioning ~15 min (5 refinement rounds, peak RSS 182 GB), then 113 shards in ~17 min (~9 s per shard: assembly, upload, GPU prove), the records resident one at a time (RSS 55 GB) |
-| wrap tail (113 leaves, 112 composes, shrink, wrap) | 221 s | 162 s (the GPU proves in ~1 min of it; the rest is executing the recursion programs on the CPU) |
-| PLONK (warm artifacts) | 183 s, 4160 bytes, verified | 170 s |
-| total `ix aggregate --compress` | 48 min | 38 min (`ix compress` on the cached root) |
+| Stage | first GPU run | shards as views | + incremental rounds, parallel matching, producers | + delta residuals, dense reductions, parallel indexes |
+|---|---|---|---|---|
+| execute + witness + extend traces | ~4 min | 143 + 8 + 70 s | 116 + 8 + 70 s | 110 + 8 + 69 s |
+| partitioning | ~11 min, 5 rounds | ~10 min, 5 rounds | 562 s, 9 rounds (69, 90, 56 … 25 s) | 395 s: indexes 24 s, rounds 75, 76, 57, 17, 15, 14, 15, 16 s |
+| shard proofs | 113 × ~20 s | 113 × ~9 s | 156 in ~130 s | 160 in ~130 s: GPU 0.52 s per shard (83 s total), waiting on assembly 0.25 s (40 s) |
+| Hypercube stage | 2444 s | 1921 s | 890 s | 712 s |
+| wrap tail | 221 s | 162 s | 238 s | 241 s |
+| PLONK (warm) | 183 s | 170 s | 173 s | 185 s |
+| total `ix compress` | 48 min | 38 min | 22.5 min | 19.9 min |
+| peak RSS | 242 GB | 182 GB | 213 GB | 132 GB |
 
 The CPU run of the same input took 2.6 h for Hypercube and 46 min for the
-tail at a 373 GB peak. The first GPU run was made with records still copied
-per shard. What remains of the peak is the partitioner's index working set
-during refinement (the execution's traces are ~55 GB of it); the CPU work
-around the GPU — partitioning, record assembly, recursion program execution
-— is now most of the wall time.
+tail at a 373 GB peak. The GPU now proves a full 2^29-cell shard in about
+half a second; what is left in the Hypercube stage is the interpreter
+(110 s), trace extension (69 s), the first two partition rounds (the only
+full scans, ~75 s each), and the ~80 s between "traces extended" and the
+first round that is not yet timed. The shard count grew from 113 to 160 with
+the split target and slack (each shard costs ~1.5 s here plus a leaf), which
+the wrap tail's 241 s reflects.
 
 Where the 114 shards come from: the verifier's own cells amount to ~30
 shards; the rest is cross-shard plumbing — 71 M adapter rows and 117 M
@@ -436,18 +474,22 @@ count is the number to drive down.
 5. **Arity 4** needs the compress shape recomputed and checked against
    SP1's 2^21 row cap; the arity-2 compose-over-leaves program already
    needs ~590k rows on its largest chip.
-6. **Memory.** Shards are views and records are assembled one at a time
+6. **Memory.** Shards are views and records are assembled a few at a time
    (see the `Partition` paragraph above), so the resident traces are the
-   execution's plus one shard's. What remains is the partitioner's index
-   working set — the provide and affinity indexes and the per-shard demand
-   maps, hash maps keyed by tuples — which still scales with the execution.
+   execution's plus a few shards'. What remains is the partitioner's index
+   working set — the provide and affinity indexes and the cached base
+   residuals, maps keyed by tuples — which still scales with the execution
+   (132 GB peak on Nat.add_comm).
 7. **Chip clusters.** Light shards still pay the leaf for all 181 chips; a
    catalogue with a few chip clusters would make them cheaper.
-8. **GPU.** Both stages run on the GPU (see the measurements). The
-   recursion worker sets up each program's proving key again for every
-   proof (as the CPU path does); caching the leaf keys per program would
-   shave a fraction of the 0.65 s a leaf costs. The wrap prover is the
-   slowest recursion stage on the GPU (1.5–8 s, BN254 Poseidon2). A cleaner
+8. **GPU.** Both stages run on the GPU and the proving phase is
+   GPU-bound (see the measurements). The CPU work around it is now the
+   bottleneck: the Aiur interpreter (110 s for the byte verifier), trace
+   extension (69 s) and the two full partition scans (~75 s each). The
+   partitioner is semantics-free and rediscovers every provider by
+   evaluating and hashing every lookup tuple; recording the provider row of
+   each lookup during witness generation would turn partitioning into
+   integer graph work and remove the tuple maps from memory. A cleaner
    `ix` entry that skips the aggregate cache when only compression is
    wanted is still missing.
 
