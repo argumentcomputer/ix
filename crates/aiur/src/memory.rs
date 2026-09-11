@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use multi_stark::{
   expr::Expr,
-  lookup::{Lookup, LookupValues},
+  lookup::{Lookup, LookupRowMut, LookupValues},
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
 };
@@ -132,16 +132,14 @@ impl Memory {
     // Builder rows start zeroed (`Lookup::empty()`), so padding rows need no
     // writes at all.
     let mut builder = LookupValues::builder(height, slot_arg_widths);
-    let mut row_writers = builder.rows_mut();
 
     if height_no_padding > 0 {
       let queries = record.memory_queries.get(&size).expect("Invalid size");
       let size_g = G::from_usize(size);
-      rows_no_padding
-        .par_chunks_mut(width)
-        .zip(row_writers[..height_no_padding].par_iter_mut())
-        .enumerate()
-        .for_each(|(i, (row, row_lookups))| {
+      let populate =
+        |i: usize,
+         row: &mut [G],
+         row_lookups: Option<&mut LookupRowMut<'_, G>>| {
           let index = range.start + i;
           let (values, result) =
             queries.get_index(index).expect("pointer in range");
@@ -150,6 +148,7 @@ impl Memory {
           row[2] = G::from_usize(record.pointer_base + index);
           row[3..].copy_from_slice(values);
 
+          let Some(row_lookups) = row_lookups else { return };
           let args = Self::lookup_args(size_g, row[2], &row[3..]);
           row_lookups.pull(0, row[0], &args);
           row_lookups.push(1, G::ONE, &Self::memseg_args(size_g, row[2]));
@@ -158,9 +157,23 @@ impl Memory {
             G::ONE,
             &Self::memseg_args(size_g, row[2] + G::ONE),
           );
-        });
+        };
+      if crate::trace::trace_only_lookups() {
+        rows_no_padding
+          .par_chunks_mut(width)
+          .enumerate()
+          .for_each(|(i, row)| populate(i, row, None));
+      } else {
+        let mut row_writers = builder.rows_mut();
+        rows_no_padding
+          .par_chunks_mut(width)
+          .zip(row_writers[..height_no_padding].par_iter_mut())
+          .enumerate()
+          .for_each(|(i, (row, row_lookups))| {
+            populate(i, row, Some(row_lookups))
+          });
+      }
     }
-    drop(row_writers);
 
     let trace = RowMajorMatrix::new(rows, width);
     (trace, builder.finish())

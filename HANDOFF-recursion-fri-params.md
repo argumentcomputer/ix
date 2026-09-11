@@ -218,8 +218,14 @@ Terminology: a "lane" = one prove process pinned to one SNC domain
 ```
 lscpu | grep -E 'Socket|NUMA|Thread|Model name'
 numactl --hardware        # expect 3 nodes, ~64 vCPU + ~512 GiB each
-cat /sys/kernel/mm/transparent_hugepage/enabled   # must NOT be [never]
-cat /sys/kernel/mm/transparent_hugepage/defrag    # set defer+madvise
+cat /sys/kernel/mm/transparent_hugepage/enabled   # must be [always]: ~1.5x on
+                                                  # CPU proving, and the prover's
+                                                  # witness/LDE buffers do not
+                                                  # madvise (only the query map does)
+cat /sys/kernel/mm/transparent_hugepage/defrag    # set defer+madvise, never always
+# sudo sh -c 'echo always > /sys/kernel/mm/transparent_hugepage/enabled'
+# sudo sh -c 'echo defer+madvise > /sys/kernel/mm/transparent_hugepage/defrag'
+# not persistent: add transparent_hugepage=always to the kernel command line
 sysctl kernel.numa_balancing                      # set to 0
 ```
 

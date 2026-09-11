@@ -36,7 +36,22 @@ struct ColumnMutSlice<'a, 'b> {
   inputs: &'a mut [G],
   selectors: &'a mut [G],
   auxiliaries: &'a mut [G],
-  lookups: &'a mut LookupRowMut<'b, G>,
+  /// `None` builds the trace alone (see [`trace_only_lookups`]).
+  lookups: Option<&'a mut LookupRowMut<'b, G>>,
+}
+
+/// Whether witness builders skip the lookup witness and hand the prover
+/// zero-filled lookup values of the right shape. The CUDA backend derives
+/// every lookup message from the committed trace through the constraint
+/// graph and never reads the host lookup witness, so building it is wasted
+/// work there. Enabled by `AIUR_TRACE_ONLY_LOOKUPS=1`; a prover that reads
+/// the host lookup witness (the CPU backend) produces an unbalanced proof
+/// under this setting.
+pub fn trace_only_lookups() -> bool {
+  static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+  *FLAG.get_or_init(|| {
+    std::env::var("AIUR_TRACE_ONLY_LOOKUPS").is_ok_and(|v| v == "1")
+  })
 }
 
 type Degree = u8;
@@ -65,7 +80,7 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     circuit_layout: &FunctionLayout,
     sel_offset: usize,
     slice: &'a mut [G],
-    lookups: &'a mut LookupRowMut<'b, G>,
+    lookups: Option<&'a mut LookupRowMut<'b, G>>,
   ) -> Self {
     let (inputs, slice) = slice.split_at_mut(circuit_layout.input_size);
     let (selectors, auxiliaries) = slice.split_at_mut(circuit_layout.selectors);
@@ -87,7 +102,9 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     multiplicity: G,
     args: &[G],
   ) {
-    self.lookups.push(index.lookup, multiplicity, args);
+    if let Some(lookups) = self.lookups.as_deref_mut() {
+      lookups.push(index.lookup, multiplicity, args);
+    }
     index.lookup += 1;
   }
 }
@@ -224,12 +241,8 @@ impl Toplevel {
     // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
     // rows need no writes at all.
     let mut builder = LookupValues::builder(height, slot_arg_widths);
-    let mut row_writers = builder.rows_mut();
-    rows_no_padding
-      .par_chunks_mut(width)
-      .zip(row_writers[..height_no_padding].par_iter_mut())
-      .enumerate()
-      .for_each(|(i, (row, lookups))| {
+    let populate =
+      |i: usize, row: &mut [G], lookups: Option<&mut LookupRowMut<'_, G>>| {
         let meta = &rows_meta[i];
         let index = &mut ColumnIndex {
           auxiliary: 0,
@@ -251,8 +264,20 @@ impl Toplevel {
           query_record,
         };
         meta.function.populate_row(index, slice, context, io_buffer);
-      });
-    drop(row_writers);
+      };
+    if trace_only_lookups() {
+      rows_no_padding
+        .par_chunks_mut(width)
+        .enumerate()
+        .for_each(|(i, row)| populate(i, row, None));
+    } else {
+      let mut row_writers = builder.rows_mut();
+      rows_no_padding
+        .par_chunks_mut(width)
+        .zip(row_writers[..height_no_padding].par_iter_mut())
+        .enumerate()
+        .for_each(|(i, (row, lookups))| populate(i, row, Some(lookups)));
+    }
     let trace = RowMajorMatrix::new(rows, width);
     (trace, builder.finish())
   }
@@ -350,7 +375,9 @@ impl Ctrl {
         );
         // The first lookup slot is reserved for the function return, which
         // pulls the query claim with the query's multiplicity.
-        slice.lookups.pull(0, context.multiplicity, &args);
+        if let Some(lookups) = slice.lookups.as_deref_mut() {
+          lookups.pull(0, context.multiplicity, &args);
+        }
         None
       },
       Ctrl::Yield(sel, vals) => {
