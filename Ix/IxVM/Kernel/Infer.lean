@@ -232,6 +232,70 @@ def infer := ⟦
     match expr_lbr(e) {
       0 => k_infer(e, store(ListNode.Nil)),
       _ => match load(e) {
+        -- Leave introductions delayed. Lowering a pure-let prefix can copy
+        -- nested continuations without shrinking the real type context, so
+        -- normalize applications only when a real local can be removed.
+        KExprNode.App(_, _) => match infer_let_local_cutoff(env) {
+          0 => k_infer_let_env_core(e, env, types, depth),
+          cutoff => match has_bvar_in_range(e, 0, cutoff) {
+            1 => k_infer_let_env_core(e, env, types, depth),
+            0 => k_infer_let_env_rebase(e, env, types, depth),
+          },
+        },
+        _ => k_infer_let_env_core(e, env, types, depth),
+      },
+    }
+  }
+
+  -- One plus the first Local's raw index, or zero if there is no Local.
+  -- A real context slot can be removed exactly when the subject references
+  -- none of this prefix. The short-circuiting occurrence test above avoids
+  -- a full minimum-index walk when strengthening is impossible.
+  fn infer_let_local_cutoff(env: InferLetEnv) -> G {
+    match load(env) {
+      InferLetEnvNode.Id(_, _) => 0,
+      InferLetEnvNode.Local(_, _, _) => 1,
+      InferLetEnvNode.Let(_, _, outer, _) => match infer_let_local_cutoff(outer) {
+        0 => 0,
+        n => n + 1,
+      },
+    }
+  }
+
+  fn k_infer_let_env_rebase(e: KExpr, env: InferLetEnv,
+                          types: List‹KExpr›, depth: G) -> KExpr {
+    let (outer, removed, locals) = infer_let_drop_unused(env, expr_glb(e, 0));
+    let subject = expr_lower(e, removed, 0);
+    let context = list_drop(types, locals);
+    let ty = k_infer_let_env_core(subject, outer, context, depth - locals);
+    expr_lift(ty, locals, 0)
+  }
+
+  -- Forget leading bindings below the subject's minimum loose index.
+  -- Their domains/values were already checked on entry to the environment.
+  -- Every retained closure was created before those bindings, so cannot
+  -- depend on them. Only Local nodes occupy real context slots: drop that
+  -- many type entries, and lift the inferred type back by that count.
+  -- Stop at Id and retain delayed application inference even there: rebasing
+  -- changes only the context, not the application-substitution algorithm.
+  fn infer_let_drop_unused(env: InferLetEnv, count: G) -> (InferLetEnv, G, G) {
+    match count {
+      0 => (env, 0, 0),
+      _ => match load(env) {
+        InferLetEnvNode.Let(_, _, outer, _) =>
+          let (rest, removed, locals) = infer_let_drop_unused(outer, count - 1);
+          (rest, removed + 1, locals),
+        InferLetEnvNode.Local(_, _, outer) =>
+          let (rest, removed, locals) = infer_let_drop_unused(outer, count - 1);
+          (rest, removed + 1, locals + 1),
+        _ => (env, 0, 0),
+      },
+    }
+  }
+
+  fn k_infer_let_env_core(e: KExpr, env: InferLetEnv,
+                        types: List‹KExpr›, depth: G) -> KExpr {
+    match load(e) {
         KExprNode.BVar(i) => @infer_let_var_type(env, i, types, depth),
         KExprNode.Lam(ty, body) =>
           let dom = infer_let_materialize(ty, env, depth, 0);
@@ -264,7 +328,6 @@ def infer := ⟦
             _ => expr_inst1(cod, infer_let_materialize(a, env, depth, 0), 0),
           },
         _ => k_infer(infer_let_materialize(e, env, depth, 0), types),
-      },
     }
   }
 

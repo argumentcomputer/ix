@@ -247,6 +247,9 @@ def subst := ⟦
   }
 
   fn expr_glb_walk(e: KExpr, c: G) -> G {
+    -- Zero is the least possible index. Once a child attains it, the
+    -- remaining children cannot change this minimum. Preserve the exact
+    -- summary and its memo key without traversing irrelevant proof tails.
     match load(e) {
       KExprNode.BVar(i) =>
         match memo_u32_less_than(i, c) {
@@ -256,7 +259,10 @@ def subst := ⟦
       KExprNode.Srt(_) => 4294967295,
       KExprNode.Const(_, _) => 4294967295,
       KExprNode.Lit(_) => 4294967295,
-      KExprNode.App(f, a) => lbr_min(expr_glb(f, c), expr_glb(a, c)),
+      KExprNode.App(f, a) => match expr_glb(f, c) {
+        0 => 0,
+        n => lbr_min(n, expr_glb(a, c)),
+      },
       KExprNode.Lam(ty, body) => expr_glb_binder(ty, body, c),
       KExprNode.Forall(ty, body) => expr_glb_binder(ty, body, c),
       KExprNode.Let(ty, val, body) => expr_glb_let(ty, val, body, c),
@@ -266,12 +272,20 @@ def subst := ⟦
 
   -- Cold binder arms (same extraction pattern as `expr_lbr_let`).
   fn expr_glb_binder(ty: KExpr, body: KExpr, c: G) -> G {
-    lbr_min(expr_glb(ty, c), expr_glb(body, c + 1))
+    match expr_glb(ty, c) {
+      0 => 0,
+      n => lbr_min(n, expr_glb(body, c + 1)),
+    }
   }
 
   fn expr_glb_let(ty: KExpr, val: KExpr, body: KExpr, c: G) -> G {
-    lbr_min(lbr_min(expr_glb(ty, c), expr_glb(val, c)),
-            expr_glb(body, c + 1))
+    match expr_glb(ty, c) {
+      0 => 0,
+      n => match expr_glb(val, c) {
+        0 => 0,
+        m => lbr_min(lbr_min(n, m), expr_glb(body, c + 1)),
+      },
+    }
   }
 
   -- ============================================================================
