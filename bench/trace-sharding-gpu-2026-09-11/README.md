@@ -1,5 +1,9 @@
 # GPU trace-sharding runs, 2026-09-11
 
+Latest evidence: [queue22](queue22/README.md). Current code pins, results, and
+Mathlib instructions: [pre-Mathlib handoff](../../docs/aiur-gpu-mathlib-handoff.md).
+The recipe and headline below describe the earlier run in the measurement ladder.
+
 Recipes behind `docs/aiur-gpu-plan-status.md`. Box: 32 cores, 249 GiB,
 one RTX PRO 6000 (96 GB), THP `always`.
 

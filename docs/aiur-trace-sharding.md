@@ -863,6 +863,15 @@ seams.
 
 ## 13. Beyond env shards: one execution, one batch, one claim
 
+> **Status (2026-09-11):** measured and parked. On the GPU, env-shard
+> claims proved the same partition with the same STARK work as this
+> one-claim model (Init, 8 shards: 58 vs 56 trace shards, 148 vs 149 GPU
+> seconds), a third of the host memory, no barrier, and claim-level resume;
+> with a min-cut partition, direct joins and root wraps they proved Mathlib
+> end to end in 2:45:22 on one device. The design below stays as the record
+> of what was built (`ix prove --distributed`) and why it was set aside; see
+> `docs/aiur-gpu-plan-status.md`.
+
 Env shards exist for one reason — the prover's RAM peak — and they cost a
 whole layer: `CheckEnv` claims with frontier assumptions, the manifest and
 its bisection tree, refinement and healing on splits, and an `ix_aggr`

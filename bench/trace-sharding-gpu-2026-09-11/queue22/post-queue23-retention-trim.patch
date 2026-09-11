@@ -1,0 +1,86 @@
+diff --git a/crates/ffi/src/aiur/protocol.rs b/crates/ffi/src/aiur/protocol.rs
+index 1f3cd78e..841db285 100644
+--- a/crates/ffi/src/aiur/protocol.rs
++++ b/crates/ffi/src/aiur/protocol.rs
+@@ -1747,6 +1747,10 @@ impl Workers<'_, '_> {
+   fn release(&mut self, worker: usize) {
+     if self.resident[worker].take().is_some() {
+       self.used -= self.charged[worker];
++      eprintln!(
++        "[distributed] worker {worker}: record released ({} B; {} B retained of the {} B budget)",
++        self.charged[worker], self.used, self.budget
++      );
+       self.charged[worker] = 0;
+     }
+   }
+@@ -1774,6 +1778,15 @@ impl Workers<'_, '_> {
+     Ok(())
+   }
+ 
++  /// The resident record with the furthest next use after step `step`,
++  /// other than `handed`: the one to release when room is needed.
++  fn furthest(&self, step: usize, handed: Option<usize>) -> Option<usize> {
++    (0..self.order.len())
++      .filter(|&w| self.resident[w].is_some() && Some(w) != handed)
++      .filter(|&w| self.next_use(w) > step)
++      .max_by_key(|&w| self.next_use(w))
++  }
++
+   /// Releases retained records, furthest next use first, until `charge`
+   /// more bytes fit both the record budget and the process's resident
+   /// size beside `--max-ram`; only records used after step `step` and
+@@ -1784,7 +1797,6 @@ impl Workers<'_, '_> {
+     step: usize,
+     handed: Option<usize>,
+   ) -> bool {
+-    let count = self.order.len();
+     loop {
+       let over_budget = self.used + charge > self.budget;
+       let over_rss =
+@@ -1792,25 +1804,37 @@ impl Workers<'_, '_> {
+       if !over_budget && !over_rss {
+         return true;
+       }
+-      let evict = (0..count)
+-        .filter(|&w| self.resident[w].is_some() && Some(w) != handed)
+-        .filter(|&w| self.next_use(w) > step)
+-        .max_by_key(|&w| self.next_use(w));
+-      match evict {
++      match self.furthest(step, handed) {
+         Some(w) => self.release(w),
+         None => return false,
+       }
+     }
+   }
+ 
+-  /// Starts executions for the workers after step `at` in commit order —
+-  /// wrapping into the second round after the last — while at most `jobs`
+-  /// run and the budget has room, releasing resident records used later
+-  /// than the candidate when that makes room. `handed` is the worker whose
++  /// Releases retained records, furthest next use first, until what is
++  /// charged fits the record budget: executions admitted before their
++  /// sizes were known (the first wave on a cold start) can leave more
++  /// resident than the budget allows. Records used at or before `step`
++  /// and `handed` stay.
++  fn trim(&mut self, step: usize, handed: Option<usize>) {
++    while self.used > self.budget {
++      match self.furthest(step, handed) {
++        Some(w) => self.release(w),
++        None => return,
++      }
++    }
++  }
++
++  /// Harvests finished executions, trims what is retained to the budget,
++  /// then starts executions for the workers after step `at` in commit
++  /// order — wrapping into the second round after the last — while at most
++  /// `jobs` run and the budget has room, releasing resident records used
++  /// later than the candidate when that makes room. `handed` is the worker whose
+   /// record the prover holds and must not be evicted; `at` is `usize::MAX`
+   /// before the first step.
+   fn fill(&mut self, at: usize, handed: Option<usize>) -> Result<(), String> {
+     self.harvest()?;
++    self.trim(at, handed);
+     let count = self.order.len();
+     let from = at.wrapping_add(1);
+     for step in from..2 * count {
