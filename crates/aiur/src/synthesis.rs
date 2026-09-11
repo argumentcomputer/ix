@@ -734,6 +734,14 @@ impl AiurSystem {
     plan: &ShardPlan,
     retention: Retention,
   ) -> (Vec<G>, AiurProof) {
+    // A shape-only lookup witness (trace-only lookups) has no payload for
+    // the backend's retained-stage-1 path to read, so every shard is
+    // rebuilt for round two, where the lookups are evaluated on the device.
+    let retention = if crate::trace::trace_only_lookups() {
+      Retention::Regenerate
+    } else {
+      retention
+    };
     // Construct the claim.
     let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
     claim.extend(input);
@@ -963,8 +971,12 @@ impl AiurSystem {
         };
         match planned {
           Ok((plan, shard_peak)) => {
-            let retention = retention
-              .unwrap_or_else(|| self.retention_for(&plan, record_bytes, max));
+            let retention = if crate::trace::trace_only_lookups() {
+              Retention::Regenerate
+            } else {
+              retention
+                .unwrap_or_else(|| self.retention_for(&plan, record_bytes, max))
+            };
             eprintln!(
               "[trace-shards] {} shards for a {} B budget: record {} B, \
                whole-execution peak {} B, heaviest shard peak {} B, {}",

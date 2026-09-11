@@ -980,7 +980,7 @@ private def runAggregateCmdNativeWith
       (p.hasFlag "plan-only")
       recursionParameters.cacheFriBytes (!(p.hasFlag "no-cache"))
       (!(p.hasFlag "no-write")) (p.hasFlag "trace-shards")
-      (((p.flag? "range").map (·.as! Nat)).getD 0)
+      (((p.flag? "range").map (·.as! Nat)).getD 0) (p.hasFlag "wrap-root")
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok _ => return 0
@@ -1217,6 +1217,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
     "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
     "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
+    "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."
     "range" : Nat;   "Wrap a shard proof of more than N trace shards as a range-sum tree — leaves verifying at most N shards each (--jobs at a time), joins, and a root with the wrap's statement — instead of one proof verifying every shard. 0 (default): with --trace-shards, two leaves per node slot (2 × --jobs), so each slot executes its next leaf while proving one; without, wrap whole."
 
   ARGS:

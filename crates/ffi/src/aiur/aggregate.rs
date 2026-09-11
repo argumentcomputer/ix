@@ -438,6 +438,9 @@ struct RunConfig<'a> {
   write_outputs: bool,
   trace_shards: bool,
   range_width: usize,
+  /// Wrap the root proof (shape 1) until the final proof is a single
+  /// trace shard.
+  wrap_root: bool,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -1835,6 +1838,50 @@ fn prove_range_tree(
   Ok((proof, address))
 }
 
+/// Wraps `proof`, a proof of `root`'s claim, once more: shape 1 verifies
+/// one `ix_aggr` proof and passes its statement through, so a root that is
+/// a batch of trace shards (a direct join) ends as a smaller proof of the
+/// same claim.
+fn wrap_root(
+  ctx: ProveContext<'_>,
+  root: &Slot,
+  proof: &AiurProof,
+) -> Result<AiurProof, String> {
+  let started = Instant::now();
+  let advice_shards = proof.preamble.headers.len();
+  let advice = ctx
+    .aggr_system
+    .proof_to_advice_bytes(&root.outer_claim, proof)
+    .map_err(|error| format!("root proof advice failed: {error}"))?;
+  let mut io = aggr_io_buffer(&AggrAdvice {
+    shape: shape_code(ChildKind::Aggr, None),
+    proof_advice: [&advice, &[]],
+    ixvm_vk: ctx.ixvm_vk,
+    self_vk: ctx.aggr_vk,
+    child_claims: [&root.claims_bytes, &[]],
+    output_claim: &root.statement.claim_bytes,
+    allowed: ctx.allowed,
+    preimages: &[],
+    trees: &[],
+    paths: &[],
+  });
+  let mut public_input = packed_digest(ctx.allowed);
+  public_input.extend(packed_digest(&root.statement.claim_bytes));
+  let (outer_claim, proof, peak) =
+    prove_aggr_io(ctx, &mut io, &public_input, "root wrap")?;
+  if outer_claim != root.outer_claim {
+    return Err("root wrap returned an unexpected outer claim".into());
+  }
+  eprintln!(
+    "[aggregate] root wrap proven in {:.1}s (query-record peak {} GiB): {} shard(s) verified into {}",
+    started.elapsed().as_secs_f64(),
+    format_gib(peak),
+    advice_shards,
+    proof.preamble.headers.len()
+  );
+  Ok(proof)
+}
+
 fn prove_slot(
   ctx: ProveContext<'_>,
   slot_index: usize,
@@ -2373,15 +2420,38 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     return Err("aggregate plan produced a raw IxVM root".into());
   }
   validate_root_statement(&prepared, &root.statement)?;
-  config.aggr_system.verify(&root.outer_claim, &root.proof).map_err(
-    |error| format!("aggregate root proof failed verification: {error:?}"),
-  )?;
-  let (address, persisted) = match &root.proof_address {
+  // Wrap until the final proof is a single trace shard: each wrap verifies
+  // the previous proof, so its own execution shrinks with that proof's
+  // shard count until one shard verifies it.
+  let mut wrapped: Option<AiurProof> = None;
+  while config.wrap_root {
+    let current = wrapped.as_ref().unwrap_or(&root.proof);
+    let shards = current.preamble.headers.len();
+    if shards <= 1 {
+      break;
+    }
+    let next = wrap_root(context, root, current)?;
+    if next.preamble.headers.len() >= shards {
+      eprintln!(
+        "[aggregate] root wrap did not shrink the proof ({shards} shards); keeping the previous one"
+      );
+      break;
+    }
+    wrapped = Some(next);
+  }
+  let (proof, proof_address) = match &wrapped {
+    Some(proof) => (proof, None),
+    None => (&root.proof, root.proof_address.as_ref()),
+  };
+  config.aggr_system.verify(&root.outer_claim, proof).map_err(|error| {
+    format!("aggregate root proof failed verification: {error:?}")
+  })?;
+  let (address, persisted) = match proof_address {
     Some(address) => (address.clone(), true),
     None if config.write_outputs => {
-      (persist_wrapper(&store_dir, &root.statement, &root.proof)?, true)
+      (persist_wrapper(&store_dir, &root.statement, proof)?, true)
     },
-    None => (wrapper_address(&root.statement, &root.proof)?, false),
+    None => (wrapper_address(&root.statement, proof)?, false),
   };
   let disposition = if persisted { "" } else { " (not persisted)" };
   eprintln!("[aggregate] root proof: {}{disposition}", address.hex());
@@ -2455,6 +2525,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
   write_outputs: bool,
   trace_shards: bool,
   range_width: LeanNat<LeanBorrowed<'_>>,
+  wrap_root: bool,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
@@ -2478,6 +2549,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       write_outputs,
       trace_shards,
       range_width: lean_unbox_nat_as_usize(range_width.inner()),
+      wrap_root,
     })
   }));
   match result {

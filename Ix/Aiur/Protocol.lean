@@ -226,7 +226,8 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
   (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
-  (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat) :
+  (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
+  (wrapRoot : Bool) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
