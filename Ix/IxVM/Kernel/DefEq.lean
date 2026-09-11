@@ -460,9 +460,17 @@ def defEq := ⟦
         0 => match load(ah) {
           KExprNode.Proj(sa, ia, ea) => match load(bh) {
             KExprNode.Proj(sb, ib, eb) =>
-              match address_eq(sa, sb) * eq_zero(ia - ib)
-                  * eq_zero(ptr_val(ea) - ptr_val(eb)) {
-                1 => de_args(aa, ba, types),
+              match address_eq(sa, sb) {
+                1 => match ia - ib {
+                  -- Projection congruence also holds for definitionally equal
+                  -- scrutinees, not just identical pointers. Compare these
+                  -- proper subterms before unfolding their large arguments.
+                  0 => match k_is_def_eq(ea, eb, types) {
+                    1 => de_args(aa, ba, types),
+                    _ => 0,
+                  },
+                  _ => 0,
+                },
                 _ => 0,
               },
             _ => 0,

@@ -33,11 +33,9 @@
 //! `Env::bfs_closure` — a single sequential BFS that parses each closure
 //! member exactly once. The hot phase that follows uses rayon:
 //!
-//! * **Byte→G conversion** (`add_entries`): for each addr in the
-//!   closure, the per-const `(key, data)` tuple is built in parallel
-//!   with rayon's `par_bridge`. Only the final IOBuffer assembly
-//!   (extending channel arenas + inserting into the key→(idx,len)
-//!   map) runs serially, since the arena `idx` is monotonic.
+//! * **Byte→G conversion** (`add_entries_parallel`): assign offsets in
+//!   sorted address order, then fill disjoint slices of the final channel
+//!   arenas in parallel. No intermediate field-element buffers are kept.
 
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use rayon::prelude::*;
@@ -108,36 +106,15 @@ fn hint_to_g(h: &ReducibilityHints) -> G {
   G::from_u64(v)
 }
 
-/// Per-channel entry produced by the parallel scan over the closure.
-/// Sorted into the IOBuffer in a serial fold afterwards.
-struct ChannelEntries {
-  /// ch 2 const entries: `(key, bytes-as-G)`. An address may also appear
-  /// in `blobs` below — the two tables share a hash codomain, so one
-  /// address can be read both ways.
-  consts: Vec<(Vec<G>, Vec<G>)>,
-  /// ch 4 blob entries: `(key, bytes-as-G)`.
-  blobs: Vec<(Vec<G>, Vec<G>)>,
-  /// ch 3 Defn hint: `(key, hint-G)`.
-  hints: Vec<(Vec<G>, G)>,
-}
-
-impl ChannelEntries {
-  fn new() -> Self {
-    Self { consts: Vec::new(), blobs: Vec::new(), hints: Vec::new() }
-  }
-}
-
-/// Build the per-channel `(key, data)` tuples for every addr in
-/// `closure`. Byte→G conversion runs in parallel; the IOBuffer
-/// assembly is sequential because arena `idx` must be monotonic.
+/// Assign deterministic offsets, then convert bytes directly into the
+/// final arenas. Holding converted partials while growing/copying the
+/// arenas can otherwise multiply the peak memory of large witnesses.
 fn add_entries_parallel(
   env: &Env,
   closure: &FxHashSet<Address>,
   io: &mut IOBuffer,
 ) {
-  let ch_const = G::from_u8(2);
   let ch_hint = G::from_u8(3);
-  let ch_blob = G::from_u8(4);
 
   // Pull the set of addrs we'll touch as a Vec for parallel iteration,
   // SORTED: the closure set is unioned by racing threads (DashSet), so its
@@ -148,57 +125,58 @@ fn add_entries_parallel(
   let mut closure_vec: Vec<Address> = closure.iter().cloned().collect();
   closure_vec.sort_unstable();
 
-  // Phase A: parallel byte conversion per closure addr. Each thread
-  // produces its own partial `ChannelEntries`. A constant goes to ch 2
-  // and a blob to ch 4, and an address that is both is seeded on both.
-  // The kernel derives blob-vs-constant from Expr context, so no marker
-  // entry is needed.
-  let partials: Vec<ChannelEntries> = closure_vec
-    .par_chunks(256)
-    .map(|chunk| {
-      let mut p = ChannelEntries::new();
-      for addr in chunk {
-        let key = addr_key(addr);
-        // The two lookups are INDEPENDENT: one address may be both a
-        // constant and a blob payload, since the two share a hash
-        // codomain and it is the Expr context (`Ref`/`Prj` vs
-        // `Str`/`Nat`) that says which table a reference means. The
-        // kernel faults ch 2 and ch 4 separately, so letting a constant
-        // hit suppress the blob seeding aborts such a check with
-        // `invalid IO key`. Mirrors the Lean seeder, which walks
-        // `consts` and `blobs` in separate passes.
-        if let Some(lc) = env.consts.get(addr) {
-          let data = bytes_to_g(lc.raw_bytes());
-          p.consts.push((key.clone(), data));
-        }
-        if let Some(blob) = env.blobs.get(addr) {
-          let data = bytes_to_g(blob.value());
-          p.blobs.push((key, data));
-        }
-        // Neither — closure includes some addresses (e.g. blob refs
-        // from const.refs) that may not be in env.blobs if the env
-        // doesn't carry them; skip silently to mirror the Lean side.
-      }
-      // Hints come from env.anon_hints (sidecar). Collect per chunk.
-      for addr in chunk {
-        if let Some(h) = env.anon_hints.get(addr) {
-          p.hints.push((addr_key(addr), hint_to_g(&h)));
-        }
-      }
-      p
-    })
-    .collect();
-
-  // Phase B: serial assembly into the IOBuffer.
-  for p in partials {
-    for (key, data) in p.consts {
-      extend(io, ch_const, key, data);
+  // Seed the constant and blob channels independently: a single address
+  // may occur in BOTH tables. Missing addresses remain absent, as before.
+  for channel in [2, 4] {
+    let entries: Vec<_> = closure_vec
+      .iter()
+      .filter_map(|addr| {
+        let len = if channel == 2 {
+          env.consts.get(addr).map(|c| c.raw_bytes().len())
+        } else {
+          env.blobs.get(addr).map(|b| b.len())
+        };
+        len.map(|len| (addr, len))
+      })
+      .collect();
+    if entries.is_empty() {
+      continue;
     }
-    for (key, data) in p.blobs {
-      extend(io, ch_blob, key, data);
+    let channel = G::from_u8(channel);
+    let arena = io.data.entry(channel).or_default();
+    let mut idx = arena.len();
+    let len: usize = entries.iter().map(|(_, len)| len).sum();
+    arena.reserve_exact(len);
+    arena.resize(idx + len, G::ZERO);
+    let mut remaining = &mut arena[idx..];
+    let mut jobs = Vec::with_capacity(entries.len());
+    for (addr, len) in entries {
+      io.map.insert((channel, addr_key(addr)), IOKeyInfo { idx, len });
+      idx += len;
+      let (dst, rest) = remaining.split_at_mut(len);
+      remaining = rest;
+      jobs.push((addr, dst));
     }
-    for (key, hint) in p.hints {
-      extend(io, ch_hint, key, vec![hint]);
+    jobs.into_par_iter().for_each(|(addr, dst)| {
+      let fill = |src: &[u8], dst: &mut [G]| {
+        assert_eq!(src.len(), dst.len());
+        for (out, byte) in dst.iter_mut().zip(src) {
+          *out = G::from_u8(*byte);
+        }
+      };
+      if channel == G::from_u8(2) {
+        let constant =
+          env.consts.get(addr).expect("witness constant disappeared");
+        fill(constant.raw_bytes(), dst);
+      } else {
+        let blob = env.blobs.get(addr).expect("witness blob disappeared");
+        fill(blob.value(), dst);
+      }
+    });
+  }
+  for addr in &closure_vec {
+    if let Some(hint) = env.anon_hints.get(addr) {
+      extend(io, ch_hint, addr_key(addr), vec![hint_to_g(&hint)]);
     }
   }
 }
@@ -365,6 +343,86 @@ mod tests {
       refs,
       Vec::new(),
     )
+  }
+
+  #[test]
+  fn direct_arenas_preserve_serial_layout() {
+    let env = Env::new();
+    let mut closure = FxHashSet::default();
+    // Cross the old 256-entry chunk boundaries; include constant-only,
+    // blob-only, dual-use, missing, zero-length, and hint-only entries.
+    for i in 0_u32..600 {
+      let addr = Address::hash(&i.to_le_bytes());
+      closure.insert(addr.clone());
+      if i % 2 == 0 {
+        env.store_const(addr.clone(), const_with_refs(vec![]));
+      }
+      if i % 3 == 0 {
+        env
+          .blobs
+          .insert(addr.clone(), vec![i.to_le_bytes()[0]; (i % 17) as usize]);
+      }
+      if i % 5 == 0 {
+        env.anon_hints.insert(addr, ReducibilityHints::Regular(i));
+      }
+    }
+    let initial = || {
+      let mut io =
+        IOBuffer { data: Default::default(), map: Default::default() };
+      // Offsets must remain correct when appending to nonempty arenas.
+      for channel in [2, 3, 4] {
+        extend(&mut io, G::from_u8(channel), vec![G::ZERO], vec![G::ONE]);
+      }
+      io
+    };
+    let mut expected = initial();
+    let mut sorted: Vec<_> = closure.iter().collect();
+    sorted.sort_unstable();
+    for addr in sorted {
+      if let Some(c) = env.consts.get(addr) {
+        extend(
+          &mut expected,
+          G::from_u8(2),
+          addr_key(addr),
+          bytes_to_g(c.raw_bytes()),
+        );
+      }
+      if let Some(b) = env.blobs.get(addr) {
+        extend(
+          &mut expected,
+          G::from_u8(4),
+          addr_key(addr),
+          bytes_to_g(b.value()),
+        );
+      }
+      if let Some(h) = env.anon_hints.get(addr) {
+        extend(
+          &mut expected,
+          G::from_u8(3),
+          addr_key(addr),
+          vec![hint_to_g(&h)],
+        );
+      }
+    }
+    for threads in [1, 4] {
+      let mut actual = initial();
+      rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .unwrap()
+        .install(|| add_entries_parallel(&env, &closure, &mut actual));
+      assert_eq!(actual.data, expected.data);
+      assert_eq!(actual.map.len(), expected.map.len());
+      for (key, info) in &expected.map {
+        let got = actual.map.get(key).unwrap();
+        assert_eq!((got.idx, got.len), (info.idx, info.len));
+      }
+    }
+    let mut empty =
+      IOBuffer { data: Default::default(), map: Default::default() };
+    add_entries_parallel(&env, &FxHashSet::default(), &mut empty);
+    assert!(empty.data.is_empty());
+    assert!(empty.map.is_empty());
   }
 
   /// One address can legitimately be read as both a constant and a blob

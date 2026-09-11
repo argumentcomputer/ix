@@ -13,8 +13,8 @@ Test-purpose declarations exercised by the `ixvm` test runner. Layout:
 
   * `IxVMPrim` — theorems whose `rfl` proofs force the kernel to drive
     each primitive reduction (Nat / String / BitVec / Decidable).
-  * `IxVMPerf` — synthetic FFT-cost guards for delayed let inference and
-    linear multiplication-row construction.
+  * `IxVMPerf` — synthetic FFT-cost guards for delayed let inference,
+    context strengthening, and multi-limb multiplication.
   * `IxVMInd` — sample inductives covering mutual blocks and nested
     parameters; their auto-generated recursors round-trip through the
     Aiur kernel.
@@ -110,7 +110,7 @@ end IxVMPrim
 
 /-! ## FLT performance regressions
 
-Small synthetic witnesses for the two optimizations in PR #624. Generate
+Small synthetic witnesses for FLT optimizations, including PR #624. Generate
 ordinary Lean terms at elaboration time; checking these constants still uses
 the full production kernel, including hashing and dependency traversal.
 -/
@@ -121,7 +121,7 @@ namespace IxVMPerf
 -- chain. Each saved value feeds the next continuation, whose body remains
 -- open under another binder. Eager substitution repeatedly rewrites the
 -- remaining continuation; the let-local inference environment avoids this.
--- 64 stages: 374,093,264 FFT with eager inference vs 166,319,792 with the fix.
+-- 64 stages: 374,093,264 FFT with eager inference vs 168,523,602 with delayed inference.
 local macro "letContinuations% " n:num a:ident x:ident : term => do
   let mut body : Lean.TSyntax `term := ← `(term| $x)
   for _ in [:n.getNat] do
@@ -150,6 +150,45 @@ local macro "mulRow% " n:num : term => do
   `(term| Nat.mul $lhs $rhs = $product)
 
 public theorem mul_row : mulRow% 512 := rfl
+
+-- Repeat the same application under mixed Let/Local prefixes. The real
+-- locals are unused by the application, but its result type refers to the
+-- outer A: strengthening must distinguish raw binding slots from type slots
+-- and lift that type back. Rebase before inference to share the repeated
+-- work; keep introductions and pure-let prefixes delayed.
+-- 808,853,595 FFT with strengthening disabled vs 514,164,080 with it.
+local macro "contextTower% " n:num a:ident x:ident : term => do
+  let mut body : Lean.TSyntax `term := ← `(term| $x)
+  let mut work : Lean.TSyntax `term := ← `(term| $x)
+  for _ in [:32] do
+    work ← `(term| (fun z : $a => z) $work)
+  for _ in [:n.getNat] do
+    body ← `(term| let saved : $a := $work
+                   (fun unused : Nat => $body) 0)
+  return body
+
+public def context_tower (A : Type) (x : A) : A := contextTower% 64 A x
+
+-- Unlike mul_row's repeated all-ones limb, vary BOTH operands so that
+-- memoization cannot hide column/carry work. Only literal operands and the
+-- independently computed product enter the kernel; the generator runs at
+-- elaboration time. Covers radix-2^16 multiplication and carry propagation.
+-- 277,782,128 FFT with the old arithmetic vs 266,740,297 with the new one.
+local macro "mulWide% " n:num : term => do
+  let mut a := 0
+  let mut b := 0
+  let mut seed := 7
+  for _ in [:n.getNat] do
+    seed := (seed * 6364136223846793005 + 1442695040888963407) % 2^64
+    a := a * 2^64 + seed
+    seed := (seed * 6364136223846793005 + 1442695040888963407) % 2^64
+    b := b * 2^64 + seed
+  let lhs := Lean.Syntax.mkNumLit (toString a)
+  let rhs := Lean.Syntax.mkNumLit (toString b)
+  let result := Lean.Syntax.mkNumLit (toString (a*b))
+  `(term| Nat.mul $lhs $rhs = $result)
+
+public theorem mul_wide : mulWide% 32 := rfl
 
 end IxVMPerf
 
@@ -399,87 +438,89 @@ private def nameOfString (str : String) : Lean.Name :=
     listed constant fails the suite, so a regression cannot land quietly
     and an improvement has to be acknowledged by re-pinning. -/
 private def kernelCheckEntries : List (String × Nat) := [
-  ("HEq",                                                        129_564_470),
-  ("HEq.rec",                                                    133_835_705),
-  ("Eq.rec",                                                     133_138_274),
-  ("Nat",                                                        129_621_491),
-  ("Nat.add",                                                    170_279_105),
-  ("Nat.add_comm",                                               321_980_321),
-  ("Nat.decEq",                                                  378_967_182),
-  ("Nat.decLe",                                                  828_229_356),
-  ("Nat.sub_le_of_le_add",                                     2_002_029_582),
-  ("Nat.shiftRight_succ",                                      1_489_636_651),
-  ("Trans.mk",                                                   137_285_131),
-  ("Array.append_assoc",                                       9_591_140_574),
-  ("Vector.append",                                            9_797_860_114),
-  ("IxVMPrim.nat_add_lit",                                       212_935_828),
-  ("IxVMPrim.nat_sub_lit",                                       227_412_521),
-  ("IxVMPrim.nat_mul_lit",                                       203_329_765),
-  ("IxVMPrim.nat_mul_big",                                       201_839_360),
-  ("IxVMPrim.nat_div_lit",                                     1_453_803_136),
-  ("IxVMPrim.nat_mod_lit",                                     1_481_127_703),
-  ("IxVMPrim.nat_succ_lit",                                      144_204_806),
-  ("IxVMPrim.nat_pred_lit",                                      165_892_846),
-  ("IxVMPrim.nat_gcd_lit",                                     2_273_518_909),
-  ("IxVMPrim.nat_land_lit",                                    3_736_043_311),
-  ("IxVMPrim.nat_lor_lit",                                     3_738_141_327),
-  ("IxVMPrim.nat_xor_lit",                                     3_757_476_415),
-  ("IxVMPrim.nat_shl_lit",                                       232_977_972),
-  ("IxVMPrim.nat_shr_lit",                                     1_469_173_067),
-  ("IxVMPrim.nat_pow_big",                                       395_058_294),
-  ("IxVMPrim.nat_beq_lit",                                       201_050_808),
-  ("IxVMPrim.nat_ble_lit",                                       196_411_526),
-  ("IxVMPrim.nat_cases_big",                                     166_086_877),
-  ("IxVMPrim.nat_dec_le",                                        846_205_654),
-  ("IxVMPrim.nat_dec_lt",                                        857_785_145),
-  ("IxVMPrim.nat_dec_eq",                                        418_539_787),
-  ("IxVMPrim.str_size_lit",                                    2_601_268_988),
-  ("IxVMPrim.bv_to_nat_lit",                                   2_171_885_866),
-  ("IxVMInd.Even",                                               206_785_879),
-  ("IxVMInd.Odd",                                                206_790_506),
-  ("IxVMInd.Even.rec",                                           225_866_317),
-  ("IxVMInd.Odd.rec",                                            225_865_388),
-  ("IxVMInd.IdxTeleN.rec",                                       160_997_411),
-  ("IxVMInd.IdxTeleB.rec",                                       160_995_720),
-  ("IxVMInd.SoloA.rec",                                          156_110_660),
-  ("IxVMInd.SoloB.rec",                                          156_109_823),
-  ("IxVMInd.UnsafeSquash",                                       131_444_007),
-  ("IxVMInd.Tree",                                               131_234_364),
-  ("IxVMInd.Tree.rec",                                           142_072_778),
-  ("IxVMInd.DedupM",                                             134_569_557),
-  ("IxVMInd.DedupM.rec",                                         149_125_951),
-  ("IxVMInd.DepthM",                                             132_969_242),
-  ("IxVMInd.DepthM.rec",                                         144_766_024),
-  ("String.Internal.append",                                   2_571_540_103),
-  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec", 3_816_761_597),
-  ("Lean.Syntax.rec",                                          2_634_207_003),
-  ("IxVMInd.AuxTie",                                             324_655_923),
-  ("IxVMInd.AuxTie.rec",                                         371_218_312),
-  ("IxVMInd.HiddenIdx",                                          130_537_050),
-  ("IxVMInd.HiddenIdx.rec",                                      133_953_792),
-  ("IxVMInd.thmMajorUse",                                        531_481_910),
-  ("IxVMInd.partialKRec",                                        150_273_491),
-  ("IxVMInd.deepRebase",                                         221_413_934),
-  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec",        3_574_081_528),
-  ("Lean.Widget.TaggedText.rec",                               2_604_242_616),
-  ("Lean.Doc.Part.rec",                                        2_650_681_603),
-  ("Lean.Doc.Block.rec",                                       2_896_995_259),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 132_540_004),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 136_184_354),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 135_211_786),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2", 135_211_786),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1", 135_211_786),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M", 132_835_263),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 144_932_073),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 144_930_491),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 135_211_786),
-  ("strOfListFoldSize",                                        2_887_250_129),
-  ("strOfListFoldSizeAscii",                                   2_888_081_016),
-  ("IxVMPrim.lazy_ble_offset",                                   234_260_320),
-  ("IxVMPrim.lazy_unit_cast",                                    558_687_900),
-  ("IxVMPrim.sizeof_unit",                                       160_835_381),
-  ("IxVMPerf.let_continuations",                                 166_319_792),
-  ("IxVMPerf.mul_row",                                           425_316_349),
+  ("HEq",                                                        129_561_906),
+  ("HEq.rec",                                                    133_623_510),
+  ("Eq.rec",                                                     133_010_671),
+  ("Nat",                                                        129_621_454),
+  ("Nat.add",                                                    170_017_266),
+  ("Nat.add_comm",                                               320_320_758),
+  ("Nat.decEq",                                                  373_889_414),
+  ("Nat.decLe",                                                  806_851_440),
+  ("Nat.sub_le_of_le_add",                                     1_934_072_047),
+  ("Nat.shiftRight_succ",                                      1_440_427_524),
+  ("Trans.mk",                                                   137_030_955),
+  ("Array.append_assoc",                                       8_942_722_073),
+  ("Vector.append",                                            9_146_677_300),
+  ("IxVMPrim.nat_add_lit",                                       212_562_390),
+  ("IxVMPrim.nat_sub_lit",                                       227_018_404),
+  ("IxVMPrim.nat_mul_lit",                                       203_023_243),
+  ("IxVMPrim.nat_mul_big",                                       201_532_839),
+  ("IxVMPrim.nat_div_lit",                                     1_404_629_363),
+  ("IxVMPrim.nat_mod_lit",                                     1_431_635_704),
+  ("IxVMPrim.nat_succ_lit",                                      144_182_615),
+  ("IxVMPrim.nat_pred_lit",                                      165_781_989),
+  ("IxVMPrim.nat_gcd_lit",                                     2_205_281_085),
+  ("IxVMPrim.nat_land_lit",                                    3_614_023_887),
+  ("IxVMPrim.nat_lor_lit",                                     3_616_139_531),
+  ("IxVMPrim.nat_xor_lit",                                     3_635_365_296),
+  ("IxVMPrim.nat_shl_lit",                                       232_546_611),
+  ("IxVMPrim.nat_shr_lit",                                     1_419_952_900),
+  ("IxVMPrim.nat_pow_big",                                       394_444_673),
+  ("IxVMPrim.nat_beq_lit",                                       200_563_953),
+  ("IxVMPrim.nat_ble_lit",                                       196_027_245),
+  ("IxVMPrim.nat_cases_big",                                     165_979_714),
+  ("IxVMPrim.nat_dec_le",                                        824_803_643),
+  ("IxVMPrim.nat_dec_lt",                                        836_382_068),
+  ("IxVMPrim.nat_dec_eq",                                        413_163_878),
+  ("IxVMPrim.str_size_lit",                                    2_535_275_859),
+  ("IxVMPrim.bv_to_nat_lit",                                   2_110_179_170),
+  ("IxVMInd.Even",                                               206_433_604),
+  ("IxVMInd.Odd",                                                206_438_231),
+  ("IxVMInd.Even.rec",                                           225_289_131),
+  ("IxVMInd.Odd.rec",                                            225_288_202),
+  ("IxVMInd.IdxTeleN.rec",                                       160_786_136),
+  ("IxVMInd.IdxTeleB.rec",                                       160_784_445),
+  ("IxVMInd.SoloA.rec",                                          155_960_075),
+  ("IxVMInd.SoloB.rec",                                          155_959_238),
+  ("IxVMInd.UnsafeSquash",                                       131_441_226),
+  ("IxVMInd.Tree",                                               131_235_133),
+  ("IxVMInd.Tree.rec",                                           141_939_288),
+  ("IxVMInd.DedupM",                                             134_567_476),
+  ("IxVMInd.DedupM.rec",                                         148_905_382),
+  ("IxVMInd.DepthM",                                             132_968_937),
+  ("IxVMInd.DepthM.rec",                                         144_439_261),
+  ("String.Internal.append",                                   2_505_741_376),
+  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec", 3_705_214_978),
+  ("Lean.Syntax.rec",                                          2_568_020_495),
+  ("IxVMInd.AuxTie",                                             324_084_157),
+  ("IxVMInd.AuxTie.rec",                                         369_734_259),
+  ("IxVMInd.HiddenIdx",                                          130_534_316),
+  ("IxVMInd.HiddenIdx.rec",                                      133_887_001),
+  ("IxVMInd.thmMajorUse",                                        513_390_983),
+  ("IxVMInd.partialKRec",                                        150_145_230),
+  ("IxVMInd.deepRebase",                                         221_120_959),
+  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec",        3_482_661_414),
+  ("Lean.Widget.TaggedText.rec",                               2_537_347_634),
+  ("Lean.Doc.Part.rec",                                        2_582_681_092),
+  ("Lean.Doc.Block.rec",                                       2_815_192_541),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 132_539_812),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 136_173_435),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 135_089_400),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2", 135_089_400),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1", 135_089_400),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M", 132_835_071),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 144_806_931),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 144_805_348),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 135_089_400),
+  ("strOfListFoldSize",                                        2_817_854_521),
+  ("strOfListFoldSizeAscii",                                   2_818_697_757),
+  ("IxVMPrim.lazy_ble_offset",                                   233_714_099),
+  ("IxVMPrim.lazy_unit_cast",                                    552_027_642),
+  ("IxVMPrim.sizeof_unit",                                       160_797_387),
+  ("IxVMPerf.let_continuations",                                 163_740_427),
+  ("IxVMPerf.mul_row",                                           420_640_365),
+  ("IxVMPerf.context_tower",                                     514_164_080),
+  ("IxVMPerf.mul_wide",                                          266_740_297),
 ]
 
 /-- Variant of `kernelChecks`, pinned to the baseline

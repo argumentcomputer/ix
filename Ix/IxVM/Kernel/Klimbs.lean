@@ -23,15 +23,14 @@ Ops covered:
 - klimbs_gcd (Euclidean) / klimbs_pow (binary exponentiation)
 - klimbs_land / klimbs_lor / klimbs_xor_op
 - klimbs_shl / klimbs_shr (via mul/div by 2^n)
-- u64_add / u64_mul (byte schoolbook) / u64_sub_with_borrow /
+- u64_add / u64_mul (radix-2^16 schoolbook) / u64_sub_with_borrow /
   u64_and / u64_or / u64_xor_kbits (element-wise byte ops)
-- divmod_256 / split_carry (unconstrained witness generators for
-  u64_mul column decomposition)
+- divmod_256 (unconstrained witness generator for u32 byte decomposition)
 
 Aiur builtin gadgets used (compiler-provided): u8_add, u8_sub,
 u8_xor, u8_and, u8_or, u8_from_field_unsafe, u32_less_than,
 u64_add, u64_is_zero, list_snoc, unconstrained_big_uint_div_mod,
-#split_carry.
+unconstrained_g_to_bytes.
 -/
 
 set_option maxRecDepth 16384 in
@@ -261,8 +260,8 @@ def klimbs := ⟦
   }
 
   -- Returns (remainder, quotient): remainder = x mod 256, quotient = x / 256.
-  -- Repeated subtraction. Only ever invoked from the `#split_carry` /
-  -- `#split_u32` unconstrained witness generators, so the O(x/256)
+  -- Repeated subtraction. Only invoked from the `#split_u32`
+  -- unconstrained witness generator, so the O(x/256)
   -- iteration cost is off-circuit (untraced).
   fn divmod_256(x: G, q: G) -> (G, G) {
     match u32_less_than(x, 256) {
@@ -271,183 +270,42 @@ def klimbs := ⟦
     }
   }
 
-  -- Unconstrained witness generator: split `x` into its low byte `limb`
-  -- and the two bytes (clo, chi) of `x div 256`. Always invoked as
-  -- `#split_carry(...)`; the result is prover-provided and MUST be pinned
-  -- by the caller with u8 range checks + a reconstruction assert. The
-  -- division here is off-circuit (untraced), so its cost is irrelevant.
-  fn split_carry(x: G) -> (G, G, G) {
-    match divmod_256(x, 0) {
-      (limb, quot) =>
-        match divmod_256(quot, 0) {
-          (clo, chi) => (limb, clo, chi),
-        },
-    }
+  -- Radix-2^16 schoolbook multiplication: four digits per operand.
+  -- Even with arbitrary checked carry advice, each column is < 2^35:
+  -- at most four 16-bit products plus a 24-bit carry. Its reconstruction
+  -- from five checked bytes is < 2^40. Both bounds are
+  -- strictly below the field modulus, so field equality is integer equality.
+  -- Input and output representations are unchanged (eight LE bytes per limb).
+  fn u64_mul(a: U64, b: U64) -> (U64, U64) {
+    let a0 = to_field(a[0]) + 256 * to_field(a[1]);
+    let b0 = to_field(b[0]) + 256 * to_field(b[1]);
+    let a1 = to_field(a[2]) + 256 * to_field(a[3]);
+    let b1 = to_field(b[2]) + 256 * to_field(b[3]);
+    let a2 = to_field(a[4]) + 256 * to_field(a[5]);
+    let b2 = to_field(b[4]) + 256 * to_field(b[5]);
+    let a3 = to_field(a[6]) + 256 * to_field(a[7]);
+    let b3 = to_field(b[6]) + 256 * to_field(b[7]);
+    let (r0, c0) = @u64_mul_column((a0 * b0));
+    let (r1, c1) = @u64_mul_column((a0 * b1) + (a1 * b0) + to_field(c0[0]) + 256 * to_field(c0[1]) + 65536 * to_field(c0[2]));
+    let (r2, c2) = @u64_mul_column((a0 * b2) + (a1 * b1) + (a2 * b0) + to_field(c1[0]) + 256 * to_field(c1[1]) + 65536 * to_field(c1[2]));
+    let (r3, c3) = @u64_mul_column((a0 * b3) + (a1 * b2) + (a2 * b1) + (a3 * b0) + to_field(c2[0]) + 256 * to_field(c2[1]) + 65536 * to_field(c2[2]));
+    let (r4, c4) = @u64_mul_column((a1 * b3) + (a2 * b2) + (a3 * b1) + to_field(c3[0]) + 256 * to_field(c3[1]) + 65536 * to_field(c3[2]));
+    let (r5, c5) = @u64_mul_column((a2 * b3) + (a3 * b2) + to_field(c4[0]) + 256 * to_field(c4[1]) + 65536 * to_field(c4[2]));
+    let (r6, c6) = @u64_mul_column((a3 * b3) + to_field(c5[0]) + 256 * to_field(c5[1]) + 65536 * to_field(c5[2]));
+    assert_eq!(c6[2], 0u8, "u64_mul: final carry exceeds one radix digit");
+    ([r0[0], r0[1], r1[0], r1[1], r2[0], r2[1], r3[0], r3[1]],
+     [r4[0], r4[1], r5[0], r5[1], r6[0], r6[1], c6[0], c6[1]])
   }
 
-  -- u64×u64 → (lo: U64, hi: U64) via byte schoolbook. Faithful port of the
-  -- `MulWitness`/`Product` reference: column k is the raw field sum
-  -- Σ_{i+j=k} a[i]*b[j]; each column accumulator `out` is decomposed by a
-  -- prover-provided (unconstrained) split into result byte + 16-bit carry,
-  -- then pinned by three u8 range checks (`u8_xor(_, 0)`) and the
-  -- reconstruction assert `out == limb + 256·clo + 65536·chi`. No `u8_mul`
-  -- gadget and no constrained division. Column accumulators are < 2^19, so
-  -- the decomposition into (limb, clo, chi) ∈ [0,256)³ is unique → sound.
-  fn u64_mul(a: U64, b: U64) -> (U64, U64) {
-    let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
-    let col0 = (to_field(a0) * to_field(b0));
-    let col1 = (to_field(a0) * to_field(b1)) + (to_field(a1) * to_field(b0));
-    let col2 = (to_field(a0) * to_field(b2)) + (to_field(a1) * to_field(b1)) + (to_field(a2) * to_field(b0));
-    let col3 = (to_field(a0) * to_field(b3)) + (to_field(a1) * to_field(b2)) + (to_field(a2) * to_field(b1)) + (to_field(a3) * to_field(b0));
-    let col4 = (to_field(a0) * to_field(b4)) + (to_field(a1) * to_field(b3)) + (to_field(a2) * to_field(b2)) + (to_field(a3) * to_field(b1)) + (to_field(a4) * to_field(b0));
-    let col5 = (to_field(a0) * to_field(b5)) + (to_field(a1) * to_field(b4)) + (to_field(a2) * to_field(b3)) + (to_field(a3) * to_field(b2)) + (to_field(a4) * to_field(b1)) + (to_field(a5) * to_field(b0));
-    let col6 = (to_field(a0) * to_field(b6)) + (to_field(a1) * to_field(b5)) + (to_field(a2) * to_field(b4)) + (to_field(a3) * to_field(b3)) + (to_field(a4) * to_field(b2)) + (to_field(a5) * to_field(b1)) + (to_field(a6) * to_field(b0));
-    let col7 = (to_field(a0) * to_field(b7)) + (to_field(a1) * to_field(b6)) + (to_field(a2) * to_field(b5)) + (to_field(a3) * to_field(b4)) + (to_field(a4) * to_field(b3)) + (to_field(a5) * to_field(b2)) + (to_field(a6) * to_field(b1)) + (to_field(a7) * to_field(b0));
-    let col8 = (to_field(a1) * to_field(b7)) + (to_field(a2) * to_field(b6)) + (to_field(a3) * to_field(b5)) + (to_field(a4) * to_field(b4)) + (to_field(a5) * to_field(b3)) + (to_field(a6) * to_field(b2)) + (to_field(a7) * to_field(b1));
-    let col9 = (to_field(a2) * to_field(b7)) + (to_field(a3) * to_field(b6)) + (to_field(a4) * to_field(b5)) + (to_field(a5) * to_field(b4)) + (to_field(a6) * to_field(b3)) + (to_field(a7) * to_field(b2));
-    let col10 = (to_field(a3) * to_field(b7)) + (to_field(a4) * to_field(b6)) + (to_field(a5) * to_field(b5)) + (to_field(a6) * to_field(b4)) + (to_field(a7) * to_field(b3));
-    let col11 = (to_field(a4) * to_field(b7)) + (to_field(a5) * to_field(b6)) + (to_field(a6) * to_field(b5)) + (to_field(a7) * to_field(b4));
-    let col12 = (to_field(a5) * to_field(b7)) + (to_field(a6) * to_field(b6)) + (to_field(a7) * to_field(b5));
-    let col13 = (to_field(a6) * to_field(b7)) + (to_field(a7) * to_field(b6));
-    let col14 = (to_field(a7) * to_field(b7));
-    match #split_carry(col0) {
-      (rl0, rc0, rh0) =>
-        let r0 = u8_xor(u8_from_field_unsafe(rl0), 0u8);
-        let lo0 = u8_xor(u8_from_field_unsafe(rc0), 0u8);
-        let hi0 = u8_xor(u8_from_field_unsafe(rh0), 0u8);
-        assert_eq!(col0, to_field(r0) + (256 * to_field(lo0)) + (65536 * to_field(hi0)),
-          "u64_mul column 0: split_carry hint does not recompose to the column sum");
-        let out1 = col1 + to_field(lo0) + (256 * to_field(hi0));
-        match #split_carry(out1) {
-          (rl1, rc1, rh1) =>
-            let r1 = u8_xor(u8_from_field_unsafe(rl1), 0u8);
-            let lo1 = u8_xor(u8_from_field_unsafe(rc1), 0u8);
-            let hi1 = u8_xor(u8_from_field_unsafe(rh1), 0u8);
-            assert_eq!(out1, to_field(r1) + (256 * to_field(lo1)) + (65536 * to_field(hi1)),
-              "u64_mul column 1: split_carry hint does not recompose to the column sum");
-            let out2 = col2 + to_field(lo1) + (256 * to_field(hi1));
-            match #split_carry(out2) {
-              (rl2, rc2, rh2) =>
-                let r2 = u8_xor(u8_from_field_unsafe(rl2), 0u8);
-                let lo2 = u8_xor(u8_from_field_unsafe(rc2), 0u8);
-                let hi2 = u8_xor(u8_from_field_unsafe(rh2), 0u8);
-                assert_eq!(out2, to_field(r2) + (256 * to_field(lo2)) + (65536 * to_field(hi2)),
-                  "u64_mul column 2: split_carry hint does not recompose to the column sum");
-                let out3 = col3 + to_field(lo2) + (256 * to_field(hi2));
-                match #split_carry(out3) {
-                  (rl3, rc3, rh3) =>
-                    let r3 = u8_xor(u8_from_field_unsafe(rl3), 0u8);
-                    let lo3 = u8_xor(u8_from_field_unsafe(rc3), 0u8);
-                    let hi3 = u8_xor(u8_from_field_unsafe(rh3), 0u8);
-                    assert_eq!(out3, to_field(r3) + (256 * to_field(lo3)) + (65536 * to_field(hi3)),
-                      "u64_mul column 3: split_carry hint does not recompose to the column sum");
-                    let out4 = col4 + to_field(lo3) + (256 * to_field(hi3));
-                    match #split_carry(out4) {
-                      (rl4, rc4, rh4) =>
-                        let r4 = u8_xor(u8_from_field_unsafe(rl4), 0u8);
-                        let lo4 = u8_xor(u8_from_field_unsafe(rc4), 0u8);
-                        let hi4 = u8_xor(u8_from_field_unsafe(rh4), 0u8);
-                        assert_eq!(out4, to_field(r4) + (256 * to_field(lo4)) + (65536 * to_field(hi4)),
-                          "u64_mul column 4: split_carry hint does not recompose to the column sum");
-                        let out5 = col5 + to_field(lo4) + (256 * to_field(hi4));
-                        match #split_carry(out5) {
-                          (rl5, rc5, rh5) =>
-                            let r5 = u8_xor(u8_from_field_unsafe(rl5), 0u8);
-                            let lo5 = u8_xor(u8_from_field_unsafe(rc5), 0u8);
-                            let hi5 = u8_xor(u8_from_field_unsafe(rh5), 0u8);
-                            assert_eq!(out5, to_field(r5) + (256 * to_field(lo5)) + (65536 * to_field(hi5)),
-                              "u64_mul column 5: split_carry hint does not recompose to the column sum");
-                            let out6 = col6 + to_field(lo5) + (256 * to_field(hi5));
-                            match #split_carry(out6) {
-                              (rl6, rc6, rh6) =>
-                                let r6 = u8_xor(u8_from_field_unsafe(rl6), 0u8);
-                                let lo6 = u8_xor(u8_from_field_unsafe(rc6), 0u8);
-                                let hi6 = u8_xor(u8_from_field_unsafe(rh6), 0u8);
-                                assert_eq!(out6, to_field(r6) + (256 * to_field(lo6)) + (65536 * to_field(hi6)),
-                                  "u64_mul column 6: split_carry hint does not recompose to the column sum");
-                                let out7 = col7 + to_field(lo6) + (256 * to_field(hi6));
-                                match #split_carry(out7) {
-                                  (rl7, rc7, rh7) =>
-                                    let r7 = u8_xor(u8_from_field_unsafe(rl7), 0u8);
-                                    let lo7 = u8_xor(u8_from_field_unsafe(rc7), 0u8);
-                                    let hi7 = u8_xor(u8_from_field_unsafe(rh7), 0u8);
-                                    assert_eq!(out7, to_field(r7) + (256 * to_field(lo7)) + (65536 * to_field(hi7)),
-                                      "u64_mul column 7: split_carry hint does not recompose to the column sum");
-                                    let out8 = col8 + to_field(lo7) + (256 * to_field(hi7));
-                                    match #split_carry(out8) {
-                                      (rl8, rc8, rh8) =>
-                                        let r8 = u8_xor(u8_from_field_unsafe(rl8), 0u8);
-                                        let lo8 = u8_xor(u8_from_field_unsafe(rc8), 0u8);
-                                        let hi8 = u8_xor(u8_from_field_unsafe(rh8), 0u8);
-                                        assert_eq!(out8, to_field(r8) + (256 * to_field(lo8)) + (65536 * to_field(hi8)),
-                                          "u64_mul column 8: split_carry hint does not recompose to the column sum");
-                                        let out9 = col9 + to_field(lo8) + (256 * to_field(hi8));
-                                        match #split_carry(out9) {
-                                          (rl9, rc9, rh9) =>
-                                            let r9 = u8_xor(u8_from_field_unsafe(rl9), 0u8);
-                                            let lo9 = u8_xor(u8_from_field_unsafe(rc9), 0u8);
-                                            let hi9 = u8_xor(u8_from_field_unsafe(rh9), 0u8);
-                                            assert_eq!(out9, to_field(r9) + (256 * to_field(lo9)) + (65536 * to_field(hi9)),
-                                              "u64_mul column 9: split_carry hint does not recompose to the column sum");
-                                            let out10 = col10 + to_field(lo9) + (256 * to_field(hi9));
-                                            match #split_carry(out10) {
-                                              (rl10, rc10, rh10) =>
-                                                let r10 = u8_xor(u8_from_field_unsafe(rl10), 0u8);
-                                                let lo10 = u8_xor(u8_from_field_unsafe(rc10), 0u8);
-                                                let hi10 = u8_xor(u8_from_field_unsafe(rh10), 0u8);
-                                                assert_eq!(out10, to_field(r10) + (256 * to_field(lo10)) + (65536 * to_field(hi10)),
-                                                  "u64_mul column 10: split_carry hint does not recompose to the column sum");
-                                                let out11 = col11 + to_field(lo10) + (256 * to_field(hi10));
-                                                match #split_carry(out11) {
-                                                  (rl11, rc11, rh11) =>
-                                                    let r11 = u8_xor(u8_from_field_unsafe(rl11), 0u8);
-                                                    let lo11 = u8_xor(u8_from_field_unsafe(rc11), 0u8);
-                                                    let hi11 = u8_xor(u8_from_field_unsafe(rh11), 0u8);
-                                                    assert_eq!(out11, to_field(r11) + (256 * to_field(lo11)) + (65536 * to_field(hi11)),
-                                                      "u64_mul column 11: split_carry hint does not recompose to the column sum");
-                                                    let out12 = col12 + to_field(lo11) + (256 * to_field(hi11));
-                                                    match #split_carry(out12) {
-                                                      (rl12, rc12, rh12) =>
-                                                        let r12 = u8_xor(u8_from_field_unsafe(rl12), 0u8);
-                                                        let lo12 = u8_xor(u8_from_field_unsafe(rc12), 0u8);
-                                                        let hi12 = u8_xor(u8_from_field_unsafe(rh12), 0u8);
-                                                        assert_eq!(out12, to_field(r12) + (256 * to_field(lo12)) + (65536 * to_field(hi12)),
-                                                          "u64_mul column 12: split_carry hint does not recompose to the column sum");
-                                                        let out13 = col13 + to_field(lo12) + (256 * to_field(hi12));
-                                                        match #split_carry(out13) {
-                                                          (rl13, rc13, rh13) =>
-                                                            let r13 = u8_xor(u8_from_field_unsafe(rl13), 0u8);
-                                                            let lo13 = u8_xor(u8_from_field_unsafe(rc13), 0u8);
-                                                            let hi13 = u8_xor(u8_from_field_unsafe(rh13), 0u8);
-                                                            assert_eq!(out13, to_field(r13) + (256 * to_field(lo13)) + (65536 * to_field(hi13)),
-                                                              "u64_mul column 13: split_carry hint does not recompose to the column sum");
-                                                            let out14 = col14 + to_field(lo13) + (256 * to_field(hi13));
-                                                            match #split_carry(out14) {
-                                                              (rl14, rc14, rh14) =>
-                                                                let r14 = u8_xor(u8_from_field_unsafe(rl14), 0u8);
-                                                                let lo14 = u8_xor(u8_from_field_unsafe(rc14), 0u8);
-                                                                let hi14 = u8_xor(u8_from_field_unsafe(rh14), 0u8);
-                                                                assert_eq!(out14, to_field(r14) + (256 * to_field(lo14)) + (65536 * to_field(hi14)),
-                                                                  "u64_mul column 14: split_carry hint does not recompose to the column sum");
-                                                                let r15 = u8_from_field_unsafe(to_field(lo14) + (256 * to_field(hi14)));
-                                                                ([r0, r1, r2, r3, r4, r5, r6, r7],
-                                                                 [r8, r9, r10, r11, r12, r13, r14, r15]),
-                                                            },
-                                                        },
-                                                    },
-                                                },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        },
-    }
+  fn u64_mul_column(x: G) -> ([U8; 2], [U8; 3]) {
+    let bytes = unconstrained_g_to_bytes(x);
+    let (r0, r1) = u8_range_check(bytes[0], bytes[1]);
+    let (c0, c1) = u8_range_check(bytes[2], bytes[3]);
+    let (c2, _) = u8_range_check(bytes[4], 0);
+    assert_eq!(x, to_field(r0) + 256 * to_field(r1)
+      + 65536 * (to_field(c0) + 256 * to_field(c1) + 65536 * to_field(c2)),
+      "u64_mul: column hint does not recompose");
+    ([r0, r1], [c0, c1, c2])
   }
 
   -- Mirror: BigUint::mul. Limb-wise schoolbook multiply.
@@ -482,10 +340,14 @@ def klimbs := ⟦
           (lo, hi) =>
             match u64_add(lo, carry) {
               (sum, carry_out) =>
-                match u64_add(hi, [carry_out, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]) {
-                  (new_carry, _) =>
-                    store(ListNode.Cons(sum,
-                      klimbs_mul_single(a_limb, rest, new_carry))),
+                -- u64_mul range-checks ALL eight high bytes. The carry is
+                -- a bit, and the old addition discarded overflow, so reuse
+                -- hi or take its modular successor.
+                match carry_out {
+                  0 => store(ListNode.Cons(sum,
+                    klimbs_mul_single(a_limb, rest, hi))),
+                  _ => store(ListNode.Cons(sum,
+                    klimbs_mul_single(a_limb, rest, relaxed_u64_succ(hi)))),
                 },
             },
         },
@@ -518,7 +380,7 @@ def klimbs := ⟦
   -- inside `glimbs_to_klimbs` below, NOT by the arithmetic — and the
   -- checker enforces the discipline by typing the hint `List‹[G; 8]›`,
   -- so the limbs cannot reach a `u8` consumer without that conversion.
-  -- `u64_mul` was rewritten to raw field products plus `#split_carry`,
+  -- `u64_mul` uses raw field products with checked decomposition hints,
   -- whose u8 checks constrain the split OUTPUTS, not the input digits —
   -- and it re-canonicalizes while multiplying, so a digit-wrong `q`
   -- still yields a canonical `q*b` and sails through the equality below.
