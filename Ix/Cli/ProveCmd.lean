@@ -348,8 +348,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         let execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
         let planOnly := p.hasFlag "plan-only"
         match aiurSystem.proveEnvDistributed funIdx checkOwnedIdx envHandle
-            ownedPer maxCells planOnly execOnly execJobs
-            (!(p.hasFlag "no-prefetch")) with
+            ownedPer maxCells planOnly execOnly execJobs maxRamBytes with
         | .error e => IO.eprintln s!"proveEnvDistributed error: {e}"; return 1
         | .ok { proof := none, .. } =>
           if planOnly then
@@ -433,7 +432,6 @@ def proveCmd : Cli.Cmd := `[Cli|
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
     "exec-jobs" : Nat;  "With --distributed: how many workers execute at once (default 0: all). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
-    "no-prefetch";      "With --distributed: do not execute the next worker while the prover works on the current record (by default it does, hiding the re-execution behind proving at the price of a second resident record)."
     "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."

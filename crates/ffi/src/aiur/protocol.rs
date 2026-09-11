@@ -1177,13 +1177,14 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
   plan_only: bool,
   exec_only: bool,
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
-  prefetch: bool,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.proveEnvDistributed", || {
     let verify_idx = lean_unbox_nat_as_usize(verify_idx.inner());
     let check_owned_idx = lean_unbox_nat_as_usize(check_owned_idx.inner());
     let max_cells = lean_unbox_nat_as_usize(max_cells.inner());
     let exec_jobs = lean_unbox_nat_as_usize(exec_jobs.inner());
+    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
     let owners = match decode_owners_blob(&owners_blob) {
       Ok(owners) => owners,
       Err(e) => return LeanExcept::error_string(&e),
@@ -1198,7 +1199,7 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
       plan_only,
       exec_only,
       exec_jobs,
-      prefetch,
+      max_ram_bytes,
     );
     let (claim_bytes, proof) = match proved {
       Ok(proved) => proved,
@@ -1267,6 +1268,8 @@ fn decode_owners_blob(
 /// are kept, and always its deferred calls and its output.
 struct Executed {
   record: Option<(Box<QueryRecord>, Box<IOBuffer>)>,
+  /// Host bytes the record and its IO retain.
+  bytes: usize,
   deferred: FxHashMap<Vec<G>, u64>,
   output: Vec<G>,
 }
@@ -1359,7 +1362,7 @@ fn prove_env_distributed(
   plan_only: bool,
   exec_only: bool,
   exec_jobs: usize,
-  prefetch: bool,
+  max_ram_bytes: usize,
 ) -> Result<(Vec<u8>, Option<AiurProof>), String> {
   use aiur::execute::{Ownership, pointer_stride};
   use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
@@ -1376,10 +1379,8 @@ fn prove_env_distributed(
   statement.claim.put(&mut claim_bytes);
   let input = statement.digest_key.clone();
   let toplevel = system.toplevel();
-  let owned_keys: Vec<FxHashSet<Vec<G>>> = owners
-    .iter()
-    .map(|owned| owned.iter().map(addr_key).collect())
-    .collect();
+  let owned_keys: Vec<FxHashSet<Vec<G>>> =
+    owners.iter().map(|owned| owned.iter().map(addr_key).collect()).collect();
   let mut owner_of: FxHashMap<Vec<G>, usize> = FxHashMap::default();
   for (worker, keys) in owned_keys.iter().enumerate() {
     for key in keys {
@@ -1420,6 +1421,7 @@ fn prove_env_distributed(
   // others their own chunk, each in its own pointer namespace, over a
   // fresh IO buffer. Deterministic, so a record can be re-executed for
   // its second round; the batch checks the headers agree.
+  let run_started = std::time::Instant::now();
   let execute = |worker: usize, round: &str| -> Result<Executed, String> {
     let started = std::time::Instant::now();
     let mut io = statement.worker_io(env, owners, worker);
@@ -1427,8 +1429,10 @@ fn prove_env_distributed(
       toplevel,
       worker * pointer_stride(workers),
     );
-    record.ownership =
-      Some(Ownership { callee: check_owned_idx, owned: owned_keys[worker].clone() });
+    record.ownership = Some(Ownership {
+      callee: check_owned_idx,
+      owned: owned_keys[worker].clone(),
+    });
     let mut output = Vec::new();
     if worker == 0 {
       output =
@@ -1480,37 +1484,78 @@ fn prove_env_distributed(
       record.memory_queries.iter().map(|(_, m)| m.len()).sum();
     let io_bytes: usize = io.data.values().map(|arena| 8 * arena.len()).sum();
     eprintln!(
-      "[distributed] worker {worker}: executed for {round} in {:.1?}; {function_rows} function queries, {memory_rows} memory entries, {} B retained, {io_bytes} B of IO, {} deferred calls",
+      "[distributed] worker {worker}: executed for {round} in {:.1?} (done at +{:.1?}); {function_rows} function queries, {memory_rows} memory entries, {} B retained, {io_bytes} B of IO, {} deferred calls",
       started.elapsed(),
+      run_started.elapsed(),
       aiur::execute::record_retained_bytes(&record),
       record.deferred.len()
     );
     let deferred = record.deferred.clone();
+    let bytes = aiur::execute::record_retained_bytes(&record) + io_bytes;
     Ok(Executed {
       record: Some((Box::new(record), Box::new(io))),
+      bytes,
       deferred,
       output,
     })
   };
+  // What records may occupy on the host: the budget less the prover's own
+  // working set (two shard witnesses at the cell budget, one being proven
+  // and one prepared ahead, plus the upload staging), or unbounded when no
+  // budget is known.
+  let budget = match max_ram_bytes {
+    0 => detected_ram_budget(),
+    given => Some(given),
+  }
+  .map_or(usize::MAX, |budget| {
+    budget.saturating_sub(2 * 8 * max_cells + (256 << 20))
+  });
+  let estimates: Vec<usize> = owners
+    .iter()
+    .map(|owned| {
+      exec_rss_estimate(
+        owned
+          .iter()
+          .filter_map(|a| env.get_const_bytes(a).map(|b| b.len()))
+          .sum::<usize>(),
+      )
+    })
+    .collect();
+  let mut position = vec![0usize; workers];
+  for (at, &worker) in order.iter().enumerate() {
+    position[worker] = at;
+  }
+  eprintln!(
+    "[distributed] record budget {:.1} GiB ({} executing at most)",
+    budget as f64 / (1u64 << 30) as f64,
+    jobs
+  );
   std::thread::scope(|scope| {
     let mut pool = Workers {
       scope,
       execute: &execute,
       jobs,
       order: &order,
+      position: &position,
       callers: &callers,
       owner_of: &owner_of,
       check_owned_idx,
       executed: (0..workers).map(|_| None).collect(),
+      resident: (0..workers).map(|_| None).collect(),
+      charged: vec![0; workers],
       served: vec![0; workers],
-      prefetch,
-      ahead: None,
+      in_flight: Vec::new(),
+      budget,
+      used: 0,
+      estimates: &estimates,
+      largest: 0,
     };
     if exec_only {
       let started = std::time::Instant::now();
-      pool.execute_group(&order, "round one")?;
-      for &worker in &order {
-        drop(pool.take_record(worker, "round one")?);
+      pool.fill(usize::MAX, None);
+      for at in 0..order.len() {
+        drop(pool.supply(at)?);
+        pool.release(order[at]);
       }
       eprintln!(
         "[distributed] {workers} workers executed and absorbed in {:.1?}",
@@ -1519,195 +1564,265 @@ fn prove_env_distributed(
       return Ok((claim_bytes, None));
     }
 
-    // The first group executes before the batch, worker 0 among it (its
-    // walk calls into every worker): its output is the claim's. From there
-    // the batch asks for records in commit order (`Workers::supply`).
-    let first = order[0];
-    let mut wanted = callers[first].clone();
-    wanted.push(first);
-    pool.execute_group(&wanted, "round one")?;
+    // Worker 0's output is the claim's; its walk calls into every worker,
+    // so it executes first, with the window open behind it.
+    pool.fill(usize::MAX, None);
+    pool.ensure(0, "round one")?;
     let output = pool.output();
     let (_, proof) = system.prove_record_supplier(
       verify_idx,
       &input,
       move || output,
       workers,
-      |position| pool.supply(position),
+      |at| pool.supply(at),
       (max_cells > 0).then_some(max_cells),
     )?;
     Ok((claim_bytes, Some(proof)))
   })
 }
 
-/// The workers' executions, owned by the driver: run in groups, handed to
-/// the prover one record at a time, the next one's execution started
-/// ahead of its turn when asked to.
+/// A record the driver holds: as executed, or absorbed and shared with the
+/// prover, retained for its second round.
+enum Resident {
+  Raw(Box<QueryRecord>, Box<IOBuffer>),
+  Absorbed(std::sync::Arc<(Box<QueryRecord>, Box<IOBuffer>)>),
+}
+
+/// The workers' executions, owned by the driver. Executions run ahead of
+/// the prover in commit order as far as a host budget for records allows,
+/// each record is handed to the prover when its turn comes, and a record
+/// stays resident for its second round while the budget has room — evicting
+/// the one whose next use is furthest when an execution needs the space —
+/// so a worker executes twice only when memory forces it. An execution the
+/// prover needs is never refused: it runs even when the budget is spent,
+/// which keeps the pipeline ordered and makes the budget a bound on what
+/// runs *ahead*, not a guarantee.
 struct Workers<'scope, 'env> {
   scope: &'scope std::thread::Scope<'scope, 'env>,
   execute:
     &'env (dyn Fn(usize, &'static str) -> Result<Executed, String> + Sync),
   /// How many workers execute at once.
   jobs: usize,
-  /// The commit order.
+  /// The commit order, and each worker's place in it.
   order: &'env [usize],
+  position: &'env [usize],
   /// The workers that may call into each worker.
   callers: &'env [Vec<usize>],
   owner_of: &'env FxHashMap<Vec<G>, usize>,
   check_owned_idx: usize,
+  /// Each worker's execution result (the record itself moves to
+  /// `resident`).
   executed: Vec<Option<Executed>>,
+  /// Records held by the driver.
+  resident: Vec<Option<Resident>>,
+  /// Bytes charged against the budget for each in-flight or resident record.
+  charged: Vec<usize>,
   /// How many times the prover has asked for each worker's record.
   served: Vec<u8>,
-  /// Whether to execute the next worker in commit order while the prover
-  /// works on the current one, at the price of a second resident record.
-  prefetch: bool,
-  /// The execution started ahead of its turn, if any.
-  ahead: Option<(
+  /// Executions started ahead of their turn.
+  in_flight: Vec<(
     usize,
     std::thread::ScopedJoinHandle<'scope, Result<Executed, String>>,
   )>,
+  /// Host bytes records may occupy at once, and how many they do.
+  budget: usize,
+  used: usize,
+  /// Each worker's record size before it is measured (execution-RSS
+  /// model over its owned bytes), and the largest record measured so far,
+  /// which is the charge for an unmeasured one once anything is measured.
+  estimates: &'env [usize],
+  largest: usize,
 }
 
 impl Workers<'_, '_> {
-  /// Execute the workers among `wanted` that have not executed, `jobs` at
-  /// a time: `jobs` threads each take the next pending worker from a shared
-  /// counter until none is left, so a freed slot starts the next worker at
-  /// once, and each thread's results come back through its join.
-  fn execute_group(
-    &mut self,
-    wanted: &[usize],
-    round: &'static str,
-  ) -> Result<(), String> {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    for &worker in wanted {
-      self.settle_ahead(worker)?;
+  /// The bytes to charge for `worker`'s record before it is measured: the
+  /// largest record measured so far, or its estimate while nothing is.
+  fn charge_for(&self, worker: usize) -> usize {
+    if self.largest > 0 { self.largest } else { self.estimates[worker] }
+  }
+
+  /// Which run `worker` needs next, if any: its first, or its second when
+  /// the first was handed over and the record not retained.
+  fn needs(&self, worker: usize) -> Option<&'static str> {
+    if self.resident[worker].is_some()
+      || self.in_flight.iter().any(|(w, _)| *w == worker)
+    {
+      return None;
     }
-    let pending: Vec<usize> = wanted
-      .iter()
-      .copied()
-      .filter(|&worker| self.executed[worker].is_none())
-      .collect();
+    match self.served[worker] {
+      0 => self.executed[worker].is_none().then_some("round one"),
+      1 => Some("round two"),
+      _ => None,
+    }
+  }
+
+  /// Starts `worker`'s execution for `round`, charging its estimate.
+  fn start(&mut self, worker: usize, round: &'static str) {
+    let charge = self.charge_for(worker);
+    self.used += charge;
+    self.charged[worker] = charge;
     let execute = self.execute;
-    let next = AtomicUsize::new(0);
-    let results: Vec<Vec<(usize, Result<Executed, String>)>> =
-      std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..self.jobs.max(1).min(pending.len()))
-          .map(|_| {
-            scope.spawn(|| {
-              let mut done = Vec::new();
-              loop {
-                let at = next.fetch_add(1, Ordering::Relaxed);
-                let Some(&worker) = pending.get(at) else { break };
-                done.push((worker, execute(worker, round)));
-              }
-              done
-            })
-          })
-          .collect();
-        handles
-          .into_iter()
-          .map(|handle| handle.join().expect("worker thread panicked"))
-          .collect()
-      });
-    for (worker, result) in results.into_iter().flatten() {
-      self.executed[worker] = Some(result?);
+    self
+      .in_flight
+      .push((worker, self.scope.spawn(move || execute(worker, round))));
+  }
+
+  /// Waits for `worker`'s in-flight execution and keeps its record,
+  /// correcting the charge to the measured size.
+  fn settle(&mut self, worker: usize) -> Result<(), String> {
+    let Some(at) = self.in_flight.iter().position(|(w, _)| *w == worker) else {
+      return Ok(());
+    };
+    let (_, handle) = self.in_flight.remove(at);
+    let mut done = handle.join().expect("worker thread panicked")?;
+    let (record, io) =
+      done.record.take().expect("a fresh execution keeps its record");
+    self.used = self.used - self.charged[worker] + done.bytes;
+    self.charged[worker] = done.bytes;
+    self.largest = self.largest.max(done.bytes);
+    if done.bytes > self.budget {
+      eprintln!(
+        "[distributed] worker {worker}: record of {} B exceeds the record budget of {} B on its own; use smaller chunks",
+        done.bytes, self.budget
+      );
     }
+    self.resident[worker] = Some(Resident::Raw(record, io));
+    self.executed[worker] = Some(done);
     Ok(())
   }
 
-  /// If `worker`'s execution was started ahead of its turn, wait for it and
-  /// keep it.
-  fn settle_ahead(&mut self, worker: usize) -> Result<(), String> {
-    if self.ahead.as_ref().is_some_and(|(started, _)| *started == worker) {
-      let (_, handle) = self.ahead.take().expect("checked just above");
-      let done = handle.join().expect("prefetch thread panicked")?;
-      self.executed[worker] = Some(done);
-    }
-    Ok(())
-  }
-
-  /// The record of `worker` as the prover needs it: kept from its
-  /// execution if still there, else executed again; the calls into it
-  /// from every executed worker absorbed.
-  fn take_record(
+  /// Makes `worker`'s record resident for `round`: already there, or in
+  /// flight, or executed now.
+  fn ensure(
     &mut self,
     worker: usize,
     round: &'static str,
+  ) -> Result<(), String> {
+    if self.resident[worker].is_none() {
+      if !self.in_flight.iter().any(|(w, _)| *w == worker) {
+        self.start(worker, round);
+      }
+      self.settle(worker)?;
+    }
+    Ok(())
+  }
+
+  /// Drops `worker`'s resident record and its charge.
+  fn release(&mut self, worker: usize) {
+    if self.resident[worker].take().is_some() {
+      self.used -= self.charged[worker];
+      self.charged[worker] = 0;
+    }
+  }
+
+  /// The commit-order step at which a resident record is next used.
+  fn next_use(&self, worker: usize) -> usize {
+    match self.served[worker] {
+      0 => self.position[worker],
+      _ => self.position[worker] + self.order.len(),
+    }
+  }
+
+  /// Starts executions for the workers after step `at` in commit order —
+  /// wrapping into the second round after the last — while at most `jobs`
+  /// run and the budget has room, evicting resident records used later
+  /// than the candidate when that makes room. `handed` is the worker whose
+  /// record the prover holds and must not be evicted; `at` is `usize::MAX`
+  /// before the first step.
+  fn fill(&mut self, at: usize, handed: Option<usize>) {
+    let count = self.order.len();
+    let from = at.wrapping_add(1);
+    for step in from..2 * count {
+      if self.in_flight.len() >= self.jobs {
+        break;
+      }
+      let next = self.order[step % count];
+      let round = if step < count { "round one" } else { "round two" };
+      let Some(needed) = self.needs(next) else { continue };
+      if needed != round {
+        continue;
+      }
+      let charge = self.charge_for(next);
+      while self.used + charge > self.budget {
+        let evict = (0..count)
+          .filter(|&w| self.resident[w].is_some() && Some(w) != handed)
+          .filter(|&w| self.next_use(w) > step)
+          .max_by_key(|&w| self.next_use(w));
+        match evict {
+          Some(w) => self.release(w),
+          None => return,
+        }
+      }
+      self.start(next, round);
+    }
+  }
+
+  /// The record at step `at` of the commit order, as the prover needs it:
+  /// its callers executed (their deferred calls absorbed into it), resident
+  /// or executed now, then the window refilled behind it. The record is
+  /// retained for its second round while the budget allows.
+  fn supply(
+    &mut self,
+    at: usize,
   ) -> Result<aiur::synthesis::Supplied<'static>, String> {
-    self.settle_ahead(worker)?;
-    let kept = self.executed[worker]
-      .as_mut()
-      .expect("executed before it is taken")
-      .record
-      .take();
-    let (mut record, io) = match kept {
-      Some(kept) => kept,
-      None => (self.execute)(worker, round)?
-        .record
-        .expect("a fresh execution keeps its record"),
-    };
-    let mut into: FxHashMap<Vec<G>, u64> = FxHashMap::default();
-    for (caller, done) in self.executed.iter().enumerate() {
-      let Some(done) = done else { continue };
-      for (args, &count) in &done.deferred {
-        let Some(&owner) = self.owner_of.get(args) else {
-          return Err(format!(
-            "worker {caller} deferred a constant no worker owns"
-          ));
-        };
-        if owner == worker {
-          *into.entry(args.clone()).or_insert(0) += count;
+    let worker = self.order[at];
+    let first = self.served[worker] == 0;
+    let round = if first { "round one" } else { "round two" };
+    if first {
+      for caller in self.callers[worker].clone() {
+        if self.executed[caller].is_none() {
+          self.ensure(caller, "round one")?;
         }
       }
     }
-    record
-      .absorb_deferred(self.check_owned_idx, &into)
-      .map_err(|e| format!("worker {worker}: {e}"))?;
-    Ok(aiur::synthesis::Supplied::Owned(record, io))
-  }
-
-  /// The prover's request for the record at `position` of the commit
-  /// order. The first time, the worker and the callers it still lacks
-  /// execute first; the second time, all callers have executed, and the
-  /// worker is executed again. With prefetching, the next worker's
-  /// execution for its coming round starts before this record is handed
-  /// over, so it runs while the prover works on this one.
-  fn supply(
-    &mut self,
-    position: usize,
-  ) -> Result<aiur::synthesis::Supplied<'static>, String> {
-    let worker = self.order[position];
-    let first = self.served[worker] == 0;
+    self.ensure(worker, round)?;
     self.served[worker] += 1;
-    if first {
-      let mut wanted = self.callers[worker].clone();
-      wanted.push(worker);
-      self.execute_group(&wanted, "round one")?;
-    }
-    let supplied =
-      self.take_record(worker, if first { "round one" } else { "round two" })?;
-    if self.prefetch && self.ahead.is_none() {
-      let next = self.order[(position + 1) % self.order.len()];
-      let (needed, round) = match self.served[next] {
-        0 => (self.executed[next].is_none(), "round one"),
-        1 => (true, "round two"),
-        _ => (false, ""),
-      };
-      if needed && next != worker {
-        let execute = self.execute;
-        self.ahead =
-          Some((next, self.scope.spawn(move || execute(next, round))));
-      }
-    }
+    let supplied = match self.resident[worker].take().expect("ensured above") {
+      Resident::Raw(mut record, io) => {
+        let mut into: FxHashMap<Vec<G>, u64> = FxHashMap::default();
+        for (caller, done) in self.executed.iter().enumerate() {
+          let Some(done) = done else { continue };
+          for (args, &count) in &done.deferred {
+            let Some(&owner) = self.owner_of.get(args) else {
+              return Err(format!(
+                "worker {caller} deferred a constant no worker owns"
+              ));
+            };
+            if owner == worker {
+              *into.entry(args.clone()).or_insert(0) += count;
+            }
+          }
+        }
+        record
+          .absorb_deferred(self.check_owned_idx, &into)
+          .map_err(|e| format!("worker {worker}: {e}"))?;
+        if first {
+          let shared = std::sync::Arc::new((record, io));
+          self.resident[worker] = Some(Resident::Absorbed(shared.clone()));
+          aiur::synthesis::Supplied::Shared(shared)
+        } else {
+          self.used -= self.charged[worker];
+          self.charged[worker] = 0;
+          aiur::synthesis::Supplied::Owned(record, io)
+        }
+      },
+      Resident::Absorbed(shared) => {
+        if first {
+          self.resident[worker] = Some(Resident::Absorbed(shared.clone()));
+        } else {
+          self.used -= self.charged[worker];
+          self.charged[worker] = 0;
+        }
+        aiur::synthesis::Supplied::Shared(shared)
+      },
+    };
+    self.fill(at, Some(worker));
     Ok(supplied)
   }
 
   /// Worker 0's output, the claim's.
   fn output(&self) -> Vec<G> {
-    self.executed[0]
-      .as_ref()
-      .expect("worker 0 executed with the first group")
-      .output
-      .clone()
+    self.executed[0].as_ref().expect("worker 0 executed first").output.clone()
   }
 }
 

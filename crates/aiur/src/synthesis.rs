@@ -170,6 +170,9 @@ fn raw_of<'a>(
 pub enum Supplied<'a> {
   Borrowed(&'a QueryRecord, &'a IOBuffer),
   Owned(Box<QueryRecord>, Box<IOBuffer>),
+  /// A record the supplier keeps a reference to as well, e.g. one it
+  /// retains for the second round.
+  Shared(std::sync::Arc<(Box<QueryRecord>, Box<IOBuffer>)>),
 }
 
 impl Supplied<'_> {
@@ -177,6 +180,7 @@ impl Supplied<'_> {
     match self {
       Self::Borrowed(record, _) => record,
       Self::Owned(record, _) => record,
+      Self::Shared(shared) => &shared.0,
     }
   }
 
@@ -184,6 +188,7 @@ impl Supplied<'_> {
     match self {
       Self::Borrowed(_, io) => io,
       Self::Owned(_, io) => io,
+      Self::Shared(shared) => &shared.1,
     }
   }
 }
@@ -528,6 +533,7 @@ impl AiurSystem {
   /// for when the first shard is committed, after the first record was
   /// supplied, so the execution that produces it need not precede the
   /// batch.
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_records")]
   pub fn prove_record_supplier<'a, O, S>(
     &self,
     fun_idx: FunIdx,
@@ -541,6 +547,7 @@ impl AiurSystem {
     O: FnOnce() -> Vec<G>,
     S: FnMut(usize) -> Result<Supplied<'a>, String>,
   {
+    tracing_texray::examine_current();
     if count == 0 {
       return Err("no records to prove".into());
     }
@@ -602,7 +609,8 @@ impl AiurSystem {
         };
         let plan = self.plan_shards(supplied.record(), max_cells);
         if locate.len() + plan.num_shards() > crate::shard::MAX_SHARDS {
-          failure = Some(format!("record {r}: the batch exceeds the shard limit"));
+          failure =
+            Some(format!("record {r}: the batch exceeds the shard limit"));
           return None;
         }
         if let Some(max_cells) = max_cells {
@@ -637,24 +645,25 @@ impl AiurSystem {
     // Round two: the record is asked for again when the batch order
     // reaches it and dropped when the order moves on.
     let mut loaded: Option<(usize, Supplied<'a>)> = None;
-    let proof = self.system.batch_round_two(&self.key, barrier, messages, |k| {
-      let (r, s) = locate[k];
-      if loaded.as_ref().is_none_or(|(at, _)| *at != r) {
-        loaded = None;
-        let supplied =
-          supply(r).unwrap_or_else(|error| panic!("record {r}: {error}"));
-        loaded = Some((r, supplied));
-      }
-      let supplied = &loaded.as_ref().expect("loaded above").1;
-      let _g = tracing::info_span!("aiur/witness").entered();
-      self.shard_witness(
-        supplied.record(),
-        supplied.io(),
-        &plans[r],
-        &indexes[r],
-        s,
-      )
-    });
+    let proof =
+      self.system.batch_round_two(&self.key, barrier, messages, |k| {
+        let (r, s) = locate[k];
+        if loaded.as_ref().is_none_or(|(at, _)| *at != r) {
+          loaded = None;
+          let supplied =
+            supply(r).unwrap_or_else(|error| panic!("record {r}: {error}"));
+          loaded = Some((r, supplied));
+        }
+        let supplied = &loaded.as_ref().expect("loaded above").1;
+        let _g = tracing::info_span!("aiur/witness").entered();
+        self.shard_witness(
+          supplied.record(),
+          supplied.io(),
+          &plans[r],
+          &indexes[r],
+          s,
+        )
+      });
     Ok((claim, proof))
   }
 
@@ -1671,10 +1680,8 @@ mod tests {
     let deferring = || {
       let mut io0 = empty_io_buffer();
       let mut worker0 = QueryRecord::with_pointer_base(system.toplevel(), 0);
-      worker0.ownership = Some(Ownership {
-        callee: 1,
-        owned: rustc_hash::FxHashSet::default(),
-      });
+      worker0.ownership =
+        Some(Ownership { callee: 1, owned: rustc_hash::FxHashSet::default() });
       let output = system
         .toplevel()
         .execute_in(0, vec![seven], &mut io0, &mut worker0)
@@ -1708,14 +1715,15 @@ mod tests {
       (worker1, io1)
     };
     let (worker1, io1) = owner(&worker0.deferred, true);
-    let (claim, proof) = system.prove_records(
-      0,
-      &[seven],
-      &output,
-      &[(worker0, &io0), (worker1, &io1)],
-      None,
-    )
-    .expect("two records plan within an unbounded budget");
+    let (claim, proof) = system
+      .prove_records(
+        0,
+        &[seven],
+        &output,
+        &[(worker0, &io0), (worker1, &io1)],
+        None,
+      )
+      .expect("two records plan within an unbounded budget");
     assert_eq!(proof.proofs.len(), 2);
     assert_eq!(proof.preamble.messages.len(), 2, "one interval, the owner's");
     system.verify(&claim, &proof).expect("two records prove one claim");
@@ -1723,14 +1731,15 @@ mod tests {
     // Unabsorbed, the owner's row pulls nothing and record 0's push hangs.
     let (worker0, io0, output) = deferring();
     let (worker1, io1) = owner(&worker0.deferred, false);
-    let (claim, proof) = system.prove_records(
-      0,
-      &[seven],
-      &output,
-      &[(worker0, &io0), (worker1, &io1)],
-      None,
-    )
-    .expect("two records plan within an unbounded budget");
+    let (claim, proof) = system
+      .prove_records(
+        0,
+        &[seven],
+        &output,
+        &[(worker0, &io0), (worker1, &io1)],
+        None,
+      )
+      .expect("two records plan within an unbounded budget");
     assert!(matches!(
       system.verify(&claim, &proof),
       Err(AiurVerificationError::Stark(VerificationError::UnbalancedBatch))
@@ -1776,12 +1785,16 @@ mod tests {
         &[seven],
         || output.clone(),
         2,
-        |r| Ok(if r == 0 { Supplied::Borrowed(&worker0, &io0) } else { owner() }),
+        |r| {
+          Ok(if r == 0 { Supplied::Borrowed(&worker0, &io0) } else { owner() })
+        },
         None,
       )
       .expect("two records plan within an unbounded budget");
     assert_eq!(executions.get(), 2, "the owner ran once per round");
-    system.verify(&claim, &proof).expect("a regenerated record proves the claim");
+    system
+      .verify(&claim, &proof)
+      .expect("a regenerated record proves the claim");
   }
 
   #[test]
@@ -1792,7 +1805,12 @@ mod tests {
     let mut io_buffer = empty_io_buffer();
     let (record, output) = system
       .toplevel()
-      .execute_with_pointer_base(0, input.clone(), &mut io_buffer, pointer_stride(2))
+      .execute_with_pointer_base(
+        0,
+        input.clone(),
+        &mut io_buffer,
+        pointer_stride(2),
+      )
       .expect("execution succeeds");
     let plan = system.single_shard_plan(&record);
     assert_eq!(plan.memory_totals, vec![(1, pointer_stride(2), 1)]);
@@ -1832,14 +1850,15 @@ mod tests {
         ),
       ]
     };
-    let with = |extra: Vec<[multi_stark::batch::BatchMessage<AiurConfig>; 2]>| {
-      let mut preamble = proof.preamble.clone();
-      for [pull, push] in extra {
-        preamble.messages.push(pull);
-        preamble.messages.push(push);
-      }
-      system.check_batch_policy(&claim, &preamble)
-    };
+    let with =
+      |extra: Vec<[multi_stark::batch::BatchMessage<AiurConfig>; 2]>| {
+        let mut preamble = proof.preamble.clone();
+        for [pull, push] in extra {
+          preamble.messages.push(pull);
+          preamble.messages.push(push);
+        }
+        system.check_batch_policy(&claim, &preamble)
+      };
     // The proof closes width 1 over `[0, 1)`. A later disjoint interval of
     // the same width, an empty one, and a wider width are all canonical.
     assert!(with(vec![pair(1, 1, 5)]).is_ok());
