@@ -26,6 +26,93 @@ Everything above the leaf is SP1 6.6.0's own recursion machinery, used from
 the registry crates unmodified. The leaf program and the pipeline that pins
 it are ours. Nothing runs inside a RISC-V guest.
 
+## The pipeline, stage by stage
+
+Three proof systems and three fields are involved, and each hop changes
+one thing: the number of proofs, the field, or the verifier's cost.
+
+```
+Lean env (.ixe)
+   │  ix prove                      Aiur/Goldilocks, proven by multi-stark
+   ▼
+IxVM shard proofs   (CheckEnv claims: "these constants typecheck")
+   │  ix aggregate                  Aiur/Goldilocks, proven by multi-stark
+   ▼
+aggregate root proof   (one multi-stark proof of the ix_aggr verifier program)
+   │  ix compress, stage 2          Aiur/KoalaBear, proven by SP1 Hypercube (sharded)
+   ▼
+Hypercube shard proofs of the byte verifier   (113 shards for Nat.add_comm)
+   │  SP1 recursion: leaf → compose → … → shrink → wrap    KoalaBear, then BN254 commitments
+   ▼
+one wrap proof
+   │  gnark PLONK over BN254
+   ▼
+~4 KB PLONK proof, 5 public inputs
+```
+
+**1. IxVM on multi-stark.** The IxVM is the Lean kernel written as an Aiur
+program over Goldilocks. `ix prove` executes it on a shard of the
+environment and multi-stark proves the execution; the claim is a `CheckEnv`
+of that shard. For Nat.add_comm this is one shard, proven in 1.3 s.
+
+**2. The aggregator on multi-stark.** `ix_aggr` is a multi-stark verifier
+written in Aiur, also over Goldilocks, also proven by multi-stark. It wraps
+each IxVM shard proof by verifying it in-circuit and joins pairs of wrapped
+proofs recursively into a tree. Its public input carries an allowlist blob
+binding the IxVM verifying key and its own, so the root proof is a
+statement about a fixed pair of systems. The output is one multi-stark root
+proof (for Nat.add_comm: one wrap, no joins).
+
+This stage stays in the Goldilocks world. Multi-stark proofs are large
+(8.6 MB at 100 queries) and Goldilocks FRI verification is expensive for
+anything downstream, which is why the next hop changes ecosystems.
+
+**3. The byte verifier on Hypercube.** The same Aiur source of the
+multi-stark verifier is compiled to a KoalaBear profile, Goldilocks
+arithmetic emulated in 8-bit limbs (`GoldilocksForeign`). It reads the root
+proof, the aggregator's vk and the claims as advice through the IO buffer
+and verifies the root proof; its public input is the Blake3 digests of the
+vk bytes and the claim bytes, so its claim commits to exactly which
+aggregator and which Lean claims were verified. This program is proven by
+SP1 Hypercube. It is the expensive stage — every Goldilocks operation is
+tens of byte-limb rows — so the execution is split into shards, each
+balanced locally, with the cross-shard lookups routed through the adapter
+chips and a septic-curve digest (section 3 below). The reason to pay this
+is that it lands the proof in SP1's KoalaBear ecosystem, where SP1's
+recursion circuits and its gnark circuit are reused unmodified.
+
+**4. SP1's recursion tail.** Each Hypercube shard proof is verified by a
+leaf program (`AiurRecursiveVerifier`, the one custom program) that maps
+Aiur's public values onto SP1's recursion public values. SP1's stock
+compose program folds leaves two at a time until one proof remains, shrink
+reduces it to a small fixed-shape proof, and wrap re-proves it on the outer
+configuration, whose Merkle commitments use Poseidon2 over BN254. Every
+program is pinned to a fixed shape and every program's verifying key sits
+in a Merkle allowlist whose root travels in the public values, so a prover
+cannot substitute a program of its own (section 4).
+
+**5. gnark PLONK.** A gnark circuit verifies the wrap proof and emits a
+BN254 PLONK proof of 4160 bytes. Its five public inputs are the digest of
+the byte verifier's Hypercube vk (which stage-3 machine ran), the digest
+of the byte verifier's claim (which aggregator vk and which Lean claims it
+verified), the recursion allowlist root, an exit code of zero, and a nonce.
+
+**What the final proof binds.** Follow the digests back: the PLONK proof
+commits to the wrap circuit; the wrap proof commits to the allowlist of
+recursion programs; the leaves verified Hypercube shards against the byte
+verifier's vk; the byte verifier's claim commits to the aggregator vk and
+the claims; the aggregator's claim commits to the IxVM vk through the
+allowlist blob and to the `CheckEnv` claims; those name the
+content-addressed Lean constants. A 4 KB proof, checked in BN254
+arithmetic, says that a specific set of Lean constants typechecked under a
+specific kernel.
+
+**Where the time goes** (Nat.add_comm on the GPU, see the measurements):
+IxVM 1 s, aggregation cached, byte verifier 32 min (15 min partitioning on
+the CPU, 17 min for 113 GPU shard proofs at 9 s each), recursion 2.7 min,
+PLONK 2.8 min. Recursion cost is per shard, so the adapter width and the
+crossing count (next steps 1 and 2) are the levers on the byte verifier.
+
 ## Layers, bottom up
 
 ### 1. Field-generic Aiur and the KoalaBear profile
