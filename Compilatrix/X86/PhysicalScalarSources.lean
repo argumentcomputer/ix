@@ -25,6 +25,7 @@ def source (name : String) : Except String Coverage.Source := do
     | "project" => .var 1
     | "tag" => .app (.recur 1 #[]) (.var 1)
     | "pred" => .app (.recur 2 #[]) (.var 1)
+    | "unary-pred" => .app (.recur 2 #[]) (.var 0)
     | "choose" => .app (.app (.recur 3 #[]) (.var 0)) (.var 1)
     | "nested" => .letE true nat (.app (.recur 2 #[]) (.var 1))
         (.app (.app (.recur 3 #[]) (.var 1)) (.app (.recur 2 #[]) (.var 0)))
@@ -37,8 +38,9 @@ def source (name : String) : Except String Coverage.Source := do
         { isUnsafe := false, lvls := 0, cidx := 1, params := 0, fields := 1, typ := .all .many .shared nat nat }] },
       .recr tag, .recr pred, .recr choose,
       .defn {
-        kind := .defn, safety := .safe, lvls := 0, typ := binary
-        value := .lam .many nat (.lam .many nat body) }]
+        kind := .defn, safety := .safe, lvls := 0
+        typ := if name == "unary-pred" then .all .many .shared nat nat else binary
+        value := if name == "unary-pred" then .lam .many nat body else .lam .many nat (.lam .many nat body) }]
     sharing := #[], refs := #[ValidatedScalar.literalAddress 11, ValidatedScalar.literalAddress 22,
       ValidatedScalar.literalAddress 0], univs := #[.zero] }
   let entry ← Coverage.addressed {

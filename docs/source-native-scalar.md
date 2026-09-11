@@ -11,7 +11,8 @@ fixtures also pass the complete ordinary source compiler through checked
 physical IxIR₂. The native proof uses the retained erasure certificate and
 runtime application simulation; it does not select arbitrary physical IxIR₂ CFGs.
 The subsequent [physical scalar CFG slice](source-native-physical-scalar.md)
-provides that separate selection boundary for its declared fragment.
+provides that selection boundary and composes ordinary source application
+with physical invocation and ELF execution for its declared fragment.
 These are synthetic Ixon fixtures, not
 additional unchanged upstream programs.
 

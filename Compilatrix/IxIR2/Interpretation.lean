@@ -196,14 +196,15 @@ theorem runMachine_creditFree {context : Context} {first second : Interpretation
       context.declarations address = some (.fn definition) →
         CreditFree.function definition = true)
     {definition : Function} (free : CreditFree.function definition = true)
+    {arguments : Array RVal} {store : Store}
     {controlFuel heapFuel : Nat} {result : Result}
     (run : runMachine context first controlFuel
-      (initialMachine definition #[] heapFuel) = .ok result) :
+      (initialMachine definition arguments heapFuel store) = .ok result) :
     runMachine context second controlFuel
-      (initialMachine definition #[] heapFuel) = .ok result := by
+      (initialMachine definition arguments heapFuel store) = .ok result := by
   obtain ⟨count, budget, steps⟩ := runMachine_steps run
   have transported : Steps context second count
-      (initialMachine definition #[] heapFuel)
+      (initialMachine definition arguments heapFuel store)
       { store := result.store, heapFuel := result.heapRemaining,
         control := .halted result.value } :=
     stepsInterpretation declarations ⟨free, by simp [stackFunctions]⟩ steps
@@ -224,6 +225,25 @@ private theorem programDeclarations {source : Program}
   have entryFree := List.all_eq_true.mp free.2 entry (List.mem_of_find?_eq_some member)
   rw [value] at entryFree
   exact entryFree
+
+/-- Declared runtime functions inherit the complete baseline interpretation
+boundary, for arbitrary arguments and initial heaps. -/
+theorem runFunction_creditFree {source : Program}
+    (free : CreditFree.program source = true)
+    {schemas : Ixon.Owned → CtorId → Option CtorSchema}
+    {oracle : Ixon.Address → List RVal → Option RVal}
+    {address : Ixon.Address} {definition : Function}
+    (declared : (Context.ofProgram source schemas oracle).declarations address = some (.fn definition))
+    {arguments : Array RVal} {store : Store}
+    {first second : Interpretation} {controlFuel heapFuel : Nat} {result : Result}
+    (arity : arguments.size = definition.signature.params.size)
+    (nonempty : definition.blocks.isEmpty = false)
+    (run : runFunction (Context.ofProgram source schemas oracle) first definition
+      arguments controlFuel heapFuel store = .ok result) :
+    runFunction (Context.ofProgram source schemas oracle) second definition
+      arguments controlFuel heapFuel store = .ok result := by
+  rw [runFunction_eq_runMachine arity nonempty] at run ⊢
+  exact runMachine_creditFree (programDeclarations free) (programDeclarations free address definition declared) run
 
 /-- The complete credit-free main boundary. The same schemas and scalar
 oracle are used on both sides; the validated compiler additionally closes

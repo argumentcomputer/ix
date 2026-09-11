@@ -391,7 +391,7 @@ source/environment premises, independent checks, and remaining scope.
 | [Runtime native reversal](source-native-runtime.md) | Actual source-to-object execution for admitted caller heaps, exact-Word adapter, entry guards, frame/return-slot assumptions, and complete release; includes the separately checked counter-fold option. |
 | [Upstream native computations](source-native-upstream.md) | Closed source/physical/object translation validation with an explicit supplied-state call/stack execution certificate |
 | [Runtime scalar functions](source-native-scalar.md) | Checked erased-source attachment, universal arithmetic/control/call contracts, finite stack and overflow behavior; general physical CFG selection remains separate. |
-| [Physical scalar CFGs](source-native-physical-scalar.md) | Actual physical instruction/edge/call certificates, exported closure binding, universal physical-to-ELF preservation, finite stack, and unchanged scalar heaps; nine ordinary-basis axiom fences and 996 linked native calls. |
+| [Physical scalar CFGs](source-native-physical-scalar.md) | Ordinary runtime source application through actual physical instruction/edge/call certificates to ELF, exact closure reclamation, finite stack, and preserved scalar heaps; nine physical fences plus eleven source-bridge fences, the existing Blake3 compiler boundary, and 1,162 linked native calls. |
 | [Closed borrowed calls](source-borrow.md) | Finite source/baseline/target certificates, owned PAP wrappers, exact fallback, and measured RC/peak conditions |
 | [Runtime borrowing](source-borrow-runtime.md) | Structural source/function/continuation certificates, lender lifetime, owned-input reclamation, and explicit sharing/oracle/application premises |
 

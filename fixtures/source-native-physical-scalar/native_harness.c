@@ -13,7 +13,11 @@
 #error "STACK_DEPTH is required"
 #endif
 struct result { uint64_t value, status; };
+#if FAMILY == 6
+extern struct result compilatrix_scalar(uint64_t);
+#else
 extern struct result compilatrix_scalar(uint64_t, uint64_t);
+#endif
 extern struct result scalar_on_stack(void *, uint64_t, uint64_t);
 
 /* The bridge's saved RSP uses RBX, whose preservation is part of the ABI.
@@ -34,7 +38,8 @@ static struct result expected(uint64_t a, uint64_t b) {
     switch (FAMILY) {
     case 0: return (struct result){a, 0};
     case 1: return (struct result){a == 0 ? 11 : 22, 0};
-    case 2: return (struct result){a == 0 ? 0 : a - 1, 0};
+    case 2:
+    case 6: return (struct result){a == 0 ? 0 : a - 1, 0};
     case 3: return (struct result){a == 0 ? b : a - 1, 0};
     case 4: return (struct result){a < 2 ? 11 : 22, 0};
     case 5: return (struct result){a < 3 ? b : a - 3, 0};
@@ -53,7 +58,11 @@ __attribute__((noinline)) static void verify(uint64_t a, uint64_t b, void *top) 
     uintptr_t before, after;
     __asm__ volatile("" : "+r"(bx), "+r"(bp), "+r"(r12), "+r"(r13), "+r"(r14), "+r"(r15) : : "memory");
     __asm__ volatile("mov %%rsp,%0" : "=r"(before));
+#if FAMILY == 6
+    struct result actual = compilatrix_scalar(a);
+#else
     struct result actual = compilatrix_scalar(a, b);
+#endif
     __asm__ volatile("mov %%rsp,%0" : "=r"(after));
     __asm__ volatile("" : "+r"(bx), "+r"(bp), "+r"(r12), "+r"(r13), "+r"(r14), "+r"(r15) : : "memory");
     struct result wanted = expected(a, b);

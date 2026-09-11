@@ -1,7 +1,7 @@
 import Compilatrix.Sim
 import Compilatrix.X86.NatCallsSim
 import Compilatrix.X86.ScalarSourceObject
-import Compilatrix.X86.PhysicalScalarExport
+import Compilatrix.X86.PhysicalScalarSourceObject
 import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.NativeSim
 import Compilatrix.UniqueReuse.RuntimeNativeSim
@@ -7269,3 +7269,60 @@ object contracts. Source-indexed theorems retain the existing hash boundary. -/
 
 /-- info: 'Compilatrix.X86.PhysicalScalar.Compiled.physicalReturns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Compiled.physicalReturns
+
+/-! Runtime source application through actual physical CFG selection.
+Source-indexed contracts retain the existing hash boundary. -/
+
+/-- info: 'Compilatrix.Sim.apply_sim_projectionSafe_with_members' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sim.apply_sim_projectionSafe_with_members
+
+/-- info: 'Compilatrix.Sim.applyMany_sim_projectionSafe_inlineSharing' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sim.applyMany_sim_projectionSafe_inlineSharing
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.runtimeApply' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.runtimeApply
+
+/-- info: 'Compilatrix.Pipeline.ValidatedCompilation.runtimeTraceRenames' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedCompilation.runtimeTraceRenames
+
+/-- info: 'Compilatrix.IxIR2.Eval.runFunction_creditFree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Eval.runFunction_creditFree
+
+/-- info: 'Compilatrix.IxIR2.Pipeline.CompiledAttachment.successfulFunctionSimulation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.CompiledAttachment.successfulFunctionSimulation
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.closureStore.applied' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.closureStore.applied
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Exported.sourceFunction' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Exported.sourceFunction
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Exported.sourceRun' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Exported.sourceRun
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Exported.sourceReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Exported.sourceReturns
+
+/-- info: 'Compilatrix.X86.PhysicalScalar.Exported.sourceNatReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalScalar.Exported.sourceNatReturns

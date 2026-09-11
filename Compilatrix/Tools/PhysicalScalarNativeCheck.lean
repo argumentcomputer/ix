@@ -5,12 +5,12 @@ imports no source compiler, selector, encoder, or machine evaluator. -/
 namespace Compilatrix.Tools.PhysicalScalarNativeCheck
 open Lean Check UniqueCheck UpstreamNativeCheck
 
-def names : Array String := #["project", "tag", "pred", "choose", "helpers", "nested"]
+def names : Array String := #["project", "tag", "pred", "choose", "helpers", "nested", "unary-pred"]
 
 def expected (name : String) (a b : Nat) : Nat :=
   if name == "project" then a
   else if name == "tag" then (if a == 0 then 11 else 22)
-  else if name == "pred" then a - 1
+  else if name == "pred" || name == "unary-pred" then a - 1
   else if name == "choose" then (if a == 0 then b else a - 1)
   else if name == "helpers" then (if a < 2 then 11 else 22)
   else if a < 3 then b else a - 3
@@ -22,7 +22,7 @@ def declared (program : Json) (address : String) : IO Json := do
       return ← field (← field pair[1]! "fn") "definition"
   throw (IO.userError "physical scalar selected declaration is missing")
 
-def exportAddress (program : Json) : Nat → Json → IO String
+def exportAddress (program : Json) (arity : Nat) : Nat → Json → IO String
   | 0, _ => throw (IO.userError "physical scalar module export exceeds its depth")
   | fuel + 1, definition => do
     let signature ← field definition "signature"
@@ -36,7 +36,7 @@ def exportAddress (program : Json) : Nat → Json → IO String
     let term ← field block "terminator"
     if let .ok tail := term.getObjVal? "tailCall" then
       need (instructions.isEmpty && (← arrField tail "args").isEmpty) "physical scalar module export alias changed"
-      return ← exportAddress program fuel (← declared program (← strField tail "function"))
+      return ← exportAddress program arity fuel (← declared program (← strField tail "function"))
     else
       need (instructions.size == 1 && (← strField signature "result") == "shared") "physical scalar module export closure changed"
       let pap ← field instructions[0]! "papp"
@@ -46,16 +46,18 @@ def exportAddress (program : Json) : Nat → Json → IO String
       let address ← strField pap "function"
       let target ← declared program address
       let signature ← field target "signature"
-      need ((← field signature "papSafe") == toJson true && (← arrField signature "params").size == 2)
+      need ((← field signature "papSafe") == toJson true && (← arrField signature "params").size == arity)
         "physical scalar module export target signature changed"
       return address
 
 def inspect (row snapshot : Json) (bytes : ByteArray) : IO Unit := do
-  need ((← strField snapshot "format") == "compilatrix/source-native-physical-scalar/1" &&
+  need ((← strField snapshot "format") == "compilatrix/source-native-physical-scalar/2" &&
     (← strField snapshot "policy") == "physical-scalar-cfg/1" && (← field snapshot "row") == row)
     "physical scalar snapshot policy/row disagrees"
   let name ← strField row "name"
   need (names.contains name) "unknown physical scalar source family"
+  let arity ← number row "runtime_parameters"
+  need (arity == if name == "unary-pred" then 1 else 2) "physical scalar runtime arity disagrees"
   let text ← byteField snapshot "text"
   need (text.size == (← number row "text_bytes") && digest text == (← strField row "text_hash") &&
     bytes.size == (← number row "object_bytes")) "physical scalar text hash/size disagrees"
@@ -70,7 +72,7 @@ def inspect (row snapshot : Json) (bytes : ByteArray) : IO Unit := do
   need ((← strField (← field source "source") "root") == (← strField row "source_root") &&
     (← strField (← field source "ixir1") "root") == root) "physical scalar source/IR binding disagrees"
   let program ← field (← field source "ixir2_diagnostic") "program"
-  need ((← exportAddress program 32 (← field program "main")) == entry) "physical scalar module export binding disagrees"
+  need ((← exportAddress program arity 32 (← field program "main")) == entry) "physical scalar module export binding disagrees"
   let entries ← arrField snapshot "selected_entries"
   let functions ← number row "functions"
   need (entries.size == functions && entries.back? == some (toJson entry) &&
@@ -93,6 +95,11 @@ def inspect (row snapshot : Json) (bytes : ByteArray) : IO Unit := do
     let a ← number observation "left"
     let b ← number observation "right"
     need ((a,b) == inputs[index]!) "physical scalar boundary input inventory disagrees"
+    let args : Array Nat := if arity == 1 then #[a] else #[a, b]
+    need ((← field observation "source_arguments") == toJson args) "physical scalar source application arguments disagree"
+    need ((← field observation "application_heap") == Json.mkObj [("allocs", toJson (1 : Nat)), ("frees", toJson (1 : Nat)),
+      ("rcops", toJson (1 : Nat)), ("reuses", toJson (0 : Nat)), ("slots", toJson (1 : Nat)), ("live", toJson (0 : Nat))])
+      "physical scalar source application reclamation disagrees"
     need ((← number observation "value") == expected name a b && (← number observation "status") == 0 &&
       (← number observation "byte_steps") > 0 && (← number observation "physical_control") > 0 &&
       (← number observation "physical_heap_fuel") ≤ (← number observation "physical_control") &&
@@ -114,5 +121,14 @@ def regressions (row snapshot : Json) (bytes : ByteArray) : IO Unit := do
   rejects "physical root" "source/IR binding" (inspect row changed bytes)
   let changed ← replaceAt snapshot ["selected_entries"] (toJson ([] : List String))
   rejects "physical selection map" "selection map" (inspect row changed bytes)
+  let changedRow ← replaceAt row ["runtime_parameters"] (toJson (3 : Nat))
+  let changed ← replaceAt snapshot ["row"] changedRow
+  rejects "physical runtime arity" "runtime arity" (inspect changedRow changed bytes)
+  let first ← replaceAt observations[0]! ["source_arguments"] (toJson ([] : List Nat))
+  let changed ← replaceAt snapshot ["observations"] (toJson (observations.set! 0 first))
+  rejects "physical application arguments" "application arguments" (inspect row changed bytes)
+  let first ← replaceAt observations[0]! ["application_heap", "frees"] (toJson (0 : Nat))
+  let changed ← replaceAt snapshot ["observations"] (toJson (observations.set! 0 first))
+  rejects "physical application reclamation" "application reclamation" (inspect row changed bytes)
 
 end Compilatrix.Tools.PhysicalScalarNativeCheck

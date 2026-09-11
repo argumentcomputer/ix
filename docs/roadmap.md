@@ -31,7 +31,7 @@ can proceed independently when their prerequisites are available.
 
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
-| [N3: compositional native lowering](#n3-compositional-native-lowering) | bounded physical scalar slice delivered | Runtime arguments, Nat peeling, branches/joins, direct calls, universal physical-to-ELF contracts, and finite stack sufficiency. Broader heap/call forms and an open source-invocation bridge remain separate extensions. |
+| [N3: compositional native lowering](#n3-compositional-native-lowering) | bounded physical scalar source slice delivered | Runtime source application, closure reclamation, Nat peeling, branches/joins, direct calls, source-to-ELF contracts, and finite stack sufficiency. Allocating calls, captured exports, and broader recursion remain extensions. |
 | [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
 | [F1: finite heap and stack](#f1-finite-heap-and-stack) | active for scalar stack; heap extension next | N3 proves sufficient finite stack for nonrecursive scalar calls. General occupied-heap capacity and allocating calls remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | next | Before independent IxIR₂ persistence, cache keys, or self-hosted intermediate-root comparison. Land the strict codec and exact versioned preimages. |
@@ -73,11 +73,14 @@ It consumes checked erased source. The subsequent
 [physical scalar CFG slice](source-native-physical-scalar.md) delivers
 compositional selection and simulation of actual physical IxIR₂: moves,
 scalar ownership operations, Nat peeling, jumps/joins, and nonrecursive
-direct calls. Its universal theorem reaches actual ELF execution with a
-sufficient finite stack. Six source exports, four separate CFG shapes,
-114 source/IR/object runs, 76 additional stream runs, and 996 linked native
-calls exercise this boundary. A general open source-application bridge,
-allocating calls, captured closures, and broader recursion remain separate.
+direct calls. Its universal source theorem derives the actual closure
+application and physical invocation from successful runtime Ixon application,
+then reaches ELF execution with a sufficient finite stack and exact Nat
+result. The exported closure is fully reclaimed before the scalar body runs.
+Seven unary/binary source exports, four separate CFG shapes, 133
+source/application/object runs, 76 additional stream runs, and 1,162 linked
+native calls exercise this boundary. Allocating calls, captured exports,
+general occupied heaps, and broader recursion remain separate.
 
 Acceptance retained for extensions beyond the delivered scalar fragment:
 
@@ -399,7 +402,7 @@ belong in those references.
 | Static unique reuse | [Consuming list reversal](source-unique-reuse.md) for every accepted finite Nat list, with checked fallback, zero RC, reuse, and complete release. |
 | Native unique reversal | [Closed native lists](source-native-unique.md) of at most 64 exact Words. Production emission is certified; the family's original source interface ends at typed execution. |
 | N2 | [Runtime list reversal](source-native-runtime.md): one object pair, caller-built unique lists of at most 64 Words, entry validation, source-to-object preservation, and full release. |
-| N3 scalar slice | [Runtime scalar functions](source-native-scalar.md) with exact arithmetic, branches/joins, direct helpers, finite stack, and overflow behavior. General physical CFG selection remains next. |
+| N3 scalar slices | [Runtime scalar functions](source-native-scalar.md) with exact arithmetic and overflow behavior; [physical scalar CFGs](source-native-physical-scalar.md) with ordinary source application, closure reclamation, branches/joins, direct helpers, and finite-stack source-to-ELF proofs. |
 | E1/E2 | [Local instructions](x86-encoded-instructions.md) and [complete streams/ELF](x86-stream-objects.md), including calls, returns, provenance, entry selection, and checked PC32 relocation. Reference ISA, external bodies, and system loading remain explicit. |
 | R6 | [General credit refinement](credit-refinement.md) for both policies and every instruction, including prefixes and independent successful budgets. Complete reclamation requires explicit logical root ownership. |
 | B1/B2 | [Closed borrowed-call certificates](source-borrow.md) and [structural runtime borrowing](source-borrow-runtime.md), with lender preservation, two fewer RC operations, full reclamation, and unchanged peak. Recursive SCCs and native shared borrowing remain open. |

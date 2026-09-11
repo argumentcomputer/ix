@@ -419,7 +419,7 @@
         "ELFLink applies actual parsed PC32 relocations with signed overflow checks, proves the S+A-P following-instruction equation, revalidates complete linked text and proves named runtime CALL transfer",
         "the actual N2 source compiler reaches byte execution of its emitted object pair for every admitted runtime list",
         "N3's first scalar source slice composes checked erased-source application, exact Nat arithmetic, generic block/frame/call contracts and finite stack sufficiency into actual ELF execution for every admitted runtime Word pair",
-        "the physical-scalar-cfg/1 selector composes certificates for actual physical IxIR2 moves, scalar ownership operations, Nat peeling, joins and nonrecursive direct calls into successful-run preservation and total actual-ELF execution on a sufficient finite stack; the checked module export identifies the uncaptured runtime function, while a general open Ixon invocation bridge remains separate"
+        "the physical-scalar-cfg/1 selector composes certificates for actual physical IxIR2 moves, scalar ownership operations, Nat peeling, joins and nonrecursive direct calls into successful-run preservation and total actual-ELF execution on a sufficient finite stack; Exported.sourceNatReturns derives actual PAP application and physical invocation from successful runtime Ixon application through the ordinary compiler, proves complete exported-closure reclamation and exact Nat equality, and reaches emitted ELF execution for every accepted uncaptured unary/binary scalar export"
       ],
       "trust_basis": [
         "one total pattern-match case per typed instruction and terminator constructor",
@@ -432,7 +432,7 @@
         "E2 adds 23 public axiom fences, kernel-evaluated nested/reused-call safety examples and the integrity-pinned check-x86-streams gate; all production object emitters use Stream.encode and ELF.writeChecked",
         "C3 independently reconstructs two unchanged upstream closed Nat call objects and checks source/physical results, complete baseline release, exact Word representation, supplied-state call certificates and native ABI observations; broader N3/F1 contracts remain open",
         "the scalar source gate checks five full source compilations, 45 source inputs, 95 object executions, admission/conversion/capacity negatives, 25 artifact corruptions and 830 linked calls with ordinary and guarded stacks; fifteen axiom fences cover universal contracts rather than per-input native certificates",
-        "the physical scalar gate checks six full source compilations, 114 source/IR/object inputs including maximum Words, 76 additional CFG stream inputs covering joins and parallel transfers, 26 admission negatives, 30 export negatives, 3 conversion negatives, 11 stack negatives, 42 artifact corruptions and 996 linked calls with ordinary and guarded stacks; nine ordinary-basis axiom fences cover the generic physical-to-object contracts"
+        "the physical scalar gate checks seven full source compilations, 133 source/application/object inputs including maximum Words and exact closure reclamation, 76 additional CFG stream inputs covering joins and parallel transfers, 26 admission negatives, 35 export negatives, 3 conversion negatives, 13 stack negatives, 42 application boundary checks, 70 artifact corruptions and 1162 linked calls with ordinary and guarded stacks; nine ordinary-basis physical-to-object fences and eleven source-bridge fences retain the existing Blake3 compiler hash boundary without adding axioms or native interfaces"
       ],
       "tests": [
         "Compilatrix.X86.Encode.Examples arithmeticProgramBytesAccepted",
@@ -467,7 +467,11 @@
         "Compilatrix.X86.ObjectEval.run_safeSteps",
         "Compilatrix.X86.Scalar.Source.raw_evaluates",
         "Compilatrix.X86.Scalar.Source.Compiled.sourceReturns",
-        "scripts/CheckSourceNativeScalar.lean"
+        "scripts/CheckSourceNativeScalar.lean",
+        "Compilatrix.X86.PhysicalScalar.Compiled.physicalReturns",
+        "Compilatrix.X86.PhysicalScalar.Exported.sourceRun",
+        "Compilatrix.X86.PhysicalScalar.Exported.sourceNatReturns",
+        "scripts/CheckSourceNativePhysicalScalar.lean"
       ],
       "retirement": {
         "milestone": "E2 delivered for certified production outputs; unchecked API completeness remains outside that claim",
@@ -648,10 +652,10 @@
       "fixtures/source-unique-reuse/expected.json": "9e0dcc02e80cc48303bf28abd361cc1415e2b1f867503fa641d555d876dcd358",
       "Compilatrix/Tools/UpstreamNativeCheck.lean": "29ac9b3267e2a1901fab5bea9992ec829ecc767e0017e6c5328065d0ed570256",
       "Compilatrix/Tools/ScalarNativeCheck.lean": "85e5d843e8d67e865644eb552bbbebe4683abdc69a92a7bf31bde3f5e70eaef3",
-      "Compilatrix/Tools/PhysicalScalarNativeCheck.lean": "277e979db8fbd46a72292067f7cc0299a1fda12be5f2d6a4f8760fecf70cd7e5",
-      "scripts/CheckSourceNativePhysicalScalar.lean": "d3fb0fefcf0c2fbf75b079c6b7d6e08e24036bfc47e83791a6a0a5692a44103c",
-      "fixtures/source-native-physical-scalar/expected.json": "318a5c957cc60a6713903e5497ae2c7820a050b6e8eb9ba94803deb4f65c21a9",
-      "fixtures/source-native-physical-scalar/native_harness.c": "829720fe7c87e12399c74caaff21e0b91db918a86d6b019a69924af05e191075",
+      "Compilatrix/Tools/PhysicalScalarNativeCheck.lean": "0e56192fc25dddba796a26c441c2e4e56d40b56d00a276187e299a6282b9836e",
+      "scripts/CheckSourceNativePhysicalScalar.lean": "9bec3340a94bd6b2148323d4fd774a18fb162859d8a8b1dac2d31ff2ddaeade7",
+      "fixtures/source-native-physical-scalar/expected.json": "389d0930ba0ead9a7c77244373771154a8d440854db2adcec528530243ce6545",
+      "fixtures/source-native-physical-scalar/native_harness.c": "cde47b250496dcf69bef17e7afbe2a8e49b3806706efb338252bc7ebd0fc56a1",
       "scripts/CheckSourceNativeScalar.lean": "c8afa27d9cc631120d450f8d95ace0a43b55aab86f111c0b52496401ad64f612",
       "fixtures/source-native-scalar/expected.json": "2b745d79663b7371ddfb0741ce0dc46957f9d72eff23e0d8a116ad350f644e19",
       "fixtures/source-native-scalar/native_harness.c": "2649afceb5433daa266ed3bf14d49d79aa7576ad7c72368e593c55ff238012e7",

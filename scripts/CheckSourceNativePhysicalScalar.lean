@@ -35,7 +35,8 @@ def main (args : List String) : IO UInt32 := cli "source native physical scalar 
       let elf ← inspectElf readelf (first / objectName) "compilatrix_scalar"
       requireAll elf ["There are no relocations"] "physical scalar local-call object"
       let assembly ← disassemble objdump (first / objectName) "compilatrix_scalar"
-      requireAll assembly ["push", "rbp", "rdi", "rsi", "ret"] "physical scalar ABI instructions"
+      requireAll assembly ["push", "rbp", "rdi", "ret"] "physical scalar ABI instructions"
+      if (← number row "runtime_parameters") == 2 then requireAll assembly ["rsi"] "physical scalar second argument"
       if index > 0 then requireAll assembly ["call", "cmp", "je"] "physical scalar helpers/branches"
       if let some (cc, harness) := native then
         let executable := directory / s!"native-{name}"
@@ -55,4 +56,4 @@ def main (args : List String) : IO UInt32 := cli "source native physical scalar 
       need (((← output.readDir).toList.map (·.fileName) |>.mergeSort (· ≤ ·)) == inventory) "physical scalar complete file inventory drifted"
     for file in inventory do
       need ((← IO.FS.readBinFile (first / file)) == (← IO.FS.readBinFile (second / file))) s!"fresh physical scalar artifact differs: {file}"
-    IO.println "source native physical scalar check ok: six fresh source artifacts, 114 object runs, 76 CFG stream runs, 42 corruptions, native ABI and guarded stack checks"
+    IO.println "source native physical scalar check ok: seven fresh source artifacts, 133 source/application/object runs, 76 CFG stream runs, 70 corruptions, native ABI and guarded stack checks"

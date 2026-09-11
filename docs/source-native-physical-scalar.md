@@ -6,19 +6,27 @@ the existing validated source-to-IxIR₂ attachment, follows its exported
 uncaptured closure, and emits one certified scalar ELF object. Selection
 uses instruction, edge, and function contracts for every accepted CFG.
 
-The universal endpoint is
-[`Compiled.physicalReturns`](../Compilatrix/X86/PhysicalScalarObject.lean):
-every successful execution of the selected physical function on exact Word
-Nats agrees with execution of the emitted ELF on a sufficient finite stack.
-`Compiled.nativeReturns` also proves that every admitted Word input returns;
-it needs no physical or native execution certificate from the caller.
+The universal source endpoint is
+[`Exported.sourceNatReturns`](../Compilatrix/X86/PhysicalScalarSourceObject.lean):
+successful runtime Ixon application on one or two exact Word Nats implies
+execution of the emitted ELF with the same Nat result on a sufficient finite
+stack. It derives the compiled closure application, physical invocation, and
+native execution from the retained ordinary compilation. Source evaluation,
+sharing/oracle assumptions, argument arity, and the stated ABI conditions are
+its premises. It also proves complete reclamation of the source module's
+exported closure in IxIR₁.
+
+[`Compiled.physicalReturns`](../Compilatrix/X86/PhysicalScalarObject.lean)
+retains the corresponding successful physical-run theorem.
+`Compiled.nativeReturns` proves that every admitted Word input returns,
+independently of source or physical execution certificates.
 
 ## Fragment and representation
 
 | Boundary | Contract |
 | --- | --- |
 | Runtime values | Unsigned 64-bit Words representing exactly `IxIR₂.RVal.lit (.nat n)`, with `0 ≤ n < 2^64` |
-| Signatures | Zero, one, or two scalar parameters and a scalar Nat result; source exports in the gate have two parameters |
+| Signatures | Zero, one, or two scalar parameters and a scalar Nat result; uncaptured source exports have one or two parameters |
 | Instructions | `move`, `retainShared`, `releaseShared`, `dropUnique`, and direct `call` |
 | Terminators | `ret`, `jump`, direct `tailCall`, and `switchValue` with Nat peeling and no constructor alternatives |
 | Edges | Arbitrary simultaneous value-argument substitutions, including joins and permutations; successor edges prepend the predecessor Nat |
@@ -28,8 +36,12 @@ it needs no physical or native execution certificate from the caller.
 Scalar ownership operations preserve the whole physical store. Release/drop
 consume traversal fuel in the reference evaluator, even for scalar leaves;
 the proof constructs that fuel and preserves its unused suffix. The native
-invocation needs no heap capacity. The module's separate initialization
-returns one ordinary shared PAP identifying the uncaptured entry function.
+invocation needs no heap capacity. Source module initialization returns one
+ordinary shared PAP identifying the uncaptured entry function. Saturated
+IxIR₁ application reclaims it before the scalar body runs: one dead slot,
+one allocation, one free, one RC operation, zero reuse, and zero live nodes.
+The physical body preserves this exact heap and its counters. The native
+export enters the scalar body directly.
 
 The low-level selector proves runtime simulation. The source attachment also
 supplies the existing IxIR₂ capability validation. Other declarations may be
@@ -70,6 +82,7 @@ struct scalar_result compilatrix_scalar(uint64_t left, uint64_t right);
 ```
 
 Arguments use RDI/RSI; RAX contains the exact result and RDX is zero.
+The unary export takes one `uint64_t` argument in RDI; RSI is unrestricted.
 `Scalar.Stack` requires an aligned, nonwrapping, readable/writable reservation
 of `272 * D` bytes, where `D > selected entry index`. This includes the caller's
 eight-byte return slot; `272 * D - 8` bytes lie below entry RSP. The bound is
@@ -91,18 +104,33 @@ induction over earlier callees. `Runs.agrees` compares the constructed run with
 any successful physical run, even with different evaluator budgets.
 
 `ExportPath.runMain` proves that the actual module entry returns the
-uncaptured closure selected for the runtime ABI. `Compiled.physicalReturns`
-then composes physical agreement with the existing scalar frame/call,
-finite-stack, instruction-stream, and complete-object proofs. Nine axiom
-fences retain the ordinary `propext`, `Classical.choice`, and `Quot.sound`
-basis; this extension adds no axiom or native interface.
+uncaptured closure selected for the runtime ABI. `Exported.sourceFunction`
+uses the ordinary source-to-physical theorem to identify that same closure
+in the source value relation. The variadic source-application simulation
+retains projection-safe IxIR₀ traces across mutual-block readdressing.
+`ValidatedCompilation.runtimeApply` derives progress, value agreement, and
+ownership from the retained IxIR₁ lowering run. `closureStore.applied` exposes
+the actual PAP dispatch and reclamation prefix.
 
-The retained source attachment binds selection to the ordinary compiler's
-physical output. This new universal theorem starts at a **physical function
-invocation**; a general open Ixon-application-to-physical-invocation bridge is
-not claimed here. Source agreement for the six fixtures is independently
-executed across all stages on every boundary pair. The earlier arithmetic
-attachment retains its own universal source-application theorem.
+`CompiledAttachment.successfulFunctionSimulation` then derives physical
+function execution through the existing structured lowering trace worker.
+The source endpoint supplies its ownership, runtime invariants, and reachable
+heap provenance internally. `Compiled.physicalReturns` composes that run
+with scalar frame/call, finite-stack, instruction-stream, and complete-object
+proofs. `Exported.sourceReturns` retains the general source value relation;
+`Exported.sourceNatReturns` specializes it to `word.toNat = sourceNat`, with
+no truncation. These theorems quantify over every accepted uncaptured scalar
+source export and every successful admitted application, independently of
+the fixture families. Source termination itself is a premise.
+
+Nine physical-to-object axiom fences retain the ordinary `propext`,
+`Classical.choice`, and `Quot.sound` basis. Eleven further fences cover the
+source application bridge. The complete source-compiler endpoints also use
+the existing Blake3 hash `native_decide` boundary, as the upstream compiler
+theorems do. This extension adds no axiom or native interface. Captured
+exports, allocating bodies, broader recursion, and general occupied heaps
+remain outside the fragment. The earlier arithmetic attachment retains its
+own universal source-application theorem.
 
 Objects use the actual IxIR₁ graph root with lowering version **6**, policy
 version **1**, and policy name `physical-scalar-cfg/1`. Physical JSON is a full
@@ -127,23 +155,34 @@ lake build source-native-physical-scalar check-source-native-physical-scalar
 | `choose` | 2 / 4 | 308 / 1,168 | 544 |
 | `helpers` | 3 / 7 | 551 / 1,408 | 816 |
 | `nested` | 3 / 7 | 601 / 1,464 | 816 |
+| `unary-pred` | 2 / 4 | 300 / 1,160 | 544 |
 
 The synthetic sources use nonrecursive Nat recursors and direct mutual-member
-references. The source compiler supplies every intermediate graph. All 114
-boundary inputs run in Ixon, raw IxIR₀, addressed IxIR₁, logical and physical
-IxIR₂, typed x86, and the actual ELF interpreter, including maximum Words.
+references. The source compiler supplies every intermediate graph. All 133
+boundary inputs run through Ixon `applyMany`, raw IxIR₀ application,
+addressed IxIR₁ module initialization and PAP application, logical and
+physical IxIR₂ invocation, typed x86, and the actual ELF interpreter,
+including maximum Words. Every application checks complete closure
+reclamation and the physical body's preservation of the resulting heap.
+The unary case supplies one source argument and checks a one-argument C call;
+the varied second register remains unconstrained. The six existing objects
+remain byte-identical to the original physical CFG slice.
 Four separate physical CFG cases exercise joins, simultaneous swaps,
 nonmonotonic block ordering, and a nullary helper on 76 more inputs.
 
-The gate rejects 26 malformed/oversized CFGs, 30 invalid exports, three
-oversized input vectors, and 11 insufficient/unwritable stack cases. An
-independent checker verifies source/IR/export bindings, selection maps, ELF
-fields, text hashes, provenance, observations, and complete fresh artifact
-inventories; 42 deliberate corruptions must reject. Two fresh generations of
-all 13 files must be byte-identical.
+The gate rejects 26 malformed/oversized CFGs, 35 invalid exports, three
+oversized input vectors, and 13 insufficient/unwritable stack cases. Another
+42 application boundary checks cover source/IxIR₁ partial application and
+completion, excess application rejection, and missing/excess physical
+arguments. An independent checker verifies source/IR/export bindings,
+selection maps, ELF fields, text hashes, provenance, observations, and complete fresh artifact
+inventories; 70 deliberate corruptions must reject, including changed
+argument arity, runtime source arguments, and reclamation counts. Two fresh
+generations of all 15 files must be byte-identical. Evidence format version
+2 records source arities, actual application arguments, and exact heap counts.
 
 On x86-64 Linux, an independent C oracle checks 19 boundary and 64
 deterministic random pairs per object on normal and guarded finite stacks:
-**996 linked native calls**. The Nix check is `source-native-physical-scalar`;
+**1,162 linked native calls**. The Nix check is `source-native-physical-scalar`;
 other configured platforms run artifact checks without claiming x86 execution.
 These are correctness checks, not a performance experiment.

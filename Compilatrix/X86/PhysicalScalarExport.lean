@@ -30,6 +30,24 @@ theorem ExportPath.nullary {program address target definition} (path : ExportPat
 theorem ExportPath.nonempty {program address target definition} (path : ExportPath program address target definition) :
     definition.blocks.isEmpty = false := by cases path <;> simp_all
 
+theorem ExportPath.declared {program address target definition} (path : ExportPath program address target definition) :
+    lookup program address = some (.fn target) := by
+  induction path with
+  | closure _ _ _ declared _ _ => exact declared
+  | tail _ _ _ _ ih => exact ih
+
+theorem ExportPath.papSafe {program address target definition} (path : ExportPath program address target definition) :
+    target.signature.papSafe = true := by
+  induction path with
+  | closure _ _ _ _ safe _ => exact safe
+  | tail _ _ _ _ ih => exact ih
+
+theorem ExportPath.positive {program address target definition} (path : ExportPath program address target definition) :
+    0 < target.signature.params.size := by
+  induction path with
+  | closure _ _ _ _ _ positive => exact positive
+  | tail _ _ _ _ ih => exact ih
+
 def closureStore (address : Ixon.Address) (target : IxIR2.Function) : Store :=
   (({} : Store).allocNode .shared (.papN address target.signature.params.size #[])).1
 
