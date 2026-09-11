@@ -299,6 +299,8 @@ lean_ffi::lean_inductive! {
   LeanAiurShardResult    [ { num_obj: 3 } ];
   // claimBytes, proof, peakBytes, suggestedParts, workerBytes
   LeanAiurShardProveResult [ { num_obj: 5 } ];
+  // claimBytes, proofAddr, peakBytes
+  LeanAiurShardProvenAhead [ { num_obj: 3 } ];
   // claimBytes, constantCount
   LeanAiurAggregateExpected [ { num_obj: 2 } ];
 

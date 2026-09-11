@@ -395,6 +395,47 @@ def proveEnvDistributed (system : @& AiurSystem)
   proveEnvDistributed' system verifyIdx checkOwnedIdx envHandle blob maxCells
     planOnly execOnly execJobs maxRamBytes measuredBlob
 
+/-- One shard claim proven by `shardProveAheadWithEnv`: the claim's wire
+    bytes, the persisted proof wrapper's store address (hex) and the
+    heaviest trace shard's projected peak. -/
+structure ShardProvenAhead where
+  claimBytes : ByteArray
+  proofAddr : String
+  peakBytes : Nat
+
+@[extern "rs_aiur_system_shard_prove_ahead_with_env"]
+private opaque shardProveAheadWithEnv' : @& AiurSystem →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& ByteArray → @& Nat →
+  @& Nat → @& Nat → @& String → @& String →
+  Except String (Array ShardProvenAhead)
+
+/-- Several shard claims proven in order, each from one execution planned
+    as trace shards within `maxRamBytes`, with the executions running
+    ahead of the prover on threads — `execJobs` at once (`0`: one per
+    core), so peak host memory is the prover's budget plus the records in
+    flight. Every proof and its claim are written to the store under
+    `storeDir` and, unless `indexDir` is empty, recorded in the shard-proof
+    index as soon as they exist, so a killed run keeps what it finished.
+    `labels` are the shards' manifest indices, for the lines printed. -/
+def shardProveAheadWithEnv (system : @& AiurSystem)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (owners : Array (Array Address)) (labels : Array Nat) (maxRamBytes : Nat)
+  (retention : ShardRetention) (execJobs : Nat) (storeDir indexDir : String) :
+    Except String (Array ShardProvenAhead) :=
+  let u32le (n : Nat) : ByteArray :=
+    ⟨#[(n &&& 0xFF).toUInt8, ((n >>> 8) &&& 0xFF).toUInt8,
+      ((n >>> 16) &&& 0xFF).toUInt8, ((n >>> 24) &&& 0xFF).toUInt8]⟩
+  let header : ByteArray :=
+    owners.foldl (fun (acc : ByteArray) (o : Array Address) => acc ++ u32le o.size)
+      (u32le owners.size)
+  let blob : ByteArray :=
+    owners.foldl (fun (acc : ByteArray) (o : Array Address) =>
+      o.foldl (fun (acc : ByteArray) (a : Address) => acc ++ a.hash) acc) header
+  let labelsBlob : ByteArray :=
+    labels.foldl (fun (acc : ByteArray) (n : Nat) => acc ++ u32le n) ByteArray.empty
+  shardProveAheadWithEnv' system funIdx envHandle blob labelsBlob maxRamBytes
+    retention.code execJobs storeDir indexDir
+
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit

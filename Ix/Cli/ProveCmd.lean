@@ -401,6 +401,51 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let mut runs : Array (Nat × Array (Array Address × Nat)) := #[]
       let mut proven : Array (Array Address × Nat) := #[]
       let mut failed : Array String := #[]
+      -- Trace-sharded claims prove as a pipeline: the shards execute ahead
+      -- of the prover (`--exec-jobs` at once) and every proof is persisted
+      -- and indexed as it lands. Leaves with a verified proof in the index
+      -- are reused first under --skip-proven.
+      if traceShards && !execOnly then
+        let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+        let execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
+        let mut todo : Array Nat := #[]
+        for k in selected do
+          let mut reused := false
+          if skipProven then
+            if let some dir := indexDir? then
+              if let .ok (claim, _) :=
+                  IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv ownedPer[k]! then
+                if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof
+                    aiurSystem compiled dir claim then
+                  let digest := Address.blake3 (Ix.Claim.ser claim)
+                  IO.println s!"[shard {k}] verified proof of claim {digest} in \
+                    the shard-proof index — reused"
+                  IO.println s!"claim {digest}"
+                  IO.println (toString addr)
+                  runs := runs.push (k, #[(shards[k]!, 0)])
+                  reused := true
+          if !reused then todo := todo.push k
+        let storeDir ← StoreIO.toIO Store.storeDir
+        let indexDir := match indexDir? with
+          | some dir => dir.toString
+          | none => ""
+        IO.println s!"Proving {todo.size} shard(s) as trace-shard batches, \
+          executions ahead of the prover"
+        (← IO.getStdout).flush
+        match aiurSystem.shardProveAheadWithEnv funIdx envHandle
+            (todo.map (ownedPer[·]!)) todo maxRamBytes retention execJobs
+            storeDir.toString indexDir with
+        | .error e =>
+          IO.eprintln s!"[prove] FAILED: {e} (finished proofs are in the \
+            store and the shard-proof index; rerun with --skip-proven)"
+          return 1
+        | .ok rows =>
+          for (k, row) in todo.zip rows do
+            runs := runs.push (k, #[(shards[k]!, row.peakBytes)])
+        let ordered := runs.qsort (·.1 < ·.1)
+        reportPartition (ordered.flatMap (·.2)) selected.size
+        emitRefined envHandle manifest shards.size ordered 0
+        return 0
       for k in selected do
         match ← runShardProveNative envHandle ixonEnv shards ownedPer k
             aiurSystem compiled maxRamBytes execOnly traceShards retention
@@ -450,7 +495,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
-    "exec-jobs" : Nat;  "With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
+    "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
     "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."

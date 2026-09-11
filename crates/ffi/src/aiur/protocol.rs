@@ -1,3 +1,4 @@
+use ix_common::address::Address;
 use multi_stark::{
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   types::{CommitmentParameters, FriParameters},
@@ -16,7 +17,7 @@ use crate::{
     LeanAiurCircuitShape, LeanAiurCommitmentParameters, LeanAiurExecuteResult,
     LeanAiurFriParameters, LeanAiurIOKeyInfo, LeanAiurProveEnvResult,
     LeanAiurProveResult, LeanAiurQueryCount, LeanAiurShardProveResult,
-    LeanAiurShardResult, LeanAiurToplevel,
+    LeanAiurShardProvenAhead, LeanAiurShardResult, LeanAiurToplevel,
   },
 };
 use aiur::{
@@ -456,7 +457,7 @@ fn build_prove_env_result(
 /// Helper: decode a 32-byte address from a `LeanByteArray`.
 fn decode_addr(
   addr_bytes: &LeanByteArray<LeanBorrowed<'_>>,
-) -> Result<ix_common::address::Address, String> {
+) -> Result<Address, String> {
   let slice = addr_bytes.as_bytes();
   if slice.len() != 32 {
     return Err(format!(
@@ -464,16 +465,13 @@ fn decode_addr(
       slice.len()
     ));
   }
-  Ok(
-    ix_common::address::Address::from_slice(slice)
-      .expect("32-byte slice already length-checked"),
-  )
+  Ok(Address::from_slice(slice).expect("32-byte slice already length-checked"))
 }
 
 /// Helper: decode a flat 32-byte-block owned blob into `Vec<Address>`.
 fn decode_owned_blob(
   owned_blob: &LeanByteArray<LeanBorrowed<'_>>,
-) -> Result<Vec<ix_common::address::Address>, String> {
+) -> Result<Vec<Address>, String> {
   let bytes = owned_blob.as_bytes();
   if !bytes.len().is_multiple_of(32) {
     return Err(format!(
@@ -486,7 +484,7 @@ fn decode_owned_blob(
       .as_chunks::<32>()
       .0
       .iter()
-      .map(|c| ix_common::address::Address::from_slice(c).unwrap())
+      .map(|c| Address::from_slice(c).unwrap())
       .collect(),
   )
 }
@@ -663,7 +661,7 @@ extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
 /// batch, the manifest emit).
 pub(crate) fn decode_addr_lists(
   bytes: &[u8],
-) -> Result<Vec<Vec<ix_common::address::Address>>, String> {
+) -> Result<Vec<Vec<Address>>, String> {
   let mut lists = Vec::new();
   let mut off = 0usize;
   while off < bytes.len() {
@@ -676,9 +674,7 @@ pub(crate) fn decode_addr_lists(
     if off + n * 32 > bytes.len() {
       return Err("addr lists: truncated addresses".into());
     }
-    lists.push(
-      ix_common::address::Address::unpack(&bytes[off..off + n * 32]).collect(),
-    );
+    lists.push(Address::unpack(&bytes[off..off + n * 32]).collect());
     off += n * 32;
   }
   Ok(lists)
@@ -1156,6 +1152,218 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   })
 }
 
+/// `AiurSystem.shardProveAheadWithEnv`: several shard claims proven in
+/// manifest order, each from one execution, with the executions running
+/// ahead of the prover on threads — `exec_jobs` at once (`0`: one per
+/// core). `owners_blob` is the layout of [`decode_owners_blob`], one
+/// owned set per shard; `labels_blob` holds each shard's manifest index
+/// as a `u32`, for the lines it prints. Every proof is planned as trace
+/// shards within `max_ram_bytes` (`0`: detect). A finished proof and its
+/// claim are written to the store under `store_dir` and, unless
+/// `index_dir` is empty, recorded in the shard-proof index under the
+/// claim digest before the next shard is proven, so a killed run keeps
+/// every proof it finished. Returns, per shard: the claim's wire bytes,
+/// the proof wrapper's store address (hex) and the heaviest shard's
+/// projected peak.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  owners_blob: LeanByteArray<LeanBorrowed<'_>>,
+  labels_blob: LeanByteArray<LeanBorrowed<'_>>,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
+  retention: LeanNat<LeanBorrowed<'_>>,
+  exec_jobs: LeanNat<LeanBorrowed<'_>>,
+  store_dir: LeanString<LeanBorrowed<'_>>,
+  index_dir: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind_except("AiurSystem.shardProveAheadWithEnv", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+    let exec_jobs = lean_unbox_nat_as_usize(exec_jobs.inner());
+    let retention = match lean_unbox_nat_as_usize(retention.inner()) {
+      1 => Some(Retention::Retain),
+      2 => Some(Retention::Regenerate),
+      _ => None,
+    };
+    let owners = match decode_owners_blob(&owners_blob) {
+      Ok(owners) => owners,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let labels: Vec<u32> = labels_blob
+      .as_bytes()
+      .chunks_exact(4)
+      .map(|c| u32::from_le_bytes(c.try_into().expect("4 bytes")))
+      .collect();
+    if labels.len() != owners.len() {
+      return LeanExcept::error_string("one label per shard expected");
+    }
+    let index_dir: String = index_dir.as_str().to_owned();
+    let store_dir: String = store_dir.as_str().to_owned();
+    let index_path = std::path::PathBuf::from(&index_dir);
+    let store_path = std::path::PathBuf::from(&store_dir);
+    let proven = prove_shards_ahead(
+      aiur_system_obj.get(),
+      &env_handle.get().env,
+      fun_idx,
+      &owners,
+      &labels,
+      max_ram_bytes,
+      retention,
+      exec_jobs,
+      &store_path,
+      (!index_dir.is_empty()).then_some(index_path.as_path()),
+    );
+    let proven = match proven {
+      Ok(proven) => proven,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let arr = LeanArray::alloc(proven.len());
+    for (i, (claim_bytes, address, peak)) in proven.iter().enumerate() {
+      let row = LeanAiurShardProvenAhead::alloc(0);
+      row.set_obj(0, LeanByteArray::from_bytes(claim_bytes));
+      row.set_obj(1, LeanString::new(&address.hex()));
+      row.set_obj(2, LeanOwned::box_usize(*peak));
+      arr.set(i, row);
+    }
+    LeanExcept::ok(arr)
+  })
+}
+
+/// One shard's execution, planned to trace shards within the budget and
+/// ready to prove.
+type Prepared = (ixon::Claim, Vec<u8>, aiur::synthesis::PreparedProve);
+
+/// Proves `owners`' shard claims in order with executions running ahead:
+/// shard `k + 1..` execute on threads (`exec_jobs` at once) while shard
+/// `k` proves, and each proof is persisted as soon as it exists. Peak host
+/// memory is the prover's budget plus the records in flight, so
+/// `exec_jobs` is the memory knob; the cgroup cap the run goes under is
+/// the backstop.
+#[allow(clippy::too_many_arguments)]
+fn prove_shards_ahead(
+  system: &AiurSystem,
+  env: &ixon::env::Env,
+  fun_idx: usize,
+  owners: &[Vec<Address>],
+  labels: &[u32],
+  max_ram_bytes: usize,
+  retention: Option<Retention>,
+  exec_jobs: usize,
+  store_dir: &std::path::Path,
+  index_dir: Option<&std::path::Path>,
+) -> Result<Vec<(Vec<u8>, Address, usize)>, String> {
+  let count = owners.len();
+  let cores = std::thread::available_parallelism().map_or(1, usize::from);
+  let jobs =
+    if exec_jobs == 0 { cores } else { exec_jobs }.clamp(1, count.max(1));
+  let budget =
+    if max_ram_bytes > 0 { Some(max_ram_bytes) } else { detected_ram_budget() };
+  eprintln!(
+    "[prove-ahead] {count} shards, {jobs} executing at a time ahead of the prover"
+  );
+  let run_started = std::time::Instant::now();
+  let prepare = |k: usize| -> Result<Prepared, String> {
+    let label = labels[k];
+    let started = std::time::Instant::now();
+    let (claim, input, mut io) =
+      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+        env, &owners[k],
+      )
+      .map_err(|e| format!("shard {label}: witness build: {e}"))?;
+    let prepared = system.prepare_ixvm_within_budget(
+      fun_idx,
+      &input,
+      &mut io,
+      |toplevel, fun_idx, input, io_buffer| {
+        ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+          toplevel, fun_idx, input, io_buffer,
+        )
+      },
+      budget,
+      true,
+      retention,
+    );
+    let prepared = match prepared {
+      Ok(prepared) => prepared,
+      Err(GatedProve::Split { peak, .. }) => {
+        return Err(format!(
+          "shard {label}: no trace-shard count fits the budget (whole-execution peak {} B) — raise --max-ram",
+          peak
+        ));
+      },
+      Err(_) => {
+        return Err(format!("shard {label}: execution did not prepare a proof"));
+      },
+    };
+    let mut claim_bytes = Vec::new();
+    claim.put(&mut claim_bytes);
+    eprintln!(
+      "[prove-ahead] shard {label}: executed in {:.1}s (at +{:.1}s), {} trace shards, {} B record",
+      started.elapsed().as_secs_f64(),
+      run_started.elapsed().as_secs_f64(),
+      prepared.plan.num_shards(),
+      aiur::execute::record_retained_bytes(&prepared.record)
+    );
+    Ok((claim, claim_bytes, prepared))
+  };
+  let mut proven = Vec::with_capacity(count);
+  std::thread::scope(|scope| -> Result<(), String> {
+    let mut in_flight = std::collections::VecDeque::new();
+    let mut next = 0;
+    let fill = |in_flight: &mut std::collections::VecDeque<_>,
+                next: &mut usize| {
+      while *next < count && in_flight.len() < jobs {
+        let k = *next;
+        in_flight.push_back(scope.spawn(move || prepare(k)));
+        *next += 1;
+      }
+    };
+    for k in 0..count {
+      fill(&mut in_flight, &mut next);
+      let handle = in_flight.pop_front().expect("shard k is in flight");
+      let (claim, claim_bytes, prepared) = handle
+        .join()
+        .map_err(|_| format!("shard {}: execution panicked", labels[k]))??;
+      // The next execution starts before this proof does.
+      fill(&mut in_flight, &mut next);
+      let label = labels[k];
+      let started = std::time::Instant::now();
+      let (_, proof, peak) = system.prove_prepared(prepared);
+      let proof_bytes = proof
+        .to_bytes()
+        .map_err(|e| format!("shard {label}: proof serialization: {e}"))?;
+      let wrapper = ixon::Proof::new(claim, proof_bytes);
+      let mut wrapper_bytes = Vec::new();
+      wrapper.put(&mut wrapper_bytes);
+      super::aggregate::write_store(store_dir, &claim_bytes)?;
+      let address = super::aggregate::write_store(store_dir, &wrapper_bytes)?;
+      let digest = Address::hash(&claim_bytes);
+      if let Some(dir) = index_dir {
+        let temporary = dir.join(format!("{}.tmp", digest.hex()));
+        std::fs::write(&temporary, format!("{}\n", address.hex()))
+          .and_then(|()| std::fs::rename(&temporary, dir.join(digest.hex())))
+          .map_err(|e| format!("shard {label}: shard-proof index: {e}"))?;
+      }
+      eprintln!(
+        "[prove-ahead] shard {label}: proven in {:.1}s (at +{:.1}s), heaviest shard peak {} B",
+        started.elapsed().as_secs_f64(),
+        run_started.elapsed().as_secs_f64(),
+        peak
+      );
+      println!("claim {}", digest.hex());
+      println!("{}", address.hex());
+      proven.push((claim_bytes, address, peak));
+    }
+    Ok(())
+  })?;
+  Ok(proven)
+}
+
 /// `AiurSystem.proveEnvDistributed`: the whole environment as ONE claim,
 /// `CheckEnv(root, none)`, proven from several worker records
 /// (trace-sharding design §13.3). `owners_blob` is a `u32` worker count,
@@ -1248,7 +1456,7 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
 /// `rs_aiur_system_prove_env_distributed`).
 fn decode_owners_blob(
   blob: &LeanByteArray<LeanBorrowed<'_>>,
-) -> Result<Vec<Vec<ix_common::address::Address>>, String> {
+) -> Result<Vec<Vec<Address>>, String> {
   let bytes = blob.as_bytes();
   let word = |at: usize| -> Result<usize, String> {
     let chunk: [u8; 4] = bytes
@@ -1272,10 +1480,7 @@ fn decode_owners_blob(
         .as_chunks::<32>()
         .0
         .iter()
-        .map(|c| {
-          ix_common::address::Address::from_slice(c)
-            .expect("32-byte chunk is an address")
-        })
+        .map(|c| Address::from_slice(c).expect("32-byte chunk is an address"))
         .collect(),
     );
     at = end;
@@ -1379,7 +1584,7 @@ fn prove_env_distributed(
   env: &ixon::Env,
   verify_idx: usize,
   check_owned_idx: usize,
-  owners: &[Vec<ix_common::address::Address>],
+  owners: &[Vec<Address>],
   max_cells: usize,
   plan_only: bool,
   exec_only: bool,

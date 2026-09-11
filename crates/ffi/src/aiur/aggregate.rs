@@ -991,7 +991,10 @@ fn read_store(root: &Path, address: &Address) -> Result<Vec<u8>, String> {
   fs::read(&path).map_err(|error| format!("read {}: {error}", path.display()))
 }
 
-fn write_store(root: &Path, bytes: &[u8]) -> Result<Address, String> {
+pub(crate) fn write_store(
+  root: &Path,
+  bytes: &[u8],
+) -> Result<Address, String> {
   let address = Address::hash(bytes);
   let path = store_path(root, &address);
   let parent = path.parent().ok_or("store path has no parent")?;
