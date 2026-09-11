@@ -1,5 +1,9 @@
 # Trace-sharded Aiur on GPU: measured ladder and status
 
+For the current code pins, queue22 evidence, and Mathlib run sequence, read
+[the pre-Mathlib handoff](aiur-gpu-mathlib-handoff.md). This page preserves the
+earlier measurement ladder as well as the later results.
+
 2026-09-11. Bases: ix `sb/aiur-trace-sharding-gpu` (on `sb/aiur-distributed-execution`
 e3a29720) and multi-stark `sb/trace-sharding-gpu` (on `sb/trace-sharding` 9322ec0,
 fork at `~/multi-stark-ts`; ix `Cargo.toml` carries an uncommitted `[patch]` to it).
@@ -169,11 +173,12 @@ the second row carefully: `--max-ram 100` was exceeded by ~80 GiB, because
 on a cold start all eight workers are admitted at once (`--exec-jobs`
 defaults to the core count) before any record is measured, so the budget
 had nothing left to gate and the retained records were what fit the box,
-not the flag. This is the accepted trade: `--exec-jobs` bounds the first
-wave, `--max-ram` bounds admission and retention once sizes are known, the
-cgroup cap is the hard limit, and the recipe halves `--exec-jobs` on a
-kill. For Mathlib set `--exec-jobs` from the chunk sizes the manifest was
-cut for, and run under the cap.
+not the flag. `--exec-jobs` bounds the first wave, the cgroup cap is the
+hard limit, and the recipe halves `--exec-jobs` on a kill. What the flag
+does once sizes are known is below (the budget trim): it releases the
+over-budget part of that first wave instead of carrying it through the
+barrier. For Mathlib set `--exec-jobs` from the chunk sizes the manifest
+was cut for, and run under the cap.
 
 ## Stage 2 on the device (range tree over the 56-shard batch)
 
@@ -258,8 +263,12 @@ Cost on Init: single record 9:16 (9:11 before), records +0.2 % queries.
 
 Two multi-stark CUDA commits (single-chunk Blake3 rows hashed one thread
 per message; wide NTTs fused at any height with fewer LDE memory passes)
-measured end to end on Init, same inputs and flags as the rows above, both
-stages verified, proof hashes unchanged:
+measured end to end on Init in queue22, with both stages verified. Stage 1's
+batch hash matches the namespace-kernel baseline. The older Stage 2
+range-28 comparison used a different batch and ix binary, and its root hash
+differs; that row is a historical comparison rather than an isolated kernel
+A/B. Exact logs and fingerprints are in the
+[pre-Mathlib handoff](aiur-gpu-mathlib-handoff.md).
 
 | | before (namespace kernel) | after |
 |---|---|---|
@@ -284,6 +293,19 @@ proves) is unchanged and is now the largest fixed cost in Stage 1.
 Five findings from the last review, all in place before Mathlib Stage 1
 restarts:
 
+- **Retained records are trimmed to the budget.** Measured on Init at
+  `--max-ram 100` before the trim: the cold wave left 119 GB of records
+  resident against a 77 GiB budget, nothing was ever released (eviction
+  only served admission, and nothing needed admitting), no round-two
+  execution ran, and the run peaked at 175 GiB, the same as at
+  `--max-ram 200`. Now every fill trims what is retained to the budget,
+  furthest next use first; the released records re-execute for round two.
+  Measured (`--max-ram 100`, trim in place): peak 152 GiB after the cold
+  wave, but 9:42, then 9:04 with the RSS gate removed, because a released
+  first-round record is only regenerated on demand (`needs` treats an
+  executed-then-released worker as needing nothing), one at a time on the
+  critical path. Not fixed: the env-shard path below has no barrier and
+  none of this machinery; the trim and gate removal are left uncommitted.
 - **Retained records made room for required executions.** The driver
   refused to run an execution ahead when retained round-two records filled
   the budget, but a required execution ran regardless, on top of them.
@@ -309,6 +331,71 @@ restarts:
   at twice the widest circuit's width instead of running the cell budget
   to zero.
 
+## Env-shard claims on the GPU (2026-09-11, afternoon)
+
+The user's question: are the chunk objects (one claim, many records,
+barrier) worth it against env shards, which give independent claims and
+claim-level resume? Measured on Init with the same binary and cell cap,
+`ix prove --ixes M --trace-shards --retention regenerate --max-ram 200`
+for Stage 1 and `ix aggregate --direct-joins --structural-above 0
+--trace-shards --jobs 1 --max-ram 200` for Stage 2 (direct joins: the
+first join verifies two raw claim proofs, so K claims cost K-1 joins and
+no wrappers; each join is itself trace-sharded):
+
+| Stage 1 | 8 chunks, one claim | 8 env shards (same partition) | 4 env shards, ordered | 4 env shards, min-cut |
+|---|---|---|---|---|
+| trace shards | 56 | 58 | 49 | **42** |
+| records | 10–23 GB, all resident | 12–21 GB, one at a time | 21–34 GB | 20–24 GB |
+| GPU util-seconds | 149 | 148 | 130 | **119** |
+| STARK (rounds one + two) | | | 232 s | **195 s** |
+| peak host RSS | 174 GiB | 51 GiB | 58 GiB | **53 GiB** |
+| wall | 5:47 | 12:14 (serial) | 11:26 (serial) | 9:46 (serial) |
+
+| Stage 2 | chunk range tree | 8 env shards | 4 ordered | 4 min-cut | 4 min-cut + `--wrap-root` |
+|---|---|---|---|---|---|
+| nodes | 2 leaves, join, root | 7 joins | 3 joins | 3 joins | 3 joins + 3 wraps |
+| trace shards | | 43 | 26 | 24 | 24 + 6 |
+| wall | 3:41 | 5:28 | 3:17 | **2:51** | 3:32 |
+| root | 9.5 MB | 11.9 MB | 14.9 MB | 14.6 MB | **6.0 MB** |
+
+Every run verified (composed verdict over the claims, then the root over
+all 56621 constants). Findings:
+
+- **The proof model costs nothing.** Eight env shards on the chunk run's
+  own partition prove the same work (58 vs 56 shards, 148 vs 149 GPU
+  seconds). The chunk model's worker-0 walk and deferred calls buy no
+  proving time.
+- **Min-cut beats the ordered layout for independent claims**: the
+  largest record drops from 34 to 24 GB, trace shards from 49 to 42, and
+  Stage 2 joins carry fewer cross-claim assumptions (2:51 vs 3:17). The
+  ordered layout existed for the shared batch's commit order; independent
+  claims carry their assumptions explicitly and do not need it.
+- **More claims, more joins**: Stage 2 is K-1 serial joins at `--jobs 1`,
+  so choose the env-shard count from execution memory and CPU parallelism
+  (the reviewer's rule) and let trace shards cover the GPU.
+- **Host memory is a third**: records are executed, proven and freed one
+  claim at a time. Nothing on this path needs the budget driver, trim,
+  eviction, RSS gate, or pointer namespaces.
+- **The serial Stage 1 wall is a scheduling artifact**: `ix prove --ixes`
+  executes shard k, proves k, executes k+1. STARK time for the min-cut
+  four is 195 s; the rest is three executions run one after another.
+  Executions run ahead (all four at t = 0, the GPU starting on claim 0 as
+  its record lands) project Stage 1 to about 5:00, the chunk model's wall
+  with a third of its memory and claim-level checkpoints. That loop is the
+  next implementation step: execute up to `--exec-jobs` shards ahead on
+  threads, prove in order, persist each proof and its index entry as it
+  completes.
+- **`--wrap-root`** (shape 1, one `ix_aggr` child, statement passed
+  through) wraps until the final proof is one trace shard: 7 → 3 → 2 → 1
+  in 39 s, 14.6 → 6.0 MB. The first attempt exposed that a plan the
+  planner chooses to retain across the barrier reads the host lookup
+  witness on the CUDA backend; under trace-only lookups every plan now
+  regenerates.
+
+Decision: build the GPU pipeline on env-shard claims (min-cut manifest,
+trace shards per claim, direct joins, root wraps). The chunk driver stays
+on the branch as measured, not as the path forward.
+
 ## Status against the recommendations
 
 | # | recommendation | state |
@@ -317,10 +404,10 @@ restarts:
 | 2 | allocation / pinning reuse | done in the fork (pool threshold, slab, staged upload); traces generated straight into pinned storage is the next step |
 | 3 | metadata-only lookup witness | `AIUR_TRACE_ONLY_LOOKUPS=1` hands the prover a shape-only witness (`LookupValues::shape_only`); the host stage-2 paths refuse it, so a backend that cannot evaluate the lookups on the device fails instead of proving an unbalanced argument |
 | 4 | lookahead in both two-call APIs | done: STARK on a worker thread, caller's iterator/closure on its own thread, one witness ahead |
-| 5 | chunk tuning for GPU consumption | measuring: 8 ordered chunks queued, 4 next |
-| 6 | record cache vs commitment retention | open |
-| 7 | LDE + Merkle kernel work | open; stage-1 commit is at its kernel floor (~1.4 s: blake3 44 %, radix-8 40 %) |
-| 8 | GPU range tree | open; not yet run on the device |
+| 5 | chunk tuning for GPU consumption | 8 ordered chunks measured and verified; 4-vs-8 tuning remains open |
+| 6 | record cache vs commitment retention | host record retention/eviction implemented; queue22 retained all 8 records while regenerating GPU commitments; broader retention-policy tuning remains open |
+| 7 | LDE + Merkle kernel work | initial BLAKE3/NTT/LDE changes landed locally in ff3237c/f15a6c4 and measured in queue22; fresh profiling remains open |
+| 8 | GPU range tree | measured and verified: queue22 3:41, two range leaves plus join/root; cross-command Stage 1/Stage 2 overlap remains open |
 
 ## Handoff
 
@@ -340,9 +427,12 @@ must be `always` (§1.1). Recipes: `bench/trace-sharding-gpu-2026-09-11/`.
 and no accounting inside the executor, by decision. `--exec-jobs` (default:
 one per core) bounds how many workers execute at once; on a cold start that
 first wave is admitted before any record is measured, so `--max-ram` does
-not bound it (Init at `--max-ram 100` still peaked at 189 GiB). Once records
-are measured, `--max-ram` bounds what runs ahead and what is retained for
-round two, and an execution ahead must also fit beside the process's actual
+not bound its peak. Once records are measured, `--max-ram` bounds what
+runs ahead and what is retained: after every harvest the driver releases
+retained records, furthest next use first, until what is charged fits the
+budget (so an over-budget first wave is not carried through the barrier;
+the released records re-execute for round two, on the CPU, behind the
+prover), and an execution ahead must also fit beside the process's actual
 RSS. Required executions are never refused, but retained records used
 later are released first to make room for them. The hard limit is a cgroup cap;
 `prove-distributed.sh` retries with `--exec-jobs` halved on a kill. For
@@ -355,9 +445,14 @@ ones.
 
 **Not measured yet, in the order to take them.**
 
+0. The execute-ahead loop for env-shard claims (above): the one piece of
+   scheduling the env-shard path lacks, projected to take Stage 1 from
+   9:46 to ~5:00 on the min-cut four. With independent claims, Stage 2
+   joins can also start as soon as their two children are proven, which
+   is the Stage 1/Stage 2 overlap without any protocol work.
 1. Stage 2 on the device is measured (above: 3:46 with two leaves and
-   lookahead). What remains there: overlapping the first leaf's execution
-   with the end of Stage 1, and the root's size growing with leaf size.
+   lookahead on the chunk batch; 2:51 with direct joins over four min-cut
+   claims).
 2. Blake3 row hashing was 43 % of GPU kernel time and radix-8 NTT 41 %;
    the first round of kernel work (fork ff3237c, f15a6c4) took the commit
    from 1.57 s to 1.32 s per Init shard. A fresh nsys kernel breakdown is
