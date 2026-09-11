@@ -165,7 +165,7 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
   match aiurSystem.shardProveWithEnv funIdx envHandle blob maxRamBytes
       execOnly traceShards retention with
   | .error e => return .error s!"{label}: shardProveWithEnv error: {e}"
-  | .ok { claimBytes, proof, peakBytes, suggestedParts } =>
+  | .ok { claimBytes, proof, peakBytes, suggestedParts, .. } =>
     let gib := toGib peakBytes
     match proof with
     | none =>
@@ -347,15 +347,34 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         (← IO.getStdout).flush
         let execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
         let planOnly := p.hasFlag "plan-only"
+        -- Record sizes an earlier exec-only run wrote to the manifest.
+        let measured ← match Ix.Cli.CheckCmd.parseIxesManifest
+            (← IO.FS.readBinFile manifest) with
+          | .ok view => pure (if view.measuredPeakBytes.size == shards.size
+              then view.measuredPeakBytes else #[])
+          | .error _ => pure #[]
         match aiurSystem.proveEnvDistributed funIdx checkOwnedIdx envHandle
-            ownedPer maxCells planOnly execOnly execJobs maxRamBytes with
+            ownedPer maxCells planOnly execOnly execJobs maxRamBytes
+            measured with
         | .error e => IO.eprintln s!"proveEnvDistributed error: {e}"; return 1
-        | .ok { proof := none, .. } =>
+        | .ok { proof := none, workerBytes, .. } =>
           if planOnly then
             IO.println "planned the workers' commit order (plan-only)"
             return 0
           if execOnly then
             IO.println "executed and absorbed every worker (exec-only)"
+            -- The measured record bytes, for the next run's admission.
+            if let some out := outIxes then
+              let sizes := Id.run do
+                let mut sizes : Array Nat := #[]
+                for i in [0:workerBytes.size / 8] do
+                  let mut v : Nat := 0
+                  for j in [0:8] do
+                    v := v + (workerBytes.get! (8 * i + j)).toNat <<< (8 * j)
+                  sizes := sizes.push v
+                sizes
+              let _ ← Ix.Cli.CheckCmd.emitRefinedManifest "prove" envHandle
+                manifest out #[] sizes 0
             return 0
           IO.eprintln "proveEnvDistributed returned no proof"; return 1
         | .ok { claimBytes, proof := some proof, .. } =>
@@ -431,7 +450,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
-    "exec-jobs" : Nat;  "With --distributed: how many workers execute at once (default 0: all). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
+    "exec-jobs" : Nat;  "With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
     "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."

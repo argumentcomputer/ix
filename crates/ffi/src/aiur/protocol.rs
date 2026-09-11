@@ -775,6 +775,15 @@ fn detected_ram_budget() -> Option<usize> {
     .map(|b| (b as f64 * ix_kernel::shard::RAM_USABLE_FRAC) as usize)
 }
 
+/// This process's resident set from `/proc/self/status`, in bytes; `None`
+/// where it is unreadable.
+fn process_rss_bytes() -> Option<usize> {
+  let s = std::fs::read_to_string("/proc/self/status").ok()?;
+  let rest = s.lines().find_map(|l| l.strip_prefix("VmRSS:"))?;
+  let kib: usize = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
+  Some(kib * 1024)
+}
+
 /// `MemAvailable` from `/proc/meminfo`, in bytes (Linux; includes
 /// reclaimable page cache). `None` if unreadable — the caller then
 /// disables the gate rather than guessing.
@@ -1138,6 +1147,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     let mut claim_bytes: Vec<u8> = Vec::new();
     claim.put(&mut claim_bytes);
     let result = LeanAiurShardProveResult::alloc(0);
+    result.set_obj(4, LeanByteArray::from_bytes(&[]));
     result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
     result.set_obj(1, proof);
     result.set_obj(2, LeanOwned::box_usize(peak));
@@ -1178,6 +1188,7 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
   exec_only: bool,
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
+  measured_blob: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.proveEnvDistributed", || {
     let verify_idx = lean_unbox_nat_as_usize(verify_idx.inner());
@@ -1185,6 +1196,11 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
     let max_cells = lean_unbox_nat_as_usize(max_cells.inner());
     let exec_jobs = lean_unbox_nat_as_usize(exec_jobs.inner());
     let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+    let measured: Vec<usize> = measured_blob
+      .as_bytes()
+      .chunks_exact(8)
+      .map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes")) as usize)
+      .collect();
     let owners = match decode_owners_blob(&owners_blob) {
       Ok(owners) => owners,
       Err(e) => return LeanExcept::error_string(&e),
@@ -1200,12 +1216,18 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
       exec_only,
       exec_jobs,
       max_ram_bytes,
+      &measured,
     );
-    let (claim_bytes, proof) = match proved {
+    let (claim_bytes, proof, worker_bytes) = match proved {
       Ok(proved) => proved,
       Err(e) => return LeanExcept::error_string(&e),
     };
     let result = LeanAiurShardProveResult::alloc(0);
+    let mut blob = Vec::with_capacity(8 * worker_bytes.len());
+    for bytes in &worker_bytes {
+      blob.extend_from_slice(&bytes.to_le_bytes());
+    }
+    result.set_obj(4, LeanByteArray::from_bytes(&blob));
     result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
     result.set_obj(
       1,
@@ -1363,7 +1385,8 @@ fn prove_env_distributed(
   exec_only: bool,
   exec_jobs: usize,
   max_ram_bytes: usize,
-) -> Result<(Vec<u8>, Option<AiurProof>), String> {
+  measured: &[usize],
+) -> Result<(Vec<u8>, Option<AiurProof>, Vec<u64>), String> {
   use aiur::execute::{Ownership, pointer_stride};
   use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
   use ixvm_codegen::aiur_ixvm_witness::{
@@ -1390,7 +1413,8 @@ fn prove_env_distributed(
     }
   }
   let workers = owners.len();
-  let jobs = if exec_jobs == 0 { workers } else { exec_jobs.min(workers) };
+  let cores = std::thread::available_parallelism().map_or(1, usize::from);
+  let jobs = if exec_jobs == 0 { cores } else { exec_jobs }.min(workers);
   let scopes = worker_scopes(env, owners);
   let callers = worker_callers(owners, &scopes);
   let groups = commit_order(&callers);
@@ -1414,7 +1438,7 @@ fn prove_env_distributed(
       groups.len(),
       groups.iter().map(Vec::len).collect::<Vec<_>>()
     );
-    return Ok((claim_bytes, None));
+    return Ok((claim_bytes, None, Vec::new()));
   }
 
   // One execution of worker `worker`: worker 0 the claimed entry, the
@@ -1510,17 +1534,11 @@ fn prove_env_distributed(
   .map_or(usize::MAX, |budget| {
     budget.saturating_sub(2 * 8 * max_cells + (256 << 20))
   });
-  let estimates: Vec<usize> = owners
-    .iter()
-    .map(|owned| {
-      exec_rss_estimate(
-        owned
-          .iter()
-          .filter_map(|a| env.get_const_bytes(a).map(|b| b.len()))
-          .sum::<usize>(),
-      )
-    })
-    .collect();
+  let measured: Vec<usize> = if measured.len() == workers {
+    measured.to_vec()
+  } else {
+    vec![0; workers]
+  };
   let mut position = vec![0usize; workers];
   for (at, &worker) in order.iter().enumerate() {
     position[worker] = at;
@@ -1547,7 +1565,11 @@ fn prove_env_distributed(
       in_flight: Vec::new(),
       budget,
       used: 0,
-      estimates: &estimates,
+      max_ram: match max_ram_bytes {
+        0 => detected_ram_budget().unwrap_or(usize::MAX),
+        given => given,
+      },
+      measured: &measured,
       largest: 0,
     };
     if exec_only {
@@ -1555,13 +1577,18 @@ fn prove_env_distributed(
       pool.fill(usize::MAX, None);
       for at in 0..order.len() {
         drop(pool.supply(at)?);
+        // Executed and measured; nothing more is asked of it.
+        pool.served[order[at]] = 2;
         pool.release(order[at]);
       }
       eprintln!(
         "[distributed] {workers} workers executed and absorbed in {:.1?}",
         started.elapsed()
       );
-      return Ok((claim_bytes, None));
+      let sizes: Vec<u64> = (0..workers)
+        .map(|w| pool.executed[w].as_ref().map_or(0, |e| e.bytes as u64))
+        .collect();
+      return Ok((claim_bytes, None, sizes));
     }
 
     // Worker 0's output is the claim's; its walk calls into every worker,
@@ -1577,7 +1604,7 @@ fn prove_env_distributed(
       |at| pool.supply(at),
       (max_cells > 0).then_some(max_cells),
     )?;
-    Ok((claim_bytes, Some(proof)))
+    Ok((claim_bytes, Some(proof), Vec::new()))
   })
 }
 
@@ -1589,7 +1616,8 @@ enum Resident {
 }
 
 /// The workers' executions, owned by the driver. Executions run ahead of
-/// the prover in commit order as far as a host budget for records allows,
+/// the prover in commit order, at most `jobs` at once and as far as a host
+/// budget for records allows once their sizes are known,
 /// each record is handed to the prover when its turn comes, and a record
 /// stays resident for its second round while the budget has room — evicting
 /// the one whose next use is furthest when an execution needs the space —
@@ -1627,18 +1655,27 @@ struct Workers<'scope, 'env> {
   /// Host bytes records may occupy at once, and how many they do.
   budget: usize,
   used: usize,
-  /// Each worker's record size before it is measured (execution-RSS
-  /// model over its owned bytes), and the largest record measured so far,
-  /// which is the charge for an unmeasured one once anything is measured.
-  estimates: &'env [usize],
+  /// The whole host budget, which the process's resident size must stay
+  /// under for an execution to run ahead.
+  max_ram: usize,
+  /// Each worker's record size as the manifest measured it (0 when it
+  /// has not been), and the largest record measured in this run, which
+  /// stands in for an unmeasured one once anything has been.
+  measured: &'env [usize],
   largest: usize,
 }
 
 impl Workers<'_, '_> {
-  /// The bytes to charge for `worker`'s record before it is measured: the
-  /// largest record measured so far, or its estimate while nothing is.
+  /// The bytes to charge for `worker`'s record before this run measures
+  /// it: the manifest's measurement, else the largest record measured so
+  /// far, else nothing (until something is measured only the concurrency
+  /// ceiling bounds what runs ahead).
   fn charge_for(&self, worker: usize) -> usize {
-    if self.largest > 0 { self.largest } else { self.estimates[worker] }
+    if self.measured[worker] > 0 {
+      self.measured[worker]
+    } else {
+      self.largest
+    }
   }
 
   /// Which run `worker` needs next, if any: its first, or its second when
@@ -1743,6 +1780,11 @@ impl Workers<'_, '_> {
         continue;
       }
       let charge = self.charge_for(next);
+      // What the process actually occupies, not only what is accounted:
+      // an execution ahead must fit beside it.
+      if process_rss_bytes().is_some_and(|rss| rss + charge > self.max_ram) {
+        return;
+      }
       while self.used + charge > self.budget {
         let evict = (0..count)
           .filter(|&w| self.resident[w].is_some() && Some(w) != handed)

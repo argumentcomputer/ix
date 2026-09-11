@@ -280,6 +280,9 @@ structure ShardProveResult where
   proof : Option Proof
   peakBytes : Nat
   suggestedParts : Nat
+  /-- `proveEnvDistributed` with `execOnly`: each worker's measured record
+      bytes, 8-byte LE per worker in manifest order; empty otherwise. -/
+  workerBytes : ByteArray
 
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
@@ -340,7 +343,8 @@ def shardProveWithEnv (system : @& AiurSystem)
 @[extern "rs_aiur_system_prove_env_distributed"]
 private opaque proveEnvDistributed' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
-  @& Nat → Bool → Bool → @& Nat → @& Nat → Except String ShardProveResult
+  @& Nat → Bool → Bool → @& Nat → @& Nat → @& ByteArray →
+  Except String ShardProveResult
 
 /-- The whole environment as ONE claim, `CheckEnv(root, none)`, proven from
     one worker record per element of `owners` (trace-sharding design
@@ -364,12 +368,15 @@ private opaque proveEnvDistributed' : @& AiurSystem →
     prover as far as `maxRamBytes` (`0`: detect) leaves room for their
     records beside the prover's working set, and a record stays resident
     for its second round while that room lasts, so a worker executes twice
-    only when memory forces it. -/
+    only when memory forces it. `measured` gives each worker's record
+    bytes as an earlier `execOnly` run measured them (the manifest's
+    measured-peaks section); without them nothing runs ahead until this
+    run has measured a record. -/
 def proveEnvDistributed (system : @& AiurSystem)
   (verifyIdx checkOwnedIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (owners : Array (Array Address)) (maxCells : Nat := 0)
   (planOnly : Bool := false) (execOnly : Bool := false) (execJobs : Nat := 0)
-  (maxRamBytes : Nat := 0) :
+  (maxRamBytes : Nat := 0) (measured : Array Nat := #[]) :
     Except String ShardProveResult :=
   let u32le (n : Nat) : ByteArray :=
     ⟨#[(n &&& 0xFF).toUInt8, ((n >>> 8) &&& 0xFF).toUInt8,
@@ -380,8 +387,12 @@ def proveEnvDistributed (system : @& AiurSystem)
   let blob : ByteArray :=
     owners.foldl (fun (acc : ByteArray) (o : Array Address) =>
       o.foldl (fun (acc : ByteArray) (a : Address) => acc ++ a.hash) acc) header
+  let u64le (n : Nat) : ByteArray :=
+    ⟨(Array.range 8).map fun i => ((n >>> (8 * i)) &&& 0xFF).toUInt8⟩
+  let measuredBlob : ByteArray := measured.foldl
+    (fun (acc : ByteArray) (n : Nat) => acc ++ u64le n) ByteArray.empty
   proveEnvDistributed' system verifyIdx checkOwnedIdx envHandle blob maxCells
-    planOnly execOnly execJobs maxRamBytes
+    planOnly execOnly execJobs maxRamBytes measuredBlob
 
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →

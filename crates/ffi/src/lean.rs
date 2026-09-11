@@ -297,8 +297,8 @@ lean_ffi::lean_inductive! {
   LeanAiurProveEnvResult [ { num_obj: 4 } ];
   // error, peakBytes, suggestedParts
   LeanAiurShardResult    [ { num_obj: 3 } ];
-  // claimBytes, proof, peakBytes, suggestedParts
-  LeanAiurShardProveResult [ { num_obj: 4 } ];
+  // claimBytes, proof, peakBytes, suggestedParts, workerBytes
+  LeanAiurShardProveResult [ { num_obj: 5 } ];
   // claimBytes, constantCount
   LeanAiurAggregateExpected [ { num_obj: 2 } ];
 
