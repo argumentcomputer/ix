@@ -16,6 +16,7 @@
 -/
 module
 import Std.Sync
+import Ix.TracingTexray
 public import Cli
 public import Ix.Aggr
 public import Ix.Cli.CheckCmd
@@ -1190,7 +1191,10 @@ def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 :=
   runAggregateCmdNativeWith recursionParameters p
 
-def runAggregateCmd (p : Cli.Parsed) : IO UInt32 :=
+def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
+  -- Streamed `[texray]` span lines on stderr: the per-node wall and RSS
+  -- breakdown of every slot's execution, witness and STARK phases.
+  if p.hasFlag "texray" then TracingTexray.init {}
   runAggregateCmdWith MultiStark.defaultRecursionParameters p
 
 end Ix.Cli.AggregateCmd
@@ -1205,6 +1209,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
     "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."
     "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted unless --no-write."
+    "texray";        "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages of every slot) to stderr as each span closes."
     "no-write";      "Do not change the proof store or aggregate cache; useful with --reprove-slot for a read-only spot check."
     "reprove-slot" : Nat; "Recompute exactly Stage 2 slot N from verified cached immediate children, bypassing that slot's cache entry."
     "jobs" : Nat;    "Maximum aggregate slots proving concurrently (default 0: all ready slots, subject to the RAM gate)."
