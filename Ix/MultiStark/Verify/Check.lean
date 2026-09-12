@@ -6,8 +6,9 @@ public import Ix.MultiStark.Verify.Pcs
 /-! Complete pure deterministic protocol checking on typed native data.
 The caller owns the expected native claims and key. Public Ixon applications
 must use the claim-bound source wrapper, not accept privately chosen claims.
-Cryptographic soundness and independent protocol refinement are separate
-obligations; composing executable phases does not discharge either one. -/
+The independent typed protocol refinement is in `Proofs.Check`; composing
+executable phases alone is not that proof. Byte decoding, application policy,
+and cryptographic soundness remain separate obligations. -/
 
 public section
 @[expose] section

@@ -4,8 +4,8 @@ import Ix.MultiStark.Verify.Proofs
 import Ix.Ixby.Claim.Stage2
 
 /-! Exact trust manifest for the pure Stage 2 components implemented so far.
-The public roots cover binding, graph/OOD/transcript phases, complete MMCS
-authentication and the complete FRI phase, NOT a completed Stage 2 refinement theorem. No native,
+The public roots cover binding and the complete typed Stage 2 refinement.
+Canonical decoding and the full byte-facing source refinement remain unfinished. No native,
 pending, upstream-implementation, or sorry allowances are permitted. -/
 
 namespace MultiStark.Verify.Audit
@@ -44,7 +44,15 @@ private def roots : Array RootAllowance := ((#[
   ``Proofs.reverseBits_go_bounded, ``Proofs.reverseBits_bounded, ``Proofs.rowPoints_refines,
   ``Proofs.queryPoint_refines, ``Proofs.reduceCoordinates_refines,
   ``Proofs.checkConstant_refines, ``Proofs.collectReduced_refines,
-  ``Proofs.insertValue_refines, ``Proofs.finishQuery_refines, ``Proofs.commitRows_refines] : Array Lean.Name).map fun root =>
+  ``Proofs.insertValue_refines, ``Proofs.finishQuery_refines, ``Proofs.commitRows_refines,
+  ``Proofs.parameters_admissible_refines, ``Proofs.nodeDegree_refines,
+  ``Proofs.degreesFrom_refines, ``Proofs.degrees_refines, ``Proofs.maxRootsFrom_refines, ``Proofs.maxRoots_refines,
+  ``Proofs.lookupDegrees_refines, ``Proofs.groupDegree_refines, ``Proofs.logupDegreeFrom_refines,
+  ``Proofs.logupDegree_refines, ``Proofs.circuit_refines, ``Proofs.circuits_refines, ``Proofs.validateKey_refines,
+  ``Proofs.twoRows_refines, ``Proofs.oneRow_refines, ``Proofs.preprocessedRows_refines,
+  ``Proofs.inactivePreprocessed_refines, ``Proofs.activeValues_refines, ``Proofs.checkCircuits_refines,
+  ``Proofs.shape_check_refines, ``Proofs.twoPoints_refines, ``Proofs.activeMatrices_refines,
+  ``Proofs.preprocessedMatrix_refines, ``Proofs.preprocessedMatrices_refines, ``Proofs.pcs_rounds_refines] : Array Lean.Name).map fun root =>
     { root, standardAxioms := #[``propext, ``Quot.sound] }) ++
   ((#[``Proofs.mapError_ok_iff, ``Proofs.pure_ok_iff, ``Proofs.getAt_ok_iff,
     ``Proofs.observeBytes_refines, ``Proofs.action_pure_ok_iff, ``Proofs.action_throw_ok_iff,
@@ -54,7 +62,8 @@ private def roots : Array RootAllowance := ((#[
     ``Proofs.claimFingerprint_refines, ``Proofs.quotientFrom_refines, ``Proofs.balanced_refines,
     ``Proofs.mmcs_getAt_refines, ``Proofs.takeFrontier_refines, ``Proofs.fri_polynomial_refines,
     ``Proofs.fri_getAt_refines, ``Proofs.coordinateStep_refines, ``Proofs.reduceCoordinatePairs_refines,
-    ``Proofs.initialOpening_refines, ``Proofs.flattenRow_refines] : Array Lean.Name).map fun root =>
+    ``Proofs.initialOpening_refines, ``Proofs.flattenRow_refines,
+    ``Proofs.getDegree_refines, ``Proofs.shape_getAt_refines] : Array Lean.Name).map fun root =>
     { root, standardAxioms := #[``propext] }) ++
   ((#[``verifyTyped_iff, ``stage2Verify_iff, ``claimWrapper_some_iff,
     ``claimBytesWrapper_some_iff, ``stage2VerifyBytes_binding,
@@ -79,6 +88,8 @@ private def roots : Array RootAllowance := ((#[
     ``Proofs.rollIn_refines, ``Proofs.foldRound_refines, ``Proofs.foldRounds_refines, ``Proofs.foldQuery_refines,
     ``Proofs.authenticateCommitRounds_refines, ``Proofs.authenticateCommits_refines,
     ``Proofs.foldQueries_refines, ``Proofs.fri_check_refines,
+    ``Proofs.pcs_check_refines, ``Proofs.checkTyped_refines, ``Proofs.verifyTyped_refines,
+    ``Proofs.verifyTyped_sound, ``Proofs.verifyTyped_complete,
     ``Ix.Ixby.Claim.Stage2.source_claim_binding,
     ``Ix.Ixby.Claim.Stage2.terminal_verified_claim_or_collision] : Array Lean.Name).map fun root =>
     { root, standardAxioms := standard }) ++

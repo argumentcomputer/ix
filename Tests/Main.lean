@@ -218,6 +218,7 @@ def primaryRunners : List (String × IO UInt32) := [
   ("stage2-ood", Tests.MultiStark.Verify.Ood.suite),
   ("stage2-mmcs", Tests.MultiStark.Verify.Mmcs.suite),
   ("stage2-fri", Tests.MultiStark.Verify.Fri.suite),
+  ("stage2-pcs", Tests.MultiStark.Verify.Pcs.suite),
   ("stage2-source", Tests.MultiStark.Verify.Source.suite),
   ("ixby-claim", Tests.Ixby.Claim.suite),
   ("ixby-flock-contract", Tests.Ixby.Flock.Contract.suite),

@@ -3,9 +3,11 @@
 Status: the complete pure deterministic protocol checker and claim-bound
 source wrapper are implemented, including canonical codecs, key/shape
 admission, transcript/PoW, AIR/logUp/OOD, Merkle multiproofs, and PCS/FRI.
-Independent protocol refinement/completeness proofs, certified compilation,
-and generic Flock/terminal execution are still unfinished. Executable
-verification is not, by itself, a certification or cryptographic soundness proof.
+The typed checker has a complete independent protocol refinement, including
+soundness and completeness for its admitted bounded class. Canonical-codec
+refinement, the complete byte-facing source proof, certified compilation,
+and generic Flock/terminal execution are still unfinished. Deterministic
+verifier correctness is not a cryptographic soundness proof.
 
 ## Protocol and import boundary
 
@@ -113,7 +115,7 @@ with the query frontier; it is not a Stage 3/4 compression measurement.
 public root, framing, and assumptions. The stand-in does not establish Ixon
 truth and is not an approvable production aggregate verifier.
 
-The exact theorem manifest covers 153 public roots, with exact per-root sets of
+The exact theorem manifest covers 185 public roots, with exact per-root sets of
 `propext`, `Quot.sound`, and, where present, `Classical.choice`. The graph sweep
 is sound and complete against a separate expression/reference relation.
 Observation updates, raw bit draws, grinding, and rejection sampling have
@@ -158,18 +160,28 @@ authentications. The row-insertion equation preserves every sibling in order;
 saved rows precede roll-in, and the final state consumes every reduction.
 Nonzero binary/quaternary chains exercise both extension coordinates,
 independently constructed leaf-level caps, and the final subgroup/bit-width
-pair. PCS round reconstruction and the full Stage 2 refinement remain unfinished.
-Bounded sampling completeness uses the
-same attempt budget on both sides. These are phase proofs, not yet a complete
-protocol-refinement theorem. The wrapper/composition lemmas establish exact
+pair.
+Key admission now refines explicit bounds, topological node-degree equations,
+analytic grouped lookup degrees, and the canonical preprocessing-slot map.
+Sparse shape admission distinguishes canonical indices from active positions,
+pins preprocessing heights and inactive empty slots, and checks every point
+and coordinate count. PCS reconstruction preserves the exact trace-domain
+degrees, quotient widths, current/next opening order, and all preprocessing
+slots before observing the openings and entering FRI.
+`Proofs.verifyTyped_refines` composes these phases into an equivalence with
+the separate `Protocol.Stage2ProtocolAccepts` relation. Its soundness and
+completeness corollaries cover the entire typed checker, with the same
+resource limits and sampling budget on both sides. They do not yet certify
+canonical byte parsing or the complete claim-bound byte entrypoint.
+The wrapper/composition lemmas establish exact
 public-claim binding under the named compiler/Exec/terminal premises.
 A source-module scan also checks private/generated theorems and
 rejects new axioms. The audit rejects native/DSL imports in the pure umbrella.
-These checks do not constitute a complete protocol-refinement theorem.
+The remaining byte-codec obligations are not discharged by the typed theorem.
 
 ```sh
 lake test --wfail -- stage2-codec stage2-claim stage2-key \
-  stage2-transcript stage2-shape stage2-ood stage2-mmcs stage2-fri stage2-source
+  stage2-transcript stage2-shape stage2-ood stage2-mmcs stage2-fri stage2-pcs stage2-source
 lake build --wfail Ix.MultiStark.Verify.Audit Tests.MultiStark.Verify.Audit
 lake test --wfail -- --ignored stage2-codec-real
 lake test --wfail -- --ignored stage2-wrapper-real

@@ -38,52 +38,62 @@ def getAt {α : Type} (values : Array α) (index : Nat) : Except Error α :=
 def twoRows (width : Nat) (rows : Array (Array Ext)) : Except Error (Array Ext × Array Ext) := do
   match rows.toList with
   | [current, next] =>
-    unless current.size == width && next.size == width do throw .width
+    ensure (current.size == width && next.size == width) .width
     return (current, next)
   | _ => throw .points
 
 def oneRow (width : Nat) (rows : Array (Array Ext)) : Except Error (Array Ext) := do
   match rows.toList with
   | [values] =>
-    unless values.size == width do throw .width
+    ensure (values.size == width) .width
     return values
   | _ => throw .points
 
-def check (key : Key) (proof : Proof) : Except Error (Array CircuitValues) := do
-  (validateKey key).mapError Error.key
-  unless proof.active.size == key.circuits.size && proof.active.any id do throw .activation
-  let activeCount := (proof.active.filter id).size
-  unless proof.logDegrees.size == activeCount && proof.accumulators.size == activeCount &&
-      proof.stage1.size == activeCount && proof.stage2.size == activeCount &&
-      proof.quotient.size == activeCount do throw .count
-  let prepCount := (key.preprocessedIndices.filter Option.isSome).size
-  let prep := proof.preprocessed.getD #[]
-  unless prep.size == prepCount do throw .preprocessing
-  let mut pos := 0
-  let mut values : Array CircuitValues := #[]
-  for index in [0:key.circuits.size] do
-    let circuit ← getAt key.circuits index
+def preprocessedRows (circuit : Circuit) (logDegree : Nat) (prep : OpenedRound) :
+    Option Nat → Except Error (Array Ext × Array Ext)
+  | none => .ok (#[], #[])
+  | some slot => do
+    -- Active preprocessing uses the canonical table's pinned height.
+    ensure (logDegree == circuit.preprocessedHeight.log2) .height
+    twoRows circuit.preprocessedWidth (← getAt prep slot)
+
+def inactivePreprocessed (prep : OpenedRound) : Option Nat → Except Error Unit
+  | none => .ok ()
+  | some slot => do
+    ensure (← getAt prep slot).isEmpty .preprocessing
+
+def activeValues (key : Key) (proof : Proof) (circuit : Circuit) (prepIndex : Option Nat)
+    (index pos : Nat) : Except Error CircuitValues := do
+  let logDegree := (← getAt proof.logDegrees pos).toNat
+  ensure (logDegree + quotientLog circuit + key.params.logBlowup ≤ 32) .height
+  let stage1 ← twoRows circuit.mainWidth (← getAt proof.stage1 pos)
+  let stage2 ← twoRows circuit.stage2Width (← getAt proof.stage2 pos)
+  let preprocessed ← preprocessedRows circuit logDegree (proof.preprocessed.getD #[]) prepIndex
+  let quotient ← oneRow (2 * quotientDegree circuit) (← getAt proof.quotient pos)
+  return { index, circuit, logDegree, stage1, stage2, preprocessed, quotient }
+
+def checkCircuits (key : Key) (proof : Proof) : List Circuit → Nat → Nat → Except Error (List CircuitValues)
+  | [], _, _ => .ok []
+  | circuit :: circuits, index, pos => do
     let active ← getAt proof.active index
     let prepIndex ← getAt key.preprocessedIndices index
     if active then
-      let logDegree := (← getAt proof.logDegrees pos).toNat
-      unless logDegree + quotientLog circuit + key.params.logBlowup ≤ 32 do throw .height
-      let stage1 ← twoRows circuit.mainWidth (← getAt proof.stage1 pos)
-      let stage2 ← twoRows circuit.stage2Width (← getAt proof.stage2 pos)
-      let preprocessed ← match prepIndex with
-        | none => pure (#[], #[])
-        | some slot => do
-          -- The supported class is honest native-builder trace geometry.
-          -- A table circuit's active trace has its pinned preprocessing height.
-          unless logDegree == circuit.preprocessedHeight.log2 do throw .height
-          twoRows circuit.preprocessedWidth (← getAt prep slot)
-      let quotient ← oneRow (2 * quotientDegree circuit) (← getAt proof.quotient pos)
-      values := values.push { index, circuit, logDegree, stage1, stage2, preprocessed, quotient }
-      pos := pos + 1
+      let value ← activeValues key proof circuit prepIndex index pos
+      let rest ← checkCircuits key proof circuits (index + 1) (pos + 1)
+      return value :: rest
     else
-      match prepIndex with
-      | none => pure ()
-      | some slot => unless (← getAt prep slot).isEmpty do throw .preprocessing
-  return values
+      inactivePreprocessed (proof.preprocessed.getD #[]) prepIndex
+      checkCircuits key proof circuits (index + 1) pos
+
+def check (key : Key) (proof : Proof) : Except Error (Array CircuitValues) := do
+  (validateKey key).mapError Error.key
+  ensure (proof.active.size == key.circuits.size && proof.active.any id) .activation
+  let activeCount := (proof.active.filter id).size
+  ensure (proof.logDegrees.size == activeCount && proof.accumulators.size == activeCount &&
+      proof.stage1.size == activeCount && proof.stage2.size == activeCount &&
+      proof.quotient.size == activeCount) .count
+  let prepCount := (key.preprocessedIndices.filter Option.isSome).size
+  ensure ((proof.preprocessed.getD #[]).size == prepCount) .preprocessing
+  return (← checkCircuits key proof key.circuits.toList 0 0).toArray
 
 end MultiStark.Verify.Shape

@@ -42,12 +42,43 @@ private def errorIs {α : Type} (result : Except DecodeError α) (error : Decode
 private def rejected (circuit : Circuit) : Bool :=
   !(validateKey { key with circuits := #[circuit] }).isOk
 
+private def okEquals {ε α : Type} [BEq α] (result : Except ε α) (expected : α) : Bool :=
+  match result with | .ok actual => actual == expected | .error _ => false
+
+private def degreeChecks : IO (List Check) := do
+  let degrees := #[0, 2, 3, 5, 11]
+  let lookups : Array Lookup := #[⟨4, #[1, 2]⟩, ⟨0, #[3]⟩, ⟨4, #[]⟩]
+  let grouped := { circuit with lookups, lookupGroupSize := 2 }
+  let doubling := { circuit with
+    nodes := #[.var .main false 0] ++ (Array.range 16).map (fun index => .mul index index) }
+  return [
+    ("all node tags have independently expected degrees", okEquals (KeyValidation.degrees allNodes)
+      #[0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1]),
+    ("root degree follows checked maximum, including empty roots", okEquals (KeyValidation.maxRoots degrees #[1, 3, 2]) 5 &&
+      okEquals (KeyValidation.maxRoots degrees #[]) 0),
+    ("lookup degree pairs preserve message/multiplicity order", okEquals (KeyValidation.lookupDegrees degrees lookups.toList)
+      [(3, 11), (5, 0), (0, 11)]),
+    ("group degree includes high multiplicity times other messages", okEquals (KeyValidation.groupDegree degrees (lookups.extract 0 2)) 16),
+    ("empty message multiplicity still contributes its degree", okEquals (KeyValidation.groupDegree degrees lookups) 19),
+    ("empty lookup group retains the accumulator-difference degree", okEquals (KeyValidation.groupDegree degrees #[]) 1),
+    ("grouped degree uses exact chunks including a partial last chunk", okEquals (KeyValidation.logupDegree grouped degrees) 16),
+    ("lookup degree rejects missing multiplicity instead of truncating", !(KeyValidation.lookupDegrees degrees [⟨5, #[]⟩]).isOk),
+    ("lookup degree rejects missing argument instead of defaulting", !(KeyValidation.lookupDegrees degrees [⟨0, #[5]⟩]).isOk),
+    ("intermediate degree bound is exact", (KeyValidation.degrees { doubling with nodes := doubling.nodes.pop }).isOk &&
+      !(KeyValidation.degrees doubling).isOk),
+    ("parallel key mapping rejects either length mismatch", !(KeyValidation.circuits params 0 [circuit] [] 0).isOk &&
+      !(KeyValidation.circuits params 0 [] [none] 0).isOk),
+    ("canonical preprocessing slots advance only at table circuits", (validateKey {
+      params, circuits := #[allNodes, circuit, allNodes], preprocessed := some #[digest],
+      preprocessedIndices := #[some 0, none, some 1] }).isOk)
+  ]
+
 private def checks : IO (List Check) := do
   let bigSmall := golden.extract 0 29 ++ #[1, 42, 0, 0, 0, 0, 0, 0, 0] ++
     golden.extract 32 golden.size
   let noncanonical := golden.extract 0 29 ++ #[1, 1, 0, 0, 0, 255, 255, 255, 255] ++
     golden.extract 32 golden.size
-  return [
+  return (← degreeChecks) ++ [
     ("dense-v5 independent golden wire is 41 bytes", golden.size == 41 && encoded key == golden),
     ("all 16 dense node tags round trip", roundTrip fullKey),
     ("key admission is separate from canonical parsing", roundTrip
