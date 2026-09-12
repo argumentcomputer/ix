@@ -121,7 +121,8 @@ def capacityRejections {schemas program root baseline provenance}
   return 4
 
 def certificateRejections {schemas program root baseline provenance}
-    (compiled : PhysicalHeap.Compiled schemas program root baseline provenance) : IO Nat := do
+    (compiled : PhysicalHeap.Compiled schemas program root baseline provenance)
+    (emission : HeapTarget.Emission := .tree) : IO Nat := do
   let target := compiled.native.target.program
   let plan ← present compiled.native.plans[compiled.selected.entry]? "heap entry plan is missing"
   let original ← present target.blocks[plan.entry.toNat]? "heap prologue block is missing"
@@ -136,7 +137,22 @@ def certificateRejections {schemas program root baseline provenance}
     "heap entry certificate accepted a bypassed capacity guard"
   let stream := compiled.stream.output
   need (!(Stream.check target { stream with text := stream.text.set! 0 0 })) "heap stream certificate accepted corrupted code"
-  return 3
+  if emission == .tree then return 3
+  let candidate : HeapTarget.Candidate := {
+    blocks := target.blocks, plans := compiled.native.plans, entry := compiled.native.entry }
+  let _ ← checked (HeapTarget.checkCandidate compiled.selected baseline candidate)
+  let mut count := 3
+  for index in [:target.blocks.size] do
+    let block := target.blocks[index]!
+    let instruction := { block with instructions := block.instructions.push (.mov .w64 .rax (.imm 0)) }
+    let control := { block with terminator := if block.terminator == .ret then .jump index.toUInt32 else .ret }
+    for changed in [instruction, control] do
+      rejectExcept "shared block instruction/control" (HeapTarget.checkCandidate compiled.selected baseline
+        { candidate with blocks := target.blocks.set! index changed })
+      count := count + 1
+  rejectExcept "shared function coverage" (HeapTarget.checkCandidate compiled.selected baseline
+    { candidate with plans := #[] })
+  return count + 1
 
 def admission : IO (Array String) := do
   let mut rejected := #[]
@@ -170,16 +186,17 @@ def sourceObservation (source : Coverage.Source) (attached : source.Attached)
 def emit {schemas program root baseline provenance}
     (directory : System.FilePath) (name origin : String) (source : Json) (artifact : IxIR2.Wire.Artifact)
     (compiled : PhysicalHeap.Compiled schemas program root baseline provenance)
-    (sourceObserve : Array Word → Nat → IxIR2.Eval.Result → IO Json) : IO Json := do
+    (sourceObserve : Array Word → Nat → IxIR2.Eval.Result → IO Json)
+    (emission : HeapTarget.Emission := .tree) : IO Json := do
   let encoded ← checked (artifact.encodeChecked {})
   let loaded ← checked (IxIR2.Wire.Artifact.ingest {} IxIR2.Validate.defaultLimits encoded.bytes artifact.address)
   need (loaded.artifact == artifact) "heap snapshot roundtrip changed its program or sidecars"
   let recompiled ← if baseline then do
-      let exported ← checked (PhysicalHeap.compileSnapshotExport loaded.artifact loaded.checked)
+      let exported ← checked (PhysicalHeap.compileSnapshotExport loaded.artifact loaded.checked (emission := emission))
       need (exported.source.address == root) "loaded source export differs from the selected entry"
       pure exported.compiled.object.bytes
     else do
-      let selected ← checked (PhysicalHeap.compileSnapshot loaded.artifact loaded.checked root)
+      let selected ← checked (PhysicalHeap.compileSnapshot loaded.artifact loaded.checked root (emission := emission))
       pure selected.object.bytes
   need (recompiled == compiled.object.bytes && compiled.input.provenance == .ixir2 artifact.address)
     "heap snapshot recompilation changed the ELF or its provenance"
@@ -187,7 +204,7 @@ def emit {schemas program root baseline provenance}
   let arity := compiled.selected.entryInterface.definition.signature.params.size
   need (arity == 1 || arity == 2) "heap fixture runtime arity changed"
   let capacityChecks ← capacityRejections compiled
-  let certificateChecks ← certificateRejections compiled
+  let certificateChecks ← certificateRejections compiled emission
   let mut observations := #[]
   for (a, b) in inputs do
     let values : Array Word := if arity == 1 then #[a.toUInt64] else #[a.toUInt64, b.toUInt64]
@@ -209,13 +226,14 @@ def emit {schemas program root baseline provenance}
     ("parameters", toJson (entry.parameters.map fun kind => match kind with | .scalar => "scalar" | .node => "node" | .erased => "erased")),
     ("blocks", toJson entry.definition.blocks.size), ("allocations", toJson entry.allocations), ("controls", toJson entry.controls)]
   let sourceRoot ← if baseline then field (← field source "source") "root" else pure Json.null
-  let row := Json.mkObj [("name", toJson name), ("origin", toJson origin), ("root", toJson artifact.address), ("source_root", sourceRoot),
+  let rowFields := [("name", toJson name), ("origin", toJson origin), ("root", toJson artifact.address), ("source_root", sourceRoot),
     ("entry", toJson root), ("runtime_parameters", toJson arity), ("functions", toJson compiled.selected.entries.size),
     ("entry_index", toJson compiled.selected.entry), ("stack_depth", toJson depth), ("workspace_words", toJson (workspaceWords depth)),
     ("allocation_demand", toJson compiled.selected.entryInterface.allocations), ("control_bound", toJson compiled.selected.entryInterface.controls),
     ("native_blocks", toJson compiled.native.target.program.blocks.size), ("text_bytes", toJson text.size),
     ("text_hash", toJson (Coverage.hex (Blake3.Rust.hash text).val)), ("object_bytes", toJson compiled.object.bytes.size),
     ("snapshot_bytes", toJson encoded.bytes.size), ("capacity_checks", toJson capacityChecks), ("certificate_checks", toJson certificateChecks)]
+  let row := Json.mkObj (rowFields ++ if emission == .shared then [("emission", toJson emission.policy)] else [])
   let snapshot := Json.mkObj [("format", toJson "compilatrix/source-native-heap/1"), ("policy", toJson PhysicalHeap.policy),
     ("row", row), ("artifact", IxIR2.Wire.artifactJson artifact), ("text", toJson (Coverage.hex text)),
     ("entry_offset", toJson offset), ("provenance", toJson (Coverage.hex compiled.input.provenance.bytes)),
@@ -228,7 +246,10 @@ def emit {schemas program root baseline provenance}
 end HeapGate
 
 def main (args : List String) : IO UInt32 := cli "source native heap failed" do
-  let [directory] := args | throw (IO.userError "usage: source-native-heap NEW-OUTPUT-DIRECTORY")
+  let (directory, emission) ← match args with
+    | [directory] => pure (directory, HeapTarget.Emission.tree)
+    | [directory, "shared"] => pure (directory, HeapTarget.Emission.shared)
+    | _ => throw (IO.userError "usage: source-native-heap NEW-OUTPUT-DIRECTORY [shared]")
   let directory : System.FilePath := directory
   need (!(← directory.pathExists)) "heap producer requires a fresh output directory"
   let rejected ← HeapGate.admission
@@ -237,7 +258,7 @@ def main (args : List String) : IO UInt32 := cli "source native heap failed" do
   for name in PhysicalHeap.Examples.sourceNames do
     let source ← checked (PhysicalHeap.Examples.source name)
     let attached ← checked (source.compile.mapError reprStr)
-    let exported ← checked (PhysicalHeap.compileSourceExport attached)
+    let exported ← checked (PhysicalHeap.compileSourceExport attached (emission := emission))
     let context := Pipeline.validatedEvalCtx source.constants source.config
     let function ← checked ((Ixon.Eval.eval context 2000 (Pipeline.validatedMainFrame source.root) [] Pipeline.validatedMainSource).mapError reprStr)
     let rawContext : IxIR0.Ctx := { env := IxIR0.Env.ofList attached.source.erasure.result.raw }
@@ -245,12 +266,12 @@ def main (args : List String) : IO UInt32 := cli "source native heap failed" do
     let (moduleStore, moduleValue) ← checked ((IxIR1.runMain attached.compiled.simulationSourceContext attached.source.artifact.main 2000).mapError reprStr)
     rows := rows.push (← HeapGate.emit directory name "source" (source.compilationSnapshot attached)
       (IxIR2.Wire.ofCompiled attached.compiled) exported.compiled
-      (HeapGate.sourceObservation source attached function rawFunction moduleStore moduleValue))
+      (HeapGate.sourceObservation source attached function rawFunction moduleStore moduleValue) emission)
   for name in PhysicalHeap.Examples.cfgNames do
     let artifact := PhysicalHeap.Examples.artifact name
     let certificate ← checked (artifact.check IxIR2.Validate.defaultLimits)
-    let compiled ← checked (PhysicalHeap.compileSnapshot artifact certificate PhysicalHeap.Examples.root)
-    rows := rows.push (← HeapGate.emit directory name "physical" Json.null artifact compiled (fun _ _ _ => pure Json.null))
+    let compiled ← checked (PhysicalHeap.compileSnapshot artifact certificate PhysicalHeap.Examples.root (emission := emission))
+    rows := rows.push (← HeapGate.emit directory name "physical" Json.null artifact compiled (fun _ _ _ => pure Json.null) emission)
   let report := Json.mkObj [("format", toJson "compilatrix/source-native-heap-report/1"), ("policy", toJson PhysicalHeap.policy),
     ("source_evaluations", toJson (PhysicalHeap.Examples.sourceNames.length * HeapGate.inputs.length)),
     ("object_executions", toJson (rows.size * HeapGate.inputs.length)), ("snapshot_roundtrips", toJson rows.size),

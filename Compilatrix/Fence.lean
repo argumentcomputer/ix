@@ -7706,3 +7706,6 @@ program/context recovery. Raw codec laws need no hash-native axiom. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Exported.sourceNatReturns
+
+/-- info: 'Compilatrix.X86.HeapTarget.checkCandidate_program' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapTarget.checkCandidate_program

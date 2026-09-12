@@ -207,3 +207,12 @@ lean_exe «compiler-scaling» where
 lean_exe «check-tools-tests» where
   srcDir := "scripts"
   root := `CheckToolsTests
+
+/- Fixed-limit native join emission and baseline comparison. -/
+lean_exe «native-sharing» where
+  srcDir := "benchmarks"
+  root := `NativeSharing
+
+lean_exe «check-native-sharing» where
+  srcDir := "scripts"
+  root := `CheckNativeSharing

@@ -4,16 +4,19 @@ import Compilatrix.Tools.X86Check
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck
 open Compilatrix.Tools.X86Check Compilatrix.Tools.HeapNativeCheck
 
-private def reloadReject (consumer : String) (wire : FilePath) (root entry mode : String) (output : FilePath) : IO Unit := do
-  let result ← IO.Process.output { cmd := consumer, args := #[wire.toString, root, entry, mode, output.toString] }
+private def reloadReject (consumer : String) (wire : FilePath) (root entry mode : String) (output : FilePath) (extra : Array String) : IO Unit := do
+  let result ← IO.Process.output { cmd := consumer, args := #[wire.toString, root, entry, mode, output.toString] ++ extra }
   need (result.exitCode != 0 && (result.stdout ++ result.stderr).contains "heap snapshot object failed" && !(← output.pathExists))
     "heap fresh consumer accepted corrupt bytes/entry metadata"
 
 def main (args : List String) : IO UInt32 := cli "source native heap check failed" do
-  let args ← checked (parseArgs ["--fixture", "--consumer", "--expected", "--cc", "--harness", "--readelf", "--objdump"] args)
+  let args ← checked (parseArgs ["--fixture", "--consumer", "--expected", "--cc", "--harness", "--readelf", "--objdump", "--emission"] args)
   let some fixture := optional args "--fixture" | throw (IO.userError "--fixture is required")
   let some consumer := optional args "--consumer" | throw (IO.userError "--consumer is required")
   let expected ← readJson (option args "--expected" "fixtures/source-native-heap/expected.json")
+  let emission := option args "--emission" "tree"
+  need (emission == "tree" || emission == "shared") "unknown heap emission mode"
+  let extra := if emission == "shared" then #["shared"] else #[]
   let native ← nativeArgs args
   let readelf := option args "--readelf" "readelf"
   let objdump := option args "--objdump" "objdump"
@@ -21,7 +24,7 @@ def main (args : List String) : IO UInt32 := cli "source native heap check faile
     let first := directory / "first"
     let second := directory / "second"
     for output in [first, second] do
-      requireAll (← run fixture #[output.toString]) ["source native heap ok:"] "heap source producer"
+      requireAll (← run fixture (#[output.toString] ++ extra)) ["source native heap ok:"] "heap source producer"
     let report ← readJson (first / "report.json")
     need (report == expected) "heap reviewed report drifted"
     need ((← strField report "format") == "compilatrix/source-native-heap-report/1" &&
@@ -46,11 +49,13 @@ def main (args : List String) : IO UInt32 := cli "source native heap check faile
       let objectName := s!"{name}.o"
       let wireName := s!"{name}.ixir2"
       inventory := snapshotName :: objectName :: wireName :: inventory
+      if emission == "shared" then
+        need ((← strField row "emission") == "heap-block-sharing/1") "heap shared emission policy disagrees"
       let snapshot ← readJson (first / snapshotName)
       let bytes ← IO.FS.readBinFile (first / objectName)
       let wire ← IO.FS.readBinFile (first / wireName)
-      inspect row snapshot bytes wire
-      corruptionCount := corruptionCount + (← regressions row snapshot bytes wire)
+      inspect row snapshot bytes wire (emission == "shared")
+      corruptionCount := corruptionCount + (← regressions row snapshot bytes wire (emission == "shared"))
       let elf ← inspectElf readelf (first / objectName) "compilatrix_heap_cfg"
       requireAll elf ["There are no relocations"] "heap local-call object"
       let assembly ← disassemble objdump (first / objectName) "compilatrix_heap_cfg"
@@ -60,18 +65,18 @@ def main (args : List String) : IO UInt32 := cli "source native heap check faile
       let entry ← strField row "entry"
       let mode ← strField row "origin"
       let reloaded := directory / s!"reloaded-{name}.o"
-      requireAll (← run consumer #[(first / wireName).toString, root, entry, mode, reloaded.toString])
+      requireAll (← run consumer (#[(first / wireName).toString, root, entry, mode, reloaded.toString] ++ extra))
         ["heap snapshot object ok:"] "heap persisted-only consumer"
       need ((← IO.FS.readBinFile reloaded) == bytes) "heap fresh consumer changed the ELF"
       let badOutput := directory / s!"rejected-{name}.o"
       let zero := String.ofList (List.replicate 64 '0')
-      reloadReject consumer (first / wireName) zero entry mode badOutput
-      reloadReject consumer (first / wireName) root zero mode badOutput
+      reloadReject consumer (first / wireName) zero entry mode badOutput extra
+      reloadReject consumer (first / wireName) root zero mode badOutput extra
       let corrupt := directory / s!"corrupt-{name}.ixir2"
       IO.FS.writeBinFile corrupt (wire.extract 0 (wire.size - 1))
-      reloadReject consumer corrupt root entry mode badOutput
+      reloadReject consumer corrupt root entry mode badOutput extra
       IO.FS.writeBinFile corrupt (wire.set! (wire.size - 1) (wire[wire.size - 1]! ^^^ 1))
-      reloadReject consumer corrupt root entry mode badOutput
+      reloadReject consumer corrupt root entry mode badOutput extra
       if let some (cc, harness) := native then
         let executable := directory / s!"native-{name}"
         let depth ← number row "stack_depth"

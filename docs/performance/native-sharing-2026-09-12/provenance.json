@@ -1,0 +1,105 @@
+{
+  "archive": {
+    "bytes": 107845184,
+    "path": "benchmarks/runs/native-sharing-2026-09-12.tar.gz",
+    "retention": "machine-local, ignored by version control; not uploaded",
+    "sha256": "28326a7622433f3577c8943e9ea883bc324d6a89149977f74093066246ea84b3"
+  },
+  "base_commit": "8d46aa231fb7e3ae4350a5cd499c16b762cb675d",
+  "code_files": 619,
+  "format": "compilatrix/native-sharing-reference/1",
+  "frozen_utc": "2026-09-12T22:07:55.165935+00:00",
+  "host": {
+    "allowed_cpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "environment": {
+      "LC_ALL": "C",
+      "LEAN_NUM_THREADS": "1",
+      "MALLOC_ARENA_MAX": "1"
+    },
+    "lscpu": {
+      "argv": [
+        "lscpu"
+      ],
+      "exit_code": 0,
+      "output": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 7950X3D 16-Core Processor\nCPU family:                              25\nModel:                                   97\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                2\nMicrocode version:                       0xa60120a\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      62%\nCPU max MHz:                             5763.3560\nCPU min MHz:                             416.6290\nBogoMIPS:                                8384.15\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid overflow_recov succor smca fsrm flush_l1d\nVirtualization:                          AMD-V\nL1d cache:                               512 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                16 MiB (16 instances)\nL3 cache:                                128 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Mitigation; Clear CPU buffers\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n"
+    },
+    "power": {
+      "/proc/sys/kernel/osrelease": "7.1.2",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver": "amd-pstate-epp",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "powersave",
+      "/sys/devices/system/cpu/cpufreq/boost": "1"
+    },
+    "recorded_utc": "2026-09-12T22:07:55.145661+00:00",
+    "selected_cpu": 0,
+    "uname": [
+      "Linux",
+      "sharkanfahr",
+      "7.1.2",
+      "#1-NixOS SMP PREEMPT_DYNAMIC Sat Jun 27 10:08:18 UTC 2026",
+      "x86_64"
+    ]
+  },
+  "measurement_end_utc": "2026-09-12T22:09:46.447633+00:00",
+  "measurement_start_utc": "2026-09-12T22:07:55.392408+00:00",
+  "memory_scope": "GNU time maximum resident set size of complete worker, including all stages, default-API replays, semantic and mutation checks, hashing, artifacts and IO",
+  "native_scope": "correctness only; no throughput measurement",
+  "phase_scope": "one timed invocation per named stage; see worker measurements.json",
+  "profile": "reference",
+  "repetitions": 3,
+  "replay_scope": "source identities plus retained executable seed and persisted-input consumer; not a Lean/compiler rebuild",
+  "runtime_closure_paths": 139,
+  "sampling": "fresh full worker process; fixed sizes ascending, tree then shared; one sample per stage per process",
+  "seed": {
+    "check-native-sharing": {
+      "bytes": 120360800,
+      "sha256": "a4fbe615abcefac9fdbc5362b2d16fb1e3fb89e0553a405d079e6d3773a53857"
+    },
+    "heap-snapshot-object": {
+      "bytes": 123399240,
+      "sha256": "8ad832138d1ae6b021e69430e28da86daa8526227e2601f4da25fcadb42da6d1"
+    },
+    "native-sharing": {
+      "bytes": 124519376,
+      "sha256": "5ebfa336fefdce3b4dda1756b3d1f07a699a4307759b5d51d89d720005144686"
+    }
+  },
+  "source": {
+    "bytes": 3535478,
+    "sha256": "aee5236d1ae03872bfdd20626eaecc5587eedab526765e2d622cab66158c7e6e"
+  },
+  "source_files": 747,
+  "source_state": "base commit plus the complete uncommitted files in source.tar.gz; final performance prose is added later"
+}

@@ -58,7 +58,8 @@ def exportAddress (program : Json) (runtimeArity : Nat) : Nat → Json → IO St
         "heap source export signature changed"
       return address
 
-def inspectObject (bytes text provenance : ByteArray) (entry : Nat) : IO Unit := do
+def inspectObject (bytes text provenance : ByteArray) (entry : Nat)
+    (exportName : String := "compilatrix_heap_cfg") : IO Unit := do
   need (bytes.size ≥ 64 && bytes.extract 0 7 == (← checked (unhex "7f 45 4c 46 02 01 01"))) "heap ELF header disagrees"
   need ((← readLE bytes 16 2) == 1 && (← readLE bytes 18 2) == 62 && (← readLE bytes 20 4) == 1 &&
     (← readLE bytes 24 8) == 0 && (← readLE bytes 32 8) == 0 && (← readLE bytes 52 2) == 64 &&
@@ -78,7 +79,7 @@ def inspectObject (bytes text provenance : ByteArray) (entry : Nat) : IO Unit :=
   need (symbols.size == 72 && (← readLE bytes (sectionOffset 4 + 56) 8) == 24 &&
     (← readLE bytes (sectionOffset 4 + 40) 4) == 5) "heap ELF symbol table disagrees"
   let nameOffset ← readLE symbols 48 4
-  let name := "compilatrix_heap_cfg".toUTF8.push 0
+  let name := exportName.toUTF8.push 0
   need (strings.extract nameOffset (nameOffset + name.size) == name && entry < text.size &&
     (← readLE symbols 52 1) == 18 && (← readLE symbols 53 1) == 0 && (← readLE symbols 54 2) == 1 &&
     (← readLE symbols 56 8) == entry && (← readLE symbols 64 8) == text.size - entry) "heap ELF export disagrees"
@@ -88,7 +89,8 @@ def inspectObject (bytes text provenance : ByteArray) (entry : Nat) : IO Unit :=
     note.extract 24 (24 + provenance.size) == provenance &&
     note.size == 24 + (provenance.size + 3) / 4 * 4) "heap ELF provenance disagrees"
 
-def inspect (row snapshot : Json) (bytes wire : ByteArray) : IO Unit := do
+def inspect (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := false) : IO Unit := do
+  if shared then need ((← strField row "emission") == "heap-block-sharing/1") "heap shared emission policy disagrees"
   need ((← strField snapshot "format") == "compilatrix/source-native-heap/1" &&
     (← strField snapshot "policy") == "physical-leaf-cfg/1" && (← field snapshot "row") == row)
     "heap snapshot policy/row disagrees"
@@ -178,7 +180,8 @@ def inspect (row snapshot : Json) (bytes wire : ByteArray) : IO Unit := do
     else if name == "branch-call" || name == "caller-live" then ["alloc", "call", "switchValue", "dropUnique"]
     else ["alloc", "call", "dropUnique"]
   need (required.all operations.contains) "heap fixture CFG features disappeared"
-  need ((← number row "certificate_checks") == 3 &&
+  let nativeBlocks ← number row "native_blocks"
+  need ((← number row "certificate_checks") == (if shared then 4 + 2 * nativeBlocks else 3) &&
     (← number row "capacity_checks") == (if ["shared-pair", "leaf-switch"].contains name then 4 else 5))
     "heap rejection inventory disagrees"
   let observations ← arrField snapshot "observations"
@@ -206,7 +209,8 @@ def inspect (row snapshot : Json) (bytes wire : ByteArray) : IO Unit := do
       ("arguments", toJson (if arity name == 1 then #[a] else #[a,b])), ("heap", heap)] else Json.null
     need ((← field observation "source") == sourceObservation) "heap source application/reclamation disagrees"
 
-def regressions (row snapshot : Json) (bytes wire : ByteArray) : IO Nat := do
+def regressions (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := false) : IO Nat := do
+  let inspect := fun row snapshot bytes wire => HeapNativeCheck.inspect row snapshot bytes wire shared
   let mut count := 0
   for (name, path, replacement, fragment) in [
       ("policy", ["policy"], toJson "unknown/1", "policy/row"),

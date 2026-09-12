@@ -132,6 +132,7 @@
             ./fixtures/source-coverage
             ./fixtures/source-modular
             ./fixtures/compiler-scaling
+            ./fixtures/native-sharing
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
@@ -195,6 +196,7 @@
             ./fixtures/source-coverage
             ./fixtures/source-modular
             ./fixtures/compiler-scaling
+            ./fixtures/native-sharing
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
@@ -633,6 +635,14 @@
               --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump \
               ${pkgs.lib.optionalString (system == "x86_64-linux")
                 "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-heap/native_harness.c"}
+            ./.lake/build/bin/check-source-native-heap \
+              --fixture ./.lake/build/bin/source-native-heap \
+              --consumer ./.lake/build/bin/heap-snapshot-object \
+              --expected ${auditSrc}/fixtures/source-native-heap/expected-shared.json \
+              --emission shared \
+              --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-heap/native_harness.c"}
           '';
         };
 
@@ -709,6 +719,24 @@
             lake build benchmark
             ./.lake/build/bin/benchmark compiler-scaling-smoke "$TMPDIR/compiler-scaling" \
               --gcc ${pkgs.gcc}/bin/gcc --time ${pkgs.time}/bin/time
+          '';
+        };
+
+        nativeSharingCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.gcc pkgs.binutils];
+          name = "native-sharing";
+          installArtifacts = false;
+          postBuild = ''
+            lake build heap-snapshot-object check-native-sharing
+            ./.lake/build/bin/check-native-sharing \
+              --fixture ./.lake/build/bin/native-sharing \
+              --consumer ./.lake/build/bin/heap-snapshot-object \
+              --expected ${auditSrc}/fixtures/native-sharing/expected.json \
+              --cc ${pkgs.gcc}/bin/gcc --harness ${auditSrc}/benchmarks/native/scaling_harness.c \
+              --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump
           '';
         };
 
@@ -799,6 +827,7 @@
         } // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           benchmark-correctness-smoke = benchmarkCheck;
           compiler-scaling-correctness-smoke = compilerScalingCheck;
+          native-sharing = nativeSharingCheck;
         };
 
         devShells.default = pkgs.mkShell {

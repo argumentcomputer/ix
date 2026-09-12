@@ -1,5 +1,6 @@
 import Compilatrix.X86.PhysicalHeapSelect
 import Compilatrix.X86.HeapArena
+import Compilatrix.X86.BlockSharing
 
 namespace Compilatrix.X86.HeapTarget
 open PhysicalHeap
@@ -149,34 +150,34 @@ def FunctionPlan.matches (program : X86.Program) (entries : Array BlockId) (para
     Scalar.blockMatches program plan.entry (Scalar.prologue parameters) (.jump plan.body.entry) &&
     Scalar.blockMatches program plan.exit Scalar.successInstructions .ret && plan.body.matches program entries plan.exit
 
-private def emitTree (entries : Array BlockId) (exit : BlockId) : Tree → Scalar.Emit Plan
-  | .ret kind value => return .ret (← Scalar.emit [Scalar.load .rax value] (.jump exit)) kind value
+private def emitTree (entries : Array BlockId) (exit : BlockId) : Tree → BlockSharing.Emit Plan
+  | .ret kind value => return .ret (← BlockSharing.emit [Scalar.load .rax value] (.jump exit)) kind value
   | .primitive operation next => do
       let next ← emitTree entries exit next
-      return .primitive (← Scalar.emit (HeapTarget.primitive operation) (.jump next.entry)) operation next
+      return .primitive (← BlockSharing.emit (HeapTarget.primitive operation) (.jump next.entry)) operation next
   | .jump copies next => do
       let next ← emitTree entries exit next
-      return .jump (← Scalar.emit (transfer copies) (.jump next.entry)) copies next
+      return .jump (← BlockSharing.emit (transfer copies) (.jump next.entry)) copies next
   | .branch value zeroTransfer zero succTransfer successor => do
       let zero ← emitTree entries exit zero
       let successor ← emitTree entries exit successor
-      let zeroEdge ← Scalar.emit (transfer zeroTransfer) (.jump zero.entry)
-      let succEdge ← Scalar.emit (transfer succTransfer) (.jump successor.entry)
-      let entry ← Scalar.emit [Scalar.load .rax value] (.branch Scalar.zeroCompare .eq zeroEdge succEdge)
+      let zeroEdge ← BlockSharing.emit (transfer zeroTransfer) (.jump zero.entry)
+      let succEdge ← BlockSharing.emit (transfer succTransfer) (.jump successor.entry)
+      let entry ← BlockSharing.emit [Scalar.load .rax value] (.branch Scalar.zeroCompare .eq zeroEdge succEdge)
       return .branch entry zeroEdge succEdge value zeroTransfer zero succTransfer successor
   | .call function operands destination next => do
       let some target := entries[function]? | throw "heap target callee is missing"
       let next ← emitTree entries exit next
-      let entry ← Scalar.emit (arguments target operands ++ [.spill (Scalar.slot destination) .rax]) (.jump next.entry)
+      let entry ← BlockSharing.emit (arguments target operands ++ [.spill (Scalar.slot destination) .rax]) (.jump next.entry)
       return .call entry function operands destination next
   | .tailCall kind function operands => do
       let some target := entries[function]? | throw "heap target tail callee is missing"
-      return .tailCall (← Scalar.emit (arguments target operands) (.jump exit)) kind function operands
+      return .tailCall (← BlockSharing.emit (arguments target operands) (.jump exit)) kind function operands
 
-private def emitFunction (entries : Array BlockId) (parameters : Nat) (tree : Tree) : Scalar.Emit FunctionPlan := do
-  let exit ← Scalar.emit Scalar.successInstructions .ret
+private def emitFunction (entries : Array BlockId) (parameters : Nat) (tree : Tree) : BlockSharing.Emit FunctionPlan := do
+  let exit ← BlockSharing.emit Scalar.successInstructions .ret
   let body ← emitTree entries exit tree
-  return { entry := ← Scalar.emit (Scalar.prologue parameters) (.jump body.entry), exit, body }
+  return { entry := ← BlockSharing.emit (Scalar.prologue parameters) (.jump body.entry), exit, body }
 
 /-- The dead source export closure is represented by a counter baseline.
 The native arena starts with zero allocated cells; the prefix has no address
@@ -207,11 +208,11 @@ def EntryPlan.matches (program : X86.Program) (baseline : Bool) (target : BlockI
   Scalar.blockMatches program plan.adapter (HeapTarget.adapter baseline target) .ret &&
   Scalar.blockMatches program plan.reject rejectInstructions .ret
 
-private def emitEntry (baseline : Bool) (target : BlockId) (demand : Nat) : Scalar.Emit EntryPlan := do
-  let reject ← Scalar.emit rejectInstructions .ret
-  let adapter ← Scalar.emit (HeapTarget.adapter baseline target) .ret
-  let lower ← Scalar.emit [] (.branch (capacityCompare demand) .unsignedLt reject adapter)
-  let entry ← Scalar.emit [.load .w64 .rax (HeapArena.memory .rdx 1)]
+private def emitEntry (baseline : Bool) (target : BlockId) (demand : Nat) : BlockSharing.Emit EntryPlan := do
+  let reject ← BlockSharing.emit rejectInstructions .ret
+  let adapter ← BlockSharing.emit (HeapTarget.adapter baseline target) .ret
+  let lower ← BlockSharing.emit [] (.branch (capacityCompare demand) .unsignedLt reject adapter)
+  let entry ← BlockSharing.emit [.load .w64 .rax (HeapArena.memory .rdx 1)]
     (.branch (capacityCompare HeapArena.capacity) .unsignedGt reject lower)
   return { entry, lower, adapter, reject }
 
@@ -226,14 +227,41 @@ structure Output {schemas program root} (selected : PhysicalHeap.Selected schema
   entryVerified : entry.matches target.program baseline ((plans.map (·.entry))[selected.entry]?.getD 0)
     selected.entryInterface.allocations = true
 
-def compile {schemas program root} (selected : PhysicalHeap.Selected schemas program root) (baseline : Bool := false) :
-    Except String (Output selected baseline) := do
-  let ((plans, entry), blocks) ← (do
+/-- Both strategies use the same templates and consumer certificate. The
+tree strategy retains the previous block order and exact output bytes. -/
+inductive Emission where
+  | tree | shared
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+def Emission.policy : Emission → String
+  | .tree => "heap-block-tree/1"
+  | .shared => "heap-block-sharing/1"
+
+/-- An untrusted emission proposal, also used for independent rechecking. -/
+structure Candidate where
+  blocks : Array Block
+  plans : Array FunctionPlan
+  entry : EntryPlan
+
+def Candidate.program (candidate : Candidate) : X86.Program :=
+  { blocks := candidate.blocks, entry := candidate.entry.entry }
+
+def emitCandidate {schemas program root} (selected : PhysicalHeap.Selected schemas program root)
+    (baseline : Bool := false) (emission : Emission := .tree) : Except String Candidate := do
+  let ((plans, entry), state) ← (do
     let mut plans : Array FunctionPlan := #[]
     for row in selected.rows do
       plans := plans.push (← emitFunction (plans.map (·.entry)) row.interface.parameters.size row.source.tree)
     let entry ← emitEntry baseline ((plans.map (·.entry))[selected.entry]?.getD 0) selected.entryInterface.allocations
-    return (plans, entry) : Scalar.Emit (Array FunctionPlan × EntryPlan)).run #[]
+    return (plans, entry) : BlockSharing.Emit (Array FunctionPlan × EntryPlan)).run { sharing := emission == .shared }
+  return { plans, entry, blocks := state.blocks }
+
+/-- Check every use of every proposed block, including shared entries. This
+retains the original instruction, simultaneous-copy, call, and arena-guard
+obligations; interning does not bypass any of them. -/
+def checkCandidate {schemas program root} (selected : PhysicalHeap.Selected schemas program root)
+    (baseline : Bool) (candidate : Candidate) : Except String (Output selected baseline) := do
+  let { blocks, plans, entry } := candidate
   let target ← (X86.Program.check { blocks, entry := entry.entry }).mapError reprStr
   if size : plans.size = selected.rows.size then
     if entryAt : target.program.entry = entry.entry then
@@ -246,5 +274,39 @@ def compile {schemas program root} (selected : PhysicalHeap.Selected schemas pro
       else throw "heap target instruction/slot/control certificate failed"
     else throw "heap target entry changed"
   else throw "heap target function coverage is incomplete"
+
+/-- A successful check certifies the exact proposed program, even when plan
+entries coincide. It cannot silently substitute another emitted graph. -/
+theorem checkCandidate_program {schemas program root}
+    {selected : PhysicalHeap.Selected schemas program root} {baseline : Bool}
+    {candidate : Candidate} {output : Output selected baseline}
+    (accepted : checkCandidate selected baseline candidate = .ok output) :
+    output.target.program = candidate.program := by
+  unfold checkCandidate at accepted
+  simp only [Program.check] at accepted
+  split at accepted
+  · simp only [Except.mapError, Except.bind, bind, pure] at accepted
+    split at accepted
+    · split at accepted
+      · split at accepted
+        · split at accepted
+          · cases accepted
+            rfl
+          · contradiction
+        · contradiction
+      · contradiction
+    · contradiction
+  · contradiction
+
+/-- Baseline emission, with its original exact artifact bytes. -/
+def compile {schemas program root} (selected : PhysicalHeap.Selected schemas program root) (baseline : Bool := false) :
+    Except String (Output selected baseline) := do
+  checkCandidate selected baseline (← emitCandidate selected baseline .tree)
+
+/-- Emit each identical native continuation once. The result has exactly the
+same proof contract as `compile`, including arbitrary incoming edges. -/
+def compileShared {schemas program root} (selected : PhysicalHeap.Selected schemas program root) (baseline : Bool := false) :
+    Except String (Output selected baseline) := do
+  checkCandidate selected baseline (← emitCandidate selected baseline .shared)
 
 end Compilatrix.X86.HeapTarget

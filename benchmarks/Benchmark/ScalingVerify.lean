@@ -127,7 +127,7 @@ def verify (directory output : FilePath) : IO Unit := do
     writeJson output (Json.mkObj [("status", toJson "passed"), ("scope", toJson "checked IxIR2 through native lowering"),
       ("arguments", toJson arguments), ("native_status", ← field outcome "status")])
     return
-  let native := X86.PhysicalHeap.compileSnapshotExport decoded.artifact decoded.checked "compilatrix_scaling"
+  let native := X86.PhysicalHeap.compileSnapshotExport decoded.artifact decoded.checked "compilatrix_scaling" (emission := .tree)
   match native with
   | .error reason =>
     need ((← strField outcome "status") == "rejected" && (← strField (← field outcome "rejection") "reason") == reason &&

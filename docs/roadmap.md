@@ -32,7 +32,7 @@ can proceed independently when their prerequisites are available.
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
 | [N3: compositional native lowering](#n3-compositional-native-lowering) | bounded allocating CFGs delivered | Runtime source application, scalar/static-capture slices, leaf allocation/reuse across branches, joins and nonrecursive calls, caller owners/reservations, finite heap/stack, exact counters/reclamation, and canonical snapshots through ELF. Runtime/heap captures, general heaps, and broader recursion remain extensions. |
-| [PERF3: optimization and compiler scaling](#performance-measurement) | first optimization and bounded scaling delivered | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) retains its selectable baseline. [Compiler scaling](performance/compiler-scaling-2026-09-12/README.md) measures fixed source/IR families, stage/process costs, evidence growth, HPT cache/dependency edits and exact rejection boundaries, with correctness and retained replay. |
+| [PERF3: optimization and compiler scaling](#performance-measurement) | checked optimization pairs and bounded scaling delivered | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) retains its selectable baseline. [Compiler scaling](performance/compiler-scaling-2026-09-12/README.md) measures fixed source/IR families, stage/process costs, evidence growth, HPT cache/dependency edits and exact rejection boundaries, with correctness and retained replay. [Shared native blocks](native-sharing.md) reduce join code growth under the same selector limits. |
 | [F1: finite heap and stack](#f1-finite-heap-and-stack) | bounded allocating CFG workspace delivered | Versioned occupied/committed bytes, explicit frames, finite physical execution, source-map adequacy, and native list/leaf arenas. The allocating CFG workspace includes caller spills, reservations and nested calls, with capacity rejection and full reclamation. General allocator reuse/fragmentation and traversal workspace remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | complete snapshots delivered | Strict bounded `ixir2-snapshot/1`, exact versioned full-body/context preimages, kernel roundtrip/canonicality and checked-source recovery, with independent malformed/resource/mutation/fresh-process checks. Renumbering and modular certification remain separate. |
 | [I3: modular source certification](#i3-modular-source-certification) | bounded units delivered | Exact checked interfaces, proved source-evidence composition, dependency-edit reuse, strict retained recovery, and a fully reachable 611-declaration closure in 11 units under unchanged monolithic defaults. Automatic partitioning and the compiler's full source closure remain extensions. |
@@ -250,7 +250,10 @@ delivers the first PERF3 optimization pair. The
 [compiler scaling reference](performance/compiler-scaling-2026-09-12/README.md)
 adds bounded source/IR families, phase/process observations, evidence growth,
 cache/dependency edits and admission boundaries under unchanged defaults.
-All retain raw data, correctness, artifact replay, and analysis.
+The [shared native emitter](native-sharing.md) adds a checked optimization
+pair for converging joins and allocating source/CFGs, retaining the tree
+baseline and all selector limits. Selection and plan checking still unfold
+trees. All retain raw data, correctness, artifact replay, and analysis.
 [Benchmark design](benchmark-plan.md) owns the
 comparison rules; the [implemented protocol](../benchmarks/protocol.md) owns
 commands and exact sampling details.
@@ -258,7 +261,7 @@ commands and exact sampling details.
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
 | PERF2: broader native workloads | deferred; admit families as source/native support lands | Cover at least three computational families: an unchanged upstream program, runtime arithmetic/control, and heap traversal. Extend beyond 64 elements only with the required ABI/selector and F1 contracts. Add OCaml; report support gaps and a fixed common comparison subset. |
-| PERF3: optimization and compiler scaling | first pair and bounded scaling delivered | Extend the recorded source/IR families and checked optimization pairs under fixed policies. Retain phase/process costs, evidence growth, cache edits, neutral/adverse cases, rejections and reproducible artifacts; use results to activate M2d/I3 work. |
+| PERF3: optimization and compiler scaling | checked pairs and bounded scaling delivered | Extend the recorded source/IR families and checked optimization pairs under fixed policies. Retain phase/process costs, evidence growth, cache edits, neutral/adverse cases, rejections and reproducible artifacts; use results to activate M2d/I3 work. |
 
 Correctness and runner smoke tests belong in ordinary CI. Timing regression
 thresholds require history on a controlled host; the first shared-host runs

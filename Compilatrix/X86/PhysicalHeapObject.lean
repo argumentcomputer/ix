@@ -19,10 +19,13 @@ structure Compiled (schemas : Schemas) (program : IxIR2.Program) (root : Ixon.Ad
   object : ELF.Certified input
 
 def compile (schemas : Schemas) (program : IxIR2.Program) (root : Ixon.Address)
-    (baseline : Bool) (provenance : ELF.Provenance) (name : String := "compilatrix_heap_cfg") :
+    (baseline : Bool) (provenance : ELF.Provenance) (name : String := "compilatrix_heap_cfg")
+    (emission : HeapTarget.Emission := .shared) :
     Except String (Compiled schemas program root baseline provenance) := do
   let selected ← select schemas program root
-  let native ← HeapTarget.compile selected baseline
+  let native ← match emission with
+    | .tree => HeapTarget.compile selected baseline
+    | .shared => HeapTarget.compileShared selected baseline
   let stream ← (Stream.encode native.target).mapError reprStr
   let input : ELF.Input := { encoded := stream.output, entryBlock := native.target.program.entry, exportName := name, provenance }
   let object ← (ELF.writeChecked input).mapError reprStr
@@ -32,9 +35,9 @@ def compile (schemas : Schemas) (program : IxIR2.Program) (root : Ixon.Address)
 layout preimages and the versioned source ownership policy. -/
 def compileSnapshot (artifact : IxIR2.Wire.Artifact) {limits : IxIR2.Validate.Limits}
     (_checked : IxIR2.Wire.Checked limits artifact) (root : Ixon.Address) (baseline : Bool := false)
-    (name : String := "compilatrix_heap_cfg") :
+    (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .shared) :
     Except String (Compiled artifact.context.schemas artifact.program root baseline (.ixir2 artifact.address)) :=
-  compile artifact.context.schemas artifact.program root baseline (.ixir2 artifact.address) name
+  compile artifact.context.schemas artifact.program root baseline (.ixir2 artifact.address) name emission
 
 /-- Execution of the exact parsed ELF with finite heap and stack capacity,
 exact counters, complete reclamation, and preserved caller state. -/

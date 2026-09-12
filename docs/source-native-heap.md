@@ -48,7 +48,10 @@ including separate scalar/node/erased profiles for the same declaration.
 Each profile has at most two parameters. Calls and CFG expansion are acyclic;
 non-topological block numbering and joins are allowed. The root's conservative
 bound is at most 64 fresh allocations and 1,048,576 physical control steps.
-Joins may duplicate native continuations; this pass does not optimize them.
+The object APIs use [shared native emission](native-sharing.md) by default;
+`(emission := .tree)` retains the original artifacts. Selection and plan
+checking still traverse the bounded tree. Shared emission leaves these
+admission limits unchanged.
 
 Selection proves successful-run preservation, not termination of arbitrary
 source programs. A single-constructor switch and a known-present credit
