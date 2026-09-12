@@ -1,0 +1,103 @@
+{
+  "schema": "ix-stage3-gates-import-v1",
+  "source_revision": "8f6d34333377d4c484041003652966f771a23d36",
+  "source_branch": "jcb/flock-stage3",
+  "source_worktree": "/home/jcb/projects/00/ix",
+  "imported_on": "2026-09-12",
+  "scope": "Reusable arithmetic/Boolean/byte-window/equality gates and shared emitter only. Captures working-source hashes, including uncommitted donor changes; no Stage 2 verifier scheduling or native verifier dependency.",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "files": [
+    {
+      "path": "flock-stage3/host/src/boolean.rs",
+      "source_sha256": "5919700986b1625b16d2b74ec4d295924a16b7d6bef1b429fb0a64d79d854210",
+      "source_git_blob": "6a137e0bbab6eec9d8f894f4fc20c7e5078b3ad8",
+      "source_head_git_blob": "6a137e0bbab6eec9d8f894f4fc20c7e5078b3ad8",
+      "working_changes": false,
+      "adaptation": "Expose reusable gate APIs (pub(crate) -> pub); unchanged table/witness definitions and tests."
+    },
+    {
+      "path": "flock-stage3/host/src/goldilocks.rs",
+      "source_sha256": "2f5c328e402fca0df4f2cddfa9d2cd498d2c95779b74ab6d154a92dcc24dd63d",
+      "source_git_blob": "7de4afe0e6d5e82b79730382db454abf4080248b",
+      "source_head_git_blob": "7de4afe0e6d5e82b79730382db454abf4080248b",
+      "working_changes": false,
+      "adaptation": "Expose reusable gate APIs (pub(crate) -> pub); unchanged table/witness definitions and tests. Differential tests import the same pinned P3 field crates directly instead of multi-stark reexports."
+    },
+    {
+      "path": "flock-stage3/host/src/multiplication.rs",
+      "source_sha256": "4e5a6010b332de6ccd7bf26d5d2e90dab5b87a3686d9dd4a67951241aa7520b4",
+      "source_git_blob": "9f8f42e0202c3cc5c6097b58f876250e5bb026ea",
+      "source_head_git_blob": "9f8f42e0202c3cc5c6097b58f876250e5bb026ea",
+      "working_changes": false,
+      "adaptation": "Expose reusable gate APIs (pub(crate) -> pub); unchanged table/witness definitions and tests. Differential tests import the same pinned P3 field crates directly instead of multi-stark reexports."
+    },
+    {
+      "path": "flock-stage3/host/src/extension.rs",
+      "source_sha256": "5a5b6021095164d0b92b88426dbd9d3d5bbab551af0684d9fc6f01bf1888750c",
+      "source_git_blob": "02cc68ff3b7130d6517e062c975fd0451cc385c0",
+      "source_head_git_blob": "02cc68ff3b7130d6517e062c975fd0451cc385c0",
+      "working_changes": false,
+      "adaptation": "Expose reusable gate APIs (pub(crate) -> pub); unchanged table/witness definitions and tests. Differential tests import the same pinned P3 field crates directly instead of multi-stark reexports."
+    },
+    {
+      "path": "flock-stage3/host/src/equality.rs",
+      "source_sha256": "67b104292ef5bfb03d6ae002507dafa2d36a718d171d72c79a96d22241d1c23b",
+      "source_git_blob": "c74292abc2a4f6dd1a0299ad8bd79dcdd46ed086",
+      "source_head_git_blob": "c74292abc2a4f6dd1a0299ad8bd79dcdd46ed086",
+      "working_changes": false,
+      "adaptation": "Expose reusable gate APIs (pub(crate) -> pub); unchanged table/witness definitions and tests."
+    },
+    {
+      "path": "flock-stage3/host/src/window.rs",
+      "source_sha256": "f01727dd8f934edb7dc002210223bb301aab4111b16ca0c81835bee6de0475b5",
+      "source_git_blob": "dc459c79a0d1a6fa6cc83c944d5751c97a2a8c27",
+      "source_head_git_blob": "dc459c79a0d1a6fa6cc83c944d5751c97a2a8c27",
+      "working_changes": false,
+      "adaptation": "Expose reusable gate APIs (pub(crate) -> pub); unchanged table/witness definitions and tests."
+    },
+    {
+      "path": "flock-stage3/host/src/sizing.rs",
+      "source_sha256": "8ae8342c0708b959c031250a4820980ba525e8383530f116cdba28917e9ca805",
+      "source_git_blob": "2aa3ce7808ed9e241cbff6031f5d587e665c728b",
+      "source_head_git_blob": "f0ad5b30576d2f471d52ee39e41e9960d0a1f64f",
+      "working_changes": true,
+      "adaptation": "Expose gate APIs; retain generic arithmetic/byte/BLAKE3/Merkle registrations and omit Stage 2 transcript gates; add Default for the now-public CountingEmitter. Formatting follows the target repository."
+    },
+    {
+      "path": "flock-stage3/host/src/binding.rs",
+      "source_sha256": "eecc704a2577a4658fcc361db5c8c350019e52cf518f5d7fd978dda4cdea7b04",
+      "source_git_blob": "cab1a432a097f530b1c3dc32d8e9f56c2999a715",
+      "source_head_git_blob": "57f8a936fbdcb7ae44b63394aebaa8191f9402b8",
+      "working_changes": true,
+      "destination": "flock-stage3/host/src/hash.rs",
+      "adaptation": "Extract only IV/flags, Blake3Gate and packing helpers; move baseline PCS helpers into conformance/config.rs. No Stage 2 statement relation or artifact parser imported. Add native BLAKE3 boundary, packing, R1CS mutation, and zero-dummy-row regressions."
+    },
+    {
+      "path": "flock-stage3/host/src/config.rs",
+      "source_sha256": "b605ff3ab4bbd7a5cb3a6253cc247ed7c020a290570a2327b765021a746e7351",
+      "source_git_blob": "6c9377c4aeb5562405be03ce83cc6dcfc3e6a35d",
+      "source_head_git_blob": "6c9377c4aeb5562405be03ce83cc6dcfc3e6a35d",
+      "working_changes": false,
+      "destination": "flock-stage3/host/src/conformance/config.rs",
+      "adaptation": "Retain the historical configuration identity for explicitly labelled arithmetic/Merkle conformance vectors only; rename type ConformanceConfigV1, remove unrelated protocol domains, expose reusable baseline PCS helpers."
+    },
+    {
+      "path": "flock-stage3/host/src/arithmetic.rs",
+      "source_sha256": "7451643749580b9dddbd24c70b87d37521c791dfe4cebc135f8efe33a24884ce",
+      "source_git_blob": "36676e691feb439c1901589f3db88e3f0e8cbc97",
+      "source_head_git_blob": "36a6502a5f8565db14713f96875794e249a4b414",
+      "working_changes": true,
+      "destination": "flock-stage3/host/src/conformance/arithmetic.rs",
+      "adaptation": "Retain strict conformance artifact/prove/verify APIs and tests; adjust generic hash/config imports and expose gate APIs. These are not Exec proofs."
+    },
+    {
+      "path": "flock-stage3/host/src/merkle.rs",
+      "source_sha256": "93977745664831e6018adc68aa087e20659e9761ddc74af884a0d95afa6e765f",
+      "source_git_blob": "fcc22c9ba329de230170afa4df79da610816b74b",
+      "source_head_git_blob": "5c0186c14ea28f2a224a657d70c7e1bb2ddcfe34",
+      "working_changes": true,
+      "destination": "flock-stage3/host/src/conformance/merkle.rs",
+      "adaptation": "Retain strict conformance artifact/prove/verify APIs and tests; adjust generic hash/config imports and expose gate APIs. These are not Exec proofs."
+    }
+  ]
+}
