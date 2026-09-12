@@ -164,6 +164,17 @@ before raising these defaults. This is an explicit interim decision, not a
 claim that the current dependent proof database scales to the whole standard
 library.
 
+The [bounded compiler scaling reference](performance/compiler-scaling-2026-09-12/README.md)
+exercises the actual defaults. Its independent-declaration family compiles at
+352 added declarations (354 certificate candidates) and rejects at 353 on the
+combined charge. Its caller-chain family passes source certification at depth
+318 and rejects at 319 on that charge, while native selection already rejects
+depth 33. Separate minimal fixtures accept 512 candidates at preflight and
+reject 513; they do not claim complete certification of a 512-declaration
+program. The branch generator also exposes the earlier canonical compression
+boundary at sizes 453/454. These are family-specific boundaries, not a new
+universal declaration limit. None of the defaults is raised by the experiment.
+
 ## Catalog aggregate ingress
 
 `Catalog.loadWith` layers aggregate limits over the per-object policy. It

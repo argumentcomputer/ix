@@ -101,7 +101,7 @@
         }
       ],
       "semantics_assumed": "The active init/update/finalize path returns the standard BLAKE3 extendable-output hash of exactly the supplied bytes; a 32-byte request returns the standard 256-bit digest. The FFI respects Lean ownership, lifetime, array-size, and C-ABI contracts. Uncalled keyed, derive-key, and version exports are covered because importing Blake3.Rust makes them reachable to downstream Lean code, but Compilatr.ix does not currently rely on their results. The sibling Blake3.C module binds the vendored C implementation behind six c_blake3_* externs; Compilatr.ix does not import it, so they are inventoried as present-but-unimported and any drift in the package tree's extern set fails the check.",
-      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1✝ because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality.",
+      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1\u271d because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality.",
       "trust_basis": [
         "Blake3.lean and lean-ffi are revision-pinned",
         "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
@@ -339,9 +339,9 @@
       "status": "active-measurement-only",
       "owner": "Compilatr.ix maintainers",
       "version": "Lean 4.33.0; CakeML v3479/e8eca63affd1653105ca4b9cc2f5ca87a01cd0af; CompCert 3.16; GCC 14.3.0; Clang 21.1.2",
-      "current_role": "Build and execute the six PERF1 comparison programs, their native timing/ABI bridges, and independent artifact/correctness/analysis replay. They do not add a production Lean extern or an axiom to source/compiler proofs.",
+      "current_role": "Build and execute the six PERF1 comparison programs, PERF3 compiler scaling workers and native correctness harness, and independent artifact/correctness/analysis replay. They do not add a production Lean extern or an axiom to source/compiler proofs.",
       "assumption": "The recorded compilers, language runtimes, libc allocation and clocks, Linux scheduling/affinity/RSS APIs, and host execute and report faithfully. Empirical output/ABI/GC checks support the measurements; compiler verification elsewhere does not prove these complete benchmark executables or clock readings.",
-      "trust_basis": "benchmarks/toolchains.json pins retrievable sources and configurations; the build records executable/tool digests and closure paths. Full input and malformed-input matrices, fresh artifact checks, opaque operation boundaries, separate GC instrumentation, raw paired timing, deterministic analysis, and clean environment replay are retained.",
+      "trust_basis": "benchmarks/toolchains.json pins retrievable sources and configurations; the build records executable/tool digests and closure paths. Full input and malformed-input matrices, fresh artifact checks, opaque operation boundaries, separate GC instrumentation, raw paired timing, deterministic analysis, and clean environment replay are retained. Compiler scaling retains canonical source inputs, checked HPT/cache and IxIR2/ELF bytes, fixed admission boundaries, independent C execution, phase/process observations, corruption regressions, and fresh source-directory replay using hashed compiler seeds; it does not rebuild the compiler executable from Lean.",
       "retirement": "Comparison measurements remain external observations. Verified runtime and ISA/loader contracts may narrow the boundary; dedicated-host repetition and independent seed/environment reproduction address measurement and supply-chain uncertainty separately."
     }
   ],
@@ -684,10 +684,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "dfcd6f2510b14a53f8624707be453ff651e344d2be4e7ca6374bb017bba42248",
+      "flake.nix": "60a12f94ddaf106ab0612395e56177151f908d77f803ea633a1e9270f19844a0",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "bf1447021e6c9b8b265c605b0b822fcfec450e279bb415201e86f6e1fe2879ca",
+      "lakefile.lean": "42fd28b04d24a9b485ce89a638369579bcc5edac1787b4b465bc59393ab2c215",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -756,7 +756,7 @@
       "benchmarks/Benchmark/Check.lean": "76ab2bc3d6de25524675203c5d7a541cf1372dae90c6dc77a606dfc2bc9d84a2",
       "benchmarks/Benchmark/Diagnostics.lean": "12f46c5e822a5ec3510473d15dc962b11b9e95a4aaec5089c09268c795685485",
       "benchmarks/Benchmark/Build.lean": "75ba5b970928dda014c6dfc0ee19d32084556df4d0ecaab204a88bcb2d9252ea",
-      "benchmarks/Benchmark/Environment.lean": "87aa4ff0a69543a2c8d4ce56aef0ae6b09695cfb489f481960e66d5641b12c7f",
+      "benchmarks/Benchmark/Environment.lean": "ff58d34f002a82ac88324989c3cd320a59555a6566dcad848fc89960ebd40b23",
       "benchmarks/Benchmark/Data.lean": "6a1e9581d333b497b9d8f160bfe7b468c805c73d6c042e90ddf3d3136a3eb4cd",
       "benchmarks/Benchmark/Verify.lean": "03908e0e1ce0a4cfe7b2851aef8dfbe4c300299ee8a599f8703a2129ff82866b",
       "benchmarks/Benchmark/Pilot.lean": "13541cf59515dfc29734e69bdaacac10d4b05213dc64530b7901078fed1aa187",
@@ -764,7 +764,7 @@
       "benchmarks/Benchmark/Measure.lean": "f407fa62c8094075de15c229269eaea6b3777102b49f697b01ac2f50cdd16e97",
       "benchmarks/Benchmark/Reproduce.lean": "98da44b81c05a3299c18259819143a1a092df7b63cb7ce2158b441bef0e0c740",
       "benchmarks/Benchmark/Analyze.lean": "a1fd180bd6ff79c342cfe4477e8c269ed16810bd9a0841ac73e38fe03820ad7a",
-      "benchmarks/Benchmark.lean": "d3ace43bb1b5b954aca1de364d65d807d3516ad48f081311431f63d62a41f7a5",
+      "benchmarks/Benchmark.lean": "076f21542f5b74eeaf5d14b344384287e9570201ceb2ccbc49137a6d2b182446",
       "fixtures/source-native-runtime/expected-counter-fold.json": "49be20e4439179563d2cf849989ddbee7680334455def7766b4ff868ccc803c6",
       "benchmarks/Benchmark/CounterFoldBuild.lean": "34ec43928efc0277ba74abe7fb76955514d32ac4b711f761c4c4e496ac1fff56",
       "benchmarks/Benchmark/CounterFoldRun.lean": "d6c61f6ba69f73578c938fd85e6b931abba52a37ca440df5a44a551b1f4fe4f3",
@@ -784,7 +784,20 @@
       "Compilatrix/Tools/HeapNativeCheck.lean": "9e5a6ae3f1ccbf7c920ca1da3c45e12d9f737a8cc48e940204889f75ebfb6bc1",
       "scripts/CheckSourceNativeHeap.lean": "f1fe307a20ac0b1f6a6274046b2a77fe8ea2a2aa8b7e42c46eacb422ef9d9c15",
       "fixtures/source-native-heap/expected.json": "1037a6fd9c53d988a48bdcda091a2760410c8b8748a823bb1a1949b8e9da635b",
-      "fixtures/source-native-heap/native_harness.c": "ae4120f9cc9eae3b4d8dbde0094791179bb4c81a184b490f1b0d9662f691ab78"
+      "fixtures/source-native-heap/native_harness.c": "ae4120f9cc9eae3b4d8dbde0094791179bb4c81a184b490f1b0d9662f691ab78",
+      "benchmarks/Benchmark/ScalingVerify.lean": "1eb6f8f213120a7dcc68f7cd8e617bf5d0b777a4969acb70a280197844aa4a80",
+      "benchmarks/Benchmark/ScalingWorker.lean": "50d6fd11235baf5fb6607a1fa40d712997a76a8ca09b1d77412a26a6b7ff9576",
+      "benchmarks/Benchmark/ScalingReproduce.lean": "beaae9dbee2f4bf9e3a21f1f99be58dc0522fbbaf7dcf93b347073ae946278bf",
+      "benchmarks/Benchmark/ScalingBuild.lean": "525b3e5928b7b46ff2bd7120e8cc7689e035307684ea565e329cd702e3aad52c",
+      "benchmarks/Benchmark/ScalingAnalyze.lean": "d442ef7214766f8a20a78937db34c02399c319656b23a04cd444a4228ccac716",
+      "benchmarks/Benchmark/ScalingJoins.lean": "d97f05f5fa25c9798f0cfa1492387f5e0f189434f87a8787203df67f25301c4b",
+      "benchmarks/Benchmark/ScalingRun.lean": "1e30721a105c7a161b643e8906772a4e6f9f0cb88d27656b667d54468935f497",
+      "benchmarks/Benchmark/ScalingPlan.lean": "bef913f0c1e9afbe61925ee40954be6a3468739e1ccfa4d3d35f2d82fc24d144",
+      "benchmarks/Benchmark/ScalingSources.lean": "3263fe1f8e731632d8f67e0c56e13ead79ad08793cb17464ba492781adbbd101",
+      "benchmarks/CompilerScaling.lean": "b5914958b3b1039d7c67259d819b9230058a8d9309c94db9fe91840886b3cf44",
+      "benchmarks/compiler-scaling.md": "05bdf7c825ee09dc45d040795ad0097bcd33b5ae4c741a9f9d2e381938164001",
+      "benchmarks/native/scaling_harness.c": "7f59e2b78577d435c26176099df11e0bdd4d93f24cb173d567f7d04af13fc809",
+      "fixtures/compiler-scaling/expected.json": "05921bd48b52d526890e1ceea2f6838fd965532e2ee3474db1ad1af94bc8a77e"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

@@ -129,6 +129,7 @@
             ./fixtures/ixon-std-contact
             ./fixtures/ixon-upstream
             ./fixtures/source-coverage
+            ./fixtures/compiler-scaling
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
@@ -189,6 +190,7 @@
             ./fixtures/ixon-std-contact
             ./fixtures/ixon-upstream
             ./fixtures/source-coverage
+            ./fixtures/compiler-scaling
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
@@ -675,6 +677,21 @@
           '';
         };
 
+        compilerScalingCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.gcc pkgs.binutils pkgs.time
+            pkgs.which pkgs.git pkgs.ripgrep pkgs.gnutar pkgs.gzip pkgs.util-linux pkgs.nix];
+          name = "compiler-scaling";
+          installArtifacts = false;
+          postBuild = ''
+            lake build benchmark
+            ./.lake/build/bin/benchmark compiler-scaling-smoke "$TMPDIR/compiler-scaling" \
+              --gcc ${pkgs.gcc}/bin/gcc --time ${pkgs.time}/bin/time
+          '';
+        };
+
         # Checked borrowed calls from Ixon, whole caller/callee reconstruction,
         # independent heap execution, RC improvement, and baseline fallbacks.
         sourceBorrowCheck = lake2nix.mkPackage {
@@ -760,6 +777,7 @@
           catalog-contact = catalogContactCheck;
         } // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           benchmark-correctness-smoke = benchmarkCheck;
+          compiler-scaling-correctness-smoke = compilerScalingCheck;
         };
 
         devShells.default = pkgs.mkShell {

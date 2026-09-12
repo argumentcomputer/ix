@@ -2875,17 +2875,16 @@ compilation. Parameter conflicts caused by IxIR₁ identities that erased
 distinct ownership signatures fail closed before IxIR₂ lowering. The HPT
 producer crosses its ordinary checked boundary before any summary is exposed
 to a site query. -/
-def buildSidecars
+def buildSidecarsWithHPT
     {constants : List (Address × Ixon.Constant)} {mainAddress : Address}
     {config : Compilatrix.Pipeline.Config} {mainWorld : Owned}
     {eraseFuel lowerFuel : Nat}
     (compilation : Compilatrix.Pipeline.ValidatedCompilation constants
-      mainAddress config mainWorld eraseFuel lowerFuel) :
+      mainAddress config mainWorld eraseFuel lowerFuel)
+    (hpt : IxIR1.HPT.Production IxIR1.HPT.defaultProducerLimits.checker
+      compilation.lowering.result.artifacts) :
     Except Error (BuiltSidecars compilation) := do
   let artifact := compilation.artifact
-  let hpt ← match IxIR1.HPT.produce compilation.lowering.result.artifacts with
-    | .ok production => pure production
-    | .error message => .error (.hpt message)
   let parameterEntries ← buildParameterWorlds
     compilation.erasure.result.declarations compilation.lowering.raw
       compilation.lowering.result.addressMap
@@ -2910,6 +2909,20 @@ def buildSidecars
     certificateProduced := rfl
     inputProduced := rfl
   }
+
+/-- Ordinary sidecar production uses the same assembly boundary as a caller
+that already holds checked HPT evidence for this exact addressed program. -/
+def buildSidecars
+    {constants : List (Address × Ixon.Constant)} {mainAddress : Address}
+    {config : Compilatrix.Pipeline.Config} {mainWorld : Owned}
+    {eraseFuel lowerFuel : Nat}
+    (compilation : Compilatrix.Pipeline.ValidatedCompilation constants
+      mainAddress config mainWorld eraseFuel lowerFuel) :
+    Except Error (BuiltSidecars compilation) := do
+  let hpt ← match IxIR1.HPT.produce compilation.lowering.result.artifacts with
+    | .ok production => pure production
+    | .error message => .error (.hpt message)
+  buildSidecarsWithHPT compilation hpt
 
 /-- Common checked attachment for an exact ownership-lowered program. The
 Ixon frontend and checked IxIR₀ transformations share this backend boundary. -/

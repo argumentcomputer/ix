@@ -32,10 +32,10 @@ can proceed independently when their prerequisites are available.
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
 | [N3: compositional native lowering](#n3-compositional-native-lowering) | bounded allocating CFGs delivered | Runtime source application, scalar/static-capture slices, leaf allocation/reuse across branches, joins and nonrecursive calls, caller owners/reservations, finite heap/stack, exact counters/reclamation, and canonical snapshots through ELF. Runtime/heap captures, general heaps, and broader recursion remain extensions. |
-| [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
+| [PERF3: optimization and compiler scaling](#performance-measurement) | first optimization and bounded scaling delivered | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) retains its selectable baseline. [Compiler scaling](performance/compiler-scaling-2026-09-12/README.md) measures fixed source/IR families, stage/process costs, evidence growth, HPT cache/dependency edits and exact rejection boundaries, with correctness and retained replay. |
 | [F1: finite heap and stack](#f1-finite-heap-and-stack) | bounded allocating CFG workspace delivered | Versioned occupied/committed bytes, explicit frames, finite physical execution, source-map adequacy, and native list/leaf arenas. The allocating CFG workspace includes caller spills, reservations and nested calls, with capacity rejection and full reclamation. General allocator reuse/fragmentation and traversal workspace remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | complete snapshots delivered | Strict bounded `ixir2-snapshot/1`, exact versioned full-body/context preimages, kernel roundtrip/canonicality and checked-source recovery, with independent malformed/resource/mutation/fresh-process checks. Renumbering and modular certification remain separate. |
-| [I3: modular source certification](#i3-modular-source-certification) | deferred | Wake before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. Compose independently checked units and reuse unaffected evidence after a dependency edit. |
+| [I3: modular source certification](#i3-modular-source-certification) | next, after the bounded scaling reference | Compose independently checked units and reuse unaffected evidence after a dependency edit before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. |
 | [A1: allocation and spill validation](#a1-allocation-and-spill-validation) | fixed spill slice delivered | Allocating CFG certificates validate value/credit flow through fixed spill slots, staged parallel copies, joins, and disjoint caller/callee activations. General register allocation remains deferred until selected programs need it. |
 
 **State meanings:** delivered is a scoped boundary backed by code and
@@ -201,6 +201,10 @@ the target ABI of a supplied layout descriptor.
 The [current certificate policy](resource-budgets.md#certificate-scaling-decision)
 checks one bounded source union. The next scaling boundary is reusable checked
 units following dependency/SCC boundaries, with recursive groups kept intact.
+The [scaling reference](performance/compiler-scaling-2026-09-12/README.md)
+records combined-work rejection below 512 candidates, plus the costs and
+limits of HPT-only reuse. It supplies a baseline for this work; source
+certificate caching and modular composition are not delivered by that cache.
 
 Acceptance:
 
@@ -245,15 +249,19 @@ spill across a call and a join. A coloring check alone does not close it.
 [PERF1](performance/native-reverse-2026-09-09/README.md) is delivered for
 runtime reversal against Lean 4, CakeML, CompCert, GCC, and Clang, with scoped
 C3 measurements. The [counter-fold experiment](performance/counter-fold-2026-09-10/README.md)
-delivers the first PERF3 optimization pair. Both retain raw data, correctness,
-artifact replay, and analysis. [Benchmark design](benchmark-plan.md) owns the
+delivers the first PERF3 optimization pair. The
+[compiler scaling reference](performance/compiler-scaling-2026-09-12/README.md)
+adds bounded source/IR families, phase/process observations, evidence growth,
+cache/dependency edits and admission boundaries under unchanged defaults.
+All retain raw data, correctness, artifact replay, and analysis.
+[Benchmark design](benchmark-plan.md) owns the
 comparison rules; the [implemented protocol](../benchmarks/protocol.md) owns
 commands and exact sampling details.
 
 | Package | State | Activation and observable exit |
 | --- | --- | --- |
 | PERF2: broader native workloads | deferred; admit families as source/native support lands | Cover at least three computational families: an unchanged upstream program, runtime arithmetic/control, and heap traversal. Extend beyond 64 elements only with the required ABI/selector and F1 contracts. Add OCaml; report support gaps and a fixed common comparison subset. |
-| PERF3: optimization and compiler scaling | first pair delivered; scaling next | Measure compile/check time, evidence/artifact growth, cache/dependency edits under fixed analysis choices, and paired checked optimizations. Both artifacts must select. Retain neutral/adverse, short-list, and fallback cases; use results to activate M2d/I3 work. |
+| PERF3: optimization and compiler scaling | first pair and bounded scaling delivered | Extend the recorded source/IR families and checked optimization pairs under fixed policies. Retain phase/process costs, evidence growth, cache edits, neutral/adverse cases, rejections and reproducible artifacts; use results to activate M2d/I3 work. |
 
 Correctness and runner smoke tests belong in ordinary CI. Timing regression
 thresholds require history on a controlled host; the first shared-host runs
@@ -467,7 +475,7 @@ belong in those references.
 | E1/E2 | [Local instructions](x86-encoded-instructions.md) and [complete streams/ELF](x86-stream-objects.md), including calls, returns, provenance, entry selection, and checked PC32 relocation. Reference ISA, external bodies, and system loading remain explicit. |
 | R6 | [General credit refinement](credit-refinement.md) for both policies and every instruction, including prefixes and independent successful budgets. Complete reclamation requires explicit logical root ownership. |
 | B1/B2 | [Closed borrowed-call certificates](source-borrow.md) and [structural runtime borrowing](source-borrow-runtime.md), with lender preservation, two fewer RC operations, full reclamation, and unchanged peak. Recursive SCCs and native shared borrowing remain open. |
-| PERF1/PERF3 | [Native comparisons](performance/native-reverse-2026-09-09/README.md) and [checked counter folding](performance/counter-fold-2026-09-10/README.md), with full retained data and independent artifact/check/analysis replay. Broader workloads and scaling remain next. |
+| PERF1/PERF3 | [Native comparisons](performance/native-reverse-2026-09-09/README.md), [checked counter folding](performance/counter-fold-2026-09-10/README.md), and [bounded compiler scaling](performance/compiler-scaling-2026-09-12/README.md), with retained data and artifact/check/analysis replay. Broader workloads and modular source certification remain extensions. |
 
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source

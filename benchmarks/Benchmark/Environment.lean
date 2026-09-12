@@ -31,7 +31,10 @@ def environment (core : Nat) : IO Json := do
   let identity := (first.splitOn "\n").filter fun line =>
     ["vendor_id", "cpu family", "model\t", "model name", "stepping", "microcode", "flags"].any (fun startText => line.startsWith startText)
   stable := stable.push ("cpu_identity", toJson identity)
-  let topology ← run "lscpu" #["--json"]
+  let topologyRun ← IO.Process.output { cmd := "lscpu", args := #["--json"] }
+  let topology ← if topologyRun.exitCode == 0 then checked (Json.parse topologyRun.stdout)
+    else pure (Json.mkObj [("status", toJson "unavailable"), ("command", toJson "lscpu --json"),
+      ("exit_code", toJson topologyRun.exitCode.toNat), ("stderr", toJson topologyRun.stderr)])
   let placement ← IO.Process.output { cmd := "taskset", args := #["--cpu-list", toString core, "sh", "-c", "cat /proc/self/status"] }
   need (placement.exitCode == 0) "requested benchmark core is unavailable"
   let affinity := (placement.stdout.splitOn "\n").filter fun line =>
@@ -53,7 +56,7 @@ def environment (core : Nat) : IO Json := do
   return Json.mkObj [
     ("format", toJson "compilatrix/benchmark-environment/1"), ("utc", toJson (← run "date" #["-u", "+%Y-%m-%dT%H:%M:%SZ"]).trimAscii.toString),
     ("core", toJson core), ("stable", stableFields), ("stable_blake3", toJson (digest stableFields.compress.toUTF8)),
-    ("lscpu", ← checked (Json.parse topology)), ("observations", Json.mkObj dynamic.toList),
+    ("lscpu", topology), ("observations", Json.mkObj dynamic.toList),
     ("environment_variables", Json.mkObj variables.toList), ("runtime_overrides", toJson runtimeEnv),
     ("limitations", toJson (["shared host; other tenants and SMT sibling are not controlled",
       "worker affinity is pinned; NUMA follows Linux first-touch placement on the pinned worker",

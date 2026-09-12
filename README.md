@@ -59,7 +59,7 @@ Start with the [documentation guide](docs/README.md), then choose a path:
 - [Roadmap](docs/roadmap.md): active work, acceptance criteria, and conditional
   extensions.
 - [Performance](docs/performance/README.md): native comparisons with Lean 4,
-  CakeML, CompCert, GCC, and Clang, plus the checked counter-fold experiment.
+  CakeML, CompCert, GCC, and Clang, checked counter folding, and compiler scaling.
 - [Benchmark protocol](benchmarks/protocol.md): build, check, measure, and
   reproduce the implemented suite.
 

@@ -191,6 +191,11 @@ lean_exe benchmark where
   srcDir := "benchmarks"
   root := `Benchmark
 
+/- Fresh-process compiler scaling workers and artifact replay. -/
+lean_exe «compiler-scaling» where
+  srcDir := "benchmarks"
+  root := `CompilerScaling
+
 lean_exe «check-tools-tests» where
   srcDir := "scripts"
   root := `CheckToolsTests

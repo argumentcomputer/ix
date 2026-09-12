@@ -6,7 +6,8 @@ formats, exact sampling parameters, and replay. [Performance reports](performanc
 retain results and raw evidence; the [roadmap](roadmap.md#performance-measurement)
 owns PERF2/PERF3 priorities.
 
-The first suite and the checked counter-fold comparison are delivered. Broader
+The first suite, checked counter-fold comparison, and bounded
+[compiler scaling protocol](../benchmarks/compiler-scaling.md) are delivered. Broader
 benchmarks follow actual source/native support, rather than assuming a larger
 compiler domain from the existing results.
 
@@ -217,7 +218,18 @@ filesystem page-cache state. Commit analysis roots or a deterministic producer
 policy under the [reproducibility contract](roadmap.md#reproducible-optimization-and-artifacts).
 Different sound facts can select different code. Equivalent cache configurations
 must reproduce complete deterministic artifacts. Canonical independent IxIR₂
-identity awaits I2.
+identity uses the delivered [I2 snapshot contract](ixir2-wire.md).
+
+The compiler scaling suite varies declaration count, call depth, branches,
+allocation work, and supplementary checked-IxIR₂ joins under fixed defaults.
+It records source construction/admission failures as well as successful stages,
+coverage database counts, serialized HPT evidence, snapshots and ELF growth.
+Fresh processes compare absent/persisted HPT stores and a single dependency
+edit; source certification still runs each time. Stage clocks, repeated
+diagnostics, whole-process costs and raw memory observations have explicit
+separate scopes. The [reference report](performance/compiler-scaling-2026-09-12/README.md)
+retains all observations and exact rejection boundaries. Its CI smoke checks
+correctness, corrupted records and artifact/analysis replay without thresholds.
 
 Name input/output boundaries when comparing compiler times. Compilatrix starts
 from Ixon; a source-to-executable comparison includes required upstream

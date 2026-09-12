@@ -1,10 +1,26 @@
 import Benchmark.Reproduce
 import Benchmark.CounterFold
+import Benchmark.ScalingReproduce
 
 open Compilatrix.Tools.Check
 
 def main (args : List String) : IO UInt32 := cli "benchmark failed" do
   match args with
+  | "compiler-scaling-build" :: output :: options =>
+    let options ← checked (parseArgs ["--profile", "--worker", "--gcc", "--time"] options)
+    Benchmark.CompilerScaling.buildSuite output (option options "--profile" "full")
+      (option options "--worker" ".lake/build/bin/compiler-scaling") (option options "--gcc" "gcc") (option options "--time" "time")
+  | ["compiler-scaling-golden", build, output] =>
+    Benchmark.writeJson output (← Benchmark.CompilerScaling.golden (← Benchmark.CompilerScaling.inspectBuild build))
+  | ["compiler-scaling-verify", build, output] => Benchmark.CompilerScaling.verifySuite build output
+  | ["compiler-scaling-measure", build, correctness, output, core] =>
+    Benchmark.CompilerScaling.measureSuite build correctness output (← present core.toNat? "core must be a natural number")
+  | ["compiler-scaling-analyze", build, measured, output] => Benchmark.CompilerScaling.analyzeSuite build measured output
+  | ["compiler-scaling-measurement-regressions", build, measured, output] => Benchmark.CompilerScaling.measurementRegressions build measured output
+  | ["compiler-scaling-reproduce", build, measured, output] => Benchmark.CompilerScaling.reproduceSuite build measured output
+  | "compiler-scaling-smoke" :: output :: options =>
+    let options ← checked (parseArgs ["--gcc", "--time"] options)
+    Benchmark.CompilerScaling.smokeSuite output (option options "--gcc" "gcc") (option options "--time" "time")
   | "counter-fold-build" :: output :: options =>
     let options ← checked (parseArgs ["--gcc", "--time"] options)
     Benchmark.CounterFold.buildSuite output (option options "--gcc" "gcc") (option options "--time" "time")
@@ -49,4 +65,4 @@ def main (args : List String) : IO UInt32 := cli "benchmark failed" do
     Benchmark.diagnoseSuite build pilot output (← present core.toNat? "core must be a natural number")
   | ["reproduce", build, measured, output] => Benchmark.reproduceSuite build measured output
   | ["rebuild-check", build, output] => let _ ← Benchmark.rebuildArtifacts build output; pure ()
-  | _ => throw (IO.userError "usage: benchmark datasets OUT | build OUT [--gcc PATH --clang PATH --compcert PATH --cakeml PATH --time PATH] | verify BUILD OUT | smoke BUILD OUT [CORE] | gc-smoke BUILD OUT [CORE] | pilot BUILD VERIFY OUT CORE | measure BUILD VERIFY PILOT OUT CORE | diagnose BUILD PILOT OUT CORE | analyze BUILD MEASURED OUT | reproduce BUILD MEASURED OUT | analysis-self-check")
+  | _ => throw (IO.userError "usage: benchmark datasets OUT | build OUT [--gcc PATH --clang PATH --compcert PATH --cakeml PATH --time PATH] | verify BUILD OUT | smoke BUILD OUT [CORE] | gc-smoke BUILD OUT [CORE] | pilot BUILD VERIFY OUT CORE | measure BUILD VERIFY PILOT OUT CORE | diagnose BUILD PILOT OUT CORE | analyze BUILD MEASURED OUT | reproduce BUILD MEASURED OUT | analysis-self-check | compiler-scaling-build OUT [--profile smoke|full --worker PATH --gcc PATH --time PATH] | compiler-scaling-verify BUILD OUT | compiler-scaling-measure BUILD VERIFY OUT CORE | compiler-scaling-analyze BUILD MEASURED OUT | compiler-scaling-reproduce BUILD MEASURED OUT | compiler-scaling-smoke OUT [--gcc PATH --time PATH] | compiler-scaling-golden BUILD OUTPUT")
