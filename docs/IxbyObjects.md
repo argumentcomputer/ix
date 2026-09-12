@@ -108,8 +108,8 @@ The first numeric connection uses Aiur's **pure** Goldilocks model: bounded
 natural embedding is exact, its comparison model reflects natural order,
 and incrementing the maximum allowed rank cannot wrap. The module imports
 no FFI oracle. The checked-in [trust manifest](../Ix/Ixby/Audit.lean) covers the
-reference and proof modules with exact allowances for 314 public theorems and
-a broader scan of 3,058 theorem declarations. CI permits only Lean's standard
+reference and proof modules with exact allowances for 322 public theorems and
+a broader scan of 3,128 theorem declarations. CI permits only Lean's standard
 logical axioms; no custom, native-decision, or sorry allowance is present.
 
 These are conditional representation results, not a complete

@@ -27,6 +27,10 @@ the [design roadmap](../plans/ixby-plan.md) records longer-term integration work
 - [Composition.lean](../Ix/Ixby/Composition.lean): conditional source/target
   refinement and composition. Its concrete example is not an IxIR₀ lowering
   theorem or general compiler certification.
+- [Claim/](../Ix/Ixby/Claim/) and [Flock/Contract.lean](../Ix/Ixby/Flock/Contract.lean):
+  experimental Exec/public-result wire, canonical public Ixon adapter,
+  proof-free setup interfaces, and conditional byte/source/terminal composition.
+  See the [Exec contract](IxbyExec.md) for implemented and remaining boundaries.
 - [Aiur.lean](../Ix/Ixby/Aiur.lean): the host adapter for
   [scalar](IxbyAiur.md), [control](IxbyControl.md), and
   [object](IxbyObjects.md) interpreters. It is a separate import from the pure
@@ -36,7 +40,7 @@ the [design roadmap](../plans/ixby-plan.md) records longer-term integration work
   store, and parser-component contracts. The
   [object proof guide](IxbyObjects.md#formal-contract-and-remaining-bridge)
   owns the detailed premises and remaining boundaries.
-- [Audit.lean](../Ix/Ixby/Audit.lean): exact standard-axiom allowances for 314
+- [Audit.lean](../Ix/Ixby/Audit.lean): exact standard-axiom allowances for 322
   public theorems, plus a source-module scan of private/generated theorems and
   global axioms. CI builds the audit and its negative regression tests.
 

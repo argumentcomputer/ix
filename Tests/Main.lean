@@ -53,6 +53,7 @@ import Tests.Ix.CondenseM
 import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
+import Tests.MultiStark.Verify
 import Tests.Aggr
 import Tests.AggrSemantics
 import Tests.AggrActivation
@@ -209,6 +210,15 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ixby", Tests.Ixby.Basic.suite),
   ("ixby-crypto", Tests.Ixby.Crypto.suite),
   ("ixby-codec", Tests.Ixby.Codec.suite),
+  ("stage2-codec", Tests.MultiStark.Verify.Codec.suite),
+  ("stage2-claim", Tests.MultiStark.Verify.Claim.suite),
+  ("stage2-key", Tests.MultiStark.Verify.Key.suite),
+  ("stage2-transcript", Tests.MultiStark.Verify.Transcript.suite),
+  ("stage2-shape", Tests.MultiStark.Verify.Shape.suite),
+  ("stage2-ood", Tests.MultiStark.Verify.Ood.suite),
+  ("stage2-mmcs", Tests.MultiStark.Verify.Mmcs.suite),
+  ("stage2-fri", Tests.MultiStark.Verify.Fri.suite),
+  ("stage2-source", Tests.MultiStark.Verify.Source.suite),
   ("ixby-claim", Tests.Ixby.Claim.suite),
   ("ixby-flock-contract", Tests.Ixby.Flock.Contract.suite),
   ("ixby-aiur", Tests.Ixby.Aiur.Scalar.suite (withProofs := false)),
@@ -221,6 +231,8 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("stage2-codec-real", Tests.MultiStark.Verify.Native.suite),
+  ("stage2-wrapper-real", Tests.MultiStark.Verify.Wrapper.suite),
   ("aiur-hoisting-prove", AiurTests.Hoisting.suite true),
   ("ixby-aiur-prove", Tests.Ixby.Aiur.Scalar.suite),
   ("ixby-control-prove", Tests.Ixby.Aiur.Control.suite),

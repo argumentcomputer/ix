@@ -38,6 +38,8 @@ jobs:
         run: lake lint -- --wfail -v
       - name: Check IxBy theorem trust manifest
         run: lake build --wfail Ix.Ixby.Audit Tests.Ixby.Audit
+      - name: Check pure Stage 2 component trust manifest
+        run: lake build --wfail Ix.MultiStark.Verify.Audit Tests.MultiStark.Verify.Audit
       - name: Check codegen'd IxVM kernel is up to date
         run: lake exe ix codegen --check
       - name: Check Lean versions match for Ix and compiler bench
@@ -115,6 +117,46 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: ${{ env.RUST_VERSION }}
+
+  # The generic interpreter's gate library is an independent Cargo workspace.
+  stage3-core:
+    runs-on: warp-ubuntu-latest-x64-8x
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-workspaces: flock-stage3
+      - name: Check Stage 3 formatting
+        run: cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
+      - name: Check Stage 3 lints
+        run: cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Test Stage 3 native gates
+        run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace
+      - name: Prove retained gadget conformance circuits
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          RAYON_NUM_THREADS: 8
+        run: |
+          ulimit -v 33554432
+          timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1
+
+  # The isolated terminal workspace is not part of root Cargo operations.
+  # These are native core regressions, not the full closed IxBy proof gate.
+  stage4-core:
+    runs-on: warp-ubuntu-latest-x64-8x
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-workspaces: flock-stage4
+      - name: Check Stage 4 formatting
+        run: cargo fmt --manifest-path flock-stage4/Cargo.toml --all -- --check
+      - name: Check Stage 4 lints
+        run: cargo clippy --release --locked --manifest-path flock-stage4/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Test Stage 4 native core
+        run: cargo test --release --locked --manifest-path flock-stage4/Cargo.toml --workspace
 
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
