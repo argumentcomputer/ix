@@ -147,6 +147,34 @@ section Tests
 
 lean_lib Tests
 
+lean_exe AiurHoistingTests where
+  root := `Tests.Aiur.HoistingMain
+  supportInterpreter := true
+
+lean_exe IxbyAiurTests where
+  root := `Tests.Ixby.Aiur.Scalar.Main
+  supportInterpreter := true
+
+lean_exe IxbyControlTests where
+  root := `Tests.Ixby.Aiur.Control.Main
+  supportInterpreter := true
+
+lean_exe IxbyObjectsTests where
+  root := `Tests.Ixby.Aiur.Objects.Main
+  supportInterpreter := true
+
+lean_exe IxbyObjectsMemoryTests where
+  root := `Tests.Ixby.Aiur.Objects.Memory.Main
+  supportInterpreter := true
+
+lean_exe IxbyObjectsTableTests where
+  root := `Tests.Ixby.Aiur.Objects.Table.Main
+  supportInterpreter := true
+
+lean_exe IxbyObjectsParserTests where
+  root := `Tests.Ixby.Aiur.Objects.Parser.Main
+  supportInterpreter := true
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main

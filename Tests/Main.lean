@@ -59,6 +59,7 @@ import Tests.AggrActivation
 import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
+import Tests.Ixby
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
@@ -162,6 +163,7 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("aiur-hoisting", AiurTests.Hoisting.suite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -204,10 +206,23 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ix-aggr", Tests.Aggr.convergedSuite),
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
   ("ixes-manifest", Tests.Ix.Ixes.suite),
+  ("ixby", Tests.Ixby.Basic.suite),
+  ("ixby-crypto", Tests.Ixby.Crypto.suite),
+  ("ixby-codec", Tests.Ixby.Codec.suite),
+  ("ixby-aiur", Tests.Ixby.Aiur.Scalar.suite (withProofs := false)),
+  ("ixby-control", Tests.Ixby.Aiur.Control.suite (withProofs := false)),
+  ("ixby-objects", Tests.Ixby.Aiur.Objects.suite (withProofs := false)),
+  ("ixby-objects-memory", Tests.Ixby.Aiur.Objects.Memory.suite),
+  ("ixby-objects-table", Tests.Ixby.Aiur.Objects.Table.suite),
+  ("ixby-objects-parser", Tests.Ixby.Aiur.Objects.Parser.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("aiur-hoisting-prove", AiurTests.Hoisting.suite true),
+  ("ixby-aiur-prove", Tests.Ixby.Aiur.Scalar.suite),
+  ("ixby-control-prove", Tests.Ixby.Aiur.Control.suite),
+  ("ixby-objects-prove", Tests.Ixby.Aiur.Objects.suite),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
