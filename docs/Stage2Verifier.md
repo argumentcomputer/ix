@@ -3,11 +3,12 @@
 Status: the complete pure deterministic protocol checker and claim-bound
 source wrapper are implemented, including canonical codecs, key/shape
 admission, transcript/PoW, AIR/logUp/OOD, Merkle multiproofs, and PCS/FRI.
-The typed checker has a complete independent protocol refinement, including
-soundness and completeness for its admitted bounded class. Canonical-codec
-refinement, the complete byte-facing source proof, certified compilation,
-and generic Flock/terminal execution are still unfinished. Deterministic
-verifier correctness is not a cryptographic soundness proof.
+Both the typed checker and the claim-bound byte entrypoint have independent
+protocol refinements, including soundness and completeness for their admitted
+bounded classes. Canonical key/proof/claim codecs and the exact native-claim
+adapter are included. Certified compilation and generic Flock/terminal
+execution are still unfinished. Deterministic verifier correctness is not a
+cryptographic soundness proof.
 
 ## Protocol and import boundary
 
@@ -55,6 +56,14 @@ Default parser limits are 16 MiB of bytes, 1,048,576 elements per vector, and
 Offsets and counts use total natural-number arithmetic, not wrapping machine
 arithmetic. These are parser admission limits, not security parameters or
 IxBy backend capacities.
+
+The independent wire relations specify little-endian integer digits, exact
+field widths, tags, ordered nested elements, cursor updates, and budget
+consumption. Read and write refinements compose into canonical decoder
+equivalences. Admission requires the same bytes to satisfy both the complete
+reader grammar and canonical writer grammar; it does not call the runtime
+decoder or encoder as a specification. Collection counts are charged before
+element processing, and the tail-recursive reader preserves exact wire order.
 
 Key admission currently covers canonical native-builder preprocessing order
 and power-of-two table heights. Every intermediate graph degree must fit u16,
@@ -115,7 +124,7 @@ with the query frontier; it is not a Stage 3/4 compression measurement.
 public root, framing, and assumptions. The stand-in does not establish Ixon
 truth and is not an approvable production aggregate verifier.
 
-The exact theorem manifest covers 185 public roots, with exact per-root sets of
+The exact theorem manifest covers 279 public roots, with exact per-root sets of
 `propext`, `Quot.sound`, and, where present, `Classical.choice`. The graph sweep
 is sound and complete against a separate expression/reference relation.
 Observation updates, raw bit draws, grinding, and rejection sampling have
@@ -171,13 +180,27 @@ slots before observing the openings and entering FRI.
 `Proofs.verifyTyped_refines` composes these phases into an equivalence with
 the separate `Protocol.Stage2ProtocolAccepts` relation. Its soundness and
 completeness corollaries cover the entire typed checker, with the same
-resource limits and sampling budget on both sides. They do not yet certify
-canonical byte parsing or the complete claim-bound byte entrypoint.
-The wrapper/composition lemmas establish exact
-public-claim binding under the named compiler/Exec/terminal premises.
+resource limits and sampling budget on both sides.
+`Proofs.stage2Verify_refines` and `Proofs.stage2VerifyBytes_refines` extend that
+equivalence to canonical key/proof bytes and the caller's canonical closed
+`CheckEnv` claim. The source relation fixes the aggregate-key bytes from the
+configuration and derives the native statement from the exact allowed-key
+identity and public claim preimages. It cannot substitute a private expected
+claim or alternate verifier key. Digest-word bounds preserve all eight 32-bit
+chunks without field-reduction truncation. These deterministic equations do
+not approve the aggregate program or prove its interpretation of Ixon claims.
+The claim-returning wrappers retain the exact public value/bytes. The optional
+`Ix.Ixby.Claim.Stage2.terminal_protocol_claim_or_collision` corollary reaches
+the independent byte-level protocol relation under the named compiler,
+generic Exec, and complete terminal-compression premises, or identifies a
+concrete program/output commitment collision.
 A source-module scan also checks private/generated theorems and
 rejects new axioms. The audit rejects native/DSL imports in the pure umbrella.
-The remaining byte-codec obligations are not discharged by the typed theorem.
+
+The current combined fast selection passed 474 checks (including the IxBy
+claim/setup/codec suites), and the two opt-in native suites passed 47 checks.
+The audit also covers the byte-level source and composition roots; negative
+audit tests reject omitted or unnecessarily enlarged axiom allowances.
 
 ```sh
 lake test --wfail -- stage2-codec stage2-claim stage2-key \

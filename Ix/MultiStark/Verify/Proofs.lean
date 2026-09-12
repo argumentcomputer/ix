@@ -1,5 +1,9 @@
 module
 public import Ix.MultiStark.Verify.Proofs.Basic
+public import Ix.MultiStark.Verify.Proofs.Wire
+public import Ix.MultiStark.Verify.Proofs.CodecKey
+public import Ix.MultiStark.Verify.Proofs.CodecProof
+public import Ix.MultiStark.Verify.Proofs.Claim
 public import Ix.MultiStark.Verify.Proofs.Key
 public import Ix.MultiStark.Verify.Proofs.Arithmetic
 public import Ix.MultiStark.Verify.Proofs.Graph
@@ -14,3 +18,4 @@ public import Ix.MultiStark.Verify.Proofs.FriCheck
 public import Ix.MultiStark.Verify.Proofs.Shape
 public import Ix.MultiStark.Verify.Proofs.Pcs
 public import Ix.MultiStark.Verify.Proofs.Check
+public import Ix.MultiStark.Verify.Proofs.Source

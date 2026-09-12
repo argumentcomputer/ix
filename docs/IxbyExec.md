@@ -1,9 +1,9 @@
 # Experimental IxBy Exec contract
 
 Status: execution statements, public-claim binding, setup interfaces, and
-conditional composition are implemented. The generic Flock interpreter,
-complete terminal relation, certified Stage 2 verifier, and Compilatrix
-certificate are not supplied by these contracts.
+conditional composition are implemented. The optional Stage 2 specialization
+now composes the independent source refinement. The generic Flock interpreter,
+complete terminal relation, and Compilatrix certificate remain unfinished.
 
 ## Statements and public claims
 
@@ -37,8 +37,9 @@ The pure `MultiStark.Verify.Claim` component derives the aggregate entry point
 and both 8-word BLAKE3 digests (allowed-key identity and C) from the approved
 configuration and this exact serialization. Differential tests check it
 against the host construction. The pure claim-bound verifier now composes the
-complete deterministic protocol checks, while independent protocol refinement
-and compiler certification remain separate gates; see [Stage 2 verifier](Stage2Verifier.md).
+complete deterministic protocol checks with independent typed and byte-level
+protocol refinements. Compiler certification and cryptographic soundness
+remain separate gates; see [Stage 2 verifier](Stage2Verifier.md).
 
 `Claim.IxonAdapter` is an explicit host import because `Ix.Claim` transitively
 imports native address hashing. The pure `Ix.Ixby` import includes no such
@@ -131,6 +132,10 @@ hash-collision alternative. It retains all compiler, generic Exec, and complete
 terminal-root/compression premises; it does not turn them into implementations
 or assert cryptographic Ixon validity. This optional import does not couple
 the generic IxBy core to a particular Stage 2 verifier.
+Its `terminal_protocol_claim_or_collision` corollary now uses the canonical
+codec, claim-adapter, and full source refinement to reach the independent
+`Stage2ProtocolAcceptsBytes` relation for that same externally expected C.
+All compiler/backend/security premises remain explicit.
 
 ## Regression commands
 

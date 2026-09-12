@@ -4,8 +4,8 @@ import Ix.MultiStark.Verify.Proofs
 import Ix.Ixby.Claim.Stage2
 
 /-! Exact trust manifest for the pure Stage 2 components implemented so far.
-The public roots cover binding and the complete typed Stage 2 refinement.
-Canonical decoding and the full byte-facing source refinement remain unfinished. No native,
+The public roots cover canonical codecs, claim binding, and complete typed
+and byte-facing Stage 2 refinement. No native,
 pending, upstream-implementation, or sorry allowances are permitted. -/
 
 namespace MultiStark.Verify.Audit
@@ -91,9 +91,48 @@ private def roots : Array RootAllowance := ((#[
     ``Proofs.pcs_check_refines, ``Proofs.checkTyped_refines, ``Proofs.verifyTyped_refines,
     ``Proofs.verifyTyped_sound, ``Proofs.verifyTyped_complete,
     ``Ix.Ixby.Claim.Stage2.source_claim_binding,
-    ``Ix.Ixby.Claim.Stage2.terminal_verified_claim_or_collision] : Array Lean.Name).map fun root =>
+    ``Ix.Ixby.Claim.Stage2.source_protocol_binding,
+    ``Ix.Ixby.Claim.Stage2.terminal_verified_claim_or_collision,
+    ``Ix.Ixby.Claim.Stage2.terminal_protocol_claim_or_collision] : Array Lean.Name).map fun root =>
     { root, standardAxioms := standard }) ++
-  #[{ root := ``Proofs.unit_exists_iff, standardAxioms := #[] }]
+  ((#[
+    ``Proofs.allowedIdentity_refines, ``Proofs.digestWord_bounded, ``Proofs.expectedClaim_refines,
+    ``Proofs.readClosedCheckEnv_refines, ``Proofs.decodeClosedCheckEnv_refines, ``Proofs.decodeClosedCheckEnv_exists_iff,
+    ``Proofs.readClaims_refines, ``Proofs.writeClaims_refines, ``Proofs.encodeClaims_refines,
+    ``Proofs.decodeClaims_refines, ``Proofs.decodeClaims_exists_iff, ``Proofs.readCap_refines,
+    ``Proofs.readRound_refines, ``Proofs.readBatchValues_refines, ``Proofs.readSiblings_refines,
+    ``Proofs.readCommitments_refines, ``Proofs.readBatchOpening_refines, ``Proofs.readCommitPhaseStep_refines,
+    ``Proofs.readFri_refines, ``Proofs.readProof_refines, ``Proofs.writeCap_refines,
+    ``Proofs.writeRound_refines, ``Proofs.writeBatchValues_refines, ``Proofs.writeSiblings_refines,
+    ``Proofs.writeCommitments_refines, ``Proofs.writeBatchOpening_refines, ``Proofs.writeCommitPhaseStep_refines,
+    ``Proofs.writeFri_refines, ``Proofs.writeProof_refines, ``Proofs.encodeProof_refines,
+    ``Proofs.decodeProof_refines, ``Proofs.decodeProof_exists_iff, ``Proofs.readParameters_refines,
+    ``Proofs.readNode_refines, ``Proofs.readLookup_refines, ``Proofs.readCircuit_refines,
+    ``Proofs.readIndex_refines, ``Proofs.readKey_refines, ``Proofs.writeParameters_refines,
+    ``Proofs.writeNode_refines, ``Proofs.writeLookup_refines, ``Proofs.writeCircuit_refines,
+    ``Proofs.writeIndex_refines, ``Proofs.littleEndian_refines, ``Proofs.littleEndianValue_bounded,
+    ``Proofs.natRead_bounded, ``Proofs.readBytes_refines, ``Proofs.readTag_refines,
+    ``Proofs.readNat_refines, ``Proofs.readBool_refines, ``Proofs.readField_refines,
+    ``Proofs.readExt_refines, ``Proofs.readDigest_refines, ``Proofs.readRepeatedFrom_refines,
+    ``Proofs.readRepeated_refines, ``Proofs.readCounted_refines, ``Proofs.readVectorWidth_refines,
+    ``Proofs.readVector_refines, ``Proofs.readOption_refines, ``Proofs.wire_decode_refines,
+    ``Proofs.writeBytes_refines, ``Proofs.writeByte_refines, ``Proofs.writeNat_refines,
+    ``Proofs.writeBool_refines, ``Proofs.writeField_refines, ``Proofs.writeExt_refines,
+    ``Proofs.writeDigest_refines, ``Proofs.writeList_refines, ``Proofs.writeCounted_refines,
+    ``Proofs.writeVectorWidth_refines, ``Proofs.writeVector_refines, ``Proofs.writeOption_refines,
+    ``Proofs.wire_encode_refines, ``Proofs.canonicalize_value_iff] : Array Lean.Name).map fun root =>
+    { root, standardAxioms := #[``propext, ``Quot.sound] }) ++
+  ((#[``Proofs.packDigest_refines, ``Proofs.bytesRead_size, ``Proofs.readByte_refines] : Array Lean.Name).map fun root =>
+    { root, standardAxioms := #[``propext] }) ++
+  ((#[
+    ``Proofs.checkClaim_refines, ``Proofs.stage2Verify_refines, ``Proofs.stage2Verify_sound,
+    ``Proofs.stage2Verify_complete, ``Proofs.claimWrapper_refines, ``Proofs.stage2VerifyBytes_refines,
+    ``Proofs.stage2VerifyBytes_sound, ``Proofs.stage2VerifyBytes_complete, ``Proofs.claimBytesWrapper_refines,
+    ``Proofs.writeKey_refines, ``Proofs.encodeKey_refines, ``Proofs.decodeKey_refines,
+    ``Proofs.decodeKey_exists_iff] : Array Lean.Name).map fun root =>
+    { root, standardAxioms := standard }) ++
+  ((#[``Proofs.unit_exists_iff, ``Proofs.closedClaimBytes_refines, ``Proofs.fromLittleEndian_refines] : Array Lean.Name).map fun root =>
+    { root, standardAxioms := #[] })
 
 def checkFrontier : CommandElabM Unit := do
   let env ← getEnv

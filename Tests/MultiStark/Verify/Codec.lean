@@ -42,10 +42,55 @@ private def roundTrip (proof : Proof) : Bool :=
 private def emptyBytes : Bytes := Array.replicate 121 0
 private def fixtureBytes : Bytes := bytesOf (encodeProof {} fixture)
 
+private def wireChecks : IO (List Check) := do
+  let state : Wire.ReadState := { bytes := #[99, 1, 0, 0, 0, 2, 0, 0, 0, 77], offset := 1, vectorLimit := 5, items := 7 }
+  let emptyState : Wire.ReadState := { bytes := #[], vectorLimit := 3, items := 3 }
+  let nested : Array Bytes := #[#[1, 2], #[3]]
+  let nestedBytes := bytesOf (Wire.encode {} (Wire.writeVector (Wire.writeVector Wire.writeByte) nested))
+  let large := (Array.range 100000).map Nat.toUInt8
+  return [
+    ("reader advances the cursor without changing bytes or budgets", match (Wire.readNat 4).run state with
+      | .ok (value, final) => value == 1 && final.offset == 5 && final.bytes == state.bytes &&
+        final.vectorLimit == 5 && final.items == 7
+      | .error _ => false),
+    ("readBytes accepts the exact remaining boundary", match (Wire.readBytes 9).run state with
+      | .ok (bytes, final) => bytes == state.bytes.extract 1 10 && final.offset == 10
+      | .error _ => false),
+    ("readBytes rejects one byte past the boundary", errorIs ((Wire.readBytes 10).run state) .truncated),
+    ("zero-width integer has exactly one admitted value", bytesOf (Wire.encode {} (Wire.writeNat 0 0)) == #[] &&
+      errorIs (Wire.encode {} (Wire.writeNat 0 1)) .integerRange &&
+      match Wire.decode {} #[] (Wire.readNat 0) with | .ok value => value == 0 | .error _ => false),
+    ("zero count performs no element read", match (Wire.readCounted 0 Wire.readByte).run emptyState with
+      | .ok (values, final) => values.isEmpty && final.offset == 0 && final.items == 3
+      | .error _ => false),
+    ("vector budget is checked before the first element", errorIs
+      ((Wire.readCounted 4 Wire.readByte).run emptyState) .vectorLimit),
+    ("item budget is checked before the first element", errorIs
+      ((Wire.readCounted 3 Wire.readByte).run { emptyState with items := 2 }) .itemLimit),
+    ("counted reader charges all items even for zero-byte elements", match
+      (Wire.readCounted 3 (Wire.readBytes 0)).run emptyState with
+      | .ok (values, final) => values == #[#[], #[], #[]] && final.items == 0 && final.offset == 0
+      | .error _ => false),
+    ("nested reader charges outer and inner elements exactly", match Wire.decode
+      { vector := 2, items := 5 } nestedBytes (Wire.readVector (Wire.readVector Wire.readByte)) with
+      | .ok values => values == nested | .error _ => false),
+    ("nested reader cannot spend an outer item twice", errorIs (Wire.decode
+      { vector := 2, items := 4 } nestedBytes (Wire.readVector (Wire.readVector Wire.readByte))) .itemLimit),
+    ("nested writer uses the same global item accounting", errorIs (Wire.encode
+      { vector := 2, items := 4 } (Wire.writeVector (Wire.writeVector Wire.writeByte) nested)) .itemLimit),
+    ("Boolean grammar rejects every other byte tag", (Array.range 256).all fun tag =>
+      (Wire.decode {} #[tag.toUInt8] Wire.readBool).isOk == (tag < 2)),
+    ("Option grammar rejects every other byte tag", (Array.range 256).all fun tag =>
+      (Wire.decode {} (#[tag.toUInt8] ++ if tag == 1 then #[99] else #[]) (Wire.readOption Wire.readByte)).isOk == (tag < 2)),
+    ("large admitted vector preserves exact order with tail recursion", match Wire.decode
+      { bytes := 100000, vector := 100000, items := 100000 } large (Wire.readCounted 100000 Wire.readByte) with
+      | .ok values => values == large | .error _ => false)
+  ]
+
 private def checks : IO (List Check) := do
   let claimBytes := bytesOf (encodeClaims {} #[#[1, 2], #[], #[3]])
   let smallClaimBytes := bytesOf (encodeClaims {} #[#[1, 2]])
-  return [
+  return (← wireChecks) ++ [
     ("empty native-shaped record has the independent 121-byte golden wire",
       bytesOf (encodeProof {} empty) == emptyBytes),
     ("codec round trips all multiproof fields", roundTrip fixture),

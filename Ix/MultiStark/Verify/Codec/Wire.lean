@@ -30,19 +30,19 @@ structure ReadState where
 
 abbrev Reader := StateT ReadState (Except DecodeError)
 
-def readBytes (count : Nat) : Reader Bytes := do
-  let state ← get
-  if state.offset + count > state.bytes.size then throw .truncated
-  set { state with offset := state.offset + count }
-  return state.bytes.extract state.offset (state.offset + count)
+def readBytes (count : Nat) : Reader Bytes := fun state => do
+  ensure (state.offset + count ≤ state.bytes.size) .truncated
+  return (state.bytes.extract state.offset (state.offset + count), { state with offset := state.offset + count })
 
-def readByte : Reader UInt8 := do
-  let state ← get
+def readByte : Reader UInt8 := fun state =>
   match state.bytes[state.offset]? with
-  | none => throw .truncated
-  | some byte =>
-    set { state with offset := state.offset + 1 }
-    return byte
+  | none => .error .truncated
+  | some byte => .ok (byte, { state with offset := state.offset + 1 })
+
+def readTag (expected : UInt8) : Reader Unit := fun state => do
+  let (actual, final) ← readByte.run state
+  ensure (actual == expected) .tag
+  return ((), final)
 
 def readNat (width : Nat) : Reader Nat := return fromLittleEndian (← readBytes width)
 
@@ -64,14 +64,22 @@ def readDigest : Reader Digest := do
   if size : bytes.size = 32 then return ⟨bytes, size⟩
   else throw .truncated
 
-def readCounted {α : Type} (count : Nat) (element : Reader α) : Reader (Array α) := do
-  let state ← get
-  if count > state.vectorLimit then throw .vectorLimit
-  if count > state.items then throw .itemLimit
-  set { state with items := state.items - count }
-  let mut values := #[]
-  for _ in [0:count] do values := values.push (← element)
-  return values
+def readRepeatedFrom {α : Type} (element : Reader α) : Nat → List α → Reader (List α)
+  | 0, reversed => pure reversed.reverse
+  | count + 1, reversed => do
+    let value ← element
+    readRepeatedFrom element count (value :: reversed)
+
+/-- Tail-recursive collection avoids using one native stack frame per
+admitted vector element. The accumulator is restored to wire order once. -/
+def readRepeated {α : Type} (element : Reader α) (count : Nat) : Reader (List α) :=
+  readRepeatedFrom element count []
+
+def readCounted {α : Type} (count : Nat) (element : Reader α) : Reader (Array α) := fun state => do
+  ensure (count ≤ state.vectorLimit) .vectorLimit
+  ensure (count ≤ state.items) .itemLimit
+  let (values, final) ← (readRepeated element count).run { state with items := state.items - count }
+  return (values.toArray, final)
 
 def readVectorWidth {α : Type} (width : Nat) (element : Reader α) : Reader (Array α) := do
   readCounted (← readNat width) element
@@ -87,9 +95,9 @@ def readOption {α : Type} (element : Reader α) : Reader (Option α) := do
 
 def decode {α : Type} (limits : DecodeLimits) (bytes : Bytes) (reader : Reader α) :
     Except DecodeError α := do
-  if bytes.size > limits.bytes then throw .byteLimit
+  ensure (bytes.size ≤ limits.bytes) .byteLimit
   let (value, state) ← reader.run { bytes, vectorLimit := limits.vector, items := limits.items }
-  unless state.offset == bytes.size do throw .trailing
+  ensure (state.offset == bytes.size) .trailing
   return value
 
 structure WriteState where
@@ -100,28 +108,31 @@ structure WriteState where
 
 abbrev Writer := StateT WriteState (Except DecodeError)
 
-def writeBytes (bytes : Bytes) : Writer Unit := do
-  let state ← get
-  if state.bytes.size + bytes.size > state.limit then throw .byteLimit
-  set { state with bytes := state.bytes ++ bytes }
+def writeBytes (bytes : Bytes) : Writer Unit := fun state => do
+  ensure (state.bytes.size + bytes.size ≤ state.limit) .byteLimit
+  return ((), { state with bytes := state.bytes ++ bytes })
 
 def writeByte (byte : UInt8) : Writer Unit := writeBytes #[byte]
 
-def writeNat (width n : Nat) : Writer Unit := do
-  if n ≥ 2 ^ (8 * width) then throw .integerRange
-  writeBytes (littleEndian width n)
+def writeNat (width n : Nat) : Writer Unit := fun state => do
+  ensure (n < 2 ^ (8 * width)) .integerRange
+  (writeBytes (littleEndian width n)).run state
 
 def writeBool (value : Bool) : Writer Unit := writeByte (if value then 1 else 0)
 def writeField (value : Field) : Writer Unit := writeNat 8 value.val
 def writeExt (value : Ext) : Writer Unit := do writeField value.c0; writeField value.c1
 def writeDigest (digest : Digest) : Writer Unit := writeBytes digest.bytes
 
-def writeCounted {α : Type} (element : α → Writer Unit) (values : Array α) : Writer Unit := do
-  let state ← get
-  if values.size > state.vectorLimit then throw .vectorLimit
-  if values.size > state.items then throw .itemLimit
-  set { state with items := state.items - values.size }
-  for value in values do element value
+def writeList {α : Type} (element : α → Writer Unit) : List α → Writer Unit
+  | [] => pure ()
+  | value :: values => do
+    element value
+    writeList element values
+
+def writeCounted {α : Type} (element : α → Writer Unit) (values : Array α) : Writer Unit := fun state => do
+  ensure (values.size ≤ state.vectorLimit) .vectorLimit
+  ensure (values.size ≤ state.items) .itemLimit
+  (writeList element values.toList).run { state with items := state.items - values.size }
 
 def writeVectorWidth {α : Type} (width : Nat) (element : α → Writer Unit)
     (values : Array α) : Writer Unit := do

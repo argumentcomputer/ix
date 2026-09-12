@@ -23,8 +23,8 @@ def readParameters : Reader Parameters := return {
   logFinalPolyLen := ← readNat 2, maxLogArity := ← readNat 2,
   numQueries := ← readNat 2, commitPowBits := ← readNat 2, queryPowBits := ← readNat 2 }
 
-def writeParameters (params : Parameters) : Writer Unit := do
-  for word in params.words do writeNat 2 word
+def writeParameters (params : Parameters) : Writer Unit :=
+  writeList (writeNat 2) params.words.toList
 
 def readNode : Reader Node := do
   match ← readByte with

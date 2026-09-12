@@ -23,3 +23,11 @@ actual but unlisted: []
 run_cmd check #[
   { root := ``MultiStark.Verify.Transcript.sampleField_complete,
     standardAxioms := #[``propext, ``Classical.choice, ``Quot.sound] }]
+
+/--
+error: axiom allowlist mismatch for MultiStark.Verify.Proofs.stage2VerifyBytes_sound
+expected but absent: []
+actual but unlisted: ["propext", "Classical.choice", "Quot.sound"]
+-/
+#guard_msgs in
+run_cmd check #[{ root := ``MultiStark.Verify.Proofs.stage2VerifyBytes_sound }]

@@ -23,13 +23,15 @@ def ClosedCheckEnv.bytes (claim : ClosedCheckEnv) : Bytes :=
 theorem ClosedCheckEnv.bytes_size (claim : ClosedCheckEnv) : claim.bytes.size = 34 := by
   simp [ClosedCheckEnv.bytes, claim.root.size]
 
+def readClosedCheckEnv : Codec.Wire.Reader ClosedCheckEnv := do
+  Codec.Wire.readTag 0xe5
+  let root ← Codec.Wire.readDigest
+  Codec.Wire.readTag 0
+  return ClosedCheckEnv.mk root
+
 def decodeClosedCheckEnv (bytes : Bytes) :
     Except DecodeError (Codec.Canonical (fun claim : ClosedCheckEnv => .ok claim.bytes) bytes) := do
-  let claim ← Codec.Wire.decode { bytes := 34, vector := 0, items := 0 } bytes do
-    unless (← Codec.Wire.readByte) == 0xe5 do throw .tag
-    let root ← Codec.Wire.readDigest
-    unless (← Codec.Wire.readByte) == 0 do throw .tag
-    return ClosedCheckEnv.mk root
+  let claim ← Codec.Wire.decode { bytes := 34, vector := 0, items := 0 } bytes readClosedCheckEnv
   Codec.Wire.canonicalize (fun claim => .ok claim.bytes) bytes claim
 
 /-- Policy data owned by the application. Constructing this record does not
