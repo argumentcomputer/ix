@@ -575,47 +575,74 @@ where
         result := result.push item
     pure (globals, result)
 
-/-- Rename every local bound in a pattern to a fresh `.str "inl#N"` name,
-extending `subst` for the pattern's scope and advancing the fresh counter.
--/
-def Pattern.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
-    Pattern → Nat × Std.HashMap Local Local × Pattern
-  | .var x =>
-    let x' : Local := .str s!"inl#{cnt}"
-    (cnt + 1, subst.insert x x', .var x')
-  | .wildcard => (cnt, subst, .wildcard)
-  | .field g => (cnt, subst, .field g)
-  | .ref g ps =>
-    let (cnt, subst, ps') := ps.attach.foldl (init := (cnt, subst, ([] : List Pattern)))
-      fun (cnt, subst, acc) ⟨p, _⟩ =>
-        let (cnt, subst, p') := Pattern.freshen cnt subst p
-        (cnt, subst, acc ++ [p'])
-    (cnt, subst, .ref g ps')
-  | .tuple ps =>
-    let (cnt, subst, ps') := ps.attach.foldl (init := (cnt, subst, (#[] : Array Pattern)))
-      fun (cnt, subst, acc) ⟨p, _⟩ =>
-        let (cnt, subst, p') := Pattern.freshen cnt subst p
-        (cnt, subst, acc.push p')
-    (cnt, subst, .tuple ps')
-  | .array ps =>
-    let (cnt, subst, ps') := ps.attach.foldl (init := (cnt, subst, (#[] : Array Pattern)))
-      fun (cnt, subst, acc) ⟨p, _⟩ =>
-        let (cnt, subst, p') := Pattern.freshen cnt subst p
-        (cnt, subst, acc.push p')
-    (cnt, subst, .array ps')
-  | .or p q =>
-    let (cnt, subst, p') := Pattern.freshen cnt subst p
-    let (cnt, subst, q') := Pattern.freshen cnt subst q
-    (cnt, subst, .or p' q')
-  | .pointer p =>
-    let (cnt, subst, p') := Pattern.freshen cnt subst p
-    (cnt, subst, .pointer p')
+/-- A counter above every existing generated-name spelling. Source IR can be
+built directly, so `inl#N` is not a reserved user namespace. -/
+def localFreshBound : Local → Nat
+  | .str s => if s.startsWith "inl#" then
+      ((s.drop 4).toString.toNat?).map (· + 1) |>.getD 0
+    else 0
+  | .idx _ => 0
+
+def globalFreshBound (g : Global) : Nat :=
+  match g.toName with
+  | .str .anonymous s => localFreshBound (.str s)
+  | _ => 0
+
+/-- Map local binders, preserving repeated names, including names shared by
+both alternatives of an `or` pattern. -/
+def Pattern.mapLocals (f : Local → Local) : Pattern → Pattern
+  | .var x => .var (f x)
+  | .wildcard => .wildcard
+  | .field g => .field g
+  | .ref g ps => .ref g (ps.attach.map fun ⟨p, _⟩ => Pattern.mapLocals f p)
+  | .tuple ps => .tuple (ps.attach.map fun ⟨p, _⟩ => Pattern.mapLocals f p)
+  | .array ps => .array (ps.attach.map fun ⟨p, _⟩ => Pattern.mapLocals f p)
+  | .or p q => .or (Pattern.mapLocals f p) (Pattern.mapLocals f q)
+  | .pointer p => .pointer (Pattern.mapLocals f p)
 termination_by p => sizeOf p
 decreasing_by
   all_goals first
     | decreasing_tactic
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+def Pattern.locals : Pattern → List Local
+  | .var x => [x]
+  | .wildcard | .field _ => []
+  | .ref _ ps => ps.attach.foldl (fun acc ⟨p, _⟩ => acc ++ Pattern.locals p) []
+  | .tuple ps | .array ps => ps.attach.foldl (fun acc ⟨p, _⟩ => acc ++ Pattern.locals p) []
+  | .or p q => Pattern.locals p ++ Pattern.locals q
+  | .pointer p => Pattern.locals p
+termination_by p => sizeOf p
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Rename each distinct binder once, extending `subst` for this scope.
+The per-pattern map starts empty: an inner binder must shadow an outer one,
+but repeated binders within a pattern must remain repeated so typechecking
+still rejects nonlinear patterns and still accepts valid `or` patterns.
+The caller supplies a counter above all names already in use. -/
+def Pattern.freshen (cnt : Nat) (subst : Std.HashMap Local Local) (p : Pattern) :
+    Nat × Std.HashMap Local Local × Pattern :=
+  let (cnt, renames) := (Pattern.locals p).foldl (init := (cnt, (∅ : Std.HashMap Local Local)))
+    fun (cnt, renames) x =>
+      if renames.contains x then (cnt, renames)
+      else (cnt + 1, renames.insert x (.str s!"inl#{cnt}"))
+  (cnt, renames.fold (fun s x y => s.insert x y) subst,
+    Pattern.mapLocals (fun x => renames.getD x x) p)
+
+/-- Applications with an unqualified name can call a local function value.
+Rename that head along with ordinary variable occurrences. Qualified globals
+and explicit `.ref` terms do not use local lookup. -/
+def freshenCall (subst : Std.HashMap Local Local) (g : Global) : Global :=
+  match g.toName with
+  | .str .anonymous s => match subst[Local.str s]? with
+    | some (.str s') => Global.init s'
+    | _ => g
+  | _ => g
 
 /-- Consistently α-rename the locals bound inside `t` to fresh names,
 following `subst` for the currently-renamed variables. Used before
@@ -654,7 +681,7 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .app g args mode =>
     let (cnt, args') := args.attach.foldl (init := (cnt, ([] : List Term))) fun (cnt, acc) ⟨x, _⟩ =>
       let (cnt, x') := Term.freshen cnt subst x; (cnt, acc ++ [x'])
-    (cnt, .app g args' mode)
+    (cnt, .app (freshenCall subst g) args' mode)
   | .ret a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .ret a')
   | .add a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .add a' b')
   | .sub a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .sub a' b')
@@ -715,6 +742,53 @@ decreasing_by
     | decreasing_tactic
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Bound for fresh names, including *free* locals and application heads.
+Looking only at binders can turn an unbound reference into a bound one, or
+capture a global call whose spelling happens to look compiler-generated. -/
+def Term.freshBound : Term → Nat
+  | .unit | .field _ | .u8Lit _ => 0
+  | .var x => localFreshBound x
+  | .ref g => globalFreshBound g
+  | .app g args _ => args.attach.foldl
+      (fun acc ⟨a, _⟩ => max acc a.freshBound) (globalFreshBound g)
+  | .tuple ts | .array ts => ts.attach.foldl (fun acc ⟨a, _⟩ => max acc a.freshBound) 0
+  | .let p v b => max ((Pattern.locals p).foldl (fun n x => max n (localFreshBound x)) 0)
+      (max v.freshBound b.freshBound)
+  | .match s arms => arms.attach.foldl (fun acc ⟨(p, a), _⟩ =>
+      max acc (max ((Pattern.locals p).foldl (fun n x => max n (localFreshBound x)) 0) a.freshBound))
+      s.freshBound
+  | .add a b | .sub a b | .mul a b | .set a _ b
+  | .u8Xor a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
+  | .u8LessThan a b | .u32LessThan a b | .u8XorSplit7 a b | .u8XorSplit4 a b
+  | .unconstrainedU32Add a b | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b
+  | .ioGetInfo a b | .ioRead a b _ => max a.freshBound b.freshBound
+  | .assertEq a b _ c | .ioWrite a b c | .unconstrainedU32Add3 a b c =>
+    max a.freshBound (max b.freshBound c.freshBound)
+  | .ioSetInfo c k i l r => max c.freshBound
+      (max k.freshBound (max i.freshBound (max l.freshBound r.freshBound)))
+  | .ret a | .eqZero a | .proj a _ | .get a _ | .slice a _ _ | .store a | .load a
+  | .ptrVal a | .ann _ a | .u8BitDecomposition a | .u8ShiftLeft a | .u8ShiftRight a
+  | .toField a | .u8FromFieldUnsafe a | .unconstrainedGToBytes a
+  | .unconstrainedGInverse a | .u32ToField a => a.freshBound
+  | .debug _ o a => max a.freshBound (match o with | none => 0 | some b => b.freshBound)
+termination_by t => sizeOf t
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Freshen the entire function, including its inputs, before any scope is
+widened. Input types and entry-point restrictions are unchanged. -/
+def Function.freshen (cnt : Nat) (f : Function) : Nat × Function :=
+  let (cnt, subst, _) := Pattern.freshen cnt ∅
+    (.tuple (f.inputs.toArray.map fun (x, _) => .var x))
+  let (cnt, body) := f.body.freshen cnt subst
+  let inputs := f.inputs.map fun (x, τ) => (subst.getD x x, τ)
+  let h : sigPointerFree inputs f.output = true ∨ f.entry = false := by
+    simpa [inputs, sigPointerFree, List.all_map, Function.comp_def] using f.entryPointerFree
+  (cnt, { f with inputs, body, entryPointerFree := h })
 
 /-- Peel the leading `let` bindings off a term: returns the binding frames
 (outermost first) and the non-`let` core. -/
@@ -890,127 +964,144 @@ decreasing_by
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
 
-/-- Peel leading lets off each of `ts` (already hoisted), collecting the
-frames left-to-right so evaluation order is preserved, and returning the
-frame chain plus the cores. -/
-def Term.peelListLets (ts : List Term) : List (Pattern × Term) × List Term :=
-  ts.foldr
-    (fun t (fs, cs) => let (f, c) := Term.peelLets t; (f ++ fs, c :: cs))
-    ([], [])
+/-- These cores have no effects or computation to reorder in well-typed code.
+Everything else is conservatively sequenced before a later argument's prefix. -/
+def Term.isAtomic : Term → Bool
+  | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => true
+  | _ => false
 
-def Term.peelArrayLets (ts : Array Term) : List (Pattern × Term) × Array Term :=
-  let (fs, cs) := Term.peelListLets ts.toList
-  (fs, cs.toArray)
+/-- Prepend an argument's complete evaluation before the later arguments'
+hoisted prefixes. Merely concatenating let prefixes is insufficient: in
+`f(effect₁(), (let x = effect₂(); x))`, `effect₁` must run first too.
+`cnt` is a fresh-name supply; all existing binders must already be hygienic. -/
+def Term.peelListLets (ts : List Term) : StateM Nat (List (Pattern × Term) × List Term) :=
+  ts.foldrM (init := ([], [])) fun t (fs, cs) => do
+    let (f, c) := Term.peelLets t
+    if fs.isEmpty || c.isAtomic then
+      return (f ++ fs, c :: cs)
+    else
+      let cnt ← getThe Nat
+      modify (fun (n : Nat) => n + 1)
+      let out : Local := .str s!"inl#{cnt}"
+      return (f ++ ((.var out, c) :: fs), .var out :: cs)
 
-/-- Hoist every `let`-chain out of a strict argument position into a
-wrapping `let`. Inlining splices a callee body (a `let`-chain ending in a
-value) wherever the `@`-call appeared; in a `let`-RHS or tail position the
-`Simple` pass already floats those lets outward, but in an argument
-position (a `set`/array element, an operator operand, …) they would stay
-nested, which the lowering cannot handle. This normalizes all such
-positions. `let`-RHS, `match` arm bodies, and `ret`/`debug` continuations
-are already handled downstream, so their lets are left in place. -/
-def Term.hoistLets : Term → Term :=
-  fun t =>
-  -- Hoist a construct's argument terms: peel each arg's lets and wrap.
+def Term.hoistUnaryLets (build : Term → Term) (a : Term) : Term :=
+  let (fs, c) := a.peelLets
+  Term.wrapLets fs (build c)
+
+def Term.hoistBinaryLets (build : Term → Term → Term) (a b : Term) : StateM Nat Term := do
+  let (fa, a) := a.peelLets
+  let (fb, b) := b.peelLets
+  if fb.isEmpty || a.isAtomic then
+    return Term.wrapLets (fa ++ fb) (build a b)
+  else
+    let cnt ← getThe Nat
+    modify (fun (n : Nat) => n + 1)
+    let out : Local := .str s!"inl#{cnt}"
+    return Term.wrapLets (fa ++ ((.var out, a) :: fb)) (build (.var out) b)
+
+/-- Hoist strict-argument prefixes in a hygienic term. Assertions and IO have
+strict operands followed by a continuation, *not* one more operand. Represent
+each statement as a unit-valued wildcard let: later prefix extraction then
+carries the statement *before* its continuation's bindings. This also exposes
+inlined non-tail matches to block lowering when a statement precedes them
+inside an operand or let RHS. Match arms stay lazy and returns remain escapes. -/
+def Term.hoistLetsAux : Term → StateM Nat Term := fun t => do
   match t with
-  | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => t
-  | .let p v b => .let p (Term.hoistLets v) (Term.hoistLets b)
+  | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => return t
+  | .let p v b => return .let p (← v.hoistLetsAux) (← b.hoistLetsAux)
   | .match s arms =>
-    let (fs, sc) := Term.peelLets (Term.hoistLets s)
-    Term.wrapLets fs (.match sc (arms.attach.map fun ⟨(p, a), _⟩ => (p, Term.hoistLets a)))
-  | .ret a => .ret (Term.hoistLets a)
+    let (fs, sc) := (← s.hoistLetsAux).peelLets
+    let arms ← arms.attach.mapM fun ⟨(p, a), _⟩ => do return (p, ← a.hoistLetsAux)
+    return Term.wrapLets fs (.match sc arms)
+  | .ret a => return Term.hoistUnaryLets .ret (← a.hoistLetsAux)
   | .debug s o a =>
-    .debug s (match o with | none => none | some x => some (Term.hoistLets x)) (Term.hoistLets a)
+    let o' : Option Term ← match o with
+      | none => pure none
+      | some x => do
+        let x ← x.hoistLetsAux
+        pure (some x)
+    return .let .wildcard (.debug s o' .unit) (← a.hoistLetsAux)
   | .tuple ts =>
-    let (fs, cs) := Term.peelArrayLets (ts.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
-    Term.wrapLets fs (.tuple cs)
+    let ts ← ts.attach.mapM fun ⟨x, _⟩ => x.hoistLetsAux
+    let (fs, cs) ← Term.peelListLets ts.toList
+    return Term.wrapLets fs (.tuple cs.toArray)
   | .array ts =>
-    let (fs, cs) := Term.peelArrayLets (ts.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
-    Term.wrapLets fs (.array cs)
+    let ts ← ts.attach.mapM fun ⟨x, _⟩ => x.hoistLetsAux
+    let (fs, cs) ← Term.peelListLets ts.toList
+    return Term.wrapLets fs (.array cs.toArray)
   | .app g args mode =>
-    let (fs, cs) := Term.peelListLets (args.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
-    Term.wrapLets fs (.app g cs mode)
+    let args ← args.attach.mapM fun ⟨x, _⟩ => x.hoistLetsAux
+    let (fs, cs) ← Term.peelListLets args
+    return Term.wrapLets fs (.app g cs mode)
   | .assertEq a b msg c =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
-    match cs with
-    | [a, b, c] => Term.wrapLets fs (.assertEq a b msg c)
-    | _ => t
+    let a ← a.hoistLetsAux; let b ← b.hoistLetsAux; let c ← c.hoistLetsAux
+    Term.hoistBinaryLets (fun a b => .let .wildcard (.assertEq a b msg .unit) c) a b
   | .ioSetInfo a b c d e =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c, Term.hoistLets d, Term.hoistLets e]
+    let args := [← a.hoistLetsAux, ← b.hoistLetsAux, ← c.hoistLetsAux, ← d.hoistLetsAux]
+    let e ← e.hoistLetsAux
+    let (fs, cs) ← Term.peelListLets args
     match cs with
-    | [a, b, c, d, e] => Term.wrapLets fs (.ioSetInfo a b c d e)
-    | _ => t
+    | [a, b, c, d] => return Term.wrapLets fs (.let .wildcard (.ioSetInfo a b c d .unit) e)
+    | _ => return t
   | .ioWrite a b c =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
+    let a ← a.hoistLetsAux; let b ← b.hoistLetsAux; let c ← c.hoistLetsAux
+    Term.hoistBinaryLets (fun a b => .let .wildcard (.ioWrite a b .unit) c) a b
+  | .ioGetInfo a b => Term.hoistBinaryLets .ioGetInfo (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .ioRead a b n => Term.hoistBinaryLets (fun a b => .ioRead a b n) (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .add a b => Term.hoistBinaryLets .add (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .sub a b => Term.hoistBinaryLets .sub (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .mul a b => Term.hoistBinaryLets .mul (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .eqZero a => return Term.hoistUnaryLets .eqZero (← a.hoistLetsAux)
+  | .proj a n => return Term.hoistUnaryLets (fun a => .proj a n) (← a.hoistLetsAux)
+  | .get a n => return Term.hoistUnaryLets (fun a => .get a n) (← a.hoistLetsAux)
+  | .slice a i j => return Term.hoistUnaryLets (fun a => .slice a i j) (← a.hoistLetsAux)
+  | .set a n v => Term.hoistBinaryLets (fun a v => .set a n v) (← a.hoistLetsAux) (← v.hoistLetsAux)
+  | .store a => return Term.hoistUnaryLets .store (← a.hoistLetsAux)
+  | .load a => return Term.hoistUnaryLets .load (← a.hoistLetsAux)
+  | .ptrVal a => return Term.hoistUnaryLets .ptrVal (← a.hoistLetsAux)
+  | .ann τ a => return Term.hoistUnaryLets (.ann τ) (← a.hoistLetsAux)
+  | .u8BitDecomposition a => return Term.hoistUnaryLets .u8BitDecomposition (← a.hoistLetsAux)
+  | .u8ShiftLeft a => return Term.hoistUnaryLets .u8ShiftLeft (← a.hoistLetsAux)
+  | .u8ShiftRight a => return Term.hoistUnaryLets .u8ShiftRight (← a.hoistLetsAux)
+  | .toField a => return Term.hoistUnaryLets .toField (← a.hoistLetsAux)
+  | .u8FromFieldUnsafe a => return Term.hoistUnaryLets .u8FromFieldUnsafe (← a.hoistLetsAux)
+  | .unconstrainedGToBytes a => return Term.hoistUnaryLets .unconstrainedGToBytes (← a.hoistLetsAux)
+  | .unconstrainedGInverse a => return Term.hoistUnaryLets .unconstrainedGInverse (← a.hoistLetsAux)
+  | .u8Xor a b => Term.hoistBinaryLets .u8Xor (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8Add a b => Term.hoistBinaryLets .u8Add (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8Mul a b => Term.hoistBinaryLets .u8Mul (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8Sub a b => Term.hoistBinaryLets .u8Sub (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8And a b => Term.hoistBinaryLets .u8And (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8Or a b => Term.hoistBinaryLets .u8Or (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8LessThan a b => Term.hoistBinaryLets .u8LessThan (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u32LessThan a b => Term.hoistBinaryLets .u32LessThan (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8XorSplit7 a b => Term.hoistBinaryLets .u8XorSplit7 (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8XorSplit4 a b => Term.hoistBinaryLets .u8XorSplit4 (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .unconstrainedU32Add a b => Term.hoistBinaryLets .unconstrainedU32Add (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .unconstrainedU32Add3 a b c =>
+    let args := [← a.hoistLetsAux, ← b.hoistLetsAux, ← c.hoistLetsAux]
+    let (fs, cs) ← Term.peelListLets args
     match cs with
-    | [a, b, c] => Term.wrapLets fs (.ioWrite a b c)
-    | _ => t
-  | .ioGetInfo a b =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-    match cs with | [a, b] => Term.wrapLets fs (.ioGetInfo a b) | _ => t
-  | .ioRead a b n =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-    match cs with | [a, b] => Term.wrapLets fs (.ioRead a b n) | _ => t
-  | .add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                match cs with | [a, b] => Term.wrapLets fs (.add a b) | _ => t
-  | .sub a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                match cs with | [a, b] => Term.wrapLets fs (.sub a b) | _ => t
-  | .mul a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                match cs with | [a, b] => Term.wrapLets fs (.mul a b) | _ => t
-  | .eqZero a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.eqZero c)
-  | .proj a n => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.proj c n)
-  | .get a n => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.get c n)
-  | .slice a i j => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.slice c i j)
-  | .set a n v =>
-    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets v]
-    match cs with | [a, v] => Term.wrapLets fs (.set a n v) | _ => t
-  | .store a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.store c)
-  | .load a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.load c)
-  | .ptrVal a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.ptrVal c)
-  | .ann τ a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.ann τ c)
-  | .u8BitDecomposition a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8BitDecomposition c)
-  | .u8ShiftLeft a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8ShiftLeft c)
-  | .u8ShiftRight a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8ShiftRight c)
-  | .toField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.toField c)
-  | .u8FromFieldUnsafe a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8FromFieldUnsafe c)
-  | .unconstrainedGToBytes a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGToBytes c)
-  | .unconstrainedGInverse a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGInverse c)
-  | .u8Xor a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Xor a b) | _ => t
-  | .u8Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Add a b) | _ => t
-  | .u8Mul a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Mul a b) | _ => t
-  | .u8Sub a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8Sub a b) | _ => t
-  | .u8And a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                  match cs with | [a, b] => Term.wrapLets fs (.u8And a b) | _ => t
-  | .u8Or a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                 match cs with | [a, b] => Term.wrapLets fs (.u8Or a b) | _ => t
-  | .u8LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                       match cs with | [a, b] => Term.wrapLets fs (.u8LessThan a b) | _ => t
-  | .u32LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                        match cs with | [a, b] => Term.wrapLets fs (.u32LessThan a b) | _ => t
-  | .u8XorSplit7 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                        match cs with | [a, b] => Term.wrapLets fs (.u8XorSplit7 a b) | _ => t
-  | .u8XorSplit4 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                        match cs with | [a, b] => Term.wrapLets fs (.u8XorSplit4 a b) | _ => t
-  | .unconstrainedU32Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                       match cs with | [a, b] => Term.wrapLets fs (.unconstrainedU32Add a b) | _ => t
-  | .unconstrainedU32Add3 a b c => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
-                          match cs with | [a, b, c] => Term.wrapLets fs (.unconstrainedU32Add3 a b c) | _ => t
-  | .u32ToField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u32ToField c)
-  | .unconstrainedBigUintDivMod a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                                       match cs with | [a, b] => Term.wrapLets fs (.unconstrainedBigUintDivMod a b) | _ => t
-  | .u8RangeCheck a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                         match cs with | [a, b] => Term.wrapLets fs (.u8RangeCheck a b) | _ => t
+    | [a, b, c] => return Term.wrapLets fs (.unconstrainedU32Add3 a b c)
+    | _ => return t
+  | .u32ToField a => return Term.hoistUnaryLets .u32ToField (← a.hoistLetsAux)
+  | .unconstrainedBigUintDivMod a b => Term.hoistBinaryLets .unconstrainedBigUintDivMod (← a.hoistLetsAux) (← b.hoistLetsAux)
+  | .u8RangeCheck a b => Term.hoistBinaryLets .u8RangeCheck (← a.hoistLetsAux) (← b.hoistLetsAux)
 termination_by t => sizeOf t
 decreasing_by
   all_goals first
     | decreasing_tactic
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Scope-safe normalization, including caller-written lets (not only inline
+splices). Freshen before widening any binder's scope; reserve all existing
+free names too. The auxiliary pass threads the same fresh supply for the
+temporary bindings that preserve left-to-right argument evaluation. -/
+def Term.hoistLets (t : Term) : Term :=
+  let (cnt, t) := t.freshen t.freshBound ∅
+  (t.hoistLetsAux cnt).1
 
 /-- Kahn-style topological sort of the inline-dependency graph: each pass
 emits every function whose inline-callees are already emitted, so callees
@@ -1064,6 +1155,16 @@ expanded exactly once (`Term.expandOnce`, structurally recursive on the term),
 and its already-inline-free result is memoized in `done` and spliced (with
 α-renaming) at every call site. -/
 def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
+  -- Freshen caller scopes as well as callee splices. Starting above *all*
+  -- original names also prevents a free callee variable from accidentally
+  -- becoming bound by the caller, even in hand-built Source IR.
+  let cnt := t.functions.foldl (init := 0) fun cnt f =>
+    f.inputs.foldl (fun cnt (x, _) => max cnt (localFreshBound x))
+      (max cnt (max (globalFreshBound f.name) f.body.freshBound))
+  let (cnt, functions) := t.functions.foldl (init := (cnt, #[])) fun (cnt, fs) f =>
+    let (cnt, f) := f.freshen cnt
+    (cnt, fs.push f)
+  let t := { t with functions }
   let funcs : Std.HashMap Global Function :=
     t.functions.foldl (fun m f => m.insert f.name f) ∅
   -- Inline dependencies per function, validating callee existence and arity.
@@ -1081,11 +1182,13 @@ def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
   let names := t.functions.toList.map Function.name
   let order ← inlineTopo deps names.length names ∅ []
   -- Expand each body once, in order, memoizing the inline-free result.
-  let done : Std.HashMap Global (List Local × Term) := order.foldl (init := ∅)
-    fun done g =>
+  let (_, done) := order.foldl
+    (init := (cnt, (∅ : Std.HashMap Global (List Local × Term)))) fun (cnt, done) g =>
       match funcs[g]? with
-      | none => done
-      | some f => done.insert g (f.inputs.map Prod.fst, (f.body.expandOnce done 0).2)
+      | none => (cnt, done)
+      | some f =>
+        let (cnt, body) := f.body.expandOnce done cnt
+        (cnt, done.insert g (f.inputs.map Prod.fst, body))
   -- Rebuild each function with its expanded body, then hoist argument-position
   -- lets that splicing may have introduced.
   let functions := t.functions.map fun f =>

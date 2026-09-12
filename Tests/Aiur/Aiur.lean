@@ -721,6 +721,30 @@ def toplevel := ⟦
   }
 
   ---------------------------------------------------------------------------
+  -- Hoisting regressions share one proof: caller shadowing, strict operand
+  -- order, statement continuations, and an assertion before an inline match.
+  fn hoist_emit(x: G) -> G { io_write(0, [x]); x }
+  fn hoist_twice(x: G) -> G { let tmp = x + x; tmp }
+  fn hoist_guarded(x: G) -> G {
+    assert_eq!(x, 0);
+    let y = match x { 0 => 7, _ => 9, };
+    y
+  }
+  pub fn hoisting_regression(x: G) -> [G; 8] {
+    let rhs = (let x = 2; x);
+    let operand = x + (let x = 2; x);
+    let inlined = x + @hoist_twice((let x = 2; x));
+    assert_eq!(x, 9);
+    let x = 0;
+    io_write(0, [7]);
+    let ys = io_read(0, 0, 1);
+    io_set_info(0, [7], 3, 4);
+    let (i, n) = io_get_info(0, [7]);
+    let sum = hoist_emit(1) + @hoist_twice(hoist_emit(2));
+    let guarded = @hoist_guarded(x) + 1;
+    [rhs, operand, inlined, ys[0], i, n, sum, guarded]
+  }
+
   -- Unconstrained field hints: `g_to_bytes` returns the 8 LE bytes of the
   -- CANONICAL u64 value as raw [G; 8] advice; `g_inverse` the field
   -- inverse with 0 ↦ 0.
@@ -891,6 +915,11 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Inlined function calls (`@fn(args)`): all scenarios in one proof
     .prove `inline_test #[] #[3182],
+
+    { AiurTestCase.prove `hoisting_regression #[9] #[2, 11, 13, 7, 3, 4, 5, 8] with
+      expectedIOBuffer := {
+        data := .ofList [(0, #[7, 1, 2])],
+        map := .ofList [((0, #[7]), ⟨3, 4⟩)] } },
 
     -- Unconstrained big-uint div/mod: all cases in one proof
     -- (6042 + 300 + 1000300 + 2^63 + 1)
