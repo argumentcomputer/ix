@@ -91,7 +91,7 @@ control slice's semantics; no call resets fuel or continuation depth.
 
 ## Formal contract and remaining bridge
 
-`Aiur/ObjectsRefinement.lean` has 25 public kernel-checked lemmas. Its `Ref`
+`Aiur/Objects/Refinement.lean` has 25 public kernel-checked lemmas. Its `Ref`
 contains an arbitrary physical field-list pointer, and its functional `Heap`
 may contain cycles or duplicate cells. `ClosedRanked` states the local
 declaration, arity, bounded-list-read, computed-rank, and child-closure checks
@@ -121,7 +121,7 @@ per-transition growth bound; the whole interpreter trace proof is still open.
 
 ### Checked concrete-memory reconstruction
 
-`Aiur/ObjectsMemory.lean` now connects the logical heap to the Lean bytecode
+`Aiur/Objects/Memory.lean` now connects the logical heap to the Lean bytecode
 evaluator's actual width-bucketed memory. Its executable decoder follows the
 current compiler layout, not the wire encoding:
 
@@ -165,7 +165,7 @@ checks its correspondence and uniqueness. Establishing those checks from the
 interpreter's authenticated parsing still remains open. Malformed or cyclic
 unreachable cells and duplicate cells at distinct pointers are allowed.
 
-`Tests/IxbyObjectsMemory.lean` adds 126 checks. Typed fixtures call the real
+`Tests/Ixby/Aiur/Objects/Memory.lean` adds 126 checks. Typed fixtures call the real
 compiled `is_make` and `is_project`, retain Lean evaluator memory for decoding,
 and compare 14 native flat outputs. The native test adapter changes only the
 selected helper's entry flag; pointer-bearing internal signatures cannot be
@@ -181,7 +181,7 @@ this test documents why local checks alone do not establish child closure.
 
 ### Concrete tables and immutable-store preservation
 
-`Aiur/ObjectsStore.lean` adds 13 public kernel-checked lemmas. Unlike a
+`Aiur/Objects/Store.lean` adds 13 public kernel-checked lemmas. Unlike a
 preservation assumption about an abstract heap, `mem_store_preserves` proves
 that the Lean evaluator's actual `memStore` preserves every existing readable
 cell, at every width. It uses the invariants carried by `IndexMap`, covering
@@ -197,7 +197,7 @@ stored Cons cell. `eval_store_preserves_representation` covers a successful
 are not yet preservation theorems for all bytecode instructions or complete
 compiled `is_make` executions, nor proofs of the AIR memory argument.
 
-`Aiur/ObjectsTable.lean` adds 11 public kernel-checked lemmas and a concrete
+`Aiur/Objects/Table.lean` adds 11 public kernel-checked lemmas and a concrete
 table decoder. `ISCtorDecl.Mk` is tagless and occupies eleven fields; a Cons
 cell is `[0, eight digest limbs, member, tag, fieldCount, tailPointer]` at width
 13, and Nil is thirteen copies of 1. All ten identity limbs must be u32.
@@ -223,7 +223,7 @@ the checked table relation, initialization establishes valid live references,
 and every interpreter transition maintains the representation and reference
 execution relation; the compiler/gadget/AIR and commitment links remain open.
 
-`Tests/IxbyObjectsTable.lean` adds 191 checks: malformed concrete tables, every
+`Tests/Ixby/Aiur/Objects/Table.lean` adds 191 checks: malformed concrete tables, every
 identity limb and Nil padding field, duplicates, exact capacities, eight
 checks against compiled `is_read_ctors`, and five complete compiled `is_run`
 fixtures with memory inspection. The latter include parsed and runtime-created
@@ -235,7 +235,7 @@ profiles, wire format, or keys.
 
 ### Bytecode parser proof components
 
-`Aiur/ObjectsParser.lean` adds 22 public kernel-checked lemmas. Its `BytePrefix`
+`Aiur/Objects/Parser.lean` adds 22 public kernel-checked lemmas. Its `BytePrefix`
 relation describes exact width-3 Cons cells containing genuine bytes and
 field-valued tail pointers. It describes a consumed prefix, not a complete
 stream: the endpoint may point into the following artifact, and is returned
@@ -264,13 +264,13 @@ The zero-count parser theorem establishes the checked empty-table relation
 at its actual output pointer, including canonical 13-field Nil padding and
 content-deduplicating allocation. A separate final-Cons-store theorem extends
 a checked tail table with a fresh semantic name in forward order. The
-nonzero recursive parser composition in `ObjectsDeclarations.lean` below
+nonzero recursive parser composition in `Objects/Declarations.lean` below
 establishes that theorem's premises from a bounded byte-derived prefix.
 The zero-count certificate intentionally leaves the default branch
 unconstrained; it must not certify the full declaration parser.
 
 All 22 axiom audits use only Lean's standard logical axioms. The initial 387
-`Tests/IxbyObjectsParser.lean` checks include every byte value, u32 boundaries
+`Tests/Ixby/Aiur/Objects/Parser.lean` checks include every byte value, u32 boundaries
 and bit positions, exact suffix/state preservation, malformed cells, callee
 and instruction mutations, and fresh/deduplicated empty tables. Explicit
 counterexamples show why byte ranges and the nonzero-branch proof are needed:
@@ -280,7 +280,7 @@ fixtures, not additional production advice or FRI workloads.
 
 ### Compiled identity-reader composition
 
-`Aiur/ObjectsIdentity.lean` adds 20 public kernel-checked lemmas. The actual
+`Aiur/Objects/Identity.lean` adds 20 public kernel-checked lemmas. The actual
 `is_read_id` body inlines ten u32 readers; calling the standalone word-reader
 theorem would not certify its register layout. The new proof handles the
 seventeen-register stride of each inlined word, composes the actual `runOps`
@@ -317,7 +317,7 @@ component alone does not establish those connections or an AIR-to-reference theo
 
 ### Exact comparison and bounded duplicate traversal
 
-`Aiur/ObjectsEquality.lean` and `ObjectsUnique.lean` add 37 public
+`Aiur/Objects/Equality.lean` and `Objects/Unique.lean` add 37 public
 kernel-checked lemmas. The comparator certificate binds the actual twenty
 subtraction/zero-test operations, nine products, and output register.
 Field subtraction and the emitted zero test distinguish arbitrary canonical
@@ -356,8 +356,8 @@ and change no interpreter, compiler, wire format, or key.
 
 ### Complete bounded declaration-parser composition
 
-`Aiur/ObjectsDeclarations.lean` adds 23 public kernel-checked lemmas, with two
-new allocation/I/O lemmas in `ObjectsStore.lean`. `checkDeclarations` checks
+`Aiur/Objects/Declarations.lean` adds 23 public kernel-checked lemmas, with two
+new allocation/I/O lemmas in `Objects/Store.lean`. `checkDeclarations` checks
 both emitted branches, all 28 nonzero operations, argument and output
 registers, and selectors. `checkDeclarationCode` also resolves and certifies
 the byte, identity, comparison, uniqueness, and recursive parser functions in
@@ -413,8 +413,8 @@ trace, or AIR correctness and add no production advice, FRI workloads, or keys.
 
 ### Bounded raw-advice loading and parser composition
 
-`Aiur/ObjectsAdmission.lean` adds 28 public kernel-checked lemmas, with one new
-other-width allocation lemma in `ObjectsStore.lean`. `checkAdviceReader` binds
+`Aiur/Objects/Admission.lean` adds 28 public kernel-checked lemmas, with one new
+other-width allocation lemma in `Objects/Store.lean`. `checkAdviceReader` binds
 both branches of the actual `ib_read_advice`, including the I/O read, byte range
 check, address/count updates, recursive Call, and exact Nil/Cons stores.
 `checkLoader` binds the complete `ib_load` metadata lookup, UInt32 limit check,
@@ -480,7 +480,7 @@ format, production advice, FRI workload, or key changes are involved.
 
 ### Actual program header and constructor-admission prefix
 
-`Aiur/ObjectsProgramPrefix.lean` adds 18 public kernel-checked lemmas.
+`Aiur/Objects/ProgramPrefix.lean` adds 18 public kernel-checked lemmas.
 `checkProgramPrefix` binds the input arity and exactly the first sixty
 operations of the actual compiled `is_run`: four magic-byte checks, revision
 zero, little-endian u32 entry and constructor count, the constructor-capacity
@@ -530,7 +530,7 @@ refinement remain open. No production code, wire, advice, FRI workload, or key c
 
 ### Function-count and function/block header admission
 
-`Aiur/ObjectsCodeHeaders.lean` adds 27 public kernel-checked lemmas. The new
+`Aiur/Objects/CodeHeaders.lean` adds 27 public kernel-checked lemmas. The new
 certificate extends the program prefix and checks both the complete zero branch
 and a bounded nonzero prefix of each list reader. It also binds the exact next
 Call, including its argument registers, output arity, callee index, and constraint
@@ -604,8 +604,8 @@ FRI workloads, or keys.
 
 ### Complete scalar and leaf-operand decoding
 
-`Aiur/ObjectsScalars.lean` adds 27 public kernel-checked lemmas and
-`Aiur/ObjectsOperands.lean` adds 13. Their structural certificates check the
+`Aiur/Objects/Scalars.lean` adds 27 public kernel-checked lemmas and
+`Aiur/Objects/Operands.lean` adds 13. Their structural certificates check the
 complete bodies of `ib_field`, `ib_scalar`, and `ic_read_operand`, including all
 operations, Call targets/arguments/output sizes/flags, match tags and ordering,
 default branches, return selectors and every output register. The combined
@@ -720,15 +720,15 @@ RAYON_NUM_THREADS=8 .lake/build/bin/IxTests recursive-verifier ix-aggr
 ## Reproduction and coverage
 
 ```sh
-lake build --wfail Ix.Ixby.Aiur.ObjectsRefinement IxbyObjectsTests IxbyControlTests IxbyAiurTests
-lake build --wfail Ix.Ixby.Aiur.ObjectsMemory IxbyObjectsMemoryTests
-lake build --wfail Ix.Ixby.Aiur.ObjectsStore Ix.Ixby.Aiur.ObjectsTable IxbyObjectsTableTests
-lake build --wfail Ix.Ixby.Aiur.ObjectsParser Ix.Ixby.Aiur.ObjectsIdentity IxbyObjectsParserTests
-lake build --wfail Ix.Ixby.Aiur.ObjectsEquality Ix.Ixby.Aiur.ObjectsUnique
-lake build --wfail Ix.Ixby.Aiur.ObjectsDeclarations Ix.Ixby.Aiur.ObjectsAdmission
-lake build --wfail Ix.Ixby.Aiur.ObjectsProgramPrefix
-lake build --wfail Ix.Ixby.Aiur.ObjectsCodeHeaders
-lake build --wfail Ix.Ixby.Aiur.ObjectsScalars Ix.Ixby.Aiur.ObjectsOperands
+lake build --wfail Ix.Ixby.Aiur.Objects.Refinement IxbyObjectsTests IxbyControlTests IxbyAiurTests
+lake build --wfail Ix.Ixby.Aiur.Objects.Memory IxbyObjectsMemoryTests
+lake build --wfail Ix.Ixby.Aiur.Objects.Store Ix.Ixby.Aiur.Objects.Table IxbyObjectsTableTests
+lake build --wfail Ix.Ixby.Aiur.Objects.Parser Ix.Ixby.Aiur.Objects.Identity IxbyObjectsParserTests
+lake build --wfail Ix.Ixby.Aiur.Objects.Equality Ix.Ixby.Aiur.Objects.Unique
+lake build --wfail Ix.Ixby.Aiur.Objects.Declarations Ix.Ixby.Aiur.Objects.Admission
+lake build --wfail Ix.Ixby.Aiur.Objects.ProgramPrefix
+lake build --wfail Ix.Ixby.Aiur.Objects.CodeHeaders
+lake build --wfail Ix.Ixby.Aiur.Objects.Scalars Ix.Ixby.Aiur.Objects.Operands
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsMemoryTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTableTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsParserTests

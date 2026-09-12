@@ -60,14 +60,6 @@ import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ixby
-import Tests.IxbyCrypto
-import Tests.IxbyCodec
-import Tests.IxbyAiur
-import Tests.IxbyControl
-import Tests.IxbyObjects
-import Tests.IxbyObjectsMemory
-import Tests.IxbyObjectsTable
-import Tests.IxbyObjectsParser
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
@@ -214,23 +206,23 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ix-aggr", Tests.Aggr.convergedSuite),
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
   ("ixes-manifest", Tests.Ix.Ixes.suite),
-  ("ixby", Tests.Ixby.suite),
-  ("ixby-crypto", Tests.IxbyCrypto.suite),
-  ("ixby-codec", Tests.IxbyCodec.suite),
-  ("ixby-aiur", Tests.IxbyAiur.suite (withProofs := false)),
-  ("ixby-control", Tests.IxbyControl.suite (withProofs := false)),
-  ("ixby-objects", Tests.IxbyObjects.suite (withProofs := false)),
-  ("ixby-objects-memory", Tests.IxbyObjectsMemory.suite),
-  ("ixby-objects-table", Tests.IxbyObjectsTable.suite),
-  ("ixby-objects-parser", Tests.IxbyObjectsParser.suite),
+  ("ixby", Tests.Ixby.Basic.suite),
+  ("ixby-crypto", Tests.Ixby.Crypto.suite),
+  ("ixby-codec", Tests.Ixby.Codec.suite),
+  ("ixby-aiur", Tests.Ixby.Aiur.Scalar.suite (withProofs := false)),
+  ("ixby-control", Tests.Ixby.Aiur.Control.suite (withProofs := false)),
+  ("ixby-objects", Tests.Ixby.Aiur.Objects.suite (withProofs := false)),
+  ("ixby-objects-memory", Tests.Ixby.Aiur.Objects.Memory.suite),
+  ("ixby-objects-table", Tests.Ixby.Aiur.Objects.Table.suite),
+  ("ixby-objects-parser", Tests.Ixby.Aiur.Objects.Parser.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("aiur-hoisting-prove", AiurTests.Hoisting.suite true),
-  ("ixby-aiur-prove", Tests.IxbyAiur.suite),
-  ("ixby-control-prove", Tests.IxbyControl.suite),
-  ("ixby-objects-prove", Tests.IxbyObjects.suite),
+  ("ixby-aiur-prove", Tests.Ixby.Aiur.Scalar.suite),
+  ("ixby-control-prove", Tests.Ixby.Aiur.Control.suite),
+  ("ixby-objects-prove", Tests.Ixby.Aiur.Objects.suite),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

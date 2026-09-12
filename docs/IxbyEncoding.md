@@ -266,7 +266,7 @@ a separate committed field: the profile's `maxSteps` is bound, and the witness
 must respect it. Nonterminal runs, failed admission, primitive errors, or output
 encoding failures do not establish successful execution.
 
-`Tests/IxbyCodec.lean` covers independent golden bytes, every primitive and
+`Tests/Ixby/Codec.lean` covers independent golden bytes, every primitive and
 operation, structured values, strict-prefix truncation, malformed tags/ranges,
 resource boundaries, execution, and altered commitments. These tests and Lean
 equations do not implement constrained decoding, authenticated program fetch,

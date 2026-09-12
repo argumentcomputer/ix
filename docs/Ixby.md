@@ -18,6 +18,13 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
 
 ## Current implementation
 
+Object-backend proof modules are grouped under `Ix/Ixby/Aiur/Objects/`, with
+namespaces under `Ix.Ixby.AiurBackend.Objects`. IxBy tests live under
+`Tests/Ixby/`: reference/crypto/codec suites at the root and backend suites under
+`Aiur/`, mirroring the implementation hierarchy. `Tests/Ixby.lean` collects the
+suites; each standalone backend runner lives in its suite's `Main.lean` module.
+The existing executable names and `IxTests` suite selectors are unchanged.
+
 - `Ix/Ixby/Basic.lean`: functional values, indexed operands, calls, constructors,
   branches, immutable local frames, and explicit continuations.
 - `Ix/Ixby/Primitive.lean`: closed, typed scalar/byte reference primitives.
@@ -33,41 +40,41 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   interpreters, with raw artifact authentication and real Aiur/FRI proofs.
 - `Aiur/Refinement.lean`: logical reversed-frame and continuation contracts,
   with kernel-checked representation/transition lemmas, not an AIR theorem.
-- `Aiur/ObjectsRefinement.lean`: conditional ranked-heap finiteness, field-order,
+- `Aiur/Objects/Refinement.lean`: conditional ranked-heap finiteness, field-order,
   constructor/case, and field-counter bridges; the full circuit proof remains open.
-- `Aiur/ObjectsMemory.lean`: checked reconstruction of concrete bytecode memory,
+- `Aiur/Objects/Memory.lean`: checked reconstruction of concrete bytecode memory,
   with a proof that success yields the logical object representation. Execution
   establishing reconstruction success and the declaration table remains open.
-- `Aiur/ObjectsStore.lean` and `ObjectsTable.lean`: actual bytecode-store
+- `Aiur/Objects/Store.lean` and `Objects/Table.lean`: actual bytecode-store
   preservation and checked concrete-table binding to canonical program bytes.
   Admission, complete interpreter transitions, and AIR links remain open.
-- `Aiur/ObjectsParser.lean`: structurally checked byte/u32 reader contracts,
+- `Aiur/Objects/Parser.lean`: structurally checked byte/u32 reader contracts,
   byte-prefix preservation, and the zero-count declaration parser proof.
   The authenticated byte-stream invariant remains open.
-- `Aiur/ObjectsIdentity.lean`: compositional inlined-word and compiled ten-limb
+- `Aiur/Objects/Identity.lean`: compositional inlined-word and compiled ten-limb
   identity-reader proofs, including exact digest/member/tag, suffix preservation,
   and actual Call semantics. Authenticated whole-program binding remains open.
-- `Aiur/ObjectsEquality.lean` and `ObjectsUnique.lean`: exact compiled ID
+- `Aiur/Objects/Equality.lean` and `Objects/Unique.lean`: exact compiled ID
   comparison and bounded duplicate traversal, tied to semantic table decoding
   and preserving caller state.
-- `Aiur/ObjectsDeclarations.lean`: complete bounded declaration-parser and Call
+- `Aiur/Objects/Declarations.lean`: complete bounded declaration-parser and Call
   contracts, including exact byte-codec identities, field-limit/duplicate
   rejection, table construction, and state preservation.
-- `Aiur/ObjectsAdmission.lean`: checked raw-advice reader and loader contracts,
+- `Aiur/Objects/Admission.lean`: checked raw-advice reader and loader contracts,
   genuine-byte stream construction, allocation/frame bounds, and composition
   with a declaration prefix. Metadata/address and initial storage bounds are
   explicit; authenticated whole-program admission remains open.
-- `Aiur/ObjectsProgramPrefix.lean`: actual `is_run` magic/revision, entry/count,
+- `Aiur/Objects/ProgramPrefix.lean`: actual `is_run` magic/revision, entry/count,
   and declaration-call contracts, with a derived constructor bound, exact
   continuation state, and checked loader composition. The suffix/function-table
   code and whole-program binding are not certified by this prefix check.
-- `Aiur/ObjectsCodeHeaders.lean`: checked function-count, function-header, and
+- `Aiur/Objects/CodeHeaders.lean`: checked function-count, function-header, and
   block-header guards, exact zero-count Nil stores, and continuation/loader
   composition. Instruction decoding and complete function-table admission remain open.
-- `Aiur/ObjectsScalars.lean`: complete checked field and scalar-literal readers,
+- `Aiur/Objects/Scalars.lean`: complete checked field and scalar-literal readers,
   exact canonical Goldilocks packing, Boolean rejection, concrete value layouts,
   and same-toplevel Call contracts.
-- `Aiur/ObjectsOperands.lean`: complete checked local/literal/erased leaf readers,
+- `Aiur/Objects/Operands.lean`: complete checked local/literal/erased leaf readers,
   exact local-index bounds and six-field layouts, caller-state preservation,
   and composition with the actual checked loader. Lists and instructions remain open.
 - `Ix/Ixby/Validate.lean`: whole-image admission and bounded input validation.
@@ -75,24 +82,24 @@ Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
   monotonicity, and uniqueness of successful results across fuel witnesses.
 - `Ix/Ixby/Composition.lean`: the required source/target refinement interface
   and a generic theorem composing compilation certification with execution.
-- `Tests/Ixby.lean`: 100 executable regressions and a kernel-checked example
+- `Tests/Ixby/Basic.lean`: 100 executable regressions and a kernel-checked example
   with a runtime argument, direct call, branch, and constructed result, plus
   a counterexample to forward simulation alone.
-- `Tests/IxbyCrypto.lean`: crypto primitive/profile tests, BLAKE3 comparison
+- `Tests/Ixby/Crypto.lean`: crypto primitive/profile tests, BLAKE3 comparison
   against the Rust implementation, and a functional-call/Word32 example.
-- `Tests/IxbyCodec.lean`: golden artifact bytes, canonical decoding, malformed
+- `Tests/Ixby/Codec.lean`: golden artifact bytes, canonical decoding, malformed
   inputs, resource bounds, byte execution, and commitment mismatch tests.
-- `Tests/IxbyAiur.lean`: scalar-slice execution/proving, malformed advice,
+- `Tests/Ixby/Aiur/Scalar.lean`: scalar-slice execution/proving, malformed advice,
   changed statements/proofs, fresh-verifier checks, and trace measurements.
-- `Tests/IxbyControl.lean`: authenticated code tables, branches, call/return
+- `Tests/Ixby/Aiur/Control.lean`: authenticated code tables, branches, call/return
   restoration, tail/self/mutual recursion, resource boundaries, and proofs.
-- `Tests/IxbyObjects.lean`: recursive list map/fold, constructor identity and
+- `Tests/Ixby/Aiur/Objects.lean`: recursive list map/fold, constructor identity and
   field order, shared objects, I/O budgets, malformed artifacts, and proofs.
-- `Tests/IxbyObjectsMemory.lean`: 126 concrete-layout, compiled-helper,
+- `Tests/Ixby/Aiur/Objects/Memory.lean`: 126 concrete-layout, compiled-helper,
   native-output parity, and malformed-memory checks, without new proof workloads.
-- `Tests/IxbyObjectsTable.lean`: 191 table-layout, compiled parser/runner,
+- `Tests/Ixby/Aiur/Objects/Table.lean`: 191 table-layout, compiled parser/runner,
   store-preservation, and checked program/table-binding tests.
-- `Tests/IxbyObjectsParser.lean`: 23,832 checks covering full/pruned compilation
+- `Tests/Ixby/Aiur/Objects/Parser.lean`: 23,832 checks covering full/pruned compilation
   certificates, byte/u32/identity execution, exact codec agreement, malformed
   cells, forged ranges/metadata, actual Call boundaries, the zero-count parser,
   exact ID comparison/duplicate traversal, complete bounded declaration parsing,
@@ -539,7 +546,7 @@ freeze; complete competing CEK and word provers are not a prerequisite.
 ## Checks
 
 ```sh
-lake build --wfail Ix.Ixby Tests.Ixby Tests.IxbyCrypto Tests.IxbyCodec
+lake build --wfail Ix.Ixby Tests.Ixby.Basic Tests.Ixby.Crypto Tests.Ixby.Codec
 lake build --wfail Ix.Ixby.Aiur.Refinement IxbyAiurTests IxbyControlTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyAiurTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyControlTests

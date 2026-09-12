@@ -9,7 +9,7 @@ is made with rank `1 + max child rank`; finite bounded ranks exclude cycles.
 I/O node/depth limits are separate from the derived intermediate rank bound.
 
 This source is not a proof of the Aiur compiler/memory/gadget arguments. See
-`ObjectsRefinement.lean` for the explicit conditional representation contract. -/
+`Objects/Refinement.lean` for the explicit conditional representation contract. -/
 
 public section
 

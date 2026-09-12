@@ -152,27 +152,27 @@ lean_exe AiurHoistingTests where
   supportInterpreter := true
 
 lean_exe IxbyAiurTests where
-  root := `Tests.IxbyAiurMain
+  root := `Tests.Ixby.Aiur.Scalar.Main
   supportInterpreter := true
 
 lean_exe IxbyControlTests where
-  root := `Tests.IxbyControlMain
+  root := `Tests.Ixby.Aiur.Control.Main
   supportInterpreter := true
 
 lean_exe IxbyObjectsTests where
-  root := `Tests.IxbyObjectsMain
+  root := `Tests.Ixby.Aiur.Objects.Main
   supportInterpreter := true
 
 lean_exe IxbyObjectsMemoryTests where
-  root := `Tests.IxbyObjectsMemoryMain
+  root := `Tests.Ixby.Aiur.Objects.Memory.Main
   supportInterpreter := true
 
 lean_exe IxbyObjectsTableTests where
-  root := `Tests.IxbyObjectsTableMain
+  root := `Tests.Ixby.Aiur.Objects.Table.Main
   supportInterpreter := true
 
 lean_exe IxbyObjectsParserTests where
-  root := `Tests.IxbyObjectsParserMain
+  root := `Tests.Ixby.Aiur.Objects.Parser.Main
   supportInterpreter := true
 
 @[test_driver]
