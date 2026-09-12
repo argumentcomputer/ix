@@ -2,6 +2,8 @@ import Compilatrix.Sim
 import Compilatrix.X86.NatCallsSim
 import Compilatrix.X86.ScalarSourceObject
 import Compilatrix.X86.PhysicalScalarSourceObject
+import Compilatrix.X86.PhysicalHeapSourceObject
+import Compilatrix.X86.HeapReject
 import Compilatrix.X86.PhysicalScalarCapturedSourceObject
 import Compilatrix.UniqueReuse.PipelineSim
 import Compilatrix.UniqueReuse.NativeSim
@@ -7635,3 +7637,53 @@ program/context recovery. Raw codec laws need no hash-native axiom. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofBorrow_matches
+
+/-! Compositional allocating CFGs, finite spills/calls, source-to-ELF, and capacity rejection. -/
+
+/-- info: 'Compilatrix.X86.HeapCopies.execute_trace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapCopies.execute_trace
+
+/-- info: 'Compilatrix.X86.HeapCopies.execute_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapCopies.execute_at
+
+/-- info: 'Compilatrix.X86.HeapCopies.execute_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapCopies.execute_preserves
+
+/-- info: 'Compilatrix.X86.HeapRuns.call_steps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapRuns.call_steps
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Code.simulate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Code.simulate
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Output.summaries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Output.summaries
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Output.physicalReturns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Output.physicalReturns
+
+/-- info: 'Compilatrix.X86.HeapEntry.RootRun.object' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapEntry.RootRun.object
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Compiled.policyReturns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Compiled.policyReturns
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Compiled.physicalReturns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Compiled.physicalReturns
+
+/-- info: 'Compilatrix.X86.HeapEntry.root_reject' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapEntry.root_reject
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Compiled.rejectsCapacity' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Compiled.rejectsCapacity
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Exported.sourceReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Exported.sourceReturns
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Exported.sourceNatReturns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Exported.sourceNatReturns

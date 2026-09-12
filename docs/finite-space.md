@@ -153,4 +153,7 @@ The [allocating native helper](source-native-allocating.md) extends this native
 bound to a live caller reservation across actual CALL/RET. It requires 16
 additional stack bytes below the external return slot and proves release of
 the memory returned by ELF execution. Its capacity rejection proof preserves
-all heap and stack bytes. General allocating CFG selection remains separate.
+all heap and stack bytes. The subsequent
+[allocating CFG slice](source-native-heap.md) covers bounded leaf allocation
+and reuse across nonrecursive calls and joins in one finite heap/stack
+workspace, including caller spills and reservations.

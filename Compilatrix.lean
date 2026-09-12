@@ -129,6 +129,10 @@ import Compilatrix.X86.PhysicalScalarSourceObject
 import Compilatrix.X86.PhysicalScalarCapturedSourceObject
 import Compilatrix.X86.PhysicalScalarSources
 import Compilatrix.X86.PhysicalScalarExamples
+import Compilatrix.X86.PhysicalHeapSourceObject
+import Compilatrix.X86.HeapReject
+import Compilatrix.X86.PhysicalHeapSources
+import Compilatrix.X86.PhysicalHeapRejections
 import Compilatrix.Coverage.StdContact
 import Compilatrix.X86.SelectExamples
 import Compilatrix.X86.Encode

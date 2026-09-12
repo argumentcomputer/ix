@@ -73,8 +73,9 @@ for locals; internal calls are aligned.
 The proof covers arbitrary initial local bytes and saved registers. It
 preserves RBX, RBP, R12–R15, the external return address, and all memory outside
 the reservation. Physical RET returns to that address and increments entry
-RSP by eight. There is no native heap allocation. General owned-heap capacity
-and allocating calls remain F1/A1 follow-ups. Stack mapping/alignment are caller
+RSP by eight. There is no native heap allocation in this slice. The subsequent
+[allocating CFG attachment](source-native-heap.md) adds bounded leaf heaps,
+allocating calls, and fixed spills. Stack mapping/alignment are caller
 preconditions, not native capacity guards. Invalid mappings are machine-model
 negative tests, not graceful native fallback behavior.
 

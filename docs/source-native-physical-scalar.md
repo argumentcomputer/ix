@@ -94,7 +94,8 @@ The emitted-object theorem proves return to the initial stack return address,
 RSP advancing by eight after RET, preserved System V saved registers, and
 unchanged bytes outside the reservation. Invalid mappings trap in the model;
 the ABI requires the mapping and alignment and does not install native stack
-guards. General occupied heap bounds and allocating calls remain F1/A1 work.
+guards. The subsequent [allocating CFG slice](source-native-heap.md) adds
+bounded leaf heaps, allocating calls, and fixed spill validation.
 
 ## Proof and source boundaries
 

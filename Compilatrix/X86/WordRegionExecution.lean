@@ -14,6 +14,10 @@ def State.setWord (state : State) (slot : Nat) (value : Word) : State :=
   { state with words := state.words.set slot value }
 def State.move (state : State) (source : MoveSource) : Word := source.eval (state.core Memory.unmapped)
 def State.alu (state : State) (source : AluSource) : Word := source.eval (state.core Memory.unmapped)
+def State.address (state : State) (address : MemAddr) : Word := address.eval (state.core Memory.unmapped)
+
+@[simp] theorem State.address_core (state : State) (memory : Memory) (address : MemAddr) :
+    address.eval (state.core memory) = state.address address := rfl
 
 @[simp] theorem State.move_core (state : State) (memory : Memory) (source : MoveSource) :
     source.eval (state.core memory) = state.move source := by cases source <;> rfl
@@ -65,6 +69,12 @@ inductive Effect (layout : Layout) : Instr → State → State → Prop where
       (bound : slot < layout.slots)
       (address : state.registers .rbp - source.displacement = layout.address slot) :
       Effect layout (.reload destination source) state (state.setReg destination (state.words slot))
+  | load (state : State) (destination : GPR) (source : MemAddr) (slot : Nat)
+      (bound : slot < layout.slots) (address : state.address source = layout.address slot) :
+      Effect layout (.load .w64 destination source) state (state.setReg destination (state.words slot))
+  | store (state : State) (destination : MemAddr) (source : GPR) (slot : Nat)
+      (bound : slot < layout.slots) (address : state.address destination = layout.address slot) :
+      Effect layout (.store .w64 destination source) state (state.setWord slot (state.registers source))
 
 inductive Trace (layout : Layout) : List Instr → State → State → Prop where
   | nil (state) : Trace layout [] state state
@@ -125,6 +135,20 @@ theorem Effect.sound {layout : Layout} {instruction : Instr} {before after : Sta
         address ▸ represented.view slot bound
       have effect := Straight.Effect.reload (before.core memory) destination source (before.words slot) allowed loaded
       exact effect
+  | load _ destination source slot bound address =>
+      refine ⟨memory, represented, ?_⟩
+      have allowed : Memory.rangeAllowed memory.readable (source.eval (before.core memory)) 8 = true := by
+        rw [State.address_core, address]; exact represented.readable slot bound
+      have loaded : memory.read64 (source.eval (before.core memory)) = before.words slot := by
+        rw [State.address_core, address]; exact represented.view slot bound
+      exact Straight.Effect.load (before.core memory) destination source (before.words slot) allowed loaded
+  | store _ destination source slot bound address =>
+      refine ⟨memory.write64 (layout.address slot) (before.registers source), represented.write64 bound _, ?_⟩
+      have allowed : Memory.rangeAllowed memory.writable (destination.eval (before.core memory)) 8 = true := by
+        rw [State.address_core, address]; exact represented.writable slot bound
+      have stored := Straight.Effect.store (before.core memory) destination source allowed
+      rw [State.address_core, address] at stored
+      exact stored
 
 theorem Trace.sound {layout : Layout} {instructions : List Instr} {before after : State}
     (trace : Trace layout instructions before after) (outside memory : Memory)

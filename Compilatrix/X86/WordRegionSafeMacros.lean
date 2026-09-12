@@ -2,6 +2,34 @@ import Compilatrix.X86.WordRegionSafeTrace
 
 namespace Compilatrix.X86.WordRegion
 
+@[simp] theorem State.address_normalized (state : State) (address : MemAddr) :
+    state.address (Encode.normalizedAddress address) = state.address address :=
+  Encode.normalizedAddress_eval address (state.core Memory.unmapped)
+
+theorem SafeTrace.load (layout : Layout) (returns : List ReturnFrame) (state : State)
+    (holes : Stream.Holes) (destination : GPR) (source : MemAddr) (index : Nat)
+    (bound : index < layout.slots) (address : state.address source = layout.address index)
+    (readable : Stream.ReadableData holes (layout.address index) 8) :
+    SafeTrace layout returns [.load .w64 destination source] state holes
+      (state.setReg destination (state.words index)) holes := by
+  refine .cons (.load _ _ _ _ bound address) ?_ (.nil _ _)
+  simpa [Stream.OperationSafe, Stream.operationReads, Stream.operationWrites,
+    Encode.instructionOperation, State.address_core, address, Width.bytes] using readable
+
+theorem SafeTrace.store (layout : Layout) (returns : List ReturnFrame) (state : State)
+    (holes : Stream.Holes) (destination : MemAddr) (source : GPR) (index : Nat)
+    (bound : index < layout.slots) (address : state.address destination = layout.address index)
+    (disjoint : Stream.FramesDisjoint returns (layout.address index) 8) :
+    SafeTrace layout returns [.store .w64 destination source] state holes
+      (state.setWord index (state.registers source)) (Stream.clearRange holes (layout.address index) 8) := by
+  refine .cons (.store _ _ _ _ bound address) ?_ ?_
+  · simpa [Stream.OperationSafe, Stream.operationReads, Stream.operationWrites,
+      Encode.instructionOperation, State.address_core, address, Width.bytes] using disjoint
+  · simpa [Stream.nextHoles, Stream.operationWrites, Encode.instructionOperation,
+      State.address_core, address, Width.bytes] using
+      SafeTrace.nil (layout := layout) (returns := returns) (state.setWord index (state.registers source))
+        (Stream.clearRange holes (layout.address index) 8)
+
 theorem SafeTrace.mov (layout : Layout) (returns : List ReturnFrame) (state : State)
     (holes : Stream.Holes) (destination : GPR) (source : MoveSource) :
     SafeTrace layout returns [.mov .w64 destination source] state holes

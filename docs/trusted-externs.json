@@ -427,7 +427,8 @@
         "N3's first scalar source slice composes checked erased-source application, exact Nat arithmetic, generic block/frame/call contracts and finite stack sufficiency into actual ELF execution for every admitted runtime Word pair",
         "the physical-scalar-cfg/1 selector composes certificates for actual physical IxIR2 moves, scalar ownership operations, Nat peeling, joins and nonrecursive direct calls into successful-run preservation and total actual-ELF execution on a sufficient finite stack; Exported.sourceNatReturns derives actual PAP application and physical invocation from successful runtime Ixon application through the ordinary compiler, proves complete exported-closure reclamation and exact Nat equality, and reaches emitted ELF execution for every accepted uncaptured unary/binary scalar export",
         "physical-scalar-capture/1 retains a kernel-checked closed initializer with one exact Word capture, validates a unary binding wrapper over the actual selected binary physical function, and composes ordinary source application with capture-first dispatch, complete initializer-heap reclamation, exact Nat results and universal finite-stack ELF execution; bounded static initialization is separate from general native heap capacity",
-        "the specialized allocating native reversal helper keeps a live caller reservation across actual CALL/RET and derives finite heap/stack safety, source-to-ELF preservation, exact capacity rejection and release of the actual byte result; general allocating CFG selection remains outside this boundary"
+        "the specialized allocating native reversal helper keeps a live caller reservation across actual CALL/RET and derives finite heap/stack safety, source-to-ELF preservation, exact capacity rejection and release of the actual byte result; general allocating CFG selection remains outside this boundary",
+        "physical-leaf-cfg/1 composes checked leaf allocation, unique reuse, hot shared reset, parallel value/credit copies, joins and nonrecursive allocating calls through fixed spills and disjoint activations; universal successful source/physical execution implies actual ELF return with a sufficient finite heap/stack workspace, exact counters and complete reclamation, and invalid capacity has a separate no-write rejection theorem; emitted provenance binds the complete canonical IxIR2 artifact"
       ],
       "trust_basis": [
         "one total pattern-match case per typed instruction and terminator constructor",
@@ -442,7 +443,8 @@
         "the scalar source gate checks five full source compilations, 45 source inputs, 95 object executions, admission/conversion/capacity negatives, 25 artifact corruptions and 830 linked calls with ordinary and guarded stacks; fifteen axiom fences cover universal contracts rather than per-input native certificates",
         "the physical scalar gate checks seven full source compilations, 133 source/application/object inputs including maximum Words and exact closure reclamation, 76 additional CFG stream inputs covering joins and parallel transfers, 26 admission negatives, 35 export negatives, 3 conversion negatives, 13 stack negatives, 42 application boundary checks, 70 artifact corruptions and 1162 linked calls with ordinary and guarded stacks; nine ordinary-basis physical-to-object fences and eleven source-bridge fences retain the existing Blake3 compiler hash boundary without adding axioms or native interfaces",
         "the captured scalar gate checks nine full source compilations at zero/seven/maximum Word captures, 171 source/application/object runs, 135 initializer rejection runs, 2 wrapper rejections, 3 conversion rejections, 36 application boundaries, 18 stack rejections, 135 independent artifact corruptions and 1494 linked ordinary/guarded-stack calls; twelve fences cover checked initialization, capture binding, ownership/reclamation and universal source-to-object composition with no new axiom or native interface",
-        "the allocating native helper gate checks 73 full source/application/object inputs per counter mode, every runtime length 0 through 64, 1961 malformed or insufficient-capacity calls per mode, live reservations across actual CALL/RET, finite 24-byte mapped stacks, exact byte-step costs, complete release of the actual byte result, and 26 independent corruption regressions; sixteen axiom fences retain the existing logical/hash basis"
+        "the allocating native helper gate checks 73 full source/application/object inputs per counter mode, every runtime length 0 through 64, 1961 malformed or insufficient-capacity calls per mode, live reservations across actual CALL/RET, finite 24-byte mapped stacks, exact byte-step costs, complete release of the actual byte result, and 26 independent corruption regressions; sixteen axiom fences retain the existing logical/hash basis",
+        "the allocating CFG gate checks five ordinary source compilations and four physical reuse/join fixtures, 95 source applications, 171 ELF runs, nine persisted-only fresh-process reloads, 19 admission and two legacy credit-policy rejections, 27 certificate and 43 capacity/workspace checks, 182 independent artifact corruptions, 36 reload rejections, and 774 guarded-workspace native calls; fourteen axiom fences retain the existing logical/hash basis"
       ],
       "tests": [
         "Compilatrix.X86.Encode.Examples arithmeticProgramBytesAccepted",
@@ -496,7 +498,12 @@
         "Compilatrix.UniqueReuse.Runtime.AllocatingNative.Output.sourceRefinesObjects",
         "Compilatrix.UniqueReuse.Runtime.AllocatingNative.ByteExecution.frame",
         "Compilatrix.UniqueReuse.Runtime.AllocatingNative.Object.capacityRejects",
-        "scripts/CheckSourceNativeAllocating.lean"
+        "scripts/CheckSourceNativeAllocating.lean",
+        "Compilatrix.X86.PhysicalHeap.Code.simulate",
+        "Compilatrix.X86.PhysicalHeap.Compiled.policyReturns",
+        "Compilatrix.X86.PhysicalHeap.Exported.sourceNatReturns",
+        "Compilatrix.X86.PhysicalHeap.Compiled.rejectsCapacity",
+        "scripts/CheckSourceNativeHeap.lean"
       ],
       "retirement": {
         "milestone": "E2 delivered for certified production outputs; unchecked API completeness remains outside that claim",
@@ -677,10 +684,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "f39fc21a97ecddca9708662435e56a5397b1a77b31f2746e4380c924b86f1257",
+      "flake.nix": "dfcd6f2510b14a53f8624707be453ff651e344d2be4e7ca6374bb017bba42248",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "2994b45916f68c81889ae85756029f725baf4caa30da4b029901fb57f93dc362",
+      "lakefile.lean": "bf1447021e6c9b8b265c605b0b822fcfec450e279bb415201e86f6e1fe2879ca",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -773,7 +780,11 @@
       "fixtures/source-native-allocating/expected-counter-fold.json": "13a1f8cdfef9afc124c3bd31e3beda857d10c292f3d1de2981f24dbc96819aea",
       "scripts/CheckIxIR2.lean": "0270ea2862506ecc3754275adcf98a1b00a4c574067599d242d1254b3f7b72bc",
       "Compilatrix/Tools/IxIR2Check.lean": "57d3e14b194a232b7ed56499a4dcbe988df8bda1634e4ab6c49d983a5da8bbd8",
-      "fixtures/ixir2/expected.json": "9ec6cdd4b7036f66e797b5456b4ff47fb33a0bb14bbbc1d527bf820a91e2f15c"
+      "fixtures/ixir2/expected.json": "9ec6cdd4b7036f66e797b5456b4ff47fb33a0bb14bbbc1d527bf820a91e2f15c",
+      "Compilatrix/Tools/HeapNativeCheck.lean": "9e5a6ae3f1ccbf7c920ca1da3c45e12d9f737a8cc48e940204889f75ebfb6bc1",
+      "scripts/CheckSourceNativeHeap.lean": "f1fe307a20ac0b1f6a6274046b2a77fe8ea2a2aa8b7e42c46eacb422ef9d9c15",
+      "fixtures/source-native-heap/expected.json": "1037a6fd9c53d988a48bdcda091a2760410c8b8748a823bb1a1949b8e9da635b",
+      "fixtures/source-native-heap/native_harness.c": "ae4120f9cc9eae3b4d8dbde0094791179bb4c81a184b490f1b0d9662f691ab78"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

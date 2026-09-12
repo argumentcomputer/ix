@@ -83,6 +83,13 @@ lean_exe «source-native-physical-scalar» where
 lean_exe «source-native-captured-scalar» where
   root := `SourceNativeCapturedScalar
 
+/- Compositional leaf allocation, finite workspaces, and physical snapshots. -/
+lean_exe «source-native-heap» where
+  root := `SourceNativeHeap
+
+lean_exe «heap-snapshot-object» where
+  root := `HeapSnapshotObject
+
 /- Checked borrowed calls from accepted source, with complete RC observations. -/
 lean_exe «source-borrow» where
   root := `SourceBorrow
@@ -159,6 +166,10 @@ lean_exe «check-source-native-scalar» where
 lean_exe «check-source-native-physical-scalar» where
   srcDir := "scripts"
   root := `CheckSourceNativePhysicalScalar
+
+lean_exe «check-source-native-heap» where
+  srcDir := "scripts"
+  root := `CheckSourceNativeHeap
 
 lean_exe «check-source-native-captured-scalar» where
   srcDir := "scripts"
