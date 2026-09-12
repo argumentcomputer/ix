@@ -81,6 +81,7 @@ import Compilatrix.X86.ELF
 import Compilatrix.X86.ELFExamples
 import Compilatrix.Pipeline
 import Compilatrix.PipelineSound
+import Compilatrix.Modular.Assemble
 import Compilatrix.Recursion.Sim
 import Compilatrix.Recursion.PhysicalSim
 import Compilatrix.Recursion.Resources
@@ -115,6 +116,24 @@ stay inside the same intended axiom triple.
 -/
 
 /-! ## Erasure simulation (`Compilatrix/Sim.lean`) -/
+
+/-! Modular evidence transport adds no native or hash assumption. The closed
+source theorem retains the pipeline's existing production BLAKE3 dependency. -/
+
+/-- info: 'Compilatrix.Sim.PErase.extend' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sim.PErase.extend
+
+/-- info: 'Compilatrix.Sim.Covered.extend' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sim.Covered.extend
+
+/-- info: 'Compilatrix.Sim.MemberCoverage.extend' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sim.MemberCoverage.extend
+
+/-- info: 'Compilatrix.Modular.Compiled.sourcePreservation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Modular.Compiled.sourcePreservation
 
 /-- info: 'Compilatrix.Ixon.Eval.projectValue_ok_of_strict' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixon.Eval.projectValue_ok_of_strict

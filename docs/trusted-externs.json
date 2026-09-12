@@ -101,7 +101,7 @@
         }
       ],
       "semantics_assumed": "The active init/update/finalize path returns the standard BLAKE3 extendable-output hash of exactly the supplied bytes; a 32-byte request returns the standard 256-bit digest. The FFI respects Lean ownership, lifetime, array-size, and C-ABI contracts. Uncalled keyed, derive-key, and version exports are covered because importing Blake3.Rust makes them reachable to downstream Lean code, but Compilatr.ix does not currently rely on their results. The sibling Blake3.C module binds the vendored C implementation behind six c_blake3_* externs; Compilatr.ix does not import it, so they are inventoried as present-but-unimported and any drift in the package tree's extern set fails the check.",
-      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1\u271d because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality.",
+      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1\u271d because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality. Modular source context transport uses exact binding equality and only ordinary logical axioms; its assembled closed-source theorem retains the same production BLAKE3 dependency. Reuse also compares full finite contexts, and serialized source records reconstruct proofs through the ordinary checker.",
       "trust_basis": [
         "Blake3.lean and lean-ffi are revision-pinned",
         "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
@@ -162,7 +162,8 @@
         "Tests.HPTFixtures.aliasReuseRegressionOk",
         "Tests.HPTFixtures.aliasReuseAcceptedFact_sound",
         "the source-space gate checks nine actual Ixon maps, 555 complete heap/frame prefixes, six fuel/representation boundaries, 65 native arena byte budgets, two fresh artifact sets and thirteen corruptions; nineteen fences preserve the ordinary logical basis, with the same existing Blake3 dependency in the three source/compiled-map/native-object compositions",
-        "the ixir2-identity gate checks twelve complete canonical snapshots, ten actual Ixon source execution/reclamation roundtrips, fifty-one identity mutations, fifty-six syntax/resource/ingress boundaries, all 18,802 proper-prefix rejections, eight file-size boundaries, and fifteen independent artifact/report corruption regressions"
+        "the ixir2-identity gate checks twelve complete canonical snapshots, ten actual Ixon source execution/reclamation roundtrips, fifty-one identity mutations, fifty-six syntax/resource/ingress boundaries, all 18,802 proper-prefix rejections, eight file-size boundaries, and fifteen independent artifact/report corruption regressions",
+        "the source-modular gate checks six complete source graphs, both source and literal-premise dependency edits, five exact monolithic comparisons, 611 reachable declarations in eleven units above the unchanged 512-candidate monolithic boundary, forty evidence/resource rejections, six file mutations, two fresh artifact sets and fresh retained proof recovery; three transport fences use propext/Quot.sound and the source composition fence retains the existing production logical/hash basis"
       ],
       "retirement": {
         "milestone": "post-M3 verified primitives",
@@ -684,10 +685,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "60a12f94ddaf106ab0612395e56177151f908d77f803ea633a1e9270f19844a0",
+      "flake.nix": "bd5bb0ea76e488610f21c1aa375301bfea2e2d448dcea79d880f0175359e4d58",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "42fd28b04d24a9b485ce89a638369579bcc5edac1787b4b465bc59393ab2c215",
+      "lakefile.lean": "4c6354cb9c9ffe892dd9a10e252c2f4e795c10053b2825441826816713a42eb6",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -797,7 +798,21 @@
       "benchmarks/CompilerScaling.lean": "b5914958b3b1039d7c67259d819b9230058a8d9309c94db9fe91840886b3cf44",
       "benchmarks/compiler-scaling.md": "05bdf7c825ee09dc45d040795ad0097bcd33b5ae4c741a9f9d2e381938164001",
       "benchmarks/native/scaling_harness.c": "7f59e2b78577d435c26176099df11e0bdd4d93f24cb173d567f7d04af13fc809",
-      "fixtures/compiler-scaling/expected.json": "05921bd48b52d526890e1ceea2f6838fd965532e2ee3474db1ad1af94bc8a77e"
+      "fixtures/compiler-scaling/expected.json": "05921bd48b52d526890e1ceea2f6838fd965532e2ee3474db1ad1af94bc8a77e",
+      "Compilatrix.lean": "ef49810b6bd529396a2c8b0dc54ad81794adc1f8a75e58975d6e4dbb24ed70fc",
+      "Compilatrix/Fence.lean": "c1a8e6e1245d3ab528824a220c29ebbd645c68364b970a520dba4e431cf63a3d",
+      "SourceModular.lean": "56c6636156b6f5d94fae525e3e6b16e7a0f7a982c337bc48f0478c339b2c5e53",
+      "scripts/CheckSourceModular.lean": "a1f7d5cf152ace936026bea821b0ad32ab5ca8ff5d6cab2aa996ec9f1320f979",
+      "fixtures/source-modular/expected.json": "1b6842f8705f23d67c6834ad669fcdda62ecb6691c05e677526dcb6a602e5c5b",
+      "Compilatrix/Modular/Assemble.lean": "1c6a8e2670f5029a22d2f33aed438c8d1dbb9151741f76ec5b14548e684947d3",
+      "Compilatrix/Modular/Basic.lean": "f7b41c7bb4352591300ab074311a580d8cdb9706c77f586d59dfea8299be8199",
+      "Compilatrix/Modular/Build.lean": "6e5e8e60fc44c30cabc6453c25d1079b57d920b0ad79af62eb6eda84efb81a05",
+      "Compilatrix/Modular/Check.lean": "77eb2d94f9238b5e6f345933c77345b57964b967bbfc19d38ab4834dd948a3e6",
+      "Compilatrix/Modular/Fixtures.lean": "01c4e2d047586cade195b06f5dc41ebe3cfed04256a269a81f5e09046192836c",
+      "Compilatrix/Modular/Regressions.lean": "9faee0a732d7833b0beca637426619e13a5c7e02b93fb7ea4b76cd4af9e401e3",
+      "Compilatrix/Modular/Report.lean": "fac182625c8bce91c04ba88284a0bedb72bf719fa1486187577855bb5b83790e",
+      "Compilatrix/Modular/Transport.lean": "a5c3d55de14f54181c62b96be6ba96571d92d2ffd80eddb34c6a100c9a270360",
+      "Compilatrix/Modular/Wire.lean": "c24f153a6826f23a120bb9495b55ca835f972e40b77f0353919f3548bcaf8896"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

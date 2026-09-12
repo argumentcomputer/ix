@@ -35,7 +35,7 @@ can proceed independently when their prerequisites are available.
 | [PERF3: optimization and compiler scaling](#performance-measurement) | first optimization and bounded scaling delivered | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) retains its selectable baseline. [Compiler scaling](performance/compiler-scaling-2026-09-12/README.md) measures fixed source/IR families, stage/process costs, evidence growth, HPT cache/dependency edits and exact rejection boundaries, with correctness and retained replay. |
 | [F1: finite heap and stack](#f1-finite-heap-and-stack) | bounded allocating CFG workspace delivered | Versioned occupied/committed bytes, explicit frames, finite physical execution, source-map adequacy, and native list/leaf arenas. The allocating CFG workspace includes caller spills, reservations and nested calls, with capacity rejection and full reclamation. General allocator reuse/fragmentation and traversal workspace remain open. |
 | [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | complete snapshots delivered | Strict bounded `ixir2-snapshot/1`, exact versioned full-body/context preimages, kernel roundtrip/canonicality and checked-source recovery, with independent malformed/resource/mutation/fresh-process checks. Renumbering and modular certification remain separate. |
-| [I3: modular source certification](#i3-modular-source-certification) | next, after the bounded scaling reference | Compose independently checked units and reuse unaffected evidence after a dependency edit before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. |
+| [I3: modular source certification](#i3-modular-source-certification) | bounded units delivered | Exact checked interfaces, proved source-evidence composition, dependency-edit reuse, strict retained recovery, and a fully reachable 611-declaration closure in 11 units under unchanged monolithic defaults. Automatic partitioning and the compiler's full source closure remain extensions. |
 | [A1: allocation and spill validation](#a1-allocation-and-spill-validation) | fixed spill slice delivered | Allocating CFG certificates validate value/credit flow through fixed spill slots, staged parallel copies, joins, and disjoint caller/callee activations. General register allocation remains deferred until selected programs need it. |
 
 **State meanings:** delivered is a scoped boundary backed by code and
@@ -198,29 +198,26 @@ the target ABI of a supplied layout descriptor.
 
 ### I3: modular source certification
 
-The [current certificate policy](resource-budgets.md#certificate-scaling-decision)
-checks one bounded source union. The next scaling boundary is reusable checked
-units following dependency/SCC boundaries, with recursive groups kept intact.
-The [scaling reference](performance/compiler-scaling-2026-09-12/README.md)
-records combined-work rejection below 512 candidates, plus the costs and
-limits of HPT-only reuse. It supplies a baseline for this work; source
-certificate caching and modular composition are not delivered by that cache.
+Delivered: [bounded modular source certification](modular-source.md) retains
+whole mutual groups in consumer-supplied units, checks exact finite source,
+literal and raw target interfaces, and transports checked coverage/member
+facts into the actual whole-program eraser output. The closed-source theorem
+and existing `ValidatedCompilation` interface retain the original premises
+and axiom basis. Strict bounded disk records recover proofs through the
+ordinary checker; process-local exact hits reuse already checked evidence.
 
-Acceptance:
+The [reference](performance/modular-source-2026-09-12/README.md) records six
+cases, source and literal-premise edits, exact monolithic/cold/warm artifact
+comparisons, and a fully reachable 611-declaration closure in 11 units.
+Per-unit and aggregate budgets count executable mutual-member obligations.
+The independent gate checks fresh artifacts, retained replay, 40 evidence and
+resource rejections, and six file mutations. Monolithic defaults stay fixed.
 
-- Bind imports/exports and certificate keys to exact source/dependency roots,
-  modes/schemas, sharing/checker policies, and required semantic/oracle premises.
-  Check each unit's evidence independently and prove that composition supplies
-  the closed program's source-preservation result without new trust assumptions.
-- Compile at least two units, change one dependency, and reuse unaffected
-  evidence while rechecking the dependent cone. Compare with monolithic
-  compilation at the declared semantic and artifact layer; reject stale or
-  incompatible interfaces and malformed evidence.
-- Bound per-unit and aggregate work, measure checking cost and certificate
-  size, and demonstrate a larger accepted closure assembled from bounded
-  units before increasing the monolithic defaults. Independent IxIR₂ evidence
-  persistence can use the delivered I2 snapshot identity; native linking
-  retains its separate ABI obligation.
+Automatic catalog/SCC partitioning, the compiler's full source closure,
+transactional source caches, and avoiding repeated whole-program
+erasure/readdressing/lowering remain extensions. Native linking retains its
+separate ABI obligation. The earlier [scaling reference](performance/compiler-scaling-2026-09-12/README.md)
+remains the baseline for HPT-only reuse and monolithic admission limits.
 
 ### A1: allocation and spill validation
 
@@ -460,6 +457,7 @@ belong in those references.
 | --- | --- |
 | Ingress and identity | Strict [Ixon codecs/sharing](ixon-v2-wire.md), bounded [catalog ingress](catalog-ingress.md), and cycle-safe [IxIR₀/IxIR₁ addressing](ixir-content-addressing.md). The full Std catalog retains a downstream rejection. |
 | I2 snapshots | [Canonical IxIR₂ identity](ixir2-wire.md): complete ordered programs and finite contexts, bounded codec proofs, addressed ingress, exact checked-source recovery, and an independent fresh-process gate. Logical declaration keys are retained; modular certification and durable storage remain separate. |
+| I3 source units | [Modular source certification](modular-source.md): exact finite interfaces, proved evidence transport/composition, unaffected-unit reuse, strict retained proof recovery, and 611 reachable declarations assembled from 11 bounded units. Automatic partitioning and the compiler's full closure remain open. |
 | Validated source and O1 | [Source preservation](simulation-strategy.md), owned IxIR₁, checked [HPT](hpt-certificates.md), and five [shrinking consumers](optimizer-harness.md). Source sharing/oracle premises remain explicit; the optimized universal counter law is `frees ≤ allocs`. |
 | Baseline IxIR₂ and R1–R4 | [Checked CFG lowering](ixir2-spec.md), physical baseline transport, selected shared reuse, fallback, reclamation, allocation/free comparison, and RC/peak-live bounds in the accepted compiler domain. |
 | C1/N1 | [Bounded coverage](source-coverage.md) and synthetic exact-Word scalar native entries, with complete fresh-process artifacts. |
@@ -475,7 +473,7 @@ belong in those references.
 | E1/E2 | [Local instructions](x86-encoded-instructions.md) and [complete streams/ELF](x86-stream-objects.md), including calls, returns, provenance, entry selection, and checked PC32 relocation. Reference ISA, external bodies, and system loading remain explicit. |
 | R6 | [General credit refinement](credit-refinement.md) for both policies and every instruction, including prefixes and independent successful budgets. Complete reclamation requires explicit logical root ownership. |
 | B1/B2 | [Closed borrowed-call certificates](source-borrow.md) and [structural runtime borrowing](source-borrow-runtime.md), with lender preservation, two fewer RC operations, full reclamation, and unchanged peak. Recursive SCCs and native shared borrowing remain open. |
-| PERF1/PERF3 | [Native comparisons](performance/native-reverse-2026-09-09/README.md), [checked counter folding](performance/counter-fold-2026-09-10/README.md), and [bounded compiler scaling](performance/compiler-scaling-2026-09-12/README.md), with retained data and artifact/check/analysis replay. Broader workloads and modular source certification remain extensions. |
+| PERF1/PERF3 | [Native comparisons](performance/native-reverse-2026-09-09/README.md), [checked counter folding](performance/counter-fold-2026-09-10/README.md), [bounded compiler scaling](performance/compiler-scaling-2026-09-12/README.md), and [modular source costs](performance/modular-source-2026-09-12/README.md), with retained data and artifact/check/analysis replay. Broader workloads remain extensions. |
 
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source

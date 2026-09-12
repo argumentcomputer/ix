@@ -109,6 +109,7 @@
             ./CatalogContact.lean
             ./X86ObjectFixture.lean
             ./SourceCoverage.lean
+            ./SourceModular.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
             ./SourceSpace.lean
@@ -129,6 +130,7 @@
             ./fixtures/ixon-std-contact
             ./fixtures/ixon-upstream
             ./fixtures/source-coverage
+            ./fixtures/source-modular
             ./fixtures/compiler-scaling
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
@@ -170,6 +172,7 @@
             ./CatalogContact.lean
             ./X86ObjectFixture.lean
             ./SourceCoverage.lean
+            ./SourceModular.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
             ./SourceSpace.lean
@@ -190,6 +193,7 @@
             ./fixtures/ixon-std-contact
             ./fixtures/ixon-upstream
             ./fixtures/source-coverage
+            ./fixtures/source-modular
             ./fixtures/compiler-scaling
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
@@ -416,6 +420,22 @@
             ./.lake/build/bin/check-source-space \
               --fixture ./.lake/build/bin/source-space \
               --expected ${auditSrc}/fixtures/source-space/expected.json
+          '';
+        };
+
+        # Bounded source units, exact dependency reuse, and fresh proof recovery.
+        sourceModularCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-modular";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-source-modular
+            ./.lake/build/bin/check-source-modular \
+              --fixture ./.lake/build/bin/source-modular \
+              --expected ${auditSrc}/fixtures/source-modular/expected.json
           '';
         };
 
@@ -761,6 +781,7 @@
           source-recursion = sourceRecursionCheck;
           source-call-reuse = sourceCallReuseCheck;
           source-space = sourceSpaceCheck;
+          source-modular = sourceModularCheck;
           ixir2-identity = ixir2Check;
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;

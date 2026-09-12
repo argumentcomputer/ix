@@ -74,6 +74,7 @@ and linked source-family documents give their current scope.
 | Interface | Result and selection boundary |
 | --- | --- |
 | [`Pipeline.compileValidated`](../Compilatrix/Pipeline.lean) | Checked source erasure and owned IxIR₁. `Pipeline.compile` bypasses erasure certification and is not interchangeable for certified clients. |
+| [`Modular.build` / `restore`](../Compilatrix/Modular/Build.lean) and [`Modular.assemble`](../Compilatrix/Modular/Assemble.lean) | [Bounded source units](modular-source.md), exact evidence reuse or fresh retained checking, and proved composition into the existing source-validated IxIR₁ artifact. |
 | [`IxIR2.Pipeline.compileValidated`](../Compilatrix/IxIR2/Pipeline.lean) | Separate checked baseline CFG attachment with trace and provenance; exact logical/physical baseline composition uses the credit-free inventory. |
 | [`Borrow.compileValidated`](../Compilatrix/Borrow/Pipeline.lean) / [`Borrow.select`](../Compilatrix/Borrow/Pipeline.lean) | [Closed borrowed-call certificates](source-borrow.md): owned wrappers, source/result agreement, RC improvement, reclamation/peak checks, and exact baseline fallback. |
 | [`Borrow.Runtime.compileValidated`](../Compilatrix/Borrow/Runtime.lean) / [`Borrow.Runtime.select`](../Compilatrix/Borrow/Runtime.lean) | [Structural runtime borrowing](source-borrow-runtime.md): selection before arguments, lender preservation, owned-heap resource laws, and exact fallback. |

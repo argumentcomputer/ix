@@ -39,6 +39,14 @@ lean_exe «x86-object-fixture» where
 lean_exe «source-coverage» where
   root := `SourceCoverage
 
+/- Independently checked source units and dependency-edit replay. -/
+lean_exe «source-modular» where
+  root := `SourceModular
+
+lean_exe «check-source-modular» where
+  srcDir := "scripts"
+  root := `CheckSourceModular
+
 /- Source recursor recovery and dynamic-reuse observations. -/
 lean_exe «source-recursion» where
   root := `SourceRecursion

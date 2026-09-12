@@ -153,16 +153,22 @@ makes candidate count, repeated validation, and program size interact instead
 of allowing three individually plausible dimensions to form one enormous
 job.
 
-The current scaling policy is fail-closed bounded compilation units: at most
-512 certificate-bearing declarations under the default policy, subject also
-to the attempt and combined-work caps.  A larger monolithic catalog is
-intentionally rejected. The catalog loader now presents the checked,
-deduplicated constant union and records member/chunk boundaries, but
-proof-producing compilation still operates on one bounded union. Chunk-wise
-certificate scheduling or another compact certificate architecture must land
-before raising these defaults. This is an explicit interim decision, not a
-claim that the current dependent proof database scales to the whole standard
-library.
+The monolithic entry point accepts at most 512 certificate-bearing declarations
+under its default policy, subject also to the attempt and combined-work caps.
+A larger monolithic catalog is intentionally rejected. The catalog loader
+presents the checked, deduplicated constant union and records member/chunk
+boundaries. The separate [modular source API](modular-source.md) now checks
+consumer-supplied units and composes their evidence, with per-unit obligations
+counting public candidates plus executable mutual members. Its source-node
+charge includes each unit's full import closure, and aggregate limits count
+repeated imported bindings and work before production/checking and assembly.
+Record recovery also bounds bytes, syntax depth, sequences, and naturals.
+
+The modular reference assembles 611 reachable declarations from 11 units while
+the monolithic entry point rejects the same source at 512. Whole-program
+erasure and lowering keep their existing budgets. Automatic catalog
+partitioning and compilation of the compiler's full source closure remain
+open; this result does not raise defaults or claim standard-library scale.
 
 The [bounded compiler scaling reference](performance/compiler-scaling-2026-09-12/README.md)
 exercises the actual defaults. Its independent-declaration family compiles at

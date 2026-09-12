@@ -107,6 +107,7 @@ import Compilatrix.IxIR2.Lower
 import Compilatrix.IxIR2.LowerExamples
 import Compilatrix.IxIR2.LowerSim
 import Compilatrix.Pipeline
+import Compilatrix.Modular.Wire
 import Compilatrix.IxIR2.Pipeline
 import Compilatrix.IxIR2.PipelineSim
 import Compilatrix.IxIR2.PipelinePhysical
