@@ -7,3 +7,5 @@ public import Ix.MultiStark.Verify.Proofs.Transcript
 public import Ix.MultiStark.Verify.Proofs.Replay
 public import Ix.MultiStark.Verify.Proofs.FriTranscript
 public import Ix.MultiStark.Verify.Proofs.Mmcs
+public import Ix.MultiStark.Verify.Proofs.FriFold
+public import Ix.MultiStark.Verify.Proofs.FriInputs

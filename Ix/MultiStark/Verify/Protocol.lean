@@ -6,3 +6,5 @@ public import Ix.MultiStark.Verify.Protocol.Transcript
 public import Ix.MultiStark.Verify.Protocol.Replay
 public import Ix.MultiStark.Verify.Protocol.FriTranscript
 public import Ix.MultiStark.Verify.Protocol.Mmcs
+public import Ix.MultiStark.Verify.Protocol.FriFold
+public import Ix.MultiStark.Verify.Protocol.FriInputs

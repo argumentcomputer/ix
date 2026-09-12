@@ -139,4 +139,102 @@ theorem leaves_refines (dimensions : Array Mmcs.Dimension) (rows : Protocol.Matr
   · intro steps
     exact ⟨result.toArray, steps, by simp⟩
 
+theorem takeFrontier_refines (frontier : Array Digest) (cursor : Nat) (digest : Digest) :
+    Mmcs.takeFrontier frontier cursor = .ok digest ↔ frontier[cursor]? = some digest := by
+  unfold Mmcs.takeFrontier
+  cases frontier[cursor]? <;> simp
+
+theorem parents_refines (frontier : Array Digest) (nodes : List Mmcs.Node) (cursor : Nat)
+    (result : List Mmcs.Node) (finalCursor : Nat) :
+    Mmcs.parents frontier nodes cursor = .ok (result, finalCursor) ↔
+      Protocol.ParentLayer frontier nodes cursor result finalCursor := by
+  cases nodes with
+  | nil => simp [Mmcs.parents, Protocol.ParentLayer]
+  | cons first remaining =>
+    cases remaining with
+    | nil =>
+      simp only [Mmcs.parents, bind_ok_iff, pure_ok_iff, takeFrontier_refines,
+        Protocol.ParentLayer, Protocol.BoundaryParent, beq_iff_eq, mmcs_compress_refines]
+    | cons second rest =>
+      by_cases paired : first.index / 2 = second.index / 2
+      · simp only [Mmcs.parents, beq_iff_eq, paired, ↓reduceIte, bind_ok_iff,
+          unit_exists_iff, ensure_ok_iff, Bool.and_eq_true, pure_ok_iff, Prod.exists,
+          parents_refines frontier rest cursor, Protocol.ParentLayer, Protocol.PairedParent,
+          mmcs_compress_refines, and_assoc]
+      · simp only [Mmcs.parents, beq_iff_eq, paired, ↓reduceIte, bind_ok_iff,
+          pure_ok_iff, Prod.exists, takeFrontier_refines,
+          parents_refines frontier (second :: rest) (cursor + 1), Protocol.ParentLayer,
+          Protocol.BoundaryParent, mmcs_compress_refines, exists_and_left]
+termination_by structural nodes
+
+theorem injectNodes_refines (dimensions : Array Mmcs.Dimension) (rows : Protocol.MatrixRows) (height : Nat)
+    (nodes result : List Mmcs.Node) :
+    Mmcs.injectNodes dimensions rows height nodes = .ok result ↔
+      Protocol.InjectedNodes dimensions rows height nodes result := by
+  induction nodes generalizing result with
+  | nil => simp [Mmcs.injectNodes, Protocol.InjectedNodes]
+  | cons node nodes ih =>
+    simp only [Mmcs.injectNodes, bind_ok_iff, pure_ok_iff, layerRows_refines, ih,
+      Protocol.InjectedNodes, mmcs_hashRow_refines, mmcs_compress_refines, exists_and_left]
+
+theorem hasHeight_refines (dimensions : Array Mmcs.Dimension) (height : Nat) :
+    dimensions.any (·.logHeight == height) = true ↔ Protocol.HasHeight dimensions height := by
+  simp only [Array.any_eq_true', beq_iff_eq, Protocol.HasHeight]
+
+theorem inject_refines (dimensions : Array Mmcs.Dimension) (rows : Protocol.MatrixRows) (height : Nat)
+    (nodes result : List Mmcs.Node) :
+    Mmcs.inject dimensions rows height nodes = .ok result ↔
+      Protocol.Injection dimensions rows height nodes result := by
+  unfold Mmcs.inject
+  split
+  next present =>
+    have present := (hasHeight_refines dimensions height).mp present
+    simpa only [Protocol.Injection, present, not_true_eq_false, false_and, true_and, false_or]
+      using injectNodes_refines dimensions rows height nodes result
+  next absent =>
+    have absent : ¬Protocol.HasHeight dimensions height :=
+      fun present => absent ((hasHeight_refines dimensions height).mpr present)
+    simp [Protocol.Injection, absent]
+
+theorem walk_refines (dimensions : Array Mmcs.Dimension) (rows : Protocol.MatrixRows) (frontier : Array Digest)
+    (levels height : Nat) (nodes : List Mmcs.Node) (cursor : Nat) (result : List Mmcs.Node) (finalCursor : Nat) :
+    Mmcs.walk dimensions rows frontier levels height nodes cursor = .ok (result, finalCursor) ↔
+      Protocol.FrontierWalk dimensions rows frontier levels height nodes cursor result finalCursor := by
+  induction levels generalizing height nodes cursor with
+  | zero => simp [Mmcs.walk, Protocol.FrontierWalk]
+  | succ levels ih =>
+    simp only [Mmcs.walk, bind_ok_iff, Prod.exists, parents_refines, inject_refines, ih,
+      Protocol.FrontierWalk, exists_and_left]
+
+theorem checkCap_refines (cap : MerkleCap) (nodes : List Mmcs.Node) :
+    Mmcs.checkCap cap nodes = .ok () ↔ Protocol.CapMatched cap nodes := by
+  induction nodes with
+  | nil => simp [Mmcs.checkCap, Protocol.CapMatched]
+  | cons node nodes ih =>
+    cases lookup : cap[node.index]? with
+    | none => simp [Mmcs.checkCap, lookup, Protocol.CapMatched]
+    | some expected =>
+      simp only [Mmcs.checkCap, lookup, bind_ok_iff, unit_exists_iff, ensure_ok_iff,
+        digest_beq_iff_eq, ih, Protocol.CapMatched, List.mem_cons, forall_eq_or_imp,
+        Option.some.injEq]
+      simp only [eq_comm]
+
+/-- The complete executable multiproof check is equivalent to the separate
+row/frontier/cap relation. Both directions pin the consumed boundary cursor
+to the full proof frontier; no trailing digest or queried cap is ignored. -/
+theorem mmcs_check_refines (capHeight : Nat) (dimensions : Array Mmcs.Dimension) (cap : MerkleCap)
+    (indices : Array Nat) (opening : BatchOpening) :
+    Mmcs.check capHeight dimensions cap indices opening = .ok () ↔
+      Protocol.MmcsAccepted capHeight dimensions cap indices opening := by
+  simp only [Mmcs.check, bind_ok_iff, Prod.exists, mmcs_geometry_refines,
+    unit_exists_iff, ensure_ok_iff, beq_iff_eq, checkRows_refines, leaves_refines,
+    walk_refines, checkCap_refines, Protocol.MmcsAccepted]
+  constructor
+  · rintro ⟨height, effectiveCap, geometry, queryCount, rows, leaves, leafRelation,
+      terminal, cursor, walked, rfl, caps⟩
+    exact ⟨height, effectiveCap, leaves, terminal, geometry, queryCount, rows, leafRelation, walked, caps⟩
+  · rintro ⟨height, effectiveCap, leaves, terminal, geometry, queryCount, rows, leafRelation, walked, caps⟩
+    exact ⟨height, effectiveCap, geometry, queryCount, rows, leaves, leafRelation,
+      terminal, opening.frontier.size, walked, rfl, caps⟩
+
 end MultiStark.Verify.Proofs

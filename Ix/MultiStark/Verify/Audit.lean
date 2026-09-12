@@ -4,8 +4,8 @@ import Ix.MultiStark.Verify.Proofs
 import Ix.Ixby.Claim.Stage2
 
 /-! Exact trust manifest for the pure Stage 2 components implemented so far.
-The public roots cover binding, graph/OOD/transcript phases, and MMCS row/leaf
-construction, NOT a completed Stage 2 soundness/refinement theorem. No native,
+The public roots cover binding, graph/OOD/transcript phases, complete MMCS
+authentication, and FRI input/row equations, NOT a completed Stage 2 refinement theorem. No native,
 pending, upstream-implementation, or sorry allowances are permitted. -/
 
 namespace MultiStark.Verify.Audit
@@ -38,7 +38,12 @@ private def roots : Array RootAllowance := ((#[
   ``Proofs.lookupTarget_refines, ``Proofs.lookupGroupsFrom_refines, ``Proofs.lookupValues_refines,
   ``Proofs.recombineQuotient_refines,
   ``Proofs.mmcs_hashRow_refines, ``Proofs.mmcs_compress_refines, ``Proofs.mmcs_geometry_refines,
-  ``Proofs.checkQueryRows_refines, ``Proofs.checkRowList_refines, ``Proofs.checkRows_refines] : Array Lean.Name).map fun root =>
+  ``Proofs.checkQueryRows_refines, ``Proofs.checkRowList_refines, ``Proofs.checkRows_refines,
+  ``Proofs.parents_refines, ``Proofs.hasHeight_refines,
+  ``Proofs.lowBits_succ, ``Proofs.reverseBits_go_refines, ``Proofs.reverseBits_refines,
+  ``Proofs.reverseBits_go_bounded, ``Proofs.reverseBits_bounded, ``Proofs.rowPoints_refines,
+  ``Proofs.queryPoint_refines, ``Proofs.reduceCoordinates_refines,
+  ``Proofs.checkConstant_refines, ``Proofs.collectReduced_refines] : Array Lean.Name).map fun root =>
     { root, standardAxioms := #[``propext, ``Quot.sound] }) ++
   ((#[``Proofs.mapError_ok_iff, ``Proofs.pure_ok_iff, ``Proofs.getAt_ok_iff,
     ``Proofs.observeBytes_refines, ``Proofs.action_pure_ok_iff, ``Proofs.action_throw_ok_iff,
@@ -46,7 +51,8 @@ private def roots : Array RootAllowance := ((#[
     ``Proofs.generator_table, ``Proofs.generator_order, ``Proofs.generator_normalization_nonzero,
     ``Proofs.extension_beq_iff_eq, ``Proofs.listArray_exists_iff, ``Proofs.references_length,
     ``Proofs.claimFingerprint_refines, ``Proofs.quotientFrom_refines, ``Proofs.balanced_refines,
-    ``Proofs.mmcs_getAt_refines] : Array Lean.Name).map fun root =>
+    ``Proofs.mmcs_getAt_refines, ``Proofs.takeFrontier_refines, ``Proofs.fri_polynomial_refines,
+    ``Proofs.fri_getAt_refines, ``Proofs.coordinateStep_refines, ``Proofs.reduceCoordinatePairs_refines] : Array Lean.Name).map fun root =>
     { root, standardAxioms := #[``propext] }) ++
   ((#[``verifyTyped_iff, ``stage2Verify_iff, ``claimWrapper_some_iff,
     ``claimBytesWrapper_some_iff, ``stage2VerifyBytes_binding,
@@ -60,6 +66,14 @@ private def roots : Array RootAllowance := ((#[
     ``Proofs.digest_beq_iff_eq, ``Proofs.checkSameRows_refines, ``Proofs.layerRowsFrom_refines,
     ``Proofs.layerRows_refines, ``Proofs.freshLeaf_refines, ``Proofs.leafStep_refines,
     ``Proofs.leavesFrom_refines, ``Proofs.leaves_refines,
+    ``Proofs.injectNodes_refines, ``Proofs.inject_refines, ``Proofs.walk_refines,
+    ``Proofs.checkCap_refines, ``Proofs.mmcs_check_refines,
+    ``Proofs.interpolationProducts_refines, ``Proofs.interpolateFrom_refines,
+    ``Proofs.interpolate_refines, ``Proofs.foldRow_refines,
+    ``Proofs.authenticateInputBatches_refines, ``Proofs.authenticateInputs_refines,
+    ``Proofs.reducePoints_refines, ``Proofs.reduceMatrix_refines, ``Proofs.reduceMatrices_refines,
+    ``Proofs.reduceBatches_refines, ``Proofs.reduceQuery_refines, ``Proofs.reduceQueries_refines,
+    ``Proofs.openInputs_refines,
     ``Ix.Ixby.Claim.Stage2.source_claim_binding,
     ``Ix.Ixby.Claim.Stage2.terminal_verified_claim_or_collision] : Array Lean.Name).map fun root =>
     { root, standardAxioms := standard }) ++

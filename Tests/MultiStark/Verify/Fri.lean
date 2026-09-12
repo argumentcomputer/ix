@@ -46,6 +46,57 @@ private def fixture : Except Fri.Error Fixture := do
     commitOpenings := #[⟨1, #[#[e 0], #[e 0]], friBoundary⟩] }
   return ⟨params, rounds, proof, state, challenges⟩
 
+private def reductionChecks : IO (List Check) := do
+  let params : Parameters := ⟨1, 0, 0, 1, 1, 0, 0⟩
+  let challenges : Fri.Challenges := ⟨e 2, #[], #[0], #[], 4, 1⟩
+  let z1 : Ext := ⟨9, 17⟩
+  let z2 : Ext := ⟨10, 19⟩
+  let linear (constant slope : Nat) (z : Ext) := (e constant).add ((e slope).mul z)
+  let high : Pcs.Matrix := ⟨3, 2, #[
+    ⟨z1, #[linear 2 3 z1, linear 4 5 z1]⟩,
+    ⟨z2, #[linear 2 3 z2, linear 4 5 z2]⟩]⟩
+  let low : Pcs.Matrix := ⟨2, 1, #[⟨z1, #[linear 1 7 z1]⟩]⟩
+  let constant : Pcs.Matrix := ⟨0, 1, #[⟨z1, #[e 19]⟩]⟩
+  let laterHigh : Pcs.Matrix := ⟨3, 1, #[⟨z1, #[linear 6 11 z1]⟩]⟩
+  let laterLow : Pcs.Matrix := ⟨2, 1, #[⟨z1, #[linear 8 13 z1]⟩, ⟨z2, #[linear 8 13 z2]⟩]⟩
+  let rounds : Array Pcs.Round := #[⟨#[], #[high, low, constant]⟩, ⟨#[], #[laterHigh, laterLow]⟩]
+  let openings : Array BatchOpening := #[⟨#[#[#[23, 39], #[50], #[19]]], #[]⟩,
+    ⟨#[#[#[83], #[99]]], #[]⟩]
+  let swappedHigh := { high with points := high.points.map fun opening =>
+    { opening with values := opening.values.reverse } }
+  let swappedRounds : Array Pcs.Round := #[⟨#[], #[swappedHigh, low, constant]⟩, ⟨#[], #[laterHigh, laterLow]⟩]
+  let swappedRows : Array BatchOpening := #[⟨#[#[#[39, 23], #[50], #[19]]], #[]⟩,
+    ⟨#[#[#[83], #[99]]], #[]⟩]
+  let quadratic : Pcs.Matrix := ⟨3, 1, #[⟨z1, #[z1.mul z1]⟩, ⟨z2, #[z2.mul z2]⟩]⟩
+  let squareRows : Array BatchOpening := #[⟨#[#[#[49]]], #[]⟩]
+  let badConstant := { constant with points := #[⟨z1, #[e 20]⟩] }
+  let badRounds : Array Pcs.Round := #[⟨#[], #[high, low, badConstant]⟩, ⟨#[], #[laterHigh, laterLow]⟩]
+  return [
+    ("nonzero quotient powers continue across matrices and batches by height", okEquals
+      (Fri.reduceQuery params challenges rounds openings 0) #[⟨4, e 241⟩, ⟨3, e 85⟩, ⟨1, e 0⟩]),
+    ("coordinate order determines each alpha-weighted contribution", okEquals
+      (Fri.reduceQuery params challenges swappedRounds swappedRows 0) #[⟨4, e 231⟩, ⟨3, e 85⟩, ⟨1, e 0⟩]),
+    ("batch order changes the nonzero reduction in every shared height", okEquals
+      (Fri.reduceQuery params challenges rounds.reverse openings.reverse 0) #[⟨4, e 141⟩, ⟨3, e 67⟩, ⟨1, e 0⟩]),
+    ("opening points contribute both extension coordinates in order", okEquals
+      (Fri.reduceQuery params challenges #[⟨#[], #[quadratic]⟩] squareRows 0) #[⟨4, ⟨50, 55⟩⟩]),
+    ("reversing points changes their alpha weights", okEquals
+      (Fri.reduceQuery params challenges #[⟨#[], #[{ quadratic with points := quadratic.points.reverse }]⟩] squareRows 0)
+      #[⟨4, ⟨49, 53⟩⟩]),
+    ("nonzero constant-height quotient is rejected", !(Fri.reduceQuery params challenges badRounds openings 0).isOk),
+    ("coordinate reduction never truncates an extra opened value", !(Fri.reduceCoordinates
+      (e 2) (e 1) [3] [e 5, e 7] (e 1) (e 0)).isOk),
+    ("coordinate reduction never truncates an extra row value", !(Fri.reduceCoordinates
+      (e 2) (e 1) [3, 4] [e 5] (e 1) (e 0)).isOk),
+    ("empty coordinate reduction preserves both accumulators", okEquals
+      (Fri.reduceCoordinates (e 2) (e 1) [] [] (e 5) (e 11)) (e 5, e 11)),
+    ("input quotient rejects a singular opening point", !(Fri.reducePoints
+      (e 2) (e 7) 1 #[49] [⟨e 7, #[e 49]⟩] (e 1) (e 0)).isOk),
+    ("matrix reduction checks declared width independently of row and opening", !(Fri.reduceQuery params challenges
+      #[⟨#[], #[{ quadratic with width := 2 }]⟩] squareRows 0).isOk),
+    ("query reduction requires the original verifier query", !(Fri.reduceQuery params challenges rounds openings 1).isOk)
+  ]
+
 private def checks : IO (List Check) := do
   let coefficients := #[e 3, ⟨5, 7⟩, e 11, ⟨13, 17⟩]
   let beta : Ext := ⟨19, 23⟩
@@ -157,7 +208,7 @@ private def checks : IO (List Check) := do
             | some values => !(Fri.foldQuery {} f.challenges f.proof 0 values).isOk
             | none => false)
       ]
-  return arithmeticChecks ++ transcriptChecks ++ vectorChecks
+  return arithmeticChecks ++ transcriptChecks ++ (← reductionChecks) ++ vectorChecks
 
 public def suite : IO UInt32 := runChecks "stage2-fri" checks
 

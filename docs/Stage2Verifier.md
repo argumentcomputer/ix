@@ -113,7 +113,7 @@ with the query frontier; it is not a Stage 3/4 compression measurement.
 public root, framing, and assumptions. The stand-in does not establish Ixon
 truth and is not an approvable production aggregate verifier.
 
-The exact theorem manifest covers 105 public roots, with exact per-root sets of
+The exact theorem manifest covers 140 public roots, with exact per-root sets of
 `propext`, `Quot.sound`, and, where present, `Classical.choice`. The graph sweep
 is sound and complete against a separate expression/reference relation.
 Observation updates, raw bit draws, grinding, and rejection sampling have
@@ -139,8 +139,19 @@ independent PCS authentication and low-degree checks.
 MMCS geometry, row dimensions, same-height row concatenation, merged-member
 row consistency, and canonical query-leaf construction also have independent
 relational equivalences. Duplicate queries must agree on every original
-matrix row before deduplication. The remaining tree walk/cap-authentication
-and FRI algebra refinements are not yet proved.
+matrix row before deduplication. The complete MMCS checker additionally
+refines the independent parent-layer/injection/frontier-walk relation and
+matches every terminal node to its supplied cap. Both directions require
+exact consumption of the full boundary frontier.
+FRI bit reversal is proved against positional binary digits and stays within
+its requested width. Row folding refines the defining ordered Lagrange
+products, including a challenge on the row domain. Input authentication and
+quotient reduction have complete phase equivalences: denominators are
+checked, alpha powers continue across coordinates/points/matrices/batches at
+each height, constant-height quotients vanish, and every present bucket is
+returned in descending height order. Nonzero differential vectors pin these
+orders and both extension coordinates. The query-fold chain, final-polynomial
+binding, and complete PCS/FRI composition refinements remain unfinished.
 Bounded sampling completeness uses the
 same attempt budget on both sides. These are phase proofs, not yet a complete
 protocol-refinement theorem. The wrapper/composition lemmas establish exact
