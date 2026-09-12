@@ -1,4 +1,5 @@
 module
+import Tests.Ixby.Common
 import Ix.Ixby.Aiur.Objects
 import Ix.Ixby.Aiur.Objects.Memory
 import Ix.Aiur.Compiler
@@ -42,7 +43,8 @@ private def accepts (raw : RawMemory) (flat : Array Aiur.G) (nodes : Nat)
 private def rejects (raw : RawMemory) (flat : Array Aiur.G) (nodes := 128) : Bool :=
   (reconstruct raw table flat nodes).isNone
 
-private def decoderChecks : List (String × Bool) := [
+private def decoderChecks : IO (List Check) := do
+  return [
   ("Bool false", accepts empty (atomFlat 0) 1 (.scalar (.bool false))),
   ("Bool true", accepts empty (atomFlat 0 1) 1 (.scalar (.bool true))),
   ("Bool is not arbitrary nonzero", rejects empty (atomFlat 0 2)),
@@ -153,11 +155,12 @@ private def fixtures : Aiur.Source.Toplevel := ⟦
   }
 ⟧
 
-private def compiled : Except String Aiur.CompiledToplevel := do
-  let source ← objectsToplevel
-  let source ← source.merge fixtures |>.mapError toString
-  (source.prune [`om_atom, `om_pair, `om_project, `om_nullary, `om_shared, `om_chain]).compile
-    |>.mapError toString
+private def compileFixture : IO (Except String Aiur.CompiledToplevel) := do
+  return do
+    let source ← objectsToplevel
+    let source ← source.merge fixtures |>.mapError toString
+    (source.prune [`om_atom, `om_pair, `om_project, `om_nullary, `om_shared, `om_chain]).compile
+      |>.mapError toString
 
 /-- Same function-boundary handling as runFunction, retaining its memory for
 inspection. This test helper does not change the production evaluator API. -/
@@ -277,16 +280,9 @@ private def helperChecks (compiled : Aiur.CompiledToplevel) : List (String × Bo
     checks := checks ++ [("compiled helper rejects " ++ label ++ detail, ok)]
   return checks
 
-public def suite : IO UInt32 := do
-  IO.println "IxBy concrete object-memory reconstruction"
-  let .ok compiled := compiled
-    | IO.eprintln (match compiled with | .error error => error | _ => "compile failed"); return 1
-  let checks := decoderChecks ++ fixtureChecks compiled ++ helperChecks compiled
-  let mut failed := 0
-  for (label, ok) in checks do
-    if ok then IO.println s!"  ✓ {label}"
-    else failed := failed + 1; IO.eprintln s!"  ✗ {label}"
-  IO.println s!"{checks.length - failed}/{checks.length} checks passed"
-  return if failed == 0 then 0 else 1
+public def suite : IO UInt32 := runChecks "ixby-objects-memory" do
+  match ← compileFixture with
+  | .error error => return [(s!"compile fixtures: {error}", false)]
+  | .ok compiled => return (← decoderChecks) ++ fixtureChecks compiled ++ helperChecks compiled
 
 end Tests.Ixby.Aiur.Objects.Memory

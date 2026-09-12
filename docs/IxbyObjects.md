@@ -107,8 +107,10 @@ The earlier 27 frame/stack/control lemmas remain reusable.
 The first numeric connection uses Aiur's **pure** Goldilocks model: bounded
 natural embedding is exact, its comparison model reflects natural order,
 and incrementing the maximum allowed rank cannot wrap. The module imports
-no FFI oracle and uses no custom axioms, `sorry`, or `native_decide`. Inspected
-theorems depend only on Lean's standard logical axioms.
+no FFI oracle. The checked-in [trust manifest](../Ix/Ixby/Audit.lean) covers the
+reference and proof modules with exact allowances for 314 public theorems and
+a broader scan of 3,058 theorem declarations. CI permits only Lean's standard
+logical axioms; no custom, native-decision, or sorry allowance is present.
 
 These are conditional representation results, not a complete
 constraints-to-`Codec.Evaluates` theorem. Work remains to establish the typed
@@ -153,9 +155,8 @@ typed cell to the evaluator's actual `memLoad` and successful layout decoding.
 `reconstruct_sound` proves that successful reconstruction yields the existing
 `Represents` relation and a finite logical value, without a `ClosedRanked`
 premise. Other lemmas establish numeric exactness, local checks and bounds,
-pointwise child representation, and decreasing/shared budgets. All 10 theorem
-axiom audits use only Lean's standard logical axioms; none relies on FFI
-execution, custom axioms, `sorry`, or `native_decide`.
+pointwise child representation, and decreasing/shared budgets. These are kernel-checked
+proofs over the evaluator model, not evidence from FFI execution.
 
 This is a checked memory interpretation, **not** a production verifier or an
 execution/AIR soundness theorem. Reconstruction success is its explicit
@@ -181,7 +182,7 @@ this test documents why local checks alone do not establish child closure.
 
 ### Concrete tables and immutable-store preservation
 
-`Aiur/Objects/Store.lean` adds 13 public kernel-checked lemmas. Unlike a
+`Aiur/Objects/Store.lean` has 16 public kernel-checked lemmas. Unlike a
 preservation assumption about an abstract heap, `mem_store_preserves` proves
 that the Lean evaluator's actual `memStore` preserves every existing readable
 cell, at every width. It uses the invariants carried by `IndexMap`, covering
@@ -197,7 +198,7 @@ stored Cons cell. `eval_store_preserves_representation` covers a successful
 are not yet preservation theorems for all bytecode instructions or complete
 compiled `is_make` executions, nor proofs of the AIR memory argument.
 
-`Aiur/Objects/Table.lean` adds 11 public kernel-checked lemmas and a concrete
+`Aiur/Objects/Table.lean` has 11 public kernel-checked lemmas and a concrete
 table decoder. `ISCtorDecl.Mk` is tagless and occupies eleven fields; a Cons
 cell is `[0, eight digest limbs, member, tag, fieldCount, tailPointer]` at width
 13, and Nil is thirteen copies of 1. All ten identity limbs must be u32.
@@ -213,7 +214,6 @@ value in the matching constructor namespace. `reconstruct_program_sound`
 establishes the canonical program-encoding equation, concrete table agreement,
 unique IDs, and logical value representation. Table decoding and this complete
 checked reconstruction are also preserved by actual `memStore` operations.
-All 24 new public theorem axiom audits use only Lean's standard logical axioms.
 
 This diagnostic does **not** authenticate the program commitment or prove
 that the program produced the value. Tests explicitly demonstrate that a
@@ -235,7 +235,7 @@ profiles, wire format, or keys.
 
 ### Bytecode parser proof components
 
-`Aiur/Objects/Parser.lean` adds 22 public kernel-checked lemmas. Its `BytePrefix`
+`Aiur/Objects/Parser.lean` has 22 public kernel-checked lemmas. Its `BytePrefix`
 relation describes exact width-3 Cons cells containing genuine bytes and
 field-valued tail pointers. It describes a consumed prefix, not a complete
 stream: the endpoint may point into the following artifact, and is returned
@@ -257,7 +257,7 @@ and I/O, and agrees with the existing codec's little-endian numeric packing.
 Bounds cover every intermediate field operation, not just the final u32.
 The byte reader itself does **not** range-check: a separate theorem proves
 what a successful actual `u8RangeCheck` instruction establishes. The bounded
-loader checkpoint below connects actual loading to `BytePrefix` under explicit
+loader connects actual loading to `BytePrefix` under explicit
 metadata/address and storage bounds.
 
 The zero-count parser theorem establishes the checked empty-table relation
@@ -269,8 +269,7 @@ establishes that theorem's premises from a bounded byte-derived prefix.
 The zero-count certificate intentionally leaves the default branch
 unconstrained; it must not certify the full declaration parser.
 
-All 22 axiom audits use only Lean's standard logical axioms. The initial 387
-`Tests/Ixby/Aiur/Objects/Parser.lean` checks include every byte value, u32 boundaries
+`Tests/Ixby/Aiur/Objects/Parser/Readers.lean` checks include every byte value, u32 boundaries
 and bit positions, exact suffix/state preservation, malformed cells, callee
 and instruction mutations, and fresh/deduplicated empty tables. Explicit
 counterexamples show why byte ranges and the nonzero-branch proof are needed:
@@ -280,9 +279,9 @@ fixtures, not additional production advice or FRI workloads.
 
 ### Compiled identity-reader composition
 
-`Aiur/Objects/Identity.lean` adds 20 public kernel-checked lemmas. The actual
+`Aiur/Objects/Identity.lean` has 20 public kernel-checked lemmas. The actual
 `is_read_id` body inlines ten u32 readers; calling the standalone word-reader
-theorem would not certify its register layout. The new proof handles the
+theorem would not certify its register layout. The proof handles the
 seventeen-register stride of each inlined word, composes the actual `runOps`
 semantics, and structurally checks all 130 operations and eleven outputs.
 The byte-reader callee is looked up and certified in the same toplevel.
@@ -300,8 +299,7 @@ and I/O buffer are unchanged, and the full-field suffix pointer is returned
 without loading it. The actual Call theorem also restores the caller's prior
 registers and accounts for the nested byte-call fuel.
 
-All 20 axiom audits use only Lean's standard logical axioms. The parser suite
-added 725 checks, for 1,112 at that checkpoint. They cover every identity
+`Tests/Ixby/Aiur/Objects/Parser/Identity.lean` covers every identity
 instruction and output position, all forty truncation and malformed-tag positions, each limb's
 u32 boundaries and bit positions, actual byte-codec agreement at a nonzero
 offset, unreadable intermediate/suffix pointers, memory/I/O preservation,
@@ -344,9 +342,7 @@ The table-decoding premise is explicit in this component; the declaration
 parser below establishes it. Admission and whole-program binding remain open.
 Both constraint flags share the Lean Call semantics, not an asserted AIR relation.
 
-All 37 axiom audits use only Lean's standard logical axioms. The 416 added
-tests brought the parser-component suite to 1,528 checks at that checkpoint.
-They cover every comparator instruction/limb, full-field boundaries, all table lengths through
+The identity/comparison and `Parser/Unique.lean` tests cover every comparator instruction/limb, full-field boundaries, all table lengths through
 sixteen and every duplicate position, count mismatches, all Nil padding fields,
 Call failures, full-field pointers, and full/pruned structural certificates.
 Out-of-range limbs and a forged comparator demonstrate why range and callee
@@ -356,8 +352,8 @@ and change no interpreter, compiler, wire format, or key.
 
 ### Complete bounded declaration-parser composition
 
-`Aiur/Objects/Declarations.lean` adds 23 public kernel-checked lemmas, with two
-new allocation/I/O lemmas in `Objects/Store.lean`. `checkDeclarations` checks
+`Aiur/Objects/Declarations.lean` has 23 public kernel-checked lemmas and uses
+the allocation/I/O lemmas in `Objects/Store.lean`. `checkDeclarations` checks
 both emitted branches, all 28 nonzero operations, argument and output
 registers, and selectors. `checkDeclarationCode` also resolves and certifies
 the byte, identity, comparison, uniqueness, and recursive parser functions in
@@ -392,8 +388,7 @@ pointers while preserving prior caller registers and I/O. Both constraint
 flags have that Lean evaluator behavior, not an asserted unconstrained AIR
 relation.
 
-All 25 new axiom audits use only Lean's standard logical axioms. The 867 added
-regressions brought the parser suite to 2,395 checks at that checkpoint. They cover full/pruned
+`Tests/Ixby/Aiur/Objects/Parser/Declarations.lean` covers full/pruned
 execution, every supported arity, all ten identity limbs and maximal digests,
 all record counts through sixteen, deep duplicate pairs, invalid arities at
 every position, all 132 truncation and malformed-tag positions in a three-record
@@ -404,8 +399,8 @@ can accept seventeen constructors, or a forged non-byte arity that wraps the
 UInt32 comparison, although `readTable` then rejects the result. A forged
 comparator likewise demonstrates why the complete callee bundle matters.
 
-The loader checkpoint below establishes genuine loaded bytes and preserves
-the table-capacity premise; the following program-prefix checkpoint derives
+The loader establishes genuine loaded bytes and preserves
+the table-capacity premise; the program-prefix contract derives
 constructor-count admission. Initial capacity discharge and correspondence
 with the authenticated whole canonical program image remain separate.
 These proofs do not establish compiler, hash, gadget,
@@ -413,8 +408,8 @@ trace, or AIR correctness and add no production advice, FRI workloads, or keys.
 
 ### Bounded raw-advice loading and parser composition
 
-`Aiur/Objects/Admission.lean` adds 28 public kernel-checked lemmas, with one new
-other-width allocation lemma in `Objects/Store.lean`. `checkAdviceReader` binds
+`Aiur/Objects/Admission.lean` has 28 public kernel-checked lemmas and uses
+the other-width allocation bound in `Objects/Store.lean`. `checkAdviceReader` binds
 both branches of the actual `ib_read_advice`, including the I/O read, byte range
 check, address/count updates, recursive Call, and exact Nil/Cons stores.
 `checkLoader` binds the complete `ib_load` metadata lookup, UInt32 limit check,
@@ -467,9 +462,7 @@ comparison's upper bound. These are not native-backend or AIR soundness claims;
 they explain why the theorem cannot infer arbitrary natural metadata bounds
 from this evaluator's cast-based comparison alone.
 
-All 29 new axiom audits use only Lean's standard logical axioms, with no proof
-oracle or unchecked proof shortcuts. The 1,211 added regressions brought the
-parser-component suite to 3,606 checks at that checkpoint. They cover every byte value, full/pruned
+`Tests/Ixby/Aiur/Objects/Parser/Admission.lean` covers every byte value, full/pruned
 compilations, exact and relaxed limits, nonzero arena offsets, full-field channel
 keys, unread non-byte prefixes/suffixes, every invalid-field and truncation
 position in a 33-entry arena, all declaration counts through sixteen, invalid
@@ -480,7 +473,7 @@ format, production advice, FRI workload, or key changes are involved.
 
 ### Actual program header and constructor-admission prefix
 
-`Aiur/Objects/ProgramPrefix.lean` adds 18 public kernel-checked lemmas.
+`Aiur/Objects/ProgramPrefix.lean` has 18 public kernel-checked lemmas.
 `checkProgramPrefix` binds the input arity and exactly the first sixty
 operations of the actual compiled `is_run`: four magic-byte checks, revision
 zero, little-endian u32 entry and constructor count, the constructor-capacity
@@ -516,8 +509,7 @@ operations and control. It does **not** conclude that those operations succeed.
 checked advice loading under the earlier metadata/address and byte-space
 bounds; it preserves the suffix's readable stream and initial reads/I/O.
 
-All 18 axiom audits use only Lean's standard logical axioms. The 3,074 added
-regressions brought the parser suite to 6,680 checks at that checkpoint. They cover every magic-byte
+`Tests/Ixby/Aiur/Objects/Parser/ProgramPrefix.lean` covers every magic-byte
 value, every revision and entry bit, counts through sixteen and oversized u32
 counts, all header truncation/tag positions, invalid declarations at every
 position, exact new/deduplicated storage, full-field pointers, loader composition,
@@ -530,7 +522,7 @@ refinement remain open. No production code, wire, advice, FRI workload, or key c
 
 ### Function-count and function/block header admission
 
-`Aiur/Objects/CodeHeaders.lean` adds 27 public kernel-checked lemmas. The new
+`Aiur/Objects/CodeHeaders.lean` has 27 public kernel-checked lemmas. The
 certificate extends the program prefix and checks both the complete zero branch
 and a bounded nonzero prefix of each list reader. It also binds the exact next
 Call, including its argument registers, output arity, callee index, and constraint
@@ -585,9 +577,7 @@ and derives both program counts under the earlier metadata/address, byte-space,
 and initial constructor-space bounds. It does not require the suffix to contain
 a valid function table. Initial/whole-admission allocation discharge remains open.
 
-All 27 axiom audits use only Lean's standard logical axioms. The 4,572 new
-regressions brought the parser suite to 11,252 checks at that checkpoint.
-Full/pruned cases exhaust
+`Tests/Ixby/Aiur/Objects/Parser/CodeHeaders.lean` full/pruned cases exhaust
 all 17 supported arities × 64 nonempty block counts and all 65 local counts,
 exercise all entry bits and truncation/tag positions, and check exact Nil/new/
 deduplicated state, both program counts, loader composition, full-field pointers,
@@ -597,14 +587,13 @@ Forged non-byte arity/local words at `2^32` and count words at `2^32 + 1` can pa
 the Lean evaluator's cast-based guards; the actual loader rejects those fixtures.
 These document the genuine-byte premise, not native/AIR soundness claims.
 
-That checkpoint leaves instruction/operand decoding and complete recursive
-block/function-table admission open. The following checkpoint handles the leaf
-scalars and operands. Neither checkpoint changes production code, wire, advice,
-FRI workloads, or keys.
+The header contracts do not certify instruction decoding or complete recursive
+block/function-table admission. The following scalar/operand contracts cover
+leaf readers, not those larger obligations.
 
 ### Complete scalar and leaf-operand decoding
 
-`Aiur/Objects/Scalars.lean` adds 27 public kernel-checked lemmas and
+`Aiur/Objects/Scalars.lean` has 27 public kernel-checked lemmas and
 `Aiur/Objects/Operands.lean` adds 13. Their structural certificates check the
 complete bodies of `ib_field`, `ib_scalar`, and `ic_read_operand`, including all
 operations, Call targets/arguments/output sizes/flags, match tags and ordering,
@@ -661,9 +650,7 @@ address, byte-space, length and limit premises remain explicit, as does the
 u32 frame bound. It does not prove that this prefix occupies the right position
 inside a canonical program. Errors carry no state; no rollback claim is made.
 
-All 40 axiom audits use only Lean's standard logical axioms, with no proof holes,
-new axioms, native-decision oracle, or proof-limit overrides. The 12,580 new
-regressions bring parser coverage to 23,832 checks. They include all Boolean
+`Tests/Ixby/Aiur/Objects/Parser/Operands.lean` checks include all Boolean
 bytes, all Word32 byte positions, all field boundary byte positions, paired
 extension boundaries, local-count/index boundaries, codec differential checks,
 every truncation/malformed-cell position in representative readers, minimum fuel,
@@ -682,35 +669,28 @@ gadget/trace/AIR refinement, and whole-admission resource discharge remain separ
 
 ### Compiler issue found and repaired
 
-The shared `Source.Term.hoistLets` pass formerly hoisted continuation lets across
-`assertEq` without protecting caller-local shadowing. Initially both program
-and input tails were named `rest`: compiled code checked the input tail twice
-and accepted trailing program bytes, while source interpretation rejected them.
+The shared `Source.Term.hoistLets` repair and all three regenerated native
+kernels landed upstream in [PR #628](https://github.com/argumentcomputer/ix/pull/628).
+The current IxBy branch depends on that change; its diff against `main` has no
+production Aiur compiler or Rust-kernel changes.
 
-The initial workaround used distinct `programEnd` and `inputEnd` names. The
-shared [normalizer](../Ix/Aiur/Stages/Source.lean) now freshens caller and callee
-scopes, keeps assertion/IO continuations after their operations, and sequences
-complete earlier arguments before later hoisted prefixes. The object entry
-again uses `rest` for both tails: the existing source/native regressions reject
-trailing bytes 0, 1, and 255 with matching commitments, testing the original
-failure without relying on the workaround.
+The original bug hoisted a continuation's shadowing binding across an assertion.
+With both program and input tails named `rest`, compiled execution checked the
+input tail twice and accepted trailing program bytes, while source execution
+rejected them. The repaired [normalizer](../Ix/Aiur/Stages/Source.lean) freshens
+caller/callee scopes, sequences strict arguments, and preserves assertion/I/O
+order. The object entry again uses the original shadowed names, and matching-
+commitment regressions reject trailing bytes 0, 1, and 255 in source and native
+execution.
 
-[Compiler regressions](../Tests/Aiur/Hoisting.lean) cover explicit results and
-failure stages, IO order, nested scopes, inline calls, alternative patterns,
-and generated-looking names. This is an implemented, tested repair, **not a
-compiler correctness proof**. Existing compiled circuits and verifying keys
-must be rebuilt. The checked-in generated Rust kernels for IxVM, MultiStark,
-and ixAggr must also be regenerated after this shared compiler change. This
-regeneration was initially omitted, causing `lake exe ix codegen --check` to
-report all three files stale; the snapshots are now refreshed. No IxBy wire
-revision or handwritten Rust/protocol implementation change is required.
-
-After changing the shared Aiur compiler, run `lake exe ix codegen`, rebuild
-the native test runner, and run the content and generated/interpreter parity
-checks. Checking content alone does not rebuild a previously linked test binary:
+[Hoisting regressions](../Tests/Aiur/Hoisting.lean) retain additional scope,
+evaluation-order, failure-stage, and independent proof-round-trip coverage
+beyond the tests ported upstream. This is regression evidence, not a compiler
+correctness theorem. Future compiler changes require regenerating kernels and
+rebuilding native test binaries; a content check alone cannot refresh an
+already linked executable.
 
 ```sh
-lake exe ix codegen
 lake build --wfail IxTests ix
 lake exe ix codegen --check
 RAYON_NUM_THREADS=8 .lake/build/bin/IxTests --ignored ixvm
@@ -720,26 +700,17 @@ RAYON_NUM_THREADS=8 .lake/build/bin/IxTests recursive-verifier ix-aggr
 ## Reproduction and coverage
 
 ```sh
-lake build --wfail Ix.Ixby.Aiur.Objects.Refinement IxbyObjectsTests IxbyControlTests IxbyAiurTests
-lake build --wfail Ix.Ixby.Aiur.Objects.Memory IxbyObjectsMemoryTests
-lake build --wfail Ix.Ixby.Aiur.Objects.Store Ix.Ixby.Aiur.Objects.Table IxbyObjectsTableTests
-lake build --wfail Ix.Ixby.Aiur.Objects.Parser Ix.Ixby.Aiur.Objects.Identity IxbyObjectsParserTests
-lake build --wfail Ix.Ixby.Aiur.Objects.Equality Ix.Ixby.Aiur.Objects.Unique
-lake build --wfail Ix.Ixby.Aiur.Objects.Declarations Ix.Ixby.Aiur.Objects.Admission
-lake build --wfail Ix.Ixby.Aiur.Objects.ProgramPrefix
-lake build --wfail Ix.Ixby.Aiur.Objects.CodeHeaders
-lake build --wfail Ix.Ixby.Aiur.Objects.Scalars Ix.Ixby.Aiur.Objects.Operands
+lake build --wfail Ix.Ixby.Audit Tests.Ixby.Audit IxbyObjectsTests \
+  IxbyObjectsMemoryTests IxbyObjectsTableTests IxbyObjectsParserTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsMemoryTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTableTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsParserTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTests
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTests --execute-only
 RAYON_NUM_THREADS=8 .lake/build/bin/IxbyObjectsTests --stats
-RAYON_NUM_THREADS=8 .lake/build/bin/IxbyControlTests
-RAYON_NUM_THREADS=8 .lake/build/bin/IxbyAiurTests
 ```
 
-`ScalarSystem.buildObjects commitmentParameters friParameters` selects this
+`System.buildObjects commitmentParameters friParameters` selects this
 backend; the existing `execute`, `prove`, `verify`, and `verifyBytes` adapter
 is reused. Verification takes the caller's expected statement and no execution
 advice. Native proving retains preflight, and untrusted proof decoding retains
@@ -761,15 +732,23 @@ missing input check.
 Additional checks cover source execution,
 the compiler regression, byte/range advice, malformed proving requests, all
 four changed statement digests, and corrupted/truncated/trailing proofs.
-The 704 earlier scalar/control/reference/crypto/codec checks also pass: **1,234
-targeted runtime checks total**, not counting theorems as runtime tests.
-`Tests/Main.lean` exposes execution-only `ixby-objects` and opt-in
-`ixby-objects-prove` alongside the earlier suites.
-The separate `ixby-objects-memory`, `ixby-objects-table`, and
-`ixby-objects-parser` suites add 126, 191, and 23,832 checks respectively,
-bringing current targeted runtime coverage to **25,383 checks**.
-They add no FRI proof workloads and do not change the
-530-check object baseline or its measurements below.
+The memory, table, and parser suites contain 126, 191, and 23,832 checks.
+Across the reference/crypto/codec, conformance, and proof-enabled scalar/control/
+object suites, current IxBy coverage is **25,383 runtime checks**, including
+155 proved workloads. These counts exclude kernel theorems and the separate
+hoisting regressions.
+
+All suites use LSpec and defer compilation/check construction until selection.
+The parser facade compiles the full and pruned interpreters once and passes them
+to its focused component modules; splitting tests does not multiply compilation.
+The shared backend harness preserves expected-statement binding, independent
+verifier construction, checked proof decoding, and key-stability checks. The
+object suite separately enforces rejection stages and explicit reference results.
+
+`Tests/Main.lean` exposes execution-only `ixby-objects`, opt-in
+`ixby-objects-prove`, and the three conformance selectors above. The merge-queue
+matrix selects all three IxBy proving suites and `aiur-hoisting-prove`.
+The theorem trust gate and its negative checks also run in regular CI.
 
 ## Initial costs (test parameters only)
 
@@ -812,17 +791,20 @@ fixed `Bytes2` table still has 65,536 rows and committed width 24. FFT-work
 surrogates are approximately 151.26, 151.89, and 166.08 million, with zero
 whole-machine cache hits. These are not Flock non-native-field estimates.
 
-Next: certify operand-list/instruction decoding, recursive block/function table
-construction, and cross-table validation, then connect the tables to the
-authenticated canonical program image while discharging initial/whole-admission
-resource premises. The bounded loader now establishes genuine bytes; program,
-function, and block header guards derive their local bounds and supply exact
-continuation states. Complete leaf scalar/operand readers now have same-toplevel
-certificates, exact semantic layouts, and loader composition. These do not
-establish the whole-program connection.
-Then establish successful reconstruction for
-live values from initialization and complete transitions. Immutable Store
-preservation and the complete bounded declaration parser are proved; full
-execution and trace/AIR contracts remain open. Continue hostile-witness work before adding
-closures/PAPs, general application, and the remaining byte/crypto operations.
-Full verifier workloads and certified Compilatrix integration remain separate.
+## Remaining proof obligations
+
+- Certify operand-list and instruction decoding, recursive block/function-table
+  construction, and cross-table entry/target/arity validation.
+- Bind those tables and identified byte prefixes to the authenticated canonical
+  whole program, discharging initial and whole-admission resource bounds.
+- Establish valid live references from initialization and preserve successful
+  reconstruction and reference execution through every interpreter transition.
+- Prove compiler, primitive/hash gadget, native trace, lookup/memory, and AIR
+  refinement under explicit cryptographic assumptions.
+
+The loader and checked headers discharge the local byte/count premises stated
+above; leaf readers supply exact layouts and Call contracts. None establishes
+the complete whole-program or execution-soundness bridge. Continue hostile-
+witness analysis before expanding to closures/PAPs, general application, and
+the remaining byte/crypto operations. Full verifier workloads and certified
+Compilatrix integration remain separate work.

@@ -1,8 +1,6 @@
 module
-import Ix.Ixby.Aiur
+import Tests.Ixby.Aiur.Common
 import Ix.Ixby.Aiur.Refinement
-import Ix.Aiur.Statistics
-import Ix.Aiur.Interpret
 
 namespace Tests.Ixby.Aiur.Control
 
@@ -89,52 +87,14 @@ private def argsFor : Primitive → Array Value
   | .extAdd | .extSub | .extMul | .extEq => #[ext 7 11, ext 13 17]
   | _ => #[g (goldilocksModulus - 1), g 2]
 
-private structure Fixture where
-  code : Codec.Bytes
-  input : Codec.Bytes
-  output : Codec.Bytes
-  statement : Commitment.Statement
-
 private def fixture (program : Program) (input : Array Value) : Except String Fixture := do
   validateControlFragment program
   unless input.all valueSupported do throw "unsupported fixture value"
-  let code ← Codec.encodeProgram controlProfile program |>.mapError (fun e => s!"code: {repr e}")
-  let input ← Codec.encodeInput controlProfile program input |>.mapError (fun e => s!"input: {repr e}")
-  let execution ← Codec.execute controlProfile code input controlProfile.maxSteps
-    |>.mapError (fun e => s!"reference execution: {repr e}")
-  let statement ← Commitment.ofExecution execution |>.mapError (fun e => s!"statement: {repr e}")
-  return ⟨code, input, execution.outputBytes, statement⟩
+  Fixture.encode controlProfile program input
 
-private def cp : Aiur.CommitmentParameters := { logBlowup := 2, capHeight := 0 }
-/-- Test-only parameters, not a deployment security recommendation. -/
-private def fri : Aiur.FriParameters := {
-  logFinalPolyLen := 0, maxLogArity := 1, numQueries := 64,
-  commitProofOfWorkBits := 0, queryProofOfWorkBits := 0 }
+private def rawFixture := Fixture.raw controlProfile
 
-private def executeFixture (backend : ScalarSystem) (f : Fixture) : Except String Unit := do
-  let (output, _, _) ← backend.execute f.statement f.code f.input
-  unless output.isEmpty do throw "unexpected public output"
-
-private def interpretFixture (f : Fixture) : Except String Unit := do
-  let source ← controlToplevel
-  let decls ← source.mkDecls.mapError toString
-  let s := f.statement
-  let args := [s.profile, s.program, s.input, s.output].map fun d =>
-    Aiur.Value.array ((digestFields d).map Aiur.Value.field)
-  match Aiur.runFunction decls ⟨`ixby_control_exec⟩ args (artifactAdvice f.code f.input) with
-  | (.error error, _) => throw s!"source interpreter: {error}"
-  | (.ok _, _) => pure ()
-
-private def rawFixture (code input output : Codec.Bytes) : Except String Fixture := do
-  let p ← Codec.encodeProfile controlProfile |>.mapError (fun e => s!"{repr e}")
-  return ⟨code, input, output, Commitment.Internal.bind p code input output⟩
-
-private def rawProgram (program : Program) : Except String Codec.Bytes :=
-  Codec.Internal.encode 65536 0 (Codec.Internal.writeProgram controlProfile program)
-    |>.mapError (fun e => s!"raw program: {repr e}")
-
-private def replaceU32 (bytes : Codec.Bytes) (offset value : Nat) : Codec.Bytes :=
-  bytes.extract 0 offset ++ bytesLE 4 value ++ bytes.extract (offset + 4) bytes.size
+private def rawProgram := encodeRawProgram controlProfile
 
 private def rawInput (values : Array Value) : Except String Codec.Bytes :=
   (Codec.Internal.encode 65536 65536 do
@@ -266,41 +226,28 @@ private def negativeCases (base : Fixture) : List (String × Except String Fixtu
     ("wrong output", rawFixture base.code base.input
       ("IXBO".toUTF8.data ++ bytesLE 4 0 ++ #[0, 1] ++ bytesLE 4 9)) ]
 
-private def printStats (backend : ScalarSystem) (label : String) (f : Fixture) : IO Unit := do
-  let .ok (_, _, counts) := backend.execute f.statement f.code f.input
-    | IO.eprintln s!"statistics execution failed: {label}"; return
-  let stats := Aiur.computeStats backend.compiled counts backend.system.circuitShapes cp.logBlowup
-  IO.println s!"{label}: {f.code.size} code bytes, {f.input.size} input bytes, {f.output.size} output bytes"
-  IO.println "table | raw rows | padded rows | committed width | cache hits"
-  for c in stats.circuits do
-    let padded := if c.height ≤ 1 then c.height else 2 ^ ((c.height - 1).log2 + 1)
-    IO.println s!"{c.name} | {c.height} | {padded} | {c.width} | {c.cacheHits}"
-  IO.println s!"FFT-work surrogate (not measured proving time): {stats.totalFftCost}"
+private def buildBackend : IO (Except String System) := buildFresh System.buildControl
 
-public def suite (withProofs := true) (withStats := false) : IO UInt32 := do
+public def suite (withProofs := true) (withStats := false) : IO UInt32 :=
+    runChecks "ixby-control" do
   IO.println "ixby-control (experimental constrained scalar CEK slice)"
-  let built := ScalarSystem.buildControl cp fri
+  let built ← buildBackend
   let .ok backend := built
-    | IO.eprintln (match built with | .error e => e | _ => "control interpreter build failed"); return 1
+    | return [succeeds "interpreter build" built]
   IO.println s!"{backend.compiled.bytecode.circuits.size} function circuits; one system for all guest programs"
   let programs := successfulCases.foldl (init := (#[] : Array Program)) fun acc (_, p, _) =>
     if acc.contains p then acc else acc.push p
   IO.println s!"{successfulCases.length} success cases over {programs.size} distinct guest programs"
-  let mut passed := 0
-  let mut failed := 0
+  let mut checks : List Check := []
   for (label, program, input) in successfulCases do
-    match fixture program input >>= executeFixture backend with
-    | .ok _ => passed := passed + 1; IO.println s!"  ✓ {label}"
-    | .error error => failed := failed + 1; IO.eprintln s!"  ✗ {label}: {error}"
+    checks := checks ++ [succeeds label (fixture program input >>= executeFixture backend)]
   let .ok base := fixture identity #[w 7]
-    | IO.eprintln "base fixture failed"; return 1
+    | return checks ++ [("base fixture failed", false)]
   for (label, program, input) in [
       ("source interpreter branch/call/resume", branchCall, #[.scalar (.bool true), w 17]),
       ("source interpreter nested restoration", nested, #[g 17, g 5]),
       ("source interpreter self call", sumProgram false, #[w 2, w 0])] do
-    match fixture program input >>= interpretFixture with
-    | .ok _ => passed := passed + 1; IO.println s!"  ✓ {label}"
-    | .error error => failed := failed + 1; IO.eprintln s!"  ✗ {label}: {error}"
+    checks := checks ++ [succeeds label (fixture program input >>= interpretFixture backend controlToplevel `ixby_control_exec)]
   let negatives := negativeCases base ++
     ((List.range base.code.size).map fun n =>
       (s!"program strict prefix {n}", rawFixture (base.code.extract 0 n) base.input base.output)) ++
@@ -308,25 +255,13 @@ public def suite (withProofs := true) (withStats := false) : IO UInt32 := do
       (s!"input strict prefix {n}", rawFixture base.code (base.input.extract 0 n) base.output))
   for (label, result) in negatives do
     match result with
-    | .error error => failed := failed + 1; IO.eprintln s!"  ✗ negative fixture {label}: {error}"
+    | .error error => checks := checks ++ [(s!"negative fixture {label}: {error}", false)]
     | .ok f =>
       match backend.execute f.statement f.code f.input with
-      | .error _ => passed := passed + 1
-      | .ok _ => failed := failed + 1; IO.eprintln s!"  ✗ accepted {label}"
+      | .error _ => checks := checks ++ [(s!"rejects {label}", true)]
+      | .ok _ => checks := checks ++ [(s!"rejects {label}", false)]
   IO.println s!"  tested {negatives.length} malformed/excluded/nonterminal artifacts with matching commitments"
-  let original := artifactAdvice base.code base.input
-  let badData := (base.input.map Aiur.G.ofUInt8).set! 14 256
-  let badByte := { original with data := original.data.insert 1 badData }
-  let badInfo : Aiur.IOKeyInfo := { idx := 0, len := 2 ^ 32 }
-  let badLength := { original with map := original.map.insert (0, #[0]) badInfo }
-  for (label, advice) in [("advice byte 256", badByte), ("non-u32 advice length", badLength)] do
-    match backend.compiled.bytecode.execute backend.entry (statementFields base.statement) advice with
-    | .error _ => passed := passed + 1; IO.println s!"  ✓ {label} rejected"
-    | .ok _ => failed := failed + 1; IO.eprintln s!"  ✗ accepted {label}"
-  if (backend.prove base.statement (base.code.push 0) base.input).isOk then
-    failed := failed + 1; IO.eprintln "  ✗ malformed prove request accepted"
-  else
-    passed := passed + 1; IO.println "  ✓ malformed prove request returns an error"
+  checks := checks ++ preflightChecks backend base
   if withStats then
     for (label, program, input) in [
         ("branch/call/resume", branchCall, #[.scalar (.bool true), w 17]),
@@ -336,54 +271,8 @@ public def suite (withProofs := true) (withStats := false) : IO UInt32 := do
       | .ok f => printStats backend label f
       | .error e => IO.eprintln e
   if withProofs then
-    let .ok verifier := ScalarSystem.buildControl cp fri
-      | IO.eprintln "fresh verifier build failed"; return 1
-    let vk := backend.system.vkBytes
-    if verifier.system.vkBytes == vk then
-      passed := passed + 1; IO.println "  ✓ fresh verifier has the same key"
-    else
-      failed := failed + 1; IO.eprintln "  ✗ nondeterministic verifier key"
-    for (label, program, input) in successfulCases do
-      IO.println s!"  proving {label}"
-      let start ← IO.monoMsNow
-      let result := do
-        let f ← fixture program input
-        let proof ← backend.prove f.statement f.code f.input
-        let bytes := proof.toBytes
-        verifier.verifyBytes f.statement bytes
-        return bytes.size
-      match result with
-      | .ok size =>
-        passed := passed + 1
-        IO.println s!"  ✓ {label}: {size} bytes, {(← IO.monoMsNow) - start} ms prove/round-trip/verify"
-      | .error error => failed := failed + 1; IO.eprintln s!"  ✗ {label}: {error}"
-    let .ok branch := fixture branchCall #[.scalar (.bool true), w 17]
-      | IO.eprintln "branch proof fixture failed"; return 1
-    match backend.prove branch.statement branch.code branch.input with
-    | .error error => failed := failed + 1; IO.eprintln s!"  ✗ negative-test proof: {error}"
-    | .ok proof =>
-      let s := branch.statement
-      for (label, expected) in [
-          ("profile", { s with profile := Commitment.hash .profile #[] }),
-          ("program", { s with program := Commitment.hash .program #[] }),
-          ("input", { s with input := Commitment.hash .input #[] }),
-          ("output", { s with output := Commitment.hash .output #[] })] do
-        match verifier.verify expected proof with
-        | .error _ => passed := passed + 1; IO.println s!"  ✓ proof rejects changed {label}"
-        | .ok _ => failed := failed + 1; IO.eprintln s!"  ✗ proof accepted changed {label}"
-      let bytes := proof.toBytes
-      for (label, corrupted) in [
-          ("empty", ByteArray.empty), ("truncated", bytes.extract 0 (bytes.size - 1)),
-          ("trailing", bytes.push 0), ("invalid Boolean", bytes.set! 8 2),
-          ("changed activation", bytes.set! 8 (bytes[8]! ^^^ 1))] do
-        match verifier.verifyBytes s corrupted with
-        | .error _ => passed := passed + 1; IO.println s!"  ✓ {label} proof rejected"
-        | .ok _ => failed := failed + 1; IO.eprintln s!"  ✗ {label} proof accepted"
-    if backend.system.vkBytes == vk then
-      passed := passed + 1; IO.println "  ✓ control-flow and guest changes preserve the interpreter key"
-    else
-      failed := failed + 1; IO.eprintln "  ✗ guest-dependent key mutation"
-  IO.println s!"{passed}/{passed + failed} checks passed"
-  return if failed == 0 then 0 else 1
+    checks := checks ++ (← proofChecks backend buildBackend
+      (successfulCases.map (fun (label, program, input) => (label, fixture program input))) (fixture branchCall #[.scalar (.bool true), w 17]))
+  return checks
 
 end Tests.Ixby.Aiur.Control

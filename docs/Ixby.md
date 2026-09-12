@@ -1,140 +1,66 @@
 # IxBy: functional bytecode and execution semantics
 
-Ixby is proposed as IxVM's permanent bytecode execution layer, with certified
-compilation from Ixon and multiple proving backends. The implementation
-direction is now **functional bytecode with CEK-family control**, potentially
-factoring Compilatrix's IxIR₁ computational lowering away from its ownership
-and store operations. The exact IR split, ISA, representation, and wire format
-remain unfrozen; no proof-performance winner has been established.
+IxBy is an experimental functional bytecode execution layer with CEK-family
+control, a pure Lean reference model, and three bounded Aiur/FRI interpreters.
+Its intended role includes certified execution of Ixon programs, but no
+Compilatrix lowering or source-to-IxBy certification is implemented here.
+The ISA, profiles, wire format, and proof parameters remain provisional.
 
-The [IxBy implementation plan](../plans/ixby-plan.md) owns the current direction
-and work packages. It supersedes the initial requirement to build complete
-competing provers before choosing an architecture. This document records the
-current executable model and the shared semantic boundaries. The plan is
-tracked on `jcb/ixby`, but is not a frozen protocol document.
+Existing production claims, Stage 1/2 keys, Flock relations, and deployment
+policies are unchanged. There is no new Flock interpreter or terminal SNARK.
+This document describes the current architecture and semantic boundaries;
+the [design roadmap](../plans/ixby-plan.md) records longer-term integration work.
 
-The local `jcb/ixby` bookmark starts this work. Existing claim encodings,
-Stage 1/2 keys, Flock relations, and deployment policies are unchanged.
+## Implementation map
 
-## Current implementation
+- [Basic.lean](../Ix/Ixby/Basic.lean), [Validate.lean](../Ix/Ixby/Validate.lean),
+  and [Eval.lean](../Ix/Ixby/Eval.lean): immutable values and locals, indexed
+  operands, whole-image admission, explicit continuations, and total
+  fuel-bounded execution with determinism and fuel-extension theorems.
+- [Primitive.lean](../Ix/Ixby/Primitive.lean), [Goldilocks.lean](../Ix/Ixby/Goldilocks.lean),
+  and [Blake3.lean](../Ix/Ixby/Blake3.lean): closed, typed reference primitives.
+  Field arithmetic and hashing remain pure, without importing an FFI oracle.
+- [Profile.lean](../Ix/Ixby/Profile.lean), [Codec/](../Ix/Ixby/Codec/), and
+  [Commitment.lean](../Ix/Ixby/Commitment.lean): bounded crypto-profile admission,
+  strict canonical artifacts, checked byte execution, and domain-separated
+  commitments. See the [encoding specification](IxbyEncoding.md).
+- [Composition.lean](../Ix/Ixby/Composition.lean): conditional source/target
+  refinement and composition. Its concrete example is not an IxIR₀ lowering
+  theorem or general compiler certification.
+- [Aiur.lean](../Ix/Ixby/Aiur.lean): the host adapter for
+  [scalar](IxbyAiur.md), [control](IxbyControl.md), and
+  [object](IxbyObjects.md) interpreters. It is a separate import from the pure
+  `Ix.Ixby` specification.
+- [Aiur/Refinement.lean](../Ix/Ixby/Aiur/Refinement.lean) and
+  [Aiur/Objects/](../Ix/Ixby/Aiur/Objects/): kernel-checked frame, heap, memory,
+  store, and parser-component contracts. The
+  [object proof guide](IxbyObjects.md#formal-contract-and-remaining-bridge)
+  owns the detailed premises and remaining boundaries.
+- [Audit.lean](../Ix/Ixby/Audit.lean): exact standard-axiom allowances for 314
+  public theorems, plus a source-module scan of private/generated theorems and
+  global axioms. CI builds the audit and its negative regression tests.
 
-Object-backend proof modules are grouped under `Ix/Ixby/Aiur/Objects/`, with
-namespaces under `Ix.Ixby.AiurBackend.Objects`. IxBy tests live under
-`Tests/Ixby/`: reference/crypto/codec suites at the root and backend suites under
-`Aiur/`, mirroring the implementation hierarchy. `Tests/Ixby.lean` collects the
-suites; each standalone backend runner lives in its suite's `Main.lean` module.
-The existing executable names and `IxTests` suite selectors are unchanged.
+Tests mirror the implementation under `Tests/Ixby/`: reference, crypto, and
+codec suites at the root; backend suites under `Aiur/`; object conformance
+tests under `Aiur/Objects/`. The parser suite delegates to focused reader,
+identity, uniqueness, declaration, loader, program-prefix, code-header, and
+operand modules under `Aiur/Objects/Parser/`, sharing one full and one pruned
+compilation per run.
 
-- `Ix/Ixby/Basic.lean`: functional values, indexed operands, calls, constructors,
-  branches, immutable local frames, and explicit continuations.
-- `Ix/Ixby/Primitive.lean`: closed, typed scalar/byte reference primitives.
-- `Ix/Ixby/Goldilocks.lean` and `Blake3.lean`: pure base/extension arithmetic
-  and unkeyed 32-byte BLAKE3, without importing an FFI oracle.
-- `Ix/Ixby/Profile.lean`: experimental crypto-profile admission and execution;
-  functional control over Bool, Word32, field/extension elements, and bytes.
-- `Ix/Ixby/Codec.lean` and `Codec/`: bounded, strict profile/program/value
-  encodings and byte execution carrying encoding and evaluation equations.
-- `Ix/Ixby/Commitment.lean`: domain-separated profile/program/input/output
-  commitments and reference execution against an expected statement.
-- `Ix/Ixby/Aiur.lean` and `Aiur/`: constrained straight-line, scalar CEK, and object
-  interpreters, with raw artifact authentication and real Aiur/FRI proofs.
-- `Aiur/Refinement.lean`: logical reversed-frame and continuation contracts,
-  with kernel-checked representation/transition lemmas, not an AIR theorem.
-- `Aiur/Objects/Refinement.lean`: conditional ranked-heap finiteness, field-order,
-  constructor/case, and field-counter bridges; the full circuit proof remains open.
-- `Aiur/Objects/Memory.lean`: checked reconstruction of concrete bytecode memory,
-  with a proof that success yields the logical object representation. Execution
-  establishing reconstruction success and the declaration table remains open.
-- `Aiur/Objects/Store.lean` and `Objects/Table.lean`: actual bytecode-store
-  preservation and checked concrete-table binding to canonical program bytes.
-  Admission, complete interpreter transitions, and AIR links remain open.
-- `Aiur/Objects/Parser.lean`: structurally checked byte/u32 reader contracts,
-  byte-prefix preservation, and the zero-count declaration parser proof.
-  The authenticated byte-stream invariant remains open.
-- `Aiur/Objects/Identity.lean`: compositional inlined-word and compiled ten-limb
-  identity-reader proofs, including exact digest/member/tag, suffix preservation,
-  and actual Call semantics. Authenticated whole-program binding remains open.
-- `Aiur/Objects/Equality.lean` and `Objects/Unique.lean`: exact compiled ID
-  comparison and bounded duplicate traversal, tied to semantic table decoding
-  and preserving caller state.
-- `Aiur/Objects/Declarations.lean`: complete bounded declaration-parser and Call
-  contracts, including exact byte-codec identities, field-limit/duplicate
-  rejection, table construction, and state preservation.
-- `Aiur/Objects/Admission.lean`: checked raw-advice reader and loader contracts,
-  genuine-byte stream construction, allocation/frame bounds, and composition
-  with a declaration prefix. Metadata/address and initial storage bounds are
-  explicit; authenticated whole-program admission remains open.
-- `Aiur/Objects/ProgramPrefix.lean`: actual `is_run` magic/revision, entry/count,
-  and declaration-call contracts, with a derived constructor bound, exact
-  continuation state, and checked loader composition. The suffix/function-table
-  code and whole-program binding are not certified by this prefix check.
-- `Aiur/Objects/CodeHeaders.lean`: checked function-count, function-header, and
-  block-header guards, exact zero-count Nil stores, and continuation/loader
-  composition. Instruction decoding and complete function-table admission remain open.
-- `Aiur/Objects/Scalars.lean`: complete checked field and scalar-literal readers,
-  exact canonical Goldilocks packing, Boolean rejection, concrete value layouts,
-  and same-toplevel Call contracts.
-- `Aiur/Objects/Operands.lean`: complete checked local/literal/erased leaf readers,
-  exact local-index bounds and six-field layouts, caller-state preservation,
-  and composition with the actual checked loader. Lists and instructions remain open.
-- `Ix/Ixby/Validate.lean`: whole-image admission and bounded input validation.
-- `Ix/Ixby/Eval.lean`: total call/evaluate/return execution, fuel
-  monotonicity, and uniqueness of successful results across fuel witnesses.
-- `Ix/Ixby/Composition.lean`: the required source/target refinement interface
-  and a generic theorem composing compilation certification with execution.
-- `Tests/Ixby/Basic.lean`: 100 executable regressions and a kernel-checked example
-  with a runtime argument, direct call, branch, and constructed result, plus
-  a counterexample to forward simulation alone.
-- `Tests/Ixby/Crypto.lean`: crypto primitive/profile tests, BLAKE3 comparison
-  against the Rust implementation, and a functional-call/Word32 example.
-- `Tests/Ixby/Codec.lean`: golden artifact bytes, canonical decoding, malformed
-  inputs, resource bounds, byte execution, and commitment mismatch tests.
-- `Tests/Ixby/Aiur/Scalar.lean`: scalar-slice execution/proving, malformed advice,
-  changed statements/proofs, fresh-verifier checks, and trace measurements.
-- `Tests/Ixby/Aiur/Control.lean`: authenticated code tables, branches, call/return
-  restoration, tail/self/mutual recursion, resource boundaries, and proofs.
-- `Tests/Ixby/Aiur/Objects.lean`: recursive list map/fold, constructor identity and
-  field order, shared objects, I/O budgets, malformed artifacts, and proofs.
-- `Tests/Ixby/Aiur/Objects/Memory.lean`: 126 concrete-layout, compiled-helper,
-  native-output parity, and malformed-memory checks, without new proof workloads.
-- `Tests/Ixby/Aiur/Objects/Table.lean`: 191 table-layout, compiled parser/runner,
-  store-preservation, and checked program/table-binding tests.
-- `Tests/Ixby/Aiur/Objects/Parser.lean`: 23,832 checks covering full/pruned compilation
-  certificates, byte/u32/identity execution, exact codec agreement, malformed
-  cells, forged ranges/metadata, actual Call boundaries, the zero-count parser,
-  exact ID comparison/duplicate traversal, complete bounded declaration parsing,
-  raw-advice loading, program/header count guards, and function/block headers
-  with exact allocation, continuation-state, and loader-composition checks;
-  complete scalar/leaf-operand certificates, canonical field/Boolean rejection,
-  local bounds, flat layouts, codec agreement, and per-byte failure cases.
+`Tests/Ixby.lean` collects the suites. Each standalone backend runner has a
+`Main.lean` module; executable names and `IxTests` selectors remain stable.
+All runtime suites use LSpec. Fixture compilation and check construction are
+deferred IO actions, so unrelated suite selection does not run IxBy checks.
+`Tests/Ixby/Aiur/Common.lean` shares artifact/proof helpers and reuses the
+repository's Aiur test parameters, while preserving backend-specific admission
+and rejection-stage checks.
 
-The earlier mutable-register/word-stream prototype and its tests have been
-replaced, rather than maintained as a second ISA. The composition contract is
-retained with a structured-value ABI. The logical bytecode now has an
-[experimental crypto-profile encoding](IxbyEncoding.md) with explicit tags and
-domain-separated commitments, but is not a frozen permanent ISA. A
-[straight-line scalar Aiur slice](IxbyAiur.md) and a
-[scalar CEK control slice](IxbyControl.md), and
-[immutable-object slice](IxbyObjects.md) now have real execution proofs and
-initial measurements, not complete functional-machine coverage. There is
-no Compilatrix backend, new production claim variant, Flock Ixby interpreter,
-or terminal SNARK yet. The composition interface is not itself a proof of
-Compilatrix's correctness or of an Ixon semantic bridge. The checked
-example covers both inputs of a small Boolean-to-pair source observation;
-it is not an IxIR₀ lowering theorem or general compiler certification.
-
-For the first integration, use the plan's incremental distinct-zk-pipeline
-route: IxIR₀ remains the anchor and the logical IxBy vocabulary is the initial
-pure computational target. No separate IxIR-F module or native compiler
-refactor is required by this first model. Extract a shared pure phase when its
-interfaces and preservation obligations are established. Compilatrix itself
-has not been modified here.
-
-Cryptographic execution work proceeds here first; actual IxIR₀ lowering and
-source-to-IxBy refinement belong in a later Compilatrix companion PR. Target
-execution proofs can use hand-authored programs without claiming source
-correctness. The compiler-facing representations and primitive contracts remain
-provisional until that integration is checked.
+Cryptographic execution uses hand-authored guest programs. Actual IxIR₀
+lowering and source-to-IxBy refinement belong in a later Compilatrix companion
+change; target execution proofs alone do not claim source correctness. IxIR₀
+remains the semantic anchor, and no native ownership/compiler refactor is
+required for this model. Extracting a shared pure lowering phase requires its
+own interface and preservation proofs.
 
 ## Eval and Exec are different claims
 
@@ -402,93 +328,40 @@ authenticated lookup, and circuit/reference correspondence remain separate
 obligations. Wire/semantic revision 0 and the commitment domain are experimental,
 not changes to production claim encodings or permanent interpreter keys.
 
-### First constrained execution slice
+### Constrained execution backends
 
-The [scalar Aiur backend](IxbyAiur.md) admits one straight-line function with
-immutable locals, copies, and 20 word/base-field/extension primitives. The
-circuit authenticates and parses raw program/input bytes, executes the admitted
-image, and binds the canonical computed output. It rejects unsupported code
-and values inside the circuit; it does not rely on host fragment admission.
-The same interpreter key proves 39 test cases over 26 guest images, including
-the 64-block limit. This original subset remains a regression baseline.
+Each backend authenticates raw program/input bytes, admits the full image
+including unused code, executes it, and checks the canonical terminal output
+commitment. Unsupported operations are rejected in the interpreter, not merely
+by the optional host admission helper.
 
-The separate [control slice](IxbyControl.md) now decodes and admits the whole
-image into immutable tables before execution. It supports scalar branches,
-direct/self calls, tail calls, and explicit caller-resume continuations. Its
-50 proved workloads cover 40 guest images under one control interpreter key,
-including mutual recursion, backward successors, exact 256-transition runs,
-and tail calls at the 16-frame continuation limit. Its fixed profile has a
-different key from the straight-line backend; no wire or semantic revision
-changed.
+| Backend | Supported execution | Proved workloads / guest images |
+| --- | --- | ---: |
+| [Scalar](IxbyAiur.md) | One straight-line function, immutable locals, 20 scalar primitives | 39 / 26 |
+| [Control](IxbyControl.md) | Branches, direct/self/tail calls, recursion, explicit continuations | 50 / 40 |
+| [Objects](IxbyObjects.md) | Immutable constructors, projection, constructor cases, shared values | 66 / 55 |
 
-The [object slice](IxbyObjects.md) adds immutable constructors, projections,
-and constructor cases under another fixed profile/key. Its 66 proved workloads
-span 55 guest images, including recursive list map, shared objects, and separate
-intermediate-rank and I/O bounds. Closures/PAPs, general application, byte values,
-and the other crypto primitives remain pending.
+`System.buildScalar`, `System.buildControl`, and `System.buildObjects` select
+separate fixed profiles and keys. Each key is reused across its guest images.
+`System.verify` binds the caller's expected statement without rerunning
+reference execution or receiving artifact advice. Proving retains native
+preflight; `verifyBytes` checks bounded decoding and exact reserialization.
 
-`ScalarSystem.verify` verifies the caller's expected commitment statement
-without rerunning reference execution or receiving execution advice. The
-backend is a separate import from the pure `Ix.Ixby` specification. Its actual
-proofs and differential/negative tests are not a formal AIR-to-reference
-refinement theorem, a complete hostile-witness audit, or production activation.
-The representation modules prove 27 frame/stack/transition lemmas and 25
-object/heap/field-counter lemmas. The latter derive finite values from a
-functional memory view and closed local rank constraints. Ten additional
-concrete-memory lemmas establish checked reconstruction into that representation
-and its connection to the Lean bytecode evaluator's width-bucketed loads.
-A further 24 lemmas establish immutable-store preservation—including an
-actual bytecode Store instruction—and checked declaration-table binding to
-canonical program bytes. Another 22 prove byte-prefix/store, actual byte/u32
-reader, and zero-count parser contracts, with executable structural certificates
-for the corresponding bytecode. Twenty more compose the actual inlined word
-operations through the ten-limb identity reader, prove exact natural-byte packing
-and semantic-name decoding, and preserve the suffix, memory/I/O, and caller
-registers. Another 37 prove full-field ID comparison, range-checked semantic
-equality, and bounded duplicate traversal through actual Call boundaries.
-Successful table decoding supplies the concrete-spine premise; the traversal
-preserves memory and I/O and succeeds exactly for an absent semantic ID.
-Another 25 lemmas establish store-allocation bounds and the complete bounded
-declaration-parser composition. Byte-derived prefixes of up to sixteen records
-are accepted exactly when their full IDs are distinct and field counts are
-supported. Success establishes the concrete semantic table in wire order,
-returns the exact suffix, and preserves prior reads, caller registers, and I/O.
-Allocation bounds prevent field-pointer wrap without assuming fresh cells.
-Another 29 lemmas certify the actual recursive advice reader and complete loader,
-prove exact limit/range-check behavior under explicit metadata bounds, and derive
-a genuine-byte stream from success. Actual loading preserves prior reads/I/O,
-adds at most one width-3 cell per byte plus Nil, and leaves other width buckets
-unchanged. This discharges the declaration parser's byte premise at an identified
-loaded prefix and preserves its table-capacity bound. Another 18 lemmas certify
-the actual `is_run` header and declaration-call prefix: exact magic and revision,
-the full u32 entry, a constructor bound derived from the executed check, and
-the ordered table at its actual output pointer. The precise 73-register state
-passes to the original suffix/control, whose success is not assumed. A loader
-composition supplies the genuine-byte premise and preserves the suffix stream.
-Another 27 lemmas extend the actual program prefix through the nonzero function
-count bounded by eight, and certify function arity/block-count and block-local
-headers. They preserve exact live state, prove both zero-count Nil stores, and
-bind the next Calls while leaving their remaining behavior unrestricted.
-Another 40 lemmas certify complete field/scalar/leaf-operand readers. The actual
-field guard accepts exactly the eight-byte encodings below the Goldilocks modulus;
-packing then agrees with the natural little-endian codec value without reduction.
-Boolean, Word32, field, and extension literals have exact five-field layouts;
-local, literal, and erased operands have exact six-field layouts. Under a genuine
-u32 frame count, the executed local-index comparison is exact. Same-toplevel Calls
-preserve caller registers, memory, and I/O; actual successful loading supplies
-genuine bytes at an identified operand prefix and preserves the suffix stream.
-Operand-list/instruction decoding, complete block/function-table admission and validation,
-canonical whole-program binding, remaining resource bounds,
-initialization/full transitions, commitment agreement, and actual circuit/gadget
-refinement remain outstanding; checked representation alone is not execution verification.
-Object tests also found a shared let-hoisting capture bug; the
-shared normalizer now has a tested scope/evaluation-order repair, and the
-original shadowed entry passes its negative regressions without the workaround.
-This is not a compiler correctness proof; compiled artifacts/keys need rebuilding.
-The three checked-in generated Rust kernels have also been regenerated;
-the [reproduction steps](IxbyObjects.md#compiler-issue-found-and-repaired) include
-the CI content check and rebuilt native/interpreter parity tests.
-The fixed test capacities and FRI parameters are not security recommendations.
+Kernel-checked contracts cover representation, immutable-store preservation,
+concrete tables, byte/u32/identity readers, ID comparison and uniqueness,
+bounded declarations and advice loading, program/function/block headers, and
+complete scalar/leaf-operand readers. Structural certificates bind the relevant
+actual bytecode shapes and same-toplevel callees. These are Lean evaluator
+contracts with explicit range, metadata, allocation, and frame premises—not an
+AIR-to-reference or compiler correctness theorem. See the
+[remaining proof obligations](IxbyObjects.md#remaining-proof-obligations).
+
+Object differential tests exposed a shared let-hoisting bug. The compiler
+repair and all three regenerated native kernels landed upstream in
+[PR #628](https://github.com/argumentcomputer/ix/pull/628); this branch depends on
+that repair and retains additional regressions. See the
+[compiler dependency](IxbyObjects.md#compiler-issue-found-and-repaired).
+The fixed capacities and FRI test parameters are not security recommendations.
 
 ## Implementation sequence and acceptance gates
 
@@ -502,8 +375,8 @@ The fixed test capacities and FRI parameters are not security recommendations.
    commitments, and checked byte-execution contract are implemented in Lean.
    Straight-line, scalar CEK control, and immutable-constructor slices have real
    proofs and local measurements; extend them to closures/PAPs, general
-   application, and the remaining crypto operations. Compiler hoisting has a
-   tested repair; prove circuit/reference correspondence and
+   application, and the remaining crypto operations. The upstream compiler repair is covered by
+   regressions; prove circuit/reference correspondence and
    expand malicious witness coverage. Use hand-authored IxBy programs to measure
    code authentication, memory consistency and primitive constraints, not just
    unconstrained host evaluation.
@@ -546,25 +419,26 @@ freeze; complete competing CEK and word provers are not a prerequisite.
 ## Checks
 
 ```sh
-lake build --wfail Ix.Ixby Tests.Ixby.Basic Tests.Ixby.Crypto Tests.Ixby.Codec
-lake build --wfail Ix.Ixby.Aiur.Refinement IxbyAiurTests IxbyControlTests
-RAYON_NUM_THREADS=8 .lake/build/bin/IxbyAiurTests
-RAYON_NUM_THREADS=8 .lake/build/bin/IxbyControlTests
-lake build IxTests
-.lake/build/bin/IxTests ixby
-.lake/build/bin/IxTests ixby-crypto
-.lake/build/bin/IxTests ixby-codec
+lake build --wfail Ix.Ixby.Audit Tests.Ixby.Audit IxTests
+lake test --wfail -- ixby ixby-crypto ixby-codec \
+  ixby-aiur ixby-control ixby-objects \
+  ixby-objects-memory ixby-objects-table ixby-objects-parser
+RAYON_NUM_THREADS=8 lake test --wfail -- --ignored \
+  aiur-hoisting-prove ixby-aiur-prove ixby-control-prove ixby-objects-prove
 ```
 
-The reference, crypto, and codec test modules also run their Boolean regression
-collections at elaboration; the Aiur backend tests require the runtime/FFI.
-Formal composition examples use the real reference semantics, not an assumed
-host acceptance bit. They introduce no `sorry`, custom axioms, or
-`native_decide`. The checked execution/composition and byte-reference bridge
-theorems report only Lean's standard `propext`, `Classical.choice`, and
-`Quot.sound`; no custom axiom was added for decoding or commitment binding.
+Boolean regressions run only when their runtime suite is selected; kernel
+theorems and the trust audit are checked at build time. The default test tier
+covers execution and conformance. The merge-queue matrix explicitly selects
+the slower IxBy proving and additional hoisting suites. Standalone runners and
+statistics commands are documented with each backend.
+
+The trust gate permits only `propext`, `Classical.choice`, and `Quot.sound`.
+It rejects proof holes, native-decision/custom axioms, stale exact allowances,
+and missing or duplicate roots. These logical checks do not replace native
+differential tests, hostile-witness analysis, or the remaining soundness proofs.
 
 Relevant existing boundaries: `Ix/Claim.lean`, `Ix/IxEval.lean`,
 `Ix/Aggr/Circuit.lean`, and `crates/aiur/src/execute.rs`. Companion compiler
 design and coverage live in Compilatrix's `docs/compiler-design.md` and
-`docs/roadmap.md`; that repository has not been modified by this first step.
+`docs/roadmap.md`; that repository has not been modified here.

@@ -1,4 +1,5 @@
 module
+import Tests.Ixby.Common
 import Ix.Ixby.Aiur.Objects.Table
 import Ix.Ixby.Aiur.Objects
 import Ix.Aiur.Compiler
@@ -44,7 +45,8 @@ private def rawTable : RawMemory := bytecodeMemory (storedTable table).1
 private def rejects (raw : RawMemory) (pointer := 2) (count := 2) : Bool :=
   (readTable raw pointer count).isNone
 
-private def tableChecks : List (String × Bool) := [
+private def tableChecks : IO (List Check) := do
+  return [
   ("tagless declaration layout and forward table order", readTable rawTable 2 2 == some table),
   ("empty table requires canonical Nil", readTable rawTable 0 0 == some #[]),
   ("missing empty table rejected", rejects (fun _ _ => none) 0 0),
@@ -86,9 +88,10 @@ private def tableChecks : List (String × Bool) := [
   (List.range 10).map (fun limb => (s!"binding includes unused identity limb {limb}",
     !checkProgramTable (replace rawTable 2 ((consFlat table[0]! 1).set! (limb + 1) 255)) 2 2 (identity)))
 
-private def compiled : Except String Aiur.CompiledToplevel := do
-  let source ← objectsToplevel
-  (source.prune [`is_read_ctors, `is_run]).compile |>.mapError toString
+private def compileFixture : IO (Except String Aiur.CompiledToplevel) := do
+  return do
+    let source ← objectsToplevel
+    (source.prune [`is_read_ctors, `is_run]).compile |>.mapError toString
 
 private def snapshot (compiled : Aiur.CompiledToplevel) (name : Lean.Name)
     (args : Array Aiur.G) (initial : EvalState) : Except String (Array Aiur.G × EvalState) := do
@@ -199,16 +202,9 @@ private def executionChecks (compiled : Aiur.CompiledToplevel) : List (String ×
     | .error error => checks := checks ++ [(label ++ ": " ++ error, false)]
   return checks
 
-public def suite : IO UInt32 := do
-  IO.println "IxBy concrete constructor-table and store preservation"
-  let .ok compiled := compiled
-    | IO.eprintln (match compiled with | .error e => e | _ => "compile failed"); return 1
-  let checks := tableChecks ++ parserChecks compiled ++ executionChecks compiled
-  let mut failed := 0
-  for (label, ok) in checks do
-    if ok then IO.println s!"  ✓ {label}"
-    else failed := failed + 1; IO.eprintln s!"  ✗ {label}"
-  IO.println s!"{checks.length - failed}/{checks.length} checks passed"
-  return if failed == 0 then 0 else 1
+public def suite : IO UInt32 := runChecks "ixby-objects-table" do
+  match ← compileFixture with
+  | .error error => return [(s!"compile fixtures: {error}", false)]
+  | .ok compiled => return (← tableChecks) ++ parserChecks compiled ++ executionChecks compiled
 
 end Tests.Ixby.Aiur.Objects.Table

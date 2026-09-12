@@ -100,7 +100,7 @@ MultiStark native Goldilocks/extension gadgets; no new Rust primitive was added.
 
 ## Host interface and key policy
 
-`Ix/Ixby/Aiur.lean` exports `ScalarSystem.build`, `execute`, `prove`, `verify`,
+`Ix/Ixby/Aiur.lean` exports `System.buildScalar`, `execute`, `prove`, `verify`,
 and `verifyBytes`. It is deliberately a separate import from `Ix.Ixby`, so the
 logical execution specification does not acquire a proving FFI dependency.
 
@@ -140,8 +140,8 @@ RAYON_NUM_THREADS=8 .lake/build/bin/IxbyAiurTests --stats
 ```
 
 The regular `IxTests` runner also exposes `ixby-aiur` for execution checks and
-`--ignored ixby-aiur-prove` for the full proving suite. This backend suite runs
-at runtime, not through the logical suites' elaboration-time `#guard` checks.
+`--ignored ixby-aiur-prove` for the full proving suite. Like the other IxBy
+runtime suites, it uses LSpec and defers setup and checks until selection.
 
 The current full suite passes 209 checks. It includes 39 successful proof
 cases covering all 20 primitives, zero/nonzero inverses, comparison outcomes,

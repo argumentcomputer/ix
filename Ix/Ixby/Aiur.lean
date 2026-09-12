@@ -27,7 +27,7 @@ def artifactAdvice (programBytes inputBytes : Codec.Bytes) : Aiur.IOBuffer :=
   (default : Aiur.IOBuffer).extend 0 #[0] (programBytes.map Aiur.G.ofUInt8)
     |>.extend 1 #[0] (inputBytes.map Aiur.G.ofUInt8)
 
-structure ScalarSystem where
+structure System where
   compiled : Aiur.CompiledToplevel
   system : Aiur.AiurSystem
   entry : Aiur.Bytecode.FunIdx
@@ -35,7 +35,7 @@ structure ScalarSystem where
 /-- Shared adapter for the experimental interpreter entrypoints. -/
 private def buildSystem (source : Aiur.Source.Toplevel) (entryName : Lean.Name)
     (commitment : Aiur.CommitmentParameters) (fri : Aiur.FriParameters) :
-    Except String ScalarSystem := do
+    Except String System := do
   let compiled ← source.compile
   let some entry := compiled.getFuncIdx entryName
     | throw s!"missing IxBy entrypoint {entryName}"
@@ -43,32 +43,32 @@ private def buildSystem (source : Aiur.Source.Toplevel) (entryName : Lean.Name)
 
 /-- Explicit backend parameters: callers choose a test or reviewed security
 policy. The same compiled system is reused for different guest programs. -/
-def ScalarSystem.build (commitment : Aiur.CommitmentParameters)
-    (fri : Aiur.FriParameters) : Except String ScalarSystem := do
+def System.buildScalar (commitment : Aiur.CommitmentParameters)
+    (fri : Aiur.FriParameters) : Except String System := do
   buildSystem (← scalarToplevel) `ixby_scalar_exec commitment fri
 
 /-- The control slice has its own fixed profile and key; guest function/block
 tables and dynamic call stacks do not participate in compiling that key. -/
-def ScalarSystem.buildControl (commitment : Aiur.CommitmentParameters)
-    (fri : Aiur.FriParameters) : Except String ScalarSystem := do
+def System.buildControl (commitment : Aiur.CommitmentParameters)
+    (fri : Aiur.FriParameters) : Except String System := do
   buildSystem (← controlToplevel) `ixby_control_exec commitment fri
 
 /-- Structured values have a separate fixed profile/key. Physical object
 pointers, ranks, and constructor tables are not public/advice inputs. -/
-def ScalarSystem.buildObjects (commitment : Aiur.CommitmentParameters)
-    (fri : Aiur.FriParameters) : Except String ScalarSystem := do
+def System.buildObjects (commitment : Aiur.CommitmentParameters)
+    (fri : Aiur.FriParameters) : Except String System := do
   buildSystem (← objectsToplevel) `ixby_objects_exec commitment fri
 
-def ScalarSystem.claim (backend : ScalarSystem) (expected : Commitment.Statement) : Array Aiur.G :=
+def System.claim (backend : System) (expected : Commitment.Statement) : Array Aiur.G :=
   Aiur.buildClaim backend.entry (statementFields expected) #[]
 
-def ScalarSystem.execute (backend : ScalarSystem) (expected : Commitment.Statement)
+def System.execute (backend : System) (expected : Commitment.Statement)
     (programBytes inputBytes : Codec.Bytes) :
     Except String (Array Aiur.G × Aiur.IOBuffer × Array Aiur.QueryCount) :=
   backend.compiled.bytecode.execute backend.entry (statementFields expected)
     (artifactAdvice programBytes inputBytes)
 
-def ScalarSystem.prove (backend : ScalarSystem) (expected : Commitment.Statement)
+def System.prove (backend : System) (expected : Commitment.Statement)
     (programBytes inputBytes : Codec.Bytes) : Except String Aiur.Proof := do
   -- The current native prove FFI can abort on execution failure. Preflight
   -- turns malformed advice into an ordinary error; it does not replace any
@@ -81,7 +81,7 @@ def ScalarSystem.prove (backend : ScalarSystem) (expected : Commitment.Statement
 
 /-- Verifies the caller's expected statement, never an unchecked statement
 returned by a prover. Does not need artifact bytes or rerun the evaluator. -/
-def ScalarSystem.verify (backend : ScalarSystem) (expected : Commitment.Statement)
+def System.verify (backend : System) (expected : Commitment.Statement)
     (proof : Aiur.Proof) : Except String Unit :=
   backend.system.verify (backend.claim expected) proof
 
@@ -89,7 +89,7 @@ def ScalarSystem.verify (backend : ScalarSystem) (expected : Commitment.Statemen
 not a new IxBy artifact envelope or production deployment policy. The existing
 native decoder permits trailing bytes; exact canonical reserialization rejects
 them here. The size cap is local transport policy, not part of Exec semantics. -/
-def ScalarSystem.verifyBytes (backend : ScalarSystem) (expected : Commitment.Statement)
+def System.verifyBytes (backend : System) (expected : Commitment.Statement)
     (bytes : ByteArray) : Except String Unit := do
   if bytes.size > 64 * 1024 * 1024 then throw "IxBy experimental proof byte limit"
   let proof ← Aiur.Proof.ofBytesChecked bytes

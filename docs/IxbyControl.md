@@ -127,7 +127,7 @@ review before deployment.
 
 ## Host interface and checks
 
-`ScalarSystem.buildControl commitmentParameters friParameters` selects the
+`System.buildControl commitmentParameters friParameters` selects the
 control backend. It uses the same `execute`, `prove`, `verify`, and `verifyBytes`
 adapter as the original scalar system. Verification constructs the claim from
 the caller's expected statement and receives no execution advice. The existing
