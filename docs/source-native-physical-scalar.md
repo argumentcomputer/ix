@@ -137,8 +137,9 @@ own universal source-application theorem.
 
 Objects use the actual IxIR₁ graph root with lowering version **6**, policy
 version **1**, and policy name `physical-scalar-cfg/1`. Physical JSON is a full
-diagnostic snapshot, not a canonical IxIR₂ persistence format; I2 remains
-separate. The local reference ISA, immutable text mapping, system
+diagnostic snapshot. The separate [canonical IxIR₂ snapshot](ixir2-wire.md)
+contract is available without changing this native provenance format.
+The local reference ISA, immutable text mapping, system
 linker/loader, and compiler/runtime seed retain their existing trust boundaries.
 
 ## Reproduction and evidence

@@ -59,6 +59,7 @@ import Compilatrix.IxIR2.EvalCounter
 import Compilatrix.IxIR2.Lower
 import Compilatrix.IxIR2.LowerSim
 import Compilatrix.IxIR2.Pipeline
+import Compilatrix.IxIR2.WireBorrow
 import Compilatrix.IxIR2.PipelineSim
 import Compilatrix.IxIR2.LivenessExamples
 import Compilatrix.IxIR2.Reuse
@@ -7537,3 +7538,100 @@ actual ELF return, exact outside-memory frame and release of the byte result. -/
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.UniqueReuse.Runtime.AllocatingNative.Output.sourceRefinesObjects
+
+
+/-! Canonical bounded IxIR₂ snapshots, addressed ingress and exact checked-source
+program/context recovery. Raw codec laws need no hash-native axiom. -/
+
+/-- info: 'Compilatrix.IxIR.Bounded.getNatFuel_spec_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR.Bounded.getNatFuel_spec_le
+
+/-- info: 'Compilatrix.IxIR.Bounded.getListAcc_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR.Bounded.getListAcc_spec
+
+/-- info: 'Compilatrix.IxIR.Bounded.run_roundtrip' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR.Bounded.run_roundtrip
+
+/-- info: 'Compilatrix.IxIR.Bounded.run_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR.Bounded.run_spec
+
+/-- info: 'Compilatrix.IxIR2.Wire.Artifact.decodePreimage_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Artifact.decodePreimage_roundtrip
+
+/-- info: 'Compilatrix.IxIR2.Wire.Artifact.decodePreimage_canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Artifact.decodePreimage_canonical
+
+/-- info: 'Compilatrix.IxIR2.Wire.Artifact.decodePreimage_fits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Artifact.decodePreimage_fits
+
+/-- info: 'Compilatrix.IxIR2.Wire.Artifact.preimage_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Artifact.preimage_injective
+
+/-- info: 'Compilatrix.IxIR2.Wire.Artifact.address_eq_iff_preimage_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Artifact.address_eq_iff_preimage_eq
+
+/-- info: 'Compilatrix.IxIR2.Wire.Encoded.roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Encoded.roundtrip
+
+/-- info: 'Compilatrix.IxIR2.Wire.Addressed.root_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Addressed.root_eq
+
+/-- info: 'Compilatrix.IxIR2.Wire.Addressed.matches' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Addressed.matches
+
+/-- info: 'Compilatrix.IxIR2.Wire.Ingress.validated' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.Ingress.validated
+
+/-- info: 'Compilatrix.IxIR2.Wire.ofCompiled_context' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofCompiled_context
+
+/-- info: 'Compilatrix.IxIR2.Wire.ofCompiled_roundtrip' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofCompiled_roundtrip
+
+/-- info: 'Compilatrix.IxIR2.Wire.ofCompiled_matches' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofCompiled_matches
+
+/-- info: 'Compilatrix.IxIR2.Wire.ofCallReuse_validated' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofCallReuse_validated
+
+/-- info: 'Compilatrix.IxIR2.Wire.ofCallReuse_matches' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofCallReuse_matches
+
+/-- info: 'Compilatrix.IxIR2.Wire.ofBorrow_validated' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofBorrow_validated
+
+/-- info: 'Compilatrix.IxIR2.Wire.ofBorrow_matches' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR2.Wire.ofBorrow_matches

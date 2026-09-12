@@ -18,6 +18,13 @@ stable-file/directory barriers. Address-exact double compilation remains
 active; streaming/sharded index maintenance and cross-store scheduling remain
 later scaling work.
 
+The [IxIR₂ snapshot contract](ixir2-wire.md), delivered 2026-09-12, adds
+independent complete-body identity under `ixir2-snapshot/1`. It uses the same
+primitive grammar with strict bounded decoding and kernel proofs, while
+retaining logical declaration keys inside one finite program/context
+snapshot. This page continues to define the separate IxIR₀/IxIR₁ declaration
+and mutual-block formats and address-transport obligations.
+
 IxIR₀ and IxIR₁ now have explicit, versioned BLAKE3 preimages in
 `Compilatrix/IxIR0/Serialize.lean` and
 `Compilatrix/IxIR1/Serialize.lean`. The common primitives live in

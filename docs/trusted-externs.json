@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "last_reviewed": "2026-09-11",
+  "last_reviewed": "2026-09-12",
   "policy": {
     "owner": "Compilatr.ix maintainers",
     "platform_baseline": "x86_64-linux",
@@ -101,7 +101,7 @@
         }
       ],
       "semantics_assumed": "The active init/update/finalize path returns the standard BLAKE3 extendable-output hash of exactly the supplied bytes; a 32-byte request returns the standard 256-bit digest. The FFI respects Lean ownership, lifetime, array-size, and C-ABI contracts. Uncalled keyed, derive-key, and version exports are covered because importing Blake3.Rust makes them reachable to downstream Lean code, but Compilatr.ix does not currently rely on their results. The sibling Blake3.C module binds the vendored C implementation behind six c_blake3_* externs; Compilatr.ix does not import it, so they are inventoried as present-but-unimported and any drift in the package tree's extern set fails the check.",
-      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1✝ because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length.",
+      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1✝ because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality.",
       "trust_basis": [
         "Blake3.lean and lean-ffi are revision-pinned",
         "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
@@ -109,7 +109,8 @@
         "the compiled tests check the official empty-input vector, determinism, input sensitivity, a complete serialized-constant address, complete IxIR0/IxIR1 declaration preimage addresses, dependency-rekeyed generated IxIR1 declaration digests, executable semantic audits, protected source identities, and version-3 recursively field-aware HPT cache/summary identities through deterministic production, persistent checked ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, power-loss-durable sibling staging for snapshots and indexed chunks with ignored orphan transactions, lazy stale-corruption isolation, file-backed corruption recovery, depth-two fetch/case refinement with exact and one-below depth limits, checked case-binder field recovery through both the ordinary checker and deterministic producer, checked finite-constructor case pruning, PAP fusion across all saturation classes, exact scalar fetch forwarding after allocation and reuse, rooted declaration/SCC removal with exported-root and dynamic-apply fallbacks through deterministic one-rebuild graph regressions, and a compiler-emitted six-to-one stored-function reduction that preserves its exact constructor result",
         "Nix builds the Rust static library in a sandbox and records its closure",
         "the source-borrow gate checks eighteen accepted Ixon call chains, full caller/callee reconstruction, independent complete heap execution, actual RC reduction, checked baseline fallback, and thirteen corrupted artifacts; its four indexed source fences retain the existing addressed-source hash dependency while six core borrow fences use only propext and Quot.sound",
-        "the source-borrow-runtime gate checks nine accepted open source functions, 144 independent direct/PAP comparisons, nine aliased lenders, exact baseline fallback, and twenty corrupted artifacts; structural proofs select before runtime arguments arrive and derive source/function/continuation preservation and complete owned-input reclamation with two fewer RC ticks and unchanged peak; ten new core/source-shape/input fences use only existing logical axioms and five indexed source fences retain the addressed-source hash dependency"
+        "the source-borrow-runtime gate checks nine accepted open source functions, 144 independent direct/PAP comparisons, nine aliased lenders, exact baseline fallback, and twenty corrupted artifacts; structural proofs select before runtime arguments arrive and derive source/function/continuation preservation and complete owned-input reclamation with two fewer RC ticks and unchanged peak; ten new core/source-shape/input fences use only existing logical axioms and five indexed source fences retain the addressed-source hash dependency",
+        "the version-1 IxIR2 snapshot gate uses an independent strict binary parser, complete source/program/context inspection views, fixed expected roots, and two fresh artifact sets; twenty exact axiom fences distinguish hash-independent codec laws from the existing addressed-source dependency"
       ],
       "tests": [
         "Tests.expectedEmptyBlake3",
@@ -160,7 +161,8 @@
         "Tests.HPTFixtures.caseBinderAcceptedFact_sound",
         "Tests.HPTFixtures.aliasReuseRegressionOk",
         "Tests.HPTFixtures.aliasReuseAcceptedFact_sound",
-        "the source-space gate checks nine actual Ixon maps, 555 complete heap/frame prefixes, six fuel/representation boundaries, 65 native arena byte budgets, two fresh artifact sets and thirteen corruptions; nineteen fences preserve the ordinary logical basis, with the same existing Blake3 dependency in the three source/compiled-map/native-object compositions"
+        "the source-space gate checks nine actual Ixon maps, 555 complete heap/frame prefixes, six fuel/representation boundaries, 65 native arena byte budgets, two fresh artifact sets and thirteen corruptions; nineteen fences preserve the ordinary logical basis, with the same existing Blake3 dependency in the three source/compiled-map/native-object compositions",
+        "the ixir2-identity gate checks twelve complete canonical snapshots, ten actual Ixon source execution/reclamation roundtrips, fifty-one identity mutations, fifty-six syntax/resource/ingress boundaries, all 18,802 proper-prefix rejections, eight file-size boundaries, and fifteen independent artifact/report corruption regressions"
       ],
       "retirement": {
         "milestone": "post-M3 verified primitives",
@@ -675,10 +677,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "caf3dc08484ae1d992e9b220bab661ab67c0b4a837c8213c99e2b93fd9a1e271",
+      "flake.nix": "f39fc21a97ecddca9708662435e56a5397b1a77b31f2746e4380c924b86f1257",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "9b7257af9c6a4ed53fa370162c316c560ad948cc676f897fa38fff72ee1ae774",
+      "lakefile.lean": "2994b45916f68c81889ae85756029f725baf4caa30da4b029901fb57f93dc362",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -768,7 +770,10 @@
       "scripts/CheckSourceNativeAllocating.lean": "00ea1f4bd71fa9b4744755b56a4382e8c8bdce063de91801ad0e2f1b48e2e236",
       "fixtures/source-native-allocating/native_harness.c": "105ccf4451260541c9439f1dbd30b80c892bc173e0e0089add520be367b0817d",
       "fixtures/source-native-allocating/expected.json": "45eda5a49a1a673ed6fcec67845a48050d4e37be50b452b0179e57ea4ea5252d",
-      "fixtures/source-native-allocating/expected-counter-fold.json": "13a1f8cdfef9afc124c3bd31e3beda857d10c292f3d1de2981f24dbc96819aea"
+      "fixtures/source-native-allocating/expected-counter-fold.json": "13a1f8cdfef9afc124c3bd31e3beda857d10c292f3d1de2981f24dbc96819aea",
+      "scripts/CheckIxIR2.lean": "0270ea2862506ecc3754275adcf98a1b00a4c574067599d242d1254b3f7b72bc",
+      "Compilatrix/Tools/IxIR2Check.lean": "57d3e14b194a232b7ed56499a4dcbe988df8bda1634e4ab6c49d983a5da8bbd8",
+      "fixtures/ixir2/expected.json": "9ec6cdd4b7036f66e797b5456b4ff47fb33a0bb14bbbc1d527bf820a91e2f15c"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

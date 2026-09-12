@@ -90,6 +90,9 @@ import Compilatrix.IxIR1.LowerAddressedSim
 import Compilatrix.IxIR1.LowerMutualAddressedSim
 import Compilatrix.IxIR1.LowerMutualAddressedProgress
 import Compilatrix.IxIR2.Basic
+import Compilatrix.IxIR2.Decode
+import Compilatrix.IxIR2.WireBorrow
+import Compilatrix.IxIR2.WireIO
 import Compilatrix.IxIR2.Validate
 import Compilatrix.IxIR2.ValidateExamples
 import Compilatrix.IxIR2.Liveness

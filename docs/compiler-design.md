@@ -98,20 +98,25 @@ Keep three kinds of information distinct:
 - **Representations:** layouts and specialized definitions are compiler
   outputs whose identities include the evidence and policies selecting them.
 
-An artifact key commits to exact input/dependency roots, checker/domain and
-wire versions, resource limits, transformation/growth policy, and any
-representation-sensitive target ABI. Key and store SCC artifacts atomically.
+An artifact key commits to exact bodies, input/dependency roots, checker/domain
+and wire versions, transformation policy, and representation-sensitive layout
+inputs. A cache of checked evidence additionally commits to the resource and
+growth budgets and semantic premises governing that evidence. Consumer read
+budgets are separate from byte identity. Key and store SCC evidence atomically.
 Transport across a rebuilt address namespace requires a theorem; inherited
 keys do not become hashes of changed bodies.
 
 The [IxIR addressing contract](ixir-content-addressing.md) and
 [HPT certificate/cache discipline](hpt-certificates.md) are the model for
 strict decoding, bounded checking, dependency invalidation, and local repair.
-Until the roadmap's I2 gate closes, IxIR₂-scoped transient artifacts and
-native provenance use the actual IxIR₁ root plus deterministic lowering/pass
-policy. They do not advertise independent IxIR₂ persistence or body identity.
-The initial IxIR₂ codec will commit to block order; renumbering is a separate
-checked transform.
+[Canonical IxIR₂ snapshots](ixir2-wire.md) now commit to complete ordered
+programs and finite validation contexts under `ixir2-snapshot/1`. Strict
+bounded ingress and checked-source recovery provide independent snapshot
+identity. Logical declaration keys are retained, and block renumbering is a
+separate checked transform. Existing native provenance continues to use the
+actual IxIR₁ root plus deterministic lowering/pass policy until that consumer
+explicitly adopts the new format. Snapshot identity alone establishes neither
+source derivation nor the ABI meaning of supplied layout bytes.
 
 ## Ownership, borrowing, and reuse
 

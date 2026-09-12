@@ -1,6 +1,6 @@
 # Compilatr.ix roadmap
 
-Reviewed 2026-09-11. This page owns priorities, delivery state, acceptance
+Reviewed 2026-09-12. This page owns priorities, delivery state, acceptance
 criteria, and activation gates. [Compiler design](compiler-design.md) explains
 the decisions; [development and validation](development-plan.md) explains how
 to land a change. The [documentation guide](README.md) indexes the contracts
@@ -34,7 +34,7 @@ can proceed independently when their prerequisites are available.
 | [N3: compositional native lowering](#n3-compositional-native-lowering) | scalar/capture slices and first allocating helper delivered | Runtime source application, static capture, closure reclamation, branches/joins, direct calls, and a live reservation across an allocating native helper with finite heap/stack source-to-ELF contracts. General allocating CFG selection, runtime/heap captures, and broader recursion remain extensions. |
 | [PERF3: optimization and compiler scaling](#performance-measurement) | first paired optimization delivered; scaling next | The [checked counter fold](performance/counter-fold-2026-09-10/README.md) has source-to-object preservation, full-matrix paired measurements and retained replay, with the byte-identical baseline selectable. Broader scaling experiments retain their own gates. |
 | [F1: finite heap and stack](#f1-finite-heap-and-stack) | first heap/call slice delivered | Versioned occupied/committed bytes and explicit caller frames, finite physical execution, source-map adequacy/reclamation, and the exact native list arena bound. The first allocating native helper is delivered; general allocating CFGs, allocator reuse/fragmentation and traversal workspace remain open. |
-| [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | next | Before independent IxIR₂ persistence, cache keys, or self-hosted intermediate-root comparison. Land the strict codec and exact versioned preimages. |
+| [I2: canonical IxIR₂ identity](#i2-canonical-ir-identity) | complete snapshots delivered | Strict bounded `ixir2-snapshot/1`, exact versioned full-body/context preimages, kernel roundtrip/canonicality and checked-source recovery, with independent malformed/resource/mutation/fresh-process checks. Renumbering and modular certification remain separate. |
 | [I3: modular source certification](#i3-modular-source-certification) | deferred | Wake before increasing the default 512 certificate-candidate limit or attempting the compiler's full source closure. Compose independently checked units and reuse unaffected evidence after a dependency edit. |
 | [A1: allocation and spill validation](#a1-allocation-and-spill-validation) | deferred | Wake when an actual selected CFG needs general allocation, moves, or spills. Validate value flow through the allocated program, including calls and joins. |
 
@@ -161,20 +161,24 @@ Acceptance:
 
 ### I2: canonical IR identity
 
-Until this gate closes, native provenance uses the actual IxIR₁ root plus
-lowering/pass/native policy versions. Diagnostic JSON and inherited
-declaration keys are not independently addressed IxIR₂ bodies.
+Delivered: [canonical complete IxIR₂ snapshots](ixir2-wire.md) under
+`ixir2-snapshot/1`, with strict bounded decoding, roundtrip on an explicit
+representable domain, and canonicality of every accepted byte sequence.
+Exact preimages cover signatures, capabilities, schemas, layout bytes,
+scalar facts, dependencies, policies, ordered bodies, and terminators.
+Addressed ingress checks the decoded finite context with consumer budgets;
+source adapters recover the exact checked program/context under the existing
+pairwise hash-collision premise. The independent Nix gate freezes source
+roundtrips, malformed/resource/mutation cases and two fresh artifact sets.
 
-Acceptance:
-
-- Strict bounded decoding, canonical encoding, roundtrip on the declared
-  representable domain, and global accepted-byte canonicality.
-- Exact versioned preimages covering signatures, capabilities, schemas,
-  layouts, dependencies, policies, block order, instructions, and terminators.
-  Canonical block renumbering is a separate checked pass.
-- Canonicality, malformed-input, resource-limit, mutation, and fresh-process
-  artifact checks before advertising an IxIR₂ wire version or using its
-  roots for independent persistence/cache identity.
+The root commits to complete bodies while retaining logical declaration keys.
+It supplies independent snapshot identity without renumbering blocks or
+rekeying recursive groups. Canonical renumbering, durable storage, and I3
+modular evidence composition retain separate obligations. Native provenance
+continues to use its existing IxIR₁-plus-policy format until a consumer
+explicitly adopts the snapshot contract; diagnostic JSON remains an
+inspection view. Metadata parsing alone does not certify source origin or
+the target ABI of a supplied layout descriptor.
 
 ### I3: modular source certification
 
@@ -195,7 +199,8 @@ Acceptance:
 - Bound per-unit and aggregate work, measure checking cost and certificate
   size, and demonstrate a larger accepted closure assembled from bounded
   units before increasing the monolithic defaults. Independent IxIR₂ evidence
-  persistence requires I2; native linking retains its separate ABI obligation.
+  persistence can use the delivered I2 snapshot identity; native linking
+  retains its separate ABI obligation.
 
 ### A1: allocation and spill validation
 
@@ -356,7 +361,7 @@ fuel-exhausted run is not evidence of divergence; see
 | X1: small executable checker | next after a suitable accepted native family | Compile a pure bounded certificate/codec checker. Connect its source specification and actual source representation to the generated implementation's acceptance result; quantify over admitted inputs and name byte/ISA/loader dependencies. Fence the theorem and compare independent runs, including rejection cases. |
 | Theory bridge | next with a pinned public interface | Prove erasure adequacy against public lean4ix and ix's checker-verification interface. Bridge to that theory rather than vendor a local replacement. |
 | Mode conservativity | next with the theory bridge | Prove the `many/shared` fragment conservative and that Uses/Owned add no definitional-equality rules. Operational compiler preservation alone does not establish this. |
-| [Seed and artifact reproducibility](#reproducible-optimization-and-artifacts) | next before self-hosting | Specify the Gen-0 toolchain, attestation and runtime closure, exact comparison layer, and analysis-choice policy. Compare artifacts across cold/warm caches and supported scheduling orders under that policy. Independent IxIR₂ roots require I2. |
+| [Seed and artifact reproducibility](#reproducible-optimization-and-artifacts) | next before self-hosting | Specify the Gen-0 toolchain, attestation and runtime closure, exact comparison layer, and analysis-choice policy. Compare artifacts across cold/warm caches and supported scheduling orders under that policy. Independent IxIR₂ comparison can use I2 snapshot roots. |
 | Full compiler executable and Gen 1 | deferred until source/runtime closure is accepted | Extend X1 to the actual compiler, cover every required recursion form, and compile its closure natively. The resulting compiler must rebuild a successor within a stated practical budget and retain the same checked boundaries. |
 | Gen 2 and diverse double compilation | deferred until Gen 1 rebuilds | Compare a self-built successor at the declared byte/address layer, then document an independently seeded comparison. Keep reproducibility, seed provenance, and executable correctness as separate claims. |
 
@@ -422,6 +427,7 @@ belong in those references.
 | Boundary | Delivered scope and continuing limit |
 | --- | --- |
 | Ingress and identity | Strict [Ixon codecs/sharing](ixon-v2-wire.md), bounded [catalog ingress](catalog-ingress.md), and cycle-safe [IxIR₀/IxIR₁ addressing](ixir-content-addressing.md). The full Std catalog retains a downstream rejection. |
+| I2 snapshots | [Canonical IxIR₂ identity](ixir2-wire.md): complete ordered programs and finite contexts, bounded codec proofs, addressed ingress, exact checked-source recovery, and an independent fresh-process gate. Logical declaration keys are retained; modular certification and durable storage remain separate. |
 | Validated source and O1 | [Source preservation](simulation-strategy.md), owned IxIR₁, checked [HPT](hpt-certificates.md), and five [shrinking consumers](optimizer-harness.md). Source sharing/oracle premises remain explicit; the optimized universal counter law is `frees ≤ allocs`. |
 | Baseline IxIR₂ and R1–R4 | [Checked CFG lowering](ixir2-spec.md), physical baseline transport, selected shared reuse, fallback, reclamation, allocation/free comparison, and RC/peak-live bounds in the accepted compiler domain. |
 | C1/N1 | [Bounded coverage](source-coverage.md) and synthetic exact-Word scalar native entries, with complete fresh-process artifacts. |

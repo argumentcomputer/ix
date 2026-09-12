@@ -155,12 +155,15 @@ def deriveRecursorOrigins
 constructor identity. No reuse credit is emitted by this lowering, but using
 the final representation key now prevents the two ownership worlds from being
 accidentally conflated by later passes. -/
-def baselineLayout (world : Owned) (identity : CtorId) : LayoutId :=
-  Address.blake3
-    (ByteArray.mk #[0x63, 0x78, 0x32, 0x6c, 0x61, 0x79, 0x30, 0x00] ++
-      Encoding.tag world.toBits ++ identity.bytes)
+def baselineLayoutPreimage (world : Owned) (identity : CtorId) : ByteArray :=
+  ByteArray.mk #[0x63, 0x78, 0x32, 0x6c, 0x61, 0x79, 0x30, 0x00] ++
+    Encoding.tag world.toBits ++ identity.bytes
 
-private def schema? (constructors : List ConstructorInfo)
+def baselineLayout (world : Owned) (identity : CtorId) : LayoutId :=
+  Address.blake3 (baselineLayoutPreimage world identity)
+
+/-- Finite constructor-table lookup shared with canonical snapshot export. -/
+def schema? (constructors : List ConstructorInfo)
     (world : Owned) (identity : CtorId) : Option CtorSchema := do
   let info ← constructors.find? fun candidate =>
     candidate.identity == identity

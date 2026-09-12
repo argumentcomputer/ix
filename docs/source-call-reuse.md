@@ -201,9 +201,12 @@ addressed IxIR₁ graph root, ordered HPT roots, lowering depth/version, pass
 version, selected execution policy, selection outcome, and optional source
 specialization policy/address. Each case verifies that changing execution
 policy changes both the preimage and its digest.
-This is IxIR₁-plus-policy provenance. IxIR₂ diagnostic JSON has no wire,
-persistence, or cache identity claim; a canonical IxIR₂ codec remains future
-work. The new checker and reviewed report are pinned in the trust ledger.
+This is IxIR₁-plus-policy provenance. The separate
+[canonical snapshot format](ixir2-wire.md) now commits to complete IxIR₂
+bodies and contexts; `Wire.ofCallReuse` exports the actual selection with exact
+program/context and validation proofs. This provenance format retains its
+existing contract, and diagnostic JSON remains an inspection view. The checker
+and reviewed report are pinned in the trust ledger.
 
 [Finite storage across calls](finite-space.md) adds a separately versioned
 Word-valued space model and finite runner over these same selected programs.

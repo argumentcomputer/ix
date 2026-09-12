@@ -112,6 +112,7 @@
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
             ./SourceSpace.lean
+            ./IxIR2Fixture.lean
             ./SourceUniqueReuse.lean
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
@@ -129,6 +130,7 @@
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
+            ./fixtures/ixir2
             ./fixtures/source-unique-reuse
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
@@ -167,6 +169,7 @@
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
             ./SourceSpace.lean
+            ./IxIR2Fixture.lean
             ./SourceUniqueReuse.lean
             ./SourceNativeUnique.lean
             ./SourceNativeRuntime.lean
@@ -184,6 +187,7 @@
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
+            ./fixtures/ixir2
             ./fixtures/source-unique-reuse
             ./fixtures/source-native-unique
             ./fixtures/source-native-runtime
@@ -404,6 +408,23 @@
             ./.lake/build/bin/check-source-space \
               --fixture ./.lake/build/bin/source-space \
               --expected ${auditSrc}/fixtures/source-space/expected.json
+          '';
+        };
+
+        # Strict bounded IxIR₂ wire identity, source-produced snapshots,
+        # independent decoding, and exact fresh-process artifact replay.
+        ixir2Check = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "ixir2-fixture";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-ixir2
+            ./.lake/build/bin/check-ixir2 \
+              --fixture ./.lake/build/bin/ixir2-fixture \
+              --expected ${auditSrc}/fixtures/ixir2/expected.json
           '';
         };
 
@@ -697,6 +718,7 @@
           source-recursion = sourceRecursionCheck;
           source-call-reuse = sourceCallReuseCheck;
           source-space = sourceSpaceCheck;
+          ixir2-identity = ixir2Check;
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;
           source-native-runtime = sourceNativeRuntimeCheck;

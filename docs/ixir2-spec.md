@@ -1,6 +1,6 @@
 # IxIR₂ v0 specification
 
-Editorial review: 2026-09-11. Syntax and execution-policy contracts are unchanged.
+Editorial review: 2026-09-12. Syntax and execution-policy contracts are unchanged.
 
 This document freezes the first IxIR₂ semantic data model. It is normative for
 the v0 syntax, ownership-flow checker,
@@ -33,13 +33,14 @@ is attached in [`IxIR2/PipelineSim.lean`](../Compilatrix/IxIR2/PipelineSim.lean)
 transports its exact execution to the physical baseline using the checked
 absence of credit operations. The [general credit refinement](credit-refinement.md)
 now covers both policies and the full instruction language, with explicit
-logical root ownership for complete reclamation. The codec remains a separate
-gate; the [roadmap](roadmap.md) records its state.
+logical root ownership for complete reclamation. The separately versioned
+[canonical snapshot codec](ixir2-wire.md) now supplies strict bounded
+decoding, exact full-body/context identity, and checked-source recovery.
 
-The freeze covers the in-memory Lean model and proof interfaces. Numeric wire
-tags and a persistent codec are not frozen yet. No artifact may advertise a
-stable `IxIR2/v0` wire version until the strict decoder, canonical encoder, and
-content-address preimages are documented alongside their executable guards.
+This specification freezes the in-memory Lean model and proof interfaces.
+The wire contract freezes numeric tags and complete preimages under
+`ixir2-snapshot/1`, independently of semantic v0 and the two credit policies.
+Diagnostic JSON has no wire identity role.
 
 Read this specification in three parts: [syntax and capabilities](#program-and-identifier-model),
 [ownership and execution](#ownership-flow-judgment), and
@@ -78,9 +79,11 @@ the closed extern boundary until a separate ownership ABI reopens it.
 
 ## Program and identifier model
 
-Top-level declaration identity continues to use ordinary declaration hashes
-and cycle-safe mutual-block identities. A function's blocks are local to that
-function and therefore do not create address cycles.
+Top-level declaration keys are logical symbols inherited from the addressed
+IxIR₁ graph or introduced by checked specialization. They do not become
+hashes of changed IxIR₂ bodies. The canonical snapshot root commits to all
+actual bodies and their ordered finite context, including recursive logical
+references. A function's blocks are local to that function.
 
 The v0 model uses three disjoint natural-number namespaces:
 
@@ -94,7 +97,8 @@ Blocks are stored in an array and `BlockId` is its index. Block `0` is the
 entry block. Value and credit identifiers are block-local definition ordinals:
 block parameters occupy the initial ordinals, and each instruction appends its
 results in the order specified below. Instructions carry no arbitrary result
-names. This makes alpha-equivalent blocks byte-identical once a codec lands.
+names. The snapshot codec preserves these local ordinals and the given block
+order. Renumbering blocks remains a separate checked transform.
 
 Every cross-block value is transferred through an explicit block parameter.
 An edge cannot refer directly to a register defined in another block.
@@ -728,7 +732,9 @@ domain, nine hot/cold/mixed source executions, 35 policy/rejection checks,
 complete fresh-process snapshots, and independent reservation/cost corruption
 checks. Canonical provenance includes the addressed IxIR₁ graph, HPT roots,
 source root, and lowering/pass/execution/specialization policies. Diagnostic
-IxIR₂ JSON is not a persistent identity.
+IxIR₂ JSON is not a persistent identity. The separate
+[snapshot format](ixir2-wire.md) commits to the actual selected program and
+context through the checked call-reuse adapter.
 
 ## Executable validation and resource limits
 
@@ -868,5 +874,5 @@ peak-live results and native ABIs retain their separate meanings.
 The in-memory syntax and semantics support static unique and dynamic shared
 reuse with the same ownership/layout contracts. Extend them through separately
 checked passes and explicit policy versions. The [roadmap](roadmap.md) owns
-remaining work, including general native selection and canonical IxIR₂ identity;
+remaining work, including general native selection and modular certification;
 this specification does not maintain a second implementation queue.

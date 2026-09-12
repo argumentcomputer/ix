@@ -227,6 +227,31 @@ the same native BLAKE3 exception already required by checked HPT production
 and the final content-address rebuild; the attachment introduces no new
 trusted primitive.
 
+## Canonical IxIR₂ snapshot boundary
+
+The [version-1 snapshot codec](ixir2-wire.md) adds complete ordered program and
+finite-context identity using the existing BLAKE3 interface. Kernel roundtrip,
+accepted-byte canonicality, representable-domain injectivity, and bounded
+reader proofs use only the existing logical axioms. Addressed ingress and
+checked-source recovery retain the existing native hash exception, with an
+explicit pairwise collision premise when equal roots recover exact artifacts.
+Twenty cones are pinned in `Compilatrix/Fence.lean`.
+
+Ingress checks the supplied root, finite metadata coherence, layout-preimage
+hashes, and the actual policy-indexed ownership validator. Source origin,
+scalar-fact truth, and ABI interpretation of opaque layout descriptors retain
+their semantic premises. The source adapters prove equality with the original
+checked program/context, allowing existing source evidence to transport to
+decoded snapshots. Logical declaration keys remain unchanged inside the
+complete snapshot.
+
+The integrity-pinned independent gate checks two fresh artifact sets, exact
+golden roots, complete binary/JSON agreement, source execution and reclamation,
+malformed/resource/identity mutations, and corruption rejection. The bounded
+file reader uses existing Lean IO and promises an input cap, not a durable
+transaction. No native interface, symbol, seed assumption, or target-ISA
+assumption is added or retired by this boundary.
+
 ## Active native interface: durable filesystem synchronization
 
 | Field | Ledger value |

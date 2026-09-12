@@ -51,6 +51,10 @@ lean_exe «source-call-reuse» where
 lean_exe «source-space» where
   root := `SourceSpace
 
+/- Canonical IxIR₂ snapshots and source-produced persistence witnesses. -/
+lean_exe «ixir2-fixture» where
+  root := `IxIR2Fixture
+
 /- Unique-major recursor and static-reuse source observations. -/
 lean_exe «source-unique-reuse» where
   root := `SourceUniqueReuse
@@ -123,6 +127,10 @@ lean_exe «check-source-call-reuse» where
 lean_exe «check-source-space» where
   srcDir := "scripts"
   root := `CheckSourceSpace
+
+lean_exe «check-ixir2» where
+  srcDir := "scripts"
+  root := `CheckIxIR2
 
 lean_exe «check-source-unique-reuse» where
   srcDir := "scripts"

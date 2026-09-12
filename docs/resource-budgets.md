@@ -1,6 +1,6 @@
 # Structural resource budgets
 
-Last reviewed 2026-08-26.
+Ixon budget policy reviewed 2026-08-26; IxIR₂ snapshot limits added 2026-09-12.
 
 Corpus-facing execution uses deterministic structural budgets rather than
 wall-clock timeouts.  A timeout depends on the host and can interrupt after an
@@ -67,6 +67,33 @@ bounded local validation, bounded exact local canonicalization, and BLAKE3;
 `addressIxonV2Checked[With]` wrapper and exact pinned-ix canonicalizer under the
 same two limits. The transparent `address?` predicate remains the local
 theorem-facing identity API.
+
+## IxIR₂ snapshot ingress
+
+The separately versioned [snapshot codec](ixir2-wire.md) uses inclusive
+consumer-supplied `IxIR.Bounded.Limits`:
+
+| Counter | Default |
+| --- | ---: |
+| complete framed bytes | 16 MiB |
+| bytes per LEB128 natural, including lengths | 64 |
+| elements in any one sequence | 65,536 |
+| bytes in any one blob or UTF-8 string | 1 MiB |
+
+The input cap precedes parsing, and sequence/blob counts are checked before
+traversal. The grammar has fixed nesting depth; list readers use an
+accumulator. File ingress reads at most the cap plus one byte and rejects
+oversize input without depending on a prior file-size observation. Rejections
+use `Except String`; the Ixon `Work.Exceeded` record above is unchanged.
+
+`Artifact.Fits` exposes the exact recursive representable domain and total
+encoded size for roundtrip proofs. `encodeChecked` checks nested bounds before
+encoding and total bytes after constructing the encoding; it does not promise
+a total allocation preflight on an already supplied in-memory artifact.
+Addressed ingress separately applies the existing ownership checker under
+consumer-supplied `IxIR2.Validate.Limits`. Read/check budgets do not change the
+canonical snapshot root; caches of acceptance evidence must separately key
+their applicable budgets and premises.
 
 ## Compilation-unit preflight
 

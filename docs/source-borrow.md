@@ -71,8 +71,10 @@ round, followed by one no-change round: `depth + 3` attempts and summaries.
 
 Borrowed entries receive deterministic labels under
 `compilatrix/borrowed-entry/1\0`. A collision with any declaration is rejected.
-These are transient internal labels, not canonical IxIR₂ body identities,
-wire-format roots, or cache keys. IxIR₂ persistence still waits for I2.
+These remain logical internal labels. The separate
+[canonical IxIR₂ snapshot](ixir2-wire.md) root commits to all actual selected
+bodies while retaining those labels. `Wire.ofBorrow` exports the actual
+selection or fallback with exact program/context and validation proofs.
 
 ## Semantic and resource certificates
 

@@ -30,6 +30,7 @@ performance reports preserve evidence from their recorded revisions.
 | [Catalog ingress](catalog-ingress.md) | ix catalog manifests, anonymous expressions, roots, coherence, and aggregate limits |
 | [Corpus contact](corpus-contact.md) | Pinned production Std catalog and its current acceptance boundary |
 | [IR content addressing](ixir-content-addressing.md) | Declaration/mutual-block preimages, readdressing, and provenance |
+| [IxIR₂ snapshot identity](ixir2-wire.md) | Versioned complete-body preimages, bounded strict codec, finite-context ingress, and source roundtrip proofs |
 | [HPT certificates](hpt-certificates.md) | Result-shape analysis, checked consumers, bounded production, and persistent caches |
 | [Optimizer harness](optimizer-harness.md) | Pass policy, semantic attachment, reports, and fallback |
 | [Resource budgets](resource-budgets.md) | Ingress, compilation, evidence, and cache limits |
