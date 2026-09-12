@@ -1,8 +1,9 @@
 # Experimental IxBy / Flock native workspace
 
 This independent workspace starts the generic IxBy execution backend. Its
-current implementation contains reusable primitive gates and labelled native
-gadget proof regressions, not an IxBy interpreter or certified Stage 2 verifier.
+current implementation contains reusable primitive gates, constrained bounded
+bank access, and labelled native gadget proof regressions, not a complete IxBy
+interpreter or compiled Stage 2 verifier.
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
 or `ix-terminal` dependency. Test-only Plonky3 field crates provide arithmetic
 differential oracles at the same revision used by the original tests.
@@ -37,7 +38,7 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The current ordinary suite passed 30 tests. The two real conformance proofs
+The current ordinary suite passed 36 tests. The two imported conformance proofs
 are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 
@@ -61,3 +62,39 @@ The new backend must instantiate the proof-free setup contract in
 compile one fixed interpreter topology per approved capacity/primitive class.
 Guest code, branch outcomes, private input, Stage 2 keys, and witness geometry
 must not determine its setup. See `docs/IxbyExec.md` for the theorem boundary.
+
+## Generic interpreter access component
+
+`host/src/ixby/access.rs` implements setup-capacity-only selector-based reads
+for banks of 1–32 F128 words. Full 32-bit indices and live lengths are
+constrained; selectors are computed from those bits, never supplied as
+untrusted one-hot advice. Disabled reads require a zero index and return zero.
+All cells outside the live prefix must be zero. The wiring wrapper pins every
+validity residual to a verifier-owned zero word. Payload type/bytecode
+admission and complete machine transitions remain separate, unfinished work.
+
+The count-only emitter now retains instance-specific setup parameters and
+does not materialize bank tables while counting. Count/emit tests compare
+counts, I/O schemas, and exact A/B matrices. Constraint tests cover every
+index/live length for representative capacities through 32, high index and
+control bits, all padding-bit mutations, and every forged output bit.
+
+An opt-in conformance test proves three distinct access patterns under the
+same fixed setup, each with a 107,763-byte Flock bundle. Its verifier rebuilds
+only setup and consumes externally expected public words, without evaluating
+the gate. It rejects changed public words, changed proof bytes, truncation,
+trailing bytes, and the old arithmetic-conformance transcript domain.
+These are **bank-access gadget proofs**, not authenticated program execution,
+Stage 3 Exec statements, or terminal compact proofs.
+
+Repeated proving exposed a zerocheck failure when the new driver honored the
+padding-elision hint on reused buffers. The bank driver therefore explicitly
+zeroes all padding even when elision is offered. Poisoned-buffer tests cover
+both flag values and empty/partial counts; repeated changed-input proofs pass
+in one process. No upstream source or dependency pin was changed. This
+prototype's full zero-fill cost must be included in future resource censuses.
+
+```sh
+RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
+  --workspace ixby::access::proof_tests:: -- --ignored --test-threads=1
+```

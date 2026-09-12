@@ -86,6 +86,13 @@ Terminal setup consumes that compiled generic verifier artifact plus terminal
 protocol, implementation, and SRS identities. These are typed interfaces;
 the native compilers and their constraint soundness are still to be supplied.
 
+The native interpreter work now has a constrained bounded-bank access gate,
+including live-prefix padding, disabled access, and full-index range checks.
+Different reads have real Flock conformance proofs under the same setup.
+This is an access component only: canonical image/input authentication,
+instruction decoding, frame/control transitions, halting, output binding,
+and the complete constraint-to-`Codec.Evaluates` theorem remain unfinished.
+
 Application policy must pin the exact source declaration closure/version,
 compiler configuration, ABI, semantic profile, image bytes, and execution-
 reflection certificate. Approving a guest is separate from compiling the

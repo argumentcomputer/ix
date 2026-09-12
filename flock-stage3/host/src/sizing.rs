@@ -18,17 +18,18 @@ use flock_prover::{
 
 /// Cheap arity metadata, checked against every finished production table.
 pub trait CountedGate: GateType {
-  const INPUTS: usize;
-  const OUTPUTS: usize;
-  fn table_at(nu: usize) -> TableType;
+  fn input_count(&self) -> usize;
+  fn output_count(&self) -> usize;
+  /// Preserve setup-owned gate parameters while changing only the row domain.
+  fn table_at(&self, nu: usize) -> TableType;
 }
 
 macro_rules! counted_gates {
   ($($gate:ty => ($inputs:literal, $outputs:literal)),+ $(,)?) => {
     $(impl CountedGate for $gate {
-      const INPUTS: usize = $inputs;
-      const OUTPUTS: usize = $outputs;
-      fn table_at(nu: usize) -> TableType { Self { nu }.table() }
+      fn input_count(&self) -> usize { $inputs }
+      fn output_count(&self) -> usize { $outputs }
+      fn table_at(&self, nu: usize) -> TableType { Self { nu }.table() }
     })+
   };
 }
@@ -94,7 +95,7 @@ struct SlotCount {
   inputs: usize,
   outputs: usize,
   rows: usize,
-  table_at: fn(usize) -> TableType,
+  table_at: Box<dyn Fn(usize) -> TableType + Send + Sync>,
 }
 
 pub struct CountingEmitter {
@@ -168,7 +169,7 @@ impl CountingEmitter {
 }
 
 impl CircuitEmitter for CountingEmitter {
-  fn slot<G>(&mut self, _gate: G) -> SlotId
+  fn slot<G>(&mut self, gate: G) -> SlotId
   where
     G: CountedGate + Send + Sync + 'static,
     G::Row: Send + 'static,
@@ -178,10 +179,10 @@ impl CircuitEmitter for CountingEmitter {
     self.slots.push(SlotCount {
       id,
       name: std::any::type_name::<G>().rsplit("::").next().unwrap(),
-      inputs: G::INPUTS,
-      outputs: G::OUTPUTS,
+      inputs: gate.input_count(),
+      outputs: gate.output_count(),
       rows: 0,
-      table_at: G::table_at,
+      table_at: Box::new(move |nu| gate.table_at(nu)),
     });
     id
   }

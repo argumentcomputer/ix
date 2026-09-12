@@ -10,6 +10,7 @@ pub mod equality;
 pub mod extension;
 pub mod goldilocks;
 pub mod hash;
+pub mod ixby;
 pub mod multiplication;
 pub mod sizing;
 pub mod window;
