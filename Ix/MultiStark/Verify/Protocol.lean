@@ -8,3 +8,4 @@ public import Ix.MultiStark.Verify.Protocol.FriTranscript
 public import Ix.MultiStark.Verify.Protocol.Mmcs
 public import Ix.MultiStark.Verify.Protocol.FriFold
 public import Ix.MultiStark.Verify.Protocol.FriInputs
+public import Ix.MultiStark.Verify.Protocol.FriCheck

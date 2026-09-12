@@ -9,3 +9,4 @@ public import Ix.MultiStark.Verify.Proofs.FriTranscript
 public import Ix.MultiStark.Verify.Proofs.Mmcs
 public import Ix.MultiStark.Verify.Proofs.FriFold
 public import Ix.MultiStark.Verify.Proofs.FriInputs
+public import Ix.MultiStark.Verify.Proofs.FriCheck

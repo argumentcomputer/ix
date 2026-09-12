@@ -97,6 +97,90 @@ private def reductionChecks : IO (List Check) := do
     ("query reduction requires the original verifier query", !(Fri.reduceQuery params challenges rounds openings 1).isOk)
   ]
 
+private def queryChainChecks : IO (List Check) := do
+  let insertion : List Check := [
+    ("row insertion preserves all siblings at every legal position", (List.range 4).all fun position =>
+      okEquals (Fri.insertValue (e 11) position [e 2, e 3, e 5])
+        ([e 2, e 3, e 5].take position ++ e 11 :: [e 2, e 3, e 5].drop position)),
+    ("row insertion rejects an index beyond the end", !(Fri.insertValue (e 11) 4 [e 2, e 3, e 5]).isOk),
+    ("empty sibling list permits exactly position zero", okEquals (Fri.insertValue (e 11) 0 []) [e 11] &&
+      !(Fri.insertValue (e 11) 1 []).isOk),
+    ("extension flattening preserves c0-c1 and value order", Fri.flattenRow [⟨2, 3⟩, ⟨5, 7⟩] == [2, 3, 5, 7])
+  ]
+  let vector : Except Fri.Error (List Check) := do
+    let beta0 := e 2
+    let beta1 : Ext := ⟨11, 13⟩
+    let points0 ← Fri.rowPoints 15 4 1
+    let row0 := points0.map fun x => (e 3).add ((e 5).mul (Arithmetic.embed x))
+    let first ← Fri.getAt row0 1
+    let sibling0 ← Fri.getAt row0 0
+    -- First row's linear polynomial folds to 3 + 5*2 = 13; the
+    -- height-four roll-in adds 2^2 * 7, giving the next carried value 41.
+    let carried := e 41
+    let points1 ← Fri.rowPoints 3 2 2
+    let selected := Arithmetic.embed (← Fri.getAt points1 3)
+    let slope : Ext := ⟨2, 3⟩
+    let row1 := points1.map fun x => carried.add (slope.mul ((Arithmetic.embed x).sub selected))
+    let reduced : Array Fri.ReducedOpening := #[⟨5, first⟩, ⟨4, e 7⟩, ⟨2, ⟨17, 19⟩⟩]
+    let fourth := (beta1.mul beta1).mul (beta1.mul beta1)
+    let finalValue := (carried.add (slope.mul (beta1.sub selected))).add (fourth.mul ⟨17, 19⟩)
+    let globalGenerator ← (Arithmetic.twoAdicGenerator 5).mapError Fri.Error.arithmetic
+    -- reverseBits 3 5 = 24, whereas reverseBits 3 2 = 3. Changing BOTH
+    -- the group and bit width gives the same point; mixing their widths
+    -- does not. A nonconstant polynomial detects the latter error.
+    let finalPoint := Arithmetic.embed (globalGenerator.pow 24)
+    let finalSlope : Ext := ⟨23, 29⟩
+    let finalPoly := #[finalValue.sub (finalSlope.mul finalPoint), finalSlope]
+    let challenges : Fri.Challenges := ⟨e 31, #[beta0, beta1], #[31], #[1, 2], 5, 2⟩
+    let proof : FriProof := ⟨#[], #[], #[], #[⟨1, #[#[sibling0]], #[]⟩,
+      ⟨2, #[row1.extract 0 3], #[]⟩], finalPoly, 0⟩
+    let expected : Array Fri.QueryRound := #[⟨15, row0⟩, ⟨3, row1⟩]
+    let run (proof : FriProof) (reduced : Array Fri.ReducedOpening) := Fri.foldQuery {} challenges proof 0 reduced
+    let wrongOrder := { proof with commitOpenings := proof.commitOpenings.modify 1 fun opening =>
+      { opening with siblings := opening.siblings.map Array.reverse } }
+    let postRollInRows : Array (Array Fri.QueryRound) := #[expected.modify 0 fun row =>
+      { row with values := row.values.set! 1 carried }]
+    let finalState : Fri.FoldState := ⟨3, 2, 3, finalValue⟩
+    let smallerGenerator ← (Arithmetic.twoAdicGenerator 2).mapError Fri.Error.arithmetic
+    let smallerPoint := Arithmetic.embed (smallerGenerator.pow 3)
+    let mismatchedPoint := Arithmetic.embed (globalGenerator.pow 3)
+    let leaf0 := Mmcs.hashRow (Fri.flattenRow row0.toList).toArray
+    let leaf1 := Mmcs.hashRow (Fri.flattenRow row1.toList).toArray
+    -- Leaf-level caps give an independent commitment fixture: the selected
+    -- slots are 15 and 3, with no frontier or parent-hash construction.
+    let authProof := { proof with commits := #[Array.replicate 16 leaf0, Array.replicate 4 leaf1] }
+    let params : Parameters := {
+      logBlowup := 1, logFinalPolyLen := 1, capHeight := 4,
+      maxLogArity := 2, numQueries := 1, commitPowBits := 0, queryPowBits := 0 }
+    let mutatedRows := #[expected.modify 1 fun row =>
+      { row with values := row.values.modify 0 fun value => value.add (e 1) }]
+    return [
+      ("nonzero binary/quaternary query chain saves pre-roll-in rows", okEquals (run proof reduced) expected),
+      (s!"nonzero query chain authenticates each flattened row ({repr (Fri.authenticateCommits params challenges authProof #[expected])})",
+        (Fri.authenticateCommits params challenges authProof #[expected]).isOk),
+      ("commit authentication rejects a changed saved coordinate", !(Fri.authenticateCommits params challenges authProof mutatedRows).isOk),
+      ("commit authentication does not accept post-roll-in row substitution", !(Fri.authenticateCommits params challenges authProof postRollInRows).isOk),
+      ("commit row lookup rejects a truncated saved query", !(Fri.authenticateCommits params challenges authProof #[expected.pop]).isOk),
+      ("commit authentication rejects a missing query", !(Fri.authenticateCommits params challenges authProof #[]).isOk),
+      ("nonzero sibling order affects the final polynomial equation", !(run wrongOrder reduced).isOk),
+      ("nonzero roll-in values affect the final polynomial equation", !(run proof (reduced.modify 1 fun row =>
+        { row with value := e 8 })).isOk),
+      ("roll-in cannot skip an earlier wrong-height reduction", !(run proof #[⟨5, first⟩, ⟨3, e 7⟩, ⟨2, ⟨17, 19⟩⟩]).isOk),
+      ("duplicate roll-in height remains unconsumed", !(run proof #[⟨5, first⟩, ⟨4, e 7⟩, ⟨4, e 0⟩, ⟨2, ⟨17, 19⟩⟩]).isOk),
+      ("query chain requires the exact final height", !(Fri.foldQuery {} { challenges with logFinal := 1 } proof 0 reduced).isOk),
+      ("query chain requires every beta", !(Fri.foldQuery {} { challenges with betas := #[beta0] } proof 0 reduced).isOk),
+      ("query chain requires the verifier's original query", !(Fri.foldQuery {} challenges proof 1 reduced).isOk),
+      ("final nonconstant equation pairs the subgroup and bit width", (Fri.finishQuery challenges proof 0 reduced finalState).isOk &&
+        smallerPoint == finalPoint && Fri.polynomial finalPoly mismatchedPoint != finalValue),
+      ("final equation independently checks reduction consumption", !(Fri.finishQuery challenges proof 0 reduced
+        { finalState with nextReduced := 2 }).isOk),
+      ("commit collection preserves saved index and exact extension layout", okEquals
+        (Fri.commitRows 1 [expected]) ([3], #[((row1.toList.flatMap fun value => [value.c0, value.c1]).toArray)] :: []))
+    ]
+  return insertion ++ match vector with
+    | .ok checks => checks
+    | .error error => [(s!"construct nonzero FRI query-chain vector ({repr error})", false)]
+
 private def checks : IO (List Check) := do
   let coefficients := #[e 3, ⟨5, 7⟩, e 11, ⟨13, 17⟩]
   let beta : Ext := ⟨19, 23⟩
@@ -208,7 +292,7 @@ private def checks : IO (List Check) := do
             | some values => !(Fri.foldQuery {} f.challenges f.proof 0 values).isOk
             | none => false)
       ]
-  return arithmeticChecks ++ transcriptChecks ++ (← reductionChecks) ++ vectorChecks
+  return arithmeticChecks ++ transcriptChecks ++ (← reductionChecks) ++ (← queryChainChecks) ++ vectorChecks
 
 public def suite : IO UInt32 := runChecks "stage2-fri" checks
 

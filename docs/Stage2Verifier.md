@@ -113,7 +113,7 @@ with the query frontier; it is not a Stage 3/4 compression measurement.
 public root, framing, and assumptions. The stand-in does not establish Ixon
 truth and is not an approvable production aggregate verifier.
 
-The exact theorem manifest covers 140 public roots, with exact per-root sets of
+The exact theorem manifest covers 153 public roots, with exact per-root sets of
 `propext`, `Quot.sound`, and, where present, `Classical.choice`. The graph sweep
 is sound and complete against a separate expression/reference relation.
 Observation updates, raw bit draws, grinding, and rejection sampling have
@@ -150,8 +150,15 @@ quotient reduction have complete phase equivalences: denominators are
 checked, alpha powers continue across coordinates/points/matrices/batches at
 each height, constant-height quotients vanish, and every present bucket is
 returned in descending height order. Nonzero differential vectors pin these
-orders and both extension coordinates. The query-fold chain, final-polynomial
-binding, and complete PCS/FRI composition refinements remain unfinished.
+orders and both extension coordinates. The complete FRI checker now has a
+soundness-and-completeness equivalence against the separate `FriAccepted`
+relation. It composes transcript derivation, input authentication/reduction,
+every query fold and roll-in, the final polynomial equation, and all commit
+authentications. The row-insertion equation preserves every sibling in order;
+saved rows precede roll-in, and the final state consumes every reduction.
+Nonzero binary/quaternary chains exercise both extension coordinates,
+independently constructed leaf-level caps, and the final subgroup/bit-width
+pair. PCS round reconstruction and the full Stage 2 refinement remain unfinished.
 Bounded sampling completeness uses the
 same attempt budget on both sides. These are phase proofs, not yet a complete
 protocol-refinement theorem. The wrapper/composition lemmas establish exact
