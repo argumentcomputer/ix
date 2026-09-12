@@ -259,7 +259,7 @@ private def checks : IO (List Check) := do
         s.profile.bytes == p && s.program.bytes == c && s.input.bytes == i && s.output.bytes == o &&
           s.digest.bytes == h 4 (p ++ c ++ i ++ o)),
     ("all hash domains distinguish the same payload", let domains : List Commitment.Domain :=
-        [.profile, .program, .input, .output, .statement]
+        [.profile, .program, .input, .output, .statement, .publicResult]
       domains.all fun a => domains.all fun b =>
         a == b || (Commitment.hash a #[1, 2, 3]).bytes != (Commitment.hash b #[1, 2, 3]).bytes),
     ("reference commitment check accepts correct execution", match statements with

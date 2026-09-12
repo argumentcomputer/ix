@@ -7,6 +7,7 @@ public import Ix.Ixby.Composition
 public import Ix.Ixby.Profile
 public import Ix.Ixby.Codec
 public import Ix.Ixby.Commitment
+public import Ix.Ixby.Claim
 
 /-! Functional IxBy semantics, experimental crypto codecs and commitments.
 The first proving backend is a separate `Ix.Ixby.Aiur` import so this logical

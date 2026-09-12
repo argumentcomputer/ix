@@ -17,7 +17,7 @@ structure Digest where
   deriving BEq, DecidableEq, Repr
 
 inductive Domain where
-  | profile | program | input | output | statement
+  | profile | program | input | output | statement | publicResult
   deriving BEq, DecidableEq, Repr, Inhabited
 
 def Domain.tag : Domain → UInt8
@@ -26,6 +26,7 @@ def Domain.tag : Domain → UInt8
   | .input => 2
   | .output => 3
   | .statement => 4
+  | .publicResult => 5
 
 /-- Fixed ASCII prefix, NUL, one domain byte, then the complete payload.
 No arbitrary string labels or ambiguous concatenations of variable fields. -/

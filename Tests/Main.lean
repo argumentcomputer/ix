@@ -209,6 +209,8 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ixby", Tests.Ixby.Basic.suite),
   ("ixby-crypto", Tests.Ixby.Crypto.suite),
   ("ixby-codec", Tests.Ixby.Codec.suite),
+  ("ixby-claim", Tests.Ixby.Claim.suite),
+  ("ixby-flock-contract", Tests.Ixby.Flock.Contract.suite),
   ("ixby-aiur", Tests.Ixby.Aiur.Scalar.suite (withProofs := false)),
   ("ixby-control", Tests.Ixby.Aiur.Control.suite (withProofs := false)),
   ("ixby-objects", Tests.Ixby.Aiur.Objects.suite (withProofs := false)),

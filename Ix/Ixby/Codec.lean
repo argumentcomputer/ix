@@ -45,4 +45,16 @@ theorem Execution.reference_evaluates {profile : Profile} {programBytes inputByt
     Ix.Ixby.Evaluates profile.limits execution.program.value execution.input.value execution.output :=
   ⟨execution.fuel, Profile.execute_refines execution.evaluated⟩
 
+/-- Recover the checked run from the byte-execution proposition. This is the
+bridge used to apply value-level compiler certificates to exact byte claims. -/
+theorem evaluates_execution {profile : Profile} {programBytes inputBytes outputBytes : Bytes}
+    (evaluated : Evaluates profile programBytes inputBytes outputBytes) :
+    ∃ execution : Execution profile programBytes inputBytes,
+      execution.outputBytes = outputBytes := by
+  obtain ⟨fuel, evaluated⟩ := evaluated
+  cases executed : execute profile programBytes inputBytes fuel with
+  | error error => simp [executed, Except.map] at evaluated
+  | ok execution =>
+    exact ⟨execution, by simpa [executed, Except.map] using evaluated⟩
+
 end Ix.Ixby.Codec

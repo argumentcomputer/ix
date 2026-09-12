@@ -1,5 +1,6 @@
 import Ix.Tc.Verify.Audit.Basic
 import Ix.Ixby
+import Ix.Ixby.Flock.Contract
 import Ix.Ixby.Aiur.Objects.Operands
 
 /-!
@@ -8,7 +9,7 @@ import Ix.Ixby.Aiur.Objects.Operands
 Run with `lake build --wfail Ix.Ixby.Audit`. This audit is deliberately not
 imported by the pure `Ix.Ixby` API or by the host proving adapter.
 
-The exact allowances below cover all 314 source-authored public theorems
+The exact allowances below cover all 322 source-authored public theorems
 in the current logical/reference and object-parser proof modules. Only
 `propext`, `Classical.choice`, and `Quot.sound` are permitted: no upstream,
 native, pending, or sorry allowances. Updating a proof's exact dependency set
@@ -202,6 +203,13 @@ private def roots : Array RootAllowance :=
     ``AiurBackend.Refinement.zero_fuel,
     ``certified_execution,
     ``Codec.Execution.reference_evaluates,
+    ``Codec.evaluates_execution,
+    ``Claim.exec_public,
+    ``Claim.Opening.bindings_or_collision,
+    ``Claim.byte_refinement_of_value_refinement,
+    ``Claim.Opening.source_or_collision,
+    ``Claim.terminal_exec,
+    ``Claim.terminal_source_or_collision,
     ``evaluates_deterministic,
     ``execute_add_fuel,
     ``Profile.execute_refines,
@@ -209,6 +217,7 @@ private def roots : Array RootAllowance :=
     ``run_add_fuel
   ] ++
   withAxioms noChoice #[
+    ``Claim.public_bind,
     ``AiurBackend.Objects.Admission.advice_bytes_exact,
     ``AiurBackend.Objects.Admission.advice_reader_checked,
     ``AiurBackend.Objects.Admission.advice_slice_array,
