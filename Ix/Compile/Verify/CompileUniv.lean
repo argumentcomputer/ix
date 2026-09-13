@@ -2,6 +2,8 @@ import Ix.Compile.Verify.CompileState
 import Ix.Compile.Verify.Reference
 import Std.Data.HashMap.Lemmas
 
+open Ix.Theory (VLevel)
+
 /-!
 # Production universe-compiler refinement
 
@@ -689,7 +691,7 @@ theorem compileAndInternUnivCanon_run_refines
     rw [run_bind compileEnv blockEnv canonState _ _, horiginalRun]
     rfl
 
-/-- The production result therefore has the independent Lean4Lean universe
+/-- The production result therefore has the independent Ix.Theory.Named universe
 value assigned to the named source level. -/
 theorem compileUniv_run_value
     (compileEnv : Ix.CompileM.CompileEnv) (blockEnv : Ix.CompileM.BlockEnv)

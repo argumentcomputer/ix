@@ -172,6 +172,20 @@ Ix consists of the following core components:
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
   different ix users can easily share `ixon` data between themselves.
 
+### Kernel certification
+
+`Ix.Kernel` includes audited implementation proofs and a certified receipt
+interface with relative consistency theorems under an explicit set-theory
+assumption. Full consistency of the production `checkEnvAnon` checker remains
+open. See the [kernel verification guide](docs/kernel-verification.md) for the
+theorem boundaries and remaining obligations, and
+[certified checking](docs/certified-checking.md) for runnable examples.
+
+Run `lake run check-kernel` to validate the implementation proofs, consistency
+refinements, theory foundation, certified host adapters, and kernel unit tests.
+Add `--with-model` to include the separate Mathlib `ZFSet` construction of the
+set-theory instance under the inaccessible-cardinal hypothesis.
+
 ## Benchmarks
 
 Benchmarks (compiler, kernel, and zk-prover backends) are tracked at

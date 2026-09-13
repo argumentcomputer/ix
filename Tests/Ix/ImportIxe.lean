@@ -1,5 +1,5 @@
 /-
-  Materialization FFI + `import_ixe` tests (plan C6/C8).
+  Materialization FFI + `import_ixe` tests.
 
   A self-contained fixture environment is built by direct kernel
   `addDecl` on an empty env (no Init, so the compiled `.ixe` is closed
@@ -11,7 +11,7 @@
   max/imax level polymorphism, and opaques.
 
   Gates:
-  - C6 parity: `rs_decompile_env_consts` output matches the original
+  - Materialization parity: `rs_decompile_env_consts` output matches the original
     constants field-for-field (types, values, level params, hints,
     recursor rules — the round trip is exact on this fixture).
   - Root equality: recompiling the materialized constants reproduces
@@ -263,7 +263,7 @@ private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
     if status.ungrounded.size > 0 then
       return (false, 0, 0,
         some s!"fixture compile ungrounded: {status.ungrounded}")
-    -- C6 parity: materialize everything and compare per constant.
+    -- Materialize everything and compare per constant.
     let materialized ← Ix.ImportIxe.materializeIxe path
     if materialized.size != original.size then
       return (false, 0, 0, some s!"constant count: original \

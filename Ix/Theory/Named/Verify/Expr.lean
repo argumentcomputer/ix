@@ -1,0 +1,1303 @@
+/-
+Adapted for Ix: namespace, imports, and shared universe semantics.
+SPDX-License-Identifier: Apache-2.0
+Source attribution and revision: Ix/Theory/Named/NOTICE.
+-/
+
+import Ix.Theory.Named.Std.Basic
+import Ix.Theory.Named.Verify.Axioms
+import Ix.Theory.Named.Verify.Level
+import Ix.Theory.Named.Reference.Expr
+import Ix.Theory.Named.Reference.Instantiate
+import Batteries.Data.String.Lemmas
+import Std.Tactic.BVDecide
+
+open Ix.Theory.Named
+
+namespace Lean
+
+instance : LawfulBEq FVarId where
+  eq_of_beq := @fun ⟨a⟩ ⟨b⟩ h => by cases LawfulBEq.eq_of_beq (α := Name) h; rfl
+  rfl := BEq.rfl (α := Name)
+
+instance : LawfulBEq MVarId where
+  eq_of_beq := @fun ⟨a⟩ ⟨b⟩ h => by cases LawfulBEq.eq_of_beq (α := Name) h; rfl
+  rfl := BEq.rfl (α := Name)
+
+instance : LawfulBEq LBool where
+  rfl {a} := by cases a <;> rfl
+  eq_of_beq {a b} := by cases a <;> cases b <;> simp +decide
+
+instance : LawfulBEq DefinitionSafety where
+  rfl {a} := by cases a <;> rfl
+  eq_of_beq {a b} := by cases a <;> cases b <;> simp +decide
+
+-- we have to define this manually instead of `deriving instance Ord`
+-- because the variants are written in the wrong order in core
+protected def DefinitionSafety.compare : DefinitionSafety → DefinitionSafety → Ordering
+  | .unsafe, .unsafe => .eq
+  | .unsafe, _ => .lt
+  | _, .unsafe => .gt
+  | .partial, .partial => .eq
+  | .partial, _ => .lt
+  | _, .partial => .gt
+  | .safe, .safe => .eq
+
+instance : Ord DefinitionSafety := ⟨DefinitionSafety.compare⟩
+
+instance : Std.TransOrd DefinitionSafety where
+  eq_swap {a b} := by cases a <;> cases b <;> rfl
+  isLE_trans {a b c} := by cases a <;> cases b <;> simp! [compare] <;> cases c <;> decide
+
+instance : Std.LawfulBEqOrd DefinitionSafety where
+  compare_eq_iff_beq {a b} := by cases a <;> cases b <;> decide
+instance : Std.LawfulEqOrd DefinitionSafety := Std.LawfulBEqOrd.lawfulEqOrd
+
+instance : LE DefinitionSafety := leOfOrd
+instance : DecidableEq DefinitionSafety := instDecidableEqOfLawfulBEq
+
+theorem DefinitionSafety.le_trans {a b c : DefinitionSafety} : a ≤ b → b ≤ c → a ≤ c :=
+  Std.TransOrd.isLE_trans
+
+theorem DefinitionSafety.le_rfl {a : DefinitionSafety} : a ≤ a := Std.ReflCmp.isLE_rfl
+
+theorem DefinitionSafety.unsafe_le : «unsafe» ≤ a := by cases a <;> rfl
+theorem DefinitionSafety.le_safe : a ≤ safe := by cases a <;> rfl
+theorem DefinitionSafety.le_antisymm {a b : DefinitionSafety} : a ≤ b → b ≤ a → a = b := by
+  cases a <;> cases b <;> decide
+
+namespace Substring
+
+open private substrEq.loop from Init.Data.String.Basic in
+theorem beq_refl (s : Substring.Raw) : s == s := by
+  simp [(· == ·), Substring.Raw.beq, Substring.Raw.bsize, String.Pos.Raw.substrEq]
+  let rec loop {s i n} : substrEq.loop s s i i n := by
+    unfold substrEq.loop; simp [Decidable.or_iff_not_imp_left]
+    intro h1
+    have := Char.utf8Size_pos (String.Pos.Raw.get s i)
+    exact loop
+  termination_by n.byteIdx - i.byteIdx
+  refine ⟨?_, loop⟩
+  obtain h | h := Nat.le_or_le s.repair.startPos.byteIdx s.repair.stopPos.byteIdx
+  · simp only [Nat.add_sub_cancel' h, decide_eq_true_eq]
+    apply String.Pos.Raw.IsValid.le_rawEndPos
+    simp [Substring.Raw.repair]; split <;> simp [*]
+  · simp [Nat.sub_eq_zero_of_le h]
+    apply String.Pos.Raw.IsValid.le_rawEndPos
+    simp [Substring.Raw.repair]; split <;> simp [*]
+
+open private substrEq.loop from Init.Data.String.Basic in
+theorem beq_symm {s t : Substring.Raw} : s == t → t == s := by
+  simp +contextual [(· == ·), Substring.Raw.beq, String.Pos.Raw.substrEq]
+  simp [Substring.Raw.bsize]
+  let rec loop {s s' b b' i n} :
+      substrEq.loop s s' ⟨b + i⟩ ⟨b' + i⟩ ⟨b + n⟩ ↔
+      substrEq.loop s' s ⟨b' + i⟩ ⟨b + i⟩ ⟨b' + n⟩ := by
+    unfold substrEq.loop; simp [beq_comm, Decidable.or_iff_not_imp_left]
+    refine imp_congr_right fun h1 => and_congr_right fun h2 => ?_
+    simp +instances [h2, String.instHAddRawChar, Nat.add_assoc]
+    have := Char.utf8Size_pos (String.Pos.Raw.get s' ⟨b'+i⟩)
+    exact Bool.eq_iff_iff.2 loop
+  termination_by b + n - (b + i)
+  intro h1 h2 h3
+  have loop := @loop (i := 0); simp at loop
+  simp [loop]
+
+open private substrEq.loop from Init.Data.String.Basic in
+theorem beq_trans {s t : Substring.Raw} : s == t → t == u → s == u := by
+  simp +contextual [(· == ·), Substring.Raw.beq, String.Pos.Raw.substrEq]
+  simp [Substring.Raw.bsize]
+  let ⟨s, ⟨b⟩, e⟩ := s.repair
+  let ⟨s2, ⟨b2⟩, e2⟩ := t.repair
+  let ⟨s3, ⟨b3⟩, e3⟩ := u.repair
+  intro h1 h2 h3 h4 h5 h6 h7 h8
+  constructor; · omega
+  simp [h5] at h4
+  let rec loop {s₁ s₂ s₃ b₁ b₂ b₃ i n} :
+      (h : substrEq.loop s₁ s₂ ⟨b₁ + i⟩ ⟨b₂ + i⟩ ⟨b₁ + n⟩) →
+      (substrEq.loop s₁ s₃ ⟨b₁ + i⟩ ⟨b₃ + i⟩ ⟨b₁ + n⟩ ↔
+       substrEq.loop s₂ s₃ ⟨b₂ + i⟩ ⟨b₃ + i⟩ ⟨b₂ + n⟩) := by
+    unfold substrEq.loop; simp [Decidable.or_iff_not_imp_left]
+    refine fun h1 => imp_congr_right fun h => ?_; let ⟨h1, h2⟩ := h1 h
+    simp [h1]; intro h3; simp +instances [h1, h3, String.instHAddRawChar, Nat.add_assoc] at h2 ⊢
+    have := Char.utf8Size_pos (String.Pos.Raw.get s₃ ⟨b₃+i⟩)
+    refine Bool.eq_iff_iff.2 (loop h2)
+  termination_by n - i
+  have loop := @loop (i := 0) (h := h4); simp at loop
+  simpa [loop] using h8
+
+instance : EquivBEq Substring.Raw where
+  symm := beq_symm
+  trans := beq_trans
+  rfl := beq_refl _
+
+end Substring
+
+namespace Syntax
+
+namespace Preresolved
+
+protected theorem beq_iff_eq {m n : Preresolved} : m == n ↔ m = n := by
+  simp only [(· == ·)]; cases m <;> cases n <;> simp! <;> grind only [cases Or]
+
+instance : LawfulBEq Preresolved where
+  eq_of_beq := Preresolved.beq_iff_eq.1
+  rfl := Preresolved.beq_iff_eq.2 rfl
+
+end Preresolved
+
+theorem structEq_refl (s : Syntax) : s.structEq' s := by
+  unfold structEq'
+  cases s with
+  | node i k args =>
+    let ⟨args⟩ := args; simp; intro x _ _ _
+    have IH := structEq_refl x
+    induction args.attach <;> simp
+    rintro (⟨rfl, ⟨⟩⟩ | h) <;> [skip; solve_by_elim]
+    simpa using IH
+  | _ => simp
+
+attribute [-simp] List.all_eq_true in
+theorem structEq_euc {s : Syntax} (H : s.structEq' t) : s.structEq' u = t.structEq' u := by
+  unfold structEq' at H; split at H
+  case h_1 => simp
+  case h_5 => cases H
+  all_goals
+    revert H; simp; intros; subst_vars
+    unfold structEq'; cases u <;> simp <;> rw [Bool.eq_iff_iff] <;> simp [*]
+  -- all_goals intros; subst_vars
+  case ident => intros; apply BEq.congr_left ‹_›
+  case node args₁ _ _ args₂ eq H _ _ args₃ =>
+    rintro rfl eq'; revert H
+    have IH {a} (h : a ∈ args₁) := @structEq_euc (s := a)
+    let ⟨args₁⟩ := args₁; let ⟨args₂⟩ := args₂; let ⟨args₃⟩ := args₃
+    revert eq eq'; simp at IH ⊢
+    simp only [← args₁.length_attach, ← args₂.length_attach, ← args₃.length_attach]
+    generalize args₁.attach = l₁, args₂.attach = l₂, args₃.attach = l₃
+    induction l₁ generalizing l₂ l₃ with cases l₂ <;> simp <;> cases l₃ <;> simp | cons a l₁ ih
+    intros _ _ H; rw [IH a.2 _ _ H, Bool.eq_iff_iff]; simp [*]; grind
+termination_by s
+
+theorem structEq_symm {s : Syntax} (H : s.structEq' t) : t.structEq' s :=
+  structEq_euc H ▸ structEq_refl _
+
+theorem structEq_trans {s : Syntax} (H : s.structEq' t) (H2 : t.structEq' u) : s.structEq' u :=
+  structEq_euc H ▸ H2
+
+theorem beq_def : (a == b) = structEq' a b := structEq_eq
+
+instance : EquivBEq Syntax where
+  symm := by simp [beq_def]; exact structEq_symm
+  trans := by simp [beq_def]; exact structEq_trans
+  rfl := by simp [beq_def]; exact structEq_refl _
+
+end Syntax
+
+namespace DataValue
+
+instance : EquivBEq DataValue where
+  symm {a b} := by simp [(· == ·)]; cases a <;> cases b <;> simp! [beq_comm]
+  trans {a b c} := by
+    simp [(· == ·)]; cases a <;> cases b <;> simp! [beq_comm] <;> try rintro rfl; simp
+    cases c <;> simp!; exact BEq.trans
+  rfl {a} := by simp [(· == ·)]; cases a <;> simp!
+
+end DataValue
+
+namespace Expr
+
+theorem Data.looseBVarRange_le :
+    (Data.looseBVarRange d).toNat ≤ 2 ^ 20 - 1 := by
+  rw [Data.looseBVarRange]
+  suffices (UInt64.shiftRight d 44).toNat ≤ 2 ^ 20 - 1 by simp; omega
+  show d.toBitVec >>> 44#64 ≤ 0xfffff#64
+  rw [BitVec.le_def, BitVec.ushiftRight_ofNat_eq]
+  simp
+  have h := BitVec.toNat_ushiftRight_lt d.toBitVec 44 (by omega)
+  simp at h ⊢
+  omega
+
+private theorem Data.flag_eq_getLsbD (d : Data) (n : UInt64) (hn : n < 64) :
+    ((d.shiftRight n).land 1 == 1) = d.toBitVec.getLsbD n.toNat := by
+  apply Bool.eq_iff_iff.2
+  simp only [beq_iff_eq]
+  have hmod : UInt64.mod n 64 = n := UInt64.mod_eq_of_lt hn
+  constructor
+  · intro h
+    have hb := congrArg UInt64.toBitVec h
+    simp [UInt64.shiftRight, UInt64.land, hmod] at hb
+    have := congrArg (fun x : BitVec 64 => x.getLsbD 0) hb
+    simpa using this
+  · intro h
+    apply UInt64.toBitVec_inj.mp
+    simp [UInt64.shiftRight, UInt64.land, hmod]
+    ext i
+    by_cases hi : i = 0
+    · subst i
+      simpa using h
+    · simp [hi]
+
+private theorem Data.hasFVar_eq_getLsbD (d : Data) :
+    d.hasFVar = d.toBitVec.getLsbD 40 := by
+  simpa [Data.hasFVar] using Data.flag_eq_getLsbD d 40 (by decide)
+
+private theorem Data.hasExprMVar_eq_getLsbD (d : Data) :
+    d.hasExprMVar = d.toBitVec.getLsbD 41 := by
+  simpa [Data.hasExprMVar] using Data.flag_eq_getLsbD d 41 (by decide)
+
+private theorem Data.hasLevelMVar_eq_getLsbD (d : Data) :
+    d.hasLevelMVar = d.toBitVec.getLsbD 42 := by
+  simpa [Data.hasLevelMVar] using Data.flag_eq_getLsbD d 42 (by decide)
+
+private theorem Data.hasLevelParam_eq_getLsbD (d : Data) :
+    d.hasLevelParam = d.toBitVec.getLsbD 43 := by
+  simpa [Data.hasLevelParam] using Data.flag_eq_getLsbD d 43 (by decide)
+
+private def flagAt (fv ev lv lp : Bool) : Nat → Bool
+  | 0 => fv
+  | 1 => ev
+  | 2 => lv
+  | 3 => lp
+  | _ => false
+
+private theorem BitVec.getLsbD_eq_false_of_toNat_lt_two_pow
+    {x : BitVec w} (h : x.toNat < 2 ^ n) (hn : n ≤ i) :
+    x.getLsbD i = false := by
+  rw [BitVec.getLsbD, Nat.testBit_lt_two_pow]
+  exact Nat.lt_of_lt_of_le h (Nat.pow_le_pow_right (by decide) hn)
+
+private theorem BitVec.add_shiftLeft_eq_or_of_toNat_lt_two_pow
+    {x y : BitVec w} (h : x.toNat < 2 ^ n) :
+    x + (y <<< n) = x ||| (y <<< n) := by
+  rw [BitVec.add_eq_or_of_and_eq_zero]
+  ext i hi
+  simp only [BitVec.getElem_and, BitVec.getElem_zero]
+  by_cases hin : i < n
+  · simp [BitVec.getElem_shiftLeft, hin]
+  · have hx : x[i] = false := by
+      rw [← BitVec.getLsbD_eq_getElem]
+      exact BitVec.getLsbD_eq_false_of_toNat_lt_two_pow h (Nat.le_of_not_gt hin)
+    simp [hx]
+
+set_option allowUnsafeReducibility true
+attribute [local reducible] Data
+
+private theorem mkData_flags (H : br ≤ 2 ^ 20 - 1) :
+    (mkData h br d fv ev lv lp).hasFVar = fv ∧
+    (mkData h br d fv ev lv lp).hasExprMVar = ev ∧
+    (mkData h br d fv ev lv lp).hasLevelMVar = lv ∧
+    (mkData h br d fv ev lv lp).hasLevelParam = lp := by
+  rw [mkData_eq, mkData', if_pos H]
+  rw [Data.hasFVar_eq_getLsbD, Data.hasExprMVar_eq_getLsbD,
+    Data.hasLevelMVar_eq_getLsbD, Data.hasLevelParam_eq_getLsbD]
+  have hh : h.toUInt32.toUInt64.toBitVec ≤ 0xffffffff#64 :=
+    Nat.le_of_lt_succ h.toUInt32.1.1.2
+  have hb : ∀ (b : Bool), b.toUInt64.toBitVec ≤ 1#64 := by decide
+  have hfv := hb fv
+  have hev := hb ev
+  have hlv := hb lv
+  have hlp := hb lp
+  have hnat : br.toUInt64.toNat = br := by simp; omega
+  have hbr : br.toUInt64.toBitVec ≤ 0xfffff#64 := (hnat ▸ H :)
+  let depth : UInt8 := if d > 255 then 255 else d.toUInt8
+  have hd : depth.toUInt64.toBitVec ≤ 0xff#64 := Nat.le_of_lt_succ depth.1.1.2
+  let data :=
+    h.toUInt32.toUInt64.toBitVec +
+    depth.toUInt64.toBitVec <<< 32#64 +
+    fv.toUInt64.toBitVec <<< 40#64 +
+    ev.toUInt64.toBitVec <<< 41#64 +
+    lv.toUInt64.toBitVec <<< 42#64 +
+    lp.toUInt64.toBitVec <<< 43#64 +
+    br.toUInt64.toBitVec <<< 44#64
+  change data.getLsbD 40 = fv ∧ data.getLsbD 41 = ev ∧
+    data.getLsbD 42 = lv ∧ data.getLsbD 43 = lp
+  have hh' : h.toUInt32.toUInt64.toBitVec.toNat < 2 ^ 32 := by
+    simpa using h.toUInt32.1.1.2
+  have hd' : depth.toUInt64.toBitVec.toNat < 2 ^ 8 := by
+    simpa using depth.1.1.2
+  have hb' : ∀ (b : Bool), b.toUInt64.toBitVec.toNat < 2 := by
+    intro b
+    cases b <;> decide
+  have h0 := BitVec.add_shiftLeft_eq_or_of_toNat_lt_two_pow
+    (x := h.toUInt32.toUInt64.toBitVec) (y := depth.toUInt64.toBitVec) hh'
+  have hs0 : (depth.toUInt64.toBitVec <<< 32).toNat < 2 ^ 40 := by
+    rw [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq, Nat.mod_eq_of_lt]
+    · omega
+    · omega
+  have hp0 :
+      (h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32).toNat <
+        2 ^ 40 := by
+    rw [BitVec.toNat_or]
+    exact Nat.or_lt_two_pow (by omega) hs0
+  have h1 := BitVec.add_shiftLeft_eq_or_of_toNat_lt_two_pow
+    (x := h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32)
+    (y := fv.toUInt64.toBitVec) hp0
+  have hs1 : (fv.toUInt64.toBitVec <<< 40).toNat < 2 ^ 41 := by
+    rw [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq, Nat.mod_eq_of_lt]
+    · have := hb' fv; omega
+    · have := hb' fv; omega
+  have hp1 :
+      (h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+        fv.toUInt64.toBitVec <<< 40).toNat < 2 ^ 41 := by
+    rw [BitVec.toNat_or]
+    exact Nat.or_lt_two_pow (by omega) hs1
+  have h2 := BitVec.add_shiftLeft_eq_or_of_toNat_lt_two_pow
+    (x := h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+      fv.toUInt64.toBitVec <<< 40)
+    (y := ev.toUInt64.toBitVec) hp1
+  have hs2 : (ev.toUInt64.toBitVec <<< 41).toNat < 2 ^ 42 := by
+    rw [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq, Nat.mod_eq_of_lt]
+    · have := hb' ev; omega
+    · have := hb' ev; omega
+  have hp2 :
+      (h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+        fv.toUInt64.toBitVec <<< 40 ||| ev.toUInt64.toBitVec <<< 41).toNat <
+        2 ^ 42 := by
+    rw [BitVec.toNat_or]
+    exact Nat.or_lt_two_pow (by omega) hs2
+  have h3 := BitVec.add_shiftLeft_eq_or_of_toNat_lt_two_pow
+    (x := h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+      fv.toUInt64.toBitVec <<< 40 ||| ev.toUInt64.toBitVec <<< 41)
+    (y := lv.toUInt64.toBitVec) hp2
+  have hs3 : (lv.toUInt64.toBitVec <<< 42).toNat < 2 ^ 43 := by
+    rw [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq, Nat.mod_eq_of_lt]
+    · have := hb' lv; omega
+    · have := hb' lv; omega
+  have hp3 :
+      (h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+        fv.toUInt64.toBitVec <<< 40 ||| ev.toUInt64.toBitVec <<< 41 |||
+        lv.toUInt64.toBitVec <<< 42).toNat < 2 ^ 43 := by
+    rw [BitVec.toNat_or]
+    exact Nat.or_lt_two_pow (by omega) hs3
+  have h4 := BitVec.add_shiftLeft_eq_or_of_toNat_lt_two_pow
+    (x := h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+      fv.toUInt64.toBitVec <<< 40 ||| ev.toUInt64.toBitVec <<< 41 |||
+      lv.toUInt64.toBitVec <<< 42)
+    (y := lp.toUInt64.toBitVec) hp3
+  have hs4 : (lp.toUInt64.toBitVec <<< 43).toNat < 2 ^ 44 := by
+    rw [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq, Nat.mod_eq_of_lt]
+    · have := hb' lp; omega
+    · have := hb' lp; omega
+  have hp4 :
+      (h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+        fv.toUInt64.toBitVec <<< 40 ||| ev.toUInt64.toBitVec <<< 41 |||
+        lv.toUInt64.toBitVec <<< 42 ||| lp.toUInt64.toBitVec <<< 43).toNat <
+        2 ^ 44 := by
+    rw [BitVec.toNat_or]
+    exact Nat.or_lt_two_pow (by omega) hs4
+  have h5 := BitVec.add_shiftLeft_eq_or_of_toNat_lt_two_pow
+    (x := h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+      fv.toUInt64.toBitVec <<< 40 ||| ev.toUInt64.toBitVec <<< 41 |||
+      lv.toUInt64.toBitVec <<< 42 ||| lp.toUInt64.toBitVec <<< 43)
+    (y := br.toUInt64.toBitVec) hp4
+  have hdata : data =
+      h.toUInt32.toUInt64.toBitVec ||| depth.toUInt64.toBitVec <<< 32 |||
+      fv.toUInt64.toBitVec <<< 40 ||| ev.toUInt64.toBitVec <<< 41 |||
+      lv.toUInt64.toBitVec <<< 42 ||| lp.toUInt64.toBitVec <<< 43 |||
+      br.toUInt64.toBitVec <<< 44 := by
+    dsimp [data]
+    rw [h0, h1, h2, h3, h4, h5]
+  have hhbit : ∀ i, 32 ≤ i → h.toUInt32.toUInt64.toBitVec.getLsbD i = false :=
+    fun _ hi => BitVec.getLsbD_eq_false_of_toNat_lt_two_pow hh' hi
+  have hdbit : ∀ i, 8 ≤ i → depth.toUInt64.toBitVec.getLsbD i = false :=
+    fun _ hi => BitVec.getLsbD_eq_false_of_toNat_lt_two_pow hd' hi
+  have hbbit : ∀ (b : Bool) i, 1 ≤ i → b.toUInt64.toBitVec.getLsbD i = false :=
+    fun b _ hi => BitVec.getLsbD_eq_false_of_toNat_lt_two_pow (hb' b) hi
+  rw [hdata]
+  simp only [BitVec.getLsbD_or, BitVec.getLsbD_shiftLeft]
+  simp only [Nat.reduceLT, decide_true, decide_false, Bool.not_true, Bool.not_false,
+    Bool.true_and, Bool.false_and, Bool.or_false, Nat.reduceSub]
+  rw [hhbit 40 (by omega), hhbit 41 (by omega), hhbit 42 (by omega),
+    hhbit 43 (by omega), hdbit 8 (by omega), hdbit 9 (by omega),
+    hdbit 10 (by omega), hdbit 11 (by omega), hbbit fv 1 (by omega),
+    hbbit fv 2 (by omega), hbbit fv 3 (by omega), hbbit ev 1 (by omega),
+    hbbit ev 2 (by omega), hbbit lv 1 (by omega)]
+  simp only [Bool.false_or]
+  cases fv <;> cases ev <;> cases lv <;> cases lp <;> decide
+
+private theorem mkData_hasFVar (H : br ≤ 2 ^ 20 - 1) :
+    (mkData h br d fv ev lv lp).hasFVar = fv := by
+  exact (mkData_flags H).1
+
+private theorem mkData_hasExprMVar (H : br ≤ 2 ^ 20 - 1) :
+    (mkData h br d fv ev lv lp).hasExprMVar = ev := by
+  exact (mkData_flags H).2.1
+
+private theorem mkData_hasLevelMVar (H : br ≤ 2 ^ 20 - 1) :
+    (mkData h br d fv ev lv lp).hasLevelMVar = lv := by
+  exact (mkData_flags H).2.2.1
+
+private theorem mkData_hasLevelParam (H : br ≤ 2 ^ 20 - 1) :
+    (mkData h br d fv ev lv lp).hasLevelParam = lp := by
+  exact (mkData_flags H).2.2.2
+
+private theorem mkData_flags_of_false (br d h) :
+    (mkData h br d false false false false).hasFVar = false ∧
+    (mkData h br d false false false false).hasExprMVar = false ∧
+    (mkData h br d false false false false).hasLevelMVar = false ∧
+    (mkData h br d false false false false).hasLevelParam = false := by
+  by_cases H : br ≤ 2 ^ 20 - 1
+  · exact mkData_flags H
+  · rw [mkData_eq, mkData', if_neg H]
+    exact ⟨rfl, rfl, rfl, rfl⟩
+
+private theorem mkData_hasFVar_of_false (br d h) :
+    (mkData h br d false false false false).hasFVar = false :=
+  (mkData_flags_of_false br d h).1
+
+private theorem mkData_hasExprMVar_of_false (br d h) :
+    (mkData h br d false false false false).hasExprMVar = false :=
+  (mkData_flags_of_false br d h).2.1
+
+private theorem mkData_hasLevelMVar_of_false (br d h) :
+    (mkData h br d false false false false).hasLevelMVar = false :=
+  (mkData_flags_of_false br d h).2.2.1
+
+private theorem mkData_hasLevelParam_of_false (br d h) :
+    (mkData h br d false false false false).hasLevelParam = false :=
+  (mkData_flags_of_false br d h).2.2.2
+
+private theorem mkAppData_flag (i : Nat) (hi : i < 4) :
+    (mkAppData fData aData).toBitVec.getLsbD (40 + i) = flagAt
+      (fData.hasFVar || aData.hasFVar)
+      (fData.hasExprMVar || aData.hasExprMVar)
+      (fData.hasLevelMVar || aData.hasLevelMVar)
+      (fData.hasLevelParam || aData.hasLevelParam) i := by
+  have hm : max fData.looseBVarRange aData.looseBVarRange ≤
+      (Nat.pow 2 20 - 1).toUInt32 := by
+    dsimp +instances [instMaxUInt32, maxOfLe]
+    split <;> exact Data.looseBVarRange_le
+  rw [mkAppData_eq, mkAppData', if_pos hm]
+  generalize (mixHash fData aData).toUInt32 = hash
+  have : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 := by omega
+  rcases this with rfl | rfl | rfl | rfl
+  · simp [flagAt, Data.hasFVar_eq_getLsbD]
+  · simp [flagAt, Data.hasExprMVar_eq_getLsbD]
+  · simp [flagAt, Data.hasLevelMVar_eq_getLsbD]
+  · simp [flagAt, Data.hasLevelParam_eq_getLsbD]
+
+private theorem mkAppData_hasFVar :
+    (mkAppData fData aData).hasFVar = (fData.hasFVar || aData.hasFVar) := by
+  rw [Data.hasFVar_eq_getLsbD]
+  exact mkAppData_flag 0 (by decide)
+
+private theorem mkAppData_hasExprMVar :
+    (mkAppData fData aData).hasExprMVar = (fData.hasExprMVar || aData.hasExprMVar) := by
+  rw [Data.hasExprMVar_eq_getLsbD]
+  exact mkAppData_flag 1 (by decide)
+
+private theorem mkAppData_hasLevelMVar :
+    (mkAppData fData aData).hasLevelMVar = (fData.hasLevelMVar || aData.hasLevelMVar) := by
+  rw [Data.hasLevelMVar_eq_getLsbD]
+  exact mkAppData_flag 2 (by decide)
+
+private theorem mkAppData_hasLevelParam :
+    (mkAppData fData aData).hasLevelParam = (fData.hasLevelParam || aData.hasLevelParam) := by
+  rw [Data.hasLevelParam_eq_getLsbD]
+  exact mkAppData_flag 3 (by decide)
+
+private theorem binder_looseBVarRange_le (ty body : Expr) :
+    max ty.data.looseBVarRange.toNat (body.data.looseBVarRange.toNat - 1) ≤ 2 ^ 20 - 1 := by
+  have hty := Data.looseBVarRange_le (d := ty.data)
+  have hbody := Data.looseBVarRange_le (d := body.data)
+  omega
+
+private theorem let_looseBVarRange_le (ty val body : Expr) :
+    max (max ty.data.looseBVarRange.toNat val.data.looseBVarRange.toNat)
+      (body.data.looseBVarRange.toNat - 1) ≤ 2 ^ 20 - 1 := by
+  have hty := Data.looseBVarRange_le (d := ty.data)
+  have hval := Data.looseBVarRange_le (d := val.data)
+  have hbody := Data.looseBVarRange_le (d := body.data)
+  omega
+
+def hasFVar' : Expr → Bool
+  | .fvar _ => true
+  | .const ..
+  | .bvar _
+  | .sort _
+  | .mvar _
+  | .lit _ => false
+  | .mdata _ e => e.hasFVar'
+  | .proj _ _ e => e.hasFVar'
+  | .app e1 e2
+  | .lam _ e1 e2 _
+  | .forallE _ e1 e2 _ => e1.hasFVar' || e2.hasFVar'
+  | .letE _ t v b _ => t.hasFVar' || v.hasFVar' || b.hasFVar'
+
+/-- The cached `hasFVar` bit agrees with structural traversal. -/
+theorem hasFVar_eq (e : Expr) : e.hasFVar = e.hasFVar' := by
+  change e.data.hasFVar = e.hasFVar'
+  induction e with
+  | bvar => simp [Expr.data, hasFVar', mkData_hasFVar_of_false]
+  | fvar | mvar | sort | const | lit =>
+    simp only [Expr.data, hasFVar']
+    apply mkData_hasFVar
+    omega
+  | app _ _ ih1 ih2 =>
+    simp only [Expr.data, hasFVar']
+    rw [mkAppData_hasFVar, ih1, ih2]
+  | lam _ ty body _ ihty ihbody | forallE _ ty body _ ihty ihbody =>
+    simp only [Expr.data, mkDataForBinder, hasFVar']
+    rw [mkData_hasFVar (binder_looseBVarRange_le ty body), ihty, ihbody]
+  | letE _ ty val body _ ihty ihval ihbody =>
+    simp only [Expr.data, mkDataForLet, hasFVar']
+    rw [mkData_hasFVar (let_looseBVarRange_le ty val body), ihty, ihval, ihbody]
+  | mdata _ e ih | proj _ _ e ih =>
+    simp only [Expr.data, hasFVar']
+    rw [mkData_hasFVar (Data.looseBVarRange_le (d := e.data)), ih]
+
+def hasExprMVar' : Expr → Bool
+  | .mvar _ => true
+  | .const ..
+  | .bvar _
+  | .sort _
+  | .fvar _
+  | .lit _ => false
+  | .mdata _ e => e.hasExprMVar'
+  | .proj _ _ e => e.hasExprMVar'
+  | .app e1 e2
+  | .lam _ e1 e2 _
+  | .forallE _ e1 e2 _ => e1.hasExprMVar' || e2.hasExprMVar'
+  | .letE _ t v b _ => t.hasExprMVar' || v.hasExprMVar' || b.hasExprMVar'
+
+/-- The cached `hasExprMVar` bit agrees with structural traversal. -/
+@[simp] theorem hasExprMVar_eq (e : Expr) : e.hasExprMVar = e.hasExprMVar' := by
+  change e.data.hasExprMVar = e.hasExprMVar'
+  induction e with
+  | bvar => simp [Expr.data, hasExprMVar', mkData_hasExprMVar_of_false]
+  | fvar | mvar | sort | const | lit =>
+    simp only [Expr.data, hasExprMVar']
+    apply mkData_hasExprMVar
+    omega
+  | app _ _ ih1 ih2 =>
+    simp only [Expr.data, hasExprMVar']
+    rw [mkAppData_hasExprMVar, ih1, ih2]
+  | lam _ ty body _ ihty ihbody | forallE _ ty body _ ihty ihbody =>
+    simp only [Expr.data, mkDataForBinder, hasExprMVar']
+    rw [mkData_hasExprMVar (binder_looseBVarRange_le ty body), ihty, ihbody]
+  | letE _ ty val body _ ihty ihval ihbody =>
+    simp only [Expr.data, mkDataForLet, hasExprMVar']
+    rw [mkData_hasExprMVar (let_looseBVarRange_le ty val body), ihty, ihval, ihbody]
+  | mdata _ e ih | proj _ _ e ih =>
+    simp only [Expr.data, hasExprMVar']
+    rw [mkData_hasExprMVar (Data.looseBVarRange_le (d := e.data)), ih]
+
+def hasLevelMVar' : Expr → Bool
+  | .const _ ls => ls.any (·.hasMVar)
+  | .sort u => u.hasMVar
+  | .bvar _
+  | .fvar _
+  | .mvar _
+  | .lit _ => false
+  | .mdata _ e => e.hasLevelMVar'
+  | .proj _ _ e => e.hasLevelMVar'
+  | .app e1 e2
+  | .lam _ e1 e2 _
+  | .forallE _ e1 e2 _ => e1.hasLevelMVar' || e2.hasLevelMVar'
+  | .letE _ t v b _ => t.hasLevelMVar' || v.hasLevelMVar' || b.hasLevelMVar'
+
+/-- The cached `hasLevelMVar` bit agrees with structural traversal. -/
+@[simp] theorem hasLevelMVar_eq (e : Expr) : e.hasLevelMVar = e.hasLevelMVar' := by
+  change e.data.hasLevelMVar = e.hasLevelMVar'
+  induction e with
+  | bvar => simp [Expr.data, hasLevelMVar', mkData_hasLevelMVar_of_false]
+  | fvar | mvar | sort | const | lit =>
+    simp only [Expr.data, hasLevelMVar']
+    apply mkData_hasLevelMVar
+    omega
+  | app _ _ ih1 ih2 =>
+    simp only [Expr.data, hasLevelMVar']
+    rw [mkAppData_hasLevelMVar, ih1, ih2]
+  | lam _ ty body _ ihty ihbody | forallE _ ty body _ ihty ihbody =>
+    simp only [Expr.data, mkDataForBinder, hasLevelMVar']
+    rw [mkData_hasLevelMVar (binder_looseBVarRange_le ty body), ihty, ihbody]
+  | letE _ ty val body _ ihty ihval ihbody =>
+    simp only [Expr.data, mkDataForLet, hasLevelMVar']
+    rw [mkData_hasLevelMVar (let_looseBVarRange_le ty val body), ihty, ihval, ihbody]
+  | mdata _ e ih | proj _ _ e ih =>
+    simp only [Expr.data, hasLevelMVar']
+    rw [mkData_hasLevelMVar (Data.looseBVarRange_le (d := e.data)), ih]
+
+def hasLevelParam' : Expr → Bool
+  | .const _ ls => ls.any (·.hasParam)
+  | .sort u => u.hasParam
+  | .bvar _
+  | .fvar _
+  | .mvar _
+  | .lit _ => false
+  | .mdata _ e => e.hasLevelParam'
+  | .proj _ _ e => e.hasLevelParam'
+  | .app e1 e2
+  | .lam _ e1 e2 _
+  | .forallE _ e1 e2 _ => e1.hasLevelParam' || e2.hasLevelParam'
+  | .letE _ t v b _ => t.hasLevelParam' || v.hasLevelParam' || b.hasLevelParam'
+
+/-- The cached `hasLevelParam` bit agrees with structural traversal. -/
+@[simp] theorem hasLevelParam_eq (e : Expr) : e.hasLevelParam = e.hasLevelParam' := by
+  change e.data.hasLevelParam = e.hasLevelParam'
+  induction e with
+  | bvar => simp [Expr.data, hasLevelParam', mkData_hasLevelParam_of_false]
+  | fvar | mvar | sort | const | lit =>
+    simp only [Expr.data, hasLevelParam']
+    apply mkData_hasLevelParam
+    omega
+  | app _ _ ih1 ih2 =>
+    simp only [Expr.data, hasLevelParam']
+    rw [mkAppData_hasLevelParam, ih1, ih2]
+  | lam _ ty body _ ihty ihbody | forallE _ ty body _ ihty ihbody =>
+    simp only [Expr.data, mkDataForBinder, hasLevelParam']
+    rw [mkData_hasLevelParam (binder_looseBVarRange_le ty body), ihty, ihbody]
+  | letE _ ty val body _ ihty ihval ihbody =>
+    simp only [Expr.data, mkDataForLet, hasLevelParam']
+    rw [mkData_hasLevelParam (let_looseBVarRange_le ty val body), ihty, ihval, ihbody]
+  | mdata _ e ih | proj _ _ e ih =>
+    simp only [Expr.data, hasLevelParam']
+    rw [mkData_hasLevelParam (Data.looseBVarRange_le (d := e.data)), ih]
+
+end Expr
+
+namespace Literal
+open Expr in
+theorem toConstructor_hasLevelParam :
+    (Literal.toConstructor l).hasLevelParam' = false := by
+  cases l with simp [Literal.toConstructor]
+  | natVal n => cases n <;> simp [natLitToConstructor, hasLevelParam', natZero, natSucc]
+  | strVal s =>
+    simp [strLitToConstructor, hasLevelParam']
+    induction s.toList <;> simp_all [hasLevelParam', Level.hasParam']
+
+protected theorem beq_iff_eq {m n : Literal} : m == n ↔ m = n := by
+  cases m <;> cases n <;> simp! [(· == ·)]
+
+instance : LawfulBEq Literal where
+  eq_of_beq := Literal.beq_iff_eq.1
+  rfl := Literal.beq_iff_eq.2 rfl
+
+instance : DecidableEq Literal :=
+  fun a b => if h : a == b then .isTrue (by simp_all) else .isFalse (by simp_all)
+
+@[simp] theorem mkConst_typeName {l : Literal} : .const l.typeName [] = l.type := by
+  cases l <;> simp [typeName, type, mkConst]
+
+end Literal
+
+namespace Expr
+
+attribute [simp] mkConst mkBVar mkSort mkFVar mkMVar mkMData mkProj mkApp mkLambda mkForall mkLet
+  updateApp! updateFVar! updateConst! updateSort! updateMData! updateProj!
+  updateForall! updateForallE! updateLambda! updateLambdaE! updateLetE! updateLet!
+
+set_option allowUnsafeReducibility true
+attribute [local reducible] Data
+
+theorem mkData_looseBVarRange (H : br ≤ 2^20 - 1) :
+    (mkData h br d fv ev lv lp).looseBVarRange.toNat = br := by
+  rw [mkData_eq, mkData', if_pos H]; dsimp only [Data.looseBVarRange, -Nat.reducePow]
+  have : br.toUInt64.toUInt32.toNat = br := by simp; omega
+  refine .trans ?_ this; congr 2
+  refine UInt64.eq_of_toBitVec_eq ?_
+  have : br.toUInt64.toNat = br := by simp; omega
+  have : br.toUInt64.toBitVec ≤ 0xfffff#64 := (this ▸ H :)
+  have : h.toUInt32.toUInt64.toBitVec ≤ 0xffffffff#64 :=
+    show h.toUInt32.toNat ≤ 2^32-1 by simp; omega
+  have : (if d > 255 then 255 else d.toUInt8).toUInt64.toBitVec ≤ 0xff#64 :=
+    Nat.le_of_lt_succ (if d > 255 then 255 else d.toUInt8).1.1.2
+  have hb : ∀ (b : Bool), b.toUInt64.toBitVec ≤ 1#64 := by decide
+  have := hb fv; have := hb ev; have := hb lv; have := hb lp
+  change
+    (h.toUInt32.toUInt64.toBitVec +
+      (if d > 255 then 255 else d.toUInt8).toUInt64.toBitVec <<< 32#64 +
+      fv.toUInt64.toBitVec <<< 40#64 +
+      ev.toUInt64.toBitVec <<< 41#64 +
+      lv.toUInt64.toBitVec <<< 42#64 +
+      lp.toUInt64.toBitVec <<< 43#64 +
+      br.toUInt64.toBitVec <<< 44#64) >>> 44#64 =
+    br.toUInt64.toBitVec
+  bv_decide
+
+theorem looseBVarRange_le : looseBVarRange e ≤ 2^20 - 1 := Data.looseBVarRange_le
+
+theorem _root_.UInt32.max_toNat (a b : UInt32) : (max a b).toNat = max a.toNat b.toNat := by
+  simp +instances only [instMaxUInt32, maxOfLe, UInt32.le_iff_toNat_le, Nat.instMax]; split <;> rfl
+
+theorem mkAppData_looseBVarRange :
+    (mkAppData fData aData).looseBVarRange = max fData.looseBVarRange aData.looseBVarRange := by
+  have hm : max fData.looseBVarRange aData.looseBVarRange ≤ (Nat.pow 2 20 - 1).toUInt32 := by
+    dsimp +instances [instMaxUInt32, maxOfLe]; split <;> exact Data.looseBVarRange_le
+  rw [mkAppData_eq, mkAppData', if_pos hm]
+  simp [Data.looseBVarRange] at hm
+  dsimp only [Data.looseBVarRange, -Nat.reducePow]
+  generalize (max .. : UInt32) = m at *
+  have : m.toUInt64.toUInt32 = m := by simp [UInt64.toUInt32]
+  refine .trans ?_ this; congr 2
+  generalize (ite (_ > (255 : UInt16)) _ _ : UInt8) = a
+  generalize HOr.hOr (α := UInt64) fData _ = b
+  generalize UInt64.toUInt32 _ = c
+  apply UInt64.eq_of_toBitVec_eq
+  change m.toUInt64.toBitVec ≤ 0xfffff#64 at hm
+  have : c.toUInt64.toBitVec ≤ 0xffffffff#64 := Nat.le_of_lt_succ c.1.1.2
+  have : a.toUInt64.toBitVec ≤ 0xff#64 := Nat.le_of_lt_succ a.1.1.2
+  change
+    (b.toBitVec &&& 15#64 <<< 40#64 |||
+      c.toUInt64.toBitVec |||
+      a.toUInt64.toBitVec <<< 32#64 |||
+      m.toUInt64.toBitVec <<< 44#64) >>> 44#64 =
+    m.toUInt64.toBitVec
+  bv_decide
+
+def getAppArgsList : Expr → (r : List Expr := []) → List Expr
+  | .app f a, r => f.getAppArgsList (a :: r)
+  | _, r => r
+
+def getAppArgsRevList : Expr → List Expr
+  | .app f a => a :: f.getAppArgsRevList
+  | _ => []
+
+theorem getAppArgsRevList_reverse : (getAppArgsRevList e).reverse = getAppArgsList e := by
+  let rec loop {e r} : getAppArgsList e r = (getAppArgsRevList e).reverse ++ r := by
+    unfold getAppArgsList getAppArgsRevList; split <;> simp; exact loop
+  simp [loop]
+
+theorem getAppArgsList_reverse : (getAppArgsList e).reverse = getAppArgsRevList e := by
+  rw [← getAppArgsRevList_reverse]; simp
+
+open private getAppNumArgsAux getAppArgsAux mkAppRangeAux from Lean.Expr
+
+theorem getAppNumArgs_eq : getAppNumArgs e = (getAppArgsRevList e).length := by
+  let rec loop e n : getAppNumArgsAux e n = (getAppArgsRevList e).length + n := by
+    unfold getAppNumArgsAux getAppArgsRevList; split <;> simp
+    rw [loop]; omega
+  rw [getAppNumArgs, loop]; rfl
+
+theorem getAppArgs_toList_rev : (getAppArgs e).toList = (getAppArgsRevList e).reverse := by
+  let rec loop {e l₁ l₂ args} (h1 : args.toList = l₁ ++ l₂) :
+      l₁.length = (getAppArgsRevList e).length →
+      (getAppArgsAux e args ((getAppArgsRevList e).length - 1)).toList =
+      (getAppArgsRevList e).reverse ++ l₂ := by
+    unfold getAppArgsAux getAppArgsRevList; split
+    · rename_i f a; intro h2
+      obtain rfl | ⟨l₁, u, rfl⟩ := List.eq_nil_or_concat l₁; · cases h2
+      simp at h2 ⊢; refine loop ?_ h2
+      simp [← h2, h1]
+    · simp; rintro ⟨⟩; simpa using h1
+  simp [getAppArgs, getAppNumArgs_eq]
+  exact (loop (List.append_nil _).symm (by simp)).trans (by simp)
+
+theorem getAppArgs_toList : (getAppArgs e).toList = getAppArgsList e := by
+  rw [getAppArgs_toList_rev, getAppArgsRevList_reverse]
+
+theorem getAppArgs_eq_rev : getAppArgs e = (getAppArgsRevList e).reverse.toArray := by
+  simp [← getAppArgs_toList_rev]
+
+theorem getAppArgs_eq : getAppArgs e = (getAppArgsList e).toArray := by
+  simp [← getAppArgs_toList]
+
+open private getAppRevArgsAux from Lean.Expr in
+theorem getAppRevArgs_toList : (getAppRevArgs e).toList = getAppArgsRevList e := by
+  simp [getAppRevArgs, loop]
+where
+  loop {e args} : (getAppRevArgsAux e args).toList = args.toList ++ getAppArgsRevList e := by
+    unfold getAppRevArgsAux getAppArgsRevList; split <;> [(rw [loop]; simp); simp]
+
+theorem getAppRevArgs_eq : getAppRevArgs e = (getAppArgsRevList e).toArray := by
+  simp [← getAppRevArgs_toList]
+
+@[simp] theorem withApp_eq {e : Expr} : e.withApp f = f e.getAppFn e.getAppArgs := loop where
+  loop {e arr n} : withAppAux f e arr n = f e.getAppFn (getAppArgsAux e arr n) := by
+    unfold withAppAux getAppArgsAux; split <;> [exact loop; simp [getAppFn]]
+
+open private withAppRevAux getAppRevArgsAux from Lean.Expr in
+@[simp] theorem withRevApp_eq {e : Expr} :
+    e.withAppRev f = f e.getAppFn e.getAppRevArgs := loop where
+  loop {e arr} : withAppRevAux f e arr = f e.getAppFn (getAppRevArgsAux e arr) := by
+    unfold withAppRevAux getAppRevArgsAux; split <;> [exact loop; simp [getAppFn]]
+
+@[simp] def mkAppList : Expr → List Expr → Expr
+  | e, [] => e
+  | e, a :: as => mkAppList (.app e a) as
+
+theorem mkAppList_eq_foldl : mkAppList e es = es.foldl .app e := by
+  induction es generalizing e <;> simp [mkAppList, *]
+
+@[simp] theorem mkAppList_append :
+    mkAppList e (es₁ ++ es₂) = mkAppList (mkAppList e es₁) es₂ := by
+  simp [mkAppList_eq_foldl]
+
+@[simp] def mkAppRevList : Expr → List Expr → Expr
+  | e, [] => e
+  | e, a :: as => .app (mkAppRevList e as) a
+
+theorem mkAppRevList_eq_foldr : mkAppRevList e es = es.foldr (fun a e => .app e a) e := by
+  induction es <;> simp [mkAppRevList, *]
+
+@[simp] theorem mkAppRevList_append :
+    mkAppRevList e (es₁ ++ es₂) = mkAppRevList (mkAppRevList e es₂) es₁ := by
+  simp [mkAppRevList_eq_foldr]
+
+theorem mkAppList_reverse : mkAppList e es.reverse = mkAppRevList e es := by
+  simp [mkAppList_eq_foldl, mkAppRevList_eq_foldr]
+
+theorem mkAppRevList_reverse : mkAppRevList e es.reverse = mkAppList e es := by
+  simp [mkAppList_eq_foldl, mkAppRevList_eq_foldr]
+
+theorem mkAppRevList_getAppArgsRevList (e) :
+    mkAppRevList e.getAppFn (getAppArgsRevList e) = e := by
+  unfold getAppFn getAppArgsRevList; split <;> simp
+  congr 1; exact mkAppRevList_getAppArgsRevList _
+
+theorem mkAppList_getAppArgsList (e) :
+    mkAppList e.getAppFn (getAppArgsList e) = e := by
+  rw [← mkAppRevList_reverse, getAppArgsList_reverse, mkAppRevList_getAppArgsRevList]
+
+theorem mkAppRange_eq (h1 : args.toList = l₁ ++ l₂ ++ l₃)
+    (h2 : l₁.length = i) (h3 : (l₁ ++ l₂).length = j) :
+    mkAppRange e i j args = mkAppList e l₂ := loop h1 h2 h3 where
+  loop {n i e l₁ l₂} (h1 : args.toList = l₁ ++ l₂ ++ l₃)
+      (h2 : l₁.length = i) (h3 : (l₁ ++ l₂).length = n) :
+      mkAppRangeAux n args i e = mkAppList e l₂ := by
+    rw [mkAppRangeAux.eq_def]; split
+    · simp [Array.getElem!_eq_getD, ← Array.getElem?_toList, h1]
+      obtain _ | ⟨a, l₂⟩ := l₂; · simp_all
+      rw [List.getElem?_append_right (by simp [h2])]
+      simp [h2]
+      rw [loop (l₁ := l₁ ++ [a]) (l₂ := l₂)] <;> simp [h1, h2, h3]
+    · simp at h3
+      have : l₂.length = 0 := by omega
+      simp_all
+
+theorem mkAppRange_eq_rev (h1 : args.toList = l₁ ++ l₂ ++ l₃)
+    (h2 : l₁.length = i) (h3 : (l₁ ++ l₂).length = j) :
+    mkAppRange e i j args = mkAppRevList e l₂.reverse := by
+  rw [mkAppRange_eq h1 h2 h3, mkAppRevList_reverse]
+
+open private mkAppRevRangeAux from Lean.Expr in
+theorem mkAppRevRange_eq(h1 : args.toList = l₁ ++ l₂ ++ l₃)
+      (h2 : l₁.length = i) (h3 : (l₁ ++ l₂).length = j) :
+    mkAppRevRange e i j args = mkAppList e l₂.reverse := by
+  unfold mkAppRevRange
+  simpa using loop l₁ l₂.reverse l₃ [] (by simpa using h1) h2 (by simpa using h3)
+where
+  loop {start i} (l₁ l₂ l₃ l₄) (h1 : args.toList = l₁ ++ l₂.reverse ++ l₃)
+      (h2 : l₁.length = start) (h3 : l₁.length + List.length l₂ = i) :
+      mkAppRevRangeAux args start (mkAppRevList e l₄) i = mkAppList (mkAppRevList e l₄) l₂ := by
+    rw [mkAppRevRangeAux.eq_def]; split
+    · have : l₂.length = 0 := by omega
+      simp_all
+    · have : 0 < l₂.length := by omega
+      let a::l₂ := l₂; simp [← Nat.add_assoc] at h3
+      let i+1 := i; simp at h3
+      simp [Array.getElem!_eq_getD, ← Array.getElem?_toList, h1]
+      rw [List.getElem?_append_right (by omega)]
+      simp at h1; simp [← List.append_assoc] at h1
+      simp [← h3]; rw [h3]
+      simpa using loop l₁ l₂ (a :: l₃) (a :: l₄) (by simp [h1]) h2 h3
+
+theorem mkAppRevRange_eq_rev (h1 : args.toList = l₁ ++ l₂ ++ l₃)
+    (h2 : l₁.length = i) (h3 : (l₁ ++ l₂).length = j) :
+    mkAppRevRange e i j args = mkAppRevList e l₂ := by
+  rw [mkAppRevRange_eq h1 h2 h3, mkAppList_reverse]
+
+theorem liftLooseBVars_eq_self : e.looseBVarRange' ≤ s → liftLooseBVars' e s d = e := by
+  induction e generalizing s <;>
+    simp +contextual [*, looseBVarRange', liftLooseBVars', Nat.max_le]
+  omega
+
+@[simp] theorem liftLooseBVars_zero : liftLooseBVars' e s 0 = e := by
+  induction e generalizing s <;> simp [*, liftLooseBVars']
+
+theorem liftLooseBVars_liftLooseBVars {e : Expr} {n1 n2 k1 k2 : Nat}
+    (h1 : k1 ≤ k2) (h2 : k2 ≤ n1 + k1) :
+    liftLooseBVars' (liftLooseBVars' e k1 n1) k2 n2 = liftLooseBVars' e k1 (n1+n2) := by
+  induction e generalizing k1 k2 with simp [liftLooseBVars', ← Nat.add_assoc, *]
+  | bvar i =>
+    split <;> rename_i h
+    · rw [if_pos (Nat.lt_of_lt_of_le h h1)]
+    · rw [if_neg (by omega), Nat.add_assoc]
+
+theorem liftLooseBVars_add {e : Expr} {n1 n2 k : Nat} :
+    liftLooseBVars' (liftLooseBVars' e k n1) k n2 = liftLooseBVars' e k (n1+n2) := by
+  induction e generalizing k with simp [liftLooseBVars', *]
+  | bvar i =>
+    split; · rfl
+    rw [if_neg (by omega), Nat.add_assoc]
+
+theorem liftLooseBVars_comm (e : Expr) (n1 n2 k1 k2 : Nat) (h : k2 ≤ k1) :
+    liftLooseBVars' (liftLooseBVars' e k1 n1) k2 n2 =
+    liftLooseBVars' (liftLooseBVars' e k2 n2) (n2+k1) n1 := by
+  induction e generalizing k1 k2 with
+    simp [liftLooseBVars', Nat.add_assoc, Nat.succ_le_succ, *]
+  | bvar i =>
+    split <;> rename_i h'
+    · rw [if_pos (c := _ < n2 + k1)]; split
+      · exact Nat.lt_add_left _ h'
+      · omega
+    · have := mt (Nat.lt_of_lt_of_le · h) h'
+      rw [if_neg (by omega), if_neg this, if_neg (by omega), Nat.add_right_comm]
+
+theorem liftLooseBVars_looseBVarRange :
+    (liftLooseBVars' e k n).looseBVarRange' ≤ e.looseBVarRange' + n := by
+  induction e generalizing k <;> simp [*, looseBVarRange', liftLooseBVars'] <;> grind
+
+theorem instantiate1'_looseBVarRange
+    (he : e.looseBVarRange' ≤ n + k + 1) (ha : a.looseBVarRange' ≤ n) :
+    (instantiate1' e a k).looseBVarRange' ≤ n + k := by
+  induction e generalizing k with
+    simp_all [looseBVarRange', instantiate1', Nat.max_le]
+  | bvar =>
+    split <;> [skip; split] <;> try simp [looseBVarRange'] at he ⊢; omega
+    have := @liftLooseBVars_looseBVarRange a 0 k; omega
+  | _ => grind
+
+theorem instantiateList_looseBVarRange
+    (he : e.looseBVarRange' ≤ n + k + as.length) (ha : ∀ a ∈ as, a.looseBVarRange' ≤ n) :
+    (instantiateList e as k).looseBVarRange' ≤ n + k := by
+  induction as generalizing e with simp_all | cons _ _ ih
+  apply ih; rw [Nat.add_right_comm]; apply instantiate1'_looseBVarRange <;> omega
+
+theorem instantiate1'_eq_self : e.looseBVarRange' ≤ k → instantiate1' e a k = e := by
+  induction e generalizing k <;>
+    simp +contextual [*, looseBVarRange', instantiate1', Nat.max_le]
+  omega
+
+theorem instantiate1_eq_self (H : e.looseBVarRange' = 0) : instantiate1' e a = e := by
+  simpa using instantiate1'_eq_self (e := e) (Nat.le_zero.2 H)
+
+theorem instantiateList'_eq_self (h : e.looseBVarRange' ≤ k) : instantiateList e as k = e := by
+  induction as <;> simp [instantiateList, instantiate1'_eq_self, *]
+
+theorem instantiateList_eq_self (h : e.looseBVarRange' = 0) : instantiateList e as = e := by
+  induction as <;> simp [instantiateList, instantiate1_eq_self, *]
+
+theorem instantiate1'_liftLooseBVars :
+    instantiate1' (liftLooseBVars' e s (d + 1)) a (s + d) = e.liftLooseBVars' s d := by
+  induction e generalizing s <;>
+    simp [*, instantiate1', liftLooseBVars', Nat.add_right_comm _ _ 1]
+  rename_i i; split; · simp; omega
+  · rw [if_neg (by omega), if_neg (by omega)]; rfl
+
+theorem instantiate1'_liftLooseBVars_0 (e1 e2 : Expr) :
+    instantiate1' (liftLooseBVars' e1 k 1) e2 k = e1 := by
+  simpa using (instantiate1'_liftLooseBVars (d := 0)).trans liftLooseBVars_zero
+
+theorem instantiate1'_instantiate1' (e1 e2 e3 j) :
+    instantiate1' (instantiate1' e1 e2 (j+1)) e3 j =
+    instantiate1' (instantiate1' e1 (e3.liftLooseBVars' 0 1) j) e2 j := by
+  induction e1 generalizing j with simp [instantiate1', *] | bvar i
+  split <;> rename_i h
+  · split <;> rename_i h1
+    · simp [instantiate1', h1]
+    split <;> rename_i h1'
+    · subst i
+      simp [instantiate1']; rw [liftLooseBVars_comm (h := Nat.zero_le _)]
+      exact (instantiate1'_liftLooseBVars_0 ..).symm
+    · have hj := Nat.lt_of_le_of_ne (Nat.not_lt.1 h1) (Ne.symm h1')
+      let i+1 := i
+      simp [instantiate1', h1, h1', Nat.lt_of_succ_lt_succ h]
+  split <;> rename_i h'
+  · subst i
+    rw [if_neg (by omega), if_neg (by omega)]
+    simp [instantiate1']
+    suffices liftLooseBVars' _ _ (j+1) = _ by
+      rw [this]; exact instantiate1'_liftLooseBVars_0 ..
+    exact (liftLooseBVars_liftLooseBVars (Nat.zero_le _) (Nat.le_refl _)).symm
+  · have hk := Nat.lt_of_le_of_ne (Nat.not_lt.1 h) (Ne.symm h')
+    let i+1 := i
+    have hk := Nat.lt_of_add_lt_add_right hk
+    simp [instantiate1']
+    rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+    simp [instantiate1']
+    rw [if_neg (Nat.lt_asymm hk), if_neg (Nat.ne_of_gt hk)]
+
+@[simp] def instantiateRevList (e : Expr) : List Expr → (k :_:= 0) → Expr
+  | [], _ => e
+  | a :: as, k => instantiate1' (instantiateRevList e as k) a k
+
+theorem instantiateList_eq_foldl :
+    instantiateList e as k = as.foldl (instantiate1' · · k) e := by
+  induction as generalizing e <;> simp [*]
+
+theorem instantiateRevList_eq_foldr :
+    instantiateRevList e as k = as.foldr (fun a e => instantiate1' e a k) e := by
+  induction as <;> simp [*]
+
+theorem instantiateList_append :
+    instantiateList e (es₁ ++ es₂) k = instantiateList (instantiateList e es₁ k) es₂ k := by
+  simp [instantiateList_eq_foldl]
+
+theorem instantiateRevList_append :
+    instantiateRevList e (es₁ ++ es₂) k =
+    instantiateRevList (instantiateRevList e es₂ k) es₁ k := by
+  simp [instantiateRevList_eq_foldr]
+
+theorem instantiateList_reverse :
+    instantiateList e as.reverse k = instantiateRevList e as k := by
+  simp [instantiateList_eq_foldl, instantiateRevList_eq_foldr]
+
+theorem instantiateRevList_reverse :
+    instantiateRevList e as.reverse k = instantiateList e as k := by
+  simp [instantiateList_eq_foldl, instantiateRevList_eq_foldr]
+
+@[simp]
+theorem instantiateRevList_lam : instantiateRevList (.lam n ty body bi) as k =
+    .lam n (instantiateRevList ty as k) (instantiateRevList body as (k + 1)) bi := by
+  induction as <;> simp [instantiate1', *]
+
+@[simp]
+theorem instantiateList_lam : instantiateList (.lam n ty body bi) as k =
+    .lam n (instantiateList ty as k) (instantiateList body as (k + 1)) bi := by
+  simp [← instantiateRevList_reverse, instantiateRevList_lam]
+
+@[simp]
+theorem instantiateRevList_app : instantiateRevList (.app f a) as k =
+    .app (instantiateRevList f as k) (instantiateRevList a as k) := by
+  induction as <;> simp [instantiate1', *]
+
+@[simp]
+theorem instantiateList_app : instantiateList (.app f a) as k =
+    .app (instantiateList f as k) (instantiateList a as k) := by
+  simp [← instantiateRevList_reverse, instantiateRevList_app]
+
+@[simp]
+theorem instantiateList_forallE : instantiateList (.forallE n ty body bi) as k =
+    .forallE n (instantiateList ty as k) (instantiateList body as (k + 1)) bi := by
+  induction as generalizing ty body <;> simp [instantiate1', *]
+
+@[simp]
+theorem instantiateList_letE : instantiateList (.letE n ty val body nd) as k =
+    .letE n (instantiateList ty as k) (instantiateList val as k)
+      (instantiateList body as (k + 1)) nd := by
+  induction as generalizing ty val body <;> simp [instantiate1', *]
+
+theorem instantiateList_instantiate1_comm (h : a.looseBVarRange' = 0) :
+    (instantiateList e as 1).instantiate1' a =
+    instantiateList (e.instantiate1' a) as := by
+  induction as generalizing e <;> simp [*]
+  congr 1; refine (instantiate1'_instantiate1' (j := 0) ..).trans ?_
+  rw [liftLooseBVars_eq_self (by simp [h])]
+
+theorem instantiateRev_push {e : Expr} {subst a} :
+    instantiateRev e (subst.push a) = instantiateRev (e.instantiate1' a) subst := by
+  let ⟨subst⟩ := subst; simp [instantiateList]
+
+theorem abstractList_eq_foldl {e : Expr} {as k} :
+    abstractList e as k = List.foldl (fun e a => abstract1 a e k) e as := by
+  induction as generalizing e <;> simp_all
+
+@[simp] def abstractRevList : Expr → List FVarId → (k :_:= 0) → Expr
+  | e, [], _ => e
+  | e, a :: as, k => abstract1 a (abstractRevList e as k) k
+
+theorem abstractRevList_eq_foldr {e : Expr} {as k} :
+    abstractRevList e as k = List.foldr (abstract1 · · k) e as := by
+  induction as <;> simp_all
+
+theorem abstractList_reverse {e : Expr} {as k} :
+    abstractList e as.reverse k = abstractRevList e as k := by
+  simp [abstractList_eq_foldl, abstractRevList_eq_foldr]
+
+theorem abstractRevList_reverse {e : Expr} {as k} :
+    abstractRevList e as.reverse k = abstractList e as k := by
+  simp [abstractList_eq_foldl, abstractRevList_eq_foldr]
+
+theorem abstractList_append {e : Expr} {as k} :
+    abstractList e (as ++ as') k = abstractList (abstractList e as k) as' k := by
+  simp [abstractList_eq_foldl]
+
+theorem abstract1_comm {e : Expr} {k} (h : a ≠ b) :
+    abstract1 a (abstract1 b e k) k =
+    abstract1 b (abstract1 a e k) (k+1) := by
+  induction e generalizing k with simp_all [abstract1]
+  | bvar => split <;> [rw [if_pos]; simp [*]] <;> omega
+  | fvar => split <;> split <;> simp_all [abstract1]
+
+theorem abstract1_abstractList {e : Expr} {as : List FVarId} {k} (H : a ∉ as) :
+    abstract1 a (abstractList e as k) k =
+    abstractList (abstract1 a e k) as (k+1) := by
+  induction as generalizing e <;> simp_all [abstract1_comm]
+
+theorem abstract1_abstractList' {e : Expr} {as : List FVarId} {k} (H : (a :: as).Nodup) :
+    abstract1 a (abstractList e as k) (k + as.length) =
+    abstractList (abstract1 a e k) as k := by
+  induction as generalizing e a with
+  | nil => simp
+  | cons b as ih =>
+    simp at *; simp [H] at ih
+    rw [← ih H.2.1, ← Nat.add_assoc, ← abstract1_comm (.symm H.1.1), ih H.1.2, ih H.2.1]
+
+theorem abstract1_hasLooseBVar (a e k i) :
+    (abstract1 a e k).hasLooseBVar' (if i < k then i else i+1) = e.hasLooseBVar' i := by
+  have (i) k : (if i < k then i else i + 1) + 1 = if i + 1 < k + 1 then i + 1 else i + 1 + 1 := by
+    simp; split <;> rfl
+  induction e generalizing i k with simp only [hasLooseBVar', abstract1, *]
+  | bvar j =>
+    by_cases h : j = i <;> simp [h]
+    split <;> split <;> omega
+  | fvar b =>
+    split <;> simp [hasLooseBVar']
+    split <;> omega
+
+theorem abstract1_eq_liftLooseBVars (h : (abstract1 a e k).hasLooseBVar' k = false) :
+    abstract1 a e k = liftLooseBVars' e k 1 := by
+  induction e generalizing k <;> grind [abstract1, hasLooseBVar', liftLooseBVars']
+
+-- theorem abstract1_looseBVarRange_le :
+--     (abstract1 a e k).looseBVarRange' ≤ max k e.looseBVarRange' + 1 := by
+--   have H {k a b c d} (h1 : a ≤ max k c + 1) (h2 : b ≤ max k d + 1) :
+--       max a b ≤ max k (max c d) + 1 := by
+--     rw [Nat.max_le]; simp [Nat.max_def]; split <;> split <;> omega
+--   have {k a b c d} (h1 : a ≤ max k c + 1) (h2 : b ≤ max (k+1) d + 1) :
+--       max a (b - 1) ≤ max k (max c (d - 1)) + 1 := by apply H <;> omega
+--   induction e generalizing k with simp [abstract1, looseBVarRange', *] <;> try solve_by_elim
+--   | bvar => split <;> omega
+--   | fvar => split <;> simp [looseBVarRange']
+
+theorem lowerLooseBVars_eq_instantiate (h : e.hasLooseBVar' k = false) :
+    e.lowerLooseBVars' (k + 1) 1 = instantiate1' e v k := by
+  induction e generalizing k with simp_all [hasLooseBVar', lowerLooseBVars', instantiate1']
+  | bvar j => split <;> [rw [if_pos (by omega)]; rw [if_neg (by omega)]]
+
+theorem hasLooseBVar_of_ge_looseBVarRange {e : Expr} (h : e.looseBVarRange' ≤ k) :
+    e.hasLooseBVar' k = false := by
+  induction e generalizing k with simp_all [hasLooseBVar', looseBVarRange', Nat.max_le]
+  | bvar j => omega
+
+theorem abstract1_lower {e : Expr} (h : e.hasLooseBVar' k₁ = false) (hk : k₁ ≤ k₂) :
+    Expr.abstract1 a (e.lowerLooseBVars' (k₁ + 1) 1) k₂ =
+    (Expr.abstract1 a e (k₂ + 1)).lowerLooseBVars' (k₁ + 1) 1 := by
+  induction e generalizing k₁ k₂ with simp_all [abstract1, lowerLooseBVars', hasLooseBVar']
+  | bvar i =>
+    split <;> [skip; split]
+    · rw [if_pos (c := i < k₂ + 1) (by omega), if_pos (by omega)]; simp [*]
+    · rw [if_pos (c := i < _) (by omega)]; simp [*]
+    · rw [if_neg (c := i < _) (by omega), if_neg (by omega)]; omega
+  | fvar b =>
+    split <;> simp [lowerLooseBVars', -right_eq_ite_iff]
+    rw [if_neg (by omega)]
+
+variable (red : Bool) (s : Name → Level) in
+def instantiateLevelParamsCore' : Expr → Expr
+  | .const c ls => .const c (ls.map (·.substParams' s red))
+  | .sort u => .sort (u.substParams' s red)
+  | .mdata m e => .mdata m (instantiateLevelParamsCore' e)
+  | .proj n i e => .proj n i (instantiateLevelParamsCore' e)
+  | .app f a => .app (instantiateLevelParamsCore' f) (instantiateLevelParamsCore' a)
+  | .lam n t b bi => .lam n (instantiateLevelParamsCore' t) (instantiateLevelParamsCore' b) bi
+  | .forallE n t b bi =>
+    .forallE n (instantiateLevelParamsCore' t) (instantiateLevelParamsCore' b) bi
+  | .letE n t v b bi => .letE n (instantiateLevelParamsCore' t)
+      (instantiateLevelParamsCore' v) (instantiateLevelParamsCore' b) bi
+  | e@(.bvar _)
+  | e@(.fvar _)
+  | e@(.mvar _)
+  | e@(.lit _) => e
+
+theorem instantiateLevelParamsCore_eq_self (h : e.hasLevelParam' = false) :
+    instantiateLevelParamsCore' red s e = e := by
+  induction e <;> simp_all [instantiateLevelParamsCore', hasLevelParam', Level.substParams_eq_self]
+  exact List.map_id''' _ fun _ h' => Level.substParams_eq_self (h _ h')
+
+theorem instantiateLevelParamsCore_id {e : Expr} :
+    instantiateLevelParamsCore' false .param e = e := by
+  induction e <;> simp_all [instantiateLevelParamsCore', Level.substParams_id]
+
+open private instantiateLevelParamsCore.replaceFn from Lean.Util.InstantiateLevelParams in
+theorem instantiateLevelParamsCore_eq :
+    instantiateLevelParamsCore s e =
+    instantiateLevelParamsCore' true (fun x => (s x).getD (.param x)) e := by
+  simp [instantiateLevelParamsCore]
+  have (e) (H : e.hasLevelParam' = true →
+        replaceNoCache (instantiateLevelParamsCore.replaceFn s) e =
+        instantiateLevelParamsCore' true (fun x => (s x).getD (Level.param x)) e) :
+      replaceNoCache (instantiateLevelParamsCore.replaceFn s) e =
+      instantiateLevelParamsCore' true (fun x => (s x).getD (Level.param x)) e := by
+    cases eq : e.hasLevelParam' <;> [skip; exact H eq]
+    rw [instantiateLevelParamsCore_eq_self eq]
+    suffices ∀ f, f e = some e → replaceNoCache f e = e by
+      apply this; simp [instantiateLevelParamsCore.replaceFn, eq]
+    intro f eq; cases e <;> simp only [replaceNoCache, eq]
+  induction e <;> (
+    refine this _ fun h => ?_
+    simp only [replaceNoCache, instantiateLevelParamsCore.replaceFn]
+    simp [h]; clear this h
+    simp_all [instantiateLevelParamsCore'])
+
+open private getParamSubst from Lean.Util.InstantiateLevelParams in
+theorem instantiateLevelParams_eq {e ps ls} :
+    instantiateLevelParams e ps ls =
+    instantiateLevelParamsCore' (!ps.isEmpty && !ls.isEmpty)
+      (fun x => ((ps.idxOf? x).bind (ls[·]?)).getD (.param x)) e := by
+  simp only [instantiateLevelParams]; rw [← Bool.not_or];
+  cases eq : ps.isEmpty || ls.isEmpty <;> simp
+  · clear eq
+    simp [instantiateLevelParamsCore_eq, List.idxOf?]; congr; ext n; congr
+    induction ps generalizing ls <;> cases ls <;> simp [getParamSubst]
+    split <;> simp [*, List.findIdx?_cons]; cases List.findIdx? .. <;> simp
+  · refine instantiateLevelParamsCore_id.symm.trans ?_; congr; ext n
+    cases ps <;> simp_all
+
+theorem eqv_sort {e : Expr} : e == .sort u ↔ e = .sort u := by
+  conv => lhs; simp [(· == ·)]
+  cases e <;> simp [eqv']
+
+theorem eqv_const {e : Expr} : e == .const c ls ↔ e = .const c ls := by
+  conv => lhs; simp [(· == ·)]
+  cases e <;> simp [eqv']
+
+theorem structuralEq_const {e : Expr} :
+    structuralEq e (.const c ls) = true ↔ e = .const c ls := by
+  cases e <;> simp [structuralEq]
+
+theorem structuralEq_refl (e : Expr) : structuralEq e e = true := by
+  induction e <;> simp [structuralEq, *]
+
+/-- Transparent structural equality implies Lean's non-strict expression
+equivalence.  This direction deliberately does not identify binder names or
+binder information, which `Expr.eqv` also ignores. -/
+theorem structuralEq_eqv {a b : Expr} :
+    structuralEq a b = true → a == b := by
+  simp only [(· == ·)]
+  induction a generalizing b <;> cases b <;>
+    simp_all [structuralEq, eqv']
+
+theorem eqv_refl (e : Expr) : e == e := by
+  simp [(· == ·)]; induction e <;> simp [eqv', *]
+
+theorem eqv_euc {e₁ e₂ e₃ : Expr} : e₁ == e₂ → e₁ == e₃ → e₂ == e₃ := by
+  simp [(· == ·)]
+  induction e₁ generalizing e₂ e₃
+  all_goals
+    cases e₂ <;> try change false = _ → _; rintro ⟨⟩
+    simp [eqv']; intros; subst_vars; try simp [*]
+  all_goals
+    revert ‹Expr.eqv' .. = _›
+    cases e₃ <;> try change false = _ → _; rintro ⟨⟩
+    simp +contextual [eqv', *]
+  simp [BEq.congr_left ‹_›]
+
+instance : EquivBEq Expr where
+  symm h := eqv_euc h (eqv_refl _)
+  trans h1 h2 := eqv_euc (eqv_euc h1 (eqv_refl _)) h2
+  rfl := eqv_refl _
+
+theorem data_eq {e₁ e₂ : Expr} : e₁ == e₂ → e₁.data = e₂.data := by
+  simp [(· == ·)]; induction e₁ generalizing e₂
+  all_goals
+    cases e₂ <;> try change false = _ → _; rintro ⟨⟩
+    simp [eqv']; intros; subst_vars; try simp [*]
+  all_goals simp [Expr.data]; grind
+
+instance : LawfulHashable Expr where
+  hash_eq e₁ e₂ h := by simp [hash, Expr.hash, data_eq h]
+
+theorem instantiate1_eqv {e₁ e₂ : Expr} :
+    e₁ == e₂ → e₁.instantiate1' a k == e₂.instantiate1' a k := by
+  simp [(· == ·)]; induction e₁ generalizing e₂ k
+  all_goals
+    cases e₂ <;> try change false = _ → _; rintro ⟨⟩
+    simp [instantiate1', eqv']
+  all_goals intros; subst_vars; try simp [*]
+  split <;> [skip; split] <;> simpa [(· == ·)] using eqv_refl _
+
+theorem instantiateList_eqv {e₁ e₂ : Expr} (h : e₁ == e₂) :
+    e₁.instantiateList as k == e₂.instantiateList as k := by
+  induction as generalizing e₁ e₂ <;> simp [instantiate1_eqv, *]

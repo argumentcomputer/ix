@@ -364,13 +364,13 @@ def whnf := ⟦
   -- Dispatch is on the ADDRESS alone, and the stored `QuotKind` is not
   -- consulted. All three references decide this way — Rust
   -- `try_quot_reduce` (`whnf.rs:3073-3120`) compares against
-  -- `self.prims.quot_lift.addr` / `quot_ind.addr`, `Ix/Tc`
+  -- `self.prims.quot_lift.addr` / `quot_ind.addr`, `Ix/Kernel`
   -- `tryQuotReduce` (`Whnf.lean:1674-1698`) against `p.quotLift.addr` /
   -- `p.quotInd.addr`, and lean4lean `quotReduceRec` (`Quot.lean:85-100`)
   -- against the names `Quot.lift` / `Quot.ind`.
   --
   -- The kind field is a checked REDUNDANCY, not a dispatch input: Rust's
-  -- `check_quot` and `Ix/Tc`'s `checkQuot` both DERIVE the expected kind
+  -- `check_quot` and `Ix/Kernel`'s `checkQuot` both DERIVE the expected kind
   -- from the address and assert the stored one matches. Reduction runs
   -- before any of that — `get_ci` typechecks nothing — so keying on the
   -- kind would trust a field no one has validated yet.
@@ -424,7 +424,7 @@ def whnf := ⟦
   -- The head is recognised by ADDRESS and the arity must be exactly 3,
   -- which is all the references look at: Rust
   -- `if *mk_addr != self.prims.quot_ctor.addr { return Ok(None) }` then
-  -- `if mk_args.len() != 3` (`whnf.rs:3108`), `Ix/Tc` the same against
+  -- `if mk_args.len() != 3` (`whnf.rs:3108`), `Ix/Kernel` the same against
   -- `p.quotCtor.addr` (`Whnf.lean:1690-1698`), lean4lean
   -- `if !mk.isAppOfArity ``Quot.mk 3` (`Quot.lean:88`). No `get_ci`, no
   -- stored kind — the constant need not even be resolvable for this to

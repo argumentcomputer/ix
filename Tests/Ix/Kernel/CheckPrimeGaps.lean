@@ -71,7 +71,7 @@ def testRustCheckPrimeGaps : TestSeq :=
   ) .done
 
 def testLeanCheckPrimeGaps : TestSeq :=
-  .individualIO s!"Ix.Tc check {focusConsts.size} inlined PrimeGaps consts" none (do
+  .individualIO s!"Ix.Kernel check {focusConsts.size} inlined PrimeGaps consts" none (do
     let names ← filterFocusConsts focusConsts
     let leanEnv ← get_env!
     let (_, closedConsts) :=

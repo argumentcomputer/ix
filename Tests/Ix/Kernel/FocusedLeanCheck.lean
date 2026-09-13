@@ -32,7 +32,7 @@ def checkClosure (tag fileStem : String)
         {status.ungrounded.size} constant(s); first: {first}")
 
     let bytes ← IO.FS.readBinFile path
-    let cfg : Ix.Tc.ParCheckCfg := {
+    let cfg : Ix.Kernel.ParCheckCfg := {
       workers := 1
       verbose := true
       progressMs := 0
@@ -43,7 +43,7 @@ def checkClosure (tag fileStem : String)
     let only := names.map fun name => toString name
     match ← Ix.Cli.CheckLeanCmd.runMetaCheck bytes cfg true none only none with
     | .error err =>
-        return (false, 0, names.size, some s!"[{tag}] Ix.Tc driver failed: {err}")
+        return (false, 0, names.size, some s!"[{tag}] Ix.Kernel driver failed: {err}")
     | .ok (report, workItems) =>
         IO.println s!"[{tag}] {report.passed}/{report.targetsCovered} passed in \
           {report.elapsedMs}ms"

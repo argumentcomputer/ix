@@ -428,7 +428,7 @@ def infer := ⟦
     -- Sort is malformed, and both references that implement this ERROR
     -- rather than answering — Rust `inductive_app_is_prop`
     -- (`infer.rs:485-517`, "projection: expected forall in inductive
-    -- type", then `ensure_sort`) and `Ix/Tc` `inductiveAppIsProp`
+    -- type", then `ensure_sort`) and `Ix/Kernel` `inductiveAppIsProp`
     -- (`Infer.lean:296-324`), with the same message. lean4lean has no
     -- counterpart: `inferProj` infers the type of the APPLIED struct
     -- expression instead and never peels the declaration's telescope, so
@@ -568,7 +568,7 @@ def infer := ⟦
 
   -- No fallthrough arm: a value whose type does not whnf to a Sort is not
   -- a type, and the references error there too (Rust `ensure_sort`,
-  -- `tc.rs:648-658`, returns `TcError::TypeExpected`; `Ix/Tc`
+  -- `tc.rs:648-658`, returns `TcError::TypeExpected`; `Ix/Kernel`
   -- `ensureSortWhnf` throws `.typeExpected`). Do not give it a default
   -- level — that would make an ill-typed `Lam` usable as a type.
   fn k_ensure_sort(e: KExpr, types: List‹KExpr›) -> KLevel {

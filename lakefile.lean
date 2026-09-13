@@ -10,7 +10,7 @@ require LSpec from git
 /- Blake3 precompiles its libraries, so Lake loads their shared objects -- which
 bundle the C and Rust FFI objects -- into any process elaborating a module that
 imports them. That is what supplies the BLAKE3 backend to Lean's native evaluator
-for the `native_decide` proofs in `IxTcVerify`, so this pin must stay at or after
+for the `native_decide` proofs in `IxKernelVerify`, so this pin must stay at or after
 the revision that turned precompilation on. Before it, Blake3 exposed a
 `blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
 that target no longer exists. -/
@@ -22,20 +22,6 @@ require Cli from git
 
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.33.0"
-
-/- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
-Theory/Verify specification surface, while `bench-lean4lean` and the ignored
-`lean4lean` test runner exercise the implementation. The default `ix` target
-still does not build this dependency. Pin `argumentcomputer/lean4ix` exactly --
-the Argument development line, a standalone repository rather than a GitHub
-fork of digama0/lean4lean: this revision carries the upstream v4.32/v4.33
-kernel hardening — including the `checkNoMVarNoFVar` check on an opaque's
-value (leanprover/lean4#14498), which the replay path in
-`Benchmarks/Lean4Lean.lean` reaches — on top of that line's certified
-inductive-environment and projection development, and tracks Lean v4.33.1 as
-this package does. -/
-require lean4lean from git
-  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
 
 /-! ## FFI
 
@@ -194,18 +180,6 @@ lean_exe «bench-aggregate-policy» where
   -- symbols are then resolved from ix_ffi and not pulled twice.
   moreLinkObjs := #[ix_rs]
 
-/- The lean4lean replay machinery as an importable lib: the
-`bench-lean4lean` exe root and the ignored `lean4lean` test runner both
-import `Benchmarks.Lean4Lean`, and modules under `Benchmarks/` belong to
-no other lib target, so without this Lake cannot schedule the module from
-the Tests import graph. -/
-lean_lib Lean4LeanBench where
-  globs := #[.one `Benchmarks.Lean4Lean]
-
-lean_exe «bench-lean4lean» where
-  root := `Benchmarks.Lean4LeanMain
-  supportInterpreter := true
-
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
@@ -228,9 +202,13 @@ lean_exe truthmines where
 
 end Benchmarks
 
-section IxTcVerify
+lean_lib IxTheoryNamed where
+  roots := #[]
+  globs := #[.submodules `Ix.Theory.Named]
 
-/-- Loadable FFI for Lean's native evaluator while `IxTcVerify` is elaborated.
+section IxKernelVerify
+
+/-- Loadable FFI for Lean's native evaluator while `IxKernelVerify` is elaborated.
 
 `native_decide` runs compiled Lean before any executable is linked, so for each
 opaque `@[extern]` it reaches, both symbol layers must be loadable up front:
@@ -255,31 +233,37 @@ target ix_native_decide_dynlib pkg : Dynlib := do
     (pkg.buildDir / nameToSharedLib "ix_native_decide")
     (boxedObjs.push ixCdylib) #[]
 
-/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
+/- Formal verification of `Ix.Kernel` against the internal named specification.
 Non-default: `lake build ix` never
 touches it, and `build-all` (the lint driver) skips it by name because its
-pinned Lean4Lean dependencies still emit named `sorry` warnings — `lake lint
+internal named-specification proofs still emit named `sorry` warnings — `lake lint
 -- --wfail` would otherwise fail even though the Ix verification source has
 no local `sorry` tokens. Required CI builds it separately without `--wfail`,
 audits the exact local sorry frontier, and checks exact per-root transitive
 axiom plus direct-`sorryAx`-origin manifests. Dev loop:
-`lake build IxTcVerify`; focused trust audit:
-`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional
-Ix.Tc.Verify.Audit.Statements`. -/
-lean_lib IxTcVerify where
-  globs := #[.submodules `Ix.Tc.Verify]
+`lake build IxKernelVerify`; focused trust audit:
+`lake build Ix.Kernel.Verify.Audit.Completed Ix.Kernel.Verify.Audit.Conditional
+Ix.Kernel.Verify.Audit.Statements`. -/
+lean_lib IxKernelVerify where
+  globs := #[.submodules `Ix.Kernel.Verify]
   -- `supportInterpreter` is a `lean_exe` option and takes effect only when
   -- that executable is linked, after its modules have been elaborated.
   -- These native-decide proofs need the boxed FFI symbols while the library
   -- modules are being elaborated, so they must be supplied as a dynlib.
   dynlibs := #[ix_native_decide_dynlib]
 
-end IxTcVerify
+end IxKernelVerify
+
+/- Direct refinement of production operations into the set model, with its
+own exact axiom audit. This is distinct from whole-checker soundness. -/
+lean_lib IxKernelConsistency where
+  roots := #[`Ix.Kernel.Verify.Consistency]
+  globs := #[.andSubmodules `Ix.Kernel.Verify.Consistency]
 
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
-Lean4Lean Theory endpoint as `IxTcVerify`.  Kept as a separate non-default
+internal named-specification endpoint as `IxKernelVerify`. Kept as a separate non-default
 library so compiler proofs cannot accidentally inherit checker acceptance
 theorems as their specification. -/
 lean_lib IxCompileVerify where
@@ -344,10 +328,11 @@ script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  -- IxTcVerify is the WIP proofs lib: sorry-bearing by design while the
-  -- verification frontier is open, so it must not run under `--wfail`.
-  -- Required CI builds it separately and audits the exact frontier.
-  let allNames := (libNames ++ exeNames |>.toList).filter (· != "IxTcVerify")
+  -- The named specification and its implementation proofs retain an audited
+  -- frontier. CI builds them separately without `--wfail`. The set model,
+  -- direct consistency roots, and certified adapters are checked strictly.
+  let allNames := (libNames ++ exeNames |>.toList).filter fun name =>
+    name != "IxKernelVerify" && name != "IxCompileVerify" && name != "IxTheoryNamed"
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {
@@ -358,3 +343,144 @@ script "build-all" (args) := do
   return 0
 
 end Scripts
+
+section Theory
+
+lean_lib IxTheory where
+  roots := #[`Ix.Theory]
+  -- Keep the set-model foundation independent of named checker proof support.
+  globs := #[.one `Ix.Theory, .one `Ix.Theory.Certified,
+    .one `Ix.Theory.Const, .one `Ix.Theory.Expr, .one `Ix.Theory.Quot,
+    .one `Ix.Theory.Ref, .one `Ix.Theory.Rename, .one `Ix.Theory.Store,
+    .one `Ix.Theory.VLevel, .submodules `Ix.Theory.Certificate,
+    .submodules `Ix.Theory.Certified, .submodules `Ix.Theory.Inductive,
+    .submodules `Ix.Theory.Model, .submodules `Ix.Theory.Std]
+
+lean_lib IxTheoryCertified where
+  roots := #[`Ix.Theory.Certified]
+
+lean_lib IxTheoryTests where
+  roots := #[`Tests.Theory]
+
+lean_exe «theory-provenance» where
+  root := `Tests.Theory.Provenance
+
+end Theory
+
+section Certified
+
+lean_lib IxCertified where
+  roots := #[`Ix.Certified]
+  moreLinkObjs := #[ix_rs]
+
+lean_lib IxCertifiedAudit where
+  roots := #[`Ix.Certified.AuditAll]
+
+lean_exe «certified-cli-tests» where
+  root := `Tests.Certified.CLI
+  supportInterpreter := true
+
+lean_exe «certified-adapter-tests» where
+  root := `Tests.Certified.Check
+  supportInterpreter := true
+
+lean_exe «certified-check» where
+  root := `Ix.Certified.Main
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-claim-check» where
+  root := `Ix.Certified.ClaimMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-feature-tests» where
+  root := `Tests.Certified.Features
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-ordinary-tests» where
+  root := `Tests.Certified.Ordinary
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-source-tests» where
+  root := `Tests.Certified.SourceMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-fidelity-tests» where
+  root := `Tests.Certified.FidelityMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-claim-tests» where
+  root := `Tests.Certified.ClaimsMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-modeled-tests» where
+  root := `Tests.Certified.ModeledMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+end Certified
+
+namespace KernelChecks
+
+private def run (command : String) (args : Array String := #[]) : IO Unit := do
+  let child ← IO.Process.spawn { cmd := command, args, stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  unless code == 0 do throw (IO.userError s!"{command} failed ({code})")
+
+private def checkReport (module expectedPath : String) : IO Unit := do
+  let report ← IO.Process.output {
+    cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", module] }
+  unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
+  unless report.stdout == (← IO.FS.readFile expectedPath) do
+    IO.FS.withTempFile fun handle path => do
+      handle.putStr report.stdout
+      handle.flush
+      let child ← IO.Process.spawn {
+        cmd := "diff", args := #["-u", expectedPath, path.toString]
+        stdout := .inherit, stderr := .inherit }
+      let _ ← child.wait
+      throw (IO.userError s!"foundation report differs from {expectedPath}")
+
+end KernelChecks
+
+open KernelChecks
+
+/-- Check the set model, its provenance, and its exact foundation report. -/
+script "check-theory" := do
+  run "lake" #["build", "--wfail", "IxTheory", "IxTheoryTests", "theory-provenance"]
+  run ".lake/build/bin/theory-provenance"
+  checkReport "Tests/Theory/Audit/Certified.lean" "Tests/Theory/certified-foundation.txt"
+  IO.println "Theory checks passed: exact root types, axioms, dependencies, and runtime inventory."
+  return 0
+
+/-- Check host certification against exact audits and frozen source/claim evidence. -/
+script "check-certified" := do
+  run "lake" #["build", "--wfail", "IxCertified", "IxCertifiedAudit",
+    "certified-check", "certified-claim-check", "certified-feature-tests",
+    "certified-ordinary-tests", "certified-source-tests", "certified-fidelity-tests",
+    "certified-claim-tests", "certified-modeled-tests", "certified-cli-tests",
+    "certified-adapter-tests"]
+  checkReport "Ix/Certified/AuditAll.lean" "Tests/Certified/foundation.txt"
+  run ".lake/build/bin/certified-adapter-tests"
+  return 0
+
+/-- Run the kernel implementation, consistency, foundation, and host checks. -/
+script "check-kernel" (args) := do
+  unless args.isEmpty || args == ["--with-model"] do
+    IO.eprintln "usage: lake run check-kernel [--with-model]"
+    return 2
+  run "lake" #["build", "IxKernelVerify", "IxCompileVerify"]
+  run "lake" #["build", "--wfail", "IxKernelConsistency"]
+  run "lake" #["run", "check-theory"]
+  run "lake" #["run", "check-certified"]
+  run "lake" #["test", "--wfail", "--", "tc-unit"]
+  if args == ["--with-model"] then
+    run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+  IO.println "Kernel certification checks passed."
+  return 0

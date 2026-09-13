@@ -1,10 +1,12 @@
 import Ix.Compile.Verify.Reference
 
+open Ix.Theory (VLevel)
+
 /-!
 # Source-to-Ixon value preservation
 
 This module closes the first expression-level compiler square.  `SourceExprRel`
-gives a named `Ix.Expr` an independent Lean4Lean meaning.  `RefCompileCtxRel`
+gives a named `Ix.Expr` an independent Ix.Theory.Named meaning.  `RefCompileCtxRel`
 states that the finite indices chosen by `compileExprRef` point at the same
 universes, names, and literal bytes in the target tables.  The preservation
 theorem then constructs `IxonExprRel` for the exact compiler result.
@@ -12,7 +14,7 @@ theorem then constructs `IxonExprRel` for the exact compiler result.
 
 namespace Ix.Compile.Verify
 
-open Lean4Lean (VConstant VEnv VExpr VLevel)
+open Ix.Theory.Named (VConstant VEnv VExpr)
 
 /-- Independent semantic interpretation choices for named source syntax. -/
 structure SourceCtx where
@@ -114,7 +116,7 @@ structure RefCompileCtxRel (compile : RefCompileCtx) (source : SourceCtx)
       String.fromUTF8? bytes = some value
 
 /-- Ordinary reference compilation preserves the independently stated
-Lean4Lean value. -/
+Ix.Theory.Named value. -/
 theorem compileExprRef_value {venv : VEnv} {sctx : SourceCtx}
     {catalog : Catalog} {dctx : DecodeCtx} {compile : RefCompileCtx}
     {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}

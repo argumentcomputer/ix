@@ -1490,7 +1490,7 @@ this rule closes that gap.
 **The quotient.** Universe-level spellings are presentation, not
 content. Two levels are identified in canonical form exactly when the
 kernels' semantic level equality holds — `univEq`
-(`Ix/Tc/Level.lean`), the relation all three kernels decide during
+(`Ix/Kernel/Level.lean`), the relation all three kernels decide during
 defeq. `univEq`'s normal-form comparison ignores EMPTY subsumption
 entries (constant 0, no vars — bookkeeping the subsumption pass
 leaves behind rather than removing; `normLevelLe` always ignored
@@ -1518,7 +1518,7 @@ unnormalized substitution results).
 
 **Canonical representative.** `canonUniv : Univ → Univ` is
 `linearize ∘ subsumption ∘ normalizeAux` — the kernels' Géran
-comparison form (`normalizeLevel`, `Ix/Tc/Level.lean:227-472`;
+comparison form (`normalizeLevel`, `Ix/Kernel/Level.lean:227-472`;
 `crates/kernel/src/level.rs:335-696`;
 `Ix/IxVM/Kernel/Levels.lean:336-386`), transliterated to positional
 `Ixon.Univ` and then linearized back into a level term. The Géran
@@ -1556,7 +1556,7 @@ tests in both languages:
 - **P5 (mirror parity):** Rust and Lean `canonUniv` agree
   byte-for-byte on serialized output.
 - **P6 (mk\* absorption):** `canonUniv ∘ reduceIxonUniv = canonUniv`
-  (`reduceIxonUniv`, `Ix/Tc/Ingress.lean`, is the retained oracle
+  (`reduceIxonUniv`, `Ix/Kernel/Ingress.lean`, is the retained oracle
   for this).
 
 `canonUniv` lives next to the wire type (`crates/ixon/src/univ.rs`
@@ -1565,13 +1565,13 @@ and probes share one implementation per language; the three kernel
 `NormLevel` implementations stay untouched as the P4 oracle. Worst
 case, canonical forms are exponential in nested `imax`-of-`max`
 depth (the Géran distribution rules duplicate the left subterm,
-`Ix/Tc/Level.lean:333-351`); real levels are a handful of nodes, and
+`Ix/Kernel/Level.lean:333-351`); real levels are a handful of nodes, and
 the blowup is paid once at compile time by whoever writes a
 pathological spelling — never by readers of stored canonical forms.
 
 **The kernel-rebuild rule set.** The `mk*` simplification rules —
 Lean `kernel/level.cpp:81-103`/`:112-120`, mirrored at
-`Ix/Tc/Level.lean:144-197`, `crates/kernel/src/level.rs:162-247`,
+`Ix/Kernel/Level.lean:144-197`, `crates/kernel/src/level.rs:162-247`,
 `Ix/IxVM/Kernel/Levels.lean:637-680` — are normative here in three
 roles: the P3 fixpoint target (kernel ingress rebuilds through them),
 the stage-1 decoration-presence test (below), and the P6 oracle.
@@ -1601,7 +1601,7 @@ They are **not** the address quotient (they miss commutative twins).
 | I6 | otherwise raw `imax a b` | — |
 
 with predicates `isZero` / `isExplicit` (`succ^n zero`) /
-`isNeverZero` / `offset` exactly as in `Ix/Tc/Level.lean:64-95` /
+`isNeverZero` / `offset` exactly as in `Ix/Kernel/Level.lean:64-95` /
 `crates/kernel/src/level.rs:111-150`. Both rule sets — `mk*` and the
 Géran linearization — are **frozen** at the pinned toolchain's
 behavior; upstream drift mints new spellings, which simply
@@ -1663,11 +1663,11 @@ class as binder names, and is caught by the strict roundtrip gates).
 one kernel-side consumer: the original spelling rides as a
 **decoration** on meta-mode `sort`/`const` occurrence nodes — folded
 into the metadata-aware `metaAddr` (so interning and egress
-memoization never collapse spelling twins, `Ix/Tc/Expr.lean:61-72`)
+memoization never collapse spelling twins, `Ix/Kernel/Expr.lean:61-72`)
 and **never** into the semantic `addr` (anon/meta address parity,
 `tc-meta-addr`, is preserved; checking never sees spellings). Meta
 egress replays the decoration at its `sort`/`const` arms
-(`Ix/Tc/EgressLean.lean:119-128`) instead of egressing the
+(`Ix/Kernel/EgressLean.lean:119-128`) instead of egressing the
 normalized kernel level. Decorations must not live on `KUniv` nodes
 — KUniv interning is semantic-address-keyed and would collapse
 spelling twins first-wins, the same lossiness as table-keyed
@@ -1677,7 +1677,7 @@ comparison and is an active spelling-fidelity gate through the
 kernel's data path, complementing the decompiler gate (phase 5).
 With stored content canonical, the anon roundtrip comparison is
 strict too (the `reduceIxonUniv` modulo in `canonExpr` was deleted;
-`Ix/Tc/Egress.lean` module doc).
+`Ix/Kernel/Egress.lean` module doc).
 
 **Decoration source.** Patches are the primary source: meta ingress
 looks the occurrence's (post-mdata) arena index up in `univPatches`
@@ -2309,13 +2309,13 @@ Phase 2 paths already were). Remaining audit items:
   `restoreLeanSourceNameHints` / `restoreSourceNamesSameContent` in
   `Ix/AuxGen/Kernel.lean`) match arm-for-arm; what diverged — and
   produced the Mathlib redStep instance — was the **key
-  equivalence**: the Lean side keys hints by `Ix.Tc.KExpr` content
+  equivalence**: the Lean side keys hints by `Ix.Kernel.KExpr` content
   addresses, while the Rust side keyed by `KExpr::hash_key()`, which
   is an intern-assigned uid, fresh for every un-interned
   `to_kexpr_static` construction — so no restore-time key ever
   matched a collect-time key and the Rust hint pass restored nothing.
   Originally fixed by `kexpr_content_key` (a pure name-erased structural
-  digest mirroring the `ExprKey`/`Ix.Tc` equivalence) and by making the
+  digest mirroring the `ExprKey`/`Ix.Kernel` equivalence) and by making the
   WHNF no-op test structural (`==`) rather than uid equality. The hint
   pass now uses exact, pass-local structural identities instead of that
   digest, with full shallow-key equality on hash collisions. Any future
@@ -2378,7 +2378,7 @@ pipelines; decompile patch replay; the decoration source switch to
 patches (stage-1 rule retained as the patchless fallback); phase 3
 strict; `univEq` empty-entry-insensitive (the exact semantic
 quotient, §10.6); primitive pins regenerated in all mirrors
-(`prim_addrs.rs`, `Ix/Tc/Primitive.lean`, the IxVM address
+(`prim_addrs.rs`, `Ix/Kernel/Primitive.lean`, the IxVM address
 literals); artifacts regenerated with the format-break hint.
 
 **Acceptance evidence:** `ix validate` and `ix validate-lean` at

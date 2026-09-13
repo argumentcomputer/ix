@@ -1,12 +1,14 @@
 import Ix.Ixon
-import Lean4Lean.Theory.Literals
-import Lean4Lean.Theory.Typing.Env
+import Ix.Theory.Named.Literals
+import Ix.Theory.Named.Typing.Env
+
+open Ix.Theory (VLevel)
 
 /-!
-# Ixon v2 expressions and Lean4Lean values
+# Ixon v2 expressions and Ix.Theory.Named values
 
 This is the first compiler-facing semantic boundary.  It interprets an Ixon
-expression directly as a Lean4Lean `VExpr`; it does not run Ix.Tc and does not
+expression directly as a Ix.Theory.Named `VExpr`; it does not run Ix.Kernel and does not
 use checker acceptance as a specification.
 
 The relation is table-aware.  It resolves universe, reference, mutual-member,
@@ -19,7 +21,7 @@ available to later substructural passes without changing the Lean meaning.
 
 namespace Ix.Compile.Verify
 
-open Lean4Lean (VConstant VEnv VExpr VLevel)
+open Ix.Theory.Named (VConstant VEnv VExpr)
 
 /-- Immutable semantic views needed to interpret an Ixon expression. -/
 structure Catalog where
@@ -70,7 +72,7 @@ def DecodeCtx.univArgs? (ctx : DecodeCtx) (idxs : Array UInt64) :
 
 /-- Projection interpretation is supplied by the surrounding declaration
 model.  Its universe/local-context indices match the existing raw Theory
-boundary, while this module remains independent of Ix.Tc. -/
+boundary, while this module remains independent of Ix.Kernel. -/
 abbrev ProjectionRel :=
   Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop
 
@@ -81,7 +83,7 @@ def none : ProjectionRel := fun _ _ _ _ _ _ => False
 
 end ProjectionRel
 
-/-- Direct semantic relation from table-indexed Ixon syntax to Lean4Lean
+/-- Direct semantic relation from table-indexed Ixon syntax to Ix.Theory.Named
 syntax.  This is a raw representation relation: typing and source-kernel
 well-formedness are separate obligations. -/
 inductive IxonExprRel (venv : VEnv) (catalog : Catalog) (dctx : DecodeCtx)
@@ -307,7 +309,7 @@ theorem eraseModes_iff {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
 
 end IxonExprRel
 
-/-- Honest boundary for source-kernel meaning while upstream Lean4Lean
+/-- Honest boundary for source-kernel meaning while upstream Ix.Theory.Named
 construction remains incomplete.  Compiler theorems consume this explicit
 witness; no axiom is needed for the structural Ixon conversion itself. -/
 structure KernelSourceWitness where

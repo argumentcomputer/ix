@@ -851,7 +851,7 @@ def defEq := ⟦
   -- binder type, not out of `ty_a`, and the ensuing Lam/Lam comparison
   -- is what checks the two domains agree. Rust `try_eta_expansion`
   -- (`def_eq.rs:1179-1211`) infers `s`, whnfs to `All`, and takes that
-  -- `ty`; `Ix/Tc` `tryEtaExpansion` (`DefEq.lean:946-951`) does the same
+  -- `ty`; `Ix/Kernel` `tryEtaExpansion` (`DefEq.lean:946-951`) does the same
   -- via `inferOnlyCall`; lean4lean `tryEtaExpansionCore`
   -- (`TypeChecker.lean:507-511`) is `let .forallE name ty _ bi ← whnf
   -- (← inferType s)`.
@@ -891,7 +891,7 @@ def defEq := ⟦
   -- SEMANTIC on purpose — `level_equal`, matching `is_inductive_prop`
   -- (`Infer.lean:260`) and all three references: Rust gates both struct-
   -- eta (`whnf.rs:1884`) and proof irrelevance (`def_eq.rs:878`) on
-  -- `KUniv::is_semantic_zero`, `Ix/Tc` on `isSemanticZero`
+  -- `KUniv::is_semantic_zero`, `Ix/Kernel` on `isSemanticZero`
   -- (`Whnf.lean:1139`, `DefEq.lean:817`), and lean4lean's `isProp` on
   -- `Level.isAlwaysZero` (`TypeChecker.lean:230`), all of which normalize.
   --

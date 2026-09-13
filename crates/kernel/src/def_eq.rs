@@ -563,7 +563,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         break;
       }
 
-      // C6: Before unfolding a definition, try reducing projection apps
+      // Before unfolding a definition, try reducing projection apps
       // on the non-definition side (lean4lean tryUnfoldProjApp).
       if a_delta && !b_delta {
         if let Some(wb2) = self.try_unfold_proj_app(wb)? {
@@ -1566,7 +1566,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   // -----------------------------------------------------------------------
-  // Post-delta congruence and projection unfolding (C5, C6)
+  // Post-delta congruence and projection unfolding
   // -----------------------------------------------------------------------
 
   /// Structural congruence after lazy delta exhaustion (lean4lean isDefEqConst/Proj).

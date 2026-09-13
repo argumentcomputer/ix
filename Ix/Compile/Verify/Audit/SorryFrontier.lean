@@ -4,7 +4,7 @@ import Ix.Compile.Verify.Audit.Statements
 # Compiler-verification source sorry frontier
 
 Fail the build if any declaration emitted from an `Ix.Compile.Verify` source
-module directly references `sorryAx`.  Upstream Lean4Lean debt is handled by
+module directly references `sorryAx`. Named-specification debt is handled by
 per-root transitive manifests rather than being confused with local source
 placeholders.
 -/
