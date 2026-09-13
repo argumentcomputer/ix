@@ -2824,6 +2824,263 @@ ROOT Aiur.NativeAIR.Graph.Valid.lookup_values_reflect
                 lookup ∈ graph.lookups →
                   Aiur.NativeAIR.readLookup prefixValues lookup = Aiur.NativeAIR.evalLookup ops values trees lookup
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.sub_zero
+∀ (value : Aiur.G), value - 0 = value
+AXIOMS [propext]
+ROOT Aiur.G.neg_neg
+∀ (value : Aiur.G), 0 - (0 - value) = value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Expr.isConstant_eq
+∀ (expr : Aiur.NativeAIR.Expr), expr.isConstant = expr.constantValue.isSome
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontNeg_noConstantNegs
+∀ {expr : Aiur.NativeAIR.Expr}, expr.noConstantNegs = true → expr.frontNeg.noConstantNegs = true
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontNeg_isConstant
+∀ {expr : Aiur.NativeAIR.Expr}, expr.noConstantNegs = true → expr.frontNeg.isConstant = expr.isConstant
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontAdd_isConstant
+∀ (left right : Aiur.NativeAIR.Expr), (left.frontAdd right).isConstant = (left.isConstant && right.isConstant)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontSub_isConstant
+∀ (left right : Aiur.NativeAIR.Expr),
+  right.noConstantNegs = true → (left.frontSub right).isConstant = (left.isConstant && right.isConstant)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontAdd_noConstantNegs
+∀ {left right : Aiur.NativeAIR.Expr},
+  left.noConstantNegs = true → right.noConstantNegs = true → (left.frontAdd right).noConstantNegs = true
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontSub_noConstantNegs
+∀ {left right : Aiur.NativeAIR.Expr},
+  left.noConstantNegs = true → right.noConstantNegs = true → (left.frontSub right).noConstantNegs = true
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontMul_noConstantNegs
+∀ {left right : Aiur.NativeAIR.Expr},
+  left.noConstantNegs = true → right.noConstantNegs = true → (left.frontMul right).noConstantNegs = true
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontNeg_eval
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.EvalLaws ops →
+    ∀ (values : Aiur.NativeAIR.Values W) {expr : Aiur.NativeAIR.Expr} {value : W},
+      Aiur.NativeAIR.Expr.eval ops values expr = some value →
+        Aiur.NativeAIR.Expr.eval ops values expr.frontNeg = some (ops.neg value)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.eval_constantValue
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) {expr : Aiur.NativeAIR.Expr}
+  {value : W} {constant : Aiur.G},
+  Aiur.NativeAIR.Expr.eval ops values expr = some value →
+    expr.constantValue = some constant → ops.konst constant = value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontAdd_eval
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.EvalLaws ops →
+    ∀ (values : Aiur.NativeAIR.Values W) {left right : Aiur.NativeAIR.Expr} {a b : W},
+      Aiur.NativeAIR.Expr.eval ops values left = some a →
+        Aiur.NativeAIR.Expr.eval ops values right = some b →
+          Aiur.NativeAIR.Expr.eval ops values (left.frontAdd right) = some (ops.add a b)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontSub_eval
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.EvalLaws ops →
+    ∀ (values : Aiur.NativeAIR.Values W) {left right : Aiur.NativeAIR.Expr} {a b : W},
+      Aiur.NativeAIR.Expr.eval ops values left = some a →
+        Aiur.NativeAIR.Expr.eval ops values right = some b →
+          Aiur.NativeAIR.Expr.eval ops values (left.frontSub right) = some (ops.sub a b)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontMul_eval
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.EvalLaws ops →
+    ∀ (values : Aiur.NativeAIR.Values W) {left right : Aiur.NativeAIR.Expr} {a b : W},
+      Aiur.NativeAIR.Expr.eval ops values left = some a →
+        Aiur.NativeAIR.Expr.eval ops values right = some b →
+          Aiur.NativeAIR.Expr.eval ops values (left.frontMul right) = some (ops.mul a b)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_add_zero
+∀ (a : Aiur.G), Aiur.NativeAIR.goldilocksOps.add a (Aiur.NativeAIR.goldilocksOps.konst 0) = a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_zero_add
+∀ (a : Aiur.G), Aiur.NativeAIR.goldilocksOps.add (Aiur.NativeAIR.goldilocksOps.konst 0) a = a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_sub_zero
+∀ (a : Aiur.G), Aiur.NativeAIR.goldilocksOps.sub a (Aiur.NativeAIR.goldilocksOps.konst 0) = a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_zero_sub
+∀ (a : Aiur.G),
+  Aiur.NativeAIR.goldilocksOps.sub (Aiur.NativeAIR.goldilocksOps.konst 0) a = Aiur.NativeAIR.goldilocksOps.neg a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_mul_zero
+∀ (a : Aiur.G),
+  Aiur.NativeAIR.goldilocksOps.mul a (Aiur.NativeAIR.goldilocksOps.konst 0) = Aiur.NativeAIR.goldilocksOps.konst 0
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_zero_mul
+∀ (a : Aiur.G),
+  Aiur.NativeAIR.goldilocksOps.mul (Aiur.NativeAIR.goldilocksOps.konst 0) a = Aiur.NativeAIR.goldilocksOps.konst 0
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_mul_one
+∀ (a : Aiur.G), Aiur.NativeAIR.goldilocksOps.mul a (Aiur.NativeAIR.goldilocksOps.konst 1) = a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_one_mul
+∀ (a : Aiur.G), Aiur.NativeAIR.goldilocksOps.mul (Aiur.NativeAIR.goldilocksOps.konst 1) a = a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_neg_neg
+∀ (a : Aiur.G), Aiur.NativeAIR.goldilocksOps.neg (Aiur.NativeAIR.goldilocksOps.neg a) = a
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.goldilocks_konst_add
+∀ (a b : Aiur.G),
+  Aiur.NativeAIR.goldilocksOps.konst (a + b) =
+    Aiur.NativeAIR.goldilocksOps.add (Aiur.NativeAIR.goldilocksOps.konst a) (Aiur.NativeAIR.goldilocksOps.konst b)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_konst
+∀ (a : Aiur.G), Aiur.NativeAIR.goldilocksOps.konst a = a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_add
+∀ (a b : Aiur.G), Aiur.NativeAIR.goldilocksOps.add a b = a + b
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_sub
+∀ (a b : Aiur.G), Aiur.NativeAIR.goldilocksOps.sub a b = a - b
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_mul
+∀ (a b : Aiur.G), Aiur.NativeAIR.goldilocksOps.mul a b = a * b
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_konst_sub
+∀ (a b : Aiur.G),
+  Aiur.NativeAIR.goldilocksOps.konst (a - b) =
+    Aiur.NativeAIR.goldilocksOps.sub (Aiur.NativeAIR.goldilocksOps.konst a) (Aiur.NativeAIR.goldilocksOps.konst b)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_konst_mul
+∀ (a b : Aiur.G),
+  Aiur.NativeAIR.goldilocksOps.konst (a * b) =
+    Aiur.NativeAIR.goldilocksOps.mul (Aiur.NativeAIR.goldilocksOps.konst a) (Aiur.NativeAIR.goldilocksOps.konst b)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocks_konst_neg
+∀ (a : Aiur.G),
+  Aiur.NativeAIR.goldilocksOps.konst (0 - a) = Aiur.NativeAIR.goldilocksOps.neg (Aiur.NativeAIR.goldilocksOps.konst a)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.goldilocksLaws
+Aiur.NativeAIR.EvalLaws Aiur.NativeAIR.goldilocksOps
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Expr.constantValue_eq_of_eval
+∀ (values : Aiur.NativeAIR.Values Aiur.G) {expr : Aiur.NativeAIR.Expr} {value constant : Aiur.G},
+  Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values expr = some value →
+    expr.constantValue = some constant → constant = value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Expr.frontMul_isConstant
+∀ (values : Aiur.NativeAIR.Values Aiur.G) {left right : Aiur.NativeAIR.Expr} {a b : Aiur.G},
+  Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values left = some a →
+    Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values right = some b →
+      (left.frontMul right).isConstant =
+        (left.isConstant && right.isConstant || left.isConstant && a == 0 || right.isConstant && b == 0)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.RowExpr.reflects_iff_eval
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (expr : Aiur.NativeAIR.RowExpr) (value : Aiur.AIR.RowValue),
+  Aiur.NativeAIR.RowExpr.Reflects values expr value ↔ Aiur.NativeAIR.RowExpr.eval values expr = some value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.RowExpr.konst_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (value : Aiur.G),
+  Aiur.NativeAIR.RowExpr.Reflects values (Aiur.NativeAIR.RowExpr.konst value) (Aiur.AIR.RowValue.konst value)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.RowExpr.variable_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) {column : Aiur.NativeAIR.ColRef} {value : Aiur.G},
+  (values.columns column.source column.offset)[column.index]? = some value →
+    Aiur.NativeAIR.RowExpr.Reflects values (Aiur.NativeAIR.RowExpr.variable column) (Aiur.AIR.RowValue.variable value)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.RowExpr.add_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) {left right : Aiur.NativeAIR.RowExpr} {a b : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.RowExpr.Reflects values left a →
+    Aiur.NativeAIR.RowExpr.Reflects values right b → Aiur.NativeAIR.RowExpr.Reflects values (left.add right) (a.add b)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.RowExpr.sub_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) {left right : Aiur.NativeAIR.RowExpr} {a b : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.RowExpr.Reflects values left a →
+    Aiur.NativeAIR.RowExpr.Reflects values right b →
+      right.expr.noConstantNegs = true → Aiur.NativeAIR.RowExpr.Reflects values (left.sub right) (a.sub b)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.RowExpr.mul_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) {left right : Aiur.NativeAIR.RowExpr} {a b : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.RowExpr.Reflects values left a →
+    Aiur.NativeAIR.RowExpr.Reflects values right b → Aiur.NativeAIR.RowExpr.Reflects values (left.mul right) (a.mul b)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ScalarEmission.eval_of
+∀ (values : Aiur.NativeAIR.Values Aiur.G) {output : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue} {used : Nat}
+  {equations : List Aiur.NativeAIR.Expr} {results : List Aiur.G},
+  Aiur.NativeAIR.RowExpr.Reflects values output value →
+    List.mapM (Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values) equations = some results →
+      Aiur.NativeAIR.ScalarEmission.eval values { output := output, used := used, equations := equations } =
+        some { outputs := #[value], used := used, equations := results }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.eqZeroRegular_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) {selector : Aiur.NativeAIR.Expr} {s : Aiur.G}
+  {first : Nat} {input : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values selector = some s →
+    Aiur.NativeAIR.RowExpr.Reflects values input value →
+      (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[first]? = some (row 0) →
+        (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[first + 1]? = some (row 1) →
+          Aiur.NativeAIR.ScalarEmission.eval values (Aiur.NativeAIR.eqZeroRegular selector first input) =
+            some
+              { outputs := #[Aiur.AIR.RowValue.variable (row 1)], used := 2,
+                equations := [s * value.value * row 1, s * (value.value * row 0 + row 1 - 1)] }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.emitEqZero_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) {selector : Aiur.NativeAIR.Expr} {s : Aiur.G}
+  {first : Nat} {input : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values selector = some s →
+    Aiur.NativeAIR.RowExpr.Reflects values input value →
+      (∀ (index : Nat),
+          index < (Aiur.NativeAIR.emitEqZero selector first input).used →
+            (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[first + index]? =
+              some (row index)) →
+        Aiur.NativeAIR.ScalarEmission.eval values (Aiur.NativeAIR.emitEqZero selector first input) =
+          Aiur.AIR.emitOp row s 0 (Aiur.Bytecode.Op.eqZero 0) #[value]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.mulRegular_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) {selector : Aiur.NativeAIR.Expr} {s : Aiur.G}
+  {first : Nat} {product : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values selector = some s →
+    Aiur.NativeAIR.RowExpr.Reflects values product value →
+      (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[first]? = some (row 0) →
+        Aiur.NativeAIR.ScalarEmission.eval values (Aiur.NativeAIR.mulRegular selector first product) =
+          some { outputs := #[Aiur.AIR.RowValue.variable (row 0)], used := 1, equations := [s * (row 0 - value.value)] }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.emitMul_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) {selector : Aiur.NativeAIR.Expr} {s : Aiur.G}
+  {first : Nat} {left right : Aiur.NativeAIR.RowExpr} {a b : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values selector = some s →
+    Aiur.NativeAIR.RowExpr.Reflects values left a →
+      Aiur.NativeAIR.RowExpr.Reflects values right b →
+        (∀ (index : Nat),
+            index < (Aiur.NativeAIR.emitMul selector first left right).used →
+              (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[first + index]? =
+                some (row index)) →
+          Aiur.NativeAIR.ScalarEmission.eval values (Aiur.NativeAIR.emitMul selector first left right) =
+            Aiur.AIR.emitOp row s 0 (Aiur.Bytecode.Op.mul 0 1) #[a, b]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.emitEqZero_noConstantNegs
+∀ (selector : Aiur.NativeAIR.Expr) (first : Nat) (input : Aiur.NativeAIR.RowExpr),
+  (Aiur.NativeAIR.emitEqZero selector first input).output.expr.noConstantNegs = true
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.emitMul_noConstantNegs
+∀ (selector : Aiur.NativeAIR.Expr) (first : Nat) {left right : Aiur.NativeAIR.RowExpr},
+  left.expr.noConstantNegs = true →
+    right.expr.noConstantNegs = true →
+      (Aiur.NativeAIR.emitMul selector first left right).output.expr.noConstantNegs = true
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.emitAdd_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) (selector rank : Aiur.G)
+  {left right : Aiur.NativeAIR.RowExpr} {a b : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.RowExpr.Reflects values left a →
+    Aiur.NativeAIR.RowExpr.Reflects values right b →
+      Aiur.NativeAIR.ScalarEmission.eval values { output := left.add right } =
+        Aiur.AIR.emitOp row selector rank (Aiur.Bytecode.Op.add 0 1) #[a, b]
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.emitSub_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) (selector rank : Aiur.G)
+  {left right : Aiur.NativeAIR.RowExpr} {a b : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.RowExpr.Reflects values left a →
+    Aiur.NativeAIR.RowExpr.Reflects values right b →
+      right.expr.noConstantNegs = true →
+        Aiur.NativeAIR.ScalarEmission.eval values { output := left.sub right } =
+          Aiur.AIR.emitOp row selector rank (Aiur.Bytecode.Op.sub 0 1) #[a, b]
+AXIOMS [propext, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -5590,6 +5847,154 @@ Aiur.NativeAIR.EvalOps Aiur.G
 DEFINITION
 { konst := id, add := fun x1 x2 => x1 + x2, sub := fun x1 x2 => x1 - x2, mul := fun x1 x2 => x1 * x2,
   neg := fun x => 0 - x }
+PREMISE Aiur.NativeAIR.Expr.isConstant
+Aiur.NativeAIR.Expr → Bool
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.NativeAIR.Expr.konst value => true
+  | x => false
+PREMISE Aiur.NativeAIR.Expr.constantValue
+Aiur.NativeAIR.Expr → Option Aiur.G
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.NativeAIR.Expr.konst value => some value
+  | x => none
+PREMISE Aiur.NativeAIR.Expr.frontNeg
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.NativeAIR.Expr.konst value => Aiur.NativeAIR.Expr.konst (0 - value)
+  | value.neg => value
+  | value => value.neg
+PREMISE Aiur.NativeAIR.Expr.frontAdd
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+DEFINITION
+fun left right =>
+  match left.constantValue, right.constantValue with
+  | some a, some b => Aiur.NativeAIR.Expr.konst (a + b)
+  | some a, none => if (a == 0) = true then right else left.add right
+  | none, some b => if (b == 0) = true then left else left.add right
+  | none, none => left.add right
+PREMISE Aiur.NativeAIR.Expr.frontSub
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+DEFINITION
+fun left right =>
+  match left.constantValue, right.constantValue with
+  | some a, some b => Aiur.NativeAIR.Expr.konst (a - b)
+  | none, some b => if (b == 0) = true then left else left.sub right
+  | some a, none => if (a == 0) = true then right.frontNeg else left.sub right
+  | none, none => left.sub right
+PREMISE Aiur.NativeAIR.Expr.frontMul
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+DEFINITION
+fun left right =>
+  match left.constantValue, right.constantValue with
+  | some a, some b => Aiur.NativeAIR.Expr.konst (a * b)
+  | some a, none =>
+    if (a == 0) = true then Aiur.NativeAIR.Expr.konst 0 else if (a == 1) = true then right else left.mul right
+  | none, some b =>
+    if (b == 0) = true then Aiur.NativeAIR.Expr.konst 0 else if (b == 1) = true then left else left.mul right
+  | none, none => left.mul right
+PREMISE Aiur.NativeAIR.EvalLaws.mk
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  (∀ (a b : Aiur.G), ops.konst (a + b) = ops.add (ops.konst a) (ops.konst b)) →
+    (∀ (a b : Aiur.G), ops.konst (a - b) = ops.sub (ops.konst a) (ops.konst b)) →
+      (∀ (a b : Aiur.G), ops.konst (a * b) = ops.mul (ops.konst a) (ops.konst b)) →
+        (∀ (a : Aiur.G), ops.konst (0 - a) = ops.neg (ops.konst a)) →
+          (∀ (a : W), ops.add a (ops.konst 0) = a) →
+            (∀ (a : W), ops.add (ops.konst 0) a = a) →
+              (∀ (a : W), ops.sub a (ops.konst 0) = a) →
+                (∀ (a : W), ops.sub (ops.konst 0) a = ops.neg a) →
+                  (∀ (a : W), ops.mul a (ops.konst 0) = ops.konst 0) →
+                    (∀ (a : W), ops.mul (ops.konst 0) a = ops.konst 0) →
+                      (∀ (a : W), ops.mul a (ops.konst 1) = a) →
+                        (∀ (a : W), ops.mul (ops.konst 1) a = a) →
+                          (∀ (a : W), ops.neg (ops.neg a) = a) → Aiur.NativeAIR.EvalLaws ops
+PREMISE Aiur.NativeAIR.Expr.noConstantNegs
+Aiur.NativeAIR.Expr → Bool
+DEFINITION
+fun x => Aiur.NativeAIR.Expr.brecOn x Aiur.NativeAIR.Expr.noConstantNegs._f
+PREMISE Aiur.NativeAIR.RowExpr.mk
+Aiur.NativeAIR.Expr → Nat → Aiur.NativeAIR.RowExpr
+PREMISE Aiur.NativeAIR.RowExpr.konst
+Aiur.G → Aiur.NativeAIR.RowExpr
+DEFINITION
+fun value => { expr := Aiur.NativeAIR.Expr.konst value, degree := 0 }
+PREMISE Aiur.NativeAIR.RowExpr.variable
+Aiur.NativeAIR.ColRef → Aiur.NativeAIR.RowExpr
+DEFINITION
+fun column => { expr := Aiur.NativeAIR.Expr.var column, degree := 1 }
+PREMISE Aiur.NativeAIR.RowExpr.add
+Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.RowExpr
+DEFINITION
+fun left right => { expr := left.expr.frontAdd right.expr, degree := max left.degree right.degree }
+PREMISE Aiur.NativeAIR.RowExpr.sub
+Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.RowExpr
+DEFINITION
+fun left right => { expr := left.expr.frontSub right.expr, degree := max left.degree right.degree }
+PREMISE Aiur.NativeAIR.RowExpr.mul
+Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.RowExpr
+DEFINITION
+fun left right => { expr := left.expr.frontMul right.expr, degree := left.degree + right.degree }
+PREMISE Aiur.NativeAIR.RowExpr.eval
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.RowExpr → Option Aiur.AIR.RowValue
+DEFINITION
+fun values expr => do
+  let value ← Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values expr.expr
+  pure { value := value, degree := expr.degree, constant := expr.expr.isConstant }
+PREMISE Aiur.NativeAIR.RowExpr.Reflects
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.RowExpr → Aiur.AIR.RowValue → Prop
+DEFINITION
+fun values expr value =>
+  Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values expr.expr = some value.value ∧
+    expr.degree = value.degree ∧ expr.expr.isConstant = value.constant
+PREMISE Aiur.NativeAIR.ScalarEmission.mk
+Aiur.NativeAIR.RowExpr → Nat → List Aiur.NativeAIR.Expr → Aiur.NativeAIR.ScalarEmission
+PREMISE Aiur.NativeAIR.ScalarEmission.eval
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.ScalarEmission → Option Aiur.AIR.OpEmission
+DEFINITION
+fun values emission => do
+  let output ← Aiur.NativeAIR.RowExpr.eval values emission.output
+  let equations ← List.mapM (Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values) emission.equations
+  pure { outputs := #[output], used := emission.used, equations := equations }
+PREMISE Aiur.NativeAIR.mainCurrent
+Nat → Aiur.NativeAIR.RowExpr
+DEFINITION
+fun index =>
+  Aiur.NativeAIR.RowExpr.variable
+    { source := Aiur.NativeAIR.Source.main, offset := Aiur.NativeAIR.RowOffset.current, index := index }
+PREMISE Aiur.NativeAIR.eqZeroRegular
+Aiur.NativeAIR.Expr → Nat → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.ScalarEmission
+DEFINITION
+fun selector first input =>
+  have d := Aiur.NativeAIR.mainCurrent first;
+  have x := Aiur.NativeAIR.mainCurrent (first + 1);
+  { output := x, used := 2,
+    equations :=
+      [(selector.frontMul input.expr).frontMul x.expr,
+        selector.frontMul (((input.expr.frontMul d.expr).frontAdd x.expr).frontSub (Aiur.NativeAIR.Expr.konst 1))] }
+PREMISE Aiur.NativeAIR.emitEqZero
+Aiur.NativeAIR.Expr → Nat → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.ScalarEmission
+DEFINITION
+fun selector first input =>
+  match input.expr.constantValue, input.degree with
+  | some value, 0 => { output := Aiur.NativeAIR.RowExpr.konst value.eqZero }
+  | x, x_1 => Aiur.NativeAIR.eqZeroRegular selector first input
+PREMISE Aiur.NativeAIR.mulRegular
+Aiur.NativeAIR.Expr → Nat → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.ScalarEmission
+DEFINITION
+fun selector first product =>
+  have output := Aiur.NativeAIR.mainCurrent first;
+  { output := output, used := 1, equations := [selector.frontMul (output.expr.frontSub product.expr)] }
+PREMISE Aiur.NativeAIR.emitMul
+Aiur.NativeAIR.Expr → Nat → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.ScalarEmission
+DEFINITION
+fun selector first left right =>
+  have product := left.mul right;
+  if product.degree < 2 then { output := product } else Aiur.NativeAIR.mulRegular selector first product
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -10316,6 +10721,16 @@ fun {W} ops values x =>
   | a.neg => do
     let __do_lift ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values a
     pure (ops.neg __do_lift)
+RECURSION WORKER Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec
+Aiur.NativeAIR.Expr → Bool
+IMPLEMENTATION
+fun x =>
+  match x with
+  | child.neg => !child.isConstant && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec child
+  | a.add b => Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec a && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec b
+  | a.sub b => Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec a && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec b
+  | a.mul b => Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec a && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec b
+  | x => true
 RECURSION WORKER Aiur.Source.Eval.applyGlobal._unsafe_rec
 Aiur.Source.Decls → Nat → Aiur.Global → List Aiur.Value → Aiur.Source.Eval.EvalState → Aiur.Source.Eval.EvalResult
 IMPLEMENTATION
@@ -12283,10 +12698,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 338; LOGICAL DECLARATIONS 15898; WITH RUNTIME 16608
+C8 component ROOTS 388; LOGICAL DECLARATIONS 16039; WITH RUNTIME 16750
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 150
+RECURSION WORKERS 151
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

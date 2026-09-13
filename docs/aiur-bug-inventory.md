@@ -91,3 +91,10 @@ The native release suite passes 61 tests and release Clippy. This failure
 prevented honest proof construction; it did not demonstrate acceptance of a
 false claim. Existing programs that built successfully retain their emitted
 AIR, column layouts and verification keys.
+
+The frontend checkpoint connects symbolic addition, subtraction, multiplication
+and equality-test emission to the valued model. All 1,752 smart-constructor
+trees, 9,804 scalar emissions and 46,224 evaluated assignments match the actual
+Rust frontend. Its 388-root audit preserves the repaired emitter and all 338
+earlier root statements, axiom sets and worker bodies. This proof work adds no
+new observed bug class; full compiler and cryptographic soundness remain open.

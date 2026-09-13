@@ -20,6 +20,7 @@ use super::*;
 
 mod block_rows;
 mod circuit_rows;
+mod frontend_expressions;
 mod memory_rows;
 mod operation_rows;
 

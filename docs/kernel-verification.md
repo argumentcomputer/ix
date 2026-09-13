@@ -410,13 +410,13 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 338 roots by traversing checked types, bodies and inductive
-constructors. Two roots use no axioms; twenty-nine depend only on `propext`;
-ninety-five use exactly `propext` and `Quot.sound`; the other 212 use exactly
+The audit checks 388 roots by traversing checked types, bodies and inductive
+constructors. Two roots use no axioms; sixty-five depend only on `propext`;
+105 use exactly `propext` and `Quot.sound`; the other 216 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 15,898 logical declarations and 16,608 declarations after following runtime
-workers and replacements. The frozen report records four native operations,
-three partial opaque sources and all 150 Ix recursion worker implementations.
+has 16,039 logical declarations and 16,750 declarations after following runtime
+workers and replacements. The frozen report records four native runtime entry points,
+three partial opaque sources and all 151 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -498,11 +498,30 @@ regression originally panicked on a self-reference and now returns an error.
 This decoder currently has no production callers in the workspace; key
 serialization is the connected path. The parser, Rust execution, frontend
 compilation and acceptance-to-satisfaction reduction still require refinement.
-All prior 308 root statements and axiom sets, 318 premise definitions and 146
-worker bodies remain byte-for-byte unchanged; 30 roots, 58 frozen definitions
-and four safe-source graph workers are added. The preceding branchless
+That checkpoint preserved all 308 earlier root statements and axiom sets,
+318 premise definitions and 146 worker bodies byte for byte; it added 30 roots,
+58 frozen definitions and four safe-source graph workers. The preceding branchless
 repair's reviewed emitter change remains frozen. The concrete failures and
 repairs are recorded in the [Aiur bug inventory](aiur-bug-inventory.md).
+`FrontendExpressions` models the native smart constructors and proves their
+evaluation laws, including constant folding and double-negation cancellation.
+The proof works for any compatible working operations; the algebra laws are
+proved for Goldilocks. A preserved check excludes negated constant children,
+which is needed to identify syntactic constant flags after subtraction.
+Expression degrees remain independent of those flags.
+The addition, subtraction, multiplication and equality-test emitters now reflect
+the valued operation model, including output metadata, allocated columns and
+every equation. The reflection theorems require reads only from allocated
+columns. The native corpus compares 1,752 exact smart-constructor trees and
+9,804 actual scalar emissions at four assignments each, for 46,224 matching
+evaluations. It includes raw negated constants outside the invariant and
+degree metadata zero, one and two. The 388-root audit preserves all 338 earlier
+root statements and axiom sets, 376 frozen definitions and 150 worker bodies.
+It adds 50 roots, 23 definitions/constructors and the total negation-check worker.
+Rust execution refinement, remaining emitter forms, graph compilation and
+native acceptance-to-satisfaction reduction remain open. The native release
+suite passes 62 tests and release Clippy; the complete component gate passes
+with thirteen native comparison corpora.
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits

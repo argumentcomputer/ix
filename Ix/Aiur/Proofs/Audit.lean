@@ -31,6 +31,7 @@ import Ix.Aiur.Proofs.LookupLayout
 import Ix.Aiur.Proofs.MemoryColumns
 import Ix.Aiur.Proofs.ByteColumns
 import Ix.Aiur.Proofs.ExpressionGraph
+import Ix.Aiur.Proofs.FrontendExpressions
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -405,6 +406,101 @@ def graphClassicalRoots : Array Lean.Name := #[
   `Aiur.NativeAIR.Graph.sweep_reflects,
   `Aiur.NativeAIR.Graph.Valid.lookup_values_reflect]
 
+def frontendExpressionRoots : Array Lean.Name := #[
+  `Aiur.G.sub_zero,
+  `Aiur.G.neg_neg,
+  `Aiur.NativeAIR.Expr.isConstant_eq,
+  `Aiur.NativeAIR.Expr.frontNeg_noConstantNegs,
+  `Aiur.NativeAIR.Expr.frontNeg_isConstant,
+  `Aiur.NativeAIR.Expr.frontAdd_isConstant,
+  `Aiur.NativeAIR.Expr.frontSub_isConstant,
+  `Aiur.NativeAIR.Expr.frontAdd_noConstantNegs,
+  `Aiur.NativeAIR.Expr.frontSub_noConstantNegs,
+  `Aiur.NativeAIR.Expr.frontMul_noConstantNegs,
+  `Aiur.NativeAIR.Expr.frontNeg_eval,
+  `Aiur.NativeAIR.Expr.eval_constantValue,
+  `Aiur.NativeAIR.Expr.frontAdd_eval,
+  `Aiur.NativeAIR.Expr.frontSub_eval,
+  `Aiur.NativeAIR.Expr.frontMul_eval,
+  `Aiur.NativeAIR.goldilocks_add_zero,
+  `Aiur.NativeAIR.goldilocks_zero_add,
+  `Aiur.NativeAIR.goldilocks_sub_zero,
+  `Aiur.NativeAIR.goldilocks_zero_sub,
+  `Aiur.NativeAIR.goldilocks_mul_zero,
+  `Aiur.NativeAIR.goldilocks_zero_mul,
+  `Aiur.NativeAIR.goldilocks_mul_one,
+  `Aiur.NativeAIR.goldilocks_one_mul,
+  `Aiur.NativeAIR.goldilocks_neg_neg,
+  `Aiur.NativeAIR.goldilocks_konst_add,
+  `Aiur.NativeAIR.goldilocks_konst,
+  `Aiur.NativeAIR.goldilocks_add,
+  `Aiur.NativeAIR.goldilocks_sub,
+  `Aiur.NativeAIR.goldilocks_mul,
+  `Aiur.NativeAIR.goldilocks_konst_sub,
+  `Aiur.NativeAIR.goldilocks_konst_mul,
+  `Aiur.NativeAIR.goldilocks_konst_neg,
+  `Aiur.NativeAIR.goldilocksLaws,
+  `Aiur.NativeAIR.Expr.constantValue_eq_of_eval,
+  `Aiur.NativeAIR.Expr.frontMul_isConstant,
+  `Aiur.NativeAIR.RowExpr.reflects_iff_eval,
+  `Aiur.NativeAIR.RowExpr.konst_reflects,
+  `Aiur.NativeAIR.RowExpr.variable_reflects,
+  `Aiur.NativeAIR.RowExpr.add_reflects,
+  `Aiur.NativeAIR.RowExpr.sub_reflects,
+  `Aiur.NativeAIR.RowExpr.mul_reflects,
+  `Aiur.NativeAIR.ScalarEmission.eval_of,
+  `Aiur.NativeAIR.eqZeroRegular_reflects,
+  `Aiur.NativeAIR.emitEqZero_reflects,
+  `Aiur.NativeAIR.mulRegular_reflects,
+  `Aiur.NativeAIR.emitMul_reflects,
+  `Aiur.NativeAIR.emitEqZero_noConstantNegs,
+  `Aiur.NativeAIR.emitMul_noConstantNegs,
+  `Aiur.NativeAIR.emitAdd_reflects,
+  `Aiur.NativeAIR.emitSub_reflects]
+
+def frontendQuotRoots : Array Lean.Name := #[
+  `Aiur.G.neg_neg,
+  `Aiur.NativeAIR.goldilocks_neg_neg,
+  `Aiur.NativeAIR.goldilocksLaws,
+  `Aiur.NativeAIR.RowExpr.add_reflects,
+  `Aiur.NativeAIR.RowExpr.sub_reflects,
+  `Aiur.NativeAIR.ScalarEmission.eval_of,
+  `Aiur.NativeAIR.eqZeroRegular_reflects,
+  `Aiur.NativeAIR.mulRegular_reflects,
+  `Aiur.NativeAIR.emitAdd_reflects,
+  `Aiur.NativeAIR.emitSub_reflects]
+
+def frontendClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Expr.frontMul_isConstant,
+  `Aiur.NativeAIR.RowExpr.mul_reflects,
+  `Aiur.NativeAIR.emitEqZero_reflects,
+  `Aiur.NativeAIR.emitMul_reflects]
+
+def frontendExpressionPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.Expr.isConstant,
+  `Aiur.NativeAIR.Expr.constantValue,
+  `Aiur.NativeAIR.Expr.frontNeg,
+  `Aiur.NativeAIR.Expr.frontAdd,
+  `Aiur.NativeAIR.Expr.frontSub,
+  `Aiur.NativeAIR.Expr.frontMul,
+  `Aiur.NativeAIR.EvalLaws.mk,
+  `Aiur.NativeAIR.Expr.noConstantNegs,
+  `Aiur.NativeAIR.RowExpr.mk,
+  `Aiur.NativeAIR.RowExpr.konst,
+  `Aiur.NativeAIR.RowExpr.variable,
+  `Aiur.NativeAIR.RowExpr.add,
+  `Aiur.NativeAIR.RowExpr.sub,
+  `Aiur.NativeAIR.RowExpr.mul,
+  `Aiur.NativeAIR.RowExpr.eval,
+  `Aiur.NativeAIR.RowExpr.Reflects,
+  `Aiur.NativeAIR.ScalarEmission.mk,
+  `Aiur.NativeAIR.ScalarEmission.eval,
+  `Aiur.NativeAIR.mainCurrent,
+  `Aiur.NativeAIR.eqZeroRegular,
+  `Aiur.NativeAIR.emitEqZero,
+  `Aiur.NativeAIR.mulRegular,
+  `Aiur.NativeAIR.emitMul]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -441,7 +537,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -680,7 +776,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps]
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -759,7 +855,11 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if graphAxiomFreeRoots.contains root then #[]
+    let expected := if frontendExpressionRoots.contains root then
+        if frontendClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if frontendQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if graphAxiomFreeRoots.contains root then #[]
       else if graphPropextRoots.contains root || (roots.extract 0 6).contains root ||
         #[`Aiur.G.n_ofNat, `Aiur.G.n_add, `Aiur.G.n_mul, `Aiur.G.zero_add,
           `Aiur.AIR.suppliedWeight_nonzero_provider, `Aiur.AIR.inverse256_correct,
