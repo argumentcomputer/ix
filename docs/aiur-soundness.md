@@ -193,6 +193,29 @@ Scaling tests include repeated operands, where memoization of the previous
 product rows can make fusion's wider circuits slightly more expensive even
 when it retains fewer queries.
 
+## Substitution key projection
+
+Simultaneous substitution records the original substitution count once.
+At entry, the existing loose-variable bound identifies a sufficient prefix
+when all loose variables fit within the substitution window. The recursive
+walk reuses that prefix and the original count. When the bound extends above
+the window, the full list is retained. This avoids an additional expression
+traversal and repeated prefix construction. Singleton lists use the existing
+checked single-substitution walker.
+
+The original count remains separate from the prefix length. Variables above
+the substitution window lower by that original count, and binder depth
+prevents variable capture. A subtree that mentions no substitution offset
+shares its existing lowering path. The let helper's extra count argument
+stays outside the shared level-equality circuit.
+
+[Projection tests](../Tests/Ix/IxVM/SubstProjection.lean) prove that the loose
+bound supplies a sufficient prefix in an independent natural-number de
+Bruijn model. They compare exact results with that model and the previous
+walker across binder, let, projection, capture and index-lowering cases,
+measure actual sharing, and prove and verify representative claims.
+The model theorem does not certify the Aiur compiler.
+
 ## Host memory and byte advice
 
 `split_u32` obtains its four low bytes from the native field-to-bytes hint.
@@ -251,4 +274,6 @@ lake test -- --ignored ixvm
 
 These repairs and regression tests address the defects above. They do not
 establish complete compiler preservation or cryptographic soundness.
+
+
 

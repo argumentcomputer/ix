@@ -541,30 +541,64 @@ def subst := ⟦
     let n = list_length(substs);
     match n {
       0 => e,
-      _ =>
-        let l = expr_lbr(e);
-        match memo_u32_less_than(depth, l) {
-          0 => e,
-          1 =>
-            match has_bvar_in_range(e, depth, depth + n) {
-              1 => expr_inst_many_walk(e, substs, depth),
-              _ => expr_lower(e, n, depth + n),
+      1 =>
+        -- A singleton has no nonempty proper prefix to project. Reuse the
+        -- checked single-substitution walker and its argument-independent
+        -- lowering path instead of adding prefix-summary rows.
+        let ListNode.Cons(arg, _) = load(substs);
+        expr_inst1(e, arg, depth),
+      _ => expr_inst_many_start(e, substs, n, depth),
+    }
+  }
+
+  -- substs can be an already projected prefix. n is ALWAYS the original
+  -- number of binders removed, not list_length(substs). This is essential:
+  -- higher variables still lower by n, and depth still prevents capture.
+  -- Every recursive child uses only offsets present in its parent's prefix.
+  fn expr_inst_many_start(e: KExpr, substs: List‹KExpr›, n: G, depth: G) -> KExpr {
+    let l = expr_lbr(e);
+    match memo_u32_less_than(depth, l) {
+      0 => e,
+      1 =>
+        -- The existing loose-variable bound gives a sufficient prefix
+        -- without a new expression traversal. Keep the full list when
+        -- variables above the substitution window make that bound coarse.
+        match memo_u32_less_than(depth + n, l) {
+          1 => expr_inst_many_projected(e, substs, n, depth),
+          0 =>
+            let needed = l - depth;
+            match n - needed {
+              0 => expr_inst_many_walk(e, substs, n, depth),
+              _ => expr_inst_many_walk(e, list_take(substs, needed), n, depth),
             },
         },
     }
   }
 
+  -- Reuse the sufficient prefix selected at the substitution entry. Repeated
+  -- trimming at every child creates extra lists and summary rows when the
+  -- children already share the same prefix.
+  fn expr_inst_many_projected(e: KExpr, substs: List‹KExpr›, n: G, depth: G) -> KExpr {
+    let l = expr_lbr(e);
+    match memo_u32_less_than(depth, l) {
+      0 => e,
+      1 => match has_bvar_in_range(e, depth, depth + n) {
+        1 => expr_inst_many_walk(e, substs, n, depth),
+        _ => expr_lower(e, n, depth + n),
+      },
+    }
+  }
+
   -- Cold BVar arm of `expr_inst_many_walk`, split into its own circuit so the
-  -- hot App/Lam/… walk stays narrow (the `list_length` / `list_lookup` /
-  -- `expr_lift` machinery only charges the BVar rows). Mirror the hot/cold
+  -- hot App/Lam/… walk stays narrow (the `list_lookup` / `expr_lift`
+  -- machinery only charges the BVar rows). Mirror the hot/cold
   -- split pattern used for `address_eq` / `whnf_with_spine`.
   --
   -- The walk invariant gives `lbr(BVar i) = i + 1 > depth`, i.e.
   -- `i ≥ depth`, so the window test reduces to one comparison on the
   -- offset. A sub-`depth` index (invariant violation) wraps in the field
   -- and fails the u32 range decomposition — no silent path.
-  fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
-    let n = list_length(substs);
+  fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, n: G, depth: G) -> KExpr {
     let ofs = i - depth;
     match memo_u32_less_than(ofs, n) {
       1 => expr_lift(list_lookup(substs, ofs), depth, 0),
@@ -572,41 +606,46 @@ def subst := ⟦
     }
   }
 
-  fn expr_inst_many_walk(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
+  fn expr_inst_many_walk(e: KExpr, substs: List‹KExpr›, n: G, depth: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => expr_inst_many_bvar(i, substs, depth),
+      KExprNode.BVar(i) => expr_inst_many_bvar(i, substs, n, depth),
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>
         store(KExprNode.App(
-          expr_inst_many(f, substs, depth),
-          expr_inst_many(a, substs, depth))),
+          expr_inst_many_projected(f, substs, n, depth),
+          expr_inst_many_projected(a, substs, n, depth))),
       KExprNode.Lam(ty, body) =>
         store(KExprNode.Lam(
-          expr_inst_many(ty, substs, depth),
-          expr_inst_many(body, substs, depth + 1))),
+          expr_inst_many_projected(ty, substs, n, depth),
+          expr_inst_many_projected(body, substs, n, depth + 1))),
       KExprNode.Forall(ty, body) =>
         store(KExprNode.Forall(
-          expr_inst_many(ty, substs, depth),
-          expr_inst_many(body, substs, depth + 1))),
+          expr_inst_many_projected(ty, substs, n, depth),
+          expr_inst_many_projected(body, substs, n, depth + 1))),
       KExprNode.Let(ty, val, body) =>
-        expr_inst_many_let(ty, val, body, substs, depth),
+        expr_inst_many_let(ty, val, body, substs, n, depth),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
-        store(KExprNode.Proj(tidx, fidx, expr_inst_many(e1, substs, depth))),
+        store(KExprNode.Proj(tidx, fidx, expr_inst_many_projected(e1, substs, n, depth))),
     }
   }
 
-  -- Cold-extracted Let arm (same pattern as `expr_lbr_let`).
+  -- Its extra original-count argument would widen the shared level-equality
+  -- circuit, so this helper stays outside that group.
   fn expr_inst_many_let(ty: KExpr, val: KExpr, body: KExpr,
-      substs: List‹KExpr›, depth: G) -> KExpr {
+      substs: List‹KExpr›, n: G, depth: G) -> KExpr {
     store(KExprNode.Let(
-      expr_inst_many(ty, substs, depth),
-      expr_inst_many(val, substs, depth),
-      expr_inst_many(body, substs, depth + 1)))
+      expr_inst_many_projected(ty, substs, n, depth),
+      expr_inst_many_projected(val, substs, n, depth),
+      expr_inst_many_projected(body, substs, n, depth + 1)))
   }
 ⟧
 
 end IxVM
 
 end
+
+
+
+

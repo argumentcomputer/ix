@@ -768,7 +768,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_68", #[
     "level_equal",
     "expr_inst1_let",
-    "expr_inst_many_let",
     "k_is_def_eq_struct_go",
     "check_positivity_fields",
     "check_positivity",
