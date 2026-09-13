@@ -651,6 +651,8 @@ mod tests {
   mod extension_mmcs;
   mod folding;
   mod fri_domain;
+  #[cfg(not(feature = "cuda"))]
+  mod fri_query;
   mod interpolation;
   mod lookup_budget;
   mod lookup_shapes;

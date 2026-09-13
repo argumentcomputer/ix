@@ -11217,6 +11217,245 @@ ROOT Aiur.NativeAIR.Folding.foldRow_equal_count_le
                         challenges).length ≤
                     Aiur.NativeAIR.Domain.size arity - 1
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.reconstruct_eq
+∀ {R : Type u_1} (arity : Aiur.NativeAIR.Domain.Subgroup) (index : Nat) (value : R) (siblings : List R),
+  siblings.length + 1 = Aiur.NativeAIR.Domain.size arity →
+    Aiur.NativeAIR.FriQuery.reconstruct arity index value siblings =
+      some (siblings.insertIdx (index % Aiur.NativeAIR.Domain.size arity) value)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.reconstruct_success
+∀ {R : Type u_1} {arity : Aiur.NativeAIR.Domain.Subgroup} {index : Nat} {value : R} {siblings row : List R},
+  Aiur.NativeAIR.FriQuery.reconstruct arity index value siblings = some row →
+    siblings.length + 1 = Aiur.NativeAIR.Domain.size arity ∧
+      row = siblings.insertIdx (index % Aiur.NativeAIR.Domain.size arity) value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.reconstruct_length
+∀ {R : Type u_1} {arity : Aiur.NativeAIR.Domain.Subgroup} {index : Nat} {value : R} {siblings row : List R},
+  Aiur.NativeAIR.FriQuery.reconstruct arity index value siblings = some row →
+    row.length = Aiur.NativeAIR.Domain.size arity
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.reconstruct_self
+∀ {R : Type u_1} {arity : Aiur.NativeAIR.Domain.Subgroup} {index : Nat} {value : R} {siblings row : List R},
+  Aiur.NativeAIR.FriQuery.reconstruct arity index value siblings = some row →
+    row[index % Aiur.NativeAIR.Domain.size arity]? = some value
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.reconstruct_siblings
+∀ {R : Type u_1} {arity : Aiur.NativeAIR.Domain.Subgroup} {index : Nat} {value : R} {siblings row : List R},
+  Aiur.NativeAIR.FriQuery.reconstruct arity index value siblings = some row →
+    row.eraseIdx (index % Aiur.NativeAIR.Domain.size arity) = siblings
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.step_success
+∀ {state : Aiur.NativeAIR.FriQuery.State} {round : Aiur.NativeAIR.FriQuery.Round}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.StepResult},
+  Aiur.NativeAIR.FriQuery.step state round openings = some result →
+    0 < ↑round.arity ∧
+      ↑round.arity ≤ ↑state.domain ∧
+        ∃ child values folded,
+          Aiur.NativeAIR.Domain.ofLogSize (↑state.domain - ↑round.arity) = some child ∧
+            Aiur.NativeAIR.FriQuery.reconstruct round.arity state.index state.value round.siblings = some values ∧
+              Aiur.NativeAIR.Interpolation.foldRow state.domain round.arity
+                    (state.index / Aiur.NativeAIR.Domain.size round.arity) values round.challenge =
+                  some folded ∧
+                result =
+                  {
+                    state :=
+                      { domain := child, index := state.index / Aiur.NativeAIR.Domain.size round.arity,
+                        value :=
+                          (Aiur.NativeAIR.FriQuery.roll (↑child)
+                              (round.challenge.power (Aiur.NativeAIR.Domain.size round.arity)) folded openings).fst },
+                    remaining :=
+                      (Aiur.NativeAIR.FriQuery.roll (↑child)
+                          (round.challenge.power (Aiur.NativeAIR.Domain.size round.arity)) folded openings).snd,
+                    row :=
+                      { domain := child, index := state.index / Aiur.NativeAIR.Domain.size round.arity,
+                        values := values } }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.step_dimensions
+∀ {state : Aiur.NativeAIR.FriQuery.State} {round : Aiur.NativeAIR.FriQuery.Round}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.StepResult},
+  Aiur.NativeAIR.FriQuery.step state round openings = some result →
+    0 < ↑round.arity ∧
+      ↑state.domain = ↑result.state.domain + ↑round.arity ∧
+        result.state.index = state.index / Aiur.NativeAIR.Domain.size round.arity ∧
+          result.state.index < Aiur.NativeAIR.Domain.size result.state.domain ∧
+            result.row.domain = result.state.domain ∧ result.row.index = result.state.index
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.step_row
+∀ {state : Aiur.NativeAIR.FriQuery.State} {round : Aiur.NativeAIR.FriQuery.Round}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.StepResult},
+  Aiur.NativeAIR.FriQuery.step state round openings = some result →
+    result.row.values.length = Aiur.NativeAIR.Domain.size round.arity ∧
+      result.row.values[state.index % Aiur.NativeAIR.Domain.size round.arity]? = some state.value ∧
+        result.row.values.eraseIdx (state.index % Aiur.NativeAIR.Domain.size round.arity) = round.siblings
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.step_index_bound
+∀ {state : Aiur.NativeAIR.FriQuery.State} {round : Aiur.NativeAIR.FriQuery.Round}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.StepResult},
+  Aiur.NativeAIR.FriQuery.step state round openings = some result →
+    state.index < Aiur.NativeAIR.Domain.size state.domain
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.step_self_sample
+∀ {state : Aiur.NativeAIR.FriQuery.State} {round : Aiur.NativeAIR.FriQuery.Round}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.StepResult},
+  Aiur.NativeAIR.FriQuery.step state round openings = some result →
+    (Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.FriDomain.queryPoint state.domain state.index),
+        state.value) ∈
+      Aiur.NativeAIR.Interpolation.foldSamples state.domain round.arity result.state.index result.row.values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.step_polynomial
+∀ {state : Aiur.NativeAIR.FriQuery.State} {round : Aiur.NativeAIR.FriQuery.Round}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.StepResult},
+  Aiur.NativeAIR.FriQuery.step state round openings = some result →
+    ∃ candidate,
+      candidate.length ≤ Aiur.NativeAIR.Domain.size round.arity ∧
+        Aiur.NativeAIR.Quotient.horner
+              (Aiur.NativeAIR.ProofCodec.Extension.ofBase
+                (Aiur.NativeAIR.FriDomain.queryPoint state.domain state.index))
+              candidate =
+            state.value ∧
+          (∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+              sample ∈
+                  Aiur.NativeAIR.Interpolation.foldSamples state.domain round.arity result.state.index
+                    result.row.values →
+                Aiur.NativeAIR.Quotient.horner sample.fst candidate = sample.snd) ∧
+            (result.state.value, result.remaining) =
+              Aiur.NativeAIR.FriQuery.roll (↑result.state.domain)
+                (round.challenge.power (Aiur.NativeAIR.Domain.size round.arity))
+                (Aiur.NativeAIR.Quotient.horner round.challenge candidate) openings
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.step_global
+∀ {state : Aiur.NativeAIR.FriQuery.State} {round : Aiur.NativeAIR.FriQuery.Round}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.StepResult},
+  Aiur.NativeAIR.FriQuery.step state round openings = some result →
+    ∀ (coefficients : List Aiur.NativeAIR.ProofCodec.Extension),
+      (∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+          sample ∈
+              Aiur.NativeAIR.Interpolation.foldSamples state.domain round.arity result.state.index result.row.values →
+            Aiur.NativeAIR.Quotient.horner sample.fst coefficients = sample.snd) →
+        (result.state.value, result.remaining) =
+          Aiur.NativeAIR.FriQuery.roll (↑result.state.domain)
+            (round.challenge.power (Aiur.NativeAIR.Domain.size round.arity))
+            (Aiur.NativeAIR.Quotient.horner
+              (Aiur.NativeAIR.ProofCodec.Extension.ofBase
+                (Aiur.NativeAIR.FriDomain.queryPoint result.state.domain result.state.index))
+              (Aiur.NativeAIR.Folding.foldCoefficients round.arity round.challenge coefficients))
+            openings
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.roll_length
+∀ (height : Nat) (factor value : Aiur.NativeAIR.ProofCodec.Extension)
+  (openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)),
+  (Aiur.NativeAIR.FriQuery.roll height factor value openings).snd.length ≤ openings.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.roll_empty
+∀ (height : Nat) (factor value : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.FriQuery.roll height factor value [] = (value, [])
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.FriQuery.roll_matching
+∀ (height : Nat) (factor value next : Aiur.NativeAIR.ProofCodec.Extension)
+  (rest : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)),
+  Aiur.NativeAIR.FriQuery.roll height factor value ((height, next) :: rest) = (value + factor * next, rest)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.roll_other
+∀ (height nextHeight : Nat) (factor value next : Aiur.NativeAIR.ProofCodec.Extension)
+  (rest : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)),
+  nextHeight ≠ height →
+    Aiur.NativeAIR.FriQuery.roll height factor value ((nextHeight, next) :: rest) = (value, (nextHeight, next) :: rest)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.roll_count
+∀ (height : Nat) (factor value : Aiur.NativeAIR.ProofCodec.Extension)
+  (openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)),
+  openings.length ≤ (Aiur.NativeAIR.FriQuery.roll height factor value openings).snd.length + 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.roll_order
+∀ (height : Nat) (factor value : Aiur.NativeAIR.ProofCodec.Extension)
+  (openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)),
+  List.Pairwise (fun left right => right.fst < left.fst)
+      (Aiur.NativeAIR.FriQuery.roll height factor value openings).snd →
+    (∀ (entry : Nat × Aiur.NativeAIR.ProofCodec.Extension),
+        entry ∈ (Aiur.NativeAIR.FriQuery.roll height factor value openings).snd → entry.fst < height) →
+      List.Pairwise (fun left right => right.fst < left.fst) openings ∧
+        ∀ (entry : Nat × Aiur.NativeAIR.ProofCodec.Extension), entry ∈ openings → entry.fst ≤ height
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.walk_nil_success
+∀ {final : Aiur.NativeAIR.Domain.Subgroup} {state : Aiur.NativeAIR.FriQuery.State}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.walk final state openings [] = some result →
+    state.domain = final ∧ openings = [] ∧ result = { state := state, rows := [] }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.walk_cons_success
+∀ {final : Aiur.NativeAIR.Domain.Subgroup} {state : Aiur.NativeAIR.FriQuery.State}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {round : Aiur.NativeAIR.FriQuery.Round}
+  {rest : List Aiur.NativeAIR.FriQuery.Round} {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.walk final state openings (round :: rest) = some result →
+    ∃ head tail,
+      Aiur.NativeAIR.FriQuery.step state round openings = some head ∧
+        Aiur.NativeAIR.FriQuery.walk final head.state head.remaining rest = some tail ∧
+          result = { state := tail.state, rows := head.row :: tail.rows }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.walk_summary
+∀ {final : Aiur.NativeAIR.Domain.Subgroup} {state : Aiur.NativeAIR.FriQuery.State}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {rounds : List Aiur.NativeAIR.FriQuery.Round}
+  {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.walk final state openings rounds = some result →
+    result.state.domain = final ∧
+      result.rows.length = rounds.length ∧
+        ↑state.domain = ↑final + (List.map (fun round => ↑round.arity) rounds).sum ∧
+          result.state.index = state.index / 2 ^ (List.map (fun round => ↑round.arity) rounds).sum
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.walk_openings
+∀ {final : Aiur.NativeAIR.Domain.Subgroup} {state : Aiur.NativeAIR.FriQuery.State}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {rounds : List Aiur.NativeAIR.FriQuery.Round}
+  {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.walk final state openings rounds = some result →
+    List.Pairwise (fun left right => right.fst < left.fst) openings ∧
+      (∀ (entry : Nat × Aiur.NativeAIR.ProofCodec.Extension), entry ∈ openings → entry.fst < ↑state.domain) ∧
+        openings.length ≤ rounds.length
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.run_success
+∀ {initial final : Aiur.NativeAIR.Domain.Subgroup} {index : Nat}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {rounds : List Aiur.NativeAIR.FriQuery.Round}
+  {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.run initial final index openings rounds = some result →
+    index < Aiur.NativeAIR.Domain.size initial ∧
+      ∃ value rest,
+        openings = (↑initial, value) :: rest ∧
+          Aiur.NativeAIR.FriQuery.walk final { domain := initial, index := index, value := value } rest rounds =
+            some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.run_summary
+∀ {initial final : Aiur.NativeAIR.Domain.Subgroup} {index : Nat}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {rounds : List Aiur.NativeAIR.FriQuery.Round}
+  {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.run initial final index openings rounds = some result →
+    index < Aiur.NativeAIR.Domain.size initial ∧
+      result.state.domain = final ∧
+        result.rows.length = rounds.length ∧
+          ↑initial = ↑final + (List.map (fun round => ↑round.arity) rounds).sum ∧
+            result.state.index = index / 2 ^ (List.map (fun round => ↑round.arity) rounds).sum ∧
+              result.state.index < Aiur.NativeAIR.Domain.size final ∧
+                List.Pairwise (fun left right => right.fst < left.fst) openings ∧ openings.length ≤ rounds.length + 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.check_success
+∀ {initial final : Aiur.NativeAIR.Domain.Subgroup} {index : Nat}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {rounds : List Aiur.NativeAIR.FriQuery.Round}
+  {finalPolynomial : List Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.check initial final index openings rounds finalPolynomial = some result →
+    Aiur.NativeAIR.FriQuery.run initial final index openings rounds = some result ∧
+      Aiur.NativeAIR.Quotient.horner
+          (Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.FriDomain.queryPoint initial result.state.index))
+          finalPolynomial =
+        result.state.value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriQuery.check_final_polynomial
+∀ {initial final : Aiur.NativeAIR.Domain.Subgroup} {index : Nat}
+  {openings : List (Nat × Aiur.NativeAIR.ProofCodec.Extension)} {rounds : List Aiur.NativeAIR.FriQuery.Round}
+  {finalPolynomial : List Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.FriQuery.Result},
+  Aiur.NativeAIR.FriQuery.check initial final index openings rounds finalPolynomial = some result →
+    Aiur.NativeAIR.Quotient.horner
+        (Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.FriDomain.queryPoint final result.state.index))
+        finalPolynomial =
+      result.state.value
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -18311,6 +18550,102 @@ fun {R} [OfNat R 0] [Add R] [Mul R] arity point =>
     else
       Aiur.NativeAIR.Polynomial.add (List.take (Aiur.NativeAIR.Domain.size arity) coefficients)
         (Aiur.NativeAIR.Polynomial.scale point (a (List.drop (Aiur.NativeAIR.Domain.size arity) coefficients) ⋯))
+PREMISE Aiur.NativeAIR.FriQuery.reconstruct
+{R : Type u_1} → Aiur.NativeAIR.Domain.Subgroup → Nat → R → List R → Option (List R)
+DEFINITION
+fun {R} arity index value siblings =>
+  if (siblings.length + 1 == Aiur.NativeAIR.Domain.size arity) = true then
+    some (siblings.insertIdx (index % Aiur.NativeAIR.Domain.size arity) value)
+  else none
+PREMISE Aiur.NativeAIR.FriQuery.State.mk
+Aiur.NativeAIR.Domain.Subgroup → Nat → Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.FriQuery.State
+PREMISE Aiur.NativeAIR.FriQuery.Round.mk
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.ProofCodec.Extension → List Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.FriQuery.Round
+PREMISE Aiur.NativeAIR.FriQuery.Row.mk
+Aiur.NativeAIR.Domain.Subgroup → Nat → List Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.FriQuery.Row
+PREMISE Aiur.NativeAIR.FriQuery.roll
+Nat →
+  Aiur.NativeAIR.ProofCodec.Extension →
+    Aiur.NativeAIR.ProofCodec.Extension →
+      List (Nat × Aiur.NativeAIR.ProofCodec.Extension) →
+        Aiur.NativeAIR.ProofCodec.Extension × List (Nat × Aiur.NativeAIR.ProofCodec.Extension)
+DEFINITION
+fun height factor value x =>
+  match x with
+  | [] => (value, [])
+  | (nextHeight, next) :: rest =>
+    if (nextHeight == height) = true then (value + factor * next, rest) else (value, (nextHeight, next) :: rest)
+PREMISE Aiur.NativeAIR.FriQuery.StepResult.mk
+Aiur.NativeAIR.FriQuery.State →
+  List (Nat × Aiur.NativeAIR.ProofCodec.Extension) → Aiur.NativeAIR.FriQuery.Row → Aiur.NativeAIR.FriQuery.StepResult
+PREMISE Aiur.NativeAIR.FriQuery.step
+Aiur.NativeAIR.FriQuery.State →
+  Aiur.NativeAIR.FriQuery.Round →
+    List (Nat × Aiur.NativeAIR.ProofCodec.Extension) → Option Aiur.NativeAIR.FriQuery.StepResult
+DEFINITION
+fun state round openings =>
+  if (↑round.arity == 0 || decide (↑round.arity > ↑state.domain)) = true then none
+  else do
+    let child ← Aiur.NativeAIR.Domain.ofLogSize (↑state.domain - ↑round.arity)
+    let values ← Aiur.NativeAIR.FriQuery.reconstruct round.arity state.index state.value round.siblings
+    have index : Nat := state.index / Aiur.NativeAIR.Domain.size round.arity
+    let folded ← Aiur.NativeAIR.Interpolation.foldRow state.domain round.arity index values round.challenge
+    match
+        Aiur.NativeAIR.FriQuery.roll (↑child) (round.challenge.power (Aiur.NativeAIR.Domain.size round.arity)) folded
+          openings with
+      | (value, remaining) =>
+        pure
+          { state := { domain := child, index := index, value := value }, remaining := remaining,
+            row := { domain := child, index := index, values := values } }
+PREMISE Aiur.NativeAIR.FriQuery.Result.mk
+Aiur.NativeAIR.FriQuery.State → List Aiur.NativeAIR.FriQuery.Row → Aiur.NativeAIR.FriQuery.Result
+PREMISE Aiur.NativeAIR.FriQuery.walk
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.FriQuery.State →
+    List (Nat × Aiur.NativeAIR.ProofCodec.Extension) →
+      List Aiur.NativeAIR.FriQuery.Round → Option Aiur.NativeAIR.FriQuery.Result
+DEFINITION
+fun final state openings x =>
+  List.brecOn (motive := fun x =>
+    Aiur.NativeAIR.FriQuery.State →
+      List (Nat × Aiur.NativeAIR.ProofCodec.Extension) → Option Aiur.NativeAIR.FriQuery.Result)
+    x (Aiur.NativeAIR.FriQuery.walk._f final) state openings
+PREMISE Aiur.NativeAIR.FriQuery.run
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.Domain.Subgroup →
+    Nat →
+      List (Nat × Aiur.NativeAIR.ProofCodec.Extension) →
+        List Aiur.NativeAIR.FriQuery.Round → Option Aiur.NativeAIR.FriQuery.Result
+DEFINITION
+fun initial final index openings rounds =>
+  if index ≥ Aiur.NativeAIR.Domain.size initial then none
+  else
+    match openings with
+    | [] => none
+    | (height, value) :: rest =>
+      if (height == ↑initial) = true then
+        Aiur.NativeAIR.FriQuery.walk final { domain := initial, index := index, value := value } rest rounds
+      else none
+PREMISE Aiur.NativeAIR.FriQuery.check
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.Domain.Subgroup →
+    Nat →
+      List (Nat × Aiur.NativeAIR.ProofCodec.Extension) →
+        List Aiur.NativeAIR.FriQuery.Round →
+          List Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.FriQuery.Result
+DEFINITION
+fun initial final index openings rounds finalPolynomial => do
+  let result ← Aiur.NativeAIR.FriQuery.run initial final index openings rounds
+  if
+        (Aiur.NativeAIR.Quotient.horner
+              (Aiur.NativeAIR.ProofCodec.Extension.ofBase
+                (Aiur.NativeAIR.FriDomain.queryPoint initial result.state.index))
+              finalPolynomial ==
+            result.state.value) =
+          true then
+      some result
+    else none
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -23428,6 +23763,19 @@ fun {R} [OfNat R 0] [Add R] [Mul R] arity point coefficients =>
       (Aiur.NativeAIR.Polynomial.scale point
         (Aiur.NativeAIR.Folding.rowCoefficients._unsafe_rec arity point
           (List.drop (Aiur.NativeAIR.Domain.size arity) coefficients)))
+RECURSION WORKER Aiur.NativeAIR.FriQuery.walk._unsafe_rec
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.FriQuery.State →
+    List (Nat × Aiur.NativeAIR.ProofCodec.Extension) →
+      List Aiur.NativeAIR.FriQuery.Round → Option Aiur.NativeAIR.FriQuery.Result
+IMPLEMENTATION
+fun final state openings x =>
+  match x with
+  | [] => if (state.domain == final && openings.isEmpty) = true then some { state := state, rows := [] } else none
+  | round :: rest => do
+    let result ← Aiur.NativeAIR.FriQuery.step state round openings
+    let tail ← Aiur.NativeAIR.FriQuery.walk._unsafe_rec final result.state result.remaining rest
+    pure { state := tail.state, rows := result.row :: tail.rows }
 RECURSION WORKER Aiur.NativeAIR.Interpolation.combine._unsafe_rec
 {R : Type u_1} → [OfNat R 0] → [Add R] → [Mul R] → List R → R → List (R × R) → List R
 IMPLEMENTATION
@@ -25707,10 +26055,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1518; LOGICAL DECLARATIONS 20151; WITH RUNTIME 20955
+C8 component ROOTS 1544; LOGICAL DECLARATIONS 20298; WITH RUNTIME 21114
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 195
+RECURSION WORKERS 196
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

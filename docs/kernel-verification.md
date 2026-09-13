@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,518 roots by traversing checked types, bodies and inductive
+The audit checks 1,544 roots by traversing checked types, bodies and inductive
 constructors. Fifty-seven roots use no axioms; one uses only `Quot.sound`;
-244 depend only on `propext`; 460 use exactly `propext` and `Quot.sound`;
-the other 756 use exactly
+245 depend only on `propext`; 470 use exactly `propext` and `Quot.sound`;
+the other 771 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 20,151 logical declarations and 20,955 declarations after following runtime
+has 20,298 logical declarations and 21,114 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 195 Ix recursion worker implementations.
+three partial opaque sources and all 196 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1416,6 +1416,48 @@ All 98 parallel native release tests, Clippy with warnings denied, the
 508-job strict build and the complete gate with thirty-nine fresh native
 corpora pass. The backend accepts two cases and rejects seventeen, with no
 unexpected outcomes.
+
+`NativeAIR.FriQuery` proves the query chain that reconstructs and folds each
+opened row. Reconstruction inserts the carried value at the query's slot,
+preserves every sibling in order and produces the exact arity. Each accepted
+step reduces the domain and index, interpolates the reconstructed row and
+then adds at most one reduced input at the new height, weighted by `beta^n`.
+The row recorded for authentication precedes this addition. Its interpolant
+agrees with the carried value at the parent query point; agreement with a
+global polynomial gives the corresponding global fold and input addition.
+
+An accepted chain consumes all remaining reduced inputs. Their heights are
+strictly descending, the final domain is exact, and the final index is the
+original index divided by the product of the arities. The final polynomial
+check uses the native expression with the initial domain's root and the
+reduced index. The padding theorem identifies that expression with evaluation
+at the final domain's query point. The model exposes the private native
+routine's caller preconditions as guards; final polynomial length and row
+authentication belong to the surrounding verifier.
+
+The native corpus generates 96 ordinary PCS proofs and verifies them with
+the concrete Merkle scheme. A delegating folding hook captures calls made
+by the actual private query routine through the public FRI verifier. The
+Lean reader derives reduced openings independently from known source
+polynomials by synthetic division and batching by height. It checks every
+claimed evaluation, authenticated input row, reconstructed row, folding
+result and final value across 336 queries, 246 rounds and 1,030 fold calls.
+Profiles include arities through sixteen, repeated and differing matrix
+heights, multiple batches and opening points, no-round proofs, and final
+polynomials of lengths one, two and four. Positive final degrees obey the
+native prover's strict minimum input-height condition. The recorded
+challenger includes the PCS caller's observation of all claimed evaluations
+before entering FRI.
+
+This component adds 26 roots, eleven definitions and constructors, and one
+inspected structural recursion worker. All 1,518 prior root statements and
+axiom sets, 944 premise definitions and 195 worker bodies remain unchanged.
+All 99 parallel native release tests, Clippy with warnings denied, the
+515-job strict build and the complete gate with forty fresh native corpora
+pass. The backend accepts two cases and rejects seventeen, with no
+unexpected outcomes.
+The complete authenticated PCS/FRI transcript, committed-trace extraction
+and quantitative proximity and Fiat–Shamir bounds remain open.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

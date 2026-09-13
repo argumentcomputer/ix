@@ -396,6 +396,9 @@ lean_exe «aiur-interpolation-tests» where
 lean_exe «aiur-folding-tests» where
   root := `Tests.Aiur.Folding
 
+lean_exe «aiur-fri-query-tests» where
+  root := `Tests.Aiur.FriQuery
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -775,7 +778,7 @@ script "check-aiur" := do
     "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests", "aiur-logup-tests", "aiur-domain-tests",
     "aiur-verifier-arithmetic-tests", "aiur-transcript-tests", "aiur-blake3-tests", "aiur-merkle-cap-tests",
     "aiur-merkle-tests", "aiur-pruned-merkle-tests", "aiur-extension-mmcs-tests", "aiur-fri-domain-tests",
-    "aiur-polynomial-tests", "aiur-interpolation-tests", "aiur-folding-tests"]
+    "aiur-polynomial-tests", "aiur-interpolation-tests", "aiur-folding-tests", "aiur-fri-query-tests"]
   let report ← IO.Process.output {
     cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
   unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
@@ -852,6 +855,7 @@ script "check-aiur" := do
     let polynomialSnapshot := directory / "native-polynomials.bin"
     let interpolationSnapshot := directory / "native-interpolation.bin"
     let foldingSnapshot := directory / "native-folding.bin"
+    let friQuerySnapshot := directory / "native-fri-query.bin"
     let exporter ← IO.Process.spawn {
       cmd := "cargo"
       args := #["test", "--locked", "--release", "-p", "aiur",
@@ -894,7 +898,8 @@ script "check-aiur" := do
         ("IX_FRI_DOMAIN_SNAPSHOT", some friDomainSnapshot.toString),
         ("IX_POLYNOMIAL_SNAPSHOT", some polynomialSnapshot.toString),
         ("IX_INTERPOLATION_SNAPSHOT", some interpolationSnapshot.toString),
-        ("IX_FOLDING_SNAPSHOT", some foldingSnapshot.toString)]
+        ("IX_FOLDING_SNAPSHOT", some foldingSnapshot.toString),
+        ("IX_FRI_QUERY_SNAPSHOT", some friQuerySnapshot.toString)]
       stdout := .inherit
       stderr := .inherit }
     unless (← exporter.wait) == 0 do
@@ -928,6 +933,7 @@ script "check-aiur" := do
     run ".lake/build/bin/aiur-polynomial-tests" #[polynomialSnapshot.toString]
     run ".lake/build/bin/aiur-interpolation-tests" #[interpolationSnapshot.toString]
     run ".lake/build/bin/aiur-folding-tests" #[foldingSnapshot.toString]
+    run ".lake/build/bin/aiur-fri-query-tests" #[friQuerySnapshot.toString]
     run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
     run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]
