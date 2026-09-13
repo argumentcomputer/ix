@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 955 roots by traversing checked types, bodies and inductive
-constructors. Twenty roots use no axioms; one uses only `Quot.sound`;
-165 depend only on `propext`; 260 use exactly `propext` and `Quot.sound`;
-the other 509 use exactly
+The audit checks 1,050 roots by traversing checked types, bodies and inductive
+constructors. Twenty-nine roots use no axioms; one uses only `Quot.sound`;
+176 depend only on `propext`; 280 use exactly `propext` and `Quot.sound`;
+the other 564 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 18,163 logical declarations and 18,942 declarations after following runtime
+has 18,489 logical declarations and 19,270 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 171 Ix recursion worker implementations.
+three partial opaque sources and all 172 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -848,11 +848,61 @@ graphs agree with both graph sweeping and expression evaluation. The audit
 adds 71 roots, 32 definitions and instances, and two inspected recursion
 workers; all 884 prior statements and axiom sets, 689 definitions and 169
 worker bodies are unchanged. Native field-instruction refinement and the
-connection through logUp, quotient, transcript and PCS checks remain open.
+connection to verifier acceptance remain open.
 All 80 parallel Rust release tests, release Clippy with warnings denied and
 formatting pass. The strict 379-job build and complete component gate pass
 with all twenty-four native corpora and the unchanged two accepted and
 seventeen rejected backend cases.
+
+`LookupCoordinates` retains the two separate coordinates checked by native
+degree-two logUp. Its Karatsuba multiplication has proved ring laws over
+any commutative coefficient ring. For base-field trace values, the pair
+identifies with the proved native extension field. At an out-of-domain opening,
+each coordinate is itself an extension value: combining the pair with the
+extension basis loses a constraint. A checked example gives a nonzero pair
+`(-u, 1)` that combines to zero. No field or cancellation law is assumed for
+that coordinate algebra.
+
+`LogUp` models the direct evaluator with checked node, public, accumulator and
+boundary-coordinate reads. It normalizes group size zero to one, rejects sizes
+above eight, and covers the empty pass-through, singleton, full-group and tail
+cases. `LogUpAlgebra` relates Horner fingerprints and seeded prefix/suffix scans
+to the denominator-cleared grouped polynomial. Padding arguments with trailing
+zeros preserves the fingerprint. Successful evaluation yields every group's
+two polynomial equations in native order, and the graph reflection theorem
+connects lookup reads to the corresponding frontend expressions.
+
+`LogUpFractions` proves that, on base-field trace rows with no zero message
+denominators, the grouped equation vanishes exactly when the accumulator
+difference equals the weighted sum of message inverses. It also proves a
+counterexample showing why the denominator condition is necessary.
+`LogUpAccumulator` telescopes all groups in a complete checked row, retaining
+the last-row injection supplied by the caller. Further ring lemmas sum a
+cyclic sequence of rows and a chain of circuit accumulators. Deriving the
+selector normalization and cyclic-domain conditions from authenticated trace
+polynomials remains an obligation, as does excluding poles and compression
+collisions to obtain exact message balance.
+
+The comparison corpus checks 4,752 direct native evaluations against the
+independent symbolic schoolbook reference and the Lean model, in both the
+base and extension fields. It covers all group sizes zero through eight,
+22 lookup counts through 65, ten argument widths, field boundaries, zero
+denominators and arbitrary extension-valued coordinates and selectors.
+The checked Lean reader additionally rejects 42,768 malformed inputs.
+Native stage-2 construction matches all partial accumulators and zero equations
+in 27 batches, 135 circuits and 513 rows, including variable argument padding,
+cyclic next rows and the raw last-row selector with a scaled boundary delta.
+These comparisons do not prove Rust implementation refinement or extract
+vanishing equations from native verifier acceptance.
+
+The logUp audit adds 95 roots, 36 definitions and instances, and one inspected
+structural recursion worker. All 955 prior root statements and axiom sets,
+721 definitions and 171 worker bodies are unchanged. The native runtime
+entry points and partial opaque sources remain the same. All 82 parallel
+Rust release tests, release Clippy with warnings denied, and formatting pass.
+The strict 396-job build and complete component gate pass with all twenty-six
+native corpora and the unchanged two accepted and seventeen rejected backend
+cases.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including
@@ -917,7 +967,7 @@ bound. The remaining components are:
 
 | Component | Remaining obligation |
 | --- | --- |
-| Native verifier | Connect the enforced proof codec and shape checks and proved field arithmetic to native logUp, quotient, transcript and PCS checks, then extract satisfying committed traces from acceptance. |
+| Native verifier | Connect the enforced proof codec and shape checks and proved field and grouped lookup models to native quotient, transcript and PCS checks, then extract satisfying committed traces from acceptance. |
 | Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
 | Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
 | Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |

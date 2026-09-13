@@ -357,6 +357,9 @@ lean_exe «aiur-proof-shape-tests» where
 lean_exe «aiur-extension-tests» where
   root := `Tests.Aiur.Extension
 
+lean_exe «aiur-logup-tests» where
+  root := `Tests.Aiur.LogUp
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -733,7 +736,7 @@ script "check-aiur" := do
     "aiur-expression-graph-tests", "aiur-constant-degree-tests", "aiur-frontend-expression-tests",
     "aiur-graph-compilation-tests", "aiur-operation-expression-tests", "aiur-block-expression-tests",
     "aiur-circuit-expression-tests", "aiur-emission-check-tests", "aiur-key-codec-tests", "aiur-compiled-key-tests",
-    "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests"]
+    "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests", "aiur-logup-tests"]
   let report ← IO.Process.output {
     cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
   unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
@@ -795,6 +798,8 @@ script "check-aiur" := do
     let proofShapeSnapshot := directory / "native-proof-shapes.bin"
     let extensionSnapshot := directory / "native-extension-arithmetic.bin"
     let extensionGraphSnapshot := directory / "native-extension-graphs.bin"
+    let logupSnapshot := directory / "native-logup.bin"
+    let logupStageSnapshot := directory / "native-logup-stages.bin"
     let exporter ← IO.Process.spawn {
       cmd := "cargo"
       args := #["test", "--locked", "--release", "-p", "aiur",
@@ -822,7 +827,9 @@ script "check-aiur" := do
         ("IX_PROOF_CODEC_SNAPSHOT", some proofCodecSnapshot.toString),
         ("IX_PROOF_SHAPE_SNAPSHOT", some proofShapeSnapshot.toString),
         ("IX_EXTENSION_ARITHMETIC_SNAPSHOT", some extensionSnapshot.toString),
-        ("IX_EXTENSION_GRAPH_SNAPSHOT", some extensionGraphSnapshot.toString)]
+        ("IX_EXTENSION_GRAPH_SNAPSHOT", some extensionGraphSnapshot.toString),
+        ("IX_LOGUP_SNAPSHOT", some logupSnapshot.toString),
+        ("IX_LOGUP_STAGE_SNAPSHOT", some logupStageSnapshot.toString)]
       stdout := .inherit
       stderr := .inherit }
     unless (← exporter.wait) == 0 do
@@ -843,6 +850,7 @@ script "check-aiur" := do
     run ".lake/build/bin/aiur-proof-codec-tests" #[proofCodecSnapshot.toString]
     run ".lake/build/bin/aiur-proof-shape-tests" #[proofShapeSnapshot.toString]
     run ".lake/build/bin/aiur-extension-tests" #[extensionSnapshot.toString, extensionGraphSnapshot.toString]
+    run ".lake/build/bin/aiur-logup-tests" #[logupSnapshot.toString, logupStageSnapshot.toString]
     run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
     run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]

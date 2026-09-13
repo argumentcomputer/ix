@@ -91,6 +91,10 @@ mod codec_tests;
 #[path = "vk_codec/tests/extension_arithmetic.rs"]
 mod extension_arithmetic_tests;
 
+#[cfg(test)]
+#[path = "vk_codec/tests/logup.rs"]
+mod logup_tests;
+
 // ════════════════════════════════════════════════════════════════════════════
 // Encoder — System<AiurConfig> -> bytes
 // ════════════════════════════════════════════════════════════════════════════

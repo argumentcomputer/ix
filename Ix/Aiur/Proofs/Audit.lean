@@ -43,6 +43,7 @@ import Ix.Aiur.Proofs.KeyArtifact
 import Ix.Aiur.Proofs.CompiledKey
 import Ix.Aiur.Proofs.ShapedVerifier
 import Ix.Aiur.Proofs.ExtensionField
+import Ix.Aiur.Proofs.LogUpAccumulator
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1926,6 +1927,231 @@ def extensionPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.ProofCodec.Extension.npow,
   `Aiur.NativeAIR.ProofCodec.Extension.commRing]
 
+def logUpRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.LogUp.Coordinates.ext,
+  `Aiur.NativeAIR.LogUp.Coordinates.zero_iff,
+  `Aiur.NativeAIR.LogUp.Coordinates.flatten_length,
+  `Aiur.NativeAIR.LogUp.Coordinates.flatten_zero_iff,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_schoolbook,
+  `Aiur.NativeAIR.LogUp.Coordinates.add_zero,
+  `Aiur.NativeAIR.LogUp.Coordinates.add_comm,
+  `Aiur.NativeAIR.LogUp.Coordinates.add_assoc,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_one,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_zero,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_comm,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_assoc,
+  `Aiur.NativeAIR.LogUp.Coordinates.left_distrib,
+  `Aiur.NativeAIR.LogUp.Coordinates.neg_add_cancel,
+  `Aiur.NativeAIR.LogUp.Coordinates.sub_eq_add_neg,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofBase_add,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofBase_neg,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofBase_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.neg_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.scale_eq_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_injective,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_fromExtension,
+  `Aiur.NativeAIR.LogUp.Coordinates.fromExtension_toExtension,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_zero_iff,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_ofBase,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_add,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_sub,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.collapse_loses_constraint,
+  `Aiur.NativeAIR.LogUp.sub_zero_iff,
+  `Aiur.NativeAIR.LogUp.clears_cons,
+  `Aiur.NativeAIR.LogUp.product_cons,
+  `Aiur.NativeAIR.LogUp.product_append,
+  `Aiur.NativeAIR.LogUp.product_foldl,
+  `Aiur.NativeAIR.LogUp.sum_foldl,
+  `Aiur.NativeAIR.LogUp.sum_append,
+  `Aiur.NativeAIR.LogUp.telescope,
+  `Aiur.NativeAIR.LogUp.cyclic_accumulator,
+  `Aiur.NativeAIR.LogUp.final_accumulator,
+  `Aiur.NativeAIR.LogUp.prefix_products,
+  `Aiur.NativeAIR.LogUp.prefix_seeded,
+  `Aiur.NativeAIR.LogUp.suffix_seeded,
+  `Aiur.NativeAIR.LogUp.suffix_products,
+  `Aiur.NativeAIR.LogUp.prefixSuffixTerms_cons,
+  `Aiur.NativeAIR.LogUp.prefixSuffixTerms_sum,
+  `Aiur.NativeAIR.LogUp.groupEquation_polynomial,
+  `Aiur.NativeAIR.LogUp.numerator_append,
+  `Aiur.NativeAIR.LogUp.fingerprint_reverse_horner,
+  `Aiur.NativeAIR.LogUp.fingerprint_nil,
+  `Aiur.NativeAIR.LogUp.fingerprint_cons,
+  `Aiur.NativeAIR.LogUp.fingerprint_trailing_zero,
+  `Aiur.NativeAIR.LogUp.fingerprint_padding,
+  `Aiur.NativeAIR.LogUp.groupCount_positive,
+  `Aiur.NativeAIR.LogUp.groupCount_covers,
+  `Aiur.NativeAIR.LogUp.groupCount_zero,
+  `Aiur.NativeAIR.LogUp.groupCount_empty,
+  `Aiur.NativeAIR.LogUp.groupCount_key,
+  `Aiur.NativeAIR.LogUp.chunk_length,
+  `Aiur.NativeAIR.LogUp.chunks_take,
+  `Aiur.NativeAIR.LogUp.chunks_cover,
+  `Aiur.NativeAIR.LogUp.chunk_mem,
+  `Aiur.NativeAIR.LogUp.chunk_map,
+  `Aiur.NativeAIR.LogUp.mapM_some_reads,
+  `Aiur.NativeAIR.LogUp.mapM_defined,
+  `Aiur.NativeAIR.LogUp.read_coordinates_defined,
+  `Aiur.NativeAIR.LogUp.read_coordinates_success,
+  `Aiur.NativeAIR.LogUp.step_polynomial,
+  `Aiur.NativeAIR.LogUp.step_defined,
+  `Aiur.NativeAIR.LogUp.equations_success,
+  `Aiur.NativeAIR.LogUp.equations_defined,
+  `Aiur.NativeAIR.LogUp.equations_zero,
+  `Aiur.NativeAIR.LogUp.constraintValues_success,
+  `Aiur.NativeAIR.LogUp.constraintValues_length,
+  `Aiur.NativeAIR.LogUp.constraintValues_defined,
+  `Aiur.NativeAIR.LogUp.constraintValues_reflect,
+  `Aiur.NativeAIR.LogUp.inverseValue_correct,
+  `Aiur.NativeAIR.LogUp.product_nonzero,
+  `Aiur.NativeAIR.LogUp.poleFree_product,
+  `Aiur.NativeAIR.LogUp.fractionSum_cons,
+  `Aiur.NativeAIR.LogUp.fractionSum_append,
+  `Aiur.NativeAIR.LogUp.fractionSum_clears,
+  `Aiur.NativeAIR.LogUp.groupEquation_zero_iff,
+  `Aiur.NativeAIR.LogUp.product_toExtension,
+  `Aiur.NativeAIR.LogUp.fieldEntries_messages,
+  `Aiur.NativeAIR.LogUp.numerator_toExtension,
+  `Aiur.NativeAIR.LogUp.groupEquation_toExtension,
+  `Aiur.NativeAIR.LogUp.coordinate_group_zero_iff,
+  `Aiur.NativeAIR.LogUp.coordinate_polynomial_zero_iff,
+  `Aiur.NativeAIR.LogUp.fingerprint_toExtension,
+  `Aiur.NativeAIR.LogUp.pole_can_hide_step,
+  `Aiur.NativeAIR.LogUp.fractionSum_flatMap,
+  `Aiur.NativeAIR.LogUp.fieldEntries_compress_chunk,
+  `Aiur.NativeAIR.LogUp.lookupFractions_chunks,
+  `Aiur.NativeAIR.LogUp.equations_accumulator,
+  `Aiur.NativeAIR.LogUp.constraintValues_accumulator]
+
+def logUpAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.LogUp.Coordinates.ext,
+  `Aiur.NativeAIR.LogUp.Coordinates.zero_iff,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_injective,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_fromExtension,
+  `Aiur.NativeAIR.LogUp.Coordinates.fromExtension_toExtension,
+  `Aiur.NativeAIR.LogUp.product_cons,
+  `Aiur.NativeAIR.LogUp.fingerprint_nil,
+  `Aiur.NativeAIR.LogUp.fingerprint_cons,
+  `Aiur.NativeAIR.LogUp.groupCount_zero]
+
+def logUpQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.LogUp.Coordinates.flatten_length,
+  `Aiur.NativeAIR.LogUp.Coordinates.flatten_zero_iff,
+  `Aiur.NativeAIR.LogUp.prefix_seeded,
+  `Aiur.NativeAIR.LogUp.suffix_seeded,
+  `Aiur.NativeAIR.LogUp.suffix_products,
+  `Aiur.NativeAIR.LogUp.prefixSuffixTerms_cons,
+  `Aiur.NativeAIR.LogUp.fingerprint_reverse_horner,
+  `Aiur.NativeAIR.LogUp.groupCount_positive,
+  `Aiur.NativeAIR.LogUp.groupCount_empty,
+  `Aiur.NativeAIR.LogUp.mapM_some_reads,
+  `Aiur.NativeAIR.LogUp.mapM_defined,
+  `Aiur.NativeAIR.LogUp.read_coordinates_defined,
+  `Aiur.NativeAIR.LogUp.read_coordinates_success,
+  `Aiur.NativeAIR.LogUp.step_defined,
+  `Aiur.NativeAIR.LogUp.equations_success,
+  `Aiur.NativeAIR.LogUp.equations_defined,
+  `Aiur.NativeAIR.LogUp.constraintValues_success,
+  `Aiur.NativeAIR.LogUp.constraintValues_length,
+  `Aiur.NativeAIR.LogUp.constraintValues_defined,
+  `Aiur.NativeAIR.LogUp.constraintValues_reflect]
+
+def logUpClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_schoolbook,
+  `Aiur.NativeAIR.LogUp.Coordinates.add_zero,
+  `Aiur.NativeAIR.LogUp.Coordinates.add_comm,
+  `Aiur.NativeAIR.LogUp.Coordinates.add_assoc,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_one,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_zero,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_comm,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul_assoc,
+  `Aiur.NativeAIR.LogUp.Coordinates.left_distrib,
+  `Aiur.NativeAIR.LogUp.Coordinates.neg_add_cancel,
+  `Aiur.NativeAIR.LogUp.Coordinates.sub_eq_add_neg,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofBase_add,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofBase_neg,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofBase_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.neg_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.scale_eq_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension_mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.collapse_loses_constraint,
+  `Aiur.NativeAIR.LogUp.sub_zero_iff,
+  `Aiur.NativeAIR.LogUp.clears_cons,
+  `Aiur.NativeAIR.LogUp.product_append,
+  `Aiur.NativeAIR.LogUp.product_foldl,
+  `Aiur.NativeAIR.LogUp.sum_foldl,
+  `Aiur.NativeAIR.LogUp.sum_append,
+  `Aiur.NativeAIR.LogUp.telescope,
+  `Aiur.NativeAIR.LogUp.cyclic_accumulator,
+  `Aiur.NativeAIR.LogUp.final_accumulator,
+  `Aiur.NativeAIR.LogUp.prefix_products,
+  `Aiur.NativeAIR.LogUp.prefixSuffixTerms_sum,
+  `Aiur.NativeAIR.LogUp.groupEquation_polynomial,
+  `Aiur.NativeAIR.LogUp.numerator_append,
+  `Aiur.NativeAIR.LogUp.fingerprint_trailing_zero,
+  `Aiur.NativeAIR.LogUp.fingerprint_padding,
+  `Aiur.NativeAIR.LogUp.groupCount_covers,
+  `Aiur.NativeAIR.LogUp.chunks_take,
+  `Aiur.NativeAIR.LogUp.chunks_cover,
+  `Aiur.NativeAIR.LogUp.step_polynomial,
+  `Aiur.NativeAIR.LogUp.equations_zero,
+  `Aiur.NativeAIR.LogUp.inverseValue_correct,
+  `Aiur.NativeAIR.LogUp.product_nonzero,
+  `Aiur.NativeAIR.LogUp.poleFree_product,
+  `Aiur.NativeAIR.LogUp.fractionSum_append,
+  `Aiur.NativeAIR.LogUp.fractionSum_clears,
+  `Aiur.NativeAIR.LogUp.groupEquation_zero_iff,
+  `Aiur.NativeAIR.LogUp.product_toExtension,
+  `Aiur.NativeAIR.LogUp.numerator_toExtension,
+  `Aiur.NativeAIR.LogUp.groupEquation_toExtension,
+  `Aiur.NativeAIR.LogUp.coordinate_group_zero_iff,
+  `Aiur.NativeAIR.LogUp.coordinate_polynomial_zero_iff,
+  `Aiur.NativeAIR.LogUp.fingerprint_toExtension,
+  `Aiur.NativeAIR.LogUp.pole_can_hide_step,
+  `Aiur.NativeAIR.LogUp.fractionSum_flatMap,
+  `Aiur.NativeAIR.LogUp.lookupFractions_chunks,
+  `Aiur.NativeAIR.LogUp.equations_accumulator,
+  `Aiur.NativeAIR.LogUp.constraintValues_accumulator]
+
+def logUpPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.LogUp.Coordinates.mk,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofBase,
+  `Aiur.NativeAIR.LogUp.Coordinates.ofNat,
+  `Aiur.NativeAIR.LogUp.Coordinates.add,
+  `Aiur.NativeAIR.LogUp.Coordinates.sub,
+  `Aiur.NativeAIR.LogUp.Coordinates.neg,
+  `Aiur.NativeAIR.LogUp.Coordinates.mul,
+  `Aiur.NativeAIR.LogUp.Coordinates.scale,
+  `Aiur.NativeAIR.LogUp.Coordinates.map,
+  `Aiur.NativeAIR.LogUp.Coordinates.read,
+  `Aiur.NativeAIR.LogUp.Coordinates.flatten,
+  `Aiur.NativeAIR.LogUp.Coordinates.toExtension,
+  `Aiur.NativeAIR.LogUp.Coordinates.fromExtension,
+  `Aiur.NativeAIR.LogUp.product,
+  `Aiur.NativeAIR.LogUp.sum,
+  `Aiur.NativeAIR.LogUp.numerator,
+  `Aiur.NativeAIR.LogUp.prefixSuffixTerms,
+  `Aiur.NativeAIR.LogUp.groupEquation,
+  `Aiur.NativeAIR.LogUp.fingerprint,
+  `Aiur.NativeAIR.LogUp.compress,
+  `Aiur.NativeAIR.LogUp.groupCount,
+  `Aiur.NativeAIR.LogUp.chunk,
+  `Aiur.NativeAIR.LogUp.step,
+  `Aiur.NativeAIR.LogUp.equations,
+  `Aiur.NativeAIR.LogUp.constraintValues,
+  `Aiur.NativeAIR.LogUp.Coordinates.natCast,
+  `Aiur.NativeAIR.LogUp.Coordinates.intCast,
+  `Aiur.NativeAIR.LogUp.Coordinates.nsmul,
+  `Aiur.NativeAIR.LogUp.Coordinates.zsmul,
+  `Aiur.NativeAIR.LogUp.Coordinates.npow,
+  `Aiur.NativeAIR.LogUp.Coordinates.commRing,
+  `Aiur.NativeAIR.LogUp.inverseValue,
+  `Aiur.NativeAIR.LogUp.fractionSum,
+  `Aiur.NativeAIR.LogUp.PoleFree,
+  `Aiur.NativeAIR.LogUp.fieldEntries,
+  `Aiur.NativeAIR.LogUp.lookupFractions]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1962,7 +2188,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -2201,7 +2427,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -2280,7 +2506,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if extensionRoots.contains root then
+    let expected := if logUpRoots.contains root then
+        if logUpAxiomFreeRoots.contains root then #[]
+        else if logUpClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if logUpQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if extensionRoots.contains root then
         if extensionAxiomFreeRoots.contains root then #[]
         else if extensionClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if extensionQuotRoots.contains root then #[``propext, ``Quot.sound]

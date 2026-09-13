@@ -7364,6 +7364,548 @@ AXIOMS [propext]
 ROOT Aiur.NativeAIR.ProofCodec.Extension.tryInverse_some_iff
 ∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), a.tryInverse = some b ↔ a * b = 1
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.ext
+∀ {W : Type u_1} {a b : Aiur.NativeAIR.LogUp.Coordinates W}, a.c0 = b.c0 → a.c1 = b.c1 → a = b
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.Coordinates.zero_iff
+∀ {W : Type u_1} [inst : OfNat W 0] (a : Aiur.NativeAIR.LogUp.Coordinates W), a = 0 ↔ a.c0 = 0 ∧ a.c1 = 0
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.Coordinates.flatten_length
+∀ {W : Type u_1} (values : List (Aiur.NativeAIR.LogUp.Coordinates W)),
+  (Aiur.NativeAIR.LogUp.Coordinates.flatten values).length = 2 * values.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.flatten_zero_iff
+∀ {W : Type u_1} [inst : OfNat W 0] (values : List (Aiur.NativeAIR.LogUp.Coordinates W)),
+  (∀ (x : W), x ∈ Aiur.NativeAIR.LogUp.Coordinates.flatten values → x = 0) ↔
+    ∀ (value : Aiur.NativeAIR.LogUp.Coordinates W), value ∈ values → value = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.mul_schoolbook
+∀ {W : Type u} [inst : Grind.CommRing W] (a b : Aiur.NativeAIR.LogUp.Coordinates W),
+  a * b = { c0 := a.c0 * b.c0 + 7 * a.c1 * b.c1, c1 := a.c0 * b.c1 + a.c1 * b.c0 }
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.add_zero
+∀ {W : Type u} [inst : Grind.CommRing W] (a : Aiur.NativeAIR.LogUp.Coordinates W), a + 0 = a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.add_comm
+∀ {W : Type u} [inst : Grind.CommRing W] (a b : Aiur.NativeAIR.LogUp.Coordinates W), a + b = b + a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.add_assoc
+∀ {W : Type u} [inst : Grind.CommRing W] (a b c : Aiur.NativeAIR.LogUp.Coordinates W), a + b + c = a + (b + c)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.mul_one
+∀ {W : Type u} [inst : Grind.CommRing W] (a : Aiur.NativeAIR.LogUp.Coordinates W), a * 1 = a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.mul_zero
+∀ {W : Type u} [inst : Grind.CommRing W] (a : Aiur.NativeAIR.LogUp.Coordinates W), a * 0 = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.mul_comm
+∀ {W : Type u} [inst : Grind.CommRing W] (a b : Aiur.NativeAIR.LogUp.Coordinates W), a * b = b * a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.mul_assoc
+∀ {W : Type u} [inst : Grind.CommRing W] (a b c : Aiur.NativeAIR.LogUp.Coordinates W), a * b * c = a * (b * c)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.left_distrib
+∀ {W : Type u} [inst : Grind.CommRing W] (a b c : Aiur.NativeAIR.LogUp.Coordinates W), a * (b + c) = a * b + a * c
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.neg_add_cancel
+∀ {W : Type u} [inst : Grind.CommRing W] (a : Aiur.NativeAIR.LogUp.Coordinates W), -a + a = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.sub_eq_add_neg
+∀ {W : Type u} [inst : Grind.CommRing W] (a b : Aiur.NativeAIR.LogUp.Coordinates W), a - b = a + -b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.ofBase_add
+∀ {W : Type u} [inst : Grind.CommRing W] (a b : W),
+  Aiur.NativeAIR.LogUp.Coordinates.ofBase (a + b) =
+    Aiur.NativeAIR.LogUp.Coordinates.ofBase a + Aiur.NativeAIR.LogUp.Coordinates.ofBase b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.ofBase_neg
+∀ {W : Type u} [inst : Grind.CommRing W] (a : W),
+  Aiur.NativeAIR.LogUp.Coordinates.ofBase (-a) = -Aiur.NativeAIR.LogUp.Coordinates.ofBase a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.ofBase_mul
+∀ {W : Type u} [inst : Grind.CommRing W] (a b : W),
+  Aiur.NativeAIR.LogUp.Coordinates.ofBase (a * b) =
+    Aiur.NativeAIR.LogUp.Coordinates.ofBase a * Aiur.NativeAIR.LogUp.Coordinates.ofBase b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.neg_mul
+∀ {W : Type u} [inst : Grind.CommRing W] (a b : Aiur.NativeAIR.LogUp.Coordinates W), -a * b = -(a * b)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.scale_eq_mul
+∀ {W : Type u} [inst : Grind.CommRing W] (a : Aiur.NativeAIR.LogUp.Coordinates W) (b : W),
+  a.scale b = a * Aiur.NativeAIR.LogUp.Coordinates.ofBase b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.toExtension_injective
+∀ {a b : Aiur.NativeAIR.LogUp.Coordinates Aiur.G}, a.toExtension = b.toExtension → a = b
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.Coordinates.toExtension_fromExtension
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), (Aiur.NativeAIR.LogUp.Coordinates.fromExtension a).toExtension = a
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.Coordinates.fromExtension_toExtension
+∀ (a : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), Aiur.NativeAIR.LogUp.Coordinates.fromExtension a.toExtension = a
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.Coordinates.toExtension_zero_iff
+∀ (a : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), a.toExtension = 0 ↔ a = 0
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.toExtension_ofBase
+∀ (a : Aiur.G), (Aiur.NativeAIR.LogUp.Coordinates.ofBase a).toExtension = Aiur.NativeAIR.ProofCodec.Extension.ofBase a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.toExtension_add
+∀ (a b : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), (a + b).toExtension = a.toExtension + b.toExtension
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.toExtension_sub
+∀ (a b : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), (a - b).toExtension = a.toExtension - b.toExtension
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.toExtension_mul
+∀ (a b : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), (a * b).toExtension = a.toExtension * b.toExtension
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.Coordinates.collapse_loses_constraint
+have a := { c0 := -Aiur.NativeAIR.ProofCodec.Extension.basis, c1 := 1 };
+a ≠ 0 ∧ a.c0 + a.c1 * Aiur.NativeAIR.ProofCodec.Extension.basis = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.sub_zero_iff
+∀ {R : Type u} [inst : Grind.CommRing R] (left right : R), left - right = 0 ↔ left = right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.clears_cons
+∀ {R : Type u} [inst : Grind.CommRing R] (weight message inverse denominator fractions cleared : R),
+  message * inverse = 1 →
+    denominator * fractions = cleared →
+      message * denominator * (weight * inverse + fractions) = weight * denominator + message * cleared
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.product_cons
+∀ {R : Type u} [inst : Grind.CommRing R] (value : R) (values : List R),
+  Aiur.NativeAIR.LogUp.product (value :: values) = value * Aiur.NativeAIR.LogUp.product values
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.product_append
+∀ {R : Type u} [inst : Grind.CommRing R] (left right : List R),
+  Aiur.NativeAIR.LogUp.product (left ++ right) = Aiur.NativeAIR.LogUp.product left * Aiur.NativeAIR.LogUp.product right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.product_foldl
+∀ {R : Type u} [inst : Grind.CommRing R] (values : List R) (initial : R),
+  List.foldl (fun x1 x2 => x1 * x2) initial values = initial * Aiur.NativeAIR.LogUp.product values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.sum_foldl
+∀ {R : Type u} [inst : Grind.CommRing R] (values : List R) (initial : R),
+  List.foldl (fun x1 x2 => x1 + x2) initial values = initial + Aiur.NativeAIR.LogUp.sum values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.sum_append
+∀ {R : Type u} [inst : Grind.CommRing R] (left right : List R),
+  Aiur.NativeAIR.LogUp.sum (left ++ right) = Aiur.NativeAIR.LogUp.sum left + Aiur.NativeAIR.LogUp.sum right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.telescope
+∀ {R : Type u} [inst : Grind.CommRing R] (states increments : Nat → R) (count : Nat),
+  (∀ (index : Nat), index < count → states (index + 1) - states index = increments index) →
+    states count - states 0 = Aiur.NativeAIR.LogUp.sum (List.map increments (List.range count))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.cyclic_accumulator
+∀ {R : Type u} [inst : Grind.CommRing R] (states fractions : Nat → R) (count : Nat) (delta : R),
+  0 < count →
+    states count = states 0 →
+      (∀ (index : Nat),
+          index < count →
+            (states (index + 1) - states index + if index + 1 = count then delta else 0) = fractions index) →
+        Aiur.NativeAIR.LogUp.sum (List.map fractions (List.range count)) = delta
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.final_accumulator
+∀ {R : Type u} [inst : Grind.CommRing R] (accumulators contributions : Nat → R) (count : Nat),
+  accumulators count = 0 →
+    (∀ (index : Nat), index < count → accumulators (index + 1) - accumulators index = contributions index) →
+      accumulators 0 + Aiur.NativeAIR.LogUp.sum (List.map contributions (List.range count)) = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.prefix_products
+∀ {R : Type u} [inst : Grind.CommRing R] (values : List R) (initial : R) (index : Nat),
+  (List.scanl (fun x1 x2 => x1 * x2) initial values)[index]? =
+    if index ≤ values.length then some (initial * Aiur.NativeAIR.LogUp.product (List.take index values)) else none
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.prefix_seeded
+∀ {R : Type u} [inst : Grind.CommRing R] (first : R) (rest : List R),
+  List.scanl (fun x1 x2 => x1 * x2) 1 (first :: rest) = 1 :: List.scanl (fun x1 x2 => x1 * x2) first rest
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.suffix_seeded
+∀ {R : Type u} [inst : Grind.CommRing R] (rest : List R) (last : R),
+  List.scanr (fun x1 x2 => x1 * x2) 1 (rest ++ [last]) = List.scanr (fun x1 x2 => x1 * x2) last rest ++ [1]
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.suffix_products
+∀ {R : Type u} [inst : Grind.CommRing R] (values : List R) (index : Nat),
+  (List.scanr (fun x1 x2 => x1 * x2) 1 values)[index]? =
+    if index ≤ values.length then some (Aiur.NativeAIR.LogUp.product (List.drop index values)) else none
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.prefixSuffixTerms_cons
+∀ {R : Type u} [inst : Grind.CommRing R] (weight message initial : R) (entries : List (R × R)),
+  Aiur.NativeAIR.LogUp.prefixSuffixTerms initial ((weight, message) :: entries) =
+    initial * Aiur.NativeAIR.LogUp.product (List.map Prod.snd entries) * weight ::
+      Aiur.NativeAIR.LogUp.prefixSuffixTerms (initial * message) entries
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.prefixSuffixTerms_sum
+∀ {R : Type u} [inst : Grind.CommRing R] (entries : List (R × R)) (initial : R),
+  Aiur.NativeAIR.LogUp.sum (Aiur.NativeAIR.LogUp.prefixSuffixTerms initial entries) =
+    initial * Aiur.NativeAIR.LogUp.numerator entries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.groupEquation_polynomial
+∀ {R : Type u} [inst : Grind.CommRing R] (entries : List (R × R)) (difference : R),
+  Aiur.NativeAIR.LogUp.groupEquation entries difference =
+    Aiur.NativeAIR.LogUp.product (List.map Prod.snd entries) * difference - Aiur.NativeAIR.LogUp.numerator entries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.numerator_append
+∀ {R : Type u} [inst : Grind.CommRing R] (left right : List (R × R)),
+  Aiur.NativeAIR.LogUp.numerator (left ++ right) =
+    Aiur.NativeAIR.LogUp.numerator left * Aiur.NativeAIR.LogUp.product (List.map Prod.snd right) +
+      Aiur.NativeAIR.LogUp.product (List.map Prod.snd left) * Aiur.NativeAIR.LogUp.numerator right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fingerprint_reverse_horner
+∀ {W : Type u} [inst : Grind.CommRing W] (gamma : Aiur.NativeAIR.LogUp.Coordinates W) (args : List W),
+  Aiur.NativeAIR.LogUp.fingerprint gamma args =
+    List.foldl (fun acc arg => acc * gamma + Aiur.NativeAIR.LogUp.Coordinates.ofBase arg) 0 args.reverse
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fingerprint_nil
+∀ {W : Type u} [inst : Grind.CommRing W] (gamma : Aiur.NativeAIR.LogUp.Coordinates W),
+  Aiur.NativeAIR.LogUp.fingerprint gamma [] = 0
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.fingerprint_cons
+∀ {W : Type u} [inst : Grind.CommRing W] (gamma : Aiur.NativeAIR.LogUp.Coordinates W) (arg : W) (args : List W),
+  Aiur.NativeAIR.LogUp.fingerprint gamma (arg :: args) =
+    Aiur.NativeAIR.LogUp.fingerprint gamma args * gamma + Aiur.NativeAIR.LogUp.Coordinates.ofBase arg
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.fingerprint_trailing_zero
+∀ {W : Type u} [inst : Grind.CommRing W] (gamma : Aiur.NativeAIR.LogUp.Coordinates W) (args : List W),
+  Aiur.NativeAIR.LogUp.fingerprint gamma (args ++ [0]) = Aiur.NativeAIR.LogUp.fingerprint gamma args
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fingerprint_padding
+∀ {W : Type u} [inst : Grind.CommRing W] (gamma : Aiur.NativeAIR.LogUp.Coordinates W) (args : List W) (count : Nat),
+  Aiur.NativeAIR.LogUp.fingerprint gamma (args ++ List.replicate count 0) = Aiur.NativeAIR.LogUp.fingerprint gamma args
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.groupCount_positive
+∀ (groupSize lookupCount : Nat), 0 < Aiur.NativeAIR.LogUp.groupCount groupSize lookupCount
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.groupCount_covers
+∀ (groupSize lookupCount : Nat), lookupCount ≤ Aiur.NativeAIR.LogUp.groupCount groupSize lookupCount * max groupSize 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.groupCount_zero
+∀ (lookupCount : Nat), Aiur.NativeAIR.LogUp.groupCount 0 lookupCount = Aiur.NativeAIR.LogUp.groupCount 1 lookupCount
+AXIOMS []
+ROOT Aiur.NativeAIR.LogUp.groupCount_empty
+∀ (groupSize : Nat), Aiur.NativeAIR.LogUp.groupCount groupSize 0 = 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.groupCount_key
+∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit),
+  0 < circuit.lookupGroupSize →
+    Aiur.NativeAIR.LogUp.groupCount circuit.lookupGroupSize circuit.graph.lookups.length = circuit.groups
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.chunk_length
+∀ {α : Type u_1} (groupSize index : Nat) (values : List α),
+  (Aiur.NativeAIR.LogUp.chunk groupSize index values).length =
+    min (max groupSize 1) (values.length - index * max groupSize 1)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.chunks_take
+∀ {α : Type u_1} (groupSize count : Nat) (values : List α),
+  List.flatMap (fun index => Aiur.NativeAIR.LogUp.chunk groupSize index values) (List.range count) =
+    List.take (count * max groupSize 1) values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.chunks_cover
+∀ {α : Type u_1} (groupSize : Nat) (values : List α),
+  List.flatMap (fun index => Aiur.NativeAIR.LogUp.chunk groupSize index values)
+      (List.range (Aiur.NativeAIR.LogUp.groupCount groupSize values.length)) =
+    values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.chunk_mem
+∀ {α : Type u_1} {groupSize index : Nat} {values : List α} {value : α},
+  value ∈ Aiur.NativeAIR.LogUp.chunk groupSize index values → value ∈ values
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.chunk_map
+∀ {α : Type u_1} {β : Type u_2} (groupSize index : Nat) (values : List α) (f : α → β),
+  Aiur.NativeAIR.LogUp.chunk groupSize index (List.map f values) =
+    List.map f (Aiur.NativeAIR.LogUp.chunk groupSize index values)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.mapM_some_reads
+∀ {α : Type u_1} {β : Type u_2} {read : α → Option β} {inputs : List α} {outputs : List β},
+  List.mapM read inputs = some outputs →
+    outputs.length = inputs.length ∧
+      ∀ (index : Nat) (input : α),
+        inputs[index]? = some input → ∃ output, outputs[index]? = some output ∧ read input = some output
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.mapM_defined
+∀ {α : Type u_1} {β : Type u_2} (inputs : List α) (read : α → Option β),
+  (∀ (input : α), input ∈ inputs → ∃ output, read input = some output) → ∃ outputs, List.mapM read inputs = some outputs
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.read_coordinates_defined
+∀ {W : Type u_1} (values : Array W) (slot : Nat),
+  2 * slot + 1 < values.size → ∃ value, Aiur.NativeAIR.LogUp.Coordinates.read values slot = some value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.read_coordinates_success
+∀ {W : Type u_1} {values : Array W} {slot : Nat} {value : Aiur.NativeAIR.LogUp.Coordinates W},
+  Aiur.NativeAIR.LogUp.Coordinates.read values slot = some value →
+    values[2 * slot]? = some value.c0 ∧ values[2 * slot + 1]? = some value.c1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.step_polynomial
+∀ {W : Type u} [inst : Grind.CommRing W] {beta gamma injection next : Aiur.NativeAIR.LogUp.Coordinates W}
+  {stageCurrent : Array W} {lookups : List (W × List W)} {groupSize index : Nat}
+  {result : Aiur.NativeAIR.LogUp.Coordinates W},
+  Aiur.NativeAIR.LogUp.step beta gamma injection next stageCurrent lookups groupSize index = some result →
+    ∃ source target,
+      Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent index = some source ∧
+        (if index + 1 < Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length then
+              Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent (index + 1)
+            else some (next + injection)) =
+            some target ∧
+          result =
+            Aiur.NativeAIR.LogUp.product
+                  (List.map Prod.snd
+                    (Aiur.NativeAIR.LogUp.compress beta gamma (Aiur.NativeAIR.LogUp.chunk groupSize index lookups))) *
+                (target - source) -
+              Aiur.NativeAIR.LogUp.numerator
+                (Aiur.NativeAIR.LogUp.compress beta gamma (Aiur.NativeAIR.LogUp.chunk groupSize index lookups))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.step_defined
+∀ {W : Type u} [inst : Grind.CommRing W] (beta gamma injection next : Aiur.NativeAIR.LogUp.Coordinates W)
+  (stageCurrent : Array W) (lookups : List (W × List W)) (groupSize index : Nat),
+  Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length * 2 ≤ stageCurrent.size →
+    index < Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length →
+      ∃ result, Aiur.NativeAIR.LogUp.step beta gamma injection next stageCurrent lookups groupSize index = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.equations_success
+∀ {W : Type u} [inst : Grind.CommRing W] {lookups : List (W × List W)}
+  {stageCurrent stageNext publics deltaScaled : Array W} {isLast : W} {groupSize : Nat}
+  {result : List (Aiur.NativeAIR.LogUp.Coordinates W)},
+  Aiur.NativeAIR.LogUp.equations lookups stageCurrent stageNext publics deltaScaled isLast groupSize = some result →
+    groupSize ≤ 8 ∧
+      ∃ beta gamma delta next,
+        Aiur.NativeAIR.LogUp.Coordinates.read publics 0 = some beta ∧
+          Aiur.NativeAIR.LogUp.Coordinates.read publics 1 = some gamma ∧
+            Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0 = some delta ∧
+              Aiur.NativeAIR.LogUp.Coordinates.read stageNext 0 = some next ∧
+                result.length = Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length ∧
+                  ∀ (index : Nat),
+                    index < Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length →
+                      ∃ value,
+                        result[index]? = some value ∧
+                          Aiur.NativeAIR.LogUp.step beta gamma (delta.scale isLast) next stageCurrent lookups groupSize
+                              index =
+                            some value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.equations_defined
+∀ {W : Type u} [inst : Grind.CommRing W] (lookups : List (W × List W))
+  (stageCurrent stageNext publics deltaScaled : Array W) (isLast : W) (groupSize : Nat),
+  groupSize ≤ 8 →
+    Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length * 2 ≤ stageCurrent.size →
+      2 ≤ stageNext.size →
+        4 ≤ publics.size →
+          2 ≤ deltaScaled.size →
+            ∃ result,
+              Aiur.NativeAIR.LogUp.equations lookups stageCurrent stageNext publics deltaScaled isLast groupSize =
+                some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.equations_zero
+∀ {W : Type u} [inst : Grind.CommRing W] {lookups : List (W × List W)}
+  {stageCurrent stageNext publics deltaScaled : Array W} {isLast : W} {groupSize : Nat}
+  {result : List (Aiur.NativeAIR.LogUp.Coordinates W)},
+  Aiur.NativeAIR.LogUp.equations lookups stageCurrent stageNext publics deltaScaled isLast groupSize = some result →
+    (∀ (value : Aiur.NativeAIR.LogUp.Coordinates W), value ∈ result → value = 0) →
+      ∃ beta gamma delta next,
+        Aiur.NativeAIR.LogUp.Coordinates.read publics 0 = some beta ∧
+          Aiur.NativeAIR.LogUp.Coordinates.read publics 1 = some gamma ∧
+            Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0 = some delta ∧
+              Aiur.NativeAIR.LogUp.Coordinates.read stageNext 0 = some next ∧
+                ∀ (index : Nat),
+                  index < Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length →
+                    ∃ source target,
+                      Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent index = some source ∧
+                        (if index + 1 < Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length then
+                              Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent (index + 1)
+                            else some (next + delta.scale isLast)) =
+                            some target ∧
+                          Aiur.NativeAIR.LogUp.product
+                                (List.map Prod.snd
+                                  (Aiur.NativeAIR.LogUp.compress beta gamma
+                                    (Aiur.NativeAIR.LogUp.chunk groupSize index lookups))) *
+                              (target - source) =
+                            Aiur.NativeAIR.LogUp.numerator
+                              (Aiur.NativeAIR.LogUp.compress beta gamma
+                                (Aiur.NativeAIR.LogUp.chunk groupSize index lookups))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.constraintValues_success
+∀ {W : Type u} [inst : Grind.CommRing W] {lookups : List Aiur.NativeAIR.Lookup}
+  {nodeValues stageCurrent stageNext publics deltaScaled : Array W} {isLast : W} {groupSize : Nat} {result : List W},
+  Aiur.NativeAIR.LogUp.constraintValues lookups nodeValues stageCurrent stageNext publics deltaScaled isLast groupSize =
+      some result →
+    ∃ values coordinates,
+      List.mapM (Aiur.NativeAIR.readLookup nodeValues) lookups = some values ∧
+        Aiur.NativeAIR.LogUp.equations values stageCurrent stageNext publics deltaScaled isLast groupSize =
+            some coordinates ∧
+          result = Aiur.NativeAIR.LogUp.Coordinates.flatten coordinates
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.constraintValues_length
+∀ {W : Type u} [inst : Grind.CommRing W] {lookups : List Aiur.NativeAIR.Lookup}
+  {nodeValues stageCurrent stageNext publics deltaScaled : Array W} {isLast : W} {groupSize : Nat} {result : List W},
+  Aiur.NativeAIR.LogUp.constraintValues lookups nodeValues stageCurrent stageNext publics deltaScaled isLast groupSize =
+      some result →
+    result.length = 2 * Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.constraintValues_defined
+∀ {W : Type u} [inst : Grind.CommRing W] (lookups : List Aiur.NativeAIR.Lookup)
+  (nodeValues stageCurrent stageNext publics deltaScaled : Array W) (isLast : W) (groupSize : Nat),
+  groupSize ≤ 8 →
+    (∀ (lookup : Aiur.NativeAIR.Lookup),
+        lookup ∈ lookups → ∀ (index : Nat), index ∈ lookup.roots → index < nodeValues.size) →
+      Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length * 2 ≤ stageCurrent.size →
+        2 ≤ stageNext.size →
+          4 ≤ publics.size →
+            2 ≤ deltaScaled.size →
+              ∃ result,
+                Aiur.NativeAIR.LogUp.constraintValues lookups nodeValues stageCurrent stageNext publics deltaScaled
+                    isLast groupSize =
+                  some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.constraintValues_reflect
+∀ {W : Type u} [inst : Grind.CommRing W] {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W}
+  {trees : Array Aiur.NativeAIR.Expr} {buffer : Array W},
+  Aiur.NativeAIR.Reflects ops values trees buffer →
+    ∀ (lookups : List Aiur.NativeAIR.Lookup) (stageCurrent stageNext publics deltaScaled : Array W) (isLast : W)
+      (groupSize : Nat),
+      Aiur.NativeAIR.LogUp.constraintValues lookups buffer stageCurrent stageNext publics deltaScaled isLast groupSize =
+        do
+        let lookupValues ← List.mapM (Aiur.NativeAIR.evalLookup ops values trees) lookups
+        let __do_lift ←
+          Aiur.NativeAIR.LogUp.equations lookupValues stageCurrent stageNext publics deltaScaled isLast groupSize
+        pure (Aiur.NativeAIR.LogUp.Coordinates.flatten __do_lift)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.inverseValue_correct
+∀ (value : Aiur.NativeAIR.ProofCodec.Extension), value ≠ 0 → value * Aiur.NativeAIR.LogUp.inverseValue value = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.product_nonzero
+∀ (values : List Aiur.NativeAIR.ProofCodec.Extension),
+  (∀ (value : Aiur.NativeAIR.ProofCodec.Extension), value ∈ values → value ≠ 0) →
+    Aiur.NativeAIR.LogUp.product values ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.poleFree_product
+∀ (entries : List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)),
+  Aiur.NativeAIR.LogUp.PoleFree entries → Aiur.NativeAIR.LogUp.product (List.map Prod.snd entries) ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fractionSum_cons
+∀ (weight message : Aiur.NativeAIR.ProofCodec.Extension)
+  (entries : List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)),
+  Aiur.NativeAIR.LogUp.fractionSum ((weight, message) :: entries) =
+    weight * Aiur.NativeAIR.LogUp.inverseValue message + Aiur.NativeAIR.LogUp.fractionSum entries
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.fractionSum_append
+∀ (left right : List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)),
+  Aiur.NativeAIR.LogUp.fractionSum (left ++ right) =
+    Aiur.NativeAIR.LogUp.fractionSum left + Aiur.NativeAIR.LogUp.fractionSum right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fractionSum_clears
+∀ (entries : List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)),
+  Aiur.NativeAIR.LogUp.PoleFree entries →
+    Aiur.NativeAIR.LogUp.product (List.map Prod.snd entries) * Aiur.NativeAIR.LogUp.fractionSum entries =
+      Aiur.NativeAIR.LogUp.numerator entries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.groupEquation_zero_iff
+∀ (entries : List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension))
+  (difference : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.LogUp.PoleFree entries →
+    (Aiur.NativeAIR.LogUp.groupEquation entries difference = 0 ↔ difference = Aiur.NativeAIR.LogUp.fractionSum entries)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.product_toExtension
+∀ (values : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G)),
+  (Aiur.NativeAIR.LogUp.product values).toExtension =
+    Aiur.NativeAIR.LogUp.product (List.map Aiur.NativeAIR.LogUp.Coordinates.toExtension values)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fieldEntries_messages
+∀ (entries : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G × Aiur.NativeAIR.LogUp.Coordinates Aiur.G)),
+  List.map Prod.snd (Aiur.NativeAIR.LogUp.fieldEntries entries) =
+    List.map Aiur.NativeAIR.LogUp.Coordinates.toExtension (List.map Prod.snd entries)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.numerator_toExtension
+∀ (entries : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G × Aiur.NativeAIR.LogUp.Coordinates Aiur.G)),
+  (Aiur.NativeAIR.LogUp.numerator entries).toExtension =
+    Aiur.NativeAIR.LogUp.numerator (Aiur.NativeAIR.LogUp.fieldEntries entries)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.groupEquation_toExtension
+∀ (entries : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G × Aiur.NativeAIR.LogUp.Coordinates Aiur.G))
+  (difference : Aiur.NativeAIR.LogUp.Coordinates Aiur.G),
+  (Aiur.NativeAIR.LogUp.groupEquation entries difference).toExtension =
+    Aiur.NativeAIR.LogUp.groupEquation (Aiur.NativeAIR.LogUp.fieldEntries entries) difference.toExtension
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.coordinate_group_zero_iff
+∀ (entries : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G × Aiur.NativeAIR.LogUp.Coordinates Aiur.G))
+  (difference : Aiur.NativeAIR.LogUp.Coordinates Aiur.G),
+  Aiur.NativeAIR.LogUp.PoleFree (Aiur.NativeAIR.LogUp.fieldEntries entries) →
+    (Aiur.NativeAIR.LogUp.groupEquation entries difference = 0 ↔
+      difference.toExtension = Aiur.NativeAIR.LogUp.fractionSum (Aiur.NativeAIR.LogUp.fieldEntries entries))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.coordinate_polynomial_zero_iff
+∀ (entries : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G × Aiur.NativeAIR.LogUp.Coordinates Aiur.G))
+  (difference : Aiur.NativeAIR.LogUp.Coordinates Aiur.G),
+  Aiur.NativeAIR.LogUp.PoleFree (Aiur.NativeAIR.LogUp.fieldEntries entries) →
+    (Aiur.NativeAIR.LogUp.product (List.map Prod.snd entries) * difference = Aiur.NativeAIR.LogUp.numerator entries ↔
+      difference.toExtension = Aiur.NativeAIR.LogUp.fractionSum (Aiur.NativeAIR.LogUp.fieldEntries entries))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fingerprint_toExtension
+∀ (gamma : Aiur.NativeAIR.LogUp.Coordinates Aiur.G) (args : List Aiur.G),
+  (Aiur.NativeAIR.LogUp.fingerprint gamma args).toExtension =
+    List.foldr (fun arg acc => acc * gamma.toExtension + Aiur.NativeAIR.ProofCodec.Extension.ofBase arg) 0 args
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.pole_can_hide_step
+Aiur.NativeAIR.LogUp.groupEquation [(0, 0)] 1 = 0 ∧ 1 ≠ Aiur.NativeAIR.LogUp.fractionSum [(0, 0)]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fractionSum_flatMap
+∀ {α : Type u_1} (inputs : List α)
+  (entries : α → List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)),
+  Aiur.NativeAIR.LogUp.fractionSum (List.flatMap entries inputs) =
+    Aiur.NativeAIR.LogUp.sum (List.map (fun input => Aiur.NativeAIR.LogUp.fractionSum (entries input)) inputs)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.fieldEntries_compress_chunk
+∀ (beta gamma : Aiur.NativeAIR.LogUp.Coordinates Aiur.G) (lookups : List (Aiur.G × List Aiur.G))
+  (groupSize index : Nat),
+  Aiur.NativeAIR.LogUp.fieldEntries
+      (Aiur.NativeAIR.LogUp.compress beta gamma (Aiur.NativeAIR.LogUp.chunk groupSize index lookups)) =
+    Aiur.NativeAIR.LogUp.chunk groupSize index
+      (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma lookups))
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.LogUp.lookupFractions_chunks
+∀ (beta gamma : Aiur.NativeAIR.LogUp.Coordinates Aiur.G) (lookups : List (Aiur.G × List Aiur.G)) (groupSize : Nat),
+  Aiur.NativeAIR.LogUp.sum
+      (List.map
+        (fun index =>
+          Aiur.NativeAIR.LogUp.lookupFractions beta gamma (Aiur.NativeAIR.LogUp.chunk groupSize index lookups))
+        (List.range (Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length))) =
+    Aiur.NativeAIR.LogUp.lookupFractions beta gamma lookups
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.equations_accumulator
+∀ {lookups : List (Aiur.G × List Aiur.G)} {stageCurrent stageNext publics deltaScaled : Array Aiur.G} {isLast : Aiur.G}
+  {groupSize : Nat} {result : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G)}
+  {beta gamma : Aiur.NativeAIR.LogUp.Coordinates Aiur.G},
+  Aiur.NativeAIR.LogUp.Coordinates.read publics 0 = some beta →
+    Aiur.NativeAIR.LogUp.Coordinates.read publics 1 = some gamma →
+      Aiur.NativeAIR.LogUp.equations lookups stageCurrent stageNext publics deltaScaled isLast groupSize = some result →
+        (∀ (value : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), value ∈ result → value = 0) →
+          Aiur.NativeAIR.LogUp.PoleFree
+              (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma lookups)) →
+            ∃ first next delta,
+              Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent 0 = some first ∧
+                Aiur.NativeAIR.LogUp.Coordinates.read stageNext 0 = some next ∧
+                  Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0 = some delta ∧
+                    next.toExtension - first.toExtension + (delta.scale isLast).toExtension =
+                      Aiur.NativeAIR.LogUp.lookupFractions beta gamma lookups
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.constraintValues_accumulator
+∀ {lookups : List Aiur.NativeAIR.Lookup} {nodeValues stageCurrent stageNext publics deltaScaled : Array Aiur.G}
+  {isLast : Aiur.G} {groupSize : Nat} {result : List Aiur.G} {beta gamma : Aiur.NativeAIR.LogUp.Coordinates Aiur.G},
+  Aiur.NativeAIR.LogUp.Coordinates.read publics 0 = some beta →
+    Aiur.NativeAIR.LogUp.Coordinates.read publics 1 = some gamma →
+      Aiur.NativeAIR.LogUp.constraintValues lookups nodeValues stageCurrent stageNext publics deltaScaled isLast
+            groupSize =
+          some result →
+        (∀ (value : Aiur.G), value ∈ result → value = 0) →
+          (∀ (values : List (Aiur.G × List Aiur.G)),
+              List.mapM (Aiur.NativeAIR.readLookup nodeValues) lookups = some values →
+                Aiur.NativeAIR.LogUp.PoleFree
+                  (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma values))) →
+            ∃ values first next delta,
+              List.mapM (Aiur.NativeAIR.readLookup nodeValues) lookups = some values ∧
+                Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent 0 = some first ∧
+                  Aiur.NativeAIR.LogUp.Coordinates.read stageNext 0 = some next ∧
+                    Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0 = some delta ∧
+                      next.toExtension - first.toExtension + (delta.scale isLast).toExtension =
+                        Aiur.NativeAIR.LogUp.lookupFractions beta gamma values
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -12912,6 +13454,268 @@ DEFINITION
   intCast_ofNat := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_11,
   intCast_neg := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_12,
   mul_comm := Aiur.NativeAIR.ProofCodec.Extension.mul_comm }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.mk
+{W : Type u} → W → W → Aiur.NativeAIR.LogUp.Coordinates W
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.ofBase
+{W : Type u_1} → [OfNat W 0] → W → Aiur.NativeAIR.LogUp.Coordinates W
+DEFINITION
+fun {W} [OfNat W 0] value => { c0 := value, c1 := 0 }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.ofNat
+{W : Type u_1} → {n : Nat} → [OfNat W n] → [OfNat W 0] → OfNat (Aiur.NativeAIR.LogUp.Coordinates W) n
+DEFINITION
+fun {W} {n} [OfNat W n] [OfNat W 0] => { ofNat := Aiur.NativeAIR.LogUp.Coordinates.ofBase (OfNat.ofNat n) }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.add
+{W : Type u_1} → [Add W] → Add (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Add W] => { add := fun a b => { c0 := a.c0 + b.c0, c1 := a.c1 + b.c1 } }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.sub
+{W : Type u_1} → [Sub W] → Sub (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Sub W] => { sub := fun a b => { c0 := a.c0 - b.c0, c1 := a.c1 - b.c1 } }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.neg
+{W : Type u_1} → [Neg W] → Neg (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Neg W] => { neg := fun a => { c0 := -a.c0, c1 := -a.c1 } }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.mul
+{W : Type u_1} → [OfNat W 7] → [Add W] → [Sub W] → [Mul W] → Mul (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [OfNat W 7] [Add W] [Sub W] [Mul W] =>
+  {
+    mul := fun a b =>
+      have v0 := a.c0 * b.c0;
+      have v1 := a.c1 * b.c1;
+      { c0 := v0 + v1 * 7, c1 := (a.c0 + a.c1) * (b.c0 + b.c1) - v0 - v1 } }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.scale
+{W : Type u_1} → [Mul W] → Aiur.NativeAIR.LogUp.Coordinates W → W → Aiur.NativeAIR.LogUp.Coordinates W
+DEFINITION
+fun {W} [Mul W] value scalar => { c0 := value.c0 * scalar, c1 := value.c1 * scalar }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.map
+{W : Type u_1} → {V : Type u_2} → (W → V) → Aiur.NativeAIR.LogUp.Coordinates W → Aiur.NativeAIR.LogUp.Coordinates V
+DEFINITION
+fun {W} {V} f value => { c0 := f value.c0, c1 := f value.c1 }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.read
+{W : Type u_1} → Array W → Nat → Option (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} values slot => do
+  let __do_lift ← values[2 * slot]?
+  let __do_lift_1 ← values[2 * slot + 1]?
+  pure { c0 := __do_lift, c1 := __do_lift_1 }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.flatten
+{W : Type u_1} → List (Aiur.NativeAIR.LogUp.Coordinates W) → List W
+DEFINITION
+fun {W} values => List.flatMap (fun value => [value.c0, value.c1]) values
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.toExtension
+Aiur.NativeAIR.LogUp.Coordinates Aiur.G → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value => { c0 := value.c0, c1 := value.c1 }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.fromExtension
+Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.LogUp.Coordinates Aiur.G
+DEFINITION
+fun value => { c0 := value.c0, c1 := value.c1 }
+PREMISE Aiur.NativeAIR.LogUp.product
+{R : Type u_1} → [OfNat R 1] → [Mul R] → List R → R
+DEFINITION
+fun {R} [OfNat R 1] [Mul R] values => List.foldr (fun x1 x2 => x1 * x2) 1 values
+PREMISE Aiur.NativeAIR.LogUp.sum
+{R : Type u_1} → [OfNat R 0] → [Add R] → List R → R
+DEFINITION
+fun {R} [OfNat R 0] [Add R] values => List.foldr (fun x1 x2 => x1 + x2) 0 values
+PREMISE Aiur.NativeAIR.LogUp.numerator
+{R : Type u_1} → [OfNat R 0] → [OfNat R 1] → [Add R] → [Mul R] → List (R × R) → R
+DEFINITION
+fun {R} [OfNat R 0] [OfNat R 1] [Add R] [Mul R] x => List.brecOn x Aiur.NativeAIR.LogUp.numerator._f
+PREMISE Aiur.NativeAIR.LogUp.prefixSuffixTerms
+{R : Type u_1} → [OfNat R 1] → [Mul R] → R → List (R × R) → List R
+DEFINITION
+fun {R} [OfNat R 1] [Mul R] initial entries =>
+  have messages := List.map Prod.snd entries;
+  have prefixes := List.scanl (fun x1 x2 => x1 * x2) initial messages;
+  have suffixes := (List.scanr (fun x1 x2 => x1 * x2) 1 messages).tail;
+  List.map
+    (fun x =>
+      match x with
+      | (entry, before, after) => before * after * entry.fst)
+    (entries.zip (prefixes.zip suffixes))
+PREMISE Aiur.NativeAIR.LogUp.groupEquation
+{R : Type u_1} → [OfNat R 0] → [OfNat R 1] → [Add R] → [Sub R] → [Mul R] → List (R × R) → R → R
+DEFINITION
+fun {R} [OfNat R 0] [OfNat R 1] [Add R] [Sub R] [Mul R] entries difference =>
+  match entries with
+  | [] => difference
+  | [(weight, message)] => message * difference - weight
+  | x =>
+    List.foldl (fun x1 x2 => x1 * x2) 1 (List.map Prod.snd entries) * difference -
+      List.foldl (fun x1 x2 => x1 + x2) 0 (Aiur.NativeAIR.LogUp.prefixSuffixTerms 1 entries)
+PREMISE Aiur.NativeAIR.LogUp.fingerprint
+{W : Type u} →
+  [OfNat W 0] →
+    [OfNat W 7] →
+      [Add W] → [Sub W] → [Mul W] → Aiur.NativeAIR.LogUp.Coordinates W → List W → Aiur.NativeAIR.LogUp.Coordinates W
+DEFINITION
+fun {W} [OfNat W 0] [OfNat W 7] [Add W] [Sub W] [Mul W] gamma args =>
+  List.foldr (fun arg acc => acc * gamma + Aiur.NativeAIR.LogUp.Coordinates.ofBase arg) 0 args
+PREMISE Aiur.NativeAIR.LogUp.compress
+{W : Type u} →
+  [OfNat W 0] →
+    [OfNat W 7] →
+      [Add W] →
+        [Sub W] →
+          [Mul W] →
+            Aiur.NativeAIR.LogUp.Coordinates W →
+              Aiur.NativeAIR.LogUp.Coordinates W →
+                List (W × List W) → List (Aiur.NativeAIR.LogUp.Coordinates W × Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [OfNat W 0] [OfNat W 7] [Add W] [Sub W] [Mul W] beta gamma lookups =>
+  List.map
+    (fun x =>
+      match x with
+      | (multiplicity, args) =>
+        (Aiur.NativeAIR.LogUp.Coordinates.ofBase multiplicity, Aiur.NativeAIR.LogUp.fingerprint gamma args + beta))
+    lookups
+PREMISE Aiur.NativeAIR.LogUp.groupCount
+Nat → Nat → Nat
+DEFINITION
+fun groupSize lookupCount => max 1 ((lookupCount + max groupSize 1 - 1) / max groupSize 1)
+PREMISE Aiur.NativeAIR.LogUp.chunk
+{α : Type u_1} → Nat → Nat → List α → List α
+DEFINITION
+fun {α} groupSize index lookups => List.take (max groupSize 1) (List.drop (index * max groupSize 1) lookups)
+PREMISE Aiur.NativeAIR.LogUp.step
+{W : Type u} →
+  [OfNat W 0] →
+    [OfNat W 1] →
+      [OfNat W 7] →
+        [Add W] →
+          [Sub W] →
+            [Mul W] →
+              Aiur.NativeAIR.LogUp.Coordinates W →
+                Aiur.NativeAIR.LogUp.Coordinates W →
+                  Aiur.NativeAIR.LogUp.Coordinates W →
+                    Aiur.NativeAIR.LogUp.Coordinates W →
+                      Array W → List (W × List W) → Nat → Nat → Option (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [OfNat W 0] [OfNat W 1] [OfNat W 7] [Add W] [Sub W] [Mul W] beta gamma injection next stageCurrent lookups
+    groupSize index =>
+  do
+  let source ← Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent index
+  have __do_jp : Aiur.NativeAIR.LogUp.Coordinates W → Option (Aiur.NativeAIR.LogUp.Coordinates W) := fun target =>
+    pure
+      (Aiur.NativeAIR.LogUp.groupEquation
+        (Aiur.NativeAIR.LogUp.compress beta gamma (Aiur.NativeAIR.LogUp.chunk groupSize index lookups))
+        (target - source))
+  if index + 1 < Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length then do
+      let target ← Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent (index + 1)
+      __do_jp target
+    else do
+      let target ← some (next + injection)
+      __do_jp target
+PREMISE Aiur.NativeAIR.LogUp.equations
+{W : Type u} →
+  [OfNat W 0] →
+    [OfNat W 1] →
+      [OfNat W 7] →
+        [Add W] →
+          [Sub W] →
+            [Mul W] →
+              List (W × List W) →
+                Array W → Array W → Array W → Array W → W → Nat → Option (List (Aiur.NativeAIR.LogUp.Coordinates W))
+DEFINITION
+fun {W} [OfNat W 0] [OfNat W 1] [OfNat W 7] [Add W] [Sub W] [Mul W] lookups stageCurrent stageNext publics deltaScaled
+    isLast groupSize =>
+  if 8 < groupSize then none
+  else do
+    let beta ← Aiur.NativeAIR.LogUp.Coordinates.read publics 0
+    let gamma ← Aiur.NativeAIR.LogUp.Coordinates.read publics 1
+    let delta ← Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0
+    have injection : Aiur.NativeAIR.LogUp.Coordinates W := delta.scale isLast
+    let next ← Aiur.NativeAIR.LogUp.Coordinates.read stageNext 0
+    have groups : Nat := Aiur.NativeAIR.LogUp.groupCount groupSize lookups.length
+    List.mapM (Aiur.NativeAIR.LogUp.step beta gamma injection next stageCurrent lookups groupSize) (List.range groups)
+PREMISE Aiur.NativeAIR.LogUp.constraintValues
+{W : Type u} →
+  [OfNat W 0] →
+    [OfNat W 1] →
+      [OfNat W 7] →
+        [Add W] →
+          [Sub W] →
+            [Mul W] →
+              List Aiur.NativeAIR.Lookup → Array W → Array W → Array W → Array W → Array W → W → Nat → Option (List W)
+DEFINITION
+fun {W} [OfNat W 0] [OfNat W 1] [OfNat W 7] [Add W] [Sub W] [Mul W] lookups nodeValues stageCurrent stageNext publics
+    deltaScaled isLast groupSize =>
+  do
+  let values ← List.mapM (Aiur.NativeAIR.readLookup nodeValues) lookups
+  let __do_lift ← Aiur.NativeAIR.LogUp.equations values stageCurrent stageNext publics deltaScaled isLast groupSize
+  pure (Aiur.NativeAIR.LogUp.Coordinates.flatten __do_lift)
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.natCast
+{W : Type u} → [Grind.CommRing W] → NatCast (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Grind.CommRing W] => { natCast := fun n => Aiur.NativeAIR.LogUp.Coordinates.ofBase ↑n }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.intCast
+{W : Type u} → [Grind.CommRing W] → IntCast (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Grind.CommRing W] => { intCast := fun n => Aiur.NativeAIR.LogUp.Coordinates.ofBase ↑n }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.nsmul
+{W : Type u} → [Grind.CommRing W] → SMul Nat (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Grind.CommRing W] => { smul := fun n a => Aiur.NativeAIR.LogUp.Coordinates.ofBase ↑n * a }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.zsmul
+{W : Type u} → [Grind.CommRing W] → SMul Int (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Grind.CommRing W] => { smul := fun n a => Aiur.NativeAIR.LogUp.Coordinates.ofBase ↑n * a }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.npow
+{W : Type u} → [Grind.CommRing W] → HPow (Aiur.NativeAIR.LogUp.Coordinates W) Nat (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Grind.CommRing W] => { hPow := fun a n => npowRec n a }
+PREMISE Aiur.NativeAIR.LogUp.Coordinates.commRing
+{W : Type u} → [Grind.CommRing W] → Grind.CommRing (Aiur.NativeAIR.LogUp.Coordinates W)
+DEFINITION
+fun {W} [Grind.CommRing W] =>
+  { toAdd := Aiur.NativeAIR.LogUp.Coordinates.add, toMul := Aiur.NativeAIR.LogUp.Coordinates.mul,
+    natCast := Aiur.NativeAIR.LogUp.Coordinates.natCast, ofNat := fun n => Aiur.NativeAIR.LogUp.Coordinates.ofNat,
+    nsmul := Aiur.NativeAIR.LogUp.Coordinates.nsmul, npow := Aiur.NativeAIR.LogUp.Coordinates.npow, add_zero := ⋯,
+    add_comm := ⋯, add_assoc := ⋯, mul_assoc := ⋯, mul_one := ⋯, one_mul := ⋯, left_distrib := ⋯, right_distrib := ⋯,
+    zero_mul := ⋯, mul_zero := ⋯, pow_zero := ⋯, pow_succ := ⋯, ofNat_succ := ⋯, ofNat_eq_natCast := ⋯,
+    nsmul_eq_natCast_mul := ⋯, toNeg := Aiur.NativeAIR.LogUp.Coordinates.neg,
+    toSub := Aiur.NativeAIR.LogUp.Coordinates.sub, intCast := Aiur.NativeAIR.LogUp.Coordinates.intCast,
+    zsmul := Aiur.NativeAIR.LogUp.Coordinates.zsmul, neg_add_cancel := ⋯, sub_eq_add_neg := ⋯, neg_zsmul := ⋯,
+    zsmul_natCast_eq_nsmul := ⋯, intCast_ofNat := ⋯, intCast_neg := ⋯, mul_comm := ⋯ }
+PREMISE Aiur.NativeAIR.LogUp.inverseValue
+Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value => value.tryInverse.getD 0
+PREMISE Aiur.NativeAIR.LogUp.fractionSum
+List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension) → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun entries =>
+  Aiur.NativeAIR.LogUp.sum
+    (List.map
+      (fun x =>
+        match x with
+        | (weight, message) => weight * Aiur.NativeAIR.LogUp.inverseValue message)
+      entries)
+PREMISE Aiur.NativeAIR.LogUp.PoleFree
+List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension) → Prop
+DEFINITION
+fun entries =>
+  ∀ (entry : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension), entry ∈ entries → entry.snd ≠ 0
+PREMISE Aiur.NativeAIR.LogUp.fieldEntries
+List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G × Aiur.NativeAIR.LogUp.Coordinates Aiur.G) →
+  List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)
+DEFINITION
+fun entries =>
+  List.map
+    (fun x =>
+      match x with
+      | (weight, message) => (weight.toExtension, message.toExtension))
+    entries
+PREMISE Aiur.NativeAIR.LogUp.lookupFractions
+Aiur.NativeAIR.LogUp.Coordinates Aiur.G →
+  Aiur.NativeAIR.LogUp.Coordinates Aiur.G → List (Aiur.G × List Aiur.G) → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun beta gamma lookups =>
+  Aiur.NativeAIR.LogUp.fractionSum
+    (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma lookups))
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -17992,6 +18796,15 @@ fun x =>
     let byte ← Aiur.NativeAIR.KeyCodec.readByte
     let rest ← Aiur.NativeAIR.KeyCodec.readNat._unsafe_rec count
     pure (byte.toNat + 256 * rest)
+RECURSION WORKER Aiur.NativeAIR.LogUp.numerator._unsafe_rec
+{R : Type u_1} → [OfNat R 0] → [OfNat R 1] → [Add R] → [Mul R] → List (R × R) → R
+IMPLEMENTATION
+fun {R} [OfNat R 0] [OfNat R 1] [Add R] [Mul R] x =>
+  match x with
+  | [] => 0
+  | (weight, message) :: rest =>
+    weight * Aiur.NativeAIR.LogUp.product (List.map Prod.snd rest) +
+      message * Aiur.NativeAIR.LogUp.numerator._unsafe_rec rest
 RECURSION WORKER Aiur.NativeAIR.LookupEmitter.addArgs._unsafe_rec
 List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Expr
 IMPLEMENTATION
@@ -19994,10 +20807,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 955; LOGICAL DECLARATIONS 18163; WITH RUNTIME 18942
+C8 component ROOTS 1050; LOGICAL DECLARATIONS 18489; WITH RUNTIME 19270
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 171
+RECURSION WORKERS 172
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.
