@@ -2368,6 +2368,167 @@ ROOT Aiur.BoundVerifier.Backend.bounded_trace_execution
                         Aiur.Bytecode.AIR.Execution backend.compiled.bytecode (Aiur.AIR.memoryFacts tables.memory)
                           { function := selection.function, inputs := input, outputs := selection.success, rank := 0 }
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.decodeMemoryRow_width
+∀ (width : Nat) (columns : Aiur.AIR.MemoryColumns width), (Aiur.AIR.decodeMemoryRow width columns).contents.size = width
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.decodeMemoryRows_size
+∀ (width height : Nat) (matrix : Fin height → Aiur.AIR.MemoryColumns width),
+  (Aiur.AIR.decodeMemoryRows width height matrix).size = height
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.memoryColumnProvider_reflect
+∀ (width : Nat) (current next : Aiur.AIR.MemoryColumns width) (transition : Aiur.G),
+  (∀ (equation : Aiur.G), equation ∈ Aiur.AIR.memoryColumnEquations width current next transition → equation = 0) →
+    ∀ (messageWidth : Nat),
+      Aiur.AIR.Provider.PaddedEq messageWidth (Aiur.AIR.memoryColumnProvider width current)
+        (Aiur.AIR.memoryMessage width (Aiur.AIR.decodeMemoryRow width current).pointer
+            (Aiur.AIR.decodeMemoryRow width current).contents,
+          (Aiur.AIR.decodeMemoryRow width current).multiplicity)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.decodeMemoryRows_polynomials
+∀ (width height : Nat) (matrix : Fin height → Aiur.AIR.MemoryColumns width),
+  Aiur.AIR.MemoryMatrixSatisfied width height matrix →
+    Aiur.AIR.MemoryRowsPolynomials width (Aiur.AIR.decodeMemoryRows width height matrix)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.decodeMemoryRows_valid
+∀ (width height : Nat) (matrix : Fin height → Aiur.AIR.MemoryColumns width),
+  Aiur.AIR.MemoryMatrixSatisfied width height matrix →
+    Aiur.AIR.MemoryRowsValid width (Aiur.AIR.decodeMemoryRows width height matrix)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.decodeMemoryRows_providers
+∀ (width height : Nat) (matrix : Fin height → Aiur.AIR.MemoryColumns width),
+  Aiur.AIR.mapProviders (fun request => Aiur.AIR.memoryMessage width request.fst request.snd)
+      (Aiur.AIR.memoryProviders (Aiur.AIR.decodeMemoryRows width height matrix)) =
+    List.ofFn fun index =>
+      (Aiur.AIR.memoryMessage width (Aiur.AIR.decodeMemoryRow width (matrix index)).pointer
+          (Aiur.AIR.decodeMemoryRow width (matrix index)).contents,
+        (Aiur.AIR.decodeMemoryRow width (matrix index)).multiplicity)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.memoryMatrixProviders_reflect
+∀ (width height : Nat) (matrix : Fin height → Aiur.AIR.MemoryColumns width),
+  Aiur.AIR.MemoryMatrixSatisfied width height matrix →
+    ∀ (messageWidth : Nat),
+      List.Forall₂ (Aiur.AIR.Provider.PaddedEq messageWidth) (Aiur.AIR.memoryMatrixProviders width height matrix)
+        (Aiur.AIR.mapProviders (fun request => Aiur.AIR.memoryMessage width request.fst request.snd)
+          (Aiur.AIR.memoryProviders (Aiur.AIR.decodeMemoryRows width height matrix)))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Decls.toBytecode_memorySizes_distinct
+∀ {decls : Aiur.Concrete.Decls} {program : Aiur.Bytecode.Toplevel}
+  {names : Std.HashMap Aiur.Global Aiur.Bytecode.FunIdx},
+  decls.toBytecode = Except.ok (program, names) → program.memorySizes.toList.Nodup
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Toplevel.deduplicate_memorySizes
+∀ (program : Aiur.Bytecode.Toplevel), program.deduplicate.fst.memorySizes = program.memorySizes
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.finishCompilation_memorySizes
+∀ (source : Aiur.Source.Toplevel) (raw : Aiur.Bytecode.Toplevel) (names : Std.HashMap Aiur.Global Aiur.Bytecode.FunIdx),
+  (Aiur.finishCompilation source raw names).bytecode.memorySizes = raw.memorySizes
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Source.Toplevel.compile_memorySizes_distinct
+∀ {source : Aiur.Source.Toplevel} {compiled : Aiur.CompiledToplevel},
+  source.compile = Except.ok compiled → compiled.bytecode.memorySizes.toList.Nodup
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.memorySizes_distinct
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection),
+  backend.compiled.bytecode.memorySizes.toList.Nodup
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.memorySizes_canonical
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection) (width : Nat),
+  width ∈ backend.compiled.bytecode.memorySizes.toList → width < Aiur.gSize.toNat
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.slot_sum_append
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths) (otherSlots : List Nat) (otherActive : List Bool)
+  (otherDegrees : List Nat),
+  Aiur.lookupSlotSum (List.replicate widths.length 1 ++ otherSlots) (traces.bitmap ++ otherActive)
+      (traces.degrees ++ otherDegrees) =
+    Option.map (fun x => traces.capacity + x) (Aiur.lookupSlotSum otherSlots otherActive otherDegrees)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.rows_valid
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths),
+  traces.Satisfied → ∀ (width : Nat), Aiur.AIR.MemoryRowsValid width (traces.rows width)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.rows_size_le
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths) (width : Nat), (traces.rows width).size ≤ traces.capacity
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.providers_reflect
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths),
+  widths.Nodup →
+    traces.Satisfied →
+      ∀ (messageWidth : Nat),
+        List.Forall₂ (Aiur.AIR.Provider.PaddedEq messageWidth) traces.providers
+          (Aiur.AIR.memoryTableProviders widths traces.rows)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.capacity_bounded
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths) {circuits : List Aiur.Bytecode.Circuit}
+  (functions : Aiur.AIR.CircuitTraces circuits) {otherSlots : List Nat} {otherActive : List Bool}
+  {otherDegrees : List Nat} {result : Nat},
+  Aiur.lookupQueryBound
+        (List.map (fun x => x.layout.lookups) circuits ++ (List.replicate widths.length 1 ++ otherSlots))
+        (functions.bitmap ++ (traces.bitmap ++ otherActive)) (functions.degrees ++ (traces.degrees ++ otherDegrees)) =
+      some result →
+    traces.capacity + 1 < Aiur.gSize.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.functional
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths),
+  traces.Satisfied →
+    traces.capacity < Aiur.gSize.toNat →
+      ∀ {width : Nat} {pointer : Aiur.G} {left right : Array Aiur.G},
+        Aiur.AIR.memoryFacts traces.rows width pointer left →
+          Aiur.AIR.memoryFacts traces.rows width pointer right → left = right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.functional_of_budget
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths) {circuits : List Aiur.Bytecode.Circuit}
+  (functions : Aiur.AIR.CircuitTraces circuits) {otherSlots : List Nat} {otherActive : List Bool}
+  {otherDegrees : List Nat} {result : Nat},
+  Aiur.lookupQueryBound
+        (List.map (fun x => x.layout.lookups) circuits ++ (List.replicate widths.length 1 ++ otherSlots))
+        (functions.bitmap ++ (traces.bitmap ++ otherActive)) (functions.degrees ++ (traces.degrees ++ otherDegrees)) =
+      some result →
+    traces.Satisfied →
+      ∀ {width : Nat} {pointer : Aiur.G} {left right : Array Aiur.G},
+        Aiur.AIR.memoryFacts traces.rows width pointer left →
+          Aiur.AIR.memoryFacts traces.rows width pointer right → left = right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.circuitProviders_reflect
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths),
+  widths.Nodup →
+    traces.Satisfied →
+      ∀ (messageWidth : Nat) (byte1 : Aiur.AIR.Byte1Kind → Fin 256 → Aiur.G)
+        (byte2 : Aiur.AIR.Byte2Kind → Fin 65536 → Aiur.G) (circuits : List Aiur.AIR.CircuitEmission),
+        List.Forall₂ (Aiur.AIR.Provider.PaddedEq messageWidth)
+          (Aiur.AIR.circuitProviders circuits ++
+            (traces.providers ++ Aiur.AIR.byte1Providers byte1 ++ Aiur.AIR.byte2Providers byte2))
+          ((traces.auxiliary byte1 byte2).circuitProviders circuits)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.memory_trace_execution
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  (functions : Aiur.AIR.CircuitTraces backend.compiled.bytecode.circuits.toList)
+  (memories : Aiur.AIR.MemoryTraces backend.compiled.bytecode.memorySizes.toList)
+  (byte1 : Aiur.AIR.Byte1Kind → Fin 256 → Aiur.G) (byte2 : Aiur.AIR.Byte2Kind → Fin 65536 → Aiur.G)
+  {witnesses : List Aiur.AIR.CircuitWitness},
+  Aiur.AIR.CircuitTraces.emitWitnesses backend.compiled.bytecode functions = some witnesses →
+    ∀ {otherSlots : List Nat} {otherActive : List Bool} {otherDegrees : List Nat} {result : Nat},
+      Aiur.lookupQueryBound
+            (List.map (fun x => x.layout.lookups) backend.compiled.bytecode.circuits.toList ++
+              (List.replicate backend.compiled.bytecode.memorySizes.size 1 ++ otherSlots))
+            (functions.bitmap ++ (memories.bitmap ++ otherActive))
+            (functions.degrees ++ (memories.degrees ++ otherDegrees)) =
+          some result →
+        ∀ (width : Nat) (input : Array Aiur.G),
+          input.size = selection.inputSize →
+            Aiur.AIR.PaddedLookupBalance width
+                ((Aiur.buildClaim selection.function input selection.success).toList ::
+                  Aiur.AIR.encodedCircuitQueryPool (List.map (fun x => x.emission) witnesses))
+                (Aiur.AIR.circuitProviders (List.map (fun x => x.emission) witnesses) ++
+                  (memories.providers ++ Aiur.AIR.byte1Providers byte1 ++ Aiur.AIR.byte2Providers byte2)) →
+              (Aiur.buildClaim selection.function input selection.success).size + 1 ≤ width →
+                (∀ (query : List Aiur.G),
+                    query ∈ Aiur.AIR.encodedCircuitQueryPool (List.map (fun x => x.emission) witnesses) →
+                      query.length ≤ width) →
+                  (∀ (witness : Aiur.AIR.CircuitWitness), witness ∈ witnesses → witness.Satisfied) →
+                    memories.Satisfied →
+                      Aiur.Bytecode.AIR.Execution backend.compiled.bytecode (Aiur.AIR.memoryFacts memories.rows)
+                        { function := selection.function, inputs := input, outputs := selection.success, rank := 0 }
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -4602,6 +4763,108 @@ DEFINITION
 fun functions circuits =>
   ∀ (circuit : Aiur.Bytecode.Circuit),
     circuit ∈ circuits → Aiur.Bytecode.MembersLookupBound functions circuit.members circuit.layout.lookups
+PREMISE Aiur.AIR.MemoryColumns
+Nat → Type
+DEFINITION
+fun width => Fin (3 + width) → Aiur.G
+PREMISE Aiur.AIR.decodeMemoryRow
+(width : Nat) → Aiur.AIR.MemoryColumns width → Aiur.AIR.MemoryRow
+DEFINITION
+fun width columns =>
+  { selector := columns ⟨1, ⋯⟩, multiplicity := columns ⟨0, ⋯⟩, pointer := columns ⟨2, ⋯⟩,
+    contents := Array.ofFn fun i => columns ⟨3 + ↑i, ⋯⟩ }
+PREMISE Aiur.AIR.memoryColumnEquations
+(width : Nat) → Aiur.AIR.MemoryColumns width → Aiur.AIR.MemoryColumns width → Aiur.G → List Aiur.G
+DEFINITION
+fun width current next transition =>
+  have selector := current ⟨1, ⋯⟩;
+  have nextSelector := next ⟨1, ⋯⟩;
+  [selector * (selector - 1), current ⟨0, ⋯⟩ * (1 - selector), nextSelector * transition * (selector - 1),
+    nextSelector * transition * (current ⟨2, ⋯⟩ + 1 - next ⟨2, ⋯⟩)]
+PREMISE Aiur.AIR.memoryColumnLookup
+(width : Nat) → Aiur.AIR.MemoryColumns width → Aiur.G × List Aiur.G
+DEFINITION
+fun width columns =>
+  (0 - columns ⟨0, ⋯⟩,
+    List.map (fun value => columns ⟨1, ⋯⟩ * value)
+      (Aiur.AIR.memoryMessage width (columns ⟨2, ⋯⟩) (Aiur.AIR.decodeMemoryRow width columns).contents))
+PREMISE Aiur.AIR.memoryColumnProvider
+(width : Nat) → Aiur.AIR.MemoryColumns width → Aiur.AIR.Provider (List Aiur.G)
+DEFINITION
+fun width columns => ((Aiur.AIR.memoryColumnLookup width columns).snd, columns ⟨0, ⋯⟩)
+PREMISE Aiur.AIR.memoryNextIndex
+{height : Nat} → Fin height → Fin height
+DEFINITION
+fun {height} index => if next : ↑index + 1 < height then ⟨↑index + 1, next⟩ else ⟨0, ⋯⟩
+PREMISE Aiur.AIR.memoryMatrixEquations
+(width height : Nat) → (Fin height → Aiur.AIR.MemoryColumns width) → Fin height → List Aiur.G
+DEFINITION
+fun width height matrix index =>
+  Aiur.AIR.memoryColumnEquations width (matrix index) (matrix (Aiur.AIR.memoryNextIndex index))
+    (if ↑index + 1 < height then 1 else 0)
+PREMISE Aiur.AIR.MemoryMatrixSatisfied
+(width height : Nat) → (Fin height → Aiur.AIR.MemoryColumns width) → Prop
+DEFINITION
+fun width height matrix =>
+  ∀ (index : Fin height) (equation : Aiur.G),
+    equation ∈ Aiur.AIR.memoryMatrixEquations width height matrix index → equation = 0
+PREMISE Aiur.AIR.decodeMemoryRows
+(width height : Nat) → (Fin height → Aiur.AIR.MemoryColumns width) → Array Aiur.AIR.MemoryRow
+DEFINITION
+fun width height matrix => Array.ofFn fun index => Aiur.AIR.decodeMemoryRow width (matrix index)
+PREMISE Aiur.AIR.memoryMatrixProviders
+(width height : Nat) → (Fin height → Aiur.AIR.MemoryColumns width) → List (Aiur.AIR.Provider (List Aiur.G))
+DEFINITION
+fun width height matrix => List.ofFn fun index => Aiur.AIR.memoryColumnProvider width (matrix index)
+PREMISE Aiur.AIR.MemoryTraces.nil
+Aiur.AIR.MemoryTraces []
+PREMISE Aiur.AIR.MemoryTraces.inactive
+(width : Nat) → {widths : List Nat} → Aiur.AIR.MemoryTraces widths → Aiur.AIR.MemoryTraces (width :: widths)
+PREMISE Aiur.AIR.MemoryTraces.active
+(width degree : Nat) →
+  (Fin (2 ^ degree) → Aiur.AIR.MemoryColumns width) →
+    {widths : List Nat} → Aiur.AIR.MemoryTraces widths → Aiur.AIR.MemoryTraces (width :: widths)
+PREMISE Aiur.AIR.MemoryTraces.bitmap
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → List Bool
+DEFINITION
+fun {widths} x => Aiur.AIR.MemoryTraces.brecOn x @Aiur.AIR.MemoryTraces.bitmap._f
+PREMISE Aiur.AIR.MemoryTraces.degrees
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → List Nat
+DEFINITION
+fun {widths} x => Aiur.AIR.MemoryTraces.brecOn x @Aiur.AIR.MemoryTraces.degrees._f
+PREMISE Aiur.AIR.MemoryTraces.capacity
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → Nat
+DEFINITION
+fun {widths} x => Aiur.AIR.MemoryTraces.brecOn x @Aiur.AIR.MemoryTraces.capacity._f
+PREMISE Aiur.AIR.MemoryTraces.rows
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → Nat → Array Aiur.AIR.MemoryRow
+DEFINITION
+fun {widths} x x_1 =>
+  Aiur.AIR.MemoryTraces.brecOn (motive := fun {widths} x => Nat → Array Aiur.AIR.MemoryRow) x
+    (@Aiur.AIR.MemoryTraces.rows._f) x_1
+PREMISE Aiur.AIR.MemoryTraces.providers
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → List (Aiur.AIR.Provider (List Aiur.G))
+DEFINITION
+fun {widths} x => Aiur.AIR.MemoryTraces.brecOn x @Aiur.AIR.MemoryTraces.providers._f
+PREMISE Aiur.AIR.MemoryTraces.Satisfied
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → Prop
+DEFINITION
+fun {widths} x => Aiur.AIR.MemoryTraces.brecOn x @Aiur.AIR.MemoryTraces.Satisfied._f
+PREMISE Aiur.AIR.memoryTableProviders
+List Nat → (Nat → Array Aiur.AIR.MemoryRow) → List (Aiur.AIR.Provider (List Aiur.G))
+DEFINITION
+fun widths rows =>
+  List.flatMap
+    (fun width =>
+      Aiur.AIR.mapProviders (fun request => Aiur.AIR.memoryMessage width request.fst request.snd)
+        (Aiur.AIR.memoryProviders (rows width)))
+    widths
+PREMISE Aiur.AIR.MemoryTraces.auxiliary
+{widths : List Nat} →
+  Aiur.AIR.MemoryTraces widths →
+    (Aiur.AIR.Byte1Kind → Fin 256 → Aiur.G) → (Aiur.AIR.Byte2Kind → Fin 65536 → Aiur.G) → Aiur.AIR.AuxiliaryTables
+DEFINITION
+fun {widths} traces byte1 byte2 => { memoryWidths := widths, memory := traces.rows, byte1 := byte1, byte2 := byte2 }
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -8141,6 +8404,63 @@ fun {circuits} program x =>
     let first ← List.mapM (Aiur.AIR.emitCircuitWitness program circuit) (List.ofFn values)
     let later ← Aiur.AIR.CircuitTraces.emitWitnesses._unsafe_rec program rest
     pure (first ++ later)
+RECURSION WORKER Aiur.AIR.MemoryTraces.Satisfied._unsafe_rec
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → Prop
+IMPLEMENTATION
+fun {widths} x =>
+  match widths, x with
+  | .([]), Aiur.AIR.MemoryTraces.nil => True
+  | .(width :: widths), Aiur.AIR.MemoryTraces.inactive width rest => Aiur.AIR.MemoryTraces.Satisfied._unsafe_rec rest
+  | .(width :: widths), Aiur.AIR.MemoryTraces.active width degree matrix rest =>
+    Aiur.AIR.MemoryMatrixSatisfied width (2 ^ degree) matrix ∧ Aiur.AIR.MemoryTraces.Satisfied._unsafe_rec rest
+RECURSION WORKER Aiur.AIR.MemoryTraces.bitmap._unsafe_rec
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → List Bool
+IMPLEMENTATION
+fun {widths} x =>
+  match widths, x with
+  | .([]), Aiur.AIR.MemoryTraces.nil => []
+  | .(width :: widths), Aiur.AIR.MemoryTraces.inactive width rest =>
+    false :: Aiur.AIR.MemoryTraces.bitmap._unsafe_rec rest
+  | .(width :: widths), Aiur.AIR.MemoryTraces.active width degree matrix rest =>
+    true :: Aiur.AIR.MemoryTraces.bitmap._unsafe_rec rest
+RECURSION WORKER Aiur.AIR.MemoryTraces.capacity._unsafe_rec
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → Nat
+IMPLEMENTATION
+fun {widths} x =>
+  match widths, x with
+  | .([]), Aiur.AIR.MemoryTraces.nil => 0
+  | .(width :: widths), Aiur.AIR.MemoryTraces.inactive width rest => Aiur.AIR.MemoryTraces.capacity._unsafe_rec rest
+  | .(width :: widths), Aiur.AIR.MemoryTraces.active width degree matrix rest =>
+    2 ^ degree + Aiur.AIR.MemoryTraces.capacity._unsafe_rec rest
+RECURSION WORKER Aiur.AIR.MemoryTraces.degrees._unsafe_rec
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → List Nat
+IMPLEMENTATION
+fun {widths} x =>
+  match widths, x with
+  | .([]), Aiur.AIR.MemoryTraces.nil => []
+  | .(width :: widths), Aiur.AIR.MemoryTraces.inactive width rest => Aiur.AIR.MemoryTraces.degrees._unsafe_rec rest
+  | .(width :: widths), Aiur.AIR.MemoryTraces.active width degree matrix rest =>
+    degree :: Aiur.AIR.MemoryTraces.degrees._unsafe_rec rest
+RECURSION WORKER Aiur.AIR.MemoryTraces.providers._unsafe_rec
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → List (Aiur.AIR.Provider (List Aiur.G))
+IMPLEMENTATION
+fun {widths} x =>
+  match widths, x with
+  | .([]), Aiur.AIR.MemoryTraces.nil => []
+  | .(width :: widths), Aiur.AIR.MemoryTraces.inactive width rest => Aiur.AIR.MemoryTraces.providers._unsafe_rec rest
+  | .(width :: widths), Aiur.AIR.MemoryTraces.active width degree matrix rest =>
+    Aiur.AIR.memoryMatrixProviders width (2 ^ degree) matrix ++ Aiur.AIR.MemoryTraces.providers._unsafe_rec rest
+RECURSION WORKER Aiur.AIR.MemoryTraces.rows._unsafe_rec
+{widths : List Nat} → Aiur.AIR.MemoryTraces widths → Nat → Array Aiur.AIR.MemoryRow
+IMPLEMENTATION
+fun {widths} x x_1 =>
+  match widths, x, x_1 with
+  | .([]), Aiur.AIR.MemoryTraces.nil, x => #[]
+  | .(width :: widths), Aiur.AIR.MemoryTraces.inactive width rest, size =>
+    if size = width then #[] else Aiur.AIR.MemoryTraces.rows._unsafe_rec rest size
+  | .(width :: widths), Aiur.AIR.MemoryTraces.active width degree matrix rest, size =>
+    if size = width then Aiur.AIR.decodeMemoryRows width (2 ^ degree) matrix
+    else Aiur.AIR.MemoryTraces.rows._unsafe_rec rest size
 RECURSION WORKER Aiur.Bytecode.Block.beq._unsafe_rec
 Aiur.Bytecode.Block → Aiur.Bytecode.Block → Bool
 IMPLEMENTATION
@@ -11172,10 +11492,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 268; LOGICAL DECLARATIONS 15179; WITH RUNTIME 15876
+C8 component ROOTS 290; LOGICAL DECLARATIONS 15636; WITH RUNTIME 16341
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 139
+RECURSION WORKERS 145
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

@@ -312,6 +312,9 @@ lean_exe «aiur-block-row-tests» where
 lean_exe «aiur-circuit-row-tests» where
   root := `Tests.Aiur.CircuitRows
 
+lean_exe «aiur-memory-row-tests» where
+  root := `Tests.Aiur.MemoryRows
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -684,7 +687,7 @@ script "check-aiur" := do
     "aiur-bytecode-tests", "aiur-dedup-tests", "aiur-tail-match-tests", "aiur-source-value-tests",
     "aiur-hoisting-tests", "aiur-air-tests", "aiur-byte-gadget-tests", "aiur-lookup-shape-tests",
     "aiur-lookup-budget-tests", "aiur-selector-control-tests", "aiur-operation-row-tests",
-    "aiur-block-row-tests", "aiur-circuit-row-tests"]
+    "aiur-block-row-tests", "aiur-circuit-row-tests", "aiur-memory-row-tests"]
   let report ← IO.Process.output {
     cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
   unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
@@ -728,6 +731,7 @@ script "check-aiur" := do
     let operationSnapshot := directory / "native-operation-rows.bin"
     let blockSnapshot := directory / "native-block-rows.bin"
     let circuitSnapshot := directory / "native-circuit-rows.bin"
+    let memorySnapshot := directory / "native-memory-rows.bin"
     let exporter ← IO.Process.spawn {
       cmd := "cargo"
       args := #["test", "--locked", "--release", "-p", "aiur",
@@ -738,7 +742,8 @@ script "check-aiur" := do
         ("IX_SELECTOR_CONTROL_SNAPSHOT", some selectorSnapshot.toString),
         ("IX_OPERATION_ROW_SNAPSHOT", some operationSnapshot.toString),
         ("IX_BLOCK_ROW_SNAPSHOT", some blockSnapshot.toString),
-        ("IX_CIRCUIT_ROW_SNAPSHOT", some circuitSnapshot.toString)]
+        ("IX_CIRCUIT_ROW_SNAPSHOT", some circuitSnapshot.toString),
+        ("IX_MEMORY_ROW_SNAPSHOT", some memorySnapshot.toString)]
       stdout := .inherit
       stderr := .inherit }
     unless (← exporter.wait) == 0 do
@@ -750,6 +755,7 @@ script "check-aiur" := do
     run ".lake/build/bin/aiur-operation-row-tests" #[operationSnapshot.toString]
     run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
+    run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]
   run ".lake/build/bin/aiur-backend-tests"
   IO.println "Aiur component checks passed: exact proof/runtime boundaries, compiler compatibility and native binding."
   return 0

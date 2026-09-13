@@ -48,6 +48,7 @@ import Ix.Aiur.Proofs.EncodedCircuitExecution
 import Ix.Aiur.Proofs.CircuitTraces
 import Ix.Aiur.Proofs.CircuitMembership
 import Ix.Aiur.Proofs.LookupLayout
+import Ix.Aiur.Proofs.MemoryColumns
 import Ix.Aiur.Proofs.Metadata
 import Ix.Aiur.Proofs.Renaming
 import Ix.Aiur.Proofs.Dedup

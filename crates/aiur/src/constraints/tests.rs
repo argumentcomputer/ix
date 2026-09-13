@@ -20,6 +20,7 @@ use super::*;
 
 mod block_rows;
 mod circuit_rows;
+mod memory_rows;
 mod operation_rows;
 
 fn write_u64(out: &mut impl Write, value: u64) -> io::Result<()> {

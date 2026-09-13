@@ -28,6 +28,7 @@ import Ix.Aiur.Proofs.EncodedCircuitExecution
 import Ix.Aiur.Proofs.CircuitTraces
 import Ix.Aiur.Proofs.CircuitMembership
 import Ix.Aiur.Proofs.LookupLayout
+import Ix.Aiur.Proofs.MemoryColumns
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -308,6 +309,30 @@ def lookupLayoutRoots : Array Lean.Name := #[
   `Aiur.BoundVerifier.Backend.witness_lookupBounds,
   `Aiur.BoundVerifier.Backend.bounded_trace_execution]
 
+def memoryColumnRoots : Array Lean.Name := #[
+  `Aiur.AIR.decodeMemoryRow_width,
+  `Aiur.AIR.decodeMemoryRows_size,
+  `Aiur.AIR.memoryColumnProvider_reflect,
+  `Aiur.AIR.decodeMemoryRows_polynomials,
+  `Aiur.AIR.decodeMemoryRows_valid,
+  `Aiur.AIR.decodeMemoryRows_providers,
+  `Aiur.AIR.memoryMatrixProviders_reflect,
+  `Aiur.Concrete.Decls.toBytecode_memorySizes_distinct,
+  `Aiur.Bytecode.Toplevel.deduplicate_memorySizes,
+  `Aiur.finishCompilation_memorySizes,
+  `Aiur.Source.Toplevel.compile_memorySizes_distinct,
+  `Aiur.BoundVerifier.Backend.memorySizes_distinct,
+  `Aiur.BoundVerifier.Backend.memorySizes_canonical,
+  `Aiur.AIR.MemoryTraces.slot_sum_append,
+  `Aiur.AIR.MemoryTraces.rows_valid,
+  `Aiur.AIR.MemoryTraces.rows_size_le,
+  `Aiur.AIR.MemoryTraces.providers_reflect,
+  `Aiur.AIR.MemoryTraces.capacity_bounded,
+  `Aiur.AIR.MemoryTraces.functional,
+  `Aiur.AIR.MemoryTraces.functional_of_budget,
+  `Aiur.AIR.MemoryTraces.circuitProviders_reflect,
+  `Aiur.BoundVerifier.Backend.memory_trace_execution]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -344,7 +369,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -479,7 +504,26 @@ def premises : Array Lean.Name := #[
   `Aiur.Bytecode.Function.LookupLayout,
   `Aiur.Bytecode.FunctionsLookupLayout,
   `Aiur.Bytecode.MembersLookupBound,
-  `Aiur.Bytecode.CircuitsLookupBound]
+  `Aiur.Bytecode.CircuitsLookupBound,
+  `Aiur.AIR.MemoryColumns,
+  `Aiur.AIR.decodeMemoryRow,
+  `Aiur.AIR.memoryColumnEquations,
+  `Aiur.AIR.memoryColumnLookup,
+  `Aiur.AIR.memoryColumnProvider,
+  `Aiur.AIR.memoryNextIndex,
+  `Aiur.AIR.memoryMatrixEquations,
+  `Aiur.AIR.MemoryMatrixSatisfied,
+  `Aiur.AIR.decodeMemoryRows,
+  `Aiur.AIR.memoryMatrixProviders,
+  `Aiur.AIR.MemoryTraces.nil, `Aiur.AIR.MemoryTraces.inactive, `Aiur.AIR.MemoryTraces.active,
+  `Aiur.AIR.MemoryTraces.bitmap,
+  `Aiur.AIR.MemoryTraces.degrees,
+  `Aiur.AIR.MemoryTraces.capacity,
+  `Aiur.AIR.MemoryTraces.rows,
+  `Aiur.AIR.MemoryTraces.providers,
+  `Aiur.AIR.MemoryTraces.Satisfied,
+  `Aiur.AIR.memoryTableProviders,
+  `Aiur.AIR.MemoryTraces.auxiliary]
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -585,6 +629,9 @@ run_cmd do
             `Aiur.AIR.GlobalLookups.rank_bytes, `Aiur.BoundVerifier.claim_padding,
             `Aiur.lookupQueryBound_sound, `Aiur.lookupQueryBound_consumer_count,
             `Aiur.AIR.CircuitTraces.slot_sum_append, `Aiur.AIR.CircuitTraces.capacity_bounded,
+            `Aiur.AIR.decodeMemoryRow_width, `Aiur.AIR.decodeMemoryRows_size,
+            `Aiur.AIR.MemoryTraces.slot_sum_append, `Aiur.AIR.MemoryTraces.rows_size_le,
+            `Aiur.AIR.MemoryTraces.capacity_bounded,
             `Aiur.AIR.encodedCircuitQueryPool_uniform_bound,
             `Aiur.lookupQueryBound_shape, `Aiur.lookupQueryBound_complete,
             `Aiur.lookupSlotSum_bounded, `Aiur.lookupQueryBound_encodedKey,

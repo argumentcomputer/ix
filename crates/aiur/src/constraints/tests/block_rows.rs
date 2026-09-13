@@ -146,7 +146,10 @@ fn block_rows_snapshot() -> io::Result<()> {
           }
           write_u64(&mut out, state.yield_info.len() as u64)?;
           for (selector, map) in &state.yield_info {
-            write_u64(&mut out, eval_expr(selector, &values).as_canonical_u64())?;
+            write_u64(
+              &mut out,
+              eval_expr(selector, &values).as_canonical_u64(),
+            )?;
             write_map(&mut out, map, &values)?;
           }
           checked += 1;
