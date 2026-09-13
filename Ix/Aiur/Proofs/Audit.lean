@@ -49,6 +49,7 @@ import Ix.Aiur.Proofs.Quotient
 import Ix.Aiur.Proofs.VerifierAccumulator
 import Ix.Aiur.Proofs.Blake3
 import Ix.Aiur.Proofs.MerkleCap
+import Ix.Aiur.Proofs.Merkle
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -2757,6 +2758,99 @@ def merkleCapPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.MerkleCap.coverage,
   `Aiur.NativeAIR.MerkleCap.check]
 
+def merkleRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Merkle.fieldsBytes_injective,
+  `Aiur.NativeAIR.Merkle.pairBytes_length,
+  `Aiur.NativeAIR.Merkle.pairBytes_injective,
+  `Aiur.NativeAIR.Merkle.branchBytes_injective,
+  `Aiur.NativeAIR.Merkle.shape_length,
+  `Aiur.NativeAIR.Merkle.rowsAt_absent,
+  `Aiur.NativeAIR.Merkle.rowsAt_injective,
+  `Aiur.NativeAIR.Merkle.rowBytes_injective,
+  `Aiur.NativeAIR.Merkle.CollisionOn.mono,
+  `Aiur.NativeAIR.Merkle.equal_of_no_collision,
+  `Aiur.NativeAIR.Merkle.step_calls,
+  `Aiur.NativeAIR.Merkle.walk_calls,
+  `Aiur.NativeAIR.Merkle.step_binding,
+  `Aiur.NativeAIR.Merkle.walk_binding,
+  `Aiur.NativeAIR.Merkle.replay_success,
+  `Aiur.NativeAIR.Merkle.replay_complete,
+  `Aiur.NativeAIR.Merkle.replay_calls,
+  `Aiur.NativeAIR.Merkle.replay_position,
+  `Aiur.NativeAIR.Merkle.replay_index_bound,
+  `Aiur.NativeAIR.Merkle.hasHeight_iff,
+  `Aiur.NativeAIR.Merkle.height_le_max,
+  `Aiur.NativeAIR.Merkle.covered_iff,
+  `Aiur.NativeAIR.Merkle.replay_binding,
+  `Aiur.NativeAIR.Merkle.verify_success,
+  `Aiur.NativeAIR.Merkle.verify_collision,
+  `Aiur.NativeAIR.Merkle.verifyCovered_collision,
+  `Aiur.NativeAIR.Merkle.blake3_collision,
+  `Aiur.NativeAIR.Merkle.branchBytes_length,
+  `Aiur.NativeAIR.Merkle.rowsAt_fields_le,
+  `Aiur.NativeAIR.Merkle.rowBytes_length_le,
+  `Aiur.NativeAIR.Merkle.step_input_length,
+  `Aiur.NativeAIR.Merkle.walk_input_length,
+  `Aiur.NativeAIR.Merkle.replay_input_length,
+  `Aiur.NativeAIR.Merkle.replay_native_input]
+
+def merkleAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Merkle.CollisionOn.mono,
+  `Aiur.NativeAIR.Merkle.equal_of_no_collision]
+
+def merkleQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Merkle.fieldsBytes_injective,
+  `Aiur.NativeAIR.Merkle.shape_length,
+  `Aiur.NativeAIR.Merkle.rowsAt_absent,
+  `Aiur.NativeAIR.Merkle.rowsAt_injective,
+  `Aiur.NativeAIR.Merkle.rowBytes_injective,
+  `Aiur.NativeAIR.Merkle.step_calls,
+  `Aiur.NativeAIR.Merkle.walk_calls,
+  `Aiur.NativeAIR.Merkle.walk_binding,
+  `Aiur.NativeAIR.Merkle.replay_success,
+  `Aiur.NativeAIR.Merkle.replay_complete,
+  `Aiur.NativeAIR.Merkle.replay_calls,
+  `Aiur.NativeAIR.Merkle.replay_position,
+  `Aiur.NativeAIR.Merkle.replay_index_bound,
+  `Aiur.NativeAIR.Merkle.hasHeight_iff,
+  `Aiur.NativeAIR.Merkle.height_le_max,
+  `Aiur.NativeAIR.Merkle.covered_iff,
+  `Aiur.NativeAIR.Merkle.replay_binding,
+  `Aiur.NativeAIR.Merkle.rowsAt_fields_le,
+  `Aiur.NativeAIR.Merkle.rowBytes_length_le,
+  `Aiur.NativeAIR.Merkle.step_input_length,
+  `Aiur.NativeAIR.Merkle.walk_input_length,
+  `Aiur.NativeAIR.Merkle.replay_input_length,
+  `Aiur.NativeAIR.Merkle.replay_native_input]
+
+def merkleClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Merkle.verify_success,
+  `Aiur.NativeAIR.Merkle.verify_collision,
+  `Aiur.NativeAIR.Merkle.verifyCovered_collision,
+  `Aiur.NativeAIR.Merkle.blake3_collision]
+
+def merklePremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.Merkle.Digest,
+  `Aiur.NativeAIR.Merkle.Hash,
+  `Aiur.NativeAIR.Merkle.Dimensions.mk,
+  `Aiur.NativeAIR.Merkle.maxHeight,
+  `Aiur.NativeAIR.Merkle.shape,
+  `Aiur.NativeAIR.Merkle.hasHeight,
+  `Aiur.NativeAIR.Merkle.rowsAt,
+  `Aiur.NativeAIR.Merkle.rowBytes,
+  `Aiur.NativeAIR.Merkle.pairBytes,
+  `Aiur.NativeAIR.Merkle.branchBytes,
+  `Aiur.NativeAIR.Merkle.Hashing.mk,
+  `Aiur.NativeAIR.Merkle.step,
+  `Aiur.NativeAIR.Merkle.walk,
+  `Aiur.NativeAIR.Merkle.Replay.mk,
+  `Aiur.NativeAIR.Merkle.replay,
+  `Aiur.NativeAIR.Merkle.accepts,
+  `Aiur.NativeAIR.Merkle.verify,
+  `Aiur.NativeAIR.Merkle.covered,
+  `Aiur.NativeAIR.Merkle.verifyCovered,
+  `Aiur.NativeAIR.Merkle.CollisionOn]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2793,7 +2887,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -3032,7 +3126,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -3111,7 +3205,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if merkleCapRoots.contains root then
+    let expected := if merkleRoots.contains root then
+        if merkleAxiomFreeRoots.contains root then #[]
+        else if merkleClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if merkleQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if merkleCapRoots.contains root then
         if merkleCapAxiomFreeRoots.contains root then #[]
         else if merkleCapClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else #[``propext, ``Quot.sound]

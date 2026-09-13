@@ -650,6 +650,8 @@ mod tests {
   mod lookup_budget;
   mod lookup_shapes;
   mod memory;
+  #[cfg(not(feature = "cuda"))]
+  mod merkle;
   mod mmcs;
   mod proof_codec;
   mod proof_shapes;

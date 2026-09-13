@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,302 roots by traversing checked types, bodies and inductive
-constructors. Fifty roots use no axioms; one uses only `Quot.sound`;
-217 depend only on `propext`; 378 use exactly `propext` and `Quot.sound`;
-the other 656 use exactly
+The audit checks 1,336 roots by traversing checked types, bodies and inductive
+constructors. Fifty-two roots use no axioms; one uses only `Quot.sound`;
+222 depend only on `propext`; 401 use exactly `propext` and `Quot.sound`;
+the other 660 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 19,371 logical declarations and 20,158 declarations after following runtime
+has 19,499 logical declarations and 20,289 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 178 Ix recursion worker implementations.
+three partial opaque sources and all 181 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1105,8 +1105,9 @@ addition overflow. The guard is enforced by native `AiurSystem.verify`
 and the selected Lean `readProof` wrapper. `CheckedProof` retains success
 as a field; each selected row consequently has its injection depth within
 the authenticated path length. Coverage is preserved by matrix subsets,
-and a uniformly sized batch permits the native cap clamp. Actual hashing
-of the path and cryptographic extraction remain separate obligations.
+and a uniformly sized batch permits the native cap clamp. The individual
+path theorem below uses these cap properties; shared-opening verification
+and cryptographic extraction remain open.
 
 The repair adds 22 roots and three definitions. All 1,280 prior root
 statements and axiom sets, 856 prior premise definitions and 178 worker
@@ -1130,6 +1131,47 @@ The proof-shape corpus additionally compares cap coverage for all 4,696
 records. The AIR, serialized keys and proof format do not change; affected
 parameter selections need a cap that covers every matrix and new proofs
 under that selection. The pinned upstream MMCS itself remains unchanged.
+
+`NativeAIR.Merkle` replays individual binary MMCS openings for selected
+power-of-two matrix heights. It checks matrix counts, row widths, query
+bounds and the exact number of siblings before hashing. Rows at the same
+height retain their original matrix order and serialize as canonical
+eight-byte Goldilocks values. Each step hashes the ordered sibling pair,
+then injects any row group at the next height. Its final index is bounded
+by the effective cap layer. Every hash input is retained in execution order.
+
+`Merkle.blake3_collision` proves that two different row openings accepted
+at the same dimensions, cap and index, with cap coverage, yield a collision
+in the concrete checked BLAKE3 function. The witness lies among at most
+`2 + 6 * (maxLogHeight - capHeight)` hash inputs from those two replays.
+Fixed-width field packing and the checked row widths recover every row
+boundary. All queried inputs fit the native BLAKE3 byte-length bound when
+each opening contains fewer than 2^61 field elements. The theorem derives
+the collision itself; a quantitative probability bound still requires the
+cryptographic security argument.
+
+The native comparison exercises 8,913 valid and malformed individual paths
+and compares all 16,456 hash inputs and outputs with the pinned verifier.
+Production commit/open generates the fixtures. An instrumented MMCS
+delegates hashing to native BLAKE3 and must agree with the production MMCS
+on every decision. Cases cover unsorted and repeated heights, wide rows,
+canonical field boundaries, every query of the smaller trees, cap clamps,
+altered row values, siblings, dimensions and cap roots, and failures before
+hashing. Raw replay reproduces the known cap omission; `verifyCovered`
+excludes it. The corpus has 1,802 native acceptances, including 1,161 with
+uncovered caps, and 3,941 structural rejections with no hash calls.
+
+This component adds 34 roots, 20 definitions and three inspected structural
+recursion workers. All 1,302 prior root statements and axiom sets, 861 premise
+definitions and 178 worker bodies remain unchanged. All 92 parallel native
+release tests, Clippy with warnings denied, the strict 466-job build and the
+complete gate with thirty-three fresh native corpora pass. The backend cases
+remain two accepted and seventeen rejected, with no unexpected outcomes.
+The added test dependency
+uses the existing Plonky3 revision. Native production code and serialized
+encodings are unchanged. The actual PCS uses shared, pruned openings;
+its frontier algorithm, PCS/FRI extraction and native refinement remain
+separate obligations.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

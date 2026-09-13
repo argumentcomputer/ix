@@ -9439,6 +9439,297 @@ ROOT Aiur.BoundVerifier.verifyShaped_cap
       Aiur.BoundVerifier.readProof backend.keyData bytes = Except.ok checked ∧
         Aiur.NativeAIR.MerkleCap.check backend.keyData checked.data = true
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.fieldsBytes_injective
+∀ {left right : List Aiur.G},
+  Aiur.NativeAIR.Transcript.fieldsBytes left = Aiur.NativeAIR.Transcript.fieldsBytes right → left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.pairBytes_length
+∀ (left right : Aiur.NativeAIR.Merkle.Digest), (Aiur.NativeAIR.Merkle.pairBytes left right).length = 64
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Merkle.pairBytes_injective
+∀ {left right otherLeft otherRight : Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.Merkle.pairBytes left right = Aiur.NativeAIR.Merkle.pairBytes otherLeft otherRight →
+    left = otherLeft ∧ right = otherRight
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Merkle.branchBytes_injective
+∀ {index : Nat} {left right leftSibling rightSibling : Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.Merkle.branchBytes index left leftSibling =
+      Aiur.NativeAIR.Merkle.branchBytes index right rightSibling →
+    left = right ∧ leftSibling = rightSibling
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Merkle.shape_length
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {rows : List (List Aiur.G)},
+  Aiur.NativeAIR.Merkle.shape dimensions rows = true → rows.length = dimensions.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.rowsAt_absent
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {rows : List (List Aiur.G)} {height : Nat},
+  Aiur.NativeAIR.Merkle.hasHeight dimensions height = false → Aiur.NativeAIR.Merkle.rowsAt dimensions rows height = []
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.rowsAt_injective
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {left right : List (List Aiur.G)},
+  Aiur.NativeAIR.Merkle.shape dimensions left = true →
+    Aiur.NativeAIR.Merkle.shape dimensions right = true →
+      (∀ (height : Nat),
+          (Aiur.NativeAIR.Merkle.rowsAt dimensions left height).flatten =
+            (Aiur.NativeAIR.Merkle.rowsAt dimensions right height).flatten) →
+        left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.rowBytes_injective
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {left right : List (List Aiur.G)},
+  Aiur.NativeAIR.Merkle.shape dimensions left = true →
+    Aiur.NativeAIR.Merkle.shape dimensions right = true →
+      (∀ (height : Nat),
+          Aiur.NativeAIR.Merkle.rowBytes dimensions left height =
+            Aiur.NativeAIR.Merkle.rowBytes dimensions right height) →
+        left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.CollisionOn.mono
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {smaller larger : List (List UInt8)},
+  (∀ (input : List UInt8), input ∈ smaller → input ∈ larger) →
+    Aiur.NativeAIR.Merkle.CollisionOn hash smaller → Aiur.NativeAIR.Merkle.CollisionOn hash larger
+AXIOMS []
+ROOT Aiur.NativeAIR.Merkle.equal_of_no_collision
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {inputs : List (List UInt8)},
+  ¬Aiur.NativeAIR.Merkle.CollisionOn hash inputs →
+    ∀ {left right : List UInt8}, left ∈ inputs → right ∈ inputs → hash left = hash right → left = right
+AXIOMS []
+ROOT Aiur.NativeAIR.Merkle.step_calls
+∀ (hash : Aiur.NativeAIR.Merkle.Hash) (dimensions : List Aiur.NativeAIR.Merkle.Dimensions) (rows : List (List Aiur.G))
+  (height index : Nat) (current sibling : Aiur.NativeAIR.Merkle.Digest),
+  (Aiur.NativeAIR.Merkle.step hash dimensions rows height index current sibling).inputs.length ≤ 3
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.walk_calls
+∀ (hash : Aiur.NativeAIR.Merkle.Hash) (dimensions : List Aiur.NativeAIR.Merkle.Dimensions) (rows : List (List Aiur.G))
+  (height index : Nat) (current : Aiur.NativeAIR.Merkle.Digest) (proof : List Aiur.NativeAIR.Merkle.Digest),
+  (Aiur.NativeAIR.Merkle.walk hash dimensions rows height index current proof).inputs.length ≤ 3 * proof.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.step_binding
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions}
+  {leftRows rightRows : List (List Aiur.G)} {height index : Nat}
+  {left right leftSibling rightSibling : Aiur.NativeAIR.Merkle.Digest},
+  ¬Aiur.NativeAIR.Merkle.CollisionOn hash
+        ((Aiur.NativeAIR.Merkle.step hash dimensions leftRows height index left leftSibling).inputs ++
+          (Aiur.NativeAIR.Merkle.step hash dimensions rightRows height index right rightSibling).inputs) →
+    (Aiur.NativeAIR.Merkle.step hash dimensions leftRows height index left leftSibling).digest =
+        (Aiur.NativeAIR.Merkle.step hash dimensions rightRows height index right rightSibling).digest →
+      left = right ∧
+        (Aiur.NativeAIR.Merkle.hasHeight dimensions height = true →
+          Aiur.NativeAIR.Merkle.rowBytes dimensions leftRows height =
+            Aiur.NativeAIR.Merkle.rowBytes dimensions rightRows height)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Merkle.walk_binding
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions}
+  {leftRows rightRows : List (List Aiur.G)} {height index : Nat} {left right : Aiur.NativeAIR.Merkle.Digest}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  leftProof.length = rightProof.length →
+    ¬Aiur.NativeAIR.Merkle.CollisionOn hash
+          ((Aiur.NativeAIR.Merkle.walk hash dimensions leftRows height index left leftProof).inputs ++
+            (Aiur.NativeAIR.Merkle.walk hash dimensions rightRows height index right rightProof).inputs) →
+      (Aiur.NativeAIR.Merkle.walk hash dimensions leftRows height index left leftProof).digest =
+          (Aiur.NativeAIR.Merkle.walk hash dimensions rightRows height index right rightProof).digest →
+        left = right ∧
+          ∀ (depth : Nat),
+            depth < leftProof.length →
+              Aiur.NativeAIR.Merkle.hasHeight dimensions (height - (depth + 1)) = true →
+                Aiur.NativeAIR.Merkle.rowBytes dimensions leftRows (height - (depth + 1)) =
+                  Aiur.NativeAIR.Merkle.rowBytes dimensions rightRows (height - (depth + 1))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_success
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof = some result →
+    dimensions ≠ [] ∧
+      Aiur.NativeAIR.Merkle.shape dimensions rows = true ∧
+        proof.length = Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight ∧
+          index < 2 ^ Aiur.NativeAIR.Merkle.maxHeight dimensions ∧
+            result =
+              { logHeight := Aiur.NativeAIR.Merkle.maxHeight dimensions - proof.length,
+                index := index / 2 ^ proof.length,
+                hashing :=
+                  {
+                    digest :=
+                      (Aiur.NativeAIR.Merkle.walk hash dimensions rows (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+                          index
+                          (hash
+                            (Aiur.NativeAIR.Merkle.rowBytes dimensions rows
+                              (Aiur.NativeAIR.Merkle.maxHeight dimensions)))
+                          proof).digest,
+                    inputs :=
+                      Aiur.NativeAIR.Merkle.rowBytes dimensions rows (Aiur.NativeAIR.Merkle.maxHeight dimensions) ::
+                        (Aiur.NativeAIR.Merkle.walk hash dimensions rows (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+                            index
+                            (hash
+                              (Aiur.NativeAIR.Merkle.rowBytes dimensions rows
+                                (Aiur.NativeAIR.Merkle.maxHeight dimensions)))
+                            proof).inputs } }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_complete
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest},
+  dimensions ≠ [] →
+    Aiur.NativeAIR.Merkle.shape dimensions rows = true →
+      proof.length = Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight →
+        index < 2 ^ Aiur.NativeAIR.Merkle.maxHeight dimensions →
+          Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof =
+            some
+              { logHeight := Aiur.NativeAIR.Merkle.maxHeight dimensions - proof.length,
+                index := index / 2 ^ proof.length,
+                hashing :=
+                  {
+                    digest :=
+                      (Aiur.NativeAIR.Merkle.walk hash dimensions rows (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+                          index
+                          (hash
+                            (Aiur.NativeAIR.Merkle.rowBytes dimensions rows
+                              (Aiur.NativeAIR.Merkle.maxHeight dimensions)))
+                          proof).digest,
+                    inputs :=
+                      Aiur.NativeAIR.Merkle.rowBytes dimensions rows (Aiur.NativeAIR.Merkle.maxHeight dimensions) ::
+                        (Aiur.NativeAIR.Merkle.walk hash dimensions rows (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+                            index
+                            (hash
+                              (Aiur.NativeAIR.Merkle.rowBytes dimensions rows
+                                (Aiur.NativeAIR.Merkle.maxHeight dimensions)))
+                            proof).inputs } }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_calls
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof = some result →
+    result.hashing.inputs.length ≤ 1 + 3 * proof.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_position
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof = some result →
+    result.logHeight = min capHeight (Aiur.NativeAIR.Merkle.maxHeight dimensions) ∧
+      result.index = index / 2 ^ (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_index_bound
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof = some result →
+    result.index < 2 ^ result.logHeight
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.hasHeight_iff
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height : Nat},
+  Aiur.NativeAIR.Merkle.hasHeight dimensions height = true ↔
+    ∃ dimension, dimension ∈ dimensions ∧ dimension.logHeight = height
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.height_le_max
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {dimension : Aiur.NativeAIR.Merkle.Dimensions},
+  dimension ∈ dimensions → dimension.logHeight ≤ Aiur.NativeAIR.Merkle.maxHeight dimensions
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.covered_iff
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight : Nat},
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight = true ↔
+    ∀ (dimension : Aiur.NativeAIR.Merkle.Dimensions),
+      dimension ∈ dimensions → min capHeight (Aiur.NativeAIR.Merkle.maxHeight dimensions) ≤ dimension.logHeight
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_binding
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {leftRows rightRows : List (List Aiur.G)} {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest}
+  {left right : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight = true →
+    Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index leftRows leftProof = some left →
+      Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rightRows rightProof = some right →
+        ¬Aiur.NativeAIR.Merkle.CollisionOn hash (left.hashing.inputs ++ right.hashing.inputs) →
+          left.hashing.digest = right.hashing.digest → leftRows = rightRows
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.verify_success
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {cap : List Aiur.NativeAIR.Merkle.Digest} {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.Merkle.verify hash dimensions capHeight index cap rows proof = true →
+    ∃ result,
+      Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof = some result ∧
+        cap[result.index]? = some result.hashing.digest
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.verify_collision
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {cap : List Aiur.NativeAIR.Merkle.Digest} {leftRows rightRows : List (List Aiur.G)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight = true →
+    Aiur.NativeAIR.Merkle.verify hash dimensions capHeight index cap leftRows leftProof = true →
+      Aiur.NativeAIR.Merkle.verify hash dimensions capHeight index cap rightRows rightProof = true →
+        leftRows ≠ rightRows →
+          ∃ left right,
+            Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index leftRows leftProof = some left ∧
+              Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rightRows rightProof = some right ∧
+                Aiur.NativeAIR.Merkle.CollisionOn hash (left.hashing.inputs ++ right.hashing.inputs) ∧
+                  (left.hashing.inputs ++ right.hashing.inputs).length ≤
+                    2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.verifyCovered_collision
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {cap : List Aiur.NativeAIR.Merkle.Digest} {leftRows rightRows : List (List Aiur.G)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.Merkle.verifyCovered hash dimensions capHeight index cap leftRows leftProof = true →
+    Aiur.NativeAIR.Merkle.verifyCovered hash dimensions capHeight index cap rightRows rightProof = true →
+      leftRows ≠ rightRows →
+        ∃ left right,
+          Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index leftRows leftProof = some left ∧
+            Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rightRows rightProof = some right ∧
+              Aiur.NativeAIR.Merkle.CollisionOn hash (left.hashing.inputs ++ right.hashing.inputs) ∧
+                (left.hashing.inputs ++ right.hashing.inputs).length ≤
+                  2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.blake3_collision
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {leftRows rightRows : List (List Aiur.G)} {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.Merkle.verifyCovered Aiur.NativeAIR.Blake3.digest dimensions capHeight index cap leftRows leftProof =
+      true →
+    Aiur.NativeAIR.Merkle.verifyCovered Aiur.NativeAIR.Blake3.digest dimensions capHeight index cap rightRows
+          rightProof =
+        true →
+      leftRows ≠ rightRows →
+        ∃ left right,
+          Aiur.NativeAIR.Merkle.replay Aiur.NativeAIR.Blake3.digest dimensions capHeight index leftRows leftProof =
+              some left ∧
+            Aiur.NativeAIR.Merkle.replay Aiur.NativeAIR.Blake3.digest dimensions capHeight index rightRows rightProof =
+                some right ∧
+              Aiur.NativeAIR.Merkle.CollisionOn Aiur.NativeAIR.Blake3.digest
+                  (left.hashing.inputs ++ right.hashing.inputs) ∧
+                (left.hashing.inputs ++ right.hashing.inputs).length ≤
+                  2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.branchBytes_length
+∀ (index : Nat) (current sibling : Aiur.NativeAIR.Merkle.Digest),
+  (Aiur.NativeAIR.Merkle.branchBytes index current sibling).length = 64
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Merkle.rowsAt_fields_le
+∀ (dimensions : List Aiur.NativeAIR.Merkle.Dimensions) (rows : List (List Aiur.G)) (height : Nat),
+  (Aiur.NativeAIR.Merkle.rowsAt dimensions rows height).flatten.length ≤ rows.flatten.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.rowBytes_length_le
+∀ (dimensions : List Aiur.NativeAIR.Merkle.Dimensions) (rows : List (List Aiur.G)) (height : Nat),
+  (Aiur.NativeAIR.Merkle.rowBytes dimensions rows height).length ≤ 8 * rows.flatten.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.step_input_length
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {rows : List (List Aiur.G)}
+  {height index : Nat} {current sibling : Aiur.NativeAIR.Merkle.Digest} {input : List UInt8},
+  input ∈ (Aiur.NativeAIR.Merkle.step hash dimensions rows height index current sibling).inputs →
+    input.length ≤ max 64 (8 * rows.flatten.length)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.walk_input_length
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {rows : List (List Aiur.G)}
+  {height index : Nat} {current : Aiur.NativeAIR.Merkle.Digest} {proof : List Aiur.NativeAIR.Merkle.Digest}
+  {input : List UInt8},
+  input ∈ (Aiur.NativeAIR.Merkle.walk hash dimensions rows height index current proof).inputs →
+    input.length ≤ max 64 (8 * rows.flatten.length)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_input_length
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof = some result →
+    ∀ {input : List UInt8}, input ∈ result.hashing.inputs → input.length ≤ max 64 (8 * rows.flatten.length)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.replay_native_input
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {rows : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof = some result →
+    rows.flatten.length < 2 ^ 61 →
+      ∀ {input : List UInt8}, input ∈ result.hashing.inputs → Aiur.NativeAIR.Blake3.NativeInput input
+AXIOMS [propext, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -15940,6 +16231,124 @@ DEFINITION
 fun key proof =>
   Aiur.NativeAIR.MerkleCap.coverage key.parameters.logBlowup key.parameters.capHeight
     (List.map UInt8.toNat proof.logDegrees)
+PREMISE Aiur.NativeAIR.Merkle.Digest
+Type
+DEFINITION
+Aiur.NativeAIR.Blake3.Digest
+PREMISE Aiur.NativeAIR.Merkle.Hash
+Type
+DEFINITION
+List UInt8 → Aiur.NativeAIR.Merkle.Digest
+PREMISE Aiur.NativeAIR.Merkle.Dimensions.mk
+Nat → Nat → Aiur.NativeAIR.Merkle.Dimensions
+PREMISE Aiur.NativeAIR.Merkle.maxHeight
+List Aiur.NativeAIR.Merkle.Dimensions → Nat
+DEFINITION
+fun dimensions => Aiur.NativeAIR.MerkleCap.maxDegree (List.map Aiur.NativeAIR.Merkle.Dimensions.logHeight dimensions)
+PREMISE Aiur.NativeAIR.Merkle.shape
+List Aiur.NativeAIR.Merkle.Dimensions → List (List Aiur.G) → Bool
+DEFINITION
+fun x x_1 => List.brecOn (motive := fun x => List (List Aiur.G) → Bool) x Aiur.NativeAIR.Merkle.shape._f x_1
+PREMISE Aiur.NativeAIR.Merkle.hasHeight
+List Aiur.NativeAIR.Merkle.Dimensions → Nat → Bool
+DEFINITION
+fun dimensions height => dimensions.any fun dimension => dimension.logHeight == height
+PREMISE Aiur.NativeAIR.Merkle.rowsAt
+List Aiur.NativeAIR.Merkle.Dimensions → List (List Aiur.G) → Nat → List (List Aiur.G)
+DEFINITION
+fun x x_1 x_2 =>
+  List.brecOn (motive := fun x => List (List Aiur.G) → Nat → List (List Aiur.G)) x Aiur.NativeAIR.Merkle.rowsAt._f x_1
+    x_2
+PREMISE Aiur.NativeAIR.Merkle.rowBytes
+List Aiur.NativeAIR.Merkle.Dimensions → List (List Aiur.G) → Nat → List UInt8
+DEFINITION
+fun dimensions rows height =>
+  Aiur.NativeAIR.Transcript.fieldsBytes (Aiur.NativeAIR.Merkle.rowsAt dimensions rows height).flatten
+PREMISE Aiur.NativeAIR.Merkle.pairBytes
+Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Digest → List UInt8
+DEFINITION
+fun left right => Vector.toList left ++ Vector.toList right
+PREMISE Aiur.NativeAIR.Merkle.branchBytes
+Nat → Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Digest → List UInt8
+DEFINITION
+fun index current sibling =>
+  if index % 2 = 0 then Aiur.NativeAIR.Merkle.pairBytes current sibling
+  else Aiur.NativeAIR.Merkle.pairBytes sibling current
+PREMISE Aiur.NativeAIR.Merkle.Hashing.mk
+Aiur.NativeAIR.Merkle.Digest → List (List UInt8) → Aiur.NativeAIR.Merkle.Hashing
+PREMISE Aiur.NativeAIR.Merkle.step
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    List (List Aiur.G) →
+      Nat → Nat → Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Hashing
+DEFINITION
+fun hash dimensions rows height index current sibling =>
+  have input := Aiur.NativeAIR.Merkle.branchBytes index current sibling;
+  have parent := hash input;
+  if Aiur.NativeAIR.Merkle.hasHeight dimensions height = true then
+    have leaf := Aiur.NativeAIR.Merkle.rowBytes dimensions rows height;
+    have inject := Aiur.NativeAIR.Merkle.pairBytes parent (hash leaf);
+    { digest := hash inject, inputs := [input, leaf, inject] }
+  else { digest := parent, inputs := [input] }
+PREMISE Aiur.NativeAIR.Merkle.walk
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    List (List Aiur.G) →
+      Nat → Nat → Aiur.NativeAIR.Merkle.Digest → List Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Hashing
+DEFINITION
+fun hash dimensions rows height index current x =>
+  List.brecOn (motive := fun x => Nat → Nat → Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Hashing) x
+    (Aiur.NativeAIR.Merkle.walk._f hash dimensions rows) height index current
+PREMISE Aiur.NativeAIR.Merkle.Replay.mk
+Nat → Nat → Aiur.NativeAIR.Merkle.Hashing → Aiur.NativeAIR.Merkle.Replay
+PREMISE Aiur.NativeAIR.Merkle.replay
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat → Nat → List (List Aiur.G) → List Aiur.NativeAIR.Merkle.Digest → Option Aiur.NativeAIR.Merkle.Replay
+DEFINITION
+fun hash dimensions capHeight index rows proof =>
+  have height := Aiur.NativeAIR.Merkle.maxHeight dimensions;
+  if
+      (dimensions.isEmpty || !Aiur.NativeAIR.Merkle.shape dimensions rows || proof.length != height - capHeight ||
+          !decide (index < 2 ^ height)) =
+        true then
+    none
+  else
+    have leaf := Aiur.NativeAIR.Merkle.rowBytes dimensions rows height;
+    have result := Aiur.NativeAIR.Merkle.walk hash dimensions rows height index (hash leaf) proof;
+    some
+      { logHeight := height - proof.length, index := index / 2 ^ proof.length,
+        hashing := { digest := result.digest, inputs := leaf :: result.inputs } }
+PREMISE Aiur.NativeAIR.Merkle.accepts
+List Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Replay → Bool
+DEFINITION
+fun cap result => cap[result.index]? == some result.hashing.digest
+PREMISE Aiur.NativeAIR.Merkle.verify
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat → Nat → List Aiur.NativeAIR.Merkle.Digest → List (List Aiur.G) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash dimensions capHeight index cap rows proof =>
+  match Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index rows proof with
+  | none => false
+  | some result => Aiur.NativeAIR.Merkle.accepts cap result
+PREMISE Aiur.NativeAIR.Merkle.covered
+List Aiur.NativeAIR.Merkle.Dimensions → Nat → Bool
+DEFINITION
+fun dimensions capHeight =>
+  Aiur.NativeAIR.MerkleCap.coverage 0 capHeight (List.map Aiur.NativeAIR.Merkle.Dimensions.logHeight dimensions)
+PREMISE Aiur.NativeAIR.Merkle.verifyCovered
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat → Nat → List Aiur.NativeAIR.Merkle.Digest → List (List Aiur.G) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash dimensions capHeight index cap rows proof =>
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight &&
+    Aiur.NativeAIR.Merkle.verify hash dimensions capHeight index cap rows proof
+PREMISE Aiur.NativeAIR.Merkle.CollisionOn
+Aiur.NativeAIR.Merkle.Hash → List (List UInt8) → Prop
+DEFINITION
+fun hash inputs => ∃ left, left ∈ inputs ∧ ∃ right, right ∈ inputs ∧ left ≠ right ∧ hash left = hash right
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -21082,6 +21491,37 @@ fun x x_1 =>
   | [], right => right
   | left, [] => left
   | x :: left, y :: right => x.frontAdd y :: Aiur.NativeAIR.LookupEmitter.addArgs._unsafe_rec left right
+RECURSION WORKER Aiur.NativeAIR.Merkle.rowsAt._unsafe_rec
+List Aiur.NativeAIR.Merkle.Dimensions → List (List Aiur.G) → Nat → List (List Aiur.G)
+IMPLEMENTATION
+fun x x_1 x_2 =>
+  match x, x_1, x_2 with
+  | dimension :: dimensions, row :: rows, height =>
+    if dimension.logHeight = height then row :: Aiur.NativeAIR.Merkle.rowsAt._unsafe_rec dimensions rows height
+    else Aiur.NativeAIR.Merkle.rowsAt._unsafe_rec dimensions rows height
+  | x, x_3, x_4 => []
+RECURSION WORKER Aiur.NativeAIR.Merkle.shape._unsafe_rec
+List Aiur.NativeAIR.Merkle.Dimensions → List (List Aiur.G) → Bool
+IMPLEMENTATION
+fun x x_1 =>
+  match x, x_1 with
+  | [], [] => true
+  | dimension :: dimensions, row :: rows =>
+    row.length == dimension.width && Aiur.NativeAIR.Merkle.shape._unsafe_rec dimensions rows
+  | x, x_2 => false
+RECURSION WORKER Aiur.NativeAIR.Merkle.walk._unsafe_rec
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    List (List Aiur.G) →
+      Nat → Nat → Aiur.NativeAIR.Merkle.Digest → List Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.Merkle.Hashing
+IMPLEMENTATION
+fun hash dimensions rows height index current x =>
+  match x with
+  | [] => { digest := current, inputs := [] }
+  | sibling :: proof =>
+    let first := Aiur.NativeAIR.Merkle.step hash dimensions rows (height - 1) index current sibling;
+    let rest := Aiur.NativeAIR.Merkle.walk._unsafe_rec hash dimensions rows (height - 1) (index / 2) first.digest proof;
+    { digest := rest.digest, inputs := first.inputs ++ rest.inputs }
 RECURSION WORKER Aiur.NativeAIR.OpEmitter.emitOps._unsafe_rec
 Aiur.NativeAIR.Expr →
   Aiur.NativeAIR.Expr →
@@ -23097,10 +23537,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1302; LOGICAL DECLARATIONS 19371; WITH RUNTIME 20158
+C8 component ROOTS 1336; LOGICAL DECLARATIONS 19499; WITH RUNTIME 20289
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 178
+RECURSION WORKERS 181
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.
