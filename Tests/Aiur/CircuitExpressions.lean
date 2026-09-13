@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Aiur.Proofs.CircuitCompletion
+import Ix.Aiur.Proofs.CheckedCircuit
 import Tests.Aiur.EmissionReader
 
 /-! Actual native function and circuit records drive both symbolic and valued
@@ -99,6 +99,7 @@ private def readCorpus : Reader Unit := do
       unless function.layout == { layout with lookups := layout.lookups + 1 } do
         throw s!"native function layout differs from compiler: program {seed}, function {index}"
     let program : Bytecode.Toplevel := ⟨functions, #[], circuits⟩
+    unless program.validateEmission do throw s!"native program fails checked emission inputs: {seed}"
     for (circuit, index) in circuits.toList.zipIdx do
       assignments := assignments + (← readCircuit program circuit s!"program {seed}, circuit {index}")
       reports := reports + 1

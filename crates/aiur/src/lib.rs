@@ -1,6 +1,7 @@
 pub mod bytecode;
 mod call_order;
 pub mod constraints;
+mod emission_checks;
 pub mod execute;
 pub mod gadgets;
 mod graph_shape;

@@ -55,6 +55,7 @@ fn circuit_expressions_snapshot() -> io::Result<()> {
       .collect();
     let top = Toplevel { functions, circuits, memory_sizes: vec![] };
     assert!(top.validate_row_counts().is_ok());
+    assert!(top.validate_emission().is_ok());
     write_u64(&mut out, top.functions.len() as u64)?;
     for function in &top.functions {
       write_block(&mut out, &function.body)?;

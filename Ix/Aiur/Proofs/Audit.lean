@@ -38,6 +38,7 @@ import Ix.Aiur.Proofs.CompiledCircuitRows
 import Ix.Aiur.Proofs.BlockAllocation
 import Ix.Aiur.Proofs.CircuitAllocation
 import Ix.Aiur.Proofs.CircuitCompletion
+import Ix.Aiur.Proofs.CheckedCircuit
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1277,6 +1278,85 @@ def circuitCompletionPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.CircuitEmitter.circuitWidths,
   `Aiur.NativeAIR.CircuitEmitter.zeroValues]
 
+def checkedCircuitRoots : Array Lean.Name := #[
+  `Aiur.Bytecode.indicesInScope_spec,
+  `Aiur.Bytecode.wordInScope_spec,
+  `Aiur.Bytecode.addScope_eq,
+  `Aiur.Bytecode.checkEmissionOps_cons,
+  `Aiur.Bytecode.checkEmissionOps_le,
+  `Aiur.Bytecode.Op.allocation_outputSize,
+  `Aiur.NativeAIR.OpEmitter.list_mapM_defined,
+  `Aiur.NativeAIR.OpEmitter.array_mapM_defined,
+  `Aiur.NativeAIR.OpEmitter.select_defined,
+  `Aiur.NativeAIR.OpEmitter.readWord_defined,
+  `Aiur.NativeAIR.OpEmitter.emitOp_defined,
+  `Aiur.NativeAIR.OpEmitter.emitOp_outputSize,
+  `Aiur.NativeAIR.OpEmitter.emitOps_defined,
+  `Aiur.Bytecode.emissionChecks_match,
+  `Aiur.Bytecode.emissionChecks_matchContinue,
+  `Aiur.Bytecode.Block.emissionChecks_parts,
+  `Aiur.Bytecode.Toplevel.validateEmission_function,
+  `Aiur.NativeAIR.BlockEmitter.ctrlSelector_defined,
+  `Aiur.NativeAIR.BlockEmitter.blockSelector_defined,
+  `Aiur.NativeAIR.BlockEmitter.Emission.YieldShape.prefix,
+  `Aiur.NativeAIR.BlockEmitter.join_yieldShape,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_defined,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_defined,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_defined,
+  `Aiur.NativeAIR.CircuitEmitter.emitMember_defined,
+  `Aiur.NativeAIR.CircuitEmitter.emitMembers_defined,
+  `Aiur.NativeAIR.CircuitEmitter.emitCircuit_defined,
+  `Aiur.BoundVerifier.Backend.circuit_emits,
+  `Aiur.BoundVerifier.Backend.circuit_compiles,
+  `Aiur.BoundVerifier.Backend.circuit_graph_reflects]
+
+def checkedCircuitAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.Bytecode.addScope_eq,
+  `Aiur.NativeAIR.BlockEmitter.Emission.YieldShape.prefix]
+
+def checkedCircuitQuotRoots : Array Lean.Name := #[
+  `Aiur.Bytecode.indicesInScope_spec,
+  `Aiur.Bytecode.wordInScope_spec,
+  `Aiur.Bytecode.checkEmissionOps_le,
+  `Aiur.NativeAIR.OpEmitter.list_mapM_defined,
+  `Aiur.NativeAIR.OpEmitter.array_mapM_defined,
+  `Aiur.NativeAIR.OpEmitter.select_defined,
+  `Aiur.NativeAIR.OpEmitter.readWord_defined,
+  `Aiur.NativeAIR.OpEmitter.emitOp_defined,
+  `Aiur.NativeAIR.BlockEmitter.join_yieldShape]
+
+def checkedCircuitClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.OpEmitter.emitOp_outputSize,
+  `Aiur.NativeAIR.OpEmitter.emitOps_defined,
+  `Aiur.Bytecode.emissionChecks_match,
+  `Aiur.Bytecode.emissionChecks_matchContinue,
+  `Aiur.Bytecode.Block.emissionChecks_parts,
+  `Aiur.Bytecode.Toplevel.validateEmission_function,
+  `Aiur.NativeAIR.BlockEmitter.ctrlSelector_defined,
+  `Aiur.NativeAIR.BlockEmitter.blockSelector_defined,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_defined,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_defined,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_defined,
+  `Aiur.NativeAIR.CircuitEmitter.emitMember_defined,
+  `Aiur.NativeAIR.CircuitEmitter.emitMembers_defined,
+  `Aiur.NativeAIR.CircuitEmitter.emitCircuit_defined,
+  `Aiur.BoundVerifier.Backend.circuit_emits,
+  `Aiur.BoundVerifier.Backend.circuit_compiles,
+  `Aiur.BoundVerifier.Backend.circuit_graph_reflects]
+
+def checkedCircuitPremises : Array Lean.Name := #[
+  `Aiur.Bytecode.indicesInScope,
+  `Aiur.Bytecode.wordInScope,
+  `Aiur.Bytecode.Op.outputSize,
+  `Aiur.Bytecode.Op.emissionInputs,
+  `Aiur.Bytecode.addScope,
+  `Aiur.Bytecode.checkEmissionOps,
+  `Aiur.Bytecode.Ctrl.emissionChecks,
+  `Aiur.Bytecode.Block.emissionChecks,
+  `Aiur.Bytecode.Function.emissionChecks,
+  `Aiur.Bytecode.Toplevel.validateEmission,
+  `Aiur.NativeAIR.BlockEmitter.Emission.YieldShape]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1313,7 +1393,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -1552,7 +1632,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -1631,7 +1711,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if circuitCompletionRoots.contains root then
+    let expected := if checkedCircuitRoots.contains root then
+        if checkedCircuitAxiomFreeRoots.contains root then #[]
+        else if checkedCircuitClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if checkedCircuitQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if circuitCompletionRoots.contains root then
         if circuitCompletionClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if circuitCompletionQuotRoots.contains root then #[``propext, ``Quot.sound]
         else #[``propext]

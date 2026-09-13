@@ -1,7 +1,7 @@
 # Aiur bug inventory
 
 This records the fixes completed during the C8 work, including the subsequent
-graph-decoder and constant-degree repairs. The nine main entries group
+graph-decoder, constant-degree and operand-scope repairs. The nine main entries group
 related failures by cause: four demonstrated verifier soundness defects,
 three compiler defects, one reference-evaluator defect and one constraint
 construction defect. Regression cases
@@ -26,7 +26,7 @@ three Rust VM files; generated-code parity and the existing VM checks passed.
 The compiler repairs have regression coverage and supporting lemmas; complete
 preservation proofs for normalization and inlining remain open.
 
-Three additional implementation bugs were fixed during this work:
+Four additional implementation bugs were fixed during this work:
 
 - **Deduplication emitted panic diagnostics for invalid callees.** Unchecked
   indexing printed panic messages even when the process returned success.
@@ -49,6 +49,17 @@ Three additional implementation bugs were fixed during this work:
   was demonstrated for this failure. [Decoder regressions](../crates/aiur/src/vk_codec.rs),
   [read-layout checks](../crates/aiur/src/graph_shape.rs),
   [checked graph evaluation](../Ix/Aiur/Proofs/ExpressionGraph.lean).
+- **Malformed bytecode could reach an out-of-bounds operand read.** A
+  constrained function with one input and `Add(0, 1)` passed the existing
+  lookup-shape and control-count guards, then panicked inside constraint
+  construction. The new structural check rejects it before construction.
+  It also checks incoming store reads, every return/yield selector, exact
+  word/assertion widths, branch scopes, continuation merges and native index
+  overflow. Unused advice and I/O operands remain outside AIR requirements.
+  This is a demonstrated construction failure, with no accepted false claim
+  shown. [Native guard and regressions](../crates/aiur/src/emission_checks.rs),
+  [total checker](../Ix/Aiur/EmissionChecks.lean),
+  [emission-completion proofs](../Ix/Aiur/Proofs/CheckedCircuit.lean).
 
 Several checks were added to discharge proof obligations without a demonstrated
 accepted false claim for each one: checked deduplication with identity fallback,
@@ -143,3 +154,13 @@ rules out contradictory constant constraints. Native and Lean checks pass for
 96 such rows, and the 719-root audit preserves all prior statements and frozen
 definitions. This adds no observed bug class or native production change;
 symbolic-emission validity and the remaining full-C8 obligations stay open.
+
+The checked-emission checkpoint adds the operand-scope guard and constructs
+the symbolic circuit and physical graph for every checked backend circuit.
+All 9,022 new Rust/Lean guard comparisons, 72 Rust release tests, release
+Clippy, the eighteen-corpus component gate and 1,345 broader Aiur assertions
+pass. The C2 VM recheck retains 12 accepted, 16 rejected and two excluded
+cases. Its 749-root audit preserves all 719 earlier theorem statements and
+axiom sets; the backend now records and enforces the new guard. Native runtime
+refinement and the remaining compiler/semantic/cryptographic obligations stay
+open. Accepted programs retain their AIR expressions, layouts and keys.

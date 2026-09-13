@@ -410,13 +410,13 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 719 roots by traversing checked types, bodies and inductive
-constructors. Eight roots use no axioms; 110 depend only on `propext`;
-201 use exactly `propext` and `Quot.sound`; the other 400 use exactly
+The audit checks 749 roots by traversing checked types, bodies and inductive
+constructors. Ten roots use no axioms; 112 depend only on `propext`;
+210 use exactly `propext` and `Quot.sound`; the other 417 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 17,111 logical declarations and 17,880 declarations after following runtime
+has 17,227 logical declarations and 17,999 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 162 Ix recursion worker implementations.
+three partial opaque sources and all 165 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -677,6 +677,43 @@ statements and axiom sets, 541 frozen definitions and 162 worker bodies.
 All 66 Rust release tests, release Clippy and formatting checks pass. There
 are no native production-code changes. The strict 311-job build and full
 component gate pass with all seventeen comparison corpora.
+
+`EmissionChecks` validates the incoming logical scope of every emitted read,
+the exact output count of all 34 operations, every terminal selector and
+the widths of words, assertions and continuation yields. Branches restore
+their incoming scope; continuations append only merge values. Virtual carries
+count as logical outputs. Native scope additions use checked arithmetic, and
+the Lean check uses the same 64-bit bound. Advice and I/O operands that the
+constraint builder does not read impose no additional AIR requirement.
+Both `BoundVerifier.build` and native system construction enforce the check.
+A malformed one-input `Add(0, 1)` function previously passed the earlier guards
+and panicked during constraint construction; it now rejects at the new guard.
+No false-claim acceptance was demonstrated for this failure.
+
+`EmissionInputs`, `EmissionControls` and `BlockCompletion` prove that the checks
+supply operation and recursive block emission, including scoped yields.
+`CheckedCircuit` carries the result through constrained circuit membership.
+`Backend.circuit_graph_reflects` constructs the symbolic circuit, physical base
+graph and valued row for column values fitting the circuit's derived widths.
+It proves graph-root satisfaction equivalent to all valued equations vanishing
+and identifies every lookup value. There is no separate emission-success,
+graph-construction-success or physical read-bound premise. Native runtime
+refinement, accepted-proof extraction, source semantics and the certified
+semantic/cryptographic endpoint remain open.
+
+The new comparison matches 1,365 operation checks, 1,157 sequences and 6,500
+control scopes, including invalid reads, missing selectors, branch-local
+values, nested continuations, wrong widths and machine boundaries. The 96
+native circuit fixtures also pass the new guard. All 72 Rust release tests,
+release Clippy and formatting checks pass. The 749-root audit preserves all
+719 previous statements and axiom sets, 542 frozen definitions and 162 worker
+bodies. The backend constructor and builder now record and enforce the check;
+30 roots, 11 definitions and three inspected total recursion workers are added.
+The strict 324-job build and full component gate pass with all eighteen native
+comparison corpora. All 1,345 broader Aiur assertions pass. The C2 VM recheck
+passes with 12 accepted packets, 16 rejections, the same two documented profile
+exclusions and no unexpected errors. The guard preserves the emitted equations,
+layouts and key bytes of programs that pass it.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

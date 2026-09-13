@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Aiur.Proofs.Compilation
 import Ix.Aiur.LookupShapes
 import Ix.Aiur.RowCounts
+import Ix.Aiur.EmissionChecks
 import Ix.Aiur.Protocol
 
 /-! A verifier whose caller selects the source, entrypoint, parameters and
@@ -58,6 +59,7 @@ structure Backend (selection : Selection) where
   returnArity : entry.body.returnsHaveSize selection.success.size = true
   lookupShapes : compiled.bytecode.validateLookupShapes = true
   rowCounts : compiled.bytecode.validateRowCounts = true
+  emissionChecks : compiled.bytecode.validateEmission = true
   keyBound : system.vkBytes = selection.key
 
 def build (selection : Selection) : Except String (Backend selection) :=
@@ -74,10 +76,12 @@ def build (selection : Selection) : Except String (Backend selection) :=
             if ho : entry.body.returnsHaveSize selection.success.size = true then
               if hl : compiled.bytecode.validateLookupShapes = true then
                 if hn : compiled.bytecode.validateRowCounts = true then
-                  let system := selection.system compiled
-                  if hk : system.vkBytes = selection.key then
-                    .ok ⟨compiled, hc, system, rfl, hs, hr, entry, hp, he.1, he.2.1, he.2.2, ho, hl, hn, hk⟩
-                  else .error "verification key differs from the selected key"
+                  if hi : compiled.bytecode.validateEmission = true then
+                    let system := selection.system compiled
+                    if hk : system.vkBytes = selection.key then
+                      .ok ⟨compiled, hc, system, rfl, hs, hr, entry, hp, he.1, he.2.1, he.2.2, ho, hl, hn, hi, hk⟩
+                    else .error "verification key differs from the selected key"
+                  else .error "compiled circuit reads an invalid logical value or selector"
                 else .error "compiled circuit control counts exceed their bounds"
               else .error "compiled lookup message arities differ"
             else .error "selected success result has the wrong output arity"

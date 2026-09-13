@@ -22,6 +22,7 @@ mod block_expressions;
 mod block_rows;
 mod circuit_expressions;
 mod circuit_rows;
+mod emission_checks;
 mod frontend_expressions;
 mod memory_rows;
 mod operation_expressions;

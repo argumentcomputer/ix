@@ -5936,6 +5936,237 @@ ROOT Aiur.BoundVerifier.Backend.emittedCircuit_reflects
                         List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
                           some (List.ofFn fun slot => result.lookup ↑slot)
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.indicesInScope_spec
+∀ (available : Nat) (indices : Array Aiur.Bytecode.ValIdx),
+  Aiur.Bytecode.indicesInScope available indices = true ↔
+    ∀ (index : Aiur.Bytecode.ValIdx), index ∈ indices → index < available
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.Bytecode.wordInScope_spec
+∀ (available : Nat) (indices : Array Aiur.Bytecode.ValIdx),
+  Aiur.Bytecode.wordInScope available indices = true ↔
+    indices.size = 4 ∧ Aiur.Bytecode.indicesInScope available indices = true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.Bytecode.addScope_eq
+∀ {available count next : Nat},
+  Aiur.Bytecode.addScope available count = some next → next = available + count ∧ next < 2 ^ 64
+AXIOMS []
+ROOT Aiur.Bytecode.checkEmissionOps_cons
+∀ {op : Aiur.Bytecode.Op} {ops : List Aiur.Bytecode.Op} {available next : Nat},
+  Aiur.Bytecode.checkEmissionOps (op :: ops) available = some next →
+    Aiur.Bytecode.Op.emissionInputs available op = true ∧
+      ∃ after,
+        Aiur.Bytecode.addScope available op.outputSize = some after ∧
+          Aiur.Bytecode.checkEmissionOps ops after = some next
+AXIOMS [propext]
+ROOT Aiur.Bytecode.checkEmissionOps_le
+∀ {ops : List Aiur.Bytecode.Op} {available next : Nat},
+  Aiur.Bytecode.checkEmissionOps ops available = some next → available ≤ next
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.Bytecode.Op.allocation_outputSize
+∀ (op : Aiur.Bytecode.Op) (degrees : Array Nat), (Aiur.Bytecode.Op.allocation degrees op).degrees.size = op.outputSize
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.list_mapM_defined
+∀ {α : Type u_1} {β : Type u_2} {read : α → Option β} (inputs : List α),
+  (∀ (input : α), input ∈ inputs → ∃ output, read input = some output) → ∃ outputs, List.mapM read inputs = some outputs
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.array_mapM_defined
+∀ {α : Type u_1} {β : Type u_2} {read : α → Option β} (inputs : Array α),
+  (∀ (input : α), input ∈ inputs → ∃ output, read input = some output) →
+    ∃ outputs, Array.mapM read inputs = some outputs
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.select_defined
+∀ {rows : Array Aiur.NativeAIR.RowExpr} {indices : Array Nat},
+  Aiur.Bytecode.indicesInScope rows.size indices = true →
+    ∃ outputs, Aiur.NativeAIR.OpEmitter.select rows indices = some outputs
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.readWord_defined
+∀ {rows : Array Aiur.NativeAIR.RowExpr} {indices : Array Nat},
+  Aiur.Bytecode.wordInScope rows.size indices = true →
+    ∃ output, Aiur.NativeAIR.OpEmitter.readWord rows indices = some output
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOp_defined
+∀ (selector rank : Aiur.NativeAIR.Expr) (first : Nat) (op : Aiur.Bytecode.Op) (rows : Array Aiur.NativeAIR.RowExpr),
+  Aiur.Bytecode.Op.emissionInputs rows.size op = true →
+    ∃ emission, Aiur.NativeAIR.OpEmitter.emitOp selector rank first op rows = some emission
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOp_outputSize
+∀ {selector rank : Aiur.NativeAIR.Expr} {first : Nat} {op : Aiur.Bytecode.Op} {rows : Array Aiur.NativeAIR.RowExpr}
+  {emission : Aiur.NativeAIR.OpEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.emitOp selector rank first op rows = some emission → emission.outputs.size = op.outputSize
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOps_defined
+∀ (selector rank : Aiur.NativeAIR.Expr) (ops : List Aiur.Bytecode.Op) (rows : Array Aiur.NativeAIR.RowExpr)
+  (column : Nat) {next : Nat},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.Bytecode.checkEmissionOps ops rows.size = some next →
+      ∃ emission,
+        Aiur.NativeAIR.OpEmitter.emitOps selector rank ops rows column = some emission ∧ emission.values.size = next
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.emissionChecks_match
+∀ (available selectors : Nat) (yieldSize : Option Nat) (index : Aiur.Bytecode.ValIdx)
+  (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block),
+  Aiur.Bytecode.Ctrl.emissionChecks available selectors yieldSize (Aiur.Bytecode.Ctrl.match index branches fallback) =
+      true ↔
+    index < available ∧
+      (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+          pair ∈ branches.toList → Aiur.Bytecode.Block.emissionChecks available selectors yieldSize pair.snd = true) ∧
+        ∀ (block : Aiur.Bytecode.Block),
+          fallback = some block → Aiur.Bytecode.Block.emissionChecks available selectors yieldSize block = true
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.emissionChecks_matchContinue
+∀ (available selectors : Nat) (yieldSize : Option Nat) (index : Aiur.Bytecode.ValIdx)
+  (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block) (size aux lookups : Nat)
+  (continuation : Aiur.Bytecode.Block),
+  Aiur.Bytecode.Ctrl.emissionChecks available selectors yieldSize
+        (Aiur.Bytecode.Ctrl.matchContinue index branches fallback size aux lookups continuation) =
+      true ↔
+    index < available ∧
+      (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+          pair ∈ branches.toList → Aiur.Bytecode.Block.emissionChecks available selectors (some size) pair.snd = true) ∧
+        (∀ (block : Aiur.Bytecode.Block),
+            fallback = some block → Aiur.Bytecode.Block.emissionChecks available selectors (some size) block = true) ∧
+          ∃ next,
+            Aiur.Bytecode.addScope available size = some next ∧
+              Aiur.Bytecode.Block.emissionChecks next selectors yieldSize continuation = true
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Block.emissionChecks_parts
+∀ {block : Aiur.Bytecode.Block} {available selectors : Nat} {yieldSize : Option Nat},
+  Aiur.Bytecode.Block.emissionChecks available selectors yieldSize block = true →
+    ∃ next,
+      Aiur.Bytecode.checkEmissionOps block.ops.toList available = some next ∧
+        Aiur.Bytecode.Ctrl.emissionChecks next selectors yieldSize block.ctrl = true
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Toplevel.validateEmission_function
+∀ {program : Aiur.Bytecode.Toplevel},
+  program.validateEmission = true →
+    ∀ {function : Aiur.Bytecode.Function},
+      function ∈ program.functions → function.constrained = true → function.emissionChecks = true
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.ctrlSelector_defined
+∀ (selectors : Array Aiur.NativeAIR.Expr) (ctrl : Aiur.Bytecode.Ctrl) {available : Nat} {yieldSize : Option Nat},
+  Aiur.Bytecode.Ctrl.emissionChecks available selectors.size yieldSize ctrl = true →
+    ∃ entry, Aiur.NativeAIR.BlockEmitter.ctrlSelector selectors ctrl = some entry
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.blockSelector_defined
+∀ (selectors : Array Aiur.NativeAIR.Expr) (block : Aiur.Bytecode.Block) {available : Nat} {yieldSize : Option Nat},
+  Aiur.Bytecode.Block.emissionChecks available selectors.size yieldSize block = true →
+    ∃ entry, Aiur.NativeAIR.BlockEmitter.blockSelector selectors block = some entry
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.Emission.YieldShape.prefix
+∀ {emission : Aiur.NativeAIR.BlockEmitter.Emission} {size : Option Nat},
+  Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size emission →
+    ∀ (equations : List Aiur.NativeAIR.Expr),
+      Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size
+        (Aiur.NativeAIR.BlockEmitter.Emission.prefix equations emission)
+AXIOMS []
+ROOT Aiur.NativeAIR.BlockEmitter.join_yieldShape
+∀ (rows : Array Aiur.NativeAIR.RowExpr) (column lookup : Nat) (emissions : List Aiur.NativeAIR.BlockEmitter.Emission)
+  {size : Option Nat},
+  (∀ (emission : Aiur.NativeAIR.BlockEmitter.Emission),
+      emission ∈ emissions → Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size emission) →
+    Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size (Aiur.NativeAIR.BlockEmitter.join rows column lookup emissions)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.branchRows_defined
+∀ (selectors : Array Aiur.NativeAIR.Expr) (context : Aiur.NativeAIR.BlockEmitter.Context)
+  (matched : Aiur.NativeAIR.RowExpr) (rows : Array Aiur.NativeAIR.RowExpr) (column lookup : Nat)
+  (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block) (size : Option Nat),
+  (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+      pair ∈ branches.toList →
+        ∃ entry emission,
+          Aiur.NativeAIR.BlockEmitter.blockSelector selectors pair.snd = some entry ∧
+            Aiur.NativeAIR.BlockEmitter.emitBlock selectors context entry rows column lookup pair.snd = some emission ∧
+              Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size emission) →
+    (∀ (block : Aiur.Bytecode.Block),
+        fallback = some block →
+          ∃ entry emission,
+            Aiur.NativeAIR.BlockEmitter.blockSelector selectors block = some entry ∧
+              Aiur.NativeAIR.BlockEmitter.emitBlock selectors context entry rows (column + branches.size) lookup block =
+                  some emission ∧
+                Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size emission) →
+      ∃ emission,
+        Aiur.NativeAIR.BlockEmitter.branchRows selectors context matched rows column lookup branches fallback =
+            some emission ∧
+          Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size emission
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitCtrl_defined
+∀ (selectors : Array Aiur.NativeAIR.Expr) (context : Aiur.NativeAIR.BlockEmitter.Context)
+  (incoming : Aiur.NativeAIR.Expr) (rows : Array Aiur.NativeAIR.RowExpr) (column lookup : Nat)
+  (ctrl : Aiur.Bytecode.Ctrl) {size : Option Nat},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    context.inputSize ≤ rows.size →
+      Aiur.Bytecode.Ctrl.emissionChecks rows.size selectors.size size ctrl = true →
+        ∃ emission,
+          Aiur.NativeAIR.BlockEmitter.emitCtrl selectors context incoming rows column lookup ctrl = some emission ∧
+            Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size emission
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitBlock_defined
+∀ (selectors : Array Aiur.NativeAIR.Expr) (context : Aiur.NativeAIR.BlockEmitter.Context)
+  (incoming : Aiur.NativeAIR.Expr) (rows : Array Aiur.NativeAIR.RowExpr) (column lookup : Nat)
+  (block : Aiur.Bytecode.Block) {size : Option Nat},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    context.inputSize ≤ rows.size →
+      Aiur.Bytecode.Block.emissionChecks rows.size selectors.size size block = true →
+        ∃ emission,
+          Aiur.NativeAIR.BlockEmitter.emitBlock selectors context incoming rows column lookup block = some emission ∧
+            Aiur.NativeAIR.BlockEmitter.Emission.YieldShape size emission
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitMember_defined
+∀ (rank : Aiur.NativeAIR.Expr) (column lookup selectorBase : Nat) (program : Aiur.Bytecode.Toplevel) (index : Nat)
+  {function : Aiur.Bytecode.Function},
+  program.functions[index]? = some function →
+    function.emissionChecks = true →
+      ∃ member, Aiur.NativeAIR.CircuitEmitter.emitMember rank column lookup selectorBase program index = some member
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitMembers_defined
+∀ (rank : Aiur.NativeAIR.Expr) (column lookup selectorBase : Nat) (program : Aiur.Bytecode.Toplevel)
+  (indices : List Nat),
+  (∀ (index : Nat),
+      index ∈ indices → ∃ function, program.functions[index]? = some function ∧ function.emissionChecks = true) →
+    ∃ members, Aiur.NativeAIR.CircuitEmitter.emitMembers rank column lookup selectorBase program indices = some members
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitCircuit_defined
+∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit),
+  program.validateEmission = true →
+    Aiur.Bytecode.MembersConstrained program.functions circuit.members →
+      ∃ emission, Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit = some emission
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.circuit_emits
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.Bytecode.Circuit},
+  circuit ∈ backend.compiled.bytecode.circuits →
+    ∃ emission, Aiur.NativeAIR.CircuitEmitter.emitCircuit backend.compiled.bytecode circuit = some emission
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.circuit_compiles
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.Bytecode.Circuit},
+  circuit ∈ backend.compiled.bytecode.circuits →
+    ∃ compiled,
+      Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit)
+          backend.compiled.bytecode circuit =
+        some compiled
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.circuit_graph_reflects
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.Bytecode.Circuit},
+  circuit ∈ backend.compiled.bytecode.circuits →
+    ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+      values.Fits (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit) →
+        ∃ compiled result buffer,
+          Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit)
+                backend.compiled.bytecode circuit =
+              some compiled ∧
+            Aiur.Bytecode.Circuit.emitRow
+                  (fun index =>
+                    (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]?.getD 0)
+                  backend.compiled.bytecode circuit =
+                some result ∧
+              compiled.base.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+                (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer compiled.base.graph.zeros ↔
+                    ∀ (equation : Aiur.G), equation ∈ result.equations → equation = 0) ∧
+                  List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
+                    some (List.ofFn fun slot => result.lookup ↑slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -6001,7 +6232,8 @@ PREMISE Aiur.BoundVerifier.Backend.mk
                         Aiur.Bytecode.Block.returnsHaveSize selection.success.size entry.body = true →
                           compiled.bytecode.validateLookupShapes = true →
                             compiled.bytecode.validateRowCounts = true →
-                              system.vkBytes = selection.key → Aiur.BoundVerifier.Backend selection
+                              compiled.bytecode.validateEmission = true →
+                                system.vkBytes = selection.key → Aiur.BoundVerifier.Backend selection
 PREMISE Aiur.BoundVerifier.verify
 {selection : Aiur.BoundVerifier.Selection} →
   Aiur.BoundVerifier.Backend selection → Array Aiur.G → ByteArray → Except String Unit
@@ -7931,13 +8163,16 @@ fun selection =>
             if ho : Aiur.Bytecode.Block.returnsHaveSize selection.success.size entry.body = true then
               if hl : compiled.bytecode.validateLookupShapes = true then
                 if hn : compiled.bytecode.validateRowCounts = true then
-                  let system := selection.system compiled;
-                  if hk : system.vkBytes = selection.key then
-                    Except.ok
-                      { compiled := compiled, compilation := hc, system := system, systemBuilt := ⋯, selected := hs,
-                        functionRange := hr, entry := entry, present := hp, publicEntry := ⋯, constrained := ⋯,
-                        arity := ⋯, returnArity := ho, lookupShapes := hl, rowCounts := hn, keyBound := hk }
-                  else Except.error "verification key differs from the selected key"
+                  if hi : compiled.bytecode.validateEmission = true then
+                    let system := selection.system compiled;
+                    if hk : system.vkBytes = selection.key then
+                      Except.ok
+                        { compiled := compiled, compilation := hc, system := system, systemBuilt := ⋯, selected := hs,
+                          functionRange := hr, entry := entry, present := hp, publicEntry := ⋯, constrained := ⋯,
+                          arity := ⋯, returnArity := ho, lookupShapes := hl, rowCounts := hn, emissionChecks := hi,
+                          keyBound := hk }
+                    else Except.error "verification key differs from the selected key"
+                  else Except.error "compiled circuit reads an invalid logical value or selector"
                 else Except.error "compiled circuit control counts exceed their bounds"
               else Except.error "compiled lookup message arities differ"
             else Except.error "selected success result has the wrong output arity"
@@ -10089,6 +10324,124 @@ fun width =>
       | Aiur.NativeAIR.Source.main => Array.replicate width 0
       | x => #[],
     publics := #[], isFirstRow := 0, isLastRow := 0, isTransition := 0 }
+PREMISE Aiur.Bytecode.indicesInScope
+Nat → Array Aiur.Bytecode.ValIdx → Bool
+DEFINITION
+fun available indices => indices.all fun index => decide (index < available)
+PREMISE Aiur.Bytecode.wordInScope
+Nat → Array Aiur.Bytecode.ValIdx → Bool
+DEFINITION
+fun available indices => indices.size == 4 && Aiur.Bytecode.indicesInScope available indices
+PREMISE Aiur.Bytecode.Op.outputSize
+Aiur.Bytecode.Op → Nat
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.Bytecode.Op.const a => 1
+  | Aiur.Bytecode.Op.add a a_1 => 1
+  | Aiur.Bytecode.Op.sub a a_1 => 1
+  | Aiur.Bytecode.Op.mul a a_1 => 1
+  | Aiur.Bytecode.Op.eqZero a => 1
+  | Aiur.Bytecode.Op.store a => 1
+  | Aiur.Bytecode.Op.u8ShiftLeft a => 1
+  | Aiur.Bytecode.Op.u8ShiftRight a => 1
+  | Aiur.Bytecode.Op.u8Xor a a_1 => 1
+  | Aiur.Bytecode.Op.u8And a a_1 => 1
+  | Aiur.Bytecode.Op.u8Or a a_1 => 1
+  | Aiur.Bytecode.Op.u8LessThan a a_1 => 1
+  | Aiur.Bytecode.Op.u32LessThan a a_1 => 1
+  | Aiur.Bytecode.Op.unconstrainedGInverse a => 1
+  | Aiur.Bytecode.Op.u32ToField a => 1
+  | Aiur.Bytecode.Op.call a a_1 size unconstrained => size
+  | Aiur.Bytecode.Op.load size a => size
+  | Aiur.Bytecode.Op.ioRead a a_1 size => size
+  | Aiur.Bytecode.Op.assertEq a a_1 a_2 => 0
+  | Aiur.Bytecode.Op.ioSetInfo a a_1 a_2 a_3 => 0
+  | Aiur.Bytecode.Op.ioWrite a a_1 => 0
+  | Aiur.Bytecode.Op.debug a a_1 => 0
+  | Aiur.Bytecode.Op.u8RangeCheck a a_1 => 0
+  | Aiur.Bytecode.Op.ioGetInfo a a_1 => 2
+  | Aiur.Bytecode.Op.u8Add a a_1 => 2
+  | Aiur.Bytecode.Op.u8Mul a a_1 => 2
+  | Aiur.Bytecode.Op.u8Sub a a_1 => 2
+  | Aiur.Bytecode.Op.u8XorSplit7 a a_1 => 2
+  | Aiur.Bytecode.Op.u8XorSplit4 a a_1 => 2
+  | Aiur.Bytecode.Op.unconstrainedBigUintDivMod a a_1 => 2
+  | Aiur.Bytecode.Op.u8BitDecomposition a => 8
+  | Aiur.Bytecode.Op.unconstrainedGToBytes a => 8
+  | Aiur.Bytecode.Op.unconstrainedU32Add a a_1 => 5
+  | Aiur.Bytecode.Op.unconstrainedU32Add3 a a_1 a_2 => 5
+PREMISE Aiur.Bytecode.Op.emissionInputs
+Nat → Aiur.Bytecode.Op → Bool
+DEFINITION
+fun available x =>
+  match x with
+  | Aiur.Bytecode.Op.add a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.sub a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.mul a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8Xor a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8Add a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8Mul a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8Sub a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8And a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8Or a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8LessThan a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u32LessThan a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8XorSplit7 a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8XorSplit4 a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.u8RangeCheck a b => decide (a < available) && decide (b < available)
+  | Aiur.Bytecode.Op.eqZero index => decide (index < available)
+  | Aiur.Bytecode.Op.load size index => decide (index < available)
+  | Aiur.Bytecode.Op.u8BitDecomposition index => decide (index < available)
+  | Aiur.Bytecode.Op.u8ShiftLeft index => decide (index < available)
+  | Aiur.Bytecode.Op.u8ShiftRight index => decide (index < available)
+  | Aiur.Bytecode.Op.call a indices outputSize false => Aiur.Bytecode.indicesInScope available indices
+  | Aiur.Bytecode.Op.store indices => Aiur.Bytecode.indicesInScope available indices
+  | Aiur.Bytecode.Op.assertEq left right a =>
+    left.size == right.size &&
+      (Aiur.Bytecode.indicesInScope available left && Aiur.Bytecode.indicesInScope available right)
+  | Aiur.Bytecode.Op.unconstrainedU32Add left right =>
+    Aiur.Bytecode.wordInScope available left && Aiur.Bytecode.wordInScope available right
+  | Aiur.Bytecode.Op.unconstrainedU32Add3 left middle right =>
+    Aiur.Bytecode.wordInScope available left &&
+      (Aiur.Bytecode.wordInScope available middle && Aiur.Bytecode.wordInScope available right)
+  | Aiur.Bytecode.Op.u32ToField indices => Aiur.Bytecode.wordInScope available indices
+  | x => true
+PREMISE Aiur.Bytecode.addScope
+Nat → Nat → Option Nat
+DEFINITION
+fun available count =>
+  have next := available + count;
+  if next < 2 ^ 64 then some next else none
+PREMISE Aiur.Bytecode.checkEmissionOps
+List Aiur.Bytecode.Op → Nat → Option Nat
+DEFINITION
+fun x x_1 => List.brecOn (motive := fun x => Nat → Option Nat) x Aiur.Bytecode.checkEmissionOps._f x_1
+PREMISE Aiur.Bytecode.Ctrl.emissionChecks
+Nat → Nat → Option Nat → Aiur.Bytecode.Ctrl → Bool
+DEFINITION
+fun available selectors yieldSize a =>
+  Aiur.Bytecode.Ctrl.emissionChecks._mutual selectors (PSum.inl ⟨available, ⟨yieldSize, a⟩⟩)
+PREMISE Aiur.Bytecode.Block.emissionChecks
+Nat → Nat → Option Nat → Aiur.Bytecode.Block → Bool
+DEFINITION
+fun available selectors yieldSize block =>
+  Aiur.Bytecode.Ctrl.emissionChecks._mutual selectors (PSum.inr ⟨available, ⟨yieldSize, block⟩⟩)
+PREMISE Aiur.Bytecode.Function.emissionChecks
+Aiur.Bytecode.Function → Bool
+DEFINITION
+fun function =>
+  decide (function.layout.inputSize < 2 ^ 64) &&
+    Aiur.Bytecode.Block.emissionChecks function.layout.inputSize function.layout.selectors none function.body
+PREMISE Aiur.Bytecode.Toplevel.validateEmission
+Aiur.Bytecode.Toplevel → Bool
+DEFINITION
+fun program => program.functions.all fun function => !function.constrained || function.emissionChecks
+PREMISE Aiur.NativeAIR.BlockEmitter.Emission.YieldShape
+Option Nat → Aiur.NativeAIR.BlockEmitter.Emission → Prop
+DEFINITION
+fun size emission =>
+  ∀ (part : Aiur.NativeAIR.BlockEmitter.YieldExpr), part ∈ emission.yields → size = some part.values.size
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -12877,6 +13230,17 @@ fun x x_1 =>
   | none, none => true
   | some left, some right => Aiur.Bytecode.Block.beq._unsafe_rec left right
   | x, x_2 => false
+RECURSION WORKER Aiur.Bytecode.checkEmissionOps._unsafe_rec
+List Aiur.Bytecode.Op → Nat → Option Nat
+IMPLEMENTATION
+fun x x_1 =>
+  match x, x_1 with
+  | [], available => some available
+  | op :: ops, available =>
+    if (!Aiur.Bytecode.Op.emissionInputs available op) = true then none
+    else do
+      let next ← Aiur.Bytecode.addScope available op.outputSize
+      Aiur.Bytecode.checkEmissionOps._unsafe_rec ops next
 RECURSION WORKER Aiur.Bytecode.collectCalleesBlock._unsafe_rec
 Aiur.Bytecode.Block → Array Aiur.Bytecode.FunIdx
 IMPLEMENTATION
@@ -13745,6 +14109,13 @@ RECURSION WORKER Aiur.Bytecode.Block.controlCounts._unsafe_rec
 Aiur.Bytecode.Block → Aiur.Bytecode.ControlCounts
 IMPLEMENTATION
 fun block => Aiur.Bytecode.Ctrl.controlCounts._unsafe_rec block.ctrl
+RECURSION WORKER Aiur.Bytecode.Block.emissionChecks._unsafe_rec
+Nat → Nat → Option Nat → Aiur.Bytecode.Block → Bool
+IMPLEMENTATION
+fun available selectors yieldSize block =>
+  match Aiur.Bytecode.checkEmissionOps block.ops.toList available with
+  | none => false
+  | some next => Aiur.Bytecode.Ctrl.emissionChecks._unsafe_rec next selectors yieldSize block.ctrl
 RECURSION WORKER Aiur.Bytecode.Block.emitRow._unsafe_rec
 (Nat → Aiur.G) →
   (Aiur.Bytecode.SelIdx → Aiur.G) →
@@ -13866,6 +14237,36 @@ fun x =>
             | none => []
             | some block => [Aiur.Bytecode.Block.controlCounts._unsafe_rec block])).continue
       (Aiur.Bytecode.Block.controlCounts._unsafe_rec continuation)
+RECURSION WORKER Aiur.Bytecode.Ctrl.emissionChecks._unsafe_rec
+Nat → Nat → Option Nat → Aiur.Bytecode.Ctrl → Bool
+IMPLEMENTATION
+fun available selectors yieldSize x =>
+  match x with
+  | Aiur.Bytecode.Ctrl.return index outputs =>
+    decide (index < selectors) && Aiur.Bytecode.indicesInScope available outputs
+  | Aiur.Bytecode.Ctrl.yield index outputs =>
+    decide (index < selectors) && (Aiur.Bytecode.indicesInScope available outputs && yieldSize == some outputs.size)
+  | Aiur.Bytecode.Ctrl.match index branches fallback =>
+    decide (index < available) &&
+      ((branches.attach.all fun x =>
+          match x with
+          | ⟨(fst, block), property⟩ =>
+            Aiur.Bytecode.Block.emissionChecks._unsafe_rec available selectors yieldSize block) &&
+        match fallback with
+        | none => true
+        | some block => Aiur.Bytecode.Block.emissionChecks._unsafe_rec available selectors yieldSize block)
+  | Aiur.Bytecode.Ctrl.matchContinue index branches fallback size sharedAuxiliaries sharedLookups continuation =>
+    decide (index < available) &&
+      ((branches.attach.all fun x =>
+          match x with
+          | ⟨(fst, block), property⟩ =>
+            Aiur.Bytecode.Block.emissionChecks._unsafe_rec available selectors (some size) block) &&
+        ((match fallback with
+          | none => true
+          | some block => Aiur.Bytecode.Block.emissionChecks._unsafe_rec available selectors (some size) block) &&
+          match Aiur.Bytecode.addScope available size with
+          | none => false
+          | some next => Aiur.Bytecode.Block.emissionChecks._unsafe_rec next selectors yieldSize continuation))
 RECURSION WORKER Aiur.Bytecode.Ctrl.emitRow._unsafe_rec
 (Nat → Aiur.G) →
   (Aiur.Bytecode.SelIdx → Aiur.G) →
@@ -17068,10 +17469,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 719; LOGICAL DECLARATIONS 17111; WITH RUNTIME 17880
+C8 component ROOTS 749; LOGICAL DECLARATIONS 17227; WITH RUNTIME 17999
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 162
+RECURSION WORKERS 165
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.
