@@ -35,7 +35,7 @@ fn close_returns(block: &mut Block, width: usize, escapes: bool) {
   }
 }
 
-fn fixture_function(seed: usize, index: usize) -> Function {
+pub(super) fn fixture_function(seed: usize, index: usize) -> Function {
   let input_size = 2 + (seed + index) % 3;
   let depth = (seed + index) % 3;
   let mut selectors = 0;
@@ -91,7 +91,10 @@ fn fixture_function(seed: usize, index: usize) -> Function {
   }
 }
 
-fn circuit_layout(functions: &[Function], members: &[usize]) -> FunctionLayout {
+pub(super) fn circuit_layout(
+  functions: &[Function],
+  members: &[usize],
+) -> FunctionLayout {
   let mut layout =
     FunctionLayout { input_size: 0, selectors: 0, auxiliaries: 7, lookups: 4 };
   for &member in members {

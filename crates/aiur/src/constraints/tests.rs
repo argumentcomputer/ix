@@ -18,7 +18,9 @@ use multi_stark::{
 
 use super::*;
 
+mod block_expressions;
 mod block_rows;
+mod circuit_expressions;
 mod circuit_rows;
 mod frontend_expressions;
 mod memory_rows;

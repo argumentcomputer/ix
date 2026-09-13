@@ -4162,6 +4162,717 @@ ROOT Aiur.NativeAIR.LookupEmitter.slots_eval
             (Aiur.AIR.querySlotMultiplicity parts ↑index,
               Aiur.AIR.slotMessage branchless (Aiur.AIR.querySlotParts parts ↑index)))
 AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.evaluated_read
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {expressions : Array Aiur.NativeAIR.Expr} {results : Array Aiur.G},
+  Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) expressions = some results →
+    ∀ {index : Nat} {expr : Aiur.NativeAIR.Expr},
+      expressions[index]? = some expr → Aiur.NativeAIR.OpEmitter.evalExpr values expr = some (results[index]?.getD 0)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.list_mapM_evaluate
+∀ {α β γ : Type} {first : α → Option β} {evaluate : β → Option γ} {inputs : List α} {outputs : List β},
+  List.mapM first inputs = some outputs →
+    ∀ (value : α → γ),
+      (∀ (input : α) (output : β), first input = some output → evaluate output = some (value input)) →
+        List.mapM evaluate outputs = some (List.map value inputs)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.sum_fold_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {expressions : List Aiur.NativeAIR.Expr} {results : List Aiur.G},
+  List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) expressions = some results →
+    ∀ {initial : Aiur.NativeAIR.Expr} {start : Aiur.G},
+      Aiur.NativeAIR.OpEmitter.evalExpr values initial = some start →
+        Aiur.NativeAIR.OpEmitter.evalExpr values (List.foldl Aiur.NativeAIR.Expr.frontAdd initial expressions) =
+          some (List.foldl (fun x1 x2 => x1 + x2) start results)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.sum_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {expressions : List Aiur.NativeAIR.Expr} {results : List Aiur.G},
+  List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) expressions = some results →
+    Aiur.NativeAIR.OpEmitter.evalExpr values (Aiur.NativeAIR.BlockEmitter.sum expressions) =
+      some (Aiur.AIR.selectorSum results)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.selectors_array_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {selectors : Array Aiur.NativeAIR.Expr} {results : Array Aiur.G},
+  Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) selectors = some results →
+    Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors fun index => results[index]?.getD 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.ctrlSelector_reads
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {selectors : Array Aiur.NativeAIR.Expr} {selector : Nat → Aiur.G},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selector →
+    ∀ (ctrl : Aiur.Bytecode.Ctrl) {expr : Aiur.NativeAIR.Expr},
+      Aiur.NativeAIR.BlockEmitter.ctrlSelector selectors ctrl = some expr →
+        Aiur.NativeAIR.OpEmitter.evalExpr values expr = some (Aiur.Bytecode.Ctrl.selectorFlow selector ctrl).entry
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.blockSelector_reads
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {selectors : Array Aiur.NativeAIR.Expr} {selector : Nat → Aiur.G},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selector →
+    ∀ (block : Aiur.Bytecode.Block) {expr : Aiur.NativeAIR.Expr},
+      Aiur.NativeAIR.BlockEmitter.blockSelector selectors block = some expr →
+        Aiur.NativeAIR.OpEmitter.evalExpr values expr = some (Aiur.Bytecode.Block.selectorFlow selector block).entry
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.ctrlSelector_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {selectors : Array Aiur.NativeAIR.Expr} {results : Array Aiur.G},
+  Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) selectors = some results →
+    ∀ (ctrl : Aiur.Bytecode.Ctrl) {expr : Aiur.NativeAIR.Expr},
+      Aiur.NativeAIR.BlockEmitter.ctrlSelector selectors ctrl = some expr →
+        Aiur.NativeAIR.OpEmitter.evalExpr values expr =
+          some (Aiur.Bytecode.Ctrl.selectorFlow (fun index => results[index]?.getD 0) ctrl).entry
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.blockSelector_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {selectors : Array Aiur.NativeAIR.Expr} {results : Array Aiur.G},
+  Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) selectors = some results →
+    ∀ (block : Aiur.Bytecode.Block) {expr : Aiur.NativeAIR.Expr},
+      Aiur.NativeAIR.BlockEmitter.blockSelector selectors block = some expr →
+        Aiur.NativeAIR.OpEmitter.evalExpr values expr =
+          some (Aiur.Bytecode.Block.selectorFlow (fun index => results[index]?.getD 0) block).entry
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.list_mapM_flatMap
+∀ {α β γ δ : Type} {read : α → Option β} {inputs : List α} {outputs : List β},
+  List.mapM read inputs = some outputs →
+    ∀ (first : α → List γ) (second : β → List δ) (evaluate : γ → Option δ),
+      (∀ (input : α) (output : β), read input = some output → List.mapM evaluate (first input) = some (second output)) →
+        List.mapM evaluate (List.flatMap first inputs) = some (List.flatMap second outputs)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.list_mapM_foldl
+∀ {α β γ : Type} {read : α → Option β} {inputs : List α} {outputs : List β},
+  List.mapM read inputs = some outputs →
+    ∀ (first : γ → α → γ) (second : γ → β → γ),
+      (∀ (input : α) (output : β), read input = some output → ∀ (start : γ), first start input = second start output) →
+        ∀ (start : γ), List.foldl first start inputs = List.foldl second start outputs
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.Emission.eval_of
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.BlockEmitter.Emission}
+  {result : Aiur.AIR.BlockEmission},
+  Aiur.NativeAIR.OpEmitter.evalRows values emission.values = some result.values →
+    emission.column = result.column →
+      emission.lookup = result.lookup →
+        List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) emission.equations = some result.equations →
+          List.mapM (Aiur.NativeAIR.LookupEmitter.QueryExpr.eval values) emission.queries = some result.queries →
+            List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) emission.returns = some result.returns →
+              List.mapM (Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values) emission.yields = some result.yields →
+                List.mapM (Aiur.NativeAIR.BlockEmitter.evalGatedCall values) emission.calls = some result.calls →
+                  Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.Emission.eval_components
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.BlockEmitter.Emission}
+  {result : Aiur.AIR.BlockEmission},
+  Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result →
+    Aiur.NativeAIR.OpEmitter.evalRows values emission.values = some result.values ∧
+      emission.column = result.column ∧
+        emission.lookup = result.lookup ∧
+          List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) emission.equations = some result.equations ∧
+            List.mapM (Aiur.NativeAIR.LookupEmitter.QueryExpr.eval values) emission.queries = some result.queries ∧
+              List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) emission.returns = some result.returns ∧
+                List.mapM (Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values) emission.yields = some result.yields ∧
+                  List.mapM (Aiur.NativeAIR.BlockEmitter.evalGatedCall values) emission.calls = some result.calls
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.BlockEmitter.Emission.prefix_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.BlockEmitter.Emission}
+  {result : Aiur.AIR.BlockEmission} {equations : List Aiur.NativeAIR.Expr} {results : List Aiur.G},
+  Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result →
+    List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) equations = some results →
+      Aiur.NativeAIR.BlockEmitter.Emission.eval values
+          (Aiur.NativeAIR.BlockEmitter.Emission.prefix equations emission) =
+        some (Aiur.AIR.BlockEmission.prefix results result)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.Emission.afterOps_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {incoming : Aiur.NativeAIR.Expr} {s : Aiur.G} (lookup : Nat)
+  {ops : Aiur.NativeAIR.OpEmitter.OpsEmission} {operations : Aiur.AIR.OpsEmission}
+  {control : Aiur.NativeAIR.BlockEmitter.Emission} {result : Aiur.AIR.BlockEmission},
+  Aiur.NativeAIR.OpEmitter.evalExpr values incoming = some s →
+    Aiur.NativeAIR.OpEmitter.OpsEmission.eval values ops = some operations →
+      Aiur.NativeAIR.BlockEmitter.Emission.eval values control = some result →
+        Aiur.NativeAIR.BlockEmitter.Emission.eval values
+            (Aiur.NativeAIR.BlockEmitter.Emission.afterOps incoming lookup ops control) =
+          some (Aiur.AIR.BlockEmission.afterOps s lookup operations result)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.join_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {rows : Array Aiur.NativeAIR.RowExpr} {inputs : Array Aiur.AIR.RowValue},
+  Aiur.NativeAIR.OpEmitter.evalRows values rows = some inputs →
+    ∀ (column lookup : Nat) {emissions : List Aiur.NativeAIR.BlockEmitter.Emission}
+      {results : List Aiur.AIR.BlockEmission},
+      List.mapM (Aiur.NativeAIR.BlockEmitter.Emission.eval values) emissions = some results →
+        Aiur.NativeAIR.BlockEmitter.Emission.eval values
+            (Aiur.NativeAIR.BlockEmitter.join rows column lookup emissions) =
+          some (Aiur.AIR.joinBlockEmissions inputs column lookup results)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.Emission.continued_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {branches continuation : Aiur.NativeAIR.BlockEmitter.Emission}
+  {first last : Aiur.AIR.BlockEmission} {equations : List Aiur.NativeAIR.Expr} {results : List Aiur.G},
+  Aiur.NativeAIR.BlockEmitter.Emission.eval values branches = some first →
+    Aiur.NativeAIR.BlockEmitter.Emission.eval values continuation = some last →
+      List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) equations = some results →
+        Aiur.NativeAIR.BlockEmitter.Emission.eval values (branches.continued equations continuation) =
+          some (first.continued results last)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.YieldExpr.eval_of
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {yielded : Aiur.NativeAIR.BlockEmitter.YieldExpr} {s : Aiur.G}
+  {outputs : Array Aiur.AIR.RowValue},
+  Aiur.NativeAIR.OpEmitter.evalExpr values yielded.selector = some s →
+    Aiur.NativeAIR.OpEmitter.evalRows values yielded.values = some outputs →
+      Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values yielded = some (s, outputs)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.YieldExpr.eval_components
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {yielded : Aiur.NativeAIR.BlockEmitter.YieldExpr}
+  {result : Aiur.G × Array Aiur.AIR.RowValue},
+  Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values yielded = some result →
+    Aiur.NativeAIR.OpEmitter.evalExpr values yielded.selector = some result.fst ∧
+      Aiur.NativeAIR.OpEmitter.evalRows values yielded.values = some result.snd
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval_of
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {returned : Aiur.NativeAIR.BlockEmitter.ReturnExpr} {s r : Aiur.G}
+  {inputs outputs : Array Aiur.G},
+  Aiur.NativeAIR.OpEmitter.evalExpr values returned.selector = some s →
+    Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) returned.inputs = some inputs →
+      Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) returned.outputs = some outputs →
+        Aiur.NativeAIR.OpEmitter.evalExpr values returned.rank = some r →
+          Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values returned =
+            some (s, { function := returned.function, inputs := inputs, outputs := outputs, rank := r })
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval_components
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {returned : Aiur.NativeAIR.BlockEmitter.ReturnExpr}
+  {result : Aiur.G × Aiur.Bytecode.AIR.Call},
+  Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values returned = some result →
+    returned.function = result.snd.function ∧
+      Aiur.NativeAIR.OpEmitter.evalExpr values returned.selector = some result.fst ∧
+        Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) returned.inputs = some result.snd.inputs ∧
+          Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) returned.outputs = some result.snd.outputs ∧
+            Aiur.NativeAIR.OpEmitter.evalExpr values returned.rank = some result.snd.rank
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.BlockEmitter.ReturnExpr.message_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {returned : Aiur.NativeAIR.BlockEmitter.ReturnExpr}
+  {result : Aiur.G × Aiur.Bytecode.AIR.Call},
+  Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values returned = some result →
+    List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) returned.message = some (Aiur.AIR.functionMessage result.snd)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.returned_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {s r : Aiur.G} {rows inputs outputs : Array Aiur.NativeAIR.RowExpr}
+  {a b c : Array Aiur.AIR.RowValue} (column lookup : Nat),
+  Aiur.NativeAIR.OpEmitter.evalExpr values incoming = some s →
+    Aiur.NativeAIR.OpEmitter.evalExpr values context.rank = some r →
+      Aiur.NativeAIR.OpEmitter.evalRows values rows = some a →
+        Aiur.NativeAIR.OpEmitter.evalRows values inputs = some b →
+          Aiur.NativeAIR.OpEmitter.evalRows values outputs = some c →
+            Aiur.NativeAIR.BlockEmitter.Emission.eval values
+                (Aiur.NativeAIR.BlockEmitter.returned context incoming rows inputs outputs column lookup) =
+              some
+                { values := a, column := column, lookup := lookup,
+                  returns :=
+                    [(s,
+                        { function := context.function, inputs := Aiur.AIR.rowValues b, outputs := Aiur.AIR.rowValues c,
+                          rank := r })] }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.yielded_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {selector : Aiur.NativeAIR.Expr} {s : Aiur.G}
+  {rows outputs : Array Aiur.NativeAIR.RowExpr} {a b : Array Aiur.AIR.RowValue} (column lookup : Nat),
+  Aiur.NativeAIR.OpEmitter.evalExpr values selector = some s →
+    Aiur.NativeAIR.OpEmitter.evalRows values rows = some a →
+      Aiur.NativeAIR.OpEmitter.evalRows values outputs = some b →
+        Aiur.NativeAIR.BlockEmitter.Emission.eval values
+            (Aiur.NativeAIR.BlockEmitter.yielded selector rows outputs column lookup) =
+          some { values := a, column := column, lookup := lookup, yields := [(s, b)] }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.evalRows_getD_any
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {rows : Array Aiur.NativeAIR.RowExpr} {results : Array Aiur.AIR.RowValue},
+  Aiur.NativeAIR.OpEmitter.evalRows values rows = some results →
+    ∀ (index : Nat),
+      Aiur.NativeAIR.RowExpr.Reflects values (rows[index]?.getD (Aiur.NativeAIR.RowExpr.konst 0))
+        (results[index]?.getD (Aiur.AIR.RowValue.konst 0))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.yieldValue_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {yielded : Aiur.NativeAIR.BlockEmitter.YieldExpr}
+  {result : Aiur.G × Array Aiur.AIR.RowValue},
+  Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values yielded = some result →
+    ∀ (index : Nat),
+      Aiur.NativeAIR.OpEmitter.evalExpr values (Aiur.NativeAIR.BlockEmitter.yieldValue yielded index) =
+        some (result.fst * (Aiur.AIR.rowValues result.snd)[index]?.getD 0)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.yieldGate_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {yields : List Aiur.NativeAIR.BlockEmitter.YieldExpr}
+  {results : List (Aiur.G × Array Aiur.AIR.RowValue)},
+  List.mapM (Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values) yields = some results →
+    Aiur.NativeAIR.OpEmitter.evalExpr values (Aiur.NativeAIR.BlockEmitter.yieldGate yields) =
+      some (Aiur.AIR.selectorSum (List.map Prod.fst results))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.mergeEquations_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {incoming : Aiur.NativeAIR.Expr} {s : Aiur.G}
+  (column size : Nat) {yields : List Aiur.NativeAIR.BlockEmitter.YieldExpr}
+  {results : List (Aiur.G × Array Aiur.AIR.RowValue)},
+  Aiur.NativeAIR.OpEmitter.evalExpr values incoming = some s →
+    List.mapM (Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values) yields = some results →
+      (∀ (index : Nat),
+          index < size →
+            (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[column + index]? =
+              some (row (column + index))) →
+        List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values)
+            (Aiur.NativeAIR.BlockEmitter.mergeEquations incoming column size yields) =
+          some (Aiur.AIR.mergeEquations row s column size results)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.yields_size
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {yields : List Aiur.NativeAIR.BlockEmitter.YieldExpr}
+  {results : List (Aiur.G × Array Aiur.AIR.RowValue)},
+  List.mapM (Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values) yields = some results →
+    ∀ (size : Nat), (yields.all fun part => part.values.size == size) = results.all fun part => part.snd.size == size
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.caseEquation_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {entry : Aiur.NativeAIR.Expr} {s : Aiur.G} {matched : Aiur.NativeAIR.RowExpr}
+  {value : Aiur.AIR.RowValue},
+  Aiur.NativeAIR.OpEmitter.evalExpr values entry = some s →
+    Aiur.NativeAIR.RowExpr.Reflects values matched value →
+      ∀ (branch : Aiur.G),
+        Aiur.NativeAIR.OpEmitter.evalExpr values (Aiur.NativeAIR.BlockEmitter.caseEquation entry matched branch) =
+          some (s * (value.value - branch))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.defaultEquations_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {entry : Aiur.NativeAIR.Expr} {s : Aiur.G}
+  {matched : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue} (column : Nat)
+  (branches : Array (Aiur.G × Aiur.Bytecode.Block)),
+  Aiur.NativeAIR.OpEmitter.evalExpr values entry = some s →
+    Aiur.NativeAIR.RowExpr.Reflects values matched value →
+      (∀ (index : Nat),
+          index < branches.size →
+            (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[column + index]? =
+              some (row (column + index))) →
+        List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values)
+            (Aiur.NativeAIR.BlockEmitter.defaultEquations entry matched column branches) =
+          some
+            (List.mapIdx (fun index pair => s * ((value.value - pair.fst) * row (column + index) - 1)) branches.toList)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.fold_max_start
+∀ {α : Type u_1} (measure : α → Nat) (items : List α) (start : Nat),
+  start ≤ List.foldl (fun current item => max current (measure item)) start items
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.BlockEmitter.fold_max_member
+∀ {α : Type u_1} (measure : α → Nat) {items : List α} {item : α},
+  item ∈ items → ∀ (start : Nat), measure item ≤ List.foldl (fun current item => max current (measure item)) start items
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.BlockEmitter.emitCtrl_match
+∀ (selectors : Array Aiur.NativeAIR.Expr) (context : Aiur.NativeAIR.BlockEmitter.Context)
+  (incoming : Aiur.NativeAIR.Expr) (rows : Array Aiur.NativeAIR.RowExpr) (column lookup index : Nat)
+  (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block),
+  Aiur.NativeAIR.BlockEmitter.emitCtrl selectors context incoming rows column lookup
+      (Aiur.Bytecode.Ctrl.match index branches fallback) =
+    do
+    let matched ← rows[index]?
+    Aiur.NativeAIR.BlockEmitter.branchRows selectors context matched rows column lookup branches fallback
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitCtrl_matchContinue
+∀ (selectors : Array Aiur.NativeAIR.Expr) (context : Aiur.NativeAIR.BlockEmitter.Context)
+  (incoming : Aiur.NativeAIR.Expr) (rows : Array Aiur.NativeAIR.RowExpr) (column lookup index : Nat)
+  (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block) (size aux slots : Nat)
+  (continuation : Aiur.Bytecode.Block),
+  Aiur.NativeAIR.BlockEmitter.emitCtrl selectors context incoming rows column lookup
+      (Aiur.Bytecode.Ctrl.matchContinue index branches fallback size aux slots continuation) =
+    do
+    let matched ← rows[index]?
+    let joined ← Aiur.NativeAIR.BlockEmitter.branchRows selectors context matched rows column lookup branches fallback
+    Aiur.NativeAIR.BlockEmitter.continueRow selectors context incoming rows size continuation joined
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.branchRows_invariants
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {matched : Aiur.NativeAIR.RowExpr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  {branches : Array (Aiur.G × Aiur.Bytecode.Block)} {fallback : Option Aiur.Bytecode.Block}
+  {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.Normal rows →
+    Aiur.NativeAIR.BlockEmitter.branchRows selectors context matched rows column lookup branches fallback =
+        some emission →
+      Aiur.NativeAIR.OpEmitter.Normal emission.values ∧ column ≤ emission.column
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitCtrl_invariants
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  (ctrl : Aiur.Bytecode.Ctrl) {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.Normal rows →
+    Aiur.NativeAIR.BlockEmitter.emitCtrl selectors context incoming rows column lookup ctrl = some emission →
+      Aiur.NativeAIR.OpEmitter.Normal emission.values ∧ column ≤ emission.column
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitBlock_invariants
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  (block : Aiur.Bytecode.Block) {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.Normal rows →
+    Aiur.NativeAIR.BlockEmitter.emitBlock selectors context incoming rows column lookup block = some emission →
+      Aiur.NativeAIR.OpEmitter.Normal emission.values ∧ column ≤ emission.column
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.list_mapM_refine_mem
+∀ {α β γ : Type} {first : α → Option β} {second : α → Option γ} {evaluate : β → Option γ} {inputs : List α}
+  {outputs : List β},
+  List.mapM first inputs = some outputs →
+    (∀ (input : α),
+        input ∈ inputs →
+          ∀ (output : β),
+            output ∈ outputs →
+              first input = some output → ∃ value, second input = some value ∧ evaluate output = some value) →
+      ∃ values, List.mapM second inputs = some values ∧ List.mapM evaluate outputs = some values
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.caseRows_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {selectors : Array Aiur.NativeAIR.Expr}
+  {selected : Nat → Aiur.G} {context : Aiur.NativeAIR.BlockEmitter.Context} (rank : Aiur.G)
+  {matched : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue} {rows : Array Aiur.NativeAIR.RowExpr}
+  {inputs : Array Aiur.AIR.RowValue} (column lookup limit : Nat) {branches : Array (Aiur.G × Aiur.Bytecode.Block)}
+  {emissions : List Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selected →
+    Aiur.NativeAIR.RowExpr.Reflects values matched value →
+      Aiur.NativeAIR.OpEmitter.evalRows values rows = some inputs →
+        Aiur.NativeAIR.OpEmitter.Normal rows →
+          List.mapM (Aiur.NativeAIR.BlockEmitter.caseRow selectors context matched rows column lookup) branches.toList =
+              some emissions →
+            (∀ (emission : Aiur.NativeAIR.BlockEmitter.Emission), emission ∈ emissions → emission.column ≤ limit) →
+              (∀ (index : Nat),
+                  column ≤ index →
+                    index < limit →
+                      (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? =
+                        some (row index)) →
+                (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+                    pair ∈ branches.toList →
+                      Aiur.NativeAIR.BlockEmitter.BlockReflects values row selectors selected context rank pair.snd) →
+                  ∃ results,
+                    List.mapM
+                          (Aiur.Bytecode.caseRow row selected (context.valued rank) value.value inputs column lookup)
+                          branches.toList =
+                        some results ∧
+                      List.mapM (Aiur.NativeAIR.BlockEmitter.Emission.eval values) emissions = some results
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.defaultRow_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {selectors : Array Aiur.NativeAIR.Expr}
+  {selected : Nat → Aiur.G} {context : Aiur.NativeAIR.BlockEmitter.Context} (rank : Aiur.G)
+  {matched : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue} {rows : Array Aiur.NativeAIR.RowExpr}
+  {inputs : Array Aiur.AIR.RowValue} (column lookup limit : Nat) (branches : Array (Aiur.G × Aiur.Bytecode.Block))
+  {fallback : Option Aiur.Bytecode.Block} {emissions : List Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selected →
+    Aiur.NativeAIR.RowExpr.Reflects values matched value →
+      Aiur.NativeAIR.OpEmitter.evalRows values rows = some inputs →
+        Aiur.NativeAIR.OpEmitter.Normal rows →
+          Aiur.NativeAIR.BlockEmitter.defaultRow selectors context matched rows column lookup branches fallback =
+              some emissions →
+            (∀ (emission : Aiur.NativeAIR.BlockEmitter.Emission), emission ∈ emissions → emission.column ≤ limit) →
+              (∀ (index : Nat),
+                  column ≤ index →
+                    index < limit →
+                      (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? =
+                        some (row index)) →
+                (∀ (block : Aiur.Bytecode.Block),
+                    block ∈ fallback.toList →
+                      Aiur.NativeAIR.BlockEmitter.BlockReflects values row selectors selected context rank block) →
+                  ∃ results,
+                    Aiur.Bytecode.defaultRow row selected (context.valued rank) value.value inputs column lookup
+                          branches fallback =
+                        some results ∧
+                      List.mapM (Aiur.NativeAIR.BlockEmitter.Emission.eval values) emissions = some results
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.branchRows_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {selectors : Array Aiur.NativeAIR.Expr}
+  {selected : Nat → Aiur.G} {context : Aiur.NativeAIR.BlockEmitter.Context} (rank : Aiur.G)
+  {matched : Aiur.NativeAIR.RowExpr} {value : Aiur.AIR.RowValue} {rows : Array Aiur.NativeAIR.RowExpr}
+  {inputs : Array Aiur.AIR.RowValue} {column lookup : Nat} {branches : Array (Aiur.G × Aiur.Bytecode.Block)}
+  {fallback : Option Aiur.Bytecode.Block} {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selected →
+    Aiur.NativeAIR.RowExpr.Reflects values matched value →
+      Aiur.NativeAIR.OpEmitter.evalRows values rows = some inputs →
+        Aiur.NativeAIR.OpEmitter.Normal rows →
+          Aiur.NativeAIR.BlockEmitter.branchRows selectors context matched rows column lookup branches fallback =
+              some emission →
+            (∀ (index : Nat),
+                column ≤ index →
+                  index < emission.column →
+                    (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? =
+                      some (row index)) →
+              (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+                  pair ∈ branches.toList →
+                    Aiur.NativeAIR.BlockEmitter.BlockReflects values row selectors selected context rank pair.snd) →
+                (∀ (block : Aiur.Bytecode.Block),
+                    block ∈ fallback.toList →
+                      Aiur.NativeAIR.BlockEmitter.BlockReflects values row selectors selected context rank block) →
+                  ∃ result,
+                    Aiur.Bytecode.branchRows row selected (context.valued rank) value.value inputs column lookup
+                          branches fallback =
+                        some result ∧
+                      Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.continueRow_column
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {rows : Array Aiur.NativeAIR.RowExpr} {size : Nat}
+  {continuation : Aiur.Bytecode.Block} {joined emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.Normal rows →
+    Aiur.NativeAIR.BlockEmitter.continueRow selectors context incoming rows size continuation joined = some emission →
+      joined.column ≤ emission.column
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.advice_absolute_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) (column size : Nat),
+  (∀ (index : Nat),
+      index < size →
+        (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[column + index]? =
+          some (row (column + index))) →
+    Aiur.NativeAIR.OpEmitter.evalRows values (Aiur.NativeAIR.OpEmitter.advice column size) =
+      some (Aiur.AIR.rowAdvice row column size)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.continueRow_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {selectors : Array Aiur.NativeAIR.Expr}
+  {selected : Nat → Aiur.G} {context : Aiur.NativeAIR.BlockEmitter.Context} (rank : Aiur.G)
+  {incoming : Aiur.NativeAIR.Expr} {s : Aiur.G} {rows : Array Aiur.NativeAIR.RowExpr} {inputs : Array Aiur.AIR.RowValue}
+  (size : Nat) (continuation : Aiur.Bytecode.Block) {joined emission : Aiur.NativeAIR.BlockEmitter.Emission}
+  {branches : Aiur.AIR.BlockEmission},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selected →
+    Aiur.NativeAIR.OpEmitter.evalExpr values incoming = some s →
+      Aiur.NativeAIR.OpEmitter.evalRows values rows = some inputs →
+        Aiur.NativeAIR.OpEmitter.Normal rows →
+          Aiur.NativeAIR.BlockEmitter.Emission.eval values joined = some branches →
+            Aiur.NativeAIR.BlockEmitter.continueRow selectors context incoming rows size continuation joined =
+                some emission →
+              (∀ (index : Nat),
+                  joined.column ≤ index →
+                    index < emission.column →
+                      (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? =
+                        some (row index)) →
+                Aiur.NativeAIR.BlockEmitter.BlockReflects values row selectors selected context rank continuation →
+                  ∃ result,
+                    Aiur.Bytecode.continueRow row selected (context.valued rank) s inputs size continuation branches =
+                        some result ∧
+                      Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.ctrl_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) {selectors : Array Aiur.NativeAIR.Expr}
+  {selected : Nat → Aiur.G} {context : Aiur.NativeAIR.BlockEmitter.Context} {rank : Aiur.G},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selected →
+    Aiur.NativeAIR.OpEmitter.evalExpr values context.rank = some rank →
+      ∀ (ctrl : Aiur.Bytecode.Ctrl),
+        Aiur.NativeAIR.BlockEmitter.CtrlReflects values row selectors selected context rank ctrl
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.block_reflects
+∀ (values : Aiur.NativeAIR.Values Aiur.G) (row : Nat → Aiur.G) {selectors : Array Aiur.NativeAIR.Expr}
+  {selected : Nat → Aiur.G} {context : Aiur.NativeAIR.BlockEmitter.Context} {rank : Aiur.G},
+  Aiur.NativeAIR.BlockEmitter.SelectorReads values selectors selected →
+    Aiur.NativeAIR.OpEmitter.evalExpr values context.rank = some rank →
+      ∀ (block : Aiur.Bytecode.Block),
+        Aiur.NativeAIR.BlockEmitter.BlockReflects values row selectors selected context rank block
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.returnArgs_fold_eval
+∀ (branchless : Bool) {values : Aiur.NativeAIR.Values Aiur.G} {returns : List Aiur.NativeAIR.BlockEmitter.ReturnExpr}
+  {results : List (Aiur.G × Aiur.Bytecode.AIR.Call)},
+  List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) returns = some results →
+    ∀ {initial : List Aiur.NativeAIR.Expr} {start : List Aiur.G},
+      List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) initial = some start →
+        List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values)
+            (List.foldl
+              (fun args returned =>
+                Aiur.NativeAIR.LookupEmitter.addArgs args
+                  (Aiur.NativeAIR.LookupEmitter.gateArgs branchless returned.selector returned.message))
+              initial returns) =
+          some
+            (List.foldl
+              (fun args part =>
+                Aiur.AIR.addMessages args
+                  (Aiur.AIR.gateMessage branchless part.fst (Aiur.AIR.functionMessage part.snd)))
+              start results)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.returnArgs_eval
+∀ (branchless : Bool) {values : Aiur.NativeAIR.Values Aiur.G} {returns : List Aiur.NativeAIR.BlockEmitter.ReturnExpr}
+  {results : List (Aiur.G × Aiur.Bytecode.AIR.Call)},
+  List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) returns = some results →
+    List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) (Aiur.NativeAIR.BlockEmitter.returnArgs branchless returns) =
+      some
+        (Aiur.AIR.slotMessage branchless (List.map (fun part => (part.fst, Aiur.AIR.functionMessage part.snd)) results))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.lookup_eval
+∀ (branchless : Bool) {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.BlockEmitter.Emission}
+  {result : Aiur.AIR.BlockEmission},
+  Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result →
+    ∀ (slot : Nat),
+      Aiur.NativeAIR.Compiler.ExprLookup.eval Aiur.NativeAIR.goldilocksOps values
+          (Aiur.NativeAIR.BlockEmitter.lookup branchless emission slot) =
+        some
+          (if slot = 0 then
+            (0,
+              Aiur.AIR.slotMessage branchless
+                (List.map (fun part => (part.fst, Aiur.AIR.functionMessage part.snd)) result.returns))
+          else
+            (Aiur.AIR.querySlotMultiplicity result.queries slot,
+              Aiur.AIR.slotMessage branchless (Aiur.AIR.querySlotParts result.queries slot)))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.selectorExprs_reads
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) (base count : Nat),
+  (∀ (index : Nat),
+      index < count →
+        (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[base + index]? =
+          some (row (base + index))) →
+    Aiur.NativeAIR.BlockEmitter.SelectorReads values (Aiur.NativeAIR.CircuitEmitter.selectorExprs base count)
+      fun index => row (base + index)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.Member.eval_of
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {member : Aiur.NativeAIR.CircuitEmitter.Member}
+  {body : Aiur.AIR.BlockEmission},
+  Aiur.NativeAIR.BlockEmitter.Emission.eval values member.body = some body →
+    Aiur.NativeAIR.CircuitEmitter.Member.eval values member =
+      some
+        { functionIndex := member.functionIndex, function := member.function, selectorBase := member.selectorBase,
+          body := body }
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.CircuitEmitter.Member.eval_components
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {member : Aiur.NativeAIR.CircuitEmitter.Member}
+  {result : Aiur.AIR.MemberEmission},
+  Aiur.NativeAIR.CircuitEmitter.Member.eval values member = some result →
+    member.functionIndex = result.functionIndex ∧
+      member.function = result.function ∧
+        member.selectorBase = result.selectorBase ∧
+          Aiur.NativeAIR.BlockEmitter.Emission.eval values member.body = some result.body
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.CircuitEmitter.selectorEquations_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) (layout : Aiur.Bytecode.FunctionLayout),
+  (∀ (index : Nat),
+      index < layout.selectors →
+        (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[layout.inputSize + index]? =
+          some (row (layout.inputSize + index))) →
+    List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) (Aiur.NativeAIR.CircuitEmitter.selectorEquations layout) =
+      some
+        (List.map (fun index => Aiur.AIR.booleanConstraint (row (layout.inputSize + index)))
+          (List.range layout.selectors))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.evalFin_of
+∀ {size : Nat} {values : Aiur.NativeAIR.Values Aiur.G} {expressions : Fin size → Aiur.NativeAIR.Expr}
+  {results : Fin size → Aiur.G},
+  (∀ (index : Fin size), Aiur.NativeAIR.OpEmitter.evalExpr values (expressions index) = some (results index)) →
+    Aiur.NativeAIR.CircuitEmitter.evalFin values expressions = some results
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.evalFin_components
+∀ {size : Nat} {values : Aiur.NativeAIR.Values Aiur.G} {expressions : Fin size → Aiur.NativeAIR.Expr}
+  {results : Fin size → Aiur.G},
+  Aiur.NativeAIR.CircuitEmitter.evalFin values expressions = some results →
+    ∀ (index : Fin size), Aiur.NativeAIR.OpEmitter.evalExpr values (expressions index) = some (results index)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.Emission.eval_of
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.CircuitEmitter.Emission}
+  {result : Aiur.AIR.CircuitEmission},
+  List.mapM (Aiur.NativeAIR.CircuitEmitter.Member.eval values) emission.members = some result.members →
+    Aiur.NativeAIR.OpEmitter.evalExpr values emission.selector = some result.selector →
+      Aiur.NativeAIR.OpEmitter.evalExpr values emission.multiplicity = some result.multiplicity →
+        (∀ (index : Fin 6),
+            Aiur.NativeAIR.OpEmitter.evalExpr values (emission.rankBytes index) = some (result.rankBytes index)) →
+          emission.width = result.width →
+            emission.selectorStart = result.selectorStart →
+              emission.selectorCount = result.selectorCount →
+                emission.lookupCount = result.lookupCount →
+                  emission.branchless = result.branchless →
+                    List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) emission.equations = some result.equations →
+                      List.mapM (Aiur.NativeAIR.LookupEmitter.QueryExpr.eval values) emission.queries =
+                          some result.queries →
+                        List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) emission.returns =
+                            some result.returns →
+                          Aiur.NativeAIR.CircuitEmitter.Emission.eval values emission = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.Emission.eval_components
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.CircuitEmitter.Emission}
+  {result : Aiur.AIR.CircuitEmission},
+  Aiur.NativeAIR.CircuitEmitter.Emission.eval values emission = some result →
+    List.mapM (Aiur.NativeAIR.CircuitEmitter.Member.eval values) emission.members = some result.members ∧
+      Aiur.NativeAIR.OpEmitter.evalExpr values emission.selector = some result.selector ∧
+        Aiur.NativeAIR.OpEmitter.evalExpr values emission.multiplicity = some result.multiplicity ∧
+          (∀ (index : Fin 6),
+              Aiur.NativeAIR.OpEmitter.evalExpr values (emission.rankBytes index) = some (result.rankBytes index)) ∧
+            emission.width = result.width ∧
+              emission.selectorStart = result.selectorStart ∧
+                emission.selectorCount = result.selectorCount ∧
+                  emission.lookupCount = result.lookupCount ∧
+                    emission.branchless = result.branchless ∧
+                      List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) emission.equations = some result.equations ∧
+                        List.mapM (Aiur.NativeAIR.LookupEmitter.QueryExpr.eval values) emission.queries =
+                            some result.queries ∧
+                          List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) emission.returns =
+                            some result.returns
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.Emission.lookup_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.CircuitEmitter.Emission}
+  {result : Aiur.AIR.CircuitEmission},
+  Aiur.NativeAIR.CircuitEmitter.Emission.eval values emission = some result →
+    ∀ (slot : Nat),
+      Aiur.NativeAIR.Compiler.ExprLookup.eval Aiur.NativeAIR.goldilocksOps values (emission.lookup slot) =
+        some (result.lookup slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.Emission.lookups_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {emission : Aiur.NativeAIR.CircuitEmitter.Emission}
+  {result : Aiur.AIR.CircuitEmission},
+  Aiur.NativeAIR.CircuitEmitter.Emission.eval values emission = some result →
+    List.mapM (Aiur.NativeAIR.Compiler.ExprLookup.eval Aiur.NativeAIR.goldilocksOps values) emission.lookups =
+      some (List.ofFn fun slot => result.lookup ↑slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitMember_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {rank : Aiur.NativeAIR.Expr} {r : Aiur.G}
+  {column lookup selectorBase : Nat} {program : Aiur.Bytecode.Toplevel} {functionIndex : Nat}
+  {member : Aiur.NativeAIR.CircuitEmitter.Member},
+  Aiur.NativeAIR.OpEmitter.evalExpr values rank = some r →
+    Aiur.NativeAIR.CircuitEmitter.emitMember rank column lookup selectorBase program functionIndex = some member →
+      (∀ (index : Nat),
+          index < member.readBound →
+            (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? = some (row index)) →
+        ∃ result,
+          Aiur.AIR.emitMember row r column lookup selectorBase program functionIndex = some result ∧
+            Aiur.NativeAIR.CircuitEmitter.Member.eval values member = some result ∧
+              Aiur.NativeAIR.OpEmitter.evalExpr values member.entry = some (Aiur.AIR.MemberEmission.entry row result)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitMembers_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {rank : Aiur.NativeAIR.Expr} {r : Aiur.G}
+  (column lookup selectorBase : Nat) (program : Aiur.Bytecode.Toplevel) (indices : List Nat)
+  {members : List Aiur.NativeAIR.CircuitEmitter.Member},
+  Aiur.NativeAIR.OpEmitter.evalExpr values rank = some r →
+    Aiur.NativeAIR.CircuitEmitter.emitMembers rank column lookup selectorBase program indices = some members →
+      (∀ (member : Aiur.NativeAIR.CircuitEmitter.Member),
+          member ∈ members →
+            ∀ (index : Nat),
+              index < member.readBound →
+                (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? =
+                  some (row index)) →
+        ∃ results,
+          Aiur.AIR.emitMembers row r column lookup selectorBase program indices = some results ∧
+            List.mapM (Aiur.NativeAIR.CircuitEmitter.Member.eval values) members = some results ∧
+              List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values)
+                  (List.map Aiur.NativeAIR.CircuitEmitter.Member.entry members) =
+                some (List.map (fun x => Aiur.AIR.MemberEmission.entry row x) results)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.circuitEmission_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) (circuit : Aiur.Bytecode.Circuit)
+  {members : List Aiur.NativeAIR.CircuitEmitter.Member} {results : List Aiur.AIR.MemberEmission},
+  List.mapM (Aiur.NativeAIR.CircuitEmitter.Member.eval values) members = some results →
+    List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) (List.map Aiur.NativeAIR.CircuitEmitter.Member.entry members) =
+        some (List.map (fun x => Aiur.AIR.MemberEmission.entry row x) results) →
+      (∀ (index : Nat),
+          index < circuit.layout.inputSize + circuit.layout.selectors + 1 + 6 →
+            (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? = some (row index)) →
+        Aiur.NativeAIR.CircuitEmitter.Emission.eval values
+            (Aiur.NativeAIR.CircuitEmitter.circuitEmission circuit members) =
+          some (Aiur.AIR.circuitEmission row circuit results)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitCircuit_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) (program : Aiur.Bytecode.Toplevel)
+  (circuit : Aiur.Bytecode.Circuit) {emission : Aiur.NativeAIR.CircuitEmitter.Emission},
+  Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit = some emission →
+    (∀ (index : Nat),
+        index < emission.readBound →
+          (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? = some (row index)) →
+      ∃ result,
+        Aiur.Bytecode.Circuit.emitRow row program circuit = some result ∧
+          Aiur.NativeAIR.CircuitEmitter.Emission.eval values emission = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.equations_vanish
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {expressions : List Aiur.NativeAIR.Expr} {results : List Aiur.G},
+  List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) expressions = some results →
+    (Aiur.NativeAIR.Compiler.ExprsVanish Aiur.NativeAIR.goldilocksOps values expressions ↔
+      ∀ (result : Aiur.G), result ∈ results → result = 0)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.compileCircuit_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} (row : Nat → Aiur.G) {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit)
+      {compiled : Aiur.NativeAIR.CircuitEmitter.Compiled},
+      Aiur.NativeAIR.CircuitEmitter.compileCircuit widths program circuit = some compiled →
+        (∀ (index : Nat),
+            index < compiled.emission.readBound →
+              (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? = some (row index)) →
+          ∃ result buffer,
+            Aiur.Bytecode.Circuit.emitRow row program circuit = some result ∧
+              compiled.base.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+                (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer compiled.base.graph.zeros ↔
+                    ∀ (equation : Aiur.G), equation ∈ result.equations → equation = 0) ∧
+                  List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
+                    some (List.ofFn fun slot => result.lookup ↑slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -7709,6 +8420,477 @@ PREMISE Aiur.NativeAIR.LookupEmitter.slots
 Bool → List Aiur.NativeAIR.LookupEmitter.QueryExpr → Nat → List Aiur.NativeAIR.Compiler.ExprLookup
 DEFINITION
 fun branchless queries count => List.ofFn fun index => Aiur.NativeAIR.LookupEmitter.slot branchless queries ↑index
+PREMISE Aiur.NativeAIR.BlockEmitter.sum
+List Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+DEFINITION
+fun expressions => List.foldl Aiur.NativeAIR.Expr.frontAdd (Aiur.NativeAIR.Expr.konst 0) expressions
+PREMISE Aiur.NativeAIR.BlockEmitter.SelectorReads
+Aiur.NativeAIR.Values Aiur.G → Array Aiur.NativeAIR.Expr → (Nat → Aiur.G) → Prop
+DEFINITION
+fun values selectors selector =>
+  ∀ {index : Nat} {expr : Aiur.NativeAIR.Expr},
+    selectors[index]? = some expr → Aiur.NativeAIR.OpEmitter.evalExpr values expr = some (selector index)
+PREMISE Aiur.NativeAIR.BlockEmitter.ctrlSelector
+Array Aiur.NativeAIR.Expr → Aiur.Bytecode.Ctrl → Option Aiur.NativeAIR.Expr
+DEFINITION
+fun selectors a => Aiur.NativeAIR.BlockEmitter.ctrlSelector._mutual selectors (PSum.inl a)
+PREMISE Aiur.NativeAIR.BlockEmitter.blockSelector
+Array Aiur.NativeAIR.Expr → Aiur.Bytecode.Block → Option Aiur.NativeAIR.Expr
+DEFINITION
+fun selectors block => Aiur.NativeAIR.BlockEmitter.ctrlSelector._mutual selectors (PSum.inr block)
+PREMISE Aiur.NativeAIR.BlockEmitter.Context.mk
+Nat → Nat → Aiur.NativeAIR.Expr → Aiur.NativeAIR.BlockEmitter.Context
+PREMISE Aiur.NativeAIR.BlockEmitter.ReturnExpr.mk
+Aiur.NativeAIR.Expr →
+  Nat →
+    Array Aiur.NativeAIR.Expr → Array Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr → Aiur.NativeAIR.BlockEmitter.ReturnExpr
+PREMISE Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.BlockEmitter.ReturnExpr → Option (Aiur.G × Aiur.Bytecode.AIR.Call)
+DEFINITION
+fun values returned => do
+  let selector ← Aiur.NativeAIR.OpEmitter.evalExpr values returned.selector
+  let inputs ← Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) returned.inputs
+  let outputs ← Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) returned.outputs
+  let rank ← Aiur.NativeAIR.OpEmitter.evalExpr values returned.rank
+  pure (selector, { function := returned.function, inputs := inputs, outputs := outputs, rank := rank })
+PREMISE Aiur.NativeAIR.BlockEmitter.ReturnExpr.message
+Aiur.NativeAIR.BlockEmitter.ReturnExpr → List Aiur.NativeAIR.Expr
+DEFINITION
+fun returned =>
+  [Aiur.NativeAIR.Expr.konst 0, Aiur.NativeAIR.Expr.konst (Aiur.G.ofNat returned.function)] ++ returned.inputs.toList ++
+      returned.outputs.toList ++
+    [returned.rank]
+PREMISE Aiur.NativeAIR.BlockEmitter.YieldExpr.mk
+Aiur.NativeAIR.Expr → Array Aiur.NativeAIR.RowExpr → Aiur.NativeAIR.BlockEmitter.YieldExpr
+PREMISE Aiur.NativeAIR.BlockEmitter.YieldExpr.eval
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.BlockEmitter.YieldExpr → Option (Aiur.G × Array Aiur.AIR.RowValue)
+DEFINITION
+fun values yielded => do
+  let selector ← Aiur.NativeAIR.OpEmitter.evalExpr values yielded.selector
+  let outputs ← Aiur.NativeAIR.OpEmitter.evalRows values yielded.values
+  pure (selector, outputs)
+PREMISE Aiur.NativeAIR.BlockEmitter.evalGatedCall
+Aiur.NativeAIR.Values Aiur.G →
+  Aiur.NativeAIR.Expr × Aiur.NativeAIR.OpEmitter.CallExpr → Option (Aiur.G × Aiur.Bytecode.AIR.Call × (Fin 6 → Aiur.G))
+DEFINITION
+fun values called => do
+  let selector ← Aiur.NativeAIR.OpEmitter.evalExpr values called.fst
+  let call ← Aiur.NativeAIR.OpEmitter.CallExpr.eval values called.snd
+  pure (selector, call)
+PREMISE Aiur.NativeAIR.BlockEmitter.Emission.mk
+Array Aiur.NativeAIR.RowExpr →
+  Nat →
+    Nat →
+      List Aiur.NativeAIR.Expr →
+        List Aiur.NativeAIR.LookupEmitter.QueryExpr →
+          List Aiur.NativeAIR.BlockEmitter.ReturnExpr →
+            List Aiur.NativeAIR.BlockEmitter.YieldExpr →
+              List (Aiur.NativeAIR.Expr × Aiur.NativeAIR.OpEmitter.CallExpr) → Aiur.NativeAIR.BlockEmitter.Emission
+PREMISE Aiur.NativeAIR.BlockEmitter.Emission.eval
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.BlockEmitter.Emission → Option Aiur.AIR.BlockEmission
+DEFINITION
+fun values emission => do
+  let outputs ← Aiur.NativeAIR.OpEmitter.evalRows values emission.values
+  let equations ← List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) emission.equations
+  let queries ← List.mapM (Aiur.NativeAIR.LookupEmitter.QueryExpr.eval values) emission.queries
+  let returns ← List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) emission.returns
+  let yields ← List.mapM (Aiur.NativeAIR.BlockEmitter.YieldExpr.eval values) emission.yields
+  let calls ← List.mapM (Aiur.NativeAIR.BlockEmitter.evalGatedCall values) emission.calls
+  pure
+      { values := outputs, column := emission.column, lookup := emission.lookup, equations := equations,
+        queries := queries, returns := returns, yields := yields, calls := calls }
+PREMISE Aiur.NativeAIR.BlockEmitter.Emission.prefix
+List Aiur.NativeAIR.Expr → Aiur.NativeAIR.BlockEmitter.Emission → Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun equations emission =>
+  { values := emission.values, column := emission.column, lookup := emission.lookup,
+    equations := equations ++ emission.equations, queries := emission.queries, returns := emission.returns,
+    yields := emission.yields, calls := emission.calls }
+PREMISE Aiur.NativeAIR.BlockEmitter.Emission.afterOps
+Aiur.NativeAIR.Expr →
+  Nat →
+    Aiur.NativeAIR.OpEmitter.OpsEmission → Aiur.NativeAIR.BlockEmitter.Emission → Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun incoming lookup ops control =>
+  { values := control.values, column := control.column, lookup := control.lookup,
+    equations := ops.equations ++ control.equations,
+    queries := Aiur.NativeAIR.LookupEmitter.queryParts lookup incoming ops.queries ++ control.queries,
+    returns := control.returns, yields := control.yields,
+    calls := List.map (fun x => (incoming, x)) ops.calls ++ control.calls }
+PREMISE Aiur.NativeAIR.BlockEmitter.join
+Array Aiur.NativeAIR.RowExpr →
+  Nat → Nat → List Aiur.NativeAIR.BlockEmitter.Emission → Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun values column lookup emissions =>
+  { values := values, column := List.foldl (fun column emission => max column emission.column) column emissions,
+    lookup := List.foldl (fun lookup emission => max lookup emission.lookup) lookup emissions,
+    equations := List.flatMap (fun x => x.equations) emissions, queries := List.flatMap (fun x => x.queries) emissions,
+    returns := List.flatMap (fun x => x.returns) emissions, yields := List.flatMap (fun x => x.yields) emissions,
+    calls := List.flatMap (fun x => x.calls) emissions }
+PREMISE Aiur.NativeAIR.BlockEmitter.Emission.continued
+Aiur.NativeAIR.BlockEmitter.Emission →
+  List Aiur.NativeAIR.Expr → Aiur.NativeAIR.BlockEmitter.Emission → Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun branches equations continuation =>
+  { values := continuation.values, column := continuation.column, lookup := continuation.lookup,
+    equations := branches.equations ++ equations ++ continuation.equations,
+    queries := branches.queries ++ continuation.queries, returns := branches.returns ++ continuation.returns,
+    yields := continuation.yields, calls := branches.calls ++ continuation.calls }
+PREMISE Aiur.NativeAIR.BlockEmitter.returned
+Aiur.NativeAIR.BlockEmitter.Context →
+  Aiur.NativeAIR.Expr →
+    Array Aiur.NativeAIR.RowExpr →
+      Array Aiur.NativeAIR.RowExpr → Array Aiur.NativeAIR.RowExpr → Nat → Nat → Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun context incoming rows inputs outputs column lookup =>
+  { values := rows, column := column, lookup := lookup,
+    returns :=
+      [{ selector := incoming, function := context.function, inputs := Aiur.NativeAIR.OpEmitter.rowExprs inputs,
+          outputs := Aiur.NativeAIR.OpEmitter.rowExprs outputs, rank := context.rank }] }
+PREMISE Aiur.NativeAIR.BlockEmitter.yielded
+Aiur.NativeAIR.Expr →
+  Array Aiur.NativeAIR.RowExpr → Array Aiur.NativeAIR.RowExpr → Nat → Nat → Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun selector rows outputs column lookup =>
+  { values := rows, column := column, lookup := lookup, yields := [{ selector := selector, values := outputs }] }
+PREMISE Aiur.NativeAIR.BlockEmitter.yieldValue
+Aiur.NativeAIR.BlockEmitter.YieldExpr → Nat → Aiur.NativeAIR.Expr
+DEFINITION
+fun yielded index => yielded.selector.frontMul (yielded.values[index]?.getD (Aiur.NativeAIR.RowExpr.konst 0)).expr
+PREMISE Aiur.NativeAIR.BlockEmitter.yieldGate
+List Aiur.NativeAIR.BlockEmitter.YieldExpr → Aiur.NativeAIR.Expr
+DEFINITION
+fun yields => Aiur.NativeAIR.BlockEmitter.sum (List.map (fun x => x.selector) yields)
+PREMISE Aiur.NativeAIR.BlockEmitter.mergeEquations
+Aiur.NativeAIR.Expr → Nat → Nat → List Aiur.NativeAIR.BlockEmitter.YieldExpr → List Aiur.NativeAIR.Expr
+DEFINITION
+fun incoming column size yields =>
+  List.map
+    (fun index =>
+      incoming.frontMul
+        ((Aiur.NativeAIR.mainCurrent (column + index)).expr.frontSub
+          (Aiur.NativeAIR.BlockEmitter.sum
+            (List.map (fun x => Aiur.NativeAIR.BlockEmitter.yieldValue x index) yields))))
+    (List.range size)
+PREMISE Aiur.NativeAIR.BlockEmitter.caseEquation
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.RowExpr → Aiur.G → Aiur.NativeAIR.Expr
+DEFINITION
+fun entry matched value => entry.frontMul (matched.expr.frontSub (Aiur.NativeAIR.Expr.konst value))
+PREMISE Aiur.NativeAIR.BlockEmitter.defaultEquations
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.RowExpr → Nat → Array (Aiur.G × Aiur.Bytecode.Block) → List Aiur.NativeAIR.Expr
+DEFINITION
+fun entry matched column branches =>
+  List.mapIdx
+    (fun index pair =>
+      entry.frontMul
+        (((matched.expr.frontSub (Aiur.NativeAIR.Expr.konst pair.fst)).frontMul
+              (Aiur.NativeAIR.mainCurrent (column + index)).expr).frontSub
+          (Aiur.NativeAIR.Expr.konst 1)))
+    branches.toList
+PREMISE Aiur.NativeAIR.BlockEmitter.emitCtrl
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.Expr →
+      Array Aiur.NativeAIR.RowExpr → Nat → Nat → Aiur.Bytecode.Ctrl → Option Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun selectors context incoming rows column lookup a =>
+  Aiur.NativeAIR.BlockEmitter.emitCtrl._mutual selectors context (PSum.inl ⟨incoming, ⟨rows, ⟨column, ⟨lookup, a⟩⟩⟩⟩)
+PREMISE Aiur.NativeAIR.BlockEmitter.emitBlock
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.Expr →
+      Array Aiur.NativeAIR.RowExpr → Nat → Nat → Aiur.Bytecode.Block → Option Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun selectors context incoming rows column lookup block =>
+  Aiur.NativeAIR.BlockEmitter.emitCtrl._mutual selectors context
+    (PSum.inr ⟨incoming, ⟨rows, ⟨column, ⟨lookup, block⟩⟩⟩⟩)
+PREMISE Aiur.NativeAIR.BlockEmitter.caseRow
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.RowExpr →
+      Array Aiur.NativeAIR.RowExpr →
+        Nat → Nat → Aiur.G × Aiur.Bytecode.Block → Option Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun selectors context matched rows column lookup pair => do
+  let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors pair.snd
+  let emission ← Aiur.NativeAIR.BlockEmitter.emitBlock selectors context entry rows column lookup pair.snd
+  pure
+      (Aiur.NativeAIR.BlockEmitter.Emission.prefix [Aiur.NativeAIR.BlockEmitter.caseEquation entry matched pair.fst]
+        emission)
+PREMISE Aiur.NativeAIR.BlockEmitter.defaultRow
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.RowExpr →
+      Array Aiur.NativeAIR.RowExpr →
+        Nat →
+          Nat →
+            Array (Aiur.G × Aiur.Bytecode.Block) →
+              Option Aiur.Bytecode.Block → Option (List Aiur.NativeAIR.BlockEmitter.Emission)
+DEFINITION
+fun selectors context matched rows column lookup branches fallback =>
+  match fallback with
+  | none => some []
+  | some block => do
+    let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors block
+    let emission ←
+      Aiur.NativeAIR.BlockEmitter.emitBlock selectors context entry rows (column + branches.size) lookup block
+    pure
+        [Aiur.NativeAIR.BlockEmitter.Emission.prefix
+            (Aiur.NativeAIR.BlockEmitter.defaultEquations entry matched column branches) emission]
+PREMISE Aiur.NativeAIR.BlockEmitter.branchRows
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.RowExpr →
+      Array Aiur.NativeAIR.RowExpr →
+        Nat →
+          Nat →
+            Array (Aiur.G × Aiur.Bytecode.Block) →
+              Option Aiur.Bytecode.Block → Option Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun selectors context matched rows column lookup branches fallback => do
+  let cases ←
+    List.mapM (Aiur.NativeAIR.BlockEmitter.caseRow selectors context matched rows column lookup) branches.toList
+  let default ← Aiur.NativeAIR.BlockEmitter.defaultRow selectors context matched rows column lookup branches fallback
+  pure (Aiur.NativeAIR.BlockEmitter.join rows column lookup (cases ++ default))
+PREMISE Aiur.NativeAIR.BlockEmitter.continueRow
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.Expr →
+      Array Aiur.NativeAIR.RowExpr →
+        Nat → Aiur.Bytecode.Block → Aiur.NativeAIR.BlockEmitter.Emission → Option Aiur.NativeAIR.BlockEmitter.Emission
+DEFINITION
+fun selectors context incoming rows size continuation joined =>
+  if (joined.yields.all fun part => part.values.size == size) = true then
+    have gate := Aiur.NativeAIR.BlockEmitter.yieldGate joined.yields;
+    do
+    let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors continuation
+    have equations : List Aiur.NativeAIR.Expr :=
+      Aiur.NativeAIR.BlockEmitter.mergeEquations incoming joined.column size joined.yields ++ [entry.frontSub gate]
+    let continued ←
+      Aiur.NativeAIR.BlockEmitter.emitBlock selectors context gate
+          (rows ++ Aiur.NativeAIR.OpEmitter.advice joined.column size) (joined.column + size) joined.lookup continuation
+    pure (joined.continued equations continued)
+  else none
+PREMISE Aiur.NativeAIR.BlockEmitter.selectorAt
+Array Aiur.G → Nat → Aiur.G
+DEFINITION
+fun selectors index => selectors[index]?.getD 0
+PREMISE Aiur.NativeAIR.BlockEmitter.Context.valued
+Aiur.NativeAIR.BlockEmitter.Context → Aiur.G → Aiur.AIR.RowContext
+DEFINITION
+fun context rank => { function := context.function, inputSize := context.inputSize, rank := rank }
+PREMISE Aiur.NativeAIR.BlockEmitter.BlockReflects
+Aiur.NativeAIR.Values Aiur.G →
+  (Nat → Aiur.G) →
+    Array Aiur.NativeAIR.Expr →
+      (Nat → Aiur.G) → Aiur.NativeAIR.BlockEmitter.Context → Aiur.G → Aiur.Bytecode.Block → Prop
+DEFINITION
+fun values row selectors selected context rank block =>
+  ∀ {incoming : Aiur.NativeAIR.Expr} {s : Aiur.G} {rows : Array Aiur.NativeAIR.RowExpr}
+    {inputs : Array Aiur.AIR.RowValue} {column lookup : Nat} {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+    Aiur.NativeAIR.OpEmitter.evalExpr values incoming = some s →
+      Aiur.NativeAIR.OpEmitter.evalRows values rows = some inputs →
+        Aiur.NativeAIR.OpEmitter.Normal rows →
+          Aiur.NativeAIR.BlockEmitter.emitBlock selectors context incoming rows column lookup block = some emission →
+            (∀ (index : Nat),
+                column ≤ index →
+                  index < emission.column →
+                    (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? =
+                      some (row index)) →
+              ∃ result,
+                Aiur.Bytecode.Block.emitRow row selected (context.valued rank) s inputs column lookup block =
+                    some result ∧
+                  Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result
+PREMISE Aiur.NativeAIR.BlockEmitter.CtrlReflects
+Aiur.NativeAIR.Values Aiur.G →
+  (Nat → Aiur.G) →
+    Array Aiur.NativeAIR.Expr →
+      (Nat → Aiur.G) → Aiur.NativeAIR.BlockEmitter.Context → Aiur.G → Aiur.Bytecode.Ctrl → Prop
+DEFINITION
+fun values row selectors selected context rank ctrl =>
+  ∀ {incoming : Aiur.NativeAIR.Expr} {s : Aiur.G} {rows : Array Aiur.NativeAIR.RowExpr}
+    {inputs : Array Aiur.AIR.RowValue} {column lookup : Nat} {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+    Aiur.NativeAIR.OpEmitter.evalExpr values incoming = some s →
+      Aiur.NativeAIR.OpEmitter.evalRows values rows = some inputs →
+        Aiur.NativeAIR.OpEmitter.Normal rows →
+          Aiur.NativeAIR.BlockEmitter.emitCtrl selectors context incoming rows column lookup ctrl = some emission →
+            (∀ (index : Nat),
+                column ≤ index →
+                  index < emission.column →
+                    (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]? =
+                      some (row index)) →
+              ∃ result,
+                Aiur.Bytecode.Ctrl.emitRow row selected (context.valued rank) s inputs column lookup ctrl =
+                    some result ∧
+                  Aiur.NativeAIR.BlockEmitter.Emission.eval values emission = some result
+PREMISE Aiur.NativeAIR.BlockEmitter.returnArgs
+Bool → List Aiur.NativeAIR.BlockEmitter.ReturnExpr → List Aiur.NativeAIR.Expr
+DEFINITION
+fun branchless returns =>
+  List.foldl
+    (fun args returned =>
+      Aiur.NativeAIR.LookupEmitter.addArgs args
+        (Aiur.NativeAIR.LookupEmitter.gateArgs branchless returned.selector returned.message))
+    [] returns
+PREMISE Aiur.NativeAIR.BlockEmitter.lookup
+Bool → Aiur.NativeAIR.BlockEmitter.Emission → Nat → Aiur.NativeAIR.Compiler.ExprLookup
+DEFINITION
+fun branchless emission slot =>
+  if slot = 0 then
+    { multiplicity := Aiur.NativeAIR.Expr.konst 0,
+      args := Aiur.NativeAIR.BlockEmitter.returnArgs branchless emission.returns }
+  else Aiur.NativeAIR.LookupEmitter.slot branchless emission.queries slot
+PREMISE Aiur.NativeAIR.CircuitEmitter.selectorExprs
+Nat → Nat → Array Aiur.NativeAIR.Expr
+DEFINITION
+fun base count => Array.ofFn fun index => (Aiur.NativeAIR.mainCurrent (base + ↑index)).expr
+PREMISE Aiur.NativeAIR.CircuitEmitter.Member.mk
+Nat →
+  Aiur.Bytecode.Function →
+    Nat → Aiur.NativeAIR.Expr → Aiur.NativeAIR.BlockEmitter.Emission → Aiur.NativeAIR.CircuitEmitter.Member
+PREMISE Aiur.NativeAIR.CircuitEmitter.Member.readBound
+Aiur.NativeAIR.CircuitEmitter.Member → Nat
+DEFINITION
+fun member =>
+  max member.function.layout.inputSize (max (member.selectorBase + member.function.layout.selectors) member.body.column)
+PREMISE Aiur.NativeAIR.CircuitEmitter.Member.eval
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.CircuitEmitter.Member → Option Aiur.AIR.MemberEmission
+DEFINITION
+fun values member => do
+  let body ← Aiur.NativeAIR.BlockEmitter.Emission.eval values member.body
+  pure
+      { functionIndex := member.functionIndex, function := member.function, selectorBase := member.selectorBase,
+        body := body }
+PREMISE Aiur.NativeAIR.CircuitEmitter.emitMember
+Aiur.NativeAIR.Expr → Nat → Nat → Nat → Aiur.Bytecode.Toplevel → Nat → Option Aiur.NativeAIR.CircuitEmitter.Member
+DEFINITION
+fun rank column lookup selectorBase program functionIndex => do
+  let function ← program.functions[functionIndex]?
+  have selectors : Array Aiur.NativeAIR.Expr :=
+    Aiur.NativeAIR.CircuitEmitter.selectorExprs selectorBase function.layout.selectors
+  let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors function.body
+  let body ←
+    Aiur.NativeAIR.BlockEmitter.emitBlock selectors
+        { function := functionIndex, inputSize := function.layout.inputSize, rank := rank } entry
+        (Aiur.NativeAIR.OpEmitter.advice 0 function.layout.inputSize) column lookup function.body
+  pure
+      { functionIndex := functionIndex, function := function, selectorBase := selectorBase, entry := entry,
+        body := body }
+PREMISE Aiur.NativeAIR.CircuitEmitter.emitMembers
+Aiur.NativeAIR.Expr →
+  Nat → Nat → Nat → Aiur.Bytecode.Toplevel → List Nat → Option (List Aiur.NativeAIR.CircuitEmitter.Member)
+DEFINITION
+fun rank column lookup selectorBase program x =>
+  List.brecOn (motive := fun x => Nat → Option (List Aiur.NativeAIR.CircuitEmitter.Member)) x
+    (Aiur.NativeAIR.CircuitEmitter.emitMembers._f rank column lookup program) selectorBase
+PREMISE Aiur.NativeAIR.CircuitEmitter.rankBytes
+Aiur.Bytecode.FunctionLayout → Fin 6 → Aiur.NativeAIR.Expr
+DEFINITION
+fun layout index => (Aiur.NativeAIR.mainCurrent (layout.inputSize + layout.selectors + 1 + ↑index)).expr
+PREMISE Aiur.NativeAIR.CircuitEmitter.selectorEquations
+Aiur.Bytecode.FunctionLayout → List Aiur.NativeAIR.Expr
+DEFINITION
+fun layout =>
+  List.map
+    (fun index =>
+      have selector := (Aiur.NativeAIR.mainCurrent (layout.inputSize + index)).expr;
+      selector.frontMul (selector.frontSub (Aiur.NativeAIR.Expr.konst 1)))
+    (List.range layout.selectors)
+PREMISE Aiur.NativeAIR.CircuitEmitter.Emission.mk
+List Aiur.NativeAIR.CircuitEmitter.Member →
+  Aiur.NativeAIR.Expr →
+    Aiur.NativeAIR.Expr →
+      (Fin 6 → Aiur.NativeAIR.Expr) →
+        Nat →
+          Nat →
+            Nat →
+              Nat →
+                Bool →
+                  List Aiur.NativeAIR.Expr →
+                    List Aiur.NativeAIR.LookupEmitter.QueryExpr →
+                      List Aiur.NativeAIR.BlockEmitter.ReturnExpr → Aiur.NativeAIR.CircuitEmitter.Emission
+PREMISE Aiur.NativeAIR.CircuitEmitter.Emission.readBound
+Aiur.NativeAIR.CircuitEmitter.Emission → Nat
+DEFINITION
+fun emission =>
+  List.foldl (fun bound member => max bound member.readBound) (emission.selectorStart + emission.selectorCount + 1 + 6)
+    emission.members
+PREMISE Aiur.NativeAIR.CircuitEmitter.circuitEmission
+Aiur.Bytecode.Circuit → List Aiur.NativeAIR.CircuitEmitter.Member → Aiur.NativeAIR.CircuitEmitter.Emission
+DEFINITION
+fun circuit members =>
+  have selector := Aiur.NativeAIR.BlockEmitter.sum (List.map (fun x => x.entry) members);
+  have multiplicity := (Aiur.NativeAIR.mainCurrent (circuit.layout.inputSize + circuit.layout.selectors)).expr;
+  have bytes := Aiur.NativeAIR.CircuitEmitter.rankBytes circuit.layout;
+  { members := members, selector := selector, multiplicity := multiplicity, rankBytes := bytes,
+    width := circuit.layout.width, selectorStart := circuit.layout.inputSize, selectorCount := circuit.layout.selectors,
+    lookupCount := circuit.layout.lookups,
+    branchless := Aiur.Bytecode.circuitBranchless circuit.layout.selectors (List.map (fun x => x.function) members),
+    equations :=
+      (List.flatMap (fun x => x.body.equations) members ++
+            Aiur.NativeAIR.CircuitEmitter.selectorEquations circuit.layout ++
+          if 1 < circuit.members.size then [selector.frontMul ((Aiur.NativeAIR.Expr.konst 1).frontSub selector)]
+          else []) ++
+        [multiplicity.frontMul ((Aiur.NativeAIR.Expr.konst 1).frontSub selector)],
+    queries :=
+      List.flatMap (fun x => x.body.queries) members ++
+        Aiur.NativeAIR.LookupEmitter.queryParts 1 selector (Aiur.NativeAIR.OpEmitter.rangeSix bytes),
+    returns := List.flatMap (fun x => x.body.returns) members }
+PREMISE Aiur.NativeAIR.CircuitEmitter.emitCircuit
+Aiur.Bytecode.Toplevel → Aiur.Bytecode.Circuit → Option Aiur.NativeAIR.CircuitEmitter.Emission
+DEFINITION
+fun program circuit =>
+  have rank := Aiur.NativeAIR.OpEmitter.packSix (Aiur.NativeAIR.CircuitEmitter.rankBytes circuit.layout);
+  have column := circuit.layout.inputSize + circuit.layout.selectors + 1 + 6;
+  do
+  let members ←
+    Aiur.NativeAIR.CircuitEmitter.emitMembers rank column 4 circuit.layout.inputSize program circuit.members.toList
+  pure (Aiur.NativeAIR.CircuitEmitter.circuitEmission circuit members)
+PREMISE Aiur.NativeAIR.CircuitEmitter.Emission.lookup
+Aiur.NativeAIR.CircuitEmitter.Emission → Nat → Aiur.NativeAIR.Compiler.ExprLookup
+DEFINITION
+fun emission slot =>
+  if slot = 0 then
+    { multiplicity := emission.multiplicity.frontNeg,
+      args := Aiur.NativeAIR.BlockEmitter.returnArgs emission.branchless emission.returns }
+  else Aiur.NativeAIR.LookupEmitter.slot emission.branchless emission.queries slot
+PREMISE Aiur.NativeAIR.CircuitEmitter.Emission.lookups
+Aiur.NativeAIR.CircuitEmitter.Emission → List Aiur.NativeAIR.Compiler.ExprLookup
+DEFINITION
+fun emission => List.ofFn fun slot => emission.lookup ↑slot
+PREMISE Aiur.NativeAIR.CircuitEmitter.evalFin
+{size : Nat} → Aiur.NativeAIR.Values Aiur.G → (Fin size → Aiur.NativeAIR.Expr) → Option (Fin size → Aiur.G)
+DEFINITION
+fun {size} values expressions => do
+  let results ← Array.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) (Array.ofFn expressions)
+  pure fun index => results[↑index]?.getD 0
+PREMISE Aiur.NativeAIR.CircuitEmitter.Emission.eval
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.CircuitEmitter.Emission → Option Aiur.AIR.CircuitEmission
+DEFINITION
+fun values emission => do
+  let members ← List.mapM (Aiur.NativeAIR.CircuitEmitter.Member.eval values) emission.members
+  let selector ← Aiur.NativeAIR.OpEmitter.evalExpr values emission.selector
+  let multiplicity ← Aiur.NativeAIR.OpEmitter.evalExpr values emission.multiplicity
+  let rankBytes ← Aiur.NativeAIR.CircuitEmitter.evalFin values emission.rankBytes
+  let equations ← List.mapM (Aiur.NativeAIR.OpEmitter.evalExpr values) emission.equations
+  let queries ← List.mapM (Aiur.NativeAIR.LookupEmitter.QueryExpr.eval values) emission.queries
+  let returns ← List.mapM (Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval values) emission.returns
+  pure
+      { members := members, selector := selector, multiplicity := multiplicity, rankBytes := rankBytes,
+        width := emission.width, selectorStart := emission.selectorStart, selectorCount := emission.selectorCount,
+        lookupCount := emission.lookupCount, branchless := emission.branchless, equations := equations,
+        queries := queries, returns := returns }
+PREMISE Aiur.NativeAIR.CircuitEmitter.Compiled.mk
+Aiur.NativeAIR.CircuitEmitter.Emission →
+  Aiur.NativeAIR.Compiler.BaseCompilation → Aiur.NativeAIR.CircuitEmitter.Compiled
+PREMISE Aiur.NativeAIR.CircuitEmitter.compileCircuit
+Aiur.NativeAIR.GraphWidths →
+  Aiur.Bytecode.Toplevel → Aiur.Bytecode.Circuit → Option Aiur.NativeAIR.CircuitEmitter.Compiled
+DEFINITION
+fun widths program circuit => do
+  let emission ← Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit
+  let base ← Aiur.NativeAIR.Compiler.compileBase widths emission.lookups emission.equations
+  pure { emission := emission, base := base }
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -12409,6 +13591,168 @@ fun decls x x_1 x_2 =>
     | some (Aiur.Concrete.Declaration.dataType dt) =>
       Aiur.Concrete.DataType.sizeBound._unsafe_rec decls bound visited dt
     | x => throw (toString "Datatype not found: `" ++ toString g ++ toString "`")
+RECURSION WORKER Aiur.NativeAIR.BlockEmitter.blockSelector._unsafe_rec
+Array Aiur.NativeAIR.Expr → Aiur.Bytecode.Block → Option Aiur.NativeAIR.Expr
+IMPLEMENTATION
+fun selectors block => Aiur.NativeAIR.BlockEmitter.ctrlSelector._unsafe_rec selectors block.ctrl
+RECURSION WORKER Aiur.NativeAIR.BlockEmitter.ctrlSelector._unsafe_rec
+Array Aiur.NativeAIR.Expr → Aiur.Bytecode.Ctrl → Option Aiur.NativeAIR.Expr
+IMPLEMENTATION
+fun selectors x =>
+  match x with
+  | Aiur.Bytecode.Ctrl.return index a => selectors[index]?
+  | Aiur.Bytecode.Ctrl.yield index a => selectors[index]?
+  | Aiur.Bytecode.Ctrl.match a branches fallback => do
+    let entries ←
+      List.mapM
+          (fun x =>
+            match x with
+            | ⟨pair, property⟩ => Aiur.NativeAIR.BlockEmitter.blockSelector._unsafe_rec selectors pair.snd)
+          branches.attach.toList
+    have __do_jp : List Aiur.NativeAIR.Expr → Option Aiur.NativeAIR.Expr := fun last =>
+      pure (Aiur.NativeAIR.BlockEmitter.sum (entries ++ last))
+    match fallback with
+      | none => do
+        let last ← some []
+        __do_jp last
+      | some block => do
+        let last ←
+          Option.map (fun expr => [expr]) (Aiur.NativeAIR.BlockEmitter.blockSelector._unsafe_rec selectors block)
+        __do_jp last
+  | Aiur.Bytecode.Ctrl.matchContinue a branches fallback outputSize sharedAuxiliaries sharedLookups a_1 => do
+    let entries ←
+      List.mapM
+          (fun x =>
+            match x with
+            | ⟨pair, property⟩ => Aiur.NativeAIR.BlockEmitter.blockSelector._unsafe_rec selectors pair.snd)
+          branches.attach.toList
+    have __do_jp : List Aiur.NativeAIR.Expr → Option Aiur.NativeAIR.Expr := fun last =>
+      pure (Aiur.NativeAIR.BlockEmitter.sum (entries ++ last))
+    match fallback with
+      | none => do
+        let last ← some []
+        __do_jp last
+      | some block => do
+        let last ←
+          Option.map (fun expr => [expr]) (Aiur.NativeAIR.BlockEmitter.blockSelector._unsafe_rec selectors block)
+        __do_jp last
+RECURSION WORKER Aiur.NativeAIR.BlockEmitter.emitBlock._unsafe_rec
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.Expr →
+      Array Aiur.NativeAIR.RowExpr → Nat → Nat → Aiur.Bytecode.Block → Option Aiur.NativeAIR.BlockEmitter.Emission
+IMPLEMENTATION
+fun selectors context incoming rows column lookup block => do
+  let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors block
+  let operations ← Aiur.NativeAIR.OpEmitter.emitOps incoming context.rank block.ops.toList rows column
+  let control ←
+    Aiur.NativeAIR.BlockEmitter.emitCtrl._unsafe_rec selectors context incoming operations.values operations.column
+        (lookup + operations.queries.length) block.ctrl
+  pure
+      (Aiur.NativeAIR.BlockEmitter.Emission.prefix [entry.frontMul ((Aiur.NativeAIR.Expr.konst 1).frontSub entry)]
+        (Aiur.NativeAIR.BlockEmitter.Emission.afterOps incoming lookup operations control))
+RECURSION WORKER Aiur.NativeAIR.BlockEmitter.emitCtrl._unsafe_rec
+Array Aiur.NativeAIR.Expr →
+  Aiur.NativeAIR.BlockEmitter.Context →
+    Aiur.NativeAIR.Expr →
+      Array Aiur.NativeAIR.RowExpr → Nat → Nat → Aiur.Bytecode.Ctrl → Option Aiur.NativeAIR.BlockEmitter.Emission
+IMPLEMENTATION
+fun selectors context incoming rows column lookup x =>
+  match x with
+  | Aiur.Bytecode.Ctrl.return a indices => do
+    let inputs ← Aiur.NativeAIR.OpEmitter.select rows (Array.range context.inputSize)
+    let outputs ← Aiur.NativeAIR.OpEmitter.select rows indices
+    pure (Aiur.NativeAIR.BlockEmitter.returned context incoming rows inputs outputs column lookup)
+  | Aiur.Bytecode.Ctrl.yield index indices => do
+    let selector ← selectors[index]?
+    let outputs ← Aiur.NativeAIR.OpEmitter.select rows indices
+    pure (Aiur.NativeAIR.BlockEmitter.yielded selector rows outputs column lookup)
+  | Aiur.Bytecode.Ctrl.match index branches fallback => do
+    let matched ← rows[index]?
+    let cases ←
+      List.mapM
+          (fun x =>
+            match x with
+            | ⟨pair, property⟩ => do
+              let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors pair.snd
+              let emission ←
+                Aiur.NativeAIR.BlockEmitter.emitBlock._unsafe_rec selectors context entry rows column lookup pair.snd
+              pure
+                  (Aiur.NativeAIR.BlockEmitter.Emission.prefix
+                    [Aiur.NativeAIR.BlockEmitter.caseEquation entry matched pair.fst] emission))
+          branches.attach.toList
+    have __do_jp : List Aiur.NativeAIR.BlockEmitter.Emission → Option Aiur.NativeAIR.BlockEmitter.Emission :=
+      fun default => pure (Aiur.NativeAIR.BlockEmitter.join rows column lookup (cases ++ default))
+    match fallback with
+      | none => do
+        let default ← some []
+        __do_jp default
+      | some block => do
+        let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors block
+        let emission ←
+          Aiur.NativeAIR.BlockEmitter.emitBlock._unsafe_rec selectors context entry rows (column + branches.size) lookup
+              block
+        let default ←
+          pure
+              [Aiur.NativeAIR.BlockEmitter.Emission.prefix
+                  (Aiur.NativeAIR.BlockEmitter.defaultEquations entry matched column branches) emission]
+        __do_jp default
+  | Aiur.Bytecode.Ctrl.matchContinue index branches fallback size sharedAuxiliaries sharedLookups continuation => do
+    let matched ← rows[index]?
+    let cases ←
+      List.mapM
+          (fun x =>
+            match x with
+            | ⟨pair, property⟩ => do
+              let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors pair.snd
+              let emission ←
+                Aiur.NativeAIR.BlockEmitter.emitBlock._unsafe_rec selectors context entry rows column lookup pair.snd
+              pure
+                  (Aiur.NativeAIR.BlockEmitter.Emission.prefix
+                    [Aiur.NativeAIR.BlockEmitter.caseEquation entry matched pair.fst] emission))
+          branches.attach.toList
+    have __do_jp : List Aiur.NativeAIR.BlockEmitter.Emission → Option Aiur.NativeAIR.BlockEmitter.Emission :=
+      fun default =>
+      let joined := Aiur.NativeAIR.BlockEmitter.join rows column lookup (cases ++ default);
+      if (joined.yields.all fun part => part.values.size == size) = true then
+        let gate := Aiur.NativeAIR.BlockEmitter.yieldGate joined.yields;
+        do
+        let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors continuation
+        let equations : List Aiur.NativeAIR.Expr :=
+          Aiur.NativeAIR.BlockEmitter.mergeEquations incoming joined.column size joined.yields ++ [entry.frontSub gate]
+        let continued ←
+          Aiur.NativeAIR.BlockEmitter.emitBlock._unsafe_rec selectors context gate
+              (rows ++ Aiur.NativeAIR.OpEmitter.advice joined.column size) (joined.column + size) joined.lookup
+              continuation
+        pure (joined.continued equations continued)
+      else none
+    match fallback with
+      | none => do
+        let default ← some []
+        __do_jp default
+      | some block => do
+        let entry ← Aiur.NativeAIR.BlockEmitter.blockSelector selectors block
+        let emission ←
+          Aiur.NativeAIR.BlockEmitter.emitBlock._unsafe_rec selectors context entry rows (column + branches.size) lookup
+              block
+        let default ←
+          pure
+              [Aiur.NativeAIR.BlockEmitter.Emission.prefix
+                  (Aiur.NativeAIR.BlockEmitter.defaultEquations entry matched column branches) emission]
+        __do_jp default
+RECURSION WORKER Aiur.NativeAIR.CircuitEmitter.emitMembers._unsafe_rec
+Aiur.NativeAIR.Expr →
+  Nat → Nat → Nat → Aiur.Bytecode.Toplevel → List Nat → Option (List Aiur.NativeAIR.CircuitEmitter.Member)
+IMPLEMENTATION
+fun rank column lookup selectorBase program x =>
+  match x with
+  | [] => some []
+  | index :: indices => do
+    let member ← Aiur.NativeAIR.CircuitEmitter.emitMember rank column lookup selectorBase program index
+    let rest ←
+      Aiur.NativeAIR.CircuitEmitter.emitMembers._unsafe_rec rank column lookup
+          (selectorBase + member.function.layout.selectors) program indices
+    pure (member :: rest)
 RECURSION WORKER Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec
 Aiur.NativeAIR.GraphWidths →
   Bool → Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × Nat)
@@ -14526,10 +15870,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 520; LOGICAL DECLARATIONS 16580; WITH RUNTIME 17344
+C8 component ROOTS 586; LOGICAL DECLARATIONS 16839; WITH RUNTIME 17608
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 157
+RECURSION WORKERS 162
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

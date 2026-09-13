@@ -410,13 +410,13 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 520 roots by traversing checked types, bodies and inductive
-constructors. Six roots use no axioms; eighty-eight depend only on `propext`;
-159 use exactly `propext` and `Quot.sound`; the other 267 use exactly
+The audit checks 586 roots by traversing checked types, bodies and inductive
+constructors. Six roots use no axioms; ninety-five depend only on `propext`;
+182 use exactly `propext` and `Quot.sound`; the other 303 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 16,580 logical declarations and 17,344 declarations after following runtime
+has 16,839 logical declarations and 17,608 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 157 Ix recursion worker implementations.
+three partial opaque sources and all 162 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -537,7 +537,7 @@ suite passes 63 tests and release Clippy; the strict 140-job proof/test build
 and complete component gate pass with fourteen native comparison corpora.
 The graph model uses natural-number indices and a linear structural interner.
 Rust execution and hash-table refinement, machine bounds, extension-coordinate
-expansion, control/circuit emission and native acceptance-to-satisfaction
+expansion and native acceptance-to-satisfaction
 reduction remain open. Aiur's native system builder supplies no user extension
 constraints: its function, memory and byte circuits all use the base graph.
 
@@ -565,8 +565,46 @@ frozen definitions and all 155 worker bodies. It adds 95 roots, 44 definitions
 and constructors, and two inspected total recursion workers. The strict build,
 64 parallel release Rust tests, release Clippy and the component gate with
 fifteen native comparison corpora pass. This checkpoint changes no native AIR,
-compiler output or verification-key format. Control/circuit emission, runtime
-refinement, compiler reflection and the semantic/cryptographic endpoint remain
+compiler output or verification-key format.
+
+`BlockSelectors`, `BlockExpressions` and `BlockReflection` extend symbolic
+reflection through recursive control and complete blocks. The proof derives
+the valued equations, logical maps, cursors, raw queries, returns, escaping
+yields and gated calls. It accounts for branch column reuse, default inverse
+advice, continuation merge columns and consumed yields. Selector tables are
+finite; incoming gates need not equal block entries or be Boolean. Required
+fresh reads cover only the consumed column interval. `BlockLookups` handles
+the shared return channel without adding to its multiplicity. All 384 actual
+native control trees and 1,536 assignments match, including zero-width merges
+and preserved outer yields. The test transports Rust's operations and control
+trees instead of generating corresponding Lean fixtures.
+
+`CircuitExpressions` and `CircuitReflection` compose grouped members with
+consecutive selector regions, shared rank and multiplicity columns, the three
+rank-byte queries, and every physical lookup slot. Successful symbolic emission
+and reads from its finite header/member allocation derive complete valued
+circuit emission. The read bound is explicit and must fit the supplied trace;
+the proof does not assume equation values or lookup messages. All 96 actual
+native circuit builds and 384 assignments match exact expression trees,
+layouts, branchless decisions and evaluated results, including empty circuits
+and empty branches that emit lookups. All corpus read bounds fit native widths.
+
+`CompiledCircuitRows.compileCircuit_reflects` connects this emission to the
+checked base-graph compiler. It derives a valued circuit row and a defined
+graph sweep, proves graph-root satisfaction equivalent to all valued equations
+vanishing, and identifies the entire physical lookup vector. The circuit
+corpus also checks this composition for every assignment. This establishes
+the composition for the Lean emitter and compiler models; refinement of the
+Rust execution and the accepted-proof boundary remains open.
+
+The 586-root audit preserves all 520 earlier statements and axiom sets, all 474
+frozen definitions and all 157 worker bodies. It adds 66 roots, 54 definitions
+and constructors, and five inspected total recursion workers. The new native
+release suite passes 66 tests and release Clippy. The strict 283-job build and
+complete component gate pass with seventeen native comparison corpora.
+Native AIR, compiler output
+and verification-key formats are unchanged. Earlier compiler-pass reflection,
+runtime refinement and the certified semantic/cryptographic endpoint remain
 separate obligations.
 
 The budget comparison covers
@@ -615,8 +653,8 @@ channel because both messages were sent without selector gating. Such
 circuits now use gated messages and one lookup per accumulator step. The
 invalid result is rejected, while the honest generated proof verifies.
 Verification keys must be rebuilt for circuits whose optimization changes.
-Padded balance still needs extraction from randomized compression, and the
-valued model still needs reflection from the native emitter.
+Padded balance still needs extraction from randomized compression, together
+with the Rust refinement connecting the reflected emitter model to execution.
 
 The call-rank repair increases proving cost through its range-checked columns
 and lookups. The IxVM FFT estimate for `Nat.add_comm` rises from 321,980,321 to
@@ -630,8 +668,9 @@ backward reflection through lowering and the earlier compiler passes, execution
 extraction from arbitrary satisfying AIR witnesses, certified source/claim
 checking inside the selected VM program, enforced certified release/key
 selection, and the cryptographic reduction with explicit bad events. The
-grouping result concerns reference execution. The valued model now composes
-grouped circuit rows; extraction from the actual grouped AIR remains open.
+grouping result concerns reference execution. The valued model composes
+grouped circuit rows; connecting accepted native proofs to the reflected
+grouped AIR remains open.
 
 The source and bytecode references use uncached calls. Repeated effectful calls
 can behave differently in the caching interpreter and native runtime: writes

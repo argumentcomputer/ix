@@ -111,5 +111,13 @@ complete sequences and lookup-slot accumulation. All 1,752 native sequences,
 7,008 assignments and 438 cases with shared slots match exact expression trees
 and evaluated results. Its 520-root audit preserves all prior statements,
 axiom sets and frozen definitions. It adds no observed bug class or native AIR
-change; control/circuit reflection and the semantic/cryptographic endpoint
-remain open.
+change.
+
+The block/circuit checkpoint extends symbolic reflection through recursive
+branches, continuation merges and grouped circuit construction, then composes
+it with base-graph compilation. All 384 native block trees / 1,536 assignments
+and 96 native circuits / 384 assignments match exact expressions and valued
+results. Its 586-root audit preserves every earlier statement, axiom set,
+frozen definition and recursion worker. No new bug or native AIR change was
+found. Rust refinement, accepted-proof extraction, earlier compiler passes
+and the certified semantic/cryptographic endpoint remain open.

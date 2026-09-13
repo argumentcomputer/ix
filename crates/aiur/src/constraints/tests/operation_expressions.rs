@@ -9,7 +9,10 @@ use std::collections::HashSet;
 
 use super::{frontend_expressions::write_expr, operation_rows, *};
 
-fn write_indices(out: &mut impl Write, indices: &[usize]) -> io::Result<()> {
+pub(super) fn write_indices(
+  out: &mut impl Write,
+  indices: &[usize],
+) -> io::Result<()> {
   write_u64(out, indices.len() as u64)?;
   for index in indices {
     write_u64(out, *index as u64)?;
@@ -38,7 +41,7 @@ fn write_option<W: Write, T>(
 
 // Test transport tags are explicit and exhaustive, independent of Rust enum
 // layout. The Lean reader receives the operations used by collect_constraints.
-fn write_op(out: &mut impl Write, op: &Op) -> io::Result<()> {
+pub(super) fn write_op(out: &mut impl Write, op: &Op) -> io::Result<()> {
   use Op::*;
   let tag = match op {
     Const(_) => 0,
@@ -149,7 +152,10 @@ fn write_op(out: &mut impl Write, op: &Op) -> io::Result<()> {
   }
 }
 
-fn write_exprs(out: &mut impl Write, exprs: &[Expr]) -> io::Result<()> {
+pub(super) fn write_exprs(
+  out: &mut impl Write,
+  exprs: &[Expr],
+) -> io::Result<()> {
   write_u64(out, exprs.len() as u64)?;
   for expr in exprs {
     write_expr(out, expr)?;
@@ -157,7 +163,10 @@ fn write_exprs(out: &mut impl Write, exprs: &[Expr]) -> io::Result<()> {
   Ok(())
 }
 
-fn write_map(out: &mut impl Write, map: &[(Expr, Degree)]) -> io::Result<()> {
+pub(super) fn write_map(
+  out: &mut impl Write,
+  map: &[(Expr, Degree)],
+) -> io::Result<()> {
   write_u64(out, map.len() as u64)?;
   for (expr, degree) in map {
     write_expr(out, expr)?;

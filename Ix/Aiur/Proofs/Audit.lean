@@ -34,6 +34,7 @@ import Ix.Aiur.Proofs.ExpressionGraph
 import Ix.Aiur.Proofs.FrontendExpressions
 import Ix.Aiur.Proofs.GraphCompilation
 import Ix.Aiur.Proofs.LookupExpressions
+import Ix.Aiur.Proofs.CompiledCircuitRows
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -837,6 +838,193 @@ def operationExpressionPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.LookupEmitter.slot,
   `Aiur.NativeAIR.LookupEmitter.slots]
 
+def blockCircuitRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.BlockEmitter.evaluated_read,
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_evaluate,
+  `Aiur.NativeAIR.BlockEmitter.sum_fold_eval,
+  `Aiur.NativeAIR.BlockEmitter.sum_eval,
+  `Aiur.NativeAIR.BlockEmitter.selectors_array_eval,
+  `Aiur.NativeAIR.BlockEmitter.ctrlSelector_reads,
+  `Aiur.NativeAIR.BlockEmitter.blockSelector_reads,
+  `Aiur.NativeAIR.BlockEmitter.ctrlSelector_eval,
+  `Aiur.NativeAIR.BlockEmitter.blockSelector_eval,
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_flatMap,
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_foldl,
+  `Aiur.NativeAIR.BlockEmitter.Emission.eval_of,
+  `Aiur.NativeAIR.BlockEmitter.Emission.eval_components,
+  `Aiur.NativeAIR.BlockEmitter.Emission.prefix_eval,
+  `Aiur.NativeAIR.BlockEmitter.Emission.afterOps_eval,
+  `Aiur.NativeAIR.BlockEmitter.join_eval,
+  `Aiur.NativeAIR.BlockEmitter.Emission.continued_eval,
+  `Aiur.NativeAIR.BlockEmitter.YieldExpr.eval_of,
+  `Aiur.NativeAIR.BlockEmitter.YieldExpr.eval_components,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval_of,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval_components,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.message_eval,
+  `Aiur.NativeAIR.BlockEmitter.returned_eval,
+  `Aiur.NativeAIR.BlockEmitter.yielded_eval,
+  `Aiur.NativeAIR.BlockEmitter.evalRows_getD_any,
+  `Aiur.NativeAIR.BlockEmitter.yieldValue_eval,
+  `Aiur.NativeAIR.BlockEmitter.yieldGate_eval,
+  `Aiur.NativeAIR.BlockEmitter.mergeEquations_eval,
+  `Aiur.NativeAIR.BlockEmitter.yields_size,
+  `Aiur.NativeAIR.BlockEmitter.caseEquation_eval,
+  `Aiur.NativeAIR.BlockEmitter.defaultEquations_eval,
+  `Aiur.NativeAIR.BlockEmitter.fold_max_start,
+  `Aiur.NativeAIR.BlockEmitter.fold_max_member,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_match,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_matchContinue,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_invariants,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_invariants,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_invariants,
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_refine_mem,
+  `Aiur.NativeAIR.BlockEmitter.caseRows_reflects,
+  `Aiur.NativeAIR.BlockEmitter.defaultRow_reflects,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_reflects,
+  `Aiur.NativeAIR.BlockEmitter.continueRow_column,
+  `Aiur.NativeAIR.BlockEmitter.advice_absolute_eval,
+  `Aiur.NativeAIR.BlockEmitter.continueRow_reflects,
+  `Aiur.NativeAIR.BlockEmitter.ctrl_reflects,
+  `Aiur.NativeAIR.BlockEmitter.block_reflects,
+  `Aiur.NativeAIR.BlockEmitter.returnArgs_fold_eval,
+  `Aiur.NativeAIR.BlockEmitter.returnArgs_eval,
+  `Aiur.NativeAIR.BlockEmitter.lookup_eval,
+  `Aiur.NativeAIR.CircuitEmitter.selectorExprs_reads,
+  `Aiur.NativeAIR.CircuitEmitter.Member.eval_of,
+  `Aiur.NativeAIR.CircuitEmitter.Member.eval_components,
+  `Aiur.NativeAIR.CircuitEmitter.selectorEquations_eval,
+  `Aiur.NativeAIR.CircuitEmitter.evalFin_of,
+  `Aiur.NativeAIR.CircuitEmitter.evalFin_components,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.eval_of,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.eval_components,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.lookup_eval,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.lookups_eval,
+  `Aiur.NativeAIR.CircuitEmitter.emitMember_reflects,
+  `Aiur.NativeAIR.CircuitEmitter.emitMembers_reflects,
+  `Aiur.NativeAIR.CircuitEmitter.circuitEmission_eval,
+  `Aiur.NativeAIR.CircuitEmitter.emitCircuit_reflects,
+  `Aiur.NativeAIR.CircuitEmitter.equations_vanish,
+  `Aiur.NativeAIR.CircuitEmitter.compileCircuit_reflects]
+
+def blockCircuitQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_evaluate,
+  `Aiur.NativeAIR.BlockEmitter.sum_fold_eval,
+  `Aiur.NativeAIR.BlockEmitter.sum_eval,
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_flatMap,
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_foldl,
+  `Aiur.NativeAIR.BlockEmitter.Emission.eval_of,
+  `Aiur.NativeAIR.BlockEmitter.Emission.prefix_eval,
+  `Aiur.NativeAIR.BlockEmitter.join_eval,
+  `Aiur.NativeAIR.BlockEmitter.Emission.continued_eval,
+  `Aiur.NativeAIR.BlockEmitter.YieldExpr.eval_of,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval_of,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.message_eval,
+  `Aiur.NativeAIR.BlockEmitter.returned_eval,
+  `Aiur.NativeAIR.BlockEmitter.yielded_eval,
+  `Aiur.NativeAIR.BlockEmitter.yieldGate_eval,
+  `Aiur.NativeAIR.BlockEmitter.yields_size,
+  `Aiur.NativeAIR.BlockEmitter.caseEquation_eval,
+  `Aiur.NativeAIR.BlockEmitter.list_mapM_refine_mem,
+  `Aiur.NativeAIR.BlockEmitter.returnArgs_fold_eval,
+  `Aiur.NativeAIR.BlockEmitter.returnArgs_eval,
+  `Aiur.NativeAIR.BlockEmitter.lookup_eval,
+  `Aiur.NativeAIR.CircuitEmitter.selectorEquations_eval,
+  `Aiur.NativeAIR.CircuitEmitter.equations_vanish]
+
+def blockCircuitClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.BlockEmitter.evaluated_read,
+  `Aiur.NativeAIR.BlockEmitter.selectors_array_eval,
+  `Aiur.NativeAIR.BlockEmitter.ctrlSelector_reads,
+  `Aiur.NativeAIR.BlockEmitter.blockSelector_reads,
+  `Aiur.NativeAIR.BlockEmitter.ctrlSelector_eval,
+  `Aiur.NativeAIR.BlockEmitter.blockSelector_eval,
+  `Aiur.NativeAIR.BlockEmitter.Emission.afterOps_eval,
+  `Aiur.NativeAIR.BlockEmitter.evalRows_getD_any,
+  `Aiur.NativeAIR.BlockEmitter.yieldValue_eval,
+  `Aiur.NativeAIR.BlockEmitter.mergeEquations_eval,
+  `Aiur.NativeAIR.BlockEmitter.defaultEquations_eval,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_match,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_matchContinue,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_invariants,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_invariants,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_invariants,
+  `Aiur.NativeAIR.BlockEmitter.caseRows_reflects,
+  `Aiur.NativeAIR.BlockEmitter.defaultRow_reflects,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_reflects,
+  `Aiur.NativeAIR.BlockEmitter.continueRow_column,
+  `Aiur.NativeAIR.BlockEmitter.advice_absolute_eval,
+  `Aiur.NativeAIR.BlockEmitter.continueRow_reflects,
+  `Aiur.NativeAIR.BlockEmitter.ctrl_reflects,
+  `Aiur.NativeAIR.BlockEmitter.block_reflects,
+  `Aiur.NativeAIR.CircuitEmitter.selectorExprs_reads,
+  `Aiur.NativeAIR.CircuitEmitter.evalFin_of,
+  `Aiur.NativeAIR.CircuitEmitter.evalFin_components,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.eval_of,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.eval_components,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.lookup_eval,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.lookups_eval,
+  `Aiur.NativeAIR.CircuitEmitter.emitMember_reflects,
+  `Aiur.NativeAIR.CircuitEmitter.emitMembers_reflects,
+  `Aiur.NativeAIR.CircuitEmitter.circuitEmission_eval,
+  `Aiur.NativeAIR.CircuitEmitter.emitCircuit_reflects,
+  `Aiur.NativeAIR.CircuitEmitter.compileCircuit_reflects]
+
+def blockCircuitPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.BlockEmitter.sum,
+  `Aiur.NativeAIR.BlockEmitter.SelectorReads,
+  `Aiur.NativeAIR.BlockEmitter.ctrlSelector,
+  `Aiur.NativeAIR.BlockEmitter.blockSelector,
+  `Aiur.NativeAIR.BlockEmitter.Context.mk,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.mk,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.eval,
+  `Aiur.NativeAIR.BlockEmitter.ReturnExpr.message,
+  `Aiur.NativeAIR.BlockEmitter.YieldExpr.mk,
+  `Aiur.NativeAIR.BlockEmitter.YieldExpr.eval,
+  `Aiur.NativeAIR.BlockEmitter.evalGatedCall,
+  `Aiur.NativeAIR.BlockEmitter.Emission.mk,
+  `Aiur.NativeAIR.BlockEmitter.Emission.eval,
+  `Aiur.NativeAIR.BlockEmitter.Emission.prefix,
+  `Aiur.NativeAIR.BlockEmitter.Emission.afterOps,
+  `Aiur.NativeAIR.BlockEmitter.join,
+  `Aiur.NativeAIR.BlockEmitter.Emission.continued,
+  `Aiur.NativeAIR.BlockEmitter.returned,
+  `Aiur.NativeAIR.BlockEmitter.yielded,
+  `Aiur.NativeAIR.BlockEmitter.yieldValue,
+  `Aiur.NativeAIR.BlockEmitter.yieldGate,
+  `Aiur.NativeAIR.BlockEmitter.mergeEquations,
+  `Aiur.NativeAIR.BlockEmitter.caseEquation,
+  `Aiur.NativeAIR.BlockEmitter.defaultEquations,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock,
+  `Aiur.NativeAIR.BlockEmitter.caseRow,
+  `Aiur.NativeAIR.BlockEmitter.defaultRow,
+  `Aiur.NativeAIR.BlockEmitter.branchRows,
+  `Aiur.NativeAIR.BlockEmitter.continueRow,
+  `Aiur.NativeAIR.BlockEmitter.selectorAt,
+  `Aiur.NativeAIR.BlockEmitter.Context.valued,
+  `Aiur.NativeAIR.BlockEmitter.BlockReflects,
+  `Aiur.NativeAIR.BlockEmitter.CtrlReflects,
+  `Aiur.NativeAIR.BlockEmitter.returnArgs,
+  `Aiur.NativeAIR.BlockEmitter.lookup,
+  `Aiur.NativeAIR.CircuitEmitter.selectorExprs,
+  `Aiur.NativeAIR.CircuitEmitter.Member.mk,
+  `Aiur.NativeAIR.CircuitEmitter.Member.readBound,
+  `Aiur.NativeAIR.CircuitEmitter.Member.eval,
+  `Aiur.NativeAIR.CircuitEmitter.emitMember,
+  `Aiur.NativeAIR.CircuitEmitter.emitMembers,
+  `Aiur.NativeAIR.CircuitEmitter.rankBytes,
+  `Aiur.NativeAIR.CircuitEmitter.selectorEquations,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.mk,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.readBound,
+  `Aiur.NativeAIR.CircuitEmitter.circuitEmission,
+  `Aiur.NativeAIR.CircuitEmitter.emitCircuit,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.lookup,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.lookups,
+  `Aiur.NativeAIR.CircuitEmitter.evalFin,
+  `Aiur.NativeAIR.CircuitEmitter.Emission.eval,
+  `Aiur.NativeAIR.CircuitEmitter.Compiled.mk,
+  `Aiur.NativeAIR.CircuitEmitter.compileCircuit]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -873,7 +1061,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -1112,7 +1300,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -1191,7 +1379,11 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if operationExpressionRoots.contains root then
+    let expected := if blockCircuitRoots.contains root then
+        if blockCircuitClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if blockCircuitQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if operationExpressionRoots.contains root then
         if operationExpressionClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if operationExpressionQuotRoots.contains root then #[``propext, ``Quot.sound]
         else #[``propext]
