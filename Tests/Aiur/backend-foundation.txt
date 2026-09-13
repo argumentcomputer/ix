@@ -7906,6 +7906,420 @@ ROOT Aiur.NativeAIR.LogUp.constraintValues_accumulator
                       next.toExtension - first.toExtension + (delta.scale isLast).toExtension =
                         Aiur.NativeAIR.LogUp.lookupFractions beta gamma values
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.generators_size
+Aiur.NativeAIR.Domain.generators.size = 33
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Domain.Algebra.power_zero
+∀ {R : Type} [inst : Grind.CommRing R] (n : Nat), 0 < n → 0 ^ n = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.Algebra.power_mul
+∀ {R : Type} [inst : Grind.CommRing R] (a : R) (m n : Nat), a ^ (m * n) = (a ^ m) ^ n
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Domain.Algebra.power_period
+∀ {R : Type} [inst : Grind.CommRing R] (a : R) {period : Nat}, a ^ period = 1 → ∀ (n : Nat), a ^ n = a ^ (n % period)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Domain.Algebra.power_inverse
+∀ {R : Type} [inst : Grind.CommRing R] (a inverse : R), a * inverse = 1 → ∀ (n : Nat), a ^ n * inverse ^ n = 1
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Domain.Algebra.predecessor_inverse
+∀ {R : Type} [inst : Grind.CommRing R] (a inverse : R) {n : Nat},
+  0 < n → a ^ n = 1 → a * inverse = 1 → a ^ (n - 1) = inverse
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.Algebra.dividedPowers_factor
+∀ {R : Type} [inst : Grind.CommRing R] (x a : R) (n : Nat),
+  (x - a) * Aiur.NativeAIR.Domain.Algebra.dividedPowers x a n = x ^ n - a ^ n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.Algebra.dividedPowers_diagonal
+∀ {R : Type} [inst : Grind.CommRing R] (a : R) (n : Nat),
+  Aiur.NativeAIR.Domain.Algebra.dividedPowers a a n = ↑n * a ^ (n - 1)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.Algebra.root_dividedPowers
+∀ {R : Type} [inst : Grind.CommRing R] (x a : R) {n : Nat},
+  a ^ n = 1 → (x - a) * Aiur.NativeAIR.Domain.Algebra.dividedPowers x a n = x ^ n - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.Algebra.dividedPowers_off_root
+∀ {R : Type} [inst : Grind.CommRing R] (x a inverse : R) {n : Nat},
+  a ^ n = 1 → (x - a) * inverse = 1 → (x ^ n - 1) * inverse = Aiur.NativeAIR.Domain.Algebra.dividedPowers x a n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.ofLogSize_some
+∀ {bits : Nat} {domain : Aiur.NativeAIR.Domain.Subgroup},
+  Aiur.NativeAIR.Domain.ofLogSize bits = some domain → ↑domain = bits
+AXIOMS []
+ROOT Aiur.NativeAIR.Domain.ofLogSize_defined
+∀ (bits : Nat), ((Aiur.NativeAIR.Domain.ofLogSize bits).isSome = true) = (bits < 33)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Domain.size_positive
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), 0 < Aiur.NativeAIR.Domain.size domain
+AXIOMS []
+ROOT Aiur.NativeAIR.Domain.size_bound
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.Domain.size domain ≤ 2 ^ 32
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.size_lt_characteristic
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.Domain.size domain < Aiur.gSize.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.size_lt_u64
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.Domain.size domain < 2 ^ 64
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.generator_zero
+Aiur.NativeAIR.Domain.generator 0 = 1
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Domain.generator_square_certificate
+∀ (index : Fin 32),
+  Aiur.NativeAIR.Domain.generator ⟨↑index + 1, ⋯⟩ * Aiur.NativeAIR.Domain.generator ⟨↑index + 1, ⋯⟩ =
+    Aiur.NativeAIR.Domain.generator ⟨↑index, ⋯⟩
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.generator_full_certificate
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  (Aiur.NativeAIR.Domain.generator domain).pow (Aiur.NativeAIR.Domain.size domain) = 1
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Domain.generator_half_certificate
+∀ (index : Fin 32), (Aiur.NativeAIR.Domain.generator ⟨↑index + 1, ⋯⟩).pow (2 ^ ↑index) = 0 - 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.generator_power
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  Aiur.NativeAIR.Domain.generator domain ^ Aiur.NativeAIR.Domain.size domain = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.generator_half
+∀ (index : Fin 32), Aiur.NativeAIR.Domain.generator ⟨↑index + 1, ⋯⟩ ^ 2 ^ ↑index = 0 - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.generator_nonzero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.Domain.generator domain ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_eq
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.point domain index = Aiur.NativeAIR.Domain.generator domain ^ ↑index
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_injective
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) {i j : Fin (Aiur.NativeAIR.Domain.size domain)},
+  Aiur.NativeAIR.Domain.point domain i = Aiur.NativeAIR.Domain.point domain j → i = j
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.generator_order
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (n : Nat),
+  Aiur.NativeAIR.Domain.generator domain ^ n = 1 ↔ Aiur.NativeAIR.Domain.size domain ∣ n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_zero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.Domain.point domain ⟨0, ⋯⟩ = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_power
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.point domain index ^ Aiur.NativeAIR.Domain.size domain = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_nonzero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.point domain index ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_next
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.point domain ⟨(↑index + 1) % Aiur.NativeAIR.Domain.size domain, ⋯⟩ =
+    Aiur.NativeAIR.Domain.point domain index * Aiur.NativeAIR.Domain.generator domain
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_first_iff
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.point domain index = 1 ↔ ↑index = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.lastPoint_eq_power
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  Aiur.NativeAIR.Domain.lastPoint domain =
+    Aiur.NativeAIR.Domain.generator domain ^ (Aiur.NativeAIR.Domain.size domain - 1)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_last
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  Aiur.NativeAIR.Domain.point domain ⟨Aiur.NativeAIR.Domain.size domain - 1, ⋯⟩ = Aiur.NativeAIR.Domain.lastPoint domain
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.lastPoint_power
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  Aiur.NativeAIR.Domain.lastPoint domain ^ Aiur.NativeAIR.Domain.size domain = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.point_last_iff
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.point domain index = Aiur.NativeAIR.Domain.lastPoint domain ↔
+    ↑index = Aiur.NativeAIR.Domain.size domain - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.lastPoint_nonzero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.Domain.lastPoint domain ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.lastPoint_inverse
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  Aiur.NativeAIR.Domain.lastPoint domain * Aiur.NativeAIR.Domain.generator domain = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.lastPoint_predecessor
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  Aiur.NativeAIR.Domain.lastPoint domain ^ (Aiur.NativeAIR.Domain.size domain - 1) =
+    Aiur.NativeAIR.Domain.generator domain
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.normalizer_nonzero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.Domain.normalizer domain ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.first_at_row
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.Algebra.dividedPowers (Aiur.NativeAIR.Domain.point domain index) 1
+      (Aiur.NativeAIR.Domain.size domain) =
+    if ↑index = 0 then Aiur.G.ofNat (Aiur.NativeAIR.Domain.size domain) else 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.last_at_row
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.Algebra.dividedPowers (Aiur.NativeAIR.Domain.point domain index)
+      (Aiur.NativeAIR.Domain.lastPoint domain) (Aiur.NativeAIR.Domain.size domain) =
+    if ↑index = Aiur.NativeAIR.Domain.size domain - 1 then Aiur.NativeAIR.Domain.normalizer domain else 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.transition_at_row
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.point domain index - Aiur.NativeAIR.Domain.lastPoint domain = 0 ↔
+    ↑index = Aiur.NativeAIR.Domain.size domain - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.ofBase_dividedPowers
+∀ (x a : Aiur.G) (n : Nat),
+  Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.Algebra.dividedPowers x a n) =
+    Aiur.NativeAIR.Domain.Algebra.dividedPowers (Aiur.NativeAIR.ProofCodec.Extension.ofBase x)
+      (Aiur.NativeAIR.ProofCodec.Extension.ofBase a) n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.vanishing_eq
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (value : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.Domain.vanishing domain value = value ^ Aiur.NativeAIR.Domain.size domain - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.vanishing_at_row
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.vanishing domain
+      (Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.point domain index)) =
+    0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.lastPoint_extension_power
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup),
+  Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.lastPoint domain) ^
+      Aiur.NativeAIR.Domain.size domain =
+    1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.root_difference_nonzero
+∀ (x a : Aiur.NativeAIR.ProofCodec.Extension) {n : Nat}, a ^ n = 1 → x ^ n - 1 ≠ 0 → x - a ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.selectors_success
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (value : Aiur.NativeAIR.ProofCodec.Extension)
+  (selected : Aiur.NativeAIR.Domain.Selectors Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.Domain.selectors domain value = some selected →
+    selected.isFirst = Aiur.NativeAIR.Domain.Algebra.dividedPowers value 1 (Aiur.NativeAIR.Domain.size domain) ∧
+      selected.isLast =
+          Aiur.NativeAIR.Domain.Algebra.dividedPowers value
+            (Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.lastPoint domain))
+            (Aiur.NativeAIR.Domain.size domain) ∧
+        selected.isTransition =
+            value - Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.lastPoint domain) ∧
+          Aiur.NativeAIR.Domain.vanishing domain value * selected.invVanishing = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.selectors_defined
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (value : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.Domain.vanishing domain value ≠ 0 →
+    ∃ selected, Aiur.NativeAIR.Domain.selectors domain value = some selected
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.selectors_defined_iff
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (value : Aiur.NativeAIR.ProofCodec.Extension),
+  (∃ selected, Aiur.NativeAIR.Domain.selectors domain value = some selected) ↔
+    Aiur.NativeAIR.Domain.vanishing domain value ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Domain.selectors_none_at_row
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  Aiur.NativeAIR.Domain.selectors domain
+      (Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.point domain index)) =
+    none
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.normalized_injection
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain))
+  (delta : Aiur.NativeAIR.LogUp.Coordinates Aiur.G),
+  (delta.scale (Aiur.NativeAIR.Domain.normalizer domain).inverse).scale
+      (Aiur.NativeAIR.Domain.Algebra.dividedPowers (Aiur.NativeAIR.Domain.point domain index)
+        (Aiur.NativeAIR.Domain.lastPoint domain) (Aiur.NativeAIR.Domain.size domain)) =
+    if ↑index = Aiur.NativeAIR.Domain.size domain - 1 then delta else 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.equations_domain_row
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain))
+  {lookups : List (Aiur.G × List Aiur.G)} {stageCurrent stageNext publics deltaScaled : Array Aiur.G} {groupSize : Nat}
+  {result : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.G)}
+  {beta gamma delta : Aiur.NativeAIR.LogUp.Coordinates Aiur.G},
+  Aiur.NativeAIR.LogUp.Coordinates.read publics 0 = some beta →
+    Aiur.NativeAIR.LogUp.Coordinates.read publics 1 = some gamma →
+      Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0 =
+          some (delta.scale (Aiur.NativeAIR.Domain.normalizer domain).inverse) →
+        Aiur.NativeAIR.LogUp.equations lookups stageCurrent stageNext publics deltaScaled
+              (Aiur.NativeAIR.Domain.Algebra.dividedPowers (Aiur.NativeAIR.Domain.point domain index)
+                (Aiur.NativeAIR.Domain.lastPoint domain) (Aiur.NativeAIR.Domain.size domain))
+              groupSize =
+            some result →
+          (∀ (value : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), value ∈ result → value = 0) →
+            Aiur.NativeAIR.LogUp.PoleFree
+                (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma lookups)) →
+              ∃ first next,
+                Aiur.NativeAIR.LogUp.Coordinates.read stageCurrent 0 = some first ∧
+                  Aiur.NativeAIR.LogUp.Coordinates.read stageNext 0 = some next ∧
+                    (next.toExtension - first.toExtension +
+                        if ↑index = Aiur.NativeAIR.Domain.size domain - 1 then delta.toExtension else 0) =
+                      Aiur.NativeAIR.LogUp.lookupFractions beta gamma lookups
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.equations_domain_sum
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup)
+  (lookups : Fin (Aiur.NativeAIR.Domain.size domain) → List (Aiur.G × List Aiur.G))
+  (stageRows : Fin (Aiur.NativeAIR.Domain.size domain) → Array Aiur.G) (publics deltaScaled : Array Aiur.G)
+  (groupSize : Nat) (beta gamma delta : Aiur.NativeAIR.LogUp.Coordinates Aiur.G),
+  Aiur.NativeAIR.LogUp.Coordinates.read publics 0 = some beta →
+    Aiur.NativeAIR.LogUp.Coordinates.read publics 1 = some gamma →
+      Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0 =
+          some (delta.scale (Aiur.NativeAIR.Domain.normalizer domain).inverse) →
+        (∀ (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+            ∃ result,
+              Aiur.NativeAIR.LogUp.equations (lookups index) (stageRows index)
+                    (stageRows ⟨(↑index + 1) % Aiur.NativeAIR.Domain.size domain, ⋯⟩) publics deltaScaled
+                    (Aiur.NativeAIR.Domain.Algebra.dividedPowers (Aiur.NativeAIR.Domain.point domain index)
+                      (Aiur.NativeAIR.Domain.lastPoint domain) (Aiur.NativeAIR.Domain.size domain))
+                    groupSize =
+                  some result ∧
+                ∀ (value : Aiur.NativeAIR.LogUp.Coordinates Aiur.G), value ∈ result → value = 0) →
+          (∀ (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+              Aiur.NativeAIR.LogUp.PoleFree
+                (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma (lookups index)))) →
+            Aiur.NativeAIR.LogUp.sum
+                (List.ofFn fun index => Aiur.NativeAIR.LogUp.lookupFractions beta gamma (lookups index)) =
+              delta.toExtension
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.LogUp.constraintValues_domain_sum
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (lookups : List Aiur.NativeAIR.Lookup)
+  (nodeRows stageRows : Fin (Aiur.NativeAIR.Domain.size domain) → Array Aiur.G) (publics deltaScaled : Array Aiur.G)
+  (groupSize : Nat) (beta gamma delta : Aiur.NativeAIR.LogUp.Coordinates Aiur.G),
+  Aiur.NativeAIR.LogUp.Coordinates.read publics 0 = some beta →
+    Aiur.NativeAIR.LogUp.Coordinates.read publics 1 = some gamma →
+      Aiur.NativeAIR.LogUp.Coordinates.read deltaScaled 0 =
+          some (delta.scale (Aiur.NativeAIR.Domain.normalizer domain).inverse) →
+        (∀ (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+            ∃ result,
+              Aiur.NativeAIR.LogUp.constraintValues lookups (nodeRows index) (stageRows index)
+                    (stageRows ⟨(↑index + 1) % Aiur.NativeAIR.Domain.size domain, ⋯⟩) publics deltaScaled
+                    (Aiur.NativeAIR.Domain.Algebra.dividedPowers (Aiur.NativeAIR.Domain.point domain index)
+                      (Aiur.NativeAIR.Domain.lastPoint domain) (Aiur.NativeAIR.Domain.size domain))
+                    groupSize =
+                  some result ∧
+                ∀ (value : Aiur.G), value ∈ result → value = 0) →
+          (∀ (index : Fin (Aiur.NativeAIR.Domain.size domain)) (values : List (Aiur.G × List Aiur.G)),
+              List.mapM (Aiur.NativeAIR.readLookup (nodeRows index)) lookups = some values →
+                Aiur.NativeAIR.LogUp.PoleFree
+                  (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma values))) →
+            ∃ values,
+              (∀ (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+                  List.mapM (Aiur.NativeAIR.readLookup (nodeRows index)) lookups = some (values index)) ∧
+                Aiur.NativeAIR.LogUp.sum
+                    (List.ofFn fun index => Aiur.NativeAIR.LogUp.lookupFractions beta gamma (values index)) =
+                  delta.toExtension
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.horner_nil
+∀ {W : Type} [inst : Grind.CommRing W] (point : W), Aiur.NativeAIR.Quotient.horner point [] = 0
+AXIOMS []
+ROOT Aiur.NativeAIR.Quotient.horner_cons
+∀ {W : Type} [inst : Grind.CommRing W] (point first : W) (rest : List W),
+  Aiur.NativeAIR.Quotient.horner point (first :: rest) = first + point * Aiur.NativeAIR.Quotient.horner point rest
+AXIOMS []
+ROOT Aiur.NativeAIR.Quotient.horner_append
+∀ {W : Type} [inst : Grind.CommRing W] (point : W) (left right : List W),
+  Aiur.NativeAIR.Quotient.horner point (left ++ right) =
+    Aiur.NativeAIR.Quotient.horner point left + point ^ left.length * Aiur.NativeAIR.Quotient.horner point right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.horner_powers
+∀ {W : Type} [inst : Grind.CommRing W] (point : W) (values : List W) (offset : Nat),
+  point ^ offset * Aiur.NativeAIR.Quotient.horner point values =
+    Aiur.NativeAIR.LogUp.sum
+      (List.map
+        (fun x =>
+          match x with
+          | (value, index) => point ^ index * value)
+        (values.zipIdx offset))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.composition_from
+∀ {W : Type} [inst : Grind.CommRing W] (point initial : W) (values : List W),
+  List.foldl (fun accumulated value => accumulated * point + value) initial values =
+    initial * point ^ values.length + Aiur.NativeAIR.Quotient.horner point values.reverse
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.composition_horner
+∀ {W : Type} [inst : Grind.CommRing W] (point : W) (values : List W),
+  Aiur.NativeAIR.Quotient.composition point values = Aiur.NativeAIR.Quotient.horner point values.reverse
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.composition_order
+∀ {W : Type} [inst : Grind.CommRing W] (point : W) (values : List W),
+  Aiur.NativeAIR.Quotient.composition point values =
+    Aiur.NativeAIR.LogUp.sum
+      (List.map
+        (fun x =>
+          match x with
+          | (value, index) => point ^ index * value)
+        values.reverse.zipIdx)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.composition_append
+∀ {W : Type} [inst : Grind.CommRing W] (point : W) (user lookup : List W),
+  Aiur.NativeAIR.Quotient.composition point (user ++ lookup) =
+    Aiur.NativeAIR.Quotient.composition point user * point ^ lookup.length +
+      Aiur.NativeAIR.Quotient.composition point lookup
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.composition_zero
+∀ {W : Type} [inst : Grind.CommRing W] (point : W) (values : List W),
+  (∀ (value : W), value ∈ values → value = 0) → Aiur.NativeAIR.Quotient.composition point values = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.inverse_check
+∀ {W : Type} [inst : Grind.CommRing W] (vanishing inverse composition quotient : W),
+  vanishing * inverse = 1 → (composition * inverse = quotient ↔ composition = vanishing * quotient)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.coefficients_flatten
+∀ (pairs : List (Aiur.NativeAIR.LogUp.Coordinates Aiur.NativeAIR.ProofCodec.Extension)),
+  Aiur.NativeAIR.Quotient.coefficients (Aiur.NativeAIR.LogUp.Coordinates.flatten pairs) =
+    some (List.map (fun pair => pair.c0 + pair.c1 * Aiur.NativeAIR.ProofCodec.Extension.basis) pairs)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Quotient.coefficients_success
+∀ {row values : List Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Quotient.coefficients row = some values →
+    ∃ pairs,
+      row = Aiur.NativeAIR.LogUp.Coordinates.flatten pairs ∧
+        values = List.map (fun pair => pair.c0 + pair.c1 * Aiur.NativeAIR.ProofCodec.Extension.basis) pairs
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.coefficients_length
+∀ {row values : List Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Quotient.coefficients row = some values → row.length = 2 * values.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.coefficients_defined
+∀ (row : List Aiur.NativeAIR.ProofCodec.Extension),
+  row.length % 2 = 0 → ∃ values, Aiur.NativeAIR.Quotient.coefficients row = some values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.coefficients_defined_iff
+∀ (row : List Aiur.NativeAIR.ProofCodec.Extension),
+  (∃ values, Aiur.NativeAIR.Quotient.coefficients row = some values) ↔ row.length % 2 = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.evaluate_success
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (point : Aiur.NativeAIR.ProofCodec.Extension)
+  {row : List Aiur.NativeAIR.ProofCodec.Extension} {value : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Quotient.evaluate domain point row = some value →
+    ∃ values,
+      Aiur.NativeAIR.Quotient.coefficients row = some values ∧
+        value = Aiur.NativeAIR.Quotient.horner (point ^ Aiur.NativeAIR.Domain.size domain) values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.evaluate_powers
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (point : Aiur.NativeAIR.ProofCodec.Extension)
+  {row : List Aiur.NativeAIR.ProofCodec.Extension} {value : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Quotient.evaluate domain point row = some value →
+    ∃ pairs,
+      row = Aiur.NativeAIR.LogUp.Coordinates.flatten pairs ∧
+        value =
+          Aiur.NativeAIR.LogUp.sum
+            (List.map
+              (fun x =>
+                match x with
+                | (pair, index) =>
+                  point ^ (Aiur.NativeAIR.Domain.size domain * index) *
+                    (pair.c0 + pair.c1 * Aiur.NativeAIR.ProofCodec.Extension.basis))
+              pairs.zipIdx)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Quotient.check_true_iff
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (point alpha : Aiur.NativeAIR.ProofCodec.Extension)
+  (constraints row : List Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.Quotient.check domain point alpha constraints row = some true ↔
+    Aiur.NativeAIR.Domain.vanishing domain point ≠ 0 ∧
+      ∃ values,
+        Aiur.NativeAIR.Quotient.coefficients row = some values ∧
+          Aiur.NativeAIR.Quotient.composition alpha constraints =
+            Aiur.NativeAIR.Domain.vanishing domain point *
+              Aiur.NativeAIR.Quotient.horner (point ^ Aiur.NativeAIR.Domain.size domain) values
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -13716,6 +14130,105 @@ DEFINITION
 fun beta gamma lookups =>
   Aiur.NativeAIR.LogUp.fractionSum
     (Aiur.NativeAIR.LogUp.fieldEntries (Aiur.NativeAIR.LogUp.compress beta gamma lookups))
+PREMISE Aiur.NativeAIR.Domain.generators
+Array Aiur.G
+DEFINITION
+(have y :=
+    have y :=
+      have y :=
+        [6414415596519834757, 16116352524544190054, 9123114210336311365, 4614640910117430873, 1753635133440165772];
+      9713644485405565297 :: 5456943929260765144 :: 17096174751763063430 :: 1213594585890690845 :: y;
+    have y := 3511170319078647661 :: 17654865857378133588 :: 5416168637041100469 :: 16905767614792059275 :: y;
+    6115771955107415310 :: 12380578893860276750 :: 9306717745644682924 :: 18146160046829613826 :: y;
+  have y :=
+    have y := 17492915097719143606 :: 1532612707718625687 :: 16207902636198568418 :: 17776499369601055404 :: y;
+    13797081185216407910 :: 1803076106186727246 :: 11353340290879379826 :: 455906449640507599 :: y;
+  have y := 17293822564807737345 :: 70368744161280 :: 549755813888 :: 17870292113338400769 :: y;
+  1 :: 18446744069414584320 :: 281474976710656 :: 18446744069397807105 :: y).toArray
+PREMISE Aiur.NativeAIR.Domain.Subgroup
+Type
+DEFINITION
+Fin 33
+PREMISE Aiur.NativeAIR.Domain.ofLogSize
+Nat → Option Aiur.NativeAIR.Domain.Subgroup
+DEFINITION
+fun bits => if bounded : bits < 33 then some ⟨bits, bounded⟩ else none
+PREMISE Aiur.NativeAIR.Domain.size
+Aiur.NativeAIR.Domain.Subgroup → Nat
+DEFINITION
+fun domain => 2 ^ ↑domain
+PREMISE Aiur.NativeAIR.Domain.generator
+Aiur.NativeAIR.Domain.Subgroup → Aiur.G
+DEFINITION
+fun domain => Aiur.NativeAIR.Domain.generators[↑domain]
+PREMISE Aiur.NativeAIR.Domain.point
+(domain : Aiur.NativeAIR.Domain.Subgroup) → Fin (Aiur.NativeAIR.Domain.size domain) → Aiur.G
+DEFINITION
+fun domain index => (Aiur.NativeAIR.Domain.generator domain).pow ↑index
+PREMISE Aiur.NativeAIR.Domain.lastPoint
+Aiur.NativeAIR.Domain.Subgroup → Aiur.G
+DEFINITION
+fun domain => (Aiur.NativeAIR.Domain.generator domain).inverse
+PREMISE Aiur.NativeAIR.Domain.normalizer
+Aiur.NativeAIR.Domain.Subgroup → Aiur.G
+DEFINITION
+fun domain => Aiur.G.ofNat (Aiur.NativeAIR.Domain.size domain) * Aiur.NativeAIR.Domain.generator domain
+PREMISE Aiur.NativeAIR.Domain.Selectors.mk
+{W : Type} → W → W → W → W → Aiur.NativeAIR.Domain.Selectors W
+PREMISE Aiur.NativeAIR.Domain.vanishing
+Aiur.NativeAIR.Domain.Subgroup → Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun domain value => value.power (Aiur.NativeAIR.Domain.size domain) - 1
+PREMISE Aiur.NativeAIR.Domain.selectors
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.ProofCodec.Extension → Option (Aiur.NativeAIR.Domain.Selectors Aiur.NativeAIR.ProofCodec.Extension)
+DEFINITION
+fun domain value =>
+  have z := Aiur.NativeAIR.Domain.vanishing domain value;
+  have lastDenominator := value - Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.lastPoint domain);
+  do
+  let firstInverse ← (value - 1).tryInverse
+  let lastInverse ← lastDenominator.tryInverse
+  let vanishingInverse ← z.tryInverse
+  pure
+      { isFirst := z * firstInverse, isLast := z * lastInverse, isTransition := lastDenominator,
+        invVanishing := vanishingInverse }
+PREMISE Aiur.NativeAIR.Quotient.horner
+{W : Type u_1} → [OfNat W 0] → [Add W] → [Mul W] → W → List W → W
+DEFINITION
+fun {W} [OfNat W 0] [Add W] [Mul W] point coefficients =>
+  List.foldr (fun coefficient rest => coefficient + point * rest) 0 coefficients
+PREMISE Aiur.NativeAIR.Quotient.composition
+{W : Type u_1} → [OfNat W 0] → [Add W] → [Mul W] → W → List W → W
+DEFINITION
+fun {W} [OfNat W 0] [Add W] [Mul W] alpha constraints =>
+  List.foldl (fun accumulated value => accumulated * alpha + value) 0 constraints
+PREMISE Aiur.NativeAIR.Quotient.coefficients
+List Aiur.NativeAIR.ProofCodec.Extension → Option (List Aiur.NativeAIR.ProofCodec.Extension)
+DEFINITION
+fun x => List.brecOn x Aiur.NativeAIR.Quotient.coefficients._f
+PREMISE Aiur.NativeAIR.Quotient.evaluate
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.ProofCodec.Extension →
+    List Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun domain point row => do
+  let __do_lift ← Aiur.NativeAIR.Quotient.coefficients row
+  pure (Aiur.NativeAIR.Quotient.horner (point.power (Aiur.NativeAIR.Domain.size domain)) __do_lift)
+PREMISE Aiur.NativeAIR.Quotient.check
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.ProofCodec.Extension →
+    Aiur.NativeAIR.ProofCodec.Extension →
+      List Aiur.NativeAIR.ProofCodec.Extension → List Aiur.NativeAIR.ProofCodec.Extension → Option Bool
+DEFINITION
+fun domain point alpha constraints row => do
+  let selected ← Aiur.NativeAIR.Domain.selectors domain point
+  let quotient ← Aiur.NativeAIR.Quotient.evaluate domain point row
+  pure (Aiur.NativeAIR.Quotient.composition alpha constraints * selected.invVanishing == quotient)
+PREMISE Aiur.NativeAIR.Domain.Algebra.dividedPowers
+{R : Type} → [Grind.CommRing R] → R → R → Nat → R
+DEFINITION
+fun {R} [Grind.CommRing R] x a x_1 => Nat.brecOn x_1 (Aiur.NativeAIR.Domain.Algebra.dividedPowers._f x a)
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -18828,6 +19341,16 @@ fun selector rank x x_1 x_2 =>
     pure
         { values := rest.values, column := rest.column, equations := first.equations ++ rest.equations,
           queries := first.queries ++ rest.queries, calls := first.calls ++ rest.calls }
+RECURSION WORKER Aiur.NativeAIR.Quotient.coefficients._unsafe_rec
+List Aiur.NativeAIR.ProofCodec.Extension → Option (List Aiur.NativeAIR.ProofCodec.Extension)
+IMPLEMENTATION
+fun x =>
+  match x with
+  | [] => some []
+  | [head] => none
+  | first :: second :: rest => do
+    let __do_lift ← Aiur.NativeAIR.Quotient.coefficients._unsafe_rec rest
+    pure ((first + second * Aiur.NativeAIR.ProofCodec.Extension.basis) :: __do_lift)
 RECURSION WORKER Aiur.Source.Eval.applyGlobal._unsafe_rec
 Aiur.Source.Decls → Nat → Aiur.Global → List Aiur.Value → Aiur.Source.Eval.EvalState → Aiur.Source.Eval.EvalResult
 IMPLEMENTATION
@@ -20807,10 +21330,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1050; LOGICAL DECLARATIONS 18489; WITH RUNTIME 19270
+C8 component ROOTS 1123; LOGICAL DECLARATIONS 18654; WITH RUNTIME 19435
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 172
+RECURSION WORKERS 173
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

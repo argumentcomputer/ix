@@ -55,6 +55,7 @@ dependencies = [
  "libc",
  "multi-stark",
  "num-bigint 0.4.6",
+ "p3-commit",
  "rayon",
  "rustc-hash",
  "tracing",

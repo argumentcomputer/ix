@@ -95,6 +95,10 @@ mod extension_arithmetic_tests;
 #[path = "vk_codec/tests/logup.rs"]
 mod logup_tests;
 
+#[cfg(test)]
+#[path = "vk_codec/tests/domain.rs"]
+mod domain_tests;
+
 // ════════════════════════════════════════════════════════════════════════════
 // Encoder — System<AiurConfig> -> bytes
 // ════════════════════════════════════════════════════════════════════════════

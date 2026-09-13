@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,050 roots by traversing checked types, bodies and inductive
-constructors. Twenty-nine roots use no axioms; one uses only `Quot.sound`;
-176 depend only on `propext`; 280 use exactly `propext` and `Quot.sound`;
-the other 564 use exactly
+The audit checks 1,123 roots by traversing checked types, bodies and inductive
+constructors. Thirty-three roots use no axioms; one uses only `Quot.sound`;
+184 depend only on `propext`; 288 use exactly `propext` and `Quot.sound`;
+the other 617 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 18,489 logical declarations and 19,270 declarations after following runtime
+has 18,654 logical declarations and 19,435 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 172 Ix recursion worker implementations.
+three partial opaque sources and all 173 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -878,10 +878,11 @@ difference equals the weighted sum of message inverses. It also proves a
 counterexample showing why the denominator condition is necessary.
 `LogUpAccumulator` telescopes all groups in a complete checked row, retaining
 the last-row injection supplied by the caller. Further ring lemmas sum a
-cyclic sequence of rows and a chain of circuit accumulators. Deriving the
-selector normalization and cyclic-domain conditions from authenticated trace
-polynomials remains an obligation, as does excluding poles and compression
-collisions to obtain exact message balance.
+cyclic sequence of rows and a chain of circuit accumulators. The domain
+results below supply the selector normalization and cyclic row indexing.
+Extracting the corresponding polynomials from authenticated openings, and
+excluding poles and compression collisions to obtain exact message balance,
+remain obligations.
 
 The comparison corpus checks 4,752 direct native evaluations against the
 independent symbolic schoolbook reference and the Lean model, in both the
@@ -903,6 +904,52 @@ Rust release tests, release Clippy with warnings denied, and formatting pass.
 The strict 396-job build and complete component gate pass with all twenty-six
 native corpora and the unchanged two accepted and seventeen rejected backend
 cases.
+
+`Domain` retains all 33 pinned Goldilocks generators and represents rows by
+finite indices, without enumerating large domains. Kernel-evaluated bounded
+squaring certificates prove the generators' full and half orders and adjacent
+square relations. The resulting order theorem proves distinct row points,
+cyclic next-row multiplication, and the inverse-generator last point for
+every supported size from one through `2^32`. The domain size and the
+last-row normalization factor `n * generator` are nonzero in Goldilocks.
+
+`SelectorAlgebra` proves the divided-power polynomial identities underlying
+the selectors. `Selectors` proves that the checked rational evaluator is
+defined exactly where the vanishing polynomial is nonzero, and agrees there
+with the selector polynomials. On trace rows, the first selector equals `n`
+only at the first row; the last equals `n * generator` only at the last row.
+These facts include the size-one case. `DomainAccumulator` cancels the native
+inverse normalization and derives the complete circuit fraction sum from
+all cyclic rows' checked lookup equations, with an explicit pole-free premise.
+It also extracts the actual lookup values from the node buffers.
+
+`Quotient` rejects incomplete coordinate pairs and recombines every quotient
+slice with the native extension basis in ascending powers of `zeta^n`.
+The constraint fold uses descending powers of `alpha`, preserving the user
+constraints followed by both coordinates of each lookup equation. Successful
+arithmetic checking is equivalent to a nonzero vanishing value and
+`composition = vanishing * quotient`. This equivalence alone does not prove
+that openings come from committed low-degree polynomials or that a random
+challenge detects a violated constraint.
+
+The domain corpus directly calls the pinned native polynomial-space methods.
+All 33 generators, 966 row samples, 1,987 defined and 125 rejected selector
+assignments, and 511 complete small-coset points match Lean. The quotient
+corpus reproduces the verifier's private recombination expression with native
+basis, power and field operations: 384 accepting and 320 rejecting arithmetic
+cases match. Lean additionally rejects odd quotient rows and selector poles
+in every case, and rejects 320 altered accepted quotient rows. These are
+arithmetic comparisons, not cryptographic proof acceptance tests.
+
+The domain and quotient audit adds 73 roots, 17 definitions, and one inspected
+structural coordinate-pairing worker. All 1,050 prior root statements and
+axiom sets, 757 definitions and 172 worker bodies are unchanged. The native
+entry points and partial opaque sources remain the same. The selector
+polynomial is symbolic and has no runtime enumeration or initialization.
+All 84 parallel Rust release tests, release Clippy with warnings denied,
+formatting, the strict 415-job build and the complete component gate pass.
+The gate covers all twenty-eight native corpora and the unchanged two
+accepted and seventeen rejected backend cases.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including
@@ -967,7 +1014,7 @@ bound. The remaining components are:
 
 | Component | Remaining obligation |
 | --- | --- |
-| Native verifier | Connect the enforced proof codec and shape checks and proved field and grouped lookup models to native quotient, transcript and PCS checks, then extract satisfying committed traces from acceptance. |
+| Native verifier | Connect the enforced proof codec and shape checks and proved field, grouped lookup, domain and quotient models to native transcript and PCS checks, then extract satisfying committed traces from acceptance. |
 | Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
 | Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
 | Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |

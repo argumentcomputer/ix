@@ -44,6 +44,8 @@ import Ix.Aiur.Proofs.CompiledKey
 import Ix.Aiur.Proofs.ShapedVerifier
 import Ix.Aiur.Proofs.ExtensionField
 import Ix.Aiur.Proofs.LogUpAccumulator
+import Ix.Aiur.Proofs.DomainAccumulator
+import Ix.Aiur.Proofs.Quotient
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -2152,6 +2154,171 @@ def logUpPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.LogUp.fieldEntries,
   `Aiur.NativeAIR.LogUp.lookupFractions]
 
+def domainRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Domain.generators_size,
+  `Aiur.NativeAIR.Domain.Algebra.power_zero,
+  `Aiur.NativeAIR.Domain.Algebra.power_mul,
+  `Aiur.NativeAIR.Domain.Algebra.power_period,
+  `Aiur.NativeAIR.Domain.Algebra.power_inverse,
+  `Aiur.NativeAIR.Domain.Algebra.predecessor_inverse,
+  `Aiur.NativeAIR.Domain.Algebra.dividedPowers_factor,
+  `Aiur.NativeAIR.Domain.Algebra.dividedPowers_diagonal,
+  `Aiur.NativeAIR.Domain.Algebra.root_dividedPowers,
+  `Aiur.NativeAIR.Domain.Algebra.dividedPowers_off_root,
+  `Aiur.NativeAIR.Domain.ofLogSize_some,
+  `Aiur.NativeAIR.Domain.ofLogSize_defined,
+  `Aiur.NativeAIR.Domain.size_positive,
+  `Aiur.NativeAIR.Domain.size_bound,
+  `Aiur.NativeAIR.Domain.size_lt_characteristic,
+  `Aiur.NativeAIR.Domain.size_lt_u64,
+  `Aiur.NativeAIR.Domain.generator_zero,
+  `Aiur.NativeAIR.Domain.generator_square_certificate,
+  `Aiur.NativeAIR.Domain.generator_full_certificate,
+  `Aiur.NativeAIR.Domain.generator_half_certificate,
+  `Aiur.NativeAIR.Domain.generator_power,
+  `Aiur.NativeAIR.Domain.generator_half,
+  `Aiur.NativeAIR.Domain.generator_nonzero,
+  `Aiur.NativeAIR.Domain.point_eq,
+  `Aiur.NativeAIR.Domain.point_injective,
+  `Aiur.NativeAIR.Domain.generator_order,
+  `Aiur.NativeAIR.Domain.point_zero,
+  `Aiur.NativeAIR.Domain.point_power,
+  `Aiur.NativeAIR.Domain.point_nonzero,
+  `Aiur.NativeAIR.Domain.point_next,
+  `Aiur.NativeAIR.Domain.point_first_iff,
+  `Aiur.NativeAIR.Domain.lastPoint_eq_power,
+  `Aiur.NativeAIR.Domain.point_last,
+  `Aiur.NativeAIR.Domain.lastPoint_power,
+  `Aiur.NativeAIR.Domain.point_last_iff,
+  `Aiur.NativeAIR.Domain.lastPoint_nonzero,
+  `Aiur.NativeAIR.Domain.lastPoint_inverse,
+  `Aiur.NativeAIR.Domain.lastPoint_predecessor,
+  `Aiur.NativeAIR.Domain.normalizer_nonzero,
+  `Aiur.NativeAIR.Domain.first_at_row,
+  `Aiur.NativeAIR.Domain.last_at_row,
+  `Aiur.NativeAIR.Domain.transition_at_row,
+  `Aiur.NativeAIR.Domain.ofBase_dividedPowers,
+  `Aiur.NativeAIR.Domain.vanishing_eq,
+  `Aiur.NativeAIR.Domain.vanishing_at_row,
+  `Aiur.NativeAIR.Domain.lastPoint_extension_power,
+  `Aiur.NativeAIR.Domain.root_difference_nonzero,
+  `Aiur.NativeAIR.Domain.selectors_success,
+  `Aiur.NativeAIR.Domain.selectors_defined,
+  `Aiur.NativeAIR.Domain.selectors_defined_iff,
+  `Aiur.NativeAIR.Domain.selectors_none_at_row,
+  `Aiur.NativeAIR.LogUp.normalized_injection,
+  `Aiur.NativeAIR.LogUp.equations_domain_row,
+  `Aiur.NativeAIR.LogUp.equations_domain_sum,
+  `Aiur.NativeAIR.LogUp.constraintValues_domain_sum,
+  `Aiur.NativeAIR.Quotient.horner_nil,
+  `Aiur.NativeAIR.Quotient.horner_cons,
+  `Aiur.NativeAIR.Quotient.horner_append,
+  `Aiur.NativeAIR.Quotient.horner_powers,
+  `Aiur.NativeAIR.Quotient.composition_from,
+  `Aiur.NativeAIR.Quotient.composition_horner,
+  `Aiur.NativeAIR.Quotient.composition_order,
+  `Aiur.NativeAIR.Quotient.composition_append,
+  `Aiur.NativeAIR.Quotient.composition_zero,
+  `Aiur.NativeAIR.Quotient.inverse_check,
+  `Aiur.NativeAIR.Quotient.coefficients_flatten,
+  `Aiur.NativeAIR.Quotient.coefficients_success,
+  `Aiur.NativeAIR.Quotient.coefficients_length,
+  `Aiur.NativeAIR.Quotient.coefficients_defined,
+  `Aiur.NativeAIR.Quotient.coefficients_defined_iff,
+  `Aiur.NativeAIR.Quotient.evaluate_success,
+  `Aiur.NativeAIR.Quotient.evaluate_powers,
+  `Aiur.NativeAIR.Quotient.check_true_iff]
+
+def domainAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Domain.ofLogSize_some,
+  `Aiur.NativeAIR.Domain.size_positive,
+  `Aiur.NativeAIR.Quotient.horner_nil,
+  `Aiur.NativeAIR.Quotient.horner_cons]
+
+def domainQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Domain.Algebra.power_zero,
+  `Aiur.NativeAIR.Domain.size_bound,
+  `Aiur.NativeAIR.Domain.size_lt_characteristic,
+  `Aiur.NativeAIR.Domain.size_lt_u64,
+  `Aiur.NativeAIR.Domain.generator_square_certificate,
+  `Aiur.NativeAIR.Domain.generator_half_certificate,
+  `Aiur.NativeAIR.Quotient.coefficients_success,
+  `Aiur.NativeAIR.Quotient.coefficients_length]
+
+def domainClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Domain.Algebra.predecessor_inverse,
+  `Aiur.NativeAIR.Domain.Algebra.dividedPowers_factor,
+  `Aiur.NativeAIR.Domain.Algebra.dividedPowers_diagonal,
+  `Aiur.NativeAIR.Domain.Algebra.root_dividedPowers,
+  `Aiur.NativeAIR.Domain.Algebra.dividedPowers_off_root,
+  `Aiur.NativeAIR.Domain.generator_power,
+  `Aiur.NativeAIR.Domain.generator_half,
+  `Aiur.NativeAIR.Domain.generator_nonzero,
+  `Aiur.NativeAIR.Domain.point_eq,
+  `Aiur.NativeAIR.Domain.point_injective,
+  `Aiur.NativeAIR.Domain.generator_order,
+  `Aiur.NativeAIR.Domain.point_zero,
+  `Aiur.NativeAIR.Domain.point_power,
+  `Aiur.NativeAIR.Domain.point_nonzero,
+  `Aiur.NativeAIR.Domain.point_next,
+  `Aiur.NativeAIR.Domain.point_first_iff,
+  `Aiur.NativeAIR.Domain.lastPoint_eq_power,
+  `Aiur.NativeAIR.Domain.point_last,
+  `Aiur.NativeAIR.Domain.lastPoint_power,
+  `Aiur.NativeAIR.Domain.point_last_iff,
+  `Aiur.NativeAIR.Domain.lastPoint_nonzero,
+  `Aiur.NativeAIR.Domain.lastPoint_inverse,
+  `Aiur.NativeAIR.Domain.lastPoint_predecessor,
+  `Aiur.NativeAIR.Domain.normalizer_nonzero,
+  `Aiur.NativeAIR.Domain.first_at_row,
+  `Aiur.NativeAIR.Domain.last_at_row,
+  `Aiur.NativeAIR.Domain.transition_at_row,
+  `Aiur.NativeAIR.Domain.ofBase_dividedPowers,
+  `Aiur.NativeAIR.Domain.vanishing_eq,
+  `Aiur.NativeAIR.Domain.vanishing_at_row,
+  `Aiur.NativeAIR.Domain.lastPoint_extension_power,
+  `Aiur.NativeAIR.Domain.root_difference_nonzero,
+  `Aiur.NativeAIR.Domain.selectors_success,
+  `Aiur.NativeAIR.Domain.selectors_defined,
+  `Aiur.NativeAIR.Domain.selectors_defined_iff,
+  `Aiur.NativeAIR.Domain.selectors_none_at_row,
+  `Aiur.NativeAIR.LogUp.normalized_injection,
+  `Aiur.NativeAIR.LogUp.equations_domain_row,
+  `Aiur.NativeAIR.LogUp.equations_domain_sum,
+  `Aiur.NativeAIR.LogUp.constraintValues_domain_sum,
+  `Aiur.NativeAIR.Quotient.horner_append,
+  `Aiur.NativeAIR.Quotient.horner_powers,
+  `Aiur.NativeAIR.Quotient.composition_from,
+  `Aiur.NativeAIR.Quotient.composition_horner,
+  `Aiur.NativeAIR.Quotient.composition_order,
+  `Aiur.NativeAIR.Quotient.composition_append,
+  `Aiur.NativeAIR.Quotient.composition_zero,
+  `Aiur.NativeAIR.Quotient.inverse_check,
+  `Aiur.NativeAIR.Quotient.coefficients_defined,
+  `Aiur.NativeAIR.Quotient.coefficients_defined_iff,
+  `Aiur.NativeAIR.Quotient.evaluate_success,
+  `Aiur.NativeAIR.Quotient.evaluate_powers,
+  `Aiur.NativeAIR.Quotient.check_true_iff]
+
+def domainPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.Domain.generators,
+  `Aiur.NativeAIR.Domain.Subgroup,
+  `Aiur.NativeAIR.Domain.ofLogSize,
+  `Aiur.NativeAIR.Domain.size,
+  `Aiur.NativeAIR.Domain.generator,
+  `Aiur.NativeAIR.Domain.point,
+  `Aiur.NativeAIR.Domain.lastPoint,
+  `Aiur.NativeAIR.Domain.normalizer,
+  `Aiur.NativeAIR.Domain.Selectors.mk,
+  `Aiur.NativeAIR.Domain.vanishing,
+  `Aiur.NativeAIR.Domain.selectors,
+  `Aiur.NativeAIR.Quotient.horner,
+  `Aiur.NativeAIR.Quotient.composition,
+  `Aiur.NativeAIR.Quotient.coefficients,
+  `Aiur.NativeAIR.Quotient.evaluate,
+  `Aiur.NativeAIR.Quotient.check,
+  `Aiur.NativeAIR.Domain.Algebra.dividedPowers]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2188,7 +2355,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -2427,7 +2594,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -2506,7 +2673,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if logUpRoots.contains root then
+    let expected := if domainRoots.contains root then
+        if domainAxiomFreeRoots.contains root then #[]
+        else if domainClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if domainQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if logUpRoots.contains root then
         if logUpAxiomFreeRoots.contains root then #[]
         else if logUpClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if logUpQuotRoots.contains root then #[``propext, ``Quot.sound]
