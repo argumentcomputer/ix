@@ -7,6 +7,9 @@ import Ix.Kernel.Verify.Consistency.Level
 import Ix.Kernel.Verify.Consistency.Expr
 import Ix.Kernel.Verify.Consistency.Judgment
 import Ix.Kernel.Verify.Consistency.Infer
+import Ix.Kernel.Verify.Consistency.Atomic
+import Ix.Kernel.Verify.Consistency.Production
+import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
 
 /-!
@@ -14,6 +17,7 @@ import Ix.Kernel.Verify.Consistency.Audit
 
 This library connects production kernel operations to `Ix.Theory`. Each
 transport keeps its representation, arithmetic, and dependency assumptions
-explicit. The component theorems are distinct from a full soundness theorem
-for `checkEnvAnon`.
+explicit. A production `checkEnvAnon` fragment now preserves models of its
+axiom set for monomorphic aliases and closed sorts under the stated execution
+resources. General checker soundness remains outside this fragment.
 -/

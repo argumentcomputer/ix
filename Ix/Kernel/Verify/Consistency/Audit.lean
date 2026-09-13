@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.Infer
+import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -20,6 +21,39 @@ private def levelNative : Lean.Name :=
   nativeAxiom `Ix.Kernel.Level `Ix.Kernel.KUniv.mkSucc._native.native_decide.ax_1
 private def expressionNative : Lean.Name :=
   nativeAxiom `Ix.Kernel.Expr `Ix.Kernel.KExpr.mkVar._native.native_decide.ax_1
+
+/-- The public driver reaches these additional generated output-length
+proofs through the full production method table, including inactive branches.
+No new native proof is introduced by the fragment verification. -/
+private def productionNative : Array Lean.Name := #[
+  expressionNative, levelNative,
+  nativeAxiom `Ix.Environment `Ix.Name.mkStr._native.native_decide.ax_1,
+  nativeAxiom `Ix.Kernel.Inductive `Ix.Kernel.RecM.canonicalAuxOrder._native.native_decide.ax_9
+]
+
+private def atomicRoots : Array Lean.Name := #[
+  ``infer_uncached_success, ``AtomicInferenceSupport.typing,
+  ``AtomicInferenceSupport.reads, ``AtomicInferenceSupport.output,
+  ``AtomicInferenceSupport.scopeAndReferences, ``AtomicInference.sound
+]
+
+private def productionRoots : Array Lean.Name := #[
+  ``StandalonePrefix.member_success, ``definition_body_trace,
+  ``AtomicDefinitionRun.sound, ``AtomicDefinitionRun.no_self_alias,
+  ``WorkPosition.check_success, ``AtomicDefinitionPlan.extends,
+  ``AtomicDefinitionPlan.sound, ``AtomicDefinitionPlan.represents,
+  ``checkEnvAnon_atomic_preserves_model, ``checkEnvAnon_atomic_represents_source,
+  ``checkEnvAnon_atomic_no_false
+]
+
+/-- The new production roots must not acquire a checker-soundness assumption
+or invoke the independent certificate validator to establish acceptance. -/
+private def forbiddenProduction : Array Lean.Name := #[
+  `Ix.Kernel.CheckSuccessSound,
+  `Ix.Kernel.SupportedCheckFragment,
+  `Ix.Theory.Certified.checkProofCertified,
+  `Ix.Certified.acceptsSerializedStore
+]
 
 def roots : Array RootAllowance := #[
   { root := ``readLevel_eq, standardAxioms := #[``propext] },
@@ -44,7 +78,13 @@ def roots : Array RootAllowance := #[
   { root := ``sort_conversion, standardAxioms := standard },
   { root := ``inferUncached_sort_sound, standardAxioms := standard,
     nativeAxioms := #[expressionNative, levelNative] }
-]
+] ++ atomicRoots.map (fun root => {
+  root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+  forbiddenDependencies := forbiddenProduction
+}) ++ productionRoots.map (fun root => {
+  root, standardAxioms := standard, nativeAxioms := productionNative,
+  forbiddenDependencies := forbiddenProduction
+}) ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 
 run_cmd Kernel.Verify.Audit.check roots
 

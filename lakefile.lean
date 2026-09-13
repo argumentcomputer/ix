@@ -254,8 +254,8 @@ lean_lib IxKernelVerify where
 
 end IxKernelVerify
 
-/- Direct refinement of production operations into the set model, with its
-own exact axiom audit. This is distinct from whole-checker soundness. -/
+/- Direct production refinement, including the atomic environment fragment,
+with its own exact axiom audit. Whole-checker soundness remains separate. -/
 lean_lib IxKernelConsistency where
   roots := #[`Ix.Kernel.Verify.Consistency]
   globs := #[.andSubmodules `Ix.Kernel.Verify.Consistency]

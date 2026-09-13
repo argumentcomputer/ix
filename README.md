@@ -176,9 +176,11 @@ Ix consists of the following core components:
 
 `Ix.Kernel` includes audited implementation proofs and a certified receipt
 interface with relative consistency theorems under an explicit set-theory
-assumption. Full consistency of the production `checkEnvAnon` checker remains
-open. See the [kernel verification guide](docs/kernel-verification.md) for the
-theorem boundaries and remaining obligations, and
+assumption. A production `checkEnvAnon` fragment for monomorphic aliases and
+closed universe terms preserves any given model of its source axioms. Full
+checker consistency remains open. See the
+[kernel verification guide](docs/kernel-verification.md) for the fragment's
+execution premises and remaining obligations, and
 [certified checking](docs/certified-checking.md) for runnable examples.
 
 Run `lake run check-kernel` to validate the implementation proofs, consistency

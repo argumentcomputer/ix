@@ -43,13 +43,79 @@ dependency audit restricted to Lean's three standard axioms.
 - `ModelTyping.no_false` rules out a closed model-typed kernel expression at
   primitive False when its environment has been admitted by the certified
   interface and the set-theory assumption has an instance.
+- `checkEnvAnon_atomic_preserves_model` connects a supported production
+  environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
+  a declaration at an axiom type interpreted as empty, including False.
 
-The last theorem assumes semantic typing; it does not assume or prove that
-arbitrary checker success supplies it. A complete checker consistency theorem
+`ModelTyping.no_false` assumes semantic typing. The production fragment below
+constructs that typing from its supported inference and conversion paths.
+A complete checker consistency theorem
 still requires the remaining inference/conversion cases, cache invariants,
 address-to-store resolution, and declaration admission to establish that
 postcondition for `checkEnvAnon`. The existing named-calculus proofs are retained
 to support this refinement, rather than being treated as a set-model proof.
+
+## Production environment fragment
+
+The axiom policy is relative: **every model of the source axioms extends to a
+model of the checked environment, preserving the axiom interpretations**.
+The axiom interface starts empty and contains exactly the listed source
+axioms. Its types must be closed and refer only to that interface. A concrete
+`Realizes` witness supplies their interpretation; checking an axiom's type
+does not manufacture an inhabitant. This model-existence hypothesis is not
+identified with syntactic consistency of an arbitrary axiom theory.
+
+The initial fragment covers monomorphic standalone definitions, theorems,
+and opaque definitions whose values are either closed universe terms or
+references to preceding interface entries. Examples include:
+
+```lean
+axiom P : Prop
+axiom p : P
+def q : P := p
+theorem r : P := q
+def typeAlias : Type := Prop
+```
+
+`AtomicEnvironmentFragment` records the precise execution boundary:
+
+- Every source key occurs in the exact `buildAnonWork` result, and every work
+  item is represented by an axiom or a definition. Standalone lookup, routing,
+  and reset witnesses identify the actual checked `KConst`.
+- Value inference misses both cache partitions. Constant lookup agrees with
+  an already admitted monomorphic type; empty level substitution preserves
+  that type. Sort inference retains the finite interning coherence and
+  address-faithfulness premises.
+- Conversion takes the initial hash-equality path, with faithfulness of the
+  compared expressions. General reduction and conversion caches are outside
+  this fragment.
+- Definitions are added in a dependency order with fresh references. Their
+  runtime observations still use the states reached in the original serial
+  work order, including cache clearing. `AtomicDefinitionRun.no_self_alias`
+  proves that a fresh definition cannot justify its own type by referring to
+  itself.
+- `checkEnvAnon` returns `.ok results` **and every result row has no error**.
+  The outer `.ok` alone does not mean that the declarations passed.
+
+These are operational and representation witnesses, not a checker-soundness
+callback or a supplied typing proof. A caller must establish them for a run;
+this change does not automatically derive them from arbitrary Ixon syntax.
+The proof follows the public checker through validation, type inference,
+the theorem guard, value inference, and conversion. Successful value
+inference constructs the body typing used to extend the preceding model.
+Lambdas, applications, polymorphic instantiation, inductives, coordinated
+blocks, and other conversion paths remain outside this slice.
+
+`checkEnvAnon_atomic_represents_source` assigns every source address an
+interface whose type reads the exact declaration reached by production
+lookup. Definition interfaces also retain their checked bodies. This is a
+statement about the production ingress/lookup result; the independent
+serialized-Ixon reader refinement remains a separate boundary.
+
+The no-False corollary takes a model of the initial axiom interface in which
+the designated false type is empty. Model extension preserves that value,
+so no resulting declaration can inhabit it. It does not blacklist axiom
+names or merely exclude declarations literally written with type `False`.
 
 ## Trust checks
 
@@ -98,10 +164,15 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 18 exact theorem boundaries. Its remaining
-native assumptions are explicitly named proofs reached through production
-smart-constructor code; the model's no-False theorem itself uses only
-`propext`, `Classical.choice`, and `Quot.sound`, with set theory as a hypothesis.
+The consistency target checks 36 exact theorem boundaries. The production
+environment roots retain four existing generated output-length proofs,
+reached through expression/universe construction, names, and the full
+production method table. They introduce no new native proofs. The model
+extension lemma and `ModelTyping.no_false` use only `propext`,
+`Classical.choice`, and `Quot.sound`, with set theory as a hypothesis.
+The new production roots additionally forbid the earlier abstract
+`CheckSuccessSound`/`SupportedCheckFragment` interfaces and the independent
+certificate validator in their dependency closures.
 
 ## Certified host adapters
 
@@ -129,6 +200,7 @@ tests are outside the host gate.
 | --- | --- |
 | Certified checker contracts | [`Ix/Kernel/Certified.lean`](../Ix/Kernel/Certified.lean), [`CertifiedClaims.lean`](../Ix/Kernel/CertifiedClaims.lean) |
 | Direct production refinement and its audit | [`Ix/Kernel/Verify/Consistency.lean`](../Ix/Kernel/Verify/Consistency.lean) |
+| Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |
 | Concrete set-theory instance | [Separate model package](../Models/SetTheory/README.md) |
@@ -142,3 +214,8 @@ necessary named-specification imports and exact hash-axiom audit updates.
 The new compiler development, circuit changes and certificate VM pilot
 are deferred. The external `lean4lean` dependency and its benchmark/test
 targets are removed; all verification dependencies are local to Ix.
+
+The subsequent production-fragment change adds direct inference, declaration,
+and serial-environment proofs on top of that extraction. It changes no
+production checker behavior and adds regression cases to the existing kernel
+unit gate.

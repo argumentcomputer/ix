@@ -22,6 +22,12 @@ These are relative consistency results for the certified interface. The
 and proves direct model results for universe comparison, structural expression
 reading, interning, and the production sort-inference branch. The certified
 host adapters connect authenticated serialized Ixon to model admission.
+A production fragment for monomorphic aliases and closed universe terms now
+proves that `checkEnvAnon` preserves a supplied model of its source axiom set,
+under explicit operational and representation witnesses. Its no-False
+corollary preserves the axiom model's empty interpretation of the false type;
+it does not assume that arbitrary source axioms are consistent. See the
+[fragment contract](kernel-verification.md#production-environment-fragment).
 A complete bridge from arbitrary `Ix.Kernel.checkEnvAnon` success or
 compiler/backend execution remains unfinished.
 
