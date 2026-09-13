@@ -6,7 +6,7 @@ import Ix.Kernel.Verify.Check.QuotientBoundary
 /-!
 # Public coordinated-block checker theorem
 
-This is E0's stable public import frontier.  It instantiates the recursive
+This is block admission's stable public import frontier.  It instantiates the recursive
 driver with the exact finite method table chosen by `TcM.runRec` and crosses
 the public error-isolation wrapper.  Successful isolation is transparent, so
 the semantic disposition is indexed by the public checker's exact final
@@ -19,8 +19,8 @@ namespace TcM.checkConst
 
 /-- A successful public checker call either atomically accepts the exact
 routed block or executes the separately verified standalone branch.  The
-coordinated body certifier is explicitly relative to K3 singleton-definition
-evidence or E2's inductive/recursor oracle resources. -/
+coordinated body certifier is explicitly relative to declaration-checking singleton-definition
+evidence or inductive/recursor oracle resources. -/
 theorem blockDisposition
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport}

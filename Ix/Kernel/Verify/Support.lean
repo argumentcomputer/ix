@@ -2,7 +2,7 @@ import Ix.Kernel.Verify.InstUniv
 import Std.Data.HashMap.Lemmas
 
 /-!
-# G3: finite run-scoped collision and arithmetic support
+# Finite run-scoped collision and arithmetic support
 
 The expression walkers were already proved against an abstract predicate
 `S`, with separate hypotheses that their reach relation and the initial

@@ -6,7 +6,7 @@ import Ix.Kernel.Verify.DefEq.StoppedContinuationClosure
 
 The bounded driver needs one verified iteration and one verified continuation
 for a stopped pair.  This module joins those independently proved executable
-surfaces under the canonical K2 suffix/cache model.
+surfaces under the canonical inference/conversion suffix/cache model.
 -/
 
 namespace Ix.Kernel

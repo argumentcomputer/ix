@@ -134,7 +134,7 @@ def wellScopedTests : TestSeq :=
         | .error (.unknownConst _) => true
         | _ => false) : Bool))
 
-/-! ### K0 totalization boundaries -/
+/-! ### Totalization boundaries -/
 
 def totalizationTests : TestSeq :=
   test "universe validation preserves LIFO error order"

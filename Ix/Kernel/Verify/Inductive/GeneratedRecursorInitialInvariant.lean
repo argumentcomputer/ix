@@ -1062,7 +1062,7 @@ private theorem familyMemberNatReferenceWhnf :
       familyMemberWhnfTheory.projections.wf trivial)
 
 /-- Lift one finite WHNF census fact to complete provenance in the full
-inductive-aware K1/K2 semantic stack. -/
+inductive-aware reduction, inference, and conversion semantic stack. -/
 private theorem familyMemberWhnfEntryProvenance
     {kind : ExprCacheKind} (isWhnf : kind.IsWhnf)
     {key : Address × Address} {value : KExpr .anon}
@@ -1619,7 +1619,7 @@ private theorem familyMemberBlockResultProvenance
 
 /-- Every physical semantic cache entry in the reached production state has
 finite support, authorized direct roots, and the meaning assigned by the
-complete K1/K2/inductive cache stack. -/
+complete reduction, inference, conversion, and inductive cache stack. -/
 theorem familyMemberInitial_cacheInvariant :
     CacheInvariant
       (kernelCacheSemanticsWithInductives familyMemberModel.keys

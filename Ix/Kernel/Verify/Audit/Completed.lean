@@ -2495,11 +2495,11 @@ private def booleanEnumerationNative : Array Lean.Name :=
     `Ix.Kernel.BooleanEnumerationFixture.recursorOwnerNative._native.native_decide.ax_1_1
 ] ++ booleanSemanticFixtureNative
 
-/- The E3-S family-body bridge consumes only the family-side slice of the
+/- The supported fragment family-body bridge consumes only the family-side slice of the
 full end-to-end Boolean witness.  Keep this narrower than
 `booleanEnumerationNative`: in particular it must not inherit the executable
 recursor run, kernel-run, generated-rule, or recursor-ingress facts merely
-because the larger E2b witness uses them. -/
+because the larger singleton certification witness uses them. -/
 private def booleanFamilyBodyNative : Array Lean.Name := inductiveNative ++ #[
   enumerationAcceptanceNativeAxiom
     `Ix.Kernel.BooleanEnumerationFixture.familyBlockLoadedNative._native.native_decide.ax_1_1,
@@ -2581,7 +2581,7 @@ private def booleanFamilyBodyNative : Array Lean.Name := inductiveNative ++ #[
     `Ix.Kernel.BooleanEnumerationFixture.trueTypeNative._native.native_decide.ax_1_2
 ]
 
-/-- Exact evaluator boundary of the final E3-S Boolean whole-driver witness.
+/-- Exact evaluator boundary of the Boolean whole-driver witness.
 This is intentionally narrower than `booleanEnumerationNative`: the release
 root consumes the generated Theory certificate and exact physical links, but
 does not inherit the earlier standalone body/kernel executions as semantic
@@ -2769,7 +2769,7 @@ def booleanDriverNative : Array Lean.Name := inductiveNative ++ #[
     `Ix.Kernel.BooleanEnumerationFixture.trueTypeNative._native.native_decide.ax_1_2
 ]
 
-/-- Exact evaluator boundary of the serialized T0 Boolean certificate.  Each
+/-- Exact evaluator boundary of the serialized Boolean certificate. Each
 closed computation is named so changes in the byte, eager, lazy, dependency,
 or driver slices are visible independently in the trust manifest. -/
 def serializedBooleanNative : Array Lean.Name := booleanDriverNative ++ #[
@@ -2907,7 +2907,7 @@ def serializedBooleanNative : Array Lean.Name := booleanDriverNative ++ #[
     `Ix.Kernel.BooleanSerialized.trueProjectionLookupNative._native.native_decide.ax_1_1
 ]
 
-/- Exact evaluator boundary of the non-vacuous literal/blob T0 fixture. -/
+/- Exact evaluator boundary of the non-vacuous literal/blob serialization fixture. -/
 private def literalRoundTripNative : Array Lean.Name := nameNative ++ #[
   literalBlobsNativeAxiom
     `Ix.Kernel.SerializedLiteralBlobs.blobKeysClassifiedNative._native.native_decide.ax_1_1,
@@ -2982,7 +2982,7 @@ than allowing the remainder of the executable inductive-fixture debt. -/
 private def projectionDebt : Array Lean.Name :=
   typingDebt.push ``Ix.Theory.Named.VEnv.WF.registeredStructureHeadInversion
 
-/- The empty legacy whole-`KEnv` inductive path is forbidden from every G2b
+/- The empty legacy whole-`KEnv` inductive path is forbidden from every catalog lookup
 consumer root.  Keeping this list in the executable audit prevents an
 innocent-looking helper from reintroducing the old `nomatch` dependency. -/
 private def legacyWholeEnv : Array Lean.Name := #[
@@ -2992,7 +2992,7 @@ private def legacyWholeEnv : Array Lean.Name := #[
   ``Ix.Kernel.TrKEnv
 ]
 
-/- E2a is intentionally a Theory-only certificate consumer. These
+/- The generation adapter is a Theory-only certificate consumer. These
 checker/catalog/pattern declarations must not enter its dependency graph. -/
 private def certificateAdapterForbidden : Array Lean.Name := #[
   ``Ix.Kernel.Catalog,
@@ -3016,7 +3016,7 @@ private def annotatedPiCertificateForbidden : Array Lean.Name := #[
 ]
 
 /- The pre-TrustedBody delta route admitted successful unfolding through a broad
-reflection oracle and arbitrary cache-write authority.  The final K1 closure
+reflection oracle and arbitrary cache-write authority.  The final WHNF closure
 must use exact trusted declaration certificates instead. -/
 private def legacyDeltaAuthority : Array Lean.Name := #[
   ``Ix.Kernel.UnfoldCacheWriteOracle,
@@ -3045,8 +3045,8 @@ private def legacyAllDepthKnot : Array Lean.Name := #[
 private def boundedKnotForbiddenDependencies : Array Lean.Name :=
   k1ForbiddenDependencies ++ legacyAllDepthKnot
 
-/- E2c occurrence-validation roots must be derived from the production run,
-not from the ambient semantic inductive oracle retained by E2b. -/
+/- Occurrence-validation roots must be derived from the production run,
+not from the ambient semantic inductive oracle retained by singleton certification. -/
 private def occurrenceValidationForbiddenDependencies : Array Lean.Name :=
   boundedKnotForbiddenDependencies.push ``Ix.Kernel.InductiveOracle
 
@@ -3074,7 +3074,7 @@ private def oracleWorldMaterialization : Array Lean.Name := #[
 private def existingSemanticBlockForbiddenDependencies : Array Lean.Name :=
   boundedKnotForbiddenDependencies ++ oracleWorldMaterialization
 
-/- K2S keeps the global suffix model as a compatibility surface only.  The
+/- Scoped method proofs keep the global suffix model as a compatibility surface only. The
 finite positive-fuel construction must neither manufacture that model nor
 reach the older public adapters that consume it. -/
 private def legacyGlobalSuffix : Array Lean.Name := #[
@@ -3124,7 +3124,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Kernel.TcM.instantiateUnivParams_wf,
     standardAxioms := standard, nativeAxioms := levelNative },
 
-  -- G3a finite run support and generated-term resource bounds. Universe
+  -- Finite run support and generated-term resource bounds. Universe
   -- instantiation can rebuild sorts/constants and therefore reaches the now
   -- total expression serializer's standard `UInt8` quotient implementation.
   { root := ``Ix.Kernel.KExpr.LiftReach.finite,
@@ -3175,7 +3175,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := inferNative,
     forbiddenDependencies := legacyWholeEnv },
 
-  -- G3b closes the remaining formalized walker/direct-intern families and
+  -- Execution-indexed support covers the formalized walker/direct-intern families and
   -- ties the exact finite request list to an actual TcM computation. The
   -- simultaneous/reverse instantiation specs can likewise rebuild serialized
   -- expressions and inherit the same standard quotient footprint.
@@ -3321,7 +3321,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Kernel.TrKExpr.defeq,
     standardAxioms := standard, sorryOrigins := typingDebt },
 
-  -- Legacy whole-environment compatibility interfaces.  G2b consumer roots
+  -- Legacy whole-environment compatibility interfaces. Catalog lookup consumer roots
   -- below are forbidden from depending on these declarations.
   { root := ``Ix.Kernel.TrKEnv.wf,
     standardAxioms := standard },
@@ -3343,7 +3343,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Kernel.CtxRecon.fvar_resolves,
     standardAxioms := standard },
 
-  -- G1a's non-circular world and one-way lazy-load boundary.
+  -- Non-circular world model and one-way lazy-load boundary.
   { root := ``Ix.Kernel.VerifyWorld.ofCatalog_catalogued_not_trusted,
     standardAxioms := standardWithoutChoice },
   { root := ``Ix.Kernel.VerifyWorld.LE.trans,
@@ -3361,7 +3361,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Kernel.VerifyWorld.ofCatalog_loaded_not_trusted,
     standardAxioms := standard },
 
-  -- G1b's raw/pending boundary.  Raw correspondence has no declaration-WF
+  -- Pending-declaration isolation. Raw correspondence has no declaration-WF
   -- premise; the fixture roots pin the concrete non-WF pending case.
   { root := ``Ix.Kernel.RawExprRel.mono,
     standardAxioms := standard },
@@ -3380,7 +3380,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Kernel.IllTypedPending.loaded_pending_but_not_wf,
     standardAxioms := standard },
 
-  -- G1c's trusted-only catalog log and explicit-WF promotion boundary.
+  -- Trusted-only catalog log and explicit-WF promotion boundary.
   { root := ``Ix.Kernel.RawDeclRel.wf_le,
     standardAxioms := standard },
   { root := ``Ix.Kernel.TrustedCatalogLog.wf,
@@ -3414,7 +3414,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Kernel.WellTypedPromotion.promotes,
     standardAxioms := standard },
 
-  -- G1d's world-based concrete-state invariant.  Loading stays
+  -- World-based concrete-state invariant. Loading stays
   -- representation-only, promotion requires a fresh WF witness, and the
   -- fixed-world Hoare roots pin no-promotion behavior on both outcomes.
   { root := ``Ix.Kernel.TcStateWF.of_consts_eq,
@@ -3434,7 +3434,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Kernel.TcM.instantiateUnivParams.tcStateWF,
     standardAxioms := standard, nativeAxioms := levelNative },
 
-  -- Pin A / E2a: the certified-generation adapter may use only Ix.Theory.Named
+  -- The certified-generation adapter may use only Ix.Theory.Named
   -- Theory transaction facts, never Ix checker/catalog/pattern authority.
   { root := ``Ix.Kernel.CertifiedGenerationTransaction.trace,
     standardAxioms := standardWithoutChoice,
@@ -3446,7 +3446,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standardWithoutChoice,
     forbiddenDependencies := certificateAdapterForbidden },
 
-  -- Spec-08's Theory-only block adapter preserves the same quarantine while
+  -- The Theory-only block adapter preserves the same quarantine while
   -- exposing one atomic all-families/all-constructors/all-recursors/all-rules
   -- transaction rather than a sequence of singleton admissions.
   { root := ``Ix.Kernel.CertifiedBlockGenerationTransaction.trace,
@@ -3459,7 +3459,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standardWithoutChoice,
     forbiddenDependencies := certificateAdapterForbidden },
 
-  -- E2c retains the exact Ix.Theory.Named candidate-producer equation alongside
+  -- Inductive verification retains the exact Ix.Theory.Named candidate-producer equation alongside
   -- the certified Theory transaction.  Unlike the Theory-only adapter above,
   -- this Verify-backed bridge deliberately inherits the pinned analyzer debt.
   { root := ``Ix.Kernel.ProducedGenerationTransaction.facts,
@@ -3494,7 +3494,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard,
     nativeAxioms := mutualFamilyNative },
 
-  -- E2c's first concrete breadth witness is the exact staged `IndexedVec`
+  -- The concrete breadth witness is the exact staged `IndexedVec`
   -- certificate: one parameter, one changing index, a recursive field, large
   -- elimination, and both generated rules.  It remains Theory-only here;
   -- production Ix catalog correspondence is audited in the later linkage.
@@ -3611,7 +3611,7 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := aliasRecUpstreamDebt,
     forbiddenDependencies := annotatedPiCertificateForbidden },
 
-  -- E2c occurrence-validation seam.  These roots expose the selected loaded
+  -- Occurrence-validation boundary. These roots expose the selected loaded
   -- family and strengthen every production guard into the elementwise
   -- valid-inductive-application invariant, without oracle authority.
   { root :=
@@ -3651,7 +3651,7 @@ private def roots : Array RootAllowance := #[
       ``Ix.Kernel.RecM.PositiveParameterComparisonTrace.theoryDefEqScoped,
     standardAxioms := standard,
     nativeAxioms := inferNative,
-    -- This is the K2S instantiation bridge, not the oracle-free occurrence
+    -- This is the scoped method instantiation bridge, not the oracle-free occurrence
     -- theorem above. `ScopedWhnfStateInv` contains `TrustedCatalogLog`, whose
     -- ambient constructor names `InductiveOracle`; semantic use remains
     -- confined to the projected `ScopedWFAtOn.isDefEq` field.
@@ -3695,7 +3695,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := inferNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2c production-traversal seam.  Root-free domains are state-preserving;
+  -- Production-traversal boundary. Root-free domains are state-preserving;
   -- direct recursive-family applications inherit the oracle-free occurrence
   -- invariant; and forall success exposes the decremented recursive run plus
   -- exact local-context restoration.
@@ -3810,7 +3810,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := inferNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2c nested auxiliary expansion.  The complete positivity trace emits an
+  -- Nested auxiliary expansion. The complete positivity trace emits an
   -- exact existing-or-fresh request; the flat scanner classifies every
   -- successful detector call as an unchanged pair or one fresh exact append.
   -- The source-ordered constructor and bounded-queue histories prove that the
@@ -3936,7 +3936,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := inferNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- Concrete E2c nested reachability.  The compiler-shaped Box/Tree fixture
+  -- Concrete nested reachability. The compiler-shaped Box/Tree fixture
   -- runs production ingress, positivity, and flat-block construction on the
   -- same `Box Tree` occurrence.  Its headline root proves that the exact
   -- fresh positivity request is retained under the audited queue invariant.
@@ -4187,7 +4187,7 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := nestedRestoredPatternUpstreamDebt,
     forbiddenDependencies := existingSemanticBlockForbiddenDependencies },
 
-  -- E2c generated-recursor metadata.  The seven cached header fields are
+  -- Generated-recursor metadata. The seven cached header fields are
   -- derived positionally from the certified flat block and are invariant
   -- under both best-effort and complete rule population.  The final root
   -- covers the actual anonymous-mode cache insertion phase; none of these
@@ -4267,7 +4267,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := inferNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2c generated-recursor type closure. Production closes the accumulated
+  -- Generated-recursor type closure. Production closes the accumulated
   -- domains through explicit right-to-left intern requests. These roots prove
   -- exact finite-support execution, operation-shaped structural translation,
   -- and equality with Ix.Theory.Named's public canonical mixed recursor type.
@@ -4339,9 +4339,9 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := generatedRecursorRuleFixtureNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2c generated-recursor commit, selection, and exhaustive comparison.
+  -- Generated-recursor commit, selection, and exhaustive comparison.
   -- Production selection compares complete closed types through an explicit
-  -- finite fold; one K2S successor layer preserves the scoped state across
+  -- finite fold; one scoped method successor layer preserves the scoped state across
   -- selection and gives semantic meaning to the repeated type and positional
   -- rule comparisons.
   { root := ``Ix.Kernel.RecM.checkGeneratedRecursorFromCache_success,
@@ -4373,7 +4373,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := generatedRecursorCanonicalFixtureNative,
     forbiddenDependencies := canonicalRecursorForbiddenDependencies },
 
-  -- E2c outer member closure and exact semantic admission.  The explicit
+  -- Outer member closure and exact semantic admission. The explicit
   -- transition bridge fixes both Theory environments and requires complete
   -- trusted provenance for every exact physical member; the existing-block
   -- specialization keeps that environment unchanged for the recursor block.
@@ -4442,7 +4442,7 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := aliasRecUpstreamDebt,
     forbiddenDependencies := canonicalRecursorForbiddenDependencies },
 
-  -- E2c flat semantic transport.  The refined flat production trace erases
+  -- Flat semantic transport. The refined flat production trace erases
   -- to the exhaustive classifier, and the operation-shaped cross-kernel
   -- contract recursively constructs Ix.Theory.Named's retained positivity trace.
   -- Nested auxiliary expansion remains a separate explicit bridge.
@@ -4456,18 +4456,18 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := inferNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2c's concrete cross-kernel trace bridge.  These roots start at the
+  -- Concrete cross-kernel trace bridge. These roots start at the
   -- exact positivity calls selected by the production IndexedVec family
   -- checker, transport those operations to Ix.Theory.Named, and replay the complete
   -- retained constructor validator.  The direct recursive fixture has no
-  -- nested auxiliary expansion; that remains the next generic E2c bridge.
+  -- nested auxiliary expansion; that remains a separate generic proof obligation.
   { root :=
       ``Ix.Kernel.IndexedRecursiveFixture.indexedVecConsConstructorValidationRun,
     standardAxioms := standard,
     nativeAxioms := indexedConstructorValidationNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2c's first production-linked indexed/recursive vertical slice.  The
+  -- Production-linked indexed/recursive fixture. The
   -- generated cons equation includes its predecessor recursive call; the
   -- oracle is then instantiated by exact anonymous ingress, production
   -- family/recursor checking, exact ownership, and atomic admission.  The
@@ -4509,7 +4509,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := kTargetAcceptanceNative,
     forbiddenDependencies := occurrenceValidationForbiddenDependencies },
 
-  -- E2b's singleton link and legacy oracle constructors remain audited as
+  -- The singleton link and legacy oracle constructors remain audited as
   -- compatibility surfaces.  The concrete Boolean closure below no longer
   -- consumes those oracle constructors: its family block advances the exact
   -- generated Theory environment, and its recursor block consumes entries
@@ -4552,7 +4552,7 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := typingDebt,
     forbiddenDependencies := canonicalRecursorForbiddenDependencies },
 
-  -- G2a's explicit ambient-inductive assumption boundary.  Audit every
+  -- Explicit ambient-inductive assumption boundary. Audit every
   -- oracle projection so adding a field changes this manifest, then pin the
   -- constructive Nat model and its adversarial loaded-state witness.
   { root := ``Ix.Kernel.RawInductiveConstRel.mono,
@@ -4633,7 +4633,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard,
     forbiddenDependencies := legacyWholeEnv },
 
-  -- G4's lookup isolation, exhaustive semantic-cache provenance, monotone
+  -- Lookup isolation, exhaustive semantic-cache provenance, monotone
   -- warm-world transport, and transactional public-check error boundary.
   { root := ``Ix.Kernel.PendingDecl.lookup_isolation,
     standardAxioms := standard },
@@ -4682,7 +4682,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := inferNative,
     forbiddenDependencies := legacyWholeEnv },
 
-  -- K1's concrete Theory reduction meaning, exact five-way cache overlay,
+  -- WHNF's concrete Theory reduction meaning, exact five-way cache overlay,
   -- and real ambient-Nat warm-hit witness.  The only sorries are the already
   -- named upstream inductive-environment boundary.
   { root := ``Ix.Kernel.WhnfMeaning.refl,
@@ -6762,7 +6762,7 @@ private def roots : Array RootAllowance := #[
     forbiddenDependencies := legacyWholeEnv },
   -- StringExpansion: the remaining String-expansion premise is reduced to a pure,
   -- finite plan.  The actual primitive read, seven prefix interns, recursive
-  -- character fold, and final intern preserve the complete K1 invariant and
+  -- character fold, and final intern preserve the complete WHNF invariant and
   -- return the exact structurally translated generated expression.
   { root := ``Ix.Kernel.RecM.strLitListToConstructor_plan_wf,
     standardAxioms := standard, nativeAxioms := expressionNative,
@@ -6821,7 +6821,7 @@ private def roots : Array RootAllowance := #[
   -- NatOffset: the actual post-major iota preprocessing path.  Bounded Nat-offset
   -- parsing, Nat constructor expansion, cleanup, lazy constructor lookup,
   -- finite String expansion, the policy-selected recursive callback, and the
-  -- constructor/struct-eta dispatch all preserve the complete K1 invariant.
+  -- constructor/struct-eta dispatch all preserve the complete WHNF invariant.
   -- Only the ordinary-constructor and struct-eta tails remain named inputs.
   { root := ``Ix.Kernel.RecM.prims_state_wf,
     standardAxioms := standardWithoutChoice,
@@ -8124,7 +8124,7 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := contextNative.push nameDecideNative,
     forbiddenDependencies := legacyWholeEnv },
 
-  -- K2a: suffix semantics reduce open-context cache validity to one explicit
+  -- Suffix semantics reduce open-context cache validity to one explicit
   -- operational model.  The recursive method table closes by induction from
   -- an exact one-layer contract split between WHNF and Infer/DefEq ownership.
   { root := ``Ix.Kernel.WhnfSuffixModel.keyRepresents,
@@ -8149,7 +8149,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := inferNative,
     forbiddenDependencies := legacyWholeEnv },
 
-  -- K2a also assigns exact meanings to the remaining cache families.  A
+  -- Exact meanings for the remaining cache families. A
   -- positive DefEq result carries Theory equality; negative results are
   -- intentionally vacuous for the one-way soundness claim.
   { root := ``Ix.Kernel.InferMeaning.mono,
@@ -8183,7 +8183,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard,
     forbiddenDependencies := legacyWholeEnv },
 
-  -- K2b: production key executions now generate the canonical operational
+  -- Production key executions generate the canonical operational
   -- context witnesses.  Physical inference/DefEq writes preserve every
   -- cache partition, including the rejection-only same-head failure set.
   { root := ``Ix.Kernel.CacheInvariant.insertInfer,
@@ -8359,7 +8359,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard,
     forbiddenDependencies := legacyWholeEnv },
 
-  -- First production K2 branches: both inference hit partitions, collision-
+  -- Production inference/conversion branches: both inference hit partitions, collision-
   -- safe DefEq address reflexivity, and a positive full DefEq hit including
   -- canonical ordering and its final union-find mutation.
   { root := ``Ix.Kernel.RecM.isDefEq_fullHit_true,
@@ -9072,7 +9072,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := levelNative,
     forbiddenDependencies := k1ForbiddenDependencies },
 
-  -- C1A's usable production boundary: a finite schedule closes only the
+  -- Bounded production methods: a finite schedule closes only the
   -- method-table depths selected by this run's recursion fuel.  The public
   -- adapters consume the terminal successor-layer domain and have no
   -- `sorryAx` dependency.
@@ -9114,7 +9114,7 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := typingDebt,
     forbiddenDependencies := boundedKnotForbiddenDependencies },
 
-  -- K3 reconstructs the typed source translation from untyped/scoped
+  -- Declaration checking reconstructs the typed source translation from untyped/scoped
   -- checker ingress.  These roots are usable before the final checkConst
   -- assembly and do not depend on its statement placeholder.
   { root := ``Ix.Kernel.KUniv.scoped_iff_toVLevel_wf,
@@ -9440,7 +9440,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := inferNative,
     forbiddenDependencies := k1ForbiddenDependencies },
 
-  -- K3 closes the concrete operational policy and retains the old strong
+  -- Declaration checking closes the concrete operational policy and retains the old strong
   -- all-support inference roots below as compatibility artifacts.  The
   -- public checker now consumes the bounded successor-layer resources above.
   { root := ``Ix.Kernel.Methods.next_preservesInferOnly,
@@ -9497,10 +9497,10 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := typingDebt,
     forbiddenDependencies := scopedK2SForbiddenDependencies },
 
-  -- E0 closes the atomic coordinated-block transaction around the real
+  -- Block admission closes the atomic coordinated-block transaction around the real
   -- production router, classifier, body, and block-result cache.  The
-  -- singleton-definition adapter consumes K3; inductive/recursor bodies keep
-  -- their E2 oracle premise explicit.  Quotients are audited as excluded from
+  -- singleton-definition adapter consumes the declaration-checking theorem; inductive/recursor bodies keep
+  -- their inductive certification oracle premise explicit.  Quotients are audited as excluded from
   -- this authority rather than being silently admitted by the block theorem.
   { root := ``Ix.Kernel.ExactCheckBlock.rebaseWorld,
     standardAxioms := standardWithoutChoice,
@@ -9628,7 +9628,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard,
     forbiddenDependencies := boundedKnotForbiddenDependencies },
 
-  -- E1 models semantic declaration dependencies in the production Address
+  -- Serial composition models semantic declaration dependencies in the production Address
   -- domain, proves buildAnonWork is an exact duplicate-free partition, and
   -- composes successful items in a constructive collapsed-block order.  The
   -- serial roots recover real successful checkConst calls from the public
@@ -9754,10 +9754,10 @@ private def roots : Array RootAllowance := #[
     standardAxioms := propextOnly,
     forbiddenDependencies := boundedKnotForbiddenDependencies },
 
-  -- E3-S assembles the scoped K3 standalone theorem and E0's exact atomic
-  -- disposition into E1's concrete-call adapter.  The operational body sum
-  -- remains transparent: singleton definitions use the scoped K3 certificate
-  -- and fresh inductive/recursor bodies retain an explicit E2 oracle resource.
+  -- The supported fragment combines the scoped standalone theorem and atomic
+  -- block disposition in the serial driver's concrete-call adapter. Singleton
+  -- definitions use the scoped checking certificate; fresh inductive/recursor
+  -- bodies retain an explicit inductive-certification oracle resource.
   -- Separately, the certificate-backed replay adapter consumes already-
   -- installed member provenance, admits exact arrays idempotently, and gives
   -- all-block consumers a path which cannot reach oracle materialization.
@@ -9844,7 +9844,7 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := typingDebt,
     forbiddenDependencies := boundedKnotForbiddenDependencies },
 
-  -- K2S closed-context vertical slice.  These roots certify the exact
+  -- Scoped methods in a closed context. These roots certify the exact
   -- fuel-one public trace, package its finite requests and bounded recursive
   -- schedule, instantiate `ScopedKernelSuffixModel.finiteOperational`, and
   -- retain `StateInScope` through successful semantic promotion.  None may

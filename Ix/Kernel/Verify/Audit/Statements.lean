@@ -9,8 +9,9 @@ All seven roots are concrete results over the bounded production recursion
 schedule and checker.  The three recursive-method adapters have no `sorryAx`
 dependency; the standalone and atomic-block checker roots retain only the two
 named Ix.Theory.Named typing lemmas through their singleton-definition branch.  The
-E3-S root executes the exact Boolean serial workset and composes its actual
-runtime success gates with E1 and fixed certificate-backed E2 entries. This
+supported-fragment root executes the exact Boolean serial workset and composes
+its runtime success gates with serial composition and fixed inductive
+certificate entries. This
 module permits no local statement placeholder and additionally forbids the
 Boolean/serialized roots from reaching oracle construction, restaging, or
 world materialization.
@@ -48,7 +49,7 @@ private def legacyAllDepthKnot : Array Lean.Name := #[
 private def forbidden : Array Lean.Name :=
   legacyWholeEnv ++ legacyAllDepthKnot
 
-/- K2S public recursive roots may retain the legacy declarations in the
+/- Scoped public recursive roots may retain the legacy declarations in the
 library, but must not manufacture a global suffix model or pass through the
 old proposition-classifier/run-context path. -/
 private def legacyGlobalSuffix : Array Lean.Name := #[
@@ -65,7 +66,7 @@ private def legacyGlobalSuffix : Array Lean.Name := #[
 private def scopedForbidden : Array Lean.Name :=
   forbidden ++ legacyGlobalSuffix
 
-/- The all-block E3-S statement must consume fixed semantic entries and may
+/- The all-block statement for the supported fragment must consume fixed semantic entries and may
 not regain the retired residual-oracle/world-materialization path through an
 adapter refactor. -/
 private def oracleWorldMaterialization : Array Lean.Name := #[

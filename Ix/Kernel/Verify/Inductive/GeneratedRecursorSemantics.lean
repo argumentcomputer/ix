@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Trans
 /-!
 # Canonical semantics of generated recursor artifacts
 
-This is the representation boundary for E2c's generated artifacts.  It names
+This is the representation boundary for inductive verification's generated artifacts.  It names
 the exact structural correspondence that the production builders must prove:
 the generated type is Ix.Theory.Named's `GenerationChecked.recType`, and rule `i`
 is Ix.Theory.Named's `GenerationChecked.rule i` for constructor `i`.  Rule lookup is

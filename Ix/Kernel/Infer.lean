@@ -146,7 +146,7 @@ def inferWith (inferRec : KExpr m → RecM m (KExpr m))
   TcM.withInferOnly (methods.infer e)
 
 /-- Tie Infer's structural recursive calls through the indexed method table.
-    `inferWith` is the transparent one-layer body consumed by K0/K1 proofs. -/
+    `inferWith` is the transparent one-layer body consumed by totalization/WHNF proofs. -/
 def infer (e : KExpr m) : RecM m (KExpr m) :=
   inferWith inferCall e
 

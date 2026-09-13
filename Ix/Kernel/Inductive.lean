@@ -579,7 +579,7 @@ def checkPositiveParametersFrom (id : KId m)
       checkPositiveParametersFrom id args params (index + 1) remaining
 
 /-- The exact stateful parameter-comparison loop used by positivity. Naming
-    it separately exposes the successful recursive `isDefEq` trace to E2c
+    it separately exposes the successful recursive `isDefEq` trace to inductive verification
     without changing the production comparison order or diagnostics. -/
 def checkPositiveParameters (id : KId m) (args params : Array (KExpr m))
     (nParams : Nat) : RecM m Unit :=
@@ -593,7 +593,7 @@ def positiveIndicesIndependent (args : Array (KExpr m)) (nParams : Nat)
     !exprMentionsAnyAddr index rootAddrs
 
 /-- The stateless prefix of recursive-application validation.  Keeping the
-    original error values here makes the production control flow and the E2c
+    original error values here makes the production control flow and the inductive verification
     success characterization share one definition. -/
 def checkPositiveRecursiveApplicationPreconditions
     (us : Array (KUniv m)) (args : Array (KExpr m))
@@ -618,7 +618,7 @@ def checkPositiveRecursiveApplicationPreconditions
       s!"positivity: recursive occurrence has wrong argument count: expected {nParams + nIndices}, got {args.size}")
 
 /-- Validate the already-resolved inductive header of an active recursive
-    application.  Separating the lookup/match from these guards gives E2c an
+    application.  Separating the lookup/match from these guards gives inductive verification an
     exact successful-branch seam while preserving their production order. -/
 def checkPositiveRecursiveApplicationHeader (id : KId m)
     (us : Array (KUniv m)) (args : Array (KExpr m))
@@ -769,7 +769,7 @@ def checkNestedPositivityApplicationResolvedFuel (fuel : Nat) (id : KId m)
     parameter specialization mentions the root block.  The caller has already
     reduced the field domain to this constant-headed spine and established
     that the head is not a root-family address.  Keeping the lookup and
-    resolved continuation as named production actions gives E2c an exact
+    resolved continuation as named production actions gives inductive verification an exact
     successful-header boundary without changing execution order. -/
 def checkNestedPositivityApplicationFuel (fuel : Nat) (id : KId m)
     (us : Array (KUniv m)) (args : Array (KExpr m))
@@ -1020,7 +1020,7 @@ def checkCtorMetadataAgainstParent (ctorId inductId : KId m)
 /-- Complete A1–A4 validation of one constructor after its parent inductive
 header and block context have been resolved.  Naming this shared sequence
 keeps member-wide and standalone-constructor checking on the same production
-path and gives E2c one exact seam at which successful positivity can be
+path and gives inductive verification one exact seam at which successful positivity can be
 retained before the later universe and return-type checks. -/
 def checkInductiveConstructor (ctorId inductId : KId m)
     (expectedCidx indParams indIndices : Nat) (indLvls : UInt64)
@@ -1228,7 +1228,7 @@ def mkIndUnivs (indLvls offset : UInt64) :
 
 /-- Reuse or append the exact auxiliary specialization discovered by the
     flat-block scan.  Keeping this decision as a named production action
-    exposes the shared specialization key to the E2c transport without
+    exposes the shared specialization key to the inductive verification transport without
     changing the source-ordered queue traversal around it. -/
 def appendNestedAuxiliary (headId : KId m)
     (occurrenceUs : Array (KUniv m)) (specParams : Array (KExpr m))
@@ -1388,7 +1388,7 @@ def scanFlatConstructors (allBlockAddrs : Array Address)
 
 /-- One source-ordered production queue step.  Naming the callback preserves
 the executable traversal while exposing the dynamically growing flat array
-and its deduplication set to E2c proofs. -/
+and its deduplication set to inductive verification proofs. -/
 def buildFlatBlockQueueStep (allBlockAddrs : Array Address)
     (nRecParams univOffset : UInt64) (state : FlatBlockQueueState m) :
     RecM m (BoundedStep (FlatBlockQueueState m)
@@ -2856,7 +2856,7 @@ def checkGeneratedRecursorCandidate (ty : KExpr m)
     throw (.other "check_recursor: type mismatch")
   let generatedRules := generated.rules
   if generatedRules.isEmpty && !storedRules.isEmpty then
-    -- C1: cannot verify stored rules against a missing canonical form.
+    -- Cannot verify stored rules against a missing canonical form.
     throw (.other s!"check_recursor: rule generation failed, cannot verify {storedRules.size} stored rules")
   else if !generatedRules.isEmpty && storedRules.isEmpty then
     throw (.other s!"check_recursor: stored recursor has no rules (expected {generatedRules.size})")
@@ -2913,7 +2913,7 @@ def collectGeneratedRecursorTypeMatches (ty : KExpr m)
 /-- Select the generated recursor corresponding to one frozen stored
 declaration. Complete recursor types are closed, unlike major domains peeled
 from under forall binders, so the stateful DefEq calls remain inside the
-top-level K2 translation context. Returning the index separately gives
+top-level inference/conversion translation context. Returning the index separately gives
 verification an exact boundary between selection and exhaustive comparison. -/
 def selectGeneratedRecursorIndex (recBlock id : KId m) (ty : KExpr m)
     (params motives minors : UInt64) (indId : KId m)

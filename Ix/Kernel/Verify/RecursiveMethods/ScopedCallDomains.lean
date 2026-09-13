@@ -2,10 +2,10 @@ import Ix.Kernel.Verify.DefEq
 import Ix.Kernel.Verify.RecursiveMethods.CallDomains
 
 /-!
-# Run-scoped recursive-method call domains
+# Run-scoped method call domains
 
-The original bounded call-domain contract carries the kernel invariant but
-not the finite context-digest state domain.  K2S must retain both: a method
+The bounded call-domain contract carries the kernel invariant but
+not the finite context-digest state domain. Scoped method contracts retain both: a method
 may construct or reuse a suffix key only while its concrete pre-state belongs
 to `ScopedKernelSuffixModel.StateInScope`, and both success and partial-error
 states must remain in that domain.

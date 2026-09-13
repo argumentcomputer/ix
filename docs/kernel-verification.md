@@ -9,6 +9,10 @@ formalization repository.
 The certified receipt interface and a fragment of production `checkEnvAnon`
 have relative consistency theorems. Full checker consistency remains open.
 
+The [recursion audit](kernel-recursion.md) explains the production call graph
+and fuel bounds. The [context-digest guide](tc-context-digest-collision-boundary.md)
+details the collision and suffix-transport assumptions for cache soundness.
+
 ## Connection to the consistency model
 
 The named specification and the set model share `Ix.Theory.VLevel`. The
@@ -104,16 +108,13 @@ declaration can inhabit it. No axiom-name restriction is needed.
 
 The audits traverse checked declaration types and bodies, including inductive
 constructors. They compare exact axiom sets and record direct origins of
-`sorryAx`. Full traversal includes dependencies missed by cached imported
-axiom summaries, including implementation assumptions and unfinished
-metatheory. All 441 retained named-specification assertions use their original
-full dependency graphs as the migration baseline.
+`sorryAx`. Full traversal includes implementation assumptions and unfinished
+metatheory. The named-specification audit checks 441 assertions against exact
+dependency manifests.
 
-The same traversal covers 2,034 kernel manifest roots. Thirteen entries omitted
-logical or native dependencies through constructor fields; their corrected
-boundaries were checked against freshly compiled pre-migration sources. Direct
-dependency lookups are cached within a fixed environment, while each root's
-reachable declarations, axioms, and proof-hole origins are computed separately.
+The same traversal covers 2,034 kernel manifest roots. Direct dependency
+lookups are cached within a fixed environment, while each root's reachable
+declarations, axioms, and proof-hole origins are computed separately.
 
 `Ix.Kernel.Frontier.Pending` quarantines the remaining explicit metatheory
 axioms. Completed roots cannot depend on that namespace. Named-specification
@@ -183,16 +184,11 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |
 | Concrete set-theory instance | [Separate model package](../Models/SetTheory/README.md) |
 
-## Provenance and scope
-
-The kernel, theory, and certified host scaffolding comes from `jcb/monorepo`
-at `7b06b754`. The checker namespace is `Ix.Kernel` (formerly `Ix.Tc`), and
-verification dependencies are local to Ix. The external `lean4lean` dependency
-and its benchmark/test targets have been removed. The new compiler development,
-circuit changes, and certificate VM pilot are deferred.
+## Source inventory
 
 The named development retains 104 source modules, including the inductive
-fixtures used by the existing proofs. Original hashes and attribution are
-recorded in `Ix/Theory/Named/NOTICE` and `Tests/Theory/NamedManifest.lean`; the
-Apache license is preserved alongside the sources. The axiom-audit helper and
-direct production-fragment proofs are authored in Ix.
+fixtures used by the existing proofs. Source hashes and attribution are in
+[`Ix/Theory/Named/NOTICE`](../Ix/Theory/Named/NOTICE) and
+[`Tests/Theory/NamedManifest.lean`](../Tests/Theory/NamedManifest.lean); the
+Apache license is preserved alongside the sources. The axiom-audit helper
+and direct production-fragment proofs are authored in Ix.

@@ -11,7 +11,7 @@ open Ix.Theory (VLevel)
 /-!
 # Constructor-validity parity fixtures
 
-Focused singleton declarations for Spec-05.  The positive declarations retain
+Focused singleton constructor-validity declarations. The positive declarations retain
 real kernel metadata while remaining inside the already-supported large-
 elimination and non-K fragment.  The failed declarations pin the nearest
 Lean elaborator/kernel rejection for each neighboring positivity or universe

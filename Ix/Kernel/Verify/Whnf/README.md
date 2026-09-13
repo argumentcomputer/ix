@@ -1,8 +1,7 @@
 # WHNF verification modules
 
-The WHNF formalization is organized by proof responsibility rather than by
-project milestone.  The directories are conceptual layers; imports retain the
-precise proof-dependency order needed by Lean.
+The WHNF formalization is organized by proof responsibility. The directories
+group related contracts; imports retain the proof-dependency order needed by Lean.
 
 - `RuntimeContracts.lean` defines the common state, callback, and result
   contracts used by the reducer proofs.

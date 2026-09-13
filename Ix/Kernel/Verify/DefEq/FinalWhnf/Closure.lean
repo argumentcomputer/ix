@@ -12,14 +12,14 @@ import Ix.Kernel.Verify.DefEq.PropositionClassifier
 The final comparator consists of an exhaustive structural prefix followed by
 the ordered Nat, lambda-eta, String, structure-eta, unit-like, and proof-
 irrelevance fallbacks.  This module assembles those independently verified
-phases under one canonical K2 suffix model.
+phases under one canonical inference/conversion suffix model.
 -/
 
 namespace Ix.Kernel
 namespace RecM
 
 /-- Concrete resources for every production phase of `isDefEqWhnf`.  The
-proposition-classifier context fixes the canonical K2 suffix model used by
+proposition-classifier context fixes the canonical inference/conversion suffix model used by
 all cache-aware fields. -/
 structure FinalWhnfClosureResources
     {trProj : RawProjRel} {world : VerifyWorld} (support : RunSupport)

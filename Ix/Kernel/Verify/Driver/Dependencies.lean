@@ -5,7 +5,7 @@ import Ix.Kernel.Verify.Driver.Model
 
 `Ixon.Constant.refs` is an intern table, not itself a dependency list.  Nat
 and String nodes index blobs through the same table, and malformed/unused
-table entries must not become declaration assumptions.  E1 therefore follows
+table entries must not become declaration assumptions. Serial composition follows
 the expression constructors which ingress turns into kernel constants:
 
 * `.ref i` contributes `refs[i]`;

@@ -9,7 +9,7 @@ open Ix.Theory (VLevel)
 This module verifies required constant lookup, universe-arity checking, and
 type instantiation.  The trusted world currently retains only `RawExprRel`
 for declaration types; inference needs the stronger typed `TrKExprS`
-relation.  `TrustedConstTypes` names that boundary explicitly so the final K2
+relation.  `TrustedConstTypes` names that boundary explicitly so the final inference/conversion
 closure must derive it from declaration admission rather than silently
 upgrading raw syntax correspondence.
 -/
@@ -76,7 +76,7 @@ theorem getConst_loaded_wf {I : TcState .anon → Prop}
 end TcM
 
 /-- Typed declaration-type evidence missing from the current raw trusted
-catalog interface.  K2 closure must construct this for every trusted
+catalog interface. Inference/conversion closure must construct this for every trusted
 constant that a supported run can infer. -/
 def TrustedConstTypes (trProj : RawProjRel) (world : VerifyWorld) : Prop :=
   ∀ {id : KId .anon} {c : KConst .anon},

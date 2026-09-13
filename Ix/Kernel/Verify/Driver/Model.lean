@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Check.BlockIdentity
 /-!
 # Workset and dependency model
 
-This file is the semantic half of E1.  It deliberately keeps three address
+This file is the semantic half of serial composition.  It deliberately keeps three address
 roles distinct while representing all of them with the production `Address`
 type:
 
@@ -127,7 +127,7 @@ namespace VerifyWorld
 
 /-- Semantic acceptance for a raw address.  Declaration projection and
 standalone addresses are accepted by `trusted`; a Muts envelope address is
-accepted by the atomic `AcceptedBlock` fact established in E0. -/
+accepted by the atomic `AcceptedBlock` fact established in block admission. -/
 def AcceptsAddress (world : VerifyWorld) (addr : Address) : Prop :=
   world.trusted (⟨addr, ()⟩ : KId .anon) ∨
     world.AcceptedBlock (⟨addr, ()⟩ : KId .anon)

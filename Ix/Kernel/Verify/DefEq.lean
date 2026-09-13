@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Whnf.Closure
 import Batteries.Data.UInt
 
 /-!
-# K2 definitional-equality cache semantics
+# Definitional-equality cache semantics
 
 For checker soundness, a cached `true` must denote Theory definitional
 equality.  A cached `false` (including the narrow failure set) can only reject
@@ -563,8 +563,8 @@ they may later be proved from a finite context-digest collision hypothesis and
 the declarative suffix-closure theorem, but must not be inferred from a bare
 address equality. -/
 
-/-- One context-key interpretation sufficient for every K1/K2 semantic cache
-family.  Operational representation is shared, while WHNF, inference, DefEq,
+/-- One context-key interpretation sufficient for every reduction, inference,
+and conversion cache family. Operational representation is shared, while WHNF, inference, DefEq,
 and the auxiliary proposition classifier each state their own
 context-transport consequence. -/
 structure KernelSuffixModel (trProj : RawProjRel) (world : VerifyWorld) where
@@ -671,7 +671,7 @@ theorem defEqCtxKey_model_matches_wf
 end TcM
 
 /-- Declarative sufficiency of one normalized context-digest input.  This is
-the semantic half of K2's suffix theorem: equality of the exact input—not
+the semantic half of the suffix theorem: equality of the exact input—not
 equality of its Blake3 output—must preserve each judgment family at the
 radius that production requested. -/
 structure ContextSuffixSemantics {trProj : RawProjRel} {world : VerifyWorld}
@@ -824,7 +824,7 @@ def transports {trProj : RawProjRel} {world : VerifyWorld}
 end ScopedKernelSuffixModel
 
 /-- The ordinary checker invariant refined by membership in one explicit
-suffix-model state domain.  K2S uses this predicate at every model-dependent
+suffix-model state domain. Scoped method proofs use this predicate at every model-dependent
 key boundary; the unscoped invariant remains available for model-independent
 helpers and legacy compatibility theorems. -/
 def ScopedWhnfStateInv {trProj : RawProjRel} {world : VerifyWorld}
@@ -1033,7 +1033,7 @@ end TcM
 
 namespace KernelSuffixModel
 
-/-- Forget the K2 transports and recover exactly the K1 suffix model. -/
+/-- Forget the inference/conversion transports and recover exactly the WHNF suffix model. -/
 def toWhnfSuffixModel {trProj : RawProjRel} {world : VerifyWorld}
     (model : KernelSuffixModel trProj world) :
     WhnfSuffixModel trProj world where
@@ -1223,7 +1223,7 @@ theorem result {keys : WhnfContextKeys} {trProj : RawProjRel}
 
 end DefEqCacheValid
 
-/-- Overlay K2 def-eq meanings on K1+inference cache semantics. -/
+/-- Overlay definitional-equality meanings on WHNF+inference cache semantics. -/
 def defEqCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) : CacheSemantics where
   Valid := DefEqCacheValid keys trProj fallback
@@ -1241,7 +1241,7 @@ def defEqCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
     intro authority support block h
     exact fallback.blockSuccessSound authority support block h
 
-/-- Canonical K1+K2 semantic stack.  K1's WHNF and fixed-universe unfold
+/-- Canonical reduction and typing semantic stack.  WHNF and fixed-universe unfold
 layers stay outermost; inference and def-eq occupy precisely the fallback
 families they own. -/
 def kernelCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel) :

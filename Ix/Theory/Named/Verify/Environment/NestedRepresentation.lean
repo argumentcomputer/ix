@@ -11,14 +11,11 @@ import Ix.Theory.Named.Meta
 open Ix.Theory (VLevel)
 
 /-!
-# Spec-09A: nested-inductive representation audit and decision
+# Nested-inductive representation and restoration
 
-This file is the committed design note and the executable metadata probes
-for the nested-inductive representation decision.  Every claim below is
-pinned by a build-failing probe in this file unless it is explicitly marked
-as a forward-looking obligation.  This checkpoint changes no acceptance
-behavior: the probes only observe the implementation and the existing
-Theory analyzers.
+The executable probes in this module check nested-inductive metadata and
+its Theory representation. The remaining semantic proof obligations are
+listed separately from those concrete checks.
 
 ## Audit: how the implementation represents nested inductives
 
@@ -42,8 +39,7 @@ Theory analyzers.
    restoration (`Result.restoreNested`), each auxiliary family's recursor
    is re-added under the name `(mkRecName mainName).appendIndexAfter i`
    with restored type and rules, and finally every `aux2nested` value
-   `I Ds` is type-checked (the lean4#14577 escape-hatch check, regression
-   tested in `Tests/NestedInductive.lean`).  The auxiliary families,
+   `I Ds` is type-checked. The auxiliary families,
    constructors, and recursor names never enter the final environment.
 
 The stored metadata therefore has this shape (probes P1, P2):
@@ -74,13 +70,12 @@ new field: `numNested` is implementation metadata recoverable as the
 number of auxiliary specifications, and parity fixtures pin it per row
 exactly as they already pin `numNested == 0` for non-nested rows.
 
-Nested support is an additive checked-block artifact (built in Spec-09B/C),
-coupling:
+Nested support is a checked-block artifact coupling:
 
 1. the flattened block as an ordinary `VInductDecl` — probe P4 shows both
    target fixtures' flattened blocks are already accepted by the existing
    `identityBlockGeneration?` machinery, so flattening reuses the complete
-   Spec-08 block analyzer and generator unchanged;
+   block analyzer and generator;
 2. one auxiliary specification per auxiliary family, in flattened family
    order: the auxiliary name, the nested value `I Ds` open over the block
    parameters (the Theory analog of `aux2nested`), and the restored
@@ -124,15 +119,15 @@ Rejected alternatives:
   relation alone would force Verify to re-synthesize them.  The artifact's
   executable coherence checks subsume the relation.
 
-## Obligations recorded for Spec-09B/09C (not claimed here)
+## Semantic proof obligations
 
-- 09B: Theory-side flattening and auxiliary-specification validation —
+- Theory-side flattening and auxiliary-specification validation —
   positivity through the existing block analyzer on the flattened block;
   executable instantiation checks of auxiliary family/constructor types
   against `I`'s metadata at `Ds`; nearest rejection differentials
   (ill-typed `Ds` — the lean4#14577 class — wrong specification order,
   non-matching instantiation).
-- 09C: σ as a total Theory function.  The spine rule needs a simultaneous
+- Restoration by a total Theory function σ. The spine rule needs a simultaneous
   `instantiateRev`-style multi-substitution for `nparams > 1`: iterating
   single `VExpr.inst` is wrong once parameter arguments mention bvars.
   Generation, preservation (typing transport along σ: auxiliary constants
@@ -430,7 +425,7 @@ run_meta do
 /-! ## P3: exact flattening pins
 
 The flattened blocks, translated to binder-erased `VExpr` form.  These are
-the descriptors the Spec-09B transformation must produce. -/
+the descriptors the flattening transformation must produce. -/
 
 def roseFlatFamilies : List (Name × VExpr) :=
   [(``RoseTree, .forallE (.sort (.succ (.param 0))) (.sort (.succ (.param 0)))),
@@ -563,10 +558,10 @@ run_meta do
 /-! ## P5: the restoration substitution σ
 
 `restoreV09A` mirrors `ElimNestedInductive.Result.restoreNested` on
-`VExpr`.  It is probe-local: the Spec-09C artifact path must define the
-total Theory version (with a simultaneous parameter substitution once
-`nparams > 1` is in scope; the probe fixtures have `nparams ≤ 1`, where
-iterated `VExpr.inst` coincides with it). -/
+`VExpr`. It is local to these probes; `NestedInductive.lean` defines the
+total restoration function with simultaneous parameter substitution.
+The probe fixtures have `nparams ≤ 1`, where iterated `VExpr.inst` agrees
+with simultaneous substitution. -/
 
 structure AuxSpec09A where
   aux : Name

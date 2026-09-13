@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.DefEq
 /-!
 # Certified semantics for inductive structural caches
 
-The K1/K2 semantic stack deliberately gives no meaning to the three caches
+The reduction, inference, and conversion semantic stack deliberately gives no meaning to the three caches
 owned only by inductive checking: generated recursors, the major-set to block
 index, and the peer-agreement marker.  Rejecting those entries makes every
 stable post-inductive state uninhabitable, while accepting them without a
@@ -52,7 +52,7 @@ theorem authorizesBlock_of_accepted {world : VerifyWorld}
 end CacheAuthority
 
 /-- Semantic ownership of the three inductive-only cache families.  The
-fallback retains the complete K1/K2 and block-result meanings. -/
+fallback retains the complete reduction, inference, and conversion and block-result meanings. -/
 def StructuralInductiveCacheValid (fallback : CacheSemantics)
     (authority : CacheAuthority) (support : RunSupport) : CacheEntry → Prop
   | .recursor block generated =>
@@ -114,7 +114,7 @@ def structuralInductiveCacheSemantics
     intro authority support block h
     exact fallback.blockSuccessSound authority support block h
 
-/-- The production K1/K2 stack with a non-vacuous meaning for every
+/-- The production reduction, inference, and conversion stack with a non-vacuous meaning for every
 inductive structural cache family. -/
 def kernelCacheSemanticsWithInductives
     (keys : WhnfContextKeys) (trProj : RawProjRel) : CacheSemantics :=

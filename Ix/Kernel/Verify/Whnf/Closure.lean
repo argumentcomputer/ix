@@ -4,9 +4,9 @@ import Ix.Kernel.Verify.Knot
 /-!
 # Four-field fixed-universe WHNF closure
 
-The structural, no-delta, full-WHNF, and trusted-delta reducers now expose
+The structural, no-delta, full-WHNF, and trusted-delta reducers expose
 fixed-universe contracts.  This module assembles those contracts into the
-four K1 fields of one unfolded production method-table layer.
+four WHNF fields of one unfolded production method-table layer.
 
 The context retains the exact construction boundary:
 
@@ -19,17 +19,16 @@ The context retains the exact construction boundary:
 
 In particular, the full reducer is constructed with
 `FullWhnfStepContext.ofTrustedDelta`; callers cannot replace delta unfolding
-with a free successful-reduction oracle.  The `tryNatOffsetStuck` stage added
-after the original K1 driver proof remains an explicit closure obligation
-until its callbacks and intern operations are decomposed into finite
-run-scoped inputs.
+with a free successful-reduction oracle. The `tryNatOffsetStuck` stage remains
+an explicit closure obligation requiring its callbacks and intern operations
+to be decomposed into finite run-scoped inputs.
 
-## K1 acceptance boundary
+## WHNF acceptance boundary
 
-`K1ClosureContext.closedAt` below is the K1 closure result: it supplies exactly
+`K1ClosureContext.closedAt` below is the WHNF closure result: it supplies exactly
 the four fixed-universe WHNF fields of `Methods.next`.  It deliberately does
-not tie the complete six-method production knot.  That later step also needs
-K2's `infer` and `isDefEq` fields before `Methods.ClosedAt.of_parts`,
+not tie the complete six-method production knot. That also requires the
+`infer` and `isDefEq` fields before `Methods.ClosedAt.of_parts`,
 `Methods.methodsN_wfAt`, and the public runner can be used.
 
 The universally quantified caller context is not assumed well formed merely
@@ -37,12 +36,12 @@ to construct `K1ClosureContext`.  Each reducer instead recovers that fact from
 the `CtxRecon` component of the runtime invariant at its point of use.  The
 concrete successful, absent, stuck, and partial-error executions in
 `NatFixture` separately keep the branch contracts inhabited; they are not a
-substitute for K2's two missing recursive fields.
+substitute for the two remaining inference and conversion fields.
 -/
 
 namespace Ix.Kernel
 
-/-- The final K1 cache composition at the universe count encoded by `keys`:
+/-- The final WHNF cache composition at the universe count encoded by `keys`:
 WHNF expression entries outside, universe-sensitive delta bodies underneath,
 and the caller's remaining cache families as the base. -/
 def k1CacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
@@ -52,7 +51,7 @@ def k1CacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
 
 namespace RecM
 
-/-- Complete input family needed to prove the four K1 method-table fields at
+/-- Complete input family needed to prove the four WHNF method-table fields at
 one universe count. -/
 structure K1ClosureContext
     {alpha : Type} (initial : TcState .anon) (program : TcM .anon alpha)
@@ -63,8 +62,7 @@ structure K1ClosureContext
     NoDeltaDriverContext initial program requests keys
       (unfoldCacheSemantics keys.uvars trProj fallback)
       trProj world support Delta .FULL
-  /-- Exact closure obligation for the compact symbolic-Nat stage introduced
-  after the original K1 driver proof. -/
+  /-- Closure obligation for the compact symbolic-Nat reduction stage. -/
   natOffsetStuck : OptionalReduction.WFAt .noAccel
     (k1CacheSemantics keys trProj fallback) trProj world support
     keys.uvars tryNatOffsetStuck
@@ -78,7 +76,7 @@ structure K1ClosureContext
 
 namespace K1ClosureContext
 
-/-- Assemble K1's four fixed-universe fields for one smaller, already
+/-- Assemble WHNF's four fixed-universe fields for one smaller, already
 well-formed method table. -/
 theorem layer
     {alpha : Type} {initial : TcState .anon} {program : TcM .anon alpha}
@@ -122,7 +120,7 @@ theorem layer
         (context.structuralFlags Delta flags) hsourceSupport hsource)
         methods hmethods
 
-/-- K1's headline fixed-universe closure result: any semantically valid
+/-- WHNF's headline fixed-universe closure result: any semantically valid
 smaller method table proves all four WHNF fields of the next production
 layer. -/
 theorem closedAt

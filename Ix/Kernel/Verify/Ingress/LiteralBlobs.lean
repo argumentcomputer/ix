@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Ingress.Representation
 /-!
 # Serialized literal/blob ingress
 
-This T0 fixture makes the blob side of the serialized representation
+This fixture makes the blob side of the serialized representation
 contract non-vacuous.  A Nat literal and a String literal are stored in one
 Ixon environment, serialized, decoded with the pure reference decoder, and
 ingressed through the production anonymous lazy-fault path.  Separate
@@ -418,7 +418,7 @@ def literalCertificate : LiteralBlobRoundTrip where
   stringRun := stringRun
   stringLoaded := stringLoadedNative
 
-/-- Non-vacuous T0 literal/blob round-trip through serialized bytes and the
+/-- Non-vacuous literal/blob round-trip through serialized bytes and the
 actual anonymous ingress implementation. -/
 theorem literalRoundTrip : Nonempty LiteralBlobRoundTrip :=
   ⟨literalCertificate⟩

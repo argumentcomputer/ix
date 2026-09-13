@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.RecursiveMethods.ScopedCallDomains
 /-!
 # Run-scoped standalone-checker pipelines
 
-This is K3's bounded type/value pipeline with `StateInScope` retained across
+This is the declaration checker's bounded type/value pipeline with `StateInScope` retained across
 every method callback.  It deliberately consumes `Methods.ScopedWFAtOn`
 directly and contains no conversion to the legacy global suffix model.
 -/
@@ -38,7 +38,7 @@ def ScopedFullInferenceWFAtOn
 
 namespace ScopedFullInferenceWFAtOn
 
-/-- Ordinary scoped inference upgrades to the K3 contract wherever raw
+/-- Ordinary scoped inference upgrades to the declaration-checking contract wherever raw
 ingress is intrinsically typed. -/
 theorem ofTypedIngress
     {trProj : RawProjRel} {world : VerifyWorld}
@@ -88,7 +88,7 @@ end ScopedFullInferenceWFAtOn
 
 end Methods
 
-/-- Declaration-local K3 resources whose method contracts preserve the
+/-- Declaration-local resources whose method contracts preserve the
 finite suffix-state witness. -/
 structure ScopedStandalonePipelineResources
     {trProj : RawProjRel} {world : VerifyWorld}

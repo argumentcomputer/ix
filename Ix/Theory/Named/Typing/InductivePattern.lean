@@ -34,9 +34,9 @@ Church–Rosser `Params` interface demands of one certified block:
   same-recursor rules comes from the analyzer's terminal `blockTarget?`
   arity equation.
 
-No open-environment `Params` instance is installed here; the block supplies
-the facts, and soundness (`pat_wf`) plus the block-local environment
-assembler belong to the pattern-soundness milestone. -/
+The block supplies the `Params` facts. Pattern soundness (`pat_wf`) and the
+block-local environment assembler are defined in `Typing/InductivePatternWF.lean`.
+This module installs no open-environment `Params` instance. -/
 
 namespace Ix.Theory.Named
 
@@ -535,7 +535,7 @@ theorem rulePattern_inj {i i' : Nat} {c c' : NormalizedBlockCtor}
 
 /-- Closedness inputs for one certified block's rule payloads: the towers a
 rule's RHS template and checks embed as fixed template constants. Concrete
-fixtures discharge this bundle by `decide`; the pattern-soundness milestone
+fixtures discharge this bundle by `decide`; the pattern-soundness proof
 derives it from the staged environment's rule well-formedness. -/
 structure RuleClosure : Prop where
   rhs_closed : ∀ ⦃i : Nat⦄ ⦃constructor : NormalizedBlockCtor⦄,

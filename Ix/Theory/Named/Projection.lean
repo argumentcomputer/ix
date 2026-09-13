@@ -3447,7 +3447,7 @@ remains the proved `projector_constructor_exact` theorem.
 
 Its eventual proof uses `IsDefEqU.weakN_iff` together with injectivity of
 registered inductive heads.  Keeping the boundary in Theory makes the
-temporary Spec-16/17 dependency explicit instead of leaving Verify's
+remaining inversion and injectivity dependencies explicit instead of leaving Verify's
 structural laws as local holes. -/
 structure RegisteredStructureHeadInversion (env : VEnv) : Prop where
   weak'_inv :
@@ -3499,10 +3499,9 @@ structure RegisteredStructureHeadInversion (env : VEnv) : Prop where
         code constructorName runtimeMajor runtimeField)
 
 set_option warn.sorry false in
-/-- Public Tier-R registered-head inversion statement.  Spec-16/17 discharge
-the underlying constant-head theorem; projection structural laws consume only
-this stable interface and therefore shed `sorryAx` automatically when it is
-proved. -/
+/-- Registered-head inversion statement. The constant-head inversion proof
+remains unfinished. Projection structural laws consume this interface and
+inherit its `sorryAx` dependency until that proof is supplied. -/
 theorem WF.registeredStructureHeadInversion
     (self : VEnv.WF env) : RegisteredStructureHeadInversion env := by
   sorry

@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Inductive.OneFamilyAdmission
 /-!
 # Oracle-free recursive-Pi admission
 
-This module closes the concrete `Acc` E2c transaction.  The family and its
+This module closes the concrete `Acc` inductive verification transaction.  The family and its
 constructor are admitted by the exact certified Theory-environment
 transition.  The separately ingressed and production-checked `Acc.rec` block
 is then admitted from semantic entries already installed by that transition.

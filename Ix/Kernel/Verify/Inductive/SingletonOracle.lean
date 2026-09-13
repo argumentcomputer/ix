@@ -18,7 +18,7 @@ namespace SingletonRecursorCatalogLink
 
 /-- Construct a complete `InductiveOracle` for the actual singleton recursor
 block.  Every rule and pattern is selected by its concrete array position and
-is justified by the equation installed by the E2a transaction. -/
+is justified by the equation installed by the certified generation transaction. -/
 def oracle
     {trProj : RawProjRel} {catalog : Catalog}
     {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}

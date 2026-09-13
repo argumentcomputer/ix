@@ -20,7 +20,7 @@ can consume the active-member disjunct.
 
 namespace Ix.Kernel
 
-/-- The complete K1/K2 state invariant while one exact coordinated block is
+/-- The complete reduction, inference, and conversion state invariant while one exact coordinated block is
 active, refined by membership in a finite suffix-model state domain. -/
 structure ScopedActiveWhnfStateInv
     {trProj : RawProjRel} {world : VerifyWorld}
@@ -121,7 +121,7 @@ theorem of_internSemanticFrame
 /-- Changing only operational bookkeeping fields preserves the complete
 active scoped invariant.  The suffix-domain frame is separate from the
 semantic-state equations because context-digest scope also observes memo and
-fault fields which ordinary K1 cache provenance intentionally ignores. -/
+fault fields which ordinary WHNF cache provenance intentionally ignores. -/
 theorem of_semantic_fields_eq
     {trProj : RawProjRel} {world : VerifyWorld}
     {model : ScopedKernelSuffixModel trProj world}

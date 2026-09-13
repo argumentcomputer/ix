@@ -6,8 +6,8 @@ import Ix.Kernel.Verify.ScopedSuffix.ClosedContext
 /-!
 # Positive-fuel bounded checker witness
 
-This fixture instantiates the corrected C1A/K3 interfaces at recursion fuel
-one.  Its method-call domain contains exactly one closed sort inference; its
+This fixture instantiates bounded method and declaration-checking contracts
+at recursion fuel one. Its call domain contains one closed sort inference; its
 finite result footprint contains that source and its successor-sort result.
 The joint suffix model remains an explicit semantic parameter, but the call
 schedule, syntax, reduction of collision freedom to two exact digest
@@ -124,7 +124,7 @@ def theory (uvars : Nat) :
 
 /-! ## Concrete run-scoped suffix instance -/
 
-/-- K2S's production suffix model for this closed fixture.  Unlike the
+/-- Scoped production suffix model for this closed fixture.  Unlike the
 legacy theorems below, this value contains only the singleton normalized
 context input reached by the run. -/
 def scopedModel : ScopedKernelSuffixModel RawProjRel.none VerifyWorld.empty :=
@@ -268,7 +268,7 @@ theorem scheduleAtFuelOne
   Methods.SortSchedule.two (support_collisionFree separation) source_supported
     result_supported (theory model.keys.uvars) trustedReferences
 
-/-- Concrete C1A contract for the outer production body at fuel one.  Its
+/-- Concrete bounded method contract for the outer production body at fuel one.  Its
 only admitted method call is inference of `source`. -/
 theorem methodContractAtFuelOne
     (separation : AddressSeparation)
@@ -281,7 +281,7 @@ theorem methodContractAtFuelOne
   simpa [Methods.SortSchedule.calls] using
     (scheduleAtFuelOne separation model).nextSelected
 
-/-- Concrete strong K3 inference contract obtained from the bounded C1A
+/-- Concrete strong full inference contract obtained from the bounded method
 contract because sort pretranslation is already typed. -/
 theorem fullInferenceAtFuelOne
     (separation : AddressSeparation)
@@ -296,7 +296,7 @@ theorem fullInferenceAtFuelOne
     (Methods.next_preservesInferOnly _
       (Methods.methodsN_concrete_preservesInferOnly 1))
 
-/-- Declaration-local K3 pipeline resources at fuel one.  The type pipeline
+/-- Declaration-local pipeline resources at fuel one.  The type pipeline
 admits one sort inference and no WHNF/DefEq callback. -/
 def pipelinesAtFuelOne
     (separation : AddressSeparation)
@@ -310,7 +310,7 @@ def pipelinesAtFuelOne
 
 def concreteAxiom : KConst .anon := .axio () () false 0 source
 
-/-- The concrete sort axiom is covered by the positive-fuel K3 resources. -/
+/-- The concrete sort axiom is covered by the positive-fuel declaration-checking resources. -/
 theorem pipelines_cover_concreteAxiom
     (separation : AddressSeparation)
     (model : KernelSuffixModel RawProjRel.none VerifyWorld.empty) :

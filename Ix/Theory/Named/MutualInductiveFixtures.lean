@@ -14,7 +14,7 @@ import Ix.Theory.Named.Meta
 These real kernel declarations pin shared parameters, per-family
 indices/results, constructor order, and cross-family recursive target
 ordinals at the `VInductDecl.CheckedBlock` boundary, then exercise the
-block-wide public generation transaction added by Spec-08C.  The Verify mutual
+block-wide public generation transaction. The Verify mutual
 fixture supplies semantic preservation, complete kernel metadata comparison,
 and environment replay.
 -/

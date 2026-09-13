@@ -6,7 +6,7 @@ Source attribution and revision: Ix/Theory/Named/NOTICE.
 
 import Ix.Theory.Named.Verify.Environment.EliminationFixturesCommon
 
-/-! Exact Spec-06B Or/And differential fixtures. -/
+/-! Exact Or/And elimination differential fixtures. -/
 
 namespace Ix.Theory.Named.InductiveReplayFixtures
 open Lean Meta Elab Term

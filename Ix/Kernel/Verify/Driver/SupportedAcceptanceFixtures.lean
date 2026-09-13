@@ -5,10 +5,10 @@ import Ix.Kernel.Verify.Inductive.EnumerationAcceptance
 /-!
 # Supported-acceptance adversarial and inductive fixtures
 
-These fixtures guard the two representation-sensitive edges of the E3-S
+These fixtures guard the two representation-sensitive edges of the supported fragment
 adapter.  The first pair proves that a Muts work item cannot be discharged by
 an unrouted call or a call routed to a different envelope.  The second joins
-E2b's concrete Boolean family execution to the adapter's oracle-backed body
+the concrete Boolean family execution to the adapter's oracle-backed body
 constructor; the only remaining inputs are the explicitly advertised scoped
 recursive context and active cache invariant.
 -/
@@ -32,23 +32,23 @@ theorem block_rejects_wrong_route :
   simp [blockItem, AnonWorkItem.SelectedBlockMatches]
 
 /-- Standalone source entries deliberately admit either operational branch:
-axioms use K3 directly, while singleton definitions and recursors are
-committed through E0. -/
+axioms use declaration-checking directly, while singleton definitions and recursors are
+committed through block admission. -/
 theorem standalone_allows_coordinated_route (selected : Option (KId .anon)) :
     (AnonWorkItem.standalone E1Fixture.first).SelectedBlockMatches selected :=
   trivial
 
-/-- The fixed-certificate replay surface cannot bypass K3 for definition
+/-- The fixed-certificate replay surface cannot bypass declaration-checking for definition
 blocks. -/
 theorem certificate_backed_definition_excluded :
     ¬ CheckBlockKind.CertificateBacked .defn := by
   intro h
   exact h
 
-/-! ## Concrete E2b body bridge -/
+/-! ## Concrete singleton certification body bridge -/
 
-/-- E2b's actual Boolean family/constructor block inhabits the exact
-oracle-backed constructor consumed by E3-S.  This theorem is indexed by the
+/-- The Boolean family/constructor block inhabits the exact oracle-backed
+constructor consumed by the supported-fragment adapter. This theorem is indexed by the
 real production body states and exact physical member array from
 `BooleanEnumerationFixture`; it does not replace them with an abstract
 inductive environment. -/
@@ -72,8 +72,8 @@ def booleanFamilyBodyResources
   .oracleBacked
     (BooleanEnumerationFixture.familyLink.blockResources activePost)
 
-/-- The adapter turns that E2b resource and the actual successful production
-trace into E0's exact atomic-body certificate. -/
+/-- The adapter turns that singleton certification resource and the actual successful production
+trace into block admission's exact atomic-body certificate. -/
 theorem booleanFamilyBody_certified
     {requests : List WalkerRequest} {support : RunSupport}
     (context : ScopedRecursiveMethodRunContext

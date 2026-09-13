@@ -6,9 +6,9 @@ import Ix.Kernel.Verify.Inductive.SingletonOracle
 /-!
 # Certificate-backed singleton family blocks
 
-E0 fixes the exact physical block, classifier, execution trace, and active
+Block admission fixes the exact physical block, classifier, execution trace, and active
 post-state.  `SingletonFamilyCatalogLink` fixes the same member array and
-constructs its semantic oracle from the E2a transaction.  This module joins
+constructs its semantic oracle from the certified generation transaction.  This module joins
 those independently audited indices, so a successful production family block
 does not need an additional ambient inductive oracle.
 
@@ -22,7 +22,7 @@ namespace Ix.Kernel
 namespace SingletonFamilyCatalogLink
 
 /-- The exact family/constructor link supplies all oracle-backed resources
-for an E0 inductive-block trace. -/
+for an inductive-block admission trace. -/
 def blockResources
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport}
@@ -72,7 +72,7 @@ end SingletonRecursorCatalogLink
 namespace RecM
 
 /-- Certify one actual successful singleton family/constructor block by
-combining E0's exact trace with E2a/E2b's exact catalog link. -/
+combining block admission's exact trace with the certified singleton catalog link. -/
 theorem certifySingletonFamilyBlock
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport} {methods : Methods .anon}
@@ -91,7 +91,7 @@ theorem certifySingletonFamilyBlock
   certifyOracleBackedBlock trace hexact (link.blockResources activePost)
 
 /-- Certify one actual successful singleton enumeration recursor block by
-combining E0's exact trace with E2a/E2b's generated-rule correspondence. -/
+combining block admission's exact trace with the certified singleton generated-rule correspondence. -/
 theorem certifySingletonRecursorBlock
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport} {methods : Methods .anon}
@@ -221,7 +221,7 @@ theorem certifySingletonRecursorIngressBlock
 /-- Join one actual anonymous family-block ingress execution to one actual
 successful production checker-body execution.  The semantic catalog link is
 constructed internally from the conversion interpretation, publication
-trace, loaded-catalog invariant, trusted log, and E2a transaction. -/
+trace, loaded-catalog invariant, trusted log, and certified generation transaction. -/
 theorem certifySingletonFamilyIngressExecution
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport} {methods : Methods .anon}
@@ -255,7 +255,7 @@ theorem certifySingletonFamilyIngressExecution
 
 /-- Join one actual anonymous recursor-block ingress execution to one actual
 successful production recursor checker-body execution.  Positional generated
-equation and iota-pattern facts remain derived from the E2a certificate and
+equation and iota-pattern facts remain derived from the certified generation certificate and
 the supported enumeration shape. -/
 theorem certifySingletonRecursorIngressExecution
     {semantics : CacheSemantics} {trProj : RawProjRel}

@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Inductive.SingletonFamily
 /-!
 # Certified singleton-recursor correspondence
 
-The Ix.Theory.Named transaction used by E2a installs a singleton family's recursor
+The Ix.Theory.Named transaction used by certified generation installs a singleton family's recursor
 and all of its iota equations atomically with the family.  Anonymous Ix
 ingress does not: the family/constructor block and the recursor block are
 distinct physical blocks.  This module links the latter block to the exact
@@ -70,7 +70,7 @@ end CertifiedSingletonGeneration
 
 /-! ## Exact supported recursor shape -/
 
-/-- Concrete recursor metadata supported by E2b's singleton adapter.
+/-- Concrete recursor metadata supported by the singleton adapter.
 
 `motives = 1` is the explicit no-mutual/no-nested boundary of this adapter.
 The exact rule count is retained, and `RecursorMajorIdxCoherent` rules out the
@@ -165,7 +165,7 @@ end KConst.IsCertifiedSingletonRecursor
 /-! ## Exact recursor/rule correspondence -/
 
 /-- Positional correspondence between the one physical Ix recursor block and
-the recursor/equations already installed by an E2a transaction.
+the recursor/equations already installed by a certified generation transaction.
 
 The structure contains representation facts only.  Registration, equation
 WF, recursor WF, and recursor-headedness are derived from the transaction and
@@ -271,7 +271,7 @@ theorem ruleAt
     CertifiedSingletonGeneration.generatedRuleAt _ hnormalized,
     hfields, hraw, htyped⟩
 
-/-- E2a registration plus the exact positional Ix link yields the complete
+/-- Certified registration plus the exact positional Ix link yields the complete
 registered-rule semantic relation. -/
 theorem registeredRuleAt
     {trProj : RawProjRel} {catalog : Catalog}

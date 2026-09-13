@@ -898,9 +898,8 @@ def checkedFamilies? (source : VInductDecl) (params : List VExpr) :
 
 /-- Source-indexed checked representation of a complete inductive block.
 Shared parameters are stored once; every per-family component lives in the
-dependent `families` spine indexed by `source.types` itself.  This is the
-Spec-08A analysis boundary and intentionally has no generation or insertion
-projection. -/
+dependent `families` spine indexed by `source.types` itself. This analysis
+artifact contains no generation or insertion result. -/
 structure CheckedBlock (source : VInductDecl) where
   params : List VExpr
   params_eq : params = blockParams source.nparams source.types
@@ -1312,7 +1311,7 @@ structure GenerationChecked (source : VInductDecl) where
 
 /-- Identity normalization always satisfies the mixed generator's positional
 layout gate. The only non-reflexive facts are the parameter and constructor
-parameter lengths already certified by Stage 3. -/
+parameter lengths certified by `Checked.direct_layout`. -/
 theorem Checked.identityBlock_generationShape {decl : VInductDecl}
     (checked : decl.Checked) :
     checked.identityBlock.generationShape = true := by
@@ -2991,7 +2990,7 @@ def VEnv.addInduct (env : VEnv) (decl : VInductDecl) : Option VEnv := do
   let generation ← decl.identityBlockGeneration?
   env.addInductBlockGeneration generation
 
-/-- Compatibility wrapper for the pre-Spec-08C one-family raw transaction.
+/-- Compatibility wrapper for the one-family raw transaction.
 
 Unlike `addInduct`, this deliberately projects the legacy `Checked` artifact
 and therefore rejects every genuinely mutual declaration.  It remains only

@@ -7,7 +7,7 @@ import Ix.Kernel.Verify.Whnf.StructEta.RecursionClassifier
 # Inference-policy frames
 
 Full inference is selected by the mutable `TcState.inferOnly` bit.  The
-ordinary K1/K2 semantic contracts intentionally ignore operational flags, so
+ordinary reduction, inference, and conversion semantic contracts intentionally ignore operational flags, so
 they cannot by themselves justify that a recursive callback which starts in
 full mode returns in full mode.
 
@@ -421,7 +421,7 @@ theorem withInferOnly (x : TcM .anon alpha) :
   cases x {before with inferOnly := true} <;> rfl
 
 /-- Combine an existing semantic Hoare proof with an independent policy
-frame.  This is the adapter used by K3 callback contexts. -/
+frame.  This is the adapter used by declaration-checking callback contexts. -/
 theorem strengthenWF
     {I : TcState .anon → Prop} {before : TcState .anon}
     {x : TcM .anon alpha} {Q : alpha → TcState .anon → Prop}
@@ -642,8 +642,8 @@ theorem methodsN_preservesInferOnly
       simpa [Methods.methodsN_succ, Nat.succ_eq_add_one] using
         hclosed (methodsN n) ih
 
-/-- The ordinary K2 DefEq contract plus its independent operational frame is
-exactly the strong DefEq callback required by K3 full inference. -/
+/-- The ordinary DefEq contract plus its independent operational frame is
+exactly the strong DefEq callback required by full inference. -/
 theorem PreservesInferOnly.isDefEq_full_wf
     {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}

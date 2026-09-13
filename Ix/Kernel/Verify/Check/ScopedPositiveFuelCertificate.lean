@@ -299,7 +299,7 @@ theorem runAssumptions (separation : AddressSeparation) :
   ⟨by simpa [requests] using public_requests separation,
     support_collisionFree separation, request_coverage, request_bounds⟩
 
-/-- The complete K2S public-run package for a real fuel-one checker
+/-- The complete scoped method public-run package for a real fuel-one checker
 execution.  Its method-call schedule and its suffix-state domain are both
 finite, but deliberately separate: the call domain contains the source
 sort, while the run support also contains the constructed successor sort. -/

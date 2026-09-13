@@ -39,8 +39,8 @@ equations) so they are robust to record-update spelling; the pop
 lemmas require the Δ-head to be the popped `(none, d)` entry — Δ is
 per-call ghost data, so the soundness layers always know the head form at a
 pop site (popping under live newer fvars would be a scoping bug and is
-deliberately unrepresentable). K0 has replaced the `truncate` and
-`restoreDepth` `while` loops with explicit Nat recursion; their exact
+deliberately unrepresentable). The `truncate` and `restoreDepth` loops use
+explicit Nat recursion; their exact
 production equations live in `Verify/Totalization`. Preservation lemmas for
 `CtxRecon` over more than one pop remain part of the checker-soundness layer.
 -/

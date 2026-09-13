@@ -14,7 +14,7 @@ namespace Ix.Kernel
 
 namespace TcM
 
-/-- Universe instantiation preserves the complete K1 invariant on both
+/-- Universe instantiation preserves the complete WHNF invariant on both
 outcomes.  On success it additionally returns the pure-spec equation and a
 result in finite run support.  The error proof is important here: production
 uses non-backtracking `EStateM`, so a failed walk may retain intern-table

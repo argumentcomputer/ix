@@ -286,7 +286,7 @@ theorem validateExprWellScoped_frame
 
 /-- Standalone declaration validation preserves the checker invariant on
 both outcomes.  The resource witness restricts this theorem to the axiom and
-definition shapes owned by K3. -/
+definition shapes owned by declaration-checking. -/
 theorem validateConstWellScoped_frame
     {support : RunSupport} {c : KConst .anon}
     (hresources : StandaloneValidationResources support c)

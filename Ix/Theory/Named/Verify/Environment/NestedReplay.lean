@@ -9,7 +9,7 @@ import Ix.Theory.Named.Verify.Environment.SingletonParityReplay
 import Ix.Theory.Named.Verify.Environment.NestedTransformation
 
 /-!
-# Nested environment replay (Spec-09C)
+# Nested environment replay
 
 Both ladder fixtures replayed from real stored metadata: the rose tree
 over the completed `List` environment and the nested-indexed family over

@@ -5,10 +5,10 @@ import Ix.Kernel.Verify.Ingress.Representation
 /-!
 # Serialized Boolean acceptance
 
-This is the first complete T0 vertical slice.  It serializes the certified
+This fixture serializes the certified
 Boolean Ixon environment, decodes the resulting bytes with the pure reference
 decoder, erases anonymous-irrelevant metadata, and reconnects the decoded
-source to the existing E3-S semantic world.
+source to the semantic world of the supported Boolean fragment.
 -/
 
 namespace Ix.Kernel
@@ -879,7 +879,7 @@ private theorem originalFamilyProjectionLookupNative :
       some familyProjectionConstant := by
   native_decide
 
-/-- Successful lookups in the in-memory source used by E3-S have the exact
+/-- Successful lookups in the in-memory source used by the Boolean proof have the exact
 same materialized value after serialization and pure decoding.  The finite
 key classification avoids any appeal to injectivity of content hashes. -/
 private theorem decodedGetConst_of_original {addr : Address}
@@ -927,7 +927,7 @@ private theorem decodedGetConst_of_original {addr : Address}
     subst constant
     exact familyProjectionEntry.getConst
 
-/-- Every dependency used by the E3-S Boolean proof is a reference stored in
+/-- Every dependency used by the Boolean proof is a reference stored in
 the corresponding constant recovered from the decoded byte array. -/
 theorem dependencyBound :
     SerializedDependencyBound env dependencyGraph := by
@@ -968,7 +968,7 @@ theorem checkEnvAnon_eq :
     checkEnvAnon env checkCfg = .ok successfulResults :=
   checkEnvAnonNative
 
-/-! ## Public T0 certificate -/
+/-! ## Public serialized-ingress certificate -/
 
 def certificate :
     SerializedSubjectCertificate bytes stagedWorld dependencyGraph
@@ -987,7 +987,7 @@ def certificate :
   resultsSucceeded := allResultsSucceeded
   semantic := semanticSubjectWF
 
-/-- T0-S: the serialized Boolean environment passes pure decoding, integrity
+/-- The serialized Boolean environment passes pure decoding, integrity
 checks, exact eager and cold-lazy ingress, production checking, dependency
 binding, and the existing semantic acceptance theorem. -/
 theorem subjectWF :

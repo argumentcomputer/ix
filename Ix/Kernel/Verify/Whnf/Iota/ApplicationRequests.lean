@@ -36,7 +36,7 @@ inductive IotaArgsInternRequests (requests : List WalkerRequest) :
 
 namespace IotaArgsInternRequests
 
-/-- A certified non-transient list fold preserves the complete K1 invariant
+/-- A certified non-transient list fold preserves the complete WHNF invariant
 and returns its indexed final application. -/
 theorem wfList
     {α : Type} {initial : TcState .anon} {program : TcM .anon α}

@@ -41,7 +41,7 @@ content-addressed environment. The structural divergences:
   `AddInduct` is an empty `-- TODO`). Thus this legacy relation remains
   uninhabited for envs containing inductives. The trusted-world log below
   retains `TrustedCatalogLog.ambient` and its explicit `InductiveOracle` as a
-  compatibility constructor. Certificate-backed E2c paths instead use
+  compatibility constructor. Certificate-backed inductive verification paths instead use
   `semanticBlock` and `existingBlock`; migrating the remaining ambient users
   depends on completing the broader inductive fragment.
 -/
@@ -184,7 +184,7 @@ theorem TrKDefVal.mono {safety : Ix.DefinitionSafety}
 
 /-- Block-level inductive translation in the legacy whole-`KEnv` relation —
     upstream-parity STUB (their `AddInduct` is an empty inductive pending the
-    `addInduct` spec). `TrustedCatalogLog.ambient` below is the live G2 path;
+    `addInduct` spec). `TrustedCatalogLog.ambient` below is the live inductive interface path;
     this constructor remains only as a quarantined compatibility interface. -/
 inductive AddKInduct :
     HashMap (KId .anon) (KConst .anon) → VEnv → VInductDecl →
@@ -377,7 +377,7 @@ theorem TrKEnv.find? {safety : Ix.DefinitionSafety}
   let ⟨_, H⟩ := H
   H.find? h hs
 
-/-! ## G1c: trusted-catalog log
+/-! ## Trusted-catalog log
 
 The legacy `TrKEnv'` above indexes its semantic log by the entire concrete
 hash map, forcing pending declarations to be WF before `checkConst` runs.
@@ -994,7 +994,7 @@ theorem TrustedCatalogRel.promote
     TrustedCatalogRel.promoteExact hrel hpending hwf
   exact ⟨world', hexact.promotes, hworld, hdecl⟩
 
-/-- The G1b ill-typed pending world already satisfies the G1c trusted-log
+/-- The ill-typed pending world satisfies the trusted-log
 invariant: its catalog entry remains completely outside the empty log. -/
 theorem IllTypedPending.trustedCatalogRel :
     TrustedCatalogRel RawProjRel.none IllTypedPending.world :=
@@ -1076,7 +1076,7 @@ theorem trustedCatalogRel :
     TrustedCatalogRel RawProjRel.none world :=
   TrustedCatalogLog.empty
 
-/-- Positive G1c fixture: supplying the new WF derivation promotes exactly
+/-- Positive trusted-catalog log fixture: supplying the new WF derivation promotes exactly
 the pending id and immediately yields trusted lookup evidence. -/
 theorem promotes :
     ∃ world',

@@ -89,7 +89,7 @@ theorem closeExactBlockSuccess
   closeBlockSuccess hcaches hle hexact.blockLookup haccepted
 
 /-- A stable physical success hit covers every catalog declaration owned by
-the exact block.  This is the member-level replay theorem used by E0. -/
+the exact block.  This is the member-level replay theorem used by block admission. -/
 theorem replayCoordinatedMember
     {semantics : CacheSemantics} {support : RunSupport}
     {world : VerifyWorld} {env : KEnv .anon}

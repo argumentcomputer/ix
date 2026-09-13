@@ -8,7 +8,7 @@ import Ix.Theory.Named.Verify.Environment.EliminationFixturesCommon
 
 open Ix.Theory (VLevel)
 
-/-! Exact Spec-06C `Unit`/`PUnit` and `Empty` edge-shape fixtures.
+/-! Exact `Unit`/`PUnit` and `Empty` elimination edge-shape fixtures.
 
 `Unit` is a reducible alias for `PUnit` on this Lean revision. The alias has
 definition metadata but no independent inductive/constructor/recursor records,

@@ -10,7 +10,7 @@ import Ix.Theory.Named.Verify.Environment.SingletonParityMatrix
 open Ix.Theory (VLevel)
 
 /-!
-# Spec-07 environment replay inventory
+# Singleton environment replay inventory
 
 This module is the sole public environment-facing inventory for singleton
 parity.  A row packages the actual implementation map, the Theory input and
@@ -2701,7 +2701,7 @@ def emptyReplay07 : SingletonReplayArtifact where
   transaction := emptyAddInduct07
   aligned := emptyAligned07
 
-/-- Every fixed Spec-07 positive row, in exactly the same order as the
+/-- Every fixed positive row, in exactly the same order as the
 Theory/kernel parity matrix.  Each entry carries an actual `ConstantInfo`
 transaction and final environment alignment, including the real dependency
 environments required by `Fin` and `Vector`. -/
@@ -2717,7 +2717,7 @@ def singletonNormalizationReplays :
   [aliasFormerReplay07, aliasRecReplay07, normalizationMatrixReplay07,
     annotatedPiReplay07, annotatedParamReplay07]
 
-/-- The sole public Spec-07 environment replay inventory. -/
+/-- The public singleton environment replay inventory. -/
 def singletonReplayMatrix : List SingletonReplayArtifact :=
   singletonFixedReplays ++ singletonNormalizationReplays
 

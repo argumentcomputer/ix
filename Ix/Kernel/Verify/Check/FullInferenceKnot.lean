@@ -5,8 +5,8 @@ import Ix.Kernel.Verify.RecursiveMethods.Closure
 /-!
 # Full-inference closure of the production recursion knot
 
-K2 closes the ordinary six-field semantic contract from an already typed
-source.  K3 needs a stronger contract for the inference field: when the
+The ordinary six-field semantic contract assumes a typed source.
+Declaration checking needs a stronger inference contract: when the
 caller is in full mode, successful inference must construct the typed source
 translation from `PreTrKExprS`, and both success and partial errors must
 restore full mode.
@@ -21,8 +21,8 @@ namespace Ix.Kernel
 
 namespace Methods
 
-/-- Strong K3 contract for the inference field of one fixed method table.
-Unlike ordinary K2 inference, this starts from untyped structural ingress and
+/-- Strong declaration-checking contract for the inference field of one fixed method table.
+Unlike ordinary inference, this starts from untyped structural ingress and
 records the full-mode frame on both outcomes. -/
 def FullInferenceWFAt
     (semantics : CacheSemantics) (trProj : RawProjRel)
@@ -101,7 +101,7 @@ def fullInferenceContext
   · exact ProjectionInference.preservesInferOnlyAt methods hpolicy
       hnextPolicy.whnf
 
-/-- One unfolded production inference layer satisfies K3 whenever its
+/-- One unfolded production inference layer satisfies the full-mode contract whenever its
 strictly smaller callback table satisfies the three independent premises. -/
 theorem next_fullInferenceWFAt
     {alpha : Type} {initial : TcState .anon} {program : TcM .anon alpha}

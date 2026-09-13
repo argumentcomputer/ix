@@ -4,12 +4,12 @@ import Ix.Kernel.Verify.Check.InferencePolicy
 /-!
 # Full inference for applications
 
-K2 proves application inference from an already typed `TrKExprS` source.
+The ordinary application-inference proof starts from a typed `TrKExprS` source.
 That premise is circular at checker ingress: the application constructor of
 `TrKExprS` already says that the function and argument have compatible
 types.
 
-This file proves the corresponding K3 branch from `PreTrKExprS`.  Its
+This file proves the corresponding declaration-checking branch from `PreTrKExprS`.  Its
 callback context deliberately records the additional operational fact needed
 by full checking: recursive inference, Pi exposure, and DefEq all restore
 `inferOnly = false`, including on partial errors.  The later concrete-knot
@@ -23,7 +23,7 @@ open Ix.Theory.Named (VExpr)
 
 /-- Strong recursive services used while reconstructing a typed translation
 from successful full inference.  These are properties of one concrete
-smaller method table, rather than consequences of the ordinary K2 method
+smaller method table, rather than consequences of the ordinary inference/conversion method
 contract. -/
 structure FullInferenceStepContext
     (semantics : CacheSemantics) (trProj : RawProjRel)
@@ -84,9 +84,9 @@ structure FullInferenceStepContext
 
 namespace FullInferenceStepContext
 
-/-- Assemble the strong K3 callback record from independent semantic proofs
+/-- Assemble the strong declaration-checking callback record from independent semantic proofs
 and the outcome-sensitive operational policy frame.  The separation matters:
-ordinary K2 soundness does not mention `inferOnly`, while the policy audit
+ordinary inference/conversion soundness does not mention `inferOnly`, while the policy audit
 does not claim typing. -/
 theorem of_semantic_and_policy
     {semantics : CacheSemantics} {trProj : RawProjRel}
@@ -243,7 +243,7 @@ private theorem throwApplicationMismatch_full_wf
   exact hrec methods hmethods
 
 /-- Semantic reconstruction for a fully checked application.  In contrast
-to K2's application lemma, argument compatibility is obtained from the
+to the typed application's inference lemma, argument compatibility is obtained from the
 actual recursive inference and true DefEq result, not from the source
 translation premise. -/
 private theorem fullApplicationResult
@@ -342,7 +342,7 @@ private theorem finishFullApplication_wf
 
 /-- The full-mode application branch, starting from an untyped structural
 translation.  This theorem is deliberately indexed by one concrete smaller
-method table and its stronger K3 callback context. -/
+method table and its stronger declaration-checking callback context. -/
 theorem inferUncached_app_full_wf
     {alpha : Type} {initial : TcState .anon} {program : TcM .anon alpha}
     {requests : List WalkerRequest} {support : RunSupport}

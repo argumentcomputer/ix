@@ -8,7 +8,7 @@ import Ix.Theory.Named.NestedInductive
 import Ix.Theory.Named.Typing.InductiveLemmas
 
 /-!
-# Nested transaction facts and preservation (Spec-09C)
+# Nested transaction facts and preservation
 
 The `addInductNested` analog of the block-wide transaction lemma suite:
 exact phase recovery, atomicity, monotonicity, freshness, lookup and rule

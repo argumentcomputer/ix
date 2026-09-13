@@ -8,11 +8,12 @@ open Ix.Theory (VLevel)
 /-!
 # WHNF soundness boundary
 
-This file starts K1 at the semantic boundary shared by reduction, caches, and
+This file defines the semantic boundary shared by reduction, caches, and
 the recursive method knot.  It intentionally does not identify a context
 hash with a typing context by fiat.  `WhnfContextKeys.Represents` is the one
 named ghost relation whose production implementation must be connected to
-`TcM.ctxAddrForLbr`; K2 supplies the suffix-sufficiency transport theorem.
+`TcM.ctxAddrForLbr`. The suffix model in `Verify.DefEq` supplies the semantic
+transport contract for equal suffix keys.
 
 The semantic payload is already concrete: `WhnfMeaning` says that source and
 result have structural `TrKExprS` translations in the same `KVLCtx`, and that
@@ -21,9 +22,9 @@ Consequently a cache hit is useful only after supplying both its finite
 source witness and the represented context.  Address equality alone carries
 no semantic meaning.
 
-K1 has five expression-cache policies.  The inference caches are excluded
+WHNF has five expression-cache policies.  The inference caches are excluded
 from this layer and continue through a caller-supplied fallback semantics;
-K2 replaces that fallback with their exact typing contracts.
+`Verify.Infer` supplies their exact typing contracts.
 -/
 
 namespace Ix.Kernel
@@ -82,7 +83,7 @@ end WhnfMeaning
 /-! ## Cache-policy partition -/
 
 /-- The five semantic policies implemented by the WHNF expression caches.
-The policy records operational strength; every policy has the same C1
+The policy records operational strength; every policy has the same cache
 soundness consequence (`WhnfMeaning`). -/
 inductive WhnfCachePolicy where
   | full
@@ -94,7 +95,8 @@ inductive WhnfCachePolicy where
 
 namespace ExprCacheKind
 
-/-- Classify exactly the K1 cache families.  Inference caches are K2. -/
+/-- Classify exactly the WHNF cache families. Inference caches belong to the
+separate inference layer. -/
 def whnfPolicy? : ExprCacheKind → Option WhnfCachePolicy
   | .whnf => some .full
   | .whnfNoDelta => some .noDelta
@@ -124,7 +126,7 @@ def whnfPolicy? : ExprCacheKind → Option WhnfCachePolicy
 @[simp] theorem whnfPolicy?_inferOnly :
     ExprCacheKind.inferOnly.whnfPolicy? = none := rfl
 
-/-- Proof-relevant membership in the K1 cache partition. -/
+/-- Proof-relevant membership in the WHNF cache partition. -/
 inductive IsWhnf : ExprCacheKind → Prop
   | whnf : IsWhnf .whnf
   | whnfNoDelta : IsWhnf .whnfNoDelta
@@ -169,9 +171,10 @@ end ExprCacheKind
 /-! ## Context-key interpretation and exact cache semantics -/
 
 /-- Ghost interpretation of suffix-aware context addresses.  `Represents`
-may relate one key to several definitionally equal contexts; K1 cache
-validity is deliberately quantified over every represented context.  K2
-constructs this model from `ctxAddrForLbr` plus suffix sufficiency. -/
+may relate one key to several definitionally equal contexts; WHNF cache
+validity is deliberately quantified over every represented context. The
+suffix-model adapter constructs this interpretation from `ctxAddrForLbr`
+plus suffix sufficiency. -/
 structure WhnfContextKeys where
   uvars : Nat
   /-- `Represents lbr key Δ` interprets `key` as the suffix requested at
@@ -194,7 +197,7 @@ def closed (uvars : Nat) : WhnfContextKeys where
 
 /-- A represented semantic context tied to the actual production cache-key
 computation in a concrete state.  Constructing this witness—not merely
-postulating `Represents`—is the K1/K2 context-key proof obligation. -/
+postulating `Represents`—is the reduction, inference, and conversion context-key proof obligation. -/
 def Matches (keys : WhnfContextKeys) (trProj : RawProjRel)
     (world : VerifyWorld) (s : TcState .anon) (Δ : KVLCtx)
     (source : KExpr .anon) (key : Address × Address) : Prop :=
@@ -216,7 +219,7 @@ def InternUpdateFrame (before after : TcState .anon) : Prop :=
   after = { before with env := { before.env with intern := after.env.intern } }
 
 /-- The empty projection relation satisfies every structural closure law
-vacuously.  This is the canonical K1 fixture interpretation for fragments
+vacuously.  This is the canonical WHNF fixture interpretation for fragments
 that contain no projection nodes. -/
 theorem RawProjRel.none_ok (env : Ix.Theory.Named.VEnv) (uvars : Nat) :
     TrProjOK env uvars RawProjRel.none := by
@@ -339,8 +342,8 @@ def blockResults : CacheSemantics where
     intro authority support block h
     exact h
 
-/-- Compatibility spelling retained for existing K1/K2 clients.  Unlike its
-pre-E0 definition, successful block verdicts now have the exact sound meaning
+/-- Compatibility spelling for block-result cache semantics.
+Successful block verdicts have the exact sound meaning
 specified by `blockResults`. -/
 abbrev blockErrorsOnly : CacheSemantics := blockResults
 
@@ -405,7 +408,7 @@ def isRecCacheSemantics (fallback : CacheSemantics) : CacheSemantics where
     intro authority support block h
     exact fallback.blockSuccessSound authority support block h
 
-/-- Exact K1 validity for one tagged entry.  The fallback owns every non-K1
+/-- Exact WHNF validity for one tagged entry. The fallback owns every non-WHNF
 cache family.  A WHNF entry must be sound for every finite-support source
 whose address is its first key component and every context represented by
 its second component whenever that source is structurally in scope there.
@@ -465,7 +468,7 @@ theorem mono {keys : WhnfContextKeys} {trProj : RawProjRel}
       recursor | recMajors | blockPeer | blockResult =>
     exact fallback.mono hle h
 
-/-- Project the concrete reduction meaning from any of the five K1 cache
+/-- Project the concrete reduction meaning from any of the five WHNF cache
 families. -/
 theorem expr {keys : WhnfContextKeys} {trProj : RawProjRel}
     {fallback : CacheSemantics} {authority : CacheAuthority}
@@ -492,7 +495,7 @@ theorem natSuccStuck {keys : WhnfContextKeys} {trProj : RawProjRel}
 
 end WhnfCacheValid
 
-/-- Overlay the exact K1 meanings on an existing semantic family. -/
+/-- Overlay the exact WHNF meanings on an existing semantic family. -/
 def whnfCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) : CacheSemantics where
   Valid := WhnfCacheValid keys trProj fallback
@@ -512,7 +515,7 @@ def whnfCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
 
 namespace CacheProvenance
 
-/-- Construct K1 provenance for a negative successor marker.  Unlike a
+/-- Construct WHNF provenance for a negative successor marker.  Unlike a
 cached expression result, the marker needs no Theory reduction witness; it
 still records a supported source address and proves that every supported
 source sharing that address refers only to trusted declarations. -/
@@ -532,7 +535,7 @@ theorem whnfNatSuccStuck
   intro id href
   exact .inl (hreferences href)
 
-/-- A provenance-certified K1 hit exposes concrete Theory reduction
+/-- A provenance-certified WHNF hit exposes concrete Theory reduction
 meaning; support and dependency facts remain available in `h`. -/
 theorem whnfMeaning {keys : WhnfContextKeys} {trProj : RawProjRel}
     {fallback : CacheSemantics} {authority : CacheAuthority}
@@ -566,7 +569,7 @@ end CacheProvenance
 
 namespace CacheInvariant
 
-/-- Physical hit plus the exact K1 cache invariant yields its Theory
+/-- Physical hit plus the exact WHNF cache invariant yields its Theory
 meaning. -/
 theorem whnfHit {keys : WhnfContextKeys} {trProj : RawProjRel}
     {fallback : CacheSemantics} {authority : CacheAuthority}
@@ -601,7 +604,7 @@ end CacheInvariant
 
 /-! ## Conditional recursive-method interface -/
 
-/-- The theorem layers used by K1. `structuralNoAccel` is deliberately
+/-- The theorem layers used by WHNF. `structuralNoAccel` is deliberately
 restricted to syntax-directed fixtures: it pins the acceleration gate but
 does not claim that the state's primitive table is the production anon
 table. The two production layers both bind every observable table address to
@@ -856,7 +859,7 @@ end WhnfStateInv
 
 namespace ContextKeyFrame
 
-/-- Populating the suffix-key memo preserves the complete K1 invariant.
+/-- Populating the suffix-key memo preserves the complete WHNF invariant.
 The proof projects the exact frame rather than treating the memo operation as
 pure; this catches future writes to context, environment, fuel, or flags. -/
 theorem whnfStateInv {layer : WhnfLayer} {semantics : CacheSemantics}
@@ -913,7 +916,7 @@ theorem trans {s₀ s₁ s₂ : TcState .anon}
   rw [h₂, h₁]
 
 /-- Intern-table growth preserves the context and acceleration components of
-the K1 invariant once the post-state kernel invariant has been re-established.
+the WHNF invariant once the post-state kernel invariant has been re-established.
 Keeping the kernel premise explicit lets the finite-support walker proofs
 supply its new intern-table coherence and coverage facts. -/
 theorem whnfStateInv {layer : WhnfLayer} {semantics : CacheSemantics}
@@ -953,7 +956,7 @@ end InternUpdateFrame
 
 namespace TcM
 
-/-- Lift an exact `InternM` specification to the complete K1 state invariant.
+/-- Lift an exact `InternM` specification to the complete WHNF state invariant.
 This is the common state bridge for beta/zeta walkers: the intern table may
 grow, but contexts, flags, loaded declarations, and semantic caches frame. -/
 theorem runIntern_whnf_wf {layer : WhnfLayer}
@@ -1143,7 +1146,7 @@ theorem ctxAddrForLbr_wf {I : TcState .anon → Prop}
       · intro _ after hafter
         exact TcM.WF.pure fun _ => hafter
 
-/-- `whnfKey` preserves K1 state and fixes the expression-address component
+/-- `whnfKey` preserves WHNF state and fixes the expression-address component
 of the returned key. -/
 theorem whnfKey_wf {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
@@ -1160,8 +1163,8 @@ theorem whnfKey_wf {layer : WhnfLayer} {semantics : CacheSemantics}
   exact TcM.WF.pure fun _ => ⟨rfl, hframe⟩
 
 /-- Operational context-match constructor.  `hrep` is deliberately the only
-remaining ghost obligation: K1 cannot infer suffix sufficiency from a hash,
-and K2 will discharge it from the concrete context-closure algorithm. -/
+remaining ghost obligation: suffix sufficiency must follow from the concrete
+context-closure algorithm and its semantic transport contract. -/
 theorem whnfKey_matches_wf {layer : WhnfLayer}
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport} {keys : WhnfContextKeys}
@@ -1289,7 +1292,7 @@ end TcM
 namespace RunAssumptions
 
 /-- One certified expression-intern request returns the requested raw
-expression exactly, preserves the complete K1 invariant, and changes only the
+expression exactly, preserves the complete WHNF invariant, and changes only the
 intern table.  Collision freedom and finite support are supplied by the
 execution-indexed request rather than assumed for an arbitrary expression. -/
 theorem internExpr_whnf_eval {α : Type} {initial : TcState .anon}
@@ -1308,7 +1311,7 @@ theorem internExpr_whnf_eval {α : Type} {initial : TcState .anon}
   exact TcM.runIntern_whnf_eval
     (fun _ hwf hsup => h.internExpr_spec hmem hwf hsup) hI
 
-/-- The verified single-substitution walker preserves the complete K1
+/-- The verified single-substitution walker preserves the complete WHNF
 invariant.  This is the explicit-let sibling of `simulSubst_whnf_wf`:
 production substitutes the let value into its body while only the intern
 table may grow. -/
@@ -1347,7 +1350,7 @@ theorem subst_whnf_eval {α : Type} {initial : TcState .anon}
   TcM.runIntern_whnf_eval
     (fun _ hwf hsup => h.subst_spec hmem hwf hsup) hI
 
-/-- The verified lifting walker preserves the complete K1 invariant.  This
+/-- The verified lifting walker preserves the complete WHNF invariant.  This
 is the legacy-zeta sibling of `simulSubst_whnf_wf`: the stored let value is
 rebased to the current de Bruijn depth while only the intern table may grow. -/
 theorem lift_whnf_wf {α : Type} {initial : TcState .anon}
@@ -1385,7 +1388,7 @@ theorem lift_whnf_eval {α : Type} {initial : TcState .anon}
   TcM.runIntern_whnf_eval
     (fun _ hwf hsup => h.lift_spec hmem hwf hsup) hI
 
-/-- The verified simultaneous-substitution walker preserves the complete K1
+/-- The verified simultaneous-substitution walker preserves the complete WHNF
 invariant, not merely intern-table coherence.  Its request membership keeps
 finite collision/support and UInt64 resource assumptions tied to an actual
 execution certificate. -/
@@ -1689,7 +1692,7 @@ theorem meaning {trProj : RawProjRel} {world : VerifyWorld}
 end WhnfPost
 
 /-- Successful inference callback postcondition used inside WHNF's K/struct
-fallbacks.  K2 proves this field for the concrete method table. -/
+fallbacks. Closing the concrete method table requires a proof of this field. -/
 def InferPost (trProj : RawProjRel) (world : VerifyWorld)
     (uvars : Nat) (Δ : KVLCtx) (sourceV : VExpr)
     (ty : KExpr .anon) : Prop :=
@@ -1755,9 +1758,9 @@ structure WFAt (layer : WhnfLayer) (semantics : CacheSemantics)
       (fun answer _ => answer = true →
         world.venv.IsDefEqU uvars Δ.toCtx va vb)
 
-/-- Conditional semantic closure of all six K0 method-table back-edges.
-K1 consumes this record while proving WHNF; K2 proves the inference/defeq
-fields and closes `methodsN` by induction. -/
+/-- Conditional semantic closure of all six recursive method-table calls.
+The reducer proofs consume this record; closing `methodsN` by induction
+also requires the inference and definitional-equality fields. -/
 structure WF (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)
     (methods : Methods .anon) : Prop where
@@ -1880,8 +1883,8 @@ structure InductiveReductionOracle (layer : WhnfLayer)
 namespace RecM
 
 /-- Reader-level Hoare triple conditional on a semantically closed method
-table.  Quantification over every `Methods.WF` table is what lets K1 land
-before K2 ties the total recursive knot. -/
+table. Quantification over every `Methods.WF` table lets branch proofs use
+the callback contracts without depending on the concrete recursive knot. -/
 def WF (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)
     (uvars : Nat) (Δ : KVLCtx) (s : TcState .anon) (x : RecM .anon α)
@@ -2008,7 +2011,7 @@ theorem liftTcM {layer : WhnfLayer} {semantics : CacheSemantics}
   intro methods hmethods
   exact hx
 
-/-- Reader-level state observation preserves the K1 invariant exactly. -/
+/-- Reader-level state observation preserves the WHNF invariant exactly. -/
 theorem get {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
     {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon}
@@ -2328,7 +2331,7 @@ theorem whnfNatReducerArg_wf
   · intro _ _ _
     trivial
 
-/-- Generic invariant rule for K0's total bounded-loop driver.  Exhaustion
+/-- Generic invariant rule for the total bounded-loop driver. Exhaustion
 is explicit in `hexhaust`; every successful `.next` re-establishes `P`, and
 every `.done` establishes the final postcondition. -/
 theorem runBounded_wf {layer : WhnfLayer} {semantics : CacheSemantics}
@@ -2462,7 +2465,7 @@ theorem no_zero {layer : WhnfLayer} {semantics : CacheSemantics}
 
 /-- A local semantic contract is sufficient to reconstruct the exact
     execution-indexed trace for every successful bounded run.  On failure,
-    the same induction preserves the K1 invariant and says whether the loop
+    the same induction preserves the WHNF invariant and says whether the loop
     exhausted its own bound or the production step raised the error. -/
 theorem complete {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
@@ -2591,7 +2594,7 @@ theorem eval {layer : WhnfLayer} {semantics : CacheSemantics}
       rw [hstep]
       exact ih
 
-/-- The first state in a trace satisfies the same fixed K1 invariant carried
+/-- The first state in a trace satisfies the same fixed WHNF invariant carried
 by every later state. -/
 theorem initialInv {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
@@ -2603,7 +2606,7 @@ theorem initialInv {layer : WhnfLayer} {semantics : CacheSemantics}
     WhnfStateInv layer semantics trProj world support uvars Δ s := by
   cases h <;> assumption
 
-/-- The last state in a trace still satisfies the fixed K1 invariant. -/
+/-- The last state in a trace still satisfies the fixed WHNF invariant. -/
 theorem finalInv {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
     {uvars : Nat} {Δ : KVLCtx} {methods : Methods .anon}
@@ -2645,7 +2648,7 @@ theorem uncached_eval {layer : WhnfLayer} {semantics : CacheSemantics}
   unfold whnfCoreWithFlagsUncached
   exact h.eval
 
-/-- K1 structural-loop acceptance package: exact production execution,
+/-- WHNF structural-loop acceptance package: exact production execution,
 initial/final fixed-world invariants, and the transitively composed Theory
 meaning. -/
 theorem uncached_acceptance {layer : WhnfLayer}
@@ -3180,7 +3183,7 @@ theorem whnfCoreWithFlags_transient_acceptance
 
 /-- Execution-indexed semantic certificate for the production no-delta
 WHNF loop.  Each constructor records the exact named step equation, the
-fixed K1 invariant on both sides, and the local Theory meaning. -/
+fixed WHNF invariant on both sides, and the local Theory meaning. -/
 inductive WhnfNoDeltaTrace (layer : WhnfLayer)
     (semantics : CacheSemantics) (trProj : RawProjRel)
     (world : VerifyWorld) (support : RunSupport) (uvars : Nat)
@@ -3754,7 +3757,7 @@ def Represents (keys : WhnfContextKeys) (trProj : RawProjRel)
     TcM.whnfKey source before = .ok key after ->
       keys.Represents source.lbr key.2 Delta
 
-/-- K2's suffix transport is unnecessary for a syntactically closed source:
+/-- Suffix transport is unnecessary for a syntactically closed source:
     production returns the distinguished empty-context key exactly. -/
 theorem closed_represents {uvars : Nat} {source : KExpr .anon}
     {trProj : RawProjRel} {world : VerifyWorld}
@@ -3786,7 +3789,7 @@ end TransientNatWork
     sites.  A meaning proof for the executed source alone is insufficient:
     cache validity quantifies over every supported source sharing the key's
     address and every represented context.  Keeping this interface explicit
-    prevents a hash-collision assumption from entering K1 unnoticed. -/
+    prevents a hash-collision assumption from entering WHNF unnoticed. -/
 structure WhnfCacheWriteOracle (keys : WhnfContextKeys)
     (trProj : RawProjRel) (fallback : CacheSemantics)
     (world : VerifyWorld) (support : RunSupport) : Prop where
@@ -3819,8 +3822,8 @@ namespace WhnfCacheWriteOracle
 /-- Construct all three outer write rules for closed expressions.  Expression
     collision freedom identifies every supported source at the address key;
     the remaining premise is exactly direct-reference authorization for the
-    concrete cache entry.  Open-context transport is deliberately absent and
-    remains K2 work. -/
+    concrete cache entry. Open-context transport remains a separate semantic
+    proof obligation. -/
 theorem closed
     {uvars : Nat} {trProj : RawProjRel} {fallback : CacheSemantics}
     {world : VerifyWorld} {support : RunSupport}
@@ -4770,7 +4773,7 @@ theorem whnfWithNatSuccMode_nonLeaf_wf
     hcharge hstep hwrites hsupport hsource
 
 /-- The full-WHNF trace/statistics prefix preserves every semantic component
-    of the K1 state invariant, independently of instrumentation settings. -/
+    of the WHNF state invariant, independently of instrumentation settings. -/
 theorem whnfWithNatSuccModePrefix_wf
     {semantics : CacheSemantics} {layer : WhnfLayer}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
@@ -4789,7 +4792,7 @@ theorem whnfWithNatSuccModePrefix_wf
       (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
       (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1
 
-/-- The full-WHNF miss charge preserves the K1 invariant on both outcomes.
+/-- The full-WHNF miss charge preserves the WHNF invariant on both outcomes.
     Its only possible error is the underlying `.maxRecFuel`; the bounded-loop
     `.maxRecDepth` classification remains separate in `WhnfLoopError`. -/
 theorem whnfWithNatSuccModeMissCharge_wf
@@ -5033,8 +5036,8 @@ theorem whnfNoDelta_wf
         WhnfPost trProj world keys.uvars Delta sourceV result) :=
   whnfNoDeltaImpl_wf theory hkeyRep htransient hstep hwrites hsupport hsource
 
-/-- Public `RecM.whnf` specialization.  K2 can use this theorem directly
-    when proving the corresponding `Methods.WF.whnf` field for `methodsN`. -/
+/-- Public `RecM.whnf` specialization, used to prove the corresponding
+    `Methods.WF.whnf` field for `methodsN`. -/
 theorem whnf_wf
     {keys : WhnfContextKeys} {fallback : CacheSemantics}
     {layer : WhnfLayer} {trProj : RawProjRel} {world : VerifyWorld}
@@ -7250,7 +7253,7 @@ theorem whnfCoreWithFlagsUncached_betaOne_wf
   exact ⟨s', whnfCoreWithFlagsUncached_betaOne hhead hwalk hleaf,
     hI', hframe⟩
 
-/-- First algorithmic K1 slice: all immediate-return WHNF forms preserve the
+/-- All immediate-return WHNF forms preserve the
 complete fixed-world/context/cache invariant and their exact Theory meaning.
 The theorem is layer-polymorphic because these branches never inspect
 `noAccel` and never consume a `NativeOracle`. -/
@@ -7283,7 +7286,7 @@ theorem whnf_leaf_wf_of_theory {layer : WhnfLayer}
   exact TcM.WF.pure fun hI =>
     WhnfPost.refl htr (theory.exprWF hI.2.1 htr)
 
-/-- Immediate structural-WHNF forms preserve the complete K1 invariant and
+/-- Immediate structural-WHNF forms preserve the complete WHNF invariant and
 have reflexive Theory meaning.  This covers the actual flag-parametric core
 entry point, including constants and the cheap projection policy. -/
 theorem whnfCoreWithFlags_leaf_wf {layer : WhnfLayer}
@@ -7586,7 +7589,7 @@ structure NoDeltaInputSupport (support : RunSupport) : Prop where
     source.collectSpine = (head, args) →
     support head ∧ ∀ (i : Nat) (hi : i < args.size), support args[i]
 
-/-- The concrete K1 input for active no-delta primitive proofs. It binds the
+/-- The concrete WHNF input for active no-delta primitive proofs. It binds the
 canonical anon table to trusted Theory names, carries Ix.Theory.Named's primitive
 reflection laws, records the quotient lift equation, and scopes generated
 syntax to actual supported executions. This is necessary but intentionally
@@ -12595,7 +12598,7 @@ theorem recordNatSuccStuck_eval
     (recordNatSuccStuck visited).run methods s = .ok () after := by
   rfl
 
-/-- The shared memo commit preserves every K1 state component when each
+/-- The shared memo commit preserves every WHNF state component when each
 visited marker has explicit cache provenance. -/
 theorem recordNatSuccStuck_wf
     {layer : WhnfLayer} {semantics : CacheSemantics}
@@ -13057,7 +13060,7 @@ structure NatSuccStuckWriteOracle (semantics : CacheSemantics)
 
 namespace NatSuccStuckWriteOracle
 
-/-- Construct the marker oracle for K1's WHNF semantic overlay once every
+/-- Construct the marker oracle for the WHNF semantic overlay once every
 finite-support expression is known to reference trusted declarations. -/
 theorem forWhnfCache
     {keys : WhnfContextKeys} {trProj : RawProjRel}
@@ -13129,7 +13132,7 @@ structure NatSuccLinearReflection (layer : WhnfLayer)
         world.venv.IsDefEqU uvars Delta.toCtx
           (natSuccIterV offset curV) reducedV
 
-/-- The syntactic step recognizer preserves K1 state through its sole
+/-- The syntactic step recognizer preserves WHNF state through its sole
 recursive WHNF callback.  All later lambda/spine/address tests and primitive
 reads are state-transparent. -/
 theorem isNatSuccIhStep_wf
@@ -13585,7 +13588,7 @@ theorem tryReduceNatSuccIterStep_wf
 /-- The public successor-collapse helper satisfies its semantic result
 contract for arbitrary successor chains. The entry memo hit is a safe miss;
 the miss path seeds certified provenance and invokes the generic bounded-loop
-driver, whose exhaustion and callback errors still preserve K1 state. -/
+driver, whose exhaustion and callback errors still preserve WHNF state. -/
 theorem tryReduceNatSuccIter_wf
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport} {flags : WhnfFlags}
@@ -14058,7 +14061,7 @@ theorem tryReduceNatWithSuccMode_collapse_optional_wf
       rw [hrun]
       exact ⟨hI, trivial⟩
 
-/-- K1's narrow collapse-mode Nat closure surface.  The implementation proof
+/-- WHNF's narrow collapse-mode Nat closure surface.  The implementation proof
 constructs both former whole-computation assumptions: descriptor ingress
 plus callback closure yield the linear recognizer's effect contract, while
 successful callback meaning plus canonical result-shape separation yields an
@@ -14084,7 +14087,7 @@ theorem tryReduceNatWithSuccMode_collapse_optional_wf_of_boundaries
     (NatSuccLinearOracle.of_reflection context partsPreserve reflection)
     (NatCollapseRequestCensus.of_result_shape context theory shape)
 
-/-- K1's stuck-mode Nat closure surface.  Unary `Nat.succ` is deliberately
+/-- WHNF's stuck-mode Nat closure surface.  Unary `Nat.succ` is deliberately
 reserved for the surrounding successor loop, so this mode needs neither the
 linear Nat.rec reflection boundary nor stuck-cache writes.  Canonical
 Nat/Bool result-shape separation is the only semantic boundary beyond the

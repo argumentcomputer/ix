@@ -13,7 +13,7 @@ import Ix.Theory.Named.Verify.Environment.EliminationFixturesEdges
 import Ix.Theory.Named.Verify.Environment.NormalizationMatrix
 
 /-!
-# Spec-07 complete singleton kernel matrix
+# Complete singleton kernel matrix
 
 The rows below join the single Theory artifact inventory to Lean's actual
 `inductInfo`/`ctorInfo`/`recInfo` records.  The executable predicate compares
@@ -380,7 +380,7 @@ def recursorEliminationRejected07 (info : ConstantInfo) (sourceUvars : Nat) :
 def typeCollisionEnv07 : VEnv :=
   (VEnv.empty.addConst ``Nat ⟨0, .sort .zero⟩).get (by decide)
 
-/-- The complete Spec-07 negative matrix.  Earlier phase-specific fixtures
+/-- The complete negative matrix. Individual stage-specific fixtures
 retain their exact kernel error messages; this table makes their coverage and
 combined acceptance result executable from one public artifact path. -/
 def singletonNegativeRows : List SingletonNegativeRow :=

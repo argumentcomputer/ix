@@ -9,11 +9,11 @@ import Ix.Theory.Named.Inductive
 open Ix.Theory (VLevel)
 
 /-!
-# Nested-inductive flattening (Spec-09B)
+# Nested-inductive flattening
 
 The Theory mirror of the kernel's `ElimNestedInductive` transformation,
-following the committed Spec-09A design
-(`Ix.Theory.Named/Verify/Environment/NestedRepresentation.lean`): the stored
+with representation probes in `Verify/Environment/NestedRepresentation.lean`:
+the stored
 payload of a nested declaration is the source `VInductDecl`, and nested
 support flows through an additive artifact coupling
 
@@ -45,16 +45,15 @@ The transformation mirrors the kernel phase for phase:
   block is stable.
 - Auxiliary names are canonical: `(`_nested` ++ familyName).appendIndexAfter i`
   with a global counter, matching the kernel's choice whenever the ambient
-  environment contains no colliding `_nested.*` constant.  The Spec-09A
+  environment contains no colliding `_nested.*` constant. The representation
   collision probe shows the choice is erased from all final artifacts, and
   in-block collisions are rejected downstream by `blockNamesOK` exactly
   where the kernel's `checkName` rejects its own collisions.
 
 Acceptance (`nestedStage3`) is flattening success plus generation
-readiness of the flattened block through the unchanged Spec-08 machinery.
-No generated recursor, rule, or environment replay is claimed at this
-checkpoint; the restoration substitution over generation artifacts is
-Spec-09C's obligation.
+readiness of the flattened block through the block analyzer and generator.
+Generation artifacts are subsequently restored by the substitution defined
+in this module; environment replay is verified separately.
 -/
 
 namespace Ix.Theory.Named
@@ -287,9 +286,8 @@ def NestedElimination.numNested {source : VInductDecl}
   elim.specs.length
 
 /-- A flattened declaration accepted by the unchanged arbitrary-block
-machinery: the complete Spec-09B validation gate.  Positivity, name, level,
-anatomy, and generation-shape checking of the flattened block reuse the
-Spec-08 analyzers verbatim. -/
+machinery. Positivity, name, level, anatomy, and generation-shape checking
+reuse the block analyzers. -/
 structure NestedBlockChecked (source : VInductDecl) where
   elim : NestedElimination source
   generation : BlockGenerationChecked elim.flat
@@ -306,7 +304,7 @@ def nestedStage3 (targets : List NestedTargetBlock)
     (source : VInductDecl) (fuel : Nat := 1000) : Bool :=
   (nestedBlockChecked? targets source fuel).isSome
 
-/-! ## Restoration (Spec-09C)
+/-! ## Restoration
 
 The restoration substitution σ maps the flattened block's generation
 artifacts back to the stored metadata surface: auxiliary family constants
@@ -477,8 +475,8 @@ well formed at their exact insertion environments.  The phase environments
 are determined by the deterministic constant folds, so each later field
 takes the earlier folds as hypotheses; a fixture discharges them by
 computation.  Inhabiting this package from the flattened block's staged
-semantic certificate is the σ-transport route recorded by the Spec-09A
-design note; fixtures may equally inhabit it from direct checker
+semantic certificate requires typing transport along σ; fixtures may also
+inhabit it from direct checker
 executions on the restored artifacts. -/
 structure NestedBlockChecked.WF {source : VInductDecl}
     (nested : NestedBlockChecked source) (env : VEnv) : Prop where

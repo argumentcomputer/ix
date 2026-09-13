@@ -3,7 +3,7 @@ import Ix.Theory.Named.Typing.InductiveCertificate
 /-!
 # Certified mutual-inductive block transactions
 
-This is the Theory-only consumer boundary for Ix.Theory.Named's Spec-08 block
+This is the Theory-only consumer boundary for Ix.Theory.Named's block
 generation certificate.  A mutual block is one atomic semantic transaction:
 all family constants are inserted before any constructors, all constructors
 before any recursors, and all recursors before the globally flattened iota
@@ -65,7 +65,7 @@ def toBlockCertificate {source : VInductDecl} {before after : VEnv}
   success := tx.success
   beforeWF := tx.beforeWF
 
-/-- Recover Spec-08's exact four-phase trace for the atomic block. -/
+/-- Recover the exact four-phase generation trace for the atomic block. -/
 theorem trace {source : VInductDecl} {before after : VEnv}
     (tx : CertifiedBlockGenerationTransaction source before after) :
     Nonempty (VEnv.AddInductBlockGenerationTrace before after

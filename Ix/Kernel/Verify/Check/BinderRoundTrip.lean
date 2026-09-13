@@ -6,7 +6,7 @@ import Ix.Kernel.Verify.Infer.BinderClosing
 
 The Ix.Theory.Named checker closes a freshly opened binder with
 `FVarsIn.abstract_instantiate1`.  Ix uses address-carrying `KExpr` smart
-constructors and separate cached walkers, so K3 needs the corresponding pure
+constructors and separate cached walkers, so declaration-checking needs the corresponding pure
 syntax theorem for `instantiateRevSpec` followed by singleton
 `abstractFVarsSpec`.
 -/

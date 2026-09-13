@@ -102,7 +102,7 @@ theorem ctxRecon
     simpa [TcM.lazyIngressPost, frame.nextFVarId] using hold
   · simpa [TcM.lazyIngressPost] using h.lets
 
-/-- One callback outcome preserves the entire K1 invariant, including the
+/-- One callback outcome preserves the entire WHNF invariant, including the
 address mark retained by production on both success and failure. -/
 theorem whnfStateInv
     {layer : WhnfLayer} {semantics : CacheSemantics}

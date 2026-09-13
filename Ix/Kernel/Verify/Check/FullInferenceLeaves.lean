@@ -6,9 +6,9 @@ open Ix.Theory (VLevel)
 # Full inference for untyped leaf ingress
 
 The leaf constructors of `PreTrKExprS` already contain every premise of the
-corresponding `TrKExprS` constructor.  They therefore reuse the completed K2
+corresponding `TrKExprS` constructor. They therefore reuse the ordinary inference
 operational proofs directly and strengthen only the postcondition.  The
-application and binder constructors remain genuinely new K3 work because
+application and binder constructors require separate full-inference proofs because
 their typed constructors contain the checks full inference must establish.
 -/
 

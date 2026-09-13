@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Whnf.Delta.StableCache
 /-!
 # Certified production unfold-cache execution
 
-The public K1 cache contract is a WHNF overlay whose fallback owns delta
+The public WHNF cache contract is a WHNF overlay whose fallback owns delta
 entries.  StableCache constructs the exact fallback provenance for a trusted body;
 this module transports that provenance through the overlay and verifies both
 physical paths of production's `unfoldConstValue`:

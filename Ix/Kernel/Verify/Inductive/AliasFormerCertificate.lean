@@ -53,14 +53,14 @@ theorem beforeWF : typeFamilyAliasEnv.WF :=
 /-- Exact post-environment selected by that certificate. -/
 def finalEnv : VEnv := aliasFormerFinalEnv
 
-/-- The exact Spec-01E package.  Its producer-shape index is deliberately
+/-- The exact producer-selected package. Its producer-shape index is deliberately
 inferred here because Ix.Theory.Named keeps the fixture's concrete shape witness
 private while exposing this public dependent existence theorem. -/
 def exactPackage :=
   Classical.choice aliasFormerExactProducedGenerationCandidatePackage_exists
 
 /-- The exact successful outer metadata producer, dependent semantic package,
-and certified Theory insertion retained as one E2c transaction.  Construction
+and certified Theory insertion retained as one inductive verification transaction.  Construction
 keeps the producer-selected source and generation indices intact. -/
 def exactProducedTransaction :=
   ExactProducedGenerationTransaction.mk
@@ -75,7 +75,7 @@ def exactProducedTransaction :=
       exact aliasFormer_addInductCertified_checked)
     beforeWF
 
-/-- Intentional operational erasure of the exact Spec-01E indices. -/
+/-- Operational erasure of the exact source and generation indices. -/
 def producedTransaction :
     ProducedGenerationTransaction typeFamilyAliasEnv finalEnv [] :=
   exactProducedTransaction.toProduced

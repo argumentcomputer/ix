@@ -7,7 +7,7 @@ open Ix.Theory (VLevel)
 
 `UnfoldingState` closes the operational state and support behavior of delta unfolding,
 but its two remaining semantic inputs are intentionally too broad for final
-K1 closure: one can certify an unfold-cache write for an arbitrary supported
+WHNF closure: one can certify an unfold-cache write for an arbitrary supported
 head/result pair, and the other can reflect any observed successful delta
 run.
 
@@ -200,7 +200,7 @@ private theorem sourceStructural
       (.const id us info) (.const ci.name (instantiatedLevels us)) :=
   .const h.nameEq h.lookup hus harity
 
-/-- Exact K1 semantics of unfolding one trusted definition or theorem body.
+/-- Exact WHNF semantics of unfolding one trusted definition or theorem body.
 
 Ordinary definitions use their registered equation.  Theorem constants are
 not registered as reducible Theory equations, so the proof uses the

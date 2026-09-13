@@ -84,7 +84,7 @@ theorem ofPrefix
   exact (defEqLazyDeltaStepWithEqualRank_wf hfault hcached hafter
     hI.2.1.wf hpair) methods hmethods hI
 
-/-- Concrete no-acceleration/K2 construction of the equal-rank branch. -/
+/-- Concrete no-acceleration/inference/conversion construction of the equal-rank branch. -/
 theorem ofKernelResources
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
     (model : KernelSuffixModel trProj world)

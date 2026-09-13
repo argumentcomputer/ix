@@ -12,7 +12,7 @@ import Ix.Theory.Named.Typing.Meta
 
 open Ix.Theory (VLevel)
 
-/-! Adequacy fixtures for `VEnv.addInduct` (stage 3): run the generator on
+/-! Adequacy fixtures for `VEnv.addInduct`: run the generator on
 hand-written declarations and check the output against the real kernel's
 constants, translated by the `vconst`/`vdefeq` macros. A mismatch in
 telescope order, universe conventions, or de Bruijn arithmetic fails these

@@ -111,7 +111,7 @@ inductive StringListPlan (support : RunSupport)
       StringListPlan support charOfNat cons (c :: chars) list result
 
 /-- The actual recursive String-list builder executes any finite pure plan,
-returning its exact result and preserving the complete K1 invariant. -/
+returning its exact result and preserving the complete WHNF invariant. -/
 theorem strLitListToConstructor_plan_wf
     {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel}
@@ -264,7 +264,7 @@ theorem strLitToConstructorWithPrimitives_plan_exact_wf
   rw [hrun]
   exact ⟨hI9, rfl, plan.final, plan.translation uvars Delta⟩
 
-/-- Compatibility form used by K1 callers that need only support and some
+/-- Compatibility form used by WHNF callers that need only support and some
 structural translation of the generated constructor term. -/
 theorem strLitToConstructorWithPrimitives_plan_wf
     {layer : WhnfLayer} {semantics : CacheSemantics} {trProj : RawProjRel}

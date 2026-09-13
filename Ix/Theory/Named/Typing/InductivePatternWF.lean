@@ -12,7 +12,7 @@ open Ix.Theory (VLevel)
 
 /-! # Pattern soundness for generated iota rules
 
-The typed β-collapse layer for Spec-10B: applying a lambda tower to a
+Typed β-collapse: applying a lambda tower to a
 well-typed argument spine is definitionally equal to the iterated
 instantiation of its body (`IsDefEq.appN_lamN`), applications are
 congruent along spines (`IsDefEq.appN_congr`, `IsDefEq.appN_defEq` over
@@ -921,8 +921,8 @@ end Ix.Theory.Named
 The typed β-collapse layer is sorry-free. `pat_wf` composes typed defeqs
 through `IsDefEqU.of_l`/`IsDefEqU.trans` and therefore carries exactly the
 transitional unique-typing closure the Church–Rosser development itself
-carries; it sheds `sorryAx` automatically when the Spec-16/17 inversion
-milestones land, with no restatement. -/
+carries. The `sorryAx` dependency remains until the underlying inversion
+and unique-typing proofs are complete. -/
 
 #guard_named_axioms Ix.Theory.Named.VEnv.IsDefEq.appN_lamN [propext, Quot.sound]
 

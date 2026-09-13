@@ -6,7 +6,7 @@ import Ix.Kernel.Verify.Check.DeclarationIngress
 
 This module lifts expression-validator soundness to the production
 `validateConstWellScoped` boundary for the standalone declaration kinds
-handled by K3.  Finite-run coverage and no-wrap size budgets are explicit
+handled by declaration-checking.  Finite-run coverage and no-wrap size budgets are explicit
 resources; neither is inferred from a successful validator return.
 -/
 

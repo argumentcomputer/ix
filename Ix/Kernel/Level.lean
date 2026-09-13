@@ -372,7 +372,7 @@ decreasing_by all_goals simp [KUniv.size]; omega
 
 end
 
-/-! ### Subsumption (Phase 2) -/
+/-! ### Subsumption -/
 
 /-- Keep only the `xs` entries not dominated by a `ys` entry (merge-walk over
     sorted var lists). Mirrors level.rs `subsume_vars`. Written as index

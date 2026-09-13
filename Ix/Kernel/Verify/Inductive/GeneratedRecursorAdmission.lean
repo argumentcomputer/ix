@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Inductive.OneFamilyAdmission
 /-!
 # Canonical generated-recursor admission
 
-This module closes the first E2c production recursor transaction.  The
+This module proves admission for a production-generated recursor. The
 certified family transaction has already installed `IndexedVec.rec` and its
 two equations in Ix.Theory.Named's Theory environment.  Ix nevertheless keeps the
 separately ingressed recursor block untrusted while
@@ -173,7 +173,7 @@ theorem familyMemberCheckStable :
 
 /-- One premise-free statement joins the real outer member run, exhaustive
 canonical artifact comparison, exact oracle-free admission, and stable cache
-publication.  This is the first E2c recursor transaction closed at the same
+publication. This recursor transaction is proved at the same
 boundary used by coordinated block checking. -/
 structure CanonicalRecursorAtomicClosure : Prop where
   memberRun :

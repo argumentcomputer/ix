@@ -5,7 +5,7 @@ import Ix.Kernel.Verify.Whnf.Projection.StringExpansion
 # String-literal definitional equality
 
 The third recursive tier expands compact String syntax before either side is
-normalized.  K1's expansion plan proves that the concrete intern transaction
+normalized.  WHNF's expansion plan proves that the concrete intern transaction
 terminates with a supported, structurally translatable term.  DefEq needs the
 stronger fact recorded here: that exact generated term translates to the same
 Theory literal as the compact source syntax.
@@ -15,7 +15,7 @@ namespace Ix.Kernel
 
 open Ix.Theory.Named (VExpr)
 
-/-- A K1 String-expansion plan together with the exact Theory meaning needed
+/-- A WHNF String-expansion plan together with the exact Theory meaning needed
 by DefEq.  Merely knowing that the generated expression has *some*
 translation would not justify comparing it in place of the source literal. -/
 structure DefEqStringExpansionPlan
@@ -40,7 +40,7 @@ namespace RecM
 attribute [local irreducible] strLitToConstructor
   strLitToConstructorWithPrimitives
 
-/-- A concrete semantic plan strengthens K1's exact-result expansion theorem
+/-- A concrete semantic plan strengthens WHNF's exact-result expansion theorem
 with the particular Theory literal required by DefEq. -/
 theorem strLitToConstructor_defeq_plan_wf
     {layer : WhnfLayer} {semantics : CacheSemantics}

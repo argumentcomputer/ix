@@ -4,8 +4,8 @@ import Ix.Kernel.Verify.Infer.ProjectionTypes
 /-!
 # Full inference for projections
 
-The K2 projection branch starts from a typed `TrKExprS` source.  At checker
-ingress K3 instead has only `PreTrKExprS`: it first establishes a typed
+The ordinary projection-inference branch starts from a typed `TrKExprS` source.
+At checker ingress only `PreTrKExprS` is available: full inference establishes a typed
 translation for the projected value, then delegates to the already verified
 `inferProj` helper.
 
@@ -27,7 +27,7 @@ def PreservesInferOnlyAt (methods : Methods .anon) : Prop :=
   ∀ structId field val valTy,
     ((RecM.inferProj structId field val valTy).run methods).PreservesInferOnly
 
-/-- Strong projection-helper contract needed by K3 full inference.  It is
+/-- Strong projection-helper contract needed by full inference.  It is
 fixed to the smaller production method table and retains full mode on both
 success and error. -/
 def FullWFAt (semantics : CacheSemantics) (trProj : RawProjRel)
@@ -50,9 +50,9 @@ def FullWFAt (semantics : CacheSemantics) (trProj : RawProjRel)
           InferPost trProj world uvars Delta projectedV result)
       (fun _ after => after.inferOnly = false)
 
-/-- Combine K2 projection soundness with the independent full-mode frame.
+/-- Combine projection-inference soundness with the independent full-mode frame.
 This is the only adapter from the ordinary, method-parametric projection
-contract to K3's fixed-table contract. -/
+contract to the declaration checker's fixed-table contract. -/
 theorem FullWFAt.of_semantic_and_policy
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport} {uvars : Nat}

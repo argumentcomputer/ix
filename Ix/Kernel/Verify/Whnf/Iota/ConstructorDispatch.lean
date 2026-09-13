@@ -503,7 +503,7 @@ theorem tryIotaWithFlags_regularCtor
 /-- Headline ConstructorDispatch contract: the actual parameter-free regular-constructor
 branch executes the checked rule selected at the runtime constructor index.
 The mutable preprocessing prefix must supply its intern-only frame and the
-invariant at dispatch ingress; later K1 slices discharge those facts for the
+invariant at dispatch ingress; later WHNF slices discharge those facts for the
 cleanup, callback, and lazy-lookup helpers themselves. -/
 theorem tryIotaWithFlags_regularCtor_checkedAcceptance_empty
     {layer : WhnfLayer} {semantics : CacheSemantics}

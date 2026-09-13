@@ -4,13 +4,12 @@ import Ix.Kernel.Verify.Inductive.Certificate
 /-!
 # Oracle-backed inductive and recursor blocks
 
-E0 proves the transaction and cache ordering around production block checks.
-The semantic meaning of a successful inductive/recursor body remains the
-explicit E2b boundary: E2b must connect the actual Ix validators and generated
-recursor patterns to an `InductiveOracle`.  The Ix.Theory.Named
-`CertifiedGenerationTransaction` supplies the Theory-owned portion of that
-future construction, but cannot determine Ix addresses, member arrays, or
-checker execution on its own.
+Block admission proves the transaction and cache ordering around production
+block checks. Certifying an inductive/recursor body additionally requires a
+connection from the Ix validators and generated recursor patterns to an
+`InductiveOracle`. The Ix.Theory.Named `CertifiedGenerationTransaction`
+supplies the Theory-owned part of that construction; Ix addresses, member
+arrays, and checker execution remain separate obligations.
 
 This module packages exactly that remaining boundary and ties it to the real
 classified-body trace.  It introduces no unindexed “block succeeded” axiom.
@@ -18,8 +17,8 @@ classified-body trace.  It introduces no unindexed “block succeeded” axiom.
 
 namespace Ix.Kernel
 
-/-- The E2b resources which remain after E0 has fixed the exact physical
-array and production classifier kind.  The post-state uses temporary block
+/-- Semantic resources required after block admission fixes the physical
+array and production classifier kind. The post-state uses temporary block
 authority; it cannot be exposed as a stable success until the oracle's exact
 member set is atomically admitted. -/
 structure OracleBackedBlockResources
@@ -35,7 +34,7 @@ structure OracleBackedBlockResources
 
 namespace RecM
 
-/-- Package an actual successful inductive/recursor body for E0.  The trace,
+/-- Package an actual successful inductive/recursor body for block admission.  The trace,
 exact block, active post-state, and oracle all share the same `members` and
 `kind` indices. -/
 theorem certifyOracleBackedBlock

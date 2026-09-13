@@ -557,7 +557,7 @@ theorem expectedAnonWork_matchesCatalog {env : Ixon.Env}
   intro item hitem addr hcovered
   exact h.matches_blockOfAddr hitem hcovered
 
-/-- Public production-facing E1 enumeration result. -/
+/-- Production enumeration result used by serial composition. -/
 theorem buildAnonWork_exact {env : Ixon.Env}
     (h : AnonWorkEnvWF env) (hblock : IxonEnv.BlockOfIdempotent env) :
     ∃ work,

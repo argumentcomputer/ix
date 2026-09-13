@@ -12,10 +12,9 @@ hashes, blob hashes, the canonical constant Merkle root, sorted table keys,
 the optional main pointer, and trailing-byte exhaustion.  The predicates
 below retain the resulting facts in the exact form consumed by ingress.
 
-The mmap-backed Rust decoder `Ixon.deEnvAnon` is intentionally not equated to
-the pure decoder here.  That implementation/refinement result belongs to the
-later Rust transport phase; T0 reasons from the pure decoder and the actual
-Lean eager/lazy ingress functions.
+The mmap-backed Rust decoder `Ixon.deEnvAnon` requires a separate refinement
+proof relating it to the pure decoder. This module reasons from the pure
+decoder and the actual Lean eager/lazy ingress functions.
 -/
 
 namespace Ix.Kernel

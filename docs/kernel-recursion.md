@@ -1,14 +1,13 @@
-# Ix.Kernel K0 recursion and back-edge audit
+# Kernel recursion and back-edge audit
 
-Snapshot: 2026-07-27. This is the named K0 tick/measure artifact required by
-the formal-verification plan. Its production scope is the kernel call graph
-rooted at `TcM.checkConst`: `Whnf`, `Infer`, `DefEq`, `Inductive`, and
+This audit covers the kernel call graph rooted at `TcM.checkConst`:
+`Whnf`, `Infer`, `DefEq`, `Inductive`, and
 `Check`, together with the shared monad, expression, local-context,
 union-find, and canonical-checking helpers they call. Ingress, egress,
 parallel scheduling, and the meta-level trust-audit visitor are not on that
 call graph.
 
-The audit result is now:
+The call graph has:
 
 - zero `partial def` declarations in the production kernel call graph;
 - zero `while` or `repeat` terms in the five recursive kernel modules;
@@ -17,8 +16,8 @@ The audit result is now:
   component that Lean could not accept structurally;
 - exact equations and fuel-boundary regressions for the totalization seams.
 
-A finite bound is operational evidence, not a soundness proof. K1 and K2
-must still prove the semantic WF properties of the transparent algorithms.
+Finite bounds establish termination. Soundness additionally requires proofs
+that each operation preserves its semantic invariant.
 
 ## Shared runtime fuel
 
@@ -111,12 +110,10 @@ context-suffix closure, and union-find path halving use finite container-size
 bounds. These replacements preserve the old traversal order where errors are
 observable; unit regressions pin the LIFO universe-validation order.
 
-The operational behavior change is intentionally narrow: malformed or
-adversarial inputs that could previously diverge in an unbounded loop now
-return `.maxRecDepth` at the documented cap. Valid-corpus verdict and
-headroom parity is the A5 closure gate. Rust and Aiur are deliberately
-unchanged in K0; any corresponding hardening is a later transport obligation
-after the Ix.Kernel theorem interface is stable.
+Inputs that exhaust a bounded loop return `.maxRecDepth` at its documented
+cap. Verdict and fuel-headroom regressions check the behavior on valid
+corpora. Transporting these contracts to Rust and Aiur is a separate
+verification obligation.
 
 ## Proof and regression surface
 
@@ -152,29 +149,23 @@ rg -n 'TcM\.tick' \
 The first two must return no matches; the last must return exactly the WHNF
 and DefEq charge sites described above.
 
-## Boundary to K1/K2
+## Semantic proof obligations
 
-K0 establishes total, equation-visible production functions and preserves
-their tested operational behavior. It does **not** establish checker
-soundness. `Methods.WF`, the conditional WHNF/Infer/DefEq WF theorems, and
-the knot-closing induction `(methodsN n).WF` belong to K1/K2. In particular,
-the method index closes Lean termination for tick-free cycles, but K1/K2
-must still prove that each field preserves `VerifyWorld`, run support, cache
-coherence, and the declared native/inductive oracle boundaries.
+Total production functions expose equations for the semantic proofs.
+`Methods.WF`, the conditional WHNF/Infer/DefEq WF theorems, and the
+knot-closing induction `(methodsN n).WF` require each field to preserve
+`VerifyWorld`, run support, cache coherence, and the declared native/inductive
+oracle boundaries. The method index establishes termination even for cycles
+that consume no runtime fuel; semantic preservation is a further obligation.
 
-## Closure validation
+## Validation
 
-The 2026-07-27 K0 closure run passed all of the following:
+Build the implementation proofs and run the kernel regressions:
 
-- exact four-statement sorry-frontier check;
-- completed (295 roots) and statement (4 roots) trust audits;
-- `lake build IxKernelVerify` and the default `lake build`;
-- strict `tc-unit` with warnings treated as failures;
-- pinned Init/Std stress constants and accelerated-versus-pure differential;
-- Init-scale anon verdict parity;
-- focused anon differential, full anon/meta roundtrip, and `tc-init` suites;
-- Lean4Lean replay and tutorial suites.
+```sh
+lake build IxKernelVerify
+lake test --wfail -- tc-unit
+```
 
-No production source in the Rust kernel or Aiur IxVM was changed. Their
-acceptance simulation/refinement work remains downstream of the Ix.Kernel
-soundness theorem.
+The [kernel verification guide](kernel-verification.md#trust-checks) describes
+the exact trust audits and the complete local validation command.

@@ -156,7 +156,7 @@ end RecM
 
 namespace TcM
 
-/-- A successful universe-instantiation run preserves the complete K1
+/-- A successful universe-instantiation run preserves the complete WHNF
 invariant, changes only the intern table, and returns an expression in the
 walk's finite support.  RuleInstantiation used the walker equation semantically; this is
 the state/resource half needed before the three ArgumentExecution traces can start. -/

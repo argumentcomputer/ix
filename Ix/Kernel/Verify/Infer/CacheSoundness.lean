@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Infer.Dispatcher
 # Inference cache soundness
 
 This module closes the production `inferWith` shell around the exhaustive
-uncached dispatcher.  Cache hits are accepted only through canonical K2
+uncached dispatcher.  Cache hits are accepted only through canonical inference/conversion
 provenance.  Cache misses build new provenance from the exact key execution,
 finite expression collision freedom, suffix transport, and the concrete
 uncached typing result before mutating either cache partition.
@@ -14,7 +14,7 @@ namespace Ix.Kernel
 
 namespace TcM
 
-/-- A joint K2 suffix model turns the actual inference-key execution into the
+/-- A joint inference/conversion suffix model turns the actual inference-key execution into the
 same operational match used to validate both hits and writes. -/
 theorem inferKey_model_matches_wf
     {layer : WhnfLayer} {trProj : RawProjRel} {world : VerifyWorld}

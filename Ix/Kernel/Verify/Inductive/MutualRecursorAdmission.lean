@@ -1017,7 +1017,7 @@ theorem familyRecursorBlockAccepted :
     familyRecursorAcceptedWorld.AcceptedBlock recursorBlockId :=
   familyRecursorAtomicAdmission.accepted
 
-/-- E3-FP's first conditional mutual checkpoint.  Every physical and
+/-- Conditional mutual-inductive admission. Every physical and
 semantic fact is closed for the two-family/five-constructor/two-recursor
 transaction.  Its transitive trust boundary retains exactly the two
 quarantined upstream witnesses: reversed-family generation WF and generated

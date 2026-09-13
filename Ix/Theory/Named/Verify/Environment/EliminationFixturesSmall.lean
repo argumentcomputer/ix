@@ -6,7 +6,7 @@ Source attribution and revision: Ix/Theory/Named/NOTICE.
 
 import Ix.Theory.Named.Verify.Environment.EliminationFixturesCommon
 
-/-! Exact Spec-06B source-universe small-elimination differential fixture. -/
+/-! Exact source-universe small-elimination differential fixture. -/
 
 namespace Ix.Theory.Named.InductiveReplayFixtures
 open Lean Meta Elab Term

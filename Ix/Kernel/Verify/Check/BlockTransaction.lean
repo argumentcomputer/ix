@@ -11,10 +11,10 @@ successful verdict.
 
 There are exactly two currently supported semantic sources:
 
-* a singleton definition, whose successful K3 result supplies ordinary
+* a singleton definition, whose successful declaration-checking result supplies ordinary
   declaration acceptance; and
 * an inductive or recursor block, relative to the explicit inductive oracle
-  which E2 must construct from the corresponding production checker.
+  which inductive certification must construct from the corresponding production checker.
 
 Ix.Theory.Named does not yet expose an atomic mutual-definition declaration, so no
 constructor below decomposes a multi-definition production block into a
@@ -43,8 +43,8 @@ namespace ActiveBlockStateWF
 /-- Enter temporary block authority from an ordinary stable kernel state.
 The additional authority does not validate any new cache entry; it only
 weakens the authority relation under which already-valid entries are viewed.
-Exact loaded-block agreement is supplied separately because the legacy K1/K2
-kernel invariant intentionally tracks constants but not block arrays. -/
+Exact loaded-block agreement is supplied separately because the reduction,
+inference, and conversion invariant tracks constants but not block arrays. -/
 theorem ofKernel
     {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport}
@@ -93,13 +93,13 @@ end ActiveBlockStateWF
 
 /-! ## Semantic evidence tied to one classified array -/
 
-/-- Semantic evidence admitted by E0.  Its indices are the production array
+/-- Semantic evidence admitted by block admission.  Its indices are the production array
 and classified kind; this rules out pairing an operational trace with a
 certificate for a different block shape.
 
-The singleton-definition constructor retains the actual K3 checker result,
+The singleton-definition constructor retains the actual declaration checker result,
 not merely an assumed `VDecl.WF`.  The oracle-backed constructor is limited
-definitionally to inductive/recursor kinds and remains the named E2 boundary.
+definitionally to inductive/recursor kinds and retains the certification premise.
 -/
 inductive BlockAdmissionEvidence (trProj : RawProjRel)
     (world : VerifyWorld) (support : RunSupport) (block : KId .anon) :

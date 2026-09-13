@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Check.ValidatorFrame
 /-!
 # State framing for the unsafe-reference traversal
 
-`checkNoUnsafeRefs` is semantically a safety guard.  For K3 its important
+`checkNoUnsafeRefs` is semantically a safety guard.  For declaration-checking its important
 operational property is that the iterative expression walk changes checker
 state only through optional constant lookup.  Consequently every outcome
 preserves any invariant framed by the installed lazy-ingress hook.

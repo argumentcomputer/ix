@@ -209,7 +209,7 @@ theorem cheapBetaPlan?_simul
       cases hplan
 
 /-- Cheap beta reduction preserves the Theory meaning of a structurally
-translated source.  A successful plan is discharged by K1's constructive
+translated source.  A successful plan is discharged by WHNF's constructive
 multi-beta theorem; an absent plan is reflexive. -/
 theorem KExpr.cheapBetaReduceResult_meaning
     {trProj : RawProjRel} {world : VerifyWorld} {uvars : Nat}

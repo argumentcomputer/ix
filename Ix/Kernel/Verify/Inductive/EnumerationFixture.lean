@@ -7,7 +7,7 @@ open Ix.Theory (VLevel)
 /-!
 # Concrete singleton-enumeration fixture
 
-This module closes E2b's executable witness with a two-constructor Boolean
+This module closes singleton certification's executable witness with a two-constructor Boolean
 enumeration.  The Theory side uses Ix.Theory.Named's checked identity-generation
 certificate; the concrete side below is built from the actual Ixon block
 encoding and production anonymous ingress/checker functions.
@@ -663,7 +663,7 @@ theorem rawConstZero {expected : KId .anon} {expression : KExpr .anon}
 
 /-- Translate the closed core syntax used by the Boolean family and recursor.
 The partiality is intentional: free variables, lets, projections, and
-literals are outside this E2b fixture.  Constant translation consults the
+literals are outside this singleton certification fixture.  Constant translation consults the
 same immutable Theory environment and address-to-name interpretation used by
 `RawExprRel`. -/
 def translateCore? : KExpr .anon → Option VExpr
@@ -771,7 +771,7 @@ private theorem recursorRulesSizeNative : recursorRules.size = 2 := by
 theorem recursorRulesSize : recursorRules.size = 2 :=
   recursorRulesSizeNative
 
-/-- Total finite selector; the accompanying size theorem proves that E2b
+/-- Total finite selector; the accompanying size theorem proves that singleton certification
 uses it only at actual rule positions. -/
 def concreteRuleAt (index : Nat) : RecRule .anon := recursorRules[index]!
 

@@ -5,14 +5,14 @@ open Ix.Theory (VLevel)
 /-!
 # Certified singleton enumerations
 
-This module is E2b's first executable inductive fragment.  A singleton
+This module certifies a fragment of singleton inductives. A singleton
 enumeration has no declaration universes, parameters, indices, constructor
 fields, or recursive arguments.  It may have several nullary constructors,
 so its generated iota rules are non-vacuous: rule `i` returns the exact
 `i`-th minor premise.
 
 The restriction is intentionally stated over the normalized generation
-retained by E2a.  It is therefore a decidable fragment boundary around the
+retained by certified generation.  It is therefore a decidable fragment boundary around the
 actual generated artifacts, not a second inductive-declaration model.
 -/
 
@@ -22,16 +22,16 @@ open Ix.Theory.Named (VConstVal VEnv VExpr VInductDecl)
 
 namespace CertifiedSingletonGeneration
 
-/-- The first executable E2b fragment: one nonempty, universe-free,
+/-- The executable singleton fragment: one nonempty, universe-free,
 parameter-free, index-free family whose constructors are nullary and
 nonrecursive. -/
 structure IsEnumeration {source : VInductDecl}
     (generation : source.GenerationChecked) : Prop where
   noUniverses : source.uvars = 0
   noParameters : source.nparams = 0
-  /-- E2b's enumeration pattern currently covers the ordinary large
-  eliminator.  Small and K elimination use the Spec-06 universe layout and
-  remain explicit E2c breadth cases. -/
+  /-- The enumeration pattern covers the ordinary large
+  eliminator. Small and K elimination use the certified universe layout and
+  require separate inductive-verification proofs. -/
   largeElimination : generation.elimination = .large
   noIndices : generation.block.rawIndices = []
   nonempty : 0 < generation.block.ctorPairs.length
@@ -416,7 +416,7 @@ theorem enumerationConstructorAt
   | _ => simp [KConst.IsCertifiedSingletonConstructor] at hconcrete
 
 /-- All finite pattern metadata for an enum rule is forced by the two exact
-catalog links and the E2a generation position.  No semantic rewrite premise
+catalog links and the certified generation position. No semantic rewrite premise
 is used here. -/
 theorem enumerationPatternMetadata
     {trProj : RawProjRel} {catalog : Catalog}
@@ -465,7 +465,7 @@ theorem enumerationPatternMetadata
   · simpa [enumerationPattern] using hruleFields
 
 /-- The compiled enum pattern is semantically justified by the exact
-registered generated equation.  This is the central E2b bridge: a successful
+registered generated equation.  This is the central singleton certification bridge: a successful
 pattern match is reduced through Ix.Theory.Named's registered equality, rather than
 through an independently postulated iota law. -/
 theorem enumerationPatternSound

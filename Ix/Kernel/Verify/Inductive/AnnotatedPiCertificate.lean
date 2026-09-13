@@ -6,8 +6,7 @@ import Ix.Theory.Named.Verify.Environment.InductiveFixtures
 
 `AnnotatedPi.mk` retains the raw binder domain `outParam Prop`, while the
 Ix.Theory.Named analyzer classifies recursion through the normalized domain `Prop`.
-This is the first Ix transaction whose certified generation is deliberately
-non-identity: the stored family and generated artifacts preserve raw syntax,
+The certified generation is non-identity: the stored family and generated artifacts preserve raw syntax,
 but recursive classification is owned by the checked view produced by the
 ordinary Ix.Theory.Named candidate pipeline.
 
@@ -59,14 +58,14 @@ theorem beforeWF : outParamEnv.WF :=
 /-- Exact post-environment selected by that certificate. -/
 def finalEnv : VEnv := annotatedPiFinalEnv
 
-/-- The exact Spec-01E package.  Its producer-shape index is deliberately
+/-- The exact producer-selected package. Its producer-shape index is deliberately
 inferred here because Ix.Theory.Named keeps the fixture's concrete shape witness
 private while exposing this public dependent existence theorem. -/
 def exactPackage :=
   Classical.choice annotatedPiExactProducedGenerationCandidatePackage_exists
 
 /-- The exact successful outer metadata producer, dependent semantic package,
-and certified Theory insertion retained as one E2c transaction.  Construction
+and certified Theory insertion retained as one inductive verification transaction.  Construction
 keeps the producer-selected source and generation indices intact. -/
 def exactProducedTransaction :=
   ExactProducedGenerationTransaction.mk
@@ -81,7 +80,7 @@ def exactProducedTransaction :=
       exact annotatedPi_addInductCertified)
     beforeWF
 
-/-- Intentional operational erasure of the exact Spec-01E indices. -/
+/-- Operational erasure of the exact source and generation indices. -/
 def producedTransaction :
     ProducedGenerationTransaction outParamEnv finalEnv [] :=
   exactProducedTransaction.toProduced

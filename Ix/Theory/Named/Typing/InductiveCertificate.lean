@@ -320,7 +320,7 @@ theorem recursorPattern
   .mk hentry
 
 /-- Rule-level consumer bundle: exact global position, generated-list
-membership, registration, well-formedness, and the corresponding Spec-10
+membership, registration, well-formedness, and the corresponding iota-pattern
 pattern all come from the same completed block. -/
 structure RecursorRuleFacts
     (certificate : BlockCertificate source before after)

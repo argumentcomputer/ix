@@ -5,7 +5,7 @@ import Ix.Kernel.Verify.Ingress.AnonStructural
 /-!
 # Concrete nested-recursive reachability fixture
 
-This fixture isolates the cross-stage E2c obligation with two compiler-shaped
+This fixture isolates the cross-stage inductive verification obligation with two compiler-shaped
 anonymous blocks:
 
 * `Box (α : Sort 1) : Sort 1`, with `wrap : α → Box α`;

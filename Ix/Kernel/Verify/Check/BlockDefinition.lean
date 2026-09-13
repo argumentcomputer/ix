@@ -8,10 +8,10 @@ import Ix.Kernel.Verify.Check.StandaloneDriver
 
 The production definition-block branch iterates `checkConstMemberFresh` over
 the complete array and then publishes the peak DefEq depth.  Ix.Theory.Named does
-not yet have an atomic mutual-definition declaration, so the constructive E0
+not yet have an atomic mutual-definition declaration, so the constructive block admission
 bridge is intentionally the singleton specialization.  It extracts the
-actual member run from `checkClassifiedBlock`, invokes K3 without performing
-K3's standalone promotion, and packages that evidence for the enclosing
+actual member run from `checkClassifiedBlock`, invokes declaration-checking without performing
+the declaration checker's standalone promotion, and packages that evidence for the enclosing
 atomic block transaction.
 -/
 
@@ -47,13 +47,13 @@ theorem checkClassifiedBlock_singleton_definition_success
       simp [UInt32.max_def]
 
 /-- Construct the certified singleton-definition body from the actual
-production trace and K3's fixed-world member theorem.  Classifier correctness
+production trace and the declaration checker's fixed-world member theorem.  Classifier correctness
 is applied to the exact observed classification equation, so no invariant for
 an unexecuted branch can satisfy it.
 
-`hblocksAfter` is the remaining representation frame for the legacy K1/K2
-invariant, which tracks loaded constants and intern/cache state but predates
-E0's explicit block-array agreement layer. -/
+`hblocksAfter` supplies block-array agreement in addition to the reduction,
+inference, and conversion invariant, which tracks loaded constants and
+intern/cache state. -/
 theorem certifySingletonDefinition
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
     {model : KernelSuffixModel trProj world}
@@ -109,8 +109,8 @@ theorem certifySingletonDefinition
           activePost := ActiveBlockStateWF.ofKernel hevidence.2.1 hblocksAfter
           evidence := .singletonDefinition hpending hevidence.1 }
 
-/-- Run-scoped singleton-definition certification for the E3-S adapter.
-This is the atomic-block analogue of K3's scoped standalone theorem: the
+/-- Run-scoped singleton-definition certification for the supported fragment adapter.
+This is the atomic-block analogue of the declaration checker's scoped standalone theorem: the
 member run produces evidence in the original world and retains the finite
 suffix-model witness, while the enclosing block transaction remains the
 sole semantic commit point. -/

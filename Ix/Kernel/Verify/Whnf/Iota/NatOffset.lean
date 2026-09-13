@@ -229,7 +229,7 @@ successful Nat-offset cleanup.
 
 The oracle is indexed by the actual production execution and assumes neither
 state preservation nor callback behavior.  A later primitive/parser trace
-construction supplies this field; K1 uses it only to recover the support and
+construction supplies this field; WHNF uses it only to recover the support and
 structural translation required by `Methods.WF` for the selected major. -/
 structure NatOffsetCleanupInputOracle (trProj : RawProjRel)
     (world : VerifyWorld) (support : RunSupport) : Prop where
@@ -492,7 +492,7 @@ theorem tryIotaAfterCleanup_state_wf
   | prj id field value info => exact hdispatch (.prj id field value info) s
   | nat value blob info => exact hdispatch (.nat value blob info) s
 
-/-- The complete post-major preprocessing stage preserves the fixed K1
+/-- The complete post-major preprocessing stage preserves the fixed WHNF
 invariant.  Nat conversion and both cleanup passes are now concrete.  String
 conversion uses the finite StringExpansion plan and the predecessor method-table
 contract for its one policy-selected callback. -/

@@ -19,7 +19,7 @@ open Ix.Theory.Named
 open Ix.Theory.Named.InductiveFixtures
 open Ix.Theory.Named.InductiveReplayFixtures
 
-/-- The Spec-01E package retains the exact source declaration and checked
+/-- The producer-selected package retains the exact source declaration and checked
 generation selected by the ordinary metadata producer. -/
 noncomputable def exactPackage :
     VInductDecl.ExactProducedGenerationCandidatePackage natFinalEnv [`u]
@@ -45,7 +45,7 @@ noncomputable def exactProducedTransaction :
     exact indexedVecSemantic_addInductCertified
   beforeWF := natWF
 
-/-- Intentional operational erasure of the exact Spec-01E indices. -/
+/-- Operational erasure of the exact source and generation indices. -/
 noncomputable def producedTransaction :
     ProducedGenerationTransaction natFinalEnv indexedVecFinalEnv [`u] :=
   exactProducedTransaction.toProduced

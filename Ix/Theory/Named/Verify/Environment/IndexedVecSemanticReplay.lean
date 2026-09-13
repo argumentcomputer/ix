@@ -12,7 +12,7 @@ import Ix.Theory.Named.Verify.Environment.IndexedVecOuterReplay
 
 This module connects the exact executable family/`nil`/`cons` candidate
 produced by `buildNormalizationCandidate` to its Theory generation
-certificate and the E1 kernel-environment replay. Every retained candidate
+certificate and the kernel-environment replay. Every retained candidate
 node is interpreted in its exact pre-family or post-family verifier context;
 the final transaction therefore consumes the certificate projected from the
 same producer-selected package rather than an independently supplied
@@ -3231,7 +3231,7 @@ theorem indexedVecSemantic_aligned_checked :
   indexedVecSemantic_trEnv'_checked.aligned
 
 /-
-The semantic assembly, executable producer, and final E1 replay intentionally
+The semantic assembly, executable producer, and final environment replay
 inherit the existing transitional verifier closure. These guards make
 additions to that closure visible at the public roots of this module.
 -/

@@ -13,9 +13,9 @@ finite method table.  This file isolates the non-circular proof shape:
 * `methodsOut_wf` and `methodsN_wf` close every finite approximation; and
 * `TcM.runRec_wf` transports a reader-level proof to the public knot runner.
 
-The remaining K2 work is therefore deliberately visible in `Methods.Closed`:
-K1 supplies the four WHNF fields and K2 supplies inference and definitional
-equality.  No theorem below assumes the recursive table is already closed.
+`Methods.Closed` retains the four WHNF fields and the inference and
+definitional-equality fields as explicit obligations. No theorem below
+assumes the recursive table is already closed.
 -/
 
 namespace Ix.Kernel
@@ -39,7 +39,7 @@ def LayerWFAt (layer : WhnfLayer) (semantics : CacheSemantics)
     (uvars : Nat) (methods : Methods .anon) : Prop :=
   Methods.WFAt layer semantics trProj world support uvars (next methods)
 
-/-- K1's four fields for one unfolded method-table layer at a fixed universe
+/-- WHNF's four fields for one unfolded method-table layer at a fixed universe
 count.  This is the closure shape used by universe-indexed WHNF and unfold
 cache semantics. -/
 structure WhnfLayerWFAt (layer : WhnfLayer) (semantics : CacheSemantics)
@@ -78,7 +78,7 @@ structure WhnfLayerWFAt (layer : WhnfLayer) (semantics : CacheSemantics)
       (fun result _ => support result ∧
         WhnfPost trProj world uvars Delta sourceV result)
 
-/-- K2's two fields for one unfolded method-table layer at a fixed universe
+/-- The two inference/conversion fields for one unfolded method-table layer at a fixed universe
 count. -/
 structure InferDefEqLayerWFAt (layer : WhnfLayer)
     (semantics : CacheSemantics) (trProj : RawProjRel)
@@ -103,7 +103,7 @@ structure InferDefEqLayerWFAt (layer : WhnfLayer)
       (fun answer _ => answer = true →
         world.venv.IsDefEqU uvars Delta.toCtx va vb)
 
-/-- The fixed-universe K1 and K2 records assemble the exact next layer. -/
+/-- The fixed-universe WHNF and inference/conversion records assemble the exact next layer. -/
 theorem LayerWFAt.of_parts
     {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
@@ -129,8 +129,8 @@ def ClosedAt (layer : WhnfLayer) (semantics : CacheSemantics)
     Methods.WFAt layer semantics trProj world support uvars methods →
     LayerWFAt layer semantics trProj world support uvars methods
 
-/-- K1's fixed-universe closure obligation, independent of construction of
-the two K2 fields. -/
+/-- WHNF's fixed-universe closure obligation, independent of construction of
+the two inference/conversion fields. -/
 def WhnfClosedAt (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)
     (uvars : Nat) : Prop :=
@@ -138,7 +138,7 @@ def WhnfClosedAt (layer : WhnfLayer) (semantics : CacheSemantics)
     Methods.WFAt layer semantics trProj world support uvars methods →
     WhnfLayerWFAt layer semantics trProj world support uvars methods
 
-/-- K2's fixed-universe closure obligation. -/
+/-- Fixed-universe inference/conversion closure obligation. -/
 def InferDefEqClosedAt (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)
     (uvars : Nat) : Prop :=
@@ -165,7 +165,7 @@ def LayerWF (layer : WhnfLayer) (semantics : CacheSemantics)
     (methods : Methods .anon) : Prop :=
   Methods.WF layer semantics trProj world support (next methods)
 
-/-- K1's four fields for one unfolded method-table layer. -/
+/-- WHNF's four fields for one unfolded method-table layer. -/
 structure WhnfLayerWF (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)
     (methods : Methods .anon) : Prop where
@@ -198,7 +198,7 @@ structure WhnfLayerWF (layer : WhnfLayer) (semantics : CacheSemantics)
       (fun result _ => support result ∧
         WhnfPost trProj world uvars Delta sourceV result)
 
-/-- K2's two fields for one unfolded method-table layer. -/
+/-- The two inference/conversion fields for one unfolded method-table layer. -/
 structure InferDefEqLayerWF (layer : WhnfLayer)
     (semantics : CacheSemantics) (trProj : RawProjRel)
     (world : VerifyWorld) (support : RunSupport)
@@ -220,7 +220,7 @@ structure InferDefEqLayerWF (layer : WhnfLayer)
       (fun answer _ => answer = true →
         world.venv.IsDefEqU uvars Delta.toCtx va vb)
 
-/-- The independently proved K1 and K2 fields assemble the exact next-layer
+/-- The independently proved WHNF and inference/conversion fields assemble the exact next-layer
 record; no field may use the table it is currently proving. -/
 theorem LayerWF.of_parts {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
@@ -242,13 +242,13 @@ def Closed (layer : WhnfLayer) (semantics : CacheSemantics)
   ∀ methods, Methods.WF layer semantics trProj world support methods →
     LayerWF layer semantics trProj world support methods
 
-/-- K1 closure obligation, separate from inference and def-eq. -/
+/-- WHNF closure obligation, separate from inference and def-eq. -/
 def WhnfClosed (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport) : Prop :=
   ∀ methods, Methods.WF layer semantics trProj world support methods →
     WhnfLayerWF layer semantics trProj world support methods
 
-/-- K2 closure obligation, assuming only the smaller table's six contracts. -/
+/-- Inference/conversion closure obligation, assuming only the smaller table's six contracts. -/
 def InferDefEqClosed (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport) : Prop :=
   ∀ methods, Methods.WF layer semantics trProj world support methods →

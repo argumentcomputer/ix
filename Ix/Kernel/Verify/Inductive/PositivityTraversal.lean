@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Inductive.OccurrenceValidation
 /-!
 # Production positivity traversal
 
-E2c must account for the recursive control flow that reaches occurrence
+Inductive verification must account for the recursive control flow that reaches occurrence
 validation, rather than assuming that a particular constructor field was
 already reduced to an active-family application.  This module starts that
 assembly at the production `checkPositivityDomainFuel` entry point.

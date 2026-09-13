@@ -7,4 +7,4 @@ Source attribution and revision: Ix/Theory/Named/NOTICE.
 import Ix.Theory.Named.Verify.Environment.EliminationFixturesEq
 import Ix.Theory.Named.Verify.Environment.EliminationFixturesNat
 
-/-! Umbrella for the exact Spec-06A Eq and Nat differential fixtures. -/
+/-! Umbrella for the exact Eq and Nat elimination differential fixtures. -/

@@ -7,7 +7,7 @@ import Ix.Kernel.Verify.Infer.LetScopes
 # Binder scopes for pre-typed checker ingress
 
 The ordinary inference scope theorem assumes the binder body already has a
-typed `TrKExprS` witness.  K3 cannot make that assumption: full inference is
+typed `TrKExprS` witness. Declaration checking cannot make that assumption: full inference is
 the operation which must construct the witness.  This wrapper combines the
 factored operational binder-opening core with `PreTrKExprS.openFVarZero` and
 the independent inference-policy frame.
@@ -138,7 +138,7 @@ end TcM
 namespace RecM
 
 /-- Scope a pre-translated binder around one fixed recursive method table.
-Unlike the ordinary K2 scope rule, the body need not be typed before the
+Unlike the ordinary inference/conversion scope rule, the body need not be typed before the
 continuation runs: the continuation receives its exact opened
 pre-translation and may establish typing by recursive full inference. -/
 theorem withLctxScope_openBinder_pre_wf

@@ -4,13 +4,13 @@ import Ix.Kernel.Verify.RecursiveMethods.Public
 /-!
 # Public standalone constant checking
 
-The member and driver proofs establish K3 for a fixed method table.  This
+The member and driver proofs establish declaration-checking for a fixed method table.  This
 module instantiates that table with the exact finite approximation selected
 by production `TcM.runRec`, and then crosses `isolateCheckErrors`.  The latter
 is transparent on success, so the certified final state is exactly the state
 returned by the public checker.
 
-Whole-block coordination remains the separately named E0 boundary.  The
+Whole-block coordination remains the separately named block admission boundary.  The
 theorem below therefore requires `StandaloneRoute`; axioms discharge it
 definitionally, while standalone definitions may supply a finite routing
 proof for their concrete block environment.
@@ -60,7 +60,7 @@ theorem rollback_preserves_kernel
     hbefore.restoreCheckCachesOnError hfailedCore hfailedIntern⟩
 
 /-- Successful public checking of a pending standalone declaration produces
-the concrete K3 acceptance result and promotes exactly that declaration into
+the concrete declaration-checking acceptance result and promotes exactly that declaration into
 a trusted ghost world.  The recursive callbacks and the stronger checker
 inference pipeline are both restricted to the successor-layer call domain
 selected by the finite production schedule. -/
@@ -209,7 +209,7 @@ theorem wf
 
 /-- An intrinsically ill-typed pending standalone declaration cannot be
 accepted by the public checker.  The contradiction uses the raw pending
-translation and freshness to turn K3's successful semantic evidence into the
+translation and freshness to turn the declaration checker's successful semantic evidence into the
 forbidden Theory declaration transition; no typing fact is assumed at
 ingress. -/
 theorem rejected_of_no_decl_wf
@@ -260,7 +260,7 @@ theorem rejected_of_no_decl_wf
           hfresh⟩ := hpending
       exact False.elim <| hnotWF (hraw.wfOfAccepted hfresh hresult.1.accepted)
 
-/-- Axioms take the standalone route by definition, so their public K3
+/-- Axioms take the standalone route by definition, so their public declaration-checking
 theorem has no residual block-coordination premise. -/
 theorem axiom_pending_sound
     {before : TcState .anon} {id : KId .anon}

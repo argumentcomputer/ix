@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Whnf.Iota.Ingress
 # Exhaustive iota optional-reduction contract
 
 `Ingress` proves that every result or partial error of the production
-`tryIotaWithFlags` dispatcher preserves the complete K1 state invariant.  This
+`tryIotaWithFlags` dispatcher preserves the complete WHNF state invariant.  This
 slice separates the two remaining concerns:
 
 * `IotaCallbackFrameOracle` retains the trusted-reference and

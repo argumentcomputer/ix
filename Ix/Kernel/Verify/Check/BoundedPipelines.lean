@@ -6,7 +6,7 @@ import Ix.Kernel.Verify.RecursiveMethods.CallDomains
 /-!
 # Bounded standalone-checker pipelines
 
-The legacy K3 checker proof quantified strong full inference over every
+The legacy declaration checker proof quantified strong full inference over every
 expression in one finite `RunSupport`.  That is too strong: a successful sort
 inference places its successor sort in the result footprint, and reusing the
 same footprint as the next input domain demands an infinite successor tower.
@@ -34,8 +34,8 @@ def AdmitsEnsureSortDirect (calls : CallDomain) : KExpr .anon → Prop
 
 end CallDomain
 
-/-- Strong K3 inference, restricted to the inference calls admitted at one
-finite method-table depth.  Unlike ordinary C1A inference, the premise is an
+/-- Strong full inference, restricted to the inference calls admitted at one
+finite method-table depth.  Unlike ordinary bounded inference, the premise is an
 untyped `PreTrKExprS` and the successful postcondition constructs the typed
 translation. -/
 def FullInferenceWFAtOn
@@ -58,7 +58,7 @@ def FullInferenceWFAtOn
 
 namespace FullInferenceWFAtOn
 
-/-- Ordinary bounded inference already implies the stronger K3 contract on
+/-- Ordinary bounded inference already implies the stronger declaration-checking contract on
 an input domain whose pretranslations can be upgraded without running the
 checker.  This covers syntax-directed typed leaves such as sorts while
 retaining the independent inference-policy frame on both outcomes. -/
@@ -307,7 +307,7 @@ private theorem ensureSortDirect_wfAtOn
     all_goals
       exact TcM.WF.throw fun _ => trivial
 
-/-- A bounded successful type pipeline constructs the same K3 evidence as
+/-- A bounded successful type pipeline constructs the same declaration-checking evidence as
 the legacy proof, but every method call is justified by the declaration's
 successor-layer call domain. -/
 theorem checkTypePipeline_bounded_sound

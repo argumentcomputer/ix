@@ -219,7 +219,7 @@ theorem selectGeneratedRecursorIndex_preserves
   rw [run] at post
   exact post.1
 
-/-- K2S's finite successor-layer contract supplies state preservation for
+/-- The finite successor-layer contract for scoped methods preserves state during
 exactly the complete closed type calls named by a selection plan. -/
 theorem selectGeneratedRecursorIndex_preservesScoped
     {trProj : RawProjRel} {world : VerifyWorld}

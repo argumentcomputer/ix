@@ -4,10 +4,10 @@ import Ix.Kernel.Verify.RecursiveMethods.ScopedCallDomains
 /-!
 # Run-scoped recursive-occurrence closure
 
-The first E2c occurrence slice exposes the exact `isDefEq` calls made while
+Occurrence verification exposes the exact `isDefEq` calls made while
 checking uniform recursive parameters, but deliberately leaves their semantic
 meaning behind `PositiveParameterDefEqContract`.  This module closes that
-boundary against K2S's actual finite successor-layer method contract.
+boundary against the finite successor-layer contract for scoped methods.
 
 The call evidence is positional.  We require only the parameter pairs that
 the successful production loop executed, rather than admitting every pair of
@@ -29,7 +29,7 @@ def PositiveParameterCallPlan (calls : Methods.CallDomain)
 namespace RecM.PositiveParameterComparisonTrace
 
 /-- Interpret every successful parameter comparison through the real
-successor method-table layer selected by K2S.
+successor method-table layer selected by the scoped method contract.
 
 `Methods.next methods` is definitionally the six production algorithms run
 with `methods` as their recursive callback table.  Its `isDefEq` field is

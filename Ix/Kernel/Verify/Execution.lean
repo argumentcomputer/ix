@@ -1,7 +1,7 @@
 import Ix.Kernel.Verify.Support
 
 /-!
-# G3b: execution-indexed finite run assumptions
+# Execution-indexed finite run assumptions
 
 An explicit request list is not evidence that it describes a checker run:
 choosing `[]` would make coverage and bounds vacuous. `ExecutionRequests` is

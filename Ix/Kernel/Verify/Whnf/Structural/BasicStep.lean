@@ -18,7 +18,7 @@ namespace Ix.Kernel
 namespace RecM
 
 /-- Runtime safety needed by production's unchanged let-fvar return.  This
-property is indexed by every state satisfying the fixed K1 invariant so it
+property is indexed by every state satisfying the fixed WHNF invariant so it
 can be consumed by the uniform `WhnfStep.WF` contract rather than by one
 hand-picked execution fixture. -/
 def FVarZetaSafety (layer : WhnfLayer) (semantics : CacheSemantics)

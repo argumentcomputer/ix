@@ -107,7 +107,7 @@ def constantInfoTag : Ixon.ConstantInfo → Ixon.ConstTag
   | .rPrj _ => .rPrj
   | .dPrj _ => .dPrj
 
-/-- Deterministic source-key order shared by the implementation and E1's
+/-- Deterministic source-key order shared by the implementation and serial composition's
 coverage certificate. -/
 def orderedAnonConstAddrs (env : Ixon.Env) : Array Address :=
   env.consts.keys.toArray.qsort fun a b => a.cmpBytes b == .lt
@@ -228,7 +228,7 @@ structure CheckResult where
   deriving Repr, Inhabited
 
 /-- Explicit accumulator for the serial anonymous driver.  Naming this
-state makes the production loop available to E1's trace theorem without
+state makes the production loop available to serial composition's trace theorem without
 changing its persistent-checker semantics. -/
 structure AnonCheckLoopState where
   results : Array CheckResult

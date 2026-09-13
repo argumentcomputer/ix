@@ -203,7 +203,7 @@ theorem sort_scoped_wf_fuel_one
   exact sort_scoped_wf_bounded hcollision hsourceSupport hresultSupport
     theory references hsource
 
-/-- The K2S construction can be consumed at the public positive-fuel entry
+/-- The scoped method construction can be consumed at the public positive-fuel entry
 without first manufacturing a universally quantified suffix model. -/
 theorem sort_finiteOperational_wf_fuel_one
     {initial : TcState .anon}

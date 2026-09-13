@@ -4,8 +4,8 @@ import Ix.Kernel.Verify.Infer.Dispatcher
 /-!
 # Exhaustive full-mode inference dispatcher
 
-This module assembles the constructor-local K3 proofs for
-`inferUncached inferCall false`.  Unlike the K2 dispatcher, its input is only
+This module assembles the constructor-local declaration-checking proofs for
+`inferUncached inferCall false`.  Unlike the inference/conversion dispatcher, its input is only
 `PreTrKExprS`; successful execution establishes the missing typed source
 translation as part of `FullInferPost`.
 
@@ -19,7 +19,7 @@ namespace Ix.Kernel
 namespace FullUncachedInference
 
 /-- Resources for one full-mode layer over a fixed smaller method table.
-`uncachedPolicy` covers the leaf actions reused from K2, while
+`uncachedPolicy` covers the leaf actions reused from inference/conversion, while
 `projectionPolicy` exposes the corresponding frame for the projection helper
 itself.  Both are purely operational obligations to be discharged by the
 concrete policy closure proof. -/
@@ -69,7 +69,7 @@ private theorem strengthenFullLeaf
   · intro _ _ post
     exact post.1
 
-/-- Exhaustive K3 correctness of `inferUncached` in full mode.  Every syntax
+/-- Exhaustive declaration-checking correctness of `inferUncached` in full mode.  Every syntax
 constructor is covered from untyped structural ingress, and both outcomes
 retain `inferOnly = false`. -/
 theorem inferUncached_full_wf

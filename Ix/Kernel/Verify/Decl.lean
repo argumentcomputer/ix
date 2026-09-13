@@ -8,8 +8,8 @@ open Ix.Theory (VLevel)
 /-!
 # Raw, pending, and trusted declarations
 
-This is the additive G1b boundary between a catalogued declaration and a
-Theory declaration.  The distinction is deliberately sharp:
+This module separates catalogued declarations from well-formed Theory
+declarations:
 
 * `RawExprRel` is syntax-directed.  In particular, it has no typing premises,
   no level-well-formedness premises, and no literal-well-formedness premises.
@@ -18,8 +18,7 @@ Theory declaration.  The distinction is deliberately sharp:
 * `RawDeclRel` preserves the standalone declaration kind and translates its
   type and (for definitions) value.  This slice covers axioms and the three
   definition kinds.  Quotient and inductive-family declarations require an
-  atomic multi-target relation and are intentionally left to the corresponding
-  block milestone.
+  atomic multi-target relation and are outside this standalone relation.
 * `PendingDecl` contains raw correspondence, catalog closure, and absence of
   the target from both the trusted index and the Theory constant table.  It
   contains no `VConstant.WF`, `VDecl.WF`, or equivalent field.
@@ -397,7 +396,7 @@ end RawDeclRel
 
 /-- The target's Theory name is not already installed.  Together with an
 untrusted target id, this blocks self-justification through constant lookup.
-Warm-cache provenance and isolation are state-specific G4 obligations. -/
+Warm-cache provenance and isolation additionally depend on the checker state. -/
 def TargetFresh (world : VerifyWorld) (id : KId .anon) : Prop :=
   ∀ ⦃name⦄, world.nameOf id.addr = some name →
     world.venv.constants name = none
@@ -488,8 +487,8 @@ theorem no_target_lookup {trProj : RawProjRel} {world : VerifyWorld}
   exact ⟨name, hname, hfresh hname⟩
 
 /-- The pending target cannot occur as a constant/projection head in its own
-translated type or value.  This is the G1b self-unfolding barrier; cache
-provenance and collision-mediated aliasing are addressed in G4/G3. -/
+translated type or value. Cache provenance and collision-mediated aliasing
+are addressed separately in `Verify.Cache` and `Verify.Support`. -/
 theorem no_self_expr_reference {trProj : RawProjRel} {world : VerifyWorld}
     {id : KId .anon} {d : VDecl} (h : PendingDecl trProj world id d) :
     ∃ concrete, world.catalog id = some concrete ∧
@@ -582,7 +581,7 @@ theorem theoryDecl_not_wf :
   cases hwf with
   | «axiom» hconstant _ => exact theoryConstant_not_wf hconstant
 
-/-- Machine-checked G1b acceptance witness: raw correspondence and pending
+/-- Adversarial isolation witness: raw correspondence and pending
 status are constructible for a declaration whose Theory WF judgment is
 false. -/
 theorem pending_but_not_wf :

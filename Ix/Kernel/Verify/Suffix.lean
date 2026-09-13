@@ -1,7 +1,7 @@
 import Ix.Kernel.Verify.Whnf
 
 /-!
-# K2 suffix-context transport boundary
+# Suffix-context transport boundary
 
 WHNF cache keys hash only the de-Bruijn suffix reachable from an expression.
 The hash itself is not semantic evidence.  This module states the two facts a
@@ -505,8 +505,8 @@ namespace WhnfSuffixModel
 
 /-- Construct the operational model once the actual semantic sufficiency
 theorem for equal emitted suffix addresses is available.  This removes the
-former representation oracle entirely: only semantic transport remains K2
-proof debt. -/
+former representation oracle entirely: semantic transport remains an explicit
+proof obligation. -/
 def operational {trProj : RawProjRel} {world : VerifyWorld} (uvars : Nat)
     (htransport : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
       {source result : KExpr .anon},

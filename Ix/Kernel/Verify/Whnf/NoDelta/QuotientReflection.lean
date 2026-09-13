@@ -17,7 +17,7 @@ namespace Ix.Kernel
 
 open Ix.Theory.Named (VExpr)
 
-/-- Theory-only quotient contraction laws expected from Ix.Theory.Named Spec-19B.
+/-- Theory-only quotient contraction laws required from Ix.Theory.Named.
 
 Both laws are deliberately phrased after the quotient major has been related
 to an exact `Quot.mk` application.  The Ix adapter below owns the proof of that

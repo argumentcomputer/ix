@@ -5,7 +5,7 @@ import Std.Data.HashMap.Lemmas
 /-!
 # Immutable compiler catalog and representation well-formedness
 
-This module states the X1 representation boundary without running Ix.Kernel.  It
+This module states the representation boundary without running Ix.Kernel. It
 separates content-address integrity, finite immutable lookup support, logical
 environment views, wire representability, and expression-table resolution.
 
@@ -392,7 +392,7 @@ structure Catalog.Finite (catalog : Catalog) : Prop where
   anonHints : FinitelySupported catalog.anonHints
   memberAddrs : FinitelySupported catalog.memberAddrs
 
-/-- X1 in-memory catalog integrity.  This is representation
+/-- In-memory catalog integrity. This is representation
 well-formedness, not Ix.Theory.Named `VEnv.WF`. -/
 structure Catalog.WF (catalog : Catalog) : Prop where
   finite : catalog.Finite

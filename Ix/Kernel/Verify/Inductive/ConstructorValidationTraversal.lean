@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Inductive.ConstructorPositivityTraversal
 # Production constructor-validation traversal
 
 `ConstructorPositivityTrace` classifies a successful strict-positivity call,
-but E2c must also establish that the call is the one selected by production's
+but inductive verification must also establish that the call is the one selected by production's
 complete constructor-validation branch.  This module retains the exact A1–A4
 execution around that call: derived metadata, shared-parameter agreement,
 safety gating, field-universe validation, and constructor-return validation.

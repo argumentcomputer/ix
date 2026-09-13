@@ -9,7 +9,7 @@ module records their exact shared inputs and composes them, in execution
 order, into the contract for one complete bounded lazy-delta iteration.
 
 The remaining inputs are deliberately concrete contracts rather than
-acceptance oracles: Nat-offset decomposition, the K1 reducers reused by
+acceptance oracles: Nat-offset decomposition, the WHNF reducers reused by
 DefEq, and finite run-scoped resources for same-head comparison and cache
 writes.
 -/
@@ -19,7 +19,7 @@ namespace Ix.Kernel
 namespace RecM
 
 /-- Run-scoped resources needed to assemble every branch of one production
-lazy-delta iteration under the canonical K2 cache semantics. -/
+lazy-delta iteration under the canonical inference/conversion cache semantics. -/
 structure LazyDeltaIterationResources
     {trProj : RawProjRel} {world : VerifyWorld} (support : RunSupport)
     (model : KernelSuffixModel trProj world) where

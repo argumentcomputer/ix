@@ -9,7 +9,7 @@ generation certificate and the exact `VEnv.addInductCertified` result, but it
 does not remember which ordinary Ix.Theory.Named metadata execution selected that
 certificate.
 
-For E2c we need both facts at once.  A successful outer producer call must not
+For inductive verification we need both facts at once.  A successful outer producer call must not
 be allowed to justify Theory semantics by itself, and an independently chosen
 Theory certificate must not be passed off as the result of that producer.  The
 record below therefore owns Ix.Theory.Named's dependent
@@ -50,7 +50,7 @@ def certificate {before after : VEnv} {Us : List Name}
 
 /-- Erase only the Verify-side producer provenance, preserving the exact
 package-owned source, certificate, successful post-environment, and input WF
-evidence in E2a's Theory-only transaction. -/
+evidence in the Theory-only transaction. -/
 def toCertified {before after : VEnv} {Us : List Name}
     (tx : ProducedGenerationTransaction before after Us) :
     CertifiedGenerationTransaction tx.source before after where
@@ -67,7 +67,7 @@ def toCertified {before after : VEnv} {Us : List Name}
     tx.toCertified.certificate.generation =
       tx.package.package.generation := rfl
 
-/-- Exact producer and semantic-transition facts retained at the E2c
+/-- Exact producer and semantic-transition facts retained at the inductive verification
 boundary.  In particular, the outer producer equation and the Theory
 certificate are projections of one dependent package rather than unrelated
 premises. -/
@@ -98,7 +98,7 @@ end ProducedGenerationTransaction
 
 /-! ## Exact dependent producer transactions -/
 
-/-- The Spec-01E producer closure before source and generation indices are
+/-- The producer closure before source and generation indices are
 erased.  Its type retains the exact raw family, kernel source, producer
 arguments, normalized source declaration, and checked generation selected by
 one successful outer candidate execution.

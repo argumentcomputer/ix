@@ -113,7 +113,7 @@ theorem boolTrueReductionAllowed_wf
       rcases hread with ⟨rfl, rfl⟩
       exact RecM.WF.pure (E := fun _ _ => True) fun _ => rfl
 
-/-- Direct WHNF contract used by the eager Boolean tier.  K1 supplies this
+/-- Direct WHNF contract used by the eager Boolean tier.  WHNF supplies this
 for the current unfolded layer; keeping it generic avoids confusing the
 current reducer with the predecessor-table callback. -/
 def DefEqDirectWhnf.WFAt (layer : WhnfLayer)

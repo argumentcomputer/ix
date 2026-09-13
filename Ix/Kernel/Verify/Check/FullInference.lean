@@ -4,8 +4,8 @@ import Ix.Kernel.Verify.Infer.CacheSoundness
 /-!
 # Full inference from untyped checker ingress
 
-The ordinary K2 contract starts from `TrKExprS`, which already contains the
-typing facts checked by full inference.  K3 instead starts from
+The ordinary inference contract starts from `TrKExprS`, which already contains
+the typing facts checked by full inference. Declaration checking starts from
 `PreTrKExprS` and must return the missing typed translation together with the
 usual inference result.
 
@@ -31,7 +31,7 @@ def FullInferPost (trProj : RawProjRel) (world : VerifyWorld)
 
 namespace FullInferPost
 
-/-- Strengthen the ordinary K2 inference post once the current source has
+/-- Strengthen the ordinary inference post once the current source has
 independently been upgraded to a typed structural translation. -/
 theorem of_typed
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}

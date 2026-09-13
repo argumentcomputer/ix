@@ -6,7 +6,7 @@ Source attribution and revision: Ix/Theory/Named/NOTICE.
 
 import Ix.Theory.Named.Verify.Environment.EliminationFixturesCommon
 
-/-! Exact Spec-06B Nat never-zero elimination and non-K fixture. -/
+/-! Exact Nat never-zero elimination and non-K fixture. -/
 
 namespace Ix.Theory.Named.InductiveReplayFixtures
 open Lean Meta Elab Term

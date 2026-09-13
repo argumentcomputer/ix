@@ -60,8 +60,6 @@ The model's 20 con-leche foundation files derive from revision
 ported content hashes, and notices are retained and checked. Imported license
 and notice texts are under `Ix/Theory`; `PORTING.md` explains their scope.
 
-On recompilation in the monorepo, two roots—`Modeled.CheckedCompanions.fixed_old`
-and `Modeled.assignment_agrees`—acquire `Classical.choice` and `Quot.sound` in
-addition to `propext`, all already permitted baseline axioms. The reviewed
-report also accounts for namespace qualification and module ordering. All root
-types, constant counts, and module sets otherwise match the source report.
+The exact report records each root's checked type, axioms, and dependencies.
+For example, `Modeled.CheckedCompanions.fixed_old` and
+`Modeled.assignment_agrees` use `propext`, `Classical.choice`, and `Quot.sound`.

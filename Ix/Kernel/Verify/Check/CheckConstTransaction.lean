@@ -6,11 +6,12 @@ import Ix.Kernel.Verify.Check.CheckConstExecution
 This module joins the real top-level dispatcher to exact coordinated-block
 admission.  The success theorem is exhaustive: a routed call yields semantic
 block acceptance; an unrouted call is returned as the standalone branch
-already covered by K3.
+already covered by declaration-checking.
 
 The body certifier is relative to the remaining checker-specific semantic
-source: K3 supplies singleton definitions, while E2 supplies inductive and
-recursor oracles.  Before invoking it, this module proves that the body's
+source: declaration checking supplies singleton-definition evidence;
+inductive certification supplies inductive and recursor oracles. Before
+invoking it, this module proves that the body's
 second block lookup and classifier selected the same ordered members and kind
 as the route.  Thus the certifier cannot be applied to a TOCTOU-substituted
 block.
@@ -18,7 +19,7 @@ block.
 
 namespace Ix.Kernel
 
-/-- Stable kernel state plus E0's physical/ghost block-table agreement. -/
+/-- Stable kernel state plus block admission's physical/ghost block-table agreement. -/
 structure CoordinatedKernelStateWF (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)
     (state : TcState .anon) : Prop where
@@ -38,7 +39,7 @@ end CoordinatedKernelStateWF
 
 /-- Exhaustive semantic disposition of a successful production call.  The
 standalone constructor is intentionally operational: its semantic result is
-the existing K3 theorem, with declaration-specific premises. -/
+the existing declaration-checking theorem, with declaration-specific premises. -/
 inductive CheckConstSuccessDisposition
     (semantics : CacheSemantics) (trProj : RawProjRel)
     (world : VerifyWorld) (support : RunSupport) (methods : Methods .anon)

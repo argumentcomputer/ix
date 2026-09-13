@@ -26,10 +26,10 @@ monotone extension proof from the caller's baseline.  Fixed-world Hoare
 triples are proved first below; their error branches retain exactly the same
 world, so ordinary state mutation cannot silently promote a declaration.
 
-Ambient-inductive admission is carried by the trusted log beginning in G2a.
-G4 layers finite-support cache provenance onto this deliberately small core
-through `KernelStateWF` below. Dual-context agreement and the concrete
-reduction/inference/native semantic contracts remain K1/K2 obligations.
+The trusted log carries ambient-inductive admission. `KernelStateWF` adds
+finite-support cache provenance to this core. Dual-context agreement and
+the concrete reduction, inference, and native semantic contracts remain
+obligations of the operation-specific proofs.
 -/
 
 namespace Ix.Kernel
@@ -103,7 +103,7 @@ def TcInv (trProj : RawProjRel) (world₀ : VerifyWorld)
     (s : TcState .anon) : Prop :=
   ∃ world, world₀ ≤ world ∧ TcStateWF trProj s world
 
-/-! ## G4 semantic-cache layer -/
+/-! ## Semantic-cache layer -/
 
 /-- The complete stable checker invariant at a finite run boundary.
 
@@ -122,7 +122,7 @@ structure KernelStateWF (semantics : CacheSemantics) (trProj : RawProjRel)
   equivalences : EquivManager.WF
     (semantics.Equiv (CacheAuthority.stable world) support) s.equivManager
 
-/-- Existential current-world form of the complete G4 state invariant. -/
+/-- Existential current-world form of the complete cache provenance state invariant. -/
 def KernelTcInv (semantics : CacheSemantics) (trProj : RawProjRel)
     (world₀ : VerifyWorld) (support : RunSupport)
     (s : TcState .anon) : Prop :=
@@ -301,7 +301,7 @@ theorem stateWF (prims : Primitives .anon) :
     exact loaded_pending_but_not_wf.1
   · exact InternTable.WF.empty
 
-/-- G1's central adversarial witness: the complete state invariant and
+/-- An adversarial world: the complete state invariant and
 pending precondition are inhabited even though declaration WF is impossible.
 This rules out a hidden whole-`KEnv` typing premise in `TcInv`. -/
 theorem tcInv_pending_but_not_wf (prims : Primitives .anon) :

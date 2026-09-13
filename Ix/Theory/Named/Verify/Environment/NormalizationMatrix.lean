@@ -12,7 +12,7 @@ open Ix.Theory (VLevel)
 /-!
 # Normalization differential matrix
 
-Executable and semantic replay for the Spec-04 matrix.  The fixture deliberately
+Executable and semantic replay for normalized inductives. The fixture deliberately
 places reducible aliases at every inductive-analysis boundary, including a
 Pi-producing alias around a recursive target.  This file observes the actual
 kernel declarations, pins the exact analyzer output and its fuel boundary, and

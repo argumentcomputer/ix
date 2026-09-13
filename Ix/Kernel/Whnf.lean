@@ -382,7 +382,7 @@ def natOffsetStuckHead (p : Primitives m) : KExpr m → Bool
 
 These helpers used to live in the large recursive WHNF mutual block even
 though none of them takes a recursive edge.  Keeping them outside that block
-makes their equations transparent to the K0 proofs without adding runtime
+makes their equations transparent to the totalization proofs without adding runtime
 fuel or changing their operational behavior.
 -/
 

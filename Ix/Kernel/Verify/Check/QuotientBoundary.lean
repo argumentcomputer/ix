@@ -12,7 +12,7 @@ member where it is observed.  The semantic catalog relation likewise has no
 coordinated quotient constructor.
 
 Quotient acceptance therefore uses the separate four-check atomic bridge; it
-never acquires inductive-oracle or block-cache authority through E0.
+never acquires inductive-oracle or block-cache authority through block admission.
 -/
 
 namespace Ix.Kernel
@@ -91,7 +91,7 @@ end Catalog
 namespace StandaloneRoute
 
 /-- Quotient declarations take the operational standalone branch, while
-their semantic acceptance remains deliberately outside K3/E0. -/
+their semantic acceptance is outside these standalone and block-admission theorems. -/
 theorem quotientRoute
     (I : TcState .anon → Prop) (methods : Methods .anon)
     (name : Mode.anon.F Name) (levelParams : Mode.anon.F (Array Name))

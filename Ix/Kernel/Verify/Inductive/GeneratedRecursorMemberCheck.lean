@@ -13,7 +13,7 @@ cache entry.  Its tail selects one generated entry and exhaustively compares
 the frozen stored type and rules.
 
 This module proves the exact operational handoff.  It intentionally does not
-postulate that the prelude preserves the K2S invariant; subsequent modules
+postulate that the prelude preserves the scoped method invariant; subsequent modules
 must prove that from the individual production operations.
 -/
 

@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Inductive.RecursivePositivityTraversal
 # Complete constructor-positivity traversal
 
 `PositivityDomainTrace` starts after production has already opened the shared
-parameter prefix and selected a constructor field.  E2c also needs evidence
+parameter prefix and selected a constructor field. Inductive verification also needs evidence
 that those field calls are the ones reached by the enclosing
 `checkPositivity` execution.  This module retains that missing outer spine:
 parameter opening, source-ordered field traversal, and final local-context

@@ -7,7 +7,7 @@ Source attribution and revision: Ix/Theory/Named/NOTICE.
 import Ix.Theory.Named.NestedInductive
 
 /-!
-# Nested flattening fixtures (Spec-09B)
+# Nested flattening fixtures
 
 Executable pins for `nestedElimination?` on the two ladder fixtures — a
 universe-polymorphic rose tree through `List` and a nested indexed family
@@ -85,7 +85,7 @@ def roseSource : VInductDecl where
 
 /-- The expected flattened rose block: the rewritten source family plus one
 auxiliary family, exactly the shapes pinned against the kernel by the
-Spec-09A probes. -/
+representation probes. -/
 def roseFlat : VInductDecl where
   uvars := 1
   nparams := 1
@@ -266,7 +266,7 @@ def collisionSource : VInductDecl where
 #guard (nestedElimination? [listTarget] collisionSource).isSome
 #guard !nestedStage3 [listTarget] collisionSource
 
-/-! ## Restoration pins (Spec-09C)
+/-! ## Restoration checks
 
 Structural pins for the restored generation artifacts; the exact
 comparison against Lean's stored recursor types and rule RHSs lives in the

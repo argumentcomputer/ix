@@ -11,7 +11,7 @@ The operational checker should produce only the typing fact which differs by
 declaration kind.  Fresh installation and trusted-world promotion are then
 pure consequences of the existing pending-declaration model.
 
-This keeps K3's critical implication explicit:
+This keeps the declaration checker's critical implication explicit:
 
 * an axiom is accepted only when its declared type is a Theory type;
 * a definition, opaque definition, or theorem is accepted only when its
@@ -123,7 +123,7 @@ theorem accepted
 
 end StandaloneCheckEvidence
 
-/-- The complete declaration-local result expected from K3: a validated raw
+/-- The complete declaration-local result expected from declaration-checking: a validated raw
 declaration has an exact untyped Theory translation, and the checker has
 supplied the semantic evidence appropriate to its declaration kind. -/
 structure StandaloneCheckResult (trProj : RawProjRel)
@@ -206,7 +206,7 @@ theorem promoteOfAccepted
     ⟨concrete, hcatalog, hraw, huntrusted, hclosed, hfresh⟩ hwf
 
 /-- Validator scope, exact raw ingress, and successful checker evidence
-assemble into the K3 result and one trusted-world promotion.  In particular,
+assemble into the declaration-checking result and one trusted-world promotion.  In particular,
 scope alone cannot promote a declaration, and semantic evidence alone cannot
 choose a translation for the concrete Ix syntax. -/
 theorem checkResultAndPromote
@@ -230,7 +230,7 @@ theorem checkResultAndPromote
   exact ⟨⟨hingress, hevidence⟩,
     promoteOfAccepted hstate hpending hevidence.accepted⟩
 
-/-- End-to-end K3 assembly at the standalone validation boundary.  The exact
+/-- End-to-end declaration-checking assembly at the standalone validation boundary.  The exact
 production validator supplies raw scoping, while checker evidence supplies
 semantic acceptance; together they produce the pre-translation result and a
 fresh trusted-world promotion. -/

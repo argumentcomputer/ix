@@ -7,7 +7,7 @@ import Ix.Kernel.Verify.World
 /-!
 # Recursive-occurrence validation
 
-E2c consumes the successful branch of production positivity checking.  This
+Inductive verification consumes the successful branch of production positivity checking. This
 module makes that branch proof-visible: a success identifies the active
 family, the exact loaded inductive header, every pure arity/universe/index
 guard, and the complete state-threaded parameter-definitional-equality loop.
@@ -101,8 +101,8 @@ def TranslatedParameterDefEq
 
 This contract intentionally stops at the production `isDefEq` call.  It does
 not grant positivity access to the complete DefEq closure, proposition
-classification, or inductive authority.  K2 may instantiate it from an
-oracle-free recursive-method closure; E2c only consumes the successful-call
+classification, or inductive authority. Inference/conversion proofs may instantiate it from an
+oracle-free recursive-method closure; inductive verification only consumes the successful-call
 meaning and state preservation recorded here. -/
 def PositiveParameterDefEqContract
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)

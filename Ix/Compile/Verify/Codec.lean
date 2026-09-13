@@ -4,7 +4,7 @@ import Std.Tactic.BVDecide
 /-!
 # Proof-visible v2 codecs
 
-These X1 slices make universe serialization kernel-visible end to end.
+These proofs make universe serialization kernel-visible end to end.
 `Reads` records exact cursor movement in arbitrary surrounding bytes, while
 `Writes` records append-only writer behavior.  The public theorem covers both
 the one-byte and trimmed 1–8-byte `Tag2` forms, subject only to the format's
@@ -1422,7 +1422,7 @@ theorem getUniv_reads (u : Ixon.Univ) (h : WireWF u) :
   have hread := getUnivFuel_reads u h _ hfuel before after
   exact hread
 
-/-- X1-U64: exact full-buffer universe round trip for every representable
+/-- Exact full-buffer universe round trip for every representable
     compressed successor count. -/
 theorem deUniv_serUniv (u : Ixon.Univ) (h : WireWF u) :
     Ixon.deUniv (Ixon.serUniv u) = .ok u := by
@@ -1467,13 +1467,13 @@ abbrev UnivWireWF : Ixon.Univ → Prop :=
 abbrev SmallUnivWireWF : Ixon.Univ → Prop :=
   Codec.Ixon.Univ.SmallWireWF
 
-/-- X1-U64: exact full-buffer universe round trip across both the one-byte
+/-- Exact full-buffer universe round trip across both the one-byte
     and trimmed large-size `Tag2` forms. -/
 theorem deUniv_serUniv (u : Ixon.Univ) (h : UnivWireWF u) :
     Ixon.deUniv (Ixon.serUniv u) = .ok u :=
   Codec.Ixon.Univ.deUniv_serUniv u h
 
-/-- X1-U8: exact full-buffer universe round trip for the one-byte tag domain.
+/-- Exact full-buffer universe round trip for the one-byte tag domain.
     This domain contains `.succ .zero`, the encoding of `Sort 1`. -/
 theorem deUniv_serUniv_small (u : Ixon.Univ) (h : SmallUnivWireWF u) :
     Ixon.deUniv (Ixon.serUniv u) = .ok u :=

@@ -11,7 +11,7 @@ lazy ingress.
 
 `ProjectionHelper.WF` records exactly that remaining implementation boundary:
 for a supported callback result, the actual `tryProjReduce` computation
-preserves the fixed K1 state invariant on hits, misses, and errors, and any
+preserves the fixed WHNF state invariant on hits, misses, and errors, and any
 successful result remains in finite run support.  The step theorem below then
 proves every concrete projection outcome.  Semantic authority for a hit stays
 with `InductiveReductionOracle`; a syntax-directed helper execution alone is

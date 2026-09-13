@@ -3,7 +3,7 @@ import Ix.Kernel.CanonicalCheck
 import Ix.Kernel.Check
 
 /-!
-# K0: equations for the total recursive-methods knot
+# Totalization: equations for the total recursive-methods knot
 
 These equations expose the production definitions needed by the later
 `Methods.WF` induction. They also pin the runtime boundary precisely:

@@ -44,7 +44,7 @@ end CacheEntry
 
 namespace DefEqFailureCacheResources
 
-/-- The joint K2 suffix model supplies failure-marker provenance without any
+/-- The joint inference/conversion suffix model supplies failure-marker provenance without any
 semantic equality premise; validity of this partition is deliberately
 vacuous on acceptance. -/
 theorem ofKernelSuffixModel

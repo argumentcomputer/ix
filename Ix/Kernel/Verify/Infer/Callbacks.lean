@@ -14,7 +14,7 @@ namespace Ix.Kernel
 namespace DirectWhnf
 
 /-- Semantic contract for the direct `RecM.whnf` body at one universe count.
-K1's fixed-universe closure constructs this contract when K2 assembles the
+WHNF's fixed-universe closure constructs this contract when inference/conversion assembles the
 joint layer. -/
 def WFAt (semantics : CacheSemantics) (trProj : RawProjRel)
     (world : VerifyWorld) (support : RunSupport) (uvars : Nat) : Prop :=

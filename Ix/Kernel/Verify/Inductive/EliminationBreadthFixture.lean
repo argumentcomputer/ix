@@ -8,7 +8,7 @@ import Ix.Theory.Named.Verify.Environment.EliminationFixturesSmall
 /-!
 # Concrete small-elimination and K-target breadth
 
-Ix.Theory.Named's Spec-06 fixtures retain the exact kernel elimination traversal and
+Ix.Theory.Named's elimination fixtures retain the exact kernel traversal and
 align it with the generated Theory metadata.  This module takes the remaining
 Ix step: it compiles those same kernel declarations to production Ixon blocks,
 ingresses the family and recursor projections, and runs both production block

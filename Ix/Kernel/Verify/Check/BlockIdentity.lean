@@ -22,7 +22,7 @@ namespace Ix.Kernel
 
 /-! ## Concrete/world block agreement -/
 
-/-- E0's representation invariant.  The existing `TcStateWF` continues to
+/-- Block admission's representation invariant.  The existing `TcStateWF` continues to
 separate loaded constants from semantic trust; this layer adds the one-way
 agreement for lazily loaded block arrays. -/
 structure BlockStateWF (trProj : RawProjRel) (s : TcState .anon)
@@ -177,7 +177,7 @@ theorem coordinated_trusted {world : VerifyWorld} {block id : KId .anon}
 
 end ExactCheckBlock
 
-/-- Global coherence required of E0's immutable inputs: every catalogued
+/-- Global coherence required of block admission's immutable inputs: every catalogued
 declaration which records coordinated ownership has one exact block entry of
 the same kind.  The premise does not trust or type the declaration. -/
 def ExactCoordinatedCatalog (world : VerifyWorld) : Prop :=
@@ -257,7 +257,7 @@ theorem block_targets {blocks : BlockCatalog} {blockAddr primary : Address}
     exact hprimary
 
 /-- `provenTargets` is the exact target array plus the original Muts block
-address.  This is the extra coverage later consumed by E1; it is not smuggled
+address.  This is the extra coverage later consumed by serial composition; it is not smuggled
 into the member array or treated as a trusted declaration. -/
 theorem block_provenTargets {blocks : BlockCatalog}
     {blockAddr primary : Address} {targets : Array Address}

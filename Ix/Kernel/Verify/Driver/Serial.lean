@@ -189,7 +189,7 @@ theorem checkEnvAnon_eq_serial {env : Ixon.Env}
   rw [h.buildAnonWork_eq_expected]
   rfl
 
-/-- E1's production serial-driver corollary.  All emitted rows succeeding is
+/-- Production serial-driver corollary. All emitted rows succeeding is
 converted to concrete per-item success traces, those traces are interpreted
 through the per-item success rule, and the resulting admissions are reordered by
 the proved collapsed-block schedule. -/

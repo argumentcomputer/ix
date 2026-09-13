@@ -244,7 +244,7 @@ theorem familyAcceptedWorld_nameOf_eq :
     familyAcceptedWorld.nameOf = nameOf := rfl
 
 /-- Transport the concrete closed-type translations to the exact suffix-model
-universe count selected by K2S. -/
+universe count selected by the scoped method contract. -/
 theorem familySelectionTranslationsScoped
     {model : ScopedKernelSuffixModel RawProjRel.none familyAcceptedWorld}
     (uvars : transaction.certificate.generation.recursor.uvars =
@@ -256,7 +256,7 @@ theorem familySelectionTranslationsScoped
     familyAcceptedWorld_nameOf_eq, ← uvars] using
       familySelectionTranslations
 
-/-- The concrete selection phase preserves the scoped K2 invariant under the
+/-- The concrete selection phase preserves the scoped inference/conversion invariant under the
 same finite successor layer later used for exhaustive artifact comparison. -/
 theorem familySelectionInvariantScoped
     {model : ScopedKernelSuffixModel RawProjRel.none familyAcceptedWorld}
@@ -284,7 +284,7 @@ theorem familySelectionInvariantScoped
       successor initialInvariant selection
 
 /-- All concrete production and representation premises are discharged.  The
-remaining semantic inputs are selection-state preservation and the K2 meaning
+remaining semantic inputs are selection-state preservation and the inference/conversion meaning
 of the exact three comparison calls. -/
 theorem familyCacheCheckCanonical
     {invariant : TcState .anon → Prop}
@@ -309,7 +309,7 @@ theorem familyCacheCheckCanonical
     familyInstalledRecursorCanonicalAt familyStoredArtifactTranslations
     familyArtifactCallPlanAt selectionInvariant defEq
 
-/-- Concrete E2c checker closure: one finite K2S successor-layer contract
+/-- Concrete checker closure: one finite scoped method successor-layer contract
 accounts for the selection call, the repeated full-type comparison, and both
 positional rule comparisons. -/
 theorem familyCacheCheckCanonicalScoped

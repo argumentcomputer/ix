@@ -6,9 +6,9 @@ open Ix.Theory (VLevel)
 # Memoized proposition classification
 
 This module verifies the production `isPropType` implementation used by
-proof irrelevance.  Cache hits are interpreted through the joint K2 suffix
+proof irrelevance.  Cache hits are interpreted through the joint inference/conversion suffix
 model.  Cache misses infer the queried expression, normalize its inferred
-type with the direct K1 reducer, and install only a provenance-certified
+type with the direct WHNF reducer, and install only a provenance-certified
 classification.
 -/
 
@@ -17,8 +17,8 @@ namespace Ix.Kernel
 open Ix.Theory.Named (VExpr)
 
 /-- Resources needed by the concrete proposition classifier.  Direct WHNF
-is the already-closed K1 reducer; inference remains a predecessor-table edge
-until K2 ties the recursive method-table knot. -/
+is the already-closed WHNF reducer; inference remains a predecessor-table edge
+until inference/conversion ties the recursive method-table knot. -/
 structure PropositionClassifierContext
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport) where
   model : KernelSuffixModel trProj world

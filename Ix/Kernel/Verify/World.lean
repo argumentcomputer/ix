@@ -4,8 +4,8 @@ import Ix.Theory.Named.Typing.Env
 /-!
 # Non-circular verification worlds
 
-This is the additive G1a model.  It separates four things which the old
-whole-`KEnv` relation conflates:
+The verification world separates the catalog, trusted declarations, and
+concrete lazy-load state:
 
 * `Catalog`: immutable ghost input, including pending and unrelated
   declarations;
@@ -21,14 +21,12 @@ whole-`KEnv` relation conflates:
 Crucially, being catalogued is not a typing fact.  `VerifyWorld.ofCatalog`
 accepts an arbitrary catalog while trusting nothing, and `LoadedAgrees` does
 not require every catalog entry to be loaded.  The trusted-catalog semantic
-log is deliberately not faked as a bare structure field: G1c's
-`TrustedCatalogRel` in `Verify/Env.lean` is an explicit proof object connecting
+log is an explicit proof object: `TrustedCatalogRel` in `Verify/Env.lean` connects
 `trusted` to `venv`.  Consumers must carry that relation before treating
 trusted membership as a WF witness.
 
-This module was introduced beside the old whole-`KEnv` relation in G1a.
-`Verify/State.lean` now uses it for `TcInv`, and G2b consumers resolve exact
-constants through `TrustedConstRel`. The legacy `TrKEnv` remains only as a
+`Verify/State.lean` uses this model for `TcInv`; lookup consumers resolve exact
+constants through `TrustedConstRel`. The legacy `TrKEnv` remains a
 quarantined compatibility proof interface.
 -/
 
@@ -86,7 +84,7 @@ structure VerifyWorld where
   venvWF : venv.WF
   trustedCatalogued : ∀ {id}, trusted id → Catalog.Contains catalog id
   /-- Exact block identity is immutable ghost input.  The default preserves
-  the pre-E0 standalone fixtures, which do not exercise coordinated blocks. -/
+  standalone fixtures, which do not exercise coordinated blocks. -/
   blocks : BlockCatalog := BlockCatalog.empty
 
 namespace VerifyWorld
@@ -257,8 +255,8 @@ section Insert
 variable [LawfulBEq (KId .anon)] [LawfulHashable (KId .anon)]
 
 /-- A lazy-load insertion preserves agreement when the inserted declaration
-is the catalog entry.  The lawfulness instances are hypotheses here; G1a
-does not move the existing global instances out of `Verify/Env.lean`. -/
+is the catalog entry. Lawfulness instances are explicit hypotheses; the
+global instances are defined in `Verify/Env.lean`. -/
 theorem insert {catalog : Catalog} {env : KEnv .anon}
     (h : LoadedAgrees catalog env) {id : KId .anon} {c : KConst .anon}
     (hc : catalog id = some c) : LoadedAgrees catalog (env.insert id c) := by

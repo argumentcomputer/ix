@@ -262,7 +262,7 @@ namespace DefEqAfterQuick
 
 /-- Semantic contract for the production-owned tail after Tier 1 misses.
 Later tier modules refine and discharge this boundary; keeping it generic in
-the cache semantics lets the structural proof be reused at the final K2
+the cache semantics lets the structural proof be reused at the final inference/conversion
 stack. -/
 def WF (layer : WhnfLayer) (semantics : CacheSemantics)
     (trProj : RawProjRel) (world : VerifyWorld) (support : RunSupport)

@@ -12,7 +12,7 @@ changing which pending declaration is certified.
 
 namespace Ix.Kernel
 
-/-- Operational boundary separating K3 standalone checking from E0 block
+/-- Operational boundary separating standalone declaration checking from block
 coordination.  The exact production router must preserve the checker
 invariant and select no coordinated block.  This condition is definitionally
 inhabited for axioms; definition-family instances are discharged when their
@@ -203,7 +203,7 @@ theorem checkConstMemberFresh_pending_evidence
 
 /-- Lift the fresh-member theorem through the exact standalone branch of
 `RecM.checkConst`.  The first required lookup and router are both executed
-before the production reset; `StandaloneRoute` makes the E0 boundary
+before the production reset; `StandaloneRoute` makes the block admission boundary
 explicit and rules out silently treating block acceptance as member
 acceptance. -/
 theorem checkConst_standalone_pending_sound

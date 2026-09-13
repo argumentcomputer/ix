@@ -8,7 +8,7 @@ open Ix.Theory (VLevel)
 `Pattern.varN` captures application arguments from left to right, but its
 dependent `Path` type represents the newest argument as `none` and every
 older argument under another `some`.  The definitions and proofs below make
-that ordering explicit.  E2b uses them to select the certified minor premise
+that ordering explicit. Singleton certification uses them to select the certified minor premise
 at a constructor's exact rule index; an off-by-one or reversed-spine adapter
 cannot satisfy the positional theorem.
 -/

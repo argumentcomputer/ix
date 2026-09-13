@@ -8,9 +8,7 @@ open Ix.Theory (VLevel)
 /-!
 # Ambient inductive oracle
 
-G2 introduced this interface before Ix.Theory.Named had a usable inductive
-specification, so it records the semantic consequences needed by the checker
-directly:
+This interface records the semantic consequences needed by the checker:
 
 * every admitted concrete inductive-family constant has an exact raw Theory
   translation and lookup;
@@ -19,15 +17,15 @@ directly:
 * every concrete recursor rule has an explicit, well-formed Theory defeq
   witness headed by that recursor.
 
-Pin A now provides Ix.Theory.Named's proved normalized `GenerationCertificate` and
+Ix.Theory.Named provides the normalized `GenerationCertificate` and proved
 `addInductCertified` transaction. `Inductive/Certificate.lean` derives the
 Theory-owned environment, lookup, freshness, and rule-registration facts from
 that certificate. It intentionally cannot supply the Ix-owned catalog/name
 translation, checker-execution, and recursor-pattern fields below.
 
 `InductiveOracle` therefore remains an explicit assumption boundary, not a
-claim that Ix's inductive checker has already been verified. E2b must combine
-the certificate facts with actual Ix block checking and pattern-generation
+claim that Ix's inductive checker has already been verified. The singleton
+adapters combine certificate facts with Ix block checking and pattern-generation
 proofs. Keeping the interface in terms of semantic consequences permits a
 closed Nat model while the recursor clause prevents WHNF proofs from treating
 computation rules as an unrecorded ambient fact.
@@ -372,7 +370,7 @@ structure RecursorRulePattern where
     (constructorParams.toNat + constructorFields.toNat)).Check
 
 /-- Finite production metadata required by one recursor pattern, separated
-from its semantic rewrite law so E2 adapters can show exactly which part is
+from its semantic rewrite law so inductive certification adapters can show exactly which part is
 discharged by catalog/layout correspondence. -/
 structure RawRecursorRulePatternMetadataRel (catalog : Catalog)
     (nameOf : Address → Option Lean.Name) (id : KId .anon)
@@ -519,7 +517,7 @@ oracle from re-certifying an existing trusted id.
 
 The oracle records `before ≤ after` rather than requiring every consumer to
 carry a transaction equation. `CertifiedGenerationFacts` now derives this
-Theory-owned portion; the remaining fields are the E2b Ix correspondence
+Theory-owned portion; the remaining fields are the singleton certification Ix correspondence
 boundary. -/
 structure InductiveOracle (trProj : RawProjRel) (catalog : Catalog)
     (nameOf : Address → Option Lean.Name) (trusted : KId .anon → Prop)

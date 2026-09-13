@@ -213,7 +213,7 @@ theorem familyMemberInitial_preservesScoped
 recursive fixture the `TrustedReferences` premise cannot be instantiated:
 the installed `cons` rule names `IndexedVec.rec`, which has not yet crossed
 the recursor-block admission boundary.  The active theorem below is the
-constructive E2c path. -/
+constructive inductive verification path. -/
 theorem familyInstalledRecursorsProvenance
     {model : ScopedKernelSuffixModel RawProjRel.none familyAcceptedWorld}
     {layer : WhnfLayer} {support : RunSupport}
@@ -2234,7 +2234,7 @@ theorem familyMemberCheckExecution :
 
 /-! ## Scoped semantic closure of the reached tail -/
 
-/-- Selection from the actual post-prelude state preserves the scoped K2S
+/-- Selection from the actual post-prelude state preserves the scoped method
 invariant under the same finite call contract as the cache-only fixture. -/
 theorem familyPreparedSelectionInvariantScoped
     {model : ScopedKernelSuffixModel RawProjRel.none familyAcceptedWorld}

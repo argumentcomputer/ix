@@ -5,7 +5,7 @@ import Ix.Kernel.Verify.DefEq.StringLiteral
 # Final-WHNF String-literal expansion
 
 This module verifies the ordered, bidirectional String-expansion phase in the
-final-WHNF comparator.  Each compact literal is expanded by the exact K1 plan,
+final-WHNF comparator.  Each compact literal is expanded by the exact WHNF plan,
 whose result translates to the same Theory literal as the source syntax.
 -/
 

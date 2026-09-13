@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Inductive.OneFamilyAdmission
 /-!
 # Oracle-free family-result-normalizing singleton admission
 
-This module closes the concrete `AliasFormer` E2c transaction.  The
+This module closes the concrete `AliasFormer` inductive verification transaction.  The
 transparent `TypeFamilyAlias` dependency is promoted first, the family/constructor
 block advances that explicit Theory world, and the independently stored
 generated recursor is then admitted from semantic entries already present in

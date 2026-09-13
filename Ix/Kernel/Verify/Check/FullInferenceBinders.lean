@@ -9,8 +9,8 @@ open Ix.Theory (VLevel)
 /-!
 # Full inference for binding forms
 
-K2's lambda and forall proofs assume the complete source translation is
-already typed.  These K3 branches instead start from `PreTrKExprS`, validate
+The ordinary lambda and forall inference proofs assume a typed source
+translation. These full-inference branches start from `PreTrKExprS`, validate
 the domain, infer the freshly opened body, and close its newly established
 typed translation back to the original de Bruijn syntax.
 -/

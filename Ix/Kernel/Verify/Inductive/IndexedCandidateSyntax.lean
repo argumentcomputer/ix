@@ -24,7 +24,7 @@ The upstream replay exposes the right executable values, but its public
 trace.  Merely mentioning that projection therefore imports the replay's
 reflection axioms into a downstream theorem statement.  Reconstruct the same
 post-family context and constructor-local binders directly from transparent
-data.  These are the values E2c relates to production Ix execution.
+data.  These are the values inductive verification relates to production Ix execution.
 -/
 
 /-- Post-family context in which the two IndexedVec constructors are checked.

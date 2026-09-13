@@ -8,7 +8,7 @@ import Ix.Theory.Named.Verify.Environment.NestedRepresentation
 import Ix.Theory.Named.NestedInductiveFixtures
 
 /-!
-# Nested flattening differential (Spec-09B)
+# Nested flattening differential
 
 Ties the Theory transformation `nestedElimination?` to the implementation:
 
@@ -264,13 +264,13 @@ run_meta do
   unless !nestedStage3 [] roseV do
     throwError "noTarget: Theory gate accepted without target metadata"
 
-/-! ## Restoration parity (Spec-09C)
+/-! ## Restoration parity
 
 The Theory restoration over the flattened block's generation artifacts
 reproduces Lean's stored metadata exactly: every restored recursor name,
 universe count, and type, and every rule RHS in the globally flattened
 order, on all three real fixtures.  This runs the product σ
-(`NestedBlockChecked.recursors`/`generatedRules`), not the Spec-09A design
+(`NestedBlockChecked.recursors`/`generatedRules`), not the representation
 probe. -/
 
 open Elab in
@@ -319,7 +319,7 @@ run_meta do
   checkRestoreParity "nv" ``NVTree [] 0 [pvecStoredTarget]
   checkRestoreParity "cu" ``CURose [] 0 [listTarget]
 
-/-! ## Real-output round-trip (Spec-09C)
+/-! ## Real-output round-trip
 
 Run the port's complete `Environment.addInductive` on a dependency-only
 kernel environment and compare its entire output — not the ambient

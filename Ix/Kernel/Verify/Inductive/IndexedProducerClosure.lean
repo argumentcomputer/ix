@@ -6,7 +6,7 @@ import Ix.Kernel.Verify.Inductive.IndexedCandidateTransaction
 
 The trust-minimal `IndexedVec` Theory transaction and the executable
 Ix.Theory.Named candidate replay are intentionally audited separately.  This module
-joins them only at a stronger E2c root: the exact producer-selected package
+joins them only at a stronger inductive verification root: the exact producer-selected package
 erases to the same certificate transaction consumed by the Ix family and
 generated-recursor admission, while all three anonymous ingress calls and both
 production block checks remain explicit.

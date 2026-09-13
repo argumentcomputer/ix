@@ -1139,7 +1139,7 @@ theorem dependentRecord_rules_registered :
 
 /-! ## Frozen legacy surface
 
-The seven fields below preserve the exact pre-Spec-13 theorem shapes.  They
+The seven fields below preserve the earlier projection theorem shapes. They
 are intentionally only statement data: constructing this bundle would
 reintroduce the old proof obligations.  In particular, `wf` permits
 unrelated contexts, `uniq` permits unrelated structure names, and every

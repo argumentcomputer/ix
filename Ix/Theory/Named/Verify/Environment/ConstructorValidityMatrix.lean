@@ -8,7 +8,7 @@ import Ix.Theory.Named.ConstructorValidityFixtures
 import Ix.Theory.Named.Verify.Environment.InductiveFixtures
 
 /-!
-# Spec-05 constructor-validity differential matrix
+# Constructor-validity differential matrix
 
 The positive half quotes real Lean metadata, runs the ordinary normalization
 candidate producer, then runs both strengthened constructor gates at their

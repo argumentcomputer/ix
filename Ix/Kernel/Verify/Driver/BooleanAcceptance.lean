@@ -4,8 +4,8 @@ import Ix.Kernel.Verify.Inductive.EnumerationAcceptance
 /-!
 # Certificate-backed Boolean driver acceptance
 
-This module connects the concrete E2 Boolean generation certificate to the
-E3-S production-driver adapter.  The runtime checker call remains a required
+This module connects the concrete Boolean generation certificate to the
+supported fragment production-driver adapter.  The runtime checker call remains a required
 gate, but semantic authority for these two coordinated blocks comes from the
 fixed family transition and existing-recursor certificates.  In particular,
 the proof does not reinterpret the runtime cache order as a topological
@@ -56,7 +56,7 @@ deriving instance DecidableEq for Ixon.LazyConstant
 deriving instance DecidableEq for AnonWorkItem
 deriving instance DecidableEq for CheckResult
 
-/-- The E2-certified Theory result, with no concrete Ix declaration trusted
+/-- The certified Theory result, with no concrete Ix declaration trusted
 yet.  Catalog, block table, names, and the empty trust predicate are inherited
 unchanged from the concrete ingress fixture. -/
 def stagedWorld : VerifyWorld :=
@@ -509,7 +509,7 @@ def stagedRecursorResources :
       theoryAfter recursorId
     exact familyRecursorSemanticEntry
 
-/-- Transport the fixed family certificate to an arbitrary monotone E1 world.
+/-- Transport the fixed family certificate to a world extended by serial checking.
 No freshness premise is needed: replay unions all exact members
 idempotently. -/
 def familyCertificateResources
@@ -519,7 +519,7 @@ def familyCertificateResources
   stagedFamilyResources.rebaseWorld hle
 
 /-- Transport the fixed generated-recursor certificate to an arbitrary
-monotone E1 world. -/
+world extended by serial checking. -/
 def recursorCertificateResources
     (current : VerifyWorld) (hle : stagedWorld ≤ current) :
     CertificateBackedBlockResources current recursorBlockAddress recursorId.addr
@@ -532,7 +532,7 @@ def recursorCertificateResources
 certificate-backed evidence at its *current* semantic world.  The actual
 successful `checkConst` equation remains in the provider interface and hence
 in `CheckSuccessSound`; it is deliberately not used as a substitute for the
-E2 semantic certificate. -/
+inductive semantic certificate. -/
 def supportedFragment :
     CertificateBackedCheckFragment stagedWorld dependencyGraph booleanWork where
   resources := by
@@ -581,10 +581,10 @@ theorem allResultsSucceeded :
   simp [successfulResults] at hresult
   rcases hresult with rfl | rfl | rfl | rfl <;> rfl
 
-/-- Whole-driver E3-S witness for a real environment containing an inductive
+/-- Whole-driver supported fragment witness for a real environment containing an inductive
 family and its generated recursor.  The theorem consumes the actual
 `checkEnvAnon` success, the exact finite source domain, the collapsed
-dependency schedule, and fixed E2 semantic entries for both coordinated
+dependency schedule, and fixed inductive semantic entries for both coordinated
 blocks. Its dependency path contains no oracle-selected world materialization. -/
 theorem subjectWF :
     SubjectWF stagedWorld dependencyGraph

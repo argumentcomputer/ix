@@ -4,10 +4,10 @@ import Ix.Kernel.Verify.Infer.CacheSoundness
 /-!
 # Full-inference cache shell
 
-The K3 uncached dispatcher establishes a typed source translation from
+The full-inference uncached dispatcher establishes a typed source translation from
 `PreTrKExprS`.  This module closes the production `inferWith` cache shell
 around that result.  Full-cache hits are reconciled with the current raw
-translation; misses construct ordinary collision-robust K2 provenance before
+translation; misses construct ordinary collision-robust inference/conversion provenance before
 writing the validated cache partition.
 -/
 
@@ -37,7 +37,7 @@ private theorem cacheReferences
   · exact context.base.references hty hresult
 
 /-- Execute a full-mode cache miss and install its result only after the
-typed source translation has supplied ordinary K2 inference provenance.
+typed source translation has supplied ordinary inference provenance.
 Both the uncached body and the cache write preserve full mode on errors. -/
 private theorem missTail_full_wf
     {alpha : Type} {initial : TcState .anon} {program : TcM .anon alpha}
@@ -95,7 +95,7 @@ namespace RecM
 
 /-- Complete production `inferWith` in full mode from untyped structural
 ingress.  A hit upgrades the current raw translation from cache provenance;
-a miss runs the exhaustive K3 dispatcher and writes validated provenance. -/
+a miss runs the exhaustive full-inference dispatcher and writes validated provenance. -/
 theorem inferWith_full_wf
     {alpha : Type} {initial : TcState .anon} {program : TcM .anon alpha}
     {requests : List WalkerRequest} {trProj : RawProjRel}

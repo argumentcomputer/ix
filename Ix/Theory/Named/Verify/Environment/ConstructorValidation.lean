@@ -2024,8 +2024,8 @@ evidence, not caller-supplied Theory judgments.
 /-- Executable fragment on which strict kernel-to-Theory translation has a
 syntactically unique endpoint.  Projections are excluded because the current
 `TrProj` contract determines their result only up to definitional equality;
-projection-bearing inductives remain outside the singleton subset until the
-projection milestones establish an exact structural API. -/
+projection-bearing inductives require an exact structural projection API
+before they can be included in the singleton subset. -/
 def theoryTranslationUnique : Expr → Bool
   | .bvar _
   | .fvar _
@@ -4231,8 +4231,8 @@ namespace VInductDecl
 
 The ordinary outer producer deliberately remains unchanged: its successful
 equation records kernel validation, while this additive wrapper retains the
-verified universe-semantic audit introduced by Spec-01D1 and extended by
-Spec-02C.  The normalized branch intersects the ordinary core decision with
+verified audit of constructor-universe comparisons. The normalized branch
+intersects the ordinary core decision with
 the proved project comparison, without making bare
 `buildNormalizationCandidate` success carry Theory meaning.
 -/

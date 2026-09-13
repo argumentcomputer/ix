@@ -7594,11 +7594,9 @@ theorem aliasFormerAlignmentRun :
       aliasFormerNormalizationCandidate.families.singleton.constructors
       { aliasFormerNormalizationCandidate.families.singleton.familyType.type.trace.terminalContext with
         env := aliasFormerCtorCandidateContext.env } = .ok () := by
-  -- Tier V (Spec-19B, v4.33 reconciliation repair debt): the premerge proof
-  -- stepped `ConstructorCandidateAlignmentTrace.build` with `rw [build.eq_def]`,
-  -- which the v4.33 elaborator no longer matches (and eq_def-in-simp loops).
-  -- The statement is an exact closed checker run and remains true; the
-  -- stepping proof needs a rework against the new equation-lemma shapes.
+  -- This exact checker-run proof needs updated equation lemmas for Lean 4.33.
+  -- `rw [build.eq_def]` no longer matches `ConstructorCandidateAlignmentTrace.build`,
+  -- and using that equation in `simp` loops.
   sorry
 
 private def aliasFormerStagedPostFamilyInput :

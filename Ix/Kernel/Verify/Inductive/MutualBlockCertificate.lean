@@ -4,13 +4,13 @@ import Ix.Theory.Named.Verify.Environment.MutualInductiveFixtures
 /-!
 # Genuine mutual-block certificate fixture
 
-`Tree`/`TreeList` is the first E2c witness that cannot be represented honestly
-by a singleton transaction.  It has two mutually visible families, five
+`Tree`/`TreeList` requires one atomic mutual-block transaction. It has two
+mutually visible families, five
 globally flattened constructors, one generated recursor per family, and five
 globally flattened iota rules.  Recursive fields target both the sibling
 family and their own family, including one recursive occurrence below a Pi.
 
-This module consumes Ix.Theory.Named's retained Spec-08 certificate through Ix's
+This module consumes Ix.Theory.Named's block-generation certificate through Ix's
 Theory-only block adapter.  Physical Ix ingress, checker execution, catalog
 linkage, and recursor admission remain separate obligations.
 -/
@@ -80,7 +80,7 @@ theorem breadth : BreadthFacts where
   treeListTargetsItself := rfl
 
 /-- Complete block-wide family/constructor/recursor/rule consequences from
-the exact retained Spec-08 transaction. -/
+the exact block-generation transaction. -/
 theorem certifiedFacts :
     CertifiedBlockGenerationFacts VEnv.empty treeFinalEnv
       transaction.certificate :=

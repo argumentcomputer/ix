@@ -12,7 +12,7 @@ open Ix.Theory (VLevel)
 /-!
 # Complete singleton-family parity inputs
 
-This module is the Theory-side inventory for Spec-07.  Each row owns the exact
+This module inventories singleton Theory fixtures. Each row owns the exact
 raw declaration together with the one checked generation artifact consumed by
 the kernel differential and environment-replay matrix.  `Unit` is represented
 honestly by the kernel's polymorphic `PUnit` family; the reducible `Unit`
@@ -135,7 +135,7 @@ def constructorNames (artifact : SingletonParityArtifact) : List Name :=
 
 end SingletonParityArtifact
 
-/-- The fixed Spec-07 positive matrix, in roadmap order.  The `Unit` row points
+/-- The positive matrix in fixed order. The `Unit` row points
 to `PUnit`, matching the actual v4.31 kernel representation rather than
 inventing alias-level inductive metadata. -/
 def singletonPositiveArtifacts : List SingletonParityArtifact :=

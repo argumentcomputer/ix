@@ -12,7 +12,7 @@ This module performs that final fixed-universe assembly.
 
 namespace Ix.Kernel
 
-/-- The semantic cache layers beneath K1's outer WHNF and delta layers. -/
+/-- The semantic cache layers beneath the outer WHNF and delta layers. -/
 def kernelCacheFallback (keys : WhnfContextKeys) (trProj : RawProjRel) :
     CacheSemantics :=
   inferCacheSemantics keys trProj <|

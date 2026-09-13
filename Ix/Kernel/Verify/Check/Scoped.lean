@@ -6,7 +6,7 @@ open Ix.Theory (VLevel)
 /-!
 # Successful well-scopedness validation
 
-`PendingDecl` deliberately permits raw, ill-scoped syntax.  K3 therefore
+`PendingDecl` deliberately permits raw, ill-scoped syntax. Declaration checking therefore
 cannot assume universe-parameter or de Bruijn bounds when it starts checking
 a declaration: those facts have to be recovered from the successful
 production `validateExprWellScoped` pass.

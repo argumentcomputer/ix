@@ -5,7 +5,7 @@ import Ix.Kernel.Verify.Whnf.Structural.BetaBoundary
 open Ix.Theory (VLevel)
 
 /-!
-# G2a ambient-Nat fixture
+# Ambient Nat fixture
 
 This file instantiates `InductiveOracle` with a small, closed Theory model of
 `Nat`, `Nat.zero`, and `Nat.succ`.  The concrete catalog entries retain their
@@ -18,15 +18,12 @@ it does not claim an eliminator or pretend that Ix.Theory.Named's still-opaque
 
 The fixture then promotes one ordinary axiom whose type is `Nat` and leaves a
 second, raw-translatable but ill-typed axiom pending.  Thus adding an ambient
-inductive family does not collapse the pending/trusted boundary established
-in G1. G3a first instantiated finite run support for lift, substitution, and
-universe instantiation. As in the G1
-adversarial fixture, fixed distinct addresses keep this logical model
-independent of the Blake3 FFI; it establishes semantic
-inhabitation, not ingress hash-integrity or Rust parity. G3b extends that
-witness to direct expression/universe interning, every currently formalized
-walker family, and a non-empty `ExecutionRequests` certificate for the exact
-same request list.
+inductive family preserves the pending/trusted boundary. Fixed distinct
+addresses keep this logical model independent of the Blake3 FFI; it establishes
+semantic inhabitation, not ingress hash-integrity or Rust parity. Finite
+execution support covers lifting, substitution, universe instantiation, direct
+expression/universe interning, every formalized walker family, and a non-empty
+`ExecutionRequests` certificate for the same request list.
 -/
 
 namespace Ix.Kernel
@@ -366,7 +363,7 @@ theorem succRaw : RawInductiveConstRel natEnv nameOf RawProjRel.none
     · exact RawExprRel.const nameOf_nat natEnv_nat rfl
     · exact RawExprRel.const nameOf_nat natEnv_nat rfl
 
-/-- A real model of the G2a assumption boundary.  This particular block has
+/-- A real model of the ambient-inductive interface assumption boundary.  This particular block has
 no recursor declaration, so `recursorFacts` and `recursorPatterns` are
 vacuous; any later block that contains a `.recr` entry must supply both its
 Theory equation and exact iota-pattern witnesses explicitly. -/
@@ -652,7 +649,7 @@ theorem stateWF (prims : Primitives .anon) :
     TcStateWF RawProjRel.none (state prims) worldGood :=
   ⟨trustedCatalogRelGood, loadedAgrees, InternTable.WF.empty⟩
 
-/-- The G2b consumer lookup is inhabited by an ambient inductive member in a
+/-- Catalog lookup is inhabited by an ambient inductive member in a
 real concrete state; no legacy whole-environment translation is involved. -/
 theorem natResolved (prims : Primitives .anon) :
     ∃ name ci,
@@ -688,7 +685,7 @@ theorem natResolvedInv (prims : Primitives .anon) :
         TrustedConstRel RawProjRel.none world natId natConcrete name ci :=
   (stateWF prims).tcInv.resolve loadedEnv_nat nat_trusted_good
 
-/-! ## G3 finite run-support and execution witness -/
+/-! ## Finite run support and execution witness -/
 
 /-- A constructed constant reference to the ambient Nat family.  Recording
 the smart constructor's own info makes it both a concrete Nat reference and a
@@ -816,7 +813,7 @@ theorem checkSupport (prims : Primitives .anon) :
       · exact fun _ hu => False.elim hu
 
 /-- Source traversal and generated-result arithmetic are simultaneously
-bounded for the concrete G3b request list. -/
+bounded for the concrete execution request list. -/
 theorem resourceBounds : ResourceBounds supportRequests := by
   constructor
   intro request hmem
@@ -852,7 +849,7 @@ theorem resourceBounds : ResourceBounds supportRequests := by
 
 /-- A small real `TcM` computation containing exactly the eight recorded
 interning operations.  It is a proof fixture, not a claim about `checkConst`;
-later K1--K3 proofs build the same certificate compositionally for the
+reducer, inference, and declaration proofs build the certificate compositionally for the
 production entry points. -/
 def supportProgram : TcM .anon Unit := do
   let _ ← TcM.intern supportExpr
@@ -884,7 +881,7 @@ theorem runAssumptions (prims : Primitives .anon) :
     RunSupport.pair_collisionFree supportExpr zeroLevel,
     checkSupport prims, resourceBounds⟩
 
-/-- G3b is non-vacuous in the same state that contains a trusted ambient Nat
+/-- Execution-indexed support is non-vacuous in a state containing a trusted ambient Nat
 family and a loaded ill-typed pending declaration.  Its execution list cannot
 be replaced by `[]`: it is indexed by the concrete eight-operation program. -/
 theorem supportAcceptance (prims : Primitives .anon) :
@@ -897,14 +894,14 @@ theorem supportAcceptance (prims : Primitives .anon) :
   ⟨stateWF prims, nat_trusted_good, badPending,
     runAssumptions prims⟩
 
-/-! ## K1 exact nonempty warm-cache witness -/
+/-! ## WHNF exact nonempty warm-cache witness -/
 
 /-- This fixture contains only closed source expressions, so its context-key
 model relates the distinguished empty key to the empty semantic context. -/
 def whnfContextKeys : WhnfContextKeys :=
   WhnfContextKeys.closed 0
 
-/-- Exact K1 semantics for all five WHNF cache families.  Non-WHNF semantic
+/-- Exact WHNF semantics for all five WHNF cache families.  Non-WHNF semantic
 caches are absent from the fixture; cached block errors remain replayable. -/
 def whnfSemantics : CacheSemantics :=
   whnfCacheSemantics whnfContextKeys RawProjRel.none
@@ -912,7 +909,7 @@ def whnfSemantics : CacheSemantics :=
 
 /-- The closed Nat reference is definitionally equal to itself in the real
 ambient-Nat Theory world.  This is the semantic fact stored by the warm
-cache, replacing G4's former address-only identity contract. -/
+cache, including its Theory meaning as well as its address. -/
 theorem supportExpr_whnfMeaning :
     WhnfMeaning RawProjRel.none worldNat 0 [] supportExpr supportExpr := by
   obtain ⟨name, ci, hresolved⟩ :=
@@ -948,7 +945,7 @@ def warmState (prims : Primitives .anon) : TcState .anon :=
   { env := warmEnv, prims, ctxId := natAddress }
 
 /-- The loaded ambient-Nat environment has constants but no semantic cache
-entries. This is the fresh side of the G4 fresh/warm comparison. -/
+entries. This is the fresh state in the provenance comparison. -/
 theorem loadedEnv_noCacheEntries (entry : CacheEntry) :
     ¬loadedEnv.HasCacheEntry entry := by
   intro hentry
@@ -1041,7 +1038,7 @@ theorem whnfLeafTheoryWF :
     VExpr.WF worldGood.venv 0 [] (.sort .zero) :=
   ⟨_, VEnv.HasType.sort trivial⟩
 
-/-- The concrete ambient-Nat state inhabits the syntax-directed K1 fixture
+/-- The concrete ambient-Nat state inhabits the syntax-directed WHNF fixture
 layer with acceleration disabled. Its primitive table remains intentionally
 parametric; production closure uses `productionNoAccelStateInv` below. -/
 theorem noAccelStateInv (prims : Primitives .anon) :
@@ -1096,7 +1093,7 @@ theorem noAccelInvariant_rejects_mismatched_primitives
 
 /-- A real Nat-containing state instantiates the first conditional
 `RecM.whnf` theorem.  This branch returns before any cache, fuel, native, or
-recursive-method operation, but still preserves the complete K1 invariant on
+recursive-method operation, but still preserves the complete WHNF invariant on
 both EStateM outcomes. -/
 theorem whnfLeaf_noAccel_wf (prims : Primitives .anon) :
     RecM.WF .structuralNoAccel whnfSemantics RawProjRel.none worldGood support 0 []
@@ -1189,7 +1186,7 @@ theorem warmCache_cannotResolvePending (prims : Primitives .anon) :
     ¬warmEntry.References support IllTypedPending.targetId :=
   (warmKernelStateWF prims).pendingCacheIsolation badPending warmEnv_hit
 
-/-- G4's formal acceptance witness contains both the fresh and nonempty warm
+/-- The cache-provenance acceptance witness contains both the fresh and nonempty warm
 states, transported provenance, and pending-declaration isolation. The
 executable failed-then-valid regression lives in `Tests.Ix.Kernel.CheckTests`. -/
 theorem cacheAcceptance (prims : Primitives .anon) :
@@ -1209,7 +1206,7 @@ theorem zero_trusted_good : worldGood.trusted zeroId :=
 theorem succ_trusted_good : worldGood.trusted succId :=
   TrustInsert.old succ_trusted
 
-/-! ### K1 structural beta witness -/
+/-! ### WHNF structural beta witness -/
 
 /-- A closed, typed beta redex over the ambient Nat family.  Smart
 constructors supply its actual content metadata; the proof below does not
@@ -1287,7 +1284,7 @@ theorem whnfCoreConst_noAccel_acceptance (prims : Primitives .anon)
           (.const natName []) result) :=
   ⟨noAccelStateInv prims, whnfCoreConst_noAccel_wf prims flags⟩
 
-/-- Nontrivial K1 semantic witness: the concrete Nat identity application
+/-- Nontrivial WHNF semantic witness: the concrete Nat identity application
 is definitionally equal to the exact output of the verified substitution
 specification. -/
 theorem betaIdentityMeaning :
@@ -1402,7 +1399,7 @@ theorem betaResultMeaning :
 /-- Small operational harness for the single recursive-head callback used by
 this fixture.  It is not claimed to satisfy `Methods.WF` or to be the tied
 production knot; the generic theorem above isolates the exact callback
-equation that K2 must later prove for `methodsN`. -/
+equation required to use `methodsN` in its place. -/
 def betaHarnessMethods : Methods .anon where
   whnf := fun e => pure e
   whnfCore := fun e => pure e
@@ -6452,7 +6449,7 @@ theorem multiBetaMiddleRebase :
     hlaterTr.rebase worldGood.venvWF (by trivial) hthroughTr hthroughEq
   exact ⟨priorArgs, laterArgs, resultV, hlater, hresultTr, hresultEq⟩
 
-/-- G2a acceptance witness: one concrete state simultaneously contains a
+/-- Ambient-inductive acceptance witness: one concrete state simultaneously contains a
 trusted, well-formed ambient Nat family; a successfully promoted standalone
 declaration that uses Nat; and an independently loaded pending declaration
 for which declaration WF is impossible. -/

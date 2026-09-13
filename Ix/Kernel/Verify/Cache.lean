@@ -8,7 +8,7 @@ import Std.Data.HashSet.Lemmas
 /-!
 # Cache provenance and pending-declaration isolation
 
-This is the G4 boundary between an optimization hit and a semantic fact.
+Cache provenance connects an optimization hit to a semantic fact.
 `KEnv` stores only compact address keys, values, and booleans; it does not
 store the world or expression witnesses under which an entry was produced.
 The verification therefore carries that missing data as ghost provenance:
@@ -25,10 +25,10 @@ The verification therefore carries that missing data as ghost provenance:
 * `CacheEntry.ReferencesAuthorized` records that every direct constant root
   behind an entry is trusted (or, for a structural block artifact only, is an
   active block member); and
-* `CacheSemantics.Valid` is the exact family of C1/K1/K2 semantic meanings.
-  G4 keeps it parametric and requires its world monotonicity. A run chooses
-  its final finite support up front; K1 and K2 instantiate and preserve the
-  contract at each concrete insertion site.
+* `CacheSemantics.Valid` gives each cache family's semantic meaning and
+  requires monotonicity under world extension. A run chooses its final finite
+  support up front; reduction, inference, and conversion proofs instantiate
+  and preserve the contract at each insertion site.
 
 The split is deliberate. This file proves generic cache-hit, world-extension,
 support-witness weakening, reset, clearing, error-restoration, and
@@ -49,8 +49,8 @@ the active atomic block. Every reduction/delta/cache fact is role (3), so a
 pending target cannot justify its own type or value.
 
 These roles are proof-side labels: the production `TcM.getConst` API is not
-yet intrinsically capability-tagged. G4 proves the standalone raw-translation
-barrier and the stable-cache barrier. K1/K2 must still classify and discharge
+yet intrinsically capability-tagged. This module proves the standalone
+raw-translation and stable-cache barriers. Each operation's proof must discharge
 `LookupScope.Allows` at each whnf/infer/defeq/inductive call site; this audit
 does not treat an untagged concrete lookup as trusted merely because it was
 listed here.
@@ -357,8 +357,8 @@ def CacheEntry.ReferencesAuthorized (authority : CacheAuthority)
     authority.world.trusted id ∨
       (entry.SubjectScoped ∧ authority.active id)
 
-/-- The semantic meaning of each tagged cache family. K1/K2 provide the
-concrete `Valid`; G4 requires world monotonicity so a warm entry remains
+/-- The semantic meaning of each tagged cache family. Reduction, inference,
+and conversion supply `Valid`; world monotonicity keeps a warm entry
 usable after declarations are admitted. A composite run chooses its final
 finite support up front, so changing support is deliberately not hidden in
 this interface. -/
@@ -739,8 +739,8 @@ theorem insertBlockError {semantics : CacheSemantics}
     (CacheProvenance.blockError semantics authority support block err)
 
 /-- Insert one certified full-whnf result while retaining provenance for all
-old entries.  The four policy-specific siblings below cover every other K1
-WHNF expression map; their exact semantic payload is supplied by
+old entries. The four policy-specific siblings below cover the other WHNF
+expression maps; their exact semantic payload is supplied by
 `Verify/Whnf.lean`. -/
 theorem insertWhnf {semantics : CacheSemantics}
     {authority : CacheAuthority} {support : RunSupport}

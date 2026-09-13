@@ -7,7 +7,7 @@ import Ix.Theory.Named.Verify.Environment.InductiveFixtures
 Ix.Theory.Named's `IndexedVec` fixture is the first certificate in the dependency
 whose source is simultaneously parameterized, indexed, and recursive.  This
 module reconstructs it through the Theory-only proof-carrying transaction
-boundary and records the exact breadth facts that distinguish it from E2b's
+boundary and records the exact breadth facts that distinguish it from singleton certification's
 Boolean enumeration.
 
 The ambient `Nat` environment is reconstructed through its own certified
@@ -75,7 +75,7 @@ normalization candidate; it is not an independently regenerated artifact. -/
     transaction.certificate.generation =
       indexedVecChecked.identityGeneration := rfl
 
-/-- Auditable shape of the first non-enumeration E2c certificate.
+/-- Auditable shape of the indexed recursive certificate.
 
 The recursive argument is the third constructor field and targets the sole
 family at the predecessor index.  The constructor result advances that index
@@ -111,7 +111,7 @@ structure BreadthFacts : Prop where
 theorem breadth : BreadthFacts := by
   constructor <;> rfl
 
-/-- Stable semantic consequences obtained only from the Ix E2a adapter. -/
+/-- Stable semantic consequences obtained only from the Ix certified generation adapter. -/
 theorem certifiedFacts :
     CertifiedGenerationFacts natFinalEnv indexedVecFinalEnv
       transaction.certificate :=

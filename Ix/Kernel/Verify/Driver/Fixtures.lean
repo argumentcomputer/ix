@@ -1,7 +1,7 @@
 import Ix.Kernel.Verify.Driver.Serial
 
 /-!
-# Adversarial E1 fixtures
+# Adversarial serial composition fixtures
 
 These small, Blake3-independent fixtures exercise the checked-set contracts
 themselves.  They deliberately use fixed distinct addresses so failures in

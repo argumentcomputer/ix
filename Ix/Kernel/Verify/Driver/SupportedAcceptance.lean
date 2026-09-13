@@ -5,25 +5,25 @@ import Ix.Kernel.Verify.Driver.Serial
 /-!
 # Supported production-checker acceptance
 
-This module is the concrete adapter between the per-call K3/E0 theorems and
-E1's serial checked-set composition.  It intentionally does not contain an
+This module connects per-call declaration and block-admission theorems to
+the serial checked-set composition. It does not contain an
 opaque `checkConst succeeded, therefore the declaration is sound` callback.
 Instead, every reusable successful call must expose:
 
-* one finite, run-scoped recursive-method context;
+* one finite, run-scoped method context;
 * the exact physical/world cache and block-table invariants for that call;
 * agreement between the source work item and the block selected by the
   production router;
-* declaration-local K3 resources for an observed standalone route; and
+* declaration-local resources for an observed standalone route; and
 * either constructive scoped singleton-definition evidence or an explicit
-  E2 oracle-backed resource for every fresh coordinated body;
+  inductive oracle resource for every fresh coordinated body;
 * certificate-backed replay resources for coordinated blocks whose semantic
   entries are already installed in the current Theory environment.
 
 The composition theorems below turn those resources into `CheckSuccessSound`,
 which `Driver.Serial` then composes into `SubjectWF`.
 The source-to-kernel route agreement remains an explicit representation
-premise until the later ingress/refinement phase discharges it generically.
+premise requiring a general ingress/refinement proof.
 -/
 
 namespace Ix.Kernel
@@ -32,7 +32,7 @@ namespace AnonWorkItem
 
 /-- Exact relation between a production work item and the result observed
 from `coordinatedBlockFor`.  A standalone source entry may be checked either
-through K3 (axioms) or through its singleton coordinated block
+through declaration-checking (axioms) or through its singleton coordinated block
 (definitions/recursors).  A Muts work item must route to its advertised
 envelope address. -/
 def SelectedBlockMatches (item : AnonWorkItem) :
@@ -44,10 +44,10 @@ def SelectedBlockMatches (item : AnonWorkItem) :
 
 end AnonWorkItem
 
-/-! ## Standalone K3 resources -/
+/-! ## Standalone declaration-checking resources -/
 
 /-- The declaration-local premises needed when the actual production router
-selects K3's standalone path.  None of these fields assumes a declaration-WF
+selects the declaration checker's standalone path.  None of these fields assumes a declaration-WF
 transition or target trust; `PendingDecl` explicitly asserts the opposite. -/
 structure SupportedStandaloneResources
     {initial : TcState .anon} {id : KId .anon}
@@ -76,8 +76,8 @@ structure SupportedStandaloneResources
 
 namespace SupportedStandaloneResources
 
-/-- Apply K3 to the exact successful public call and retain only the world
-extension and target-trust facts required by E1. -/
+/-- Apply declaration-checking to the exact successful public call and retain only the world
+extension and target-trust facts required by serial composition. -/
 theorem promotes
     {initial after : TcState .anon} {id : KId .anon}
     {requests : List WalkerRequest} {trProj : RawProjRel}
@@ -105,11 +105,11 @@ end SupportedStandaloneResources
 
 /-! ## Coordinated-body resources -/
 
-/-- Exhaustive body evidence supported by the E3-S adapter.
+/-- Exhaustive body evidence accepted by the fragment adapter.
 
-The first constructor is constructive K3 evidence for the only definition
+The first constructor is constructive declaration-checking evidence for the only definition
 block shape currently modeled atomically by Ix.Theory.Named: one definition.  The
-second constructor keeps the E2 inductive/recursor oracle visible.  In
+second constructor keeps the inductive/recursor oracle visible.  In
 particular there is no constructor containing a prebuilt
 `CertifiedBlockBodySuccess`. -/
 inductive SupportedBlockBodyResources
@@ -154,7 +154,7 @@ inductive SupportedBlockBodyResources
 
 namespace SupportedBlockBodyResources
 
-/-- Turn one transparent supported-body constructor into the exact E0 body
+/-- Turn one transparent supported-body constructor into the exact block admission body
 certificate for the observed trace. -/
 theorem certify
     {initial : TcState .anon} {id : KId .anon}
@@ -201,8 +201,8 @@ end SupportedBlockBodyResources
 
 namespace CheckBlockKind
 
-/-- Kinds which E3-S may replay from already-installed semantic entries.
-Definitions remain on the constructive K3 route; this adapter is only for
+/-- Kinds the supported-fragment adapter may replay from installed semantic entries.
+Definitions remain on the constructive declaration-checking route; this adapter is only for
 inductive-family and generated-recursor blocks. -/
 def CertificateBacked : CheckBlockKind → Prop
   | .inductive' | .recursor => True
@@ -213,7 +213,7 @@ end CheckBlockKind
 /-- A coordinated block whose complete semantic entries are already installed
 in `world.venv`.
 
-This is the reusable E3-S form of E2's fixed semantic certificates. Unlike an
+This reuses fixed inductive certificates in the supported fragment. Unlike an
 `ExistingSemanticBlockCertificate`, it deliberately has no freshness premise:
 checked-set composition may replay a block in a monotone world which already
 trusts a proper subset of its exact members. Admission is therefore the
@@ -294,7 +294,7 @@ theorem le_admittedWorld
   ⟨rfl, rfl, rfl, fun {_} hold => Or.inr hold, Ix.Theory.Named.VEnv.LE.rfl⟩
 
 /-- Reindex installed semantic entries across an arbitrary monotone current
-world. This is the reusable bridge used by E1 after prior work items have
+world. This is the reusable bridge used by serial composition after prior work items have
 possibly trusted a proper subset of this block. -/
 def rebaseWorld
     {before current : VerifyWorld} {blockAddr primary : Address}
@@ -414,7 +414,7 @@ structure SupportedCheckRun (world : VerifyWorld) (item : AnonWorkItem)
 
 namespace SupportedCheckRun
 
-/-- K3/E0 assembly for one actual successful production call. -/
+/-- Assemble declaration and block evidence for a successful production call. -/
 theorem accepts
     {world : VerifyWorld} {item : AnonWorkItem}
     {initial after : TcState .anon}
@@ -483,11 +483,11 @@ theorem accepts
 
 end SupportedCheckRun
 
-/-! ## Reusable fragment and E1 composition -/
+/-! ## Reusable fragment and serial composition -/
 
-/-- Exhaustive semantic resources accepted by the supported-fragment
-adapter. `operational` is the full K3/E0 state-and-cache route.
-`certificateBackedBlock` is the narrower E2 replay route for
+/-- Exhaustive semantic resources accepted by the supported fragment
+adapter. `operational` is the full declaration and block checking state-and-cache route.
+`certificateBackedBlock` is the narrower inductive certification replay route for
 inductive/recursor blocks whose complete semantic entries are already
 installed; it does not manufacture a standalone recursive-method context or
 an oracle-selected future world. -/
@@ -521,7 +521,7 @@ end SupportedCheckEvidence
 /-- Exact all-block evidence used when every row in a fragment is backed by
 already-installed semantic entries. Keeping this narrow evidence separate
 from `SupportedCheckEvidence` gives all-block consumers a dependency path
-which cannot reach the operational oracle-backed E0 branch. -/
+which cannot reach the operational oracle-backed block admission branch. -/
 inductive CertificateBackedCheckEvidence (world : VerifyWorld) :
     AnonWorkItem → Type
   | block {blockAddr primary targets} :
@@ -564,7 +564,7 @@ structure CertificateBackedCheckFragment (baseline : VerifyWorld)
 
 namespace CertificateBackedCheckFragment
 
-/-- The oracle-free all-block adapter demanded by E1. -/
+/-- The oracle-free all-block adapter demanded by serial composition. -/
 theorem checkSuccessSound
     {baseline : VerifyWorld} {catalog : DependencyCatalog}
     {work : Array AnonWorkItem}
@@ -581,7 +581,7 @@ end CertificateBackedCheckFragment
 
 /-- A precisely scoped fragment provider.  Resources are requested only when
 the item is not already accepted in `current`; this keeps the pending/fresh
-K3 premise honest while allowing E1 to reuse the rule at arbitrary monotone
+declaration-checking premise honest while allowing serial composition to reuse the rule at arbitrary monotone
 world extensions.  The provider may use the accepted external dependencies
 to establish the run's cache and declaration premises, but cannot assume its
 own `WorkItemAccepted` conclusion. -/
@@ -601,7 +601,7 @@ structure SupportedCheckFragment (baseline : VerifyWorld)
 
 namespace SupportedCheckFragment
 
-/-- The concrete K3/E0 adapter demanded by E1. -/
+/-- The concrete declaration and block checking adapter demanded by serial composition. -/
 theorem checkSuccessSound
     {baseline : VerifyWorld} {catalog : DependencyCatalog}
     {work : Array AnonWorkItem}
@@ -618,8 +618,8 @@ end SupportedCheckFragment
 
 namespace AnonWorkEnvWF
 
-/-- E3-S composition specialized to an all-block certificate-backed fragment.
-This route keeps the public serial success gate and E1 schedule unchanged while
+/-- Serial composition specialized to an all-block certificate-backed fragment.
+This route retains the public success gate and serial schedule while
 excluding the operational oracle-backed body branch from its dependency
 closure. -/
 theorem checkEnvAnon_certificateBacked_subjectWF
@@ -642,7 +642,7 @@ theorem checkEnvAnon_certificateBacked_subjectWF
   exact h.checkEnvAnon_subjectWF hblock hdeps hwf hassumptions hdisjoint
     fragment.checkSuccessSound cfg hrun hresults
 
-/-- E3-S supported-fragment composition theorem. Successful `checkEnvAnon`
+/-- Supported-fragment composition theorem. Successful `checkEnvAnon`
 rows imply `SubjectWF` for the exact enumerated work/subject sets and the explicit
 assumption set, provided every still-pending successful call belongs to the
 transparent supported fragment above. -/

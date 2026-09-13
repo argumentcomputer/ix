@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Inductive
 /-!
 # Certified singleton-family admission
 
-This module is the first production-facing half of E2b.  A Ix.Theory.Named
+This module links singleton certificates to production declarations. An Ix.Theory.Named
 `CertifiedGenerationTransaction` already owns the semantic generation of one
 family, all of its constructors, its recursor, and its iota equations.  What
 that transaction cannot know is which anonymous Ix addresses contain the
@@ -22,7 +22,7 @@ link for the physical family block:
 
 The structure deliberately contains no `InductiveOracle`, environment-WF,
 environment-extension, constant-WF, or recursor-rule premise.  Those facts
-are derived below from the E2a transaction.  The later checker adapter must
+are derived below from the certified generation transaction.  The later checker adapter must
 construct this link from ingress plus a successful production block run.
 -/
 
@@ -134,7 +134,7 @@ end CertifiedSingletonGeneration
 
 /-! ## Exact supported production shapes -/
 
-/-- The concrete family shape supported by the singleton E2b adapter.
+/-- The concrete family shape supported by the singleton adapter.
 
 The singleton family is member zero of its physical inductive block.  Its
 stored parameter and index counters must agree with the raw/view generation
@@ -428,7 +428,7 @@ theorem noRecursorRuleAt
     exact hshape.noRecursorRuleAt ruleIndex rule
 
 /-- Construct the complete family-block oracle from the exact Ix/source link
-and E2a's certified transaction.  The recursor clauses are vacuous for this
+and the certified generation transaction. The recursor clauses are vacuous for this
 physical block because it contains only the family and its constructors. -/
 def oracle
     {trProj : RawProjRel} {catalog : Catalog}

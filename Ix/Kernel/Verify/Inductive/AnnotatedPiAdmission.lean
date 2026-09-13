@@ -4,7 +4,7 @@ import Ix.Kernel.Verify.Inductive.OneFamilyAdmission
 /-!
 # Oracle-free annotation-normalizing recursive-Pi admission
 
-This module closes the concrete `AnnotatedPi` E2c transaction.  The
+This module closes the concrete `AnnotatedPi` inductive verification transaction.  The
 transparent `outParam` dependency is promoted first, the family/constructor
 block advances that explicit Theory world, and the independently stored
 generated recursor is then admitted from semantic entries already present in

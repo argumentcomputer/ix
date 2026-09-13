@@ -886,7 +886,7 @@ theorem eval
   h.selection.eval
     (h.probes.success h.admissible h.instantiation h.rebuild)
 
-/-- K1 acceptance at the honest semantic boundary.  The operational trace is
+/-- WHNF acceptance at the honest semantic boundary.  The operational trace is
 constructed here; state preservation, finite support, and Theory meaning are
 explicit premises because structure-likeness alone does not supply the
 registered struct-eta equation or projection interpretation. -/

@@ -20,7 +20,7 @@ open Ix.Theory.Named.InductiveReplayFixtures
 
 The upstream replay modules are useful for naming the exact candidate states,
 but their proof lemmas intentionally depend on reflected implementation
-equations.  E2c does not inherit that trust.  Recheck the finite observations
+equations. Inductive verification does not inherit that trust. Recheck the finite observations
 consumed below with private native facts, so the exported transport depends on
 the concrete executions without admitting those reflected equations. -/
 

@@ -6,7 +6,7 @@ import Ix.Kernel.Verify.Check.FullInferenceCache
 
 This module connects the two sequential computation fragments used by
 `checkConstMember` to the declaration-local evidence consumed by acceptance.
-The inference premise is K3's stronger full-mode contract: it starts from a
+The inference premise is the declaration checker's stronger full-mode contract: it starts from a
 raw pretranslation and establishes the typed structural translation itself.
 
 The value pipeline is parameterized by the semantic contract for the actual

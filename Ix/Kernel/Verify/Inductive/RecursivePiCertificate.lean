@@ -5,8 +5,7 @@ import Ix.Theory.Named.InductiveFixtures
 # Certified recursive-Pi generation fixture
 
 `Acc.intro` contains a recursive occurrence beneath a two-binder function
-telescope. This is the next one-family E2c breadth case after `IndexedVec`:
-the recursive argument is not a direct family application, and its induction
+telescope. The recursive argument is not a direct family application, and its induction
 hypothesis is itself a function.
 
 This module stays on the Theory-only side of the boundary. It constructs the
@@ -81,7 +80,7 @@ structure BreadthFacts : Prop where
 theorem breadth : BreadthFacts := by
   constructor <;> rfl
 
-/-- Stable semantic consequences obtained through the same generic E2a
+/-- Stable semantic consequences obtained through the same generic certified generation
 adapter used by the IndexedVec transaction. -/
 theorem certifiedFacts :
     CertifiedGenerationFacts VEnv.empty finalEnv transaction.certificate :=

@@ -6,7 +6,7 @@ open Ix.Theory (VLevel)
 # Indexed recursive iota soundness
 
 This module opens the two generated `IndexedVec.rec` equations selected by
-the E2a certificate and relates them to the dependent patterns consumed by
+the certified generation certificate and relates them to the dependent patterns consumed by
 production WHNF.  All equation shapes below reduce from the retained
 `GenerationChecked.rule`; no independently supplied rewrite law is used.
 -/

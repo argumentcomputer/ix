@@ -2,9 +2,9 @@ import Ix.Kernel.Verify.Suffix
 import Ix.Kernel.Verify.Knot
 
 /-!
-# K2 inference semantics
+# Inference semantics
 
-This module replaces the inference-cache portion of K1's fallback semantics
+This module replaces the inference-cache portion of WHNF's fallback semantics
 with its exact Theory meaning.  Algorithmic branch proofs will consume the
 hit and insertion interfaces defined here.
 -/
@@ -235,7 +235,7 @@ inductive IsInfer : ExprCacheKind → Prop
 end ExprCacheKind
 
 /-- Exact validity of the two inference cache families.  All other entries
-retain the semantics already established by the caller (normally K1 WHNF).
+retain the semantics already established by the caller (normally WHNF).
 Persistent entries created under a later-popped local scope are required to
 carry semantic meaning only when their source is structurally in scope in the
 represented context. -/
@@ -283,7 +283,7 @@ theorem expr {keys : WhnfContextKeys} {trProj : RawProjRel}
 
 end InferCacheValid
 
-/-- Overlay K2's inference meanings on the already-selected cache semantics. -/
+/-- Overlay inference meanings on the already-selected cache semantics. -/
 def inferCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) : CacheSemantics where
   Valid := InferCacheValid keys trProj fallback

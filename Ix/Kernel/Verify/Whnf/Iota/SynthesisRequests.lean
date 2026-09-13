@@ -233,7 +233,7 @@ theorem state_wf
 
 end FinishAppRequests
 
-/-- Candidate construction preserves the complete K1 invariant from the
+/-- Candidate construction preserves the complete WHNF invariant from the
 finite intern plan plus the two exact callback authorities. -/
 theorem verifyKSynthCandidate_state_wf_of_requests
     {α : Type} {initial : TcState .anon} {program : TcM .anon α}

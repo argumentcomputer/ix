@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Execution
 import Ix.Kernel.Verify.Frame
 
 /-!
-# G3b: execution-indexed run assumptions
+# Execution-indexed run assumptions
 
 An explicit request list is not, by itself, evidence that it describes a
 checker run: choosing `[]` would make coverage and bounds vacuous.  This file
@@ -21,8 +21,8 @@ existing walker masters and retain both finite intern ranges in post-states.
 
 namespace Ix.Kernel
 
-/-- State invariant used by run-level adapters and top-level statements. G4
-adds stable-world provenance for every warm cache entry. -/
+/-- State invariant used by run-level adapters and top-level statements.
+It includes stable-world provenance for every warm cache entry. -/
 def SupportedState (semantics : CacheSemantics) (trProj : RawProjRel)
     (world : VerifyWorld)
     (support : RunSupport) (s : TcState .anon) : Prop :=

@@ -439,7 +439,7 @@ theorem checkConstMember_validation_success
           cases validationValue
           exact ⟨afterValidation, rfl⟩
 
-/-- End-to-end member-level K3 result from an untyped pending declaration.
+/-- End-to-end member-level declaration-checking result from an untyped pending declaration.
 Successful production validation constructs the pretranslation; successful
 checking constructs semantic evidence; the pure acceptance layer then
 promotes exactly the pending target in the ghost world. -/

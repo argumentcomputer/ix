@@ -5,7 +5,7 @@ import Ix.Kernel.Verify.Inductive.CandidateSyntax
 
 Lean's kernel `Level` and `Expr` values expose fast Boolean equality but do
 not provide the proof-producing decidable equality needed to certify a
-native-evaluated checker result.  The E2c constructor bridge needs exactly
+native-evaluated checker result.  The inductive verification constructor bridge needs exactly
 that implication: a finite computation may observe an expression, but the
 public proof must recover structural equality without importing reflected
 implementation equations.
@@ -57,7 +57,7 @@ def literalCheck : Lean.Literal → Lean.Literal → Bool
 
 All fields which contribute to kernel expression equality are compared,
 including binder names and annotations.  Metavariable nodes are supported so
-the checker remains useful for exact failure diagnostics, although E2c's
+the checker remains useful for exact failure diagnostics, although inductive verification's
 successful constructor candidates contain none. -/
 def exprCheck : Lean.Expr → Lean.Expr → Bool
   | .bvar left, .bvar right => decide (left = right)

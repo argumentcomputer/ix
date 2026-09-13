@@ -356,9 +356,8 @@ theorem fresh {trProj : RawProjRel} {world : VerifyWorld}
   certificate.oracle.fresh ((certificate.memberIff id).2 hid)
 
 /-- Commit an oracle-backed block as one exact ghost transaction and one
-trusted-log event.  This theorem is intentionally semantic: E2 supplies the
-future operational proof that a production inductive/recursor block success
-constructs this certificate. -/
+trusted-log event. A separate operational proof must construct the certificate
+from a successful production inductive/recursor block check. -/
 theorem admit {trProj : RawProjRel} {world : VerifyWorld}
     {block : KId .anon} {members : Array (KId .anon)}
     {kind : CheckBlockKind}

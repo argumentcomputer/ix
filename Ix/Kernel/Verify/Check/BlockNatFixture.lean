@@ -2,11 +2,11 @@ import Ix.Kernel.Verify.Check.PublicBlocks
 import Ix.Kernel.Verify.NatFixture
 
 /-!
-# Concrete Nat block fixture for E0
+# Concrete Nat block fixture for block admission
 
 The existing ambient-Nat oracle is instantiated here against an exact
 physical block table.  This fixture exercises the semantic transaction and
-the adversarial cache rule without pretending that E2 has already connected
+the adversarial cache rule without pretending that inductive certification has already connected
 the production inductive checker to the oracle.
 -/
 

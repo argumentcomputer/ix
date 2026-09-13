@@ -144,7 +144,7 @@ structure DefEqCheapReductionContext
 
 namespace DefEqCheapReductionContext
 
-/-- Construct the public cheap reducers from their unwrapped K1/K2 body
+/-- Construct the public cheap reducers from their unwrapped reduction, inference, and conversion body
 contracts. -/
 theorem ofBodies
     {layer : WhnfLayer} {semantics : CacheSemantics}

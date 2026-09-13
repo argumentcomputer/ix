@@ -7,7 +7,7 @@ import Ix.Kernel.Verify.RecursiveMethods.ScopedCallDomains
 
 The exhaustive recursor comparison retains exactly one type DefEq call and
 one RHS DefEq call per positional rule.  This module interprets those calls
-through K2S's finite successor-layer method contract.  It does not require a
+through the finite successor-layer contract for scoped methods. It does not require a
 global DefEq oracle or place every expression in an unbounded call domain.
 -/
 
@@ -74,7 +74,7 @@ end Methods.ActiveScopedWFAtOn
 namespace RecM
 
 /-- A successful selected-candidate comparison is semantically canonical
-under the same finite K2S successor-layer contract used by the production
+under the same finite scoped method successor-layer contract used by the production
 recursive-method knot. -/
 theorem checkGeneratedRecursorCandidate_canonicalScoped
     {trProj : RawProjRel} {world : VerifyWorld}
