@@ -7,6 +7,7 @@ use std::{array, ops::Range, sync::LazyLock};
 use crate::{
   FxIndexMap, G,
   bytecode::{Block, Ctrl, Op, Toplevel, ValIdx},
+  call_order::{RANK_BYTES, RANK_LOOKUPS},
   function_channel,
   gadgets::{
     AiurGadget,
@@ -67,9 +68,10 @@ pub struct Constraints {
 struct ConstraintState {
   /// Index of the circuit member currently being walked.
   function_index: G,
-  /// Exactly one selector: the circuit backs a single function with a
-  /// single leaf block (no matches), so every lookup slot is written by
-  /// exactly one branch.
+  /// Packed 48-bit rank of this row, shared across circuit members.
+  rank: Expr,
+  /// One function with terminal control and one selector: operation slots
+  /// have one writer. Selector count alone does not exclude empty branches.
   branchless: bool,
   /// Input size of the current member (inputs live in columns
   /// `0..input_size` for every member; the circuit reserves the max).
@@ -122,6 +124,17 @@ impl ConstraintState {
     var(self.column - 1)
   }
 
+  fn range_pair(&mut self, sel: &Expr, a: Expr, b: Expr) {
+    let args = vec![
+      self.gate(sel, konst(u8_range_check_channel())),
+      self.gate(sel, a),
+      self.gate(sel, b),
+    ];
+    let lookup = self.next_lookup();
+    combine_lookup_args(lookup, args);
+    lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+  }
+
   fn save(&mut self) -> SharedState {
     SharedState {
       column: self.column,
@@ -138,6 +151,20 @@ impl ConstraintState {
 }
 
 impl Toplevel {
+  /// Ungated lookup arguments are safe only with one writer per slot.
+  /// A branch with no return/yield still writes lookups, so counting the
+  /// terminal selectors alone does not establish that condition.
+  pub(crate) fn circuit_is_branchless(&self, circuit_index: usize) -> bool {
+    let circuit = &self.circuits[circuit_index];
+    let [member] = circuit.members.as_slice() else {
+      return false;
+    };
+    circuit.layout.selectors == 1
+      && self.functions.get(*member).is_some_and(|function| {
+        matches!(function.body.ctrl, Ctrl::Return(..) | Ctrl::Yield(..))
+      })
+  }
+
   /// Build the constraints of one circuit. The circuit's members are walked
   /// like branches of a single function: each walk restarts the auxiliary
   /// column / lookup-slot counters (so members share those, like match arms
@@ -158,7 +185,8 @@ impl Toplevel {
     };
     let mut state = ConstraintState {
       function_index: G::ZERO,
-      branchless: layout.selectors == 1,
+      rank: konst(G::ZERO),
+      branchless: self.circuit_is_branchless(circuit_index),
       input_size: 0,
       sel_base: 0,
       column: 0,
@@ -171,8 +199,13 @@ impl Toplevel {
     // The shared multiplicity column: first auxiliary, right after the
     // selectors. The return lookup occupies the first lookup slot.
     let multiplicity = var(layout.input_size + layout.selectors);
-    state.lookups[0].multiplicity = -multiplicity;
+    state.lookups[0].multiplicity = -multiplicity.clone();
     let aux_start = layout.input_size + layout.selectors + 1;
+    let rank_bytes: [Expr; RANK_BYTES] = array::from_fn(|i| var(aux_start + i));
+    state.rank =
+      rank_bytes.iter().enumerate().fold(konst(G::ZERO), |acc, (i, byte)| {
+        acc + byte.clone() * konst(G::from_u64(1 << (8 * i)))
+      });
     let mut sel_base = layout.input_size;
     let mut circuit_sel = Expr::from(G::ZERO);
     for &member in &circuit.members {
@@ -180,8 +213,8 @@ impl Toplevel {
       state.function_index = G::from_usize(member);
       state.input_size = function.layout.input_size;
       state.sel_base = sel_base;
-      state.column = aux_start;
-      state.lookup = 1;
+      state.column = aux_start + RANK_BYTES;
+      state.lookup = 1 + RANK_LOOKUPS;
       state.map.clear();
       (0..function.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
       let body_sel = function.body.get_block_selector(&state);
@@ -205,8 +238,19 @@ impl Toplevel {
       state
         .constraints
         .zeros
-        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel));
+        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel.clone()));
     }
+    // Rank bytes are shared across members and checked once for an active
+    // circuit row. An inactive row emits no byte-table queries.
+    state.lookup = 1;
+    for pair in rank_bytes.as_chunks::<2>().0 {
+      state.range_pair(&circuit_sel, pair[0].clone(), pair[1].clone());
+    }
+    // Only an active member can supply a return lookup. In particular,
+    // branchless return arguments are ungated, so an inactive row with a
+    // nonzero multiplicity could otherwise supply an arbitrary result.
+    // Keep the lookup multiplicity linear and constrain its activity here.
+    state.constraints.zeros.push(multiplicity * (konst(G::ONE) - circuit_sel));
     (state.constraints, state.lookups)
   }
 }
@@ -312,6 +356,9 @@ impl Ctrl {
         args.extend(
           values.iter().map(|arg| state.gate(&sel, state.map[*arg].0.clone())),
         );
+        // The public root rank is zero. Lookup compression zero-pads short
+        // messages, preserving the public claim's existing byte encoding.
+        args.push(state.gate(&sel, state.rank.clone()));
         let lookup = &mut state.lookups[0];
         combine_lookup_args(lookup, args);
         // multiplicity is already set
@@ -462,9 +509,28 @@ impl Op {
           lookup_args
             .extend(output.into_iter().map(|col| state.gate(sel, col)));
 
+          let callee_rank = state.next_auxiliary();
+          lookup_args.push(state.gate(sel, callee_rank.clone()));
+
           let lookup = state.next_lookup();
           combine_lookup_args(lookup, lookup_args);
           lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+
+          let gap_bytes: [Expr; RANK_BYTES] =
+            array::from_fn(|_| state.next_auxiliary());
+          let gap = gap_bytes.iter().enumerate().fold(
+            konst(G::ZERO),
+            |acc, (i, byte)| {
+              acc + byte.clone() * konst(G::from_u64(1 << (8 * i)))
+            },
+          );
+          state.constraints.zeros.push(
+            sel.clone()
+              * (callee_rank - state.rank.clone() - konst(G::ONE) - gap),
+          );
+          for pair in gap_bytes.as_chunks::<2>().0 {
+            state.range_pair(sel, pair[0].clone(), pair[1].clone());
+          }
         }
       },
       Op::Store(values) => {
