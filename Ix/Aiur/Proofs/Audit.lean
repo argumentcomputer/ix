@@ -51,6 +51,7 @@ import Ix.Aiur.Proofs.Blake3
 import Ix.Aiur.Proofs.MerkleCap
 import Ix.Aiur.Proofs.Merkle
 import Ix.Aiur.Proofs.PrunedMerkle
+import Ix.Aiur.Proofs.ExtensionMmcs
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -2945,6 +2946,66 @@ def prunedMerklePremises : Array Lean.Name := #[
   `Aiur.NativeAIR.PrunedMerkle.origins,
   `Aiur.NativeAIR.PrunedMerkle.instMonadLogged]
 
+def extensionMmcsRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.ExtensionMmcs.baseRow_length,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRow_injective,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows_length,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows_injective,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows_fields,
+  `Aiur.NativeAIR.ExtensionMmcs.baseDimensions_length,
+  `Aiur.NativeAIR.ExtensionMmcs.baseDimensions_heights,
+  `Aiur.NativeAIR.ExtensionMmcs.baseDimensions_maxHeight,
+  `Aiur.NativeAIR.ExtensionMmcs.baseDimensions_covered,
+  `Aiur.NativeAIR.ExtensionMmcs.baseDimensions_exact,
+  `Aiur.NativeAIR.ExtensionMmcs.shape_base,
+  `Aiur.NativeAIR.ExtensionMmcs.fri_width_fits,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows_query,
+  `Aiur.NativeAIR.ExtensionMmcs.replay_shape,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMulti_individual,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMulti_shape,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered_individual,
+  `Aiur.NativeAIR.ExtensionMmcs.replay_native_input,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyCovered_collision,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered_collision,
+  `Aiur.NativeAIR.ExtensionMmcs.blake3_native_collision,
+  `Aiur.NativeAIR.ExtensionMmcs.blake3_multi_native_collision]
+
+def extensionMmcsAxiomFreeRoots : Array Lean.Name := #[]
+
+def extensionMmcsQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.ExtensionMmcs.baseRow_length,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRow_injective,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows_injective,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows_fields,
+  `Aiur.NativeAIR.ExtensionMmcs.baseDimensions_exact,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows_query,
+  `Aiur.NativeAIR.ExtensionMmcs.replay_native_input]
+
+def extensionMmcsClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.ExtensionMmcs.shape_base,
+  `Aiur.NativeAIR.ExtensionMmcs.fri_width_fits,
+  `Aiur.NativeAIR.ExtensionMmcs.replay_shape,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMulti_individual,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMulti_shape,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered_individual,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyCovered_collision,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered_collision,
+  `Aiur.NativeAIR.ExtensionMmcs.blake3_native_collision,
+  `Aiur.NativeAIR.ExtensionMmcs.blake3_multi_native_collision]
+
+def extensionMmcsPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.ExtensionMmcs.baseRow,
+  `Aiur.NativeAIR.ExtensionMmcs.baseRows,
+  `Aiur.NativeAIR.ExtensionMmcs.baseDimensions,
+  `Aiur.NativeAIR.ExtensionMmcs.WidthsFit,
+  `Aiur.NativeAIR.ExtensionMmcs.shape,
+  `Aiur.NativeAIR.ExtensionMmcs.replay,
+  `Aiur.NativeAIR.ExtensionMmcs.verify,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyCovered,
+  `Aiur.NativeAIR.ExtensionMmcs.replayMulti,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMulti,
+  `Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2981,7 +3042,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -3220,7 +3281,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises ++ extensionMmcsPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -3299,7 +3360,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if prunedMerkleRoots.contains root then
+    let expected := if extensionMmcsRoots.contains root then
+        if extensionMmcsAxiomFreeRoots.contains root then #[]
+        else if extensionMmcsClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if extensionMmcsQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if prunedMerkleRoots.contains root then
         if prunedMerkleAxiomFreeRoots.contains root then #[]
         else if prunedMerkleClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if prunedMerkleQuotRoots.contains root then #[``propext, ``Quot.sound]

@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,369 roots by traversing checked types, bodies and inductive
+The audit checks 1,391 roots by traversing checked types, bodies and inductive
 constructors. Fifty-five roots use no axioms; one uses only `Quot.sound`;
-232 depend only on `propext`; 415 use exactly `propext` and `Quot.sound`;
-the other 666 use exactly
+237 depend only on `propext`; 422 use exactly `propext` and `Quot.sound`;
+the other 676 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 19,698 logical declarations and 20,493 declarations after following runtime
+has 19,752 logical declarations and 20,548 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 186 Ix recursion worker implementations.
+three partial opaque sources and all 187 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1217,9 +1217,50 @@ release tests, Clippy with warnings denied, the strict 473-job build and
 the complete gate with thirty-four fresh native corpora pass. The backend
 cases remain two accepted and seventeen rejected, with no unexpected outcomes.
 
-The extension-field MMCS adapter, PCS/FRI verification and extraction,
-quantitative security, and universal Rust refinement remain separate
-obligations. Native comparisons establish compatibility on the corpus.
+PCS/FRI verification and extraction, quantitative security, and universal
+Rust refinement remain separate obligations. Native comparisons establish
+compatibility on the corpus.
+
+`NativeAIR.ExtensionMmcs` models the quadratic-extension adapter used for
+FRI commitments. Each extension value contributes its `c0` and `c1`
+coordinates, in that order. The adapter doubles matrix widths and retains
+heights, cap roots, query indices and sibling digests. Both individual and
+shared verification delegate to the base-field Merkle algorithms above.
+The coordinate packing is injective, so their authentication and collision
+theorems carry back to the original extension-field rows.
+
+Width multiplication uses the selected machine word size, including wrapping
+in native release builds. The model preserves that behavior. `WidthsFit`
+states when doubling is exact; under this condition, base-row shape is
+equivalent to the original extension-row shape. A FRI matrix with width
+`2^logArity` fits this doubling on a 64-bit machine when `logArity ≤ 32`.
+Deriving that condition from the complete native FRI acceptance path is part
+of the remaining verifier connection.
+
+Every query in an accepted shared extension opening has an accepted individual
+extension path using only inputs from the shared hash log. With cap coverage,
+different accepted extension rows at a common public index expose a BLAKE3
+collision in at most `2 + 6 * (maxLogHeight - capHeight)` witness inputs.
+The witness inputs fit the native hash bound when each queried opening
+contains fewer than 2^60 extension elements. Recovering the original row
+width additionally uses `WidthsFit`; the collision reduction itself also
+covers the modeled wrapping behavior.
+
+The native corpus contains 9,597 cases, including 7,362 shared cases. It
+checks actual extension commit/open/verify, equality with the flattened
+base-field commitment and verifier, and instrumented hash calls. All 42,969
+hash inputs and outputs agree with Lean, along with all 20,448 individual
+paths. Cases alter both coordinates, repeated and merged queries, row widths,
+caps, dimensions and sibling proofs. They include 507 release width wraps,
+2,566 acceptances, 1,661 acceptances with uncovered caps and 3,513 rejections
+after hashing. Cap coverage and width overflow are checked separately.
+
+This adapter adds 22 roots, eleven definitions and one inspected structural
+shape worker. All 1,369 prior root statements and axiom sets, 908 premise
+definitions and 186 worker bodies remain unchanged. All 94 parallel native
+release tests, Clippy with warnings denied, the strict 480-job build and the
+complete gate with thirty-five fresh native corpora pass. The backend cases
+remain two accepted and seventeen rejected, with no unexpected outcomes.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

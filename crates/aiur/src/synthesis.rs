@@ -647,6 +647,8 @@ mod tests {
   mod byte_shapes;
   mod call_order;
   mod constant_degree;
+  #[cfg(not(feature = "cuda"))]
+  mod extension_mmcs;
   mod lookup_budget;
   mod lookup_shapes;
   mod memory;

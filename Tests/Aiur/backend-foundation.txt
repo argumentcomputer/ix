@@ -10092,6 +10092,221 @@ ROOT Aiur.NativeAIR.PrunedMerkle.blake3_native_collision
                       inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
                         ∀ (input : List UInt8), input ∈ inputs → Aiur.NativeAIR.Blake3.NativeInput input
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseRow_length
+∀ (values : List Aiur.NativeAIR.ProofCodec.Extension),
+  (Aiur.NativeAIR.ExtensionMmcs.baseRow values).length = values.length * 2
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseRow_injective
+∀ {left right : List Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.ExtensionMmcs.baseRow left = Aiur.NativeAIR.ExtensionMmcs.baseRow right → left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseRows_length
+∀ (rows : List (List Aiur.NativeAIR.ProofCodec.Extension)),
+  (Aiur.NativeAIR.ExtensionMmcs.baseRows rows).length = rows.length
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseRows_injective
+∀ {left right : List (List Aiur.NativeAIR.ProofCodec.Extension)},
+  Aiur.NativeAIR.ExtensionMmcs.baseRows left = Aiur.NativeAIR.ExtensionMmcs.baseRows right → left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseRows_fields
+∀ (rows : List (List Aiur.NativeAIR.ProofCodec.Extension)),
+  (Aiur.NativeAIR.ExtensionMmcs.baseRows rows).flatten.length = rows.flatten.length * 2
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseDimensions_length
+∀ (wordBits : Nat) (dimensions : List Aiur.NativeAIR.Merkle.Dimensions),
+  (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions).length = dimensions.length
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseDimensions_heights
+∀ (wordBits : Nat) (dimensions : List Aiur.NativeAIR.Merkle.Dimensions),
+  List.map Aiur.NativeAIR.Merkle.Dimensions.logHeight
+      (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions) =
+    List.map Aiur.NativeAIR.Merkle.Dimensions.logHeight dimensions
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseDimensions_maxHeight
+∀ (wordBits : Nat) (dimensions : List Aiur.NativeAIR.Merkle.Dimensions),
+  Aiur.NativeAIR.Merkle.maxHeight (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions) =
+    Aiur.NativeAIR.Merkle.maxHeight dimensions
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseDimensions_covered
+∀ (wordBits : Nat) (dimensions : List Aiur.NativeAIR.Merkle.Dimensions) (capHeight : Nat),
+  Aiur.NativeAIR.Merkle.covered (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions) capHeight =
+    Aiur.NativeAIR.Merkle.covered dimensions capHeight
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseDimensions_exact
+∀ {wordBits : Nat} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions},
+  Aiur.NativeAIR.ExtensionMmcs.WidthsFit wordBits dimensions →
+    Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions =
+      List.map (fun dimension => { width := dimension.width * 2, logHeight := dimension.logHeight }) dimensions
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.shape_base
+∀ {wordBits : Nat} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions}
+  {rows : List (List Aiur.NativeAIR.ProofCodec.Extension)},
+  Aiur.NativeAIR.ExtensionMmcs.WidthsFit wordBits dimensions →
+    Aiur.NativeAIR.Merkle.shape (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions)
+        (Aiur.NativeAIR.ExtensionMmcs.baseRows rows) =
+      Aiur.NativeAIR.ExtensionMmcs.shape dimensions rows
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.fri_width_fits
+∀ {logArity height : Nat},
+  logArity ≤ 32 → Aiur.NativeAIR.ExtensionMmcs.WidthsFit 64 [{ width := 2 ^ logArity, logHeight := height }]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.baseRows_query
+∀ {indices : List Nat} {rows : List (List (List Aiur.NativeAIR.ProofCodec.Extension))} {index : Nat}
+  {query : List (List Aiur.NativeAIR.ProofCodec.Extension)},
+  (index, query) ∈ indices.zip rows →
+    (index, Aiur.NativeAIR.ExtensionMmcs.baseRows query) ∈
+      indices.zip (List.map Aiur.NativeAIR.ExtensionMmcs.baseRows rows)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.replay_shape
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {wordBits capHeight index : Nat}
+  {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {rows : List (List Aiur.NativeAIR.ProofCodec.Extension)}
+  {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.ExtensionMmcs.WidthsFit wordBits dimensions →
+    Aiur.NativeAIR.ExtensionMmcs.replay hash wordBits dimensions capHeight index rows proof = some result →
+      Aiur.NativeAIR.ExtensionMmcs.shape dimensions rows = true
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.verifyMulti_individual
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {wordBits capHeight index : Nat}
+  {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {indices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {rows : List (List (List Aiur.NativeAIR.ProofCodec.Extension))}
+  {query : List (List Aiur.NativeAIR.ProofCodec.Extension)} {proof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.ExtensionMmcs.verifyMulti hash wordBits dimensions capHeight indices cap rows proof = true →
+    (index, query) ∈ indices.zip rows →
+      ∃ path result,
+        Aiur.NativeAIR.ExtensionMmcs.replay hash wordBits dimensions capHeight index query path = some result ∧
+          Aiur.NativeAIR.ExtensionMmcs.verify hash wordBits dimensions capHeight index cap query path = true ∧
+            result.hashing.inputs ⊆
+              (Aiur.NativeAIR.ExtensionMmcs.replayMulti hash wordBits dimensions capHeight indices rows proof).inputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.verifyMulti_shape
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {wordBits capHeight index : Nat}
+  {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {indices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {rows : List (List (List Aiur.NativeAIR.ProofCodec.Extension))}
+  {query : List (List Aiur.NativeAIR.ProofCodec.Extension)} {proof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.ExtensionMmcs.WidthsFit wordBits dimensions →
+    Aiur.NativeAIR.ExtensionMmcs.verifyMulti hash wordBits dimensions capHeight indices cap rows proof = true →
+      (index, query) ∈ indices.zip rows → Aiur.NativeAIR.ExtensionMmcs.shape dimensions query = true
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered_individual
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {wordBits capHeight index : Nat}
+  {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {indices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {rows : List (List (List Aiur.NativeAIR.ProofCodec.Extension))}
+  {query : List (List Aiur.NativeAIR.ProofCodec.Extension)} {proof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered hash wordBits dimensions capHeight indices cap rows proof = true →
+    (index, query) ∈ indices.zip rows →
+      ∃ path result,
+        Aiur.NativeAIR.ExtensionMmcs.replay hash wordBits dimensions capHeight index query path = some result ∧
+          Aiur.NativeAIR.ExtensionMmcs.verifyCovered hash wordBits dimensions capHeight index cap query path = true ∧
+            result.hashing.inputs ⊆
+              (Aiur.NativeAIR.ExtensionMmcs.replayMulti hash wordBits dimensions capHeight indices rows proof).inputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.replay_native_input
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {wordBits capHeight index : Nat}
+  {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {rows : List (List Aiur.NativeAIR.ProofCodec.Extension)}
+  {proof : List Aiur.NativeAIR.Merkle.Digest} {result : Aiur.NativeAIR.Merkle.Replay},
+  Aiur.NativeAIR.ExtensionMmcs.replay hash wordBits dimensions capHeight index rows proof = some result →
+    rows.flatten.length < 2 ^ 60 →
+      ∀ {input : List UInt8}, input ∈ result.hashing.inputs → Aiur.NativeAIR.Blake3.NativeInput input
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.verifyCovered_collision
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {wordBits capHeight index : Nat}
+  {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {leftRows rightRows : List (List Aiur.NativeAIR.ProofCodec.Extension)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.ExtensionMmcs.verifyCovered hash wordBits dimensions capHeight index cap leftRows leftProof = true →
+    Aiur.NativeAIR.ExtensionMmcs.verifyCovered hash wordBits dimensions capHeight index cap rightRows rightProof =
+        true →
+      leftRows ≠ rightRows →
+        ∃ left right,
+          Aiur.NativeAIR.ExtensionMmcs.replay hash wordBits dimensions capHeight index leftRows leftProof = some left ∧
+            Aiur.NativeAIR.ExtensionMmcs.replay hash wordBits dimensions capHeight index rightRows rightProof =
+                some right ∧
+              Aiur.NativeAIR.Merkle.CollisionOn hash (left.hashing.inputs ++ right.hashing.inputs) ∧
+                (left.hashing.inputs ++ right.hashing.inputs).length ≤
+                  2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered_collision
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {wordBits capHeight index : Nat}
+  {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {leftIndices rightIndices : List Nat}
+  {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {leftRows rightRows : List (List (List Aiur.NativeAIR.ProofCodec.Extension))}
+  {leftQuery rightQuery : List (List Aiur.NativeAIR.ProofCodec.Extension)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered hash wordBits dimensions capHeight leftIndices cap leftRows
+        leftProof =
+      true →
+    Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered hash wordBits dimensions capHeight rightIndices cap rightRows
+          rightProof =
+        true →
+      (index, leftQuery) ∈ leftIndices.zip leftRows →
+        (index, rightQuery) ∈ rightIndices.zip rightRows →
+          leftQuery ≠ rightQuery →
+            ∃ inputs,
+              inputs ⊆
+                  (Aiur.NativeAIR.ExtensionMmcs.replayMulti hash wordBits dimensions capHeight leftIndices leftRows
+                        leftProof).inputs ++
+                    (Aiur.NativeAIR.ExtensionMmcs.replayMulti hash wordBits dimensions capHeight rightIndices rightRows
+                        rightProof).inputs ∧
+                Aiur.NativeAIR.Merkle.CollisionOn hash inputs ∧
+                  inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
+                    ∀ (input : List UInt8),
+                      input ∈ inputs →
+                        input.length ≤ max 64 (16 * max leftQuery.flatten.length rightQuery.flatten.length)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.blake3_native_collision
+∀ {wordBits capHeight index : Nat} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions}
+  {cap : List Aiur.NativeAIR.Merkle.Digest} {leftRows rightRows : List (List Aiur.NativeAIR.ProofCodec.Extension)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.ExtensionMmcs.verifyCovered Aiur.NativeAIR.Blake3.digest wordBits dimensions capHeight index cap
+        leftRows leftProof =
+      true →
+    Aiur.NativeAIR.ExtensionMmcs.verifyCovered Aiur.NativeAIR.Blake3.digest wordBits dimensions capHeight index cap
+          rightRows rightProof =
+        true →
+      leftRows ≠ rightRows →
+        leftRows.flatten.length < 2 ^ 60 →
+          rightRows.flatten.length < 2 ^ 60 →
+            ∃ left right,
+              Aiur.NativeAIR.ExtensionMmcs.replay Aiur.NativeAIR.Blake3.digest wordBits dimensions capHeight index
+                    leftRows leftProof =
+                  some left ∧
+                Aiur.NativeAIR.ExtensionMmcs.replay Aiur.NativeAIR.Blake3.digest wordBits dimensions capHeight index
+                      rightRows rightProof =
+                    some right ∧
+                  Aiur.NativeAIR.Merkle.CollisionOn Aiur.NativeAIR.Blake3.digest
+                      (left.hashing.inputs ++ right.hashing.inputs) ∧
+                    (left.hashing.inputs ++ right.hashing.inputs).length ≤
+                        2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
+                      ∀ (input : List UInt8),
+                        input ∈ left.hashing.inputs ++ right.hashing.inputs → Aiur.NativeAIR.Blake3.NativeInput input
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ExtensionMmcs.blake3_multi_native_collision
+∀ {wordBits capHeight index : Nat} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions}
+  {leftIndices rightIndices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {leftRows rightRows : List (List (List Aiur.NativeAIR.ProofCodec.Extension))}
+  {leftQuery rightQuery : List (List Aiur.NativeAIR.ProofCodec.Extension)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered Aiur.NativeAIR.Blake3.digest wordBits dimensions capHeight leftIndices
+        cap leftRows leftProof =
+      true →
+    Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered Aiur.NativeAIR.Blake3.digest wordBits dimensions capHeight
+          rightIndices cap rightRows rightProof =
+        true →
+      (index, leftQuery) ∈ leftIndices.zip leftRows →
+        (index, rightQuery) ∈ rightIndices.zip rightRows →
+          leftQuery ≠ rightQuery →
+            leftQuery.flatten.length < 2 ^ 60 →
+              rightQuery.flatten.length < 2 ^ 60 →
+                ∃ inputs,
+                  inputs ⊆
+                      (Aiur.NativeAIR.ExtensionMmcs.replayMulti Aiur.NativeAIR.Blake3.digest wordBits dimensions
+                            capHeight leftIndices leftRows leftProof).inputs ++
+                        (Aiur.NativeAIR.ExtensionMmcs.replayMulti Aiur.NativeAIR.Blake3.digest wordBits dimensions
+                            capHeight rightIndices rightRows rightProof).inputs ∧
+                    Aiur.NativeAIR.Merkle.CollisionOn Aiur.NativeAIR.Blake3.digest inputs ∧
+                      inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
+                        ∀ (input : List UInt8), input ∈ inputs → Aiur.NativeAIR.Blake3.NativeInput input
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -16938,6 +17153,104 @@ DEFINITION
         (fun {α} => Aiur.NativeAIR.PrunedMerkle.Logged.pure) a,
   seqRight := fun {α β} x y => (fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind) x fun x => y (),
   bind := fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind }
+PREMISE Aiur.NativeAIR.ExtensionMmcs.baseRow
+List Aiur.NativeAIR.ProofCodec.Extension → List Aiur.G
+DEFINITION
+fun values => List.flatMap (fun value => [value.c0, value.c1]) values
+PREMISE Aiur.NativeAIR.ExtensionMmcs.baseRows
+List (List Aiur.NativeAIR.ProofCodec.Extension) → List (List Aiur.G)
+DEFINITION
+fun rows => List.map Aiur.NativeAIR.ExtensionMmcs.baseRow rows
+PREMISE Aiur.NativeAIR.ExtensionMmcs.baseDimensions
+Nat → List Aiur.NativeAIR.Merkle.Dimensions → List Aiur.NativeAIR.Merkle.Dimensions
+DEFINITION
+fun wordBits dimensions =>
+  List.map (fun dimension => { width := dimension.width * 2 % 2 ^ wordBits, logHeight := dimension.logHeight })
+    dimensions
+PREMISE Aiur.NativeAIR.ExtensionMmcs.WidthsFit
+Nat → List Aiur.NativeAIR.Merkle.Dimensions → Prop
+DEFINITION
+fun wordBits dimensions =>
+  ∀ (dimension : Aiur.NativeAIR.Merkle.Dimensions), dimension ∈ dimensions → dimension.width * 2 < 2 ^ wordBits
+PREMISE Aiur.NativeAIR.ExtensionMmcs.shape
+List Aiur.NativeAIR.Merkle.Dimensions → List (List Aiur.NativeAIR.ProofCodec.Extension) → Bool
+DEFINITION
+fun x x_1 =>
+  List.brecOn (motive := fun x => List (List Aiur.NativeAIR.ProofCodec.Extension) → Bool) x
+    Aiur.NativeAIR.ExtensionMmcs.shape._f x_1
+PREMISE Aiur.NativeAIR.ExtensionMmcs.replay
+Aiur.NativeAIR.Merkle.Hash →
+  Nat →
+    List Aiur.NativeAIR.Merkle.Dimensions →
+      Nat →
+        Nat →
+          List (List Aiur.NativeAIR.ProofCodec.Extension) →
+            List Aiur.NativeAIR.Merkle.Digest → Option Aiur.NativeAIR.Merkle.Replay
+DEFINITION
+fun hash wordBits dimensions capHeight index rows proof =>
+  Aiur.NativeAIR.Merkle.replay hash (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions) capHeight index
+    (Aiur.NativeAIR.ExtensionMmcs.baseRows rows) proof
+PREMISE Aiur.NativeAIR.ExtensionMmcs.verify
+Aiur.NativeAIR.Merkle.Hash →
+  Nat →
+    List Aiur.NativeAIR.Merkle.Dimensions →
+      Nat →
+        Nat →
+          List Aiur.NativeAIR.Merkle.Digest →
+            List (List Aiur.NativeAIR.ProofCodec.Extension) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash wordBits dimensions capHeight index cap rows proof =>
+  Aiur.NativeAIR.Merkle.verify hash (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions) capHeight index
+    cap (Aiur.NativeAIR.ExtensionMmcs.baseRows rows) proof
+PREMISE Aiur.NativeAIR.ExtensionMmcs.verifyCovered
+Aiur.NativeAIR.Merkle.Hash →
+  Nat →
+    List Aiur.NativeAIR.Merkle.Dimensions →
+      Nat →
+        Nat →
+          List Aiur.NativeAIR.Merkle.Digest →
+            List (List Aiur.NativeAIR.ProofCodec.Extension) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash wordBits dimensions capHeight index cap rows proof =>
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight &&
+    Aiur.NativeAIR.ExtensionMmcs.verify hash wordBits dimensions capHeight index cap rows proof
+PREMISE Aiur.NativeAIR.ExtensionMmcs.replayMulti
+Aiur.NativeAIR.Merkle.Hash →
+  Nat →
+    List Aiur.NativeAIR.Merkle.Dimensions →
+      Nat →
+        List Nat →
+          List (List (List Aiur.NativeAIR.ProofCodec.Extension)) →
+            List Aiur.NativeAIR.Merkle.Digest →
+              Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node)
+DEFINITION
+fun hash wordBits dimensions capHeight indices rows proof =>
+  Aiur.NativeAIR.PrunedMerkle.replay hash (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions) capHeight
+    indices (List.map Aiur.NativeAIR.ExtensionMmcs.baseRows rows) proof
+PREMISE Aiur.NativeAIR.ExtensionMmcs.verifyMulti
+Aiur.NativeAIR.Merkle.Hash →
+  Nat →
+    List Aiur.NativeAIR.Merkle.Dimensions →
+      Nat →
+        List Nat →
+          List Aiur.NativeAIR.Merkle.Digest →
+            List (List (List Aiur.NativeAIR.ProofCodec.Extension)) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash wordBits dimensions capHeight indices cap rows proof =>
+  Aiur.NativeAIR.PrunedMerkle.verify hash (Aiur.NativeAIR.ExtensionMmcs.baseDimensions wordBits dimensions) capHeight
+    indices cap (List.map Aiur.NativeAIR.ExtensionMmcs.baseRows rows) proof
+PREMISE Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered
+Aiur.NativeAIR.Merkle.Hash →
+  Nat →
+    List Aiur.NativeAIR.Merkle.Dimensions →
+      Nat →
+        List Nat →
+          List Aiur.NativeAIR.Merkle.Digest →
+            List (List (List Aiur.NativeAIR.ProofCodec.Extension)) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash wordBits dimensions capHeight indices cap rows proof =>
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight &&
+    Aiur.NativeAIR.ExtensionMmcs.verifyMulti hash wordBits dimensions capHeight indices cap rows proof
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -22027,6 +22340,15 @@ fun x =>
   | a.sub b => Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec a && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec b
   | a.mul b => Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec a && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec b
   | x => true
+RECURSION WORKER Aiur.NativeAIR.ExtensionMmcs.shape._unsafe_rec
+List Aiur.NativeAIR.Merkle.Dimensions → List (List Aiur.NativeAIR.ProofCodec.Extension) → Bool
+IMPLEMENTATION
+fun x x_1 =>
+  match x, x_1 with
+  | [], [] => true
+  | dimension :: dimensions, row :: rows =>
+    row.length == dimension.width && Aiur.NativeAIR.ExtensionMmcs.shape._unsafe_rec dimensions rows
+  | x, x_2 => false
 RECURSION WORKER Aiur.NativeAIR.KeyCodec.encodeNat._unsafe_rec
 Nat → Nat → List UInt8
 IMPLEMENTATION
@@ -24248,10 +24570,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1369; LOGICAL DECLARATIONS 19698; WITH RUNTIME 20493
+C8 component ROOTS 1391; LOGICAL DECLARATIONS 19752; WITH RUNTIME 20548
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 186
+RECURSION WORKERS 187
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.
