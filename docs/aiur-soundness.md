@@ -10,7 +10,7 @@ a native Merkle commitment-binding defect.
 | An inactive function row supplied a public proof of `3 * 5 = 16`. | Function and memory rows satisfy `multiplicity * (1 - selector) = 0`. | [Inactive rows](../crates/aiur/src/synthesis/tests/acceptance.rs) |
 | Self-recursive and mutually recursive rows balanced their own calls without a finite execution. | Calls advance a checked static component order, or strictly increase a range-checked rank within one component. | [Self recursion](../crates/aiur/src/synthesis/tests/acceptance.rs), [call ordering](../crates/aiur/src/synthesis/tests/call_order.rs) |
 | An empty return at rank seven supplied a public claim with output seven because lookup messages are zero-padded. | Public claims and constrained calls agree with the function's input and output arities; yields agree with their continuation. | [Message shapes](../crates/aiur/src/synthesis/tests/lookup_shapes.rs) |
-| An inactive branch's store arguments changed a live call's lookup channel and supplied output seven for a program returning one. | Ungated arguments require a single function with terminal control and one selector. Constraint emission and lookup grouping use the same predicate. | [Empty branches](../crates/aiur/src/synthesis/tests/branchless.rs) |
+| An inactive branch's store arguments changed a live call's lookup channel and supplied output seven for a program returning one. | Ungated arguments require a single function with terminal control and one selector. Branching circuits retain argument gates. | [Empty branches](../crates/aiur/src/synthesis/tests/branchless.rs) |
 | A large native Merkle cap omitted a shorter matrix: changing its values preserved the commitment, and altered openings verified. | The cap retains the injection layer of every committed matrix. | [Merkle cap coverage](../crates/aiur/src/synthesis/tests/mmcs.rs) |
 
 ## Call ranks and witness generation
@@ -81,6 +81,31 @@ The remaining recursive components keep explicit ranks. Regenerating the
 IxVM, aggregation and recursive-verifier execution sources produces identical
 files because instructions and function indices are preserved.
 
+## Lookup grouping
+
+After compiling the constraints, synthesis chooses lookup groups using their
+actual polynomial degrees and the configured PCS quotient-degree limit. A
+larger group commits fewer stage-2 accumulator columns but can require more
+quotient chunks. The deterministic selector accepts a change only if its FFT
+cost is no larger than the previous layout at every integer row height,
+including height one. Integer comparisons cover the small-height cases and
+the slope of the cost for larger heights. This guarantee concerns the FFT
+model; higher quotient degrees can increase constraint-evaluation work.
+
+Grouping retains every lookup message, multiplicity, selector gate and rank
+check. The consumer bound counts logical lookup slots, independently of the
+number of accumulator groups. Derived circuit metadata is updated before
+transcript construction and key serialization. The key codec and recursive
+verifier already support the selected group sizes and quotient degrees.
+Native tests cover the degree limit, key round-trips and altered claims;
+recursive-verifier tests exercise quotient degrees two and four together.
+
+Relative to the component-rank layout, modeled FFT work falls on all 83 kernel
+fixtures by a median 4.44%: `Nat.add_comm` improves 6.22%, `Vector.append`
+9.11%, and the shard pipeline 9.40%. Fixed byte-table rows and main columns
+stay unchanged. For the small unary byte table, the same selector chooses
+more accumulators at a lower quotient degree because that costs less FFT work.
+
 ## Structural bounds
 
 System construction validates constrained-call arities, continuation yields,
@@ -131,6 +156,8 @@ regenerate stored proofs against the repaired systems. Public claim encoding
 is preserved: its omitted rank is zero under lookup padding. Component
 specialization also changes the IxVM AIR and key, and extends the internal
 Lean/Rust bytecode representation; rebuild both sides of the FFI together.
+Lookup retuning changes affected stage-2 layouts, quotient degrees and keys,
+so it also requires rebuilding systems and regenerating proofs.
 
 The native regressions cover supplied false witnesses as well as honest
 execution, finite recursion, shared callees, advice promotion and grouped
