@@ -168,43 +168,72 @@ inductive UFrame where
   | imax
   deriving Inhabited
 
-/-- Convert one universe tree (iterative). Uses the *simplifying*
-    `mkMax`/`mkIMax` smart constructors — reduced-node addresses must match
-    the Rust kernel node-for-node — and interns every node. -/
-def convertUnivTree (root : Ixon.Univ) : InternIngressM (KUniv .anon) := do
-  let mut stack : Array UFrame := #[.process root]
-  let mut values : Array (KUniv .anon) := #[]
-  while !stack.isEmpty do
-    let frame := stack.back!
-    stack := stack.pop
-    match frame with
-    | .process u =>
-      match u with
-      | .zero =>
-        values := values.push (← InternIngressM.internU .mkZero)
-      | .succ inner =>
-        stack := stack.push .succ |>.push (.process inner)
-      | .max a b =>
-        stack := stack.push .max |>.push (.process b) |>.push (.process a)
-      | .imax a b =>
-        stack := stack.push .imax |>.push (.process b) |>.push (.process a)
-      | .var idx =>
-        values := values.push (← InternIngressM.internU (.mkParam idx ()))
-    | .succ =>
-      let inner := values.back!
-      values := values.pop
-      values := values.push (← InternIngressM.internU (.mkSucc inner))
-    | .max =>
-      let b := values.back!; values := values.pop
-      let a := values.back!; values := values.pop
-      values := values.push (← InternIngressM.internU (.mkMax a b))
-    | .imax =>
-      let b := values.back!; values := values.pop
-      let a := values.back!; values := values.pop
-      values := values.push (← InternIngressM.internU (.mkIMax a b))
-  match values.back? with
-  | some v => return v
-  | none => throw "ingressUnivTree: empty result stack"
+/-- Count universe nodes with a tail-recursive worklist, so deriving the
+conversion bound does not put deep source trees on the runtime call stack. -/
+def univIngressSize (root : Ixon.Univ) : Nat := go [root] 0 where
+  go (pending : List Ixon.Univ) (count : Nat) : Nat :=
+    match pending with
+    | [] => count
+    | .zero :: rest | .var _ :: rest => go rest (count + 1)
+    | .succ inner :: rest => go (inner :: rest) (count + 1)
+    | .max left right :: rest | .imax left right :: rest =>
+        go (left :: right :: rest) (count + 1)
+  termination_by (pending.map sizeOf).sum
+  decreasing_by all_goals simp_wf <;> omega
+
+/-- One frame of the universe stack machine, in the same traversal order
+as expression conversion. All mutable effects are interning operations. -/
+def convertUnivStep (stack : Array UFrame) (values : Array (KUniv .anon)) :
+    InternIngressM (Array UFrame × Array (KUniv .anon)) := do
+  let frame := stack.back!
+  let mut stack := stack.pop
+  let mut values := values
+  match frame with
+  | .process u =>
+    match u with
+    | .zero =>
+      values := values.push (← InternIngressM.internU .mkZero)
+    | .succ inner =>
+      stack := stack.push .succ |>.push (.process inner)
+    | .max a b =>
+      stack := stack.push .max |>.push (.process b) |>.push (.process a)
+    | .imax a b =>
+      stack := stack.push .imax |>.push (.process b) |>.push (.process a)
+    | .var idx =>
+      values := values.push (← InternIngressM.internU (.mkParam idx ()))
+  | .succ =>
+    let inner := values.back!
+    values := values.pop
+    values := values.push (← InternIngressM.internU (.mkSucc inner))
+  | .max =>
+    let b := values.back!; values := values.pop
+    let a := values.back!; values := values.pop
+    values := values.push (← InternIngressM.internU (.mkMax a b))
+  | .imax =>
+    let b := values.back!; values := values.pop
+    let a := values.back!; values := values.pop
+    values := values.push (← InternIngressM.internU (.mkIMax a b))
+  return (stack, values)
+
+/-- Bounded tail loop for universe conversion. Each source node needs at
+most a processing frame and a constructor frame. -/
+def convertUnivLoop (fuel : Nat) (stack : Array UFrame) (values : Array (KUniv .anon)) :
+    InternIngressM (KUniv .anon) := do
+  if stack.isEmpty then
+    match values.back? with
+    | some value => return value
+    | none => throw "ingressUnivTree: empty result stack"
+  else
+    match fuel with
+    | 0 => throw "ingressUnivTree: conversion step bound exhausted"
+    | fuel + 1 =>
+        let (stack, values) ← convertUnivStep stack values
+        convertUnivLoop fuel stack values
+
+/-- Convert one universe tree (iterative). Uses the simplifying smart
+constructors and interns every node. The bound comes from the source tree. -/
+def convertUnivTree (root : Ixon.Univ) : InternIngressM (KUniv .anon) :=
+  convertUnivLoop (2 * univIngressSize root) #[.process root] #[]
 
 /-- Environment-threading interface for universe-tree conversion. -/
 def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) :=
@@ -267,113 +296,148 @@ inductive EFrame where
   | cacheShare (idx : UInt64)
   deriving Inhabited
 
-/-- Convert one Ixon expression (explicit stack machine).
+/-- Count the source expression nodes, treating sharing indices as leaves.
+The worklist keeps this pass tail-recursive even for deeply nested terms. -/
+def exprIngressSize (pending : List Ixon.Expr) : Nat := go pending 0 where
+  go (pending : List Ixon.Expr) (count : Nat) : Nat :=
+    match pending with
+    | [] => count
+    | .share _ :: rest | .var _ :: rest | .sort _ :: rest
+    | .ref _ _ :: rest | .recur _ _ :: rest | .nat _ :: rest | .str _ :: rest =>
+        go rest (count + 1)
+    | .app left right :: rest | .lam _ left right :: rest
+    | .all _ _ left right :: rest => go (left :: right :: rest) (count + 1)
+    | .letE _ type value body :: rest => go (type :: value :: body :: rest) (count + 1)
+    | .prj _ _ value :: rest => go (value :: rest) (count + 1)
+  termination_by (pending.map sizeOf).sum
+  decreasing_by all_goals (simp_wf; omega)
 
-    Resolution: `sort i → univs[i]`; `ref i us → refs[i]` KId + univ args;
-    `recur i us → mutCtx[i]` (the sibling *projection* KId); `nat/str i →
-    refs[i]` names a blob, decoded from the env (the blob address is the hash
-    payload; the value itself is never hashed); `share i` expands
-    transparently against the sharing table (cached by index). -/
+/-- One expression frame. Sharing and universe caches remain local to the
+constant; failed resolution retains any earlier intern-table progress. -/
+def convertExprStep (ixonEnv : Ixon.Env) (ctx : IngressCtx)
+    (stack : Array EFrame) (values : Array (KExpr .anon)) :
+    InternConvM (Array EFrame × Array (KExpr .anon)) := do
+  let frame := stack.back!
+  let mut stack := stack.pop
+  let mut values := values
+  match frame with
+  | .process e =>
+    match e with
+    | .share idx =>
+      if let some cached := (← get).exprCache[idx]? then
+        values := values.push cached
+      else
+        let some expansion := ctx.sharing[idx.toNat]?
+          | throw s!"invalid Share index {idx}"
+        stack := stack.push (.cacheShare idx) |>.push (.process expansion)
+    | .var idx =>
+      values := values.push (← liftM (InternIngressM.internE (.mkVar idx ())))
+    | .sort uidx =>
+      let u ← convertUnivIdx ctx uidx
+      values := values.push (← liftM (InternIngressM.internE (.mkSort u)))
+    | .ref refIdx univIdxs =>
+      let some addr := ctx.refs[refIdx.toNat]?
+        | throw s!"invalid Ref index {refIdx}"
+      let univs ← convertUnivArgs ctx univIdxs
+      values := values.push
+        (← liftM (InternIngressM.internE (.mkConst ⟨addr, ()⟩ univs)))
+    | .recur recIdx univIdxs =>
+      let some mid := ctx.mutCtx[recIdx.toNat]?
+        | throw s!"invalid Rec index {recIdx}"
+      let univs ← convertUnivArgs ctx univIdxs
+      values := values.push
+        (← liftM (InternIngressM.internE (.mkConst mid univs)))
+    | .nat blobIdx =>
+      let some blobAddr := ctx.refs[blobIdx.toNat]?
+        | throw s!"invalid Nat blob ref index {blobIdx}"
+      let some bytes := ixonEnv.getBlob? blobAddr
+        | throw s!"missing Nat blob {blobAddr}"
+      let val := Nat.fromBytesLE bytes.data
+      values := values.push
+        (← liftM (InternIngressM.internE (.mkNat val blobAddr)))
+    | .str blobIdx =>
+      let some blobAddr := ctx.refs[blobIdx.toNat]?
+        | throw s!"invalid Str blob ref index {blobIdx}"
+      let some bytes := ixonEnv.getBlob? blobAddr
+        | throw s!"missing Str blob {blobAddr}"
+      let some val := String.fromUTF8? bytes
+        | throw s!"Str blob {blobAddr} is not valid UTF-8"
+      values := values.push
+        (← liftM (InternIngressM.internE (.mkStr val blobAddr)))
+    | .app f a =>
+      stack := stack.push .appDone |>.push (.process a) |>.push (.process f)
+    | .lam _ ty body =>
+      stack := stack.push .lamDone |>.push (.process body)
+        |>.push (.process ty)
+    | .all _ _ ty body =>
+      stack := stack.push .allDone |>.push (.process body)
+        |>.push (.process ty)
+    | .letE nd ty val body =>
+      stack := stack.push (.letDone nd) |>.push (.process body)
+        |>.push (.process val) |>.push (.process ty)
+    | .prj typeRefIdx field val =>
+      let some typeAddr := ctx.refs[typeRefIdx.toNat]?
+        | throw s!"invalid Prj type ref index {typeRefIdx}"
+      stack := stack.push (.prjDone ⟨typeAddr, ()⟩ field)
+        |>.push (.process val)
+  | .appDone =>
+    let a := values.back!; values := values.pop
+    let f := values.back!; values := values.pop
+    values := values.push (← liftM (InternIngressM.internE (.mkApp f a)))
+  | .lamDone =>
+    let body := values.back!; values := values.pop
+    let ty := values.back!; values := values.pop
+    values := values.push
+      (← liftM (InternIngressM.internE (.mkLam () () ty body)))
+  | .allDone =>
+    let body := values.back!; values := values.pop
+    let ty := values.back!; values := values.pop
+    values := values.push
+      (← liftM (InternIngressM.internE (.mkAll () () ty body)))
+  | .letDone nd =>
+    let body := values.back!; values := values.pop
+    let val := values.back!; values := values.pop
+    let ty := values.back!; values := values.pop
+    values := values.push
+      (← liftM (InternIngressM.internE (.mkLet () ty val body nd)))
+  | .prjDone id field =>
+    let val := values.back!; values := values.pop
+    values := values.push
+      (← liftM (InternIngressM.internE (.mkPrj id field val)))
+  | .cacheShare idx =>
+    let v := values.back!
+    modify fun s => { s with exprCache := s.exprCache.insert idx v }
+  return (stack, values)
+
+/-- The expression stack machine with an explicit step bound. Cyclic sharing
+cannot recurse forever; exhaustion retains the partial intern state. -/
+def convertExprLoop (ixonEnv : Ixon.Env) (ctx : IngressCtx) (fuel : Nat)
+    (stack : Array EFrame) (values : Array (KExpr .anon)) : InternConvM (KExpr .anon) := do
+  if stack.isEmpty then
+    match values.back? with
+    | some value =>
+        if values.size != 1 then
+          throw s!"ingressExpr: unbalanced value stack ({values.size} values)"
+        return value
+    | none => throw "ingressExpr: empty result stack"
+  else
+    match fuel with
+    | 0 => throw "ingressExpr: conversion step bound exhausted"
+    | fuel + 1 =>
+        let (stack, values) ← convertExprStep ixonEnv ctx stack values
+        convertExprLoop ixonEnv ctx fuel stack values
+
+/-- Convert one Ixon expression with the production stack machine.
+
+Resolution: `sort i → univs[i]`; `ref i us → refs[i]` plus universe arguments;
+`recur i us → mutCtx[i]`; literal indices name blobs; sharing expands through
+its per-constant cache. For acyclic sharing, every expansion is cached before
+it is revisited, so twice the nodes in the root and sharing table bounds all
+processing, construction, and cache frames. The bound uses unbounded `Nat`. -/
 def convertExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
-    InternConvM (KExpr .anon) := do
-  let mut stack : Array EFrame := #[.process root]
-  let mut values : Array (KExpr .anon) := #[]
-  while !stack.isEmpty do
-    let frame := stack.back!
-    stack := stack.pop
-    match frame with
-    | .process e =>
-      match e with
-      | .share idx =>
-        if let some cached := (← get).exprCache[idx]? then
-          values := values.push cached
-        else
-          let some expansion := ctx.sharing[idx.toNat]?
-            | throw s!"invalid Share index {idx}"
-          stack := stack.push (.cacheShare idx) |>.push (.process expansion)
-      | .var idx =>
-        values := values.push (← liftM (InternIngressM.internE (.mkVar idx ())))
-      | .sort uidx =>
-        let u ← convertUnivIdx ctx uidx
-        values := values.push (← liftM (InternIngressM.internE (.mkSort u)))
-      | .ref refIdx univIdxs =>
-        let some addr := ctx.refs[refIdx.toNat]?
-          | throw s!"invalid Ref index {refIdx}"
-        let univs ← convertUnivArgs ctx univIdxs
-        values := values.push
-          (← liftM (InternIngressM.internE (.mkConst ⟨addr, ()⟩ univs)))
-      | .recur recIdx univIdxs =>
-        let some mid := ctx.mutCtx[recIdx.toNat]?
-          | throw s!"invalid Rec index {recIdx}"
-        let univs ← convertUnivArgs ctx univIdxs
-        values := values.push
-          (← liftM (InternIngressM.internE (.mkConst mid univs)))
-      | .nat blobIdx =>
-        let some blobAddr := ctx.refs[blobIdx.toNat]?
-          | throw s!"invalid Nat blob ref index {blobIdx}"
-        let some bytes := ixonEnv.getBlob? blobAddr
-          | throw s!"missing Nat blob {blobAddr}"
-        let val := Nat.fromBytesLE bytes.data
-        values := values.push
-          (← liftM (InternIngressM.internE (.mkNat val blobAddr)))
-      | .str blobIdx =>
-        let some blobAddr := ctx.refs[blobIdx.toNat]?
-          | throw s!"invalid Str blob ref index {blobIdx}"
-        let some bytes := ixonEnv.getBlob? blobAddr
-          | throw s!"missing Str blob {blobAddr}"
-        let some val := String.fromUTF8? bytes
-          | throw s!"Str blob {blobAddr} is not valid UTF-8"
-        values := values.push
-          (← liftM (InternIngressM.internE (.mkStr val blobAddr)))
-      | .app f a =>
-        stack := stack.push .appDone |>.push (.process a) |>.push (.process f)
-      | .lam _ ty body =>
-        stack := stack.push .lamDone |>.push (.process body)
-          |>.push (.process ty)
-      | .all _ _ ty body =>
-        stack := stack.push .allDone |>.push (.process body)
-          |>.push (.process ty)
-      | .letE nd ty val body =>
-        stack := stack.push (.letDone nd) |>.push (.process body)
-          |>.push (.process val) |>.push (.process ty)
-      | .prj typeRefIdx field val =>
-        let some typeAddr := ctx.refs[typeRefIdx.toNat]?
-          | throw s!"invalid Prj type ref index {typeRefIdx}"
-        stack := stack.push (.prjDone ⟨typeAddr, ()⟩ field)
-          |>.push (.process val)
-    | .appDone =>
-      let a := values.back!; values := values.pop
-      let f := values.back!; values := values.pop
-      values := values.push (← liftM (InternIngressM.internE (.mkApp f a)))
-    | .lamDone =>
-      let body := values.back!; values := values.pop
-      let ty := values.back!; values := values.pop
-      values := values.push
-        (← liftM (InternIngressM.internE (.mkLam () () ty body)))
-    | .allDone =>
-      let body := values.back!; values := values.pop
-      let ty := values.back!; values := values.pop
-      values := values.push
-        (← liftM (InternIngressM.internE (.mkAll () () ty body)))
-    | .letDone nd =>
-      let body := values.back!; values := values.pop
-      let val := values.back!; values := values.pop
-      let ty := values.back!; values := values.pop
-      values := values.push
-        (← liftM (InternIngressM.internE (.mkLet () ty val body nd)))
-    | .prjDone id field =>
-      let val := values.back!; values := values.pop
-      values := values.push
-        (← liftM (InternIngressM.internE (.mkPrj id field val)))
-    | .cacheShare idx =>
-      let v := values.back!
-      modify fun s => { s with exprCache := s.exprCache.insert idx v }
-  match values.back? with
-  | some v =>
-    if values.size != 1 then
-      throw s!"ingressExpr: unbalanced value stack ({values.size} values)"
-    return v
-  | none => throw "ingressExpr: empty result stack"
+    InternConvM (KExpr .anon) :=
+  convertExprLoop ixonEnv ctx (2 * exprIngressSize (root :: ctx.sharing.toList))
+    #[.process root] #[]
 
 /-- Environment-threading interface for cached universe conversion. -/
 def ingressUnivIdx (ctx : IngressCtx) (idx : UInt64) : ConvM (KUniv .anon) :=

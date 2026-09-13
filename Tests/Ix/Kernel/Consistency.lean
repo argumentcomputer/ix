@@ -1151,9 +1151,156 @@ private def blockCacheCases : TestSeq :=
   ++ test "block cache: an unknown root retains a completed block publication and both warm slots"
     (cacheAcrossBlockFailure 4)
 
+private def internKeysCoherent (table : InternTable .anon) : Bool :=
+  table.univs.toList.all (fun (key, level) => level.addr == key) &&
+  table.exprs.toList.all (fun (key, term) => term.internKey == key)
+
+/-- Deriving the loop bound must also work on source trees deeper than the
+runtime call stack. Build the expected value independently in forward order. -/
+private def coherentDeepUniverse : Bool := Id.run do
+  let depth := 4096
+  let mut source : Ixon.Univ := .zero
+  let mut expected : KUniv .anon := .mkZero
+  for _ in [0:depth] do
+    source := .succ source
+    expected := .mkSucc expected
+  return match convertUnivTree source .empty with
+    | .ok result table => result.addr == expected.addr && table.univs.size == depth + 1 &&
+        table.exprs.isEmpty && internKeysCoherent table
+    | .error _ _ => false
+
+private def coherentUniverseBranches : Bool :=
+  let source := Ixon.Univ.imax (.max (.var 0) (.succ .zero)) (.max (.var 1) (.var 2))
+  let expected := KUniv.mkIMax (m := .anon) (.mkMax (.mkParam 0 ()) levelOne)
+    (.mkMax (.mkParam 1 ()) (.mkParam 2 ()))
+  match convertUnivTree source .empty with
+  | .ok result table => result.addr == expected.addr && internKeysCoherent table
+  | .error _ _ => false
+
+private def coherentDeepExpression (binder : Bool) : Bool := Id.run do
+  let depth := 4096
+  let mut source : Ixon.Expr := .var 0
+  let mut expected : KExpr .anon := .mkVar 0 ()
+  let baseVar := KExpr.mkVar (m := .anon) 0 ()
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  for _ in [0:depth] do
+    if binder then
+      source := .leanLam (.sort 0) source
+      expected := .mkLam () () sort expected
+    else
+      source := .app source (.var 0)
+      expected := .mkApp expected baseVar
+  let ctx : IngressCtx := {sharing := #[], refs := #[], univs := #[.succ .zero], mutCtx := #[]}
+  return match convertExpr {} ctx source {} .empty with
+    | .ok (result, cache) table => result.addr == expected.addr && internKeysCoherent table &&
+        table.exprs.size == depth + (if binder then 2 else 1) &&
+        cache.univCache.size == (if binder then 1 else 0)
+    | .error _ _ => false
+
+/-- A long acyclic sharing chain nearly consumes the derived step bound.
+Both forward and backward references must finish and memoize every expansion. -/
+private def coherentSharingChain (forward : Bool) : Bool :=
+  let depth := 2048
+  let sharing : Array Ixon.Expr := (Array.range depth).map fun idx =>
+    if forward then
+      if idx + 1 < depth then .share (idx + 1).toUInt64 else .var 7
+    else if idx == 0 then .var 7 else .share (idx - 1).toUInt64
+  let root := Ixon.Expr.share (if forward then 0 else (depth - 1).toUInt64)
+  let ctx : IngressCtx := {sharing, refs := #[], univs := #[], mutCtx := #[]}
+  let expected := KExpr.mkVar (m := .anon) 7 ()
+  match convertExpr {} ctx root {} .empty with
+  | .ok (result, cache) table => result.addr == expected.addr && internKeysCoherent table &&
+      table.exprs.size == 1 && table.univs.isEmpty && cache.exprCache.size == depth &&
+      cache.exprCache.toList.all (fun (_, value) => value.addr == expected.addr)
+  | .error _ _ => false
+
+private def coherentSharedDiamond : Bool :=
+  let sharing := #[Ixon.Expr.leanLam (.sort 0) (.var 0)]
+  let ctx : IngressCtx := {sharing, refs := #[], univs := #[.succ .zero], mutCtx := #[]}
+  let function := KExpr.mkLam (m := .anon) () () (.mkSort levelOne) (.mkVar 0 ())
+  match convertExpr {} ctx (.app (.share 0) (.share 0)) {} .empty with
+  | .ok (result, cache) table => result.addr == (KExpr.mkApp function function).addr &&
+      internKeysCoherent table && cache.exprCache.size == 1 && cache.univCache.size == 1 &&
+      table.exprs.size == 4
+  | .error _ _ => false
+
+private def coherentUnusedCycle : Bool :=
+  let ctx : IngressCtx := {sharing := #[.share 0], refs := #[], univs := #[], mutCtx := #[]}
+  match convertExpr {} ctx (.var 0) {} .empty with
+  | .ok (result, cache) table => result.addr == (KExpr.mkVar (m := .anon) 0 ()).addr &&
+      internKeysCoherent table && cache.exprCache.isEmpty && table.exprs.size == 1
+  | .error _ _ => false
+
+/-- Cyclic source sharing now returns a bounded diagnostic through the real
+fault hook. Warm entries and coherent partial conversion survive the error. -/
+private def coherenceAfterCyclicLoad (block : Bool) : Bool :=
+  let (source, warmAddr) := polymorphicIdentity
+  let level : Ixon.Univ := .succ (.succ (.succ (.succ (.succ .zero))))
+  let broken : Ixon.Definition := ⟨.defn, .safe, 0, .sort 0, .share 0⟩
+  let info := if block then Ixon.ConstantInfo.muts
+    #[.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩, .defn broken] else .defn broken
+  let sharing := if block then #[Ixon.Expr.share 1, .share 0] else #[Ixon.Expr.share 0]
+  let constant : Ixon.Constant := ⟨info, sharing, #[], #[level]⟩
+  let (source, storedAddr) := if block then storeMutsWithProjs source constant else storeConst source constant
+  let requested : KId .anon := ⟨if block then defnProjAddr storedAddr 1 else storedAddr, ()⟩
+  let warm := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelOne]
+  let action : RecM .anon Bool := do
+    let expected ← warmBothCaches warm
+    let key ← TcM.inferKey warm
+    let before ← get
+    let rejected ← try
+      let _ ← liftM (TcM.getConst requested)
+      pure false
+    catch err => pure (((toString err).splitOn "conversion step bound exhausted").length > 1)
+    let failed ← get
+    let retry ← try
+      let _ ← liftM (TcM.getConst requested)
+      pure false
+    catch err =>
+      match err with
+      | .unknownConst addr => pure (addr == requested.addr)
+      | _ => pure false
+    let reused ← RecM.inferCall warm
+    let after ← get
+    return rejected && retry && reused.addr == expected.addr && warmSlotsRetained key before failed &&
+      internKeysCoherent before.env.intern && internKeysCoherent failed.env.intern &&
+      failed.env.intern.exprs.size > before.env.intern.exprs.size &&
+      failed.env.intern.univs.size > before.env.intern.univs.size &&
+      failed.env.consts.size == before.env.consts.size && failed.env.blocks.size == before.env.blocks.size &&
+      failed.env.inferCache.size == before.env.inferCache.size &&
+      failed.env.inferOnlyCache.size == before.env.inferOnlyCache.size &&
+      failed.env.nextFVarId == before.env.nextFVarId && failed.faultedAddrs.contains requested.addr &&
+      after.env.intern.exprs.size == failed.env.intern.exprs.size &&
+      after.env.intern.univs.size == failed.env.intern.univs.size
+  match TcM.runRec action (TcState.newLazyAnon source) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def ingressCoherenceCases : TestSeq :=
+  test "ingress coherence: deep universe conversion uses a bounded worklist"
+    coherentDeepUniverse
+  ++ test "ingress coherence: bounded universe conversion retains max/imax normalization"
+    coherentUniverseBranches
+  ++ test "ingress coherence: deep application conversion and its counting pass finish"
+    (coherentDeepExpression false)
+  ++ test "ingress coherence: deep binder conversion retains universe memoization"
+    (coherentDeepExpression true)
+  ++ test "ingress coherence: a long forward sharing chain fits the source-derived bound"
+    (coherentSharingChain true)
+  ++ test "ingress coherence: a long backward sharing chain fits the source-derived bound"
+    (coherentSharingChain false)
+  ++ test "ingress coherence: repeated sharing is converted once"
+    coherentSharedDiamond
+  ++ test "ingress coherence: an unused cyclic sharing entry is not expanded"
+    coherentUnusedCycle
+  ++ test "ingress coherence: cyclic standalone sharing fails with coherent partial state"
+    (coherenceAfterCyclicLoad false)
+  ++ test "ingress coherence: cyclic block sharing retains warm witnesses without publication"
+    (coherenceAfterCyclicLoad true)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
-    lazyCacheCases, blockCacheCases]
+    lazyCacheCases, blockCacheCases, ingressCoherenceCases]
 
 end Tests.Kernel.Consistency

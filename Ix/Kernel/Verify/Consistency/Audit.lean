@@ -23,13 +23,15 @@ private def levelNative : Lean.Name :=
   nativeAxiom `Ix.Kernel.Level `Ix.Kernel.KUniv.mkSucc._native.native_decide.ax_1
 private def expressionNative : Lean.Name :=
   nativeAxiom `Ix.Kernel.Expr `Ix.Kernel.KExpr.mkVar._native.native_decide.ax_1
+private def nameNative : Lean.Name :=
+  nativeAxiom `Ix.Environment `Ix.Name.mkStr._native.native_decide.ax_1
 
 /-- The public driver reaches these additional generated output-length
 proofs through the full production method table, including inactive branches.
 No new native proof is introduced by the fragment verification. -/
 private def productionNative : Array Lean.Name := #[
   expressionNative, levelNative,
-  nativeAxiom `Ix.Environment `Ix.Name.mkStr._native.native_decide.ax_1,
+  nameNative,
   nativeAxiom `Ix.Kernel.Inductive `Ix.Kernel.RecM.canonicalAuxOrder._native.native_decide.ax_9
 ]
 
@@ -75,6 +77,7 @@ private def cacheFrameRoots : Array Lean.Name := #[
   ``PreservesInferenceCache.withInferOnly, ``getConst_loaded,
   ``IngressCacheExtension.refl, ``IngressCacheExtension.intern, ``IngressCacheExtension.trans,
   ``EntriesCompatible.ofFresh, ``EntriesCompatible.ofLookups,
+  ``insertMutsEntriesState_intern,
   ``ingress_runIntern_cache, ``LazyLookupFrame.refl, ``LazyLookupFrame.cache, ``LazyLookupFrame.policy
 ]
 
@@ -86,7 +89,8 @@ private def cacheMapRoots : Array Lean.Name := #[
 ]
 
 private def cacheKeyRoots : Array Lean.Name := #[
-  ``inferKey_closed, ``inferKey_policy, ``InferenceCacheHit.key_closed, ``observeInferenceCache,
+  ``inferKey_closed, ``inferKey_policy, ``inferKey_environment,
+  ``InferenceCacheHit.key_closed, ``observeInferenceCache,
   ``InferenceCacheAgreement.selected, ``InferenceCacheHit.transport,
   ``PreservesInferenceCache.inferKey, ``PreservesInferenceCache.openBinder,
   ``withLctxScope_eq, ``PreservesInferenceCache.withLctxScope
@@ -101,6 +105,8 @@ private def recursiveCacheRoots : Array Lean.Name := #[
   ``infer_lazyConst_cache_frame, ``CachedConstantInferenceSupport.afterLazyInference,
   ``InferenceCacheTrace.verifiedConstOfKey,
   ``infer_verifiedConst_cache_frame, ``CachedConstantInferenceSupport.afterVerifiedInference,
+  ``InferenceCacheTrace.coherentConstOfKey, ``infer_verifiedConst_coherent,
+  ``infer_coherentConst_cache_frame, ``CachedConstantInferenceSupport.afterCoherentInference,
   ``InferenceCacheHit.afterInference, ``CachedConstantInferenceSupport.afterInference,
   ``CachedConstantInferenceSupport.sound_after_inference, ``BinderInference.sortAfterInference
 ]
@@ -114,7 +120,11 @@ private def lazyCacheRoots : Array Lean.Name := #[
   ``ingressAnonAddrShallow_verified_cache, ``StandaloneLazySupport.toVerified,
   ``lazyIngressAddr_verified_cache, ``tryGetConst_verified_cache, ``getConst_verified_cache,
   ``CachedConstantInferenceSupport.afterVerifiedGetConst,
-  ``CachedConstantInferenceSupport.afterFailedVerifiedGetConst
+  ``CachedConstantInferenceSupport.afterFailedVerifiedGetConst,
+  ``convertExpr_coherent, ``convertAnonStandalone_coherent, ``convertAnonBlock_coherent,
+  ``prepareAnonBlock_coherent, ``ingressAnonBlock_coherent, ``ingressAnonAddrShallow_coherent,
+  ``lazyIngressAddr_coherent, ``tryGetConst_coherent, ``getConst_coherent,
+  ``UniverseInstantiationSupport.afterVerifiedGetConst
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -156,6 +166,11 @@ private def forbiddenProduction : Array Lean.Name := #[
 ]
 
 def roots : Array RootAllowance := #[
+  { root := ``convertUnivTree_coherent, standardAxioms := standard,
+    nativeAxioms := #[levelNative], forbiddenDependencies := forbiddenProduction },
+  { root := ``newLazyAnon_intern_coherent, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative, nameNative],
+    forbiddenDependencies := forbiddenProduction },
   { root := ``readLevel_eq, standardAxioms := #[``propext] },
   { root := ``readLevel_eval, standardAxioms := #[``propext] },
   { root := ``readLevel_wf, standardAxioms := #[``propext] },

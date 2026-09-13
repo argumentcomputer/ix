@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BinderInference
-import Ix.Kernel.Verify.Consistency.BlockCache
+import Ix.Kernel.Verify.Consistency.IngressCoherence
 
 /-!
 # Cache preservation through recursive inference
@@ -25,6 +25,24 @@ universe u v
 theorem inferKey_policy {term : KExpr .anon} {before after : TcState .anon}
     {key : Address × Address} (run : TcM.inferKey term before = .ok key after) :
     after.inferOnly = before.inferOnly := by
+  unfold TcM.inferKey at run
+  change EStateM.bind (TcM.ctxAddrForLbr term.lbr) _ before = _ at run
+  unfold TcM.ctxAddrForLbr at run
+  change EStateM.bind (fun state => EStateM.bind (get : TcM .anon (TcState .anon))
+    _ state) _ before = _ at run
+  simp only [EStateM.bind, show (get : TcM .anon (TcState .anon)) before =
+    .ok before before from rfl] at run
+  by_cases fast : (term.lbr == 0 || before.ctx.isEmpty) = true
+  · rw [if_pos fast] at run
+    cases run; rfl
+  · rw [if_neg fast] at run
+    cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;>
+      rw [cached] at run <;> cases run <;> rfl
+
+/-- Context-digest memoization leaves the complete kernel environment intact. -/
+theorem inferKey_environment {term : KExpr .anon} {before after : TcState .anon}
+    {key : Address × Address} (run : TcM.inferKey term before = .ok key after) :
+    after.env = before.env := by
   unfold TcM.inferKey at run
   change EStateM.bind (TcM.ctxAddrForLbr term.lbr) _ before = _ at run
   unfold TcM.ctxAddrForLbr at run
@@ -238,6 +256,22 @@ def InferenceCacheTrace.lazyConstOfKey {fuel : Nat} {before keyed : TcState .ano
     InferenceCacheTrace fuel before (.const id arguments info) :=
   .verifiedConstOfKey keyRun loader.toVerified resources
 
+/-- A lazy constant leaf derives post-lookup coherence from the state before
+key computation. Only finite collision and level data are supplied afterward. -/
+def InferenceCacheTrace.coherentConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : VerifiedLazySupport keyed id.addr) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport arguments concrete.ty) :
+    InferenceCacheTrace fuel before (.const id arguments info) :=
+  .verifiedConstOfKey keyRun loader fun concrete loaded run =>
+    .afterVerifiedGetConst loader (by rwa [inferKey_environment keyRun]) run
+      (resources concrete loaded run).1 (resources concrete loaded run).2
+
 /-- Every successful call in the finite tree preserves entries outside its
 computed write footprint and retains the loaded declarations and policy.
 The proof follows the recursive calls, then their real outer cache insertion. -/
@@ -371,6 +405,56 @@ theorem infer_lazyConst_cache_frame {fuel : Nat} {before keyed after : TcState .
     InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly :=
   infer_verifiedConst_cache_frame keyRun different loader.toVerified resources accepted
 
+/-- Coherence survives the complete successful constant call, including
+key computation, actual loading, universe substitution, and the cache write. -/
+theorem infer_verifiedConst_coherent {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : VerifiedLazySupport keyed id.addr) (coherent : before.env.intern.WF)
+    (faithful : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    after.env.intern.WF := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+  · rw [hit.run] at accepted
+    cases accepted
+    rwa [inferKey_environment hit.keyRun]
+  · obtain ⟨middle, run, written⟩ := infer_uncached_success_state miss accepted
+    rw [stateEq] at run
+    obtain ⟨concrete, loaded, got, _, instantiated⟩ := inferUncached_const_instantiation run
+    have lookup := getConst_coherent (id := id) loader.source true loader.installed
+      (by rwa [inferKey_environment keyRun])
+    rw [got] at lookup
+    have post := TcM.instantiateUnivParams_wf (faithful concrete loaded got)
+      (fun _ h => Or.inr h) ⟨lookup, fun _ h => Or.inl h⟩
+    rw [instantiated] at post
+    rw [written]
+    cases before.inferOnly <;> exact post.1.1
+
+/-- The complete constant call needs coherence only before it starts and
+returns it alongside cache preservation, ready for the next operation. -/
+theorem infer_coherentConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key watched : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (different : key ≠ watched) (loader : VerifiedLazySupport keyed id.addr)
+    (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport arguments concrete.ty)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly ∧
+      after.env.intern.WF :=
+  let frame := infer_verifiedConst_cache_frame keyRun different loader
+    (fun concrete loaded run => .afterVerifiedGetConst loader
+      (by rwa [inferKey_environment keyRun]) run
+      (resources concrete loaded run).1 (resources concrete loaded run).2) accepted
+  ⟨frame.1, frame.2, infer_verifiedConst_coherent keyRun loader coherent
+    (fun concrete loaded run => (resources concrete loaded run).1) accepted⟩
+
 /-- Concrete agreement at an unwritten key is retained by the entire tree. -/
 theorem InferenceCacheTrace.agreement {fuel : Nat} {before after : TcState .anon}
     {term result expected : KExpr .anon} (tree : InferenceCacheTrace fuel before term)
@@ -444,6 +528,29 @@ def CachedConstantInferenceSupport.afterLazyInference {β : Type u}
       (methodsN fuel) before = .ok result after) :
     CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
   support.afterVerifiedInference closed keyRun different loader.toVerified resources accepted
+
+/-- Reuse the old witness after loading and inference without assuming that
+the loader returned coherent intern tables. That fact follows from execution. -/
+def CachedConstantInferenceSupport.afterCoherentInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : VerifiedLazySupport keyed requested.addr) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach requestedArguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport requestedArguments concrete.ty)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  let frame := infer_coherentConst_cache_frame keyRun different loader coherent resources accepted
+  support.transport closed frame.1 frame.2.1
 
 /-- A later constant's actual returned type inherits typing from its earlier
 witness after recursive inference; no semantic premise about caches is added. -/

@@ -18,6 +18,7 @@ import Ix.Kernel.Verify.Consistency.SortCache
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.LazyCache
 import Ix.Kernel.Verify.Consistency.BlockCache
+import Ix.Kernel.Verify.Consistency.IngressCoherence
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
@@ -71,6 +72,12 @@ old declaration at its key. Fresh or partially loaded blocks meet this condition
 through pointwise lookup checks; uniqueness among fresh keys is unnecessary.
 Recursive constant leaves can use that loader and post-lookup walker resources,
 so later closed witnesses survive inference that loads another dependency.
+The production conversion loops have bounds derived from source syntax and
+reject exhausted cyclic sharing while retaining partial intern state. Coherence
+is proved through every conversion form and the actual loader on both outcomes.
+Constant inference derives post-lookup coherence from its initial state and
+returns coherence after substitution and cache publication, so the next call
+can reuse it. Finite collision and level resources remain explicit.
 Initial agreement, block overlap checks, finite execution resources, trace
 construction, and preservation for keys inside the footprint remain obligations.
 General checker soundness remains outside this fragment.

@@ -43,9 +43,13 @@ deduplicated faults. This covers standalone and mutual-block loading. Block
 publication requires every prepared entry to agree with any old declaration at
 its key, admitting fresh entries and exact repeats in a partially loaded block.
 Recursive constant leaves use this result, so an earlier witness survives
-inference that loads another dependency. Initial agreement, block overlap checks,
-post-lookup interning resources, trace construction, and preservation for keys
-that are written remain obligations.
+inference that loads another dependency. Key coherence of the intern tables
+is now derived through every production conversion form and the actual loader,
+including errors. Conversion uses bounds computed from source syntax and
+rejects exhausted cyclic sharing with coherent partial state. Constant inference
+carries pre-call coherence through lookup, substitution, and cache publication.
+Initial cache agreement, block overlap checks, finite collision/level resources,
+trace construction, and preservation for keys that are written remain obligations.
 Full checker consistency
 and compiler/backend refinement remain open.
 

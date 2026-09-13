@@ -139,6 +139,20 @@ increasing sequence of strongly inaccessible cardinals.
   recursive transport also covers loads inside application and binder trees.
   Block overlap agreement remains a data premise. The source admission and
   other recursive paths still need proofs.
+- `getConst_coherent` derives intern-table key coherence through the actual
+  loader on success and error. Universe and expression conversion now use
+  finite step bounds computed from source syntax; their counting passes and
+  conversion loops use worklists to handle deep inputs. Exhausted cyclic
+  sharing returns an error with coherent partial state. The proof follows every
+  conversion form, publication, and fault dispatch without collision or
+  declaration-overlap premises.
+  `UniverseInstantiationSupport.afterVerifiedGetConst` builds the walker's
+  coherence field from the pre-load invariant. `infer_verifiedConst_coherent`
+  carries it through key computation, loading, substitution, and the final
+  cache write. `CachedConstantInferenceSupport.afterCoherentInference` reuses
+  the earlier witness with coherence required only before the call. Finite
+  collision and level resources, source agreement, and block overlap checks
+  remain explicit.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -222,8 +236,12 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   inference. Constant misses use already-loaded declarations or verified
   standalone/block loading, with finite universe-walker resources after lookup;
   applications use full mode and hash conversion. The new dependency's semantic
-  source agreement, block overlap checks, and intern coherence remain explicit
-  resources. Preservation at written keys and automatic trace construction remain open.
+  source agreement, block overlap checks, and finite collision/level resources
+  remain explicit. Intern coherence follows through actual loading from the
+  pre-load invariant; successful constant inference also returns coherence for
+  the next operation. Initial coherence holds for `TcState.newLazyAnon`. Extending
+  its preservation to every checker operation, preservation at written keys,
+  and automatic trace construction remain open.
   The operational trace can frame any selected cache hit, while semantic typing
   of composite hits remains outside `BinderInference`.
 - Binder definitions supply finite inference trees for both the value and its
@@ -319,7 +337,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 217 exact theorem boundaries. The production
+The consistency target checks 235 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -374,6 +392,11 @@ deduplication, missing or corrupt parents, preparation failures after earlier
 members converted, and an unknown block-root lookup that retains completed
 publication. These exercise loading and cache preservation; they do not establish
 semantic admission of inductives or recursors.
+Intern-coherence regressions include 4,096-deep universe, application, and
+binder trees; forward and backward sharing chains; repeated sharing; and
+unexpanded cyclic entries. Cyclic standalone and block loads must return a
+bounded diagnostic, preserve both warm cache partitions and coherent partial
+intern state, and deduplicate retries without publishing declarations.
 
 ## Certified host adapters
 
@@ -406,6 +429,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Recursive cache preservation and witness reuse | [`Consistency/RecursiveCache.lean`](../Ix/Kernel/Verify/Consistency/RecursiveCache.lean) |
 | Verified standalone lazy loading and cache frames | [`Consistency/LazyCache.lean`](../Ix/Kernel/Verify/Consistency/LazyCache.lean) |
 | Mutual-block publication and verified lookup frames | [`Consistency/BlockCache.lean`](../Ix/Kernel/Verify/Consistency/BlockCache.lean) |
+| Intern coherence through conversion and lazy loading | [`Consistency/IngressCoherence.lean`](../Ix/Kernel/Verify/Consistency/IngressCoherence.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
