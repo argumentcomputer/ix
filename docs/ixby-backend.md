@@ -145,12 +145,17 @@ The backend distinguishes compilation from execution certification:
 * `ByteCertificate.execution_refines` likewise covers every successful canonical
   byte execution of its exact program/input/profile and identifies the complete
   output bytes with the result tied to the checked source evaluation.
+* `Compiled.certifySymbolic` adds [reusable refinement](ixby-symbolic.md) for
+  programs with a finite symbolic control path and opaque data parameters.
+  Its value and byte theorems cover every admitted future input without
+  executing the source to certify that input. Runtime input inspection remains
+  outside this fragment.
 * `Pipeline.ValidatedErasure.sourcePreservation` retains the existing unbounded
   forward Ixon → IxIR₀ simulation and its sharing-well-formedness premise. The
   execution-refinement source anchor is IxIR₀'s weak CBV semantics. There is no
   reverse erasure theorem or assertion that this proves upstream `Meta.reduce`.
 
-The six axiom fences distinguish ordinary logical axioms in the target, equality,
+The twelve axiom fences distinguish ordinary logical axioms in the target, equality,
 and execution proofs from the existing native BLAKE3 dependency of checked Ixon
 erasure. No new axiom, native interface, `sorry`, or native-decide proof was added.
 Serialized artifacts carry bytes, not persisted Lean proof objects; certification
@@ -180,3 +185,7 @@ upstream inventory, including both licenses.
 
 The upstream `addClosed` and `recClosed` fixtures still fail the existing source
 certificate gate. They are recorded rejections, not claimed Ixby executions.
+
+The [fixed Stage2 verifier fixture](ixby-stage2-fixture.md) retains the grouped
+benchmark keys and complete original source closures. Its current failure is
+source catalog admission; it has no claimed Ixby image or Flock certificate.

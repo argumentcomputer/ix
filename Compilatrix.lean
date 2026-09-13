@@ -178,4 +178,6 @@ import Compilatrix.Fence
 import Compilatrix.Ixby.Catalog
 import Compilatrix.Ixby.Examples
 import Compilatrix.Ixby.Report
+import Compilatrix.Ixby.SymbolicExamples
+import Compilatrix.Ixby.SymbolicReport
 import Compilatrix.Ixby.Fence

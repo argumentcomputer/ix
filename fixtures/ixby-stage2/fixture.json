@@ -1,0 +1,139 @@
+{
+  "format": "compilatrix/ixby-stage2-fixture/1",
+  "source_repository": "https://github.com/argumentcomputer/ix",
+  "source_revision": "e7de6d2818dbb5ad0888cc1218e5e67782d4b0ae",
+  "source_path": "Ix/MultiStark/Verify/Source.lean",
+  "source_entry": "CompilatrixStage2Fixture.initStage2Guest",
+  "source_root": "f758af421bd9c1955c5813b74cfd76bb76ee5e2c496d93034dc40fc4199dd632",
+  "source_constants": 10757,
+  "source_named_dependencies": 10870,
+  "source_toolchain": "leanprover/lean4:v4.33.1",
+  "writer": {
+    "version": "4.33.1|0.0.1",
+    "sha256": "5fccef0868de9a74fe9c290c613457222d0c126c4657ae6123acb4d1866cfd5e",
+    "origin": "pre-existing executable in supplied checkout",
+    "rebuilt_from_revision": false
+  },
+  "upstream_kernel": {
+    "mode": "anonymous complete closure",
+    "targets": 10622,
+    "passed": 10622,
+    "failed": 0
+  },
+  "assumption_cuts": 0,
+  "files_sha256": {
+    "claimBytesWrapper.ixe": "18a6fa707ae8411556a07cb30dca519071547542b2d805e363526af1272baa76",
+    "manifest": "4e2f096ac7d458070d44656f5fd6e1615aaf8e03852593fc216a49435c7b13ee",
+    "Source.lean": "c49d42ce4dfa409cff8757993e43357bebad00d970a5377e4e44540c64e76449",
+    "ixvm.vk": "079f3e5ad85f4bc425288e05e44d758a210737349cee50d2ed80582f5781300d",
+    "aggr.vk": "ab719dac47e74a672369406e6d60ad735d8b54121411e0f15f92c82fd833741e",
+    "CURRENT-GROUPED-TARGET.json": "8b50343a9aa4918fb358a46f68a44087285f9759e50cc8f39c25939710c5221c",
+    "handoff.md": "c004cdb2f6c031b4469985acc1661487a09243c444959f6e3447bc68e2e33505",
+    "Freeze.lean": "6363bbeb80694f3eac1616dad25c14585cfd025f9c1cc890b593265fe55659db",
+    "initStage2Guest.ixe.gz": "e592939109ac4ccde80b5911638c8d5c0cfd5fb0800f122b991cb21f8bc9f5c4",
+    "guest.manifest": "4917765d6211944a86296ff1d14c7a75d0790dfe0fbb3219e44261fba3571d74"
+  },
+  "required_source_config": {
+    "status": "fixed benchmark target; production security approval pending",
+    "ixvm_key": {
+      "file": "ixvm.vk",
+      "bytes": 744159,
+      "blake3": "3983867e9f70a82d990ea65e15265da105617317b95b4b1482e7a7b854ca8063"
+    },
+    "verify_claim_entry": 755,
+    "aggregate_key": {
+      "file": "aggr.vk",
+      "bytes": 181630,
+      "blake3": "75452941bc0dbe4a861c88c792067f34d7864f0460f305858a0a004ec409406e"
+    },
+    "aggregate_entry": 243,
+    "allowed_identity": {
+      "bytes": 80,
+      "blake3": "224668baa32c9e827a1751513d8976836f6e3d9aba3f1b3cca5c9cbd1b7ff19b"
+    },
+    "target_record": "CURRENT-GROUPED-TARGET.json",
+    "handoff": "handoff.md"
+  },
+  "input_abi": {
+    "public_claim": "canonical closed CheckEnv bytes: e5 || root[32] || 00",
+    "private_proof": "raw canonical native Stage2 multiproof; excludes Ixon.Proof envelope and expanded advice",
+    "runtime_parameters_after_configuration_binding": 2,
+    "current_source_parameters": 2
+  },
+  "required_result_abi": {
+    "success": "Ixby.Value.scalar (Ixby.Scalar.bytes exact_public_claim)",
+    "rejection": "Ixby.Value.erased",
+    "source_result": "Option (Array UInt8)",
+    "adapter_certified": false
+  },
+  "guest": {
+    "image": null,
+    "profile": null,
+    "instruction_inventory": null,
+    "capacities": null,
+    "source_to_image_reflection": false,
+    "flock_compatibility": "not established"
+  },
+  "source_operations": [
+    "canonical byte-array parsing and equality",
+    "bounded loops and recursive data traversal",
+    "natural-number indexing and length arithmetic",
+    "UInt8/UInt32 bit operations and BLAKE3",
+    "Goldilocks base and extension arithmetic including checked division",
+    "transcript sampling, Merkle multiproofs, AIR/OOD and PCS/FRI verification"
+  ],
+  "source_limits": {
+    "decode_bytes": 16777216,
+    "decode_vector_elements": 1048576,
+    "decode_nested_items": 2097152,
+    "fri_queries": 1024,
+    "fri_fold_arity": 256,
+    "transcript_sampling_attempts": 64,
+    "meaning": "source admission defaults, not measured guest capacities",
+    "transcript_observation_bytes": 16777216
+  },
+  "first_rejection": {
+    "stage": "catalog canonical-address admission",
+    "address": "001bba8a1cbe777fb4950a7b58f2a500a6608dcd6151c75e3b63d859cab4a6e5",
+    "source_name": "_private.Init.Data.Int.DivMod.Bootstrap.0.Int.emod_add_mul_ediv.aux",
+    "metric": "compressionInputUnits",
+    "actual": 13195,
+    "limit": 4096
+  },
+  "larger_limit_probe": {
+    "compression_limit": 65536,
+    "first_exceeded": 66861,
+    "address": "1965455c67e3797db2a8c69a5b443f4e30539b125fba54cbc78e9349126108fa",
+    "source_name": "Lean.Omega.Constraint.combine_sat",
+    "outcome": "resource rejection"
+  },
+  "certification_gap": "Runtime byte inspection is outside opaque-parameters/1; a broader proof and the explicit result adapter are required after source ingress and compilation.",
+  "unconfigured_wrapper": {
+    "source_entry": "MultiStark.Verify.claimBytesWrapper",
+    "source_root": "f34f4f717d9d2493a47bf8cb58f5e402568190da2789fcb00c81ed44d2dbc8d0",
+    "source_constants": 3008,
+    "source_named_dependencies": 3121,
+    "upstream_kernel": {
+      "mode": "anonymous complete closure",
+      "targets": 2873,
+      "passed": 2873,
+      "failed": 0
+    }
+  },
+  "frozen_data": {
+    "representation": "UInt8/BitVec/Fin and List/Array constructors; 128-byte list segments",
+    "elaboration": "ordinary Lean kernel addDecl; no native decision proof",
+    "runtime_loader": false,
+    "runtime_key_generator": false,
+    "generator": "SourceIxbyStage2.lean",
+    "command_template": "Freeze.lean",
+    "source_sha256": "1f217717dab1dd5a5f4233eb2fcbe4092d0e85af14bafda8761fd5c5561f0398",
+    "source_bytes": 1868375
+  },
+  "guest_source_pack": {
+    "compression": "gzip, deterministic mtime=0, exact original bytes after decompression",
+    "packed_bytes": 16075494,
+    "packed_sha256": "cc6f11dfbecc3ef16c09307d06ae0b3460e755064b98be5c7647c261451b06fa",
+    "compressed_bytes": 4753331
+  }
+}

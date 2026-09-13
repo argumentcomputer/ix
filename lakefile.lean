@@ -55,6 +55,20 @@ lean_exe «check-ixby» where
 lean_exe «source-ixby» where
   root := `SourceIxby
 
+lean_exe «source-ixby-symbolic» where
+  root := `SourceIxbySymbolic
+
+lean_exe «source-ixby-stage2» where
+  root := `SourceIxbyStage2
+
+lean_exe «check-ixby-stage2» where
+  srcDir := "scripts"
+  root := `CheckIxbyStage2
+
+lean_exe «check-ixby-symbolic» where
+  srcDir := "scripts"
+  root := `CheckIxbySymbolic
+
 lean_exe «source-coverage» where
   root := `SourceCoverage
 

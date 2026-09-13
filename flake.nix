@@ -110,9 +110,13 @@
             ./X86ObjectFixture.lean
             ./SourceCoverage.lean
             ./SourceIxby.lean
+            ./SourceIxbySymbolic.lean
+            ./SourceIxbyStage2.lean
             ./IxonToIxby.lean
             ./vendor/ixby
             ./fixtures/ixby
+            ./fixtures/ixby-symbolic
+            ./fixtures/ixby-stage2
             ./SourceModular.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
@@ -181,9 +185,13 @@
             ./X86ObjectFixture.lean
             ./SourceCoverage.lean
             ./SourceIxby.lean
+            ./SourceIxbySymbolic.lean
+            ./SourceIxbyStage2.lean
             ./IxonToIxby.lean
             ./vendor/ixby
             ./fixtures/ixby
+            ./fixtures/ixby-symbolic
+            ./fixtures/ixby-stage2
             ./SourceModular.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
@@ -506,6 +514,42 @@
               --root ${auditSrc} \
               --expected ${auditSrc}/fixtures/ixby/expected.json \
               --upstream ${auditSrc}/fixtures/ixon-upstream
+          '';
+        };
+
+        # One checked image theorem reused across fresh runtime argument arrays.
+        ixbySymbolicCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "source-ixby-symbolic";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-ixby-symbolic ixby-run ixon-to-ixby
+            ./.lake/build/bin/check-ixby-symbolic \
+              --fixture ./.lake/build/bin/source-ixby-symbolic \
+              --runner ./.lake/build/bin/ixby-run \
+              --compiler ./.lake/build/bin/ixon-to-ixby \
+              --expected ${auditSrc}/fixtures/ixby-symbolic/expected.json \
+              --upstream ${auditSrc}/fixtures/ixon-upstream
+          '';
+        };
+
+        # Fixed Stage2 source data and its exact current admission frontier.
+        ixbyStage2Check = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.coreutils pkgs.gzip];
+          name = "source-ixby-stage2";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-ixby-stage2
+            ./.lake/build/bin/check-ixby-stage2 \
+              --fixture ./.lake/build/bin/source-ixby-stage2 \
+              --inputs ${auditSrc}/fixtures/ixby-stage2 \
+              --expected ${auditSrc}/fixtures/ixby-stage2/expected.json
           '';
         };
 
@@ -907,6 +951,8 @@
           assembly-scaling = assemblyScalingCheck;
           source-evidence = sourceEvidenceCheck;
           ixby = ixbyCheck;
+          ixby-symbolic = ixbySymbolicCheck;
+          ixby-stage2 = ixbyStage2Check;
           ixir2-identity = ixir2Check;
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;

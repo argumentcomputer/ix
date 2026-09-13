@@ -20,8 +20,9 @@ The design combines two ideas:
 The validated pipeline compiles the supported Ixon fragment to owned IxIR₁.
 Checked attachments extend it to IxIR₂ and selected x86-64 programs.
 The [Ixby backend](docs/ixby-backend.md) compiles checked Ixon directly from
-IxIR₀ to the pinned functional machine, with canonical export and per-input
-execution certificates.
+IxIR₀ to the pinned functional machine, with canonical export and
+[reusable execution refinement](docs/ixby-symbolic.md) for programs with opaque
+runtime parameters and a finite symbolic path.
 
 | Area | Current scope |
 | --- | --- |
