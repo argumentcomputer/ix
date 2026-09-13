@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use super::*;
+use crate::bytecode::{CallComponent, Circuit};
 use crate::call_order::{RANK_BOUND, RANK_BYTES, RankRanges};
 use multi_stark::eval::{VarValues, eval_expr};
 
@@ -28,7 +29,7 @@ fn cycle_toplevel(grouped: bool) -> Toplevel {
   let mut top = with_singleton_circuits(functions, vec![]);
   if grouped {
     top.circuits.truncate(1);
-    top.circuits.push(crate::bytecode::Circuit {
+    top.circuits.push(Circuit {
       members: vec![1, 2],
       layout: FunctionLayout {
         input_size: 1,
@@ -39,6 +40,237 @@ fn cycle_toplevel(grouped: bool) -> Toplevel {
     });
   }
   top
+}
+
+fn component_cycle_toplevel(grouped: bool) -> Toplevel {
+  let mut top = cycle_toplevel(grouped);
+  top.call_components = vec![
+    CallComponent { order: 0, ranked: false },
+    CallComponent { order: 1, ranked: true },
+    CallComponent { order: 1, ranked: true },
+  ];
+  // The acyclic root keeps only multiplicity, output and the bound callee
+  // rank. The mutually recursive providers retain all their rank checks.
+  top.functions[0].layout.auxiliaries = 3;
+  top.functions[0].layout.lookups = 2;
+  top.circuits[0].layout = top.functions[0].layout;
+  top
+}
+
+#[test]
+fn component_certificates_reject_unranked_cycles_and_invalid_orders() {
+  let mut top = component_cycle_toplevel(false);
+  assert_eq!(top.validate_call_components(), Ok(()));
+  top.call_components[1].ranked = false;
+  assert!(top.validate_call_components().is_err());
+  top.call_components[1].ranked = true;
+  top.call_components[2].order = 2;
+  assert!(top.validate_call_components().is_err(), "backward edge");
+  top.call_components[2].order = 1;
+  top.call_components[0].order = 3;
+  assert!(top.validate_call_components().is_err(), "out-of-bounds order");
+  top.call_components.pop();
+  assert!(top.validate_call_components().is_err(), "missing component");
+
+  let mut top = component_cycle_toplevel(false);
+  top.functions[0].body.ops = vec![Op::Call(3, vec![0], 1, false)];
+  assert!(top.validate_call_components().is_err(), "missing callee");
+}
+
+#[test]
+fn component_checker_visits_branches_defaults_and_continuations() {
+  for location in 0..3 {
+    let mut top = component_cycle_toplevel(false);
+    let backedge = || Block {
+      ops: vec![Op::Call(0, vec![0], 1, false)],
+      ctrl: Ctrl::Yield(0, vec![1]),
+    };
+    let empty = || Block { ops: vec![], ctrl: Ctrl::Yield(0, vec![0]) };
+    top.functions[1].body = Block {
+      ops: vec![],
+      ctrl: Ctrl::MatchContinue(
+        0,
+        [(G::ZERO, if location == 0 { backedge() } else { empty() })]
+          .into_iter()
+          .collect(),
+        Some(Box::new(if location == 1 { backedge() } else { empty() })),
+        1,
+        0,
+        0,
+        Box::new(if location == 2 { backedge() } else { empty() }),
+      ),
+    };
+    assert!(
+      top.validate_call_components().is_err(),
+      "hidden edge at {location}"
+    );
+  }
+}
+
+#[test]
+#[should_panic(expected = "call violates the static component order")]
+fn system_construction_rejects_a_forged_component_certificate() {
+  let mut top = component_cycle_toplevel(false);
+  top.call_components[2].ranked = false;
+  let (cp, fp) = test_parameters();
+  let _ = AiurSystem::build(top, cp, fp);
+}
+
+/// f promotes and shares g(n); g recurses to zero, then calls acyclic h.
+/// Values above 255 also detect accidental range checks on acyclic members
+/// when their operation columns overlap a recursive member's rank bytes.
+fn component_promotion_toplevel(grouped: bool) -> Toplevel {
+  let root = Function {
+    body: Block {
+      ops: vec![
+        Op::Call(1, vec![0], 1, true),
+        Op::Call(1, vec![0], 1, false),
+        Op::Call(1, vec![0], 1, false),
+        Op::Add(2, 3),
+      ],
+      ctrl: Ctrl::Return(0, vec![4]),
+    },
+    layout: FunctionLayout {
+      input_size: 1,
+      selectors: 1,
+      auxiliaries: 6,
+      lookups: 3,
+    },
+    entry: true,
+    constrained: true,
+  };
+  let recursive = Function {
+    body: Block {
+      ops: vec![],
+      ctrl: Ctrl::Match(
+        0,
+        [(
+          G::ZERO,
+          Block {
+            ops: vec![Op::Call(2, vec![0], 1, false)],
+            ctrl: Ctrl::Return(0, vec![1]),
+          },
+        )]
+        .into_iter()
+        .collect(),
+        Some(Box::new(Block {
+          ops: vec![
+            Op::Const(G::ONE),
+            Op::Sub(0, 1),
+            Op::Call(1, vec![2], 1, false),
+          ],
+          ctrl: Ctrl::Return(1, vec![3]),
+        })),
+      ),
+    },
+    layout: FunctionLayout {
+      input_size: 1,
+      selectors: 2,
+      auxiliaries: 15,
+      lookups: 8,
+    },
+    entry: false,
+    constrained: true,
+  };
+  let leaf = Function {
+    body: Block {
+      ops: vec![Op::Const(G::from_u64(1_000)), Op::Add(0, 1)],
+      ctrl: Ctrl::Return(0, vec![2]),
+    },
+    layout: FunctionLayout {
+      input_size: 1,
+      selectors: 1,
+      auxiliaries: 1,
+      lookups: 1,
+    },
+    entry: false,
+    constrained: true,
+  };
+  let mut top = with_singleton_circuits(vec![root, recursive, leaf], vec![]);
+  top.call_components = vec![
+    CallComponent { order: 0, ranked: false },
+    CallComponent { order: 1, ranked: true },
+    CallComponent { order: 2, ranked: false },
+  ];
+  if grouped {
+    top.circuits = vec![Circuit {
+      members: vec![0, 1, 2],
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 4,
+        auxiliaries: 15,
+        lookups: 8,
+      },
+    }];
+  }
+  top
+}
+
+#[test]
+fn component_boundaries_preserve_promotion_sharing_and_mixed_groups() {
+  for grouped in [false, true] {
+    let (cp, fp) = test_parameters();
+    let system =
+      AiurSystem::build(component_promotion_toplevel(grouped), cp, fp);
+    for n in [0, 4] {
+      let (claim, proof) =
+        system.prove(0, &[G::from_u8(n)], &mut empty_io_buffer());
+      assert_eq!(
+        claim,
+        vec![function_channel(), G::ZERO, G::from_u8(n), G::from_u64(2_000)]
+      );
+      system
+        .verify(&claim, &proof)
+        .expect("component boundary proof must verify");
+    }
+  }
+}
+
+#[test]
+fn component_boundary_cannot_displace_a_recursive_provider_rank() {
+  let (cp, fp) = test_parameters();
+  let system = AiurSystem::build(component_promotion_toplevel(false), cp, fp);
+  let mut io = empty_io_buffer();
+  let input = vec![G::from_u8(4)];
+  let (mut record, output) =
+    system.toplevel.execute(0, input.clone(), &mut io).unwrap();
+  let mut traces = Vec::new();
+  let mut ranges = RankRanges::default();
+  for i in 0..system.toplevel.circuits.len() {
+    let (trace, _, counts) =
+      system.toplevel.witness_data(i, &record, &io, &system.slot_arg_widths(i));
+    ranges = crate::call_order::merge_ranges(ranges, counts);
+    traces.push(trace);
+  }
+  record.bytes2_queries.add_rank_ranges(ranges.clone());
+  traces.push(Bytes1.witness_data(&record, &system.slot_arg_widths(3)).0);
+  traces.push(Bytes2.witness_data(&record, &system.slot_arg_widths(4)).0);
+  let mut claim = vec![function_channel(), G::ZERO];
+  claim.extend(input);
+  claim.extend(output);
+  assert!(
+    lookup_balance(&system.toplevel, &traces, &ranges, &claim).is_empty()
+  );
+
+  // Root columns: input, selector, multiplicity, hint output, call output,
+  // bound rank, second call output, bound rank. Replace only one binding.
+  assert_ne!(traces[0].values[5], G::ZERO);
+  traces[0].values[5] = G::ZERO;
+  let (constraints, _) = system.toplevel.build_constraints(0);
+  assert!(constraints.zeros.iter().all(|expr| eval_expr(
+    expr,
+    &row_values(&traces[0].values[..constraints.width])
+  ) == G::ZERO));
+  assert_eq!(
+    lookup_balance(&system.toplevel, &traces, &ranges, &claim).len(),
+    2
+  );
+  let witness = SystemWitness::from_stage_1(traces, &system.system);
+  let proof = system.system.prove(&system.key, &claim, witness);
+  assert!(
+    system.verify(&claim, &proof).is_err(),
+    "boundary rank must bind the provider"
+  );
 }
 
 fn fill_bytes(row: &mut [G], value: u64, ranges: &mut RankRanges) {
@@ -107,9 +339,16 @@ fn lookup_balance(
 
 #[test]
 fn mutual_cycles_reject_at_the_closing_lookup_in_both_partitions() {
-  for grouped in [false, true] {
+  for (grouped, specialized) in
+    [(false, false), (true, false), (false, true), (true, true)]
+  {
     let (cp, fp) = test_parameters();
-    let system = AiurSystem::build(cycle_toplevel(grouped), cp, fp);
+    let top = if specialized {
+      component_cycle_toplevel(grouped)
+    } else {
+      cycle_toplevel(grouped)
+    };
+    let system = AiurSystem::build(top, cp, fp);
     let input = G::from_u8(3);
     let output = G::from_u8(7);
     let claim = vec![function_channel(), G::ZERO, input, output];
@@ -130,10 +369,15 @@ fn mutual_cycles_reject_at_the_closing_lookup_in_both_partitions() {
           row[1 + offset] = G::ONE;
           let aux = 1 + circuit.layout.selectors;
           row[aux] = if member == 1 { G::from_u8(2) } else { G::ONE };
-          fill_bytes(&mut row[aux + 1..aux + 7], member as u64, &mut ranges);
-          row[aux + 7] = output;
-          let gap = if member == 2 { RANK_BOUND - 2 } else { 0 };
-          fill_bytes(&mut row[aux + 8..aux + 14], gap, &mut ranges);
+          if specialized && member == 0 {
+            row[aux + 1] = output;
+            row[aux + 2] = G::ONE;
+          } else {
+            fill_bytes(&mut row[aux + 1..aux + 7], member as u64, &mut ranges);
+            row[aux + 7] = output;
+            let gap = if member == 2 { RANK_BOUND - 2 } else { 0 };
+            fill_bytes(&mut row[aux + 8..aux + 14], gap, &mut ranges);
+          }
           violated += constraints
             .zeros
             .iter()
@@ -164,7 +408,7 @@ fn mutual_cycles_reject_at_the_closing_lookup_in_both_partitions() {
     let proof = system.system.prove(&system.key, &claim, witness);
     assert!(
       system.verify(&claim, &proof).is_err(),
-      "cyclic return accepted (grouped={grouped})"
+      "cyclic return accepted (grouped={grouped}, specialized={specialized})"
     );
   }
 }

@@ -12,8 +12,13 @@ use rayon::{
 
 use crate::{
   FxIndexMap, G,
-  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
-  call_order::{RANK_BOUND, RANK_BYTES, RankRanges, merge_ranges},
+  bytecode::{
+    Block, CallComponent, Ctrl, Function, FunctionLayout, Op, Toplevel,
+  },
+  call_order::{
+    CallRank, RANK_BOUND, RANK_BYTES, RankRanges, call_rank, merge_ranges,
+    row_uses_rank,
+  },
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
     g_inverse_value,
@@ -113,6 +118,8 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
 
 #[derive(Clone, Copy)]
 struct TraceContext<'a> {
+  function: usize,
+  call_components: &'a [CallComponent],
   function_index: G,
   multiplicity: G,
   rank: u64,
@@ -196,11 +203,19 @@ impl Toplevel {
           lookups,
           &mut rank_ranges,
         );
+        let function = usize::try_from(meta.function_index.as_canonical_u64())
+          .expect("function index fits usize");
         let context = TraceContext {
+          function,
+          call_components: &self.call_components,
           function_index: meta.function_index,
           inputs: meta.inputs,
           multiplicity: meta.result.multiplicity,
-          rank: meta.result.rank,
+          rank: if row_uses_rank(&self.call_components, function) {
+            meta.result.rank
+          } else {
+            0
+          },
           output: meta.result.output,
           query_record,
         };
@@ -241,7 +256,9 @@ impl Function {
       .for_each(|(i, arg)| slice.inputs[i] = *arg);
     // Push the multiplicity
     slice.push_auxiliary(index, context.multiplicity);
-    slice.push_rank_bytes(index, context.rank);
+    if row_uses_rank(context.call_components, context.function) {
+      slice.push_rank_bytes(index, context.rank);
+    }
     let _ = self.body.populate_row(map, index, slice, context, io_buffer);
   }
 }
@@ -413,18 +430,29 @@ impl Op {
           slice.push_auxiliary(index, *f);
         }
         if !op_unconstrained {
+          let kind = call_rank(
+            context.call_components,
+            context.function,
+            *function_index,
+          );
+          let rank = if kind == CallRank::Zero { 0 } else { result.rank };
           let args = function_lookup_args(
             G::from_usize(*function_index),
             &inputs,
             result.output,
-            result.rank,
+            rank,
           );
           slice.push_lookup(index, G::ONE, &args);
-          let gap = result
-            .rank
-            .checked_sub(context.rank + 1)
-            .expect("constrained call does not increase rank");
-          slice.push_rank_bytes(index, gap);
+          match kind {
+            CallRank::Zero => {},
+            CallRank::Bound => slice.push_auxiliary(index, G::from_u64(rank)),
+            CallRank::Ordered => {
+              let gap = rank
+                .checked_sub(context.rank + 1)
+                .expect("constrained call does not increase rank");
+              slice.push_rank_bytes(index, gap);
+            },
+          }
         }
       },
       Op::Store(values) => {

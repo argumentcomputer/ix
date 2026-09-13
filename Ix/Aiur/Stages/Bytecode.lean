@@ -142,6 +142,19 @@ def FunctionLayout.merge (a b : FunctionLayout) : FunctionLayout where
   auxiliaries := a.auxiliaries.max b.auxiliaries
   lookups := a.lookups.max b.lookups
 
+inductive CallRank where
+  | zero
+  | bound
+  | ordered
+  deriving Inhabited, Repr, BEq
+
+/-- A checked static component order. Equal-component calls require both
+endpoints to retain dynamic ranks; all other calls increase `order`. -/
+structure CallComponent where
+  order : Nat
+  ranked : Bool
+  deriving Inhabited, Repr, BEq
+
 structure Toplevel where
   functions : Array Function
   memorySizes : Array Nat
@@ -149,6 +162,9 @@ structure Toplevel where
   order. Built by `Source.Toplevel.compile` (singletons by default; see
   `CompiledToplevel.groupFunctions`); empty on a freshly lowered toplevel. -/
   circuits : Array Circuit := #[]
+  /-- Empty selects the general dynamic-rank layout. Otherwise there is one
+  entry per function, including functions used only as unconstrained hints. -/
+  callComponents : Array CallComponent := #[]
   deriving Repr
 
 end Bytecode

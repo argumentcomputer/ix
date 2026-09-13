@@ -550,18 +550,21 @@ structure Toplevel where
   dataTypes : Array DataType
   typeAliases : Array TypeAlias
   functions : Array Function
+  /-- Compile component-local call ranks. The resulting certificate is checked
+  against the bytecode before native constraint construction. -/
+  componentRanks : Bool := false
   deriving Repr
 
 def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Nat := do
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
 def Toplevel.merge (x y : Toplevel) : Except Global Toplevel := do
-  let ⟨xDT, xTA, xF⟩ := x
-  let ⟨yDT, yTA, yF⟩ := y
+  let ⟨xDT, xTA, xF, xRanks⟩ := x
+  let ⟨yDT, yTA, yF, yRanks⟩ := y
   let (globals, dataTypes) ← mergeArrays DataType.name ∅ xDT yDT
   let (globals, typeAliases) ← mergeArrays TypeAlias.name globals xTA yTA
   let (_, functions) ← mergeArrays Function.name globals xF yF
-  pure ⟨dataTypes, typeAliases, functions⟩
+  pure ⟨dataTypes, typeAliases, functions, xRanks || yRanks⟩
 where
   mergeArrays {α : Type} (getName : α → Global) (globals : Std.HashSet Global)
       (xs ys : Array α) : Except Global (Std.HashSet Global × Array α) := do

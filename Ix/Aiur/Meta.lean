@@ -813,6 +813,7 @@ def elabToplevel : ElabStxCat `aiur_toplevel
       ← mkArrayLit (mkConst ``DataType) dataTypes.toList,
       ← mkArrayLit (mkConst ``TypeAlias) typeAliases.toList,
       ← mkArrayLit (mkConst ``Source.Function) functions.toList,
+      mkConst ``Bool.false,
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 

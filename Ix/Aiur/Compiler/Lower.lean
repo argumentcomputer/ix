@@ -395,7 +395,7 @@ def Concrete.computeSharedLayout
   let degrees := (← get).degrees
   let initLS : Bytecode.LayoutMState :=
     ⟨{ inputSize := 0, selectors := 0, auxiliaries := 0, lookups := 0 },
-     .empty, degrees⟩
+     .empty, degrees, #[]⟩
   let (sharedAux, sharedLookups) := matchCases.foldl (init := (0, 0))
     fun (maxA, maxL) (_, block) =>
       let (_, ls) := Bytecode.blockLayout block |>.run initLS
@@ -633,7 +633,7 @@ def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
         let memSizes := layoutMState.memSizes.foldl (·.insert ·) memSizes
         pure (functions.push function, memSizes, nameMap)
       | _ => pure acc
-  pure (⟨functions, memSizes.toArray, #[]⟩, nameMap)
+  pure (⟨functions, memSizes.toArray, #[], #[]⟩, nameMap)
 
 end Aiur
 

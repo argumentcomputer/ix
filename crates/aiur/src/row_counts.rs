@@ -157,6 +157,7 @@ mod tests {
       }],
       memory_sizes: vec![],
       circuits: vec![Circuit { members: vec![0], layout }],
+      call_components: vec![],
     }
   }
 
