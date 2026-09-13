@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,162 roots by traversing checked types, bodies and inductive
-constructors. Thirty-three roots use no axioms; one uses only `Quot.sound`;
-192 depend only on `propext`; 299 use exactly `propext` and `Quot.sound`;
-the other 637 use exactly
+The audit checks 1,231 roots by traversing checked types, bodies and inductive
+constructors. Forty-four roots use no axioms; one uses only `Quot.sound`;
+217 depend only on `propext`; 329 use exactly `propext` and `Quot.sound`;
+the other 640 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 18,768 logical declarations and 19,550 declarations after following runtime
+has 18,942 logical declarations and 19,726 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 174 Ix recursion worker implementations.
+three partial opaque sources and all 176 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -994,6 +994,56 @@ native corpora and the unchanged two accepted and seventeen rejected
 backend cases. This checkpoint changes no native production behavior,
 compiler output or serialized encoding.
 
+`Challenger` models the native hash buffers and serializing Goldilocks
+sampler. It retains the forward digest as the next hash input and consumes
+output bytes from the digest's end. Slice observation appends once, with a
+proof that this equals the native byte-by-byte loop; an empty slice preserves
+pending output. Field sampling reads eight bytes in little-endian order and
+rejects noncanonical words. A finite sampling relation characterizes success
+under explicit fuel, proves that the returned representative is the first
+canonical word, and preserves both value and state when fuel increases.
+Extension coordinates use consecutive base samples. Bit sampling uses the
+proved low-bit mask without field rejection; zero-bit sampling consumes a
+word, while a zero-bit proof-of-work check preserves the entire state.
+
+`Transcript` derives the lookup, fingerprint, folding and out-of-domain
+challenges from the selected key's parameters and circuit metadata, the
+complete activation bitmap, commitments, trace heights, framed public claims
+and intermediate accumulators. The two lookup challenges are re-observed
+before sampling continues. The replay retains the exact state for PCS
+verification. Its buffer invariant and fuel monotonicity are proved, and
+`CompiledBackend.transcript_row` connects the resulting challenges to each
+checked row's source position, accumulator and quotient identity.
+
+The native corpus instruments the actual `System::verify_multiple_claims`
+method through a forwarding challenger, including its actual `observe_shape`
+call and PCS continuation. All forty schedules match, covering four accepted
+proofs and altered claims, claim boundaries, commitments, openings and trace
+heights. Each accepted proof also passes the transcript-derived Lean
+arithmetic. Separate cases compare 1,280 byte operations, sixteen forced
+rejection patterns containing 26 rejected limbs, and 48 witness checks,
+including eight zero-bit checks with pending output. Rejection cases cross
+digest boundaries and test exhaustion and continuation, including the field
+modulus and maximum u64 word.
+
+The replay theorems quantify over an explicit 32-byte hash function. The
+comparison executable supplies Blake3 through test-only FFI; the proof audit
+does not acquire that implementation's opaque definitions or default-proof
+axioms. A checked concrete hash, PCS authentication, extraction and
+quantitative cryptographic guarantees remain necessary for full C8.
+Native comparisons establish compatibility on the corpus. A universal
+refinement theorem for the Rust verifier remains open.
+
+This integration adds 69 roots, 32 definitions and two inspected structural
+sampling workers. All 1,162 prior statements and axiom sets, 791 definitions
+and 174 worker bodies are unchanged. The test dependencies use the existing
+pinned Plonky3 revision and change no dependency versions. All 86 parallel
+Rust release tests, Clippy with warnings denied and formatting pass.
+The strict 445-job build and complete component gate pass, including thirty
+fresh native corpora and the unchanged two accepted and seventeen rejected
+backend cases. Native production behavior, compiler output and serialized
+encodings are unchanged.
+
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits
@@ -1057,7 +1107,7 @@ bound. The remaining components are:
 
 | Component | Remaining obligation |
 | --- | --- |
-| Native verifier | Connect the enforced proof codec and shape checks and the complete opened-row arithmetic/accumulator model to native transcript and PCS checks, then extract satisfying committed traces from acceptance. |
+| Native verifier | Connect the enforced proof codec and shape checks, proved transcript replay and complete opened-row arithmetic to a checked concrete hash and PCS acceptance, then extract satisfying committed traces. |
 | Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
 | Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
 | Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |

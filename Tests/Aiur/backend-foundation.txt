@@ -8670,6 +8670,375 @@ ROOT Aiur.BoundVerifier.CompiledBackend.checked_row_values
                               Aiur.NativeAIR.Quotient.composition challenges.alpha result.constraints =
                                 Aiur.NativeAIR.Domain.vanishing result.domain challenges.zeta * result.quotientValue
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.initial_valid
+∀ (seed : List UInt8), (Aiur.NativeAIR.Challenger.initial seed).Valid
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.State.Valid.bound
+∀ {state : Aiur.NativeAIR.Challenger.State}, state.Valid → state.pending.length ≤ 32
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.observeBytes_nil
+∀ (state : Aiur.NativeAIR.Challenger.State), Aiur.NativeAIR.Challenger.observeBytes state [] = state
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeBytes_append
+∀ (state : Aiur.NativeAIR.Challenger.State) (left right : List UInt8),
+  Aiur.NativeAIR.Challenger.observeBytes state (left ++ right) =
+    Aiur.NativeAIR.Challenger.observeBytes (Aiur.NativeAIR.Challenger.observeBytes state left) right
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.observeBytes_value
+∀ (state : Aiur.NativeAIR.Challenger.State) (bytes : List UInt8),
+  Aiur.NativeAIR.Challenger.observeBytes state bytes =
+    if bytes.isEmpty = true then state else { input := state.input ++ bytes, pending := [] }
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeBytes_fold
+∀ (state : Aiur.NativeAIR.Challenger.State) (bytes : List UInt8),
+  Aiur.NativeAIR.Challenger.observeBytes state bytes = List.foldl Aiur.NativeAIR.Challenger.observeByte state bytes
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.observeBytes_valid
+∀ {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid → ∀ (bytes : List UInt8), (Aiur.NativeAIR.Challenger.observeBytes state bytes).Valid
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeField_value
+∀ (state : Aiur.NativeAIR.Challenger.State) (value : Aiur.G),
+  Aiur.NativeAIR.Challenger.observeField state value =
+    { input := state.input ++ Aiur.NativeAIR.ProofCodec.encodeField value, pending := [] }
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeField_valid
+∀ {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid → ∀ (value : Aiur.G), (Aiur.NativeAIR.Challenger.observeField state value).Valid
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeExtension_bytes
+∀ (state : Aiur.NativeAIR.Challenger.State) (value : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.Challenger.observeExtension state value =
+    Aiur.NativeAIR.Challenger.observeBytes state (Aiur.NativeAIR.ProofCodec.encodeExtension value)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.observeExtension_valid
+∀ {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid →
+    ∀ (value : Aiur.NativeAIR.ProofCodec.Extension), (Aiur.NativeAIR.Challenger.observeExtension state value).Valid
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeExtensions_valid
+∀ {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid →
+    ∀ (values : List Aiur.NativeAIR.ProofCodec.Extension),
+      (List.foldl Aiur.NativeAIR.Challenger.observeExtension state values).Valid
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeCap_empty
+∀ (state : Aiur.NativeAIR.Challenger.State), Aiur.NativeAIR.Challenger.observeCap state [] = state
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.observeCap_valid
+∀ {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid → ∀ (cap : Aiur.NativeAIR.KeyCodec.MerkleCap), (Aiur.NativeAIR.Challenger.observeCap state cap).Valid
+AXIOMS []
+ROOT Aiur.NativeAIR.Challenger.sampleByte_buffered
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (input : List UInt8) (byte : UInt8) (rest : List UInt8),
+  Aiur.NativeAIR.Challenger.sampleByte hash { input := input, pending := byte :: rest } =
+    (byte, { input := input, pending := rest })
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleByte_refill
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (input : List UInt8),
+  Aiur.NativeAIR.Challenger.sampleByte hash { input := input, pending := [] } =
+    (hash input 31, { input := List.ofFn (hash input), pending := List.drop 1 (List.ofFn (hash input)).reverse })
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleByte_valid
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid → (Aiur.NativeAIR.Challenger.sampleByte hash state).snd.Valid
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.digest_reverse
+∀ (digest : Fin 32 → UInt8), (List.ofFn digest).reverse = digest 31 :: List.drop 1 (List.ofFn digest).reverse
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleByte_pending_bound
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (state : Aiur.NativeAIR.Challenger.State),
+  state.pending.length ≤ 32 → (Aiur.NativeAIR.Challenger.sampleByte hash state).snd.pending.length ≤ 32
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleBytes_length
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (count : Nat) (state : Aiur.NativeAIR.Challenger.State),
+  (Aiur.NativeAIR.Challenger.sampleBytes hash count state).fst.length = count
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleBytes_pending_bound
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (count : Nat) (state : Aiur.NativeAIR.Challenger.State),
+  state.pending.length ≤ 32 → (Aiur.NativeAIR.Challenger.sampleBytes hash count state).snd.pending.length ≤ 32
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleBytes_valid
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (count : Nat) {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid → (Aiur.NativeAIR.Challenger.sampleBytes hash count state).snd.Valid
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleBytes_buffered
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (input bytes rest : List UInt8),
+  Aiur.NativeAIR.Challenger.sampleBytes hash bytes.length { input := input, pending := bytes ++ rest } =
+    (bytes, { input := input, pending := rest })
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleBytes_refill
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (input : List UInt8),
+  Aiur.NativeAIR.Challenger.sampleBytes hash 32 { input := input, pending := [] } =
+    ((List.ofFn (hash input)).reverse, { input := List.ofFn (hash input), pending := [] })
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.littleEndian_bound
+∀ (bytes : List UInt8), Aiur.NativeAIR.Challenger.littleEndian bytes < 256 ^ bytes.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.littleEndian_encode
+∀ (count value : Nat),
+  value < 256 ^ count → Aiur.NativeAIR.Challenger.littleEndian (Aiur.NativeAIR.KeyCodec.encodeNat count value) = value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.littleEndian_reads
+∀ (bytes : List UInt8),
+  Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.KeyCodec.readNat bytes.length) bytes
+    (Aiur.NativeAIR.Challenger.littleEndian bytes)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleWord_bound
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (state : Aiur.NativeAIR.Challenger.State),
+  (Aiur.NativeAIR.Challenger.sampleWord hash state).fst < 2 ^ 64
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleWord_full_mask
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (state : Aiur.NativeAIR.Challenger.State),
+  (Aiur.NativeAIR.Challenger.sampleWord hash state).fst &&& 2 ^ 64 - 1 =
+    (Aiur.NativeAIR.Challenger.sampleWord hash state).fst
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleWord_reads
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (state : Aiur.NativeAIR.Challenger.State),
+  Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.KeyCodec.readNat 8)
+    (Aiur.NativeAIR.Challenger.sampleBytes hash 8 state).fst (Aiur.NativeAIR.Challenger.sampleWord hash state).fst
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.FieldSample.positive
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {state final : Aiur.NativeAIR.Challenger.State} {count : Nat}
+  {value : Aiur.G}, Aiur.NativeAIR.Challenger.FieldSample hash state count value final → 0 < count
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleField_success
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {state final : Aiur.NativeAIR.Challenger.State}
+  {value : Aiur.G},
+  Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (value, final) →
+    ∃ count, count ≤ fuel ∧ Aiur.NativeAIR.Challenger.FieldSample hash state count value final
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.FieldSample.complete
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {state final : Aiur.NativeAIR.Challenger.State} {count : Nat}
+  {value : Aiur.G},
+  Aiur.NativeAIR.Challenger.FieldSample hash state count value final →
+    ∀ (fuel : Nat), count ≤ fuel → Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (value, final)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleField_iff
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (fuel : Nat) (state final : Aiur.NativeAIR.Challenger.State)
+  (value : Aiur.G),
+  Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (value, final) ↔
+    ∃ count, count ≤ fuel ∧ Aiur.NativeAIR.Challenger.FieldSample hash state count value final
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleField_mono
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel more : Nat} {state final : Aiur.NativeAIR.Challenger.State}
+  {value : Aiur.G},
+  Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (value, final) →
+    fuel ≤ more → Aiur.NativeAIR.Challenger.sampleField hash more state = some (value, final)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleField_unique
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel other : Nat} {state left right : Aiur.NativeAIR.Challenger.State}
+  {a b : Aiur.G},
+  Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (a, left) →
+    Aiur.NativeAIR.Challenger.sampleField hash other state = some (b, right) → a = b ∧ left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.FieldSample.valid
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {state final : Aiur.NativeAIR.Challenger.State} {count : Nat}
+  {value : Aiur.G}, Aiur.NativeAIR.Challenger.FieldSample hash state count value final → state.Valid → final.Valid
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleField_valid
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {state final : Aiur.NativeAIR.Challenger.State}
+  {value : Aiur.G},
+  Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (value, final) → state.Valid → final.Valid
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleField_canonical
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {state final : Aiur.NativeAIR.Challenger.State}
+  {value : Aiur.G},
+  Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (value, final) →
+    ∃ before, Aiur.NativeAIR.Challenger.sampleWord hash before = (value.n, final) ∧ value.n < Aiur.gSize.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleExtension_success
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {state final : Aiur.NativeAIR.Challenger.State}
+  {value : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Challenger.sampleExtension hash fuel state = some (value, final) →
+    ∃ next,
+      Aiur.NativeAIR.Challenger.sampleField hash fuel state = some (value.c0, next) ∧
+        Aiur.NativeAIR.Challenger.sampleField hash fuel next = some (value.c1, final)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleExtension_mono
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel more : Nat} {state final : Aiur.NativeAIR.Challenger.State}
+  {value : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Challenger.sampleExtension hash fuel state = some (value, final) →
+    fuel ≤ more → Aiur.NativeAIR.Challenger.sampleExtension hash more state = some (value, final)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleExtension_valid
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {state final : Aiur.NativeAIR.Challenger.State}
+  {value : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Challenger.sampleExtension hash fuel state = some (value, final) → state.Valid → final.Valid
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleBits_success
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {bits value : Nat} {state final : Aiur.NativeAIR.Challenger.State},
+  Aiur.NativeAIR.Challenger.sampleBits hash bits state = some (value, final) →
+    bits < 64 ∧
+      2 ^ bits < Aiur.gSize.toNat ∧
+        value = (Aiur.NativeAIR.Challenger.sampleWord hash state).fst % 2 ^ bits ∧
+          final = (Aiur.NativeAIR.Challenger.sampleWord hash state).snd ∧ value < 2 ^ bits
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleBits_zero
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (state : Aiur.NativeAIR.Challenger.State),
+  Aiur.NativeAIR.Challenger.sampleBits hash 0 state = some (0, (Aiur.NativeAIR.Challenger.sampleWord hash state).snd)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.sampleBits_mask
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {bits value : Nat} {state final : Aiur.NativeAIR.Challenger.State},
+  Aiur.NativeAIR.Challenger.sampleBits hash bits state = some (value, final) →
+    value = (Aiur.NativeAIR.Challenger.sampleWord hash state).fst &&& 2 ^ bits - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.sampleBits_valid
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {bits value : Nat} {state final : Aiur.NativeAIR.Challenger.State},
+  Aiur.NativeAIR.Challenger.sampleBits hash bits state = some (value, final) → state.Valid → final.Valid
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.checkWitness_zero
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (witness : Aiur.G) (state : Aiur.NativeAIR.Challenger.State),
+  Aiur.NativeAIR.Challenger.checkWitness hash 0 witness state = some (true, state)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.checkWitness_positive
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) {bits : Nat},
+  bits ≠ 0 →
+    ∀ (witness : Aiur.G) (state : Aiur.NativeAIR.Challenger.State),
+      Aiur.NativeAIR.Challenger.checkWitness hash bits witness state = do
+        let __x ← Aiur.NativeAIR.Challenger.sampleBits hash bits (Aiur.NativeAIR.Challenger.observeField state witness)
+        match __x with
+          | (value, next) => pure (value == 0, next)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Challenger.checkWitness_true_iff
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (bits : Nat) (witness : Aiur.G)
+  (state final : Aiur.NativeAIR.Challenger.State),
+  Aiur.NativeAIR.Challenger.checkWitness hash bits witness state = some (true, final) ↔
+    bits = 0 ∧ final = state ∨
+      bits ≠ 0 ∧
+        Aiur.NativeAIR.Challenger.sampleBits hash bits (Aiur.NativeAIR.Challenger.observeField state witness) =
+          some (0, final)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Challenger.checkWitness_valid
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {bits : Nat} {witness : Aiur.G}
+  {state final : Aiur.NativeAIR.Challenger.State} {accepted : Bool},
+  Aiur.NativeAIR.Challenger.checkWitness hash bits witness state = some (accepted, final) → state.Valid → final.Valid
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.seed_length
+∀ (parameters : Aiur.NativeAIR.KeyCodec.Parameters), (Aiur.NativeAIR.Transcript.seed parameters).length = 70
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Transcript.circuitShape_length
+∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), (Aiur.NativeAIR.Transcript.circuitShape circuit).length = 7
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Transcript.shape_length
+∀ (key : Aiur.NativeAIR.KeyCodec.Key), (Aiur.NativeAIR.Transcript.shape key).length = 1 + 7 * key.circuits.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.fieldsBytes_length
+∀ (values : List Aiur.G), (Aiur.NativeAIR.Transcript.fieldsBytes values).length = 8 * values.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.observeFields_bytes
+∀ (state : Aiur.NativeAIR.Challenger.State) (values : List Aiur.G),
+  List.foldl Aiur.NativeAIR.Challenger.observeField state values =
+    Aiur.NativeAIR.Challenger.observeBytes state (Aiur.NativeAIR.Transcript.fieldsBytes values)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Transcript.claimsFields_framing
+∀ (claims : List (List Aiur.G)),
+  Aiur.NativeAIR.Transcript.claimsFields claims =
+    Aiur.G.ofNat claims.length :: List.flatMap (fun claim => Aiur.G.ofNat claim.length :: claim) claims
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Transcript.lookupState_schedule
+∀ (key : Aiur.NativeAIR.KeyCodec.Key) (proof : Aiur.NativeAIR.ProofCodec.Data) (claims : List (List Aiur.G)),
+  Aiur.NativeAIR.Transcript.lookupState key proof claims =
+    List.foldl Aiur.NativeAIR.Challenger.observeField
+      (List.foldl Aiur.NativeAIR.Challenger.observeField
+        (Aiur.NativeAIR.Challenger.observeCap
+          (Aiur.NativeAIR.Challenger.observeCap
+            (List.foldl Aiur.NativeAIR.Challenger.observeField
+              (List.foldl Aiur.NativeAIR.Challenger.observeField
+                (Aiur.NativeAIR.Challenger.initial (Aiur.NativeAIR.Transcript.seed key.parameters))
+                (Aiur.NativeAIR.Transcript.shape key))
+              (List.map (fun active => if active = true then 1 else 0) proof.active))
+            (key.preprocessedCommitment.getD []))
+          proof.commitments.stage1)
+        (List.map (fun degree => Aiur.G.ofNat degree.toNat) proof.logDegrees))
+      (Aiur.NativeAIR.Transcript.claimsFields claims)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Transcript.lookupState_valid
+∀ (key : Aiur.NativeAIR.KeyCodec.Key) (proof : Aiur.NativeAIR.ProofCodec.Data) (claims : List (List Aiur.G)),
+  (Aiur.NativeAIR.Transcript.lookupState key proof claims).Valid
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Transcript.accumulatorState_valid
+∀ (proof : Aiur.NativeAIR.ProofCodec.Data) {state : Aiur.NativeAIR.Challenger.State},
+  state.Valid → (Aiur.NativeAIR.Transcript.accumulatorState proof state).Valid
+AXIOMS []
+ROOT Aiur.NativeAIR.Transcript.replay_success
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)} {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some result →
+    Aiur.NativeAIR.Transcript.Replay.Reads hash fuel key proof claims result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.Replay.Reads.complete
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)} {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.Replay.Reads hash fuel key proof claims result →
+    Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some result
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Transcript.replay_iff
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (fuel : Nat) (key : Aiur.NativeAIR.KeyCodec.Key)
+  (proof : Aiur.NativeAIR.ProofCodec.Data) (claims : List (List Aiur.G)) (result : Aiur.NativeAIR.Transcript.Replay),
+  Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some result ↔
+    Aiur.NativeAIR.Transcript.Replay.Reads hash fuel key proof claims result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.replay_mono
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel more : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)} {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some result →
+    fuel ≤ more → Aiur.NativeAIR.Transcript.replay hash more key proof claims = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.replay_unique
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel other : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)}
+  {left right : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some left →
+    Aiur.NativeAIR.Transcript.replay hash other key proof claims = some right → left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.replay_valid
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)} {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some result → result.state.Valid
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.verifyArithmetic_success
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)} {rows : List Aiur.NativeAIR.ProofShape.Row}
+  {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.verifyArithmetic hash fuel key proof claims rows = some result →
+    Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some result ∧
+      Aiur.NativeAIR.VerifierArithmetic.verify result.challenges claims rows = some true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.verifyArithmetic_iff
+∀ (hash : Aiur.NativeAIR.Challenger.Hash32) (fuel : Nat) (key : Aiur.NativeAIR.KeyCodec.Key)
+  (proof : Aiur.NativeAIR.ProofCodec.Data) (claims : List (List Aiur.G)) (rows : List Aiur.NativeAIR.ProofShape.Row)
+  (result : Aiur.NativeAIR.Transcript.Replay),
+  Aiur.NativeAIR.Transcript.verifyArithmetic hash fuel key proof claims rows = some result ↔
+    Aiur.NativeAIR.Transcript.replay hash fuel key proof claims = some result ∧
+      Aiur.NativeAIR.VerifierArithmetic.verify result.challenges claims rows = some true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Transcript.verifyArithmetic_mono
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel more : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)} {rows : List Aiur.NativeAIR.ProofShape.Row}
+  {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.verifyArithmetic hash fuel key proof claims rows = some result →
+    fuel ≤ more → Aiur.NativeAIR.Transcript.verifyArithmetic hash more key proof claims rows = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.transcript_row
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof backend.keyData bytes)
+  {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {claims : List (List Aiur.G)}
+  {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Transcript.verifyArithmetic hash fuel backend.keyData checked.data claims checked.rows = some result →
+    ∀ {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+      checked.rows[position]? = some row →
+        Aiur.NativeAIR.Transcript.Replay.Reads hash fuel backend.keyData checked.data claims result ∧
+          Aiur.NativeAIR.ProofShape.Row.Sourced backend.keyData checked.data row.circuitIndex position row ∧
+            Aiur.NativeAIR.ProofShape.Row.Fits backend.keyData.parameters row ∧
+              ∃ initial before evaluation,
+                Aiur.NativeAIR.VerifierArithmetic.initialAccumulator result.challenges claims = some initial ∧
+                  (initial :: List.map (fun x => x.accumulator) checked.rows)[position]? = some before ∧
+                    Aiur.NativeAIR.VerifierArithmetic.evaluate result.challenges row before = some evaluation ∧
+                      Aiur.NativeAIR.Quotient.composition result.challenges.alpha evaluation.constraints =
+                        Aiur.NativeAIR.Domain.vanishing evaluation.domain result.challenges.zeta *
+                          evaluation.quotientValue
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -14738,6 +15107,227 @@ Aiur.NativeAIR.VerifierArithmetic.Challenges →
 DEFINITION
 fun challenges claims =>
   List.map (fun claim => (1, Aiur.NativeAIR.VerifierArithmetic.claimMessage challenges claim)) claims
+PREMISE Aiur.NativeAIR.Challenger.Hash32
+Type
+DEFINITION
+List UInt8 → Fin 32 → UInt8
+PREMISE Aiur.NativeAIR.Challenger.State.mk
+List UInt8 → List UInt8 → Aiur.NativeAIR.Challenger.State
+PREMISE Aiur.NativeAIR.Challenger.initial
+List UInt8 → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun seed => { input := seed, pending := [] }
+PREMISE Aiur.NativeAIR.Challenger.observeByte
+Aiur.NativeAIR.Challenger.State → UInt8 → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun state byte => { input := state.input ++ [byte], pending := [] }
+PREMISE Aiur.NativeAIR.Challenger.observeBytes
+Aiur.NativeAIR.Challenger.State → List UInt8 → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun state bytes => if bytes.isEmpty = true then state else { input := state.input ++ bytes, pending := [] }
+PREMISE Aiur.NativeAIR.Challenger.observeField
+Aiur.NativeAIR.Challenger.State → Aiur.G → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun state value => Aiur.NativeAIR.Challenger.observeBytes state (Aiur.NativeAIR.ProofCodec.encodeField value)
+PREMISE Aiur.NativeAIR.Challenger.observeExtension
+Aiur.NativeAIR.Challenger.State → Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun state value =>
+  Aiur.NativeAIR.Challenger.observeField (Aiur.NativeAIR.Challenger.observeField state value.c0) value.c1
+PREMISE Aiur.NativeAIR.Challenger.observeCap
+Aiur.NativeAIR.Challenger.State → Aiur.NativeAIR.KeyCodec.MerkleCap → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun state cap => Aiur.NativeAIR.Challenger.observeBytes state (List.flatten cap)
+PREMISE Aiur.NativeAIR.Challenger.sampleByte
+Aiur.NativeAIR.Challenger.Hash32 → Aiur.NativeAIR.Challenger.State → UInt8 × Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun hash state =>
+  match state.pending with
+  | byte :: rest => (byte, { input := state.input, pending := rest })
+  | [] =>
+    have digest := hash state.input;
+    (digest 31, { input := List.ofFn digest, pending := List.drop 1 (List.ofFn digest).reverse })
+PREMISE Aiur.NativeAIR.Challenger.sampleBytes
+Aiur.NativeAIR.Challenger.Hash32 → Nat → Aiur.NativeAIR.Challenger.State → List UInt8 × Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun hash x x_1 =>
+  Nat.brecOn (motive := fun x => Aiur.NativeAIR.Challenger.State → List UInt8 × Aiur.NativeAIR.Challenger.State) x
+    (Aiur.NativeAIR.Challenger.sampleBytes._f hash) x_1
+PREMISE Aiur.NativeAIR.Challenger.littleEndian
+List UInt8 → Nat
+DEFINITION
+fun bytes => List.foldr (fun byte rest => byte.toNat + 256 * rest) 0 bytes
+PREMISE Aiur.NativeAIR.Challenger.sampleWord
+Aiur.NativeAIR.Challenger.Hash32 → Aiur.NativeAIR.Challenger.State → Nat × Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun hash state =>
+  match Aiur.NativeAIR.Challenger.sampleBytes hash 8 state with
+  | (bytes, next) => (Aiur.NativeAIR.Challenger.littleEndian bytes, next)
+PREMISE Aiur.NativeAIR.Challenger.sampleField
+Aiur.NativeAIR.Challenger.Hash32 →
+  Nat → Aiur.NativeAIR.Challenger.State → Option (Aiur.G × Aiur.NativeAIR.Challenger.State)
+DEFINITION
+fun hash x x_1 =>
+  Nat.brecOn (motive := fun x => Aiur.NativeAIR.Challenger.State → Option (Aiur.G × Aiur.NativeAIR.Challenger.State)) x
+    (Aiur.NativeAIR.Challenger.sampleField._f hash) x_1
+PREMISE Aiur.NativeAIR.Challenger.sampleExtension
+Aiur.NativeAIR.Challenger.Hash32 →
+  Nat → Aiur.NativeAIR.Challenger.State → Option (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.Challenger.State)
+DEFINITION
+fun hash fuel state => do
+  let __x ← Aiur.NativeAIR.Challenger.sampleField hash fuel state
+  match __x with
+    | (c0, next) => do
+      let __x ← Aiur.NativeAIR.Challenger.sampleField hash fuel next
+      match __x with
+        | (c1, final) => pure ({ c0 := c0, c1 := c1 }, final)
+PREMISE Aiur.NativeAIR.Challenger.sampleBits
+Aiur.NativeAIR.Challenger.Hash32 →
+  Nat → Aiur.NativeAIR.Challenger.State → Option (Nat × Aiur.NativeAIR.Challenger.State)
+DEFINITION
+fun hash bits state =>
+  if bits < 64 ∧ 2 ^ bits < Aiur.gSize.toNat then
+    match Aiur.NativeAIR.Challenger.sampleWord hash state with
+    | (word, next) => some (word % 2 ^ bits, next)
+  else none
+PREMISE Aiur.NativeAIR.Challenger.checkWitness
+Aiur.NativeAIR.Challenger.Hash32 →
+  Nat → Aiur.G → Aiur.NativeAIR.Challenger.State → Option (Bool × Aiur.NativeAIR.Challenger.State)
+DEFINITION
+fun hash bits witness state =>
+  if bits = 0 then pure (true, state)
+  else do
+    let __x ← Aiur.NativeAIR.Challenger.sampleBits hash bits (Aiur.NativeAIR.Challenger.observeField state witness)
+    match __x with
+      | (value, next) => pure (value == 0, next)
+PREMISE Aiur.NativeAIR.Transcript.parameterWords
+Aiur.NativeAIR.KeyCodec.Parameters → List Nat
+DEFINITION
+fun parameters =>
+  [parameters.logBlowup, parameters.capHeight, parameters.logFinalPolyLen, parameters.maxLogArity,
+    parameters.numQueries, parameters.commitProofOfWorkBits, parameters.queryProofOfWorkBits]
+PREMISE Aiur.NativeAIR.Transcript.seed
+Aiur.NativeAIR.KeyCodec.Parameters → List UInt8
+DEFINITION
+fun parameters =>
+  "multi-stark/v0".toUTF8.data.toList ++
+    List.flatMap (Aiur.NativeAIR.KeyCodec.encodeNat 8) (Aiur.NativeAIR.Transcript.parameterWords parameters)
+PREMISE Aiur.NativeAIR.Transcript.circuitShape
+Aiur.NativeAIR.KeyCodec.Circuit → List Aiur.G
+DEFINITION
+fun circuit =>
+  List.map Aiur.G.ofNat
+    [circuit.constraintCount, circuit.maxConstraintDegree, circuit.preprocessedHeight, circuit.preprocessedWidth,
+      circuit.mainWidth, circuit.widths.stage2, circuit.lookupGroupSize]
+PREMISE Aiur.NativeAIR.Transcript.shape
+Aiur.NativeAIR.KeyCodec.Key → List Aiur.G
+DEFINITION
+fun key => Aiur.G.ofNat key.circuits.length :: List.flatMap Aiur.NativeAIR.Transcript.circuitShape key.circuits
+PREMISE Aiur.NativeAIR.Transcript.claimsFields
+List (List Aiur.G) → List Aiur.G
+DEFINITION
+fun claims => Aiur.G.ofNat claims.length :: List.flatMap (fun claim => Aiur.G.ofNat claim.length :: claim) claims
+PREMISE Aiur.NativeAIR.Transcript.fieldsBytes
+List Aiur.G → List UInt8
+DEFINITION
+fun values => List.flatMap Aiur.NativeAIR.ProofCodec.encodeField values
+PREMISE Aiur.NativeAIR.Transcript.prefixBytes
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → List (List Aiur.G) → List UInt8
+DEFINITION
+fun key proof claims =>
+  Aiur.NativeAIR.Transcript.fieldsBytes (Aiur.NativeAIR.Transcript.shape key) ++
+            Aiur.NativeAIR.Transcript.fieldsBytes
+              (List.map (fun active => if active = true then 1 else 0) proof.active) ++
+          List.flatten (key.preprocessedCommitment.getD []) ++
+        List.flatten proof.commitments.stage1 ++
+      Aiur.NativeAIR.Transcript.fieldsBytes (List.map (fun degree => Aiur.G.ofNat degree.toNat) proof.logDegrees) ++
+    Aiur.NativeAIR.Transcript.fieldsBytes (Aiur.NativeAIR.Transcript.claimsFields claims)
+PREMISE Aiur.NativeAIR.Transcript.lookupState
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → List (List Aiur.G) → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun key proof claims =>
+  Aiur.NativeAIR.Challenger.observeBytes
+    (Aiur.NativeAIR.Challenger.initial (Aiur.NativeAIR.Transcript.seed key.parameters))
+    (Aiur.NativeAIR.Transcript.prefixBytes key proof claims)
+PREMISE Aiur.NativeAIR.Transcript.accumulatorState
+Aiur.NativeAIR.ProofCodec.Data → Aiur.NativeAIR.Challenger.State → Aiur.NativeAIR.Challenger.State
+DEFINITION
+fun proof state =>
+  List.foldl Aiur.NativeAIR.Challenger.observeExtension
+    (Aiur.NativeAIR.Challenger.observeCap state proof.commitments.stage2) proof.accumulators
+PREMISE Aiur.NativeAIR.Transcript.Replay.mk
+Aiur.NativeAIR.VerifierArithmetic.Challenges → Aiur.NativeAIR.Challenger.State → Aiur.NativeAIR.Transcript.Replay
+PREMISE Aiur.NativeAIR.Transcript.replay
+Aiur.NativeAIR.Challenger.Hash32 →
+  Nat →
+    Aiur.NativeAIR.KeyCodec.Key →
+      Aiur.NativeAIR.ProofCodec.Data → List (List Aiur.G) → Option Aiur.NativeAIR.Transcript.Replay
+DEFINITION
+fun hash fuel key proof claims => do
+  let __x ← Aiur.NativeAIR.Challenger.sampleExtension hash fuel (Aiur.NativeAIR.Transcript.lookupState key proof claims)
+  match __x with
+    | (beta, afterBeta) => do
+      let __x ←
+        Aiur.NativeAIR.Challenger.sampleExtension hash fuel (Aiur.NativeAIR.Challenger.observeExtension afterBeta beta)
+      match __x with
+        | (gamma, afterGamma) => do
+          let __x ←
+            Aiur.NativeAIR.Challenger.sampleExtension hash fuel
+                (Aiur.NativeAIR.Transcript.accumulatorState proof
+                  (Aiur.NativeAIR.Challenger.observeExtension afterGamma gamma))
+          match __x with
+            | (alpha, afterAlpha) => do
+              let __x ←
+                Aiur.NativeAIR.Challenger.sampleExtension hash fuel
+                    (Aiur.NativeAIR.Challenger.observeCap afterAlpha proof.commitments.quotient)
+              match __x with
+                | (zeta, final) =>
+                  pure { challenges := { beta := beta, gamma := gamma, alpha := alpha, zeta := zeta }, state := final }
+PREMISE Aiur.NativeAIR.Transcript.verifyArithmetic
+Aiur.NativeAIR.Challenger.Hash32 →
+  Nat →
+    Aiur.NativeAIR.KeyCodec.Key →
+      Aiur.NativeAIR.ProofCodec.Data →
+        List (List Aiur.G) → List Aiur.NativeAIR.ProofShape.Row → Option Aiur.NativeAIR.Transcript.Replay
+DEFINITION
+fun hash fuel key proof claims rows => do
+  let result ← Aiur.NativeAIR.Transcript.replay hash fuel key proof claims
+  let __do_lift ← Aiur.NativeAIR.VerifierArithmetic.verify result.challenges claims rows
+  if __do_lift = true then some result else none
+PREMISE Aiur.NativeAIR.Challenger.State.Valid
+Aiur.NativeAIR.Challenger.State → Prop
+DEFINITION
+fun state =>
+  state.pending = [] ∨ ∃ consumed, state.input.length = 32 ∧ state.pending = List.drop consumed state.input.reverse
+PREMISE Aiur.NativeAIR.Challenger.FieldSample.accept
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {state : Aiur.NativeAIR.Challenger.State},
+  (Aiur.NativeAIR.Challenger.sampleWord hash state).fst < Aiur.gSize.toNat →
+    Aiur.NativeAIR.Challenger.FieldSample hash state 1
+      (Aiur.G.ofNat (Aiur.NativeAIR.Challenger.sampleWord hash state).fst)
+      (Aiur.NativeAIR.Challenger.sampleWord hash state).snd
+PREMISE Aiur.NativeAIR.Challenger.FieldSample.reject
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {state final : Aiur.NativeAIR.Challenger.State} {count : Nat}
+  {value : Aiur.G},
+  ¬(Aiur.NativeAIR.Challenger.sampleWord hash state).fst < Aiur.gSize.toNat →
+    Aiur.NativeAIR.Challenger.FieldSample hash (Aiur.NativeAIR.Challenger.sampleWord hash state).snd count value final →
+      Aiur.NativeAIR.Challenger.FieldSample hash state (count + 1) value final
+PREMISE Aiur.NativeAIR.Transcript.Replay.Reads.mk
+∀ {hash : Aiur.NativeAIR.Challenger.Hash32} {fuel : Nat} {key : Aiur.NativeAIR.KeyCodec.Key}
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {claims : List (List Aiur.G)} {result : Aiur.NativeAIR.Transcript.Replay},
+  (∃ afterBeta afterGamma afterAlpha,
+      Aiur.NativeAIR.Challenger.sampleExtension hash fuel (Aiur.NativeAIR.Transcript.lookupState key proof claims) =
+          some (result.challenges.beta, afterBeta) ∧
+        Aiur.NativeAIR.Challenger.sampleExtension hash fuel
+              (Aiur.NativeAIR.Challenger.observeExtension afterBeta result.challenges.beta) =
+            some (result.challenges.gamma, afterGamma) ∧
+          Aiur.NativeAIR.Challenger.sampleExtension hash fuel
+                (Aiur.NativeAIR.Transcript.accumulatorState proof
+                  (Aiur.NativeAIR.Challenger.observeExtension afterGamma result.challenges.gamma)) =
+              some (result.challenges.alpha, afterAlpha) ∧
+            Aiur.NativeAIR.Challenger.sampleExtension hash fuel
+                (Aiur.NativeAIR.Challenger.observeCap afterAlpha proof.commitments.quotient) =
+              some (result.challenges.zeta, result.state)) →
+    Aiur.NativeAIR.Transcript.Replay.Reads hash fuel key proof claims result
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -19642,6 +20232,29 @@ fun selectors context incoming rows column lookup x =>
               [Aiur.NativeAIR.BlockEmitter.Emission.prefix
                   (Aiur.NativeAIR.BlockEmitter.defaultEquations entry matched column branches) emission]
         __do_jp default
+RECURSION WORKER Aiur.NativeAIR.Challenger.sampleBytes._unsafe_rec
+Aiur.NativeAIR.Challenger.Hash32 → Nat → Aiur.NativeAIR.Challenger.State → List UInt8 × Aiur.NativeAIR.Challenger.State
+IMPLEMENTATION
+fun hash x x_1 =>
+  match x, x_1 with
+  | 0, state => ([], state)
+  | count.succ, state =>
+    match Aiur.NativeAIR.Challenger.sampleByte hash state with
+    | (byte, next) =>
+      match Aiur.NativeAIR.Challenger.sampleBytes._unsafe_rec hash count next with
+      | (rest, final) => (byte :: rest, final)
+RECURSION WORKER Aiur.NativeAIR.Challenger.sampleField._unsafe_rec
+Aiur.NativeAIR.Challenger.Hash32 →
+  Nat → Aiur.NativeAIR.Challenger.State → Option (Aiur.G × Aiur.NativeAIR.Challenger.State)
+IMPLEMENTATION
+fun hash x x_1 =>
+  match x, x_1 with
+  | 0, x => none
+  | fuel.succ, state =>
+    match Aiur.NativeAIR.Challenger.sampleWord hash state with
+    | (word, next) =>
+      if word < Aiur.gSize.toNat then some (Aiur.G.ofNat word, next)
+      else Aiur.NativeAIR.Challenger.sampleField._unsafe_rec hash fuel next
 RECURSION WORKER Aiur.NativeAIR.CircuitEmitter.emitMembers._unsafe_rec
 Aiur.NativeAIR.Expr →
   Nat → Nat → Nat → Aiur.Bytecode.Toplevel → List Nat → Option (List Aiur.NativeAIR.CircuitEmitter.Member)
@@ -21850,10 +22463,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1162; LOGICAL DECLARATIONS 18768; WITH RUNTIME 19550
+C8 component ROOTS 1231; LOGICAL DECLARATIONS 18942; WITH RUNTIME 19726
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 174
+RECURSION WORKERS 176
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

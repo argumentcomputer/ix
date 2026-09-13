@@ -366,6 +366,9 @@ lean_exe «aiur-domain-tests» where
 lean_exe «aiur-verifier-arithmetic-tests» where
   root := `Tests.Aiur.VerifierArithmetic
 
+lean_exe «aiur-transcript-tests» where
+  root := `Tests.Aiur.Transcript
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -743,7 +746,7 @@ script "check-aiur" := do
     "aiur-graph-compilation-tests", "aiur-operation-expression-tests", "aiur-block-expression-tests",
     "aiur-circuit-expression-tests", "aiur-emission-check-tests", "aiur-key-codec-tests", "aiur-compiled-key-tests",
     "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests", "aiur-logup-tests", "aiur-domain-tests",
-    "aiur-verifier-arithmetic-tests"]
+    "aiur-verifier-arithmetic-tests", "aiur-transcript-tests"]
   let report ← IO.Process.output {
     cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
   unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
@@ -810,6 +813,7 @@ script "check-aiur" := do
     let domainSnapshot := directory / "native-domains.bin"
     let quotientSnapshot := directory / "native-quotients.bin"
     let verifierArithmeticSnapshot := directory / "native-verifier-arithmetic.bin"
+    let transcriptSnapshot := directory / "native-transcript.bin"
     let exporter ← IO.Process.spawn {
       cmd := "cargo"
       args := #["test", "--locked", "--release", "-p", "aiur",
@@ -842,7 +846,8 @@ script "check-aiur" := do
         ("IX_LOGUP_STAGE_SNAPSHOT", some logupStageSnapshot.toString),
         ("IX_DOMAIN_SNAPSHOT", some domainSnapshot.toString),
         ("IX_QUOTIENT_SNAPSHOT", some quotientSnapshot.toString),
-        ("IX_VERIFIER_ARITHMETIC_SNAPSHOT", some verifierArithmeticSnapshot.toString)]
+        ("IX_VERIFIER_ARITHMETIC_SNAPSHOT", some verifierArithmeticSnapshot.toString),
+        ("IX_TRANSCRIPT_SNAPSHOT", some transcriptSnapshot.toString)]
       stdout := .inherit
       stderr := .inherit }
     unless (← exporter.wait) == 0 do
@@ -866,6 +871,7 @@ script "check-aiur" := do
     run ".lake/build/bin/aiur-logup-tests" #[logupSnapshot.toString, logupStageSnapshot.toString]
     run ".lake/build/bin/aiur-domain-tests" #[domainSnapshot.toString, quotientSnapshot.toString]
     run ".lake/build/bin/aiur-verifier-arithmetic-tests" #[verifierArithmeticSnapshot.toString]
+    run ".lake/build/bin/aiur-transcript-tests" #[transcriptSnapshot.toString]
     run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
     run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]

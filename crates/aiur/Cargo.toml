@@ -18,6 +18,10 @@ tracing-texray = { workspace = true }
 [dev-dependencies]
 # Test the actual selector methods from the same Plonky3 revision as multi-stark.
 p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Instrument the native verifier's actual challenger without changing the protocol.
+p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
 [features]
 default = []

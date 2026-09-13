@@ -47,6 +47,7 @@ import Ix.Aiur.Proofs.LogUpAccumulator
 import Ix.Aiur.Proofs.DomainAccumulator
 import Ix.Aiur.Proofs.Quotient
 import Ix.Aiur.Proofs.VerifierAccumulator
+import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -2417,6 +2418,161 @@ def verifierArithmeticPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.mk,
   `Aiur.NativeAIR.VerifierArithmetic.publicEntries]
 
+def transcriptRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Challenger.initial_valid,
+  `Aiur.NativeAIR.Challenger.State.Valid.bound,
+  `Aiur.NativeAIR.Challenger.observeBytes_nil,
+  `Aiur.NativeAIR.Challenger.observeBytes_append,
+  `Aiur.NativeAIR.Challenger.observeBytes_value,
+  `Aiur.NativeAIR.Challenger.observeBytes_fold,
+  `Aiur.NativeAIR.Challenger.observeBytes_valid,
+  `Aiur.NativeAIR.Challenger.observeField_value,
+  `Aiur.NativeAIR.Challenger.observeField_valid,
+  `Aiur.NativeAIR.Challenger.observeExtension_bytes,
+  `Aiur.NativeAIR.Challenger.observeExtension_valid,
+  `Aiur.NativeAIR.Challenger.observeExtensions_valid,
+  `Aiur.NativeAIR.Challenger.observeCap_empty,
+  `Aiur.NativeAIR.Challenger.observeCap_valid,
+  `Aiur.NativeAIR.Challenger.sampleByte_buffered,
+  `Aiur.NativeAIR.Challenger.sampleByte_refill,
+  `Aiur.NativeAIR.Challenger.sampleByte_valid,
+  `Aiur.NativeAIR.Challenger.digest_reverse,
+  `Aiur.NativeAIR.Challenger.sampleByte_pending_bound,
+  `Aiur.NativeAIR.Challenger.sampleBytes_length,
+  `Aiur.NativeAIR.Challenger.sampleBytes_pending_bound,
+  `Aiur.NativeAIR.Challenger.sampleBytes_valid,
+  `Aiur.NativeAIR.Challenger.sampleBytes_buffered,
+  `Aiur.NativeAIR.Challenger.sampleBytes_refill,
+  `Aiur.NativeAIR.Challenger.littleEndian_bound,
+  `Aiur.NativeAIR.Challenger.littleEndian_encode,
+  `Aiur.NativeAIR.Challenger.littleEndian_reads,
+  `Aiur.NativeAIR.Challenger.sampleWord_bound,
+  `Aiur.NativeAIR.Challenger.sampleWord_full_mask,
+  `Aiur.NativeAIR.Challenger.sampleWord_reads,
+  `Aiur.NativeAIR.Challenger.FieldSample.positive,
+  `Aiur.NativeAIR.Challenger.sampleField_success,
+  `Aiur.NativeAIR.Challenger.FieldSample.complete,
+  `Aiur.NativeAIR.Challenger.sampleField_iff,
+  `Aiur.NativeAIR.Challenger.sampleField_mono,
+  `Aiur.NativeAIR.Challenger.sampleField_unique,
+  `Aiur.NativeAIR.Challenger.FieldSample.valid,
+  `Aiur.NativeAIR.Challenger.sampleField_valid,
+  `Aiur.NativeAIR.Challenger.sampleField_canonical,
+  `Aiur.NativeAIR.Challenger.sampleExtension_success,
+  `Aiur.NativeAIR.Challenger.sampleExtension_mono,
+  `Aiur.NativeAIR.Challenger.sampleExtension_valid,
+  `Aiur.NativeAIR.Challenger.sampleBits_success,
+  `Aiur.NativeAIR.Challenger.sampleBits_zero,
+  `Aiur.NativeAIR.Challenger.sampleBits_mask,
+  `Aiur.NativeAIR.Challenger.sampleBits_valid,
+  `Aiur.NativeAIR.Challenger.checkWitness_zero,
+  `Aiur.NativeAIR.Challenger.checkWitness_positive,
+  `Aiur.NativeAIR.Challenger.checkWitness_true_iff,
+  `Aiur.NativeAIR.Challenger.checkWitness_valid,
+  `Aiur.NativeAIR.Transcript.seed_length,
+  `Aiur.NativeAIR.Transcript.circuitShape_length,
+  `Aiur.NativeAIR.Transcript.shape_length,
+  `Aiur.NativeAIR.Transcript.fieldsBytes_length,
+  `Aiur.NativeAIR.Transcript.observeFields_bytes,
+  `Aiur.NativeAIR.Transcript.claimsFields_framing,
+  `Aiur.NativeAIR.Transcript.lookupState_schedule,
+  `Aiur.NativeAIR.Transcript.lookupState_valid,
+  `Aiur.NativeAIR.Transcript.accumulatorState_valid,
+  `Aiur.NativeAIR.Transcript.replay_success,
+  `Aiur.NativeAIR.Transcript.Replay.Reads.complete,
+  `Aiur.NativeAIR.Transcript.replay_iff,
+  `Aiur.NativeAIR.Transcript.replay_mono,
+  `Aiur.NativeAIR.Transcript.replay_unique,
+  `Aiur.NativeAIR.Transcript.replay_valid,
+  `Aiur.NativeAIR.Transcript.verifyArithmetic_success,
+  `Aiur.NativeAIR.Transcript.verifyArithmetic_iff,
+  `Aiur.NativeAIR.Transcript.verifyArithmetic_mono,
+  `Aiur.BoundVerifier.CompiledBackend.transcript_row]
+
+def transcriptAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Challenger.initial_valid,
+  `Aiur.NativeAIR.Challenger.observeBytes_nil,
+  `Aiur.NativeAIR.Challenger.observeBytes_value,
+  `Aiur.NativeAIR.Challenger.observeBytes_valid,
+  `Aiur.NativeAIR.Challenger.observeField_value,
+  `Aiur.NativeAIR.Challenger.observeField_valid,
+  `Aiur.NativeAIR.Challenger.observeExtension_valid,
+  `Aiur.NativeAIR.Challenger.observeExtensions_valid,
+  `Aiur.NativeAIR.Challenger.observeCap_empty,
+  `Aiur.NativeAIR.Challenger.observeCap_valid,
+  `Aiur.NativeAIR.Transcript.accumulatorState_valid]
+
+def transcriptQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Challenger.State.Valid.bound,
+  `Aiur.NativeAIR.Challenger.digest_reverse,
+  `Aiur.NativeAIR.Challenger.sampleByte_pending_bound,
+  `Aiur.NativeAIR.Challenger.sampleBytes_pending_bound,
+  `Aiur.NativeAIR.Challenger.sampleBytes_refill,
+  `Aiur.NativeAIR.Challenger.littleEndian_bound,
+  `Aiur.NativeAIR.Challenger.sampleWord_bound,
+  `Aiur.NativeAIR.Challenger.FieldSample.positive,
+  `Aiur.NativeAIR.Challenger.sampleField_success,
+  `Aiur.NativeAIR.Challenger.FieldSample.complete,
+  `Aiur.NativeAIR.Challenger.sampleField_iff,
+  `Aiur.NativeAIR.Challenger.sampleField_mono,
+  `Aiur.NativeAIR.Challenger.sampleField_unique,
+  `Aiur.NativeAIR.Challenger.sampleField_valid,
+  `Aiur.NativeAIR.Challenger.sampleField_canonical,
+  `Aiur.NativeAIR.Challenger.sampleExtension_success,
+  `Aiur.NativeAIR.Challenger.sampleExtension_mono,
+  `Aiur.NativeAIR.Challenger.sampleExtension_valid,
+  `Aiur.NativeAIR.Challenger.checkWitness_true_iff,
+  `Aiur.NativeAIR.Challenger.checkWitness_valid,
+  `Aiur.NativeAIR.Transcript.shape_length,
+  `Aiur.NativeAIR.Transcript.fieldsBytes_length,
+  `Aiur.NativeAIR.Transcript.replay_success,
+  `Aiur.NativeAIR.Transcript.replay_iff,
+  `Aiur.NativeAIR.Transcript.replay_mono,
+  `Aiur.NativeAIR.Transcript.replay_unique,
+  `Aiur.NativeAIR.Transcript.replay_valid,
+  `Aiur.NativeAIR.Transcript.verifyArithmetic_success,
+  `Aiur.NativeAIR.Transcript.verifyArithmetic_iff,
+  `Aiur.NativeAIR.Transcript.verifyArithmetic_mono]
+
+def transcriptClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Challenger.sampleWord_full_mask,
+  `Aiur.NativeAIR.Challenger.sampleBits_mask,
+  `Aiur.BoundVerifier.CompiledBackend.transcript_row]
+
+def transcriptPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.Challenger.Hash32,
+  `Aiur.NativeAIR.Challenger.State.mk,
+  `Aiur.NativeAIR.Challenger.initial,
+  `Aiur.NativeAIR.Challenger.observeByte,
+  `Aiur.NativeAIR.Challenger.observeBytes,
+  `Aiur.NativeAIR.Challenger.observeField,
+  `Aiur.NativeAIR.Challenger.observeExtension,
+  `Aiur.NativeAIR.Challenger.observeCap,
+  `Aiur.NativeAIR.Challenger.sampleByte,
+  `Aiur.NativeAIR.Challenger.sampleBytes,
+  `Aiur.NativeAIR.Challenger.littleEndian,
+  `Aiur.NativeAIR.Challenger.sampleWord,
+  `Aiur.NativeAIR.Challenger.sampleField,
+  `Aiur.NativeAIR.Challenger.sampleExtension,
+  `Aiur.NativeAIR.Challenger.sampleBits,
+  `Aiur.NativeAIR.Challenger.checkWitness,
+  `Aiur.NativeAIR.Transcript.parameterWords,
+  `Aiur.NativeAIR.Transcript.seed,
+  `Aiur.NativeAIR.Transcript.circuitShape,
+  `Aiur.NativeAIR.Transcript.shape,
+  `Aiur.NativeAIR.Transcript.claimsFields,
+  `Aiur.NativeAIR.Transcript.fieldsBytes,
+  `Aiur.NativeAIR.Transcript.prefixBytes,
+  `Aiur.NativeAIR.Transcript.lookupState,
+  `Aiur.NativeAIR.Transcript.accumulatorState,
+  `Aiur.NativeAIR.Transcript.Replay.mk,
+  `Aiur.NativeAIR.Transcript.replay,
+  `Aiur.NativeAIR.Transcript.verifyArithmetic,
+  `Aiur.NativeAIR.Challenger.State.Valid,
+  `Aiur.NativeAIR.Challenger.FieldSample.accept,
+  `Aiur.NativeAIR.Challenger.FieldSample.reject,
+  `Aiur.NativeAIR.Transcript.Replay.Reads.mk]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2453,7 +2609,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -2692,7 +2848,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -2771,7 +2927,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if verifierArithmeticRoots.contains root then
+    let expected := if transcriptRoots.contains root then
+        if transcriptAxiomFreeRoots.contains root then #[]
+        else if transcriptClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if transcriptQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if verifierArithmeticRoots.contains root then
         if verifierArithmeticAxiomFreeRoots.contains root then #[]
         else if verifierArithmeticClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if verifierArithmeticQuotRoots.contains root then #[``propext, ``Quot.sound]

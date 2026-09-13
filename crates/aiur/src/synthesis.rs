@@ -645,6 +645,7 @@ mod tests {
   mod proof_codec;
   mod proof_shapes;
   mod scalar;
+  mod transcript;
 
   use super::*;
   use crate::{
