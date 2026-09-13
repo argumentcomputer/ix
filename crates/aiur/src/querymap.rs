@@ -327,6 +327,12 @@ impl QueryMap {
     self.keys.retained_elems() + self.outs.retained_elems()
   }
 
+  /// Number of stored completion timestamps. Certified acyclic functions
+  /// and memory maps do not need completion order; generic functions do.
+  pub(crate) fn completion_entries(&self) -> usize {
+    self.completion.as_ref().map_or(0, |order| order.times.entries)
+  }
+
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
     debug_assert_eq!(key.len(), self.keys.stride);
     let hash = hash_g_slice(key);

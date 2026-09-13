@@ -6,6 +6,7 @@ use std::sync::{Arc, atomic::AtomicU64};
 use crate::{
   FxIndexMap, G,
   bytecode::{Block, Ctrl, FunIdx, Function, Op, Toplevel},
+  call_order::row_uses_rank,
   gadgets::{
     AiurGadget,
     bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
@@ -42,7 +43,16 @@ impl QueryRecord {
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| QueryMap::new_function(f.layout.input_size, Arc::clone(&clock)))
+      .enumerate()
+      .map(|(i, f)| {
+        if row_uses_rank(&toplevel.call_components, i) {
+          QueryMap::new_function(f.layout.input_size, Arc::clone(&clock))
+        } else {
+          // Acyclic rows return rank zero. Their completion times cannot
+          // affect the relative order of calls inside a ranked component.
+          QueryMap::new(f.layout.input_size)
+        }
+      })
       .collect();
     let memory_queries = toplevel
       .memory_sizes
@@ -217,6 +227,14 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
   eprintln!(
     "[aiur-stats {tag}] function_queries: {total_entries} entries, \
      {total_elems} G-elems; top maps:"
+  );
+  let completion_entries: usize =
+    record.function_queries.iter().map(QueryMap::completion_entries).sum();
+  eprintln!(
+    "[aiur-stats {tag}] completion order: {completion_entries} entries, \
+     {} bytes; estimated record: {} bytes",
+    completion_entries * size_of::<u64>(),
+    record_retained_bytes(record)
   );
   for (i, n, e) in rows.iter().take(30) {
     eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
@@ -1097,19 +1115,21 @@ fn build_klimbs_u64(
 /// Approximate retained bytes of a record's query maps: field elements
 /// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
 /// overhead (hash-table slot, stored hash, multiplicity), and 8 bytes per
-/// function entry for completion order. Feeds the
+/// ranked function entry for completion order. Feeds the
 /// witness phase of the prover RAM model
 /// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
 pub fn record_retained_bytes(record: &QueryRecord) -> usize {
   let mut elems = 0usize;
   let mut entries = 0usize;
+  let mut completion_entries = 0usize;
   for m in &record.function_queries {
-    elems += m.retained_elems() + m.len();
+    elems += m.retained_elems();
     entries += m.len();
+    completion_entries += m.completion_entries();
   }
   for (_, m) in &record.memory_queries {
     elems += m.retained_elems();
     entries += m.len();
   }
-  elems * 8 + entries * 21
+  elems * size_of::<G>() + entries * 21 + completion_entries * size_of::<u64>()
 }

@@ -207,6 +207,35 @@ fn component_promotion_toplevel(grouped: bool) -> Toplevel {
 }
 
 #[test]
+fn acyclic_maps_omit_timestamps_without_changing_promoted_call_order() {
+  let top = component_promotion_toplevel(false);
+  let (record, output) =
+    top.execute(0, vec![G::from_u8(4)], &mut empty_io_buffer()).unwrap();
+  assert_eq!(output, vec![G::from_u64(2_000)]);
+  for i in [0, 2] {
+    let map = &record.function_queries[i];
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.completion_entries(), 0);
+    assert_eq!(map.get_index(0).unwrap().1.rank, 0);
+  }
+  let recursive = &record.function_queries[1];
+  assert_eq!(recursive.len(), 5);
+  assert_eq!(recursive.completion_entries(), 5);
+  for n in 0..=4 {
+    let row = recursive.get(&[G::from_u64(n)]).unwrap();
+    assert_eq!(row.rank, 4 - n, "promoted children finish before parents");
+    assert_eq!(row.multiplicity, G::from_u8(if n == 4 { 2 } else { 1 }));
+  }
+  let payload: usize =
+    record.function_queries.iter().map(|m| m.retained_elems()).sum();
+  let entries: usize = record.function_queries.iter().map(|m| m.len()).sum();
+  assert_eq!(
+    crate::execute::record_retained_bytes(&record),
+    payload * size_of::<G>() + entries * 21 + 5 * size_of::<u64>()
+  );
+}
+
+#[test]
 fn component_boundaries_preserve_promotion_sharing_and_mixed_groups() {
   for grouped in [false, true] {
     let (cp, fp) = test_parameters();
@@ -254,8 +283,7 @@ fn component_boundary_cannot_displace_a_recursive_provider_rank() {
 
   // Root columns: input, selector, multiplicity, hint output, call output,
   // bound rank, second call output, bound rank. Replace only one binding.
-  assert_ne!(traces[0].values[5], G::ZERO);
-  traces[0].values[5] = G::ZERO;
+  traces[0].values[5] += G::ONE;
   let (constraints, _) = system.toplevel.build_constraints(0);
   assert!(constraints.zeros.iter().all(|expr| eval_expr(
     expr,
@@ -638,6 +666,14 @@ fn shared_callee_keeps_one_consistent_rank() {
     cp,
     fp,
   );
+  let (record, _) = system
+    .toplevel
+    .execute(0, vec![G::from_u8(3)], &mut empty_io_buffer())
+    .unwrap();
+  for (i, map) in record.function_queries.iter().enumerate() {
+    assert_eq!(map.completion_entries(), 1, "generic functions retain ranks");
+    assert_eq!(map.get_index(0).unwrap().1.rank, i as u64);
+  }
   let (claim, proof) =
     system.prove(0, &[G::from_u8(3)], &mut empty_io_buffer());
   assert_eq!(

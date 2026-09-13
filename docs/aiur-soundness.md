@@ -23,8 +23,9 @@ lookups range-check each six-byte value. Ranks and gaps are below `2^48`, so
 the derived rank is below `2^49`, below the Goldilocks characteristic. The
 call lookup therefore cannot wrap around the field to permit a cycle.
 
-Function query maps share a completion counter. Reversing completion order
-assigns the root rank zero and gives each constrained callee a larger rank.
+Ranked function query maps share a completion counter. Reversing completion
+order assigns a ranked root rank zero and gives each constrained callee in
+the same component a larger rank.
 Promoting an earlier advice query refreshes its completion time after its
 children are promoted. Shared callees retain a consistent rank. Witness
 workers accumulate their byte-range queries locally; the prover merges those
@@ -52,7 +53,7 @@ The resulting layouts use these rank witnesses:
 | Call within a recursive component | 6 gap bytes | 3 |
 
 A boundary call must still bind its recursive callee's rank through the return
-lookup. Setting it to zero would break shared callees. Within a recursive
+lookup. Replacing it with a constant would break that binding. Within a recursive
 component, the bounded rank and gap retain the original strict ordering.
 The Lean theorem `CallComponent.wellFounded_calls` in
 [the compiler pass](../Ix/Aiur/Compiler/CallOrder.lean) proves that the bounded
@@ -75,9 +76,12 @@ kernel fixtures: median 6.65%, with 9.73% for `Nat.add_comm`, 15.09% for
 `Vector.append`, and 9.81% for the shard pipeline, relative to the repaired
 dynamic-rank layout. These are model estimates, not wall-clock timings.
 
-Query records still retain their completion timestamps, including for acyclic
-functions; this pass reduces AIR and witness work rather than record storage.
-The remaining recursive components keep explicit ranks. Regenerating the
+Certified acyclic function maps omit completion timestamps and counter updates:
+their return rank is always zero. This saves eight retained bytes per query
+without changing the relative completion order inside recursive components.
+The RAM estimate counts only stored timestamps. Generic Aiur systems without
+a component certificate retain timestamps for every function; recursive
+components still refresh timestamps after advice promotion. Regenerating the
 IxVM, aggregation and recursive-verifier execution sources produces identical
 files because instructions and function indices are preserved.
 
@@ -164,7 +168,7 @@ active row, sharing function metadata across the member's rows. On a 64-bit
 host this reduces per-row metadata from 72 to 16 bytes. Counting active
 multiplicities before allocation also avoids geometric vector growth and
 metadata for advice-only entries. Row order, selector offsets, multiplicities
-and completion ranks are preserved, including advice promotion.
+and rank bindings are preserved, including advice promotion.
 
 The prover RAM model sums all member-function queries before splitting a
 grouped circuit's height. It uses the configured extension-field dimension
