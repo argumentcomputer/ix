@@ -1,12 +1,17 @@
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use std::sync::{
+  Arc,
+  atomic::{AtomicU64, Ordering},
+};
 
-use crate::G;
+use crate::{G, call_order::RANK_BOUND};
 
 /// Immutable view of one query entry.
 #[derive(Clone, Copy)]
 pub struct QueryRef<'a> {
   pub(crate) output: &'a [G],
   pub multiplicity: G,
+  pub(crate) rank: u64,
 }
 
 /// Mutable view of one query entry: the output is fixed at insertion,
@@ -215,6 +220,10 @@ impl SegU64s {
     self.segs[i >> SEG_BITS].slice(i & SEG_MASK, 1)[0]
   }
 
+  fn set(&mut self, i: usize, value: u64) {
+    self.segs[i >> SEG_BITS].slice_mut(i & SEG_MASK, 1)[0] = value;
+  }
+
   #[inline]
   fn push(&mut self, h: u64) {
     let seg = self.entries >> SEG_BITS;
@@ -223,6 +232,30 @@ impl SegU64s {
     }
     self.segs[seg].extend_from_slice(&[h]);
     self.entries += 1;
+  }
+}
+
+/// Shared completion order across function maps. Memory maps omit it.
+/// Reverse completion order gives the root rank zero and every constrained
+/// callee a strictly greater rank than its caller.
+struct CompletionOrder {
+  clock: Arc<AtomicU64>,
+  times: SegU64s,
+}
+
+impl CompletionOrder {
+  fn next(&self) -> u64 {
+    let time = self.clock.fetch_add(1, Ordering::Relaxed);
+    assert!(
+      time < RANK_BOUND,
+      "function completion count exceeds 48-bit rank bound"
+    );
+    time
+  }
+
+  fn rank(&self, i: usize) -> u64 {
+    let last = self.clock.load(Ordering::Relaxed) - 1;
+    last - self.times.at(i)
   }
 }
 
@@ -252,6 +285,7 @@ pub struct QueryMap {
   mults: SegStore,
   hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
+  completion: Option<CompletionOrder>,
 }
 
 impl QueryMap {
@@ -263,7 +297,18 @@ impl QueryMap {
       mults: SegStore::new(1),
       hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
+      completion: None,
     }
+  }
+
+  pub(crate) fn new_function(key_stride: usize, clock: Arc<AtomicU64>) -> Self {
+    let mut map = Self::new(key_stride);
+    map.completion = Some(CompletionOrder { clock, times: SegU64s::new() });
+    map
+  }
+
+  fn rank_at(&self, i: usize) -> u64 {
+    self.completion.as_ref().map_or(0, |order| order.rank(i))
   }
 
   #[inline]
@@ -296,6 +341,7 @@ impl QueryMap {
     Some(QueryRef {
       output: self.outs.at(i),
       multiplicity: self.mults.at(i)[0],
+      rank: self.rank_at(i),
     })
   }
 
@@ -334,6 +380,12 @@ impl QueryMap {
       debug_assert_eq!(self.outs.at(i), output);
       if constrained {
         self.bump_multiplicity(i);
+        // Promotion executes/promotes children first, so its new completion
+        // time must follow them even when the hint entry was inserted early.
+        if let Some(order) = &mut self.completion {
+          let time = order.next();
+          order.times.set(i, time);
+        }
       }
     } else {
       self.insert(key, output, G::from_bool(constrained));
@@ -358,6 +410,10 @@ impl QueryMap {
     self.outs.push(output);
     self.mults.push(&[multiplicity]);
     self.hashes.push(hash);
+    if let Some(order) = &mut self.completion {
+      let time = order.next();
+      order.times.push(time);
+    }
     let hashes = &self.hashes;
     self.table.insert_unique(hash, i, |&j| hashes.at(j as usize));
   }
@@ -377,7 +433,11 @@ impl QueryMap {
     }
     Some((
       self.keys.at(i),
-      QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+      QueryRef {
+        output: self.outs.at(i),
+        multiplicity: self.mults.at(i)[0],
+        rank: self.rank_at(i),
+      },
     ))
   }
 
@@ -385,7 +445,11 @@ impl QueryMap {
     (0..self.len()).map(|i| {
       (
         self.keys.at(i),
-        QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+        QueryRef {
+          output: self.outs.at(i),
+          multiplicity: self.mults.at(i)[0],
+          rank: self.rank_at(i),
+        },
       )
     })
   }

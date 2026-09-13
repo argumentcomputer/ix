@@ -46,7 +46,7 @@ impl Memory {
     }
     let width = Self::width(size);
     // pull = negated multiplicity.
-    let lookups = vec![Lookup { multiplicity: -multiplicity, args }];
+    let lookups = vec![Lookup { multiplicity: -multiplicity.clone(), args }];
 
     // Transition constraints (formerly the `Air::eval` body): the selector is
     // boolean; a real next row implies a real current row; and the pointer
@@ -59,6 +59,8 @@ impl Memory {
     let is_real_transition = is_real_next * Expr::IsTransition;
     let constraints = vec![
       is_real.clone() * (is_real.clone() - one()),
+      // Padding cannot supply a memory lookup with nonzero multiplicity.
+      multiplicity * (one() - is_real.clone()),
       is_real_transition.clone() * (is_real - one()),
       is_real_transition * (ptr + one() - ptr_next),
     ];
