@@ -22,8 +22,8 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and root-closure/setup prototypes pass 253 ordinary tests
-(95 FFLONK, 48 trace, 93 circuit, 17 replay/setup); thirty-seven heavier native,
+The generic replay and root-closure/setup prototypes pass 266 ordinary tests
+(101 FFLONK, 48 trace, 100 circuit, 17 replay/setup); thirty-nine heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -395,6 +395,55 @@ constraints and compare the resulting polynomial coefficients; materialized
 tests reject altered parity, carry, product-auxiliary, input and output wires.
 This does not establish whole-relation fit, a terminal key, or a full proof.
 The earlier Boolean-carry and uncached modes retain their geometry/identities.
+
+## Complete small-class census and checked assignment
+
+The 2026-09-13 [whole streamed run](census/exec-ranged-original-claims-checked-v1.json)
+completed successfully. Its [unaltered log](census/exec-ranged-original-claims-checked-v1.log)
+records both the proof-free full setup census and actual satisfaction of every
+constraint in a complete real native-replay assignment. This supersedes the
+earlier rejected-prefix results for this explicit ranged-arithmetic composition,
+not for the other retained arithmetic modes or larger capacity classes.
+
+| Complete measurement | Result |
+| --- | ---: |
+| R1CS constraints, all checked | 757,209,570 |
+| Assignment elements, including constant one | 752,489,975 |
+| Assignment payload | 24,079,679,200 bytes |
+| PLONK constraint rows | 1,042,919,351 |
+| Public-input rows | 2 |
+| Supported base domain | 1,073,741,824 (`2^30`) |
+| Padding rows, including space for blinding | 30,822,471 |
+| Setup census including preparation | 1,566.327 seconds |
+| Whole constraint-satisfaction check | 1,584.986 seconds |
+
+All 64 original matrix, three structure, and three jagged claims remain
+constrained. Queries `[244,79,48]` and grinding `[16,16,16]` are unchanged.
+The checked canonical matrix identity is
+`d6f41218479a03ba5ae06e0ec4290005ead453ff69b90224ed9c48606d38ae33`.
+The test completed in 3,152.54 seconds. GNU time reported peak RSS
+24,450,752 KiB (about 23.3 GiB); the process's sampled `VmHWM` was
+24,455,840 KiB. These are separate process measurements, not prover or
+aggregate process-tree memory. The run had a 64 GiB virtual-address cap and
+a separate 24 GiB assignment-payload cap.
+
+`R1csBuilder` now supports bounded streams that hash the full normalized
+relation and check each constraint before reporting progress. Prefixes,
+wrong counts/identities, observer failures and oversized reservations cannot
+export a checked result. `PlonkArithmetizationStreamV0` lowers setup directly
+without retaining R1CS matrices; small equivalence tests compare every gate,
+copy target, checked witness, file key and proof byte with the existing path.
+The full-Exec materialization APIs recheck composition, public inputs, census
+and canonical identity before returning their artifacts.
+
+This completed run did **not** allocate the full PLONK arena, preprocess a key,
+generate an SRS, or produce a Stage 4 proof. It used the tiny scalar class
+(64-byte program, 32-byte I/O, one function/block/local, four transitions), not
+the full-crypto/constructor setup or a compiled Stage 2 guest. Those upgrades
+require their own complete census. Materialized setup and checked assignment
+must still agree on canonical identity at the future proving boundary.
+The current full PLONK arena model is about 271.7 GiB before assignment and
+emitter overhead. The key/SRS disk limit below remains unresolved.
 
 ## File-key storage with derived C0 and sigma evaluations
 

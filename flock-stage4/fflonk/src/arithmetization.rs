@@ -10,6 +10,12 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 #[path = "arithmetization_prepared_tests.rs"]
 mod prepared_tests;
 
+#[path = "arithmetization_stream.rs"]
+mod stream;
+pub use stream::{
+  PlonkArithmetizationStreamV0, PlonkStreamMemoryV0, plan_plonk_stream_memory,
+};
+
 /// Rows reserved at the end of the evaluation domain for prover blinding.
 pub const FFLONK_BLINDING_ROWS: u64 = 2;
 
@@ -455,6 +461,8 @@ pub enum PlonkArithmetizationError {
   DomainTooLarge { required_rows: u64, maximum_domain: u64 },
   ProjectionConstraintMismatch { observed: u64, projected: u64 },
   R1csDigestMismatch,
+  StreamCensusMismatch,
+  StreamObserverAttached,
   R1csVariableMismatch { expected: u32, actual: u32 },
   UnknownAuxiliaryWire { wire: u64, row: u64 },
   InvalidAuxiliaryDefinition { wire: u64, row: u64 },
@@ -480,6 +488,8 @@ impl core::fmt::Display for PlonkArithmetizationError {
       Self::R1csDigestMismatch => {
         formatter.write_str("PLONK arithmetization belongs to another R1CS")
       },
+      Self::StreamCensusMismatch => formatter.write_str("streamed PLONK geometry differs from its complete expected census"),
+      Self::StreamObserverAttached => formatter.write_str("streamed PLONK materialization still has an attached emission observer"),
       Self::R1csVariableMismatch { expected, actual } => write!(
         formatter,
         "PLONK arithmetization expects {expected} R1CS variables, got {actual}",
@@ -626,6 +636,20 @@ pub struct FflonkCheckedWitnessV1 {
 }
 
 impl FflonkCheckedWitnessV1 {
+  /// Consume a sealed assignment checked against every streamed constraint.
+  /// Its canonical matrix digest is identical to materialized checking; an
+  /// unchecked assignment or completed shape alone cannot call this path.
+  pub fn from_streamed(
+    checked: ix_terminal_circuit::R1csCheckedStreamV0,
+  ) -> Self {
+    let (shape, witness) = checked.into_parts();
+    Self {
+      r1cs_digest: shape.canonical_digest(),
+      public_variables: shape.projection().public_variables(),
+      witness,
+    }
+  }
+
   /// Check satisfaction before taking the assignment into the immutable
   /// wrapper. The caller may then consume or drop the canonical R1CS.
   pub fn new(
@@ -1176,6 +1200,23 @@ fn build_copy_permutation(
   } else {
     CopyTails::Sparse(BTreeMap::new())
   };
+  populate_copy_permutation(
+    gates,
+    r1cs_variables,
+    auxiliary_wires,
+    &mut sigma,
+    &mut tails,
+  )?;
+  Ok(sigma)
+}
+
+fn populate_copy_permutation(
+  gates: &[PlonkGateV1],
+  r1cs_variables: u32,
+  auxiliary_wires: u64,
+  sigma: &mut [Vec<PlonkCellV1>; 3],
+  tails: &mut CopyTails,
+) -> Result<(), PlonkArithmetizationError> {
   for (row, gate) in gates.iter().enumerate() {
     for (column, wire) in gate.wires.iter().enumerate() {
       if let Some(wire) = wire {
@@ -1223,7 +1264,7 @@ fn build_copy_permutation(
       }
     }
   }
-  Ok(sigma)
+  Ok(())
 }
 
 enum CopyTails {

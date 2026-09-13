@@ -1,0 +1,136 @@
+{
+  "schema": "ixby-stage4-ranged-original-claims-checked-v1",
+  "measurement_date": "2026-09-13",
+  "status": "complete_whole_setup_census_and_whole_r1cs_satisfying_assignment",
+  "source_archive": {
+    "sha256": "d4ddcf358b6a2a1321911170dae1b946ca75b583ab1aa541c37bee291f20d86c",
+    "bytes": 518784,
+    "files": 191,
+    "scope": "Frozen native source snapshot with streamed checking, before later byte/word/constructor work. This run uses the unchanged small scalar setup, not the expanded constructor or Nat profile."
+  },
+  "runner": {
+    "sha256": "8834fc69c085e10b2ab228bd35e39849f7e5a6538da7beedf0acaec5320e7d42",
+    "bytes": 1831,
+    "started_utc": "2026-09-13T20:17:15Z",
+    "finished_utc": "2026-09-13T21:10:02Z",
+    "exit_status": 0
+  },
+  "composition": {
+    "arithmetic": "PreparedRangedF128Fifo1024V1",
+    "digest": "158396e249b6f752582f456cc852a55fa994310866bf4f95e3f9f03e3ec7f00e",
+    "tables_digest": "2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f",
+    "matrix_claims": 64,
+    "structure_claims": 3,
+    "jagged_claims": 3,
+    "queries": [
+      244,
+      79,
+      48
+    ],
+    "grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "public_fr_limbs": 2,
+    "public_scalar_bytes": 64
+  },
+  "stage3_capacity": {
+    "program_bytes": 64,
+    "functions": 1,
+    "blocks_per_function": 1,
+    "operands": 1,
+    "locals": 1,
+    "continuations": 1,
+    "arguments": 1,
+    "input_bytes": 32,
+    "input_values": 1,
+    "output_bytes": 32,
+    "steps": 4,
+    "primitive_registry": "legacy 20 scalar primitives",
+    "blake3_backend": "PackedWordsV0",
+    "semantic_revision": 0
+  },
+  "r1cs": {
+    "constraints": 757209570,
+    "public_variables": 2,
+    "private_variables": 752489972,
+    "assignment_elements_including_constant_one": 752489975,
+    "nonzero_terms": 3483940136,
+    "assignment_payload_bytes": 24079679200,
+    "setup_projection_digest": "797703ce84a5928bbc04c4bfd47bfad0324aae69005c47163d5cb1fb16a123fc",
+    "checked_canonical_matrix_digest": "d6f41218479a03ba5ae06e0ec4290005ead453ff69b90224ed9c48606d38ae33",
+    "constraints_by_phase": {
+      "Statement": 79742,
+      "Transcript": 24676163,
+      "Zerocheck": 4374065,
+      "Lincheck": 8379668,
+      "Wiring": 17617327,
+      "Pcs": 277749570,
+      "MatrixFold": 424333035
+    }
+  },
+  "plonk": {
+    "constraint_rows": 1042919351,
+    "public_input_rows": 2,
+    "blinding_rows": 2,
+    "padding_rows": 30822471,
+    "domain_size": 1073741824,
+    "auxiliary_wires": 285709781,
+    "rows_by_phase": {
+      "Statement": 149958,
+      "Transcript": 46397611,
+      "Zerocheck": 5995481,
+      "Lincheck": 11484829,
+      "Wiring": 23882852,
+      "Pcs": 399158881,
+      "MatrixFold": 555849739
+    }
+  },
+  "timing": {
+    "setup_census_including_preparation_seconds": 1566.327,
+    "whole_constraint_check_seconds": 1584.986,
+    "total_to_checked_result_seconds": 3151.802,
+    "main_test_seconds": 3152.54,
+    "main_command_wall_seconds": 3152.63,
+    "preflight_test_seconds": 1.18
+  },
+  "bounds": {
+    "virtual_address_gib": 64,
+    "assignment_payload_gib": 24,
+    "rayon_threads": 8,
+    "cargo_jobs": 16,
+    "preflight_timeout_seconds": 900,
+    "main_timeout_seconds": 10800,
+    "kill_grace_seconds": 30
+  },
+  "host": {
+    "class": "authorized 64-vCPU / approximately 496-GiB CPU host",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "main_command_maxrss_kib": 24450752,
+    "checked_process_vmhwm_kib": 24455840,
+    "checked_process_vmpeak_kib": 25276924,
+    "memory_scope": "Census and streamed complete assignment checking only; not PLONK materialization, preprocessing, proving, or aggregate concurrent-process peak.",
+    "available_disk_bytes_observed_during_run": 425473204224
+  },
+  "raw_log": {
+    "path": "flock-stage4/census/exec-ranged-original-claims-checked-v1.log",
+    "sha256": "676531b4b4f6810d537e5c1aec7e41f0948d0c865a07f17297aa492d2298c68b",
+    "bytes": 27118,
+    "capture_normalization": "None; remote SHA-256 and byte count compared after capture."
+  },
+  "reproduce": "RAYON_NUM_THREADS=8 CARGO_BUILD_JOBS=16 prlimit --as=68719476736 --core=0 -- timeout --kill-after=30s 10800 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec native::tests::original_closure_tests::packed_small_whole_ranged_original_claims_checked_assignment -- --exact --ignored --nocapture --test-threads=1",
+  "interpretation": "The complete setup-owned census finishes under the supported domain, and every emitted constraint in one complete real native-replay assignment is satisfied. Stream completion checks the full setup projection and computes the canonical matrix identity. This is not proof generation or independent verification of a terminal proof. Future materialized setup/preprocessing must bind the same canonical identity.",
+  "remaining": {
+    "plonk_gate_arena_materialized": false,
+    "srs_generated": false,
+    "terminal_key_generated": false,
+    "stage4_proof_generated": false,
+    "full_pipeline_resource_admission": false,
+    "expanded_stage3_profile_census": false,
+    "file_key_payload_gib_at_domain": 256,
+    "compressed_srs_payload_gib_at_domain": 432,
+    "key_plus_srs_payload_gib_before_scratch": 688,
+    "largest_fft_array_gib": 128
+  }
+}

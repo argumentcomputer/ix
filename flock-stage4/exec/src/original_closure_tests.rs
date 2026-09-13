@@ -561,3 +561,196 @@ fn owns_arithmetic(arithmetic: ExecOriginalClosureArithmeticV0) {
     blake3::Hash::from(prepared.tables().digest()),
   );
 }
+
+#[test]
+#[ignore = "actual approved setup and native proof with false/prefix-census and resource preflights; no whole materialization or Stage 4 proof"]
+fn packed_small_streamed_materialization_rejects_false_census_and_limits() {
+  use crate::{
+    ExecRootClosedCensusV0, check_exec_original_claims_streamed_observed,
+    materialize_exec_original_claims_setup_observed,
+  };
+  use ark_ff::AdditiveGroup;
+  use ix_fflonk::{PlonkGateProjectionV1, plan_plonk_stream_memory};
+  let setup = setup();
+  let replay = compile_exec_replay(&setup).unwrap();
+  let closure = compile_exec_original_claims_closure_with_arithmetic(
+    &replay,
+    DIRECT_LIMITS,
+    ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1,
+  )
+  .unwrap();
+  // A caller can write composition metadata around another complete census,
+  // but cannot make it match the actual closed relation's streamed matrices.
+  let projection = PlonkGateProjectionV1::new();
+  let mut builder =
+    R1csBuilder::new_shape_projection_observed(projection.observer());
+  builder.alloc_public(ark_bls12_381::Fr::ZERO).unwrap();
+  builder.alloc_public(ark_bls12_381::Fr::ZERO).unwrap();
+  let r1cs = builder.finish_projection().unwrap();
+  let plonk = projection.finish(&r1cs).unwrap();
+  let fake = ExecRootClosedCensusV0 {
+    composition_digest: closure.digest(),
+    r1cs,
+    plonk,
+    public_scalar_bytes: 64,
+  };
+  let source = closure.setup_source_slots().unwrap().payload_bytes().unwrap();
+  let bytes = plan_plonk_stream_memory(fake.r1cs.variables(), &fake.plonk)
+    .unwrap()
+    .peak_payload_bytes;
+  for (source_limit, plonk_limit) in
+    [(source - 1, bytes), (source, bytes - 1), (source, bytes)]
+  {
+    let result = materialize_exec_original_claims_setup_observed(
+      &closure,
+      &fake,
+      source_limit,
+      plonk_limit,
+      |_| panic!("no row may escape these preflights"),
+    );
+    assert!(result.is_err());
+    if source_limit == source && plonk_limit == bytes {
+      assert_eq!(
+        result.unwrap_err().downcast_ref::<R1csError>(),
+        Some(&R1csError::StreamMismatch)
+      );
+    }
+  }
+  for change in 0..3 {
+    let mut bad = fake.clone();
+    match change {
+      0 => bad.composition_digest[0] ^= 1,
+      1 => bad.public_scalar_bytes += 1,
+      2 => bad.plonk.domain_size = 0,
+      _ => unreachable!(),
+    }
+    assert!(
+      materialize_exec_original_claims_setup_observed(
+        &closure,
+        &bad,
+        source,
+        bytes,
+        |_| panic!("metadata preflight")
+      )
+      .is_err()
+    );
+  }
+  let (commitments, public, proof) = prove(&setup, false, true);
+  let witness = replay.replay(commitments, &proof).unwrap();
+  for limit in [95, 96] {
+    let result = check_exec_original_claims_streamed_observed(
+      &closure,
+      &fake,
+      public,
+      &witness,
+      limit,
+      |_| panic!("no checked prefix may escape"),
+    );
+    assert!(result.is_err());
+    if limit == 96 {
+      assert_eq!(
+        result.unwrap_err().downcast_ref::<R1csError>(),
+        Some(&R1csError::StreamMismatch)
+      );
+    }
+  }
+  eprintln!(
+    "streamed closed-Exec false census, metadata/source/array bounds and checked-assignment preflights PASS; no complete materialization/key/proof"
+  );
+}
+
+#[test]
+#[ignore = "bounded WHOLE proof-free census then every R1CS constraint checked against the complete native-replay assignment; about 23 GiB assignment payload, no PLONK gate arena, SRS, key or Stage 4 proof"]
+fn packed_small_whole_ranged_original_claims_checked_assignment() {
+  use crate::check_exec_original_claims_streamed_observed;
+  let started = Instant::now();
+  let setup = setup();
+  let replay = compile_exec_replay(&setup).unwrap();
+  let closure = compile_exec_original_claims_closure_with_arithmetic(
+    &replay,
+    DIRECT_LIMITS,
+    ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1,
+  )
+  .unwrap();
+  let slots = closure.setup_source_slots().unwrap();
+  let config = setup.pcs_params().ligerito_verifier_config().unwrap();
+  assert_eq!(config.queries, [244, 79, 48]);
+  assert_eq!(config.grinding_bits, [16, 16, 16]);
+  assert_eq!(closure.tables().matrices().outputs().len(), 64);
+  eprintln!(
+    "WHOLE checked-assignment preparation: composition={}, tables={}, all 64 matrix/3 structure/3 jagged claims; pinned queries {:?}, grinding {:?}; {}",
+    blake3::Hash::from(closure.digest()),
+    blake3::Hash::from(closure.tables().digest()),
+    config.queries,
+    config.grinding_bits,
+    memory_summary()
+  );
+  // Recompute a complete, setup-owned census in this process. No imported
+  // count record or digest is treated as evidence of completed emission.
+  let outcome = census_exec_original_claims_setup_observed(
+    &closure,
+    slots.payload_bytes().unwrap(),
+    ExecRootClosedCensusLimitsV0 {
+      required_domain_rows: ix_fflonk::FFLONK_MAX_BASE_DOMAIN,
+    },
+    move |p| {
+      eprintln!(
+        "checked-assignment setup {:?}: {} R1CS, {} PLONK; {:.2}s; {}",
+        p.last_phase,
+        p.plonk.r1cs_constraints,
+        p.plonk.constraint_rows,
+        started.elapsed().as_secs_f64(),
+        memory_summary()
+      );
+    },
+  )
+  .unwrap();
+  let ExecRootClosedCensusOutcomeV0::Complete(expected) = outcome else {
+    panic!(
+      "whole checked assignment requires a complete supported census: {outcome:?}"
+    )
+  };
+  let bytes = u64::from(expected.r1cs.variables())
+    .checked_mul(size_of::<ark_bls12_381::Fr>() as u64)
+    .unwrap();
+  // This test is a bounded witness-satisfaction job, not large-key admission.
+  assert!(bytes <= 24 * (1u64 << 30));
+  eprintln!(
+    "COMPLETE checked-assignment SETUP census: {expected:?}; assignment payload {bytes} bytes; {:.3}s; {}. No checked witness yet.",
+    started.elapsed().as_secs_f64(),
+    memory_summary()
+  );
+  let (commitments, public, proof) = prove(&setup, false, true);
+  let witness = replay.replay(commitments, &proof).unwrap();
+  let checked_started = Instant::now();
+  let checked = check_exec_original_claims_streamed_observed(
+    &closure,
+    &expected,
+    public,
+    &witness,
+    bytes,
+    move |p| {
+      eprintln!(
+        "whole CHECKED assignment {:?}: {} satisfied R1CS constraints; {:.2}s; {}",
+        p.phase,
+        p.r1cs_constraints,
+        checked_started.elapsed().as_secs_f64(),
+        memory_summary()
+      );
+    },
+  )
+  .unwrap();
+  assert_eq!(checked.assignment().len(), expected.r1cs.variables() as usize);
+  assert_eq!(checked.public_inputs(), &public.field_elements());
+  eprintln!(
+    "COMPLETE WHOLE CHECKED assignment: {} satisfied R1CS constraints, {} variables, {} bytes; full setup projection {}; canonical matrix identity {}; {:.3}s checking, {:.3}s total; {}. No PLONK gate arena, SRS, terminal key or Stage 4 proof.",
+    expected.r1cs.census().constraints,
+    checked.assignment().len(),
+    bytes,
+    blake3::Hash::from(expected.r1cs.digest()),
+    blake3::Hash::from(checked.r1cs_digest()),
+    checked_started.elapsed().as_secs_f64(),
+    started.elapsed().as_secs_f64(),
+    memory_summary()
+  );
+}

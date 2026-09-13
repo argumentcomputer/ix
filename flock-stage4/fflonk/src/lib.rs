@@ -27,10 +27,11 @@ mod verifier_key;
 
 pub use arithmetization::{
   FFLONK_BLINDING_ROWS, FflonkCheckedWitnessV1, PLONK_GATE_RECORD_BYTES,
-  PlonkArithmetizationError, PlonkArithmetizationV1, PlonkCellV1,
-  PlonkGateCensusV1, PlonkGatePrefixV0, PlonkGateProjectionV1,
-  PlonkGateRecordError, PlonkGateV1, PlonkWireV1, PlonkWitnessV1,
-  arithmetize_r1cs, arithmetize_r1cs_owned, lower_plonk_witness,
+  PlonkArithmetizationError, PlonkArithmetizationStreamV0,
+  PlonkArithmetizationV1, PlonkCellV1, PlonkGateCensusV1, PlonkGatePrefixV0,
+  PlonkGateProjectionV1, PlonkGateRecordError, PlonkGateV1,
+  PlonkStreamMemoryV0, PlonkWireV1, PlonkWitnessV1, arithmetize_r1cs,
+  arithmetize_r1cs_owned, lower_plonk_witness, plan_plonk_stream_memory,
 };
 pub use capacity::{
   BLS12_381_G1_COMPRESSED_BYTES, BLS12_381_G1_EIP2537_BYTES,

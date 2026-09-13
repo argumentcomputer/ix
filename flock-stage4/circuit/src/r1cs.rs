@@ -2,6 +2,10 @@ use ark_bls12_381::Fr;
 use ark_ff::{AdditiveGroup, Field, PrimeField, Zero};
 use std::collections::BTreeMap;
 
+#[path = "r1cs_stream.rs"]
+mod stream;
+pub use stream::{R1csCheckedStreamV0, R1csShapeStreamV0, R1csStreamedShapeV0};
+
 const CIRCUIT_DIGEST_DOMAIN: &[u8] = b"ix:stage4:r1cs:bls12-381:v1";
 const PROJECTION_DIGEST_DOMAIN: &[u8] =
   b"ix:stage4:r1cs-projection:bls12-381:v1";
@@ -178,6 +182,19 @@ fn hash_constraint(hasher: &mut blake3::Hasher, constraint: &Constraint) {
   }
 }
 
+fn canonical_hasher(
+  public_variables: u32,
+  private_variables: u32,
+  constraints: u64,
+) -> blake3::Hasher {
+  let mut hasher = blake3::Hasher::new();
+  hasher.update(CIRCUIT_DIGEST_DOMAIN);
+  hasher.update(&public_variables.to_le_bytes());
+  hasher.update(&private_variables.to_le_bytes());
+  hasher.update(&constraints.to_le_bytes());
+  hasher
+}
+
 /// Deterministic size report for one canonical relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct R1csCensusV1 {
@@ -275,14 +292,10 @@ impl CanonicalR1csV1 {
 
   /// Content address of the normalized matrices and variable layout.
   pub fn digest(&self) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(CIRCUIT_DIGEST_DOMAIN);
-    hasher.update(&self.public_variables.to_le_bytes());
-    hasher.update(&self.private_variables.to_le_bytes());
-    hasher.update(
-      &u64::try_from(self.constraints.len())
-        .expect("constraint count fits u64")
-        .to_le_bytes(),
+    let mut hasher = canonical_hasher(
+      self.public_variables,
+      self.private_variables,
+      u64::try_from(self.constraints.len()).expect("constraint count fits u64"),
     );
     for constraint in &self.constraints {
       hash_constraint(&mut hasher, constraint);
@@ -372,6 +385,9 @@ enum BuilderStorage {
     observer: Option<Box<dyn FnMut(&Constraint) -> Result<(), R1csError>>>,
     shape_only: bool,
   },
+  Streamed {
+    state: Box<stream::StreamingBuilder>,
+  },
 }
 
 struct ProjectionAccumulator {
@@ -379,6 +395,68 @@ struct ProjectionAccumulator {
   nonzero_terms: u64,
   constraints_by_phase: BTreeMap<ConstraintPhase, u64>,
   hasher: blake3::Hasher,
+}
+
+impl ProjectionAccumulator {
+  fn new() -> Self {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(PROJECTION_DIGEST_DOMAIN);
+    Self {
+      constraints: 0,
+      nonzero_terms: 0,
+      constraints_by_phase: BTreeMap::new(),
+      hasher,
+    }
+  }
+
+  fn observe(&mut self, constraint: &Constraint) -> Result<(), R1csError> {
+    let constraints =
+      self.constraints.checked_add(1).ok_or(R1csError::CountOverflow)?;
+    let terms = constraint
+      .a
+      .terms
+      .len()
+      .checked_add(constraint.b.terms.len())
+      .and_then(|n| n.checked_add(constraint.c.terms.len()))
+      .and_then(|n| u64::try_from(n).ok())
+      .and_then(|n| self.nonzero_terms.checked_add(n))
+      .ok_or(R1csError::CountOverflow)?;
+    let phase_count = self
+      .constraints_by_phase
+      .get(&constraint.phase)
+      .copied()
+      .unwrap_or(0)
+      .checked_add(1)
+      .ok_or(R1csError::CountOverflow)?;
+    self.constraints = constraints;
+    self.nonzero_terms = terms;
+    self.constraints_by_phase.insert(constraint.phase, phase_count);
+    hash_constraint(&mut self.hasher, constraint);
+    Ok(())
+  }
+
+  fn finish(
+    mut self,
+    public_variables: u32,
+    private_variables: u32,
+  ) -> R1csProjectionV1 {
+    self.hasher.update(&[0xff]);
+    self.hasher.update(&public_variables.to_le_bytes());
+    self.hasher.update(&private_variables.to_le_bytes());
+    self.hasher.update(&self.constraints.to_le_bytes());
+    R1csProjectionV1 {
+      public_variables,
+      private_variables,
+      census: R1csCensusV1 {
+        public_variables: u64::from(public_variables),
+        private_variables: u64::from(private_variables),
+        constraints: self.constraints,
+        nonzero_terms: self.nonzero_terms,
+        constraints_by_phase: self.constraints_by_phase,
+      },
+      digest: *self.hasher.finalize().as_bytes(),
+    }
+  }
 }
 
 impl R1csBuilder {
@@ -424,11 +502,12 @@ impl R1csBuilder {
   /// This mode is fixed at construction and never turns into a witness
   /// builder. It is NOT permission to omit any relation constraints.
   pub fn is_shape_only(&self) -> bool {
-    matches!(
-      self.storage,
+    match &self.storage {
       BuilderStorage::Shape { .. }
-        | BuilderStorage::Projection { shape_only: true, .. }
-    )
+      | BuilderStorage::Projection { shape_only: true, .. } => true,
+      BuilderStorage::Streamed { state } => state.is_shape_only(),
+      _ => false,
+    }
   }
 
   /// Surface a sticky emission refusal, including one on the final
@@ -469,6 +548,7 @@ impl R1csBuilder {
       BuilderStorage::Projection { accumulator, .. } => {
         accumulator.constraints != 0
       },
+      BuilderStorage::Streamed { state } => state.constraints_started(),
     };
     if self.f128_preparations.is_some()
       || self.public_variables != 0
@@ -563,20 +643,13 @@ impl R1csBuilder {
     observer: Option<Box<dyn FnMut(&Constraint) -> Result<(), R1csError>>>,
     shape_only: bool,
   ) -> Self {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(PROJECTION_DIGEST_DOMAIN);
     Self {
       public_variables: 0,
       private_variables: 0,
       error: None,
       f128_preparations: None,
       storage: BuilderStorage::Projection {
-        accumulator: Box::new(ProjectionAccumulator {
-          constraints: 0,
-          nonzero_terms: 0,
-          constraints_by_phase: BTreeMap::new(),
-          hasher,
-        }),
+        accumulator: Box::new(ProjectionAccumulator::new()),
         observer,
         shape_only,
       },
@@ -587,6 +660,7 @@ impl R1csBuilder {
     if let Some(error) = &self.error {
       return Err(error.clone());
     }
+    self.check_streamed_allocation(true)?;
     if self.private_variables != 0 {
       return Err(R1csError::PublicAfterPrivate);
     }
@@ -603,6 +677,9 @@ impl R1csBuilder {
     {
       public_values.push(value);
     }
+    if let BuilderStorage::Streamed { state } = &mut self.storage {
+      state.push_value(value);
+    }
     Ok(Variable(u32::try_from(index).map_err(|_| R1csError::TooManyVariables)?))
   }
 
@@ -610,6 +687,7 @@ impl R1csBuilder {
     if let Some(error) = &self.error {
       return Err(error.clone());
     }
+    self.check_streamed_allocation(false)?;
     let index = 1usize
       .checked_add(self.public_variables)
       .and_then(|value| value.checked_add(self.private_variables))
@@ -623,6 +701,9 @@ impl R1csBuilder {
       &mut self.storage
     {
       private_values.push(value);
+    }
+    if let BuilderStorage::Streamed { state } = &mut self.storage {
+      state.push_value(value);
     }
     Ok(Variable(u32::try_from(index).map_err(|_| R1csError::TooManyVariables)?))
   }
@@ -693,18 +774,21 @@ impl R1csBuilder {
         constraints.push(constraint);
       },
       BuilderStorage::Projection { accumulator, observer, .. } => {
-        accumulator.constraints += 1;
-        accumulator.nonzero_terms += u64::try_from(
-          constraint.a.terms.len()
-            + constraint.b.terms.len()
-            + constraint.c.terms.len(),
-        )
-        .expect("constraint term count fits u64");
-        *accumulator.constraints_by_phase.entry(phase).or_default() += 1;
-        hash_constraint(&mut accumulator.hasher, &constraint);
+        if let Err(error) = accumulator.observe(&constraint) {
+          self.error = Some(error);
+          return;
+        }
         if let Some(observer) = observer
           && let Err(error) = observer(&constraint)
         {
+          self.error = Some(error);
+        }
+      },
+      BuilderStorage::Streamed { state } => {
+        if let Err(error) = state.observe(
+          &constraint,
+          1 + self.public_variables + self.private_variables,
+        ) {
           self.error = Some(error);
         }
       },
@@ -810,24 +894,7 @@ impl R1csBuilder {
     let BuilderStorage::Projection { accumulator, .. } = self.storage else {
       return Err(R1csError::WrongBuilderMode);
     };
-    let mut projection = *accumulator;
-    projection.hasher.update(&[0xff]);
-    projection.hasher.update(&public_variables.to_le_bytes());
-    projection.hasher.update(&private_variables.to_le_bytes());
-    projection.hasher.update(&projection.constraints.to_le_bytes());
-    let digest = *projection.hasher.finalize().as_bytes();
-    Ok(R1csProjectionV1 {
-      public_variables,
-      private_variables,
-      census: R1csCensusV1 {
-        public_variables: u64::from(public_variables),
-        private_variables: u64::from(private_variables),
-        constraints: projection.constraints,
-        nonzero_terms: projection.nonzero_terms,
-        constraints_by_phase: projection.constraints_by_phase,
-      },
-      digest,
-    })
+    Ok(accumulator.finish(public_variables, private_variables))
   }
 }
 
@@ -849,6 +916,8 @@ pub enum R1csError {
   InvalidF128PreparationCacheCapacity { capacity: usize },
   ResourceLimit { resource: &'static str, limit: u64, actual: u64 },
   ObserverFailure(String),
+  StreamMismatch,
+  AllocationFailed { resource: &'static str, bytes: u64 },
   AssignmentLength { actual: usize, expected: usize },
   InvalidConstantWire,
   UnknownVariable(Variable),
@@ -884,6 +953,13 @@ impl std::fmt::Display for R1csError {
       ),
       Self::ObserverFailure(message) => {
         write!(formatter, "R1CS stream observer failed: {message}")
+      },
+      Self::StreamMismatch => write!(
+        formatter,
+        "R1CS stream differs from its complete expected census or identity"
+      ),
+      Self::AllocationFailed { resource, bytes } => {
+        write!(formatter, "could not allocate {bytes} bytes for {resource}")
       },
       Self::AssignmentLength { actual, expected } => write!(
         formatter,

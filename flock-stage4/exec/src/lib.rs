@@ -10,6 +10,7 @@ mod blueprint;
 mod census;
 mod closure;
 mod closure_census;
+mod materialization;
 mod native;
 mod original_closure;
 pub mod replay;
@@ -34,6 +35,11 @@ pub use closure_census::{
   census_exec_original_claims_observed,
   census_exec_original_claims_setup_observed, census_exec_root_closed_observed,
   census_exec_root_closed_setup_observed,
+};
+pub use materialization::{
+  ExecOriginalMaterializationProgressV0,
+  check_exec_original_claims_streamed_observed,
+  materialize_exec_original_claims_setup_observed,
 };
 pub use native::{ExecReplayWitness, compile_exec_binding, replay_exec};
 pub use original_closure::{
