@@ -247,6 +247,29 @@ this encoding feasible. This is a new refused prefix, not a full census.
 The [small-class report](census/exec-small-class-root-closed-admission-v0.json)
 records source hashes, setup identities, reproduction commands and result scope.
 
+## Candidate packed-word compression
+
+A separate Stage 3 compression prototype replaces the single flattened
+BLAKE3 table with ten reusable word tables. It is not selected by approved
+Exec setup. Its twenty exact A/B diagrams retain 1,582 nodes and 23,808
+nonzero entries. Four native-field differentials per matrix pass.
+
+The complete independent matrix-component census is 8,786,640 R1CS
+constraints / 14,121,316 PLONK rows, with setup-only and assigned projections
+identical for every component. It includes twenty private point/value
+bindings. The earlier two flattened-table components alone needed
+430,918,142 PLONK rows (without separately allocated claimed values).
+This is a component comparison, not a new full-Exec estimate: more outer rows,
+dense words, matrix folds and wiring may increase other costs.
+
+One actual lane-table component was materialized at 160,197 R1CS constraints.
+Both assignments satisfy identical matrices, and all 128 claimed-output-bit
+mutations reject. Two real native compression proofs also pass isolated
+verification, with a locally valid but globally miswired row rejected.
+Neither test is a terminal proof. The [packed-component report](census/packed-blake3-components-v0.json)
+records sources, exact counts and bounded commands. Integration needs an
+explicit backend/key change and a fresh whole closed census before proving.
+
 ## Boundary that is not yet closed
 
 `Stage4RelationPublicInputsV1` is the historical **root-conditional** relation.

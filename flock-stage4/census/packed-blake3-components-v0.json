@@ -1,0 +1,389 @@
+{
+  "schema": "ixby-packed-blake3-component-evidence-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "34a5fd070ef95644f08a503fa79561112f1eaa70",
+  "status": "complete_compression_component_evidence_not_an_approved_exec_backend",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "provenance": "New local packed-word Boolean tables and fixed seven-round composition. Reuses the existing Boolean builder, packing helpers and pinned upstream message permutation/native compression as a differential oracle. No donor worktree, dependency pin, active Exec setup or backend identity was changed.",
+  "source_hashes": [
+    {
+      "path": "flock-stage3/host/src/packed_blake3.rs",
+      "sha256": "9f2140149418359e418c93b99ebb93d1fa61324ddd53c5f0f255a5bdf2df975e"
+    },
+    {
+      "path": "flock-stage3/host/src/packed_blake3/tests.rs",
+      "sha256": "f9db4b78db7fb08ed1cbf1d8b0ffafb2f222da026a82a1c77c9036a05d078e3e"
+    },
+    {
+      "path": "flock-stage3/host/src/packed_blake3/proof_tests.rs",
+      "sha256": "8a02183439bd6bb96438512336bd80acb60571885e5a9f271bc65c3e49e1b41b"
+    },
+    {
+      "path": "flock-stage4/exec/src/packed_blake3_tests.rs",
+      "sha256": "e1be4c1fa1b45dd1cbf077a4424e65a8b47568e0422e76ded4683e0b6aa1fa42"
+    }
+  ],
+  "active_exec_backend_changed": false,
+  "whole_redesigned_exec_census_completed": false,
+  "whole_root_closed_relation_materialized": false,
+  "terminal_key_generated": false,
+  "terminal_proof_generated": false,
+  "lean_primitive_refinement_proved": false,
+  "component_geometry": {
+    "private_input_words": 7,
+    "expected_output_words": 4,
+    "fixed_public_iv_words": 1,
+    "tables": 10,
+    "table_invocations_per_compression": 187,
+    "dense_words_per_compression": 632,
+    "total_unpadded_inner_bits": 7936,
+    "padded_inner_bits": 8192,
+    "count_only_setup_and_shape_registry_agree": true,
+    "cases": [
+      {
+        "compressions": 1,
+        "nu": 9,
+        "virtual_m": 22,
+        "dense_m": 22,
+        "dense_words": 632
+      },
+      {
+        "compressions": 2,
+        "nu": 9,
+        "virtual_m": 22,
+        "dense_m": 22,
+        "dense_words": 1264
+      },
+      {
+        "compressions": 19,
+        "nu": 11,
+        "virtual_m": 24,
+        "dense_m": 22,
+        "dense_words": 12008
+      }
+    ],
+    "caveat": "Standalone compression geometry only, not a new measurement of the full scalar interpreter. Larger outer nu and dense witness width can increase wiring, folds and PCS cost."
+  },
+  "component_tests": {
+    "stage3_ordinary_new_tests": 7,
+    "evidence": [
+      "Independent native word arithmetic versus Boolean table rows; every single witness-column mutation rejected, including all carry and padding bits.",
+      "u32 carry-chain and overflow boundaries do not cross packed lanes.",
+      "All 512 original message basis bits routed through every round and output lane.",
+      "Poisoned in-place z/Az/Bz and stripe buffers match full matrix generation for counts 0,1,7,8,9,16 at nu=4.",
+      "All sixteen u32 compression outputs match pinned upstream for 64 private CV/message/counter/length/flag vectors; all composed gate rows checked.",
+      "Independent blake3 crate hash matches every single-block length from 0 through 64.",
+      "Identical count/compiled layouts, counts, registry digests and exact A/B/C matrices for 1,2,19 shared compressions.",
+      "Twenty decision diagrams compile deterministically and match native sparse bilinear evaluation at four F128 row/column points each."
+    ],
+    "caveat": "Native and matrix conformance tests, not a Lean proof of primitive or composition refinement. The component is raw compression, not the bounded multi-block hash or Exec relation."
+  },
+  "native_proofs": {
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml private_compressions_verify_in_fresh_process_and_reject_broken_wiring -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 0.17,
+    "positive_proofs": 2,
+    "proof_bundle_bytes": [
+      114027,
+      114027
+    ],
+    "separately_expected_output_bytes": 64,
+    "security": "Pinned embedded Fast128/m22 and BLAKE3 configuration, nu=9; no reduced-query override or m37 patch.",
+    "fixed_setup_reused": true,
+    "fresh_process_verification": true,
+    "fresh_process_inputs": "Only 64 bytes of externally expected full compression output and the serialized Flock bundle. Setup/public constants are reconstructed. Empty inherited environment, cwd outside the worktree; no private CV/message/parameters, gate evaluation or native hash invocation in the verifier branch.",
+    "negatives": [
+      "Each of the four externally expected output words changed independently.",
+      "Commitment byte, last proof byte, truncation, trailing byte and transcript domain mutations.",
+      "One separately generated proof with a recomputed locally valid addition row violating fixed global wiring. Fresh verification rejects with Wiring(Gkr(ProductMismatch))."
+    ],
+    "scope": "Real compression-component Flock proofs. Not execution proofs, FFLONK proofs, a full bounded-hash proof or an authenticated private-input statement."
+  },
+  "terminal_component_tests": {
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec packed_blake3_tests -- --include-ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "tests_passed": 3,
+    "test_duration_seconds": 37.46,
+    "census_scope": "Complete separate A/B table MLE gadgets for all ten new table types. Each has freshly allocated private row/column coordinates, a private claimed value and equality binding. No sharing of point/claim variables across the twenty components. Setup-only versus assigned projections have identical full projection objects and PLONK censuses; assigned outputs match native sparse bilinear evaluation.",
+    "plonk_constraint_row_limit_per_component": 50000000,
+    "limits": {
+      "source_entries_per_diagram": 20000,
+      "retained_nodes_per_diagram": 10000
+    },
+    "totals": {
+      "matrix_count": 20,
+      "nonzero_entries": 23808,
+      "diagram_nodes": 1582,
+      "r1cs_constraints": 8786640,
+      "plonk_constraint_rows": 14121316
+    },
+    "materialized_representative": {
+      "gate": "LanesLeft1",
+      "side": "A",
+      "valid_assignments": 2,
+      "private_variables": 159465,
+      "r1cs_constraints": 160197,
+      "nonzero_terms": 740834,
+      "identical_r1cs_digest_across_assignments": true,
+      "full_satisfaction_checked": true,
+      "claimed_bit_mutations_per_assignment": 128,
+      "caveat": "Only this representative root gadget was materialized. The other nineteen root gadgets use streaming projection, not full satisfaction checks. None is the complete terminal relation."
+    },
+    "excluded": "All noncompression matrix roots, structure and jagged roots, transcript, Flock sumchecks, wiring, PCS, Exec statement binding, terminal preprocessing/proving and whole-pipeline resource admission."
+  },
+  "tables": [
+    {
+      "kind": "Add",
+      "k_log": 9,
+      "useful_bits": 508,
+      "rows_per_compression": 84,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 4480,
+          "diagram_nodes": 298,
+          "r1cs_constraints": 1695291,
+          "plonk_constraint_rows": 2729354
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 4480,
+          "diagram_nodes": 298,
+          "r1cs_constraints": 1695163,
+          "plonk_constraint_rows": 2729226
+        }
+      ]
+    },
+    {
+      "kind": "Xor",
+      "k_log": 9,
+      "useful_bits": 384,
+      "rows_per_compression": 4,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 512,
+          "diagram_nodes": 30,
+          "r1cs_constraints": 154373,
+          "plonk_constraint_rows": 247540
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 512,
+          "diagram_nodes": 30,
+          "r1cs_constraints": 154373,
+          "plonk_constraint_rows": 247540
+        }
+      ]
+    },
+    {
+      "kind": "XorRotate7",
+      "k_log": 9,
+      "useful_bits": 384,
+      "rows_per_compression": 14,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 512,
+          "diagram_nodes": 56,
+          "r1cs_constraints": 306309,
+          "plonk_constraint_rows": 492140
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 512,
+          "diagram_nodes": 56,
+          "r1cs_constraints": 306309,
+          "plonk_constraint_rows": 492140
+        }
+      ]
+    },
+    {
+      "kind": "XorRotate8",
+      "k_log": 9,
+      "useful_bits": 384,
+      "rows_per_compression": 14,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 512,
+          "diagram_nodes": 41,
+          "r1cs_constraints": 218693,
+          "plonk_constraint_rows": 351064
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 512,
+          "diagram_nodes": 41,
+          "r1cs_constraints": 218693,
+          "plonk_constraint_rows": 351064
+        }
+      ]
+    },
+    {
+      "kind": "XorRotate12",
+      "k_log": 9,
+      "useful_bits": 384,
+      "rows_per_compression": 14,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 512,
+          "diagram_nodes": 46,
+          "r1cs_constraints": 247941,
+          "plonk_constraint_rows": 398132
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 512,
+          "diagram_nodes": 46,
+          "r1cs_constraints": 247941,
+          "plonk_constraint_rows": 398132
+        }
+      ]
+    },
+    {
+      "kind": "XorRotate16",
+      "k_log": 9,
+      "useful_bits": 384,
+      "rows_per_compression": 14,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 512,
+          "diagram_nodes": 37,
+          "r1cs_constraints": 195269,
+          "plonk_constraint_rows": 313384
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 512,
+          "diagram_nodes": 37,
+          "r1cs_constraints": 195269,
+          "plonk_constraint_rows": 313384
+        }
+      ]
+    },
+    {
+      "kind": "LanesLeft1",
+      "k_log": 8,
+      "useful_bits": 256,
+      "rows_per_compression": 14,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 256,
+          "diagram_nodes": 31,
+          "r1cs_constraints": 160197,
+          "plonk_constraint_rows": 256928
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 256,
+          "diagram_nodes": 31,
+          "r1cs_constraints": 160197,
+          "plonk_constraint_rows": 256928
+        }
+      ]
+    },
+    {
+      "kind": "LanesLeft2",
+      "k_log": 8,
+      "useful_bits": 256,
+      "rows_per_compression": 14,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 256,
+          "diagram_nodes": 27,
+          "r1cs_constraints": 136773,
+          "plonk_constraint_rows": 219248
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 256,
+          "diagram_nodes": 27,
+          "r1cs_constraints": 136773,
+          "plonk_constraint_rows": 219248
+        }
+      ]
+    },
+    {
+      "kind": "LanesLeft3",
+      "k_log": 8,
+      "useful_bits": 256,
+      "rows_per_compression": 14,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 256,
+          "diagram_nodes": 31,
+          "r1cs_constraints": 160197,
+          "plonk_constraint_rows": 256928
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 256,
+          "diagram_nodes": 31,
+          "r1cs_constraints": 160197,
+          "plonk_constraint_rows": 256928
+        }
+      ]
+    },
+    {
+      "kind": "MessageSchedule",
+      "k_log": 12,
+      "useful_bits": 4096,
+      "rows_per_compression": 1,
+      "matrices": [
+        {
+          "side": "A",
+          "nonzero_entries": 4096,
+          "diagram_nodes": 194,
+          "r1cs_constraints": 1118341,
+          "plonk_constraint_rows": 1796004
+        },
+        {
+          "side": "B",
+          "nonzero_entries": 4096,
+          "diagram_nodes": 194,
+          "r1cs_constraints": 1118341,
+          "plonk_constraint_rows": 1796004
+        }
+      ]
+    }
+  ],
+  "historical_comparison": {
+    "source_report": "flock-stage4/census/exec-structural-blake3-root-v0.json",
+    "legacy_ab_nonzero_entries": 44442498,
+    "legacy_dense_words_per_compression": 92,
+    "legacy_component_plonk_constraint_rows": 430918142,
+    "candidate_component_plonk_constraint_rows": 14121316,
+    "scope_difference": "Historical two flattened A/B components allocate their points but not separate claimed-value inputs/equality checks; the twenty candidate components include those. This is a structural component-cost comparison, not a matched complete-relation census or controlled time comparison.",
+    "interpretation": "The lower matrix-root cost justifies testing an explicitly versioned integrated backend. It does not prove that the complete closed relation fits or that old keys can be reused."
+  },
+  "resource_scope": {
+    "virtual_address_limit_kib": 16777216,
+    "rayon_workers": 4,
+    "timeout_seconds_per_test_command": 240,
+    "peak_process_tree_rss_measured": false,
+    "terminal_prover_memory_admission": false,
+    "timing_caveat": "Ordinary tests and compilation overlapped parts of these checks. Durations are bounded regression observations, not controlled benchmarks. No terminal setup ceremony, large proving job or remote job was run."
+  },
+  "regression": {
+    "stage3_ordinary_passed": 95,
+    "stage3_ignored": 8,
+    "stage4_ordinary_passed": 208,
+    "stage4_ignored": 20,
+    "stage4_crates": {
+      "fflonk": 88,
+      "trace": 34,
+      "circuit": 69,
+      "exec": 17
+    },
+    "both_release_locked_workspace_suites_passed": true,
+    "both_workspace_all_target_clippy_warnings_denied_passed": true,
+    "formatting_and_diff_checks_passed": true
+  },
+  "next_gate": "Wire this component into an explicit backend implementation choice, preserve the old default, test different byte/Exec inputs and malicious wiring under that choice, reject cross-backend proof/key substitution, and recensus the WHOLE closed relation before any full terminal materialization or proving."
+}

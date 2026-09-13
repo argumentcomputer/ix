@@ -115,6 +115,55 @@ evidence for the 1,024-byte terminal target. Tests use four Rayon workers,
 a 32 GiB virtual-address limit, and bounded timeouts. No peak-RSS, large-profile
 capacity, production cryptographic-parameter or setup claim follows.
 
+## Candidate packed-word compression layout
+
+The independent `flock-stage3/host/src/packed_blake3` component is a new
+implementation experiment, not a silent replacement of the compression slot
+above. Its raw inputs and sixteen u32 outputs have exactly the same semantics
+as the pinned compression gate. Counter, length and flags are raw words here;
+the surrounding bounded-hash construction must supply hash-mode constraints.
+
+State columns `[v0..3]`, `[v4..7]`, `[v8..11]`, `[v12..15]` each occupy one
+F128 word. Four G operations execute in parallel across independent u32
+lanes. Fixed lane permutations switch between column and diagonal rounds.
+One setup-owned linear table routes the original sixteen message words to
+all seven rounds. Every invocation emits exactly 84 additions, 60 XOR/rotate
+operations, 42 lane permutations and one schedule row, independent of values.
+
+The addition table uses `c_i = XOR(p_0,...,p_(i-1))` and
+`p_i = (x_i+c_i)*(y_i+c_i)`. Over Boolean GF(2) witnesses,
+`c_(i+1) = c_i+p_i = x_i*y_i + c_i*(x_i+y_i)`, the full-adder carry.
+Output is `x_i+y_i+c_i`; dropping the final carry gives wrapping u32
+addition. Each lane starts with an empty carry. Linear rows use `f*f=f`
+for Boolean linear forms, avoiding a constant-one pin. Padding still has
+zero A/B rows and C=I, hence must be zero. This mathematical explanation and
+native differential tests are not an extracted-table Lean refinement proof.
+
+The ten tables have a padded combined width of 8,192 bits. Standalone proving
+uses explicit `nu=9` to admit the pinned Fast128/m22 floor; it does not switch
+to a development query schedule. Poisoned-buffer tests compare the in-place
+driver against complete matrices for empty, partial and full counts.
+Every bit of each table row is mutation-tested, including carries and padding.
+Complete composition tests cover 64 arbitrary private CV/message/parameter
+vectors and independent hashes for every single-block length 0–64.
+
+Two real compression proofs use identical setup and verify in fresh child
+processes receiving only the four expected F128 output words and the bundle.
+Each bundle is 114,027 bytes; the separately supplied output is 64 bytes.
+Expected-word, transcript-domain and canonical transport mutations reject;
+a recomputed valid addition row substituted into the wrong wiring fails
+Product-GKR. The child rebuilds only the fixed component setup, not any
+message or native hash evaluation. This establishes component conformance,
+not an execution statement, full multi-block hash proof or compact terminal
+proof. Formal primitive/composition refinement remains outstanding.
+
+The [paired terminal measurements](../flock-stage4/census/packed-blake3-components-v0.json)
+show much smaller matrix-root evaluation components, but dense witness width
+rises from 92 to 632 words per compression. Nineteen shared invocations need
+`nu=11`. Whole Exec geometry, wiring/PCS cost, implementation identity and
+old-key rejection must be addressed before this component becomes an approved
+backend choice. The existing byte commitment and Exec setups remain unchanged.
+
 ## Missing correctness and execution obligations
 
 The native gates use one Boolean synthesis description for matrices and row

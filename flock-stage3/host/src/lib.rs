@@ -12,6 +12,7 @@ pub mod goldilocks;
 pub mod hash;
 pub mod ixby;
 pub mod multiplication;
+pub mod packed_blake3;
 pub mod sizing;
 pub mod window;
 

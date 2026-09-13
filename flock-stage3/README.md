@@ -40,7 +40,7 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The current ordinary suite passed 88 tests. The two imported conformance proofs
+The current ordinary suite passed 95 tests. The two imported conformance proofs
 are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 
@@ -172,4 +172,36 @@ constraint/representation bridge remains unfinished. See
 ```sh
 RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
   --workspace ixby::control::proof_tests:: -- --ignored --test-threads=1
+```
+
+## Packed-word BLAKE3 experiment
+
+`host/src/packed_blake3` adds a separate raw-compression component using ten
+small Boolean tables. Four independent u32 lanes share each F128 word;
+fixed add/XOR-rotate/lane-shuffle gates implement all seven rounds, and one
+linear gate supplies the complete message schedule. The active Exec backend
+and its implementation identity still use the original compression table.
+
+The new component has 23,808 A/B nonzero entries, down from the original
+44,442,498, but uses 632 dense witness words per compression instead of 92.
+Nineteen shared compressions require outer `nu=11`, not the old `nu=8`.
+These tradeoffs require an explicitly versioned backend and new whole-relation
+admission before adoption; no old-key reuse is claimed for this layout.
+
+Seven ordinary tests cover every witness-column mutation, overflow/rotation,
+all message basis bits, recycled padding, full upstream compression
+differentials, independent hashes for lengths 0–64, and exact count/compile
+registry agreement. Two real Fast128/m22 proofs verify in fresh processes
+given only fixed setup, four externally expected output words, and the proof.
+Each bundle is 114,027 bytes, excluding the 64-byte expected output. A proof
+containing a valid local addition row with broken circuit wiring is rejected.
+These are compression-component proofs, not bounded full-hash, Exec, or FFLONK
+proofs. The [component report](../flock-stage4/census/packed-blake3-components-v0.json)
+also records the complete 14,121,316-row terminal A/B component census and its
+limits; the entire redesigned verifier has not yet been measured or proved.
+
+```sh
+ulimit -v 16777216
+RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
+  private_compressions_verify_in_fresh_process_and_reject_broken_wiring -- --ignored --test-threads=1 --nocapture
 ```
