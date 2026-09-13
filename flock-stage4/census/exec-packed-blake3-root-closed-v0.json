@@ -1,0 +1,381 @@
+{
+  "schema": "ixby-stage4-packed-blake3-root-closed-evidence-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "2bdc658e63aef2470f2666d24e1eb6d724008ae8",
+  "status": "native_exec_backend_integrated_whole_closed_emission_refused_not_a_complete_census_key_or_proof",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "scope": "Explicit opt-in packed-word compression backend for the same generic scalar Exec semantics. Baseline default setup and historical evidence remain unchanged. The small capacity is an M6 diagnostic, not a Stage 2 guest profile or a replacement for M4/M8.",
+  "default_backend_changed": false,
+  "opt_in_backend_integrated": true,
+  "semantic_opcodes_or_commitment_function_changed": false,
+  "query_or_grinding_policy_reduced": false,
+  "whole_closed_census_completed": false,
+  "whole_closed_r1cs_materialized": false,
+  "whole_closed_assignment_checked": false,
+  "terminal_srs_or_key_generated": false,
+  "terminal_proof_generated": false,
+  "lean_native_primitive_or_machine_refinement_proved": false,
+  "source_hashes_scope": "Every changed or added Rust source relative to base_revision. Sources frozen before the whole closed census; no cost-affecting source changes during emission.",
+  "source_hashes": [
+    {
+      "path": "flock-stage3/host/src/blake3_backend.rs",
+      "sha256": "e0b05f109ef28f38d847db756760df7126652d80aabf54041d8bbe306170e636"
+    },
+    {
+      "path": "flock-stage3/host/src/ixby/bounded_hash.rs",
+      "sha256": "92dcbc6f776807f07917fcb70b36208726644cded0a1becb7e4e200f0e186a58"
+    },
+    {
+      "path": "flock-stage3/host/src/ixby/commitment.rs",
+      "sha256": "43504b218948a4cb3ef8fba9e22efd4c7e194f033e09a910c58a2d3e09e771d5"
+    },
+    {
+      "path": "flock-stage3/host/src/ixby/exec/mod.rs",
+      "sha256": "d2400e8abe5f5cc80077760e060bda629b53a83f8a2b9ac18dcb77000f6f324a"
+    },
+    {
+      "path": "flock-stage3/host/src/ixby/exec/profile.rs",
+      "sha256": "1f567f818f69978dfde995de1ffcc0a4387b4d26922c752ee0e6116e810c4f20"
+    },
+    {
+      "path": "flock-stage3/host/src/ixby/exec/witness.rs",
+      "sha256": "d23d7ec601992ab9be2e696e4be835493929c0e92d9c05f54ee6d6a9e2dd7558"
+    },
+    {
+      "path": "flock-stage3/host/src/ixby/exec/backend_tests.rs",
+      "sha256": "0a76919cd9a09faa52ceb9f55b47cf98a4529838d62cc629c6fd9239e4454a93"
+    },
+    {
+      "path": "flock-stage3/host/src/lib.rs",
+      "sha256": "e4f1623486f525d487e6e82661871f406ad8d326446e24bebe832f20f8bdb1f4"
+    },
+    {
+      "path": "flock-stage3/host/src/packed_blake3.rs",
+      "sha256": "bb961a581d6cc08285ecd332ccfd36c277854127da84c1f2a394b070fbd337a5"
+    },
+    {
+      "path": "flock-stage4/exec/src/blake3_table.rs",
+      "sha256": "922ddeb9aa7fb22436c73599fe252009872e69ba3979ffdf39cf250926fd60f6"
+    },
+    {
+      "path": "flock-stage4/exec/src/capacity_tests.rs",
+      "sha256": "0aa93b50c3ffa8d3168e71a30e0097403974b2c5365dd4568bbf7d6761636031"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure.rs",
+      "sha256": "6302e7b5e01a7a3784d3245eaf1007c121463f02874dee68898353032facfd8e"
+    },
+    {
+      "path": "flock-stage4/exec/src/tests.rs",
+      "sha256": "026d1c767ff7db87ed1b2c4142e769f7a4acf473c0314ab98ccdc9d4d79fbb08"
+    },
+    {
+      "path": "flock-stage4/exec/src/packed_exec_tests.rs",
+      "sha256": "d634dd1f5908c596c732cd26290571f0c687fac81c5e08d4be6e47a88eed9332"
+    }
+  ],
+  "backend": {
+    "setup_api": "compile_exec_profile_with_backend(profile, capacity, primitives, Blake3Backend::PackedWordsV0)",
+    "default_api": "compile_exec_profile(...) selects LegacyOptionF and retains its exact golden setup identity.",
+    "implementation_tag": "IxBy/Flock/fixed-scalar-machine/packed-blake3/v0",
+    "implementation_digest": "d097115b12ddb7ef96bcb7b4904ed84b5ebb13fb1efd4d214f5b87bd2a659214",
+    "same_execution_identities": "Semantic profile, physical capacity, scalar primitive meanings and P/B/I/O/S commitments are unchanged when only backend choice changes.",
+    "changed_identities": "Implementation, concrete registry, circuit/input/public layouts, protocol geometry and aggregate setup/transcript domain are separately bound. There is no cross-backend key reuse.",
+    "ownership": "Finite setup-owned choice, not decoded from proof bytes, inferred from guest code, or selected by a failed formula compiler.",
+    "hash_composition": "Full bounded block/chunk/odd-tree/ROOT schedule and all five commitment domains share ten packed tables and the same fixed IV wire. Generic row drivers and exact table coverage include all ten slots.",
+    "root_compiler": "Legacy requires exactly two exhaustively validated Option-F formula replacements. Packed requires zero replacements and diagrams for all 64 A/B matrices. Both retain the exact cofactor-basis structure program and jagged diagram. Legacy formula API explicitly rejects packed setup; compilation errors propagate with no fallback."
+  },
+  "packed_baseline": {
+    "setup_digest": "e100007d6afc10d3d4e0afcc529a7a1a1c147c7e76d2f1623d83240cf073da11",
+    "replay_digest": "705cd4ebab3b441935d7a9a61d6e7b3c564985907fc8d15882d1ad127cee5c8e",
+    "composition_digest": "00a182d1b5b526c174f4f5077110be8dd9815a9e2314edcd2fd359eb8ab3e18e",
+    "root_table_set_digest": "47b0f93a943d06d4cb560a5118f92db8fdf63eef8db209688f75b17164717ffb",
+    "capacities": {
+      "program_bytes": 256,
+      "functions": 2,
+      "blocks_per_function": 4,
+      "operands": 2,
+      "locals": 4,
+      "continuations": 2,
+      "arguments": 2,
+      "input_bytes": 64,
+      "input_values": 2,
+      "output_bytes": 64,
+      "steps": 24
+    },
+    "outer_row_log": 11,
+    "virtual_m": 33,
+    "pcs_m": 23,
+    "dense_words": 53288,
+    "live_lanes": 53,
+    "queries": [
+      244,
+      79,
+      48
+    ],
+    "query_grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "boolean_types": 32,
+    "matrix_root_claims": 64,
+    "closed_root_count": 66,
+    "boolean_arithmetic_operations": 4372,
+    "wiring_arithmetic_operations": 6288,
+    "wiring_gather_claims": 538,
+    "matrix_fold_rounds": 1512,
+    "structure_fold_rounds": 24,
+    "jagged_fold_rounds": 49,
+    "inner_opened_f128_words": 14964,
+    "inner_path_digests": 1484,
+    "source_slots": {
+      "f128_words": 33924,
+      "digest32_words": 1484,
+      "byte_payloads": 2133,
+      "byte_payload_bytes": 28681,
+      "logical_payload_bytes": 618953
+    },
+    "legacy_comparison": {
+      "setup_digest": "41163b87f03675917ac93824d8b1c11ab0c489c2fc2e03abece34d11fa3255f7",
+      "outer_row_log": 8,
+      "pcs_m": 23,
+      "dense_words": 43028,
+      "live_lanes": 43,
+      "matrix_root_claims": 46
+    }
+  },
+  "packed_small_class": {
+    "setup_digest": "e02060020627b285c8c1d13989e9a18cb0f88595ca5bf414f8daaf4b6f713e96",
+    "replay_digest": "5299fddaa07d51bd22d1701d61d5b376a105c150fcc18c580d3395a8c7c1a2d0",
+    "composition_digest": "c97728dd23604a34325981a5ddbec0ad9d7f4468f44307f07a4c0b7a60272251",
+    "root_table_set_digest": "e9eccff4533b6a01b51e5d21e6f49c84564f9e80fc314c2ba7989d26a9e8bd7a",
+    "capacities": {
+      "program_bytes": 64,
+      "functions": 1,
+      "blocks_per_function": 1,
+      "operands": 1,
+      "locals": 1,
+      "continuations": 1,
+      "arguments": 1,
+      "input_bytes": 32,
+      "input_values": 1,
+      "output_bytes": 32,
+      "steps": 4
+    },
+    "outer_row_log": 11,
+    "virtual_m": 30,
+    "pcs_m": 22,
+    "dense_words": 15764,
+    "live_lanes": 31,
+    "queries": [
+      244,
+      79,
+      48
+    ],
+    "query_grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "boolean_types": 32,
+    "matrix_root_claims": 64,
+    "closed_root_count": 66,
+    "boolean_arithmetic_operations": 3980,
+    "wiring_arithmetic_operations": 4504,
+    "wiring_gather_claims": 291,
+    "matrix_fold_rounds": 1476,
+    "structure_fold_rounds": 23,
+    "jagged_fold_rounds": 44,
+    "inner_opened_f128_words": 9596,
+    "inner_path_digests": 1113,
+    "source_slots": {
+      "f128_words": 27271,
+      "digest32_words": 1113,
+      "byte_payloads": 2059,
+      "byte_payload_bytes": 28089,
+      "logical_payload_bytes": 500041
+    },
+    "legacy_comparison": {
+      "setup_digest": "4fe87f091aef3cd1e54f290874eb5f148c8a31a3bbbafdac5a242b3e2d7081f5",
+      "outer_row_log": 8,
+      "pcs_m": 22,
+      "dense_words": 7124,
+      "live_lanes": 14,
+      "matrix_root_claims": 46
+    }
+  },
+  "geometry_scope": "These are setup/replay/root-program identities, not complete R1CS or terminal-key digests. Source-slot payload excludes approved setup, gadget intermediates, matrices/witness, allocator/container overhead and process-tree RSS.",
+  "ordinary_backend_tests": {
+    "new_tests": 2,
+    "bounded_hash_capacities": [
+      0,
+      65,
+      1025,
+      3073,
+      7169
+    ],
+    "bounded_hash_private_lengths_when_within_capacity": [
+      0,
+      1,
+      63,
+      64,
+      65,
+      1023,
+      1024,
+      1025,
+      2048,
+      2049,
+      3072,
+      3073,
+      4097,
+      7169
+    ],
+    "checks": "Independent full blake3 hashes across private block/chunk/odd-tree boundaries; exact count/compiled registry and layouts; default legacy golden identity; deterministic packed setup; equal semantic/capacity/primitive identities but different backend domains; all ten shared slots in all five hashes; native witness/public digest and all 32 row drivers for every scalar corpus case.",
+    "scope": "These conformance tests are not a Lean refinement proof or a whole Stage 4 satisfaction check."
+  },
+  "native_exec_corpus": {
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml packed_exec_proofs_verify_in_isolation_and_reject_backend_and_wiring_substitution -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 137.65,
+    "cases": 39,
+    "native_exec_bundle_bytes_each": 339563,
+    "separately_expected_statement_bytes": 32,
+    "fixed_setup_reused": true,
+    "fresh_process_verification": true,
+    "coverage": "The entire original scalar/control corpus, all 20 enabled scalar opcodes, different images, branches, calls and recursion depths.",
+    "verifier_inputs": "Only externally expected 32-byte S and complete Exec bundle on stdin. Child fixes PackedWordsV0 setup independently, clears inherited environment and runs outside the worktree. No guest, private byte input, gate evaluation, native hash or prover public-vector dump.",
+    "negative_checks": [
+      "Both directions of cross-backend substitution, both with original header and forged matching receiver setup digest.",
+      "Changed expected S in a fresh verifier; header/proof mutations, truncation and trailing bytes.",
+      "A recomputed locally valid zero+zero packed addition replacing an IV-connected row; fresh verifier rejects with Wiring(Gkr(ProductMismatch))."
+    ],
+    "scope": "Real native generic scalar execution proofs, not FFLONK, a certified Stage 2 guest, formal machine refinement or the M8 same-key guest upgrade test."
+  },
+  "geometry_regression": {
+    "test": "packed_exec_geometry_and_exact_root_programs_are_setup_owned",
+    "exit_code": 0,
+    "test_duration_seconds": 4.84,
+    "baseline_seconds": 3.911,
+    "small_seconds": 0.568,
+    "last_observed_process_vm_peak_kib": 1657360,
+    "last_observed_process_vm_hwm_kib": 1465680,
+    "checks": "Both capacities independently rebuild identical replay and root-program identities before any guest. All 64 matrices are exact decision diagrams, structure is a cofactor basis, jagged is a diagram. Legacy formula compiler refuses either packed setup. Actual PCS configuration asserts unchanged query/grinding schedule.",
+    "scope": "One test process compiles both profiles serially; cumulative memory includes baseline setup. Not process-tree RSS or terminal-prover memory."
+  },
+  "small_native_replay": {
+    "test": "packed_small_exec_replay_and_all_closed_roots_match_native",
+    "exit_code": 0,
+    "test_duration_seconds": 2.07,
+    "cases": [
+      {
+        "guest": "ret local(0)",
+        "input": false,
+        "output": false
+      },
+      {
+        "guest": "ret local(0)",
+        "input": true,
+        "output": true
+      },
+      {
+        "guest": "ret literal(Bool.true)",
+        "input": false,
+        "output": true
+      }
+    ],
+    "native_exec_bundle_bytes_each": 236307,
+    "checks": "One proof-free setup/replay/closure reused for all three executions. All 64 matrix plus structure and jagged native roots agree with independent exact table-program evaluation. Every assigned first-4096-constraint prefix equals setup-only emission. Changed B/I/O commitments and last proof-byte mutations reject for every case.",
+    "last_observed_process_vm_peak_kib": 1320024,
+    "last_observed_process_vm_hwm_kib": 733696,
+    "scope": "Native Flock proofs/replay and exact root differentials, not complete closed R1CS checking or terminal proving. A literal true result has no Stage 2 application authorization."
+  },
+  "legacy_compatibility": {
+    "command": "ulimit -v 33554432 && RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec native::tests::closure_tests::setup_owned_closure_matches_all_real_fold_roots -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 37.37,
+    "preproof_compilations_and_bounds_seconds": 18.277,
+    "composition_digest": "2a5197d95f015ded732322e73a999bb128faab2e8ffd4c873a15a6c759db2d24",
+    "root_table_set_digest": "2100cce6c5b5aa4136b68217fda000d2a10189f7863c530507e76cfb94e4a073",
+    "last_observed_process_vm_peak_kib": 3936436,
+    "last_observed_process_vm_hwm_kib": 3351592,
+    "checks": "The original local return and two branch outcomes retain exact setup/composition/table identities; all 48 roots, exact 4096-row setup/assigned prefix and bounded-entry negatives pass.",
+    "scope": "Separate native test process overlapping the whole packed census; not a terminal-prover or process-tree measurement."
+  },
+  "workspace_validation": {
+    "both_release_locked_workspace_suites_passed": true,
+    "stage3": {
+      "passed": 97,
+      "ignored": 9
+    },
+    "stage4": {
+      "passed": 208,
+      "ignored": 23,
+      "passed_by_crate": {
+        "fflonk": 88,
+        "trace": 34,
+        "circuit": 69,
+        "exec": 17
+      }
+    },
+    "both_all_target_clippy_with_warnings_denied_passed": true,
+    "both_format_checks_passed": true,
+    "git_diff_check_passed": true,
+    "scope": "Ordinary suites and all-target clippy, separate from the explicitly listed opt-in native/census tests. Runs overlap portions of the whole census; times are diagnostics, not controlled comparisons."
+  },
+  "whole_closed_census": {
+    "status": "RejectedBudget",
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 1800 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec packed_small_exec_whole_root_closed_admission_census -- --ignored --test-threads=1 --nocapture",
+    "required_domain_row_limit": 1073741824,
+    "reserved_public_and_blinding_rows": 4,
+    "virtual_memory_limit_kib": 16777216,
+    "rayon_threads": 4,
+    "timeout_seconds": 1800,
+    "scope": "Complete proof-free closed emitter streamed through actual R1CS-to-PLONK lowering; no guest, Flock proof or assignment used. Full matrices and assignments are not retained. Completion or refusal does not itself materialize a relation, approve RAM/disk/SRS, preprocess a key or prove anything.",
+    "timing_scope": "Other bounded ordinary/native regression processes overlapped portions of emission. Not a controlled benchmark comparison.",
+    "memory_scope": "Sampled cumulative /proc/self/status including native setup. Not process-tree RSS or terminal-prover memory.",
+    "exit_code": 0,
+    "test_duration_seconds": 1350.62,
+    "emission_seconds": 1349.908,
+    "over_limit_observation_seconds": 1349.898,
+    "rejected_prefix": {
+      "r1cs_constraints": 643838506,
+      "plonk_constraint_rows": 1073741859,
+      "plonk_auxiliary_wires": 429903353,
+      "last_phase": "MatrixFold",
+      "required_domain_rows": 1073741863,
+      "limit": 1073741824
+    },
+    "last_observed_process_vm_peak_kib": 1323516,
+    "last_observed_process_vm_hwm_kib": 1165708,
+    "interpretation": "Refused at the first R1CS constraint whose lowering crossed the supported size-4n domain cap. The prefix already exceeds the limit by 39 rows including reservations, but the remaining relation is unknown: removing 39 rows would not establish a fit. No complete projection digest or closed-relation count was produced. Exit zero means the bounded test correctly reported refusal, not that a complete circuit or proof passed."
+  },
+  "root_compilation_limits": {
+    "diagram_source_entries": 64000000,
+    "diagram_nodes": 2000000,
+    "linear_map_inputs": 16384,
+    "linear_map_outputs": 16384,
+    "linear_map_xors": 100000,
+    "linear_coefficient_words": 64000000,
+    "linear_source_entries": 48000000,
+    "structure_basis_state_slots": 4000000,
+    "structure_basis_dense_words": 16000000,
+    "structure_basis_word_operations": 200000000,
+    "structure_basis_coefficient_terms": 8000000,
+    "scope": "Unchanged explicit limits from legacy closure regression. Packed does not invoke linear-map compilation. No fallback, budget enlargement or reduced-query retry."
+  },
+  "remaining_gates": [
+    "Reduce the complete closed encoding below the pinned supported domain and recensus; the full count remains unknown after bounded refusal. Then perform practical RAM/disk/SRS admission.",
+    "Materialize and check the entire closed assignment; terminal preprocessing, actual FFLONK proof and fresh sidecar-free verification.",
+    "Native constraint-to-IxBy and primitive refinement, broader byte/structured-value crypto guest profile.",
+    "Certified Compilatrix Stage 2 guest and changed-verifier same-backend-key upgrade test; larger workloads and production security/setup/resource review."
+  ],
+  "local_resource_snapshot": {
+    "memory_total_kib": 130984484,
+    "memory_available_kib": 102351772,
+    "filesystem_available_bytes": 136249524224,
+    "scope": "Read-only /proc/meminfo and df snapshot during the census, after 852 seconds of emission. These volatile host counters are not reserved resources or whole-pipeline admission. No SRS/key/prover resources were allocated. The supported-domain failure already prevents the current complete encoding from being proved regardless of additional host resources."
+  },
+  "interpretation": "The packed backend is now an explicit generic Exec implementation with native proof, exact root-program and legacy-rejection evidence. It is not the default and preserves semantic/profile/commitment behavior. The whole small-class closed emitter still crosses the pinned FFLONK domain before completion. Standalone hash-root component savings do not establish complete-verifier feasibility. Continue exact PCS/fold/root cost reduction without relaxing the 371-query policy, omitting any root, specializing to a guest or narrowing the M0-M8 objective. Complete matrix/assignment/key/proof and certified larger-guest gates remain open."
+}

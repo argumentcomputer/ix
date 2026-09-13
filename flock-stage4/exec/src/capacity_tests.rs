@@ -14,7 +14,7 @@ use ixby_flock::ixby::{
 };
 use std::time::Instant;
 
-const SMALL: MachineCapacities = MachineCapacities {
+pub(super) const SMALL: MachineCapacities = MachineCapacities {
   program: ProgramCapacities {
     bytes: 64,
     functions: 1,

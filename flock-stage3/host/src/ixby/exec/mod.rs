@@ -4,6 +4,8 @@
 //! commitments. Its native constraint-to-`Codec.Evaluates` refinement remains
 //! a separate, unfinished formal obligation; this is not a Stage 4 proof.
 
+#[cfg(test)]
+mod backend_tests;
 mod profile;
 mod proof;
 #[cfg(test)]
@@ -23,7 +25,10 @@ use super::{
   io::{InputLayout, LayoutEmitter, PublicLayout},
   machine::{MachineCapacities, ScalarMachineSlots},
 };
-use crate::sizing::{CircuitEmitter, CountingEmitter};
+use crate::{
+  blake3_backend::Blake3Backend,
+  sizing::{CircuitEmitter, CountingEmitter},
+};
 use anyhow::{Result, ensure};
 use flock_prover::{
   circuit::builder::{CircuitShape, ShapeBuilder},
@@ -63,6 +68,9 @@ impl CompiledExec {
   pub fn capacity(&self) -> MachineCapacities {
     self.capacity
   }
+  pub fn blake3_backend(&self) -> Blake3Backend {
+    self.commitments.hashes()[0].compression().backend()
+  }
   pub fn public_template(&self) -> &PublicLayout {
     &self.public
   }
@@ -94,10 +102,28 @@ pub fn compile_exec_profile(
   capacity: MachineCapacities,
   primitives: PrimitiveSet,
 ) -> Result<CompiledExec> {
+  compile_exec_profile_with_backend(
+    profile,
+    capacity,
+    primitives,
+    Blake3Backend::LegacyOptionF,
+  )
+}
+
+/// Explicit implementation/key upgrade; does not change semantic profile
+/// bytes, guest opcodes or the BLAKE3 commitment function. The selected
+/// implementation is bound into setup and the proof transcript. Neither
+/// guest updates nor proof headers may select it on the verifier's behalf.
+pub fn compile_exec_profile_with_backend(
+  profile: SemanticProfile,
+  capacity: MachineCapacities,
+  primitives: PrimitiveSet,
+  backend: Blake3Backend,
+) -> Result<CompiledExec> {
   profile.admit_scalar(capacity)?;
   let mut count = CountingEmitter::new();
   let (_, _, counted_input, counted_public) =
-    emit(&mut count, 8, profile, capacity, primitives)?;
+    emit(&mut count, 8, profile, capacity, primitives, backend)?;
   let nu = count.required_nu(8)?;
   ensure!(nu <= 20, "scalar row domain admission");
   let (registry, counts) = count.registry(nu);
@@ -107,7 +133,7 @@ pub fn compile_exec_profile(
   drop(registry);
   let mut builder = ShapeBuilder::new(nu);
   let (machine, commitments, input, public) =
-    emit(&mut builder, nu, profile, capacity, primitives)?;
+    emit(&mut builder, nu, profile, capacity, primitives, backend)?;
   let shape = builder
     .finish()
     .map_err(|error| anyhow::anyhow!("Exec circuit compilation: {error:?}"))?;
@@ -125,7 +151,7 @@ pub fn compile_exec_profile(
     "Exec digest must be the only variable public output"
   );
   let mut identities =
-    ExecIdentities::new(profile, capacity, primitives, nu, &params);
+    ExecIdentities::new(profile, capacity, primitives, nu, &params, backend);
   identities.registry = shape.registry.digest();
   identities.circuit = shape.circuit.digest();
   identities.public_template = public.digest();
@@ -167,11 +193,12 @@ fn emit(
   profile: SemanticProfile,
   c: MachineCapacities,
   primitives: PrimitiveSet,
+  backend: Blake3Backend,
 ) -> Result<(ScalarMachineSlots, ByteCommitmentSlots, InputLayout, PublicLayout)>
 {
   let mut b = LayoutEmitter::new(builder);
   let machine = ScalarMachineSlots::declare(&mut b, nu, c, primitives)?;
-  let commitments = ByteCommitmentSlots::declare(
+  let commitments = ByteCommitmentSlots::declare_with_backend(
     &mut b,
     nu,
     &profile.to_bytes(),
@@ -180,6 +207,7 @@ fn emit(
       input: c.input.bytes,
       output: c.output_bytes,
     },
+    backend,
   )?;
   let code: Vec<_> =
     (0..1 + c.program.data_words()).map(|_| b.input()).collect();

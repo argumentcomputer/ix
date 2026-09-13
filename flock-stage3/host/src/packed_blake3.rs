@@ -293,6 +293,7 @@ impl GateType for PackedWordGate {
 /// word; the two CV words, four message words, and parameter word may all be
 /// private. This is raw compression: hash-mode length/flag constraints belong
 /// to the caller, just as for the original seven-input BLAKE3 gate.
+#[derive(Clone)]
 pub struct PackedBlake3 {
   gates: Vec<(PackedWordGate, SlotId)>,
   iv: Wire,

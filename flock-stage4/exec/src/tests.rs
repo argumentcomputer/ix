@@ -22,6 +22,9 @@ mod capacity_tests;
 #[path = "packed_blake3_tests.rs"]
 mod packed_blake3_tests;
 
+#[path = "packed_exec_tests.rs"]
+mod packed_exec_tests;
+
 const CAPACITY: MachineCapacities = MachineCapacities {
   program: ProgramCapacities {
     bytes: 256,

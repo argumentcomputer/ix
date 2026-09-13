@@ -247,12 +247,12 @@ this encoding feasible. This is a new refused prefix, not a full census.
 The [small-class report](census/exec-small-class-root-closed-admission-v0.json)
 records source hashes, setup identities, reproduction commands and result scope.
 
-## Candidate packed-word compression
+## Explicit packed-word compression backend
 
-A separate Stage 3 compression prototype replaces the single flattened
-BLAKE3 table with ten reusable word tables. It is not selected by approved
-Exec setup. Its twenty exact A/B diagrams retain 1,582 nodes and 23,808
-nonzero entries. Four native-field differentials per matrix pass.
+A Stage 3 compression implementation replaces the single flattened
+BLAKE3 table with ten reusable word tables. Its twenty exact A/B diagrams
+retain 1,582 nodes and 23,808 nonzero entries. Four native-field differentials
+per matrix pass.
 
 The complete independent matrix-component census is 8,786,640 R1CS
 constraints / 14,121,316 PLONK rows, with setup-only and assigned projections
@@ -266,9 +266,40 @@ One actual lane-table component was materialized at 160,197 R1CS constraints.
 Both assignments satisfy identical matrices, and all 128 claimed-output-bit
 mutations reject. Two real native compression proofs also pass isolated
 verification, with a locally valid but globally miswired row rejected.
-Neither test is a terminal proof. The [packed-component report](census/packed-blake3-components-v0.json)
-records sources, exact counts and bounded commands. Integration needs an
-explicit backend/key change and a fresh whole closed census before proving.
+Neither test is a terminal proof. The [historical packed-component report](census/packed-blake3-components-v0.json)
+records those sources, exact counts and bounded commands.
+
+`compile_exec_profile_with_backend(..., Blake3Backend::PackedWordsV0)` now
+integrates the packed implementation into generic scalar Exec as an explicit
+backend/key upgrade. The default legacy setup remains byte-identical. Backend
+choice is verifier-owned, never taken from a guest or proof header. Stage 4
+compiles exact diagrams for all 64 packed-registry A/B matrices, an exact
+cofactor-basis structure program and a jagged diagram: all 66 roots are covered.
+The old BLAKE3 formula API explicitly refuses packed setup; a formula/compiler
+error never selects another backend or skips a root.
+
+All 39 baseline scalar corpus proofs verify with the packed implementation,
+each with a 339,563-byte native Exec bundle. Three small-class executions also
+reuse one packed setup; their 236,307-byte native bundles match all 66 root
+programs and the exact first 4,096 setup/assigned constraints. The baseline
+and small classes retain respectively Fast128/m23 and m22 with all 371 queries
+and the original grinding policy. Dense words/live lanes increase to
+53,288/53 and 15,764/31, respectively; smaller hash-table components are not a
+whole-verifier cost estimate. These are native proof/replay checks, not a
+complete R1CS satisfaction check or terminal proof.
+
+The separate `packed_small_exec_whole_root_closed_admission_census` measures
+the entire proof-free closed emitter under the unchanged `2^30` domain cap.
+The [integrated report](census/exec-packed-blake3-root-closed-v0.json) records
+its outcome separately from the native tests, with source/setup identities
+and explicit resource-measurement limits. It returned `RejectedBudget` after
+1,349.908 seconds of emission: 643,838,506 R1CS constraints and 1,073,741,859
+PLONK rows, still in `MatrixFold`. With the four reserved rows, that prefix
+exceeds the supported domain before the relation ends. This is not a full
+census or a claim that removing 39 rows would make the whole relation fit.
+Packed compression alone has not solved complete-verifier feasibility.
+Further cost reduction, materialization, terminal key/SRS admission and an
+isolated full-relation FFLONK proof remain required.
 
 ## Boundary that is not yet closed
 

@@ -13,6 +13,7 @@ use ix_terminal_circuit::{
   ExecRootClosedCircuitOutputV0, R1csBuilder, Stage4PublicInputsV1,
   constrain_exec_root_closed, validate_exec_root_tables,
 };
+use ixby_flock::blake3_backend::Blake3Backend;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExecRootClosureCompilationLimitsV0 {
@@ -84,28 +85,37 @@ impl<'r, 's> CompiledExecRootClosure<'r, 's> {
   }
 }
 
-/// Compile a complete root set with BLAKE3's exhaustively checked linear
-/// formulas, measured cofactor bases for structure, and exact diagrams for
-/// every other matrix and layout. The coefficient relation and Stage 3 setup
-/// are unchanged; the new program kind changes the Stage 4 composition digest.
+/// Compile a complete root set for the explicitly selected Stage 3 backend.
+/// Legacy Option-F uses exhaustively checked linear formulas for its two
+/// BLAKE3 matrices; PackedWordsV0 uses exact diagrams for ALL its matrices.
+/// Both use cofactor bases for structure and an exact jagged diagram.
+/// Formula/diagram failures propagate, never select a fallback backend.
 /// No point, value, statement, image, or proof is a setup input.
 pub fn compile_exec_root_closure<'r, 's>(
   replay: &'r CompiledExecReplay<'s>,
   limits: ExecRootClosureCompilationLimitsV0,
 ) -> Result<CompiledExecRootClosure<'r, 's>> {
   let diagrams = crate::compile_exec_root_tables(replay, limits.diagrams)?;
-  let linear = crate::compile_exec_blake3_root_maps(
-    replay,
-    limits.linear_program,
-    limits.linear_validation,
-  )?;
+  let (linear, expected_replacements) =
+    match replay.exec_setup().blake3_backend() {
+      Blake3Backend::LegacyOptionF => (
+        Some(crate::compile_exec_blake3_root_maps(
+          replay,
+          limits.linear_program,
+          limits.linear_validation,
+        )?),
+        2,
+      ),
+      Blake3Backend::PackedWordsV0 => (None, 0),
+    };
   let mut replaced = 0;
   let matrices = diagrams
     .matrices()
     .iter()
     .map(|(id, diagram)| {
-      let program = if let Some((_, map)) =
-        linear.matrices().iter().find(|(key, _)| key == id)
+      let program = if let Some((_, map)) = linear
+        .as_ref()
+        .and_then(|maps| maps.matrices().iter().find(|(key, _)| key == id))
       {
         replaced += 1;
         Program::BinaryLinear(map.clone())
@@ -116,8 +126,8 @@ pub fn compile_exec_root_closure<'r, 's>(
     })
     .collect();
   ensure!(
-    replaced == 2,
-    "both approved BLAKE3 matrices must be covered exactly once"
+    replaced == expected_replacements,
+    "exact matrix-program coverage for the explicitly approved backend"
   );
   let (structure_id, structure) = diagrams.structure();
   let structure =

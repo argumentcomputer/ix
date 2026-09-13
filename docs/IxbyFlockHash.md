@@ -84,9 +84,9 @@ unused table columns. Every new driver clears poisoned/recycled z/Az/Bz
 buffers and lincheck stripes, including empty and partial active-row counts,
 under both values of the upstream padding-elision hint.
 
-The pinned native workspace has 53 ordinary tests and five opt-in conformance
-tests. The new real Flock proofs use the pinned baseline Fast128/BLAKE3 path,
-nu = 8, with these component-only measurements:
+At this component's original checkpoint, the native workspace had 53 ordinary
+tests and five opt-in conformance tests. These real Flock proofs use the pinned
+baseline Fast128/BLAKE3 path, nu = 8, with these component-only measurements:
 
 | Relation | Fixed byte capacities | Flock bundle bytes |
 | --- | --- | ---: |
@@ -106,7 +106,8 @@ and proof on stdin, has no inherited environment, and runs outside the source
 worktree. It rebuilds the fixed setup/public template and never executes gates,
 receives private artifacts, runs IxBy, or calls the prover. A changed expected
 digest is also rejected in a fresh child. This is isolation evidence for the
-byte-binding component, not for the still-unimplemented Exec relation.
+byte-binding component. The separately integrated scalar Exec relation has its
+own [execution proof evidence](IxbyFlockScalar.md).
 
 Proof sizes exclude the independently supplied 32-byte expected digest and
 reusable setup. Fixed public constants are reconstructed, not transported by
@@ -115,12 +116,13 @@ evidence for the 1,024-byte terminal target. Tests use four Rayon workers,
 a 32 GiB virtual-address limit, and bounded timeouts. No peak-RSS, large-profile
 capacity, production cryptographic-parameter or setup claim follows.
 
-## Candidate packed-word compression layout
+## Explicit packed-word compression backend
 
-The independent `flock-stage3/host/src/packed_blake3` component is a new
-implementation experiment, not a silent replacement of the compression slot
-above. Its raw inputs and sixteen u32 outputs have exactly the same semantics
-as the pinned compression gate. Counter, length and flags are raw words here;
+The `flock-stage3/host/src/packed_blake3` component implements the explicitly
+selected `Blake3Backend::PackedWordsV0`, not a silent replacement of the
+default compression slot above. Its raw inputs and sixteen u32 outputs have
+exactly the same semantics as the pinned compression gate. Counter, length and
+flags are raw words here;
 the surrounding bounded-hash construction must supply hash-mode constraints.
 
 State columns `[v0..3]`, `[v4..7]`, `[v8..11]`, `[v12..15]` each occupy one
@@ -157,12 +159,30 @@ message or native hash evaluation. This establishes component conformance,
 not an execution statement, full multi-block hash proof or compact terminal
 proof. Formal primitive/composition refinement remains outstanding.
 
-The [paired terminal measurements](../flock-stage4/census/packed-blake3-components-v0.json)
+The [original paired terminal measurements](../flock-stage4/census/packed-blake3-components-v0.json)
 show much smaller matrix-root evaluation components, but dense witness width
 rises from 92 to 632 words per compression. Nineteen shared invocations need
-`nu=11`. Whole Exec geometry, wiring/PCS cost, implementation identity and
-old-key rejection must be addressed before this component becomes an approved
-backend choice. The existing byte commitment and Exec setups remain unchanged.
+`nu=11`. Component savings alone do not measure total wiring/PCS/fold costs.
+
+`BoundedBlake3::declare_with_backend` and
+`ByteCommitmentSlots::declare_with_backend` now use this compression choice
+through the complete fixed block/tree schedule. The five commitment domains
+share all ten word-table slots and the exact same fixed IV wire. Their default
+constructors remain legacy-compatible. Generic drivers inspect the explicit
+compression variant and cover every declared slot; the old single-slot getter
+is legacy-only and rejects use with the packed variant.
+
+New count/native-hash differentials cover capacities 0, 65, 1,025, 3,073 and
+7,169, with private lengths around block/chunk/odd-tree boundaries. Count and
+compiled registries/layouts agree. All 39 scalar/control Exec corpus cases
+also have direct packed-backend Flock proofs under one setup, each with a
+339,563-byte bundle; fresh verification needs only approved setup, externally
+expected S and proof. A locally valid packed addition with broken global wiring
+is rejected. This is integration/native proof evidence, not the still-missing
+formal hash/machine refinement or a terminal FFLONK proof. The opt-in compiler
+binds a new backend/key identity; the existing default setup and exact commitment
+function are unchanged. Whole Stage 4 sizing is recorded separately in the
+[integrated report](../flock-stage4/census/exec-packed-blake3-root-closed-v0.json).
 
 ## Missing correctness and execution obligations
 

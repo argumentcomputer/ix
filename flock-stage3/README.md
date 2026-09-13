@@ -40,7 +40,7 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The current ordinary suite passed 95 tests. The two imported conformance proofs
+The current ordinary suite passed 97 tests. The two imported conformance proofs
 are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 
@@ -179,14 +179,19 @@ RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/C
 `host/src/packed_blake3` adds a separate raw-compression component using ten
 small Boolean tables. Four independent u32 lanes share each F128 word;
 fixed add/XOR-rotate/lane-shuffle gates implement all seven rounds, and one
-linear gate supplies the complete message schedule. The active Exec backend
-and its implementation identity still use the original compression table.
+linear gate supplies the complete message schedule. The default Exec compiler
+still uses the original compression table and retains its setup identity.
+`compile_exec_profile_with_backend(..., Blake3Backend::PackedWordsV0)` now
+selects the packed implementation explicitly at setup, never from a guest or
+proof header. It binds a distinct implementation/registry/circuit/transcript
+identity; no old-key reuse is claimed for this backend upgrade.
 
 The new component has 23,808 A/B nonzero entries, down from the original
 44,442,498, but uses 632 dense witness words per compression instead of 92.
 Nineteen shared compressions require outer `nu=11`, not the old `nu=8`.
-These tradeoffs require an explicitly versioned backend and new whole-relation
-admission before adoption; no old-key reuse is claimed for this layout.
+The integrated baseline has 53,288 dense words and 53 live PCS lanes, versus
+43,028 and 43 for the default backend. Both retain Fast128/m23 and all 371
+queries. These tradeoffs require fresh whole-relation admission before proving.
 
 Seven ordinary tests cover every witness-column mutation, overflow/rotation,
 all message basis bits, recycled padding, full upstream compression
@@ -195,10 +200,23 @@ registry agreement. Two real Fast128/m22 proofs verify in fresh processes
 given only fixed setup, four externally expected output words, and the proof.
 Each bundle is 114,027 bytes, excluding the 64-byte expected output. A proof
 containing a valid local addition row with broken circuit wiring is rejected.
-These are compression-component proofs, not bounded full-hash, Exec, or FFLONK
-proofs. The [component report](../flock-stage4/census/packed-blake3-components-v0.json)
+These particular proofs cover raw compression, not Exec or FFLONK.
+The [historical component report](../flock-stage4/census/packed-blake3-components-v0.json)
 also records the complete 14,121,316-row terminal A/B component census and its
-limits; the entire redesigned verifier has not yet been measured or proved.
+limits; its counts are not a full-verifier estimate.
+
+The bounded-hash and five-domain commitment chain now share all ten packed
+tables and their fixed IV wire. Ordinary differentials cover private lengths
+at block/chunk boundaries and odd trees through 7,169 bytes, with identical
+count/compile layouts. A separate opt-in regression proves all 39 scalar/control
+corpus cases under one packed setup. Each complete Exec bundle is 339,563
+bytes, plus the independently expected 32-byte S. Fresh verifier children
+receive only S and the proof. Both directions of cross-backend substitution,
+forged matching headers, changed S, malformed transport and a recomputed valid
+addition row violating global wiring are rejected. This is native Stage 3
+execution evidence, not formal refinement or a terminal proof. See the
+[integrated backend report](../flock-stage4/census/exec-packed-blake3-root-closed-v0.json)
+for the separately measured Stage 4 relation and remaining admission gates.
 
 ```sh
 ulimit -v 16777216

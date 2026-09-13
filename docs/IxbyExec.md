@@ -113,6 +113,19 @@ backend: changing a Stage 2 guest within the same capacity/primitive class must
 not change either backend key. Ordinary capacity/protocol changes do require
 an explicitly approved backend upgrade.
 
+The native compiler also exposes the explicit implementation choice
+`compile_exec_profile_with_backend(..., Blake3Backend::PackedWordsV0)`.
+The existing `compile_exec_profile` remains the legacy Option-F default, with
+its golden setup digest unchanged. PackedWordsV0 changes the compression
+layout and binds a new implementation/registry/circuit/transcript identity,
+but preserves the semantic profile, capacity, primitive meanings, BLAKE3
+function and P/B/I/O/S bytes for the same execution. The verifier supplies
+this choice; neither guest bytes nor proof metadata may select it. All 39
+scalar corpus cases also prove under one packed setup (339,563-byte Exec
+bundles), and cross-backend proofs reject even after replacing their header
+with the receiver's identity. This is an explicit backend upgrade, not the
+same-key Stage 2 guest upgrade required by M8.
+
 ## The theorem chain and remaining obligations
 
 ```text

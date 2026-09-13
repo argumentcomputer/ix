@@ -12,7 +12,8 @@ use super::{
   select::{SelectWordsGate, SelectWordsSlot},
 };
 use crate::{
-  hash::{Blake3Gate, IV, PARENT, pack_params, pack8},
+  blake3_backend::{Blake3Backend, Blake3CompressionSlots},
+  hash::{IV, PARENT, pack_params, pack8},
   sizing::CircuitEmitter,
 };
 use anyhow::Result;
@@ -29,7 +30,7 @@ struct Node {
 }
 
 pub struct BoundedBlake3 {
-  compression_slot: SlotId,
+  compression: Blake3CompressionSlots,
   block_slot: HashBlockSlot,
   select_slot: SelectWordsSlot,
   root_slot: SlotId,
@@ -47,10 +48,21 @@ impl BoundedBlake3 {
     nu: usize,
     capacity: usize,
   ) -> Result<Self> {
+    Self::declare_with_backend(b, nu, capacity, Blake3Backend::LegacyOptionF)
+  }
+
+  /// Compression implementation is an explicit setup parameter, not a
+  /// message/length-dependent selection. The legacy constructor is unchanged.
+  pub fn declare_with_backend(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    capacity: usize,
+    backend: Blake3Backend,
+  ) -> Result<Self> {
     let block_gate = HashBlockGate::new(nu, capacity)?;
     let select_gate = SelectWordsGate::new(nu, 9)?;
     let root_gate = RootParamsGate { nu };
-    let compression_slot = b.slot(Blake3Gate { nu });
+    let compression = Blake3CompressionSlots::declare(b, nu, backend)?;
     let block_slot = HashBlockSlot::declare(b, block_gate.clone());
     let select_slot = SelectWordsSlot::declare(b, select_gate.clone());
     let root_slot = b.slot(root_gate);
@@ -58,7 +70,7 @@ impl BoundedBlake3 {
     let iv = pack8(&IV).map(|word| b.fixed_public_input(word));
     let parent_params = b.fixed_public_input(pack_params(0, 64, PARENT));
     Ok(Self {
-      compression_slot,
+      compression,
       block_slot,
       select_slot,
       root_slot,
@@ -89,7 +101,7 @@ impl BoundedBlake3 {
     Ok(Self {
       block_slot,
       block_gate,
-      compression_slot: self.compression_slot,
+      compression: self.compression.clone(),
       select_slot: self.select_slot,
       root_slot: self.root_slot,
       select_gate: self.select_gate.clone(),
@@ -99,8 +111,18 @@ impl BoundedBlake3 {
       parent_params: self.parent_params,
     })
   }
+  pub fn compression(&self) -> &Blake3CompressionSlots {
+    &self.compression
+  }
+  /// Original single-slot conformance API. Generic drivers must inspect
+  /// `compression()` and cover ALL slots of the explicitly selected backend.
   pub fn compression_slot(&self) -> SlotId {
-    self.compression_slot
+    match self.compression {
+      Blake3CompressionSlots::LegacyOptionF { slot, .. } => slot,
+      Blake3CompressionSlots::PackedWordsV0(_) => {
+        panic!("packed compression has ten slots; use compression()")
+      },
+    }
   }
   pub fn block_slot(&self) -> SlotId {
     self.block_slot.slot()
@@ -184,9 +206,9 @@ impl BoundedBlake3 {
     // selected root Output exists; ROOT output counter is independently zero.
     let root = nodes[0].record;
     let params = b.gate(self.root_slot, &[root[6]])[0];
-    let output = b.gate(
-      self.compression_slot,
-      &[root[0], root[1], root[2], root[3], root[4], root[5], params],
+    let output = self.compression.compress(
+      b,
+      [root[0], root[1], root[2], root[3], root[4], root[5], params],
     );
     [output[0], output[1]]
   }
@@ -200,7 +222,7 @@ impl BoundedBlake3 {
   ) -> [Wire; 9] {
     let inputs =
       [cv[0], cv[1], message[0], message[1], message[2], message[3], params];
-    let output = b.gate(self.compression_slot, &inputs);
+    let output = self.compression.compress(b, inputs);
     [
       inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], inputs[5],
       inputs[6], output[0], output[1],
@@ -220,8 +242,19 @@ pub(super) mod tests {
     nu: usize,
     capacity: usize,
   ) -> (BoundedBlake3, InputLayout, PublicLayout) {
+    emit_with_backend(b, nu, capacity, Blake3Backend::LegacyOptionF)
+  }
+
+  fn emit_with_backend(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    capacity: usize,
+    backend: Blake3Backend,
+  ) -> (BoundedBlake3, InputLayout, PublicLayout) {
     let mut b = LayoutEmitter::new(b);
-    let hash = BoundedBlake3::declare(&mut b, nu, capacity).unwrap();
+    let hash =
+      BoundedBlake3::declare_with_backend(&mut b, nu, capacity, backend)
+        .unwrap();
     let length = b.input();
     let words: Vec<_> = (0..hash.padded_words()).map(|_| b.input()).collect();
     for output in hash.hash(&mut b, length, &words) {
@@ -284,6 +317,51 @@ pub(super) mod tests {
           witness.rows::<HashBlockGate>(hash.block_slot()).len(),
           capacity.div_ceil(64).max(1)
         );
+      }
+    }
+  }
+
+  #[test]
+  fn packed_backend_hashes_full_private_prefixes_and_odd_trees_in_fixed_shapes()
+  {
+    for capacity in [0, 65, 1025, 3073, 7169] {
+      let mut count = CountingEmitter::new();
+      let (_, counted_inputs, counted_public) = emit_with_backend(
+        &mut count,
+        8,
+        capacity,
+        Blake3Backend::PackedWordsV0,
+      );
+      let nu = count.required_nu(9).unwrap();
+      let mut builder = ShapeBuilder::new(nu);
+      let (_, inputs, public) = emit_with_backend(
+        &mut builder,
+        nu,
+        capacity,
+        Blake3Backend::PackedWordsV0,
+      );
+      let shape = builder.finish().unwrap();
+      count.ensure_matches(&shape).unwrap();
+      assert_eq!(inputs, counted_inputs);
+      assert_eq!(public, counted_public);
+      assert_eq!(shape.registry.digest(), count.registry(nu).0.digest());
+      let identity = shape.circuit.digest();
+      for length in
+        [0, 1, 63, 64, 65, 1023, 1024, 1025, 2048, 2049, 3072, 3073, 4097, 7169]
+          .into_iter()
+          .filter(|n| *n <= capacity)
+      {
+        let message: Vec<_> =
+          (0..length).map(|i| (i * 31 + i / 128 + 7) as u8).collect();
+        let witness = shape.run(
+          &inputs.assign(&private_input(capacity, &message)).unwrap(),
+          &[],
+        );
+        assert_eq!(
+          witness.public,
+          public.instantiate(&expected(&message)).unwrap()
+        );
+        assert_eq!(shape.circuit.digest(), identity);
       }
     }
   }

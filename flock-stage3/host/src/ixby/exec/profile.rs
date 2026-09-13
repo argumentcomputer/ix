@@ -1,4 +1,5 @@
 use super::super::{decode::PrimitiveSet, machine::MachineCapacities};
+use crate::blake3_backend::Blake3Backend;
 use anyhow::{Result, ensure};
 use flock_prover::{field::F128, pcs::PcsParams};
 
@@ -138,6 +139,8 @@ fn hash(tag: u8, parent: &[u8], bytes: &[u8]) -> [u8; 32] {
 pub(super) const TRANSCRIPT_DOMAIN: &[u8] = b"ix:ixby:scalar-exec:v0";
 const UPSTREAM: &[u8] = b"b310f35f35f68095537150a1c8c0a43caca9a29e";
 const IMPLEMENTATION: &[u8] = b"IxBy/Flock/fixed-scalar-machine/v0";
+const PACKED_IMPLEMENTATION: &[u8] =
+  b"IxBy/Flock/fixed-scalar-machine/packed-blake3/v0";
 
 /// Distinct verifier-owned identities. The final digest binds their ordered
 /// tuple; callers must approve it, not accept a proof-selected setup identity.
@@ -179,6 +182,7 @@ impl ExecIdentities {
     primitives: PrimitiveSet,
     nu: usize,
     params: &PcsParams,
+    backend: Blake3Backend,
   ) -> Self {
     let mut protocol = b"IxBy/Flock/protocol/v0\0".to_vec();
     protocol.extend_from_slice(UPSTREAM);
@@ -213,7 +217,11 @@ impl ExecIdentities {
     registry.extend_from_slice(&opcodes);
     Self {
       protocol: *blake3::hash(&protocol).as_bytes(),
-      implementation: *blake3::hash(IMPLEMENTATION).as_bytes(),
+      implementation: *blake3::hash(match backend {
+        Blake3Backend::LegacyOptionF => IMPLEMENTATION,
+        Blake3Backend::PackedWordsV0 => PACKED_IMPLEMENTATION,
+      })
+      .as_bytes(),
       profile: hash(0, &[], &profile.to_bytes()),
       capacity: *blake3::hash(&capacity).as_bytes(),
       primitives: *blake3::hash(&registry).as_bytes(),

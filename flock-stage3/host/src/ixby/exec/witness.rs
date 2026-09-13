@@ -3,6 +3,7 @@
 
 use super::{ByteCommitmentSlots, CompiledExec, ScalarMachineSlots};
 use crate::{
+  blake3_backend::Blake3CompressionSlots,
   extension::{self, GoldilocksLaneRepackGate},
   goldilocks::{self, CanonicalGoldilocksQuadGate, GoldilocksAddPairGate},
   hash::Blake3Gate,
@@ -18,6 +19,7 @@ use crate::{
     select::SelectWordsGate,
   },
   multiplication::{self, GoldilocksMulPairGate},
+  packed_blake3::PackedWordGate,
 };
 use anyhow::{Result, ensure};
 use flock_prover::{
@@ -50,11 +52,11 @@ pub(super) fn tables(
     (m.control_slot.slot(), m.control_gate.r1cs()),
     (m.initial_slot.slot(), m.initial_gate.r1cs()),
     (m.output_slot.slot(), m.output_gate.r1cs()),
-    (common.compression_slot(), flock_blake3::build_block_r1cs(nu)),
     (common.select_slot(), common.select_gate().r1cs()),
     (common.root_slot(), common.root_gate().r1cs()),
     (h.length_slot().slot(), h.length_gate().r1cs()),
   ];
+  tables.extend(common.compression().tables());
   tables.extend(
     h.hashes().iter().map(|hash| (hash.block_slot(), hash.block_gate().r1cs())),
   );
@@ -160,11 +162,20 @@ pub(super) fn drivers<'a>(
     GoldilocksLaneRepackGate,
     extension::generate_lane_repack_witness_into
   );
-  native!(
-    common.compression_slot(),
-    Blake3Gate,
-    flock_blake3::generate_witness_batch_major_partial_into
-  );
+  match common.compression() {
+    Blake3CompressionSlots::LegacyOptionF { slot, .. } => {
+      native!(
+        *slot,
+        Blake3Gate,
+        flock_blake3::generate_witness_batch_major_partial_into
+      );
+    },
+    Blake3CompressionSlots::PackedWordsV0(packed) => {
+      for (word_gate, slot) in packed.gates() {
+        gate!(*slot, PackedWordGate, word_gate);
+      }
+    },
+  }
   gate!(common.select_slot(), SelectWordsGate, common.select_gate());
   gate!(common.root_slot(), RootParamsGate, common.root_gate());
   gate!(h.length_slot().slot(), CheckedLengthAddGate, h.length_gate());

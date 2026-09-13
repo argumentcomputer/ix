@@ -4,6 +4,7 @@
 //! components, not a certified interpreter or a Stage 2 verification oracle.
 //! Public gate internals remain experimental, with no stable API guarantee.
 
+pub mod blake3_backend;
 pub mod boolean;
 pub mod conformance;
 pub mod equality;

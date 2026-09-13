@@ -115,7 +115,7 @@ an arbitrary proof. The proof-free R1CS emitter below consumes this topology
 without relying on a valid assignment. Complete materialization and terminal
 key preprocessing remain unfinished; no terminal key-generation API is exposed.
 
-## Current evidence
+## Legacy-backend baseline evidence
 
 The direct scalar setup is the same one exercised by Stage 3's 39-program/
 primitive proof corpus: 256 code bytes, two functions, four blocks/function,
@@ -140,12 +140,11 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 207 ordinary workspace tests pass; eighteen tests are ignored by default
-(the retained large two-ring projection, native replay/census, and the four
-decision-diagram native/materialization/optimization tests, plus two
-structural BLAKE3 component tests, three closed-composition/admission tests,
-three bounded cofactor-basis experiments, and three explicit small-class
-geometry/native/full-census tests).
+The current ordinary Stage 4 workspace suite passes 208 tests; 23 tests are
+ignored by default. These separately labelled opt-in tests cover native
+proof/replay, component materialization, and bounded whole-circuit census;
+none is a full terminal proving test. This count includes the later packed
+backend integration below.
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
@@ -239,10 +238,78 @@ Neither a native root differential nor a successful sizing result establishes
 the full satisfying assignment, terminal key/proof, isolated verification or
 larger-profile acceptance gates.
 
+### Explicit packed-word backend integration
+
+`Blake3Backend::PackedWordsV0` is a setup-owned implementation choice supplied
+to `compile_exec_profile_with_backend`. The default compiler remains
+LegacyOptionF with the unchanged baseline setup digest above. Within either
+capacity class, packed setup preserves the same semantic profile, primitive
+meanings, capacity and commitment function, but changes the implementation,
+registry, circuit/public-template, protocol geometry and transcript identity.
+No proof header or guest selects this choice. Native cross-backend substitution
+rejects both original proofs and proofs with forged receiver-matching headers.
+
+The packed baseline setup digest is
+`e100007d6afc10d3d4e0afcc529a7a1a1c147c7e76d2f1623d83240cf073da11`;
+the packed small class is
+`e02060020627b285c8c1d13989e9a18cb0f88595ca5bf414f8daaf4b6f713e96`.
+These are generic Exec setup identities, not terminal verification keys.
+
+| Packed setup-owned geometry | Baseline | Small class |
+| --- | ---: | ---: |
+| Outer row log / PCS dimension | 11 / `m=23` | 11 / `m=22` |
+| Dense witness words / live lanes | 53,288 / 53 | 15,764 / 31 |
+| Ligerito queries | 371 | 371 |
+| Opened F128 words / path digests | 14,964 / 1,484 | 9,596 / 1,113 |
+| Boolean matrix root claims | 64 | 64 |
+| Matrix-fold rounds | 1,512 | 1,476 |
+| Logical source-slot payload bytes | 618,953 | 500,041 |
+
+The embedded Fast128 schedule remains `[244,79,48]` queries and `[16,16,16]`
+query-grinding bits. Source-slot bytes exclude approved setup, intermediates,
+matrix/witness storage, allocator overhead and process-tree RSS. Repeated
+proof-free replay/root compilation gives identical identities for each class.
+The root compiler dispatches on the approved backend: legacy has exactly two
+checked BLAKE3 formula replacements; packed has zero replacements and exact
+diagrams for all 64 A/B matrices. Both retain the exact cofactor-basis structure
+and jagged programs. The legacy formula API rejects packed setup explicitly;
+compilation failures do not trigger a fallback or leave a missing root.
+
+All 39 baseline scalar/control cases have real packed Exec proofs, each with
+a 339,563-byte bundle, and fresh-process verification using only fixed approved
+setup, externally expected 32-byte S and proof. For the small class, local
+return with false/true inputs and a distinct literal-true image reuse one
+setup; each bundle is 236,307 bytes. All 66 native roots match exact setup-owned
+evaluation, and the first 4,096 assigned constraints equal proof-free emission
+for every case. Changed B/I/O commitments and proof bytes reject. These are
+native proofs, root differentials and a short exact prefix, not a complete
+closed R1CS identity, satisfying assignment or terminal proof.
+
+`packed_small_exec_whole_root_closed_admission_census` separately measures the
+whole proof-free closed emitter with the actual PLONK observer and unchanged
+`2^30` domain cap, including the four public/blinding reservations. Its outcome,
+frozen source hashes, commands and limits are retained in the
+[integrated report](../flock-stage4/census/exec-packed-blake3-root-closed-v0.json).
+The run returned `RejectedBudget` after 1,349.908 seconds of emission
+(1,350.62 seconds including setup), at 643,838,506 R1CS constraints and
+1,073,741,859 PLONK rows in `MatrixFold`. Including the four reserved rows
+requires 1,073,741,863 rows, beyond the supported domain. That is a refused
+prefix, not a full count; the 39-row overrun is only the stopping threshold,
+not the savings needed to fit. Last sampled test-process high-water RSS was
+1,165,708 KiB, not a terminal-prover or process-tree measurement. No complete
+matrix, satisfying assignment, terminal key or proof was generated.
+The [earlier compression-component census](../flock-stage4/census/packed-blake3-components-v0.json)
+is not a substitute for this whole-relation measurement: denser witnesses,
+more matrix folds and changed wiring/PCS can offset root-component savings.
+The complete encoding still needs cost reduction before full materialization,
+key/SRS/resource admission and isolated terminal proving. Formal refinement
+and the larger crypto/certified Stage 2 guest requirements remain unfinished.
+
 ## Exact fixed-table components (M6)
 
-`compile_exec_root_tables` borrows the approved setup and derives all 46 Boolean
-A/B matrices, the circuit-structure matrix, and the jagged matrix from it.
+`compile_exec_root_tables` borrows the approved setup and derives all Boolean
+A/B matrices (46 for legacy, 64 for packed), the circuit-structure matrix, and
+the jagged matrix from it.
 There is no proof input. Source-entry and retained-node limits apply across
 all tables together. The program identity includes the replay identity, exact
 coordinate order, coefficients, and all diagram nodes. It is not a terminal

@@ -13,7 +13,9 @@ use super::{
   hash_control::MAX_HASH_CAPACITY,
   length::{CheckedLengthAddGate, CheckedLengthAddSlot},
 };
-use crate::{hash::pack_bytes, sizing::CircuitEmitter};
+use crate::{
+  blake3_backend::Blake3Backend, hash::pack_bytes, sizing::CircuitEmitter,
+};
 use anyhow::{Result, ensure};
 use flock_prover::{circuit::builder::Wire, field::F128};
 
@@ -67,6 +69,22 @@ impl ByteCommitmentSlots {
     fixed_profile: &[u8],
     capacities: CommitmentCapacities,
   ) -> Result<Self> {
+    Self::declare_with_backend(
+      b,
+      nu,
+      fixed_profile,
+      capacities,
+      Blake3Backend::LegacyOptionF,
+    )
+  }
+
+  pub fn declare_with_backend(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    fixed_profile: &[u8],
+    capacities: CommitmentCapacities,
+    backend: Blake3Backend,
+  ) -> Result<Self> {
     ensure!(
       fixed_profile.len() <= MAX_HASH_CAPACITY - 16,
       "profile hash capacity"
@@ -74,7 +92,12 @@ impl ByteCommitmentSlots {
     for capacity in [capacities.program, capacities.input, capacities.output] {
       ensure!(capacity <= MAX_HASH_CAPACITY - 48, "artifact hash capacity");
     }
-    let profile = BoundedBlake3::declare(b, nu, fixed_profile.len() + 16)?;
+    let profile = BoundedBlake3::declare_with_backend(
+      b,
+      nu,
+      fixed_profile.len() + 16,
+      backend,
+    )?;
     let program = profile.sharing_primitives(b, capacities.program + 48)?;
     let input = profile.sharing_primitives(b, capacities.input + 48)?;
     let output = profile.sharing_primitives(b, capacities.output + 48)?;

@@ -8,7 +8,7 @@ use ix_stage4_trace::{
   BinaryLinearMapLimitsV0, BinaryLinearMapV0, BinaryLinearValidationLimitsV0,
   F128MatrixSideV1, F128StaticMatrixIdV1,
 };
-use ixby_flock::ixby::exec::CompiledExec;
+use ixby_flock::{blake3_backend::Blake3Backend, ixby::exec::CompiledExec};
 
 #[path = "blake3_table_formula.rs"]
 mod formula;
@@ -48,6 +48,10 @@ pub fn compile_exec_blake3_root_maps<'a>(
   validation_limits: BinaryLinearValidationLimitsV0,
 ) -> Result<CompiledExecBlake3RootMaps<'a>> {
   let setup = replay.exec_setup();
+  ensure!(
+    setup.blake3_backend() == Blake3Backend::LegacyOptionF,
+    "Option-F formulas require the explicitly approved legacy backend"
+  );
   let slots = setup
     .verifier_shape()
     .registry
