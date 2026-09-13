@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,506 roots by traversing checked types, bodies and inductive
+The audit checks 1,518 roots by traversing checked types, bodies and inductive
 constructors. Fifty-seven roots use no axioms; one uses only `Quot.sound`;
-244 depend only on `propext`; 457 use exactly `propext` and `Quot.sound`;
-the other 747 use exactly
+244 depend only on `propext`; 460 use exactly `propext` and `Quot.sound`;
+the other 756 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 20,113 logical declarations and 20,915 declarations after following runtime
+has 20,151 logical declarations and 20,955 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 193 Ix recursion worker implementations.
+three partial opaque sources and all 195 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1380,6 +1380,42 @@ corpora pass. The backend accepts two cases and rejects seventeen, with no
 unexpected outcomes.
 Connecting these folds to the complete authenticated FRI transcript and
 deriving quantitative proximity soundness remain separate obligations.
+
+`NativeAIR.Folding` connects each row to one global polynomial. Write the
+ascending coefficient list in blocks of `n` terms. Evaluating each block at
+the folding challenge gives the coefficients of the folded polynomial.
+Restricting the original polynomial to a coset `x^n = c` combines those
+blocks with weights `1, c, c², …`. The restriction has at most `n`
+coefficients and agrees with the original polynomial at every coset node.
+Evaluating it at the challenge equals the folded polynomial evaluated at
+`c`. The checked row interpolator therefore returns the same global folded
+polynomial at every child-domain query point. An original coefficient bound
+of `n*d` becomes a bound of `d`, including empty polynomials, incomplete
+blocks and trailing zero coefficients.
+
+For two fixed, different rows of length `n`, their interpolating polynomials
+have a nonzero difference: agreement as polynomials would recover the same
+value at every row node. The polynomial root bound then limits equal fold
+results to at most `n−1` challenges in any list of distinct extension-field
+elements. This is a deterministic count for fixed rows; it does not supply
+an adaptive FRI proximity argument or a Fiat–Shamir probability bound.
+
+The native folding corpus uses global polynomials spanning several
+coefficient blocks and compares both native matrix paths and the actual
+row helper with the folded coefficient polynomial. It covers 4,872 rows,
+24,360 challenge evaluations, 936 matrices and 24,048 matrix rows. Seven
+distinct row pairs, differing at one node, attain exactly `n−1` agreements
+over 141 tested challenges. The Lean replay checks complete input recipes,
+both extension coordinates, folded coefficients, coset restrictions,
+degree bounds and native outputs.
+
+This component adds twelve roots, two definitions and two inspected
+recursion workers. All 1,506 prior root statements and axiom sets, 942
+premise definitions and 193 worker bodies remain unchanged.
+All 98 parallel native release tests, Clippy with warnings denied, the
+508-job strict build and the complete gate with thirty-nine fresh native
+corpora pass. The backend accepts two cases and rejects seventeen, with no
+unexpected outcomes.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including
