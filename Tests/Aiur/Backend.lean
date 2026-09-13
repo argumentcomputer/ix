@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Aiur.CompiledVerifier
+import Ix.Aiur.ShapedVerifier
 import Ix.Aiur.Meta
 
 /-! Nonvacuity and rejection tests for the generic program binding component.
@@ -51,13 +51,22 @@ def run : IO Unit := do
   unless claim == buildClaim function #[3, 5] #[15] do
     throw (IO.userError "unexpected public claim")
   let bytes := proof.toBytes
-  IO.ofExcept (verifyCompiled backend #[3, 5] bytes)
+  IO.ofExcept (verifyShaped backend #[3, 5] bytes)
   IO.println "PASS selected program/key/function/input/result: accepted"
-  requireRejected "changed public input" (verifyCompiled backend #[3, 4] bytes)
-  requireRejected "public input arity" (verifyCompiled backend #[3] bytes)
-  requireRejected "malformed proof" (verifyCompiled backend #[3, 5] ByteArray.empty)
+  requireRejected "changed public input" (verifyShaped backend #[3, 4] bytes)
+  requireRejected "public input arity" (verifyShaped backend #[3] bytes)
+  requireRejected "malformed proof" (verifyShaped backend #[3, 5] ByteArray.empty)
+  let suffixed := bytes.push 0
+  let _ ← IO.ofExcept (Proof.ofBytesChecked suffixed)
+  requireRejected "proof suffix" (verifyShaped backend #[3, 5] suffixed)
+  let checked ← IO.ofExcept (readProof backend.keyData bytes)
+  let malformed := { checked.data with stage1 := [] }
+  let malformedBytes := NativeAIR.ProofCodec.encode malformed
+  unless (NativeAIR.ProofCodec.decodeCanonical malformedBytes).isSome do
+    throw (IO.userError "shape mutation is not a canonical proof artifact")
+  requireRejected "proof opening dimensions" (verifyShaped backend #[3, 5] malformedBytes)
   let changedResult ← IO.ofExcept (buildCompiled { selection with success := #[16] })
-  requireRejected "changed success result" (verifyCompiled changedResult #[3, 5] bytes)
+  requireRejected "changed success result" (verifyShaped changedResult #[3, 5] bytes)
   requireRejected "missing success output" (buildCompiled { selection with success := #[] })
   requireRejected "extra zero success output" (buildCompiled { selection with success := #[15, 0] })
   requireRejected "unselected key" (buildCompiled { selection with key := ByteArray.empty })
@@ -88,11 +97,11 @@ def run : IO Unit := do
     IO.ofExcept (groupedSystem.prove groupedFunction #[3, 4] default)
   unless groupedClaim == buildClaim groupedFunction #[3, 4] #[30] do
     throw (IO.userError "unexpected grouped public claim")
-  IO.ofExcept (verifyCompiled groupedBackend #[3, 4] groupedProof.toBytes)
+  IO.ofExcept (verifyShaped groupedBackend #[3, 4] groupedProof.toBytes)
   IO.println "PASS selected grouped program: accepted"
   requireRejected "grouped key with ungrouped program"
     (buildCompiled { groupedSelection with groups := #[] })
-  IO.println "backend binding: 2 accepted, 15 rejected, 0 unexpected outcomes"
+  IO.println "backend binding: 2 accepted, 17 rejected, 0 unexpected outcomes"
 
 end AiurTests.Backend
 

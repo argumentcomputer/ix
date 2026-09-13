@@ -410,12 +410,12 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 831 roots by traversing checked types, bodies and inductive
-constructors. Seventeen roots use no axioms; one uses only `Quot.sound`;
-131 depend only on `propext`; 224 use exactly `propext` and `Quot.sound`;
-the other 458 use exactly
+The audit checks 884 roots by traversing checked types, bodies and inductive
+constructors. Eighteen roots use no axioms; one uses only `Quot.sound`;
+149 depend only on `propext`; 256 use exactly `propext` and `Quot.sound`;
+the other 460 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 17,597 logical declarations and 18,373 declarations after following runtime
+has 17,843 logical declarations and 18,619 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
 three partial opaque sources and all 169 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
@@ -788,6 +788,40 @@ bodies are unchanged. The strict 346-job build and complete component gate
 pass with all twenty native corpora. Native production code and key bytes
 are unchanged.
 
+`BoundVerifier.verifyShaped` now decodes the accepted bytes into a complete
+proof artifact and checks its opening dimensions against a `CompiledBackend`.
+The total codec retains every commitment, quadratic extension coordinate,
+FRI round, opened value and Merkle authentication digest. Its proofs establish
+round trips, injective canonical encoding, complete consumption, u64 vector
+length bounds and 32-byte digest bounds. Native bincode permits a trailing
+suffix; this host entry point requires exact canonical framing.
+
+The checked proof records are indexed by the actual activation bitmap and
+the selected key's canonical circuit order. They retain both opening points,
+quotient slices and accumulators, with checked column widths and domain
+bounds. Acceptance also supplies fixed trace heights and the strict global
+lookup budget. The wrapper then verifies the same bytes and the selected
+public statement through the existing native interface. Its theorem provides
+these framing and shape facts directly from success; it does not yet derive
+authenticated polynomials, satisfying traces or cryptographic failure bounds.
+Native execution refinement and the certified release remain open.
+
+The proof codec comparison covers 3,636 native/Lean byte cases, all fields of
+twenty decoded records and eight native-accepted suffixes rejected by the
+host framing gate. Four original proofs pass full native verification. The
+shape comparison checks 4,696 cases across four systems, including every u8
+degree and independent changes to activation, matrices, opening points and
+columns. Native and Lean agree on 510 accepted shapes; 266 also meet the
+fixed-height and budget guards. These shape fixtures deliberately omit PCS
+data and make no cryptographic acceptance claim. The ordinary and grouped
+backend tests use `verifyShaped`, accepting two valid proofs and rejecting
+seventeen altered cases. All 78 parallel Rust release tests and release
+Clippy pass. The 884-root audit adds 53 roots and 65 frozen definitions and
+constructors, preserving all prior statements, axiom sets, definitions and
+169 worker bodies. The strict 364-job build and complete component gate pass
+with all twenty-two native corpora.
+Native production behavior and serialized proof/key bytes are unchanged.
+
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits
@@ -851,7 +885,7 @@ bound. The remaining components are:
 
 | Component | Remaining obligation |
 | --- | --- |
-| Native verifier | Connect the actual decoder and verifier to the mathematical protocol and extract satisfying committed traces from acceptance. |
+| Native verifier | Extend the enforced proof codec and shape checks through the native transcript, PCS and AIR checks, then extract satisfying committed traces from acceptance. |
 | Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
 | Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
 | Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |

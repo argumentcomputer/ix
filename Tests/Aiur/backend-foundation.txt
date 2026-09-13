@@ -6847,6 +6847,292 @@ ROOT Aiur.BoundVerifier.CompiledBackend.byte2_graph_reflects
                           Aiur.NativeAIR.RowOffset.current 10))
                     Aiur.AIR.Byte2Kind.all)
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.verifyShaped_success
+∀ {selection : Aiur.BoundVerifier.Selection} {backend : Aiur.BoundVerifier.CompiledBackend selection}
+  {input : Array Aiur.G} {bytes : ByteArray},
+  Aiur.BoundVerifier.verifyShaped backend input bytes = Except.ok () →
+    ∃ checked,
+      Aiur.BoundVerifier.readProof backend.keyData bytes = Except.ok checked ∧
+        Aiur.BoundVerifier.verifyCompiled backend input bytes = Except.ok ()
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readVector_reads
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} (encode : α → List UInt8) (values : List α),
+  values.length < 256 ^ 8 →
+    (∀ (value : α), value ∈ values → Aiur.NativeAIR.KeyCodec.Reads read (encode value) value) →
+      Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.ProofCodec.readVector read)
+        (Aiur.NativeAIR.ProofCodec.encodeVector encode values) values
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readOption_reads
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} (encode : α → List UInt8) (value : Option α),
+  (∀ (entry : α), value = some entry → Aiur.NativeAIR.KeyCodec.Reads read (encode entry) entry) →
+    Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.ProofCodec.readOption read)
+      (Aiur.NativeAIR.ProofCodec.encodeOption encode value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readBool_reads
+∀ (value : Bool),
+  Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readBool (Aiur.NativeAIR.ProofCodec.encodeBool value) value
+AXIOMS []
+ROOT Aiur.NativeAIR.ProofCodec.readField_reads
+∀ (value : Aiur.G),
+  Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readField (Aiur.NativeAIR.ProofCodec.encodeField value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readExtension_reads
+∀ (value : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readExtension
+    (Aiur.NativeAIR.ProofCodec.encodeExtension value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readCap_reads
+∀ (cap : Aiur.NativeAIR.ProofCodec.Cap),
+  Aiur.NativeAIR.ProofCodec.CapFits cap →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readCap (Aiur.NativeAIR.ProofCodec.encodeCap cap) cap
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readOpenings_reads
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} (encode : α → List UInt8),
+  (∀ (value : α), Aiur.NativeAIR.KeyCodec.Reads read (encode value) value) →
+    ∀ (values : Aiur.NativeAIR.ProofCodec.Openings α),
+      Aiur.NativeAIR.ProofCodec.OpeningsFits values →
+        Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.ProofCodec.readOpenings read)
+          (Aiur.NativeAIR.ProofCodec.encodeOpenings encode values) values
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readCommitments_reads
+∀ (value : Aiur.NativeAIR.ProofCodec.Commitments),
+  Aiur.NativeAIR.ProofCodec.CommitmentsFits value →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readCommitments
+      (Aiur.NativeAIR.ProofCodec.encodeCommitments value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readBatchOpening_reads
+∀ (value : Aiur.NativeAIR.ProofCodec.BatchOpening),
+  Aiur.NativeAIR.ProofCodec.BatchOpeningFits value →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readBatchOpening
+      (Aiur.NativeAIR.ProofCodec.encodeBatchOpening value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readCommitStep_reads
+∀ (value : Aiur.NativeAIR.ProofCodec.CommitStep),
+  Aiur.NativeAIR.ProofCodec.CommitStepFits value →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readCommitStep
+      (Aiur.NativeAIR.ProofCodec.encodeCommitStep value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readFri_reads
+∀ (value : Aiur.NativeAIR.ProofCodec.Fri),
+  Aiur.NativeAIR.ProofCodec.FriFits value →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readFri (Aiur.NativeAIR.ProofCodec.encodeFri value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readData_reads
+∀ (value : Aiur.NativeAIR.ProofCodec.Data),
+  Aiur.NativeAIR.ProofCodec.DataFits value →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.ProofCodec.readData (Aiur.NativeAIR.ProofCodec.encodeData value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.decode_encode
+∀ (value : Aiur.NativeAIR.ProofCodec.Data),
+  Aiur.NativeAIR.ProofCodec.DataFits value →
+    Aiur.NativeAIR.ProofCodec.decode (Aiur.NativeAIR.ProofCodec.encode value) = some value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.decode_success
+∀ {bytes : ByteArray} {value : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.ProofCodec.decode bytes = some value →
+    Aiur.NativeAIR.ProofCodec.readData bytes.data.toList = some (value, [])
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.decodeCanonical_success
+∀ {bytes : ByteArray} {value : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.ProofCodec.decodeCanonical bytes = some value →
+    Aiur.NativeAIR.ProofCodec.decode bytes = some value ∧ Aiur.NativeAIR.ProofCodec.encode value = bytes
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.decodeCanonical_encode
+∀ (value : Aiur.NativeAIR.ProofCodec.Data),
+  Aiur.NativeAIR.ProofCodec.DataFits value →
+    Aiur.NativeAIR.ProofCodec.decodeCanonical (Aiur.NativeAIR.ProofCodec.encode value) = some value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.canonical_bytes_unique
+∀ {first second : ByteArray} {value : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.ProofCodec.decodeCanonical first = some value →
+    Aiur.NativeAIR.ProofCodec.decodeCanonical second = some value → first = second
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.encode_injective
+∀ {first second : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.ProofCodec.DataFits first →
+    Aiur.NativeAIR.ProofCodec.DataFits second →
+      Aiur.NativeAIR.ProofCodec.encode first = Aiur.NativeAIR.ProofCodec.encode second → first = second
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.decode_append_rejected
+∀ (value : Aiur.NativeAIR.ProofCodec.Data),
+  Aiur.NativeAIR.ProofCodec.DataFits value →
+    ∀ (suffix : List UInt8),
+      suffix ≠ [] →
+        Aiur.NativeAIR.ProofCodec.decode (Aiur.NativeAIR.ProofCodec.encodeData value ++ suffix).toByteArray = none
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readNat_returns
+∀ (count : Nat),
+  Aiur.NativeAIR.KeyCodec.Returns (Aiur.NativeAIR.KeyCodec.readNat count) fun value => value < 256 ^ count
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readVector_returns
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {property : α → Prop},
+  Aiur.NativeAIR.KeyCodec.Returns read property →
+    Aiur.NativeAIR.KeyCodec.Returns (Aiur.NativeAIR.ProofCodec.readVector read)
+      (Aiur.NativeAIR.ProofCodec.VectorFits property)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readOption_returns
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {property : α → Prop},
+  Aiur.NativeAIR.KeyCodec.Returns read property →
+    Aiur.NativeAIR.KeyCodec.Returns (Aiur.NativeAIR.ProofCodec.readOption read) fun result =>
+      ∀ (value : α), result = some value → property value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.readCap_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.ProofCodec.readCap Aiur.NativeAIR.ProofCodec.CapFits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readOpenings_returns
+∀ {α : Type} (read : Aiur.NativeAIR.KeyCodec.Reader α),
+  Aiur.NativeAIR.KeyCodec.Returns (Aiur.NativeAIR.ProofCodec.readOpenings read) Aiur.NativeAIR.ProofCodec.OpeningsFits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readCommitments_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.ProofCodec.readCommitments Aiur.NativeAIR.ProofCodec.CommitmentsFits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readBatchOpening_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.ProofCodec.readBatchOpening Aiur.NativeAIR.ProofCodec.BatchOpeningFits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readCommitStep_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.ProofCodec.readCommitStep Aiur.NativeAIR.ProofCodec.CommitStepFits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readFri_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.ProofCodec.readFri Aiur.NativeAIR.ProofCodec.FriFits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.readData_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.ProofCodec.readData Aiur.NativeAIR.ProofCodec.DataFits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.decode_fits
+∀ {bytes : ByteArray} {value : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.ProofCodec.decode bytes = some value → Aiur.NativeAIR.ProofCodec.DataFits value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.pair_success
+∀ {values : List (List Aiur.NativeAIR.ProofCodec.Extension)} {result : Aiur.NativeAIR.ProofShape.Pair},
+  Aiur.NativeAIR.ProofShape.pair values = some result → values = [result.current, result.next]
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofShape.single_success
+∀ {α : Type u_1} {values : List α} {result : α},
+  Aiur.NativeAIR.ProofShape.single values = some result → values = [result]
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofShape.readPreprocessed_none
+∀ (proof : Aiur.NativeAIR.ProofCodec.Data), Aiur.NativeAIR.ProofShape.readPreprocessed proof none = some none
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofShape.readPreprocessed_some
+∀ {proof : Aiur.NativeAIR.ProofCodec.Data} {slot : Nat} {result : Option Aiur.NativeAIR.ProofShape.Pair},
+  Aiur.NativeAIR.ProofShape.readPreprocessed proof (some slot) = some result →
+    ∃ values opened,
+      proof.preprocessed = some opened ∧ opened[slot]? = some [values.current, values.next] ∧ result = some values
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.readRow_success
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data} {index position : Nat}
+  {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.readRow key proof index position = some row →
+    Aiur.NativeAIR.ProofShape.Row.Sourced key proof index position row
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.Pair.hasWidth_success
+∀ {values : Aiur.NativeAIR.ProofShape.Pair} {width : Nat},
+  values.hasWidth width = true → values.current.length = width ∧ values.next.length = width
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.Row.fits_success
+∀ {parameters : Aiur.NativeAIR.KeyCodec.Parameters} {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.Row.fits parameters row = true → Aiur.NativeAIR.ProofShape.Row.Fits parameters row
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.check_success
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data}
+  {result : List Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.check key proof = some result →
+    Aiur.NativeAIR.ProofShape.header key proof = true ∧
+      Aiur.NativeAIR.ProofShape.inactivePreprocessed key proof = true ∧
+        Aiur.NativeAIR.ProofShape.rows key proof = some result ∧
+          ∀ (row : Aiur.NativeAIR.ProofShape.Row), row ∈ result → Aiur.NativeAIR.ProofShape.Row.Fits key.parameters row
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.check_length
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data}
+  {result : List Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.check key proof = some result →
+    result.length = (Aiur.NativeAIR.ProofShape.activeIndices proof).length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.activeIndices_mem
+∀ {proof : Aiur.NativeAIR.ProofCodec.Data} {index : Nat},
+  index ∈ Aiur.NativeAIR.ProofShape.activeIndices proof ↔ proof.active[index]? = some true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.check_row
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data}
+  {result : List Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.check key proof = some result →
+    ∀ {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+      result[position]? = some row →
+        ∃ index,
+          (Aiur.NativeAIR.ProofShape.activeIndices proof)[position]? = some index ∧
+            Aiur.NativeAIR.ProofShape.Row.Sourced key proof index position row ∧
+              Aiur.NativeAIR.ProofShape.Row.Fits key.parameters row
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.check_row_active
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data}
+  {result : List Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.check key proof = some result →
+    ∀ {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+      result[position]? = some row → proof.active[row.circuitIndex]? = some true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.check_nonempty
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data}
+  {result : List Aiur.NativeAIR.ProofShape.Row}, Aiur.NativeAIR.ProofShape.check key proof = some result → result ≠ []
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.fixedHeights_sound
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.ProofShape.fixedHeights key proof = true →
+    Aiur.FixedTraceHeights (List.map (fun x => x.preprocessedHeight) key.circuits) proof.active
+      (List.map UInt8.toNat proof.logDegrees)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofShape.queryBound_sound
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data} {bound : Nat},
+  Aiur.NativeAIR.ProofShape.queryBound key proof = some bound →
+    ∃ total,
+      Aiur.lookupSlotSum (List.map (fun x => x.graph.lookups.length) key.circuits) proof.active
+            (List.map UInt8.toNat proof.logDegrees) =
+          some total ∧
+        bound = 1 + total ∧ bound < Aiur.gSize.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.framing
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes),
+  Aiur.NativeAIR.ProofCodec.readData bytes.data.toList = some (checked.data, []) ∧
+    Aiur.NativeAIR.ProofCodec.encode checked.data = bytes
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.wire_bounds
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes),
+  Aiur.NativeAIR.ProofCodec.DataFits checked.data
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.row
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes)
+  {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+  checked.rows[position]? = some row →
+    checked.data.active[row.circuitIndex]? = some true ∧
+      Aiur.NativeAIR.ProofShape.Row.Sourced key checked.data row.circuitIndex position row ∧
+        Aiur.NativeAIR.ProofShape.Row.Fits key.parameters row
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.nonempty
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes),
+  checked.rows ≠ []
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.fixed_heights
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes),
+  Aiur.FixedTraceHeights (List.map (fun x => x.preprocessedHeight) key.circuits) checked.data.active
+    (List.map UInt8.toNat checked.data.logDegrees)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.lookup_budget
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes),
+  ∃ total,
+    Aiur.lookupSlotSum (List.map (fun x => x.graph.lookups.length) key.circuits) checked.data.active
+          (List.map UInt8.toNat checked.data.logDegrees) =
+        some total ∧
+      checked.bound = 1 + total ∧ checked.bound < Aiur.gSize.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.verifyShaped_acceptance
+∀ {selection : Aiur.BoundVerifier.Selection} {backend : Aiur.BoundVerifier.CompiledBackend selection}
+  {input : Array Aiur.G} {bytes : ByteArray},
+  Aiur.BoundVerifier.verifyShaped backend input bytes = Except.ok () →
+    input.size = selection.inputSize ∧
+      ∃ checked native,
+        Aiur.BoundVerifier.readProof backend.keyData bytes = Except.ok checked ∧
+          Aiur.Proof.ofBytesChecked bytes = Except.ok native ∧
+            backend.system.verify (Aiur.buildClaim selection.function input selection.success) native = Except.ok ()
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -11748,6 +12034,487 @@ PREMISE Aiur.NativeAIR.CompiledKey.columns
 Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.Source → Aiur.NativeAIR.RowOffset → (width : Nat) → Fin width → Aiur.G
 DEFINITION
 fun values source offset width index => (values.columns source offset)[↑index]?.getD 0
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.mk
+Aiur.G → Aiur.G → Aiur.NativeAIR.ProofCodec.Extension
+PREMISE Aiur.NativeAIR.ProofCodec.Digest
+Type
+DEFINITION
+List UInt8
+PREMISE Aiur.NativeAIR.ProofCodec.Cap
+Type
+DEFINITION
+List Aiur.NativeAIR.ProofCodec.Digest
+PREMISE Aiur.NativeAIR.ProofCodec.Openings
+Type → Type
+DEFINITION
+fun α => List (List (List α))
+PREMISE Aiur.NativeAIR.ProofCodec.readVector
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → Aiur.NativeAIR.KeyCodec.Reader (List α)
+DEFINITION
+fun {α} read => do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 8
+  Aiur.NativeAIR.KeyCodec.readMany read __do_lift
+PREMISE Aiur.NativeAIR.ProofCodec.encodeVector
+{α : Type u_1} → (α → List UInt8) → List α → List UInt8
+DEFINITION
+fun {α} encode values => Aiur.NativeAIR.KeyCodec.encodeNat 8 values.length ++ List.flatMap encode values
+PREMISE Aiur.NativeAIR.ProofCodec.readOption
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → Aiur.NativeAIR.KeyCodec.Reader (Option α)
+DEFINITION
+fun {α} read => do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readByte
+  match __do_lift.toNat with
+    | 0 => pure none
+    | 1 => do
+      let __do_lift ← read
+      pure (some __do_lift)
+    | x => failure
+PREMISE Aiur.NativeAIR.ProofCodec.encodeOption
+{α : Type u_1} → (α → List UInt8) → Option α → List UInt8
+DEFINITION
+fun {α} encode x =>
+  match x with
+  | none => [0]
+  | some value => 1 :: encode value
+PREMISE Aiur.NativeAIR.ProofCodec.readBool
+Aiur.NativeAIR.KeyCodec.Reader Bool
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readByte
+  match __do_lift.toNat with
+    | 0 => pure false
+    | 1 => pure true
+    | x => failure
+PREMISE Aiur.NativeAIR.ProofCodec.encodeBool
+Bool → List UInt8
+DEFINITION
+fun value => [if value = true then 1 else 0]
+PREMISE Aiur.NativeAIR.ProofCodec.readField
+Aiur.NativeAIR.KeyCodec.Reader Aiur.G
+DEFINITION
+do
+  let value ← Aiur.NativeAIR.KeyCodec.readNat 8
+  if value < Aiur.gSize.toNat then pure (Aiur.G.ofNat value) else failure
+PREMISE Aiur.NativeAIR.ProofCodec.encodeField
+Aiur.G → List UInt8
+DEFINITION
+fun value => Aiur.NativeAIR.KeyCodec.encodeNat 8 value.n
+PREMISE Aiur.NativeAIR.ProofCodec.readExtension
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.ProofCodec.readField
+  let __do_lift_1 ← Aiur.NativeAIR.ProofCodec.readField
+  pure { c0 := __do_lift, c1 := __do_lift_1 }
+PREMISE Aiur.NativeAIR.ProofCodec.encodeExtension
+Aiur.NativeAIR.ProofCodec.Extension → List UInt8
+DEFINITION
+fun value => Aiur.NativeAIR.ProofCodec.encodeField value.c0 ++ Aiur.NativeAIR.ProofCodec.encodeField value.c1
+PREMISE Aiur.NativeAIR.ProofCodec.readCap
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.ProofCodec.Cap
+DEFINITION
+Aiur.NativeAIR.ProofCodec.readVector (Aiur.NativeAIR.KeyCodec.readMany Aiur.NativeAIR.KeyCodec.readByte 32)
+PREMISE Aiur.NativeAIR.ProofCodec.encodeCap
+Aiur.NativeAIR.ProofCodec.Cap → List UInt8
+DEFINITION
+fun cap => Aiur.NativeAIR.ProofCodec.encodeVector id cap
+PREMISE Aiur.NativeAIR.ProofCodec.readOpenings
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → Aiur.NativeAIR.KeyCodec.Reader (Aiur.NativeAIR.ProofCodec.Openings α)
+DEFINITION
+fun {α} read =>
+  Aiur.NativeAIR.ProofCodec.readVector
+    (Aiur.NativeAIR.ProofCodec.readVector (Aiur.NativeAIR.ProofCodec.readVector read))
+PREMISE Aiur.NativeAIR.ProofCodec.encodeOpenings
+{α : Type} → (α → List UInt8) → Aiur.NativeAIR.ProofCodec.Openings α → List UInt8
+DEFINITION
+fun {α} encode values =>
+  Aiur.NativeAIR.ProofCodec.encodeVector
+    (Aiur.NativeAIR.ProofCodec.encodeVector (Aiur.NativeAIR.ProofCodec.encodeVector encode)) values
+PREMISE Aiur.NativeAIR.ProofCodec.Commitments.mk
+Aiur.NativeAIR.ProofCodec.Cap →
+  Aiur.NativeAIR.ProofCodec.Cap → Aiur.NativeAIR.ProofCodec.Cap → Aiur.NativeAIR.ProofCodec.Commitments
+PREMISE Aiur.NativeAIR.ProofCodec.readCommitments
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.ProofCodec.Commitments
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.ProofCodec.readCap
+  let __do_lift_1 ← Aiur.NativeAIR.ProofCodec.readCap
+  let __do_lift_2 ← Aiur.NativeAIR.ProofCodec.readCap
+  pure { stage1 := __do_lift, stage2 := __do_lift_1, quotient := __do_lift_2 }
+PREMISE Aiur.NativeAIR.ProofCodec.encodeCommitments
+Aiur.NativeAIR.ProofCodec.Commitments → List UInt8
+DEFINITION
+fun value =>
+  Aiur.NativeAIR.ProofCodec.encodeCap value.stage1 ++ Aiur.NativeAIR.ProofCodec.encodeCap value.stage2 ++
+    Aiur.NativeAIR.ProofCodec.encodeCap value.quotient
+PREMISE Aiur.NativeAIR.ProofCodec.BatchOpening.mk
+Aiur.NativeAIR.ProofCodec.Openings Aiur.G →
+  List Aiur.NativeAIR.ProofCodec.Digest → Aiur.NativeAIR.ProofCodec.BatchOpening
+PREMISE Aiur.NativeAIR.ProofCodec.readBatchOpening
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.ProofCodec.BatchOpening
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.ProofCodec.readOpenings Aiur.NativeAIR.ProofCodec.readField
+  let __do_lift_1 ← Aiur.NativeAIR.ProofCodec.readCap
+  pure { values := __do_lift, siblingHashes := __do_lift_1 }
+PREMISE Aiur.NativeAIR.ProofCodec.encodeBatchOpening
+Aiur.NativeAIR.ProofCodec.BatchOpening → List UInt8
+DEFINITION
+fun value =>
+  Aiur.NativeAIR.ProofCodec.encodeOpenings Aiur.NativeAIR.ProofCodec.encodeField value.values ++
+    Aiur.NativeAIR.ProofCodec.encodeCap value.siblingHashes
+PREMISE Aiur.NativeAIR.ProofCodec.CommitStep.mk
+UInt8 →
+  List (List Aiur.NativeAIR.ProofCodec.Extension) →
+    List Aiur.NativeAIR.ProofCodec.Digest → Aiur.NativeAIR.ProofCodec.CommitStep
+PREMISE Aiur.NativeAIR.ProofCodec.readCommitStep
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.ProofCodec.CommitStep
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readByte
+  let __do_lift_1 ←
+    Aiur.NativeAIR.ProofCodec.readVector (Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readExtension)
+  let __do_lift_2 ← Aiur.NativeAIR.ProofCodec.readCap
+  pure { logArity := __do_lift, siblingValues := __do_lift_1, siblingHashes := __do_lift_2 }
+PREMISE Aiur.NativeAIR.ProofCodec.encodeCommitStep
+Aiur.NativeAIR.ProofCodec.CommitStep → List UInt8
+DEFINITION
+fun value =>
+  value.logArity ::
+    (Aiur.NativeAIR.ProofCodec.encodeVector
+        (Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeExtension) value.siblingValues ++
+      Aiur.NativeAIR.ProofCodec.encodeCap value.siblingHashes)
+PREMISE Aiur.NativeAIR.ProofCodec.Fri.mk
+List Aiur.NativeAIR.ProofCodec.Cap →
+  List Aiur.G →
+    List Aiur.NativeAIR.ProofCodec.BatchOpening →
+      List Aiur.NativeAIR.ProofCodec.CommitStep →
+        List Aiur.NativeAIR.ProofCodec.Extension → Aiur.G → Aiur.NativeAIR.ProofCodec.Fri
+PREMISE Aiur.NativeAIR.ProofCodec.readFri
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.ProofCodec.Fri
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readCap
+  let __do_lift_1 ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readField
+  let __do_lift_2 ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readBatchOpening
+  let __do_lift_3 ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readCommitStep
+  let __do_lift_4 ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readExtension
+  let __do_lift_5 ← Aiur.NativeAIR.ProofCodec.readField
+  pure
+      { commits := __do_lift, commitPowWitnesses := __do_lift_1, inputOpenings := __do_lift_2,
+        commitOpenings := __do_lift_3, finalPoly := __do_lift_4, queryPowWitness := __do_lift_5 }
+PREMISE Aiur.NativeAIR.ProofCodec.encodeFri
+Aiur.NativeAIR.ProofCodec.Fri → List UInt8
+DEFINITION
+fun value =>
+  Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeCap value.commits ++
+            Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeField value.commitPowWitnesses ++
+          Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeBatchOpening value.inputOpenings ++
+        Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeCommitStep value.commitOpenings ++
+      Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeExtension value.finalPoly ++
+    Aiur.NativeAIR.ProofCodec.encodeField value.queryPowWitness
+PREMISE Aiur.NativeAIR.ProofCodec.Data.mk
+List Bool →
+  Aiur.NativeAIR.ProofCodec.Commitments →
+    List Aiur.NativeAIR.ProofCodec.Extension →
+      List UInt8 →
+        Aiur.NativeAIR.ProofCodec.Fri →
+          Aiur.NativeAIR.ProofCodec.Openings Aiur.NativeAIR.ProofCodec.Extension →
+            Option (Aiur.NativeAIR.ProofCodec.Openings Aiur.NativeAIR.ProofCodec.Extension) →
+              Aiur.NativeAIR.ProofCodec.Openings Aiur.NativeAIR.ProofCodec.Extension →
+                Aiur.NativeAIR.ProofCodec.Openings Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofCodec.Data
+PREMISE Aiur.NativeAIR.ProofCodec.readData
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.ProofCodec.Data
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readBool
+  let __do_lift_1 ← Aiur.NativeAIR.ProofCodec.readCommitments
+  let __do_lift_2 ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.ProofCodec.readExtension
+  let __do_lift_3 ← Aiur.NativeAIR.ProofCodec.readVector Aiur.NativeAIR.KeyCodec.readByte
+  let __do_lift_4 ← Aiur.NativeAIR.ProofCodec.readFri
+  let __do_lift_5 ← Aiur.NativeAIR.ProofCodec.readOpenings Aiur.NativeAIR.ProofCodec.readExtension
+  let __do_lift_6 ←
+    Aiur.NativeAIR.ProofCodec.readOption
+        (Aiur.NativeAIR.ProofCodec.readOpenings Aiur.NativeAIR.ProofCodec.readExtension)
+  let __do_lift_7 ← Aiur.NativeAIR.ProofCodec.readOpenings Aiur.NativeAIR.ProofCodec.readExtension
+  let __do_lift_8 ← Aiur.NativeAIR.ProofCodec.readOpenings Aiur.NativeAIR.ProofCodec.readExtension
+  pure
+      { active := __do_lift, commitments := __do_lift_1, accumulators := __do_lift_2, logDegrees := __do_lift_3,
+        fri := __do_lift_4, quotient := __do_lift_5, preprocessed := __do_lift_6, stage1 := __do_lift_7,
+        stage2 := __do_lift_8 }
+PREMISE Aiur.NativeAIR.ProofCodec.encodeData
+Aiur.NativeAIR.ProofCodec.Data → List UInt8
+DEFINITION
+fun value =>
+  Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeBool value.active ++
+                  Aiur.NativeAIR.ProofCodec.encodeCommitments value.commitments ++
+                Aiur.NativeAIR.ProofCodec.encodeVector Aiur.NativeAIR.ProofCodec.encodeExtension value.accumulators ++
+              Aiur.NativeAIR.ProofCodec.encodeVector (fun b => [b]) value.logDegrees ++
+            Aiur.NativeAIR.ProofCodec.encodeFri value.fri ++
+          Aiur.NativeAIR.ProofCodec.encodeOpenings Aiur.NativeAIR.ProofCodec.encodeExtension value.quotient ++
+        Aiur.NativeAIR.ProofCodec.encodeOption
+          (Aiur.NativeAIR.ProofCodec.encodeOpenings Aiur.NativeAIR.ProofCodec.encodeExtension) value.preprocessed ++
+      Aiur.NativeAIR.ProofCodec.encodeOpenings Aiur.NativeAIR.ProofCodec.encodeExtension value.stage1 ++
+    Aiur.NativeAIR.ProofCodec.encodeOpenings Aiur.NativeAIR.ProofCodec.encodeExtension value.stage2
+PREMISE Aiur.NativeAIR.ProofCodec.decode
+ByteArray → Option Aiur.NativeAIR.ProofCodec.Data
+DEFINITION
+fun bytes => do
+  let __x ← Aiur.NativeAIR.ProofCodec.readData bytes.data.toList
+  match __x with
+    | (value, rest) => if rest.isEmpty = true then some value else none
+PREMISE Aiur.NativeAIR.ProofCodec.encode
+Aiur.NativeAIR.ProofCodec.Data → ByteArray
+DEFINITION
+fun value => (Aiur.NativeAIR.ProofCodec.encodeData value).toByteArray
+PREMISE Aiur.NativeAIR.ProofCodec.decodeCanonical
+ByteArray → Option Aiur.NativeAIR.ProofCodec.Data
+DEFINITION
+fun bytes => do
+  let value ← Aiur.NativeAIR.ProofCodec.decode bytes
+  if Aiur.NativeAIR.ProofCodec.encode value = bytes then some value else none
+PREMISE Aiur.NativeAIR.ProofShape.Pair.mk
+List Aiur.NativeAIR.ProofCodec.Extension → List Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofShape.Pair
+PREMISE Aiur.NativeAIR.ProofShape.pair
+List (List Aiur.NativeAIR.ProofCodec.Extension) → Option Aiur.NativeAIR.ProofShape.Pair
+DEFINITION
+fun x =>
+  match x with
+  | [current, next] => some { current := current, next := next }
+  | x => none
+PREMISE Aiur.NativeAIR.ProofShape.single
+{α : Type u_1} → List α → Option α
+DEFINITION
+fun {α} x =>
+  match x with
+  | [value] => some value
+  | x => none
+PREMISE Aiur.NativeAIR.ProofShape.activeIndices
+Aiur.NativeAIR.ProofCodec.Data → List Nat
+DEFINITION
+fun proof =>
+  List.filterMap
+    (fun x =>
+      match x with
+      | (active, index) => if active = true then some index else none)
+    proof.active.zipIdx
+PREMISE Aiur.NativeAIR.ProofShape.quotientDegree
+Aiur.NativeAIR.KeyCodec.Circuit → Nat
+DEFINITION
+fun circuit => (max circuit.maxConstraintDegree 2 - 1).nextPowerOfTwo
+PREMISE Aiur.NativeAIR.ProofShape.Row.mk
+Nat →
+  Aiur.NativeAIR.KeyCodec.Circuit →
+    UInt8 →
+      Aiur.NativeAIR.ProofShape.Pair →
+        Aiur.NativeAIR.ProofShape.Pair →
+          Option Aiur.NativeAIR.ProofShape.Pair →
+            List Aiur.NativeAIR.ProofCodec.Extension →
+              Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofShape.Row
+PREMISE Aiur.NativeAIR.ProofShape.readPreprocessed
+Aiur.NativeAIR.ProofCodec.Data → Option Nat → Option (Option Aiur.NativeAIR.ProofShape.Pair)
+DEFINITION
+fun proof x =>
+  match x with
+  | none => some none
+  | some slot => Option.map some (proof.preprocessed >>= fun opened => opened[slot]? >>= Aiur.NativeAIR.ProofShape.pair)
+PREMISE Aiur.NativeAIR.ProofShape.readRow
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Nat → Nat → Option Aiur.NativeAIR.ProofShape.Row
+DEFINITION
+fun key proof index position => do
+  let circuit ← key.circuits[index]?
+  let preprocessedIndex ← key.preprocessedIndices[index]?
+  let degree ← proof.logDegrees[position]?
+  let __do_lift ← proof.stage1[position]?
+  let stage1 ← Aiur.NativeAIR.ProofShape.pair __do_lift
+  let __do_lift ← proof.stage2[position]?
+  let stage2 ← Aiur.NativeAIR.ProofShape.pair __do_lift
+  let __do_lift ← proof.quotient[position]?
+  let quotient ← Aiur.NativeAIR.ProofShape.single __do_lift
+  let accumulator ← proof.accumulators[position]?
+  let preprocessed ← Aiur.NativeAIR.ProofShape.readPreprocessed proof preprocessedIndex
+  pure
+      { circuitIndex := index, circuit := circuit, logDegree := degree, stage1 := stage1, stage2 := stage2,
+        preprocessed := preprocessed, quotient := quotient, accumulator := accumulator }
+PREMISE Aiur.NativeAIR.ProofShape.Pair.hasWidth
+Aiur.NativeAIR.ProofShape.Pair → Nat → Bool
+DEFINITION
+fun values width => values.current.length == width && values.next.length == width
+PREMISE Aiur.NativeAIR.ProofShape.Row.fits
+Aiur.NativeAIR.KeyCodec.Parameters → Aiur.NativeAIR.ProofShape.Row → Bool
+DEFINITION
+fun parameters row =>
+  (row.stage1.hasWidth row.circuit.mainWidth && row.stage2.hasWidth row.circuit.widths.stage2 &&
+        match row.preprocessed with
+        | none => true
+        | some values => values.hasWidth row.circuit.preprocessedWidth) &&
+      row.quotient.length == Aiur.NativeAIR.ProofShape.quotientDegree row.circuit * 2 &&
+    decide
+      (row.logDegree.toNat + (Aiur.NativeAIR.ProofShape.quotientDegree row.circuit).log2 ≤ 32 - parameters.logBlowup)
+PREMISE Aiur.NativeAIR.ProofShape.header
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Bool
+DEFINITION
+fun key proof =>
+  have active := (Aiur.NativeAIR.ProofShape.activeIndices proof).length;
+  have preprocessed := (List.filter Option.isSome key.preprocessedIndices).length;
+  !key.circuits.isEmpty && proof.active.length == key.circuits.length && decide (active > 0) &&
+                  key.preprocessedIndices.length == key.circuits.length &&
+                proof.logDegrees.length == active &&
+              key.preprocessedCommitment.isNone == (preprocessed == 0) &&
+            List.length (proof.preprocessed.getD []) == preprocessed &&
+          List.length proof.stage1 == active &&
+        List.length proof.stage2 == active &&
+      List.length proof.quotient == active &&
+    proof.accumulators.length == active
+PREMISE Aiur.NativeAIR.ProofShape.inactivePreprocessed
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Bool
+DEFINITION
+fun key proof =>
+  (key.preprocessedIndices.zip proof.active).all fun x =>
+    match x with
+    | (slot, active) =>
+      match slot, active with
+      | some index, false => (proof.preprocessed.getD [])[index]? == some []
+      | x, x_1 => true
+PREMISE Aiur.NativeAIR.ProofShape.rows
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Option (List Aiur.NativeAIR.ProofShape.Row)
+DEFINITION
+fun key proof =>
+  List.mapM
+    (fun x =>
+      match x with
+      | (index, position) => Aiur.NativeAIR.ProofShape.readRow key proof index position)
+    (Aiur.NativeAIR.ProofShape.activeIndices proof).zipIdx
+PREMISE Aiur.NativeAIR.ProofShape.check
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Option (List Aiur.NativeAIR.ProofShape.Row)
+DEFINITION
+fun key proof =>
+  if
+      (Aiur.NativeAIR.ProofShape.header key proof && Aiur.NativeAIR.ProofShape.inactivePreprocessed key proof) =
+        true then
+    do
+    let result ← Aiur.NativeAIR.ProofShape.rows key proof
+    if result.all (Aiur.NativeAIR.ProofShape.Row.fits key.parameters) = true then some result else none
+  else none
+PREMISE Aiur.NativeAIR.ProofShape.fixedHeights
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Bool
+DEFINITION
+fun key proof =>
+  Aiur.fixedTraceHeights (List.map (fun x => x.preprocessedHeight) key.circuits) proof.active
+    (List.map UInt8.toNat proof.logDegrees)
+PREMISE Aiur.NativeAIR.ProofShape.queryBound
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Option Nat
+DEFINITION
+fun key proof =>
+  Aiur.lookupQueryBound (List.map (fun x => x.graph.lookups.length) key.circuits) proof.active
+    (List.map UInt8.toNat proof.logDegrees)
+PREMISE Aiur.BoundVerifier.CheckedProof.mk
+{key : Aiur.NativeAIR.KeyCodec.Key} →
+  {bytes : ByteArray} →
+    (data : Aiur.NativeAIR.ProofCodec.Data) →
+      (rows : List Aiur.NativeAIR.ProofShape.Row) →
+        (bound : Nat) →
+          Aiur.NativeAIR.ProofCodec.decodeCanonical bytes = some data →
+            Aiur.NativeAIR.ProofShape.check key data = some rows →
+              Aiur.NativeAIR.ProofShape.fixedHeights key data = true →
+                Aiur.NativeAIR.ProofShape.queryBound key data = some bound → Aiur.BoundVerifier.CheckedProof key bytes
+PREMISE Aiur.BoundVerifier.readProof
+(key : Aiur.NativeAIR.KeyCodec.Key) → (bytes : ByteArray) → Except String (Aiur.BoundVerifier.CheckedProof key bytes)
+DEFINITION
+fun key bytes =>
+  match parsed : Aiur.NativeAIR.ProofCodec.decodeCanonical bytes with
+  | none => Except.error "proof is not a canonical complete artifact"
+  | some data =>
+    match shape : Aiur.NativeAIR.ProofShape.check key data with
+    | none => Except.error "proof opening shape differs from the selected key"
+    | some rows =>
+      if fixed : Aiur.NativeAIR.ProofShape.fixedHeights key data = true then
+        match budget : Aiur.NativeAIR.ProofShape.queryBound key data with
+        | none => Except.error "proof lookup budget exceeds its bound"
+        | some bound =>
+          Except.ok
+            { data := data, rows := rows, bound := bound, decoded := parsed, shape := shape, fixed := fixed,
+              budget := budget }
+      else Except.error "proof fixed table heights differ from the selected key"
+PREMISE Aiur.BoundVerifier.verifyShaped
+{selection : Aiur.BoundVerifier.Selection} →
+  Aiur.BoundVerifier.CompiledBackend selection → Array Aiur.G → ByteArray → Except String Unit
+DEFINITION
+fun {selection} backend input bytes => do
+  let _ ← Aiur.BoundVerifier.readProof backend.keyData bytes
+  Aiur.BoundVerifier.verifyCompiled backend input bytes
+PREMISE Aiur.NativeAIR.ProofCodec.VectorFits
+{α : Type u_1} → (α → Prop) → List α → Prop
+DEFINITION
+fun {α} property values => values.length < 256 ^ 8 ∧ ∀ (value : α), value ∈ values → property value
+PREMISE Aiur.NativeAIR.ProofCodec.CapFits
+Aiur.NativeAIR.ProofCodec.Cap → Prop
+DEFINITION
+fun cap => Aiur.NativeAIR.ProofCodec.VectorFits (fun digest => List.length digest = 32) cap
+PREMISE Aiur.NativeAIR.ProofCodec.OpeningsFits
+{α : Type} → Aiur.NativeAIR.ProofCodec.Openings α → Prop
+DEFINITION
+fun {α} values =>
+  Aiur.NativeAIR.ProofCodec.VectorFits
+    (Aiur.NativeAIR.ProofCodec.VectorFits (Aiur.NativeAIR.ProofCodec.VectorFits fun x => True)) values
+PREMISE Aiur.NativeAIR.ProofCodec.CommitmentsFits.mk
+∀ {value : Aiur.NativeAIR.ProofCodec.Commitments},
+  Aiur.NativeAIR.ProofCodec.CapFits value.stage1 →
+    Aiur.NativeAIR.ProofCodec.CapFits value.stage2 →
+      Aiur.NativeAIR.ProofCodec.CapFits value.quotient → Aiur.NativeAIR.ProofCodec.CommitmentsFits value
+PREMISE Aiur.NativeAIR.ProofCodec.BatchOpeningFits.mk
+∀ {value : Aiur.NativeAIR.ProofCodec.BatchOpening},
+  Aiur.NativeAIR.ProofCodec.OpeningsFits value.values →
+    Aiur.NativeAIR.ProofCodec.CapFits value.siblingHashes → Aiur.NativeAIR.ProofCodec.BatchOpeningFits value
+PREMISE Aiur.NativeAIR.ProofCodec.CommitStepFits.mk
+∀ {value : Aiur.NativeAIR.ProofCodec.CommitStep},
+  Aiur.NativeAIR.ProofCodec.VectorFits (Aiur.NativeAIR.ProofCodec.VectorFits fun x => True) value.siblingValues →
+    Aiur.NativeAIR.ProofCodec.CapFits value.siblingHashes → Aiur.NativeAIR.ProofCodec.CommitStepFits value
+PREMISE Aiur.NativeAIR.ProofCodec.FriFits.mk
+∀ {value : Aiur.NativeAIR.ProofCodec.Fri},
+  Aiur.NativeAIR.ProofCodec.VectorFits Aiur.NativeAIR.ProofCodec.CapFits value.commits →
+    value.commitPowWitnesses.length < 256 ^ 8 →
+      Aiur.NativeAIR.ProofCodec.VectorFits Aiur.NativeAIR.ProofCodec.BatchOpeningFits value.inputOpenings →
+        Aiur.NativeAIR.ProofCodec.VectorFits Aiur.NativeAIR.ProofCodec.CommitStepFits value.commitOpenings →
+          value.finalPoly.length < 256 ^ 8 → Aiur.NativeAIR.ProofCodec.FriFits value
+PREMISE Aiur.NativeAIR.ProofCodec.DataFits.mk
+∀ {value : Aiur.NativeAIR.ProofCodec.Data},
+  value.active.length < 256 ^ 8 →
+    Aiur.NativeAIR.ProofCodec.CommitmentsFits value.commitments →
+      value.accumulators.length < 256 ^ 8 →
+        value.logDegrees.length < 256 ^ 8 →
+          Aiur.NativeAIR.ProofCodec.FriFits value.fri →
+            Aiur.NativeAIR.ProofCodec.OpeningsFits value.quotient →
+              (∀ (openings : Aiur.NativeAIR.ProofCodec.Openings Aiur.NativeAIR.ProofCodec.Extension),
+                  value.preprocessed = some openings → Aiur.NativeAIR.ProofCodec.OpeningsFits openings) →
+                Aiur.NativeAIR.ProofCodec.OpeningsFits value.stage1 →
+                  Aiur.NativeAIR.ProofCodec.OpeningsFits value.stage2 → Aiur.NativeAIR.ProofCodec.DataFits value
+PREMISE Aiur.NativeAIR.ProofShape.Row.Sourced.mk
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data} {index position : Nat}
+  {row : Aiur.NativeAIR.ProofShape.Row},
+  row.circuitIndex = index →
+    key.circuits[index]? = some row.circuit →
+      proof.logDegrees[position]? = some row.logDegree →
+        proof.stage1[position]? = some [row.stage1.current, row.stage1.next] →
+          proof.stage2[position]? = some [row.stage2.current, row.stage2.next] →
+            proof.quotient[position]? = some [row.quotient] →
+              proof.accumulators[position]? = some row.accumulator →
+                (∃ slot,
+                    key.preprocessedIndices[index]? = some slot ∧
+                      Aiur.NativeAIR.ProofShape.readPreprocessed proof slot = some row.preprocessed) →
+                  Aiur.NativeAIR.ProofShape.Row.Sourced key proof index position row
+PREMISE Aiur.NativeAIR.ProofShape.Row.Fits.mk
+∀ {parameters : Aiur.NativeAIR.KeyCodec.Parameters} {row : Aiur.NativeAIR.ProofShape.Row},
+  row.stage1.current.length = row.circuit.mainWidth ∧ row.stage1.next.length = row.circuit.mainWidth →
+    row.stage2.current.length = row.circuit.widths.stage2 ∧ row.stage2.next.length = row.circuit.widths.stage2 →
+      (∀ (values : Aiur.NativeAIR.ProofShape.Pair),
+          row.preprocessed = some values →
+            values.current.length = row.circuit.preprocessedWidth ∧
+              values.next.length = row.circuit.preprocessedWidth) →
+        row.quotient.length = Aiur.NativeAIR.ProofShape.quotientDegree row.circuit * 2 →
+          row.logDegree.toNat + (Aiur.NativeAIR.ProofShape.quotientDegree row.circuit).log2 ≤
+              32 - parameters.logBlowup →
+            Aiur.NativeAIR.ProofShape.Row.Fits parameters row
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -18811,7 +19578,7 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 831; LOGICAL DECLARATIONS 17597; WITH RUNTIME 18373
+C8 component ROOTS 884; LOGICAL DECLARATIONS 17843; WITH RUNTIME 18619
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []

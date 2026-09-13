@@ -642,6 +642,8 @@ mod tests {
   mod lookup_budget;
   mod lookup_shapes;
   mod memory;
+  mod proof_codec;
+  mod proof_shapes;
   mod scalar;
 
   use super::*;

@@ -41,6 +41,7 @@ import Ix.Aiur.Proofs.CircuitCompletion
 import Ix.Aiur.Proofs.CheckedCircuit
 import Ix.Aiur.Proofs.KeyArtifact
 import Ix.Aiur.Proofs.CompiledKey
+import Ix.Aiur.Proofs.ShapedVerifier
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1593,6 +1594,169 @@ def compiledKeyPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.GraphWidths.Le,
   `Aiur.NativeAIR.CompiledKey.columns]
 
+def proofAcceptanceRoots : Array Lean.Name := #[
+  `Aiur.BoundVerifier.verifyShaped_success,
+  `Aiur.NativeAIR.ProofCodec.readVector_reads,
+  `Aiur.NativeAIR.ProofCodec.readOption_reads,
+  `Aiur.NativeAIR.ProofCodec.readBool_reads,
+  `Aiur.NativeAIR.ProofCodec.readField_reads,
+  `Aiur.NativeAIR.ProofCodec.readExtension_reads,
+  `Aiur.NativeAIR.ProofCodec.readCap_reads,
+  `Aiur.NativeAIR.ProofCodec.readOpenings_reads,
+  `Aiur.NativeAIR.ProofCodec.readCommitments_reads,
+  `Aiur.NativeAIR.ProofCodec.readBatchOpening_reads,
+  `Aiur.NativeAIR.ProofCodec.readCommitStep_reads,
+  `Aiur.NativeAIR.ProofCodec.readFri_reads,
+  `Aiur.NativeAIR.ProofCodec.readData_reads,
+  `Aiur.NativeAIR.ProofCodec.decode_encode,
+  `Aiur.NativeAIR.ProofCodec.decode_success,
+  `Aiur.NativeAIR.ProofCodec.decodeCanonical_success,
+  `Aiur.NativeAIR.ProofCodec.decodeCanonical_encode,
+  `Aiur.NativeAIR.ProofCodec.canonical_bytes_unique,
+  `Aiur.NativeAIR.ProofCodec.encode_injective,
+  `Aiur.NativeAIR.ProofCodec.decode_append_rejected,
+  `Aiur.NativeAIR.ProofCodec.readNat_returns,
+  `Aiur.NativeAIR.ProofCodec.readVector_returns,
+  `Aiur.NativeAIR.ProofCodec.readOption_returns,
+  `Aiur.NativeAIR.ProofCodec.readCap_returns,
+  `Aiur.NativeAIR.ProofCodec.readOpenings_returns,
+  `Aiur.NativeAIR.ProofCodec.readCommitments_returns,
+  `Aiur.NativeAIR.ProofCodec.readBatchOpening_returns,
+  `Aiur.NativeAIR.ProofCodec.readCommitStep_returns,
+  `Aiur.NativeAIR.ProofCodec.readFri_returns,
+  `Aiur.NativeAIR.ProofCodec.readData_returns,
+  `Aiur.NativeAIR.ProofCodec.decode_fits,
+  `Aiur.NativeAIR.ProofShape.pair_success,
+  `Aiur.NativeAIR.ProofShape.single_success,
+  `Aiur.NativeAIR.ProofShape.readPreprocessed_none,
+  `Aiur.NativeAIR.ProofShape.readPreprocessed_some,
+  `Aiur.NativeAIR.ProofShape.readRow_success,
+  `Aiur.NativeAIR.ProofShape.Pair.hasWidth_success,
+  `Aiur.NativeAIR.ProofShape.Row.fits_success,
+  `Aiur.NativeAIR.ProofShape.check_success,
+  `Aiur.NativeAIR.ProofShape.check_length,
+  `Aiur.NativeAIR.ProofShape.activeIndices_mem,
+  `Aiur.NativeAIR.ProofShape.check_row,
+  `Aiur.NativeAIR.ProofShape.check_row_active,
+  `Aiur.NativeAIR.ProofShape.check_nonempty,
+  `Aiur.NativeAIR.ProofShape.fixedHeights_sound,
+  `Aiur.NativeAIR.ProofShape.queryBound_sound,
+  `Aiur.BoundVerifier.CheckedProof.framing,
+  `Aiur.BoundVerifier.CheckedProof.wire_bounds,
+  `Aiur.BoundVerifier.CheckedProof.row,
+  `Aiur.BoundVerifier.CheckedProof.nonempty,
+  `Aiur.BoundVerifier.CheckedProof.fixed_heights,
+  `Aiur.BoundVerifier.CheckedProof.lookup_budget,
+  `Aiur.BoundVerifier.verifyShaped_acceptance]
+
+def proofAcceptanceAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.ProofCodec.readBool_reads]
+
+def proofAcceptanceQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.ProofCodec.decode_success,
+  `Aiur.NativeAIR.ProofCodec.decodeCanonical_success,
+  `Aiur.NativeAIR.ProofCodec.decodeCanonical_encode,
+  `Aiur.NativeAIR.ProofCodec.canonical_bytes_unique,
+  `Aiur.NativeAIR.ProofCodec.readNat_returns,
+  `Aiur.NativeAIR.ProofCodec.readVector_returns,
+  `Aiur.NativeAIR.ProofCodec.readCap_returns,
+  `Aiur.NativeAIR.ProofCodec.readOpenings_returns,
+  `Aiur.NativeAIR.ProofCodec.readCommitments_returns,
+  `Aiur.NativeAIR.ProofCodec.readBatchOpening_returns,
+  `Aiur.NativeAIR.ProofCodec.readCommitStep_returns,
+  `Aiur.NativeAIR.ProofCodec.readFri_returns,
+  `Aiur.NativeAIR.ProofCodec.readData_returns,
+  `Aiur.NativeAIR.ProofCodec.decode_fits,
+  `Aiur.NativeAIR.ProofShape.readPreprocessed_some,
+  `Aiur.NativeAIR.ProofShape.readRow_success,
+  `Aiur.NativeAIR.ProofShape.Pair.hasWidth_success,
+  `Aiur.NativeAIR.ProofShape.Row.fits_success,
+  `Aiur.NativeAIR.ProofShape.check_success,
+  `Aiur.NativeAIR.ProofShape.check_length,
+  `Aiur.NativeAIR.ProofShape.activeIndices_mem,
+  `Aiur.NativeAIR.ProofShape.check_row,
+  `Aiur.NativeAIR.ProofShape.check_row_active,
+  `Aiur.NativeAIR.ProofShape.check_nonempty,
+  `Aiur.NativeAIR.ProofShape.fixedHeights_sound,
+  `Aiur.NativeAIR.ProofShape.queryBound_sound,
+  `Aiur.BoundVerifier.CheckedProof.framing,
+  `Aiur.BoundVerifier.CheckedProof.wire_bounds,
+  `Aiur.BoundVerifier.CheckedProof.row,
+  `Aiur.BoundVerifier.CheckedProof.nonempty,
+  `Aiur.BoundVerifier.CheckedProof.fixed_heights,
+  `Aiur.BoundVerifier.CheckedProof.lookup_budget]
+
+def proofAcceptanceClassicalRoots : Array Lean.Name := #[
+  `Aiur.BoundVerifier.verifyShaped_success,
+  `Aiur.BoundVerifier.verifyShaped_acceptance]
+
+def proofAcceptancePremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.ProofCodec.Extension.mk,
+  `Aiur.NativeAIR.ProofCodec.Digest,
+  `Aiur.NativeAIR.ProofCodec.Cap,
+  `Aiur.NativeAIR.ProofCodec.Openings,
+  `Aiur.NativeAIR.ProofCodec.readVector,
+  `Aiur.NativeAIR.ProofCodec.encodeVector,
+  `Aiur.NativeAIR.ProofCodec.readOption,
+  `Aiur.NativeAIR.ProofCodec.encodeOption,
+  `Aiur.NativeAIR.ProofCodec.readBool,
+  `Aiur.NativeAIR.ProofCodec.encodeBool,
+  `Aiur.NativeAIR.ProofCodec.readField,
+  `Aiur.NativeAIR.ProofCodec.encodeField,
+  `Aiur.NativeAIR.ProofCodec.readExtension,
+  `Aiur.NativeAIR.ProofCodec.encodeExtension,
+  `Aiur.NativeAIR.ProofCodec.readCap,
+  `Aiur.NativeAIR.ProofCodec.encodeCap,
+  `Aiur.NativeAIR.ProofCodec.readOpenings,
+  `Aiur.NativeAIR.ProofCodec.encodeOpenings,
+  `Aiur.NativeAIR.ProofCodec.Commitments.mk,
+  `Aiur.NativeAIR.ProofCodec.readCommitments,
+  `Aiur.NativeAIR.ProofCodec.encodeCommitments,
+  `Aiur.NativeAIR.ProofCodec.BatchOpening.mk,
+  `Aiur.NativeAIR.ProofCodec.readBatchOpening,
+  `Aiur.NativeAIR.ProofCodec.encodeBatchOpening,
+  `Aiur.NativeAIR.ProofCodec.CommitStep.mk,
+  `Aiur.NativeAIR.ProofCodec.readCommitStep,
+  `Aiur.NativeAIR.ProofCodec.encodeCommitStep,
+  `Aiur.NativeAIR.ProofCodec.Fri.mk,
+  `Aiur.NativeAIR.ProofCodec.readFri,
+  `Aiur.NativeAIR.ProofCodec.encodeFri,
+  `Aiur.NativeAIR.ProofCodec.Data.mk,
+  `Aiur.NativeAIR.ProofCodec.readData,
+  `Aiur.NativeAIR.ProofCodec.encodeData,
+  `Aiur.NativeAIR.ProofCodec.decode,
+  `Aiur.NativeAIR.ProofCodec.encode,
+  `Aiur.NativeAIR.ProofCodec.decodeCanonical,
+  `Aiur.NativeAIR.ProofShape.Pair.mk,
+  `Aiur.NativeAIR.ProofShape.pair,
+  `Aiur.NativeAIR.ProofShape.single,
+  `Aiur.NativeAIR.ProofShape.activeIndices,
+  `Aiur.NativeAIR.ProofShape.quotientDegree,
+  `Aiur.NativeAIR.ProofShape.Row.mk,
+  `Aiur.NativeAIR.ProofShape.readPreprocessed,
+  `Aiur.NativeAIR.ProofShape.readRow,
+  `Aiur.NativeAIR.ProofShape.Pair.hasWidth,
+  `Aiur.NativeAIR.ProofShape.Row.fits,
+  `Aiur.NativeAIR.ProofShape.header,
+  `Aiur.NativeAIR.ProofShape.inactivePreprocessed,
+  `Aiur.NativeAIR.ProofShape.rows,
+  `Aiur.NativeAIR.ProofShape.check,
+  `Aiur.NativeAIR.ProofShape.fixedHeights,
+  `Aiur.NativeAIR.ProofShape.queryBound,
+  `Aiur.BoundVerifier.CheckedProof.mk,
+  `Aiur.BoundVerifier.readProof,
+  `Aiur.BoundVerifier.verifyShaped,
+  `Aiur.NativeAIR.ProofCodec.VectorFits,
+  `Aiur.NativeAIR.ProofCodec.CapFits,
+  `Aiur.NativeAIR.ProofCodec.OpeningsFits,
+  `Aiur.NativeAIR.ProofCodec.CommitmentsFits.mk,
+  `Aiur.NativeAIR.ProofCodec.BatchOpeningFits.mk,
+  `Aiur.NativeAIR.ProofCodec.CommitStepFits.mk,
+  `Aiur.NativeAIR.ProofCodec.FriFits.mk,
+  `Aiur.NativeAIR.ProofCodec.DataFits.mk,
+  `Aiur.NativeAIR.ProofShape.Row.Sourced.mk,
+  `Aiur.NativeAIR.ProofShape.Row.Fits.mk]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1629,7 +1793,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -1868,7 +2032,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -1947,7 +2111,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if compiledKeyRoots.contains root then
+    let expected := if proofAcceptanceRoots.contains root then
+        if proofAcceptanceAxiomFreeRoots.contains root then #[]
+        else if proofAcceptanceClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if proofAcceptanceQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if compiledKeyRoots.contains root then
         if compiledKeyQuotOnlyRoots.contains root then #[``Quot.sound]
         else if compiledKeyClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if compiledKeyQuotRoots.contains root then #[``propext, ``Quot.sound]
