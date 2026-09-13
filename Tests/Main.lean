@@ -3,6 +3,7 @@ import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
+import Tests.Ix.IxVM.ByteHints
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
@@ -162,6 +163,7 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("ixvm-byte-hints", Tests.Ix.IxVM.ByteHints.run),
   ("aiur-components", AiurTests.CallOrder.suite),
   ("aiur-prove", do
     IO.println "aiur-prove"
@@ -209,6 +211,7 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("ixvm-byte-hint-timings", Tests.Ix.IxVM.ByteHints.timings),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
