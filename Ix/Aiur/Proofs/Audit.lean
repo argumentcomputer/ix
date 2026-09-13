@@ -30,6 +30,7 @@ import Ix.Aiur.Proofs.CircuitMembership
 import Ix.Aiur.Proofs.LookupLayout
 import Ix.Aiur.Proofs.MemoryColumns
 import Ix.Aiur.Proofs.ByteColumns
+import Ix.Aiur.Proofs.ExpressionGraph
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -354,6 +355,56 @@ def byteColumnRoots : Array Lean.Name := #[
   `Aiur.AIR.SystemTraces.memory_functional,
   `Aiur.BoundVerifier.Backend.column_trace_execution]
 
+def expressionGraphRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Node.check_iff,
+  `Aiur.NativeAIR.checkNodes_iff,
+  `Aiur.NativeAIR.checkedGraphPrefix_iff,
+  `Aiur.NativeAIR.roots_below_prefix,
+  `Aiur.NativeAIR.prefix_bounded,
+  `Aiur.NativeAIR.Graph.Valid.prefix_bounded,
+  `Aiur.NativeAIR.Node.eval_defined,
+  `Aiur.NativeAIR.sweepFrom_defined,
+  `Aiur.NativeAIR.Graph.Valid.sweep_defined,
+  `Aiur.NativeAIR.ValidNodes.take,
+  `Aiur.NativeAIR.Node.eval_withoutStage2,
+  `Aiur.NativeAIR.sweepFrom_withoutStage2,
+  `Aiur.NativeAIR.sweepFrom_append,
+  `Aiur.NativeAIR.sweepFrom_preserves,
+  `Aiur.NativeAIR.Graph.Valid.lookup_sweep_defined,
+  `Aiur.NativeAIR.Graph.Valid.lookup_sweep_agrees,
+  `Aiur.NativeAIR.Node.unfold_eval,
+  `Aiur.NativeAIR.Reflects.push,
+  `Aiur.NativeAIR.Node.unfold_defined,
+  `Aiur.NativeAIR.unfoldFrom_defined,
+  `Aiur.NativeAIR.unfoldFrom_reflects,
+  `Aiur.NativeAIR.Graph.Valid.unfold_defined,
+  `Aiur.NativeAIR.Graph.sweep_reflects,
+  `Aiur.NativeAIR.Reflects.readNodes,
+  `Aiur.NativeAIR.Reflects.readLookup,
+  `Aiur.NativeAIR.readNodes_congr,
+  `Aiur.NativeAIR.readNodes_defined,
+  `Aiur.NativeAIR.readLookup_defined,
+  `Aiur.NativeAIR.Graph.Valid.lookup_values_agree,
+  `Aiur.NativeAIR.Graph.Valid.lookup_values_reflect]
+
+def graphAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.ValidNodes.take,
+  `Aiur.NativeAIR.sweepFrom_append]
+
+def graphPropextRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Node.check_iff,
+  `Aiur.NativeAIR.checkNodes_iff,
+  `Aiur.NativeAIR.roots_below_prefix,
+  `Aiur.NativeAIR.prefix_bounded,
+  `Aiur.NativeAIR.Graph.Valid.prefix_bounded,
+  `Aiur.NativeAIR.Node.eval_withoutStage2]
+
+def graphClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Reflects.push,
+  `Aiur.NativeAIR.unfoldFrom_reflects,
+  `Aiur.NativeAIR.Graph.sweep_reflects,
+  `Aiur.NativeAIR.Graph.Valid.lookup_values_reflect]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -390,7 +441,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -571,7 +622,65 @@ def premises : Array Lean.Name := #[
   `Aiur.AIR.SystemTraces.queryBound,
   `Aiur.AIR.SystemTraces.providers,
   `Aiur.AIR.systemFixedHeights,
-  `Aiur.AIR.systemLookupSlots]
+  `Aiur.AIR.systemLookupSlots,
+  `Aiur.NativeAIR.Source.preprocessed,
+  `Aiur.NativeAIR.Source.main,
+  `Aiur.NativeAIR.Source.stage2,
+  `Aiur.NativeAIR.RowOffset.current,
+  `Aiur.NativeAIR.RowOffset.next,
+  `Aiur.NativeAIR.ColRef.mk,
+  `Aiur.NativeAIR.Node.konst,
+  `Aiur.NativeAIR.Node.var,
+  `Aiur.NativeAIR.Node.publicInput,
+  `Aiur.NativeAIR.Node.isFirstRow,
+  `Aiur.NativeAIR.Node.isLastRow,
+  `Aiur.NativeAIR.Node.isTransition,
+  `Aiur.NativeAIR.Node.add,
+  `Aiur.NativeAIR.Node.sub,
+  `Aiur.NativeAIR.Node.mul,
+  `Aiur.NativeAIR.Node.neg,
+  `Aiur.NativeAIR.GraphWidths.mk,
+  `Aiur.NativeAIR.GraphWidths.width,
+  `Aiur.NativeAIR.Lookup.mk,
+  `Aiur.NativeAIR.Graph.mk,
+  `Aiur.NativeAIR.Lookup.roots,
+  `Aiur.NativeAIR.Graph.lookupRoots,
+  `Aiur.NativeAIR.Graph.lookupPrefix,
+  `Aiur.NativeAIR.Node.Valid,
+  `Aiur.NativeAIR.Node.check,
+  `Aiur.NativeAIR.checkNodes,
+  `Aiur.NativeAIR.ValidNodes.nil,
+  `Aiur.NativeAIR.ValidNodes.cons,
+  `Aiur.NativeAIR.checkedGraphPrefix,
+  `Aiur.NativeAIR.Graph.Valid.mk,
+  `Aiur.NativeAIR.EvalOps.mk,
+  `Aiur.NativeAIR.Values.mk,
+  `Aiur.NativeAIR.Values.Fits,
+  `Aiur.NativeAIR.Node.eval,
+  `Aiur.NativeAIR.sweepFrom,
+  `Aiur.NativeAIR.Graph.sweep,
+  `Aiur.NativeAIR.Values.withoutStage2,
+  `Aiur.NativeAIR.Graph.sweepLookupPrefix,
+  `Aiur.NativeAIR.Expr.konst,
+  `Aiur.NativeAIR.Expr.var,
+  `Aiur.NativeAIR.Expr.publicInput,
+  `Aiur.NativeAIR.Expr.isFirstRow,
+  `Aiur.NativeAIR.Expr.isLastRow,
+  `Aiur.NativeAIR.Expr.isTransition,
+  `Aiur.NativeAIR.Expr.add,
+  `Aiur.NativeAIR.Expr.sub,
+  `Aiur.NativeAIR.Expr.mul,
+  `Aiur.NativeAIR.Expr.neg,
+  `Aiur.NativeAIR.Expr.eval,
+  `Aiur.NativeAIR.Node.unfold,
+  `Aiur.NativeAIR.Reflects,
+  `Aiur.NativeAIR.unfoldFrom,
+  `Aiur.NativeAIR.Graph.unfold,
+  `Aiur.NativeAIR.readNodes,
+  `Aiur.NativeAIR.evalRoots,
+  `Aiur.NativeAIR.readLookup,
+  `Aiur.NativeAIR.evalLookup,
+  `Aiur.NativeAIR.goldilocksOps]
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -650,7 +759,8 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if (roots.extract 0 6).contains root ||
+    let expected := if graphAxiomFreeRoots.contains root then #[]
+      else if graphPropextRoots.contains root || (roots.extract 0 6).contains root ||
         #[`Aiur.G.n_ofNat, `Aiur.G.n_add, `Aiur.G.n_mul, `Aiur.G.zero_add,
           `Aiur.AIR.suppliedWeight_nonzero_provider, `Aiur.AIR.inverse256_correct,
           `Aiur.AIR.byte1Request_shape, `Aiur.AIR.byte2Request_shape,
@@ -663,7 +773,8 @@ run_cmd do
           `Aiur.FixedTraceHeights.alignment,
           `Aiur.AIR.PaddedLookupBalance.congr_queries].contains root
       then #[``propext]
-      else if callOrderRoots.contains root || lookupRoots.contains root ||
+      else if (expressionGraphRoots.contains root && !graphClassicalRoots.contains root) ||
+          callOrderRoots.contains root || lookupRoots.contains root ||
           executionRoots.contains root || memoryRoots.contains root ||
           #[`Aiur.AIR.selectorSum_characteristic_cancel, `Aiur.AIR.active_case,
             `Aiur.AIR.active_default, `Aiur.AIR.byte_add_carry, `Aiur.AIR.byte_sub_borrow,

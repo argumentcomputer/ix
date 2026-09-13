@@ -410,13 +410,13 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 308 roots by traversing checked types, bodies and inductive
-constructors. Twenty-three roots depend only on `propext`; seventy-seven use exactly
-`propext` and `Quot.sound`; the other 208 use exactly
+The audit checks 338 roots by traversing checked types, bodies and inductive
+constructors. Two roots use no axioms; twenty-nine depend only on `propext`;
+ninety-five use exactly `propext` and `Quot.sound`; the other 212 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 15,721 logical declarations and 16,427 declarations after following runtime
+has 15,898 logical declarations and 16,608 declarations after following runtime
 workers and replacements. The frozen report records four native operations,
-three partial opaque sources and all 146 Ix recursion worker implementations.
+three partial opaque sources and all 150 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -482,9 +482,25 @@ function, memory and byte columns with their exact metadata and global budget.
 `Backend.column_trace_execution` derives the selected public execution from
 satisfaction and padded balance of these columns. Native extraction must still
 establish those conditions for an accepted proof.
-All prior 290 root statements and axiom sets, 291 premise definitions and 145
-worker bodies remain byte-for-byte unchanged; 18 roots, 27 frozen definitions
-and one safe-source height-check worker are added. The preceding branchless
+`ExpressionGraph` models the native node syntax and checked graph layout.
+Valid layouts have bounded leaf/root indices, children before parents and no
+stage-two column reads in the lookup prefix. Both forward sweeps are defined;
+their shared values and extracted lookups agree. Unfolding produces expression
+trees with the same evaluation for arbitrary working operations. The codec's
+root-derived lookup prefix may be shorter than the compiler's stored prefix
+after constant folding; the native corpus checks that both give the same
+lookup values. All 88,228 layout cases and 240 assignments across ten actual
+native graphs match Lean, including all 8,016 node values, constraint roots
+and lookup messages. The corpus uses the existing v5 node encoding.
+The native key decoder now validates graph reads before degree recomputation,
+checks degree overflow and verifies the combined maximum degree. Its focused
+regression originally panicked on a self-reference and now returns an error.
+This decoder currently has no production callers in the workspace; key
+serialization is the connected path. The parser, Rust execution, frontend
+compilation and acceptance-to-satisfaction reduction still require refinement.
+All prior 308 root statements and axiom sets, 318 premise definitions and 146
+worker bodies remain byte-for-byte unchanged; 30 roots, 58 frozen definitions
+and four safe-source graph workers are added. The preceding branchless
 repair's reviewed emitter change remains frozen. The concrete failures and
 repairs are recorded in the [Aiur bug inventory](aiur-bug-inventory.md).
 The budget comparison covers

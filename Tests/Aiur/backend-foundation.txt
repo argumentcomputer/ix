@@ -2638,6 +2638,192 @@ ROOT Aiur.BoundVerifier.Backend.column_trace_execution
                       Aiur.Bytecode.AIR.Execution backend.compiled.bytecode (Aiur.AIR.memoryFacts traces.memories.rows)
                         { function := selection.function, inputs := input, outputs := selection.success, rank := 0 }
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Node.check_iff
+∀ (widths : Aiur.NativeAIR.GraphWidths) (lookupEnd index : Nat) (node : Aiur.NativeAIR.Node),
+  Aiur.NativeAIR.Node.check widths lookupEnd index node = true ↔ Aiur.NativeAIR.Node.Valid widths lookupEnd index node
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.checkNodes_iff
+∀ (widths : Aiur.NativeAIR.GraphWidths) (lookupEnd index : Nat) (nodes : List Aiur.NativeAIR.Node),
+  Aiur.NativeAIR.checkNodes widths lookupEnd index nodes = true ↔ Aiur.NativeAIR.ValidNodes widths lookupEnd index nodes
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.checkedGraphPrefix_iff
+∀ (widths : Aiur.NativeAIR.GraphWidths) (graph : Aiur.NativeAIR.Graph) (lookupEnd : Nat),
+  Aiur.NativeAIR.checkedGraphPrefix widths graph = some lookupEnd ↔
+    Aiur.NativeAIR.Graph.Valid widths graph ∧ lookupEnd = graph.lookupPrefix
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.roots_below_prefix
+∀ (roots : List Nat) (index : Nat), index ∈ roots → index < List.foldr (fun root rest => max (root + 1) rest) 0 roots
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.prefix_bounded
+∀ (roots : List Nat) (bound : Nat),
+  (∀ (index : Nat), index ∈ roots → index < bound) → List.foldr (fun root rest => max (root + 1) rest) 0 roots ≤ bound
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Graph.Valid.prefix_bounded
+∀ {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.Graph.Valid widths graph → graph.lookupPrefix ≤ graph.nodes.length
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Node.eval_defined
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) (buffer : Array W)
+  {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd : Nat} {node : Aiur.NativeAIR.Node},
+  values.Fits widths →
+    Aiur.NativeAIR.Node.Valid widths lookupEnd buffer.size node →
+      ∃ value, Aiur.NativeAIR.Node.eval ops values buffer node = some value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.sweepFrom_defined
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) (nodes : List Aiur.NativeAIR.Node)
+  (buffer : Array W) {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd : Nat},
+  values.Fits widths →
+    Aiur.NativeAIR.ValidNodes widths lookupEnd buffer.size nodes →
+      ∃ result,
+        Aiur.NativeAIR.sweepFrom ops values nodes buffer = some result ∧ result.size = buffer.size + nodes.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Graph.Valid.sweep_defined
+∀ {W : Type u_1} {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.Graph.Valid widths graph →
+    ∀ (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W),
+      values.Fits widths → ∃ result, graph.sweep ops values = some result ∧ result.size = graph.nodes.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ValidNodes.take
+∀ {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd index : Nat} {nodes : List Aiur.NativeAIR.Node},
+  Aiur.NativeAIR.ValidNodes widths lookupEnd index nodes →
+    ∀ (count : Nat), Aiur.NativeAIR.ValidNodes widths lookupEnd index (List.take count nodes)
+AXIOMS []
+ROOT Aiur.NativeAIR.Node.eval_withoutStage2
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) (buffer : Array W)
+  {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd : Nat} {node : Aiur.NativeAIR.Node},
+  Aiur.NativeAIR.Node.Valid widths lookupEnd buffer.size node →
+    buffer.size < lookupEnd →
+      Aiur.NativeAIR.Node.eval ops values.withoutStage2 buffer node = Aiur.NativeAIR.Node.eval ops values buffer node
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.sweepFrom_withoutStage2
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) (nodes : List Aiur.NativeAIR.Node)
+  (buffer : Array W) {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd : Nat},
+  Aiur.NativeAIR.ValidNodes widths lookupEnd buffer.size nodes →
+    buffer.size + nodes.length ≤ lookupEnd →
+      Aiur.NativeAIR.sweepFrom ops values.withoutStage2 nodes buffer = Aiur.NativeAIR.sweepFrom ops values nodes buffer
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.sweepFrom_append
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W)
+  (left right : List Aiur.NativeAIR.Node) (buffer : Array W),
+  Aiur.NativeAIR.sweepFrom ops values (left ++ right) buffer =
+    (Aiur.NativeAIR.sweepFrom ops values left buffer).bind (Aiur.NativeAIR.sweepFrom ops values right)
+AXIOMS []
+ROOT Aiur.NativeAIR.sweepFrom_preserves
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) (nodes : List Aiur.NativeAIR.Node)
+  {buffer result : Array W},
+  Aiur.NativeAIR.sweepFrom ops values nodes buffer = some result →
+    ∀ (index : Nat), index < buffer.size → result[index]? = buffer[index]?
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Graph.Valid.lookup_sweep_defined
+∀ {W : Type u_1} {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.Graph.Valid widths graph →
+    ∀ (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W),
+      values.Fits widths → ∃ result, graph.sweepLookupPrefix ops values = some result ∧ result.size = graph.lookupPrefix
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Graph.Valid.lookup_sweep_agrees
+∀ {W : Type u_1} {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.Graph.Valid widths graph →
+    ∀ (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) {full prefixValues : Array W},
+      graph.sweep ops values = some full →
+        graph.sweepLookupPrefix ops values = some prefixValues →
+          ∀ (index : Nat), index < prefixValues.size → full[index]? = prefixValues[index]?
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Node.unfold_eval
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) {trees : Array Aiur.NativeAIR.Expr}
+  {buffer : Array W},
+  Aiur.NativeAIR.Reflects ops values trees buffer →
+    ∀ (node : Aiur.NativeAIR.Node) {expr : Aiur.NativeAIR.Expr},
+      Aiur.NativeAIR.Node.unfold trees node = some expr →
+        Aiur.NativeAIR.Node.eval ops values buffer node = Aiur.NativeAIR.Expr.eval ops values expr
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Reflects.push
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {trees : Array Aiur.NativeAIR.Expr}
+  {buffer : Array W},
+  Aiur.NativeAIR.Reflects ops values trees buffer →
+    ∀ (expr : Aiur.NativeAIR.Expr) (value : W),
+      Aiur.NativeAIR.Expr.eval ops values expr = some value →
+        Aiur.NativeAIR.Reflects ops values (trees.push expr) (buffer.push value)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Node.unfold_defined
+∀ {trees : Array Aiur.NativeAIR.Expr} {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd : Nat}
+  {node : Aiur.NativeAIR.Node},
+  Aiur.NativeAIR.Node.Valid widths lookupEnd trees.size node → ∃ expr, Aiur.NativeAIR.Node.unfold trees node = some expr
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.unfoldFrom_defined
+∀ {nodes : List Aiur.NativeAIR.Node} {trees : Array Aiur.NativeAIR.Expr} {widths : Aiur.NativeAIR.GraphWidths}
+  {lookupEnd : Nat},
+  Aiur.NativeAIR.ValidNodes widths lookupEnd trees.size nodes →
+    ∃ result, Aiur.NativeAIR.unfoldFrom nodes trees = some result ∧ result.size = trees.size + nodes.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.unfoldFrom_reflects
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) (nodes : List Aiur.NativeAIR.Node)
+  {trees resultTrees : Array Aiur.NativeAIR.Expr} {buffer resultBuffer : Array W},
+  Aiur.NativeAIR.Reflects ops values trees buffer →
+    Aiur.NativeAIR.unfoldFrom nodes trees = some resultTrees →
+      Aiur.NativeAIR.sweepFrom ops values nodes buffer = some resultBuffer →
+        Aiur.NativeAIR.Reflects ops values resultTrees resultBuffer
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Graph.Valid.unfold_defined
+∀ {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.Graph.Valid widths graph → ∃ trees, graph.unfold = some trees ∧ trees.size = graph.nodes.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Graph.sweep_reflects
+∀ {W : Type u_1} (graph : Aiur.NativeAIR.Graph) (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W)
+  {trees : Array Aiur.NativeAIR.Expr} {buffer : Array W},
+  graph.unfold = some trees → graph.sweep ops values = some buffer → Aiur.NativeAIR.Reflects ops values trees buffer
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Reflects.readNodes
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {trees : Array Aiur.NativeAIR.Expr}
+  {buffer : Array W},
+  Aiur.NativeAIR.Reflects ops values trees buffer →
+    ∀ (roots : List Nat), Aiur.NativeAIR.readNodes buffer roots = Aiur.NativeAIR.evalRoots ops values trees roots
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Reflects.readLookup
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {trees : Array Aiur.NativeAIR.Expr}
+  {buffer : Array W},
+  Aiur.NativeAIR.Reflects ops values trees buffer →
+    ∀ (lookup : Aiur.NativeAIR.Lookup),
+      Aiur.NativeAIR.readLookup buffer lookup = Aiur.NativeAIR.evalLookup ops values trees lookup
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.readNodes_congr
+∀ {W : Type u_1} (left right : Array W) (roots : List Nat),
+  (∀ (index : Nat), index ∈ roots → left[index]? = right[index]?) →
+    Aiur.NativeAIR.readNodes left roots = Aiur.NativeAIR.readNodes right roots
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.readNodes_defined
+∀ {W : Type u_1} (buffer : Array W) (roots : List Nat),
+  (∀ (index : Nat), index ∈ roots → index < buffer.size) →
+    ∃ values, Aiur.NativeAIR.readNodes buffer roots = some values ∧ values.length = roots.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.readLookup_defined
+∀ {W : Type u_1} (buffer : Array W) (lookup : Aiur.NativeAIR.Lookup),
+  (∀ (index : Nat), index ∈ lookup.roots → index < buffer.size) →
+    ∃ value, Aiur.NativeAIR.readLookup buffer lookup = some value ∧ value.snd.length = lookup.args.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Graph.Valid.lookup_values_agree
+∀ {W : Type u_1} {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.Graph.Valid widths graph →
+    ∀ (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) {full prefixValues : Array W},
+      graph.sweep ops values = some full →
+        graph.sweepLookupPrefix ops values = some prefixValues →
+          prefixValues.size = graph.lookupPrefix →
+            ∀ (lookup : Aiur.NativeAIR.Lookup),
+              lookup ∈ graph.lookups →
+                Aiur.NativeAIR.readLookup full lookup = Aiur.NativeAIR.readLookup prefixValues lookup
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Graph.Valid.lookup_values_reflect
+∀ {W : Type u_1} {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.Graph.Valid widths graph →
+    ∀ (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) {trees : Array Aiur.NativeAIR.Expr}
+      {full prefixValues : Array W},
+      graph.unfold = some trees →
+        graph.sweep ops values = some full →
+          graph.sweepLookupPrefix ops values = some prefixValues →
+            prefixValues.size = graph.lookupPrefix →
+              ∀ (lookup : Aiur.NativeAIR.Lookup),
+                lookup ∈ graph.lookups →
+                  Aiur.NativeAIR.readLookup prefixValues lookup = Aiur.NativeAIR.evalLookup ops values trees lookup
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -5122,6 +5308,288 @@ Aiur.Bytecode.Toplevel → List Nat
 DEFINITION
 fun program =>
   List.map (fun x => x.layout.lookups) program.circuits.toList ++ (List.replicate program.memorySizes.size 1 ++ [3, 10])
+PREMISE Aiur.NativeAIR.Source.preprocessed
+Aiur.NativeAIR.Source
+PREMISE Aiur.NativeAIR.Source.main
+Aiur.NativeAIR.Source
+PREMISE Aiur.NativeAIR.Source.stage2
+Aiur.NativeAIR.Source
+PREMISE Aiur.NativeAIR.RowOffset.current
+Aiur.NativeAIR.RowOffset
+PREMISE Aiur.NativeAIR.RowOffset.next
+Aiur.NativeAIR.RowOffset
+PREMISE Aiur.NativeAIR.ColRef.mk
+Aiur.NativeAIR.Source → Aiur.NativeAIR.RowOffset → Nat → Aiur.NativeAIR.ColRef
+PREMISE Aiur.NativeAIR.Node.konst
+Aiur.G → Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.var
+Aiur.NativeAIR.ColRef → Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.publicInput
+Nat → Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.isFirstRow
+Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.isLastRow
+Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.isTransition
+Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.add
+Nat → Nat → Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.sub
+Nat → Nat → Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.mul
+Nat → Nat → Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.Node.neg
+Nat → Aiur.NativeAIR.Node
+PREMISE Aiur.NativeAIR.GraphWidths.mk
+Nat → Nat → Nat → Nat → Aiur.NativeAIR.GraphWidths
+PREMISE Aiur.NativeAIR.GraphWidths.width
+Aiur.NativeAIR.GraphWidths → Aiur.NativeAIR.Source → Nat
+DEFINITION
+fun widths x =>
+  match x with
+  | Aiur.NativeAIR.Source.preprocessed => widths.preprocessed
+  | Aiur.NativeAIR.Source.main => widths.main
+  | Aiur.NativeAIR.Source.stage2 => widths.stage2
+PREMISE Aiur.NativeAIR.Lookup.mk
+Nat → List Nat → Aiur.NativeAIR.Lookup
+PREMISE Aiur.NativeAIR.Graph.mk
+List Aiur.NativeAIR.Node → List Nat → List Aiur.NativeAIR.Lookup → Aiur.NativeAIR.Graph
+PREMISE Aiur.NativeAIR.Lookup.roots
+Aiur.NativeAIR.Lookup → List Nat
+DEFINITION
+fun lookup => lookup.multiplicity :: lookup.args
+PREMISE Aiur.NativeAIR.Graph.lookupRoots
+Aiur.NativeAIR.Graph → List Nat
+DEFINITION
+fun graph => List.flatMap Aiur.NativeAIR.Lookup.roots graph.lookups
+PREMISE Aiur.NativeAIR.Graph.lookupPrefix
+Aiur.NativeAIR.Graph → Nat
+DEFINITION
+fun graph => List.foldr (fun index rest => max (index + 1) rest) 0 graph.lookupRoots
+PREMISE Aiur.NativeAIR.Node.Valid
+Aiur.NativeAIR.GraphWidths → Nat → Nat → Aiur.NativeAIR.Node → Prop
+DEFINITION
+fun widths lookupEnd index x =>
+  match x with
+  | Aiur.NativeAIR.Node.konst value => True
+  | Aiur.NativeAIR.Node.isFirstRow => True
+  | Aiur.NativeAIR.Node.isLastRow => True
+  | Aiur.NativeAIR.Node.isTransition => True
+  | Aiur.NativeAIR.Node.var column =>
+    column.index < widths.width column.source ∧ (column.source = Aiur.NativeAIR.Source.stage2 → lookupEnd ≤ index)
+  | Aiur.NativeAIR.Node.publicInput input => input < widths.publics
+  | Aiur.NativeAIR.Node.add a b => a < index ∧ b < index
+  | Aiur.NativeAIR.Node.sub a b => a < index ∧ b < index
+  | Aiur.NativeAIR.Node.mul a b => a < index ∧ b < index
+  | Aiur.NativeAIR.Node.neg a => a < index
+PREMISE Aiur.NativeAIR.Node.check
+Aiur.NativeAIR.GraphWidths → Nat → Nat → Aiur.NativeAIR.Node → Bool
+DEFINITION
+fun widths lookupEnd index x =>
+  match x with
+  | Aiur.NativeAIR.Node.konst value => true
+  | Aiur.NativeAIR.Node.isFirstRow => true
+  | Aiur.NativeAIR.Node.isLastRow => true
+  | Aiur.NativeAIR.Node.isTransition => true
+  | Aiur.NativeAIR.Node.var column =>
+    decide (column.index < widths.width column.source) &&
+      (column.source != Aiur.NativeAIR.Source.stage2 || decide (lookupEnd ≤ index))
+  | Aiur.NativeAIR.Node.publicInput input => decide (input < widths.publics)
+  | Aiur.NativeAIR.Node.add a b => decide (a < index) && decide (b < index)
+  | Aiur.NativeAIR.Node.sub a b => decide (a < index) && decide (b < index)
+  | Aiur.NativeAIR.Node.mul a b => decide (a < index) && decide (b < index)
+  | Aiur.NativeAIR.Node.neg a => decide (a < index)
+PREMISE Aiur.NativeAIR.checkNodes
+Aiur.NativeAIR.GraphWidths → Nat → Nat → List Aiur.NativeAIR.Node → Bool
+DEFINITION
+fun widths lookupEnd x x_1 =>
+  List.brecOn (motive := fun x => Nat → Bool) x_1 (Aiur.NativeAIR.checkNodes._f widths lookupEnd) x
+PREMISE Aiur.NativeAIR.ValidNodes.nil
+∀ {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd : Nat} (index : Nat),
+  Aiur.NativeAIR.ValidNodes widths lookupEnd index []
+PREMISE Aiur.NativeAIR.ValidNodes.cons
+∀ {widths : Aiur.NativeAIR.GraphWidths} {lookupEnd index : Nat} {node : Aiur.NativeAIR.Node}
+  {nodes : List Aiur.NativeAIR.Node},
+  Aiur.NativeAIR.Node.Valid widths lookupEnd index node →
+    Aiur.NativeAIR.ValidNodes widths lookupEnd (index + 1) nodes →
+      Aiur.NativeAIR.ValidNodes widths lookupEnd index (node :: nodes)
+PREMISE Aiur.NativeAIR.checkedGraphPrefix
+Aiur.NativeAIR.GraphWidths → Aiur.NativeAIR.Graph → Option Nat
+DEFINITION
+fun widths graph =>
+  if
+      (((graph.zeros.all fun x => decide (x < graph.nodes.length)) &&
+            graph.lookupRoots.all fun x => decide (x < graph.nodes.length)) &&
+          Aiur.NativeAIR.checkNodes widths graph.lookupPrefix 0 graph.nodes) =
+        true then
+    some graph.lookupPrefix
+  else none
+PREMISE Aiur.NativeAIR.Graph.Valid.mk
+∀ {widths : Aiur.NativeAIR.GraphWidths} {graph : Aiur.NativeAIR.Graph},
+  Aiur.NativeAIR.ValidNodes widths graph.lookupPrefix 0 graph.nodes →
+    (∀ (index : Nat), index ∈ graph.zeros → index < graph.nodes.length) →
+      (∀ (index : Nat), index ∈ graph.lookupRoots → index < graph.nodes.length) →
+        Aiur.NativeAIR.Graph.Valid widths graph
+PREMISE Aiur.NativeAIR.EvalOps.mk
+{W : Type u} → (Aiur.G → W) → (W → W → W) → (W → W → W) → (W → W → W) → (W → W) → Aiur.NativeAIR.EvalOps W
+PREMISE Aiur.NativeAIR.Values.mk
+{W : Type u} →
+  (Aiur.NativeAIR.Source → Aiur.NativeAIR.RowOffset → Array W) → Array W → W → W → W → Aiur.NativeAIR.Values W
+PREMISE Aiur.NativeAIR.Values.Fits
+{W : Type u_1} → Aiur.NativeAIR.Values W → Aiur.NativeAIR.GraphWidths → Prop
+DEFINITION
+fun {W} values widths =>
+  (∀ (source : Aiur.NativeAIR.Source) (offset : Aiur.NativeAIR.RowOffset),
+      (values.columns source offset).size = widths.width source) ∧
+    values.publics.size = widths.publics
+PREMISE Aiur.NativeAIR.Node.eval
+{W : Type u_1} → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Array W → Aiur.NativeAIR.Node → Option W
+DEFINITION
+fun {W} ops values buffer x =>
+  match x with
+  | Aiur.NativeAIR.Node.konst value => some (ops.konst value)
+  | Aiur.NativeAIR.Node.var column => (values.columns column.source column.offset)[column.index]?
+  | Aiur.NativeAIR.Node.publicInput index => values.publics[index]?
+  | Aiur.NativeAIR.Node.isFirstRow => some values.isFirstRow
+  | Aiur.NativeAIR.Node.isLastRow => some values.isLastRow
+  | Aiur.NativeAIR.Node.isTransition => some values.isTransition
+  | Aiur.NativeAIR.Node.add a b => do
+    let __do_lift ← buffer[a]?
+    let __do_lift_1 ← buffer[b]?
+    pure (ops.add __do_lift __do_lift_1)
+  | Aiur.NativeAIR.Node.sub a b => do
+    let __do_lift ← buffer[a]?
+    let __do_lift_1 ← buffer[b]?
+    pure (ops.sub __do_lift __do_lift_1)
+  | Aiur.NativeAIR.Node.mul a b => do
+    let __do_lift ← buffer[a]?
+    let __do_lift_1 ← buffer[b]?
+    pure (ops.mul __do_lift __do_lift_1)
+  | Aiur.NativeAIR.Node.neg a => do
+    let __do_lift ← buffer[a]?
+    pure (ops.neg __do_lift)
+PREMISE Aiur.NativeAIR.sweepFrom
+{W : Type u_1} →
+  Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → List Aiur.NativeAIR.Node → Array W → Option (Array W)
+DEFINITION
+fun {W} ops values x x_1 =>
+  List.brecOn (motive := fun x => Array W → Option (Array W)) x (Aiur.NativeAIR.sweepFrom._f ops values) x_1
+PREMISE Aiur.NativeAIR.Graph.sweep
+{W : Type u_1} → Aiur.NativeAIR.Graph → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Option (Array W)
+DEFINITION
+fun {W} graph ops values => Aiur.NativeAIR.sweepFrom ops values graph.nodes #[]
+PREMISE Aiur.NativeAIR.Values.withoutStage2
+{W : Type u_1} → Aiur.NativeAIR.Values W → Aiur.NativeAIR.Values W
+DEFINITION
+fun {W} values =>
+  {
+    columns := fun source offset =>
+      match source with
+      | Aiur.NativeAIR.Source.stage2 => #[]
+      | x => values.columns source offset,
+    publics := values.publics, isFirstRow := values.isFirstRow, isLastRow := values.isLastRow,
+    isTransition := values.isTransition }
+PREMISE Aiur.NativeAIR.Graph.sweepLookupPrefix
+{W : Type u_1} → Aiur.NativeAIR.Graph → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Option (Array W)
+DEFINITION
+fun {W} graph ops values =>
+  Aiur.NativeAIR.sweepFrom ops values.withoutStage2 (List.take graph.lookupPrefix graph.nodes) #[]
+PREMISE Aiur.NativeAIR.Expr.konst
+Aiur.G → Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.var
+Aiur.NativeAIR.ColRef → Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.publicInput
+Nat → Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.isFirstRow
+Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.isLastRow
+Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.isTransition
+Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.add
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.sub
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.mul
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.neg
+Aiur.NativeAIR.Expr → Aiur.NativeAIR.Expr
+PREMISE Aiur.NativeAIR.Expr.eval
+{W : Type u_1} → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Aiur.NativeAIR.Expr → Option W
+DEFINITION
+fun {W} ops values x => Aiur.NativeAIR.Expr.brecOn x (Aiur.NativeAIR.Expr.eval._f ops values)
+PREMISE Aiur.NativeAIR.Node.unfold
+Array Aiur.NativeAIR.Expr → Aiur.NativeAIR.Node → Option Aiur.NativeAIR.Expr
+DEFINITION
+fun trees x =>
+  match x with
+  | Aiur.NativeAIR.Node.konst value => some (Aiur.NativeAIR.Expr.konst value)
+  | Aiur.NativeAIR.Node.var column => some (Aiur.NativeAIR.Expr.var column)
+  | Aiur.NativeAIR.Node.publicInput index => some (Aiur.NativeAIR.Expr.publicInput index)
+  | Aiur.NativeAIR.Node.isFirstRow => some Aiur.NativeAIR.Expr.isFirstRow
+  | Aiur.NativeAIR.Node.isLastRow => some Aiur.NativeAIR.Expr.isLastRow
+  | Aiur.NativeAIR.Node.isTransition => some Aiur.NativeAIR.Expr.isTransition
+  | Aiur.NativeAIR.Node.add a b => do
+    let __do_lift ← trees[a]?
+    let __do_lift_1 ← trees[b]?
+    pure (__do_lift.add __do_lift_1)
+  | Aiur.NativeAIR.Node.sub a b => do
+    let __do_lift ← trees[a]?
+    let __do_lift_1 ← trees[b]?
+    pure (__do_lift.sub __do_lift_1)
+  | Aiur.NativeAIR.Node.mul a b => do
+    let __do_lift ← trees[a]?
+    let __do_lift_1 ← trees[b]?
+    pure (__do_lift.mul __do_lift_1)
+  | Aiur.NativeAIR.Node.neg a => do
+    let __do_lift ← trees[a]?
+    pure __do_lift.neg
+PREMISE Aiur.NativeAIR.Reflects
+{W : Type u_1} → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Array Aiur.NativeAIR.Expr → Array W → Prop
+DEFINITION
+fun {W} ops values trees buffer =>
+  buffer.size = trees.size ∧ ∀ (index : Nat), buffer[index]? = trees[index]?.bind (Aiur.NativeAIR.Expr.eval ops values)
+PREMISE Aiur.NativeAIR.unfoldFrom
+List Aiur.NativeAIR.Node → Array Aiur.NativeAIR.Expr → Option (Array Aiur.NativeAIR.Expr)
+DEFINITION
+fun x x_1 =>
+  List.brecOn (motive := fun x => Array Aiur.NativeAIR.Expr → Option (Array Aiur.NativeAIR.Expr)) x
+    Aiur.NativeAIR.unfoldFrom._f x_1
+PREMISE Aiur.NativeAIR.Graph.unfold
+Aiur.NativeAIR.Graph → Option (Array Aiur.NativeAIR.Expr)
+DEFINITION
+fun graph => Aiur.NativeAIR.unfoldFrom graph.nodes #[]
+PREMISE Aiur.NativeAIR.readNodes
+{W : Type u_1} → Array W → List Nat → Option (List W)
+DEFINITION
+fun {W} buffer roots => List.mapM (fun index => buffer[index]?) roots
+PREMISE Aiur.NativeAIR.evalRoots
+{W : Type u_1} →
+  Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Array Aiur.NativeAIR.Expr → List Nat → Option (List W)
+DEFINITION
+fun {W} ops values trees roots =>
+  List.mapM (fun index => trees[index]?.bind (Aiur.NativeAIR.Expr.eval ops values)) roots
+PREMISE Aiur.NativeAIR.readLookup
+{W : Type u_1} → Array W → Aiur.NativeAIR.Lookup → Option (W × List W)
+DEFINITION
+fun {W} buffer lookup => do
+  let multiplicity ← buffer[lookup.multiplicity]?
+  let args ← Aiur.NativeAIR.readNodes buffer lookup.args
+  pure (multiplicity, args)
+PREMISE Aiur.NativeAIR.evalLookup
+{W : Type u_1} →
+  Aiur.NativeAIR.EvalOps W →
+    Aiur.NativeAIR.Values W → Array Aiur.NativeAIR.Expr → Aiur.NativeAIR.Lookup → Option (W × List W)
+DEFINITION
+fun {W} ops values trees lookup => do
+  let multiplicity ← trees[lookup.multiplicity]?.bind (Aiur.NativeAIR.Expr.eval ops values)
+  let args ← Aiur.NativeAIR.evalRoots ops values trees lookup.args
+  pure (multiplicity, args)
+PREMISE Aiur.NativeAIR.goldilocksOps
+Aiur.NativeAIR.EvalOps Aiur.G
+DEFINITION
+{ konst := id, add := fun x1 x2 => x1 + x2, sub := fun x1 x2 => x1 - x2, mul := fun x1 x2 => x1 * x2,
+  neg := fun x => 0 - x }
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -8207,6 +8675,34 @@ fun retTyp scrutTyp x =>
     match Aiur.MatchCompiler.decisionToTyped._unsafe_rec retTyp scrutTyp body with
     | none => none
     | some body' => some (Aiur.Typed.Term.let body'.typ body'.escapes (Aiur.Pattern.var var) term body')
+RECURSION WORKER Aiur.NativeAIR.checkNodes._unsafe_rec
+Aiur.NativeAIR.GraphWidths → Nat → Nat → List Aiur.NativeAIR.Node → Bool
+IMPLEMENTATION
+fun widths lookupEnd x x_1 =>
+  match x, x_1 with
+  | x, [] => true
+  | index, node :: nodes =>
+    Aiur.NativeAIR.Node.check widths lookupEnd index node &&
+      Aiur.NativeAIR.checkNodes._unsafe_rec widths lookupEnd (index + 1) nodes
+RECURSION WORKER Aiur.NativeAIR.sweepFrom._unsafe_rec
+{W : Type u_1} →
+  Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → List Aiur.NativeAIR.Node → Array W → Option (Array W)
+IMPLEMENTATION
+fun {W} ops values x x_1 =>
+  match x, x_1 with
+  | [], buffer => some buffer
+  | node :: nodes, buffer => do
+    let value ← Aiur.NativeAIR.Node.eval ops values buffer node
+    Aiur.NativeAIR.sweepFrom._unsafe_rec ops values nodes (buffer.push value)
+RECURSION WORKER Aiur.NativeAIR.unfoldFrom._unsafe_rec
+List Aiur.NativeAIR.Node → Array Aiur.NativeAIR.Expr → Option (Array Aiur.NativeAIR.Expr)
+IMPLEMENTATION
+fun x x_1 =>
+  match x, x_1 with
+  | [], trees => some trees
+  | node :: nodes, trees => do
+    let expr ← Aiur.NativeAIR.Node.unfold trees node
+    Aiur.NativeAIR.unfoldFrom._unsafe_rec nodes (trees.push expr)
 RECURSION WORKER Aiur.Source.inlineTopo._unsafe_rec
 Std.HashMap Aiur.Global (List Aiur.Global) →
   Nat → List Aiur.Global → Std.HashSet Aiur.Global → List Aiur.Global → Except String (List Aiur.Global)
@@ -9794,6 +10290,32 @@ fun decls x x_1 x_2 =>
     | some (Aiur.Concrete.Declaration.dataType dt) =>
       Aiur.Concrete.DataType.sizeBound._unsafe_rec decls bound visited dt
     | x => throw (toString "Datatype not found: `" ++ toString g ++ toString "`")
+RECURSION WORKER Aiur.NativeAIR.Expr.eval._unsafe_rec
+{W : Type u_1} → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Aiur.NativeAIR.Expr → Option W
+IMPLEMENTATION
+fun {W} ops values x =>
+  match x with
+  | Aiur.NativeAIR.Expr.konst value => some (ops.konst value)
+  | Aiur.NativeAIR.Expr.var column => (values.columns column.source column.offset)[column.index]?
+  | Aiur.NativeAIR.Expr.publicInput index => values.publics[index]?
+  | Aiur.NativeAIR.Expr.isFirstRow => some values.isFirstRow
+  | Aiur.NativeAIR.Expr.isLastRow => some values.isLastRow
+  | Aiur.NativeAIR.Expr.isTransition => some values.isTransition
+  | a.add b => do
+    let __do_lift ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values a
+    let __do_lift_1 ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values b
+    pure (ops.add __do_lift __do_lift_1)
+  | a.sub b => do
+    let __do_lift ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values a
+    let __do_lift_1 ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values b
+    pure (ops.sub __do_lift __do_lift_1)
+  | a.mul b => do
+    let __do_lift ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values a
+    let __do_lift_1 ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values b
+    pure (ops.mul __do_lift __do_lift_1)
+  | a.neg => do
+    let __do_lift ← Aiur.NativeAIR.Expr.eval._unsafe_rec ops values a
+    pure (ops.neg __do_lift)
 RECURSION WORKER Aiur.Source.Eval.applyGlobal._unsafe_rec
 Aiur.Source.Decls → Nat → Aiur.Global → List Aiur.Value → Aiur.Source.Eval.EvalState → Aiur.Source.Eval.EvalResult
 IMPLEMENTATION
@@ -11761,10 +12283,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 308; LOGICAL DECLARATIONS 15721; WITH RUNTIME 16427
+C8 component ROOTS 338; LOGICAL DECLARATIONS 15898; WITH RUNTIME 16608
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 146
+RECURSION WORKERS 150
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

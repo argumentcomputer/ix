@@ -3,6 +3,7 @@ mod call_order;
 pub mod constraints;
 pub mod execute;
 pub mod gadgets;
+mod graph_shape;
 mod lookup_budget;
 mod lookup_shapes;
 pub mod memory;

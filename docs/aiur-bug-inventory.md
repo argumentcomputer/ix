@@ -1,7 +1,7 @@
 # Aiur bug inventory
 
-This records the fixes completed during the C8 work through commit
-`35186721c912f0356015737de98d8833877f580b`. The eight main entries group
+This records the fixes completed during the C8 work, including the subsequent
+graph-decoder repair. The eight main entries group
 related failures by cause: four demonstrated verifier soundness defects,
 three compiler defects and one reference-evaluator defect. Regression cases
 are counted separately from bug classes.
@@ -24,7 +24,7 @@ three Rust VM files; generated-code parity and the existing VM checks passed.
 The compiler repairs have regression coverage and supporting lemmas; complete
 preservation proofs for normalization and inlining remain open.
 
-Two additional implementation bugs were fixed during this work:
+Three additional implementation bugs were fixed during this work:
 
 - **Deduplication emitted panic diagnostics for invalid callees.** Unchecked
   indexing printed panic messages even when the process returned success.
@@ -37,6 +37,16 @@ Two additional implementation bugs were fixed during this work:
   `p + 1` rows, so native initialization attempted to allocate it. Making the
   period an argument keeps the example symbolic in theorem statements and
   avoids eager allocation. [Corrected example](../Ix/Aiur/Proofs/Memory.lean).
+- **Malformed key graphs could panic during decoding.** A self-referencing
+  node indexed an empty degree vector. The regression now returns an error.
+  The decoder also checks forward references, root and column bounds,
+  stage-two reads in lookup prefixes, degree overflow and incorrect maximum
+  degrees before constructing a graph for evaluation. Valid keys retain the
+  same bytes. This native decoder currently has no production callers in the
+  workspace; serialization is the connected key path. No accepted false claim
+  was demonstrated for this failure. [Decoder regressions](../crates/aiur/src/vk_codec.rs),
+  [read-layout checks](../crates/aiur/src/graph_shape.rs),
+  [checked graph evaluation](../Ix/Aiur/Proofs/ExpressionGraph.lean).
 
 Several checks were added to discharge proof obligations without a demonstrated
 accepted false claim for each one: checked deduplication with identity fallback,
@@ -65,3 +75,9 @@ nine native comparison corpora, the complete Aiur component gate and all 1,345
 broader execution/cost/proving assertions. Its exact audit covers 308 roots.
 These results do not establish the remaining native verifier,
 compiler and certified semantic/cryptographic obligations of full C8.
+
+The graph checkpoint adds the decoder regression and passes all 59 parallel
+release Rust tests, release Clippy, eleven native comparison corpora and the
+complete component gate. Its 338-root audit preserves every earlier root,
+frozen definition and worker body. The new graph corpora compare 88,228 layout
+checks and 240 assignments across ten actual native graphs.
