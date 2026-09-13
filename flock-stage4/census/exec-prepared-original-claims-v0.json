@@ -1,0 +1,94 @@
+{
+  "schema": "ixby-stage4-prepared-original-claims-census-v0",
+  "measurement_date": "2026-09-13",
+  "source_revision": "5e17c6ad6b8f26f8c341aba5cb2824a56201e2af",
+  "status": "whole_setup_census_refused_supported_domain_before_completion",
+  "source_archive": {
+    "sha256": "74cf483090fa85a90c1de758196dadd4dfb173cf62e9d0c13e9ae3de168b8e99",
+    "bytes": 496918,
+    "files": 182,
+    "scope": "Frozen native workspace source, before the later derived-sigma file-key change. Census does not preprocess or store any key."
+  },
+  "composition": {
+    "arithmetic": "PreparedF128Fifo1024V0",
+    "digest": "8fad78d09e0a3321876fe38d9381e9311b1be62ee69f3c82a9d44a8c0de481fc",
+    "tables_digest": "2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f",
+    "matrices": 64,
+    "structure_claims": 3,
+    "jagged_claims": 3,
+    "queries": [
+      244,
+      79,
+      48
+    ],
+    "grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "public_fr_limbs": 2,
+    "source_payload_bytes": 252016
+  },
+  "result": {
+    "outcome": "RejectedBudget",
+    "prefix_r1cs_constraints": 689193521,
+    "prefix_plonk_constraint_rows": 1073741821,
+    "prefix_auxiliary_wires": 384548300,
+    "last_constraint_phase": "MatrixFold",
+    "public_and_blinding_rows": 4,
+    "required_rows": 1073741825,
+    "required_rows_limit": 1073741824,
+    "emission_including_setup_seconds": 1455.414,
+    "total_test_seconds": 1455.47,
+    "command_wall_seconds": 1455.55,
+    "exit_status": 0
+  },
+  "boundary_comparison": {
+    "scope": "Both snapshots are at the first MatrixFold constraint, including that first closure row. They are matching logical phase boundaries, not whole relation totals.",
+    "uncached_prefix_r1cs_constraints": 331318108,
+    "uncached_prefix_plonk_rows": 543010856,
+    "prepared_prefix_r1cs_constraints": 323570122,
+    "prepared_prefix_plonk_rows": 522227177,
+    "plonk_rows_removed": 20783679,
+    "prepared_seconds": 767.79
+  },
+  "bounds": {
+    "virtual_address_gib": 32,
+    "rayon_threads": 8,
+    "cargo_jobs": 16,
+    "native_prefix_command_timeout_seconds": 900,
+    "whole_census_command_timeout_seconds": 7200,
+    "timeout_kill_grace_seconds": 30
+  },
+  "host": {
+    "class": "authorized 64-vCPU / 496-GiB CPU host",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "rustflags": "-Ctarget-cpu=native",
+    "command_maxrss_kib": 620260,
+    "maximum_sampled_vmhwm_kib": 620860,
+    "maximum_sampled_vmpeak_kib": 692488,
+    "memory_scope": "Matrix-free census only, not materialized R1CS, preprocessing, process-tree prover peak or resource admission. Sampled /proc high-water and time(1) maxrss are retained separately."
+  },
+  "native_prefix_test": {
+    "passed": 1,
+    "failed": 0,
+    "real_exec_proofs": 3,
+    "test_seconds": 2.4,
+    "scope": "Ownership and exact bounded setup/assigned prefixes only, not whole relation satisfaction or a terminal proof."
+  },
+  "started_utc": "2026-09-13T14:16:42Z",
+  "finished_utc": "2026-09-13T14:41:13Z",
+  "raw_log": {
+    "path": "flock-stage4/census/exec-prepared-original-claims-v0.log",
+    "sha256": "9fe6ce9cb8ef1efb916e35c09c1c8e84692d0186adf8eaab75ce021ce04787fb",
+    "capture_normalization": "None; retained byte-for-byte from the completed runner."
+  },
+  "reproduce": "ulimit -v 33554432 && RAYON_NUM_THREADS=8 CARGO_BUILD_JOBS=16 timeout --kill-after=30s 7200 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec packed_small_whole_prepared_original_claims_closed_census -- --ignored --nocapture --test-threads=1",
+  "interpretation": "Operand preparation reduces the measured main-verifier boundary by 20,783,679 PLONK rows, but does not make the entire closed relation fit. The cutoff is an incomplete prefix. MatrixFold labels the closure phase and alone does not identify which closure family was active. The uncounted suffix must not be replaced by an estimate or omitted.",
+  "whole_constraint_count_known": false,
+  "whole_r1cs_digest_known": false,
+  "whole_assigned_census_completed": false,
+  "full_materialized_assignment_checked": false,
+  "terminal_srs_or_key_generated": false,
+  "whole_closed_fflonk_proof_generated": false
+}

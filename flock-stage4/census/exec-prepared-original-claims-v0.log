@@ -1,0 +1,158 @@
+started 2026-09-13T14:16:42Z
+74cf483090fa85a90c1de758196dadd4dfb173cf62e9d0c13e9ae3de168b8e99  source.tar.gz
+rustc 1.98.0 (88d9e12ae 2026-08-18)
+Filesystem        1B-blocks        Used    Available Use% Mounted on
+/dev/root      518933680128 92795043840 426121859072  18% /
+   Compiling ix-stage4-trace v0.1.0 (/tmp/ixby-stage4-prepared.SXKB2j/flock-stage4/trace)
+   Compiling ixby-flock v0.1.0 (/tmp/ixby-stage4-prepared.SXKB2j/flock-stage3/host)
+   Compiling ix-terminal-circuit v0.1.0 (/tmp/ixby-stage4-prepared.SXKB2j/flock-stage4/circuit)
+   Compiling ix-fflonk v0.1.0 (/tmp/ixby-stage4-prepared.SXKB2j/flock-stage4/fflonk)
+   Compiling ixby-stage4-exec v0.1.0 (/tmp/ixby-stage4-prepared.SXKB2j/flock-stage4/exec)
+    Finished `release` profile [optimized] target(s) in 13.44s
+     Running unittests src/lib.rs (/tmp/ixby-stage4-census.qBgBlb/flock-stage4/target/release/deps/ixby_stage4_exec-107a61a6791ae7e9)
+
+running 1 test
+test native::tests::original_closure_tests::packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters ... prepared arithmetic ownership, rejected ambient cache selection, and 3 native/setup PREFIX comparisons PASS; composition=8fad78d09e0a3321876fe38d9381e9311b1be62ee69f3c82a9d44a8c0de481fc; tables=2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f; not complete census/key/proof
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 2.40s
+
+	Command being timed: "timeout --kill-after=30s 900 /home/john/.cargo/bin/rustup run 1.98 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters -- --ignored --nocapture --test-threads=1"
+	User time (seconds): 81.99
+	System time (seconds): 2.51
+	Percent of CPU this job got: 532%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:15.88
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 787132
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 63
+	Minor (reclaiming a frame) page faults: 1224099
+	Voluntary context switches: 11515
+	Involuntary context switches: 223
+	Swaps: 0
+	File system inputs: 304
+	File system outputs: 143616
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (/tmp/ixby-stage4-census.qBgBlb/flock-stage4/target/release/deps/ixby_stage4_exec-107a61a6791ae7e9)
+
+running 1 test
+test native::tests::original_closure_tests::packed_small_whole_prepared_original_claims_closed_census ... WHOLE direct original-claim closed census: arithmetic=PreparedF128Fifo1024V0, composition=8fad78d09e0a3321876fe38d9381e9311b1be62ee69f3c82a9d44a8c0de481fc, tables=2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f, matrices=64, structure=3 jagged=3; source_slots=ExecSetupSourceSlotsV0 { f128_words: 12613, digest32_words: 1113, byte_payloads: 380, byte_payload_bytes: 14592 }, bytes=252016; pinned queries [244, 79, 48], grinding [16, 16, 16]; VmPeak:	  324496 kB; VmHWM:	  264088 kB
+whole direct setup Some(Transcript): 1 R1CS, 1 PLONK; 0.60s; VmPeak:	  324496 kB; VmHWM:	  264088 kB
+whole direct setup Some(Transcript): 10000000 R1CS, 18666856 PLONK; 19.52s; VmPeak:	  475404 kB; VmHWM:	  317412 kB
+whole direct setup Some(Transcript): 20000000 R1CS, 37556749 PLONK; 38.94s; VmPeak:	  475404 kB; VmHWM:	  365228 kB
+whole direct setup Some(Wiring): 24676164 R1CS, 46397612 PLONK; 48.12s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Statement): 24678724 R1CS, 46400172 PLONK; 48.12s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Wiring): 24757954 R1CS, 46549618 PLONK; 48.28s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Statement): 24764146 R1CS, 46561810 PLONK; 48.28s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Wiring): 24764658 R1CS, 46562322 PLONK; 48.28s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Wiring): 30000000 R1CS, 54919485 PLONK; 57.68s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Wiring): 40000000 R1CS, 70646088 PLONK; 75.24s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Lincheck): 41635971 R1CS, 73215634 PLONK; 79.01s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Zerocheck): 41644163 R1CS, 73223826 PLONK; 79.01s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Lincheck): 45841080 R1CS, 79888275 PLONK; 88.01s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Lincheck): 50000000 R1CS, 86507661 PLONK; 95.57s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Zerocheck): 53867009 R1CS, 92670307 PLONK; 102.54s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Lincheck): 53867010 R1CS, 92670561 PLONK; 102.54s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Pcs): 53867011 R1CS, 92670562 PLONK; 102.54s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Pcs): 60000000 R1CS, 102175172 PLONK; 114.10s; VmPeak:	  475404 kB; VmHWM:	  409828 kB
+whole direct setup Some(Pcs): 70000000 R1CS, 115448080 PLONK; 247.56s; VmPeak:	  626952 kB; VmHWM:	  503304 kB
+whole direct setup Some(Pcs): 80000000 R1CS, 128376446 PLONK; 293.07s; VmPeak:	  626952 kB; VmHWM:	  538784 kB
+whole direct setup Some(Pcs): 90000000 R1CS, 142812782 PLONK; 327.97s; VmPeak:	  692488 kB; VmHWM:	  550096 kB
+whole direct setup Some(Pcs): 100000000 R1CS, 156826896 PLONK; 350.22s; VmPeak:	  692488 kB; VmHWM:	  550096 kB
+whole direct setup Some(Pcs): 110000000 R1CS, 172685872 PLONK; 369.70s; VmPeak:	  692488 kB; VmHWM:	  550096 kB
+whole direct setup Some(Pcs): 120000000 R1CS, 188486343 PLONK; 385.85s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 130000000 R1CS, 207717112 PLONK; 405.21s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 140000000 R1CS, 226950871 PLONK; 424.58s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 150000000 R1CS, 246198275 PLONK; 443.94s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 160000000 R1CS, 265407479 PLONK; 463.17s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 170000000 R1CS, 281062791 PLONK; 480.96s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 180000000 R1CS, 296720173 PLONK; 498.66s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 190000000 R1CS, 312377789 PLONK; 516.34s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 200000000 R1CS, 328035099 PLONK; 534.02s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 210000000 R1CS, 345683612 PLONK; 552.56s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 220000000 R1CS, 362653823 PLONK; 570.75s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 230000000 R1CS, 380271605 PLONK; 589.31s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 240000000 R1CS, 395627463 PLONK; 609.16s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 250000000 R1CS, 410725122 PLONK; 628.33s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 260000000 R1CS, 425823058 PLONK; 647.50s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 270000000 R1CS, 440928581 PLONK; 666.66s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 280000000 R1CS, 456036261 PLONK; 685.81s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 290000000 R1CS, 471135860 PLONK; 704.98s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 300000000 R1CS, 486233846 PLONK; 724.15s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 310000000 R1CS, 501439577 PLONK; 742.98s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(Pcs): 320000000 R1CS, 516722265 PLONK; 761.49s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(MatrixFold): 323570122 R1CS, 522227177 PLONK; 767.79s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(MatrixFold): 330000000 R1CS, 532154257 PLONK; 778.40s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(MatrixFold): 340000000 R1CS, 547573403 PLONK; 794.85s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(MatrixFold): 350000000 R1CS, 559985823 PLONK; 819.03s; VmPeak:	  692488 kB; VmHWM:	  587500 kB
+whole direct setup Some(MatrixFold): 360000000 R1CS, 569985823 PLONK; 849.43s; VmPeak:	  692488 kB; VmHWM:	  588104 kB
+whole direct setup Some(MatrixFold): 370000000 R1CS, 584437876 PLONK; 869.78s; VmPeak:	  692488 kB; VmHWM:	  589268 kB
+whole direct setup Some(MatrixFold): 380000000 R1CS, 600074624 PLONK; 887.45s; VmPeak:	  692488 kB; VmHWM:	  590416 kB
+whole direct setup Some(MatrixFold): 390000000 R1CS, 615711366 PLONK; 905.10s; VmPeak:	  692488 kB; VmHWM:	  591536 kB
+whole direct setup Some(MatrixFold): 400000000 R1CS, 631323988 PLONK; 922.78s; VmPeak:	  692488 kB; VmHWM:	  592676 kB
+whole direct setup Some(MatrixFold): 410000000 R1CS, 646928228 PLONK; 940.42s; VmPeak:	  692488 kB; VmHWM:	  593804 kB
+whole direct setup Some(MatrixFold): 420000000 R1CS, 662538258 PLONK; 958.08s; VmPeak:	  692488 kB; VmHWM:	  594948 kB
+whole direct setup Some(MatrixFold): 430000000 R1CS, 678179716 PLONK; 975.73s; VmPeak:	  692488 kB; VmHWM:	  596056 kB
+whole direct setup Some(MatrixFold): 440000000 R1CS, 693808406 PLONK; 993.39s; VmPeak:	  692488 kB; VmHWM:	  597176 kB
+whole direct setup Some(MatrixFold): 450000000 R1CS, 709420344 PLONK; 1011.08s; VmPeak:	  692488 kB; VmHWM:	  598408 kB
+whole direct setup Some(MatrixFold): 460000000 R1CS, 725008510 PLONK; 1028.72s; VmPeak:	  692488 kB; VmHWM:	  599544 kB
+whole direct setup Some(MatrixFold): 470000000 R1CS, 740618492 PLONK; 1046.42s; VmPeak:	  692488 kB; VmHWM:	  600776 kB
+whole direct setup Some(MatrixFold): 480000000 R1CS, 756217254 PLONK; 1064.14s; VmPeak:	  692488 kB; VmHWM:	  601876 kB
+whole direct setup Some(MatrixFold): 490000000 R1CS, 771839968 PLONK; 1081.81s; VmPeak:	  692488 kB; VmHWM:	  603088 kB
+whole direct setup Some(MatrixFold): 500000000 R1CS, 787421804 PLONK; 1099.47s; VmPeak:	  692488 kB; VmHWM:	  604212 kB
+whole direct setup Some(MatrixFold): 510000000 R1CS, 803046102 PLONK; 1117.15s; VmPeak:	  692488 kB; VmHWM:	  605396 kB
+whole direct setup Some(MatrixFold): 520000000 R1CS, 818643202 PLONK; 1134.87s; VmPeak:	  692488 kB; VmHWM:	  606560 kB
+whole direct setup Some(MatrixFold): 530000000 R1CS, 834251534 PLONK; 1152.58s; VmPeak:	  692488 kB; VmHWM:	  607688 kB
+whole direct setup Some(MatrixFold): 540000000 R1CS, 849833628 PLONK; 1170.23s; VmPeak:	  692488 kB; VmHWM:	  608768 kB
+whole direct setup Some(MatrixFold): 550000000 R1CS, 865445662 PLONK; 1187.93s; VmPeak:	  692488 kB; VmHWM:	  609912 kB
+whole direct setup Some(MatrixFold): 560000000 R1CS, 881042240 PLONK; 1205.66s; VmPeak:	  692488 kB; VmHWM:	  610952 kB
+whole direct setup Some(MatrixFold): 570000000 R1CS, 896647062 PLONK; 1223.36s; VmPeak:	  692488 kB; VmHWM:	  612084 kB
+whole direct setup Some(MatrixFold): 580000000 R1CS, 912243514 PLONK; 1241.01s; VmPeak:	  692488 kB; VmHWM:	  613132 kB
+whole direct setup Some(MatrixFold): 590000000 R1CS, 927849578 PLONK; 1258.73s; VmPeak:	  692488 kB; VmHWM:	  614216 kB
+whole direct setup Some(MatrixFold): 600000000 R1CS, 943453320 PLONK; 1276.46s; VmPeak:	  692488 kB; VmHWM:	  615304 kB
+whole direct setup Some(MatrixFold): 610000000 R1CS, 959090296 PLONK; 1294.11s; VmPeak:	  692488 kB; VmHWM:	  616400 kB
+whole direct setup Some(MatrixFold): 620000000 R1CS, 974716832 PLONK; 1311.77s; VmPeak:	  692488 kB; VmHWM:	  617524 kB
+whole direct setup Some(MatrixFold): 630000000 R1CS, 990346404 PLONK; 1329.44s; VmPeak:	  692488 kB; VmHWM:	  618664 kB
+whole direct setup Some(MatrixFold): 640000000 R1CS, 1005980446 PLONK; 1347.09s; VmPeak:	  692488 kB; VmHWM:	  619780 kB
+whole direct setup Some(MatrixFold): 650000000 R1CS, 1021600322 PLONK; 1364.76s; VmPeak:	  692488 kB; VmHWM:	  620860 kB
+whole direct setup Some(MatrixFold): 660000000 R1CS, 1036507231 PLONK; 1384.17s; VmPeak:	  692488 kB; VmHWM:	  620260 kB
+whole direct setup Some(MatrixFold): 670000000 R1CS, 1048555559 PLONK; 1410.22s; VmPeak:	  692488 kB; VmHWM:	  620260 kB
+whole direct setup Some(MatrixFold): 680000000 R1CS, 1060366611 PLONK; 1436.80s; VmPeak:	  692488 kB; VmHWM:	  620260 kB
+whole direct setup Some(MatrixFold): 689193521 R1CS, 1073741821 PLONK; 1455.38s; VmPeak:	  692488 kB; VmHWM:	  620260 kB
+REFUSED WHOLE direct closed SETUP at ExecRootClosedCensusPrefixV0 { plonk: PlonkGatePrefixV0 { r1cs_constraints: 689193521, constraint_rows: 1073741821, auxiliary_wires: 384548300 }, last_phase: Some(MatrixFold) }; required_rows=1073741825 > limit=1073741824; 1455.414s; VmPeak:	  692488 kB; VmHWM:	  620260 kB. This is an incomplete prefix, NO full circuit size/digest/domain/key/proof.
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 1455.47s
+
+	Command being timed: "timeout --kill-after=30s 7200 /home/john/.cargo/bin/rustup run 1.98 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec packed_small_whole_prepared_original_claims_closed_census -- --ignored --nocapture --test-threads=1"
+	User time (seconds): 1455.11
+	System time (seconds): 0.33
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 24:15.55
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 620260
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 194293
+	Voluntary context switches: 114
+	Involuntary context switches: 7076
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 312
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+finished 2026-09-13T14:41:13Z

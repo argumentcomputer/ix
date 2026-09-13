@@ -369,6 +369,14 @@ queries, stopping at the supported domain limit. Only if setup finishes does it
 run the whole native replay census and require exact equality. Component or
 prefix checks do not establish this whole count, terminal key, or proof.
 
+The [completed CPU-box census](census/exec-prepared-original-claims-v0.json)
+again returned `RejectedBudget`: 689,193,521 R1CS constraints and
+1,073,741,821 PLONK rows after 1,455.414 seconds. Four reserved rows cross
+the supported domain. At the first closure row, the main-verifier boundary
+uses 20,783,679 fewer PLONK rows than the uncached version, but the complete
+count and assigned census remain unavailable. Further arithmetic reduction
+is required; the optimization is not a domain-fit or proving result.
+
 ## File-key storage without a duplicated C0
 
 `preprocess_fflonk_to_file` stores eight fixed coefficient columns and three

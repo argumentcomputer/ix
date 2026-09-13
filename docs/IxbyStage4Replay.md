@@ -690,6 +690,12 @@ the complete 371-query schedule. If the setup census completes, it must then
 match a complete native replay census. Only that separate result can establish
 the new full geometry; even a match still does not satisfy the proving gate.
 
+Its [completed census](../flock-stage4/census/exec-prepared-original-claims-v0.json)
+still refused the domain at 689,193,521 R1CS constraints and 1,073,741,821 PLONK
+rows, including no completed suffix. The first closure-row boundary is
+20,783,679 PLONK rows smaller than the uncached version. This proves a real
+partial cost reduction, not a full circuit fit, complete assignment or proof.
+
 ## Remaining gates
 
 Complete proof-free materialization/key preprocessing at feasible geometry;
