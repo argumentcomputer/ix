@@ -20,8 +20,10 @@ use std::io::{Read, Seek, Write};
 ///
 /// Use `R = std::fs::File` for disk storage. The key retains its arithmetization,
 /// verification metadata, and chunk hashes, while its eight coefficient
-/// polynomials, three sigma evaluation columns, and packed C0 live in the file.
-/// The file contains canonical 32-byte little-endian fields and costs `19*n*32`
+/// polynomials and three sigma evaluation columns live in the file. Packed C0
+/// is derived on demand from those authenticated coefficient columns, not stored
+/// a second time. This preserves its polynomial, commitment, and key digest.
+/// The file contains canonical 32-byte little-endian fields and costs `11*n*32`
 /// bytes. It is scratch storage: reopening the raw file does not reconstruct a
 /// trusted key, and the authentication metadata is never loaded from the file.
 ///
@@ -34,7 +36,7 @@ pub struct FflonkFilePreprocessedCircuitV1<R> {
   file: PolynomialFile<R>,
   coefficients: [StoredPolynomial; 8],
   sigma_evaluations: [StoredPolynomial; 3],
-  c0: StoredPolynomial,
+  c0_len: usize,
   verification_key: FflonkVerificationKeyV1,
   required_srs_degree: u64,
   digest: [u8; 32],
@@ -59,7 +61,8 @@ impl<R> FflonkFilePreprocessedCircuitV1<R> {
 
   /// Exact scratch payload bytes, excluding filesystem metadata and cache.
   pub fn storage_bytes(&self) -> u64 {
-    self.c0.end()
+    // Sigma3 coefficients are the last of the eleven stored columns.
+    self.coefficients[FflonkFixedPolynomialV1::Sigma3.index()].end()
   }
 
   /// Requested heap bytes in the retained chunk hashes, excluding the reader,
@@ -69,7 +72,6 @@ impl<R> FflonkFilePreprocessedCircuitV1<R> {
       .coefficients
       .iter()
       .chain(&self.sigma_evaluations)
-      .chain([&self.c0])
       .map(StoredPolynomial::authentication_bytes)
       .sum()
   }
@@ -102,7 +104,11 @@ impl<R: Read + Seek> FflonkProvingKeyV1 for FflonkFilePreprocessedCircuitV1<R> {
     })
   }
   fn c0_source(&self) -> impl FflonkPolynomialSourceV1 + '_ {
-    self.file.source(&self.c0)
+    InterleavedC0 {
+      file: &self.file,
+      coefficients: &self.coefficients,
+      len: self.c0_len,
+    }
   }
 }
 
@@ -110,7 +116,9 @@ impl<R: Read + Seek> FflonkProvingKeyV1 for FflonkFilePreprocessedCircuitV1<R> {
 ///
 /// This never constructs the materialized key. Each selector needs one size-n
 /// in-place IFFT buffer. Sigma construction additionally retains n omega powers;
-/// C0 packing uses bounded chunks, and its KZG commitment streams from storage.
+/// C0 is interleaved on demand, and its KZG commitment and digest stream from the
+/// authenticated coefficient columns. No C0 payload or separate chunk index is
+/// written. Repeated C0 reads trade extra coefficient I/O for reduced storage.
 /// The arithmetization and FFT workspaces remain in memory. The caller controls
 /// file creation, cleanup, and durability; errors may leave partial scratch data.
 pub fn preprocess_fflonk_to_file<R: Read + Write + Seek>(
@@ -195,18 +203,13 @@ pub fn preprocess_fflonk_to_file<R: Read + Write + Seek>(
   let sigma_evaluations = sigma_evaluations
     .try_into()
     .map_err(|_| FflonkPreprocessingError::CountOverflow)?;
-  let c0 = file.write_polynomial(
-    offset,
-    &InterleavedC0 { file: &file, coefficients: &coefficients, len: c0_len },
-    8 * FFLONK_POLYNOMIAL_CHUNK_FIELDS,
-  )?;
-  let c0_source = file.source(&c0);
+  let c0_source =
+    InterleavedC0 { file: &file, coefficients: &coefficients, len: c0_len };
   let c0_commitment = commit_polynomial_source(srs, &c0_source)?;
   hasher.update(&(c0_len as u64).to_le_bytes());
   for_each_polynomial_chunk(&c0_source, |_, values| {
     hash_field_values(&mut hasher, values)
   })?;
-  drop(c0_source);
   let verification_key = FflonkVerificationKeyV1::new(
     usize::try_from(arithmetization.census().public_input_rows)
       .map_err(|_| FflonkPreprocessingError::CountOverflow)?,
@@ -221,7 +224,7 @@ pub fn preprocess_fflonk_to_file<R: Read + Write + Seek>(
     file,
     coefficients,
     sigma_evaluations,
-    c0,
+    c0_len,
     verification_key,
     required_srs_degree,
     digest: *hasher.finalize().as_bytes(),
@@ -237,6 +240,28 @@ struct InterleavedC0<'a, R> {
 impl<R: Read + Seek> FflonkPolynomialSourceV1 for InterleavedC0<'_, R> {
   fn len(&self) -> usize {
     self.len
+  }
+
+  fn nonzero_len(&self) -> Result<usize, FflonkStorageError> {
+    // These lengths, like the chunk hashes, come from generated coefficients
+    // before writing. They are never reconstructed from untrusted file bytes.
+    let mut len = 0;
+    for (slot, id) in FflonkFixedPolynomialV1::C0_ORDER.into_iter().enumerate()
+    {
+      if let Some(last) =
+        self.coefficients[id.index()].nonzero_len().checked_sub(1)
+      {
+        let end = last
+          .checked_mul(8)
+          .and_then(|index| index.checked_add(slot + 1))
+          .ok_or(FflonkStorageError::CountOverflow)?;
+        if end > self.len {
+          return Err(FflonkStorageError::Range);
+        }
+        len = len.max(end);
+      }
+    }
+    Ok(len)
   }
   fn read_fields(
     &self,
@@ -347,8 +372,15 @@ mod tests {
       assert_eq!(file.c0_commitment(), memory.c0_commitment());
       assert_eq!(file.required_srs_degree(), memory.required_srs_degree());
       assert_eq!(file.arithmetization(), memory.arithmetization());
-      assert_eq!(file.storage_bytes(), 19 * n * 32);
-      assert_eq!(file.authentication_bytes(), 12 * 32);
+      assert_eq!(file.storage_bytes(), 11 * n * 32);
+      assert_eq!(file.authentication_bytes(), 11 * 32);
+      let capacity =
+        crate::plan_fflonk_capacity(file.arithmetization().census()).unwrap();
+      assert_eq!(file.storage_bytes(), capacity.file_key_polynomial_bytes);
+      assert_eq!(
+        u64::try_from(file.authentication_bytes()).unwrap(),
+        capacity.file_key_authentication_bytes
+      );
       for id in FflonkFixedPolynomialV1::ALL {
         assert_eq!(
           load_polynomial(&file.coefficient_source(id)).unwrap(),
@@ -446,7 +478,7 @@ mod tests {
   }
 
   #[test]
-  fn c0_packing_crosses_source_and_output_chunk_boundaries() {
+  fn derived_c0_matches_stored_reference_across_chunk_boundaries() {
     use crate::polynomial_storage::evaluate_polynomial_source;
     let n = FFLONK_POLYNOMIAL_CHUNK_FIELDS + 3;
     let file = PolynomialFile::new(Cursor::new(Vec::new())).unwrap();
@@ -475,14 +507,21 @@ mod tests {
       )
       .unwrap();
     let source = file.source(&c0);
+    assert_eq!(interleaved.nonzero_len().unwrap(), 8 * n);
     for start in [
       0,
+      1,
+      7,
+      8,
       FFLONK_POLYNOMIAL_CHUNK_FIELDS - 3,
       8 * FFLONK_POLYNOMIAL_CHUNK_FIELDS - 3,
       8 * n - 9,
     ] {
       let mut values = [Fr::zero(); 9];
       source.read_fields(start, &mut values).unwrap();
+      let mut derived = [Fr::zero(); 9];
+      interleaved.read_fields(start, &mut derived).unwrap();
+      assert_eq!(derived, values);
       for (i, value) in values.into_iter().enumerate() {
         let degree = start + i;
         let column = FflonkFixedPolynomialV1::C0_ORDER[degree % 8].index();
@@ -504,6 +543,62 @@ mod tests {
       evaluate_polynomial_source(&source, &[point]).unwrap(),
       [expected]
     );
+    assert_eq!(
+      evaluate_polynomial_source(&interleaved, &[point]).unwrap(),
+      [expected]
+    );
+    assert_eq!(interleaved.read_fields(8 * n, &mut []), Ok(()));
+    assert_eq!(
+      interleaved.read_fields(8 * n + 1, &mut []),
+      Err(FflonkStorageError::Range)
+    );
+    for start in [8 * n, usize::MAX] {
+      let mut output = [Fr::from(17u64); 2];
+      assert_eq!(
+        interleaved.read_fields(start, &mut output),
+        Err(FflonkStorageError::Range)
+      );
+      assert_eq!(output, [Fr::from(17u64); 2]);
+    }
+  }
+
+  #[test]
+  fn derived_c0_nonzero_length_handles_zero_columns_and_slot_order() {
+    // Independently spell the C0 slot for each coefficient in storage order:
+    // QL, QR, QM, QO, QC, sigma1, sigma2, sigma3. QM and QO exchange slots.
+    let slots = [0, 1, 3, 2, 4, 5, 6, 7];
+    for active_column in std::iter::once(None).chain((0..8).map(Some)) {
+      let file = PolynomialFile::new(Cursor::new(Vec::new())).unwrap();
+      let mut offset = 0;
+      let coefficients: [_; 8] = core::array::from_fn(|column| {
+        let mut values = [Fr::zero(); 3];
+        if Some(column) == active_column {
+          values[1] = Fr::from(19u64);
+        }
+        let stored = file
+          .write_polynomial(
+            offset,
+            values.as_slice(),
+            FFLONK_POLYNOMIAL_CHUNK_FIELDS,
+          )
+          .unwrap();
+        offset = stored.end();
+        stored
+      });
+      let source =
+        InterleavedC0 { file: &file, coefficients: &coefficients, len: 24 };
+      let mut expected = [Fr::zero(); 24];
+      let expected_len = active_column.map_or(0, |column| {
+        let index = 8 + slots[column];
+        expected[index] = Fr::from(19u64);
+        index + 1
+      });
+      assert_eq!(source.nonzero_len().unwrap(), expected_len);
+      let mut actual = [Fr::zero(); 24];
+      source.read_fields(0, &mut actual).unwrap();
+      assert_eq!(actual, expected);
+      assert_eq!(source.len(), 24);
+    }
   }
 
   #[test]
@@ -549,7 +644,7 @@ mod tests {
   }
 
   #[test]
-  fn external_file_changes_are_rejected_in_early_and_late_proof_rounds() {
+  fn external_file_changes_are_rejected_by_the_key_and_derived_c0() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
@@ -584,14 +679,26 @@ mod tests {
       .write(true)
       .open(&cleanup.0)
       .unwrap();
-    // QL is read in round 1, sigma evaluations in round 2, and C0 in round 4.
-    for offset in [0, 5 * n * 32, 11 * n * 32] {
+    assert_eq!(writer.metadata().unwrap().len(), 11 * n * 32);
+    let c0_source = key.c0_source();
+    let mut c0_prefix = [Fr::zero(); 8];
+    c0_source.read_fields(0, &mut c0_prefix).unwrap();
+    // Every stored column remains authenticated. C0 has no independently
+    // mutable file region: even its repeated, late reads check the originals.
+    for column in 0..11 {
+      let offset = column * n * 32;
       writer.seek(SeekFrom::Start(offset)).unwrap();
       let mut original = [0u8; 1];
       writer.read_exact(&mut original).unwrap();
       writer.seek(SeekFrom::Start(offset)).unwrap();
       writer.write_all(&[original[0] ^ 1]).unwrap();
       writer.flush().unwrap();
+      if ![5, 7, 9].contains(&column) {
+        assert_eq!(
+          c0_source.read_fields(0, &mut [Fr::zero(); 8]),
+          Err(FflonkStorageError::ChunkChanged { offset })
+        );
+      }
       assert_eq!(
         prove_fflonk(&srs, &key, &r1cs, &witness, FflonkBlindingV1::default()),
         Err(FflonkProverError::Storage(FflonkStorageError::ChunkChanged {
@@ -601,6 +708,9 @@ mod tests {
       writer.seek(SeekFrom::Start(offset)).unwrap();
       writer.write_all(&original).unwrap();
       writer.flush().unwrap();
+      let mut restored = [Fr::zero(); 8];
+      c0_source.read_fields(0, &mut restored).unwrap();
+      assert_eq!(restored, c0_prefix);
     }
     let output =
       prove_fflonk(&srs, &key, &r1cs, &witness, FflonkBlindingV1::default())

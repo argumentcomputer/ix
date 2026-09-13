@@ -301,6 +301,29 @@ Packed compression alone has not solved complete-verifier feasibility.
 Further cost reduction, materialization, terminal key/SRS admission and an
 isolated full-relation FFLONK proof remain required.
 
+## File-key storage without a duplicated C0
+
+`preprocess_fflonk_to_file` stores eight fixed coefficient columns and three
+sigma evaluation columns. Its C0 source now interleaves the authenticated
+coefficients on demand, instead of writing another eight columns. This is a
+storage change, not a different polynomial, commitment, preprocessing digest,
+verification key or proof format. The file remains caller-owned scratch;
+reopening its raw bytes cannot reconstruct a trusted key.
+
+The payload is exactly `11*n*32` bytes, down from `19*n*32`. At `n=2^30`, this
+is 352 GiB instead of 608 GiB, saving 256 GiB. Small real-file and proof
+equivalence tests, chunk-boundary/range checks, and mutations in every stored
+column pass. Every C0 read still authenticates its source chunks. The
+[storage report](census/fflonk-derived-c0-storage-v1.json) records source hashes,
+the exact capacity model, tests and development-setup scope.
+
+The saving trades extra coefficient I/O for less storage; large-domain
+throughput is not measured. The separate compressed SRS is still about
+432 GiB at that domain, and the largest FFT array alone is 128 GiB. The
+existing prover workspace already recycles released extents. Neither that
+reuse nor a RAM disk establishes whole-pipeline RAM/disk admission. Historical
+censuses retain the former file-key model under their pinned source revisions.
+
 ## Boundary that is not yet closed
 
 `Stage4RelationPublicInputsV1` is the historical **root-conditional** relation.
