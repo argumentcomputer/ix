@@ -656,7 +656,7 @@
         "canonical export uses the original profile/program/input/output codecs and checks exact decoded program and profile-limit equality",
         "the original pure BLAKE3 reference is separate from the existing native source-address implementation",
         "twelve axiom fences pin equality, substitution, target determinism, source erasure, fixed-input reflection, and reusable value/byte reflection",
-        "The configured Stage2 benchmark uses the handed-off grouped keys and entrypoints 755/243. The original anonymous source closures and complete byte pins remain unchanged. All 10757 guest constants pass full catalog admission under measured compiler budgets, with all 1316 current usage rejections retained. The 35 unchanged source-reference modules, two shared Ixby boundaries, licenses, raw native proof, claim, and checked proof-envelope extraction provenance have independent pins. The source reference is freshly built with the repository Lean 4.33.0 toolchain; the original Ixon exporter remains a pre-existing digest-pinned executable, without an authenticated clean build from its recorded checkout revision. No Stage2 image/profile or source/image reflection is claimed."
+        "The configured Stage2 benchmark uses the handed-off grouped keys and entrypoints 755/243. The original anonymous source closures and complete byte pins remain unchanged. All 10757 guest constants pass full catalog admission under measured compiler budgets, with all 1316 current usage rejections retained. The 35 unchanged source-reference modules, two shared Ixby boundaries, licenses, raw native proof, claim, and checked proof-envelope extraction provenance have independent pins. The source reference is freshly built with the repository Lean 4.33.0 toolchain; the original Ixon exporter remains a pre-existing digest-pinned executable, without an authenticated clean build from its recorded checkout revision. No canonical Stage2 image/profile or source/image reflection is claimed by this checked pipeline."
       ],
       "tests": [
         "Compilatrix/Ixby/Fence.lean",
@@ -670,6 +670,35 @@
         "milestone": "Proved general lowering and an authenticated upstream proving integration",
         "replacement": "Structural source/target simulation and reflection with explicit resource adequacy, plus exact deployed prover/profile/source bindings",
         "exit_criteria": "Retain the existing closed-source and byte gates while proving the broader theorem and checking the actual proving implementation against the pinned reference semantics"
+      }
+    },
+    {
+      "id": "ixby-lean-lcnf-experimental",
+      "status": "active",
+      "owner": "Compilatr.ix maintainers",
+      "scope": "Experimental retained pure Lean LCNF lowering and Stage2 reference execution",
+      "assumption": "Practical source agreement depends on Lean 4.33.0 typed erasure and monomorphic specialization, the LCNF frontend, runtime value representations, and source-specific wire mappings. These passes have no source-refinement certificate and do not authenticate the original anonymous Ixon source root.",
+      "proof_effect": "No new axiom or native interface is introduced. The API returns an ordinary validated reference Program, not an IxonCompilation. The two wire definition equations identify source helper bodies, and runChunk_run equates resumable execution with the unchanged reference evaluator. Neither proves source/image reflection. Mathematical Nat remains exact; the current upstream cryptographic profile excludes it, so this image currently has no canonical export.",
+      "trust_basis": [
+        "The exact vendored Ixby evaluator and retained Stage2 source modules are shared with the independently pinned reference gates.",
+        "Constructor identities are local layouts without source-address authentication. Unknown runtime externs fail compilation. Tail calls and partial applications use the existing reference instructions.",
+        "Naturals retain exact values with an optional cached low Word32, computed only when needed. Arrays use immutable trees or packed byte blocks; polymorphic updates widen packed storage. The optional wire lowering is specific to the pinned UInt8 helpers and retains source writer limits.",
+        "The Stage2 adapter embeds both original keys, entrypoints 755/243, and the fixed source configuration. It accepts only two raw byte-array arguments and maps Option.some to raw claim bytes and Option.none to erased. Host fixture preparation never supplies a verifier result.",
+        "Reference capacities and successful example executions are not Flock resource measurements, universal source correspondence, or executor soundness."
+      ],
+      "tests": [
+        "check-ixby-lean: 1945 differential reference executions covering exact large Nat arithmetic, word operations, proof-bearing values, closures, persistent arrays, byte concatenation and polymorphic mutation, wire encodings and admission limits, canonical byte comparisons, and bounded-continuation tail calls. Two compiler rejections cover unsupported Float externs and byte capacities outside Word32 indexing.",
+        "stage2-ixby: compiles the complete retained source and frozen adapter, validates all image blocks, executes actual reference transitions on the retained raw multiproof and public claim, and compares exact output bytes or erased; step-limit exhaustion fails the test.",
+        "Compilatrix/Ixby/Runtime/Execute.lean: kernel-checked runChunk_run equation for any state, chunk size, and remaining fuel."
+      ],
+      "retirement": {
+        "milestone": "Certified typed source lowering and canonical Stage2 image",
+        "replacement": "Checked typed erasure and a source-bound structural simulation covering every runtime representation, primitive mapping, constructor, call, branch, loop, and byte ABI",
+        "exit_criteria": [
+          "Bind the exact original source, fixed data, canonical image, profile, and ABI.",
+          "Prove reverse source/image reflection for every admitted input without a per-input source run.",
+          "Retain explicit resource semantics and independently establish any executor compatibility and soundness claims."
+        ]
       }
     }
   ],
@@ -737,10 +766,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "c6c44686cd490c7ea7b47fb57638e06c651de30c5ead6cb29332720209983128",
+      "flake.nix": "6d3241e03256dbe4521889453568bbfa703376b7470f3625031419defcf5d209",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "13d7001c87c35caf08074b33668e28df2feae2a4d95f6f4e4e97ab28aa51f201",
+      "lakefile.lean": "95d531e38caafbd3e65b2b8e48e029c72c9ccd45223c8ac6e2e00c86b2145d87",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -851,7 +880,7 @@
       "benchmarks/compiler-scaling.md": "05bdf7c825ee09dc45d040795ad0097bcd33b5ae4c741a9f9d2e381938164001",
       "benchmarks/native/scaling_harness.c": "7f59e2b78577d435c26176099df11e0bdd4d93f24cb173d567f7d04af13fc809",
       "fixtures/compiler-scaling/expected.json": "05921bd48b52d526890e1ceea2f6838fd965532e2ee3474db1ad1af94bc8a77e",
-      "Compilatrix.lean": "893d5f62b2a66ae3f76a634cd86c0942a11de58ffdc51ad4b37e59ae68f31ff3",
+      "Compilatrix.lean": "d782df456f0c58ad56ece7d4b9e6eb3da7fa49dd23805c219ecd939f4cb0efb1",
       "Compilatrix/Fence.lean": "77ce4006ce637828639f22751deb6ec21c5867094b15caffca57712f9425e25a",
       "SourceModular.lean": "56c6636156b6f5d94fae525e3e6b16e7a0f7a982c337bc48f0478c339b2c5e53",
       "scripts/CheckSourceModular.lean": "a1f7d5cf152ace936026bea821b0ad32ab5ca8ff5d6cab2aa996ec9f1320f979",
@@ -940,7 +969,19 @@
       "fixtures/ixby-stage2/smoke.json": "bf1283c416ecd5a2fbdb1920a2c98c506ef4b58debf3fe6bc970da3eb2cc1c57",
       "scripts/Stage2SourceRun.lean": "93d2801aab4f47898308c4f172159a6d87abe6407605098d6f3d61f4ca028015",
       "vendor/stage2/upstream.json": "3e23c2774a01523fffb655c966ef70a5c47324104a635a7b9aae75bab435b974",
-      "vendor/stage2/Ix/MultiStark/Verify.lean": "cd1c8fbac3e923d1e8081755335688c35601e0add283c451b53e0264464306db"
+      "vendor/stage2/Ix/MultiStark/Verify.lean": "cd1c8fbac3e923d1e8081755335688c35601e0add283c451b53e0264464306db",
+      "Compilatrix/Ixby/Lean.lean": "8ab6d825dc8c6e0bda4aafc4245738b203be30e16d6883c36fcae29d1a0143cf",
+      "scripts/CheckIxbyLean.lean": "f7331ec2b96d5ed41a95a0c6d30a18d547f4a7b2d887e8dc1a4ffa0811289591",
+      "scripts/Stage2Ixby.lean": "9f37bede3682c9e8c0694fa255d4c213c032c1b21fb115af4219d8a3edc95250",
+      "fixtures/ixby-stage2/reference-inventory.json": "d39ff6e175159b41b2f415ae353e5cb7f939e09fa43496e693c42694326a373b",
+      "Compilatrix/Ixby/Runtime/Array.lean": "62c5ce9e8da1790945949371e7d9bd61a95ca0e602e27d3c3a3a43b90670979c",
+      "Compilatrix/Ixby/Runtime/Builder.lean": "0a9e212c7679d47e8f9e9f980566eb8f3bdec77b820fbc757e8771d064690fa4",
+      "Compilatrix/Ixby/Runtime/Bytes.lean": "9fee389b1d7be918eacf8090477349bcc622c46dbac80eae90f7d68ce3fa4502",
+      "Compilatrix/Ixby/Runtime/Examples.lean": "205af44dc0108c6e5d18398e9b8167b585e6f42f92feb72edcae6df9d199ad0d",
+      "Compilatrix/Ixby/Runtime/Execute.lean": "f7c1a4133902dd53675d8c8753cc277b92c3fb384876e0fb8fe0b6defffe75b4",
+      "Compilatrix/Ixby/Runtime/Number.lean": "58d8e5b0cb5389ba2e9c95bcc26ab84f491626c04efc8c62db973d83f066aebf",
+      "Compilatrix/Ixby/Runtime/Report.lean": "cdd842c5ae1b41177056cf4eff16012943c497cbcd257986df3d6e2974faecc6",
+      "Compilatrix/Ixby/Runtime/Wire.lean": "fb591f825f5b577317a8bd72a777aa80f35907670acca091d90f5708065d20bf"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

@@ -557,6 +557,26 @@
           '';
         };
 
+        # Experimental typed lowering: differential tests and actual execution
+        # of the pinned Stage2 proof on the unchanged reference machine.
+        ixbyLeanCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.coreutils pkgs.gzip pkgs.diffutils];
+          name = "check-ixby-lean";
+          installArtifacts = false;
+          postBuild = ''
+            lake env ./.lake/build/bin/check-ixby-lean
+            lake build stage2-ixby
+            lake env ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile inventory.json
+            diff -u ${auditSrc}/fixtures/ixby-stage2/reference-inventory.json inventory.json
+            for case in wrong-claim-kind trailing-public empty-proof malformed-proof valid; do
+              lake env ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 "$case"
+            done
+          '';
+        };
+
         # Strict bounded IxIR₂ wire identity, source-produced snapshots,
         # independent decoding, and exact fresh-process artifact replay.
         ixir2Check = lake2nix.mkPackage {
@@ -957,6 +977,7 @@
           ixby = ixbyCheck;
           ixby-symbolic = ixbySymbolicCheck;
           ixby-stage2 = ixbyStage2Check;
+          ixby-lean = ixbyLeanCheck;
           ixir2-identity = ixir2Check;
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;

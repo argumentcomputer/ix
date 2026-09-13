@@ -110,20 +110,32 @@ runtime inventory contains 672 entries (including those two boundaries) and
 That inventory describes Lean IR, not an emitted Ixby image or an accepted
 Ixby primitive mapping.
 
+The separate [experimental typed frontend](ixby-lean.md) now constructs an
+in-memory Ixby reference image from the retained Lean source, with explicit
+runtime representations and the fixed two-byte-array adapter. Actual reference
+execution accepts the retained valid proof with the exact raw claim and rejects
+all seven invalid cases. These tests do not resolve the checked anonymous Ixon
+pipeline's usage or erasure failures. The current cryptographic codec rejects
+Nat, so that image cannot yet be exported with its canonical profile.
+Source/image reflection remains open.
+
 | Requested artifact or evidence | Current result |
 | --- | --- |
 | Fixed source, keys, entrypoints, limits and complete Ixon closure | Retained and pinned |
 | Complete catalog admission under explicit Stage2 compiler budgets | Passed |
 | Native execution of the unchanged source verifier | Valid proof accepted with exact claim; seven invalid cases rejected |
-| Ixby guest image and serialized profile | Unavailable: checked source erasure remains open |
-| Exact target operation inventory and measured capacities | Unavailable until lowering succeeds |
+| Experimental typed Lean image | Validated; valid proof returns exact claim; seven invalid cases return erased; not source certified |
+| Canonical Ixby guest image and serialized profile | Unavailable with the current profile, which excludes Nat |
+| Measured Flock capacities | Not established by reference execution limits |
 | Source-to-image reflection | Unavailable for this guest |
 | Current Flock executor compatibility | Not established |
 
-The source needs runtime byte parsing/equality, indexing, bounded recursive
-traversal, UInt bit operations and BLAKE3, Goldilocks base/extension arithmetic,
-transcript sampling, and Merkle/AIR/OOD/PCS/FRI verification. Those are source
-requirements, not a fabricated instruction inventory for an absent image.
+The [actual reference inventory](../fixtures/ixby-stage2/reference-inventory.json)
+contains 675 functions, 6,677 blocks, and 146 constructor layouts. It includes
+Nat arithmetic, Word32 operations, byte primitives, BLAKE3, constructor and
+closure operations, calls, and branches. Goldilocks base/extension arithmetic
+currently compiles through exact Nat operations. The inventory is not a
+canonical program encoding or an execution capacity measurement.
 
 ## Required input and output ABI
 
@@ -168,8 +180,9 @@ completion conditions:
    follow checked erasure of the original source, preserving the source bindings.
 3. **Compile the required representations and primitive operations.** The
    reference target already defines bytes, Word32, Goldilocks/extension fields,
-   and BLAKE3, but this compiler currently emits boxed functional code and has
-   no lowering to those primitives. Add source-bound representation and
+   and BLAKE3. The checked Ixon pipeline emits boxed functional code; the
+   experimental typed frontend adds tested runtime mappings without source
+   certificates. Add source-bound representation and
    primitive correspondence proofs, including fixed key bytes and bounded
    indices. Preserve the unchanged verifier definition and fixed configuration.
    Establish the two-byte-array input ABI and the exact raw bytes/erased output
@@ -211,6 +224,9 @@ lake exe source-ixby-stage2 --freeze fixtures/ixby-stage2 /tmp/Stage2Guest.lean
 lake exe source-ixby-stage2 fixtures/ixby-stage2 /tmp/stage2-report
 lake exe source-ixby-stage2 --admit fixtures/ixby-stage2 /tmp/stage2-admission
 lake exe stage2-source-run fixtures/ixby-stage2 valid
+lake exe stage2-ixby fixtures/ixby-stage2 compile /tmp/stage2-inventory.json
+lake exe stage2-ixby fixtures/ixby-stage2 valid
+nix build .#checks.x86_64-linux.ixby-lean
 ```
 
 The gate checks two fresh complete output sets, both default catalog
@@ -237,8 +253,10 @@ The [smoke fixture](../fixtures/ixby-stage2/smoke.json) retains the valid raw
 claim. It comes from the grouped singleton fixture with the approved keys; it
 is a valid runtime input for this guest, not the Init claim. The original
 Ixon proof-envelope digest, checked extraction layout, raw proof digest, and
-compressed file digest are retained separately. These runs test the source;
-they do not supply an Ixby execution or universal source/image reflection.
+compressed file digest are retained separately. The source gate tests the
+source. The separate typed frontend now also executes the compiled image;
+its [eight measured results](ixby-lean.md#tests-and-stage2-adapter) establish
+agreement on these fixtures, without universal source/image reflection.
 
 To regenerate the source exports, use the recorded exporter and Lean 4.33.1
 environment with the pinned upstream imports already built. Generate

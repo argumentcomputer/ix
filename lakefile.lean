@@ -57,6 +57,10 @@ lean_exe «check-ixby» where
   srcDir := "scripts"
   root := `CheckIxby
 
+lean_exe «check-ixby-lean» where
+  srcDir := "scripts"
+  root := `CheckIxbyLean
+
 lean_exe «source-ixby» where
   root := `SourceIxby
 
@@ -69,6 +73,10 @@ lean_exe «source-ixby-stage2» where
 lean_exe «stage2-source-run» where
   srcDir := "scripts"
   root := `Stage2SourceRun
+
+lean_exe «stage2-ixby» where
+  srcDir := "scripts"
+  root := `Stage2Ixby
 
 lean_exe «check-ixby-stage2» where
   srcDir := "scripts"
